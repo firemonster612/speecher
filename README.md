@@ -4,7 +4,7 @@
 
 <h1 align="center">speecher</h1>
 
-Linux dictation app.
+<p align="center"> Linux Speech-To-Text app that reuses your existing subscriptions.</p>
 
 ## Quick start
 
