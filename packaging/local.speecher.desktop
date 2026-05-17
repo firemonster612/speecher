@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Speecher
+Comment=Linux dictation popup
+Exec=@SPEECHER_DESKTOP_EXEC@
+Icon=local.speecher
+Terminal=false
+Categories=Utility;Accessibility;

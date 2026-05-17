@@ -1,0 +1,24 @@
+# CMake build trees
+/build/
+/build-*/
+
+# Packaging outputs
+/dist/
+/*.AppImage
+
+# CMake generated files if configured in-tree
+/CMakeCache.txt
+/CMakeFiles/
+/cmake_install.cmake
+/compile_commands.json
+/CTestTestfile.cmake
+/Testing/
+
+# Editor and OS noise
+/.cache/
+/.idea/
+/.vscode/
+*~
+*.swp
+*.swo
+.DS_Store
