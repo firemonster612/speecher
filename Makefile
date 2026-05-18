@@ -10,6 +10,7 @@ all: build
 configure:
 	cmake -S . -B "$(BUILD_DIR)" -G "$(GENERATOR)" \
 		-DCMAKE_BUILD_TYPE="$(BUILD_TYPE)" \
+		-DCMAKE_INSTALL_PREFIX="$(PREFIX)" \
 		-DSPEECHER_BUILD_TESTS=ON
 
 build: configure

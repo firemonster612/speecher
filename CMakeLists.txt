@@ -108,16 +108,24 @@ endif()
 
 include(GNUInstallDirs)
 if(NOT DEFINED SPEECHER_DESKTOP_EXEC)
-  set(SPEECHER_DESKTOP_EXEC "speecher")
+  set(SPEECHER_DESKTOP_EXEC "${CMAKE_INSTALL_FULL_BINDIR}/speecher")
 endif()
 configure_file(
   packaging/local.speecher.desktop
   "${CMAKE_CURRENT_BINARY_DIR}/local.speecher.desktop"
   @ONLY
 )
+set(SPEECHER_INSTALL_APPLICATIONS_DIR "${CMAKE_INSTALL_DATADIR}/applications")
+set(SPEECHER_INSTALL_HICOLOR_DIR "${CMAKE_INSTALL_DATADIR}/icons/hicolor")
+configure_file(
+  packaging/post-install.cmake.in
+  "${CMAKE_CURRENT_BINARY_DIR}/post-install.cmake"
+  @ONLY
+)
 install(TARGETS speecher RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/local.speecher.desktop" DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
-install(FILES packaging/local.speecher.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/local.speecher.desktop" DESTINATION ${SPEECHER_INSTALL_APPLICATIONS_DIR})
+install(FILES packaging/local.speecher.svg DESTINATION ${SPEECHER_INSTALL_HICOLOR_DIR}/scalable/apps)
+install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/post-install.cmake")
 
 if(SPEECHER_BUILD_TESTS)
   enable_testing()
