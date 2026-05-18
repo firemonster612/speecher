@@ -78,6 +78,7 @@ int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("speecher"));
+    QApplication::setDesktopFileName(QStringLiteral("local.speecher"));
     QApplication::setOrganizationName(QStringLiteral("local.speecher"));
     Theme::apply(SettingsStore().theme());
     const QString logPath = installLogHandler();
