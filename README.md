@@ -9,7 +9,7 @@
 ## Quick start
 
 ### Prerequisites
-Be signed into Claude Code CLI (required) and Codex CLI (optionaly) if you want refinement.
+Be signed into Claude Code CLI (required) and Codex CLI (optionaly) if you want refinement. Speecher can refresh expired Claude logins by running `claude auth status`, so `claude` should be available on `PATH`; it also checks common Claude Code install locations such as `~/.local/bin/claude`.
 
 ```sh
 # Arch
@@ -153,7 +153,7 @@ Technical text is preserved more literally. Commands, paths, URLs, environment v
 
 ## Credentials
 
-Claude credentials are read from `~/.claude/.credentials.json`.
+Claude credentials are read from `~/.claude/.credentials.json`. If the token is expired, Speecher tries to refresh it through Claude Code before starting capture.
 
 OpenAI refinement uses `gpt-5.4-mini` through the Responses API shape.
 

@@ -19,7 +19,7 @@ struct ClaudeCredentialResult {
 
 class ClaudeCredentials {
 public:
-    static ClaudeCredentialResult load(const QString &path);
+    static ClaudeCredentialResult load(const QString &path, bool refreshExpired = false);
 };
 
 } // namespace speecher

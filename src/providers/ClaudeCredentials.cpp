@@ -1,13 +1,19 @@
 #include "providers/ClaudeCredentials.h"
 
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QProcess>
+#include <QStandardPaths>
 
 namespace speecher {
 
-ClaudeCredentialResult ClaudeCredentials::load(const QString &path)
+namespace {
+
+ClaudeCredentialResult readCredentials(const QString &path)
 {
     ClaudeCredentialResult result;
     QFile file(path);
@@ -45,6 +51,98 @@ ClaudeCredentialResult ClaudeCredentials::load(const QString &path)
 
     result.ok = true;
     return result;
+}
+
+QString findClaudeExecutable()
+{
+    const QString fromPath = QStandardPaths::findExecutable(QStringLiteral("claude"));
+    if (!fromPath.isEmpty()) {
+        return fromPath;
+    }
+
+    const QStringList fixedCandidates{
+        QDir::homePath() + QStringLiteral("/.local/bin/claude"),
+        QStringLiteral("/usr/local/bin/claude"),
+        QStringLiteral("/usr/bin/claude"),
+    };
+    for (const QString &candidate : fixedCandidates) {
+        const QFileInfo file(candidate);
+        if (file.isFile() && file.isExecutable()) {
+            return candidate;
+        }
+    }
+
+    QDir versions(QDir::homePath() + QStringLiteral("/.local/share/claude/versions"));
+    const QFileInfoList entries = versions.entryInfoList(QDir::Files | QDir::Executable | QDir::NoDotAndDotDot,
+                                                         QDir::Time);
+    if (!entries.isEmpty()) {
+        return entries.first().absoluteFilePath();
+    }
+
+    return {};
+}
+
+bool refreshClaudeAuth(QString *error)
+{
+    const QString executable = findClaudeExecutable();
+    if (executable.isEmpty()) {
+        if (error) {
+            *error = QStringLiteral("Could not find Claude Code; install it and ensure `claude` is on PATH");
+        }
+        return false;
+    }
+
+    QProcess process;
+    process.setProgram(executable);
+    process.setArguments({QStringLiteral("auth"), QStringLiteral("status")});
+    process.start();
+    if (!process.waitForStarted(2000)) {
+        if (error) {
+            *error = QStringLiteral("Could not start `claude auth status` to refresh login");
+        }
+        return false;
+    }
+    if (!process.waitForFinished(8000)) {
+        process.kill();
+        process.waitForFinished(1000);
+        if (error) {
+            *error = QStringLiteral("Timed out refreshing Claude login with `claude auth status`");
+        }
+        return false;
+    }
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        const QString stderrText = QString::fromUtf8(process.readAllStandardError()).trimmed();
+        if (error) {
+            *error = stderrText.isEmpty()
+                ? QStringLiteral("Claude login refresh failed; run `claude auth login`")
+                : QStringLiteral("Claude login refresh failed: %1").arg(stderrText.left(240));
+        }
+        return false;
+    }
+    return true;
+}
+
+} // namespace
+
+ClaudeCredentialResult ClaudeCredentials::load(const QString &path, bool refreshExpired)
+{
+    ClaudeCredentialResult result = readCredentials(path);
+    if (result.ok || !refreshExpired || !result.expiresAt.isValid()
+        || result.expiresAt > QDateTime::currentDateTimeUtc()) {
+        return result;
+    }
+
+    QString refreshError;
+    if (!refreshClaudeAuth(&refreshError)) {
+        result.error = refreshError;
+        return result;
+    }
+
+    ClaudeCredentialResult refreshed = readCredentials(path);
+    if (!refreshed.ok) {
+        refreshed.error = QStringLiteral("Claude login refresh did not produce valid credentials; %1").arg(refreshed.error);
+    }
+    return refreshed;
 }
 
 } // namespace speecher

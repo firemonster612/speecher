@@ -153,7 +153,7 @@ void ApplicationController::startListening()
         m_mediaPause->pausePlaying();
     }
 
-    const ClaudeCredentialResult credentials = ClaudeCredentials::load(m_settings->claudeCredentialsPath());
+    const ClaudeCredentialResult credentials = ClaudeCredentials::load(m_settings->claudeCredentialsPath(), true);
     if (!credentials.ok) {
         qWarning().noquote() << "claude credentials unavailable message=" + credentials.error;
         resumePausedMedia();
