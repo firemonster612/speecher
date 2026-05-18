@@ -108,7 +108,7 @@ endif()
 
 include(GNUInstallDirs)
 if(NOT DEFINED SPEECHER_DESKTOP_EXEC)
-  set(SPEECHER_DESKTOP_EXEC "${CMAKE_INSTALL_FULL_BINDIR}/speecher")
+  set(SPEECHER_DESKTOP_EXEC "speecher")
 endif()
 configure_file(
   packaging/local.speecher.desktop

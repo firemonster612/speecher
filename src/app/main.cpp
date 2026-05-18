@@ -59,9 +59,17 @@ static QString installLogHandler()
 
 static bool startDetachedToggle()
 {
-    QString program = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
-    if (program.isEmpty()) {
-        program = QCoreApplication::applicationFilePath();
+    QString program = QCoreApplication::applicationFilePath();
+    const QString appImage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
+    const QString appDir = QString::fromLocal8Bit(qgetenv("APPDIR"));
+    if (!appImage.isEmpty() && !appDir.isEmpty()) {
+        const QString executablePath = QFileInfo(program).canonicalFilePath();
+        const QString appDirPath = QFileInfo(appDir).canonicalFilePath();
+        if (!executablePath.isEmpty()
+            && !appDirPath.isEmpty()
+            && executablePath.startsWith(appDirPath + QDir::separator())) {
+            program = appImage;
+        }
     }
     return QProcess::startDetached(program, {QStringLiteral("--daemon"), QStringLiteral("--start-listening")});
 }

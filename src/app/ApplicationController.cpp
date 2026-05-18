@@ -48,10 +48,14 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
     connect(m_claude, &ClaudeVoiceClient::failed, this, [this](const QString &message) {
         qWarning().noquote() << "claude failed transcriptEmpty=" << m_transcript->isEmpty() << "message=" + message;
         if (m_transcript->isEmpty()) {
+            const quint64 generation = m_generation;
             m_audio->stop();
             resumePausedMedia();
             setState(State::Error, message);
-            QTimer::singleShot(1800, this, [this] {
+            QTimer::singleShot(1800, this, [this, generation] {
+                if (generation != m_generation || m_state != State::Error) {
+                    return;
+                }
                 m_popup->hide();
                 setState(State::Idle);
             });
@@ -124,7 +128,7 @@ void ApplicationController::toggle()
     qInfo().noquote() << "toggle requested state=" + stateName();
     if (m_state == State::Idle || m_state == State::Error) {
         startListening();
-    } else if (m_state == State::Listening) {
+    } else if (m_state == State::Starting || m_state == State::Listening) {
         stopListening();
     }
 }
@@ -134,6 +138,7 @@ void ApplicationController::startListening()
     if (m_state != State::Idle && m_state != State::Error) {
         return;
     }
+    ++m_generation;
     setState(State::Starting);
     qInfo().noquote() << "startListening credentialsPath=" + m_settings->claudeCredentialsPath()
                       << "voiceUrl=" + claudeVoiceUrl().toString(QUrl::RemoveUserInfo);
@@ -173,15 +178,18 @@ void ApplicationController::startListening()
 
 void ApplicationController::stopListening()
 {
-    if (m_state != State::Listening) {
+    if (m_state != State::Starting && m_state != State::Listening) {
         return;
     }
+    const quint64 generation = m_generation;
     setState(State::Stopping);
     qInfo() << "stopListening transcriptLength=" << m_transcript->text().size();
     m_audio->stop();
     m_claude->stop();
     resumePausedMedia();
-    QTimer::singleShot(650, this, &ApplicationController::beginRefinement);
+    QTimer::singleShot(650, this, [this, generation] {
+        beginRefinement(generation);
+    });
 }
 
 void ApplicationController::showMain()
@@ -221,12 +229,19 @@ void ApplicationController::setState(State state, const QString &message)
     emit statusChanged(label);
 }
 
-void ApplicationController::beginRefinement()
+void ApplicationController::beginRefinement(quint64 generation)
 {
+    if (generation != m_generation || m_state != State::Stopping) {
+        qInfo() << "beginRefinement skipped stale generation";
+        return;
+    }
     if (m_transcript->isEmpty()) {
         qWarning() << "beginRefinement no transcript captured";
         setState(State::Error, QStringLiteral("No transcript captured"));
-        QTimer::singleShot(1400, this, [this] {
+        QTimer::singleShot(1400, this, [this, generation] {
+            if (generation != m_generation || m_state != State::Error) {
+                return;
+            }
             m_popup->hide();
             setState(State::Idle);
         });
@@ -272,9 +287,13 @@ void ApplicationController::deliverFinal(const QString &text)
     const DeliveryResult result = m_delivery->deliver(m_settings->outputTypeCommand(), text, m_settings->fallbackClipboard());
     m_popup->hidePreview();
     if (result.ok) {
+        const quint64 generation = m_generation;
         m_popup->showMessage(result.message);
         emit statusChanged(result.message);
-        QTimer::singleShot(1300, this, [this] {
+        QTimer::singleShot(1300, this, [this, generation] {
+            if (generation != m_generation || m_state != State::Delivering) {
+                return;
+            }
             m_popup->hide();
             setState(State::Idle);
         });

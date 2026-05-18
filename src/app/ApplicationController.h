@@ -50,7 +50,7 @@ signals:
 
 private:
     void setState(State state, const QString &message = {});
-    void beginRefinement();
+    void beginRefinement(quint64 generation);
     void deliverFinal(const QString &text);
     void resumePausedMedia();
     QUrl claudeVoiceUrl() const;
@@ -70,6 +70,7 @@ private:
     MainWindow *m_mainWindow = nullptr;
     SingleInstanceIpc *m_ipc = nullptr;
     QString m_refinedText;
+    quint64 m_generation = 0;
 };
 
 } // namespace speecher

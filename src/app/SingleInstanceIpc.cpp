@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
+#include <QDir>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -10,6 +11,53 @@
 #include <unistd.h>
 
 namespace speecher {
+
+namespace {
+
+QString appSocketName()
+{
+    return QStringLiteral("speecher-%1").arg(getuid());
+}
+
+QString appImageSocketName()
+{
+    return QStringLiteral("speecher-%1-appimage").arg(getuid());
+}
+
+bool isRunningFromOwnAppImage()
+{
+    const QString appDir = QString::fromLocal8Bit(qgetenv("APPDIR"));
+    if (qgetenv("APPIMAGE").isEmpty() || appDir.isEmpty()) {
+        return false;
+    }
+
+    const QString executablePath = QFileInfo(QCoreApplication::applicationFilePath()).canonicalFilePath();
+    const QString appDirPath = QFileInfo(appDir).canonicalFilePath();
+    return !executablePath.isEmpty()
+        && !appDirPath.isEmpty()
+        && executablePath.startsWith(appDirPath + QDir::separator());
+}
+
+QString executablePathSocketName()
+{
+    const QFileInfo executable(QCoreApplication::applicationFilePath());
+    QString path = executable.canonicalFilePath();
+    if (path.isEmpty()) {
+        path = executable.absoluteFilePath();
+    }
+    const QByteArray digest = QCryptographicHash::hash(path.toUtf8(), QCryptographicHash::Sha1).toHex().left(12);
+    return QStringLiteral("speecher-%1-%2").arg(getuid()).arg(QString::fromLatin1(digest));
+}
+
+QStringList socketCandidates()
+{
+    if (isRunningFromOwnAppImage()) {
+        return {appImageSocketName()};
+    }
+    return {appSocketName(), executablePathSocketName()};
+}
+
+} // namespace
 
 SingleInstanceIpc::SingleInstanceIpc(QObject *parent)
     : QObject(parent)
@@ -27,17 +75,10 @@ SingleInstanceIpc::SingleInstanceIpc(QObject *parent)
 
 QString SingleInstanceIpc::socketName()
 {
-    if (!qgetenv("APPIMAGE").isEmpty()) {
-        return QStringLiteral("speecher-%1-appimage").arg(getuid());
+    if (isRunningFromOwnAppImage()) {
+        return appImageSocketName();
     }
-
-    const QFileInfo executable(QCoreApplication::applicationFilePath());
-    QString path = executable.canonicalFilePath();
-    if (path.isEmpty()) {
-        path = executable.absoluteFilePath();
-    }
-    const QByteArray digest = QCryptographicHash::hash(path.toUtf8(), QCryptographicHash::Sha1).toHex().left(12);
-    return QStringLiteral("speecher-%1-%2").arg(getuid()).arg(QString::fromLatin1(digest));
+    return appSocketName();
 }
 
 bool SingleInstanceIpc::listen(QString *error)
@@ -54,24 +95,27 @@ bool SingleInstanceIpc::listen(QString *error)
 
 bool SingleInstanceIpc::sendCommand(const QString &command, IpcResponse *response, int timeoutMs)
 {
-    QLocalSocket socket;
-    socket.connectToServer(socketName());
-    if (!socket.waitForConnected(timeoutMs)) {
-        return false;
+    for (const QString &candidate : socketCandidates()) {
+        QLocalSocket socket;
+        socket.connectToServer(candidate);
+        if (!socket.waitForConnected(timeoutMs)) {
+            continue;
+        }
+        const QJsonObject request{{QStringLiteral("command"), command}};
+        socket.write(QJsonDocument(request).toJson(QJsonDocument::Compact));
+        socket.flush();
+        if (!socket.waitForReadyRead(timeoutMs)) {
+            return false;
+        }
+        const QJsonObject object = QJsonDocument::fromJson(socket.readAll()).object();
+        if (response) {
+            response->ok = object.value(QStringLiteral("ok")).toBool();
+            response->state = object.value(QStringLiteral("state")).toString();
+            response->message = object.value(QStringLiteral("message")).toString();
+        }
+        return true;
     }
-    const QJsonObject request{{QStringLiteral("command"), command}};
-    socket.write(QJsonDocument(request).toJson(QJsonDocument::Compact));
-    socket.flush();
-    if (!socket.waitForReadyRead(timeoutMs)) {
-        return false;
-    }
-    const QJsonObject object = QJsonDocument::fromJson(socket.readAll()).object();
-    if (response) {
-        response->ok = object.value(QStringLiteral("ok")).toBool();
-        response->state = object.value(QStringLiteral("state")).toString();
-        response->message = object.value(QStringLiteral("message")).toString();
-    }
-    return true;
+    return false;
 }
 
 void SingleInstanceIpc::writeResponse(QLocalSocket *socket, const IpcResponse &response)
