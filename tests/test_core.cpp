@@ -16,12 +16,43 @@
 #include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QTextStream>
 #include <QtTest>
 
 using namespace speecher;
 
 class CoreTests : public QObject {
     Q_OBJECT
+
+    static bool writeJsonCredentials(const QString &path, const QString &accessToken, const QDateTime &expiresAt)
+    {
+        QFile file(path);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            return false;
+        }
+        QJsonObject oauth{
+            {QStringLiteral("accessToken"), accessToken},
+            {QStringLiteral("expiresAt"), double(expiresAt.toSecsSinceEpoch())},
+        };
+        file.write(QJsonDocument(QJsonObject{{QStringLiteral("claudeAiOauth"), oauth}}).toJson());
+        return true;
+    }
+
+    static QString writeFakeClaudeScript(const QString &path, const QString &body)
+    {
+        QFile file(path);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            return {};
+        }
+        QTextStream stream(&file);
+        stream << "#!/bin/sh\n" << body;
+        file.close();
+        QFile::setPermissions(path,
+                              QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner
+                                  | QFileDevice::ReadGroup | QFileDevice::ExeGroup
+                                  | QFileDevice::ReadOther | QFileDevice::ExeOther);
+        return path;
+    }
 
 private slots:
     void initTestCase()
@@ -181,17 +212,65 @@ private slots:
     {
         QTemporaryDir dir;
         const QString path = dir.filePath(QStringLiteral("credentials.json"));
-        QFile file(path);
-        QVERIFY(file.open(QIODevice::WriteOnly));
-        QJsonObject oauth{
-            {QStringLiteral("accessToken"), QStringLiteral("secret-token")},
-            {QStringLiteral("expiresAt"), double(QDateTime::currentDateTimeUtc().addSecs(-60).toSecsSinceEpoch())},
-        };
-        file.write(QJsonDocument(QJsonObject{{QStringLiteral("claudeAiOauth"), oauth}}).toJson());
-        file.close();
+        QVERIFY(writeJsonCredentials(path,
+                                     QStringLiteral("secret-token"),
+                                     QDateTime::currentDateTimeUtc().addSecs(-60)));
         const ClaudeCredentialResult result = ClaudeCredentials::load(path);
         QVERIFY(!result.ok);
         QVERIFY(result.error.contains(QStringLiteral("claude")));
+    }
+
+    void claudeCredentialsInteractiveRefresh()
+    {
+        QTemporaryDir dir;
+        const QString credentialsPath = dir.filePath(QStringLiteral("credentials.json"));
+        QVERIFY(writeJsonCredentials(credentialsPath,
+                                     QStringLiteral("expired-token"),
+                                     QDateTime::currentDateTimeUtc().addSecs(-60)));
+        const QString fakeClaude = writeFakeClaudeScript(dir.filePath(QStringLiteral("claude-fake")), QStringLiteral(R"(
+read prompt
+cat > "$SPEECHER_TEST_CREDENTIALS_PATH" <<'JSON'
+{"claudeAiOauth":{"accessToken":"refreshed-token","expiresAt":4102444800}}
+JSON
+echo OK
+read command
+exit 0
+)"));
+        QVERIFY(!fakeClaude.isEmpty());
+
+        qputenv("SPEECHER_TEST_CLAUDE_EXECUTABLE", QFile::encodeName(fakeClaude));
+        qputenv("SPEECHER_TEST_CREDENTIALS_PATH", QFile::encodeName(credentialsPath));
+        const auto cleanup = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_CLAUDE_EXECUTABLE");
+            qunsetenv("SPEECHER_TEST_CREDENTIALS_PATH");
+        });
+
+        const ClaudeCredentialResult result = ClaudeCredentials::load(credentialsPath, true);
+        QVERIFY2(result.ok, qPrintable(result.error));
+        QCOMPARE(result.accessToken, QStringLiteral("refreshed-token"));
+    }
+
+    void claudeCredentialsInteractiveRefreshFailure()
+    {
+        QTemporaryDir dir;
+        const QString credentialsPath = dir.filePath(QStringLiteral("credentials.json"));
+        QVERIFY(writeJsonCredentials(credentialsPath,
+                                     QStringLiteral("expired-token"),
+                                     QDateTime::currentDateTimeUtc().addSecs(-60)));
+        const QString fakeClaude = writeFakeClaudeScript(dir.filePath(QStringLiteral("claude-fake")), QStringLiteral(R"(
+read prompt
+exit 12
+)"));
+        QVERIFY(!fakeClaude.isEmpty());
+
+        qputenv("SPEECHER_TEST_CLAUDE_EXECUTABLE", QFile::encodeName(fakeClaude));
+        const auto cleanup = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_CLAUDE_EXECUTABLE");
+        });
+
+        const ClaudeCredentialResult result = ClaudeCredentials::load(credentialsPath, true);
+        QVERIFY(!result.ok);
+        QVERIFY(result.error.contains(QStringLiteral("Claude refresh session")));
     }
 
     void claudeInstalledVersion()
