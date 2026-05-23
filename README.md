@@ -134,22 +134,24 @@ The script creates `dist/Speecher-x86_64.AppImage`. It uses CMake install output
 
 ## Refinement
 
-OpenAI refinement can be tuned in Settings. The default is `Balanced` with `Plain sentences` output.
+OpenAI refinement can be tuned in Settings. The default is `Balanced` with `Plain sentences` output. Refinement is built from composable rules: always-on preservation rules, cumulative level rules, output-format rules, and conflict-resolution rules.
 
 Refinement styles:
 
-- `Strong polish`: aggressively rewrites dictation into polished text, removes speech artifacts, infers structure, and handles broad natural corrections.
-- `Balanced`: fixes transcription issues, lightly improves wording, infers clear structure cues, and handles common corrections.
-- `Light cleanup`: stays close to the transcript while fixing punctuation, capitalization, spacing, and explicit corrections.
+- `Light cleanup`: applies always-on rules plus light cleanup. It stays close to the transcript while fixing punctuation, capitalization, spacing, obvious speech-to-text mistakes, minimal grammar accidents, and explicit corrections.
+- `Balanced`: applies always-on, light, and balanced rules. It produces natural dictation that is clean enough to paste anywhere while staying close to what was said; it removes speech artifacts, lightly improves wording, infers simple obvious structure, and handles common corrections.
+- `Strong polish`: applies always-on, light, balanced, and strong rules. It rewrites dictated speech into polished, useful text while preserving meaning; it may infer useful organization, consolidate overlap, repair clear insertions or moves, reduce rambling, and handle broad natural corrections.
 
 Output formats:
 
-- `Plain sentences`: prefers compact paragraphs and sentence-style lists. Explicit paragraph and line-break cues are still honored.
-- `Markdown style`: may use headings, hyphen bullets, numbered lists, and blank lines when useful.
+- `Plain sentences`: renders permitted structure as compact prose. It avoids Markdown headings, bullets, and vertical numbered lists unless the user explicitly dictated literal Markdown.
+- `Markdown style`: renders permitted structure using simple Markdown when useful. It may use short headings, hyphen bullets, numbered lists, and blank lines, but it does not create structure that the selected refinement level would not otherwise allow.
+
+Refinement level controls how much the transcript may be transformed. Output format controls how permitted structure is rendered. For example, `Light cleanup` with `Markdown style` still does not infer lists or headings, but it will render an explicitly dictated bullet list as Markdown. `Balanced` with `Markdown style` may infer simple obvious lists. `Strong polish` with `Markdown style` may organize content more aggressively when that makes the result more useful. When rules conflict, Speecher favors always-on preservation rules, explicit user instructions, technical literals, and the least transformative interpretation.
 
 Spoken corrections are applied inside the current capture before delivery. Phrases like `oops remove that`, `scratch that`, `I meant X not Y`, and `replace X with Y` are treated as edits according to the selected refinement style, then removed from the final text.
 
-Technical text is preserved more literally. Commands, paths, URLs, environment variables, inline code, and verbatim errors may be wrapped in backticks when clearly dictated, and spoken symbols such as `slash`, `dash`, `underscore`, `dot`, `colon`, `pipe`, and `equals` are converted to literal characters when the context is technical.
+Technical text is preserved more literally. Commands, paths, URLs, environment variables, identifiers, inline code, config values, issue IDs, and verbatim errors may be wrapped in backticks when clearly dictated. Spoken symbols such as `slash`, `backslash`, `dash`, `underscore`, `dot`, `colon`, `pipe`, `equals`, `plus`, `at`, `hash`, brackets, braces, comma, semicolon, and ampersand are converted to literal characters when the context is technical.
 
 ## Credentials
 

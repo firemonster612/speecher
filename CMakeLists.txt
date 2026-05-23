@@ -141,6 +141,7 @@ if(SPEECHER_BUILD_TESTS)
     src/output/WtypeDelivery.cpp
     src/providers/ClaudeCredentials.cpp
     src/providers/OpenAiAuthProvider.cpp
+    src/providers/OpenAiRefiner.cpp
   )
   target_include_directories(speecher_tests PRIVATE src)
   target_compile_definitions(speecher_tests PRIVATE SPEECHER_VERSION="${PROJECT_VERSION}")

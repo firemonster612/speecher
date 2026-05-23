@@ -5,6 +5,7 @@
 #include "core/WordPreview.h"
 #include "providers/ClaudeCredentials.h"
 #include "providers/OpenAiAuthProvider.h"
+#include "providers/OpenAiRefiner.h"
 
 #include <QDir>
 #include <QFile>
@@ -93,6 +94,31 @@ private slots:
         QCOMPARE(settings.pauseMediaDuringTranscription(), true);
         settings.setPauseMediaDuringTranscription(false);
         QCOMPARE(settings.pauseMediaDuringTranscription(), false);
+    }
+
+    void refinementInstructionsCompose()
+    {
+        const QString lightMarkdown = openAiRefinementInstructions(QStringLiteral("light_cleanup"), QStringLiteral("markdown"));
+        QVERIFY(lightMarkdown.contains(QStringLiteral("Rule: return_only_refined_text.")));
+        QVERIFY(lightMarkdown.contains(QStringLiteral("Rule: no_inferred_structure.")));
+        QVERIFY(lightMarkdown.contains(QStringLiteral("Output format: markdown.")));
+        QVERIFY(lightMarkdown.contains(QStringLiteral("Do not create structure that the selected refinement level would not otherwise allow.")));
+        QVERIFY(lightMarkdown.contains(QStringLiteral("even Light may produce a bullet list when Markdown output is selected")));
+        QVERIFY(!lightMarkdown.contains(QStringLiteral("Rule: infer_simple_structure.")));
+        QVERIFY(!lightMarkdown.contains(QStringLiteral("Rule: useful_organization.")));
+
+        const QString balancedPlain = openAiRefinementInstructions(QStringLiteral("balanced"), QStringLiteral("plain_sentences"));
+        QVERIFY(balancedPlain.contains(QStringLiteral("Rule: no_inferred_structure.")));
+        QVERIFY(balancedPlain.contains(QStringLiteral("Rule: infer_simple_structure.")));
+        QVERIFY(balancedPlain.contains(QStringLiteral("Output format: plain_sentences.")));
+        QVERIFY(balancedPlain.contains(QStringLiteral("Render any permitted structure as compact prose.")));
+        QVERIFY(!balancedPlain.contains(QStringLiteral("Rule: useful_organization.")));
+
+        const QString strongMarkdown = openAiRefinementInstructions(QStringLiteral("strong_polish"), QStringLiteral("markdown"));
+        QVERIFY(strongMarkdown.contains(QStringLiteral("Rule: no_inferred_structure.")));
+        QVERIFY(strongMarkdown.contains(QStringLiteral("Rule: infer_simple_structure.")));
+        QVERIFY(strongMarkdown.contains(QStringLiteral("Rule: useful_organization.")));
+        QVERIFY(strongMarkdown.contains(QStringLiteral("Rule: technical_literal_priority.")));
     }
 
     void vocabularyLimits()

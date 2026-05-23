@@ -6,6 +6,8 @@
 
 namespace speecher {
 
+QString openAiRefinementInstructions(const QString &style, const QString &format);
+
 class OpenAiRefiner : public QObject {
     Q_OBJECT
 
