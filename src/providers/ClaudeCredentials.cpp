@@ -7,6 +7,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QStandardPaths>
 
 namespace speecher {
@@ -123,6 +124,41 @@ bool refreshClaudeAuth(QString *error)
 }
 
 } // namespace
+
+QString ClaudeCredentials::installedVersion()
+{
+    const QString executable = findClaudeExecutable();
+    if (executable.isEmpty()) {
+        return {};
+    }
+
+    const QFileInfo executableInfo(executable);
+    static const QRegularExpression versionPattern(QStringLiteral("\\b\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9._-]+)?\\b"));
+    const QRegularExpressionMatch pathMatch = versionPattern.match(executableInfo.fileName());
+    if (pathMatch.hasMatch()) {
+        return pathMatch.captured(0);
+    }
+
+    QProcess process;
+    process.setProgram(executable);
+    process.setArguments({QStringLiteral("--version")});
+    process.start();
+    if (!process.waitForStarted(1000)) {
+        return {};
+    }
+    if (!process.waitForFinished(2000)) {
+        process.kill();
+        process.waitForFinished(1000);
+        return {};
+    }
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        return {};
+    }
+
+    const QString output = QString::fromUtf8(process.readAllStandardOutput() + process.readAllStandardError());
+    const QRegularExpressionMatch outputMatch = versionPattern.match(output);
+    return outputMatch.hasMatch() ? outputMatch.captured(0) : QString();
+}
 
 ClaudeCredentialResult ClaudeCredentials::load(const QString &path, bool refreshExpired)
 {

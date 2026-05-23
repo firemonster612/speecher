@@ -1,5 +1,7 @@
 #include "providers/ClaudeVoiceClient.h"
 
+#include "providers/ClaudeCredentials.h"
+
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -83,6 +85,49 @@ static QString redactedErrorSummary(const QJsonObject &object)
     return parts.join(QStringLiteral(" "));
 }
 
+static bool envFlag(const char *name, bool defaultValue)
+{
+    const QString value = qEnvironmentVariable(name).trimmed().toLower();
+    if (value.isEmpty()) {
+        return defaultValue;
+    }
+    if (value == QStringLiteral("1") || value == QStringLiteral("true") || value == QStringLiteral("yes") || value == QStringLiteral("on")) {
+        return true;
+    }
+    if (value == QStringLiteral("0") || value == QStringLiteral("false") || value == QStringLiteral("no") || value == QStringLiteral("off")) {
+        return false;
+    }
+    return defaultValue;
+}
+
+static bool typedInterimsEnabled()
+{
+    if (envFlag("CLAUDE_CODE_VOICE_FORWARD_INTERIMS_TYPED", false)) {
+        return true;
+    }
+    return envFlag("SPEECHER_CLAUDE_FORWARD_INTERIMS_TYPED", true);
+}
+
+QUrlQuery claudeVoiceStreamQuery(const QStringList &vocabulary)
+{
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("encoding"), QStringLiteral("linear16"));
+    query.addQueryItem(QStringLiteral("sample_rate"), QStringLiteral("16000"));
+    query.addQueryItem(QStringLiteral("channels"), QStringLiteral("1"));
+    query.addQueryItem(QStringLiteral("endpointing_ms"), QStringLiteral("300"));
+    query.addQueryItem(QStringLiteral("utterance_end_ms"), QStringLiteral("1000"));
+    query.addQueryItem(QStringLiteral("language"), QStringLiteral("en"));
+    query.addQueryItem(QStringLiteral("use_conversation_engine"), QStringLiteral("true"));
+    if (typedInterimsEnabled()) {
+        query.addQueryItem(QStringLiteral("forward_interims"), QStringLiteral("typed"));
+    }
+    query.addQueryItem(QStringLiteral("stt_provider"), QStringLiteral("deepgram-nova3"));
+    for (const QString &term : vocabulary) {
+        query.addQueryItem(QStringLiteral("keyterms"), term);
+    }
+    return query;
+}
+
 ClaudeVoiceClient::ClaudeVoiceClient(QObject *parent)
     : QObject(parent)
     , m_debugSchema(qEnvironmentVariable("SPEECHER_DEBUG_CLAUDE_SCHEMA") == QStringLiteral("1"))
@@ -128,26 +173,17 @@ void ClaudeVoiceClient::start(const QUrl &url, const QString &accessToken, const
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     QUrl streamUrl(url);
-    QUrlQuery query(streamUrl);
-    query.addQueryItem(QStringLiteral("encoding"), QStringLiteral("linear16"));
-    query.addQueryItem(QStringLiteral("sample_rate"), QStringLiteral("16000"));
-    query.addQueryItem(QStringLiteral("channels"), QStringLiteral("1"));
-    query.addQueryItem(QStringLiteral("endpointing_ms"), QStringLiteral("300"));
-    query.addQueryItem(QStringLiteral("utterance_end_ms"), QStringLiteral("1000"));
-    query.addQueryItem(QStringLiteral("language"), QStringLiteral("en"));
-    query.addQueryItem(QStringLiteral("use_conversation_engine"), QStringLiteral("true"));
-    query.addQueryItem(QStringLiteral("stt_provider"), QStringLiteral("deepgram-nova3"));
-    for (const QString &term : vocabulary) {
-        query.addQueryItem(QStringLiteral("keyterms"), term);
-    }
-    streamUrl.setQuery(query);
+    streamUrl.setQuery(claudeVoiceStreamQuery(vocabulary));
 
     m_lastInterim.clear();
     m_finalizing = false;
     ++m_sessionId;
     QNetworkRequest request(streamUrl);
     request.setRawHeader("Authorization", "Bearer " + accessToken.toUtf8());
-    request.setRawHeader("User-Agent", "Claude-Code/" SPEECHER_CLAUDE_CODE_VERSION);
+    const QString claudeVersion = ClaudeCredentials::installedVersion();
+    request.setRawHeader("User-Agent", claudeVersion.isEmpty()
+                                           ? QByteArrayLiteral("Claude-Code")
+                                           : QStringLiteral("Claude-Code/%1").arg(claudeVersion).toUtf8());
     request.setRawHeader("x-app", "cli");
     request.setRawHeader("anthropic-client-platform", "linux");
     qInfo().noquote() << "claude websocket opening url=" + streamUrl.toString(QUrl::RemoveUserInfo)

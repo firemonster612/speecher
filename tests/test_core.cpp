@@ -4,6 +4,7 @@
 #include "core/VocabularyLimit.h"
 #include "core/WordPreview.h"
 #include "providers/ClaudeCredentials.h"
+#include "providers/ClaudeVoiceClient.h"
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/OpenAiRefiner.h"
 
@@ -11,6 +12,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -190,6 +192,33 @@ private slots:
         const ClaudeCredentialResult result = ClaudeCredentials::load(path);
         QVERIFY(!result.ok);
         QVERIFY(result.error.contains(QStringLiteral("claude")));
+    }
+
+    void claudeInstalledVersion()
+    {
+        const QString version = ClaudeCredentials::installedVersion();
+        if (!version.isEmpty()) {
+            QVERIFY(QRegularExpression(QStringLiteral("^\\d+\\.\\d+\\.\\d+")).match(version).hasMatch());
+        }
+    }
+
+    void claudeVoiceStreamQueryMatchesClaudeCode()
+    {
+        const QUrlQuery query = claudeVoiceStreamQuery(QStringList{
+            QStringLiteral("Deepgram Nova 3"),
+            QStringLiteral("Speecher"),
+        });
+
+        QCOMPARE(query.queryItemValue(QStringLiteral("encoding")), QStringLiteral("linear16"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("sample_rate")), QStringLiteral("16000"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("channels")), QStringLiteral("1"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("endpointing_ms")), QStringLiteral("300"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("utterance_end_ms")), QStringLiteral("1000"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("language")), QStringLiteral("en"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("use_conversation_engine")), QStringLiteral("true"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("forward_interims")), QStringLiteral("typed"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("stt_provider")), QStringLiteral("deepgram-nova3"));
+        QCOMPARE(query.allQueryItemValues(QStringLiteral("keyterms")).size(), 2);
     }
 };
 

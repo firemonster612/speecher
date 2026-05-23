@@ -1,13 +1,18 @@
 #pragma once
 
 #include <QObject>
+#include <QStringList>
 #include <QTimer>
+#include <QUrl>
+#include <QUrlQuery>
 
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
 #include <QWebSocket>
 #endif
 
 namespace speecher {
+
+QUrlQuery claudeVoiceStreamQuery(const QStringList &vocabulary);
 
 class ClaudeVoiceClient : public QObject {
     Q_OBJECT

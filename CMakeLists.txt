@@ -84,7 +84,6 @@ qt_add_executable(speecher
 target_include_directories(speecher PRIVATE src)
 target_compile_definitions(speecher PRIVATE
   SPEECHER_VERSION="${PROJECT_VERSION}"
-  SPEECHER_CLAUDE_CODE_VERSION="2.1.143"
 )
 target_link_libraries(speecher PRIVATE
   Qt6::Core Qt6::Widgets Qt6::Network Qt6::Multimedia Qt6::DBus
@@ -140,6 +139,7 @@ if(SPEECHER_BUILD_TESTS)
     src/output/TextDelivery.cpp
     src/output/WtypeDelivery.cpp
     src/providers/ClaudeCredentials.cpp
+    src/providers/ClaudeVoiceClient.cpp
     src/providers/OpenAiAuthProvider.cpp
     src/providers/OpenAiRefiner.cpp
   )

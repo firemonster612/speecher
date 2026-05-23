@@ -177,4 +177,10 @@ Claude schema-only diagnostics can be enabled with:
 SPEECHER_DEBUG_CLAUDE_SCHEMA=1 ./build/speecher
 ```
 
+Speecher mirrors Claude Code's voice stream parameters for Deepgram Nova-3, including typed interim transcripts, and reads the installed Claude Code version at runtime for the voice stream user agent. Typed interims are enabled by default and can be disabled for debugging with:
+
+```sh
+SPEECHER_CLAUDE_FORWARD_INTERIMS_TYPED=0 ./build/speecher
+```
+
 The diagnostic path records message types and schema keys only.
