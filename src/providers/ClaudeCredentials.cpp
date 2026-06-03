@@ -362,4 +362,11 @@ ClaudeCredentialResult ClaudeCredentials::load(const QString &path, bool refresh
     return refreshed;
 }
 
+bool ClaudeCredentials::requiresRefresh(const QString &path)
+{
+    const ClaudeCredentialResult result = readCredentials(path);
+    return !result.ok && result.expiresAt.isValid()
+        && result.expiresAt <= QDateTime::currentDateTimeUtc();
+}
+
 } // namespace speecher

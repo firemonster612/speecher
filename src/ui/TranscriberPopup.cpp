@@ -43,13 +43,13 @@ TranscriberPopup::TranscriberPopup(QWidget *parent)
     m_preview->setText(QStringLiteral("---"));
     previewLayout->addWidget(m_preview);
 
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(2, 2, 2, 2);
-    layout->setSpacing(10);
-    layout->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
+    m_layout = new QVBoxLayout(this);
+    m_layout->setContentsMargins(2, 2, 2, 2);
+    m_layout->setSpacing(10);
+    m_layout->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
 
-    layout->addWidget(m_waveform, 0, Qt::AlignHCenter);
-    layout->addWidget(m_previewPill, 0, Qt::AlignHCenter);
+    m_layout->addWidget(m_waveform, 0, Qt::AlignHCenter);
+    m_layout->addWidget(m_previewPill, 0, Qt::AlignHCenter);
 }
 
 QSize TranscriberPopup::sizeHint() const
@@ -102,16 +102,40 @@ void TranscriberPopup::setLevel(float level)
 
 void TranscriberPopup::setRefining(bool refining)
 {
+    setRefreshLayout(false);
     m_waveform->setMode(refining ? WaveformWidget::Mode::Dots : WaveformWidget::Mode::Waveform);
 }
 
 void TranscriberPopup::setFrozen(bool frozen)
 {
+    setRefreshLayout(false);
     m_waveform->setMode(frozen ? WaveformWidget::Mode::Frozen : WaveformWidget::Mode::Waveform);
+}
+
+void TranscriberPopup::showOAuthRefreshIndicator()
+{
+    setRefreshLayout(true);
+    m_preview->setText(QStringLiteral("refreshing oAuth token"));
+    m_preview->setVisible(true);
+    m_previewPill->setVisible(true);
+    m_preview->setMaximumWidth(520);
+    m_previewPill->resize(m_previewPill->sizeHint().width(), 48);
+    m_waveform->setMode(WaveformWidget::Mode::Dots);
+    adjustSize();
+    updateWindowMask();
+}
+
+void TranscriberPopup::showListeningIndicator()
+{
+    setRefreshLayout(false);
+    m_waveform->setMode(WaveformWidget::Mode::Waveform);
+    adjustSize();
+    updateWindowMask();
 }
 
 void TranscriberPopup::showMessage(const QString &message)
 {
+    setRefreshLayout(false);
     m_waveform->setMessage(message);
     updateWindowMask();
 }
@@ -155,6 +179,30 @@ void TranscriberPopup::applyTheme()
                       "QLabel{color:%3;font:14px 'Inter','Noto Sans',sans-serif;}")
                       .arg(pill, stroke, text));
     m_applyingTheme = false;
+}
+
+void TranscriberPopup::setRefreshLayout(bool refreshLayout)
+{
+    if (!m_layout) {
+        return;
+    }
+
+    const int previewIndex = m_layout->indexOf(m_previewPill);
+    const int waveformIndex = m_layout->indexOf(m_waveform);
+    const bool isRefreshLayout = previewIndex >= 0 && waveformIndex >= 0 && previewIndex < waveformIndex;
+    if (isRefreshLayout == refreshLayout) {
+        return;
+    }
+
+    m_layout->removeWidget(m_previewPill);
+    m_layout->removeWidget(m_waveform);
+    if (refreshLayout) {
+        m_layout->addWidget(m_previewPill, 0, Qt::AlignHCenter);
+        m_layout->addWidget(m_waveform, 0, Qt::AlignHCenter);
+    } else {
+        m_layout->addWidget(m_waveform, 0, Qt::AlignHCenter);
+        m_layout->addWidget(m_previewPill, 0, Qt::AlignHCenter);
+    }
 }
 
 void TranscriberPopup::updateWindowMask()

@@ -215,6 +215,7 @@ private slots:
         QVERIFY(writeJsonCredentials(path,
                                      QStringLiteral("secret-token"),
                                      QDateTime::currentDateTimeUtc().addSecs(-60)));
+        QVERIFY(ClaudeCredentials::requiresRefresh(path));
         const ClaudeCredentialResult result = ClaudeCredentials::load(path);
         QVERIFY(!result.ok);
         QVERIFY(result.error.contains(QStringLiteral("claude")));

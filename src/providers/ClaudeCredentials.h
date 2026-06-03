@@ -20,6 +20,7 @@ struct ClaudeCredentialResult {
 class ClaudeCredentials {
 public:
     static ClaudeCredentialResult load(const QString &path, bool refreshExpired = false);
+    static bool requiresRefresh(const QString &path);
     static QString installedVersion();
 };
 

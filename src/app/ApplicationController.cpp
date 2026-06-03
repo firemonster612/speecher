@@ -15,7 +15,9 @@
 #include "ui/TranscriberPopup.h"
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QDebug>
+#include <QEventLoop>
 #include <QTimer>
 
 namespace speecher {
@@ -153,7 +155,14 @@ void ApplicationController::startListening()
         m_mediaPause->pausePlaying();
     }
 
+    if (ClaudeCredentials::requiresRefresh(m_settings->claudeCredentialsPath())) {
+        m_popup->showOAuthRefreshIndicator();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    }
+
     const ClaudeCredentialResult credentials = ClaudeCredentials::load(m_settings->claudeCredentialsPath(), true);
+    m_popup->setPreview({});
+    m_popup->showListeningIndicator();
     if (!credentials.ok) {
         qWarning().noquote() << "claude credentials unavailable message=" + credentials.error;
         resumePausedMedia();

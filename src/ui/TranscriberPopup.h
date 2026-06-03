@@ -6,6 +6,7 @@
 class QFrame;
 class QEvent;
 class QResizeEvent;
+class QVBoxLayout;
 
 namespace speecher {
 
@@ -26,6 +27,8 @@ public slots:
     void setLevel(float level);
     void setRefining(bool refining);
     void setFrozen(bool frozen);
+    void showOAuthRefreshIndicator();
+    void showListeningIndicator();
     void showMessage(const QString &message);
     void showPopup();
 
@@ -35,8 +38,10 @@ protected:
 
 private:
     void applyTheme();
+    void setRefreshLayout(bool refreshLayout);
     void updateWindowMask();
 
+    QVBoxLayout *m_layout = nullptr;
     QFrame *m_previewPill = nullptr;
     QLabel *m_preview = nullptr;
     WaveformWidget *m_waveform = nullptr;
