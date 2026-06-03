@@ -162,7 +162,6 @@ void ApplicationController::startListening()
 
     const ClaudeCredentialResult credentials = ClaudeCredentials::load(m_settings->claudeCredentialsPath(), true);
     m_popup->setPreview({});
-    m_popup->showListeningIndicator();
     if (!credentials.ok) {
         qWarning().noquote() << "claude credentials unavailable message=" + credentials.error;
         resumePausedMedia();
@@ -172,6 +171,20 @@ void ApplicationController::startListening()
     qInfo() << "claude credentials ok expiresAt=" << credentials.expiresAt.toString(Qt::ISODate)
             << "scopesCount=" << credentials.scopes.size()
             << "subscriptionTypePresent=" << !credentials.subscriptionType.isEmpty();
+
+    if (m_settings->refinementProvider() != QStringLiteral("none")) {
+        OpenAiAuthProvider openAiAuth(m_secrets, m_settings->openAiAuthMode());
+        if (openAiAuth.requiresCodexOauthRefresh()) {
+            m_popup->showOAuthRefreshIndicator();
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+            const OpenAiAuth refreshed = openAiAuth.refreshCodexOauth();
+            if (!refreshed.ok) {
+                qWarning().noquote() << "codex oauth refresh unavailable status=" + refreshed.status;
+            }
+            m_popup->setPreview({});
+        }
+    }
+    m_popup->showListeningIndicator();
 
     QString audioError;
     if (!m_audio->start(&audioError)) {

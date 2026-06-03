@@ -9,7 +9,7 @@
 ## Quick start
 
 ### Prerequisites
-Be signed into Claude Code CLI (required) and Codex CLI (optionaly) if you want refinement. Speecher can refresh expired Claude logins by running `claude auth status`, so `claude` should be available on `PATH`; it also checks common Claude Code install locations such as `~/.local/bin/claude`.
+Be signed into Claude Code CLI (required) and Codex CLI (optionaly) if you want refinement. Speecher can refresh expired Claude logins through Claude Code, and expired Codex OAuth tokens by running `codex exec "i" --skip-git-repo-check`, so `claude` and `codex` should be available on `PATH`; it also checks common install locations such as `~/.local/bin`.
 
 ```sh
 # Arch
@@ -163,7 +163,7 @@ Authentication is resolved in this order:
 
 1. If `~/.codex/auth.json` says `auth_mode` is `chatgpt`, use its Codex OAuth token against the ChatGPT Codex backend.
 2. `~/.codex/auth.json` `OPENAI_API_KEY`, when it starts with `sk-`.
-3. `~/.codex/auth.json` Codex OAuth token against the ChatGPT Codex backend.
+3. `~/.codex/auth.json` Codex OAuth token against the ChatGPT Codex backend. If the OAuth access token is expired, Speecher asks the Codex CLI to refresh it and reloads the auth file.
 4. The `OPENAI_API_KEY` environment variable, when it starts with `sk-`.
 5. The API key saved in the app settings.
 

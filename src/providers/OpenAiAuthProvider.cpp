@@ -3,10 +3,15 @@
 #include "core/SecretStore.h"
 
 #include <QDir>
+#include <QDateTime>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QProcess>
 #include <QProcessEnvironment>
+#include <QStandardPaths>
+#include <QTimeZone>
 
 namespace speecher {
 
@@ -60,9 +65,102 @@ static QString envValue(const QStringList &names)
     return {};
 }
 
+static QString codexAuthPath()
+{
+    return QDir::homePath() + QStringLiteral("/.codex/auth.json");
+}
+
+static qint64 jwtExpirySecs(const QString &jwt)
+{
+    const QStringList parts = jwt.split(QLatin1Char('.'));
+    if (parts.size() < 2) {
+        return 0;
+    }
+    QJsonParseError parseError;
+    const QJsonDocument payload = QJsonDocument::fromJson(QByteArray::fromBase64(parts.at(1).toUtf8(), QByteArray::Base64UrlEncoding),
+                                                          &parseError);
+    if (parseError.error != QJsonParseError::NoError || !payload.isObject()) {
+        return 0;
+    }
+    return static_cast<qint64>(payload.object().value(QStringLiteral("exp")).toDouble());
+}
+
+static bool jwtExpired(const QString &jwt)
+{
+    const qint64 expires = jwtExpirySecs(jwt);
+    return expires > 0 && QDateTime::fromSecsSinceEpoch(expires, QTimeZone::UTC) <= QDateTime::currentDateTimeUtc();
+}
+
+static QString findCodexExecutable()
+{
+    const QString overridePath = qEnvironmentVariable("SPEECHER_TEST_CODEX_EXECUTABLE");
+    if (!overridePath.isEmpty()) {
+        return overridePath;
+    }
+
+    const QString fromPath = QStandardPaths::findExecutable(QStringLiteral("codex"));
+    if (!fromPath.isEmpty()) {
+        return fromPath;
+    }
+
+    const QStringList fixedCandidates{
+        QDir::homePath() + QStringLiteral("/.local/bin/codex"),
+        QStringLiteral("/usr/local/bin/codex"),
+        QStringLiteral("/usr/bin/codex"),
+    };
+    for (const QString &candidate : fixedCandidates) {
+        const QFileInfo file(candidate);
+        if (file.isFile() && file.isExecutable()) {
+            return candidate;
+        }
+    }
+
+    return {};
+}
+
+static bool refreshCodexAuth(QString *error)
+{
+    const QString executable = findCodexExecutable();
+    if (executable.isEmpty()) {
+        if (error) {
+            *error = QStringLiteral("Could not find Codex CLI; install it and ensure `codex` is on PATH");
+        }
+        return false;
+    }
+
+    QProcess process;
+    process.setProgram(executable);
+    process.setArguments({QStringLiteral("exec"), QStringLiteral("i"), QStringLiteral("--skip-git-repo-check")});
+    process.start();
+    if (!process.waitForStarted(2000)) {
+        if (error) {
+            *error = QStringLiteral("Could not start Codex OAuth refresh");
+        }
+        return false;
+    }
+    if (!process.waitForFinished(15000)) {
+        process.kill();
+        process.waitForFinished(1000);
+        if (error) {
+            *error = QStringLiteral("Timed out refreshing Codex OAuth token with `codex exec \"i\" --skip-git-repo-check`");
+        }
+        return false;
+    }
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        if (error) {
+            const QString output = QString::fromUtf8(process.readAllStandardError() + process.readAllStandardOutput()).left(240).simplified();
+            *error = output.isEmpty()
+                ? QStringLiteral("Codex OAuth refresh exited unsuccessfully")
+                : QStringLiteral("Codex OAuth refresh exited unsuccessfully: %1").arg(output);
+        }
+        return false;
+    }
+    return true;
+}
+
 ApiKeyCandidate readCodexApiKeyCandidate(QString *status)
 {
-    QFile file(QDir::homePath() + QStringLiteral("/.codex/auth.json"));
+    QFile file(codexAuthPath());
     if (!file.open(QIODevice::ReadOnly)) {
         if (status) {
             *status = QStringLiteral("No Codex auth file");
@@ -125,16 +223,16 @@ static ApiKeyCandidate readEnvApiKey()
 
 static QString codexAuthMode()
 {
-    QFile file(QDir::homePath() + QStringLiteral("/.codex/auth.json"));
+    QFile file(codexAuthPath());
     if (!file.open(QIODevice::ReadOnly)) {
         return {};
     }
     return QJsonDocument::fromJson(file.readAll()).object().value(QStringLiteral("auth_mode")).toString();
 }
 
-OpenAiAuth OpenAiAuthProvider::readCodexOauth()
+OpenAiAuth OpenAiAuthProvider::readCodexOauth(bool refreshExpired)
 {
-    QFile file(QDir::homePath() + QStringLiteral("/.codex/auth.json"));
+    QFile file(codexAuthPath());
     if (!file.open(QIODevice::ReadOnly)) {
         return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("No Codex auth file"), {}, {}, {}, {}, true};
     }
@@ -142,6 +240,17 @@ OpenAiAuth OpenAiAuthProvider::readCodexOauth()
     const QString accessToken = tokens.value(QStringLiteral("access_token")).toString().trimmed();
     if (accessToken.isEmpty()) {
         return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("No Codex OAuth token found"), {}, {}, {}, {}, true};
+    }
+    if (jwtExpired(accessToken)) {
+        if (!refreshExpired) {
+            return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("Codex OAuth token expired"), {}, {}, {}, {}, true};
+        }
+
+        QString refreshError;
+        if (!refreshCodexAuth(&refreshError)) {
+            return {false, {}, QStringLiteral("codex_oauth"), refreshError, {}, {}, {}, {}, true};
+        }
+        return readCodexOauth(false);
     }
     const QString accountId = tokens.value(QStringLiteral("account_id")).toString().trimmed();
     return {true,
@@ -228,6 +337,34 @@ OpenAiAuth OpenAiAuthProvider::resolve() const
                 false};
     }
     return {false, {}, {}, QStringLiteral("No OpenAI credential found"), {}, {}, {}, {}, false};
+}
+
+bool OpenAiAuthProvider::requiresCodexOauthRefresh() const
+{
+    QString status;
+    const QString mode = m_mode.isEmpty() ? QStringLiteral("auto") : m_mode;
+    if (mode == QStringLiteral("codex_oauth")) {
+        return readCodexOauth(false).status == QStringLiteral("Codex OAuth token expired");
+    }
+    if (mode == QStringLiteral("codex_api_key") || mode == QStringLiteral("env") || mode == QStringLiteral("settings")) {
+        return false;
+    }
+
+    if (codexAuthMode() == QStringLiteral("chatgpt")) {
+        return readCodexOauth(false).status == QStringLiteral("Codex OAuth token expired");
+    }
+
+    if (!readCodexApiKeyCandidate(&status).key.isEmpty()) {
+        return false;
+    }
+    return readCodexOauth(false).status == QStringLiteral("Codex OAuth token expired");
+}
+
+OpenAiAuth OpenAiAuthProvider::refreshCodexOauth() const
+{
+    Q_UNUSED(m_secretStore)
+    Q_UNUSED(m_mode)
+    return readCodexOauth(true);
 }
 
 QString OpenAiAuthProvider::status() const

@@ -54,6 +54,37 @@ class CoreTests : public QObject {
         return path;
     }
 
+    static QString jwtWithExpiry(const QDateTime &expiresAt)
+    {
+        const QByteArray header = QJsonDocument(QJsonObject{{QStringLiteral("alg"), QStringLiteral("none")}}).toJson(QJsonDocument::Compact)
+                                      .toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals);
+        const QByteArray payload = QJsonDocument(QJsonObject{{QStringLiteral("exp"), double(expiresAt.toSecsSinceEpoch())}}).toJson(QJsonDocument::Compact)
+                                       .toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals);
+        return QString::fromLatin1(header + "." + payload + ".");
+    }
+
+    static bool writeCodexAuth(const QString &homePath, const QString &accessToken)
+    {
+        QDir dir(homePath);
+        if (!dir.mkpath(QStringLiteral(".codex"))) {
+            return false;
+        }
+        QFile file(dir.filePath(QStringLiteral(".codex/auth.json")));
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            return false;
+        }
+        QJsonObject tokens{
+            {QStringLiteral("access_token"), accessToken},
+            {QStringLiteral("account_id"), QStringLiteral("acct")},
+        };
+        file.write(QJsonDocument(QJsonObject{
+                                      {QStringLiteral("auth_mode"), QStringLiteral("chatgpt")},
+                                      {QStringLiteral("tokens"), tokens},
+                                  })
+                       .toJson());
+        return true;
+    }
+
 private slots:
     void initTestCase()
     {
@@ -280,6 +311,69 @@ exit 12
         if (!version.isEmpty()) {
             QVERIFY(QRegularExpression(QStringLiteral("^\\d+\\.\\d+\\.\\d+")).match(version).hasMatch());
         }
+    }
+
+    void codexOauthRefreshesExpiredToken()
+    {
+        QTemporaryDir dir;
+        QVERIFY(writeCodexAuth(dir.path(), jwtWithExpiry(QDateTime::currentDateTimeUtc().addSecs(-60))));
+        const QString fakeCodex = writeFakeClaudeScript(dir.filePath(QStringLiteral("codex-fake")), QStringLiteral(R"(
+test "$1" = "exec" || exit 10
+test "$2" = "i" || exit 11
+test "$3" = "--skip-git-repo-check" || exit 12
+cat > "$HOME/.codex/auth.json" <<'JSON'
+{"auth_mode":"chatgpt","tokens":{"access_token":"REFRESHED_TOKEN","account_id":"acct"}}
+JSON
+exit 0
+)"));
+        QVERIFY(!fakeCodex.isEmpty());
+
+        const QByteArray oldHome = qgetenv("HOME");
+        qputenv("HOME", QFile::encodeName(dir.path()));
+        qputenv("SPEECHER_TEST_CODEX_EXECUTABLE", QFile::encodeName(fakeCodex));
+        const auto cleanup = qScopeGuard([oldHome] {
+            if (oldHome.isEmpty()) {
+                qunsetenv("HOME");
+            } else {
+                qputenv("HOME", oldHome);
+            }
+            qunsetenv("SPEECHER_TEST_CODEX_EXECUTABLE");
+        });
+
+        OpenAiAuthProvider provider(nullptr, QStringLiteral("codex_oauth"));
+        QVERIFY(provider.requiresCodexOauthRefresh());
+        const OpenAiAuth auth = provider.resolve();
+        QVERIFY2(auth.ok, qPrintable(auth.status));
+        QCOMPARE(auth.bearerToken, QStringLiteral("REFRESHED_TOKEN"));
+        QVERIFY(!provider.requiresCodexOauthRefresh());
+    }
+
+    void codexOauthRefreshFailure()
+    {
+        QTemporaryDir dir;
+        QVERIFY(writeCodexAuth(dir.path(), jwtWithExpiry(QDateTime::currentDateTimeUtc().addSecs(-60))));
+        const QString fakeCodex = writeFakeClaudeScript(dir.filePath(QStringLiteral("codex-fake")), QStringLiteral(R"(
+echo failed >&2
+exit 12
+)"));
+        QVERIFY(!fakeCodex.isEmpty());
+
+        const QByteArray oldHome = qgetenv("HOME");
+        qputenv("HOME", QFile::encodeName(dir.path()));
+        qputenv("SPEECHER_TEST_CODEX_EXECUTABLE", QFile::encodeName(fakeCodex));
+        const auto cleanup = qScopeGuard([oldHome] {
+            if (oldHome.isEmpty()) {
+                qunsetenv("HOME");
+            } else {
+                qputenv("HOME", oldHome);
+            }
+            qunsetenv("SPEECHER_TEST_CODEX_EXECUTABLE");
+        });
+
+        OpenAiAuthProvider provider(nullptr, QStringLiteral("codex_oauth"));
+        const OpenAiAuth auth = provider.resolve();
+        QVERIFY(!auth.ok);
+        QVERIFY(auth.status.contains(QStringLiteral("Codex OAuth refresh")));
     }
 
     void claudeVoiceStreamQueryMatchesClaudeCode()
