@@ -136,6 +136,8 @@ The script creates `dist/Speecher-x86_64.AppImage`. It uses CMake install output
 
 OpenAI refinement can be tuned in Settings. The default is `Balanced` with `Plain sentences` output. Refinement is built from composable rules: always-on preservation rules, cumulative level rules, output-format rules, and conflict-resolution rules.
 
+Settings also includes output controls for choosing how Speecher delivers text, including setup for typing directly into focused text fields.
+
 Refinement styles:
 
 - `Light cleanup`: applies always-on rules plus light cleanup. It stays close to the transcript while fixing punctuation, capitalization, spacing, obvious speech-to-text mistakes, minimal grammar accidents, and explicit corrections.

@@ -1,5 +1,6 @@
 #include "core/SettingsStore.h"
 
+#include "core/OutputMethod.h"
 #include "core/VocabularyLimit.h"
 
 #include <QDir>
@@ -158,9 +159,32 @@ QString SettingsStore::outputTypeCommand() const
     return value(QStringLiteral("output/typeCommand"), QStringLiteral("wtype")).toString();
 }
 
+QString SettingsStore::outputMethod() const
+{
+    return OutputMethod::normalized(value(QStringLiteral("output/method"), QString::fromLatin1(OutputMethod::Automatic)).toString());
+}
+
+void SettingsStore::setOutputMethod(const QString &value)
+{
+    m_settings.setValue(QStringLiteral("output/method"), OutputMethod::normalized(value));
+}
+
 bool SettingsStore::fallbackClipboard() const
 {
     return value(QStringLiteral("output/fallbackClipboard"), true).toBool();
+}
+
+bool SettingsStore::ydotoolEnabled() const
+{
+    return value(QStringLiteral("output/ydotoolEnabled"), false).toBool();
+}
+
+void SettingsStore::setYdotoolEnabled(bool value)
+{
+    m_settings.setValue(QStringLiteral("output/ydotoolEnabled"), value);
+    if (!value && outputMethod() == QString::fromLatin1(OutputMethod::Ydotool)) {
+        setOutputMethod(QString::fromLatin1(OutputMethod::Automatic));
+    }
 }
 
 QString SettingsStore::claudeCredentialsPath() const
@@ -212,8 +236,10 @@ AppSettings SettingsStore::snapshot() const
     settings.refinement.openAiModel = openAiModel();
     settings.refinement.openAiAuthMode = openAiAuthMode();
 
+    settings.output.method = outputMethod();
     settings.output.typeCommand = outputTypeCommand();
     settings.output.fallbackClipboard = fallbackClipboard();
+    settings.output.ydotoolEnabled = ydotoolEnabled();
     return settings;
 }
 

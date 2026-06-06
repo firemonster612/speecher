@@ -26,6 +26,7 @@ if(SPEECHER_BUILD_TESTS)
 endif()
 
 set(SPEECHER_DOMAIN_SOURCES
+  src/core/OutputMethod.cpp
   src/core/SettingsStore.cpp
   src/core/SecretStore.cpp
   src/core/TranscriptState.cpp
@@ -37,6 +38,7 @@ set(SPEECHER_DOMAIN_SOURCES
 
 set(SPEECHER_DOMAIN_HEADERS
   src/core/AppSettings.h
+  src/core/OutputMethod.h
   src/core/SettingsStore.h
   src/core/SecretStore.h
   src/core/TranscriptState.h
@@ -77,8 +79,12 @@ set(SPEECHER_PLATFORM_SOURCES
   src/core/AudioCapture.cpp
   src/core/MediaPauseController.cpp
   src/output/ClipboardDelivery.cpp
+  src/output/QtClipboardDelivery.cpp
   src/output/TextDelivery.cpp
+  src/output/WlClipboardDelivery.cpp
   src/output/WtypeDelivery.cpp
+  src/output/YdotoolDelivery.cpp
+  src/output/YdotoolSetup.cpp
   src/platform/PlatformIntegration.cpp
   src/ui/WaylandLayerShell.cpp
 )
@@ -88,8 +94,12 @@ set(SPEECHER_PLATFORM_HEADERS
   src/core/MediaPauseController.h
   src/output/ClipboardDelivery.h
   src/output/DeliveryResult.h
+  src/output/QtClipboardDelivery.h
   src/output/TextDelivery.h
+  src/output/WlClipboardDelivery.h
   src/output/WtypeDelivery.h
+  src/output/YdotoolDelivery.h
+  src/output/YdotoolSetup.h
   src/platform/PlatformIntegration.h
   src/ui/WaylandLayerShell.h
 )
@@ -161,6 +171,11 @@ target_compile_definitions(speecher PRIVATE
   SPEECHER_VERSION="${PROJECT_VERSION}"
 )
 target_link_libraries(speecher PRIVATE speecher_app_ui)
+
+qt_add_executable(speecher-ydotool-setup
+  src/setup/YdotoolSetupHelper.cpp
+)
+target_link_libraries(speecher-ydotool-setup PRIVATE Qt6::Core)
 if(Qt6WebSockets_FOUND)
   target_compile_definitions(speecher_providers PUBLIC SPEECHER_WITH_QT_WEBSOCKETS=1)
   target_link_libraries(speecher_providers PUBLIC Qt6::WebSockets)
@@ -182,9 +197,18 @@ include(GNUInstallDirs)
 if(NOT DEFINED SPEECHER_DESKTOP_EXEC)
   set(SPEECHER_DESKTOP_EXEC "${CMAKE_INSTALL_FULL_BINDIR}/speecher")
 endif()
+set(SPEECHER_YDOTOOL_HELPER_PATH "${CMAKE_INSTALL_FULL_LIBEXECDIR}/speecher/speecher-ydotool-setup")
+target_compile_definitions(speecher_platform PUBLIC
+  SPEECHER_YDOTOOL_HELPER_PATH="${SPEECHER_YDOTOOL_HELPER_PATH}"
+)
 configure_file(
   packaging/local.speecher.desktop
   "${CMAKE_CURRENT_BINARY_DIR}/local.speecher.desktop"
+  @ONLY
+)
+configure_file(
+  packaging/local.speecher.setup-ydotool.policy.in
+  "${CMAKE_CURRENT_BINARY_DIR}/local.speecher.setup-ydotool.policy"
   @ONLY
 )
 set(SPEECHER_INSTALL_APPLICATIONS_DIR "${CMAKE_INSTALL_DATADIR}/applications")
@@ -195,7 +219,9 @@ configure_file(
   @ONLY
 )
 install(TARGETS speecher RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS speecher-ydotool-setup RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/speecher)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/local.speecher.desktop" DESTINATION ${SPEECHER_INSTALL_APPLICATIONS_DIR})
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/local.speecher.setup-ydotool.policy" DESTINATION ${CMAKE_INSTALL_DATADIR}/polkit-1/actions)
 install(FILES packaging/local.speecher.svg DESTINATION ${SPEECHER_INSTALL_HICOLOR_DIR}/scalable/apps)
 install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/post-install.cmake")
 

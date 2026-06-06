@@ -1,5 +1,6 @@
 #include "core/SecretStore.h"
 #include "core/AppSettings.h"
+#include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
 #include "core/VocabularyLimit.h"
@@ -11,6 +12,9 @@
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/OpenAiRefiner.h"
 #include "providers/ProviderRegistry.h"
+#include "output/TextDelivery.h"
+#include "output/YdotoolDelivery.h"
+#include "output/YdotoolSetup.h"
 
 #include <QDir>
 #include <QFile>
@@ -22,6 +26,8 @@
 #include <QTemporaryDir>
 #include <QTextStream>
 #include <QtTest>
+
+#include <utility>
 
 using namespace speecher;
 
@@ -256,6 +262,31 @@ public:
     QString lastText;
 };
 
+class FakeBackend final : public DeliveryBackend {
+public:
+    FakeBackend(QString method, QList<QString> *attempts, QHash<QString, bool> *results)
+        : m_method(std::move(method))
+        , m_attempts(attempts)
+        , m_results(results)
+    {
+    }
+
+    bool deliver(const QString &, QString *error) override
+    {
+        m_attempts->append(m_method);
+        const bool ok = m_results->value(m_method, false);
+        if (!ok && error) {
+            *error = m_method + QStringLiteral(" failed");
+        }
+        return ok;
+    }
+
+private:
+    QString m_method;
+    QList<QString> *m_attempts = nullptr;
+    QHash<QString, bool> *m_results = nullptr;
+};
+
 static void registerFakeSpeechProvider(ProviderRegistry &registry, FakeSpeechTranscriber **speech)
 {
     registry.registerSpeechProvider({QStringLiteral("claude"), QStringLiteral("Fake Speech")}, [speech](QObject *parent) {
@@ -375,6 +406,8 @@ private slots:
         QCOMPARE(settings.refinementOutputFormat(), QStringLiteral("plain_sentences"));
         QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.4-mini"));
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("auto"));
+        QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
+        QCOMPARE(settings.ydotoolEnabled(), false);
 
         settings.setRefinementStyle(QStringLiteral("strong_polish"));
         QCOMPARE(settings.refinementStyle(), QStringLiteral("strong_polish"));
@@ -409,6 +442,18 @@ private slots:
         QCOMPARE(settings.pauseMediaDuringTranscription(), true);
         settings.setPauseMediaDuringTranscription(false);
         QCOMPARE(settings.pauseMediaDuringTranscription(), false);
+
+        settings.setOutputMethod(QStringLiteral("ydotool"));
+        QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Ydotool));
+        settings.setOutputMethod(QStringLiteral("unknown"));
+        QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
+        settings.setOutputMethod(QStringLiteral("clipboard"));
+        QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::WlCopy));
+        settings.setYdotoolEnabled(true);
+        QCOMPARE(settings.ydotoolEnabled(), true);
+        settings.setOutputMethod(QString::fromLatin1(OutputMethod::Ydotool));
+        settings.setYdotoolEnabled(false);
+        QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
     }
 
     void settingsSnapshot()
@@ -435,8 +480,10 @@ private slots:
         QCOMPARE(snapshot.refinement.style, QStringLiteral("strong_polish"));
         QCOMPARE(snapshot.refinement.outputFormat, QStringLiteral("markdown"));
         QCOMPARE(snapshot.refinement.openAiAuthMode, QStringLiteral("env"));
+        QCOMPARE(snapshot.output.method, QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(snapshot.output.typeCommand, QStringLiteral("wtype"));
         QCOMPARE(snapshot.output.fallbackClipboard, true);
+        QCOMPARE(snapshot.output.ydotoolEnabled, false);
     }
 
     void providerRegistryReturnsSingletonAdapters()
@@ -459,6 +506,102 @@ private slots:
         QCOMPARE(registry.refinementProvider(QStringLiteral("openai")), refinementProvider);
         QCOMPARE(speechProvider, speech);
         QCOMPARE(refinementProvider, refiner);
+    }
+
+    void outputDeliverySelection()
+    {
+        OutputSettings settings;
+        settings.method = QString::fromLatin1(OutputMethod::Automatic);
+        settings.ydotoolEnabled = true;
+        settings.fallbackClipboard = true;
+        QCOMPARE(TextDelivery::orderedMethods(settings),
+                 QStringList({QString::fromLatin1(OutputMethod::Wtype),
+                              QString::fromLatin1(OutputMethod::Ydotool),
+                              QString::fromLatin1(OutputMethod::WlCopy),
+                              QString::fromLatin1(OutputMethod::QtClipboard)}));
+
+        settings.ydotoolEnabled = false;
+        QCOMPARE(TextDelivery::orderedMethods(settings),
+                 QStringList({QString::fromLatin1(OutputMethod::Wtype),
+                              QString::fromLatin1(OutputMethod::WlCopy),
+                              QString::fromLatin1(OutputMethod::QtClipboard)}));
+
+        settings.method = QString::fromLatin1(OutputMethod::Ydotool);
+        QCOMPARE(TextDelivery::orderedMethods(settings), QStringList());
+        settings.ydotoolEnabled = true;
+        QCOMPARE(TextDelivery::orderedMethods(settings), QStringList({QString::fromLatin1(OutputMethod::Ydotool)}));
+
+        settings.method = QString::fromLatin1(OutputMethod::QtClipboard);
+        QCOMPARE(TextDelivery::orderedMethods(settings), QStringList({QString::fromLatin1(OutputMethod::QtClipboard)}));
+    }
+
+    void outputAutomaticFallbackOrder()
+    {
+        QList<QString> attempts;
+        QHash<QString, bool> results;
+        results.insert(QString::fromLatin1(OutputMethod::Wtype), false);
+        results.insert(QString::fromLatin1(OutputMethod::Ydotool), true);
+        results.insert(QString::fromLatin1(OutputMethod::WlCopy), true);
+
+        TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        });
+
+        OutputSettings settings;
+        settings.method = QString::fromLatin1(OutputMethod::Automatic);
+        settings.ydotoolEnabled = true;
+        const DeliveryResult result = delivery.deliver(settings, QStringLiteral("hello"));
+        QVERIFY(result.ok);
+        QCOMPARE(result.copied, false);
+        QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::Wtype), QString::fromLatin1(OutputMethod::Ydotool)}));
+    }
+
+    void ydotoolDeliveryUsesSingleFastArgument()
+    {
+        const QString text = QStringLiteral("hello\nworld\n \t");
+        const QStringList args = YdotoolDelivery::commandArguments(text);
+        QCOMPARE(args,
+                 QStringList({QStringLiteral("type"),
+                              QStringLiteral("--key-delay=1"),
+                              QStringLiteral("--key-hold=2"),
+                              QStringLiteral("--escape=0"),
+                              QStringLiteral("--"),
+                              QStringLiteral("hello\nworld")}));
+        QCOMPARE(YdotoolDelivery::withoutTrailingWhitespace(QStringLiteral("one\n\n")), QStringLiteral("one"));
+        QCOMPARE(YdotoolDelivery::withoutTrailingWhitespace(QStringLiteral("one\n \t")), QStringLiteral("one"));
+        QCOMPARE(YdotoolDelivery::withoutTrailingWhitespace(QStringLiteral(" one\ntwo")), QStringLiteral(" one\ntwo"));
+        QVERIFY(!args.contains(QStringLiteral("--file=-")));
+        QVERIFY(std::none_of(args.cbegin(), args.cend(), [](const QString &arg) {
+            return arg.startsWith(QStringLiteral("--file="));
+        }));
+    }
+
+    void ydotoolStatusEvaluation()
+    {
+        YdotoolProbeFacts facts;
+        QCOMPARE(YdotoolSetup::evaluate(facts).state, YdotoolSetupState::NotInstalled);
+
+        facts.ydotoolInstalled = true;
+        facts.ydotooldInstalled = true;
+        facts.uinputExists = true;
+        QCOMPARE(YdotoolSetup::evaluate(facts).state, YdotoolSetupState::NeedsUinputPermission);
+
+        facts.userInConfiguredGroup = true;
+        facts.currentSessionInConfiguredGroup = false;
+        QCOMPARE(YdotoolSetup::evaluate(facts).state, YdotoolSetupState::NeedsSignOut);
+
+        facts.currentSessionInConfiguredGroup = true;
+        facts.uinputReadWrite = true;
+        QCOMPARE(YdotoolSetup::evaluate(facts).state, YdotoolSetupState::DaemonNotRunning);
+
+        facts.socketExists = true;
+        facts.socketWritable = true;
+        QCOMPARE(YdotoolSetup::evaluate(facts).state, YdotoolSetupState::Disabled);
+
+        facts.enabledInSpeecher = true;
+        const YdotoolSetupStatus ready = YdotoolSetup::evaluate(facts);
+        QCOMPARE(ready.state, YdotoolSetupState::Ready);
+        QVERIFY(ready.ready());
     }
 
     void dictationSessionDeliversRawTranscript()
@@ -492,6 +635,7 @@ private slots:
 
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
         QCOMPARE(delivery->lastText, QStringLiteral("hello world"));
+        QCOMPARE(delivery->lastSettings.method, QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(delivery->lastSettings.typeCommand, QStringLiteral("wtype"));
         QCOMPARE(media->resumeCalls, 1);
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);

@@ -73,7 +73,7 @@ public:
 
     QString outputSummary() const override
     {
-        return QStringLiteral("wtype, wl-copy, Qt clipboard");
+        return QStringLiteral("Automatic: wtype, ydotool when enabled, wl-copy, Qt clipboard");
     }
 
     QString primaryOutputStatus() const override

@@ -43,7 +43,11 @@ public:
     void setOpenAiAuthMode(const QString &value);
 
     QString outputTypeCommand() const;
+    QString outputMethod() const;
+    void setOutputMethod(const QString &value);
     bool fallbackClipboard() const;
+    bool ydotoolEnabled() const;
+    void setYdotoolEnabled(bool value);
 
     QString claudeCredentialsPath() const;
     QString claudeEndpointBase() const;

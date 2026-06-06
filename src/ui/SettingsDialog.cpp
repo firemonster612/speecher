@@ -1,9 +1,12 @@
 #include "ui/SettingsDialog.h"
 
 #include "app/ApplicationController.h"
+#include "core/OutputMethod.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/VocabularyLimit.h"
+#include "output/YdotoolDelivery.h"
+#include "output/YdotoolSetup.h"
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/Theme.h"
@@ -25,10 +28,13 @@
 #include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QStandardItemModel>
 #include <QSizePolicy>
 #include <QStackedWidget>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QTimer>
+#include <QToolTip>
 #include <QVBoxLayout>
 
 namespace speecher {
@@ -120,7 +126,9 @@ static QFrame *makeRow(const QString &label, const QString &description, QWidget
     title->setForegroundRole(QPalette::WindowText);
     subtitle->setForegroundRole(QPalette::WindowText);
     textLayout->addWidget(title);
-    textLayout->addWidget(subtitle);
+    if (!description.isEmpty()) {
+        textLayout->addWidget(subtitle);
+    }
 
     if (auto *labelControl = qobject_cast<QLabel *>(control)) {
         labelControl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
@@ -153,6 +161,50 @@ static void selectData(QComboBox *combo, const QString &data)
     combo->setCurrentIndex(index >= 0 ? index : 0);
 }
 
+static void setComboItemEnabled(QComboBox *combo, int index, bool enabled, const QString &toolTip = QString())
+{
+    auto *model = qobject_cast<QStandardItemModel *>(combo->model());
+    if (!model || index < 0) {
+        return;
+    }
+    QStandardItem *item = model->item(index);
+    if (!item) {
+        return;
+    }
+    item->setEnabled(enabled);
+    item->setToolTip(toolTip);
+}
+
+static QWidget *makeYdotoolControl(QLabel *status,
+                                   QPushButton *setup,
+                                   QPushButton *start,
+                                   QPushButton *disable,
+                                   QPushButton *remove,
+                                   QWidget *parent)
+{
+    auto *control = new QWidget(parent);
+    auto *layout = new QVBoxLayout(control);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(8);
+    status->setObjectName(QStringLiteral("statusText"));
+    status->setWordWrap(true);
+    status->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    status->setForegroundRole(QPalette::WindowText);
+    status->setAttribute(Qt::WA_StyledBackground, false);
+
+    auto *row = new QHBoxLayout();
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(8);
+    row->addWidget(setup);
+    row->addWidget(start);
+    row->addWidget(disable);
+    row->addWidget(remove);
+
+    layout->addWidget(status);
+    layout->addLayout(row);
+    return control;
+}
+
 static QLabel *makeSectionLabel(const QString &text, QWidget *parent)
 {
     auto *section = new QLabel(text, parent);
@@ -180,9 +232,11 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_provider(new QComboBox(this))
     , m_refinementStyle(new QComboBox(this))
     , m_outputFormat(new QComboBox(this))
+    , m_outputMethod(new QComboBox(this))
     , m_authMode(new QComboBox(this))
     , m_authControl(new QStackedWidget(this))
     , m_authStatus(new QLabel(this))
+    , m_ydotoolStatus(new QLabel(this))
     , m_vocabLimit(new QLabel(this))
     , m_apiKey(new QLineEdit(this))
     , m_previewWords(new QSpinBox(this))
@@ -204,6 +258,13 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_refinementStyle->addItem(QStringLiteral("Light cleanup"), QStringLiteral("light_cleanup"));
     m_outputFormat->addItem(QStringLiteral("Plain sentences"), QStringLiteral("plain_sentences"));
     m_outputFormat->addItem(QStringLiteral("Markdown style"), QStringLiteral("markdown"));
+    m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::Automatic)), QString::fromLatin1(OutputMethod::Automatic));
+    m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::Wtype)), QString::fromLatin1(OutputMethod::Wtype));
+    m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::Ydotool)), QString::fromLatin1(OutputMethod::Ydotool));
+    m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::WlCopy)), QString::fromLatin1(OutputMethod::WlCopy));
+    m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::QtClipboard)), QString::fromLatin1(OutputMethod::QtClipboard));
+    m_outputMethod->setToolTip(QStringLiteral("How Speecher delivers final text."));
+    m_outputMethod->view()->setMouseTracking(true);
     m_authMode->addItem(QStringLiteral("Automatic"), QStringLiteral("auto"));
     m_authMode->addItem(QStringLiteral("Codex API key"), QStringLiteral("codex_api_key"));
     m_authMode->addItem(QStringLiteral("Codex OAuth"), QStringLiteral("codex_oauth"));
@@ -249,6 +310,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
 
     auto *generalSection = makeSectionLabel(QStringLiteral("General"), this);
     auto *refinementSection = makeSectionLabel(QStringLiteral("Refinement"), this);
+    auto *outputSection = makeSectionLabel(QStringLiteral("Output"), this);
     auto *openAiSection = makeSectionLabel(QStringLiteral("OpenAI"), this);
     auto *vocabularySection = makeSectionLabel(QStringLiteral("Vocabulary"), this);
 
@@ -256,12 +318,21 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *generalLayout = qobject_cast<QVBoxLayout *>(generalCard->layout());
     auto *refinementCard = makeSettingsCard(this);
     auto *refinementLayout = qobject_cast<QVBoxLayout *>(refinementCard->layout());
+    auto *outputCard = makeSettingsCard(this);
+    auto *outputLayout = qobject_cast<QVBoxLayout *>(outputCard->layout());
     auto *openAiCard = makeSettingsCard(this);
     auto *openAiLayout = qobject_cast<QVBoxLayout *>(openAiCard->layout());
 
     auto *model = new QLabel(QStringLiteral("gpt-5.4-mini"), this);
-    auto *output = new QLabel(m_controller->outputSummary(), this);
     auto *primaryOutput = new QLabel(m_controller->primaryOutputStatus(), this);
+    m_ydotoolSetupButton = new QPushButton(QStringLiteral("Set up"), this);
+    m_ydotoolStartButton = new QPushButton(QStringLiteral("Start service"), this);
+    m_ydotoolDisableButton = new QPushButton(QStringLiteral("Disable in Speecher"), this);
+    m_ydotoolRemoveButton = new QPushButton(QStringLiteral("Remove setup"), this);
+    for (QPushButton *button : {m_ydotoolSetupButton, m_ydotoolStartButton, m_ydotoolDisableButton, m_ydotoolRemoveButton}) {
+        button->setMinimumWidth(button->fontMetrics().horizontalAdvance(button->text()) + 36);
+        button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+    }
     m_authStatus->setObjectName(QStringLiteral("statusText"));
     m_authStatus->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_authStatus->setWordWrap(false);
@@ -269,17 +340,34 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_authStatus->setAttribute(Qt::WA_StyledBackground, false);
     m_authStatus->setAutoFillBackground(false);
     model->setObjectName(QStringLiteral("statusText"));
-    output->setObjectName(QStringLiteral("statusText"));
     primaryOutput->setObjectName(QStringLiteral("statusText"));
-    for (QLabel *label : {m_authStatus, model, output, primaryOutput}) {
+    for (QLabel *label : {m_authStatus, model, primaryOutput}) {
         label->setForegroundRole(QPalette::WindowText);
     }
 
     addRow(generalLayout, makeRow(QStringLiteral("Theme"), QStringLiteral("App colors."), m_theme, generalCard), generalCard);
     addRow(generalLayout, makeRow(QStringLiteral("Pause media"), QStringLiteral("Pause currently playing media while transcribing."), m_pauseMedia, generalCard), generalCard);
     addRow(generalLayout, makeRow(QStringLiteral("Preview words"), QStringLiteral("Trailing words shown in the popup."), m_previewWords, generalCard), generalCard);
-    addRow(generalLayout, makeRow(QStringLiteral("Output"), QStringLiteral("Delivery method for final text."), output, generalCard), generalCard);
     addRow(generalLayout, makeRow(QStringLiteral("Primary output"), QStringLiteral("Current platform typing adapter."), primaryOutput, generalCard), generalCard, false);
+
+    addRow(outputLayout,
+           makeRow(QStringLiteral("Method"),
+                   QStringLiteral("How Speecher delivers final text."),
+                   m_outputMethod,
+                   outputCard),
+           outputCard);
+    addRow(outputLayout,
+           makeRow(QStringLiteral("Virtual keyboard"),
+                   QString(),
+                   makeYdotoolControl(m_ydotoolStatus,
+                                      m_ydotoolSetupButton,
+                                      m_ydotoolStartButton,
+                                      m_ydotoolDisableButton,
+                                      m_ydotoolRemoveButton,
+                                      outputCard),
+                   outputCard),
+           outputCard,
+           false);
 
     addRow(refinementLayout, makeRow(QStringLiteral("Refinement"), QStringLiteral("Clean up dictated text after capture."), m_provider, refinementCard), refinementCard);
     addRow(refinementLayout, makeRow(QStringLiteral("Refinement style"), QStringLiteral("How strongly dictated text is rewritten."), m_refinementStyle, refinementCard), refinementCard);
@@ -317,6 +405,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
 
     content->addWidget(generalSection);
     content->addWidget(generalCard);
+    content->addWidget(outputSection);
+    content->addWidget(outputCard);
     content->addWidget(refinementSection);
     content->addWidget(refinementCard);
     content->addWidget(openAiSection);
@@ -332,10 +422,12 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     root->addWidget(buttons, 0, Qt::AlignRight);
 
     generalCard->setStyleSheet(QString::fromLatin1(settingsStyle));
+    outputCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     refinementCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     openAiCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     vocabSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     generalSection->setStyleSheet(QString::fromLatin1(settingsStyle));
+    outputSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     refinementSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     openAiSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     vocabularySection->setStyleSheet(QString::fromLatin1(settingsStyle));
@@ -368,12 +460,36 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(m_provider, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_refinementStyle, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_outputFormat, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_outputMethod, &QComboBox::currentIndexChanged, this, [this] {
+        if (m_outputMethod->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool)) {
+            const YdotoolSetupStatus status = YdotoolSetup::probe(m_controller->settings()->ydotoolEnabled());
+            if (!status.ready() || !m_controller->settings()->ydotoolEnabled()) {
+                QSignalBlocker blocker(m_outputMethod);
+                selectData(m_outputMethod, m_controller->settings()->outputMethod());
+                QToolTip::showText(m_outputMethod->mapToGlobal(m_outputMethod->rect().bottomLeft()),
+                                   QStringLiteral("Set up ydotool first"),
+                                   m_outputMethod);
+                return;
+            }
+        }
+        updateButtonState();
+    });
     connect(m_authMode, &QComboBox::currentIndexChanged, this, [this] {
         updateAuthControl();
         updateButtonState();
     });
     connect(m_apiKey, &QLineEdit::textChanged, this, &SettingsDialog::updateButtonState);
     connect(m_previewWords, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_ydotoolSetupButton, &QPushButton::clicked, this, &SettingsDialog::setupOrEnableYdotool);
+    connect(m_ydotoolStartButton, &QPushButton::clicked, this, [this] {
+        QString error;
+        if (!YdotoolSetup::startUserService(&error)) {
+            QMessageBox::warning(this, QStringLiteral("ydotool service"), error);
+        }
+        refreshOutputControls();
+    });
+    connect(m_ydotoolDisableButton, &QPushButton::clicked, this, &SettingsDialog::disableYdotool);
+    connect(m_ydotoolRemoveButton, &QPushButton::clicked, this, &SettingsDialog::removeYdotoolSetup);
     connect(m_vocab, &QTableWidget::itemChanged, this, [this] {
         updateVocabularyLimit();
         updateButtonState();
@@ -389,12 +505,14 @@ void SettingsDialog::load()
     selectData(m_provider, settings->refinementProvider());
     selectData(m_refinementStyle, settings->refinementStyle());
     selectData(m_outputFormat, settings->refinementOutputFormat());
+    selectData(m_outputMethod, settings->outputMethod());
     selectData(m_authMode, settings->openAiAuthMode());
     m_previewWords->setValue(settings->previewWords());
     m_apiKey->setText(m_controller->secretStore()->apiKey());
     setVocabularyRows(settings->customVocabulary());
     updateVocabularyLimit();
     updateAuthControl();
+    refreshOutputControls();
     updateButtonState();
 }
 
@@ -407,6 +525,7 @@ void SettingsDialog::save()
     settings->setRefinementProvider(m_provider->currentData().toString());
     settings->setRefinementStyle(m_refinementStyle->currentData().toString());
     settings->setRefinementOutputFormat(m_outputFormat->currentData().toString());
+    settings->setOutputMethod(m_outputMethod->currentData().toString());
     settings->setOpenAiAuthMode(m_authMode->currentData().toString());
     settings->setPreviewWords(m_previewWords->value());
     settings->setCustomVocabulary(currentVocabulary());
@@ -421,6 +540,7 @@ void SettingsDialog::save()
         }
     }
     updateAuthControl();
+    refreshOutputControls();
     updateButtonState();
 }
 
@@ -432,6 +552,7 @@ bool SettingsDialog::hasChanges() const
         || m_provider->currentData().toString() != settings->refinementProvider()
         || m_refinementStyle->currentData().toString() != settings->refinementStyle()
         || m_outputFormat->currentData().toString() != settings->refinementOutputFormat()
+        || m_outputMethod->currentData().toString() != settings->outputMethod()
         || m_authMode->currentData().toString() != settings->openAiAuthMode()
         || m_previewWords->value() != settings->previewWords()
         || currentVocabulary() != settings->customVocabulary()) {
@@ -482,6 +603,46 @@ void SettingsDialog::updateAuthControl()
     m_authControl->setCurrentWidget(m_authStatus);
 }
 
+void SettingsDialog::refreshOutputControls()
+{
+    const YdotoolSetupStatus status = YdotoolSetup::probe(m_controller->settings()->ydotoolEnabled());
+    const bool ydotoolEnabled = m_controller->settings()->ydotoolEnabled() && status.ready();
+    const int ydotoolIndex = m_outputMethod->findData(QString::fromLatin1(OutputMethod::Ydotool));
+    setComboItemEnabled(m_outputMethod,
+                        ydotoolIndex,
+                        ydotoolEnabled,
+                        ydotoolEnabled ? QString() : QStringLiteral("Set up ydotool first"));
+    if (!ydotoolEnabled && m_outputMethod->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool)) {
+        QSignalBlocker blocker(m_outputMethod);
+        selectData(m_outputMethod, QString::fromLatin1(OutputMethod::Automatic));
+    }
+    m_outputMethod->setToolTip(ydotoolEnabled
+                                   ? QStringLiteral("Automatic tries wtype, ydotool, wl-copy, then Qt clipboard.")
+                                   : QStringLiteral("Type with ydotool is visible but disabled until virtual keyboard setup passes."));
+    m_ydotoolStatus->setText(status.label + QStringLiteral(". ") + status.detail);
+    updateYdotoolButtons();
+}
+
+void SettingsDialog::updateYdotoolButtons()
+{
+    const YdotoolSetupStatus status = YdotoolSetup::probe(m_controller->settings()->ydotoolEnabled());
+    const bool ready = status.ready();
+    const bool disabled = status.state == YdotoolSetupState::Disabled;
+    const bool daemonMissing = status.state == YdotoolSetupState::DaemonNotRunning;
+    const bool setupInstalled = status.speecherManagedSetupInstalled || ready || disabled;
+    const QString setupFirst = QStringLiteral("Run setup first");
+    m_ydotoolSetupButton->setText(disabled && status.speecherManagedSetupInstalled ? QStringLiteral("Enable") : QStringLiteral("Set up"));
+    m_ydotoolSetupButton->setVisible(!ready || disabled);
+    m_ydotoolSetupButton->setEnabled(status.state != YdotoolSetupState::NeedsSignOut);
+    m_ydotoolStartButton->setVisible(daemonMissing);
+    m_ydotoolStartButton->setEnabled(setupInstalled);
+    m_ydotoolStartButton->setToolTip(setupInstalled ? QString() : setupFirst);
+    m_ydotoolDisableButton->setVisible(ready && m_controller->settings()->ydotoolEnabled());
+    m_ydotoolRemoveButton->setVisible(status.speecherManagedSetupInstalled);
+    m_ydotoolRemoveButton->setEnabled(status.speecherManagedSetupInstalled);
+    m_ydotoolRemoveButton->setToolTip(setupInstalled ? QString() : setupFirst);
+}
+
 void SettingsDialog::updateButtonState()
 {
     const bool changed = hasChanges();
@@ -491,6 +652,128 @@ void SettingsDialog::updateButtonState()
     if (m_applyButton) {
         m_applyButton->setEnabled(changed);
     }
+}
+
+void SettingsDialog::setupOrEnableYdotool()
+{
+    const YdotoolSetupStatus status = YdotoolSetup::probe(m_controller->settings()->ydotoolEnabled());
+    if (status.state == YdotoolSetupState::Disabled && status.speecherManagedSetupInstalled) {
+        if (verifyYdotoolTyping()) {
+            m_controller->settings()->setYdotoolEnabled(true);
+            refreshOutputControls();
+            updateButtonState();
+        }
+        return;
+    }
+
+    const int answer = QMessageBox::question(this,
+                                             QStringLiteral("Set up virtual keyboard"),
+                                             QStringLiteral("Speecher will ask for administrator permission to install ydotool if needed, load uinput, configure a speecher-uinput group, install udev rules, and install a user-level ydotoold service. Speecher itself remains unprivileged at runtime."),
+                                             QMessageBox::Cancel | QMessageBox::Ok,
+                                             QMessageBox::Ok);
+    if (answer != QMessageBox::Ok) {
+        return;
+    }
+
+    QString error;
+    if (!YdotoolSetup::runHelper(YdotoolSetup::HelperAction::Install, &error)) {
+        QMessageBox::warning(this, QStringLiteral("ydotool setup failed"), error);
+        refreshOutputControls();
+        return;
+    }
+    if (!YdotoolSetup::startUserService(&error)) {
+        QMessageBox::warning(this, QStringLiteral("ydotool service"), error);
+    }
+    if (verifyYdotoolTyping()) {
+        m_controller->settings()->setYdotoolEnabled(true);
+    }
+    refreshOutputControls();
+    updateButtonState();
+}
+
+void SettingsDialog::disableYdotool()
+{
+    m_controller->settings()->setYdotoolEnabled(false);
+    QSignalBlocker blocker(m_outputMethod);
+    selectData(m_outputMethod, m_controller->settings()->outputMethod());
+    refreshOutputControls();
+    updateButtonState();
+}
+
+void SettingsDialog::removeYdotoolSetup()
+{
+    const int answer = QMessageBox::question(this,
+                                             QStringLiteral("Remove virtual keyboard setup"),
+                                             QStringLiteral("Speecher will ask for administrator permission to remove the service, udev rule, module-load file, and Speecher-specific group membership it manages. It will not uninstall the distro ydotool package."),
+                                             QMessageBox::Cancel | QMessageBox::Ok,
+                                             QMessageBox::Cancel);
+    if (answer != QMessageBox::Ok) {
+        return;
+    }
+    QString error;
+    QString stopError;
+    YdotoolSetup::stopUserService(&stopError);
+    if (!YdotoolSetup::runHelper(YdotoolSetup::HelperAction::Remove, &error)) {
+        QMessageBox::warning(this, QStringLiteral("ydotool removal failed"), error);
+        refreshOutputControls();
+        return;
+    }
+
+    const YdotoolSetupStatus status = YdotoolSetup::probe(false);
+    if (status.speecherManagedSetupInstalled) {
+        QMessageBox::warning(this,
+                             QStringLiteral("ydotool removal incomplete"),
+                             QStringLiteral("The privileged helper finished, but Speecher-managed setup files are still detected."));
+        refreshOutputControls();
+        return;
+    }
+    m_controller->settings()->setYdotoolEnabled(false);
+    QSignalBlocker blocker(m_outputMethod);
+    selectData(m_outputMethod, m_controller->settings()->outputMethod());
+    refreshOutputControls();
+    updateButtonState();
+}
+
+bool SettingsDialog::verifyYdotoolTyping()
+{
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Verify ydotool"));
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *label = new QLabel(QStringLiteral("Keep this field focused while Speecher tests virtual keyboard input."), &dialog);
+    label->setWordWrap(true);
+    auto *field = new QLineEdit(&dialog);
+    field->setClearButtonEnabled(true);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
+    auto *run = buttons->addButton(QStringLiteral("Run test"), QDialogButtonBox::AcceptRole);
+    layout->addWidget(label);
+    layout->addWidget(field);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(run, &QPushButton::clicked, &dialog, [field, &dialog] {
+        field->clear();
+        field->setFocus(Qt::OtherFocusReason);
+        QTimer::singleShot(150, field, [field, &dialog] {
+            QString error;
+            YdotoolDelivery ydotool;
+            const QString expected = QStringLiteral("speecher test");
+            if (!ydotool.type(expected, &error)) {
+                QMessageBox::warning(&dialog, QStringLiteral("ydotool verification failed"), error);
+                return;
+            }
+            QTimer::singleShot(350, field, [field, expected, &dialog] {
+                if (field->text() == expected) {
+                    dialog.accept();
+                } else {
+                    QMessageBox::warning(&dialog,
+                                         QStringLiteral("ydotool verification failed"),
+                                         QStringLiteral("The test field did not receive the expected text."));
+                }
+            });
+        });
+    });
+    dialog.resize(420, dialog.sizeHint().height());
+    field->setFocus(Qt::OtherFocusReason);
+    return dialog.exec() == QDialog::Accepted;
 }
 
 void SettingsDialog::updateVocabularyLimit()
