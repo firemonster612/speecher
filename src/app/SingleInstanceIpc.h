@@ -3,7 +3,11 @@
 #include <QLocalServer>
 #include <QObject>
 
+#include <memory>
+
 namespace speecher {
+
+class PlatformIntegration;
 
 struct IpcResponse {
     bool ok = false;
@@ -15,11 +19,15 @@ class SingleInstanceIpc : public QObject {
     Q_OBJECT
 
 public:
-    explicit SingleInstanceIpc(QObject *parent = nullptr);
+    explicit SingleInstanceIpc(std::shared_ptr<const PlatformIntegration> platform = {}, QObject *parent = nullptr);
 
     bool listen(QString *error = nullptr);
-    static QString socketName();
-    static bool sendCommand(const QString &command, IpcResponse *response, int timeoutMs = 1200);
+    QString socketName() const;
+    static QString socketName(std::shared_ptr<const PlatformIntegration> platform);
+    static bool sendCommand(const QString &command,
+                            IpcResponse *response,
+                            int timeoutMs = 1200,
+                            std::shared_ptr<const PlatformIntegration> platform = {});
 
 signals:
     void commandReceived(const QString &command, QLocalSocket *socket);
@@ -28,6 +36,7 @@ public slots:
     static void writeResponse(QLocalSocket *socket, const IpcResponse &response);
 
 private:
+    std::shared_ptr<const PlatformIntegration> m_platform;
     QLocalServer m_server;
 };
 

@@ -4,6 +4,8 @@
 #include <QSettings>
 #include <QStringList>
 
+#include "core/AppSettings.h"
+
 namespace speecher {
 
 class SettingsStore : public QObject {
@@ -20,6 +22,9 @@ public:
 
     bool pauseMediaDuringTranscription() const;
     void setPauseMediaDuringTranscription(bool value);
+
+    QString speechProvider() const;
+    void setSpeechProvider(const QString &value);
 
     QStringList customVocabulary() const;
     void setCustomVocabulary(const QStringList &value);
@@ -48,6 +53,7 @@ public:
     void setStoredApiKeyFallback(const QString &value);
     void clearStoredApiKeyFallback();
 
+    AppSettings snapshot() const;
     QSettings &raw();
 
 private:

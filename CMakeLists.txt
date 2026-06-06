@@ -25,83 +25,156 @@ if(SPEECHER_BUILD_TESTS)
   find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
 endif()
 
-set(SPEECHER_SOURCES
-  src/app/ApplicationController.cpp
-  src/app/SingleInstanceIpc.cpp
-  src/core/AudioCapture.cpp
-  src/core/MediaPauseController.cpp
+set(SPEECHER_DOMAIN_SOURCES
   src/core/SettingsStore.cpp
   src/core/SecretStore.cpp
   src/core/TranscriptState.cpp
   src/core/VocabularyLimit.cpp
   src/core/WordPreview.cpp
-  src/output/ClipboardDelivery.cpp
-  src/output/TextDelivery.cpp
-  src/output/WtypeDelivery.cpp
-  src/providers/ClaudeCredentials.cpp
-  src/providers/ClaudeVoiceClient.cpp
-  src/providers/OpenAiAuthProvider.cpp
-  src/providers/OpenAiRefiner.cpp
-  src/ui/MainWindow.cpp
-  src/ui/SettingsDialog.cpp
-  src/ui/Theme.cpp
-  src/ui/TranscriberPopup.cpp
-  src/ui/WaveformWidget.cpp
-  src/ui/WaylandLayerShell.cpp
+  src/dictation/DictationTypes.cpp
+  src/providers/ProviderRegistry.cpp
 )
 
-set(SPEECHER_HEADERS
-  src/app/ApplicationController.h
-  src/app/SingleInstanceIpc.h
-  src/core/AudioCapture.h
-  src/core/MediaPauseController.h
+set(SPEECHER_DOMAIN_HEADERS
+  src/core/AppSettings.h
   src/core/SettingsStore.h
   src/core/SecretStore.h
   src/core/TranscriptState.h
   src/core/VocabularyLimit.h
   src/core/WordPreview.h
-  src/output/ClipboardDelivery.h
-  src/output/TextDelivery.h
-  src/output/WtypeDelivery.h
+  src/dictation/DictationInterfaces.h
+  src/dictation/DictationTypes.h
+  src/providers/ProviderRegistry.h
+)
+
+set(SPEECHER_WORKFLOW_SOURCES
+  src/dictation/DictationSession.cpp
+)
+
+set(SPEECHER_WORKFLOW_HEADERS
+  src/dictation/DictationSession.h
+)
+
+set(SPEECHER_PROVIDER_SOURCES
+  src/providers/ClaudeCredentials.cpp
+  src/providers/ClaudeSpeechTranscriber.cpp
+  src/providers/ClaudeVoiceClient.cpp
+  src/providers/OpenAiAuthProvider.cpp
+  src/providers/OpenAiRefiner.cpp
+  src/providers/OpenAiTranscriptRefiner.cpp
+)
+
+set(SPEECHER_PROVIDER_HEADERS
   src/providers/ClaudeCredentials.h
+  src/providers/ClaudeSpeechTranscriber.h
   src/providers/ClaudeVoiceClient.h
   src/providers/OpenAiAuthProvider.h
   src/providers/OpenAiRefiner.h
+  src/providers/OpenAiTranscriptRefiner.h
+)
+
+set(SPEECHER_PLATFORM_SOURCES
+  src/core/AudioCapture.cpp
+  src/core/MediaPauseController.cpp
+  src/output/ClipboardDelivery.cpp
+  src/output/TextDelivery.cpp
+  src/output/WtypeDelivery.cpp
+  src/platform/PlatformIntegration.cpp
+  src/ui/WaylandLayerShell.cpp
+)
+
+set(SPEECHER_PLATFORM_HEADERS
+  src/core/AudioCapture.h
+  src/core/MediaPauseController.h
+  src/output/ClipboardDelivery.h
+  src/output/DeliveryResult.h
+  src/output/TextDelivery.h
+  src/output/WtypeDelivery.h
+  src/platform/PlatformIntegration.h
+  src/ui/WaylandLayerShell.h
+)
+
+set(SPEECHER_APP_UI_SOURCES
+  src/app/ApplicationController.cpp
+  src/app/SingleInstanceIpc.cpp
+  src/ui/MainWindow.cpp
+  src/ui/SettingsDialog.cpp
+  src/ui/Theme.cpp
+  src/ui/TranscriberPopup.cpp
+  src/ui/WaveformWidget.cpp
+)
+
+set(SPEECHER_APP_UI_HEADERS
+  src/app/ApplicationController.h
+  src/app/SingleInstanceIpc.h
   src/ui/MainWindow.h
   src/ui/SettingsDialog.h
   src/ui/Theme.h
   src/ui/TranscriberPopup.h
   src/ui/WaveformWidget.h
-  src/ui/WaylandLayerShell.h
+)
+
+add_library(speecher_domain STATIC
+  ${SPEECHER_DOMAIN_SOURCES}
+  ${SPEECHER_DOMAIN_HEADERS}
+)
+target_include_directories(speecher_domain PUBLIC src)
+target_link_libraries(speecher_domain PUBLIC Qt6::Core)
+
+add_library(speecher_workflow STATIC
+  ${SPEECHER_WORKFLOW_SOURCES}
+  ${SPEECHER_WORKFLOW_HEADERS}
+)
+target_include_directories(speecher_workflow PUBLIC src)
+target_link_libraries(speecher_workflow PUBLIC speecher_domain)
+
+add_library(speecher_providers STATIC
+  ${SPEECHER_PROVIDER_SOURCES}
+  ${SPEECHER_PROVIDER_HEADERS}
+)
+target_include_directories(speecher_providers PUBLIC src)
+target_link_libraries(speecher_providers PUBLIC speecher_domain Qt6::Network)
+
+add_library(speecher_platform STATIC
+  ${SPEECHER_PLATFORM_SOURCES}
+  ${SPEECHER_PLATFORM_HEADERS}
+)
+target_include_directories(speecher_platform PUBLIC src)
+target_link_libraries(speecher_platform PUBLIC speecher_domain Qt6::Widgets Qt6::Multimedia Qt6::DBus)
+
+add_library(speecher_app_ui STATIC
+  ${SPEECHER_APP_UI_SOURCES}
+  ${SPEECHER_APP_UI_HEADERS}
+)
+target_include_directories(speecher_app_ui PUBLIC src)
+target_compile_definitions(speecher_app_ui PUBLIC SPEECHER_VERSION="${PROJECT_VERSION}")
+target_link_libraries(speecher_app_ui PUBLIC
+  speecher_domain speecher_workflow speecher_providers speecher_platform Qt6::Widgets
 )
 
 qt_add_executable(speecher
   src/app/main.cpp
-  ${SPEECHER_SOURCES}
-  ${SPEECHER_HEADERS}
 )
 
 target_include_directories(speecher PRIVATE src)
 target_compile_definitions(speecher PRIVATE
   SPEECHER_VERSION="${PROJECT_VERSION}"
 )
-target_link_libraries(speecher PRIVATE
-  Qt6::Core Qt6::Widgets Qt6::Network Qt6::Multimedia Qt6::DBus
-)
+target_link_libraries(speecher PRIVATE speecher_app_ui)
 if(Qt6WebSockets_FOUND)
-  target_compile_definitions(speecher PRIVATE SPEECHER_WITH_QT_WEBSOCKETS=1)
-  target_link_libraries(speecher PRIVATE Qt6::WebSockets)
+  target_compile_definitions(speecher_providers PUBLIC SPEECHER_WITH_QT_WEBSOCKETS=1)
+  target_link_libraries(speecher_providers PUBLIC Qt6::WebSockets)
 endif()
 if(LayerShellQt_FOUND)
-  target_compile_definitions(speecher PRIVATE SPEECHER_WITH_LAYER_SHELL=1)
-  target_link_libraries(speecher PRIVATE LayerShellQt::Interface)
+  target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_LAYER_SHELL=1)
+  target_link_libraries(speecher_platform PUBLIC LayerShellQt::Interface)
 endif()
 
 if(SPEECHER_WITH_QKEYCHAIN)
   find_package(Qt6Keychain QUIET)
   if(Qt6Keychain_FOUND)
-    target_compile_definitions(speecher PRIVATE SPEECHER_WITH_QKEYCHAIN=1)
-    target_link_libraries(speecher PRIVATE qt6keychain)
+    target_compile_definitions(speecher_domain PUBLIC SPEECHER_WITH_QKEYCHAIN=1)
+    target_link_libraries(speecher_domain PUBLIC qt6keychain)
   endif()
 endif()
 
@@ -130,22 +203,12 @@ if(SPEECHER_BUILD_TESTS)
   enable_testing()
   qt_add_executable(speecher_tests
     tests/test_core.cpp
-    src/core/SettingsStore.cpp
-    src/core/SecretStore.cpp
-    src/core/TranscriptState.cpp
-    src/core/VocabularyLimit.cpp
-    src/core/WordPreview.cpp
-    src/output/ClipboardDelivery.cpp
-    src/output/TextDelivery.cpp
-    src/output/WtypeDelivery.cpp
-    src/providers/ClaudeCredentials.cpp
-    src/providers/ClaudeVoiceClient.cpp
-    src/providers/OpenAiAuthProvider.cpp
-    src/providers/OpenAiRefiner.cpp
   )
   target_include_directories(speecher_tests PRIVATE src)
   target_compile_definitions(speecher_tests PRIVATE SPEECHER_VERSION="${PROJECT_VERSION}")
-  target_link_libraries(speecher_tests PRIVATE Qt6::Core Qt6::Widgets Qt6::Network Qt6::Test)
+  target_link_libraries(speecher_tests PRIVATE
+    speecher_domain speecher_workflow speecher_providers speecher_platform Qt6::Test
+  )
   add_test(NAME speecher_tests COMMAND speecher_tests)
   set_tests_properties(speecher_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()

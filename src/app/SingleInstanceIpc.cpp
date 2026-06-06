@@ -1,66 +1,18 @@
 #include "app/SingleInstanceIpc.h"
 
-#include <QCoreApplication>
-#include <QCryptographicHash>
-#include <QDir>
-#include <QFileInfo>
+#include "platform/PlatformIntegration.h"
+
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocalSocket>
 
-#include <unistd.h>
+#include <utility>
 
 namespace speecher {
 
-namespace {
-
-QString appSocketName()
-{
-    return QStringLiteral("speecher-%1").arg(getuid());
-}
-
-QString appImageSocketName()
-{
-    return QStringLiteral("speecher-%1-appimage").arg(getuid());
-}
-
-bool isRunningFromOwnAppImage()
-{
-    const QString appDir = QString::fromLocal8Bit(qgetenv("APPDIR"));
-    if (qgetenv("APPIMAGE").isEmpty() || appDir.isEmpty()) {
-        return false;
-    }
-
-    const QString executablePath = QFileInfo(QCoreApplication::applicationFilePath()).canonicalFilePath();
-    const QString appDirPath = QFileInfo(appDir).canonicalFilePath();
-    return !executablePath.isEmpty()
-        && !appDirPath.isEmpty()
-        && executablePath.startsWith(appDirPath + QDir::separator());
-}
-
-QString executablePathSocketName()
-{
-    const QFileInfo executable(QCoreApplication::applicationFilePath());
-    QString path = executable.canonicalFilePath();
-    if (path.isEmpty()) {
-        path = executable.absoluteFilePath();
-    }
-    const QByteArray digest = QCryptographicHash::hash(path.toUtf8(), QCryptographicHash::Sha1).toHex().left(12);
-    return QStringLiteral("speecher-%1-%2").arg(getuid()).arg(QString::fromLatin1(digest));
-}
-
-QStringList socketCandidates()
-{
-    if (isRunningFromOwnAppImage()) {
-        return {appImageSocketName()};
-    }
-    return {appSocketName(), executablePathSocketName()};
-}
-
-} // namespace
-
-SingleInstanceIpc::SingleInstanceIpc(QObject *parent)
+SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const PlatformIntegration> platform, QObject *parent)
     : QObject(parent)
+    , m_platform(platform ? std::move(platform) : PlatformFactory::create())
 {
     connect(&m_server, &QLocalServer::newConnection, this, [this] {
         while (QLocalSocket *socket = m_server.nextPendingConnection()) {
@@ -73,12 +25,15 @@ SingleInstanceIpc::SingleInstanceIpc(QObject *parent)
     });
 }
 
-QString SingleInstanceIpc::socketName()
+QString SingleInstanceIpc::socketName() const
 {
-    if (isRunningFromOwnAppImage()) {
-        return appImageSocketName();
-    }
-    return appSocketName();
+    return m_platform->ipcListenName();
+}
+
+QString SingleInstanceIpc::socketName(std::shared_ptr<const PlatformIntegration> platform)
+{
+    const std::shared_ptr<const PlatformIntegration> resolved = platform ? std::move(platform) : PlatformFactory::create();
+    return resolved->ipcListenName();
 }
 
 bool SingleInstanceIpc::listen(QString *error)
@@ -93,9 +48,13 @@ bool SingleInstanceIpc::listen(QString *error)
     return true;
 }
 
-bool SingleInstanceIpc::sendCommand(const QString &command, IpcResponse *response, int timeoutMs)
+bool SingleInstanceIpc::sendCommand(const QString &command,
+                                    IpcResponse *response,
+                                    int timeoutMs,
+                                    std::shared_ptr<const PlatformIntegration> platform)
 {
-    for (const QString &candidate : socketCandidates()) {
+    const std::shared_ptr<const PlatformIntegration> resolved = platform ? std::move(platform) : PlatformFactory::create();
+    for (const QString &candidate : resolved->ipcConnectCandidates()) {
         QLocalSocket socket;
         socket.connectToServer(candidate);
         if (!socket.waitForConnected(timeoutMs)) {

@@ -11,7 +11,7 @@
 namespace speecher {
 
 WaylandLayerShell::WaylandLayerShell(QObject *parent)
-    : QObject(parent)
+    : PopupPositioner(parent)
 {
 }
 

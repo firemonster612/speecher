@@ -8,7 +8,7 @@
 namespace speecher {
 
 AudioCapture::AudioCapture(QObject *parent)
-    : QObject(parent)
+    : AudioInput(parent)
 {
 }
 

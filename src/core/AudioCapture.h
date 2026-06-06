@@ -2,24 +2,20 @@
 
 #include <QAudioSource>
 #include <QIODevice>
-#include <QObject>
 #include <QScopedPointer>
+
+#include "dictation/DictationInterfaces.h"
 
 namespace speecher {
 
-class AudioCapture : public QObject {
+class AudioCapture : public AudioInput {
     Q_OBJECT
 
 public:
     explicit AudioCapture(QObject *parent = nullptr);
-    bool start(QString *error = nullptr);
-    void stop();
-    bool isActive() const;
-
-signals:
-    void audioChunk(const QByteArray &pcm);
-    void levelChanged(float level);
-    void failed(const QString &message);
+    bool start(QString *error = nullptr) override;
+    void stop() override;
+    bool isActive() const override;
 
 private:
     void onReadyRead();

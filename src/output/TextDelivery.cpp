@@ -1,13 +1,19 @@
 #include "output/TextDelivery.h"
 
+#include "core/AppSettings.h"
 #include "output/ClipboardDelivery.h"
 #include "output/WtypeDelivery.h"
 
 namespace speecher {
 
 TextDelivery::TextDelivery(QObject *parent)
-    : QObject(parent)
+    : TextDeliveryAdapter(parent)
 {
+}
+
+DeliveryResult TextDelivery::deliver(const OutputSettings &settings, const QString &text)
+{
+    return deliver(settings.typeCommand, text, settings.fallbackClipboard);
 }
 
 DeliveryResult TextDelivery::deliver(const QString &command, const QString &text, bool allowClipboardFallback)

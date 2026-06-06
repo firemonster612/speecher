@@ -10,14 +10,14 @@ class QVBoxLayout;
 
 namespace speecher {
 
+class PopupPositioner;
 class WaveformWidget;
-class WaylandLayerShell;
 
 class TranscriberPopup : public QWidget {
     Q_OBJECT
 
 public:
-    explicit TranscriberPopup(QWidget *parent = nullptr);
+    explicit TranscriberPopup(PopupPositioner *positioner = nullptr, QWidget *parent = nullptr);
     QSize sizeHint() const override;
 
 public slots:
@@ -45,7 +45,7 @@ private:
     QFrame *m_previewPill = nullptr;
     QLabel *m_preview = nullptr;
     WaveformWidget *m_waveform = nullptr;
-    WaylandLayerShell *m_layer = nullptr;
+    PopupPositioner *m_positioner = nullptr;
     bool m_applyingTheme = false;
 };
 

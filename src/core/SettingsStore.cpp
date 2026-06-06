@@ -55,6 +55,17 @@ void SettingsStore::setPauseMediaDuringTranscription(bool value)
     m_settings.setValue(QStringLiteral("ui/pauseMediaDuringTranscription"), value);
 }
 
+QString SettingsStore::speechProvider() const
+{
+    const QString provider = value(QStringLiteral("stt/provider"), QStringLiteral("claude")).toString();
+    return provider.isEmpty() ? QStringLiteral("claude") : provider;
+}
+
+void SettingsStore::setSpeechProvider(const QString &value)
+{
+    m_settings.setValue(QStringLiteral("stt/provider"), value.isEmpty() ? QStringLiteral("claude") : value);
+}
+
 QStringList SettingsStore::customVocabulary() const
 {
     return VocabularyLimit::limited(value(QStringLiteral("stt/customVocabulary"), QStringList()).toStringList());
@@ -180,6 +191,30 @@ void SettingsStore::setStoredApiKeyFallback(const QString &value)
 void SettingsStore::clearStoredApiKeyFallback()
 {
     m_settings.remove(QStringLiteral("openai/apiKey"));
+}
+
+AppSettings SettingsStore::snapshot() const
+{
+    AppSettings settings;
+    settings.ui.previewWords = previewWords();
+    settings.ui.theme = theme();
+    settings.ui.pauseMediaDuringTranscription = pauseMediaDuringTranscription();
+
+    settings.speech.providerId = speechProvider();
+    settings.speech.vocabulary = customVocabulary();
+    settings.speech.claudeCredentialsPath = claudeCredentialsPath();
+    settings.speech.claudeEndpointBase = claudeEndpointBase();
+    settings.speech.claudeVoicePath = claudeVoicePath();
+
+    settings.refinement.providerId = refinementProvider();
+    settings.refinement.style = refinementStyle();
+    settings.refinement.outputFormat = refinementOutputFormat();
+    settings.refinement.openAiModel = openAiModel();
+    settings.refinement.openAiAuthMode = openAiAuthMode();
+
+    settings.output.typeCommand = outputTypeCommand();
+    settings.output.fallbackClipboard = fallbackClipboard();
+    return settings;
 }
 
 QSettings &SettingsStore::raw()

@@ -1,12 +1,16 @@
 #include "core/SecretStore.h"
+#include "core/AppSettings.h"
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
 #include "core/VocabularyLimit.h"
 #include "core/WordPreview.h"
+#include "dictation/DictationSession.h"
+#include "dictation/DictationTypes.h"
 #include "providers/ClaudeCredentials.h"
 #include "providers/ClaudeVoiceClient.h"
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/OpenAiRefiner.h"
+#include "providers/ProviderRegistry.h"
 
 #include <QDir>
 #include <QFile>
@@ -20,6 +24,253 @@
 #include <QtTest>
 
 using namespace speecher;
+
+class FakeAudioInput final : public AudioInput {
+public:
+    explicit FakeAudioInput(QObject *parent = nullptr)
+        : AudioInput(parent)
+    {
+    }
+
+    bool start(QString *error = nullptr) override
+    {
+        if (!startResult) {
+            if (error) {
+                *error = startError;
+            }
+            return false;
+        }
+        started = true;
+        active = true;
+        return true;
+    }
+
+    void stop() override
+    {
+        active = false;
+        emit levelChanged(0.0f);
+    }
+
+    bool isActive() const override
+    {
+        return active;
+    }
+
+    void pushAudio(const QByteArray &pcm)
+    {
+        emit audioChunk(pcm);
+    }
+
+    bool startResult = true;
+    QString startError = QStringLiteral("audio failed");
+    bool started = false;
+    bool active = false;
+};
+
+class FakeMediaController final : public MediaController {
+public:
+    explicit FakeMediaController(QObject *parent = nullptr)
+        : MediaController(parent)
+    {
+    }
+
+    void pausePlaying() override
+    {
+        ++pauseCalls;
+    }
+
+    void resumePaused() override
+    {
+        ++resumeCalls;
+    }
+
+    int pauseCalls = 0;
+    int resumeCalls = 0;
+};
+
+class FakeSpeechTranscriber final : public SpeechTranscriber {
+public:
+    explicit FakeSpeechTranscriber(QObject *parent = nullptr)
+        : SpeechTranscriber(parent)
+    {
+    }
+
+    QString id() const override
+    {
+        return QStringLiteral("claude");
+    }
+
+    QString label() const override
+    {
+        return QStringLiteral("Fake Speech");
+    }
+
+    bool requiresRefresh(const SpeechSettings &) const override
+    {
+        return refreshRequired;
+    }
+
+    SpeechPrepareResult prepare(const SpeechSettings &) override
+    {
+        ++prepareCalls;
+        return prepareResult;
+    }
+
+    void start(const SpeechSettings &settings) override
+    {
+        ++startCalls;
+        lastVocabulary = settings.vocabulary;
+    }
+
+    void sendAudio(const QByteArray &pcm) override
+    {
+        audioChunks << pcm;
+    }
+
+    void stop() override
+    {
+        ++stopCalls;
+    }
+
+    void emitPartialText(const QString &text)
+    {
+        emit partialTranscript(text);
+    }
+
+    void emitFinalText(const QString &text)
+    {
+        emit finalTranscript(text);
+    }
+
+    void emitFailure(const QString &message)
+    {
+        emit failed(message);
+    }
+
+    bool refreshRequired = false;
+    SpeechPrepareResult prepareResult{true, {}};
+    int prepareCalls = 0;
+    int startCalls = 0;
+    int stopCalls = 0;
+    QList<QByteArray> audioChunks;
+    QStringList lastVocabulary;
+};
+
+class FakeRefiner final : public TranscriptRefiner {
+public:
+    explicit FakeRefiner(QObject *parent = nullptr)
+        : TranscriptRefiner(parent)
+    {
+    }
+
+    QString id() const override
+    {
+        return QStringLiteral("openai");
+    }
+
+    QString label() const override
+    {
+        return QStringLiteral("Fake Refiner");
+    }
+
+    bool requiresRefresh(const RefinementSettings &) const override
+    {
+        return refreshRequired;
+    }
+
+    void refresh(const RefinementSettings &) override
+    {
+        ++refreshCalls;
+    }
+
+    RefinementPrepareResult prepare(const RefinementSettings &) override
+    {
+        ++prepareCalls;
+        return prepareResult;
+    }
+
+    void refine(const QString &rawTranscript,
+                const QStringList &vocabulary,
+                const RefinementSettings &settings) override
+    {
+        ++refineCalls;
+        lastRawTranscript = rawTranscript;
+        lastVocabulary = vocabulary;
+        lastStyle = settings.style;
+        if (autoComplete) {
+            emit completed(autoCompleteText);
+        }
+    }
+
+    void cancel() override
+    {
+        ++cancelCalls;
+    }
+
+    void emitDeltaText(const QString &text)
+    {
+        emit delta(text);
+    }
+
+    void emitCompletedText(const QString &text)
+    {
+        emit completed(text);
+    }
+
+    void emitFailure(const QString &message)
+    {
+        emit failed(message);
+    }
+
+    bool refreshRequired = false;
+    bool autoComplete = false;
+    QString autoCompleteText;
+    RefinementPrepareResult prepareResult{true, {}};
+    int refreshCalls = 0;
+    int prepareCalls = 0;
+    int refineCalls = 0;
+    int cancelCalls = 0;
+    QString lastRawTranscript;
+    QStringList lastVocabulary;
+    QString lastStyle;
+};
+
+class FakeDelivery final : public TextDeliveryAdapter {
+public:
+    explicit FakeDelivery(QObject *parent = nullptr)
+        : TextDeliveryAdapter(parent)
+    {
+    }
+
+    DeliveryResult deliver(const OutputSettings &settings, const QString &text) override
+    {
+        ++calls;
+        lastSettings = settings;
+        lastText = text;
+        return result;
+    }
+
+    DeliveryResult result{true, false, QStringLiteral("Delivered")};
+    int calls = 0;
+    OutputSettings lastSettings;
+    QString lastText;
+};
+
+static void registerFakeSpeechProvider(ProviderRegistry &registry, FakeSpeechTranscriber **speech)
+{
+    registry.registerSpeechProvider({QStringLiteral("claude"), QStringLiteral("Fake Speech")}, [speech](QObject *parent) {
+        *speech = new FakeSpeechTranscriber(parent);
+        return *speech;
+    });
+}
+
+static void registerFakeRefiner(ProviderRegistry &registry, FakeRefiner **refiner)
+{
+    registry.registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("Fake Refiner")}, [refiner](QObject *parent) {
+        *refiner = new FakeRefiner(parent);
+        return *refiner;
+    });
+}
 
 class CoreTests : public QObject {
     Q_OBJECT
@@ -158,6 +409,175 @@ private slots:
         QCOMPARE(settings.pauseMediaDuringTranscription(), true);
         settings.setPauseMediaDuringTranscription(false);
         QCOMPARE(settings.pauseMediaDuringTranscription(), false);
+    }
+
+    void settingsSnapshot()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setPreviewWords(12);
+        settings.setTheme(QStringLiteral("dark"));
+        settings.setPauseMediaDuringTranscription(false);
+        settings.setSpeechProvider(QStringLiteral("claude"));
+        settings.setCustomVocabulary({QStringLiteral("Deepgram Nova 3"), QStringLiteral("Speecher")});
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.setRefinementStyle(QStringLiteral("strong_polish"));
+        settings.setRefinementOutputFormat(QStringLiteral("markdown"));
+        settings.setOpenAiAuthMode(QStringLiteral("env"));
+
+        const AppSettings snapshot = settings.snapshot();
+        QCOMPARE(snapshot.ui.previewWords, 12);
+        QCOMPARE(snapshot.ui.theme, QStringLiteral("dark"));
+        QCOMPARE(snapshot.ui.pauseMediaDuringTranscription, false);
+        QCOMPARE(snapshot.speech.providerId, QStringLiteral("claude"));
+        QCOMPARE(snapshot.speech.vocabulary.size(), 2);
+        QCOMPARE(snapshot.refinement.providerId, QStringLiteral("openai"));
+        QCOMPARE(snapshot.refinement.style, QStringLiteral("strong_polish"));
+        QCOMPARE(snapshot.refinement.outputFormat, QStringLiteral("markdown"));
+        QCOMPARE(snapshot.refinement.openAiAuthMode, QStringLiteral("env"));
+        QCOMPARE(snapshot.output.typeCommand, QStringLiteral("wtype"));
+        QCOMPARE(snapshot.output.fallbackClipboard, true);
+    }
+
+    void providerRegistryReturnsSingletonAdapters()
+    {
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+
+        QCOMPARE(registry.speechProviders().size(), 1);
+        QCOMPARE(registry.refinementProviders().size(), 1);
+        QVERIFY(registry.speechProvider(QStringLiteral("missing")) == nullptr);
+        QVERIFY(registry.refinementProvider(QStringLiteral("missing")) == nullptr);
+        SpeechTranscriber *speechProvider = registry.speechProvider(QStringLiteral("claude"));
+        TranscriptRefiner *refinementProvider = registry.refinementProvider(QStringLiteral("openai"));
+        QVERIFY(speechProvider);
+        QVERIFY(refinementProvider);
+        QCOMPARE(registry.speechProvider(QStringLiteral("claude")), speechProvider);
+        QCOMPARE(registry.refinementProvider(QStringLiteral("openai")), refinementProvider);
+        QCOMPARE(speechProvider, speech);
+        QCOMPARE(refinementProvider, refiner);
+    }
+
+    void dictationSessionDeliversRawTranscript()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setPauseMediaDuringTranscription(true);
+        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.setCustomVocabulary({QStringLiteral("Speecher")});
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QVERIFY(audio->started);
+        QCOMPARE(media->pauseCalls, 1);
+        QCOMPARE(speech->prepareCalls, 1);
+        QCOMPARE(speech->startCalls, 1);
+        QCOMPARE(speech->lastVocabulary, QStringList{QStringLiteral("Speecher")});
+
+        audio->pushAudio(QByteArrayLiteral("pcm"));
+        QCOMPARE(speech->audioChunks.size(), 1);
+        speech->emitFinalText(QStringLiteral("hello world"));
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText, QStringLiteral("hello world"));
+        QCOMPARE(delivery->lastSettings.typeCommand, QStringLiteral("wtype"));
+        QCOMPARE(media->resumeCalls, 1);
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
+    }
+
+    void dictationSessionRefinesTranscript()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.setRefinementStyle(QStringLiteral("light_cleanup"));
+        settings.setCustomVocabulary({QStringLiteral("Qt")});
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        speech->emitFinalText(QStringLiteral("rough text"));
+        refiner->autoComplete = true;
+        refiner->autoCompleteText = QStringLiteral("Polished text.");
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
+        QCOMPARE(refiner->lastRawTranscript, QStringLiteral("rough text"));
+        QCOMPARE(refiner->lastVocabulary, QStringList{QStringLiteral("Qt")});
+        QCOMPARE(refiner->lastStyle, QStringLiteral("light_cleanup"));
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText, QStringLiteral("Polished text."));
+    }
+
+    void dictationSessionFallsBackWhenRefinementUnavailable()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        speech->emitFinalText(QStringLiteral("raw fallback"));
+        refiner->prepareResult = {false, QStringLiteral("No OpenAI credential found")};
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(refiner->prepareCalls, 1);
+        QCOMPARE(refiner->refineCalls, 0);
+        QCOMPARE(delivery->lastText, QStringLiteral("raw fallback"));
+    }
+
+    void dictationSessionStopsOnEmptySpeechFailure()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        speech->emitFailure(QStringLiteral("provider failed"));
+
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Error), 200);
+        QCOMPARE(audio->isActive(), false);
+        QCOMPARE(media->resumeCalls, 1);
+        QCOMPARE(delivery->calls, 0);
+        QCOMPARE(session.lastMessage(), QStringLiteral("provider failed"));
     }
 
     void refinementInstructionsCompose()

@@ -79,7 +79,7 @@ bool runMprisPlayerCommand(const QString &player, const QString &command)
 } // namespace
 
 MediaPauseController::MediaPauseController(QObject *parent)
-    : QObject(parent)
+    : MediaController(parent)
 {
 }
 

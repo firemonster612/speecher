@@ -1,7 +1,8 @@
 #pragma once
 
+#include <memory>
+
 #include <QObject>
-#include <QTimer>
 
 #include "app/SingleInstanceIpc.h"
 
@@ -9,30 +10,28 @@ class QLocalSocket;
 
 namespace speecher {
 
-class AudioCapture;
-class ClaudeVoiceClient;
+class DictationSession;
 class MainWindow;
-class MediaPauseController;
-class OpenAiRefiner;
+class PlatformIntegration;
+class ProviderRegistry;
 class SecretStore;
 class SettingsStore;
-class TextDelivery;
-class TranscriptState;
 class TranscriberPopup;
 
 class ApplicationController : public QObject {
     Q_OBJECT
 
 public:
-    enum class State { Idle, Starting, Listening, Stopping, Refining, Delivering, Error };
-    Q_ENUM(State)
-
     explicit ApplicationController(bool popupOnly, QObject *parent = nullptr);
 
     SettingsStore *settings() const;
     SecretStore *secretStore() const;
+    ProviderRegistry *providerRegistry() const;
+    const PlatformIntegration *platform() const;
     QString stateName() const;
     IpcResponse response(bool ok = true, const QString &message = {}) const;
+    QString outputSummary() const;
+    QString primaryOutputStatus() const;
 
     void showMainWindow();
     bool startIpc(QString *error = nullptr);
@@ -49,28 +48,18 @@ signals:
     void previewChanged(const QString &preview);
 
 private:
-    void setState(State state, const QString &message = {});
-    void beginRefinement(quint64 generation);
-    void deliverFinal(const QString &text);
-    void resumePausedMedia();
-    QUrl claudeVoiceUrl() const;
+    void registerProviders();
+    void wireSessionToPopup();
 
     bool m_popupOnly = false;
-    State m_state = State::Idle;
-    QString m_lastMessage;
+    std::shared_ptr<const PlatformIntegration> m_platform;
     SettingsStore *m_settings = nullptr;
     SecretStore *m_secrets = nullptr;
-    TranscriptState *m_transcript = nullptr;
-    AudioCapture *m_audio = nullptr;
-    MediaPauseController *m_mediaPause = nullptr;
-    ClaudeVoiceClient *m_claude = nullptr;
-    OpenAiRefiner *m_refiner = nullptr;
-    TextDelivery *m_delivery = nullptr;
+    ProviderRegistry *m_providers = nullptr;
+    DictationSession *m_session = nullptr;
     TranscriberPopup *m_popup = nullptr;
     MainWindow *m_mainWindow = nullptr;
     SingleInstanceIpc *m_ipc = nullptr;
-    QString m_refinedText;
-    quint64 m_generation = 0;
 };
 
 } // namespace speecher

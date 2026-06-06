@@ -1,18 +1,19 @@
 #pragma once
 
-#include <QObject>
 #include <QStringList>
+
+#include "dictation/DictationInterfaces.h"
 
 namespace speecher {
 
-class MediaPauseController : public QObject {
+class MediaPauseController : public MediaController {
     Q_OBJECT
 
 public:
     explicit MediaPauseController(QObject *parent = nullptr);
 
-    void pausePlaying();
-    void resumePaused();
+    void pausePlaying() override;
+    void resumePaused() override;
 
 private:
     QStringList playingPlayers() const;

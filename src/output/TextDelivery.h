@@ -1,21 +1,15 @@
 #pragma once
 
-#include <QObject>
-#include <QString>
+#include "dictation/DictationInterfaces.h"
 
 namespace speecher {
 
-struct DeliveryResult {
-    bool ok = false;
-    bool copied = false;
-    QString message;
-};
-
-class TextDelivery : public QObject {
+class TextDelivery : public TextDeliveryAdapter {
     Q_OBJECT
 
 public:
     explicit TextDelivery(QObject *parent = nullptr);
+    DeliveryResult deliver(const OutputSettings &settings, const QString &text) override;
     DeliveryResult deliver(const QString &command, const QString &text, bool allowClipboardFallback);
 };
 

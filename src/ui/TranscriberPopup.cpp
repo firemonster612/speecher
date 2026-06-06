@@ -1,7 +1,7 @@
 #include "ui/TranscriberPopup.h"
 
+#include "platform/PlatformIntegration.h"
 #include "ui/WaveformWidget.h"
-#include "ui/WaylandLayerShell.h"
 
 #include <QFrame>
 #include <QHBoxLayout>
@@ -16,17 +16,20 @@
 
 namespace speecher {
 
-TranscriberPopup::TranscriberPopup(QWidget *parent)
+TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     : QWidget(parent)
     , m_previewPill(new QFrame(this))
     , m_preview(new QLabel(this))
     , m_waveform(new WaveformWidget(this))
-    , m_layer(new WaylandLayerShell(this))
+    , m_positioner(positioner ? positioner : PlatformFactory::create()->createPopupPositioner(this))
 {
+    if (m_positioner->parent() != this) {
+        m_positioner->setParent(this);
+    }
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_NoSystemBackground);
     setAutoFillBackground(false);
-    m_layer->configurePopup(this);
+    m_positioner->configurePopup(this);
     setObjectName(QStringLiteral("transcriberPopup"));
     applyTheme();
 
@@ -142,7 +145,7 @@ void TranscriberPopup::showMessage(const QString &message)
 
 void TranscriberPopup::showPopup()
 {
-    m_layer->positionBottomCenter(this);
+    m_positioner->positionBottomCenter(this);
     updateWindowMask();
     show();
     raise();

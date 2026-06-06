@@ -4,8 +4,8 @@
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/VocabularyLimit.h"
-#include "output/WtypeDelivery.h"
 #include "providers/OpenAiAuthProvider.h"
+#include "providers/ProviderRegistry.h"
 #include "ui/Theme.h"
 
 #include <QAbstractItemView>
@@ -195,7 +195,9 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_theme->addItem(QStringLiteral("Light"), QStringLiteral("light"));
     m_theme->addItem(QStringLiteral("Dark"), QStringLiteral("dark"));
     m_pauseMedia->setText(QStringLiteral("Pause"));
-    m_provider->addItem(QStringLiteral("OpenAI"), QStringLiteral("openai"));
+    for (const ProviderDescriptor &provider : m_controller->providerRegistry()->refinementProviders()) {
+        m_provider->addItem(provider.label, provider.id);
+    }
     m_provider->addItem(QStringLiteral("None"), QStringLiteral("none"));
     m_refinementStyle->addItem(QStringLiteral("Strong polish"), QStringLiteral("strong_polish"));
     m_refinementStyle->addItem(QStringLiteral("Balanced"), QStringLiteral("balanced"));
@@ -258,8 +260,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *openAiLayout = qobject_cast<QVBoxLayout *>(openAiCard->layout());
 
     auto *model = new QLabel(QStringLiteral("gpt-5.4-mini"), this);
-    auto *output = new QLabel(QStringLiteral("wtype, wl-copy, Qt clipboard"), this);
-    auto *wtype = new QLabel(WtypeDelivery::isAvailable(QStringLiteral("wtype")) ? QStringLiteral("available") : QStringLiteral("missing"), this);
+    auto *output = new QLabel(m_controller->outputSummary(), this);
+    auto *primaryOutput = new QLabel(m_controller->primaryOutputStatus(), this);
     m_authStatus->setObjectName(QStringLiteral("statusText"));
     m_authStatus->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_authStatus->setWordWrap(false);
@@ -268,8 +270,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_authStatus->setAutoFillBackground(false);
     model->setObjectName(QStringLiteral("statusText"));
     output->setObjectName(QStringLiteral("statusText"));
-    wtype->setObjectName(QStringLiteral("statusText"));
-    for (QLabel *label : {m_authStatus, model, output, wtype}) {
+    primaryOutput->setObjectName(QStringLiteral("statusText"));
+    for (QLabel *label : {m_authStatus, model, output, primaryOutput}) {
         label->setForegroundRole(QPalette::WindowText);
     }
 
@@ -277,7 +279,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     addRow(generalLayout, makeRow(QStringLiteral("Pause media"), QStringLiteral("Pause currently playing media while transcribing."), m_pauseMedia, generalCard), generalCard);
     addRow(generalLayout, makeRow(QStringLiteral("Preview words"), QStringLiteral("Trailing words shown in the popup."), m_previewWords, generalCard), generalCard);
     addRow(generalLayout, makeRow(QStringLiteral("Output"), QStringLiteral("Delivery method for final text."), output, generalCard), generalCard);
-    addRow(generalLayout, makeRow(QStringLiteral("wtype"), QStringLiteral("Primary Wayland typing command."), wtype, generalCard), generalCard, false);
+    addRow(generalLayout, makeRow(QStringLiteral("Primary output"), QStringLiteral("Current platform typing adapter."), primaryOutput, generalCard), generalCard, false);
 
     addRow(refinementLayout, makeRow(QStringLiteral("Refinement"), QStringLiteral("Clean up dictated text after capture."), m_provider, refinementCard), refinementCard);
     addRow(refinementLayout, makeRow(QStringLiteral("Refinement style"), QStringLiteral("How strongly dictated text is rewritten."), m_refinementStyle, refinementCard), refinementCard);

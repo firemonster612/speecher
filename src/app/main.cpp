@@ -1,17 +1,18 @@
 #include "app/ApplicationController.h"
 #include "app/SingleInstanceIpc.h"
 #include "core/SettingsStore.h"
+#include "platform/PlatformIntegration.h"
 #include "ui/Theme.h"
 
 #include <QApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
-#include <QMutex>
 #include <QProcess>
 #include <QStandardPaths>
 #include <QTextStream>
 #include <QTimer>
+#include <QMutex>
 
 #include <iostream>
 
@@ -57,21 +58,10 @@ static QString installLogHandler()
     return path;
 }
 
-static bool startDetachedToggle()
+static bool startDetachedToggle(const PlatformIntegration *platform)
 {
-    QString program = QCoreApplication::applicationFilePath();
-    const QString appImage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
-    const QString appDir = QString::fromLocal8Bit(qgetenv("APPDIR"));
-    if (!appImage.isEmpty() && !appDir.isEmpty()) {
-        const QString executablePath = QFileInfo(program).canonicalFilePath();
-        const QString appDirPath = QFileInfo(appDir).canonicalFilePath();
-        if (!executablePath.isEmpty()
-            && !appDirPath.isEmpty()
-            && executablePath.startsWith(appDirPath + QDir::separator())) {
-            program = appImage;
-        }
-    }
-    return QProcess::startDetached(program, {QStringLiteral("--daemon"), QStringLiteral("--start-listening")});
+    return QProcess::startDetached(platform->detachedExecutablePath(),
+                                   {QStringLiteral("--daemon"), QStringLiteral("--start-listening")});
 }
 
 int main(int argc, char **argv)
@@ -82,6 +72,7 @@ int main(int argc, char **argv)
     QApplication::setOrganizationName(QStringLiteral("local.speecher"));
     Theme::apply(SettingsStore().theme());
     const QString logPath = installLogHandler();
+    const std::shared_ptr<const PlatformIntegration> platform = PlatformFactory::create();
 
     const QStringList args = app.arguments();
     if (args.contains(QStringLiteral("--version"))) {
@@ -96,11 +87,11 @@ int main(int argc, char **argv)
 
     if (toggleCli) {
         IpcResponse response;
-        if (SingleInstanceIpc::sendCommand(QStringLiteral("toggle"), &response)) {
+        if (SingleInstanceIpc::sendCommand(QStringLiteral("toggle"), &response, 1200, platform)) {
             std::cout << response.state.toStdString() << "\n";
             return response.ok ? 0 : 1;
         }
-        if (!startDetachedToggle()) {
+        if (!startDetachedToggle(platform.get())) {
             std::cerr << "Could not start speecher daemon\n";
             return 1;
         }

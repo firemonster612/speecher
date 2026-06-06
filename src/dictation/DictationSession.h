@@ -1,0 +1,77 @@
+#pragma once
+
+#include "dictation/DictationInterfaces.h"
+#include "dictation/DictationTypes.h"
+
+#include <QMetaObject>
+#include <QVector>
+
+namespace speecher {
+
+class ProviderRegistry;
+class SettingsStore;
+class TranscriptState;
+
+class DictationSession : public QObject {
+    Q_OBJECT
+
+public:
+    DictationSession(SettingsStore *settings,
+                     AudioInput *audio,
+                     MediaController *mediaController,
+                     TextDeliveryAdapter *delivery,
+                     ProviderRegistry *providers,
+                     QObject *parent = nullptr);
+
+    DictationState state() const;
+    QString stateName() const;
+    QString lastMessage() const;
+    SessionResponse response(bool ok = true, const QString &message = {}) const;
+
+public slots:
+    void toggle();
+    void startListening();
+    void stopListening();
+
+signals:
+    void statusChanged(const QString &status);
+    void previewChanged(const QString &transcript);
+    void previewDisplayChanged(const QString &preview);
+    void audioLevelChanged(float level);
+    void popupStatusChanged(const QString &status);
+    void popupShowRequested();
+    void popupHideRequested();
+    void popupHidePreviewRequested();
+    void popupFrozenChanged(bool frozen);
+    void popupRefiningChanged(bool refining);
+    void popupOAuthRefreshRequested();
+    void popupListeningIndicatorRequested();
+    void popupMessageRequested(const QString &message);
+
+private:
+    void setState(DictationState state, const QString &message = {});
+    void beginRefinement(quint64 generation);
+    void deliverFinal(const QString &text);
+    void resumePausedMedia();
+    bool selectSpeechTranscriber(const QString &providerId, QString *error);
+    bool selectTranscriptRefiner(const QString &providerId, QString *error);
+    void connectSpeechTranscriber(SpeechTranscriber *transcriber);
+    void connectTranscriptRefiner(TranscriptRefiner *refiner);
+
+    SettingsStore *m_settings = nullptr;
+    AudioInput *m_audio = nullptr;
+    MediaController *m_mediaController = nullptr;
+    TextDeliveryAdapter *m_delivery = nullptr;
+    ProviderRegistry *m_providers = nullptr;
+    TranscriptState *m_transcript = nullptr;
+    SpeechTranscriber *m_transcriber = nullptr;
+    TranscriptRefiner *m_refiner = nullptr;
+    QVector<QMetaObject::Connection> m_transcriberConnections;
+    QVector<QMetaObject::Connection> m_refinerConnections;
+    DictationState m_state = DictationState::Idle;
+    QString m_lastMessage;
+    QString m_refinedText;
+    quint64 m_generation = 0;
+};
+
+} // namespace speecher
