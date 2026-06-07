@@ -22,7 +22,6 @@ struct SpeechSettings {
 struct RefinementSettings {
     QString providerId = QStringLiteral("openai");
     QString style = QStringLiteral("balanced");
-    QString outputFormat = QStringLiteral("plain_sentences");
     QString openAiModel;
     QString openAiAuthMode = QStringLiteral("auto");
 };

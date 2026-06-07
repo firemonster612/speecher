@@ -14,6 +14,14 @@ OpenAiRefiner::OpenAiRefiner(QObject *parent)
 {
 }
 
+static QStringList taskPreamble()
+{
+    return {
+        QStringLiteral("You are Speecher's transcript refinement engine."),
+        QStringLiteral("You receive raw speech-to-text dictation and optional preferred vocabulary. Your job is to produce the final text the user intended to paste or send. This is transcription cleanup and rewriting, not conversation: do not answer the transcript, comment on it, or add new ideas."),
+    };
+}
+
 static QStringList alwaysRules()
 {
     return {
@@ -33,6 +41,10 @@ static QStringList alwaysRules()
                        "Apply spoken corrections inside the transcript before producing final output, then remove the correction phrases."),
         QStringLiteral("Rule: honor_explicit_formatting.\n"
                        "Honor explicit formatting cues such as \"new paragraph\", \"new line\", \"bullet list\", \"numbered list\", \"heading\", \"quote\", \"colon\", \"period\", and \"comma\" when they are clearly dictation instructions."),
+        QStringLiteral("Rule: spoken_unordered_list_cues.\n"
+                       "Treat list-introducing phrases such as \"the ingredients are\", \"the ingredients needed are\", \"you need\", \"the materials are\", \"the supplies are\", \"the items are\", and \"the options are\" as explicit unordered-list structure when they introduce multiple distinct items. If that list is the main content of the transcript or has four or more items, render it as a short lead-in followed by hyphen bullets. Keep incidental two- or three-item lists inline when they read naturally."),
+        QStringLiteral("Rule: spoken_order_cues.\n"
+                       "Treat spoken ordinal and sequence cues such as \"first\", \"second\", \"third\", \"step one\", \"first step\", \"number three\", and \"fourth step\" as explicit ordered-list structure when they introduce multiple steps or items. For procedures, recipes, instructions, checklists, rankings, or ordered sequences with two or more such cues, render a vertical Markdown numbered list by default. Normalize the spoken cues into `1.`, `2.`, `3.`, etc.; do not leave phrases like \"number three is\" in the final text unless they are part of the user's intended wording."),
         QStringLiteral("Rule: do_not_guess_missing_context.\n"
                        "If the transcript is ambiguous, use the least invasive interpretation. Do not invent missing targets, nouns, recipients, context, or conclusions."),
         QStringLiteral("Rule: preserve_sensitive_literals.\n"
@@ -113,39 +125,51 @@ static QStringList strongRules()
     };
 }
 
-static QStringList plainSentenceRules()
+static QStringList outputStyleRules()
 {
     return {
-        QStringLiteral("Output format: plain_sentences.\n"
-                       "Output format rules do not decide how much the transcript may be transformed. They only decide how permitted structure is rendered."),
-        QStringLiteral("Rule: plain_sentences.\n"
-                       "Render any permitted structure as compact prose. Do not infer Markdown headings, bullets, or vertical numbered lists. Express list-like content as prose using words such as first, second, third, commas, or semicolons. Prefer compact paragraphs. Honor explicit \"new paragraph\" and \"new line\" cues. Do not use Markdown formatting unless the user explicitly dictated literal Markdown."),
+        QStringLiteral("Output style: adaptive_markdown.\n"
+                       "Output style rules do not decide how much the transcript may be transformed. They only decide how permitted structure is rendered."),
+        QStringLiteral("Rule: adaptive_markdown.\n"
+                       "Use Markdown-compatible plain text. Prefer ordinary paragraphs for normal prose. When structure is explicitly dictated or allowed by the selected refinement level, decide whether compact sentence-list prose, hyphen bullets, or numbered lists gives the most useful result. Keep short simple lists inside a sentence with commas or semicolons when that reads naturally. Use hyphen bullets for unordered multi-item lists. Use numbered lists for ordered steps, rankings, or explicitly numbered items. Use short headings only when explicitly dictated or allowed by the selected refinement level. Honor explicit \"new paragraph\", \"new line\", \"bullet list\", \"numbered list\", \"heading\", and literal Markdown cues. Avoid tables unless the user explicitly asks for a table. Do not add decorative formatting, excessive heading levels, bold labels everywhere, fenced wrappers, or Markdown code blocks unless requested. Do not create structure that the selected refinement level would not otherwise allow."),
     };
 }
 
-static QStringList markdownRules()
+static QStringList formattingExamples()
 {
     return {
-        QStringLiteral("Output format: markdown.\n"
-                       "Output format rules do not decide how much the transcript may be transformed. They only decide how permitted structure is rendered."),
-        QStringLiteral("Rule: markdown.\n"
-                       "Render permitted structure using simple Markdown when useful. Use Markdown only for structure that is explicitly dictated or allowed by the selected refinement level. Use short headings, hyphen bullets, numbered lists, and blank lines. Convert clear spoken structure cues into Markdown formatting. Avoid tables unless the user explicitly asks for a table. Do not add decorative formatting, excessive heading levels, bold labels everywhere, fenced wrappers, or Markdown code blocks unless requested. Do not create structure that the selected refinement level would not otherwise allow."),
+        QStringLiteral("Formatting examples for adaptive Markdown.\n"
+                       "Raw transcript: \"The ingredients needed for an apple pie are apples, cinnamon, butter, cardamom, caramel sauce, and salt.\"\n"
+                       "Refined text:\n"
+                       "Ingredients needed for an apple pie:\n"
+                       "- Apples\n"
+                       "- Cinnamon\n"
+                       "- Butter\n"
+                       "- Cardamom\n"
+                       "- Caramel sauce\n"
+                       "- Salt\n\n"
+                       "Raw transcript: \"to make an apple pie, the first step is to gather your ingredients. You need apples, butter, cinnamon, caramel sauce, and pie crust. Then you assemble the ingredients. Then number three is you bake your apple pie for fifty minutes. And then the fourth step is take it out and enjoy.\"\n"
+                       "Refined text:\n"
+                       "1. Gather your ingredients: apples, butter, cinnamon, caramel sauce, and pie crust.\n"
+                       "2. Assemble the ingredients.\n"
+                       "3. Bake the apple pie for 50 minutes.\n"
+                       "4. Take it out and enjoy."),
     };
 }
 
 static QStringList conflictResolutionRules()
 {
     return {
-        QStringLiteral("Output format and refinement overlap.\n"
-                       "Refinement rules decide whether structure may be inferred. Format rules decide how allowed structure is rendered."),
+        QStringLiteral("Output style and refinement overlap.\n"
+                       "Refinement rules decide whether structure may be inferred. Output style rules decide how allowed structure is rendered."),
         QStringLiteral("Rule: always_rules_override.\n"
                        "Always rules override level and format preferences. Meaning preservation, literal technical text, sensitive literals, and explicit user intent are never weakened."),
         QStringLiteral("Rule: explicit_user_instruction_wins.\n"
-                       "Explicit user formatting or correction instructions beat refinement conservatism. If the user says \"make this a bullet list\", even Light may produce a bullet list when Markdown output is selected."),
+                       "Explicit user formatting or correction instructions beat refinement conservatism. If the user says \"make this a bullet list\", even Light may produce a bullet list."),
         QStringLiteral("Rule: level_gates_inferred_structure.\n"
                        "The refinement level decides whether structure can be inferred: Light has no inferred structure; Balanced may infer simple, obvious structure; Strong may infer useful organization."),
-        QStringLiteral("Rule: format_renders_permitted_structure.\n"
-                       "The output format decides how allowed structure appears: Plain sentences uses prose, compact paragraphs, and sentence-style lists; Markdown uses headings, bullets, numbered lists, and blank lines where useful."),
+        QStringLiteral("Rule: style_renders_permitted_structure.\n"
+                       "For allowed structure, choose the rendering that best fits the dictated content: prose for normal text and short simple lists, hyphen bullets for unordered multi-item lists, numbered lists for ordered steps or ranked items, and headings only when useful and permitted."),
         QStringLiteral("Rule: least_transformative_on_conflict.\n"
                        "When there is still conflict or ambiguity, choose the less transformative option unless the user explicitly asked otherwise."),
         QStringLiteral("Rule: technical_literal_priority.\n"
@@ -153,9 +177,10 @@ static QStringList conflictResolutionRules()
     };
 }
 
-QString openAiRefinementInstructions(const QString &style, const QString &format)
+QString openAiRefinementInstructions(const QString &style)
 {
     QStringList parts;
+    parts << taskPreamble();
     parts << alwaysRules();
     parts << lightRules();
 
@@ -166,12 +191,8 @@ QString openAiRefinementInstructions(const QString &style, const QString &format
         parts << strongRules();
     }
 
-    if (format == QStringLiteral("markdown")) {
-        parts << markdownRules();
-    } else {
-        parts << plainSentenceRules();
-    }
-
+    parts << outputStyleRules();
+    parts << formattingExamples();
     parts << conflictResolutionRules();
     return parts.join(QStringLiteral("\n\n"));
 }
@@ -197,14 +218,14 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
                            const QString &accountId,
                            bool chatgptBackend,
                            const QString &model,
-                           const QString &refinementStyle,
-                           const QString &outputFormat)
+                           const QString &refinementStyle)
 {
     Q_UNUSED(chatgptBackend)
     cancel();
     m_accumulated.clear();
     m_buffer.clear();
     m_failed = false;
+    m_completed = false;
 
     QUrl endpoint(endpointBase.isEmpty() ? QStringLiteral("https://api.openai.com/v1") : endpointBase);
     endpoint.setPath(endpoint.path().replace(QRegularExpression(QStringLiteral("/$")), QString()) + QStringLiteral("/responses"));
@@ -225,7 +246,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
     QJsonObject body;
     body.insert(QStringLiteral("model"), model);
     body.insert(QStringLiteral("reasoning"), QJsonObject{{QStringLiteral("effort"), QStringLiteral("none")}});
-    body.insert(QStringLiteral("instructions"), openAiRefinementInstructions(refinementStyle, outputFormat));
+    body.insert(QStringLiteral("instructions"), openAiRefinementInstructions(refinementStyle));
     body.insert(QStringLiteral("stream"), true);
     body.insert(QStringLiteral("store"), false);
     QJsonObject user;
@@ -238,12 +259,16 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
     connect(m_reply, &QNetworkReply::finished, this, [this] {
         const auto reply = m_reply;
         m_reply = nullptr;
-        if (reply->error() != QNetworkReply::NoError && m_accumulated.isEmpty()) {
+        if (m_failed || m_completed) {
+            reply->deleteLater();
+            return;
+        }
+        if (reply->error() != QNetworkReply::NoError) {
             const QByteArray payload = m_buffer + reply->readAll();
             emit failed(QStringLiteral("OpenAI refinement failed: %1")
                             .arg(openAiErrorMessage(payload, reply->errorString())));
         } else if (!m_accumulated.isEmpty()) {
-            emit completed(m_accumulated);
+            completeIfReady();
         } else if (!m_failed) {
             emit failed(QStringLiteral("OpenAI refinement failed: empty response"));
         }
@@ -291,9 +316,18 @@ void OpenAiRefiner::parseSseChunk(const QByteArray &chunk)
             m_accumulated += text;
             emit delta(text);
         } else if (eventName == "response.completed") {
-            emit completed(m_accumulated);
+            completeIfReady();
         }
     }
+}
+
+void OpenAiRefiner::completeIfReady()
+{
+    if (m_completed || m_accumulated.isEmpty()) {
+        return;
+    }
+    m_completed = true;
+    emit completed(m_accumulated);
 }
 
 } // namespace speecher

@@ -161,6 +161,18 @@ static void selectData(QComboBox *combo, const QString &data)
     combo->setCurrentIndex(index >= 0 ? index : 0);
 }
 
+static void selectEditableText(QComboBox *combo, const QString &text)
+{
+    const QString trimmed = text.trimmed();
+    const int index = combo->findText(trimmed);
+    if (index >= 0) {
+        combo->setCurrentIndex(index);
+        return;
+    }
+    combo->addItem(trimmed, trimmed);
+    combo->setCurrentIndex(combo->count() - 1);
+}
+
 static void setComboItemEnabled(QComboBox *combo, int index, bool enabled, const QString &toolTip = QString())
 {
     auto *model = qobject_cast<QStandardItemModel *>(combo->model());
@@ -231,7 +243,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_pauseMedia(new QCheckBox(this))
     , m_provider(new QComboBox(this))
     , m_refinementStyle(new QComboBox(this))
-    , m_outputFormat(new QComboBox(this))
+    , m_openAiModel(new QComboBox(this))
     , m_outputMethod(new QComboBox(this))
     , m_authMode(new QComboBox(this))
     , m_authControl(new QStackedWidget(this))
@@ -256,8 +268,23 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_refinementStyle->addItem(QStringLiteral("Strong polish"), QStringLiteral("strong_polish"));
     m_refinementStyle->addItem(QStringLiteral("Balanced"), QStringLiteral("balanced"));
     m_refinementStyle->addItem(QStringLiteral("Light cleanup"), QStringLiteral("light_cleanup"));
-    m_outputFormat->addItem(QStringLiteral("Plain sentences"), QStringLiteral("plain_sentences"));
-    m_outputFormat->addItem(QStringLiteral("Markdown style"), QStringLiteral("markdown"));
+    for (const QString &model : {
+             QStringLiteral("gpt-5.4-nano"),
+             QStringLiteral("gpt-5.4-mini"),
+             QStringLiteral("gpt-5.4"),
+             QStringLiteral("gpt-5.5"),
+         }) {
+        m_openAiModel->addItem(model, model);
+    }
+    m_openAiModel->setEditable(true);
+    m_openAiModel->setInsertPolicy(QComboBox::NoInsert);
+    m_openAiModel->setMaxVisibleItems(6);
+    m_openAiModel->setMinimumContentsLength(16);
+    m_openAiModel->setToolTip(QStringLiteral("Use gpt-5.4-nano for fastest refinement, or type another model ID."));
+    m_openAiModel->view()->setMouseTracking(true);
+    if (m_openAiModel->lineEdit()) {
+        m_openAiModel->lineEdit()->setClearButtonEnabled(true);
+    }
     m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::Automatic)), QString::fromLatin1(OutputMethod::Automatic));
     m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::Wtype)), QString::fromLatin1(OutputMethod::Wtype));
     m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::Ydotool)), QString::fromLatin1(OutputMethod::Ydotool));
@@ -323,7 +350,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *openAiCard = makeSettingsCard(this);
     auto *openAiLayout = qobject_cast<QVBoxLayout *>(openAiCard->layout());
 
-    auto *model = new QLabel(QStringLiteral("gpt-5.4-mini"), this);
     auto *primaryOutput = new QLabel(m_controller->primaryOutputStatus(), this);
     m_ydotoolSetupButton = new QPushButton(QStringLiteral("Set up"), this);
     m_ydotoolStartButton = new QPushButton(QStringLiteral("Start service"), this);
@@ -339,9 +365,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_authStatus->setMinimumWidth(170);
     m_authStatus->setAttribute(Qt::WA_StyledBackground, false);
     m_authStatus->setAutoFillBackground(false);
-    model->setObjectName(QStringLiteral("statusText"));
     primaryOutput->setObjectName(QStringLiteral("statusText"));
-    for (QLabel *label : {m_authStatus, model, primaryOutput}) {
+    for (QLabel *label : {m_authStatus, primaryOutput}) {
         label->setForegroundRole(QPalette::WindowText);
     }
 
@@ -370,10 +395,9 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
            false);
 
     addRow(refinementLayout, makeRow(QStringLiteral("Refinement"), QStringLiteral("Clean up dictated text after capture."), m_provider, refinementCard), refinementCard);
-    addRow(refinementLayout, makeRow(QStringLiteral("Refinement style"), QStringLiteral("How strongly dictated text is rewritten."), m_refinementStyle, refinementCard), refinementCard);
-    addRow(refinementLayout, makeRow(QStringLiteral("Output format"), QStringLiteral("How lists and structure are formatted."), m_outputFormat, refinementCard), refinementCard, false);
+    addRow(refinementLayout, makeRow(QStringLiteral("Refinement style"), QStringLiteral("How strongly dictated text is rewritten."), m_refinementStyle, refinementCard), refinementCard, false);
 
-    addRow(openAiLayout, makeRow(QStringLiteral("OpenAI model"), QStringLiteral("Model used for refinement."), model, openAiCard), openAiCard);
+    addRow(openAiLayout, makeRow(QStringLiteral("OpenAI model"), QStringLiteral("Model used for refinement."), m_openAiModel, openAiCard), openAiCard);
     addRow(openAiLayout, makeRow(QStringLiteral("OpenAI auth mode"), QStringLiteral("Credential source used for refinement."), m_authMode, openAiCard), openAiCard);
     addRow(openAiLayout, makeRow(QStringLiteral("OpenAI auth"), QStringLiteral("Current credential source or app settings key."), m_authControl, openAiCard), openAiCard, false);
 
@@ -459,7 +483,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(m_pauseMedia, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
     connect(m_provider, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_refinementStyle, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
-    connect(m_outputFormat, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_openAiModel, &QComboBox::currentTextChanged, this, &SettingsDialog::updateButtonState);
     connect(m_outputMethod, &QComboBox::currentIndexChanged, this, [this] {
         if (m_outputMethod->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool)) {
             const YdotoolSetupStatus status = YdotoolSetup::probe(m_controller->settings()->ydotoolEnabled());
@@ -504,7 +528,7 @@ void SettingsDialog::load()
     m_pauseMedia->setChecked(settings->pauseMediaDuringTranscription());
     selectData(m_provider, settings->refinementProvider());
     selectData(m_refinementStyle, settings->refinementStyle());
-    selectData(m_outputFormat, settings->refinementOutputFormat());
+    selectEditableText(m_openAiModel, settings->openAiModel());
     selectData(m_outputMethod, settings->outputMethod());
     selectData(m_authMode, settings->openAiAuthMode());
     m_previewWords->setValue(settings->previewWords());
@@ -524,7 +548,8 @@ void SettingsDialog::save()
     settings->setPauseMediaDuringTranscription(m_pauseMedia->isChecked());
     settings->setRefinementProvider(m_provider->currentData().toString());
     settings->setRefinementStyle(m_refinementStyle->currentData().toString());
-    settings->setRefinementOutputFormat(m_outputFormat->currentData().toString());
+    settings->setOpenAiModel(m_openAiModel->currentText());
+    selectEditableText(m_openAiModel, settings->openAiModel());
     settings->setOutputMethod(m_outputMethod->currentData().toString());
     settings->setOpenAiAuthMode(m_authMode->currentData().toString());
     settings->setPreviewWords(m_previewWords->value());
@@ -551,7 +576,7 @@ bool SettingsDialog::hasChanges() const
         || m_pauseMedia->isChecked() != settings->pauseMediaDuringTranscription()
         || m_provider->currentData().toString() != settings->refinementProvider()
         || m_refinementStyle->currentData().toString() != settings->refinementStyle()
-        || m_outputFormat->currentData().toString() != settings->refinementOutputFormat()
+        || m_openAiModel->currentText().trimmed() != settings->openAiModel()
         || m_outputMethod->currentData().toString() != settings->outputMethod()
         || m_authMode->currentData().toString() != settings->openAiAuthMode()
         || m_previewWords->value() != settings->previewWords()

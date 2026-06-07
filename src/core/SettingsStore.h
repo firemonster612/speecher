@@ -35,10 +35,9 @@ public:
     QString refinementStyle() const;
     void setRefinementStyle(const QString &value);
 
-    QString refinementOutputFormat() const;
-    void setRefinementOutputFormat(const QString &value);
-
     QString openAiModel() const;
+    void setOpenAiModel(const QString &value);
+
     QString openAiAuthMode() const;
     void setOpenAiAuthMode(const QString &value);
 

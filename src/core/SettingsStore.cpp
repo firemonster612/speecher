@@ -106,23 +106,17 @@ void SettingsStore::setRefinementStyle(const QString &value)
     m_settings.setValue(QStringLiteral("refinement/style"), QStringLiteral("balanced"));
 }
 
-QString SettingsStore::refinementOutputFormat() const
-{
-    const QString format = value(QStringLiteral("refinement/outputFormat"), QStringLiteral("plain_sentences")).toString();
-    if (format == QStringLiteral("markdown")) {
-        return format;
-    }
-    return QStringLiteral("plain_sentences");
-}
-
-void SettingsStore::setRefinementOutputFormat(const QString &value)
-{
-    m_settings.setValue(QStringLiteral("refinement/outputFormat"), value == QStringLiteral("markdown") ? value : QStringLiteral("plain_sentences"));
-}
-
 QString SettingsStore::openAiModel() const
 {
-    return value(QStringLiteral("openai/model"), QStringLiteral("gpt-5.4-mini")).toString();
+    const QString model = value(QStringLiteral("openai/model"), QStringLiteral("gpt-5.4-mini")).toString().trimmed();
+    return model.isEmpty() ? QStringLiteral("gpt-5.4-mini") : model;
+}
+
+void SettingsStore::setOpenAiModel(const QString &value)
+{
+    const QString model = value.trimmed();
+    m_settings.setValue(QStringLiteral("openai/model"),
+                        model.isEmpty() ? QStringLiteral("gpt-5.4-mini") : model);
 }
 
 QString SettingsStore::openAiAuthMode() const
@@ -232,7 +226,6 @@ AppSettings SettingsStore::snapshot() const
 
     settings.refinement.providerId = refinementProvider();
     settings.refinement.style = refinementStyle();
-    settings.refinement.outputFormat = refinementOutputFormat();
     settings.refinement.openAiModel = openAiModel();
     settings.refinement.openAiAuthMode = openAiAuthMode();
 

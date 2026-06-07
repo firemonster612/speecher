@@ -6,7 +6,7 @@
 
 namespace speecher {
 
-QString openAiRefinementInstructions(const QString &style, const QString &format);
+QString openAiRefinementInstructions(const QString &style);
 
 class OpenAiRefiner : public QObject {
     Q_OBJECT
@@ -23,8 +23,7 @@ public:
                 const QString &accountId,
                 bool chatgptBackend,
                 const QString &model,
-                const QString &refinementStyle,
-                const QString &outputFormat);
+                const QString &refinementStyle);
     void cancel();
 
 signals:
@@ -34,12 +33,14 @@ signals:
 
 private:
     void parseSseChunk(const QByteArray &chunk);
+    void completeIfReady();
 
     QNetworkAccessManager m_network;
     QNetworkReply *m_reply = nullptr;
     QByteArray m_buffer;
     QString m_accumulated;
     bool m_failed = false;
+    bool m_completed = false;
 };
 
 } // namespace speecher

@@ -134,7 +134,7 @@ The script creates `dist/Speecher-x86_64.AppImage`. It uses CMake install output
 
 ## Refinement
 
-OpenAI refinement can be tuned in Settings. The default is `Balanced` with `Plain sentences` output. Refinement is built from composable rules: always-on preservation rules, cumulative level rules, output-format rules, and conflict-resolution rules.
+OpenAI refinement can be tuned in Settings. The default is `Balanced` with adaptive Markdown-compatible output. Refinement is built from composable rules: always-on preservation rules, cumulative level rules, output-style rules, and conflict-resolution rules.
 
 Settings also includes output controls for choosing how Speecher delivers text, including setup for typing directly into focused text fields.
 
@@ -144,12 +144,13 @@ Refinement styles:
 - `Balanced`: applies always-on, light, and balanced rules. It produces natural dictation that is clean enough to paste anywhere while staying close to what was said; it removes speech artifacts, lightly improves wording, infers simple obvious structure, and handles common corrections.
 - `Strong polish`: applies always-on, light, balanced, and strong rules. It rewrites dictated speech into polished, useful text while preserving meaning; it may infer useful organization, consolidate overlap, repair clear insertions or moves, reduce rambling, and handle broad natural corrections.
 
-Output formats:
+Output style:
 
-- `Plain sentences`: renders permitted structure as compact prose. It avoids Markdown headings, bullets, and vertical numbered lists unless the user explicitly dictated literal Markdown.
-- `Markdown style`: renders permitted structure using simple Markdown when useful. It may use short headings, hyphen bullets, numbered lists, and blank lines, but it does not create structure that the selected refinement level would not otherwise allow.
+- Adaptive Markdown-compatible output renders normal prose as paragraphs, unordered lists as hyphen bullets, and ordered steps or rankings as numbered lists when that structure is explicit or allowed by the selected refinement style.
+- Short simple lists stay inside a sentence when that reads naturally. Standalone ingredients, materials, supplies, items, or options lists prefer a lead-in plus hyphen bullets when the list is the main content or has several items.
+- Spoken ordinal cues such as `first step`, `number three`, and `fourth step` are treated as ordered-list structure for procedures, recipes, checklists, rankings, and other obvious sequences.
 
-Refinement level controls how much the transcript may be transformed. Output format controls how permitted structure is rendered. For example, `Light cleanup` with `Markdown style` still does not infer lists or headings, but it will render an explicitly dictated bullet list as Markdown. `Balanced` with `Markdown style` may infer simple obvious lists. `Strong polish` with `Markdown style` may organize content more aggressively when that makes the result more useful. When rules conflict, Speecher favors always-on preservation rules, explicit user instructions, technical literals, and the least transformative interpretation.
+Refinement level controls how much the transcript may be transformed. Output style controls how permitted structure is rendered. For example, `Light cleanup` still does not infer lists or headings, but it will render explicitly dictated structure clearly. `Balanced` may infer simple obvious lists. `Strong polish` may organize content more aggressively when that makes the result more useful. When rules conflict, Speecher favors always-on preservation rules, explicit user instructions, technical literals, and the least transformative interpretation.
 
 Spoken corrections are applied inside the current capture before delivery. Phrases like `oops remove that`, `scratch that`, `I meant X not Y`, and `replace X with Y` are treated as edits according to the selected refinement style, then removed from the final text.
 

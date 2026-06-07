@@ -42,7 +42,7 @@ private:
     QCheckBox *m_pauseMedia = nullptr;
     QComboBox *m_provider = nullptr;
     QComboBox *m_refinementStyle = nullptr;
-    QComboBox *m_outputFormat = nullptr;
+    QComboBox *m_openAiModel = nullptr;
     QComboBox *m_outputMethod = nullptr;
     QComboBox *m_authMode = nullptr;
     QStackedWidget *m_authControl = nullptr;

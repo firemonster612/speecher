@@ -17,12 +17,19 @@
 #include "output/YdotoolSetup.h"
 
 #include <QDir>
+#include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
+#include <QHostAddress>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
 #include <QSignalSpy>
 #include <QStandardPaths>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTextStream>
 #include <QtTest>
@@ -303,6 +310,42 @@ static void registerFakeRefiner(ProviderRegistry &registry, FakeRefiner **refine
     });
 }
 
+static int httpContentLength(const QByteArray &headers)
+{
+    for (const QByteArray &line : headers.split('\n')) {
+        const QByteArray trimmed = line.trimmed();
+        if (trimmed.toLower().startsWith("content-length:")) {
+            bool ok = false;
+            const int value = trimmed.mid(QByteArrayLiteral("content-length:").size()).trimmed().toInt(&ok);
+            return ok ? value : -1;
+        }
+    }
+    return -1;
+}
+
+static QByteArray readHttpRequest(QTcpSocket *socket, int timeoutMs)
+{
+    QByteArray request;
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < timeoutMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        request += socket->readAll();
+
+        const int headerEnd = request.indexOf("\r\n\r\n");
+        if (headerEnd >= 0) {
+            const int contentLength = httpContentLength(request.left(headerEnd));
+            if (contentLength >= 0 && request.size() >= headerEnd + 4 + contentLength) {
+                return request;
+            }
+        }
+
+        socket->waitForReadyRead(20);
+    }
+    request += socket->readAll();
+    return request;
+}
+
 class CoreTests : public QObject {
     Q_OBJECT
 
@@ -403,7 +446,6 @@ private slots:
         QCOMPARE(settings.customVocabulary(), QStringList());
         QCOMPARE(settings.refinementProvider(), QStringLiteral("openai"));
         QCOMPARE(settings.refinementStyle(), QStringLiteral("balanced"));
-        QCOMPARE(settings.refinementOutputFormat(), QStringLiteral("plain_sentences"));
         QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.4-mini"));
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("auto"));
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
@@ -418,12 +460,10 @@ private slots:
         settings.setRefinementStyle(QStringLiteral("unknown"));
         QCOMPARE(settings.refinementStyle(), QStringLiteral("balanced"));
 
-        settings.setRefinementOutputFormat(QStringLiteral("markdown"));
-        QCOMPARE(settings.refinementOutputFormat(), QStringLiteral("markdown"));
-        settings.setRefinementOutputFormat(QStringLiteral("plain_sentences"));
-        QCOMPARE(settings.refinementOutputFormat(), QStringLiteral("plain_sentences"));
-        settings.setRefinementOutputFormat(QStringLiteral("unknown"));
-        QCOMPARE(settings.refinementOutputFormat(), QStringLiteral("plain_sentences"));
+        settings.setOpenAiModel(QStringLiteral(" gpt-5.4-nano "));
+        QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.4-nano"));
+        settings.setOpenAiModel(QString());
+        QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.4-mini"));
 
         settings.raw().setValue(QStringLiteral("openai/auth/mode"), QStringLiteral("api_key_env"));
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("env"));
@@ -467,7 +507,6 @@ private slots:
         settings.setCustomVocabulary({QStringLiteral("Deepgram Nova 3"), QStringLiteral("Speecher")});
         settings.setRefinementProvider(QStringLiteral("openai"));
         settings.setRefinementStyle(QStringLiteral("strong_polish"));
-        settings.setRefinementOutputFormat(QStringLiteral("markdown"));
         settings.setOpenAiAuthMode(QStringLiteral("env"));
 
         const AppSettings snapshot = settings.snapshot();
@@ -478,7 +517,6 @@ private slots:
         QCOMPARE(snapshot.speech.vocabulary.size(), 2);
         QCOMPARE(snapshot.refinement.providerId, QStringLiteral("openai"));
         QCOMPARE(snapshot.refinement.style, QStringLiteral("strong_polish"));
-        QCOMPARE(snapshot.refinement.outputFormat, QStringLiteral("markdown"));
         QCOMPARE(snapshot.refinement.openAiAuthMode, QStringLiteral("env"));
         QCOMPARE(snapshot.output.method, QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(snapshot.output.typeCommand, QStringLiteral("wtype"));
@@ -726,27 +764,125 @@ private slots:
 
     void refinementInstructionsCompose()
     {
-        const QString lightMarkdown = openAiRefinementInstructions(QStringLiteral("light_cleanup"), QStringLiteral("markdown"));
-        QVERIFY(lightMarkdown.contains(QStringLiteral("Rule: return_only_refined_text.")));
-        QVERIFY(lightMarkdown.contains(QStringLiteral("Rule: no_inferred_structure.")));
-        QVERIFY(lightMarkdown.contains(QStringLiteral("Output format: markdown.")));
-        QVERIFY(lightMarkdown.contains(QStringLiteral("Do not create structure that the selected refinement level would not otherwise allow.")));
-        QVERIFY(lightMarkdown.contains(QStringLiteral("even Light may produce a bullet list when Markdown output is selected")));
-        QVERIFY(!lightMarkdown.contains(QStringLiteral("Rule: infer_simple_structure.")));
-        QVERIFY(!lightMarkdown.contains(QStringLiteral("Rule: useful_organization.")));
+        const QString light = openAiRefinementInstructions(QStringLiteral("light_cleanup"));
+        QVERIFY(light.startsWith(QStringLiteral("You are Speecher's transcript refinement engine.")));
+        QVERIFY(light.contains(QStringLiteral("Your job is to produce the final text the user intended to paste or send.")));
+        QVERIFY(light.contains(QStringLiteral("This is transcription cleanup and rewriting, not conversation")));
+        QVERIFY(light.contains(QStringLiteral("Rule: return_only_refined_text.")));
+        QVERIFY(light.contains(QStringLiteral("Rule: spoken_unordered_list_cues.")));
+        QVERIFY(light.contains(QStringLiteral("render it as a short lead-in followed by hyphen bullets")));
+        QVERIFY(light.contains(QStringLiteral("Rule: spoken_order_cues.")));
+        QVERIFY(light.contains(QStringLiteral("For procedures, recipes, instructions, checklists, rankings, or ordered sequences")));
+        QVERIFY(light.contains(QStringLiteral("render a vertical Markdown numbered list by default")));
+        QVERIFY(light.contains(QStringLiteral("Rule: no_inferred_structure.")));
+        QVERIFY(light.contains(QStringLiteral("Output style: adaptive_markdown.")));
+        QVERIFY(light.contains(QStringLiteral("Keep short simple lists inside a sentence with commas or semicolons")));
+        QVERIFY(light.contains(QStringLiteral("Ingredients needed for an apple pie:\n- Apples\n- Cinnamon")));
+        QVERIFY(light.contains(QStringLiteral("1. Gather your ingredients: apples, butter, cinnamon, caramel sauce, and pie crust.")));
+        QVERIFY(light.contains(QStringLiteral("even Light may produce a bullet list")));
+        QVERIFY(!light.contains(QStringLiteral("Rule: infer_simple_structure.")));
+        QVERIFY(!light.contains(QStringLiteral("Rule: useful_organization.")));
+        QVERIFY(!light.contains(QStringLiteral("plain_sentences")));
 
-        const QString balancedPlain = openAiRefinementInstructions(QStringLiteral("balanced"), QStringLiteral("plain_sentences"));
-        QVERIFY(balancedPlain.contains(QStringLiteral("Rule: no_inferred_structure.")));
-        QVERIFY(balancedPlain.contains(QStringLiteral("Rule: infer_simple_structure.")));
-        QVERIFY(balancedPlain.contains(QStringLiteral("Output format: plain_sentences.")));
-        QVERIFY(balancedPlain.contains(QStringLiteral("Render any permitted structure as compact prose.")));
-        QVERIFY(!balancedPlain.contains(QStringLiteral("Rule: useful_organization.")));
+        const QString balanced = openAiRefinementInstructions(QStringLiteral("balanced"));
+        QVERIFY(balanced.contains(QStringLiteral("Rule: no_inferred_structure.")));
+        QVERIFY(balanced.contains(QStringLiteral("Rule: infer_simple_structure.")));
+        QVERIFY(balanced.contains(QStringLiteral("Rule: adaptive_markdown.")));
+        QVERIFY(balanced.contains(QStringLiteral("Use hyphen bullets for unordered multi-item lists.")));
+        QVERIFY(!balanced.contains(QStringLiteral("Rule: useful_organization.")));
 
-        const QString strongMarkdown = openAiRefinementInstructions(QStringLiteral("strong_polish"), QStringLiteral("markdown"));
-        QVERIFY(strongMarkdown.contains(QStringLiteral("Rule: no_inferred_structure.")));
-        QVERIFY(strongMarkdown.contains(QStringLiteral("Rule: infer_simple_structure.")));
-        QVERIFY(strongMarkdown.contains(QStringLiteral("Rule: useful_organization.")));
-        QVERIFY(strongMarkdown.contains(QStringLiteral("Rule: technical_literal_priority.")));
+        const QString strong = openAiRefinementInstructions(QStringLiteral("strong_polish"));
+        QVERIFY(strong.contains(QStringLiteral("Rule: no_inferred_structure.")));
+        QVERIFY(strong.contains(QStringLiteral("Rule: infer_simple_structure.")));
+        QVERIFY(strong.contains(QStringLiteral("Rule: useful_organization.")));
+        QVERIFY(strong.contains(QStringLiteral("Rule: technical_literal_priority.")));
+    }
+
+    void openAiRefinerSendsAdaptiveInstructions()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        OpenAiRefiner refiner;
+        QSignalSpy completed(&refiner, &OpenAiRefiner::completed);
+        QSignalSpy failed(&refiner, &OpenAiRefiner::failed);
+
+        const QString rawTranscript = QStringLiteral("to make an apple pie, the first step is to gather your ingredients. You need apples, butter, cinnamon, caramel sauce, and pie crust. Then you assemble the ingredients. Then number three is you bake your apple pie for fifty minutes. And then the fourth step is take it out and enjoy.");
+        refiner.refine(rawTranscript,
+                       QStringList{QStringLiteral("Qt"), QStringLiteral("Pie crust")},
+                       QStringLiteral("test-token"),
+                       QStringLiteral("org-id"),
+                       QStringLiteral("project-id"),
+                       QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()),
+                       QStringLiteral("acct-id"),
+                       true,
+                       QStringLiteral("gpt-test"),
+                       QStringLiteral("balanced"));
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(socket);
+
+        const QByteArray request = readHttpRequest(socket, 1000);
+        const int headerEnd = request.indexOf("\r\n\r\n");
+        QVERIFY2(headerEnd >= 0, request.constData());
+        const QByteArray headers = request.left(headerEnd);
+        const int contentLength = httpContentLength(headers);
+        QVERIFY(contentLength > 0);
+        QVERIFY(request.size() >= headerEnd + 4 + contentLength);
+
+        QCOMPARE(headers.left(headers.indexOf('\n')).trimmed(), QByteArrayLiteral("POST /v1/responses HTTP/1.1"));
+        const QByteArray lowerHeaders = headers.toLower();
+        QVERIFY(lowerHeaders.contains(QByteArrayLiteral("authorization: bearer test-token")));
+        QVERIFY(lowerHeaders.contains(QByteArrayLiteral("openai-organization: org-id")));
+        QVERIFY(lowerHeaders.contains(QByteArrayLiteral("openai-project: project-id")));
+        QVERIFY(lowerHeaders.contains(QByteArrayLiteral("chatgpt-account-id: acct-id")));
+
+        QJsonParseError parseError;
+        const QByteArray payload = request.mid(headerEnd + 4, contentLength);
+        const QJsonObject body = QJsonDocument::fromJson(payload, &parseError).object();
+        QCOMPARE(parseError.error, QJsonParseError::NoError);
+        QCOMPARE(body.value(QStringLiteral("model")).toString(), QStringLiteral("gpt-test"));
+        QCOMPARE(body.value(QStringLiteral("stream")).toBool(), true);
+        QCOMPARE(body.value(QStringLiteral("store")).toBool(), false);
+
+        const QString instructions = body.value(QStringLiteral("instructions")).toString();
+        QVERIFY(instructions.contains(QStringLiteral("Rule: spoken_unordered_list_cues.")));
+        QVERIFY(instructions.contains(QStringLiteral("If that list is the main content of the transcript or has four or more items")));
+        QVERIFY(instructions.contains(QStringLiteral("Ingredients needed for an apple pie:\n- Apples\n- Cinnamon")));
+        QVERIFY(instructions.contains(QStringLiteral("Rule: spoken_order_cues.")));
+        QVERIFY(instructions.contains(QStringLiteral("render a vertical Markdown numbered list by default")));
+        QVERIFY(instructions.contains(QStringLiteral("1. Gather your ingredients: apples, butter, cinnamon, caramel sauce, and pie crust.")));
+        QVERIFY(!instructions.contains(QStringLiteral("plain_sentences")));
+
+        const QJsonArray input = body.value(QStringLiteral("input")).toArray();
+        QCOMPARE(input.size(), 1);
+        const QJsonObject user = input.at(0).toObject();
+        QCOMPARE(user.value(QStringLiteral("role")).toString(), QStringLiteral("user"));
+        const QString content = user.value(QStringLiteral("content")).toString();
+        QVERIFY(content.contains(rawTranscript));
+        QVERIFY(content.contains(QStringLiteral("Preferred vocabulary:\nQt, Pie crust")));
+
+        const QByteArray sse = QByteArrayLiteral("event: response.output_text.delta\n"
+                                                 "data: {\"delta\":\"1. Gather\"}\n\n"
+                                                 "event: response.completed\n"
+                                                 "data: {\"type\":\"response.completed\"}\n\n");
+        socket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\n"
+                                        "Content-Type: text/event-stream\r\n"
+                                        "Content-Length: ")
+                      + QByteArray::number(sse.size())
+                      + QByteArrayLiteral("\r\n"
+                                          "Connection: close\r\n"
+                                          "\r\n")
+                      + sse);
+        QVERIFY(socket->waitForBytesWritten(1000));
+        socket->disconnectFromHost();
+
+        QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 1000);
+        QCOMPARE(completed.at(0).at(0).toString(), QStringLiteral("1. Gather"));
+        QTest::qWait(50);
+        QCOMPARE(completed.size(), 1);
+        QCOMPARE(failed.size(), 0);
     }
 
     void vocabularyLimits()
