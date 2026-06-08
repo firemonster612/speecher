@@ -11,9 +11,11 @@ class YdotoolDelivery : public QObject {
 public:
     explicit YdotoolDelivery(QObject *parent = nullptr);
     bool type(const QString &text, QString *error = nullptr);
+    bool pasteFromClipboard(const QString &text, QString *error = nullptr);
     static bool isAvailable();
     static QString socketPath();
     static QStringList commandArguments(const QString &text);
+    static QStringList pasteShortcutArguments();
     static QString withoutTrailingWhitespace(const QString &text);
 };
 

@@ -2,38 +2,37 @@
 
 #include "core/AppSettings.h"
 #include "core/OutputMethod.h"
+#include "output/ClipboardDelivery.h"
 #include "output/QtClipboardDelivery.h"
 #include "output/WlClipboardDelivery.h"
-#include "output/WtypeDelivery.h"
 #include "output/YdotoolDelivery.h"
-
-#include <utility>
 
 namespace speecher {
 
 namespace {
 
-class WtypeBackend final : public DeliveryBackend {
-public:
-    explicit WtypeBackend(QString command)
-        : m_command(std::move(command))
-    {
-    }
-
-    bool deliver(const QString &text, QString *error) override
-    {
-        return WtypeDelivery().deliver(m_command.isEmpty() ? QStringLiteral("wtype") : m_command, text, error);
-    }
-
-private:
-    QString m_command;
-};
-
 class YdotoolBackend final : public DeliveryBackend {
 public:
     bool deliver(const QString &text, QString *error) override
     {
-        return YdotoolDelivery().type(text, error);
+        QString copyError;
+        if (!ClipboardDelivery().copy(text, &copyError)) {
+            if (error) {
+                *error = copyError.isEmpty()
+                    ? QStringLiteral("Could not copy text before ydotool paste")
+                    : QStringLiteral("Could not copy text before ydotool paste: %1").arg(copyError);
+            }
+            return false;
+        }
+
+        QString pasteError;
+        if (!YdotoolDelivery().pasteFromClipboard(text, &pasteError)) {
+            if (error) {
+                *error = pasteError;
+            }
+            return false;
+        }
+        return true;
     }
 };
 
@@ -55,9 +54,7 @@ public:
 
 std::unique_ptr<DeliveryBackend> defaultBackendFactory(const QString &method, const OutputSettings &settings)
 {
-    if (method == QString::fromLatin1(OutputMethod::Wtype)) {
-        return std::make_unique<WtypeBackend>(settings.typeCommand);
-    }
+    Q_UNUSED(settings)
     if (method == QString::fromLatin1(OutputMethod::Ydotool)) {
         return std::make_unique<YdotoolBackend>();
     }
@@ -108,27 +105,16 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings, const QStri
     return {false, false, firstError.isEmpty() ? QStringLiteral("No output method is available") : firstError};
 }
 
-DeliveryResult TextDelivery::deliver(const QString &command, const QString &text, bool allowClipboardFallback)
-{
-    OutputSettings settings;
-    settings.method = allowClipboardFallback ? QString::fromLatin1(OutputMethod::Automatic) : QString::fromLatin1(OutputMethod::Wtype);
-    settings.typeCommand = command;
-    settings.fallbackClipboard = allowClipboardFallback;
-    return deliver(settings, text);
-}
-
 QStringList TextDelivery::orderedMethods(const OutputSettings &settings)
 {
     const QString method = OutputMethod::normalized(settings.method);
     if (method == QString::fromLatin1(OutputMethod::Automatic)) {
-        QStringList methods{QString::fromLatin1(OutputMethod::Wtype)};
+        QStringList methods;
         if (settings.ydotoolEnabled) {
             methods << QString::fromLatin1(OutputMethod::Ydotool);
         }
-        if (settings.fallbackClipboard) {
-            methods << QString::fromLatin1(OutputMethod::WlCopy)
-                    << QString::fromLatin1(OutputMethod::QtClipboard);
-        }
+        methods << QString::fromLatin1(OutputMethod::WlCopy)
+                << QString::fromLatin1(OutputMethod::QtClipboard);
         return methods;
     }
 

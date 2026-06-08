@@ -82,7 +82,6 @@ set(SPEECHER_PLATFORM_SOURCES
   src/output/QtClipboardDelivery.cpp
   src/output/TextDelivery.cpp
   src/output/WlClipboardDelivery.cpp
-  src/output/WtypeDelivery.cpp
   src/output/YdotoolDelivery.cpp
   src/output/YdotoolSetup.cpp
   src/platform/PlatformIntegration.cpp
@@ -97,7 +96,6 @@ set(SPEECHER_PLATFORM_HEADERS
   src/output/QtClipboardDelivery.h
   src/output/TextDelivery.h
   src/output/WlClipboardDelivery.h
-  src/output/WtypeDelivery.h
   src/output/YdotoolDelivery.h
   src/output/YdotoolSetup.h
   src/platform/PlatformIntegration.h

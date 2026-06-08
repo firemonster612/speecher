@@ -3,7 +3,7 @@
 #include "core/AudioCapture.h"
 #include "core/MediaPauseController.h"
 #include "output/TextDelivery.h"
-#include "output/WtypeDelivery.h"
+#include "output/WlClipboardDelivery.h"
 #include "ui/WaylandLayerShell.h"
 
 #include <QCoreApplication>
@@ -73,12 +73,12 @@ public:
 
     QString outputSummary() const override
     {
-        return QStringLiteral("Automatic: wtype, ydotool when enabled, wl-copy, Qt clipboard");
+        return QStringLiteral("Automatic: ydotool paste when enabled, wl-copy, Qt clipboard");
     }
 
     QString primaryOutputStatus() const override
     {
-        return WtypeDelivery::isAvailable(QStringLiteral("wtype")) ? QStringLiteral("available") : QStringLiteral("missing");
+        return WlClipboardDelivery::isAvailable() ? QStringLiteral("wl-copy available") : QStringLiteral("Qt clipboard fallback");
     }
 
     QString ipcListenName() const override

@@ -485,6 +485,8 @@ private slots:
 
         settings.setOutputMethod(QStringLiteral("ydotool"));
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Ydotool));
+        settings.setOutputMethod(QStringLiteral("wtype"));
+        QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
         settings.setOutputMethod(QStringLiteral("unknown"));
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
         settings.setOutputMethod(QStringLiteral("clipboard"));
@@ -519,8 +521,6 @@ private slots:
         QCOMPARE(snapshot.refinement.style, QStringLiteral("strong_polish"));
         QCOMPARE(snapshot.refinement.openAiAuthMode, QStringLiteral("env"));
         QCOMPARE(snapshot.output.method, QString::fromLatin1(OutputMethod::Automatic));
-        QCOMPARE(snapshot.output.typeCommand, QStringLiteral("wtype"));
-        QCOMPARE(snapshot.output.fallbackClipboard, true);
         QCOMPARE(snapshot.output.ydotoolEnabled, false);
     }
 
@@ -551,17 +551,14 @@ private slots:
         OutputSettings settings;
         settings.method = QString::fromLatin1(OutputMethod::Automatic);
         settings.ydotoolEnabled = true;
-        settings.fallbackClipboard = true;
         QCOMPARE(TextDelivery::orderedMethods(settings),
-                 QStringList({QString::fromLatin1(OutputMethod::Wtype),
-                              QString::fromLatin1(OutputMethod::Ydotool),
+                 QStringList({QString::fromLatin1(OutputMethod::Ydotool),
                               QString::fromLatin1(OutputMethod::WlCopy),
                               QString::fromLatin1(OutputMethod::QtClipboard)}));
 
         settings.ydotoolEnabled = false;
         QCOMPARE(TextDelivery::orderedMethods(settings),
-                 QStringList({QString::fromLatin1(OutputMethod::Wtype),
-                              QString::fromLatin1(OutputMethod::WlCopy),
+                 QStringList({QString::fromLatin1(OutputMethod::WlCopy),
                               QString::fromLatin1(OutputMethod::QtClipboard)}));
 
         settings.method = QString::fromLatin1(OutputMethod::Ydotool);
@@ -577,9 +574,9 @@ private slots:
     {
         QList<QString> attempts;
         QHash<QString, bool> results;
-        results.insert(QString::fromLatin1(OutputMethod::Wtype), false);
-        results.insert(QString::fromLatin1(OutputMethod::Ydotool), true);
+        results.insert(QString::fromLatin1(OutputMethod::Ydotool), false);
         results.insert(QString::fromLatin1(OutputMethod::WlCopy), true);
+        results.insert(QString::fromLatin1(OutputMethod::QtClipboard), true);
 
         TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
@@ -590,11 +587,30 @@ private slots:
         settings.ydotoolEnabled = true;
         const DeliveryResult result = delivery.deliver(settings, QStringLiteral("hello"));
         QVERIFY(result.ok);
-        QCOMPARE(result.copied, false);
-        QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::Wtype), QString::fromLatin1(OutputMethod::Ydotool)}));
+        QCOMPARE(result.copied, true);
+        QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::Ydotool), QString::fromLatin1(OutputMethod::WlCopy)}));
     }
 
-    void ydotoolDeliveryUsesSingleFastArgument()
+    void outputExplicitMethodDoesNotFallback()
+    {
+        QList<QString> attempts;
+        QHash<QString, bool> results;
+        results.insert(QString::fromLatin1(OutputMethod::WlCopy), false);
+        results.insert(QString::fromLatin1(OutputMethod::QtClipboard), true);
+
+        TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        });
+
+        OutputSettings settings;
+        settings.method = QString::fromLatin1(OutputMethod::WlCopy);
+        settings.ydotoolEnabled = true;
+        const DeliveryResult result = delivery.deliver(settings, QStringLiteral("hello"));
+        QVERIFY(!result.ok);
+        QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::WlCopy)}));
+    }
+
+    void ydotoolDeliveryBuildsTypeAndPasteCommands()
     {
         const QString text = QStringLiteral("hello\nworld\n \t");
         const QStringList args = YdotoolDelivery::commandArguments(text);
@@ -612,6 +628,16 @@ private slots:
         QVERIFY(std::none_of(args.cbegin(), args.cend(), [](const QString &arg) {
             return arg.startsWith(QStringLiteral("--file="));
         }));
+
+        QCOMPARE(YdotoolDelivery::pasteShortcutArguments(),
+                 QStringList({QStringLiteral("key"),
+                              QStringLiteral("--key-delay=2"),
+                              QStringLiteral("29:1"),
+                              QStringLiteral("42:1"),
+                              QStringLiteral("47:1"),
+                              QStringLiteral("47:0"),
+                              QStringLiteral("42:0"),
+                              QStringLiteral("29:0")}));
     }
 
     void ydotoolStatusEvaluation()
@@ -674,7 +700,6 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
         QCOMPARE(delivery->lastText, QStringLiteral("hello world"));
         QCOMPARE(delivery->lastSettings.method, QString::fromLatin1(OutputMethod::Automatic));
-        QCOMPARE(delivery->lastSettings.typeCommand, QStringLiteral("wtype"));
         QCOMPARE(media->resumeCalls, 1);
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
     }

@@ -28,8 +28,6 @@ struct RefinementSettings {
 
 struct OutputSettings {
     QString method = QStringLiteral("automatic");
-    QString typeCommand;
-    bool fallbackClipboard = true;
     bool ydotoolEnabled = false;
 };
 

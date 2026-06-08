@@ -286,7 +286,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
         m_openAiModel->lineEdit()->setClearButtonEnabled(true);
     }
     m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::Automatic)), QString::fromLatin1(OutputMethod::Automatic));
-    m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::Wtype)), QString::fromLatin1(OutputMethod::Wtype));
     m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::Ydotool)), QString::fromLatin1(OutputMethod::Ydotool));
     m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::WlCopy)), QString::fromLatin1(OutputMethod::WlCopy));
     m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::QtClipboard)), QString::fromLatin1(OutputMethod::QtClipboard));
@@ -373,7 +372,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     addRow(generalLayout, makeRow(QStringLiteral("Theme"), QStringLiteral("App colors."), m_theme, generalCard), generalCard);
     addRow(generalLayout, makeRow(QStringLiteral("Pause media"), QStringLiteral("Pause currently playing media while transcribing."), m_pauseMedia, generalCard), generalCard);
     addRow(generalLayout, makeRow(QStringLiteral("Preview words"), QStringLiteral("Trailing words shown in the popup."), m_previewWords, generalCard), generalCard);
-    addRow(generalLayout, makeRow(QStringLiteral("Primary output"), QStringLiteral("Current platform typing adapter."), primaryOutput, generalCard), generalCard, false);
+    addRow(generalLayout, makeRow(QStringLiteral("Clipboard output"), QStringLiteral("Current platform clipboard path."), primaryOutput, generalCard), generalCard, false);
 
     addRow(outputLayout,
            makeRow(QStringLiteral("Method"),
@@ -642,8 +641,8 @@ void SettingsDialog::refreshOutputControls()
         selectData(m_outputMethod, QString::fromLatin1(OutputMethod::Automatic));
     }
     m_outputMethod->setToolTip(ydotoolEnabled
-                                   ? QStringLiteral("Automatic tries wtype, ydotool, wl-copy, then Qt clipboard.")
-                                   : QStringLiteral("Type with ydotool is visible but disabled until virtual keyboard setup passes."));
+                                   ? QStringLiteral("Automatic tries ydotool paste, wl-copy, then Qt clipboard.")
+                                   : QStringLiteral("Type with ydotool paste is disabled until virtual keyboard setup passes."));
     m_ydotoolStatus->setText(status.label + QStringLiteral(". ") + status.detail);
     updateYdotoolButtons();
 }

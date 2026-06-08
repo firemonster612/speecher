@@ -21,6 +21,7 @@ namespace {
 constexpr qint64 duplicateWindowMs = 2500;
 constexpr int keyDelayMs = 1;
 constexpr int keyHoldMs = 2;
+constexpr int shortcutKeyDelayMs = 2;
 
 QString runtimeDirectory()
 {
@@ -114,13 +115,15 @@ bool runYdotool(const QString &executable,
     return false;
 }
 
-bool releaseShiftKeys(const QString &executable, const QProcessEnvironment &env)
+bool releaseModifierKeys(const QString &executable, const QProcessEnvironment &env)
 {
     QString ignored;
     return runYdotool(executable,
                       env,
                       {QStringLiteral("key"),
-                       QStringLiteral("--key-delay=2"),
+                       QStringLiteral("--key-delay=%1").arg(shortcutKeyDelayMs),
+                       QStringLiteral("29:0"),
+                       QStringLiteral("97:0"),
                        QStringLiteral("42:0"),
                        QStringLiteral("54:0")},
                       3000,
@@ -158,6 +161,20 @@ QStringList YdotoolDelivery::commandArguments(const QString &text)
     };
 }
 
+QStringList YdotoolDelivery::pasteShortcutArguments()
+{
+    return {
+        QStringLiteral("key"),
+        QStringLiteral("--key-delay=%1").arg(shortcutKeyDelayMs),
+        QStringLiteral("29:1"),
+        QStringLiteral("42:1"),
+        QStringLiteral("47:1"),
+        QStringLiteral("47:0"),
+        QStringLiteral("42:0"),
+        QStringLiteral("29:0"),
+    };
+}
+
 QString YdotoolDelivery::withoutTrailingWhitespace(const QString &text)
 {
     QString cleaned = text;
@@ -192,12 +209,45 @@ bool YdotoolDelivery::type(const QString &text, QString *error)
         env.insert(QStringLiteral("YDOTOOL_SOCKET"), socket);
     }
 
-    releaseShiftKeys(executable, env);
+    releaseModifierKeys(executable, env);
     if (!runYdotool(executable, env, commandArguments(typedText), 30000, error)) {
-        releaseShiftKeys(executable, env);
+        releaseModifierKeys(executable, env);
         return false;
     }
-    releaseShiftKeys(executable, env);
+    releaseModifierKeys(executable, env);
+    return true;
+}
+
+bool YdotoolDelivery::pasteFromClipboard(const QString &text, QString *error)
+{
+    if (text.isEmpty()) {
+        return true;
+    }
+
+    if (shouldSuppressDuplicateDelivery(text)) {
+        return true;
+    }
+
+    const QString executable = QStandardPaths::findExecutable(QStringLiteral("ydotool"));
+    if (executable.isEmpty()) {
+        if (error) {
+            *error = QStringLiteral("ydotool is not installed");
+        }
+        return false;
+    }
+
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    const QString socket = socketPath();
+    if (!socket.isEmpty()) {
+        env.insert(QStringLiteral("YDOTOOL_SOCKET"), socket);
+    }
+
+    releaseModifierKeys(executable, env);
+    if (!runYdotool(executable, env, pasteShortcutArguments(), 5000, error)) {
+        releaseModifierKeys(executable, env);
+        return false;
+    }
+    releaseModifierKeys(executable, env);
     return true;
 }
 

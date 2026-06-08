@@ -6,7 +6,6 @@ QStringList all()
 {
     return {
         QString::fromLatin1(Automatic),
-        QString::fromLatin1(Wtype),
         QString::fromLatin1(Ydotool),
         QString::fromLatin1(WlCopy),
         QString::fromLatin1(QtClipboard),
@@ -26,17 +25,17 @@ QString normalized(const QString &method)
     if (method == QStringLiteral("qt")) {
         return QString::fromLatin1(QtClipboard);
     }
+    if (method == QStringLiteral("wtype")) {
+        return QString::fromLatin1(Automatic);
+    }
     return isValid(method) ? method : QString::fromLatin1(Automatic);
 }
 
 QString label(const QString &method)
 {
     const QString value = normalized(method);
-    if (value == QString::fromLatin1(Wtype)) {
-        return QStringLiteral("Type with wtype");
-    }
     if (value == QString::fromLatin1(Ydotool)) {
-        return QStringLiteral("Type with ydotool");
+        return QStringLiteral("Type with ydotool paste");
     }
     if (value == QString::fromLatin1(WlCopy)) {
         return QStringLiteral("Copy with wl-copy");

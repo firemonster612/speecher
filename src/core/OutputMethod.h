@@ -6,7 +6,6 @@
 namespace speecher::OutputMethod {
 
 inline constexpr auto Automatic = "automatic";
-inline constexpr auto Wtype = "wtype";
 inline constexpr auto Ydotool = "ydotool";
 inline constexpr auto WlCopy = "wl-copy";
 inline constexpr auto QtClipboard = "qt-clipboard";

@@ -6,7 +6,6 @@ BUILD_DIR="${SPEECHER_BUILD_DIR:-"$ROOT_DIR/build-appimage"}"
 APPDIR_PATH="${SPEECHER_APPDIR:-"$ROOT_DIR/dist/AppDir"}"
 OUTPUT_DIR="${SPEECHER_OUTPUT_DIR:-"$ROOT_DIR/dist"}"
 BUILD_TYPE="${SPEECHER_BUILD_TYPE:-RelWithDebInfo}"
-BUNDLE_WTYPE="${BUNDLE_WTYPE:-1}"
 BUNDLE_WL_CLIPBOARD="${BUNDLE_WL_CLIPBOARD:-1}"
 
 usage() {
@@ -17,7 +16,6 @@ Options:
   --build-dir PATH       CMake build directory. Default: ./build-appimage
   --appdir PATH          AppDir staging directory. Default: ./dist/AppDir
   --output-dir PATH      Output directory. Default: ./dist
-  --no-bundle-wtype      Do not bundle wtype even if available.
   --no-bundle-wl-clipboard
                          Do not bundle wl-copy even if available.
   --help                 Show this help.
@@ -44,10 +42,6 @@ while [[ $# -gt 0 ]]; do
     --output-dir)
       OUTPUT_DIR="$2"
       shift 2
-      ;;
-    --no-bundle-wtype)
-      BUNDLE_WTYPE=0
-      shift
       ;;
     --no-bundle-wl-clipboard)
       BUNDLE_WL_CLIPBOARD=0
@@ -90,10 +84,6 @@ cmake --build "$BUILD_DIR" --parallel
 echo "Installing into AppDir at $APPDIR_PATH"
 DESTDIR="$APPDIR_PATH" cmake --install "$BUILD_DIR" --prefix /usr
 
-if [[ "$BUNDLE_WTYPE" == "1" ]] && command -v wtype >/dev/null 2>&1; then
-  echo "Bundling wtype"
-  install -Dm755 "$(command -v wtype)" "$APPDIR_PATH/usr/bin/wtype"
-fi
 if [[ "$BUNDLE_WL_CLIPBOARD" == "1" ]] && command -v wl-copy >/dev/null 2>&1; then
   echo "Bundling wl-copy"
   install -Dm755 "$(command -v wl-copy)" "$APPDIR_PATH/usr/bin/wl-copy"
@@ -137,7 +127,6 @@ copy_deps_for_elf() {
 copy_deps_closure() {
   local before after
   copy_deps_for_elf "$APPDIR_PATH/usr/bin/speecher"
-  [[ -x "$APPDIR_PATH/usr/bin/wtype" ]] && copy_deps_for_elf "$APPDIR_PATH/usr/bin/wtype"
   [[ -x "$APPDIR_PATH/usr/bin/wl-copy" ]] && copy_deps_for_elf "$APPDIR_PATH/usr/bin/wl-copy"
   while true; do
     before="$(find "$APPDIR_PATH/usr/lib" -type f | wc -l)"

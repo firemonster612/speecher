@@ -23,7 +23,6 @@ public:
     explicit TextDelivery(QObject *parent = nullptr);
     explicit TextDelivery(BackendFactory backendFactory, QObject *parent = nullptr);
     DeliveryResult deliver(const OutputSettings &settings, const QString &text) override;
-    DeliveryResult deliver(const QString &command, const QString &text, bool allowClipboardFallback);
     static QStringList orderedMethods(const OutputSettings &settings);
 
 private:

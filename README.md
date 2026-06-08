@@ -13,13 +13,13 @@ Be signed into Claude Code CLI (required) and Codex CLI (optionaly) if you want 
 
 ```sh
 # Arch
-sudo pacman -S cmake ninja gcc qt6-base qt6-multimedia qt6-websockets qt6-wayland layer-shell-qt qtkeychain-qt6 wtype wl-clipboard
+sudo pacman -S cmake ninja gcc qt6-base qt6-multimedia qt6-websockets qt6-wayland layer-shell-qt qtkeychain-qt6 wl-clipboard
 
 # Debian
-sudo apt install cmake ninja-build g++ qt6-base-dev qt6-multimedia-dev qt6-websockets-dev qt6-wayland liblayershellqtinterface-dev qtkeychain-qt6-dev wtype wl-clipboard
+sudo apt install cmake ninja-build g++ qt6-base-dev qt6-multimedia-dev qt6-websockets-dev qt6-wayland liblayershellqtinterface-dev qtkeychain-qt6-dev wl-clipboard
 
 # Fedora
-sudo dnf install cmake ninja-build gcc-c++ qt6-qtbase-devel qt6-qtmultimedia-devel qt6-qtwebsockets-devel qt6-qtwayland layer-shell-qt-devel qtkeychain-qt6-devel wtype wl-clipboard
+sudo dnf install cmake ninja-build gcc-c++ qt6-qtbase-devel qt6-qtmultimedia-devel qt6-qtwebsockets-devel qt6-qtwayland layer-shell-qt-devel qtkeychain-qt6-devel wl-clipboard
 ```
 
 ### Install
@@ -120,7 +120,7 @@ Build a portable AppImage with:
 packaging/build-appimage.sh
 ```
 
-The script creates `dist/Speecher-x86_64.AppImage`. It uses CMake install output and `appimagetool`. If `wtype` and `wl-copy` are installed on the build machine, they are bundled into the AppImage by default; pass `--no-bundle-wtype` to keep wtype external and `--no-bundle-wl-clipboard` to keep wl-clipboard external.
+The script creates `dist/Speecher-x86_64.AppImage`. It uses CMake install output and `appimagetool`. If `wl-copy` is installed on the build machine, it is bundled into the AppImage by default; pass `--no-bundle-wl-clipboard` to keep wl-clipboard external.
 
 ## Run
 

@@ -148,11 +148,6 @@ void SettingsStore::setOpenAiAuthMode(const QString &value)
     m_settings.setValue(QStringLiteral("openai/auth/mode"), QStringLiteral("auto"));
 }
 
-QString SettingsStore::outputTypeCommand() const
-{
-    return value(QStringLiteral("output/typeCommand"), QStringLiteral("wtype")).toString();
-}
-
 QString SettingsStore::outputMethod() const
 {
     return OutputMethod::normalized(value(QStringLiteral("output/method"), QString::fromLatin1(OutputMethod::Automatic)).toString());
@@ -161,11 +156,6 @@ QString SettingsStore::outputMethod() const
 void SettingsStore::setOutputMethod(const QString &value)
 {
     m_settings.setValue(QStringLiteral("output/method"), OutputMethod::normalized(value));
-}
-
-bool SettingsStore::fallbackClipboard() const
-{
-    return value(QStringLiteral("output/fallbackClipboard"), true).toBool();
 }
 
 bool SettingsStore::ydotoolEnabled() const
@@ -230,8 +220,6 @@ AppSettings SettingsStore::snapshot() const
     settings.refinement.openAiAuthMode = openAiAuthMode();
 
     settings.output.method = outputMethod();
-    settings.output.typeCommand = outputTypeCommand();
-    settings.output.fallbackClipboard = fallbackClipboard();
     settings.output.ydotoolEnabled = ydotoolEnabled();
     return settings;
 }
