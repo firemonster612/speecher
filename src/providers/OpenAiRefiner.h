@@ -16,6 +16,7 @@ public:
 
     void refine(const QString &rawTranscript,
                 const QStringList &vocabulary,
+                const QStringList &bindingVocabulary,
                 const QString &bearerToken,
                 const QString &organization,
                 const QString &project,

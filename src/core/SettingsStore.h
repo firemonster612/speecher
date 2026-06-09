@@ -29,6 +29,9 @@ public:
     QStringList customVocabulary() const;
     void setCustomVocabulary(const QStringList &value);
 
+    QList<BindingRule> bindingRules() const;
+    bool setBindingRules(const QList<BindingRule> &rules, QString *error = nullptr);
+
     QString refinementProvider() const;
     void setRefinementProvider(const QString &value);
 

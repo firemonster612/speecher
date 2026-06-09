@@ -1,12 +1,16 @@
 #pragma once
 
+#include "core/AppSettings.h"
+
 #include <QDialog>
 
 class QComboBox;
 class QCheckBox;
 class QLabel;
 class QLineEdit;
+class QListWidget;
 class QPushButton;
+class QScrollArea;
 class QSpinBox;
 class QStackedWidget;
 class QTableWidget;
@@ -23,10 +27,14 @@ public:
 
 private:
     void load();
-    void save();
+    bool save();
     bool hasChanges() const;
     QStringList currentVocabulary() const;
+    QList<BindingRule> currentBindingRules() const;
     void setVocabularyRows(const QStringList &terms);
+    void setBindingRules(const QList<BindingRule> &rules);
+    void refreshBindingList();
+    void editBinding(int row);
     void updateAuthControl();
     void refreshOutputControls();
     void updateYdotoolButtons();
@@ -56,8 +64,12 @@ private:
     QPushButton *m_ydotoolStartButton = nullptr;
     QPushButton *m_ydotoolDisableButton = nullptr;
     QPushButton *m_ydotoolRemoveButton = nullptr;
+    QPushButton *m_addBindingButton = nullptr;
+    QScrollArea *m_scroll = nullptr;
     QSpinBox *m_previewWords = nullptr;
     QTableWidget *m_vocab = nullptr;
+    QListWidget *m_bindings = nullptr;
+    QList<BindingRule> m_bindingRules;
     bool m_updatingVocabulary = false;
 };
 

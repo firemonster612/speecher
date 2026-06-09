@@ -1,6 +1,7 @@
 #include "ui/SettingsDialog.h"
 
 #include "app/ApplicationController.h"
+#include "core/BindingProcessor.h"
 #include "core/OutputMethod.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
@@ -22,15 +23,21 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
+#include <QListWidgetItem>
 #include <QMessageBox>
+#include <QPainter>
 #include <QPalette>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStandardItemModel>
 #include <QSizePolicy>
 #include <QStackedWidget>
+#include <QStyle>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QTimer>
@@ -40,13 +47,14 @@
 namespace speecher {
 
 static const char *settingsStyle =
-    "QFrame#settingsCard,QFrame#vocabSection{background:palette(base);border:1px solid palette(mid);border-radius:12px;}"
+    "QFrame#settingsCard,QFrame#vocabSection,QFrame#bindingSection{background:palette(base);border:1px solid palette(mid);border-radius:12px;}"
     "QFrame#settingsRow{background:transparent;border:0;}"
     "QWidget#rowText{background:transparent;border:0;}"
-    "QTableWidget#vocabInput{background:palette(base);color:palette(text);border:1px solid palette(mid);border-radius:6px;gridline-color:palette(mid);}"
-    "QTableWidget#vocabInput:focus{border-color:palette(highlight);}"
-    "QFrame#settingsCard QLabel,QFrame#vocabSection QLabel,QLabel#noteText,QLabel#sectionLabel{background:transparent;border:0;}"
+    "QTableWidget#vocabInput,QListWidget#bindingList{background:palette(base);color:palette(text);border:1px solid palette(mid);border-radius:6px;gridline-color:palette(mid);}"
+    "QTableWidget#vocabInput:focus,QListWidget#bindingList:focus{border-color:palette(highlight);}"
+    "QFrame#settingsCard QLabel,QFrame#vocabSection QLabel,QFrame#bindingSection QLabel,QLabel#noteText,QLabel#sectionLabel{background:transparent;border:0;}"
     "QFrame#settingsSeparator{background:palette(mid);border:0;margin:0;}"
+    "QWidget#bindingRow{background:transparent;border:0;}"
     "QLabel#rowTitle{font-weight:600;}"
     "QLabel#rowDescription,QLabel#statusText,QLabel#noteText{font-weight:400;}"
     "QLabel#sectionLabel{font-weight:600;}";
@@ -83,6 +91,31 @@ static QTableWidgetItem *makeVocabularyItem(const QString &text)
     auto *item = new QTableWidgetItem(text);
     item->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEditable | Qt::ItemIsEnabled);
     return item;
+}
+
+class ElidedLabel : public QLabel {
+public:
+    explicit ElidedLabel(QWidget *parent = nullptr)
+        : QLabel(parent)
+    {
+        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setFont(font());
+        painter.setPen(palette().color(foregroundRole()));
+        painter.drawText(rect(), alignment(), fontMetrics().elidedText(text(), Qt::ElideRight, width()));
+    }
+};
+
+static QString bindingPreview(const QString &replacement)
+{
+    QString preview = replacement;
+    preview.replace(QLatin1Char('\n'), QStringLiteral(" / "));
+    return preview.simplified();
 }
 
 static QFrame *makeSeparator(QWidget *parent)
@@ -251,8 +284,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_ydotoolStatus(new QLabel(this))
     , m_vocabLimit(new QLabel(this))
     , m_apiKey(new QLineEdit(this))
+    , m_scroll(new QScrollArea(this))
     , m_previewWords(new QSpinBox(this))
     , m_vocab(new VocabularyTable(this))
+    , m_bindings(new QListWidget(this))
 {
     setWindowTitle(QStringLiteral("Speecher Settings"));
     resize(720, 780);
@@ -317,12 +352,18 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_vocabLimit->setObjectName(QStringLiteral("statusText"));
     m_vocabLimit->setForegroundRole(QPalette::WindowText);
     m_vocabLimit->setAttribute(Qt::WA_StyledBackground, false);
+    m_bindings->setObjectName(QStringLiteral("bindingList"));
+    m_bindings->setUniformItemSizes(false);
+    m_bindings->setAlternatingRowColors(false);
+    m_bindings->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_bindings->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_bindings->setMinimumHeight(180);
 
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(24, 20, 24, 20);
     root->setSpacing(12);
 
-    auto *scroll = new QScrollArea(this);
+    auto *scroll = m_scroll;
     scroll->setObjectName(QStringLiteral("settingsScroll"));
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
@@ -339,6 +380,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *outputSection = makeSectionLabel(QStringLiteral("Output"), this);
     auto *openAiSection = makeSectionLabel(QStringLiteral("OpenAI"), this);
     auto *vocabularySection = makeSectionLabel(QStringLiteral("Vocabulary"), this);
+    auto *bindingsSection = makeSectionLabel(QStringLiteral("Bindings"), this);
 
     auto *generalCard = makeSettingsCard(this);
     auto *generalLayout = qobject_cast<QVBoxLayout *>(generalCard->layout());
@@ -420,6 +462,29 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     vocabLayout->addWidget(m_vocab);
     vocabLayout->addWidget(m_vocabLimit);
 
+    auto *bindingSection = new QFrame(this);
+    bindingSection->setObjectName(QStringLiteral("bindingSection"));
+    auto *bindingLayout = new QVBoxLayout(bindingSection);
+    bindingLayout->setContentsMargins(20, 16, 20, 20);
+    bindingLayout->setSpacing(8);
+    auto *bindingTitle = new QLabel(QStringLiteral("Phrase bindings"), bindingSection);
+    bindingTitle->setObjectName(QStringLiteral("rowTitle"));
+    bindingTitle->setAlignment(Qt::AlignCenter);
+    bindingTitle->setForegroundRole(QPalette::WindowText);
+    bindingTitle->setAttribute(Qt::WA_StyledBackground, false);
+    auto *bindingDescription = new QLabel(QStringLiteral("Bindings replace spoken aliases after capture. Matching ignores case and treats punctuation as spaces; replacements are inserted exactly."), bindingSection);
+    bindingDescription->setObjectName(QStringLiteral("rowDescription"));
+    bindingDescription->setAlignment(Qt::AlignCenter);
+    bindingDescription->setWordWrap(true);
+    bindingDescription->setAttribute(Qt::WA_StyledBackground, false);
+    m_addBindingButton = new QPushButton(QStringLiteral("Add binding"), bindingSection);
+    m_addBindingButton->setIcon(QIcon::fromTheme(QStringLiteral("list-add")));
+    m_addBindingButton->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    bindingLayout->addWidget(bindingTitle);
+    bindingLayout->addWidget(bindingDescription);
+    bindingLayout->addWidget(m_bindings);
+    bindingLayout->addWidget(m_addBindingButton, 0, Qt::AlignRight);
+
     auto *note = new QLabel(QStringLiteral("Automatic OpenAI auth follows the Codex auth mode when available, then falls back to Codex API key, Codex OAuth, OPENAI_API_KEY, and the app settings key. Codex OAuth uses the ChatGPT Codex backend. The app settings key is stored in the desktop keyring through QtKeychain when available."), this);
     note->setObjectName(QStringLiteral("noteText"));
     note->setWordWrap(true);
@@ -436,6 +501,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     content->addWidget(openAiCard);
     content->addWidget(vocabularySection);
     content->addWidget(vocabSection);
+    content->addWidget(bindingsSection);
+    content->addWidget(bindingSection);
     content->addWidget(note);
     scroll->setWidget(scrollContent);
     root->addWidget(scroll, 1);
@@ -449,11 +516,13 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     refinementCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     openAiCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     vocabSection->setStyleSheet(QString::fromLatin1(settingsStyle));
+    bindingSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     generalSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     outputSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     refinementSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     openAiSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     vocabularySection->setStyleSheet(QString::fromLatin1(settingsStyle));
+    bindingsSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     note->setStyleSheet(QString::fromLatin1(settingsStyle));
 
     if (QPushButton *ok = buttons->button(QDialogButtonBox::Ok)) {
@@ -473,10 +542,13 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     }
 
     connect(buttons, &QDialogButtonBox::accepted, this, [this] {
-        save();
-        accept();
+        if (save()) {
+            accept();
+        }
     });
-    connect(m_applyButton, &QPushButton::clicked, this, &SettingsDialog::save);
+    connect(m_applyButton, &QPushButton::clicked, this, [this] {
+        save();
+    });
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(m_theme, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_pauseMedia, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
@@ -517,6 +589,14 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
         updateVocabularyLimit();
         updateButtonState();
     });
+    connect(m_addBindingButton, &QPushButton::clicked, this, [this] {
+        editBinding(-1);
+    });
+    connect(m_bindings, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
+        if (item) {
+            editBinding(item->data(Qt::UserRole).toInt());
+        }
+    });
     load();
 }
 
@@ -533,15 +613,25 @@ void SettingsDialog::load()
     m_previewWords->setValue(settings->previewWords());
     m_apiKey->setText(m_controller->secretStore()->apiKey());
     setVocabularyRows(settings->customVocabulary());
+    setBindingRules(settings->bindingRules());
     updateVocabularyLimit();
     updateAuthControl();
     refreshOutputControls();
     updateButtonState();
 }
 
-void SettingsDialog::save()
+bool SettingsDialog::save()
 {
     SettingsStore *settings = m_controller->settings();
+    const QList<BindingRule> bindingRules = currentBindingRules();
+    const BindingValidationResult bindingValidation = BindingProcessor::validateRules(bindingRules);
+    if (!bindingValidation.ok()) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Bindings not saved"),
+                             bindingValidation.messages().join(QStringLiteral("\n")));
+        return false;
+    }
+
     settings->setTheme(m_theme->currentData().toString());
     Theme::apply(settings->theme());
     settings->setPauseMediaDuringTranscription(m_pauseMedia->isChecked());
@@ -553,19 +643,22 @@ void SettingsDialog::save()
     settings->setOpenAiAuthMode(m_authMode->currentData().toString());
     settings->setPreviewWords(m_previewWords->value());
     settings->setCustomVocabulary(currentVocabulary());
+    settings->setBindingRules(bindingValidation.rules);
     setVocabularyRows(settings->customVocabulary());
+    setBindingRules(settings->bindingRules());
     updateVocabularyLimit();
     if (settings->openAiAuthMode() == QStringLiteral("settings")) {
         if (!m_controller->secretStore()->saveApiKey(m_apiKey->text().trimmed())) {
             QMessageBox::warning(this,
                                  QStringLiteral("OpenAI key not saved"),
                                  m_controller->secretStore()->status());
-            return;
+            return false;
         }
     }
     updateAuthControl();
     refreshOutputControls();
     updateButtonState();
+    return true;
 }
 
 bool SettingsDialog::hasChanges() const
@@ -579,7 +672,8 @@ bool SettingsDialog::hasChanges() const
         || m_outputMethod->currentData().toString() != settings->outputMethod()
         || m_authMode->currentData().toString() != settings->openAiAuthMode()
         || m_previewWords->value() != settings->previewWords()
-        || currentVocabulary() != settings->customVocabulary()) {
+        || currentVocabulary() != settings->customVocabulary()
+        || currentBindingRules() != settings->bindingRules()) {
         return true;
     }
 
@@ -600,6 +694,11 @@ QStringList SettingsDialog::currentVocabulary() const
     return VocabularyLimit::limited(vocabulary);
 }
 
+QList<BindingRule> SettingsDialog::currentBindingRules() const
+{
+    return m_bindingRules;
+}
+
 void SettingsDialog::setVocabularyRows(const QStringList &terms)
 {
     QSignalBlocker blocker(m_vocab);
@@ -613,6 +712,177 @@ void SettingsDialog::setVocabularyRows(const QStringList &terms)
     m_vocab->setCurrentCell(0, 0);
 
     m_updatingVocabulary = false;
+}
+
+void SettingsDialog::setBindingRules(const QList<BindingRule> &rules)
+{
+    m_bindingRules = rules;
+    refreshBindingList();
+}
+
+void SettingsDialog::refreshBindingList()
+{
+    QScrollBar *scrollBar = m_scroll ? m_scroll->verticalScrollBar() : nullptr;
+    const int scrollValue = scrollBar ? scrollBar->value() : 0;
+
+    QSignalBlocker blocker(m_bindings);
+    m_bindings->clear();
+
+    for (int row = 0; row < m_bindingRules.size(); ++row) {
+        const BindingRule rule = m_bindingRules.at(row);
+        auto *item = new QListWidgetItem(m_bindings);
+        item->setData(Qt::UserRole, row);
+        item->setSizeHint(QSize(0, 56));
+
+        auto *rowWidget = new QWidget(m_bindings);
+        rowWidget->setObjectName(QStringLiteral("bindingRow"));
+        auto *layout = new QHBoxLayout(rowWidget);
+        layout->setContentsMargins(10, 6, 8, 6);
+        layout->setSpacing(8);
+
+        auto *phrase = new ElidedLabel(rowWidget);
+        phrase->setText(rule.phrase);
+        phrase->setToolTip(rule.phrase);
+        phrase->setMinimumWidth(120);
+        phrase->setForegroundRole(QPalette::WindowText);
+        QFont phraseFont = phrase->font();
+        phraseFont.setBold(true);
+        phrase->setFont(phraseFont);
+
+        auto *arrow = new QLabel(rowWidget);
+        arrow->setAlignment(Qt::AlignCenter);
+        arrow->setPixmap(style()->standardIcon(QStyle::SP_ArrowRight).pixmap(16, 16));
+        arrow->setFixedWidth(18);
+
+        auto *preview = new ElidedLabel(rowWidget);
+        preview->setText(bindingPreview(rule.replacement));
+        preview->setToolTip(rule.replacement);
+        preview->setForegroundRole(QPalette::WindowText);
+
+        auto *edit = new QPushButton(QStringLiteral("Edit"), rowWidget);
+        edit->setIcon(QIcon::fromTheme(QStringLiteral("document-edit")));
+        edit->setMinimumWidth(edit->fontMetrics().horizontalAdvance(edit->text()) + 32);
+        edit->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+
+        auto *remove = new QPushButton(QStringLiteral("Remove"), rowWidget);
+        remove->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
+        remove->setMinimumWidth(remove->fontMetrics().horizontalAdvance(remove->text()) + 32);
+        remove->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+
+        layout->addWidget(phrase, 1);
+        layout->addWidget(arrow, 0);
+        layout->addWidget(preview, 4);
+        layout->addWidget(edit, 0);
+        layout->addWidget(remove, 0);
+
+        m_bindings->setItemWidget(item, rowWidget);
+
+        connect(edit, &QPushButton::clicked, this, [this, row] {
+            editBinding(row);
+        });
+        connect(remove, &QPushButton::clicked, this, [this, row] {
+            if (row < 0 || row >= m_bindingRules.size()) {
+                return;
+            }
+            m_bindingRules.removeAt(row);
+            refreshBindingList();
+            updateButtonState();
+        });
+    }
+
+    if (scrollBar) {
+        scrollBar->setValue(qMin(scrollValue, scrollBar->maximum()));
+        QTimer::singleShot(0, this, [this, scrollValue] {
+            QScrollBar *delayedScrollBar = m_scroll ? m_scroll->verticalScrollBar() : nullptr;
+            if (delayedScrollBar) {
+                delayedScrollBar->setValue(qMin(scrollValue, delayedScrollBar->maximum()));
+            }
+        });
+    }
+}
+
+void SettingsDialog::editBinding(int row)
+{
+    const bool editing = row >= 0 && row < m_bindingRules.size();
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(editing ? QStringLiteral("Edit binding") : QStringLiteral("Add binding"));
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(18, 18, 18, 14);
+    layout->setSpacing(8);
+
+    auto *phraseLabel = new QLabel(QStringLiteral("Binding"), &dialog);
+    auto *phrase = new QLineEdit(&dialog);
+    phrase->setClearButtonEnabled(true);
+
+    auto *replacementLabel = new QLabel(QStringLiteral("Replacement"), &dialog);
+    auto *replacement = new QPlainTextEdit(&dialog);
+    replacement->setMinimumHeight(240);
+    replacement->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+
+    if (editing) {
+        phrase->setText(m_bindingRules.at(row).phrase);
+        replacement->setPlainText(m_bindingRules.at(row).replacement);
+    }
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    QPushButton *saveButton = buttons->button(QDialogButtonBox::Ok);
+    if (saveButton) {
+        saveButton->setText(QStringLiteral("Save"));
+        saveButton->setIcon(QIcon::fromTheme(QStringLiteral("document-save")));
+    }
+    QPushButton *deleteButton = nullptr;
+    if (editing) {
+        deleteButton = buttons->addButton(QStringLiteral("Delete"), QDialogButtonBox::DestructiveRole);
+        deleteButton->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
+    }
+
+    layout->addWidget(phraseLabel);
+    layout->addWidget(phrase);
+    layout->addSpacing(8);
+    layout->addWidget(replacementLabel);
+    layout->addWidget(replacement, 1);
+    layout->addWidget(buttons);
+
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    if (saveButton) {
+        connect(saveButton, &QPushButton::clicked, &dialog, [this, row, editing, phrase, replacement, &dialog] {
+            QList<BindingRule> candidate = m_bindingRules;
+            const BindingRule updated{phrase->text().trimmed(), replacement->toPlainText()};
+            if (editing) {
+                candidate[row] = updated;
+            } else {
+                candidate.append(updated);
+            }
+
+            const BindingValidationResult validation = BindingProcessor::validateRules(candidate);
+            if (!validation.ok()) {
+                QMessageBox::warning(&dialog,
+                                     QStringLiteral("Binding not saved"),
+                                     validation.messages().join(QStringLiteral("\n")));
+                return;
+            }
+
+            m_bindingRules = validation.rules;
+            refreshBindingList();
+            updateButtonState();
+            dialog.accept();
+        });
+    }
+    if (deleteButton) {
+        connect(deleteButton, &QPushButton::clicked, &dialog, [this, row, &dialog] {
+            if (row >= 0 && row < m_bindingRules.size()) {
+                m_bindingRules.removeAt(row);
+                refreshBindingList();
+                updateButtonState();
+            }
+            dialog.accept();
+        });
+    }
+
+    dialog.resize(560, 430);
+    phrase->setFocus(Qt::OtherFocusReason);
+    dialog.exec();
 }
 
 void SettingsDialog::updateAuthControl()

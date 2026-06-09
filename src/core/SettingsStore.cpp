@@ -1,9 +1,13 @@
 #include "core/SettingsStore.h"
 
+#include "core/BindingProcessor.h"
 #include "core/OutputMethod.h"
 #include "core/VocabularyLimit.h"
 
 #include <QDir>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 namespace speecher {
 
@@ -75,6 +79,50 @@ QStringList SettingsStore::customVocabulary() const
 void SettingsStore::setCustomVocabulary(const QStringList &value)
 {
     m_settings.setValue(QStringLiteral("stt/customVocabulary"), VocabularyLimit::limited(value));
+}
+
+QList<BindingRule> SettingsStore::bindingRules() const
+{
+    const QString stored = value(QStringLiteral("bindings/rules"), QString()).toString();
+    const QJsonDocument document = QJsonDocument::fromJson(stored.toUtf8());
+    if (!document.isArray()) {
+        return {};
+    }
+
+    QList<BindingRule> rules;
+    const QJsonArray array = document.array();
+    rules.reserve(array.size());
+    for (const QJsonValue &value : array) {
+        const QJsonObject object = value.toObject();
+        const QString phrase = object.value(QStringLiteral("phrase")).toString().trimmed();
+        const QString replacement = object.value(QStringLiteral("replacement")).toString();
+        if (!phrase.isEmpty() && !replacement.trimmed().isEmpty()) {
+            rules.append({phrase, replacement});
+        }
+    }
+    return BindingProcessor::validateRules(rules).rules;
+}
+
+bool SettingsStore::setBindingRules(const QList<BindingRule> &rules, QString *error)
+{
+    const BindingValidationResult validated = BindingProcessor::validateRules(rules);
+    if (!validated.ok()) {
+        if (error) {
+            *error = validated.messages().join(QStringLiteral("\n"));
+        }
+        return false;
+    }
+
+    QJsonArray array;
+    for (const BindingRule &rule : validated.rules) {
+        array.append(QJsonObject{
+            {QStringLiteral("phrase"), rule.phrase},
+            {QStringLiteral("replacement"), rule.replacement},
+        });
+    }
+    m_settings.setValue(QStringLiteral("bindings/rules"),
+                        QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Compact)));
+    return true;
 }
 
 QString SettingsStore::refinementProvider() const
@@ -213,6 +261,7 @@ AppSettings SettingsStore::snapshot() const
     settings.speech.claudeCredentialsPath = claudeCredentialsPath();
     settings.speech.claudeEndpointBase = claudeEndpointBase();
     settings.speech.claudeVoicePath = claudeVoicePath();
+    settings.bindings = bindingRules();
 
     settings.refinement.providerId = refinementProvider();
     settings.refinement.style = refinementStyle();

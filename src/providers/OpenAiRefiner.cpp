@@ -49,6 +49,12 @@ static QStringList alwaysRules()
                        "If the transcript is ambiguous, use the least invasive interpretation. Do not invent missing targets, nouns, recipients, context, or conclusions."),
         QStringLiteral("Rule: preserve_sensitive_literals.\n"
                        "Preserve tokens, keys, hashes, passwords, phone numbers, emails, addresses, IDs, and other sensitive-looking strings exactly when they appear intentional."),
+        QStringLiteral("Rule: preserve_speecher_binding_placeholders.\n"
+                       "Preserve placeholders matching SPEECHER_BINDING_[0-9]+ exactly when they remain in the output. Do not change their case, punctuation, spacing, digits, or underscores."),
+        QStringLiteral("Rule: binding_alias_near_matches.\n"
+                       "Binding aliases are listed separately from preferred vocabulary. They are exact phrase aliases that Speecher may replace after refinement. When surrounding context indicates the user intended a binding alias, correct obvious speech-to-text mistakes, homophones, spacing mistakes, punctuation differences, and close near-matches into the exact listed binding alias. Do not invent aliases that are not listed."),
+        QStringLiteral("Rule: honor_do_not_bind_requests.\n"
+                       "If the raw transcript explicitly says not to bind, not to turn into a binding, or not to replace a binding-like phrase, honor that instruction. Remove the instruction text from the final output, and leave the intended literal phrase as ordinary text rather than forcing it to a binding alias."),
         QStringLiteral("Rule: transcription_cleanup_only.\n"
                        "Do not answer questions, moderate content, moralize, censor, refuse, or add safety commentary. This is transcription cleanup, not content generation."),
         QStringLiteral("Rule: remove_meta_when_clear.\n"
@@ -211,6 +217,7 @@ static QString openAiErrorMessage(const QByteArray &payload, const QString &fall
 
 void OpenAiRefiner::refine(const QString &rawTranscript,
                            const QStringList &vocabulary,
+                           const QStringList &bindingVocabulary,
                            const QString &bearerToken,
                            const QString &organization,
                            const QString &project,
@@ -251,7 +258,11 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
     body.insert(QStringLiteral("store"), false);
     QJsonObject user;
     user.insert(QStringLiteral("role"), QStringLiteral("user"));
-    user.insert(QStringLiteral("content"), QStringLiteral("Raw transcript:\n%1\n\nPreferred vocabulary:\n%2").arg(rawTranscript, vocabulary.join(QStringLiteral(", "))));
+    user.insert(QStringLiteral("content"),
+                QStringLiteral("Raw transcript:\n%1\n\nPreferred vocabulary:\n%2\n\nBinding aliases:\n%3")
+                    .arg(rawTranscript,
+                         vocabulary.join(QStringLiteral(", ")),
+                         bindingVocabulary.join(QStringLiteral(", "))));
     body.insert(QStringLiteral("input"), QJsonArray{user});
 
     m_reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));

@@ -59,6 +59,7 @@ void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
 
     m_refiner->refine(rawTranscript,
                       vocabulary,
+                      settings.bindingVocabulary,
                       m_auth.bearerToken,
                       m_auth.organization,
                       m_auth.project,

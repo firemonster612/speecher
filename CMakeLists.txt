@@ -26,6 +26,7 @@ if(SPEECHER_BUILD_TESTS)
 endif()
 
 set(SPEECHER_DOMAIN_SOURCES
+  src/core/BindingProcessor.cpp
   src/core/OutputMethod.cpp
   src/core/SettingsStore.cpp
   src/core/SecretStore.cpp
@@ -38,6 +39,7 @@ set(SPEECHER_DOMAIN_SOURCES
 
 set(SPEECHER_DOMAIN_HEADERS
   src/core/AppSettings.h
+  src/core/BindingProcessor.h
   src/core/OutputMethod.h
   src/core/SettingsStore.h
   src/core/SecretStore.h

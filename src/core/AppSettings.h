@@ -2,8 +2,16 @@
 
 #include <QString>
 #include <QStringList>
+#include <QList>
 
 namespace speecher {
+
+struct BindingRule {
+    QString phrase;
+    QString replacement;
+
+    bool operator==(const BindingRule &other) const = default;
+};
 
 struct UiSettings {
     int previewWords = 8;
@@ -24,6 +32,7 @@ struct RefinementSettings {
     QString style = QStringLiteral("balanced");
     QString openAiModel;
     QString openAiAuthMode = QStringLiteral("auto");
+    QStringList bindingVocabulary;
 };
 
 struct OutputSettings {
@@ -36,6 +45,7 @@ struct AppSettings {
     SpeechSettings speech;
     RefinementSettings refinement;
     OutputSettings output;
+    QList<BindingRule> bindings;
 };
 
 } // namespace speecher

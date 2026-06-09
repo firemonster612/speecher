@@ -8,9 +8,56 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QEventLoop>
+#include <QSet>
 #include <QTimer>
 
 namespace speecher {
+namespace {
+
+QList<BindingRule> withoutNoBindPhrases(const QList<BindingRule> &rules, const QStringList &normalizedNoBindPhrases)
+{
+    if (normalizedNoBindPhrases.isEmpty()) {
+        return rules;
+    }
+
+    QSet<QString> excluded;
+    for (const QString &phrase : normalizedNoBindPhrases) {
+        excluded.insert(phrase);
+    }
+    QList<BindingRule> filtered;
+    for (const BindingRule &rule : rules) {
+        if (!excluded.contains(BindingProcessor::normalizedPhrase(rule.phrase))) {
+            filtered.append(rule);
+        }
+    }
+    return filtered;
+}
+
+RefinementSettings refinementSettingsWithBindingVocabulary(const AppSettings &settings)
+{
+    RefinementSettings refinement = settings.refinement;
+    refinement.bindingVocabulary = BindingProcessor::refinementVocabulary(settings.bindings);
+    return refinement;
+}
+
+QStringList refinementVocabulary(const AppSettings &settings)
+{
+    QStringList vocabulary = settings.speech.vocabulary;
+    QSet<QString> seen;
+    QStringList deduplicated;
+    for (const QString &term : vocabulary) {
+        const QString cleaned = term.simplified();
+        const QString key = cleaned.toCaseFolded();
+        if (!cleaned.isEmpty() && !seen.contains(key)) {
+            seen.insert(key);
+            deduplicated.append(cleaned);
+        }
+    }
+
+    return deduplicated;
+}
+
+} // namespace
 
 DictationSession::DictationSession(SettingsStore *settings,
                                    AudioInput *audio,
@@ -93,6 +140,10 @@ void DictationSession::startListening()
                       << "voiceBase=" + settings.speech.claudeEndpointBase;
     m_transcript->clear();
     m_refinedText.clear();
+    m_bindingResult = {};
+    m_activeBindingRules.clear();
+    m_noBindPhrases.clear();
+    m_allowPostRefinementBindings = true;
     emit previewDisplayChanged({});
     emit popupFrozenChanged(false);
     emit popupRefiningChanged(false);
@@ -186,9 +237,21 @@ void DictationSession::beginRefinement(quint64 generation)
     }
 
     const AppSettings settings = m_settings->snapshot();
+    const bool hasNoBindDirective = BindingProcessor::hasExplicitNoBindDirective(m_transcript->text());
+    m_noBindPhrases = BindingProcessor::explicitNoBindPhrases(m_transcript->text(), settings.bindings);
+    m_allowPostRefinementBindings = !hasNoBindDirective || !m_noBindPhrases.isEmpty();
+    m_activeBindingRules = withoutNoBindPhrases(settings.bindings, m_noBindPhrases);
+    m_bindingResult = BindingProcessor::process(m_transcript->text(), m_activeBindingRules);
     if (settings.refinement.providerId == QStringLiteral("none")) {
-        qInfo() << "refinement disabled delivering raw length=" << m_transcript->text().size();
-        deliverFinal(m_transcript->text());
+        qInfo() << "refinement disabled delivering bound length=" << m_bindingResult.boundText.size()
+                << "bindingCount=" << m_bindingResult.placeholders.size();
+        deliverFinal(m_bindingResult.boundText);
+        return;
+    }
+
+    if (m_bindingResult.canSkipRefinement) {
+        qInfo() << "bindings covered transcript; skipping refinement bindingCount=" << m_bindingResult.placeholders.size();
+        deliverFinal(m_bindingResult.boundText);
         return;
     }
 
@@ -196,7 +259,7 @@ void DictationSession::beginRefinement(quint64 generation)
     if (!selectTranscriptRefiner(settings.refinement.providerId, &providerError)) {
         qWarning().noquote() << "refinement provider unavailable message=" + providerError;
         m_lastMessage = providerError;
-        deliverFinal(m_transcript->text());
+        deliverFinal(m_bindingResult.boundText);
         return;
     }
 
@@ -204,7 +267,7 @@ void DictationSession::beginRefinement(quint64 generation)
     if (!prepared.ok) {
         qWarning().noquote() << "refinement auth unavailable status=" + prepared.message;
         m_lastMessage = prepared.message;
-        deliverFinal(m_transcript->text());
+        deliverFinal(m_bindingResult.boundText);
         return;
     }
 
@@ -212,12 +275,17 @@ void DictationSession::beginRefinement(quint64 generation)
     emit popupRefiningChanged(true);
     emit popupHidePreviewRequested();
     m_refinedText.clear();
+    const RefinementSettings refinement = refinementSettingsWithBindingVocabulary(settings);
+    const QStringList vocabulary = refinementVocabulary(settings);
     qInfo() << "refinement started provider=" << settings.refinement.providerId
             << "rawLength=" << m_transcript->text().size()
-            << "vocabularyCount=" << settings.speech.vocabulary.size();
-    m_refiner->refine(m_transcript->text(),
-                      settings.speech.vocabulary,
-                      settings.refinement);
+            << "placeholderLength=" << m_bindingResult.placeholderText.size()
+            << "bindingCount=" << m_bindingResult.placeholders.size()
+            << "noBindCount=" << m_noBindPhrases.size()
+            << "vocabularyCount=" << vocabulary.size();
+    m_refiner->refine(m_bindingResult.placeholderText,
+                      vocabulary,
+                      refinement);
 }
 
 void DictationSession::deliverFinal(const QString &text)
@@ -325,11 +393,21 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
         }
     });
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::completed, this, [this](const QString &text) {
-        deliverFinal(text.trimmed().isEmpty() ? m_transcript->text() : text.trimmed());
+        const QString refined = text.trimmed();
+        if (refined.isEmpty()) {
+            deliverFinal(m_bindingResult.boundText);
+            return;
+        }
+
+        const QString postBound = m_allowPostRefinementBindings
+            ? BindingProcessor::applyBindingsOutsidePlaceholders(refined, m_activeBindingRules)
+            : refined;
+        const BindingRestoreResult restored = BindingProcessor::restorePlaceholders(postBound, m_bindingResult.placeholders);
+        deliverFinal(restored.ok ? restored.text : m_bindingResult.boundText);
     });
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::failed, this, [this](const QString &message) {
         m_lastMessage = message;
-        deliverFinal(m_transcript->text());
+        deliverFinal(m_bindingResult.boundText);
     });
 }
 

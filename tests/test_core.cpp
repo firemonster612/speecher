@@ -1,5 +1,6 @@
 #include "core/SecretStore.h"
 #include "core/AppSettings.h"
+#include "core/BindingProcessor.h"
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
@@ -209,6 +210,7 @@ public:
         ++refineCalls;
         lastRawTranscript = rawTranscript;
         lastVocabulary = vocabulary;
+        lastBindingVocabulary = settings.bindingVocabulary;
         lastStyle = settings.style;
         if (autoComplete) {
             emit completed(autoCompleteText);
@@ -245,6 +247,7 @@ public:
     int cancelCalls = 0;
     QString lastRawTranscript;
     QStringList lastVocabulary;
+    QStringList lastBindingVocabulary;
     QString lastStyle;
 };
 
@@ -436,6 +439,119 @@ private slots:
         QCOMPARE(state.text(), QStringLiteral("hello world"));
     }
 
+    void bindingNormalizationAndValidation()
+    {
+        QCOMPARE(BindingProcessor::normalizedPhrase(QStringLiteral(" My, EMAIL! C++ repo_path ")),
+                 QStringLiteral("my email c repo path"));
+        QCOMPARE(BindingProcessor::normalizedTokens(QStringLiteral("alpha.beta/gamma")),
+                 QStringList({QStringLiteral("alpha"), QStringLiteral("beta"), QStringLiteral("gamma")}));
+
+        const BindingValidationResult validation = BindingProcessor::validateRules({
+            {QStringLiteral("my,email"), QStringLiteral("one")},
+            {QStringLiteral("MY email"), QStringLiteral("two")},
+            {QStringLiteral("++"), QStringLiteral("symbols only")},
+            {QStringLiteral("empty replacement"), QStringLiteral("   ")},
+        });
+        QVERIFY(!validation.ok());
+        QCOMPARE(validation.issues.size(), 3);
+        QVERIFY(validation.issues.at(0).type == BindingValidationIssue::Type::DuplicatePhrase);
+        QVERIFY(validation.issues.at(1).type == BindingValidationIssue::Type::EmptyPhrase);
+        QVERIFY(validation.issues.at(2).type == BindingValidationIssue::Type::EmptyReplacement);
+        QCOMPARE(validation.rules.size(), 1);
+        QCOMPARE(validation.rules.at(0).phrase, QStringLiteral("my,email"));
+
+        QCOMPARE(BindingProcessor::refinementVocabulary({
+                     {QStringLiteral("my,email"), QStringLiteral("efox@example.com")},
+                     {QStringLiteral("speecher repo"), QStringLiteral("/home/efox/projects/speecher3")},
+                 }),
+                 QStringList({QStringLiteral("my,email"),
+                              QStringLiteral("my email"),
+                              QStringLiteral("speecher repo")}));
+        QCOMPARE(BindingProcessor::explicitNoBindPhrases(
+                     QStringLiteral("please write my email but don't turn that into a binding"),
+                     {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}}),
+                 QStringList({QStringLiteral("my email")}));
+        QCOMPARE(BindingProcessor::explicitNoBindPhrases(
+                     QStringLiteral("please write my email and my phone but don't turn that into a binding"),
+                     {
+                         {QStringLiteral("my email"), QStringLiteral("efox@example.com")},
+                         {QStringLiteral("my phone"), QStringLiteral("+1 555 0100")},
+                     }),
+                 QStringList({QStringLiteral("my phone")}));
+        QVERIFY(BindingProcessor::hasExplicitNoBindDirective(
+            QStringLiteral("please write my evil but don't turn that into a binding")));
+    }
+
+    void bindingProcessorMatchesCasePunctuationAndSkipsCoveredText()
+    {
+        const BindingProcessingResult result = BindingProcessor::process(
+            QStringLiteral("My, email! my phone"),
+            {
+                {QStringLiteral("my email"), QStringLiteral("efox@example.com")},
+                {QStringLiteral("my phone"), QStringLiteral("+1 555 0100")},
+            });
+
+        QCOMPARE(result.boundText, QStringLiteral("efox@example.com! +1 555 0100"));
+        QCOMPARE(result.placeholderText, QStringLiteral("SPEECHER_BINDING_0! SPEECHER_BINDING_1"));
+        QCOMPARE(result.canSkipRefinement, true);
+        QCOMPARE(result.placeholders.size(), 2);
+    }
+
+    void bindingProcessorRejectsGluedWordsAndPrefersLongestMatch()
+    {
+        const BindingProcessingResult result = BindingProcessor::process(
+            QStringLiteral("open main repo and repo mainrepo"),
+            {
+                {QStringLiteral("repo"), QStringLiteral("R")},
+                {QStringLiteral("main repo"), QStringLiteral("M")},
+            });
+
+        QCOMPARE(result.boundText, QStringLiteral("open M and R mainrepo"));
+        QCOMPARE(result.placeholderText, QStringLiteral("open SPEECHER_BINDING_0 and SPEECHER_BINDING_1 mainrepo"));
+        QCOMPARE(result.canSkipRefinement, false);
+    }
+
+    void bindingProcessorRestoresPlaceholdersAndAllowsMissingOnes()
+    {
+        const BindingProcessingResult result = BindingProcessor::process(
+            QStringLiteral("my email and my email"),
+            {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}});
+
+        QCOMPARE(result.boundText, QStringLiteral("efox@example.com and efox@example.com"));
+        QCOMPARE(result.placeholderText, QStringLiteral("SPEECHER_BINDING_0 and SPEECHER_BINDING_1"));
+        QCOMPARE(result.placeholders.size(), 2);
+
+        BindingRestoreResult restored = BindingProcessor::restorePlaceholders(
+            QStringLiteral("Please send SPEECHER_BINDING_0."),
+            result.placeholders);
+        QVERIFY(restored.ok);
+        QCOMPARE(restored.text, QStringLiteral("Please send efox@example.com."));
+
+        restored = BindingProcessor::restorePlaceholders(QStringLiteral("Please send Alex."), result.placeholders);
+        QVERIFY(restored.ok);
+        QCOMPARE(restored.text, QStringLiteral("Please send Alex."));
+
+        restored = BindingProcessor::restorePlaceholders(
+            QStringLiteral("Please send SPEECHER_BINDING_99."),
+            result.placeholders);
+        QVERIFY(!restored.ok);
+
+        restored = BindingProcessor::restorePlaceholders(
+            QStringLiteral("Please send Speecher binding 0."),
+            result.placeholders);
+        QVERIFY(!restored.ok);
+
+        restored = BindingProcessor::restorePlaceholders(
+            QStringLiteral("Please send Speecher binding zero."),
+            result.placeholders);
+        QVERIFY(!restored.ok);
+
+        QCOMPARE(BindingProcessor::applyBindingsOutsidePlaceholders(
+                     QStringLiteral("SPEECHER_BINDING_0 and speecher binding"),
+                     {{QStringLiteral("speecher binding"), QStringLiteral("bound")}}),
+                 QStringLiteral("SPEECHER_BINDING_0 and bound"));
+    }
+
     void settingsDefaults()
     {
         SettingsStore settings;
@@ -444,6 +560,7 @@ private slots:
         QCOMPARE(settings.theme(), QStringLiteral("system"));
         QCOMPARE(settings.pauseMediaDuringTranscription(), true);
         QCOMPARE(settings.customVocabulary(), QStringList());
+        QCOMPARE(settings.bindingRules().size(), 0);
         QCOMPARE(settings.refinementProvider(), QStringLiteral("openai"));
         QCOMPARE(settings.refinementStyle(), QStringLiteral("balanced"));
         QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.4-mini"));
@@ -498,6 +615,38 @@ private slots:
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
     }
 
+    void settingsBindingRulesRoundTrip()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+
+        const QList<BindingRule> rules{
+            {QStringLiteral("my email"), QStringLiteral("efox@example.com")},
+            {QStringLiteral("signature"), QStringLiteral("Line 1\nLine 2")},
+        };
+        QString error;
+        QVERIFY(settings.setBindingRules(rules, &error));
+        QVERIFY(error.isEmpty());
+
+        const QList<BindingRule> loaded = settings.bindingRules();
+        QCOMPARE(loaded.size(), 2);
+        QCOMPARE(loaded.at(0).phrase, QStringLiteral("my email"));
+        QCOMPARE(loaded.at(0).replacement, QStringLiteral("efox@example.com"));
+        QCOMPARE(loaded.at(1).phrase, QStringLiteral("signature"));
+        QCOMPARE(loaded.at(1).replacement, QStringLiteral("Line 1\nLine 2"));
+
+        const AppSettings snapshot = settings.snapshot();
+        QCOMPARE(snapshot.bindings.size(), 2);
+        QCOMPARE(snapshot.bindings.at(1).replacement, QStringLiteral("Line 1\nLine 2"));
+
+        QVERIFY(!settings.setBindingRules({
+            {QStringLiteral("my,email"), QStringLiteral("one")},
+            {QStringLiteral("MY email"), QStringLiteral("two")},
+        }, &error));
+        QVERIFY(error.contains(QStringLiteral("duplicates")));
+        QCOMPARE(settings.bindingRules().size(), 2);
+    }
+
     void settingsSnapshot()
     {
         SettingsStore settings;
@@ -507,6 +656,7 @@ private slots:
         settings.setPauseMediaDuringTranscription(false);
         settings.setSpeechProvider(QStringLiteral("claude"));
         settings.setCustomVocabulary({QStringLiteral("Deepgram Nova 3"), QStringLiteral("Speecher")});
+        QVERIFY(settings.setBindingRules({{QStringLiteral("my email"), QStringLiteral("efox@example.com")}}));
         settings.setRefinementProvider(QStringLiteral("openai"));
         settings.setRefinementStyle(QStringLiteral("strong_polish"));
         settings.setOpenAiAuthMode(QStringLiteral("env"));
@@ -517,6 +667,8 @@ private slots:
         QCOMPARE(snapshot.ui.pauseMediaDuringTranscription, false);
         QCOMPARE(snapshot.speech.providerId, QStringLiteral("claude"));
         QCOMPARE(snapshot.speech.vocabulary.size(), 2);
+        QCOMPARE(snapshot.bindings.size(), 1);
+        QCOMPARE(snapshot.bindings.at(0).replacement, QStringLiteral("efox@example.com"));
         QCOMPARE(snapshot.refinement.providerId, QStringLiteral("openai"));
         QCOMPARE(snapshot.refinement.style, QStringLiteral("strong_polish"));
         QCOMPARE(snapshot.refinement.openAiAuthMode, QStringLiteral("env"));
@@ -736,6 +888,279 @@ private slots:
         QCOMPARE(delivery->lastText, QStringLiteral("Polished text."));
     }
 
+    void dictationSessionAppliesBindingsWhenRefinementDisabled()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        QVERIFY(settings.setBindingRules({{QStringLiteral("my email"), QStringLiteral("efox@example.com")}}));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        speech->emitFinalText(QStringLiteral("My, email!"));
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText, QStringLiteral("efox@example.com!"));
+    }
+
+    void dictationSessionSkipsRefinementWhenBindingsCoverTranscript()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        QVERIFY(settings.setBindingRules({
+            {QStringLiteral("my email"), QStringLiteral("efox@example.com")},
+            {QStringLiteral("my phone"), QStringLiteral("+1 555 0100")},
+        }));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        speech->emitFinalText(QStringLiteral("my email, my phone"));
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText, QStringLiteral("efox@example.com, +1 555 0100"));
+        QCOMPARE(refiner->prepareCalls, 0);
+        QCOMPARE(refiner->refineCalls, 0);
+    }
+
+    void dictationSessionProtectsBindingsDuringRefinement()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.setCustomVocabulary({QStringLiteral("Qt")});
+        QVERIFY(settings.setBindingRules({{QStringLiteral("my email"), QStringLiteral("efox@example.com")}}));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        speech->emitFinalText(QStringLiteral("please send my email to Alex"));
+        refiner->autoComplete = true;
+        refiner->autoCompleteText = QStringLiteral("Please send SPEECHER_BINDING_0 to Alex.");
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
+        QCOMPARE(refiner->lastRawTranscript, QStringLiteral("please send SPEECHER_BINDING_0 to Alex"));
+        QCOMPARE(refiner->lastVocabulary, QStringList({QStringLiteral("Qt")}));
+        QCOMPARE(refiner->lastBindingVocabulary, QStringList({QStringLiteral("my email")}));
+        QVERIFY(!refiner->lastVocabulary.contains(QStringLiteral("efox@example.com")));
+        QVERIFY(!refiner->lastBindingVocabulary.contains(QStringLiteral("efox@example.com")));
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText, QStringLiteral("Please send efox@example.com to Alex."));
+    }
+
+    void dictationSessionAppliesBindingsCorrectedByRefinement()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.setCustomVocabulary({QStringLiteral("Qt")});
+        QVERIFY(settings.setBindingRules({{QStringLiteral("my email"), QStringLiteral("efox@example.com")}}));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        speech->emitFinalText(QStringLiteral("please send my evil to Alex"));
+        refiner->autoComplete = true;
+        refiner->autoCompleteText = QStringLiteral("Please send my email to Alex.");
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
+        QCOMPARE(refiner->lastRawTranscript, QStringLiteral("please send my evil to Alex"));
+        QCOMPARE(refiner->lastVocabulary, QStringList({QStringLiteral("Qt")}));
+        QCOMPARE(refiner->lastBindingVocabulary, QStringList({QStringLiteral("my email")}));
+        QVERIFY(!refiner->lastVocabulary.contains(QStringLiteral("efox@example.com")));
+        QVERIFY(!refiner->lastBindingVocabulary.contains(QStringLiteral("efox@example.com")));
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText, QStringLiteral("Please send efox@example.com to Alex."));
+    }
+
+    void dictationSessionPostRefinementBindingsPreserveExistingPlaceholders()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        QVERIFY(settings.setBindingRules({
+            {QStringLiteral("my email"), QStringLiteral("efox@example.com")},
+            {QStringLiteral("speecher binding"), QStringLiteral("bad replacement")},
+        }));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        speech->emitFinalText(QStringLiteral("please send my email and my evil"));
+        refiner->autoComplete = true;
+        refiner->autoCompleteText = QStringLiteral("Please send SPEECHER_BINDING_0 and my email.");
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
+        QCOMPARE(refiner->lastRawTranscript, QStringLiteral("please send SPEECHER_BINDING_0 and my evil"));
+        QCOMPARE(refiner->lastVocabulary, QStringList());
+        QCOMPARE(refiner->lastBindingVocabulary,
+                 QStringList({QStringLiteral("my email"), QStringLiteral("speecher binding")}));
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText, QStringLiteral("Please send efox@example.com and efox@example.com."));
+    }
+
+    void dictationSessionHonorsDoNotBindRequest()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        QVERIFY(settings.setBindingRules({{QStringLiteral("my email"), QStringLiteral("efox@example.com")}}));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        speech->emitFinalText(QStringLiteral("please write my email but don't turn that into a binding"));
+        refiner->autoComplete = true;
+        refiner->autoCompleteText = QStringLiteral("Please write my email.");
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
+        QCOMPARE(refiner->lastRawTranscript,
+                 QStringLiteral("please write my email but don't turn that into a binding"));
+        QCOMPARE(refiner->lastBindingVocabulary, QStringList({QStringLiteral("my email")}));
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText, QStringLiteral("Please write my email."));
+    }
+
+    void dictationSessionDoesNotPostBindAmbiguousDoNotBindRequest()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        QVERIFY(settings.setBindingRules({{QStringLiteral("my email"), QStringLiteral("efox@example.com")}}));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        speech->emitFinalText(QStringLiteral("please write my evil but don't turn that into a binding"));
+        refiner->autoComplete = true;
+        refiner->autoCompleteText = QStringLiteral("Please write my email.");
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
+        QCOMPARE(refiner->lastRawTranscript,
+                 QStringLiteral("please write my evil but don't turn that into a binding"));
+        QCOMPARE(refiner->lastBindingVocabulary, QStringList({QStringLiteral("my email")}));
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText, QStringLiteral("Please write my email."));
+    }
+
+    void dictationSessionRefinerFailureFallsBackToBoundText()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        QVERIFY(settings.setBindingRules({{QStringLiteral("my email"), QStringLiteral("efox@example.com")}}));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        speech->emitFinalText(QStringLiteral("please send my email"));
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
+        refiner->emitFailure(QStringLiteral("refinement failed"));
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText, QStringLiteral("please send efox@example.com"));
+    }
+
+    void dictationSessionCorruptedPlaceholderFallsBackToBoundText()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        QVERIFY(settings.setBindingRules({{QStringLiteral("my email"), QStringLiteral("efox@example.com")}}));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        speech->emitFinalText(QStringLiteral("please send my email"));
+        refiner->autoComplete = true;
+        refiner->autoCompleteText = QStringLiteral("Please send SPEECHER_BINDING_ZERO.");
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText, QStringLiteral("please send efox@example.com"));
+    }
+
     void dictationSessionFallsBackWhenRefinementUnavailable()
     {
         SettingsStore settings;
@@ -794,6 +1219,12 @@ private slots:
         QVERIFY(light.contains(QStringLiteral("Your job is to produce the final text the user intended to paste or send.")));
         QVERIFY(light.contains(QStringLiteral("This is transcription cleanup and rewriting, not conversation")));
         QVERIFY(light.contains(QStringLiteral("Rule: return_only_refined_text.")));
+        QVERIFY(light.contains(QStringLiteral("Rule: preserve_speecher_binding_placeholders.")));
+        QVERIFY(light.contains(QStringLiteral("SPEECHER_BINDING_[0-9]+")));
+        QVERIFY(light.contains(QStringLiteral("Rule: binding_alias_near_matches.")));
+        QVERIFY(light.contains(QStringLiteral("correct obvious speech-to-text mistakes")));
+        QVERIFY(light.contains(QStringLiteral("Rule: honor_do_not_bind_requests.")));
+        QVERIFY(light.contains(QStringLiteral("Remove the instruction text")));
         QVERIFY(light.contains(QStringLiteral("Rule: spoken_unordered_list_cues.")));
         QVERIFY(light.contains(QStringLiteral("render it as a short lead-in followed by hyphen bullets")));
         QVERIFY(light.contains(QStringLiteral("Rule: spoken_order_cues.")));
@@ -835,6 +1266,7 @@ private slots:
         const QString rawTranscript = QStringLiteral("to make an apple pie, the first step is to gather your ingredients. You need apples, butter, cinnamon, caramel sauce, and pie crust. Then you assemble the ingredients. Then number three is you bake your apple pie for fifty minutes. And then the fourth step is take it out and enjoy.");
         refiner.refine(rawTranscript,
                        QStringList{QStringLiteral("Qt"), QStringLiteral("Pie crust")},
+                       QStringList{QStringLiteral("my email"), QStringLiteral("speecher repo")},
                        QStringLiteral("test-token"),
                        QStringLiteral("org-id"),
                        QStringLiteral("project-id"),
@@ -872,6 +1304,10 @@ private slots:
         QCOMPARE(body.value(QStringLiteral("store")).toBool(), false);
 
         const QString instructions = body.value(QStringLiteral("instructions")).toString();
+        QVERIFY(instructions.contains(QStringLiteral("Rule: preserve_speecher_binding_placeholders.")));
+        QVERIFY(instructions.contains(QStringLiteral("Do not change their case, punctuation, spacing, digits, or underscores.")));
+        QVERIFY(instructions.contains(QStringLiteral("Rule: binding_alias_near_matches.")));
+        QVERIFY(instructions.contains(QStringLiteral("Rule: honor_do_not_bind_requests.")));
         QVERIFY(instructions.contains(QStringLiteral("Rule: spoken_unordered_list_cues.")));
         QVERIFY(instructions.contains(QStringLiteral("If that list is the main content of the transcript or has four or more items")));
         QVERIFY(instructions.contains(QStringLiteral("Ingredients needed for an apple pie:\n- Apples\n- Cinnamon")));
@@ -887,6 +1323,7 @@ private slots:
         const QString content = user.value(QStringLiteral("content")).toString();
         QVERIFY(content.contains(rawTranscript));
         QVERIFY(content.contains(QStringLiteral("Preferred vocabulary:\nQt, Pie crust")));
+        QVERIFY(content.contains(QStringLiteral("Binding aliases:\nmy email, speecher repo")));
 
         const QByteArray sse = QByteArrayLiteral("event: response.output_text.delta\n"
                                                  "data: {\"delta\":\"1. Gather\"}\n\n"
