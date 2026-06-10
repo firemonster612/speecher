@@ -35,7 +35,9 @@ MainWindow::MainWindow(ApplicationController *controller, QWidget *parent)
 
 void MainWindow::setStatusText(const QString &status)
 {
-    m_toggle->setText(status == QStringLiteral("Listening") ? QStringLiteral("Stop") : QStringLiteral("Start"));
+    const QString state = status.toCaseFolded();
+    const bool canStop = state == QStringLiteral("starting") || state == QStringLiteral("listening");
+    m_toggle->setText(canStop ? QStringLiteral("Stop") : QStringLiteral("Start"));
 }
 
 } // namespace speecher

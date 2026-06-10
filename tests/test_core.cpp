@@ -1,3 +1,4 @@
+#include "app/SingleInstanceIpc.h"
 #include "core/SecretStore.h"
 #include "core/AppSettings.h"
 #include "core/BindingProcessor.h"
@@ -16,16 +17,20 @@
 #include "output/TextDelivery.h"
 #include "output/YdotoolDelivery.h"
 #include "output/YdotoolSetup.h"
+#include "platform/PlatformIntegration.h"
 
 #include <QDir>
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
+#include <QFileInfo>
 #include <QHostAddress>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLocalServer>
+#include <QLocalSocket>
 #include <QRegularExpression>
 #include <QSignalSpy>
 #include <QStandardPaths>
@@ -33,6 +38,7 @@
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTextStream>
+#include <QUuid>
 #include <QtTest>
 
 #include <utility>
@@ -301,6 +307,85 @@ private:
     QList<QString> *m_attempts = nullptr;
     QHash<QString, bool> *m_results = nullptr;
 };
+
+class FakePlatformIntegration final : public PlatformIntegration {
+public:
+    FakePlatformIntegration(QString listenName, QStringList candidates = {}, QString detachedPath = {})
+        : m_listenName(std::move(listenName))
+        , m_candidates(candidates.isEmpty() ? QStringList{m_listenName} : std::move(candidates))
+        , m_detachedPath(detachedPath.isEmpty() ? QCoreApplication::applicationFilePath() : std::move(detachedPath))
+    {
+    }
+
+    QString id() const override
+    {
+        return QStringLiteral("test");
+    }
+
+    QString outputSummary() const override
+    {
+        return QStringLiteral("test output");
+    }
+
+    QString primaryOutputStatus() const override
+    {
+        return QStringLiteral("test output ready");
+    }
+
+    QString ipcListenName() const override
+    {
+        return m_listenName;
+    }
+
+    QStringList ipcConnectCandidates() const override
+    {
+        return m_candidates;
+    }
+
+    QString detachedExecutablePath() const override
+    {
+        return m_detachedPath;
+    }
+
+    QList<AudioInputDeviceInfo> availableAudioInputDevices() const override
+    {
+        return {};
+    }
+
+    AudioInput *createAudioInput(SettingsStore *, QObject *) const override
+    {
+        return nullptr;
+    }
+
+    MediaController *createMediaController(QObject *) const override
+    {
+        return nullptr;
+    }
+
+    TextDeliveryAdapter *createTextDelivery(QObject *) const override
+    {
+        return nullptr;
+    }
+
+    PopupPositioner *createPopupPositioner(QObject *) const override
+    {
+        return nullptr;
+    }
+
+private:
+    QString m_listenName;
+    QStringList m_candidates;
+    QString m_detachedPath;
+};
+
+static QString uniqueIpcName(const QString &suffix = {})
+{
+    QString name = QStringLiteral("speecher-test-%1").arg(QUuid::createUuid().toString(QUuid::Id128));
+    if (!suffix.isEmpty()) {
+        name += QStringLiteral("-") + suffix;
+    }
+    return name;
+}
 
 static void registerFakeSpeechProvider(ProviderRegistry &registry, FakeSpeechTranscriber **speech)
 {
@@ -741,6 +826,97 @@ private slots:
         QCOMPARE(registry.refinementProvider(QStringLiteral("openai")), refinementProvider);
         QCOMPARE(speechProvider, speech);
         QCOMPARE(refinementProvider, refiner);
+    }
+
+    void singleInstanceIpcDoesNotStealLiveSocket()
+    {
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        QLocalServer existing;
+        QVERIFY(existing.listen(name));
+
+        const auto platform = std::make_shared<FakePlatformIntegration>(name);
+        SingleInstanceIpc second(platform);
+        QString error;
+        QVERIFY(!second.listen(&error));
+        QVERIFY(error.contains(name));
+
+        QLocalSocket socket;
+        socket.connectToServer(name);
+        QVERIFY(socket.waitForConnected(500));
+
+        existing.close();
+        QLocalServer::removeServer(name);
+    }
+
+    void singleInstanceIpcRefusesActiveLegacyCandidate()
+    {
+        const QString listenName = uniqueIpcName(QStringLiteral("stable"));
+        const QString legacyName = uniqueIpcName(QStringLiteral("legacy"));
+        QLocalServer::removeServer(listenName);
+        QLocalServer::removeServer(legacyName);
+        QLocalServer existing;
+        QVERIFY(existing.listen(legacyName));
+
+        const auto platform = std::make_shared<FakePlatformIntegration>(
+            listenName,
+            QStringList{listenName, legacyName});
+        SingleInstanceIpc second(platform);
+        QString error;
+        QVERIFY(!second.listen(&error));
+        QVERIFY(error.contains(legacyName));
+
+        QLocalSocket socket;
+        socket.connectToServer(legacyName);
+        QVERIFY(socket.waitForConnected(500));
+
+        existing.close();
+        QLocalServer::removeServer(listenName);
+        QLocalServer::removeServer(legacyName);
+    }
+
+    void singleInstanceIpcRemovesStaleSocketFile()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString name = dir.filePath(QStringLiteral("stale.sock"));
+        QFile stale(name);
+        QVERIFY(stale.open(QIODevice::WriteOnly));
+        stale.close();
+        QVERIFY(QFileInfo::exists(name));
+
+        const auto platform = std::make_shared<FakePlatformIntegration>(name);
+        SingleInstanceIpc ipc(platform);
+        QString error;
+        QVERIFY2(ipc.listen(&error), qPrintable(error));
+
+        QLocalSocket socket;
+        socket.connectToServer(name);
+        QVERIFY(socket.waitForConnected(500));
+
+        QLocalServer::removeServer(name);
+    }
+
+    void singleInstanceIpcReportsConnectedServerWithoutResponse()
+    {
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        QLocalServer existing;
+        QVERIFY(existing.listen(name));
+
+        const auto platform = std::make_shared<FakePlatformIntegration>(name);
+        IpcResponse response;
+        QString error;
+        const IpcCommandResult result = SingleInstanceIpc::sendCommandDetailed(QStringLiteral("toggle"),
+                                                                               &response,
+                                                                               75,
+                                                                               platform,
+                                                                               &error);
+        QCOMPARE(result, IpcCommandResult::NoResponse);
+        QVERIFY(error.contains(QStringLiteral("did not respond")));
+
+        existing.close();
+        QLocalServer::removeServer(name);
     }
 
     void outputDeliverySelection()

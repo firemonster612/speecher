@@ -130,7 +130,7 @@ The script creates `dist/Speecher-x86_64.AppImage`. It uses CMake install output
 ./build/speecher --version
 ```
 
-`speecher toggle` contacts the running app through a per-user socket. Native binaries scope the socket to the executable path, so `./build/speecher`, `~/.local/bin/speecher`, and `/usr/local/bin/speecher` do not accidentally control each other. AppImages use one stable AppImage socket, because the internal mounted executable path changes on every launch. If nothing is running for that socket, the command starts a popup-only background process and begins listening.
+`speecher toggle` contacts the running app through a per-user socket. Native binaries use one stable user socket so the desktop app and CLI keybind talk to the same instance after `make install`; the CLI also checks the older executable-path socket for compatibility with already-running older builds. AppImages use one stable AppImage socket, because the internal mounted executable path changes on every launch. If no compatible instance is running, the command starts a popup-only background process and begins listening.
 
 ## Refinement
 

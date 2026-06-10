@@ -90,6 +90,7 @@ void ApplicationController::showMainWindow()
     if (!m_mainWindow) {
         m_mainWindow = new MainWindow(this);
         connect(this, &ApplicationController::statusChanged, m_mainWindow, &MainWindow::setStatusText);
+        m_mainWindow->setStatusText(stateName());
     }
     m_mainWindow->show();
     m_mainWindow->raise();

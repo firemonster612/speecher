@@ -233,7 +233,7 @@ if(SPEECHER_BUILD_TESTS)
   target_include_directories(speecher_tests PRIVATE src)
   target_compile_definitions(speecher_tests PRIVATE SPEECHER_VERSION="${PROJECT_VERSION}")
   target_link_libraries(speecher_tests PRIVATE
-    speecher_domain speecher_workflow speecher_providers speecher_platform Qt6::Test
+    speecher_app_ui Qt6::Test
   )
   add_test(NAME speecher_tests COMMAND speecher_tests)
   set_tests_properties(speecher_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

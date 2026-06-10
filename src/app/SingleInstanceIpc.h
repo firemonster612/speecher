@@ -15,6 +15,13 @@ struct IpcResponse {
     QString message;
 };
 
+enum class IpcCommandResult {
+    Sent,
+    Unavailable,
+    NoResponse,
+    InvalidResponse,
+};
+
 class SingleInstanceIpc : public QObject {
     Q_OBJECT
 
@@ -28,6 +35,11 @@ public:
                             IpcResponse *response,
                             int timeoutMs = 1200,
                             std::shared_ptr<const PlatformIntegration> platform = {});
+    static IpcCommandResult sendCommandDetailed(const QString &command,
+                                                IpcResponse *response,
+                                                int timeoutMs = 1200,
+                                                std::shared_ptr<const PlatformIntegration> platform = {},
+                                                QString *error = nullptr);
 
 signals:
     void commandReceived(const QString &command, QLocalSocket *socket);

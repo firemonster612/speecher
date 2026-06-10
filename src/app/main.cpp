@@ -87,9 +87,19 @@ int main(int argc, char **argv)
 
     if (toggleCli) {
         IpcResponse response;
-        if (SingleInstanceIpc::sendCommand(QStringLiteral("toggle"), &response, 1200, platform)) {
+        QString ipcError;
+        const IpcCommandResult ipcResult = SingleInstanceIpc::sendCommandDetailed(QStringLiteral("toggle"),
+                                                                                  &response,
+                                                                                  1200,
+                                                                                  platform,
+                                                                                  &ipcError);
+        if (ipcResult == IpcCommandResult::Sent) {
             std::cout << response.state.toStdString() << "\n";
             return response.ok ? 0 : 1;
+        }
+        if (ipcResult != IpcCommandResult::Unavailable) {
+            std::cerr << ipcError.toStdString() << "\n";
+            return 1;
         }
         if (!startDetachedToggle(platform.get())) {
             std::cerr << "Could not start speecher daemon\n";
