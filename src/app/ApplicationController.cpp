@@ -27,7 +27,7 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
 {
     registerProviders();
     m_session = new DictationSession(m_settings,
-                                     m_platform->createAudioInput(this),
+                                     m_platform->createAudioInput(m_settings, this),
                                      m_platform->createMediaController(this),
                                      m_platform->createTextDelivery(this),
                                      m_providers,

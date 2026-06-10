@@ -75,6 +75,11 @@ public:
         emit audioChunk(pcm);
     }
 
+    void emitFailure(const QString &message)
+    {
+        emit failed(message);
+    }
+
     bool startResult = true;
     QString startError = QStringLiteral("audio failed");
     bool started = false;
@@ -567,6 +572,13 @@ private slots:
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("auto"));
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(settings.ydotoolEnabled(), false);
+        QCOMPARE(settings.audioInputDeviceId(), QString());
+        QCOMPARE(settings.audioCaptureMode(), QStringLiteral("on_demand"));
+        QCOMPARE(settings.audioVadEnabled(), false);
+        QCOMPARE(settings.audioPreRollMs(), 250);
+        QCOMPARE(settings.audioPostRollMs(), 200);
+        QCOMPARE(settings.audioReadinessTimeoutMs(), 900);
+        QCOMPARE(settings.audioVadThresholdPercent(), 2);
 
         settings.setRefinementStyle(QStringLiteral("strong_polish"));
         QCOMPARE(settings.refinementStyle(), QStringLiteral("strong_polish"));
@@ -613,6 +625,23 @@ private slots:
         settings.setOutputMethod(QString::fromLatin1(OutputMethod::Ydotool));
         settings.setYdotoolEnabled(false);
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
+
+        settings.setAudioCaptureSettings({
+            QStringLiteral(" mic-id "),
+            QStringLiteral("always_open"),
+            true,
+            5000,
+            -20,
+            50,
+            99,
+        });
+        QCOMPARE(settings.audioInputDeviceId(), QStringLiteral("mic-id"));
+        QCOMPARE(settings.audioCaptureMode(), QStringLiteral("warm"));
+        QCOMPARE(settings.audioVadEnabled(), true);
+        QCOMPARE(settings.audioPreRollMs(), 1500);
+        QCOMPARE(settings.audioPostRollMs(), 0);
+        QCOMPARE(settings.audioReadinessTimeoutMs(), 150);
+        QCOMPARE(settings.audioVadThresholdPercent(), 20);
     }
 
     void settingsBindingRulesRoundTrip()
@@ -660,6 +689,15 @@ private slots:
         settings.setRefinementProvider(QStringLiteral("openai"));
         settings.setRefinementStyle(QStringLiteral("strong_polish"));
         settings.setOpenAiAuthMode(QStringLiteral("env"));
+        settings.setAudioCaptureSettings({
+            QStringLiteral("device-1"),
+            QStringLiteral("warm"),
+            true,
+            300,
+            250,
+            700,
+            4,
+        });
 
         const AppSettings snapshot = settings.snapshot();
         QCOMPARE(snapshot.ui.previewWords, 12);
@@ -667,6 +705,13 @@ private slots:
         QCOMPARE(snapshot.ui.pauseMediaDuringTranscription, false);
         QCOMPARE(snapshot.speech.providerId, QStringLiteral("claude"));
         QCOMPARE(snapshot.speech.vocabulary.size(), 2);
+        QCOMPARE(snapshot.audio.deviceId, QStringLiteral("device-1"));
+        QCOMPARE(snapshot.audio.mode, QStringLiteral("warm"));
+        QCOMPARE(snapshot.audio.vadEnabled, true);
+        QCOMPARE(snapshot.audio.preRollMs, 300);
+        QCOMPARE(snapshot.audio.postRollMs, 250);
+        QCOMPARE(snapshot.audio.readinessTimeoutMs, 700);
+        QCOMPARE(snapshot.audio.vadThresholdPercent, 4);
         QCOMPARE(snapshot.bindings.size(), 1);
         QCOMPARE(snapshot.bindings.at(0).replacement, QStringLiteral("efox@example.com"));
         QCOMPARE(snapshot.refinement.providerId, QStringLiteral("openai"));
@@ -1210,6 +1255,31 @@ private slots:
         QCOMPARE(media->resumeCalls, 1);
         QCOMPARE(delivery->calls, 0);
         QCOMPARE(session.lastMessage(), QStringLiteral("provider failed"));
+    }
+
+    void dictationSessionStopsOnEmptyAudioFailure()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        audio->emitFailure(QStringLiteral("microphone blocked"));
+
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Error), 200);
+        QCOMPARE(audio->isActive(), false);
+        QCOMPARE(speech->stopCalls, 1);
+        QCOMPARE(media->resumeCalls, 1);
+        QCOMPARE(delivery->calls, 0);
+        QCOMPARE(session.lastMessage(), QStringLiteral("microphone blocked"));
     }
 
     void refinementInstructionsCompose()

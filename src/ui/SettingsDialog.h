@@ -35,6 +35,8 @@ private:
     void setBindingRules(const QList<BindingRule> &rules);
     void refreshBindingList();
     void editBinding(int row);
+    void refreshAudioDeviceList(const QString &selectedDeviceId);
+    void updateAudioControls();
     void updateAuthControl();
     void refreshOutputControls();
     void updateYdotoolButtons();
@@ -47,7 +49,10 @@ private:
 
     ApplicationController *m_controller = nullptr;
     QComboBox *m_theme = nullptr;
+    QComboBox *m_audioDevice = nullptr;
+    QComboBox *m_captureMode = nullptr;
     QCheckBox *m_pauseMedia = nullptr;
+    QCheckBox *m_vadEnabled = nullptr;
     QComboBox *m_provider = nullptr;
     QComboBox *m_refinementStyle = nullptr;
     QComboBox *m_openAiModel = nullptr;
@@ -67,6 +72,10 @@ private:
     QPushButton *m_addBindingButton = nullptr;
     QScrollArea *m_scroll = nullptr;
     QSpinBox *m_previewWords = nullptr;
+    QSpinBox *m_preRollMs = nullptr;
+    QSpinBox *m_postRollMs = nullptr;
+    QSpinBox *m_readinessTimeoutMs = nullptr;
+    QSpinBox *m_vadThreshold = nullptr;
     QTableWidget *m_vocab = nullptr;
     QListWidget *m_bindings = nullptr;
     QList<BindingRule> m_bindingRules;

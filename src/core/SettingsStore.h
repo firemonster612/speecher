@@ -29,6 +29,23 @@ public:
     QStringList customVocabulary() const;
     void setCustomVocabulary(const QStringList &value);
 
+    QString audioInputDeviceId() const;
+    void setAudioInputDeviceId(const QString &value);
+    QString audioCaptureMode() const;
+    void setAudioCaptureMode(const QString &value);
+    bool audioVadEnabled() const;
+    void setAudioVadEnabled(bool value);
+    int audioPreRollMs() const;
+    void setAudioPreRollMs(int value);
+    int audioPostRollMs() const;
+    void setAudioPostRollMs(int value);
+    int audioReadinessTimeoutMs() const;
+    void setAudioReadinessTimeoutMs(int value);
+    int audioVadThresholdPercent() const;
+    void setAudioVadThresholdPercent(int value);
+    AudioCaptureSettings audioCaptureSettings() const;
+    void setAudioCaptureSettings(const AudioCaptureSettings &value);
+
     QList<BindingRule> bindingRules() const;
     bool setBindingRules(const QList<BindingRule> &rules, QString *error = nullptr);
 
@@ -60,8 +77,12 @@ public:
     AppSettings snapshot() const;
     QSettings &raw();
 
+signals:
+    void audioCaptureSettingsChanged(const AudioCaptureSettings &settings);
+
 private:
     QVariant value(const QString &key, const QVariant &fallback) const;
+    void emitAudioCaptureSettingsChangedIfNeeded(const AudioCaptureSettings &previous);
     QSettings m_settings;
 };
 

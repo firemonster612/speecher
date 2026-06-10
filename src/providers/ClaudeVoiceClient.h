@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QByteArray>
+#include <QList>
 #include <QObject>
 #include <QStringList>
 #include <QTimer>
@@ -35,13 +37,18 @@ signals:
 
 private:
     void sendInit(const QStringList &vocabulary);
+    void queueAudio(const QByteArray &pcm);
+    void flushPendingAudio();
+    void clearPendingAudio();
     void handleTextMessage(const QString &message);
 
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     QWebSocket m_socket;
 #endif
     QTimer m_keepAliveTimer;
+    QList<QByteArray> m_pendingAudio;
     QString m_lastInterim;
+    qsizetype m_pendingAudioBytes = 0;
     bool m_finalizing = false;
     bool m_connected = false;
     bool m_debugSchema = false;

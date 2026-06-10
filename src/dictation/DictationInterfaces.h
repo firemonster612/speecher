@@ -4,6 +4,7 @@
 #include "output/DeliveryResult.h"
 
 #include <QObject>
+#include <QList>
 #include <QStringList>
 
 namespace speecher {
@@ -16,6 +17,12 @@ struct SpeechPrepareResult {
 struct RefinementPrepareResult {
     bool ok = false;
     QString message;
+};
+
+struct AudioInputDeviceInfo {
+    QString id;
+    QString label;
+    bool isDefault = false;
 };
 
 class AudioInput : public QObject {

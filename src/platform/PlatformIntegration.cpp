@@ -111,9 +111,14 @@ public:
         return program;
     }
 
-    AudioInput *createAudioInput(QObject *parent) const override
+    QList<AudioInputDeviceInfo> availableAudioInputDevices() const override
     {
-        return new AudioCapture(parent);
+        return AudioCapture::availableInputDevices();
+    }
+
+    AudioInput *createAudioInput(SettingsStore *settings, QObject *parent) const override
+    {
+        return new AudioCapture(settings, parent);
     }
 
     MediaController *createMediaController(QObject *parent) const override

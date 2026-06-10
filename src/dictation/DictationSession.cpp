@@ -85,6 +85,34 @@ DictationSession::DictationSession(SettingsStore *settings,
             m_transcriber->sendAudio(pcm);
         }
     });
+    connect(m_audio, &AudioInput::failed, this, [this](const QString &message) {
+        if (m_state != DictationState::Starting && m_state != DictationState::Listening) {
+            return;
+        }
+
+        qWarning().noquote() << "audio capture failed transcriptEmpty=" << m_transcript->isEmpty()
+                             << "message=" + message;
+        if (!m_transcript->isEmpty()) {
+            m_lastMessage = message;
+            stopListening();
+            return;
+        }
+
+        const quint64 generation = m_generation;
+        m_audio->stop();
+        if (m_transcriber) {
+            m_transcriber->stop();
+        }
+        resumePausedMedia();
+        setState(DictationState::Error, message);
+        QTimer::singleShot(1800, this, [this, generation] {
+            if (generation != m_generation || m_state != DictationState::Error) {
+                return;
+            }
+            emit popupHideRequested();
+            setState(DictationState::Idle);
+        });
+    });
 }
 
 DictationState DictationSession::state() const
@@ -176,15 +204,17 @@ void DictationSession::startListening()
     }
     emit popupListeningIndicatorRequested();
 
+    m_transcriber->start(settings.speech);
+
     QString audioError;
     if (!m_audio->start(&audioError)) {
         qWarning().noquote() << "audio start failed message=" + audioError;
+        m_transcriber->stop();
         resumePausedMedia();
         setState(DictationState::Error, audioError);
         return;
     }
     qInfo() << "audio capture started";
-    m_transcriber->start(settings.speech);
     setState(DictationState::Listening);
 }
 

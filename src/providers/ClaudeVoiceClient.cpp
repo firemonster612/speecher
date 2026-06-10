@@ -11,7 +11,13 @@
 #include <QProcessEnvironment>
 #include <QUrlQuery>
 
+#include <utility>
+
 namespace speecher {
+
+namespace {
+constexpr qsizetype kMaxPendingAudioBytes = 15 * 16000 * 2;
+}
 
 static QString firstTranscriptText(const QJsonValue &value)
 {
@@ -143,8 +149,14 @@ ClaudeVoiceClient::ClaudeVoiceClient(QObject *parent)
     connect(&m_socket, &QWebSocket::connected, this, [this] {
         m_connected = true;
         qInfo() << "claude websocket connected";
+        if (m_finalizing) {
+            qInfo() << "claude websocket connected after stop; closing";
+            m_socket.close();
+            return;
+        }
         qInfo() << "claude initial keepalive sent";
         m_socket.sendTextMessage(QStringLiteral("{\"type\":\"KeepAlive\"}"));
+        flushPendingAudio();
         m_keepAliveTimer.start();
         emit connected();
     });
@@ -177,6 +189,7 @@ void ClaudeVoiceClient::start(const QUrl &url, const QString &accessToken, const
 
     m_lastInterim.clear();
     m_finalizing = false;
+    clearPendingAudio();
     ++m_sessionId;
     QNetworkRequest request(streamUrl);
     request.setRawHeader("Authorization", "Bearer " + accessToken.toUtf8());
@@ -211,6 +224,8 @@ void ClaudeVoiceClient::sendAudio(const QByteArray &pcm)
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     if (m_connected && !m_finalizing) {
         m_socket.sendBinaryMessage(pcm);
+    } else if (!m_finalizing) {
+        queueAudio(pcm);
     }
 #else
     Q_UNUSED(pcm)
@@ -220,6 +235,7 @@ void ClaudeVoiceClient::sendAudio(const QByteArray &pcm)
 void ClaudeVoiceClient::stop()
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
+    clearPendingAudio();
     if (m_connected) {
         m_finalizing = true;
         const quint64 sessionId = m_sessionId;
@@ -230,6 +246,11 @@ void ClaudeVoiceClient::stop()
                 m_socket.close();
             }
         });
+    } else {
+        m_finalizing = true;
+        if (m_socket.state() != QAbstractSocket::UnconnectedState) {
+            m_socket.close();
+        }
     }
     qInfo() << "claude close requested connected=" << m_connected;
 #endif
@@ -238,6 +259,45 @@ void ClaudeVoiceClient::stop()
 bool ClaudeVoiceClient::isConnected() const
 {
     return m_connected;
+}
+
+void ClaudeVoiceClient::queueAudio(const QByteArray &pcm)
+{
+#ifdef SPEECHER_WITH_QT_WEBSOCKETS
+    if (pcm.isEmpty()) {
+        return;
+    }
+
+    m_pendingAudio.append(pcm);
+    m_pendingAudioBytes += pcm.size();
+    while (m_pendingAudioBytes > kMaxPendingAudioBytes && !m_pendingAudio.isEmpty()) {
+        m_pendingAudioBytes -= m_pendingAudio.takeFirst().size();
+    }
+#else
+    Q_UNUSED(pcm)
+#endif
+}
+
+void ClaudeVoiceClient::flushPendingAudio()
+{
+#ifdef SPEECHER_WITH_QT_WEBSOCKETS
+    if (!m_connected || m_finalizing || m_pendingAudio.isEmpty()) {
+        return;
+    }
+
+    qInfo() << "claude websocket flushing pending audio bytes=" << m_pendingAudioBytes
+            << "chunks=" << m_pendingAudio.size();
+    for (const QByteArray &pcm : std::as_const(m_pendingAudio)) {
+        m_socket.sendBinaryMessage(pcm);
+    }
+    clearPendingAudio();
+#endif
+}
+
+void ClaudeVoiceClient::clearPendingAudio()
+{
+    m_pendingAudio.clear();
+    m_pendingAudioBytes = 0;
 }
 
 void ClaudeVoiceClient::handleTextMessage(const QString &message)

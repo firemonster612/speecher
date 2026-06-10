@@ -8,6 +8,7 @@
 #include "core/VocabularyLimit.h"
 #include "output/YdotoolDelivery.h"
 #include "output/YdotoolSetup.h"
+#include "platform/PlatformIntegration.h"
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/Theme.h"
@@ -273,7 +274,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     : QDialog(parent)
     , m_controller(controller)
     , m_theme(new QComboBox(this))
+    , m_audioDevice(new QComboBox(this))
+    , m_captureMode(new QComboBox(this))
     , m_pauseMedia(new QCheckBox(this))
+    , m_vadEnabled(new QCheckBox(this))
     , m_provider(new QComboBox(this))
     , m_refinementStyle(new QComboBox(this))
     , m_openAiModel(new QComboBox(this))
@@ -286,6 +290,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_apiKey(new QLineEdit(this))
     , m_scroll(new QScrollArea(this))
     , m_previewWords(new QSpinBox(this))
+    , m_preRollMs(new QSpinBox(this))
+    , m_postRollMs(new QSpinBox(this))
+    , m_readinessTimeoutMs(new QSpinBox(this))
+    , m_vadThreshold(new QSpinBox(this))
     , m_vocab(new VocabularyTable(this))
     , m_bindings(new QListWidget(this))
 {
@@ -296,6 +304,14 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_theme->addItem(QStringLiteral("Light"), QStringLiteral("light"));
     m_theme->addItem(QStringLiteral("Dark"), QStringLiteral("dark"));
     m_pauseMedia->setText(QStringLiteral("Pause"));
+    m_audioDevice->setMinimumContentsLength(28);
+    m_audioDevice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_audioDevice->setToolTip(QStringLiteral("Microphone Speecher records from."));
+    m_captureMode->addItem(QStringLiteral("On demand"), QStringLiteral("on_demand"));
+    m_captureMode->addItem(QStringLiteral("Warm"), QStringLiteral("warm"));
+    m_captureMode->setToolTip(QStringLiteral("Warm keeps the microphone stream open between captures for lower startup latency."));
+    m_vadEnabled->setText(QStringLiteral("Trim silence"));
+    m_vadEnabled->setToolTip(QStringLiteral("Suppress leading, trailing, and long in-between silence before audio is sent."));
     for (const ProviderDescriptor &provider : m_controller->providerRegistry()->refinementProviders()) {
         m_provider->addItem(provider.label, provider.id);
     }
@@ -336,6 +352,16 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_authControl->addWidget(m_authStatus);
     m_authControl->addWidget(m_apiKey);
     m_previewWords->setRange(1, 40);
+    for (QSpinBox *spinBox : {m_preRollMs, m_postRollMs}) {
+        spinBox->setRange(0, 1500);
+        spinBox->setSingleStep(50);
+        spinBox->setSuffix(QStringLiteral(" ms"));
+    }
+    m_readinessTimeoutMs->setRange(150, 3000);
+    m_readinessTimeoutMs->setSingleStep(50);
+    m_readinessTimeoutMs->setSuffix(QStringLiteral(" ms"));
+    m_vadThreshold->setRange(1, 20);
+    m_vadThreshold->setSuffix(QStringLiteral("%"));
     m_vocab->setObjectName(QStringLiteral("vocabInput"));
     m_vocab->setColumnCount(1);
     m_vocab->setHorizontalHeaderLabels({QStringLiteral("Term")});
@@ -376,6 +402,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     content->setSpacing(12);
 
     auto *generalSection = makeSectionLabel(QStringLiteral("General"), this);
+    auto *audioSection = makeSectionLabel(QStringLiteral("Audio"), this);
     auto *refinementSection = makeSectionLabel(QStringLiteral("Refinement"), this);
     auto *outputSection = makeSectionLabel(QStringLiteral("Output"), this);
     auto *openAiSection = makeSectionLabel(QStringLiteral("OpenAI"), this);
@@ -384,6 +411,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
 
     auto *generalCard = makeSettingsCard(this);
     auto *generalLayout = qobject_cast<QVBoxLayout *>(generalCard->layout());
+    auto *audioCard = makeSettingsCard(this);
+    auto *audioLayout = qobject_cast<QVBoxLayout *>(audioCard->layout());
     auto *refinementCard = makeSettingsCard(this);
     auto *refinementLayout = qobject_cast<QVBoxLayout *>(refinementCard->layout());
     auto *outputCard = makeSettingsCard(this);
@@ -415,6 +444,50 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     addRow(generalLayout, makeRow(QStringLiteral("Pause media"), QStringLiteral("Pause currently playing media while transcribing."), m_pauseMedia, generalCard), generalCard);
     addRow(generalLayout, makeRow(QStringLiteral("Preview words"), QStringLiteral("Trailing words shown in the popup."), m_previewWords, generalCard), generalCard);
     addRow(generalLayout, makeRow(QStringLiteral("Clipboard output"), QStringLiteral("Current platform clipboard path."), primaryOutput, generalCard), generalCard, false);
+
+    addRow(audioLayout,
+           makeRow(QStringLiteral("Microphone"),
+                   QStringLiteral("Input device used for dictation."),
+                   m_audioDevice,
+                   audioCard),
+           audioCard);
+    addRow(audioLayout,
+           makeRow(QStringLiteral("Capture mode"),
+                   QStringLiteral("Open the microphone only while listening, or keep it warm between captures."),
+                   m_captureMode,
+                   audioCard),
+           audioCard);
+    addRow(audioLayout,
+           makeRow(QStringLiteral("Pre-roll"),
+                   QStringLiteral("Audio kept before speech or before a warm capture starts."),
+                   m_preRollMs,
+                   audioCard),
+           audioCard);
+    addRow(audioLayout,
+           makeRow(QStringLiteral("Post-roll"),
+                   QStringLiteral("Audio kept after stop or after speech falls quiet."),
+                   m_postRollMs,
+                   audioCard),
+           audioCard);
+    addRow(audioLayout,
+           makeRow(QStringLiteral("Readiness timeout"),
+                   QStringLiteral("How long Speecher waits for the first microphone sample."),
+                   m_readinessTimeoutMs,
+                   audioCard),
+           audioCard);
+    addRow(audioLayout,
+           makeRow(QStringLiteral("Silence trimming"),
+                   QStringLiteral("Optional VAD gate before sending audio to the speech provider."),
+                   m_vadEnabled,
+                   audioCard),
+           audioCard);
+    addRow(audioLayout,
+           makeRow(QStringLiteral("Voice threshold"),
+                   QStringLiteral("RMS level required before VAD treats audio as speech."),
+                   m_vadThreshold,
+                   audioCard),
+           audioCard,
+           false);
 
     addRow(outputLayout,
            makeRow(QStringLiteral("Method"),
@@ -493,6 +566,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
 
     content->addWidget(generalSection);
     content->addWidget(generalCard);
+    content->addWidget(audioSection);
+    content->addWidget(audioCard);
     content->addWidget(outputSection);
     content->addWidget(outputCard);
     content->addWidget(refinementSection);
@@ -512,12 +587,14 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     root->addWidget(buttons, 0, Qt::AlignRight);
 
     generalCard->setStyleSheet(QString::fromLatin1(settingsStyle));
+    audioCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     outputCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     refinementCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     openAiCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     vocabSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     bindingSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     generalSection->setStyleSheet(QString::fromLatin1(settingsStyle));
+    audioSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     outputSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     refinementSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     openAiSection->setStyleSheet(QString::fromLatin1(settingsStyle));
@@ -552,6 +629,16 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(m_theme, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_pauseMedia, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
+    connect(m_audioDevice, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_captureMode, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_vadEnabled, &QCheckBox::toggled, this, [this] {
+        updateAudioControls();
+        updateButtonState();
+    });
+    connect(m_preRollMs, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_postRollMs, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_readinessTimeoutMs, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_vadThreshold, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
     connect(m_provider, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_refinementStyle, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_openAiModel, &QComboBox::currentTextChanged, this, &SettingsDialog::updateButtonState);
@@ -605,6 +692,14 @@ void SettingsDialog::load()
     SettingsStore *settings = m_controller->settings();
     selectData(m_theme, settings->theme());
     m_pauseMedia->setChecked(settings->pauseMediaDuringTranscription());
+    const AudioCaptureSettings audio = settings->audioCaptureSettings();
+    refreshAudioDeviceList(audio.deviceId);
+    selectData(m_captureMode, audio.mode);
+    m_vadEnabled->setChecked(audio.vadEnabled);
+    m_preRollMs->setValue(audio.preRollMs);
+    m_postRollMs->setValue(audio.postRollMs);
+    m_readinessTimeoutMs->setValue(audio.readinessTimeoutMs);
+    m_vadThreshold->setValue(audio.vadThresholdPercent);
     selectData(m_provider, settings->refinementProvider());
     selectData(m_refinementStyle, settings->refinementStyle());
     selectEditableText(m_openAiModel, settings->openAiModel());
@@ -615,6 +710,7 @@ void SettingsDialog::load()
     setVocabularyRows(settings->customVocabulary());
     setBindingRules(settings->bindingRules());
     updateVocabularyLimit();
+    updateAudioControls();
     updateAuthControl();
     refreshOutputControls();
     updateButtonState();
@@ -635,6 +731,15 @@ bool SettingsDialog::save()
     settings->setTheme(m_theme->currentData().toString());
     Theme::apply(settings->theme());
     settings->setPauseMediaDuringTranscription(m_pauseMedia->isChecked());
+    settings->setAudioCaptureSettings({
+        m_audioDevice->currentData().toString(),
+        m_captureMode->currentData().toString(),
+        m_vadEnabled->isChecked(),
+        m_preRollMs->value(),
+        m_postRollMs->value(),
+        m_readinessTimeoutMs->value(),
+        m_vadThreshold->value(),
+    });
     settings->setRefinementProvider(m_provider->currentData().toString());
     settings->setRefinementStyle(m_refinementStyle->currentData().toString());
     settings->setOpenAiModel(m_openAiModel->currentText());
@@ -664,8 +769,16 @@ bool SettingsDialog::save()
 bool SettingsDialog::hasChanges() const
 {
     const SettingsStore *settings = m_controller->settings();
+    const AudioCaptureSettings audio = settings->audioCaptureSettings();
     if (m_theme->currentData().toString() != settings->theme()
         || m_pauseMedia->isChecked() != settings->pauseMediaDuringTranscription()
+        || m_audioDevice->currentData().toString() != audio.deviceId
+        || m_captureMode->currentData().toString() != audio.mode
+        || m_vadEnabled->isChecked() != audio.vadEnabled
+        || m_preRollMs->value() != audio.preRollMs
+        || m_postRollMs->value() != audio.postRollMs
+        || m_readinessTimeoutMs->value() != audio.readinessTimeoutMs
+        || m_vadThreshold->value() != audio.vadThresholdPercent
         || m_provider->currentData().toString() != settings->refinementProvider()
         || m_refinementStyle->currentData().toString() != settings->refinementStyle()
         || m_openAiModel->currentText().trimmed() != settings->openAiModel()
@@ -883,6 +996,56 @@ void SettingsDialog::editBinding(int row)
     dialog.resize(560, 430);
     phrase->setFocus(Qt::OtherFocusReason);
     dialog.exec();
+}
+
+void SettingsDialog::refreshAudioDeviceList(const QString &selectedDeviceId)
+{
+    const QSignalBlocker blocker(m_audioDevice);
+    m_audioDevice->clear();
+
+    const QList<AudioInputDeviceInfo> devices = m_controller->platform()->availableAudioInputDevices();
+    if (devices.isEmpty()) {
+        m_audioDevice->addItem(QStringLiteral("No microphones found"), QString());
+        setComboItemEnabled(m_audioDevice,
+                            0,
+                            false,
+                            QStringLiteral("Connect or enable an input device, then reopen Settings."));
+        if (!selectedDeviceId.isEmpty()) {
+            m_audioDevice->addItem(QStringLiteral("Missing microphone"), selectedDeviceId);
+            setComboItemEnabled(m_audioDevice,
+                                1,
+                                false,
+                                QStringLiteral("This saved microphone is not currently available."));
+            selectData(m_audioDevice, selectedDeviceId);
+        }
+        return;
+    }
+
+    m_audioDevice->addItem(QStringLiteral("System default"), QString());
+    bool selectedFound = selectedDeviceId.isEmpty();
+    for (const AudioInputDeviceInfo &device : devices) {
+        const QString label = device.isDefault
+            ? QStringLiteral("%1 (default)").arg(device.label)
+            : device.label;
+        m_audioDevice->addItem(label, device.id);
+        selectedFound = selectedFound || device.id == selectedDeviceId;
+    }
+
+    if (!selectedFound) {
+        m_audioDevice->addItem(QStringLiteral("Missing microphone"), selectedDeviceId);
+        const int missingIndex = m_audioDevice->count() - 1;
+        setComboItemEnabled(m_audioDevice,
+                            missingIndex,
+                            false,
+                            QStringLiteral("This saved microphone is not currently available."));
+    }
+
+    selectData(m_audioDevice, selectedDeviceId);
+}
+
+void SettingsDialog::updateAudioControls()
+{
+    m_vadThreshold->setEnabled(m_vadEnabled->isChecked());
 }
 
 void SettingsDialog::updateAuthControl()

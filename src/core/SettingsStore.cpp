@@ -9,7 +9,32 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
+#include <algorithm>
+
 namespace speecher {
+namespace {
+
+QString normalizedAudioCaptureMode(const QString &value)
+{
+    const QString mode = value.trimmed();
+    if (mode == QStringLiteral("warm") || mode == QStringLiteral("always_open")) {
+        return QStringLiteral("warm");
+    }
+    return QStringLiteral("on_demand");
+}
+
+AudioCaptureSettings normalizedAudioCaptureSettings(AudioCaptureSettings settings)
+{
+    settings.deviceId = settings.deviceId.trimmed();
+    settings.mode = normalizedAudioCaptureMode(settings.mode);
+    settings.preRollMs = std::clamp(settings.preRollMs, 0, 1500);
+    settings.postRollMs = std::clamp(settings.postRollMs, 0, 1500);
+    settings.readinessTimeoutMs = std::clamp(settings.readinessTimeoutMs, 150, 3000);
+    settings.vadThresholdPercent = std::clamp(settings.vadThresholdPercent, 1, 20);
+    return settings;
+}
+
+} // namespace
 
 SettingsStore::SettingsStore(QObject *parent)
     : QObject(parent)
@@ -79,6 +104,117 @@ QStringList SettingsStore::customVocabulary() const
 void SettingsStore::setCustomVocabulary(const QStringList &value)
 {
     m_settings.setValue(QStringLiteral("stt/customVocabulary"), VocabularyLimit::limited(value));
+}
+
+QString SettingsStore::audioInputDeviceId() const
+{
+    return audioCaptureSettings().deviceId;
+}
+
+void SettingsStore::setAudioInputDeviceId(const QString &value)
+{
+    AudioCaptureSettings settings = audioCaptureSettings();
+    settings.deviceId = value;
+    setAudioCaptureSettings(settings);
+}
+
+QString SettingsStore::audioCaptureMode() const
+{
+    return audioCaptureSettings().mode;
+}
+
+void SettingsStore::setAudioCaptureMode(const QString &value)
+{
+    AudioCaptureSettings settings = audioCaptureSettings();
+    settings.mode = value;
+    setAudioCaptureSettings(settings);
+}
+
+bool SettingsStore::audioVadEnabled() const
+{
+    return audioCaptureSettings().vadEnabled;
+}
+
+void SettingsStore::setAudioVadEnabled(bool value)
+{
+    AudioCaptureSettings settings = audioCaptureSettings();
+    settings.vadEnabled = value;
+    setAudioCaptureSettings(settings);
+}
+
+int SettingsStore::audioPreRollMs() const
+{
+    return audioCaptureSettings().preRollMs;
+}
+
+void SettingsStore::setAudioPreRollMs(int value)
+{
+    AudioCaptureSettings settings = audioCaptureSettings();
+    settings.preRollMs = value;
+    setAudioCaptureSettings(settings);
+}
+
+int SettingsStore::audioPostRollMs() const
+{
+    return audioCaptureSettings().postRollMs;
+}
+
+void SettingsStore::setAudioPostRollMs(int value)
+{
+    AudioCaptureSettings settings = audioCaptureSettings();
+    settings.postRollMs = value;
+    setAudioCaptureSettings(settings);
+}
+
+int SettingsStore::audioReadinessTimeoutMs() const
+{
+    return audioCaptureSettings().readinessTimeoutMs;
+}
+
+void SettingsStore::setAudioReadinessTimeoutMs(int value)
+{
+    AudioCaptureSettings settings = audioCaptureSettings();
+    settings.readinessTimeoutMs = value;
+    setAudioCaptureSettings(settings);
+}
+
+int SettingsStore::audioVadThresholdPercent() const
+{
+    return audioCaptureSettings().vadThresholdPercent;
+}
+
+void SettingsStore::setAudioVadThresholdPercent(int value)
+{
+    AudioCaptureSettings settings = audioCaptureSettings();
+    settings.vadThresholdPercent = value;
+    setAudioCaptureSettings(settings);
+}
+
+AudioCaptureSettings SettingsStore::audioCaptureSettings() const
+{
+    return normalizedAudioCaptureSettings({
+        value(QStringLiteral("audio/deviceId"), QString()).toString(),
+        value(QStringLiteral("audio/captureMode"), QStringLiteral("on_demand")).toString(),
+        value(QStringLiteral("audio/vadEnabled"), false).toBool(),
+        value(QStringLiteral("audio/preRollMs"), 250).toInt(),
+        value(QStringLiteral("audio/postRollMs"), 200).toInt(),
+        value(QStringLiteral("audio/readinessTimeoutMs"), 900).toInt(),
+        value(QStringLiteral("audio/vadThresholdPercent"), 2).toInt(),
+    });
+}
+
+void SettingsStore::setAudioCaptureSettings(const AudioCaptureSettings &value)
+{
+    const AudioCaptureSettings previous = audioCaptureSettings();
+    const AudioCaptureSettings settings = normalizedAudioCaptureSettings(value);
+    m_settings.setValue(QStringLiteral("audio/deviceId"), settings.deviceId);
+    m_settings.setValue(QStringLiteral("audio/captureMode"), settings.mode);
+    m_settings.setValue(QStringLiteral("audio/vadEnabled"), settings.vadEnabled);
+    m_settings.setValue(QStringLiteral("audio/preRollMs"), settings.preRollMs);
+    m_settings.setValue(QStringLiteral("audio/postRollMs"), settings.postRollMs);
+    m_settings.setValue(QStringLiteral("audio/readinessTimeoutMs"), settings.readinessTimeoutMs);
+    m_settings.setValue(QStringLiteral("audio/vadThresholdPercent"), settings.vadThresholdPercent);
+    emitAudioCaptureSettingsChangedIfNeeded(previous);
 }
 
 QList<BindingRule> SettingsStore::bindingRules() const
@@ -261,6 +397,7 @@ AppSettings SettingsStore::snapshot() const
     settings.speech.claudeCredentialsPath = claudeCredentialsPath();
     settings.speech.claudeEndpointBase = claudeEndpointBase();
     settings.speech.claudeVoicePath = claudeVoicePath();
+    settings.audio = audioCaptureSettings();
     settings.bindings = bindingRules();
 
     settings.refinement.providerId = refinementProvider();
@@ -276,6 +413,14 @@ AppSettings SettingsStore::snapshot() const
 QSettings &SettingsStore::raw()
 {
     return m_settings;
+}
+
+void SettingsStore::emitAudioCaptureSettingsChangedIfNeeded(const AudioCaptureSettings &previous)
+{
+    const AudioCaptureSettings current = audioCaptureSettings();
+    if (current != previous) {
+        emit audioCaptureSettingsChanged(current);
+    }
 }
 
 } // namespace speecher

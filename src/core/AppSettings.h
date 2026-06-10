@@ -27,6 +27,18 @@ struct SpeechSettings {
     QString claudeVoicePath;
 };
 
+struct AudioCaptureSettings {
+    QString deviceId;
+    QString mode = QStringLiteral("on_demand");
+    bool vadEnabled = false;
+    int preRollMs = 250;
+    int postRollMs = 200;
+    int readinessTimeoutMs = 900;
+    int vadThresholdPercent = 2;
+
+    bool operator==(const AudioCaptureSettings &other) const = default;
+};
+
 struct RefinementSettings {
     QString providerId = QStringLiteral("openai");
     QString style = QStringLiteral("balanced");
@@ -43,6 +55,7 @@ struct OutputSettings {
 struct AppSettings {
     UiSettings ui;
     SpeechSettings speech;
+    AudioCaptureSettings audio;
     RefinementSettings refinement;
     OutputSettings output;
     QList<BindingRule> bindings;
