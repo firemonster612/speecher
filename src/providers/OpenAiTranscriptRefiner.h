@@ -17,6 +17,7 @@ public:
     QString id() const override;
     QString label() const override;
     bool requiresRefresh(const RefinementSettings &settings) const override;
+    std::optional<RefinementRefreshJob> createRefreshJob(const RefinementSettings &settings) override;
     void refresh(const RefinementSettings &settings) override;
     RefinementPrepareResult prepare(const RefinementSettings &settings) override;
     void refine(const QString &rawTranscript,

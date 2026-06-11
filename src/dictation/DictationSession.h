@@ -7,6 +7,9 @@
 #include <QMetaObject>
 #include <QVector>
 
+#include <memory>
+#include <optional>
+
 namespace speecher {
 
 class ProviderRegistry;
@@ -23,6 +26,7 @@ public:
                      TextDeliveryAdapter *delivery,
                      ProviderRegistry *providers,
                      QObject *parent = nullptr);
+    ~DictationSession() override;
 
     DictationState state() const;
     QString stateName() const;
@@ -50,7 +54,19 @@ signals:
     void popupMessageRequested(const QString &message);
 
 private:
+    struct StartupPreparation;
+
     void setState(DictationState state, const QString &message = {});
+    void startPreparationWorker(quint64 generation,
+                                const AppSettings &settings,
+                                std::optional<SpeechPrepareJob> speechPrepareJob,
+                                std::optional<RefinementRefreshJob> refinerRefreshJob,
+                                const SpeechPrepareResult &speechPrepared);
+    void finishStartupPreparation(quint64 generation,
+                                  const AppSettings &settings,
+                                  const std::shared_ptr<StartupPreparation> &preparation);
+    void continueStartupAfterPreparation(quint64 generation, const AppSettings &settings);
+    void failStartup(quint64 generation, const QString &message);
     void beginRefinement(quint64 generation);
     void deliverFinal(const QString &text);
     void resumePausedMedia();
@@ -77,6 +93,7 @@ private:
     QStringList m_noBindPhrases;
     bool m_allowPostRefinementBindings = true;
     quint64 m_generation = 0;
+    std::shared_ptr<StartupPreparation> m_startupPreparation;
 };
 
 } // namespace speecher

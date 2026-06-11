@@ -69,6 +69,8 @@ void TranscriberPopup::setStatus(const QString &status)
 
 void TranscriberPopup::setPreview(const QString &preview)
 {
+    setRefreshLayout(false);
+    m_waveform->setMode(WaveformWidget::Mode::Waveform);
     QString cleaned = preview.simplified();
     if (!cleaned.isEmpty()) {
         const QFontMetrics metrics(m_preview->font());
@@ -87,11 +89,13 @@ void TranscriberPopup::setPreview(const QString &preview)
     m_previewPill->setVisible(true);
     m_preview->setMaximumWidth(520);
     m_previewPill->resize(m_previewPill->sizeHint().width(), 48);
+    adjustSize();
     updateWindowMask();
 }
 
 void TranscriberPopup::hidePreview()
 {
+    setRefreshLayout(false);
     m_previewPill->hide();
     m_preview->hide();
     adjustSize();
@@ -118,7 +122,7 @@ void TranscriberPopup::setFrozen(bool frozen)
 void TranscriberPopup::showOAuthRefreshIndicator()
 {
     setRefreshLayout(true);
-    m_preview->setText(QStringLiteral("refreshing oAuth token"));
+    m_preview->setText(QStringLiteral("Refreshing OAuth token"));
     m_preview->setVisible(true);
     m_previewPill->setVisible(true);
     m_preview->setMaximumWidth(520);

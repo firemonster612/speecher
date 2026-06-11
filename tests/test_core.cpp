@@ -18,13 +18,17 @@
 #include "output/YdotoolDelivery.h"
 #include "output/YdotoolSetup.h"
 #include "platform/PlatformIntegration.h"
+#include "ui/TranscriberPopup.h"
+#include "ui/WaveformWidget.h"
 
+#include <QBoxLayout>
 #include <QDir>
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QFrame>
 #include <QHostAddress>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -38,6 +42,7 @@
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTextStream>
+#include <QThread>
 #include <QUuid>
 #include <QtTest>
 
@@ -135,6 +140,27 @@ public:
         return refreshRequired;
     }
 
+    std::optional<SpeechPrepareJob> createPrepareJob(const SpeechSettings &) override
+    {
+        if (!backgroundPrepare) {
+            return std::nullopt;
+        }
+
+        SpeechPrepareJob job;
+        job.showRefreshIndicator = refreshRequired;
+        job.run = [this] {
+            ++backgroundPrepareCalls;
+            if (backgroundPrepareDelayMs > 0) {
+                QThread::msleep(backgroundPrepareDelayMs);
+            }
+            return prepareResult;
+        };
+        job.apply = [this](const SpeechPrepareResult &) {
+            ++prepareCalls;
+        };
+        return job;
+    }
+
     SpeechPrepareResult prepare(const SpeechSettings &) override
     {
         ++prepareCalls;
@@ -173,7 +199,10 @@ public:
     }
 
     bool refreshRequired = false;
+    bool backgroundPrepare = false;
+    unsigned long backgroundPrepareDelayMs = 0;
     SpeechPrepareResult prepareResult{true, {}};
+    int backgroundPrepareCalls = 0;
     int prepareCalls = 0;
     int startCalls = 0;
     int stopCalls = 0;
@@ -201,6 +230,27 @@ public:
     bool requiresRefresh(const RefinementSettings &) const override
     {
         return refreshRequired;
+    }
+
+    std::optional<RefinementRefreshJob> createRefreshJob(const RefinementSettings &) override
+    {
+        if (!backgroundRefresh || !refreshRequired) {
+            return std::nullopt;
+        }
+
+        RefinementRefreshJob job;
+        job.showRefreshIndicator = true;
+        job.run = [this] {
+            ++backgroundRefreshCalls;
+            if (backgroundRefreshDelayMs > 0) {
+                QThread::msleep(backgroundRefreshDelayMs);
+            }
+            return refreshResult;
+        };
+        job.apply = [this](const RefinementRefreshResult &) {
+            ++refreshCalls;
+        };
+        return job;
     }
 
     void refresh(const RefinementSettings &) override
@@ -249,9 +299,13 @@ public:
     }
 
     bool refreshRequired = false;
+    bool backgroundRefresh = false;
+    unsigned long backgroundRefreshDelayMs = 0;
     bool autoComplete = false;
     QString autoCompleteText;
+    RefinementRefreshResult refreshResult{true, {}};
     RefinementPrepareResult prepareResult{true, {}};
+    int backgroundRefreshCalls = 0;
     int refreshCalls = 0;
     int prepareCalls = 0;
     int refineCalls = 0;
@@ -376,6 +430,22 @@ private:
     QString m_listenName;
     QStringList m_candidates;
     QString m_detachedPath;
+};
+
+class FakePopupPositioner final : public PopupPositioner {
+public:
+    explicit FakePopupPositioner(QObject *parent = nullptr)
+        : PopupPositioner(parent)
+    {
+    }
+
+    void configurePopup(QWidget *) override
+    {
+    }
+
+    void positionBottomCenter(QWidget *) override
+    {
+    }
 };
 
 static QString uniqueIpcName(const QString &suffix = {})
@@ -1077,6 +1147,100 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
     }
 
+    void dictationSessionBackgroundSpeechPreparationDoesNotBlockStartup()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registry.speechProvider(QStringLiteral("claude"));
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        speech->backgroundPrepare = true;
+        speech->backgroundPrepareDelayMs = 180;
+        speech->refreshRequired = true;
+
+        QSignalSpy refreshSpy(&session, &DictationSession::popupOAuthRefreshRequested);
+        QElapsedTimer timer;
+        timer.start();
+        session.startListening();
+
+        QVERIFY(timer.elapsed() < 100);
+        QCOMPARE(int(session.state()), int(DictationState::Starting));
+        QCOMPARE(refreshSpy.count(), 1);
+        QVERIFY(!audio->started);
+
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 1000);
+        QCOMPARE(speech->backgroundPrepareCalls, 1);
+        QCOMPARE(speech->prepareCalls, 1);
+        QCOMPARE(speech->startCalls, 1);
+        QVERIFY(audio->started);
+    }
+
+    void dictationSessionBackgroundRefinerRefreshDoesNotBlockStartup()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        registry.speechProvider(QStringLiteral("claude"));
+        registry.refinementProvider(QStringLiteral("openai"));
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        refiner->backgroundRefresh = true;
+        refiner->backgroundRefreshDelayMs = 180;
+        refiner->refreshRequired = true;
+
+        QSignalSpy refreshSpy(&session, &DictationSession::popupOAuthRefreshRequested);
+        QElapsedTimer timer;
+        timer.start();
+        session.startListening();
+
+        QVERIFY(timer.elapsed() < 100);
+        QCOMPARE(int(session.state()), int(DictationState::Starting));
+        QCOMPARE(refreshSpy.count(), 1);
+        QVERIFY(!audio->started);
+
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 1000);
+        QCOMPARE(refiner->backgroundRefreshCalls, 1);
+        QCOMPARE(refiner->refreshCalls, 1);
+        QCOMPARE(speech->startCalls, 1);
+        QVERIFY(audio->started);
+    }
+
+    void transcriberPopupRestoresPreviewLayoutAfterOAuthIndicator()
+    {
+        TranscriberPopup popup(new FakePopupPositioner);
+        auto *layout = qobject_cast<QBoxLayout *>(popup.layout());
+        auto *previewPill = popup.findChild<QFrame *>(QStringLiteral("previewPill"));
+        auto *waveform = popup.findChild<WaveformWidget *>();
+        QVERIFY(layout);
+        QVERIFY(previewPill);
+        QVERIFY(waveform);
+
+        popup.showOAuthRefreshIndicator();
+        QVERIFY(layout->indexOf(previewPill) < layout->indexOf(waveform));
+
+        popup.setPreview(QStringLiteral("hello world"));
+        QVERIFY(layout->indexOf(waveform) < layout->indexOf(previewPill));
+
+        popup.showOAuthRefreshIndicator();
+        popup.hidePreview();
+        QVERIFY(layout->indexOf(waveform) < layout->indexOf(previewPill));
+    }
+
     void dictationSessionRefinesTranscript()
     {
         SettingsStore settings;
@@ -1756,6 +1920,50 @@ exit 0
         QVERIFY(!provider.requiresCodexOauthRefresh());
     }
 
+    void codexOauthRefreshClosesChildStdin()
+    {
+        QTemporaryDir dir;
+        QVERIFY(writeCodexAuth(dir.path(), jwtWithExpiry(QDateTime::currentDateTimeUtc().addSecs(-60))));
+        const QString stdinCapture = dir.filePath(QStringLiteral("codex-stdin.txt"));
+        const QString fakeCodex = writeFakeClaudeScript(dir.filePath(QStringLiteral("codex-fake")), QStringLiteral(R"(
+test "$1" = "exec" || exit 10
+cat > "$SPEECHER_TEST_CODEX_STDIN_CAPTURE"
+cat > "$HOME/.codex/auth.json" <<'JSON'
+{"auth_mode":"chatgpt","tokens":{"access_token":"REFRESHED_AFTER_STDIN_EOF","account_id":"acct"}}
+JSON
+exit 0
+)"));
+        QVERIFY(!fakeCodex.isEmpty());
+
+        const QByteArray oldHome = qgetenv("HOME");
+        qputenv("HOME", QFile::encodeName(dir.path()));
+        qputenv("SPEECHER_TEST_CODEX_EXECUTABLE", QFile::encodeName(fakeCodex));
+        qputenv("SPEECHER_TEST_CODEX_STDIN_CAPTURE", QFile::encodeName(stdinCapture));
+        qputenv("SPEECHER_CODEX_REFRESH_TIMEOUT_MS", "500");
+        const auto cleanup = qScopeGuard([oldHome] {
+            if (oldHome.isEmpty()) {
+                qunsetenv("HOME");
+            } else {
+                qputenv("HOME", oldHome);
+            }
+            qunsetenv("SPEECHER_TEST_CODEX_EXECUTABLE");
+            qunsetenv("SPEECHER_TEST_CODEX_STDIN_CAPTURE");
+            qunsetenv("SPEECHER_CODEX_REFRESH_TIMEOUT_MS");
+        });
+
+        QElapsedTimer timer;
+        timer.start();
+        OpenAiAuthProvider provider(nullptr, QStringLiteral("codex_oauth"));
+        const OpenAiAuth auth = provider.resolve();
+        QVERIFY2(auth.ok, qPrintable(auth.status));
+        QVERIFY(timer.elapsed() < 1500);
+        QCOMPARE(auth.bearerToken, QStringLiteral("REFRESHED_AFTER_STDIN_EOF"));
+
+        QFile file(stdinCapture);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(), QByteArray());
+    }
+
     void codexOauthRefreshFailure()
     {
         QTemporaryDir dir;
@@ -1782,6 +1990,54 @@ exit 12
         const OpenAiAuth auth = provider.resolve();
         QVERIFY(!auth.ok);
         QVERIFY(auth.status.contains(QStringLiteral("Codex OAuth refresh")));
+    }
+
+    void codexOauthAutoModeDoesNotRetryFailedChatGptRefresh()
+    {
+        QTemporaryDir dir;
+        QVERIFY(writeCodexAuth(dir.path(), jwtWithExpiry(QDateTime::currentDateTimeUtc().addSecs(-60))));
+        const QString countPath = dir.filePath(QStringLiteral("codex-count"));
+        const QString fakeCodex = writeFakeClaudeScript(dir.filePath(QStringLiteral("codex-fake")), QStringLiteral(R"SH(
+count=0
+if test -f "$SPEECHER_TEST_CODEX_COUNT"; then
+  count="$(cat "$SPEECHER_TEST_CODEX_COUNT")"
+fi
+count=$((count + 1))
+printf '%s\n' "$count" > "$SPEECHER_TEST_CODEX_COUNT"
+echo failed >&2
+exit 12
+)SH"));
+        QVERIFY(!fakeCodex.isEmpty());
+
+        const QByteArray oldHome = qgetenv("HOME");
+        const bool hadOpenAiKey = qEnvironmentVariableIsSet("OPENAI_API_KEY");
+        const QByteArray oldOpenAiKey = qgetenv("OPENAI_API_KEY");
+        qputenv("HOME", QFile::encodeName(dir.path()));
+        qputenv("SPEECHER_TEST_CODEX_EXECUTABLE", QFile::encodeName(fakeCodex));
+        qputenv("SPEECHER_TEST_CODEX_COUNT", QFile::encodeName(countPath));
+        qunsetenv("OPENAI_API_KEY");
+        const auto cleanup = qScopeGuard([oldHome, hadOpenAiKey, oldOpenAiKey] {
+            if (oldHome.isEmpty()) {
+                qunsetenv("HOME");
+            } else {
+                qputenv("HOME", oldHome);
+            }
+            qunsetenv("SPEECHER_TEST_CODEX_EXECUTABLE");
+            qunsetenv("SPEECHER_TEST_CODEX_COUNT");
+            if (hadOpenAiKey) {
+                qputenv("OPENAI_API_KEY", oldOpenAiKey);
+            } else {
+                qunsetenv("OPENAI_API_KEY");
+            }
+        });
+
+        OpenAiAuthProvider provider(nullptr, QStringLiteral("auto"));
+        const OpenAiAuth auth = provider.resolve();
+        QVERIFY(!auth.ok);
+
+        QFile file(countPath);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(QString::fromUtf8(file.readAll()).trimmed(), QStringLiteral("1"));
     }
 
     void claudeVoiceStreamQueryMatchesClaudeCode()

@@ -4,6 +4,8 @@
 
 #include <QDebug>
 
+#include <memory>
+
 namespace speecher {
 
 OpenAiTranscriptRefiner::OpenAiTranscriptRefiner(SecretStore *secretStore, QObject *parent)
@@ -31,6 +33,28 @@ bool OpenAiTranscriptRefiner::requiresRefresh(const RefinementSettings &settings
     return OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode).requiresCodexOauthRefresh();
 }
 
+std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(const RefinementSettings &settings)
+{
+    if (!requiresRefresh(settings)) {
+        return std::nullopt;
+    }
+
+    auto refreshed = std::make_shared<OpenAiAuth>();
+    const QString authMode = settings.openAiAuthMode;
+    RefinementRefreshJob job;
+    job.showRefreshIndicator = true;
+    job.run = [authMode, refreshed] {
+        *refreshed = OpenAiAuthProvider(nullptr, authMode).refreshCodexOauth();
+        return RefinementRefreshResult{refreshed->ok, refreshed->status};
+    };
+    job.apply = [this, refreshed](const RefinementRefreshResult &result) {
+        if (result.ok) {
+            m_auth = *refreshed;
+        }
+    };
+    return job;
+}
+
 void OpenAiTranscriptRefiner::refresh(const RefinementSettings &settings)
 {
     const OpenAiAuth refreshed = OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode).refreshCodexOauth();
@@ -41,7 +65,7 @@ void OpenAiTranscriptRefiner::refresh(const RefinementSettings &settings)
 
 RefinementPrepareResult OpenAiTranscriptRefiner::prepare(const RefinementSettings &settings)
 {
-    m_auth = OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode).resolve();
+    m_auth = OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode).resolve(false);
     return {m_auth.ok, m_auth.status};
 }
 

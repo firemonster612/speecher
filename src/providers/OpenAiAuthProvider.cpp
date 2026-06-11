@@ -118,6 +118,13 @@ static QString findCodexExecutable()
     return {};
 }
 
+static int codexRefreshTimeoutMs()
+{
+    bool ok = false;
+    const int timeoutMs = qEnvironmentVariableIntValue("SPEECHER_CODEX_REFRESH_TIMEOUT_MS", &ok);
+    return ok && timeoutMs > 0 ? timeoutMs : 15000;
+}
+
 static bool refreshCodexAuth(QString *error)
 {
     const QString executable = findCodexExecutable();
@@ -138,7 +145,8 @@ static bool refreshCodexAuth(QString *error)
         }
         return false;
     }
-    if (!process.waitForFinished(15000)) {
+    process.closeWriteChannel();
+    if (!process.waitForFinished(codexRefreshTimeoutMs())) {
         process.kill();
         process.waitForFinished(1000);
         if (error) {
@@ -264,7 +272,7 @@ OpenAiAuth OpenAiAuthProvider::readCodexOauth(bool refreshExpired)
             true};
 }
 
-OpenAiAuth OpenAiAuthProvider::resolve() const
+OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
 {
     QString status;
     const QString mode = m_mode.isEmpty() ? QStringLiteral("auto") : m_mode;
@@ -276,7 +284,7 @@ OpenAiAuth OpenAiAuthProvider::resolve() const
         return {false, {}, QStringLiteral("codex_api_key"), status, {}, {}, {}, {}, false};
     }
     if (mode == QStringLiteral("codex_oauth")) {
-        return readCodexOauth();
+        return readCodexOauth(refreshExpired);
     }
     if (mode == QStringLiteral("env")) {
         const ApiKeyCandidate envKey = readEnvApiKey();
@@ -302,8 +310,9 @@ OpenAiAuth OpenAiAuthProvider::resolve() const
         return {false, {}, QStringLiteral("settings"), QStringLiteral("Settings API key not found"), {}, {}, {}, {}, false};
     }
 
-    if (codexAuthMode() == QStringLiteral("chatgpt")) {
-        OpenAiAuth oauth = readCodexOauth();
+    const bool codexUsesChatGpt = codexAuthMode() == QStringLiteral("chatgpt");
+    if (codexUsesChatGpt) {
+        OpenAiAuth oauth = readCodexOauth(refreshExpired);
         if (oauth.ok) {
             return oauth;
         }
@@ -315,9 +324,11 @@ OpenAiAuth OpenAiAuthProvider::resolve() const
         auth.endpointBase = QStringLiteral("https://api.openai.com/v1");
         return auth;
     }
-    OpenAiAuth oauth = readCodexOauth();
-    if (oauth.ok) {
-        return oauth;
+    if (!codexUsesChatGpt) {
+        OpenAiAuth oauth = readCodexOauth(refreshExpired);
+        if (oauth.ok) {
+            return oauth;
+        }
     }
     const ApiKeyCandidate envKey = readEnvApiKey();
     if (envKey.key.startsWith(QStringLiteral("sk-"))) {

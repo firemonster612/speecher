@@ -22,7 +22,7 @@ class OpenAiAuthProvider {
 public:
     explicit OpenAiAuthProvider(SecretStore *secretStore = nullptr, const QString &mode = QStringLiteral("auto"));
 
-    OpenAiAuth resolve() const;
+    OpenAiAuth resolve(bool refreshExpired = true) const;
     QString status() const;
     bool requiresCodexOauthRefresh() const;
     OpenAiAuth refreshCodexOauth() const;

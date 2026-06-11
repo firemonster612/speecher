@@ -9,7 +9,7 @@
 ## Quick start
 
 ### Prerequisites
-Be signed into Claude Code CLI (required) and Codex CLI (optionaly) if you want refinement. Speecher can refresh expired Claude logins through Claude Code, and expired Codex OAuth tokens by running `codex exec "i" --skip-git-repo-check`, so `claude` and `codex` should be available on `PATH`; it also checks common install locations such as `~/.local/bin`.
+Be signed into Claude Code CLI (required) and Codex CLI (optionally) if you want refinement through Codex OAuth. Speecher can refresh expired Claude logins through Claude Code, and can ask Codex CLI to refresh an expired Codex OAuth token, so `claude` and `codex` should be available on `PATH`; it also checks common install locations such as `~/.local/bin`.
 
 ```sh
 # Arch

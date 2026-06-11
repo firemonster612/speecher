@@ -3,9 +3,11 @@
 #include "core/AppSettings.h"
 #include "output/DeliveryResult.h"
 
+#include <functional>
 #include <QObject>
 #include <QList>
 #include <QStringList>
+#include <optional>
 
 namespace speecher {
 
@@ -17,6 +19,23 @@ struct SpeechPrepareResult {
 struct RefinementPrepareResult {
     bool ok = false;
     QString message;
+};
+
+struct SpeechPrepareJob {
+    bool showRefreshIndicator = false;
+    std::function<SpeechPrepareResult()> run;
+    std::function<void(const SpeechPrepareResult &)> apply;
+};
+
+struct RefinementRefreshResult {
+    bool ok = true;
+    QString message;
+};
+
+struct RefinementRefreshJob {
+    bool showRefreshIndicator = false;
+    std::function<RefinementRefreshResult()> run;
+    std::function<void(const RefinementRefreshResult &)> apply;
 };
 
 struct AudioInputDeviceInfo {
@@ -57,6 +76,11 @@ public:
     virtual QString id() const = 0;
     virtual QString label() const = 0;
     virtual bool requiresRefresh(const SpeechSettings &settings) const = 0;
+    virtual std::optional<SpeechPrepareJob> createPrepareJob(const SpeechSettings &settings)
+    {
+        Q_UNUSED(settings);
+        return std::nullopt;
+    }
     virtual SpeechPrepareResult prepare(const SpeechSettings &settings) = 0;
     virtual void start(const SpeechSettings &settings) = 0;
     virtual void sendAudio(const QByteArray &pcm) = 0;
@@ -76,6 +100,11 @@ public:
     virtual QString id() const = 0;
     virtual QString label() const = 0;
     virtual bool requiresRefresh(const RefinementSettings &settings) const = 0;
+    virtual std::optional<RefinementRefreshJob> createRefreshJob(const RefinementSettings &settings)
+    {
+        Q_UNUSED(settings);
+        return std::nullopt;
+    }
     virtual void refresh(const RefinementSettings &settings) = 0;
     virtual RefinementPrepareResult prepare(const RefinementSettings &settings) = 0;
     virtual void refine(const QString &rawTranscript,

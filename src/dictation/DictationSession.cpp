@@ -5,11 +5,13 @@
 #include "core/WordPreview.h"
 #include "providers/ProviderRegistry.h"
 
-#include <QCoreApplication>
 #include <QDebug>
-#include <QEventLoop>
+#include <QPointer>
 #include <QSet>
+#include <QThread>
 #include <QTimer>
+
+#include <memory>
 
 namespace speecher {
 namespace {
@@ -58,6 +60,15 @@ QStringList refinementVocabulary(const AppSettings &settings)
 }
 
 } // namespace
+
+struct DictationSession::StartupPreparation {
+    std::optional<SpeechPrepareJob> speechPrepareJob;
+    std::optional<RefinementRefreshJob> refinerRefreshJob;
+    SpeechPrepareResult speechResult{true, {}};
+    RefinementRefreshResult refinerRefreshResult{true, {}};
+    bool refinerRefreshAttempted = false;
+    QPointer<QThread> thread;
+};
 
 DictationSession::DictationSession(SettingsStore *settings,
                                    AudioInput *audio,
@@ -115,6 +126,15 @@ DictationSession::DictationSession(SettingsStore *settings,
     });
 }
 
+DictationSession::~DictationSession()
+{
+    if (m_startupPreparation && m_startupPreparation->thread) {
+        m_startupPreparation->thread->requestInterruption();
+        m_startupPreparation->thread->quit();
+        m_startupPreparation->thread->wait();
+    }
+}
+
 DictationState DictationSession::state() const
 {
     return m_state;
@@ -162,6 +182,7 @@ void DictationSession::startListening()
     }
 
     ++m_generation;
+    const quint64 generation = m_generation;
     setState(DictationState::Starting);
     qInfo().noquote() << "startListening speechProvider=" + settings.speech.providerId
                       << "credentialsPath=" + settings.speech.claudeCredentialsPath
@@ -181,46 +202,64 @@ void DictationSession::startListening()
         m_mediaController->pausePlaying();
     }
 
-    if (m_transcriber->requiresRefresh(settings.speech)) {
-        emit popupOAuthRefreshRequested();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    std::optional<SpeechPrepareJob> speechPrepareJob = m_transcriber->createPrepareJob(settings.speech);
+    const bool speechRefreshRequired = speechPrepareJob ? speechPrepareJob->showRefreshIndicator
+                                                        : m_transcriber->requiresRefresh(settings.speech);
+
+    std::optional<RefinementRefreshJob> refinerRefreshJob;
+    bool refinerRefreshRequired = false;
+    if (m_refiner && settings.refinement.providerId != QStringLiteral("none")) {
+        refinerRefreshJob = m_refiner->createRefreshJob(settings.refinement);
+        refinerRefreshRequired = refinerRefreshJob ? refinerRefreshJob->showRefreshIndicator
+                                                   : m_refiner->requiresRefresh(settings.refinement);
     }
 
-    const SpeechPrepareResult speechPrepared = m_transcriber->prepare(settings.speech);
-    emit previewDisplayChanged({});
-    if (!speechPrepared.ok) {
-        qWarning().noquote() << "speech credentials unavailable message=" + speechPrepared.message;
-        resumePausedMedia();
-        setState(DictationState::Error, speechPrepared.message);
-        return;
+    if (speechRefreshRequired || refinerRefreshRequired) {
+        emit popupOAuthRefreshRequested();
     }
 
-    if (m_refiner && settings.refinement.providerId != QStringLiteral("none")
-        && m_refiner->requiresRefresh(settings.refinement)) {
-        emit popupOAuthRefreshRequested();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    SpeechPrepareResult speechPrepared{true, {}};
+    if (!speechPrepareJob) {
+        speechPrepared = m_transcriber->prepare(settings.speech);
+        emit previewDisplayChanged({});
+        if (!speechPrepared.ok) {
+            failStartup(generation, speechPrepared.message);
+            return;
+        }
+    }
+
+    if (!refinerRefreshJob && refinerRefreshRequired) {
         m_refiner->refresh(settings.refinement);
         emit previewDisplayChanged({});
     }
-    emit popupListeningIndicatorRequested();
 
-    m_transcriber->start(settings.speech);
-
-    QString audioError;
-    if (!m_audio->start(&audioError)) {
-        qWarning().noquote() << "audio start failed message=" + audioError;
-        m_transcriber->stop();
-        resumePausedMedia();
-        setState(DictationState::Error, audioError);
+    if (speechPrepareJob || refinerRefreshJob) {
+        startPreparationWorker(generation,
+                               settings,
+                               std::move(speechPrepareJob),
+                               std::move(refinerRefreshJob),
+                               speechPrepared);
         return;
     }
-    qInfo() << "audio capture started";
-    setState(DictationState::Listening);
+
+    continueStartupAfterPreparation(generation, settings);
 }
 
 void DictationSession::stopListening()
 {
     if (m_state != DictationState::Starting && m_state != DictationState::Listening) {
+        return;
+    }
+    if (m_state == DictationState::Starting && m_startupPreparation) {
+        ++m_generation;
+        m_startupPreparation.reset();
+        qInfo() << "startup preparation cancelled";
+        if (m_transcriber) {
+            m_transcriber->stop();
+        }
+        resumePausedMedia();
+        emit popupHideRequested();
+        setState(DictationState::Idle);
         return;
     }
     const quint64 generation = m_generation;
@@ -245,6 +284,104 @@ void DictationSession::setState(DictationState state, const QString &message)
     qInfo().noquote() << "state changed state=" + stateName()
                       << "messagePresent=" + QString::number(!message.isEmpty());
     emit statusChanged(label);
+}
+
+void DictationSession::startPreparationWorker(quint64 generation,
+                                              const AppSettings &settings,
+                                              std::optional<SpeechPrepareJob> speechPrepareJob,
+                                              std::optional<RefinementRefreshJob> refinerRefreshJob,
+                                              const SpeechPrepareResult &speechPrepared)
+{
+    auto preparation = std::make_shared<StartupPreparation>();
+    preparation->speechPrepareJob = std::move(speechPrepareJob);
+    preparation->refinerRefreshJob = std::move(refinerRefreshJob);
+    preparation->speechResult = speechPrepared;
+
+    QThread *thread = QThread::create([preparation] {
+        if (preparation->speechPrepareJob) {
+            preparation->speechResult = preparation->speechPrepareJob->run
+                ? preparation->speechPrepareJob->run()
+                : SpeechPrepareResult{false, QStringLiteral("Speech provider startup job unavailable")};
+        }
+        if (preparation->speechResult.ok
+            && preparation->refinerRefreshJob) {
+            preparation->refinerRefreshAttempted = true;
+            preparation->refinerRefreshResult = preparation->refinerRefreshJob->run
+                ? preparation->refinerRefreshJob->run()
+                : RefinementRefreshResult{false, QStringLiteral("Refinement refresh job unavailable")};
+        }
+    });
+    preparation->thread = thread;
+    m_startupPreparation = preparation;
+
+    connect(thread, &QThread::finished, this, [this, generation, settings, preparation] {
+        finishStartupPreparation(generation, settings, preparation);
+    });
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start();
+}
+
+void DictationSession::finishStartupPreparation(quint64 generation,
+                                                const AppSettings &settings,
+                                                const std::shared_ptr<StartupPreparation> &preparation)
+{
+    if (m_startupPreparation != preparation || generation != m_generation || m_state != DictationState::Starting) {
+        qInfo() << "startup preparation result ignored";
+        return;
+    }
+    m_startupPreparation.reset();
+
+    if (preparation->speechPrepareJob && preparation->speechPrepareJob->apply) {
+        preparation->speechPrepareJob->apply(preparation->speechResult);
+    }
+    if (!preparation->speechResult.ok) {
+        failStartup(generation, preparation->speechResult.message);
+        return;
+    }
+
+    if (preparation->refinerRefreshJob && preparation->refinerRefreshJob->apply) {
+        preparation->refinerRefreshJob->apply(preparation->refinerRefreshResult);
+    }
+    if (preparation->refinerRefreshAttempted && !preparation->refinerRefreshResult.ok) {
+        qWarning().noquote() << "refinement oauth refresh unavailable status=" + preparation->refinerRefreshResult.message;
+    }
+
+    emit previewDisplayChanged({});
+    continueStartupAfterPreparation(generation, settings);
+}
+
+void DictationSession::continueStartupAfterPreparation(quint64 generation, const AppSettings &settings)
+{
+    if (generation != m_generation || m_state != DictationState::Starting) {
+        qInfo() << "startup continuation skipped stale generation";
+        return;
+    }
+
+    emit popupListeningIndicatorRequested();
+
+    m_transcriber->start(settings.speech);
+
+    QString audioError;
+    if (!m_audio->start(&audioError)) {
+        qWarning().noquote() << "audio start failed message=" + audioError;
+        m_transcriber->stop();
+        resumePausedMedia();
+        setState(DictationState::Error, audioError);
+        return;
+    }
+    qInfo() << "audio capture started";
+    setState(DictationState::Listening);
+}
+
+void DictationSession::failStartup(quint64 generation, const QString &message)
+{
+    if (generation != m_generation || m_state != DictationState::Starting) {
+        return;
+    }
+    qWarning().noquote() << "speech credentials unavailable message=" + message;
+    emit previewDisplayChanged({});
+    resumePausedMedia();
+    setState(DictationState::Error, message);
 }
 
 void DictationSession::beginRefinement(quint64 generation)

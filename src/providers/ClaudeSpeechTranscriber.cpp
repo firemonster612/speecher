@@ -3,7 +3,28 @@
 #include "providers/ClaudeCredentials.h"
 #include "providers/ClaudeVoiceClient.h"
 
+#include <memory>
+
 namespace speecher {
+
+namespace {
+
+SpeechPrepareResult loadClaudeAccessToken(const SpeechSettings &settings, QString *accessToken)
+{
+    const ClaudeCredentialResult credentials = ClaudeCredentials::load(settings.claudeCredentialsPath, true);
+    if (!credentials.ok) {
+        if (accessToken) {
+            accessToken->clear();
+        }
+        return {false, credentials.error};
+    }
+    if (accessToken) {
+        *accessToken = credentials.accessToken;
+    }
+    return {true, QString()};
+}
+
+} // namespace
 
 ClaudeSpeechTranscriber::ClaudeSpeechTranscriber(QObject *parent)
     : SpeechTranscriber(parent)
@@ -29,15 +50,27 @@ bool ClaudeSpeechTranscriber::requiresRefresh(const SpeechSettings &settings) co
     return ClaudeCredentials::requiresRefresh(settings.claudeCredentialsPath);
 }
 
+std::optional<SpeechPrepareJob> ClaudeSpeechTranscriber::createPrepareJob(const SpeechSettings &settings)
+{
+    auto accessToken = std::make_shared<QString>();
+    SpeechPrepareJob job;
+    job.showRefreshIndicator = requiresRefresh(settings);
+    job.run = [settings, accessToken] {
+        return loadClaudeAccessToken(settings, accessToken.get());
+    };
+    job.apply = [this, accessToken](const SpeechPrepareResult &result) {
+        if (result.ok) {
+            m_accessToken = *accessToken;
+        } else {
+            m_accessToken.clear();
+        }
+    };
+    return job;
+}
+
 SpeechPrepareResult ClaudeSpeechTranscriber::prepare(const SpeechSettings &settings)
 {
-    const ClaudeCredentialResult credentials = ClaudeCredentials::load(settings.claudeCredentialsPath, true);
-    if (!credentials.ok) {
-        m_accessToken.clear();
-        return {false, credentials.error};
-    }
-    m_accessToken = credentials.accessToken;
-    return {true, QString()};
+    return loadClaudeAccessToken(settings, &m_accessToken);
 }
 
 void ClaudeSpeechTranscriber::start(const SpeechSettings &settings)
