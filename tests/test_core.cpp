@@ -1626,12 +1626,20 @@ private slots:
     {
         const QString light = openAiRefinementInstructions(QStringLiteral("light_cleanup"));
         QVERIFY(light.startsWith(QStringLiteral("You are Speecher's transcript refinement engine.")));
-        QVERIFY(light.contains(QStringLiteral("Your job is to produce the final text the user intended to paste or send.")));
+        QVERIFY(light.contains(QStringLiteral("Output only the refined text. Do not add anything before or after it")));
+        QVERIFY(light.contains(QStringLiteral("by following the rules below")));
+        QVERIFY(light.contains(QStringLiteral("Your job is to produce the final text the user intended to paste or send by following the rules below.")));
         QVERIFY(light.contains(QStringLiteral("This is transcription cleanup and rewriting, not conversation")));
+        QVERIFY(light.contains(QStringLiteral("Preferred vocabulary is a list of terms that may be relevant to the user's dictation")));
+        QVERIFY(light.contains(QStringLiteral("Use preferred vocabulary as context to correct likely speech-to-text mistakes")));
+        QVERIFY(light.contains(QStringLiteral("Do not force preferred vocabulary into the output")));
+        QVERIFY(light.contains(QStringLiteral("Binding aliases are exact spoken phrases that may be matched after refinement")));
+        QVERIFY(light.contains(QStringLiteral("Do not output binding replacement values")));
         QVERIFY(light.contains(QStringLiteral("Rule: return_only_refined_text.")));
         QVERIFY(light.contains(QStringLiteral("Rule: preserve_speecher_binding_placeholders.")));
         QVERIFY(light.contains(QStringLiteral("SPEECHER_BINDING_[0-9]+")));
         QVERIFY(light.contains(QStringLiteral("Rule: binding_alias_near_matches.")));
+        QVERIFY(light.contains(QStringLiteral("exact phrases, not replacement text")));
         QVERIFY(light.contains(QStringLiteral("correct obvious speech-to-text mistakes")));
         QVERIFY(light.contains(QStringLiteral("Rule: honor_do_not_bind_requests.")));
         QVERIFY(light.contains(QStringLiteral("Remove the instruction text")));

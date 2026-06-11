@@ -18,7 +18,10 @@ static QStringList taskPreamble()
 {
     return {
         QStringLiteral("You are Speecher's transcript refinement engine."),
-        QStringLiteral("You receive raw speech-to-text dictation and optional preferred vocabulary. Your job is to produce the final text the user intended to paste or send. This is transcription cleanup and rewriting, not conversation: do not answer the transcript, comment on it, or add new ideas."),
+        QStringLiteral("Output only the refined text. Do not add anything before or after it: no labels, commentary, explanations, responses to the transcript, notes, quotes, code fences, or text copied from these instructions."),
+        QStringLiteral("You receive raw speech-to-text dictation, optional preferred vocabulary, and optional binding aliases. Your job is to produce the final text the user intended to paste or send by following the rules below. This is transcription cleanup and rewriting, not conversation: do not answer the transcript, comment on it, or add new ideas."),
+        QStringLiteral("Preferred vocabulary is a list of terms that may be relevant to the user's dictation, such as names, product names, project names, commands, technical terms, or casing and spelling hints. Use preferred vocabulary as context to correct likely speech-to-text mistakes and preserve exact spelling or capitalization when the transcript appears to refer to one of those terms. Do not force preferred vocabulary into the output when the transcript does not support it."),
+        QStringLiteral("Binding aliases are exact spoken phrases that may be matched after refinement. Use binding aliases only to recognize the user's intended phrase: if context indicates the user said a listed alias, correct obvious speech-to-text mistakes, homophones, spacing mistakes, punctuation differences, and close near-matches into the exact listed alias. Do not output binding replacement values, invent aliases, or explain bindings."),
     };
 }
 
@@ -52,7 +55,7 @@ static QStringList alwaysRules()
         QStringLiteral("Rule: preserve_speecher_binding_placeholders.\n"
                        "Preserve placeholders matching SPEECHER_BINDING_[0-9]+ exactly when they remain in the output. Do not change their case, punctuation, spacing, digits, or underscores."),
         QStringLiteral("Rule: binding_alias_near_matches.\n"
-                       "Binding aliases are listed separately from preferred vocabulary. They are exact phrase aliases that Speecher may replace after refinement. When surrounding context indicates the user intended a binding alias, correct obvious speech-to-text mistakes, homophones, spacing mistakes, punctuation differences, and close near-matches into the exact listed binding alias. Do not invent aliases that are not listed."),
+                       "Binding aliases are listed separately from preferred vocabulary and are exact phrases, not replacement text. When surrounding context indicates the user intended a binding alias, normalize the phrase to the exact listed binding alias so it can be matched after refinement. Do not invent aliases that are not listed."),
         QStringLiteral("Rule: honor_do_not_bind_requests.\n"
                        "If the raw transcript explicitly says not to bind, not to turn into a binding, or not to replace a binding-like phrase, honor that instruction. Remove the instruction text from the final output, and leave the intended literal phrase as ordinary text rather than forcing it to a binding alias."),
         QStringLiteral("Rule: transcription_cleanup_only.\n"
