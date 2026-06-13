@@ -3,6 +3,8 @@
 #include "platform/PlatformIntegration.h"
 #include "ui/WaveformWidget.h"
 
+#include <QApplication>
+#include <QColor>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QEvent>
@@ -15,6 +17,19 @@
 #include <algorithm>
 
 namespace speecher {
+namespace {
+
+QString rgbaString(QColor color, int alpha)
+{
+    color.setAlpha(alpha);
+    return QStringLiteral("rgba(%1,%2,%3,%4)")
+        .arg(color.red())
+        .arg(color.green())
+        .arg(color.blue())
+        .arg(color.alpha());
+}
+
+} // namespace
 
 TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     : QWidget(parent)
@@ -175,16 +190,15 @@ void TranscriberPopup::applyTheme()
         return;
     }
     m_applyingTheme = true;
-    const QPalette p = palette();
-    const bool dark = p.color(QPalette::Window).lightness() < 128;
-    const QString pill = dark ? QStringLiteral("#1d1d1d") : QStringLiteral("#f2f0e6");
-    const QString stroke = dark ? QStringLiteral("rgba(255,255,236,46)") : QStringLiteral("rgba(32,32,32,42)");
-    const QString text = dark ? QStringLiteral("#ffffec") : QStringLiteral("#202020");
+    const QPalette p = qApp ? qApp->palette() : palette();
+    const QColor pill = p.color(QPalette::Base);
+    const QString stroke = rgbaString(p.color(QPalette::Mid), 150);
+    const QColor text = p.color(QPalette::Text);
     setStyleSheet(QStringLiteral(
                       "#transcriberPopup{background:transparent;}"
                       "QFrame#previewPill{background:%1;border:1px solid %2;border-radius:24px;}"
                       "QLabel{color:%3;font:14px 'Inter','Noto Sans',sans-serif;}")
-                      .arg(pill, stroke, text));
+                      .arg(pill.name(QColor::HexRgb), stroke, text.name(QColor::HexRgb)));
     m_applyingTheme = false;
 }
 

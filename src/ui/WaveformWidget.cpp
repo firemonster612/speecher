@@ -9,6 +9,15 @@
 #include <cmath>
 
 namespace speecher {
+namespace {
+
+QColor withAlpha(QColor color, int alpha)
+{
+    color.setAlpha(alpha);
+    return color;
+}
+
+} // namespace
 
 WaveformWidget::WaveformWidget(QWidget *parent)
     : QWidget(parent)
@@ -71,10 +80,9 @@ void WaveformWidget::paintEvent(QPaintEvent *)
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     const QPalette p = QApplication::palette();
-    const bool dark = p.color(QPalette::Window).lightness() < 128;
-    const QColor pill = dark ? QColor("#1d1d1d") : QColor("#f2f0e6");
-    const QColor bar = dark ? QColor("#ffffec") : QColor("#202020");
-    const QColor stroke = dark ? QColor(255, 255, 236, 46) : QColor(32, 32, 32, 42);
+    const QColor pill = p.color(QPalette::Base);
+    const QColor bar = p.color(QPalette::Text);
+    const QColor stroke = withAlpha(p.color(QPalette::Mid), 150);
     painter.setPen(QPen(stroke, 1.2));
     painter.setBrush(pill);
     painter.drawRoundedRect(QRectF(rect()).adjusted(1.2, 1.2, -1.2, -1.2), (height() - 2.4) / 2.0, (height() - 2.4) / 2.0);
