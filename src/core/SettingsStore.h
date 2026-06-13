@@ -65,6 +65,8 @@ public:
     void setOutputMethod(const QString &value);
     bool ydotoolEnabled() const;
     void setYdotoolEnabled(bool value);
+    bool restoreClipboardAfterTyping() const;
+    void setRestoreClipboardAfterTyping(bool value);
 
     QString claudeCredentialsPath() const;
     QString claudeEndpointBase() const;

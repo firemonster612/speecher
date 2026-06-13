@@ -282,6 +282,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_refinementStyle(new QComboBox(this))
     , m_openAiModel(new QComboBox(this))
     , m_outputMethod(new QComboBox(this))
+    , m_restoreClipboardAfterTyping(new QCheckBox(this))
     , m_authMode(new QComboBox(this))
     , m_authControl(new QStackedWidget(this))
     , m_authStatus(new QLabel(this))
@@ -342,6 +343,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::QtClipboard)), QString::fromLatin1(OutputMethod::QtClipboard));
     m_outputMethod->setToolTip(QStringLiteral("How Speecher delivers final text."));
     m_outputMethod->view()->setMouseTracking(true);
+    m_restoreClipboardAfterTyping->setText(QStringLiteral("Restore"));
+    m_restoreClipboardAfterTyping->setToolTip(QStringLiteral("Restore the previous clipboard after virtual-keyboard paste."));
     m_authMode->addItem(QStringLiteral("Automatic"), QStringLiteral("auto"));
     m_authMode->addItem(QStringLiteral("Codex API key"), QStringLiteral("codex_api_key"));
     m_authMode->addItem(QStringLiteral("Codex OAuth"), QStringLiteral("codex_oauth"));
@@ -496,6 +499,12 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
                    outputCard),
            outputCard);
     addRow(outputLayout,
+           makeRow(QStringLiteral("Restore clipboard"),
+                   QStringLiteral("After virtual-keyboard paste, put the previous clipboard contents back."),
+                   m_restoreClipboardAfterTyping,
+                   outputCard),
+           outputCard);
+    addRow(outputLayout,
            makeRow(QStringLiteral("Virtual keyboard"),
                    QString(),
                    makeYdotoolControl(m_ydotoolStatus,
@@ -642,6 +651,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(m_provider, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_refinementStyle, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_openAiModel, &QComboBox::currentTextChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_restoreClipboardAfterTyping, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
     connect(m_outputMethod, &QComboBox::currentIndexChanged, this, [this] {
         if (m_outputMethod->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool)) {
             const YdotoolSetupStatus status = YdotoolSetup::probe(m_controller->settings()->ydotoolEnabled());
@@ -704,6 +714,7 @@ void SettingsDialog::load()
     selectData(m_refinementStyle, settings->refinementStyle());
     selectEditableText(m_openAiModel, settings->openAiModel());
     selectData(m_outputMethod, settings->outputMethod());
+    m_restoreClipboardAfterTyping->setChecked(settings->restoreClipboardAfterTyping());
     selectData(m_authMode, settings->openAiAuthMode());
     m_previewWords->setValue(settings->previewWords());
     m_apiKey->setText(m_controller->secretStore()->apiKey());
@@ -745,6 +756,7 @@ bool SettingsDialog::save()
     settings->setOpenAiModel(m_openAiModel->currentText());
     selectEditableText(m_openAiModel, settings->openAiModel());
     settings->setOutputMethod(m_outputMethod->currentData().toString());
+    settings->setRestoreClipboardAfterTyping(m_restoreClipboardAfterTyping->isChecked());
     settings->setOpenAiAuthMode(m_authMode->currentData().toString());
     settings->setPreviewWords(m_previewWords->value());
     settings->setCustomVocabulary(currentVocabulary());
@@ -783,6 +795,7 @@ bool SettingsDialog::hasChanges() const
         || m_refinementStyle->currentData().toString() != settings->refinementStyle()
         || m_openAiModel->currentText().trimmed() != settings->openAiModel()
         || m_outputMethod->currentData().toString() != settings->outputMethod()
+        || m_restoreClipboardAfterTyping->isChecked() != settings->restoreClipboardAfterTyping()
         || m_authMode->currentData().toString() != settings->openAiAuthMode()
         || m_previewWords->value() != settings->previewWords()
         || currentVocabulary() != settings->customVocabulary()

@@ -355,6 +355,16 @@ void SettingsStore::setYdotoolEnabled(bool value)
     }
 }
 
+bool SettingsStore::restoreClipboardAfterTyping() const
+{
+    return value(QStringLiteral("output/restoreClipboardAfterTyping"), false).toBool();
+}
+
+void SettingsStore::setRestoreClipboardAfterTyping(bool value)
+{
+    m_settings.setValue(QStringLiteral("output/restoreClipboardAfterTyping"), value);
+}
+
 QString SettingsStore::claudeCredentialsPath() const
 {
     return value(QStringLiteral("claude/credentialsPath"), QDir::homePath() + QStringLiteral("/.claude/.credentials.json")).toString();
@@ -407,6 +417,7 @@ AppSettings SettingsStore::snapshot() const
 
     settings.output.method = outputMethod();
     settings.output.ydotoolEnabled = ydotoolEnabled();
+    settings.output.restoreClipboardAfterTyping = restoreClipboardAfterTyping();
     return settings;
 }
 

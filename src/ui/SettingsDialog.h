@@ -57,6 +57,7 @@ private:
     QComboBox *m_refinementStyle = nullptr;
     QComboBox *m_openAiModel = nullptr;
     QComboBox *m_outputMethod = nullptr;
+    QCheckBox *m_restoreClipboardAfterTyping = nullptr;
     QComboBox *m_authMode = nullptr;
     QStackedWidget *m_authControl = nullptr;
     QLabel *m_authStatus = nullptr;

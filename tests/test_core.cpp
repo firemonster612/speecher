@@ -15,6 +15,7 @@
 #include "providers/OpenAiRefiner.h"
 #include "providers/ProviderRegistry.h"
 #include "output/TextDelivery.h"
+#include "output/WlClipboardDelivery.h"
 #include "output/YdotoolDelivery.h"
 #include "output/YdotoolSetup.h"
 #include "platform/PlatformIntegration.h"
@@ -727,6 +728,7 @@ private slots:
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("auto"));
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(settings.ydotoolEnabled(), false);
+        QCOMPARE(settings.restoreClipboardAfterTyping(), false);
         QCOMPARE(settings.audioInputDeviceId(), QString());
         QCOMPARE(settings.audioCaptureMode(), QStringLiteral("on_demand"));
         QCOMPARE(settings.audioVadEnabled(), false);
@@ -780,6 +782,10 @@ private slots:
         settings.setOutputMethod(QString::fromLatin1(OutputMethod::Ydotool));
         settings.setYdotoolEnabled(false);
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
+        settings.setRestoreClipboardAfterTyping(true);
+        QCOMPARE(settings.restoreClipboardAfterTyping(), true);
+        settings.setRestoreClipboardAfterTyping(false);
+        QCOMPARE(settings.restoreClipboardAfterTyping(), false);
 
         settings.setAudioCaptureSettings({
             QStringLiteral(" mic-id "),
@@ -844,6 +850,7 @@ private slots:
         settings.setRefinementProvider(QStringLiteral("openai"));
         settings.setRefinementStyle(QStringLiteral("strong_polish"));
         settings.setOpenAiAuthMode(QStringLiteral("env"));
+        settings.setRestoreClipboardAfterTyping(true);
         settings.setAudioCaptureSettings({
             QStringLiteral("device-1"),
             QStringLiteral("warm"),
@@ -874,6 +881,7 @@ private slots:
         QCOMPARE(snapshot.refinement.openAiAuthMode, QStringLiteral("env"));
         QCOMPARE(snapshot.output.method, QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(snapshot.output.ydotoolEnabled, false);
+        QCOMPARE(snapshot.output.restoreClipboardAfterTyping, true);
     }
 
     void providerRegistryReturnsSingletonAdapters()
@@ -1016,22 +1024,26 @@ private slots:
     void outputAutomaticFallbackOrder()
     {
         QList<QString> attempts;
+        QList<bool> restoreFlags;
         QHash<QString, bool> results;
         results.insert(QString::fromLatin1(OutputMethod::Ydotool), false);
         results.insert(QString::fromLatin1(OutputMethod::WlCopy), true);
         results.insert(QString::fromLatin1(OutputMethod::QtClipboard), true);
 
-        TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &) {
+        TextDelivery delivery([&attempts, &restoreFlags, &results](const QString &method, const OutputSettings &settings) {
+            restoreFlags.append(settings.restoreClipboardAfterTyping);
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         });
 
         OutputSettings settings;
         settings.method = QString::fromLatin1(OutputMethod::Automatic);
         settings.ydotoolEnabled = true;
+        settings.restoreClipboardAfterTyping = true;
         const DeliveryResult result = delivery.deliver(settings, QStringLiteral("hello"));
         QVERIFY(result.ok);
         QCOMPARE(result.copied, true);
         QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::Ydotool), QString::fromLatin1(OutputMethod::WlCopy)}));
+        QCOMPARE(restoreFlags, QList<bool>({true, true}));
     }
 
     void outputExplicitMethodDoesNotFallback()
@@ -1051,6 +1063,94 @@ private slots:
         const DeliveryResult result = delivery.deliver(settings, QStringLiteral("hello"));
         QVERIFY(!result.ok);
         QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::WlCopy)}));
+    }
+
+    void wlClipboardSnapshotCapturesAndRestoresPreferredMimeType()
+    {
+        QTemporaryDir dir;
+        const QString copyArgsPath = dir.filePath(QStringLiteral("copy-args"));
+        const QString copyDataPath = dir.filePath(QStringLiteral("copy-data"));
+        const QString fakePaste = writeFakeClaudeScript(dir.filePath(QStringLiteral("wl-paste")), QStringLiteral(R"SH(
+if test "$1" = "--list-types"; then
+  printf '%s\n' 'image/png' 'text/plain;charset=utf-8' 'text/html'
+  exit 0
+fi
+if test "$1" = "--no-newline" && test "$2" = "--type"; then
+  printf 'old clipboard from %s' "$3"
+  exit 0
+fi
+echo unexpected wl-paste args "$@" >&2
+exit 9
+)SH"));
+        const QString fakeCopy = writeFakeClaudeScript(dir.filePath(QStringLiteral("wl-copy")), QStringLiteral(R"SH(
+printf '%s\n' "$*" > "$SPEECHER_TEST_WL_COPY_ARGS"
+cat > "$SPEECHER_TEST_WL_COPY_DATA"
+exit 0
+)SH"));
+        QVERIFY(!fakePaste.isEmpty());
+        QVERIFY(!fakeCopy.isEmpty());
+
+        const QByteArray oldPath = qgetenv("PATH");
+        qputenv("PATH", QFile::encodeName(dir.path()) + QByteArrayLiteral(":") + oldPath);
+        qputenv("SPEECHER_TEST_WL_COPY_ARGS", QFile::encodeName(copyArgsPath));
+        qputenv("SPEECHER_TEST_WL_COPY_DATA", QFile::encodeName(copyDataPath));
+        const auto cleanup = qScopeGuard([oldPath] {
+            qputenv("PATH", oldPath);
+            qunsetenv("SPEECHER_TEST_WL_COPY_ARGS");
+            qunsetenv("SPEECHER_TEST_WL_COPY_DATA");
+        });
+
+        WlClipboardSnapshot snapshot;
+        QString error;
+        QVERIFY2(WlClipboardDelivery::capture(&snapshot, &error), qPrintable(error));
+        QVERIFY(snapshot.hasData);
+        QCOMPARE(snapshot.mimeType, QStringLiteral("text/plain;charset=utf-8"));
+        QCOMPARE(snapshot.data, QByteArrayLiteral("old clipboard from text/plain;charset=utf-8"));
+
+        QVERIFY2(WlClipboardDelivery::restore(snapshot, &error), qPrintable(error));
+
+        QFile argsFile(copyArgsPath);
+        QVERIFY(argsFile.open(QIODevice::ReadOnly));
+        QCOMPARE(QString::fromUtf8(argsFile.readAll()).trimmed(), QStringLiteral("--type text/plain;charset=utf-8"));
+
+        QFile dataFile(copyDataPath);
+        QVERIFY(dataFile.open(QIODevice::ReadOnly));
+        QCOMPARE(dataFile.readAll(), QByteArrayLiteral("old clipboard from text/plain;charset=utf-8"));
+    }
+
+    void wlClipboardSnapshotRestoresEmptyClipboard()
+    {
+        QTemporaryDir dir;
+        const QString copyArgsPath = dir.filePath(QStringLiteral("copy-args"));
+        const QString fakePaste = writeFakeClaudeScript(dir.filePath(QStringLiteral("wl-paste")), QStringLiteral(R"SH(
+echo 'Nothing is copied' >&2
+exit 1
+)SH"));
+        const QString fakeCopy = writeFakeClaudeScript(dir.filePath(QStringLiteral("wl-copy")), QStringLiteral(R"SH(
+printf '%s\n' "$*" > "$SPEECHER_TEST_WL_COPY_ARGS"
+exit 0
+)SH"));
+        QVERIFY(!fakePaste.isEmpty());
+        QVERIFY(!fakeCopy.isEmpty());
+
+        const QByteArray oldPath = qgetenv("PATH");
+        qputenv("PATH", QFile::encodeName(dir.path()) + QByteArrayLiteral(":") + oldPath);
+        qputenv("SPEECHER_TEST_WL_COPY_ARGS", QFile::encodeName(copyArgsPath));
+        const auto cleanup = qScopeGuard([oldPath] {
+            qputenv("PATH", oldPath);
+            qunsetenv("SPEECHER_TEST_WL_COPY_ARGS");
+        });
+
+        WlClipboardSnapshot snapshot;
+        QString error;
+        QVERIFY2(WlClipboardDelivery::capture(&snapshot, &error), qPrintable(error));
+        QVERIFY(!snapshot.hasData);
+
+        QVERIFY2(WlClipboardDelivery::restore(snapshot, &error), qPrintable(error));
+
+        QFile argsFile(copyArgsPath);
+        QVERIFY(argsFile.open(QIODevice::ReadOnly));
+        QCOMPARE(QString::fromUtf8(argsFile.readAll()).trimmed(), QStringLiteral("--clear"));
     }
 
     void ydotoolDeliveryBuildsTypeAndPasteCommands()
@@ -1143,6 +1243,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
         QCOMPARE(delivery->lastText, QStringLiteral("hello world"));
         QCOMPARE(delivery->lastSettings.method, QString::fromLatin1(OutputMethod::Automatic));
+        QCOMPARE(delivery->lastSettings.restoreClipboardAfterTyping, false);
         QCOMPARE(media->resumeCalls, 1);
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
     }

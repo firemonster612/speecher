@@ -136,7 +136,7 @@ The script creates `dist/Speecher-x86_64.AppImage`. It uses CMake install output
 
 OpenAI refinement can be tuned in Settings. The default is `Balanced` with adaptive Markdown-compatible output. Refinement is built from composable rules: always-on preservation rules, cumulative level rules, output-style rules, and conflict-resolution rules.
 
-Settings also includes output controls for choosing how Speecher delivers text, including setup for typing directly into focused text fields.
+Settings also includes output controls for choosing how Speecher delivers text, including setup for typing directly into focused text fields. When virtual-keyboard paste is enabled, Speecher can optionally restore the previous clipboard contents after delivery.
 
 Refinement styles:
 

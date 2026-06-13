@@ -50,6 +50,7 @@ struct RefinementSettings {
 struct OutputSettings {
     QString method = QStringLiteral("automatic");
     bool ydotoolEnabled = false;
+    bool restoreClipboardAfterTyping = false;
 };
 
 struct AppSettings {
