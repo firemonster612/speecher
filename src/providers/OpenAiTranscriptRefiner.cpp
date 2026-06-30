@@ -91,6 +91,7 @@ void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
                       m_auth.accountId,
                       m_auth.chatgptBackend,
                       settings.openAiModel,
+                      settings.openAiEffort,
                       settings.style);
 }
 

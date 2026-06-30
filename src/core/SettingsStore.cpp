@@ -1,6 +1,7 @@
 #include "core/SettingsStore.h"
 
 #include "core/BindingProcessor.h"
+#include "core/CliToolDiscovery.h"
 #include "core/OutputMethod.h"
 #include "core/VocabularyLimit.h"
 
@@ -32,6 +33,17 @@ AudioCaptureSettings normalizedAudioCaptureSettings(AudioCaptureSettings setting
     settings.readinessTimeoutMs = std::clamp(settings.readinessTimeoutMs, 150, 3000);
     settings.vadThresholdPercent = std::clamp(settings.vadThresholdPercent, 1, 20);
     return settings;
+}
+
+QString defaultRefinementProvider()
+{
+    if (CliToolDiscovery::isCodexInstalled()) {
+        return QStringLiteral("openai");
+    }
+    if (CliToolDiscovery::isClaudeCodeInstalled()) {
+        return QStringLiteral("anthropic");
+    }
+    return QStringLiteral("openai");
 }
 
 } // namespace
@@ -263,13 +275,22 @@ bool SettingsStore::setBindingRules(const QList<BindingRule> &rules, QString *er
 
 QString SettingsStore::refinementProvider() const
 {
-    const QString provider = value(QStringLiteral("refinement/provider"), QStringLiteral("openai")).toString();
-    return provider == QStringLiteral("none") ? provider : QStringLiteral("openai");
+    const QString key = QStringLiteral("refinement/provider");
+    const QString provider = m_settings.contains(key) ? value(key, QStringLiteral("openai")).toString()
+                                                      : defaultRefinementProvider();
+    if (provider == QStringLiteral("none") || provider == QStringLiteral("anthropic")) {
+        return provider;
+    }
+    return QStringLiteral("openai");
 }
 
 void SettingsStore::setRefinementProvider(const QString &value)
 {
-    m_settings.setValue(QStringLiteral("refinement/provider"), value == QStringLiteral("none") ? value : QStringLiteral("openai"));
+    if (value == QStringLiteral("none") || value == QStringLiteral("anthropic")) {
+        m_settings.setValue(QStringLiteral("refinement/provider"), value);
+        return;
+    }
+    m_settings.setValue(QStringLiteral("refinement/provider"), QStringLiteral("openai"));
 }
 
 QString SettingsStore::refinementStyle() const
@@ -292,15 +313,15 @@ void SettingsStore::setRefinementStyle(const QString &value)
 
 QString SettingsStore::openAiModel() const
 {
-    const QString model = value(QStringLiteral("openai/model"), QStringLiteral("gpt-5.4-mini")).toString().trimmed();
-    return model.isEmpty() ? QStringLiteral("gpt-5.4-mini") : model;
+    const QString model = value(QStringLiteral("openai/model"), QStringLiteral("gpt-5.5")).toString().trimmed();
+    return model.isEmpty() ? QStringLiteral("gpt-5.5") : model;
 }
 
 void SettingsStore::setOpenAiModel(const QString &value)
 {
     const QString model = value.trimmed();
     m_settings.setValue(QStringLiteral("openai/model"),
-                        model.isEmpty() ? QStringLiteral("gpt-5.4-mini") : model);
+                        model.isEmpty() ? QStringLiteral("gpt-5.5") : model);
 }
 
 QString SettingsStore::openAiAuthMode() const
@@ -330,6 +351,78 @@ void SettingsStore::setOpenAiAuthMode(const QString &value)
         return;
     }
     m_settings.setValue(QStringLiteral("openai/auth/mode"), QStringLiteral("auto"));
+}
+
+QString SettingsStore::openAiEffort() const
+{
+    const QString effort = value(QStringLiteral("openai/effort"), QStringLiteral("none")).toString();
+    if (effort == QStringLiteral("minimal") || effort == QStringLiteral("low")
+        || effort == QStringLiteral("medium") || effort == QStringLiteral("high")
+        || effort == QStringLiteral("xhigh")) {
+        return effort;
+    }
+    return QStringLiteral("none");
+}
+
+void SettingsStore::setOpenAiEffort(const QString &value)
+{
+    if (value == QStringLiteral("minimal") || value == QStringLiteral("low")
+        || value == QStringLiteral("medium") || value == QStringLiteral("high")
+        || value == QStringLiteral("xhigh")) {
+        m_settings.setValue(QStringLiteral("openai/effort"), value);
+        return;
+    }
+    m_settings.setValue(QStringLiteral("openai/effort"), QStringLiteral("none"));
+}
+
+QString SettingsStore::anthropicModel() const
+{
+    const QString model = value(QStringLiteral("anthropic/model"), QStringLiteral("claude-sonnet-4-6")).toString().trimmed();
+    return model.isEmpty() ? QStringLiteral("claude-sonnet-4-6") : model;
+}
+
+void SettingsStore::setAnthropicModel(const QString &value)
+{
+    const QString model = value.trimmed();
+    m_settings.setValue(QStringLiteral("anthropic/model"),
+                        model.isEmpty() ? QStringLiteral("claude-sonnet-4-6") : model);
+}
+
+QString SettingsStore::anthropicAuthMode() const
+{
+    const QString mode = value(QStringLiteral("anthropic/auth/mode"), QStringLiteral("claude_code")).toString();
+    if (mode == QStringLiteral("oauth") || mode == QStringLiteral("claude_code")) {
+        return mode;
+    }
+    return QStringLiteral("claude_code");
+}
+
+void SettingsStore::setAnthropicAuthMode(const QString &value)
+{
+    m_settings.setValue(QStringLiteral("anthropic/auth/mode"),
+                        value == QStringLiteral("oauth") ? QStringLiteral("oauth") : QStringLiteral("claude_code"));
+}
+
+QString SettingsStore::anthropicEffort() const
+{
+    const QString effort = value(QStringLiteral("anthropic/effort"), QStringLiteral("low")).toString();
+    if (effort == QStringLiteral("low") || effort == QStringLiteral("medium")
+        || effort == QStringLiteral("high") || effort == QStringLiteral("xhigh")
+        || effort == QStringLiteral("max")) {
+        return effort;
+    }
+    return QStringLiteral("low");
+}
+
+void SettingsStore::setAnthropicEffort(const QString &value)
+{
+    if (value == QStringLiteral("low") || value == QStringLiteral("medium")
+        || value == QStringLiteral("high") || value == QStringLiteral("xhigh")
+        || value == QStringLiteral("max")) {
+        m_settings.setValue(QStringLiteral("anthropic/effort"), value);
+        return;
+    }
+    m_settings.setValue(QStringLiteral("anthropic/effort"), QStringLiteral("low"));
 }
 
 QString SettingsStore::outputMethod() const
@@ -414,6 +507,12 @@ AppSettings SettingsStore::snapshot() const
     settings.refinement.style = refinementStyle();
     settings.refinement.openAiModel = openAiModel();
     settings.refinement.openAiAuthMode = openAiAuthMode();
+    settings.refinement.openAiEffort = openAiEffort();
+    settings.refinement.anthropicModel = anthropicModel();
+    settings.refinement.anthropicAuthMode = anthropicAuthMode();
+    settings.refinement.anthropicEffort = anthropicEffort();
+    settings.refinement.anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
+    settings.refinement.claudeCredentialsPath = claudeCredentialsPath();
 
     settings.output.method = outputMethod();
     settings.output.ydotoolEnabled = ydotoolEnabled();

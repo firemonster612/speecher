@@ -1,28 +1,24 @@
 #pragma once
 
-#include <QObject>
 #include <QNetworkAccessManager>
+#include <QObject>
 #include <QStringList>
+
+class QNetworkReply;
 
 namespace speecher {
 
-QString openAiRefinementInstructions(const QString &style);
-
-class OpenAiRefiner : public QObject {
+class AnthropicApiRefiner final : public QObject {
     Q_OBJECT
 
 public:
-    explicit OpenAiRefiner(QObject *parent = nullptr);
+    explicit AnthropicApiRefiner(QObject *parent = nullptr);
 
     void refine(const QString &rawTranscript,
                 const QStringList &vocabulary,
                 const QStringList &bindingVocabulary,
                 const QString &bearerToken,
-                const QString &organization,
-                const QString &project,
                 const QString &endpointBase,
-                const QString &accountId,
-                bool chatgptBackend,
                 const QString &model,
                 const QString &effort,
                 const QString &refinementStyle);

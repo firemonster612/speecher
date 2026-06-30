@@ -4,6 +4,7 @@
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "platform/PlatformIntegration.h"
+#include "providers/AnthropicTranscriptRefiner.h"
 #include "providers/ClaudeSpeechTranscriber.h"
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
@@ -145,6 +146,9 @@ void ApplicationController::registerProviders()
     });
     m_providers->registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("OpenAI")}, [this](QObject *parent) {
         return new OpenAiTranscriptRefiner(m_secrets, parent);
+    });
+    m_providers->registerRefinementProvider({QStringLiteral("anthropic"), QStringLiteral("Anthropic")}, [](QObject *parent) {
+        return new AnthropicTranscriptRefiner(parent);
     });
 }
 

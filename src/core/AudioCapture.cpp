@@ -180,12 +180,26 @@ QString sourceErrorMessageForLabel(const QString &label, QAudio::Error error)
     case QAudio::IOError:
         return QStringLiteral("Microphone \"%1\" stopped while reading audio. It may have been unplugged or denied by the audio server.")
             .arg(microphone);
+#if QT_VERSION < QT_VERSION_CHECK(6, 11, 0)
     case QAudio::UnderrunError:
         return QStringLiteral("Microphone \"%1\" could not provide audio quickly enough.").arg(microphone);
+#endif
     case QAudio::FatalError:
         return QStringLiteral("Microphone \"%1\" failed with a fatal audio error.").arg(microphone);
     }
     return QStringLiteral("Microphone \"%1\" failed.").arg(microphone);
+}
+
+bool isIgnorableStoppedSourceError(QAudio::Error error)
+{
+    if (error == QAudio::NoError) {
+        return true;
+    }
+#if QT_VERSION < QT_VERSION_CHECK(6, 11, 0)
+    return error == QAudio::UnderrunError;
+#else
+    return false;
+#endif
 }
 
 QString sourceErrorMessage(const QAudioDevice &device, QAudio::Error error)
@@ -616,7 +630,7 @@ void AudioCapture::handleSourceStateChanged(QAudio::State state)
     }
 
     const QAudio::Error audioError = m_source->error();
-    if (audioError == QAudio::NoError || audioError == QAudio::UnderrunError) {
+    if (isIgnorableStoppedSourceError(audioError)) {
         return;
     }
 

@@ -1,16 +1,15 @@
 #include "providers/OpenAiAuthProvider.h"
 
+#include "core/CliToolDiscovery.h"
 #include "core/SecretStore.h"
 
 #include <QDir>
 #include <QDateTime>
 #include <QFile>
-#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
 #include <QProcessEnvironment>
-#include <QStandardPaths>
 #include <QTimeZone>
 
 namespace speecher {
@@ -91,33 +90,6 @@ static bool jwtExpired(const QString &jwt)
     return expires > 0 && QDateTime::fromSecsSinceEpoch(expires, QTimeZone::UTC) <= QDateTime::currentDateTimeUtc();
 }
 
-static QString findCodexExecutable()
-{
-    const QString overridePath = qEnvironmentVariable("SPEECHER_TEST_CODEX_EXECUTABLE");
-    if (!overridePath.isEmpty()) {
-        return overridePath;
-    }
-
-    const QString fromPath = QStandardPaths::findExecutable(QStringLiteral("codex"));
-    if (!fromPath.isEmpty()) {
-        return fromPath;
-    }
-
-    const QStringList fixedCandidates{
-        QDir::homePath() + QStringLiteral("/.local/bin/codex"),
-        QStringLiteral("/usr/local/bin/codex"),
-        QStringLiteral("/usr/bin/codex"),
-    };
-    for (const QString &candidate : fixedCandidates) {
-        const QFileInfo file(candidate);
-        if (file.isFile() && file.isExecutable()) {
-            return candidate;
-        }
-    }
-
-    return {};
-}
-
 static int codexRefreshTimeoutMs()
 {
     bool ok = false;
@@ -127,7 +99,7 @@ static int codexRefreshTimeoutMs()
 
 static bool refreshCodexAuth(QString *error)
 {
-    const QString executable = findCodexExecutable();
+    const QString executable = CliToolDiscovery::codexExecutable();
     if (executable.isEmpty()) {
         if (error) {
             *error = QStringLiteral("Could not find Codex CLI; install it and ensure `codex` is on PATH");

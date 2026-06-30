@@ -1,6 +1,7 @@
 #include "providers/ClaudeCredentials.h"
 
-#include <QDir>
+#include "core/CliToolDiscovery.h"
+
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
@@ -9,7 +10,6 @@
 #include <QJsonObject>
 #include <QProcess>
 #include <QRegularExpression>
-#include <QStandardPaths>
 #include <QTimeZone>
 
 #include <cerrno>
@@ -77,36 +77,7 @@ ClaudeCredentialResult readCredentials(const QString &path)
 
 QString findClaudeExecutable()
 {
-    const QString overridePath = qEnvironmentVariable("SPEECHER_TEST_CLAUDE_EXECUTABLE");
-    if (!overridePath.isEmpty()) {
-        return overridePath;
-    }
-
-    const QString fromPath = QStandardPaths::findExecutable(QStringLiteral("claude"));
-    if (!fromPath.isEmpty()) {
-        return fromPath;
-    }
-
-    const QStringList fixedCandidates{
-        QDir::homePath() + QStringLiteral("/.local/bin/claude"),
-        QStringLiteral("/usr/local/bin/claude"),
-        QStringLiteral("/usr/bin/claude"),
-    };
-    for (const QString &candidate : fixedCandidates) {
-        const QFileInfo file(candidate);
-        if (file.isFile() && file.isExecutable()) {
-            return candidate;
-        }
-    }
-
-    QDir versions(QDir::homePath() + QStringLiteral("/.local/share/claude/versions"));
-    const QFileInfoList entries = versions.entryInfoList(QDir::Files | QDir::Executable | QDir::NoDotAndDotDot,
-                                                         QDir::Time);
-    if (!entries.isEmpty()) {
-        return entries.first().absoluteFilePath();
-    }
-
-    return {};
+    return CliToolDiscovery::claudeCodeExecutable();
 }
 
 #ifdef Q_OS_UNIX

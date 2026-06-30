@@ -14,6 +14,7 @@
 #include "ui/Theme.h"
 
 #include <QAbstractItemView>
+#include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -44,6 +45,7 @@
 #include <QTimer>
 #include <QToolTip>
 #include <QVBoxLayout>
+#include <QtMath>
 
 namespace speecher {
 
@@ -94,6 +96,58 @@ static QTableWidgetItem *makeVocabularyItem(const QString &text)
     return item;
 }
 
+static QIcon informationIcon(QWidget *widget)
+{
+    QIcon icon = QIcon::fromTheme(QStringLiteral("dialog-information-symbolic"));
+    if (icon.isNull()) {
+        icon = QIcon::fromTheme(QStringLiteral("dialog-information"));
+    }
+    if (icon.isNull() && widget) {
+        icon = widget->style()->standardIcon(QStyle::SP_MessageBoxInformation, nullptr, widget);
+    }
+    return icon;
+}
+
+static QPixmap tintedInformationPixmap(QWidget *widget, const QSize &size, const QColor &color)
+{
+    const QIcon icon = informationIcon(widget);
+    QPixmap source = icon.pixmap(size - QSize(2, 2));
+    if (source.isNull()) {
+        return source;
+    }
+
+    QPixmap tinted(size);
+    tinted.fill(Qt::transparent);
+    QPainter painter(&tinted);
+    painter.drawPixmap((size.width() - source.width()) / 2, (size.height() - source.height()) / 2, source);
+    painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+    painter.fillRect(tinted.rect(), color);
+    return tinted;
+}
+
+static QPixmap warningInformationPixmap(QWidget *widget, int logicalSize, const QColor &color)
+{
+    const qreal dpr = widget ? widget->devicePixelRatioF() : qApp->devicePixelRatio();
+    QPixmap pixmap(qCeil(logicalSize * dpr), qCeil(logicalSize * dpr));
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.scale(dpr, dpr);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(color);
+    painter.drawEllipse(QRectF(1.5, 1.5, logicalSize - 3.0, logicalSize - 3.0));
+
+    const QColor cutout = widget ? widget->palette().color(QPalette::Base) : QColor(Qt::black);
+    painter.setBrush(cutout);
+    painter.drawEllipse(QRectF(logicalSize / 2.0 - 1.1, 4.0, 2.2, 2.2));
+    painter.drawRoundedRect(QRectF(logicalSize / 2.0 - 1.1, 7.4, 2.2, 5.3), 1.0, 1.0);
+    painter.end();
+
+    pixmap.setDevicePixelRatio(dpr);
+    return pixmap;
+}
+
 class ElidedLabel : public QLabel {
 public:
     explicit ElidedLabel(QWidget *parent = nullptr)
@@ -128,7 +182,11 @@ static QFrame *makeSeparator(QWidget *parent)
     return line;
 }
 
-static QFrame *makeRow(const QString &label, const QString &description, QWidget *control, QWidget *parent)
+static QFrame *makeRow(const QString &label,
+                       const QString &description,
+                       QWidget *control,
+                       QWidget *parent,
+                       QWidget *titleAccessory = nullptr)
 {
     auto *row = new QFrame(parent);
     row->setObjectName(QStringLiteral("settingsRow"));
@@ -159,7 +217,21 @@ static QFrame *makeRow(const QString &label, const QString &description, QWidget
     subtitle->setAutoFillBackground(false);
     title->setForegroundRole(QPalette::WindowText);
     subtitle->setForegroundRole(QPalette::WindowText);
-    textLayout->addWidget(title);
+    if (titleAccessory) {
+        auto *titleRow = new QWidget(text);
+        titleRow->setObjectName(QStringLiteral("rowText"));
+        titleRow->setAttribute(Qt::WA_StyledBackground, false);
+        titleRow->setAutoFillBackground(false);
+        auto *titleLayout = new QHBoxLayout(titleRow);
+        titleLayout->setContentsMargins(0, 0, 0, 0);
+        titleLayout->setSpacing(6);
+        titleLayout->addWidget(title, 0, Qt::AlignVCenter);
+        titleLayout->addWidget(titleAccessory, 0, Qt::AlignVCenter);
+        titleLayout->addStretch();
+        textLayout->addWidget(titleRow);
+    } else {
+        textLayout->addWidget(title);
+    }
     if (!description.isEmpty()) {
         textLayout->addWidget(subtitle);
     }
@@ -198,6 +270,11 @@ static void selectData(QComboBox *combo, const QString &data)
 static void selectEditableText(QComboBox *combo, const QString &text)
 {
     const QString trimmed = text.trimmed();
+    const int dataIndex = combo->findData(trimmed);
+    if (dataIndex >= 0) {
+        combo->setCurrentIndex(dataIndex);
+        return;
+    }
     const int index = combo->findText(trimmed);
     if (index >= 0) {
         combo->setCurrentIndex(index);
@@ -205,6 +282,19 @@ static void selectEditableText(QComboBox *combo, const QString &text)
     }
     combo->addItem(trimmed, trimmed);
     combo->setCurrentIndex(combo->count() - 1);
+}
+
+static QString editableComboValue(const QComboBox *combo)
+{
+    const int index = combo->currentIndex();
+    const QString text = combo->currentText().trimmed();
+    if (index >= 0 && text == combo->itemText(index)) {
+        const QString data = combo->itemData(index).toString().trimmed();
+        if (!data.isEmpty()) {
+            return data;
+        }
+    }
+    return text;
 }
 
 static void setComboItemEnabled(QComboBox *combo, int index, bool enabled, const QString &toolTip = QString())
@@ -251,6 +341,51 @@ static QWidget *makeYdotoolControl(QLabel *status,
     return control;
 }
 
+static QWidget *makeAnthropicModelControl(QComboBox *model, QLabel *warning, QWidget **warningRowOut, QWidget *parent)
+{
+    auto *control = new QWidget(parent);
+    auto *layout = new QVBoxLayout(control);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(6);
+
+    auto *warningRow = new QWidget(control);
+    auto *warningLayout = new QHBoxLayout(warningRow);
+    warningLayout->setContentsMargins(0, 0, 0, 0);
+    warningLayout->setSpacing(5);
+    warningRow->setFixedHeight(18);
+
+    auto *icon = new QLabel(warningRow);
+    icon->setAlignment(Qt::AlignCenter);
+    icon->setFixedSize(18, 18);
+    icon->setPixmap(warningInformationPixmap(parent, 14, QColor(QStringLiteral("#f59e0b"))));
+
+    QFont warningFont = warning->font();
+    if (warningFont.pointSize() > 0) {
+        warningFont.setPointSize(qMax(warningFont.pointSize() - 2, 8));
+    } else {
+        warningFont.setPixelSize(qMax(warningFont.pixelSize() - 2, 11));
+    }
+    warning->setFont(warningFont);
+    warning->setWordWrap(false);
+    warning->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    warning->setMinimumWidth(0);
+    warning->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    warning->setFixedHeight(18);
+    warning->setAttribute(Qt::WA_StyledBackground, false);
+    warning->setAutoFillBackground(false);
+
+    warningLayout->addWidget(icon, 0, Qt::AlignVCenter);
+    warningLayout->addWidget(warning, 1, Qt::AlignVCenter);
+    layout->addWidget(model);
+    layout->addWidget(warningRow);
+
+    if (warningRowOut) {
+        *warningRowOut = warningRow;
+    }
+    warningRow->setVisible(false);
+    return control;
+}
+
 static QLabel *makeSectionLabel(const QString &text, QWidget *parent)
 {
     auto *section = new QLabel(text, parent);
@@ -281,11 +416,16 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_provider(new QComboBox(this))
     , m_refinementStyle(new QComboBox(this))
     , m_openAiModel(new QComboBox(this))
+    , m_openAiEffort(new QComboBox(this))
+    , m_anthropicModel(new QComboBox(this))
+    , m_anthropicEffort(new QComboBox(this))
     , m_outputMethod(new QComboBox(this))
     , m_restoreClipboardAfterTyping(new QCheckBox(this))
     , m_authMode(new QComboBox(this))
+    , m_anthropicAuthMode(new QComboBox(this))
     , m_authControl(new QStackedWidget(this))
     , m_authStatus(new QLabel(this))
+    , m_anthropicWarning(new QLabel(this))
     , m_ydotoolStatus(new QLabel(this))
     , m_vocabLimit(new QLabel(this))
     , m_apiKey(new QLineEdit(this))
@@ -321,10 +461,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_refinementStyle->addItem(QStringLiteral("Balanced"), QStringLiteral("balanced"));
     m_refinementStyle->addItem(QStringLiteral("Light cleanup"), QStringLiteral("light_cleanup"));
     for (const QString &model : {
+             QStringLiteral("gpt-5.5"),
              QStringLiteral("gpt-5.4-nano"),
              QStringLiteral("gpt-5.4-mini"),
              QStringLiteral("gpt-5.4"),
-             QStringLiteral("gpt-5.5"),
          }) {
         m_openAiModel->addItem(model, model);
     }
@@ -332,11 +472,41 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_openAiModel->setInsertPolicy(QComboBox::NoInsert);
     m_openAiModel->setMaxVisibleItems(6);
     m_openAiModel->setMinimumContentsLength(16);
-    m_openAiModel->setToolTip(QStringLiteral("Use gpt-5.4-nano for fastest refinement, or type another model ID."));
+    m_openAiModel->setToolTip(QStringLiteral("Defaults to gpt-5.5. Use gpt-5.4-nano for fastest refinement, or type another model ID."));
     m_openAiModel->view()->setMouseTracking(true);
     if (m_openAiModel->lineEdit()) {
         m_openAiModel->lineEdit()->setClearButtonEnabled(true);
     }
+    m_openAiEffort->addItem(QStringLiteral("None"), QStringLiteral("none"));
+    m_openAiEffort->addItem(QStringLiteral("Minimal"), QStringLiteral("minimal"));
+    m_openAiEffort->addItem(QStringLiteral("Low"), QStringLiteral("low"));
+    m_openAiEffort->addItem(QStringLiteral("Medium"), QStringLiteral("medium"));
+    m_openAiEffort->addItem(QStringLiteral("High"), QStringLiteral("high"));
+    m_openAiEffort->addItem(QStringLiteral("Extra high"), QStringLiteral("xhigh"));
+    m_openAiEffort->setToolTip(QStringLiteral("OpenAI Responses reasoning.effort. Supported values vary by model."));
+    const QList<QPair<QString, QString>> anthropicModels{
+        {QStringLiteral("Claude Opus 4.8"), QStringLiteral("claude-opus-4-8")},
+        {QStringLiteral("Claude Sonnet 4.6"), QStringLiteral("claude-sonnet-4-6")},
+        {QStringLiteral("Claude Haiku 4.5"), QStringLiteral("claude-haiku-4-5-20251001")},
+    };
+    for (const auto &model : anthropicModels) {
+        m_anthropicModel->addItem(model.first, model.second);
+    }
+    m_anthropicModel->setEditable(true);
+    m_anthropicModel->setInsertPolicy(QComboBox::NoInsert);
+    m_anthropicModel->setMaxVisibleItems(8);
+    m_anthropicModel->setMinimumContentsLength(24);
+    m_anthropicModel->setToolTip(QStringLiteral("Defaults to Claude Sonnet 4.6. Select a model or type another model ID."));
+    m_anthropicModel->view()->setMouseTracking(true);
+    if (m_anthropicModel->lineEdit()) {
+        m_anthropicModel->lineEdit()->setClearButtonEnabled(true);
+    }
+    m_anthropicEffort->addItem(QStringLiteral("Low"), QStringLiteral("low"));
+    m_anthropicEffort->addItem(QStringLiteral("Medium"), QStringLiteral("medium"));
+    m_anthropicEffort->addItem(QStringLiteral("High"), QStringLiteral("high"));
+    m_anthropicEffort->addItem(QStringLiteral("Extra high"), QStringLiteral("xhigh"));
+    m_anthropicEffort->addItem(QStringLiteral("Max"), QStringLiteral("max"));
+    m_anthropicEffort->setToolTip(QStringLiteral("Claude effort. Claude Code supports all listed levels; Anthropic API support depends on the selected model."));
     m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::Automatic)), QString::fromLatin1(OutputMethod::Automatic));
     m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::Ydotool)), QString::fromLatin1(OutputMethod::Ydotool));
     m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::WlCopy)), QString::fromLatin1(OutputMethod::WlCopy));
@@ -350,6 +520,9 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_authMode->addItem(QStringLiteral("Codex OAuth"), QStringLiteral("codex_oauth"));
     m_authMode->addItem(QStringLiteral("OPENAI_API_KEY"), QStringLiteral("env"));
     m_authMode->addItem(QStringLiteral("App settings key"), QStringLiteral("settings"));
+    m_anthropicAuthMode->addItem(QStringLiteral("Claude Code session"), QStringLiteral("claude_code"));
+    m_anthropicAuthMode->addItem(QStringLiteral("OAuth extra usage"), QStringLiteral("oauth"));
+    m_anthropicAuthMode->setToolTip(QStringLiteral("Choose interactive Claude Code subscription usage or direct OAuth API routing."));
     m_apiKey->setEchoMode(QLineEdit::Password);
     m_apiKey->setPlaceholderText(QStringLiteral("Enter OpenAI API key"));
     m_authControl->addWidget(m_authStatus);
@@ -409,6 +582,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *refinementSection = makeSectionLabel(QStringLiteral("Refinement"), this);
     auto *outputSection = makeSectionLabel(QStringLiteral("Output"), this);
     auto *openAiSection = makeSectionLabel(QStringLiteral("OpenAI"), this);
+    auto *anthropicSection = makeSectionLabel(QStringLiteral("Anthropic"), this);
     auto *vocabularySection = makeSectionLabel(QStringLiteral("Vocabulary"), this);
     auto *bindingsSection = makeSectionLabel(QStringLiteral("Bindings"), this);
 
@@ -422,6 +596,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *outputLayout = qobject_cast<QVBoxLayout *>(outputCard->layout());
     auto *openAiCard = makeSettingsCard(this);
     auto *openAiLayout = qobject_cast<QVBoxLayout *>(openAiCard->layout());
+    auto *anthropicCard = makeSettingsCard(this);
+    auto *anthropicLayout = qobject_cast<QVBoxLayout *>(anthropicCard->layout());
 
     auto *primaryOutput = new QLabel(m_controller->primaryOutputStatus(), this);
     m_ydotoolSetupButton = new QPushButton(QStringLiteral("Set up"), this);
@@ -438,6 +614,20 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_authStatus->setMinimumWidth(170);
     m_authStatus->setAttribute(Qt::WA_StyledBackground, false);
     m_authStatus->setAutoFillBackground(false);
+    m_anthropicWarning->setObjectName(QStringLiteral("statusText"));
+    m_anthropicWarning->setForegroundRole(QPalette::WindowText);
+    m_anthropicInfoButton = new QPushButton(this);
+    m_anthropicInfoButton->setIcon(informationIcon(this));
+    m_anthropicInfoButton->setIconSize(QSize(14, 14));
+    m_anthropicInfoButton->setFlat(true);
+    m_anthropicInfoButton->setCursor(Qt::PointingHandCursor);
+    m_anthropicInfoButton->setFixedSize(22, 22);
+    m_anthropicInfoButton->setToolTip(QStringLiteral("Compare Claude Code session and OAuth extra usage."));
+    m_anthropicInfoButton->setAccessibleName(QStringLiteral("Anthropic auth info"));
+    m_anthropicInfoButton->setStyleSheet(QStringLiteral(
+        "QPushButton{border:0;border-radius:4px;padding:2px;background:transparent;}"
+        "QPushButton:hover{background:palette(midlight);}"
+        "QPushButton:pressed{background:palette(mid);}"));
     primaryOutput->setObjectName(QStringLiteral("statusText"));
     for (QLabel *label : {m_authStatus, primaryOutput}) {
         label->setForegroundRole(QPalette::WindowText);
@@ -521,8 +711,30 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     addRow(refinementLayout, makeRow(QStringLiteral("Refinement style"), QStringLiteral("How strongly dictated text is rewritten."), m_refinementStyle, refinementCard), refinementCard, false);
 
     addRow(openAiLayout, makeRow(QStringLiteral("OpenAI model"), QStringLiteral("Model used for refinement."), m_openAiModel, openAiCard), openAiCard);
+    addRow(openAiLayout, makeRow(QStringLiteral("OpenAI effort"), QStringLiteral("Reasoning effort used for refinement."), m_openAiEffort, openAiCard), openAiCard);
     addRow(openAiLayout, makeRow(QStringLiteral("OpenAI auth mode"), QStringLiteral("Credential source used for refinement."), m_authMode, openAiCard), openAiCard);
     addRow(openAiLayout, makeRow(QStringLiteral("OpenAI auth"), QStringLiteral("Current credential source or app settings key."), m_authControl, openAiCard), openAiCard, false);
+
+    addRow(anthropicLayout,
+           makeRow(QStringLiteral("Claude model"),
+                   QStringLiteral("Model used for Anthropic refinement."),
+                   makeAnthropicModelControl(m_anthropicModel, m_anthropicWarning, &m_anthropicWarningRow, anthropicCard),
+                   anthropicCard),
+           anthropicCard);
+    addRow(anthropicLayout,
+           makeRow(QStringLiteral("Claude effort"),
+                   QStringLiteral("Token spend and reasoning depth for Anthropic refinement."),
+                   m_anthropicEffort,
+                   anthropicCard),
+           anthropicCard);
+    addRow(anthropicLayout,
+           makeRow(QStringLiteral("Anthropic auth"),
+                   QStringLiteral("How Speecher sends refinement requests to Claude."),
+                   m_anthropicAuthMode,
+                   anthropicCard,
+                   m_anthropicInfoButton),
+           anthropicCard,
+           false);
 
     auto *vocabSection = new QFrame(this);
     vocabSection->setObjectName(QStringLiteral("vocabSection"));
@@ -583,6 +795,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     content->addWidget(refinementCard);
     content->addWidget(openAiSection);
     content->addWidget(openAiCard);
+    content->addWidget(anthropicSection);
+    content->addWidget(anthropicCard);
     content->addWidget(vocabularySection);
     content->addWidget(vocabSection);
     content->addWidget(bindingsSection);
@@ -600,6 +814,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     outputCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     refinementCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     openAiCard->setStyleSheet(QString::fromLatin1(settingsStyle));
+    anthropicCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     vocabSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     bindingSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     generalSection->setStyleSheet(QString::fromLatin1(settingsStyle));
@@ -607,6 +822,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     outputSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     refinementSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     openAiSection->setStyleSheet(QString::fromLatin1(settingsStyle));
+    anthropicSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     vocabularySection->setStyleSheet(QString::fromLatin1(settingsStyle));
     bindingsSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     note->setStyleSheet(QString::fromLatin1(settingsStyle));
@@ -651,6 +867,14 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(m_provider, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_refinementStyle, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_openAiModel, &QComboBox::currentTextChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_openAiEffort, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_anthropicModel, &QComboBox::currentTextChanged, this, [this] {
+        updateAnthropicControls();
+        updateButtonState();
+    });
+    connect(m_anthropicEffort, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_anthropicAuthMode, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_anthropicInfoButton, &QPushButton::clicked, this, &SettingsDialog::showAnthropicAuthInfo);
     connect(m_restoreClipboardAfterTyping, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
     connect(m_outputMethod, &QComboBox::currentIndexChanged, this, [this] {
         if (m_outputMethod->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool)) {
@@ -713,9 +937,13 @@ void SettingsDialog::load()
     selectData(m_provider, settings->refinementProvider());
     selectData(m_refinementStyle, settings->refinementStyle());
     selectEditableText(m_openAiModel, settings->openAiModel());
+    selectData(m_openAiEffort, settings->openAiEffort());
+    selectEditableText(m_anthropicModel, settings->anthropicModel());
+    selectData(m_anthropicEffort, settings->anthropicEffort());
     selectData(m_outputMethod, settings->outputMethod());
     m_restoreClipboardAfterTyping->setChecked(settings->restoreClipboardAfterTyping());
     selectData(m_authMode, settings->openAiAuthMode());
+    selectData(m_anthropicAuthMode, settings->anthropicAuthMode());
     m_previewWords->setValue(settings->previewWords());
     m_apiKey->setText(m_controller->secretStore()->apiKey());
     setVocabularyRows(settings->customVocabulary());
@@ -723,6 +951,7 @@ void SettingsDialog::load()
     updateVocabularyLimit();
     updateAudioControls();
     updateAuthControl();
+    updateAnthropicControls();
     refreshOutputControls();
     updateButtonState();
 }
@@ -753,11 +982,16 @@ bool SettingsDialog::save()
     });
     settings->setRefinementProvider(m_provider->currentData().toString());
     settings->setRefinementStyle(m_refinementStyle->currentData().toString());
-    settings->setOpenAiModel(m_openAiModel->currentText());
+    settings->setOpenAiModel(editableComboValue(m_openAiModel));
     selectEditableText(m_openAiModel, settings->openAiModel());
+    settings->setOpenAiEffort(m_openAiEffort->currentData().toString());
+    settings->setAnthropicModel(editableComboValue(m_anthropicModel));
+    selectEditableText(m_anthropicModel, settings->anthropicModel());
+    settings->setAnthropicEffort(m_anthropicEffort->currentData().toString());
     settings->setOutputMethod(m_outputMethod->currentData().toString());
     settings->setRestoreClipboardAfterTyping(m_restoreClipboardAfterTyping->isChecked());
     settings->setOpenAiAuthMode(m_authMode->currentData().toString());
+    settings->setAnthropicAuthMode(m_anthropicAuthMode->currentData().toString());
     settings->setPreviewWords(m_previewWords->value());
     settings->setCustomVocabulary(currentVocabulary());
     settings->setBindingRules(bindingValidation.rules);
@@ -773,6 +1007,7 @@ bool SettingsDialog::save()
         }
     }
     updateAuthControl();
+    updateAnthropicControls();
     refreshOutputControls();
     updateButtonState();
     return true;
@@ -793,10 +1028,14 @@ bool SettingsDialog::hasChanges() const
         || m_vadThreshold->value() != audio.vadThresholdPercent
         || m_provider->currentData().toString() != settings->refinementProvider()
         || m_refinementStyle->currentData().toString() != settings->refinementStyle()
-        || m_openAiModel->currentText().trimmed() != settings->openAiModel()
+        || editableComboValue(m_openAiModel) != settings->openAiModel()
+        || m_openAiEffort->currentData().toString() != settings->openAiEffort()
+        || editableComboValue(m_anthropicModel) != settings->anthropicModel()
+        || m_anthropicEffort->currentData().toString() != settings->anthropicEffort()
         || m_outputMethod->currentData().toString() != settings->outputMethod()
         || m_restoreClipboardAfterTyping->isChecked() != settings->restoreClipboardAfterTyping()
         || m_authMode->currentData().toString() != settings->openAiAuthMode()
+        || m_anthropicAuthMode->currentData().toString() != settings->anthropicAuthMode()
         || m_previewWords->value() != settings->previewWords()
         || currentVocabulary() != settings->customVocabulary()
         || currentBindingRules() != settings->bindingRules()) {
@@ -1071,6 +1310,27 @@ void SettingsDialog::updateAuthControl()
     }
     m_authStatus->setText(OpenAiAuthProvider(m_controller->secretStore(), mode).status());
     m_authControl->setCurrentWidget(m_authStatus);
+}
+
+void SettingsDialog::updateAnthropicControls()
+{
+    const QString model = editableComboValue(m_anthropicModel).toCaseFolded();
+    const bool haiku = model.contains(QStringLiteral("haiku"));
+    if (m_anthropicWarningRow) {
+        m_anthropicWarningRow->setVisible(haiku);
+    }
+    m_anthropicWarning->setText(haiku
+                                    ? QStringLiteral("Haiku may treat transcript as instructions.")
+                                    : QString());
+}
+
+void SettingsDialog::showAnthropicAuthInfo()
+{
+    QMessageBox::information(
+        this,
+        QStringLiteral("Anthropic auth"),
+        QStringLiteral("Claude Code session starts and keeps an interactive Claude Code session in Speecher's background daemon. Refinement messages are sent to that session, then the session is cleared after each result. This uses your Claude Code subscription usage.\n\n"
+                       "OAuth extra usage reads the Claude Code OAuth token from ~/.claude/.credentials.json and calls the Anthropic Messages API directly. Anthropic can route this as extra usage billed at API rates, and this path is the one to use when you want direct API-style routing from Speecher."));
 }
 
 void SettingsDialog::refreshOutputControls()

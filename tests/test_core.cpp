@@ -1,15 +1,17 @@
 #include "app/SingleInstanceIpc.h"
-#include "core/SecretStore.h"
 #include "core/AppSettings.h"
 #include "core/BindingProcessor.h"
 #include "core/OutputMethod.h"
+#include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
 #include "core/VocabularyLimit.h"
 #include "core/WordPreview.h"
 #include "dictation/DictationSession.h"
 #include "dictation/DictationTypes.h"
+#include "providers/AnthropicApiRefiner.h"
 #include "providers/ClaudeCredentials.h"
+#include "providers/ClaudeCodeSessionRefiner.h"
 #include "providers/ClaudeVoiceClient.h"
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/OpenAiRefiner.h"
@@ -715,6 +717,13 @@ private slots:
 
     void settingsDefaults()
     {
+        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
+        qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "1");
+        const auto cleanup = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_CODEX_INSTALLED");
+            qunsetenv("SPEECHER_TEST_CLAUDE_INSTALLED");
+        });
+
         SettingsStore settings;
         settings.raw().clear();
         QCOMPARE(settings.previewWords(), 8);
@@ -724,8 +733,12 @@ private slots:
         QCOMPARE(settings.bindingRules().size(), 0);
         QCOMPARE(settings.refinementProvider(), QStringLiteral("openai"));
         QCOMPARE(settings.refinementStyle(), QStringLiteral("balanced"));
-        QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.4-mini"));
+        QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.5"));
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("auto"));
+        QCOMPARE(settings.openAiEffort(), QStringLiteral("none"));
+        QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-sonnet-4-6"));
+        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("claude_code"));
+        QCOMPARE(settings.anthropicEffort(), QStringLiteral("low"));
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(settings.ydotoolEnabled(), false);
         QCOMPARE(settings.restoreClipboardAfterTyping(), false);
@@ -749,7 +762,7 @@ private slots:
         settings.setOpenAiModel(QStringLiteral(" gpt-5.4-nano "));
         QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.4-nano"));
         settings.setOpenAiModel(QString());
-        QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.4-mini"));
+        QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.5"));
 
         settings.raw().setValue(QStringLiteral("openai/auth/mode"), QStringLiteral("api_key_env"));
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("env"));
@@ -763,6 +776,30 @@ private slots:
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("codex_oauth"));
         settings.setOpenAiAuthMode(QStringLiteral("env"));
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("env"));
+        settings.setOpenAiEffort(QStringLiteral("xhigh"));
+        QCOMPARE(settings.openAiEffort(), QStringLiteral("xhigh"));
+        settings.setOpenAiEffort(QStringLiteral("unsupported"));
+        QCOMPARE(settings.openAiEffort(), QStringLiteral("none"));
+
+        settings.setRefinementProvider(QStringLiteral("anthropic"));
+        QCOMPARE(settings.refinementProvider(), QStringLiteral("anthropic"));
+        settings.setRefinementProvider(QStringLiteral("unknown"));
+        QCOMPARE(settings.refinementProvider(), QStringLiteral("openai"));
+
+        settings.setAnthropicModel(QStringLiteral(" claude-opus-4-8 "));
+        QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-opus-4-8"));
+        settings.setAnthropicModel(QString());
+        QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-sonnet-4-6"));
+        settings.setAnthropicAuthMode(QStringLiteral("oauth"));
+        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
+        settings.setAnthropicAuthMode(QStringLiteral("unknown"));
+        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("claude_code"));
+        settings.setAnthropicEffort(QStringLiteral("high"));
+        QCOMPARE(settings.anthropicEffort(), QStringLiteral("high"));
+        settings.setAnthropicEffort(QStringLiteral("max"));
+        QCOMPARE(settings.anthropicEffort(), QStringLiteral("max"));
+        settings.setAnthropicEffort(QStringLiteral("none"));
+        QCOMPARE(settings.anthropicEffort(), QStringLiteral("low"));
 
         settings.setPauseMediaDuringTranscription(true);
         QCOMPARE(settings.pauseMediaDuringTranscription(), true);
@@ -803,6 +840,38 @@ private slots:
         QCOMPARE(settings.audioPostRollMs(), 0);
         QCOMPARE(settings.audioReadinessTimeoutMs(), 150);
         QCOMPARE(settings.audioVadThresholdPercent(), 20);
+    }
+
+    void settingsDefaultRefinementProviderUsesInstalledCli()
+    {
+        const auto cleanup = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_CODEX_INSTALLED");
+            qunsetenv("SPEECHER_TEST_CLAUDE_INSTALLED");
+        });
+
+        SettingsStore settings;
+        settings.raw().clear();
+
+        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "0");
+        qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "1");
+        QCOMPARE(settings.refinementProvider(), QStringLiteral("anthropic"));
+
+        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
+        qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "1");
+        QCOMPARE(settings.refinementProvider(), QStringLiteral("openai"));
+
+        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
+        qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "0");
+        QCOMPARE(settings.refinementProvider(), QStringLiteral("openai"));
+
+        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "0");
+        qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "0");
+        QCOMPARE(settings.refinementProvider(), QStringLiteral("openai"));
+
+        settings.setRefinementProvider(QStringLiteral("anthropic"));
+        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
+        qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "1");
+        QCOMPARE(settings.refinementProvider(), QStringLiteral("anthropic"));
     }
 
     void settingsBindingRulesRoundTrip()
@@ -850,6 +919,10 @@ private slots:
         settings.setRefinementProvider(QStringLiteral("openai"));
         settings.setRefinementStyle(QStringLiteral("strong_polish"));
         settings.setOpenAiAuthMode(QStringLiteral("env"));
+        settings.setOpenAiEffort(QStringLiteral("high"));
+        settings.setAnthropicModel(QStringLiteral("claude-opus-4-8"));
+        settings.setAnthropicAuthMode(QStringLiteral("oauth"));
+        settings.setAnthropicEffort(QStringLiteral("xhigh"));
         settings.setRestoreClipboardAfterTyping(true);
         settings.setAudioCaptureSettings({
             QStringLiteral("device-1"),
@@ -879,6 +952,11 @@ private slots:
         QCOMPARE(snapshot.refinement.providerId, QStringLiteral("openai"));
         QCOMPARE(snapshot.refinement.style, QStringLiteral("strong_polish"));
         QCOMPARE(snapshot.refinement.openAiAuthMode, QStringLiteral("env"));
+        QCOMPARE(snapshot.refinement.openAiEffort, QStringLiteral("high"));
+        QCOMPARE(snapshot.refinement.anthropicModel, QStringLiteral("claude-opus-4-8"));
+        QCOMPARE(snapshot.refinement.anthropicAuthMode, QStringLiteral("oauth"));
+        QCOMPARE(snapshot.refinement.anthropicEffort, QStringLiteral("xhigh"));
+        QVERIFY(snapshot.refinement.claudeCredentialsPath.endsWith(QStringLiteral("/.claude/.credentials.json")));
         QCOMPARE(snapshot.output.method, QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(snapshot.output.ydotoolEnabled, false);
         QCOMPARE(snapshot.output.restoreClipboardAfterTyping, true);
@@ -1793,6 +1871,7 @@ exit 0
                        QStringLiteral("acct-id"),
                        true,
                        QStringLiteral("gpt-test"),
+                       QStringLiteral("high"),
                        QStringLiteral("balanced"));
 
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
@@ -1819,6 +1898,7 @@ exit 0
         const QJsonObject body = QJsonDocument::fromJson(payload, &parseError).object();
         QCOMPARE(parseError.error, QJsonParseError::NoError);
         QCOMPARE(body.value(QStringLiteral("model")).toString(), QStringLiteral("gpt-test"));
+        QCOMPARE(body.value(QStringLiteral("reasoning")).toObject().value(QStringLiteral("effort")).toString(), QStringLiteral("high"));
         QCOMPARE(body.value(QStringLiteral("stream")).toBool(), true);
         QCOMPARE(body.value(QStringLiteral("store")).toBool(), false);
 
@@ -1864,6 +1944,142 @@ exit 0
         QTest::qWait(50);
         QCOMPARE(completed.size(), 1);
         QCOMPARE(failed.size(), 0);
+    }
+
+    void anthropicApiRefinerSendsClaudeCodeOauthShape()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        AnthropicApiRefiner refiner;
+        QSignalSpy completed(&refiner, &AnthropicApiRefiner::completed);
+        QSignalSpy failed(&refiner, &AnthropicApiRefiner::failed);
+
+        const QString rawTranscript = QStringLiteral("please clean this up");
+        refiner.refine(rawTranscript,
+                       QStringList{QStringLiteral("Qt")},
+                       QStringList{QStringLiteral("my email")},
+                       QStringLiteral("test-token"),
+                       QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()),
+                       QStringLiteral("claude-sonnet-4-6"),
+                       QStringLiteral("low"),
+                       QStringLiteral("balanced"));
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(socket);
+
+        const QByteArray request = readHttpRequest(socket, 1000);
+        const int headerEnd = request.indexOf("\r\n\r\n");
+        QVERIFY2(headerEnd >= 0, request.constData());
+        const QByteArray headers = request.left(headerEnd);
+        const int contentLength = httpContentLength(headers);
+        QVERIFY(contentLength > 0);
+        QVERIFY(request.size() >= headerEnd + 4 + contentLength);
+
+        QCOMPARE(headers.left(headers.indexOf('\n')).trimmed(), QByteArrayLiteral("POST /v1/messages HTTP/1.1"));
+        const QByteArray lowerHeaders = headers.toLower();
+        QVERIFY(lowerHeaders.contains(QByteArrayLiteral("authorization: bearer test-token")));
+        QVERIFY(lowerHeaders.contains(QByteArrayLiteral("anthropic-version: 2023-06-01")));
+        QVERIFY(lowerHeaders.contains(QByteArrayLiteral("anthropic-beta: claude-code-20250219,oauth-2025-04-20")));
+        QVERIFY(lowerHeaders.contains(QByteArrayLiteral("user-agent: claude-cli/")));
+        QVERIFY(lowerHeaders.contains(QByteArrayLiteral("(external, cli)")));
+        QVERIFY(lowerHeaders.contains(QByteArrayLiteral("x-app: cli")));
+        QVERIFY(lowerHeaders.contains(QByteArrayLiteral("x-claude-code-session-id:")));
+        QVERIFY(lowerHeaders.contains(QByteArrayLiteral("x-client-request-id:")));
+
+        QJsonParseError parseError;
+        const QByteArray payload = request.mid(headerEnd + 4, contentLength);
+        const QJsonObject body = QJsonDocument::fromJson(payload, &parseError).object();
+        QCOMPARE(parseError.error, QJsonParseError::NoError);
+        QCOMPARE(body.value(QStringLiteral("model")).toString(), QStringLiteral("claude-sonnet-4-6"));
+        QCOMPARE(body.value(QStringLiteral("thinking")).toObject().value(QStringLiteral("type")).toString(), QStringLiteral("adaptive"));
+        QCOMPARE(body.value(QStringLiteral("thinking")).toObject().value(QStringLiteral("display")).toString(), QStringLiteral("omitted"));
+        QCOMPARE(body.value(QStringLiteral("output_config")).toObject().value(QStringLiteral("effort")).toString(), QStringLiteral("low"));
+        QCOMPARE(body.value(QStringLiteral("stream")).toBool(), true);
+
+        const QString system = body.value(QStringLiteral("system")).toString();
+        QVERIFY(system.startsWith(QStringLiteral("You are Claude Code, Anthropic's official CLI for Claude.")));
+        QVERIFY(system.contains(QStringLiteral("Rule: preserve_speecher_binding_placeholders.")));
+
+        const QJsonArray messages = body.value(QStringLiteral("messages")).toArray();
+        QCOMPARE(messages.size(), 1);
+        const QJsonObject user = messages.at(0).toObject();
+        QCOMPARE(user.value(QStringLiteral("role")).toString(), QStringLiteral("user"));
+        const QString content = user.value(QStringLiteral("content")).toString();
+        QVERIFY(content.contains(rawTranscript));
+        QVERIFY(content.contains(QStringLiteral("Preferred vocabulary:\nQt")));
+        QVERIFY(content.contains(QStringLiteral("Binding aliases:\nmy email")));
+
+        const QByteArray sse = QByteArrayLiteral("event: content_block_delta\n"
+                                                 "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"oauth-ok\"}}\n\n"
+                                                 "event: message_stop\n"
+                                                 "data: {\"type\":\"message_stop\"}\n\n");
+        socket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\n"
+                                        "Content-Type: text/event-stream\r\n"
+                                        "Content-Length: ")
+                      + QByteArray::number(sse.size())
+                      + QByteArrayLiteral("\r\n"
+                                          "Connection: close\r\n"
+                                          "\r\n")
+                      + sse);
+        QVERIFY(socket->waitForBytesWritten(1000));
+        socket->disconnectFromHost();
+
+        QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 1000);
+        QCOMPARE(completed.at(0).at(0).toString(), QStringLiteral("oauth-ok"));
+        QCOMPARE(failed.size(), 0);
+    }
+
+    void anthropicApiRefinerDoesNotTreatUnavailableModelsAsEffortSupported()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        AnthropicApiRefiner refiner;
+        refiner.refine(QStringLiteral("please clean this up"),
+                       {},
+                       {},
+                       QStringLiteral("test-token"),
+                       QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()),
+                       QStringLiteral("claude-mythos-5"),
+                       QStringLiteral("low"),
+                       QStringLiteral("balanced"));
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(socket);
+
+        const QByteArray request = readHttpRequest(socket, 1000);
+        const int headerEnd = request.indexOf("\r\n\r\n");
+        QVERIFY2(headerEnd >= 0, request.constData());
+        const QByteArray headers = request.left(headerEnd);
+        const int contentLength = httpContentLength(headers);
+        QVERIFY(contentLength > 0);
+        QVERIFY(request.size() >= headerEnd + 4 + contentLength);
+
+        QJsonParseError parseError;
+        const QByteArray payload = request.mid(headerEnd + 4, contentLength);
+        const QJsonObject body = QJsonDocument::fromJson(payload, &parseError).object();
+        QCOMPARE(parseError.error, QJsonParseError::NoError);
+        QCOMPARE(body.value(QStringLiteral("model")).toString(), QStringLiteral("claude-mythos-5"));
+        QVERIFY(!body.contains(QStringLiteral("thinking")));
+        QVERIFY(!body.contains(QStringLiteral("output_config")));
+
+        const QByteArray sse = QByteArrayLiteral("event: content_block_delta\n"
+                                                 "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\n"
+                                                 "event: message_stop\n"
+                                                 "data: {\"type\":\"message_stop\"}\n\n");
+        socket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\n"
+                                        "Content-Type: text/event-stream\r\n"
+                                        "Content-Length: ")
+                      + QByteArray::number(sse.size())
+                      + QByteArrayLiteral("\r\n"
+                                          "Connection: close\r\n"
+                                          "\r\n")
+                      + sse);
+        QVERIFY(socket->waitForBytesWritten(1000));
+        socket->disconnectFromHost();
     }
 
     void vocabularyLimits()
@@ -1984,6 +2200,79 @@ exit 12
         const ClaudeCredentialResult result = ClaudeCredentials::load(credentialsPath, true);
         QVERIFY(!result.ok);
         QVERIFY(result.error.contains(QStringLiteral("Claude refresh session")));
+    }
+
+    void claudeCodeSessionRefinerUsesInteractiveStreamJson()
+    {
+        QTemporaryDir dir;
+        const QString argsPath = dir.filePath(QStringLiteral("claude-args.txt"));
+        const QString stdinPath = dir.filePath(QStringLiteral("claude-stdin.txt"));
+        const QString fakeClaude = writeFakeClaudeScript(dir.filePath(QStringLiteral("claude-fake")), QStringLiteral(R"SH(
+printf '%s\n' "$@" > "$SPEECHER_TEST_CLAUDE_ARGS"
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$SPEECHER_TEST_CLAUDE_STDIN"
+  case "$line" in
+    *'/clear'*)
+      printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"","session_id":"fake"}'
+      ;;
+    *)
+      printf '%s\n' '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Refined text"}}}'
+      printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"Refined text","session_id":"fake"}'
+      ;;
+  esac
+done
+exit 0
+)SH"));
+        QVERIFY(!fakeClaude.isEmpty());
+
+        qputenv("SPEECHER_TEST_CLAUDE_EXECUTABLE", QFile::encodeName(fakeClaude));
+        qputenv("SPEECHER_TEST_CLAUDE_ARGS", QFile::encodeName(argsPath));
+        qputenv("SPEECHER_TEST_CLAUDE_STDIN", QFile::encodeName(stdinPath));
+        const auto cleanup = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_CLAUDE_EXECUTABLE");
+            qunsetenv("SPEECHER_TEST_CLAUDE_ARGS");
+            qunsetenv("SPEECHER_TEST_CLAUDE_STDIN");
+        });
+
+        ClaudeCodeSessionRefiner refiner;
+        QString error;
+        QVERIFY2(refiner.prepare(QStringLiteral("claude-sonnet-4-6"), QStringLiteral("high"), QStringLiteral("balanced"), &error),
+                 qPrintable(error));
+        QSignalSpy completed(&refiner, &ClaudeCodeSessionRefiner::completed);
+        QSignalSpy delta(&refiner, &ClaudeCodeSessionRefiner::delta);
+
+        refiner.refine(QStringLiteral("raw transcript"),
+                       {QStringLiteral("Speecher")},
+                       {QStringLiteral("my email")});
+
+        QVERIFY(completed.wait(2000));
+        QCOMPARE(completed.first().at(0).toString(), QStringLiteral("Refined text"));
+        QCOMPARE(delta.first().at(0).toString(), QStringLiteral("Refined text"));
+
+        QTRY_VERIFY(QFileInfo::exists(argsPath));
+        QFile argsFile(argsPath);
+        QVERIFY(argsFile.open(QIODevice::ReadOnly));
+        const QStringList args = QString::fromUtf8(argsFile.readAll()).split('\n', Qt::SkipEmptyParts);
+        QVERIFY(args.contains(QStringLiteral("--input-format")));
+        QVERIFY(args.contains(QStringLiteral("stream-json")));
+        QVERIFY(args.contains(QStringLiteral("--output-format")));
+        QVERIFY(args.contains(QStringLiteral("--verbose")));
+        QVERIFY(args.contains(QStringLiteral("--effort")));
+        QVERIFY(args.contains(QStringLiteral("high")));
+        QVERIFY(!args.contains(QStringLiteral("-p")));
+        QVERIFY(!args.contains(QStringLiteral("--print")));
+
+        auto readFileText = [](const QString &path) {
+            QFile file(path);
+            if (!file.open(QIODevice::ReadOnly)) {
+                return QString();
+            }
+            return QString::fromUtf8(file.readAll());
+        };
+        QTRY_VERIFY(readFileText(stdinPath).contains(QStringLiteral("/clear")));
+        const QString stdinLog = readFileText(stdinPath);
+        QVERIFY(stdinLog.contains(QStringLiteral("Raw transcript")));
+        QVERIFY(stdinLog.contains(QStringLiteral("raw transcript")));
     }
 
     void claudeInstalledVersion()

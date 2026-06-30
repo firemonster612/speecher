@@ -27,6 +27,7 @@ endif()
 
 set(SPEECHER_DOMAIN_SOURCES
   src/core/BindingProcessor.cpp
+  src/core/CliToolDiscovery.cpp
   src/core/OutputMethod.cpp
   src/core/SettingsStore.cpp
   src/core/SecretStore.cpp
@@ -40,6 +41,7 @@ set(SPEECHER_DOMAIN_SOURCES
 set(SPEECHER_DOMAIN_HEADERS
   src/core/AppSettings.h
   src/core/BindingProcessor.h
+  src/core/CliToolDiscovery.h
   src/core/OutputMethod.h
   src/core/SettingsStore.h
   src/core/SecretStore.h
@@ -60,7 +62,10 @@ set(SPEECHER_WORKFLOW_HEADERS
 )
 
 set(SPEECHER_PROVIDER_SOURCES
+  src/providers/AnthropicApiRefiner.cpp
+  src/providers/AnthropicTranscriptRefiner.cpp
   src/providers/ClaudeCredentials.cpp
+  src/providers/ClaudeCodeSessionRefiner.cpp
   src/providers/ClaudeSpeechTranscriber.cpp
   src/providers/ClaudeVoiceClient.cpp
   src/providers/OpenAiAuthProvider.cpp
@@ -69,12 +74,16 @@ set(SPEECHER_PROVIDER_SOURCES
 )
 
 set(SPEECHER_PROVIDER_HEADERS
+  src/providers/AnthropicApiRefiner.h
+  src/providers/AnthropicTranscriptRefiner.h
   src/providers/ClaudeCredentials.h
+  src/providers/ClaudeCodeSessionRefiner.h
   src/providers/ClaudeSpeechTranscriber.h
   src/providers/ClaudeVoiceClient.h
   src/providers/OpenAiAuthProvider.h
   src/providers/OpenAiRefiner.h
   src/providers/OpenAiTranscriptRefiner.h
+  src/providers/TranscriptRefinementPrompt.h
 )
 
 set(SPEECHER_PLATFORM_SOURCES

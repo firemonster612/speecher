@@ -42,8 +42,14 @@ struct AudioCaptureSettings {
 struct RefinementSettings {
     QString providerId = QStringLiteral("openai");
     QString style = QStringLiteral("balanced");
-    QString openAiModel;
+    QString openAiModel = QStringLiteral("gpt-5.5");
     QString openAiAuthMode = QStringLiteral("auto");
+    QString openAiEffort = QStringLiteral("none");
+    QString anthropicModel = QStringLiteral("claude-sonnet-4-6");
+    QString anthropicAuthMode = QStringLiteral("claude_code");
+    QString anthropicEffort = QStringLiteral("low");
+    QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
+    QString claudeCredentialsPath;
     QStringList bindingVocabulary;
 };
 

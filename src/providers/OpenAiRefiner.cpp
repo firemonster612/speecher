@@ -1,5 +1,7 @@
 #include "providers/OpenAiRefiner.h"
 
+#include "providers/TranscriptRefinementPrompt.h"
+
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -186,7 +188,7 @@ static QStringList conflictResolutionRules()
     };
 }
 
-QString openAiRefinementInstructions(const QString &style)
+QString transcriptRefinementInstructions(const QString &style)
 {
     QStringList parts;
     parts << taskPreamble();
@@ -204,6 +206,21 @@ QString openAiRefinementInstructions(const QString &style)
     parts << formattingExamples();
     parts << conflictResolutionRules();
     return parts.join(QStringLiteral("\n\n"));
+}
+
+QString openAiRefinementInstructions(const QString &style)
+{
+    return transcriptRefinementInstructions(style);
+}
+
+QString transcriptRefinementUserMessage(const QString &rawTranscript,
+                                        const QStringList &vocabulary,
+                                        const QStringList &bindingVocabulary)
+{
+    return QStringLiteral("Raw transcript:\n%1\n\nPreferred vocabulary:\n%2\n\nBinding aliases:\n%3")
+        .arg(rawTranscript,
+             vocabulary.join(QStringLiteral(", ")),
+             bindingVocabulary.join(QStringLiteral(", ")));
 }
 
 static QString openAiErrorMessage(const QByteArray &payload, const QString &fallback)
@@ -228,6 +245,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
                            const QString &accountId,
                            bool chatgptBackend,
                            const QString &model,
+                           const QString &effort,
                            const QString &refinementStyle)
 {
     Q_UNUSED(chatgptBackend)
@@ -255,17 +273,13 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
 
     QJsonObject body;
     body.insert(QStringLiteral("model"), model);
-    body.insert(QStringLiteral("reasoning"), QJsonObject{{QStringLiteral("effort"), QStringLiteral("none")}});
+    body.insert(QStringLiteral("reasoning"), QJsonObject{{QStringLiteral("effort"), effort.isEmpty() ? QStringLiteral("none") : effort}});
     body.insert(QStringLiteral("instructions"), openAiRefinementInstructions(refinementStyle));
     body.insert(QStringLiteral("stream"), true);
     body.insert(QStringLiteral("store"), false);
     QJsonObject user;
     user.insert(QStringLiteral("role"), QStringLiteral("user"));
-    user.insert(QStringLiteral("content"),
-                QStringLiteral("Raw transcript:\n%1\n\nPreferred vocabulary:\n%2\n\nBinding aliases:\n%3")
-                    .arg(rawTranscript,
-                         vocabulary.join(QStringLiteral(", ")),
-                         bindingVocabulary.join(QStringLiteral(", "))));
+    user.insert(QStringLiteral("content"), transcriptRefinementUserMessage(rawTranscript, vocabulary, bindingVocabulary));
     body.insert(QStringLiteral("input"), QJsonArray{user});
 
     m_reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));

@@ -61,6 +61,18 @@ public:
     QString openAiAuthMode() const;
     void setOpenAiAuthMode(const QString &value);
 
+    QString openAiEffort() const;
+    void setOpenAiEffort(const QString &value);
+
+    QString anthropicModel() const;
+    void setAnthropicModel(const QString &value);
+
+    QString anthropicAuthMode() const;
+    void setAnthropicAuthMode(const QString &value);
+
+    QString anthropicEffort() const;
+    void setAnthropicEffort(const QString &value);
+
     QString outputMethod() const;
     void setOutputMethod(const QString &value);
     bool ydotoolEnabled() const;

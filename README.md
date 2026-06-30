@@ -134,7 +134,11 @@ The script creates `dist/Speecher-x86_64.AppImage`. It uses CMake install output
 
 ## Refinement
 
-OpenAI refinement can be tuned in Settings. The default is `Balanced` with adaptive Markdown-compatible output. Refinement is built from composable rules: always-on preservation rules, cumulative level rules, output-style rules, and conflict-resolution rules.
+OpenAI and Anthropic refinement can be tuned in Settings. On first run, Speecher defaults refinement to OpenAI when the Codex CLI is installed; if Codex is not installed but Claude Code is installed, it defaults to Anthropic. Explicit provider choices in Settings are preserved. The default style is `Balanced` with adaptive Markdown-compatible output. Refinement is built from composable rules: always-on preservation rules, cumulative level rules, output-style rules, and conflict-resolution rules.
+
+Anthropic refinement defaults to Claude Sonnet 4.6. The Settings model picker shows one simple display name per built-in Claude model, such as Claude Opus 4.8, Claude Sonnet 4.6, and Claude Haiku 4.5. It intentionally excludes Fable 5 and Mythos 5 after their June 13, 2026 access suspension. The field is editable for newer or account-specific model IDs. Speecher warns when a Haiku model is selected because Haiku has been observed interpreting the transcript being refined as instructions.
+
+Refinement effort is configurable per provider. OpenAI effort maps to `reasoning.effort` on the Responses API and defaults to `none`, matching non-reasoning refinement. Anthropic effort maps to Claude Code's interactive `--effort` flag in Claude Code session mode, and to Anthropic adaptive thinking plus `output_config.effort` in OAuth extra usage mode when the selected model supports it. Anthropic effort defaults to `low`.
 
 Settings also includes output controls for choosing how Speecher delivers text, including setup for typing directly into focused text fields. When virtual-keyboard paste is enabled, Speecher can optionally restore the previous clipboard contents after delivery.
 
@@ -160,7 +164,12 @@ Technical text is preserved more literally. Commands, paths, URLs, environment v
 
 Claude credentials are read from `~/.claude/.credentials.json`. If the token is expired, Speecher tries to refresh it through Claude Code before starting capture.
 
-OpenAI refinement uses `gpt-5.4-mini` through the Responses API shape.
+Anthropic refinement has two auth modes:
+
+- Claude Code session: Speecher starts and keeps an interactive Claude Code `stream-json` session in the background app process, sends refinement turns to it, then sends `/clear` after each result. This uses Claude Code subscription usage and does not use `claude -p`.
+- OAuth extra usage: Speecher reads the Claude Code OAuth token from `~/.claude/.credentials.json` and calls the Anthropic Messages API directly with Claude Code OAuth identity headers. Anthropic can route this as usage credits at API rates.
+
+OpenAI refinement defaults to `gpt-5.5` with effort set to `none`, through the Responses API shape.
 
 Authentication is resolved in this order:
 

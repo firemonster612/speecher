@@ -38,6 +38,8 @@ private:
     void refreshAudioDeviceList(const QString &selectedDeviceId);
     void updateAudioControls();
     void updateAuthControl();
+    void updateAnthropicControls();
+    void showAnthropicAuthInfo();
     void refreshOutputControls();
     void updateYdotoolButtons();
     void updateButtonState();
@@ -56,11 +58,17 @@ private:
     QComboBox *m_provider = nullptr;
     QComboBox *m_refinementStyle = nullptr;
     QComboBox *m_openAiModel = nullptr;
+    QComboBox *m_openAiEffort = nullptr;
+    QComboBox *m_anthropicModel = nullptr;
+    QComboBox *m_anthropicEffort = nullptr;
     QComboBox *m_outputMethod = nullptr;
     QCheckBox *m_restoreClipboardAfterTyping = nullptr;
     QComboBox *m_authMode = nullptr;
+    QComboBox *m_anthropicAuthMode = nullptr;
     QStackedWidget *m_authControl = nullptr;
     QLabel *m_authStatus = nullptr;
+    QLabel *m_anthropicWarning = nullptr;
+    QWidget *m_anthropicWarningRow = nullptr;
     QLabel *m_ydotoolStatus = nullptr;
     QLabel *m_vocabLimit = nullptr;
     QLineEdit *m_apiKey = nullptr;
@@ -70,6 +78,7 @@ private:
     QPushButton *m_ydotoolStartButton = nullptr;
     QPushButton *m_ydotoolDisableButton = nullptr;
     QPushButton *m_ydotoolRemoveButton = nullptr;
+    QPushButton *m_anthropicInfoButton = nullptr;
     QPushButton *m_addBindingButton = nullptr;
     QScrollArea *m_scroll = nullptr;
     QSpinBox *m_previewWords = nullptr;
