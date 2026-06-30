@@ -3,6 +3,7 @@
 #include <QGuiApplication>
 #include <QScreen>
 #include <QWidget>
+#include <QWindow>
 
 #ifdef SPEECHER_WITH_LAYER_SHELL
 #include <LayerShellQt/Window>
@@ -28,10 +29,14 @@ void WaylandLayerShell::configurePopup(QWidget *widget)
         window->setScope(QStringLiteral("speecher-popup"));
         window->setLayer(LayerShellQt::Window::LayerOverlay);
         window->setKeyboardInteractivity(LayerShellQt::Window::KeyboardInteractivityNone);
+#ifdef SPEECHER_LAYER_SHELL_HAS_ACTIVATE_ON_SHOW
         window->setActivateOnShow(false);
+#endif
         window->setAnchors(LayerShellQt::Window::AnchorBottom);
         window->setMargins(QMargins(0, 0, 0, 28));
+#ifdef SPEECHER_LAYER_SHELL_HAS_DESIRED_SIZE
         window->setDesiredSize(widget->sizeHint());
+#endif
     }
 #endif
 }
@@ -50,8 +55,16 @@ void WaylandLayerShell::positionBottomCenter(QWidget *widget)
     widget->resize(size);
 #ifdef SPEECHER_WITH_LAYER_SHELL
     if (auto *window = LayerShellQt::Window::get(widget->windowHandle())) {
+#ifdef SPEECHER_LAYER_SHELL_HAS_DESIRED_SIZE
         window->setDesiredSize(size);
+#endif
+#ifdef SPEECHER_LAYER_SHELL_HAS_WINDOW_SCREEN
         window->setScreen(const_cast<QScreen *>(screen));
+#else
+        if (QWindow *handle = widget->windowHandle()) {
+            handle->setScreen(const_cast<QScreen *>(screen));
+        }
+#endif
         return;
     }
 #endif

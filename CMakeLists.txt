@@ -192,6 +192,52 @@ endif()
 if(LayerShellQt_FOUND)
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_LAYER_SHELL=1)
   target_link_libraries(speecher_platform PUBLIC LayerShellQt::Interface)
+  include(CheckCXXSourceCompiles)
+  include(CMakePushCheckState)
+
+  cmake_push_check_state(RESET)
+  set(CMAKE_REQUIRED_LIBRARIES LayerShellQt::Interface)
+  check_cxx_source_compiles("
+    #include <LayerShellQt/Window>
+    int main()
+    {
+      LayerShellQt::Window *window = nullptr;
+      window->setActivateOnShow(false);
+      return 0;
+    }
+  " SPEECHER_LAYER_SHELL_HAS_ACTIVATE_ON_SHOW)
+  check_cxx_source_compiles("
+    #include <LayerShellQt/Window>
+    #include <QSize>
+    int main()
+    {
+      LayerShellQt::Window *window = nullptr;
+      window->setDesiredSize(QSize());
+      return 0;
+    }
+  " SPEECHER_LAYER_SHELL_HAS_DESIRED_SIZE)
+  check_cxx_source_compiles("
+    #include <LayerShellQt/Window>
+    #include <QScreen>
+    int main()
+    {
+      LayerShellQt::Window *window = nullptr;
+      QScreen *screen = nullptr;
+      window->setScreen(screen);
+      return 0;
+    }
+  " SPEECHER_LAYER_SHELL_HAS_WINDOW_SCREEN)
+  cmake_pop_check_state()
+
+  if(SPEECHER_LAYER_SHELL_HAS_ACTIVATE_ON_SHOW)
+    target_compile_definitions(speecher_platform PUBLIC SPEECHER_LAYER_SHELL_HAS_ACTIVATE_ON_SHOW=1)
+  endif()
+  if(SPEECHER_LAYER_SHELL_HAS_DESIRED_SIZE)
+    target_compile_definitions(speecher_platform PUBLIC SPEECHER_LAYER_SHELL_HAS_DESIRED_SIZE=1)
+  endif()
+  if(SPEECHER_LAYER_SHELL_HAS_WINDOW_SCREEN)
+    target_compile_definitions(speecher_platform PUBLIC SPEECHER_LAYER_SHELL_HAS_WINDOW_SCREEN=1)
+  endif()
 endif()
 
 if(SPEECHER_WITH_QKEYCHAIN)
