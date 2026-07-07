@@ -778,6 +778,8 @@ private slots:
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("env"));
         settings.setOpenAiEffort(QStringLiteral("xhigh"));
         QCOMPARE(settings.openAiEffort(), QStringLiteral("xhigh"));
+        settings.raw().setValue(QStringLiteral("openai/effort"), QStringLiteral("minimal"));
+        QCOMPARE(settings.openAiEffort(), QStringLiteral("none"));
         settings.setOpenAiEffort(QStringLiteral("unsupported"));
         QCOMPARE(settings.openAiEffort(), QStringLiteral("none"));
 

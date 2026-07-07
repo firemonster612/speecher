@@ -478,7 +478,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
         m_openAiModel->lineEdit()->setClearButtonEnabled(true);
     }
     m_openAiEffort->addItem(QStringLiteral("None"), QStringLiteral("none"));
-    m_openAiEffort->addItem(QStringLiteral("Minimal"), QStringLiteral("minimal"));
     m_openAiEffort->addItem(QStringLiteral("Low"), QStringLiteral("low"));
     m_openAiEffort->addItem(QStringLiteral("Medium"), QStringLiteral("medium"));
     m_openAiEffort->addItem(QStringLiteral("High"), QStringLiteral("high"));

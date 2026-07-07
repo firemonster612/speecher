@@ -356,8 +356,7 @@ void SettingsStore::setOpenAiAuthMode(const QString &value)
 QString SettingsStore::openAiEffort() const
 {
     const QString effort = value(QStringLiteral("openai/effort"), QStringLiteral("none")).toString();
-    if (effort == QStringLiteral("minimal") || effort == QStringLiteral("low")
-        || effort == QStringLiteral("medium") || effort == QStringLiteral("high")
+    if (effort == QStringLiteral("low") || effort == QStringLiteral("medium") || effort == QStringLiteral("high")
         || effort == QStringLiteral("xhigh")) {
         return effort;
     }
@@ -366,8 +365,7 @@ QString SettingsStore::openAiEffort() const
 
 void SettingsStore::setOpenAiEffort(const QString &value)
 {
-    if (value == QStringLiteral("minimal") || value == QStringLiteral("low")
-        || value == QStringLiteral("medium") || value == QStringLiteral("high")
+    if (value == QStringLiteral("low") || value == QStringLiteral("medium") || value == QStringLiteral("high")
         || value == QStringLiteral("xhigh")) {
         m_settings.setValue(QStringLiteral("openai/effort"), value);
         return;
