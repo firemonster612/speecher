@@ -733,7 +733,7 @@ private slots:
         QCOMPARE(settings.bindingRules().size(), 0);
         QCOMPARE(settings.refinementProvider(), QStringLiteral("openai"));
         QCOMPARE(settings.refinementStyle(), QStringLiteral("balanced"));
-        QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.5"));
+        QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.6-luna"));
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("auto"));
         QCOMPARE(settings.openAiEffort(), QStringLiteral("none"));
         QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-sonnet-4-6"));
@@ -762,7 +762,7 @@ private slots:
         settings.setOpenAiModel(QStringLiteral(" gpt-5.4-nano "));
         QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.4-nano"));
         settings.setOpenAiModel(QString());
-        QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.5"));
+        QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.6-luna"));
 
         settings.raw().setValue(QStringLiteral("openai/auth/mode"), QStringLiteral("api_key_env"));
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("env"));
@@ -778,6 +778,8 @@ private slots:
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("env"));
         settings.setOpenAiEffort(QStringLiteral("xhigh"));
         QCOMPARE(settings.openAiEffort(), QStringLiteral("xhigh"));
+        settings.setOpenAiEffort(QStringLiteral("none"));
+        QCOMPARE(settings.openAiEffort(), QStringLiteral("none"));
         settings.raw().setValue(QStringLiteral("openai/effort"), QStringLiteral("minimal"));
         QCOMPARE(settings.openAiEffort(), QStringLiteral("none"));
         settings.setOpenAiEffort(QStringLiteral("unsupported"));

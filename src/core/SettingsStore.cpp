@@ -313,15 +313,15 @@ void SettingsStore::setRefinementStyle(const QString &value)
 
 QString SettingsStore::openAiModel() const
 {
-    const QString model = value(QStringLiteral("openai/model"), QStringLiteral("gpt-5.5")).toString().trimmed();
-    return model.isEmpty() ? QStringLiteral("gpt-5.5") : model;
+    const QString model = value(QStringLiteral("openai/model"), QStringLiteral("gpt-5.6-luna")).toString().trimmed();
+    return model.isEmpty() ? QStringLiteral("gpt-5.6-luna") : model;
 }
 
 void SettingsStore::setOpenAiModel(const QString &value)
 {
     const QString model = value.trimmed();
     m_settings.setValue(QStringLiteral("openai/model"),
-                        model.isEmpty() ? QStringLiteral("gpt-5.5") : model);
+                        model.isEmpty() ? QStringLiteral("gpt-5.6-luna") : model);
 }
 
 QString SettingsStore::openAiAuthMode() const
@@ -356,8 +356,8 @@ void SettingsStore::setOpenAiAuthMode(const QString &value)
 QString SettingsStore::openAiEffort() const
 {
     const QString effort = value(QStringLiteral("openai/effort"), QStringLiteral("none")).toString();
-    if (effort == QStringLiteral("low") || effort == QStringLiteral("medium") || effort == QStringLiteral("high")
-        || effort == QStringLiteral("xhigh")) {
+    if (effort == QStringLiteral("none") || effort == QStringLiteral("low") || effort == QStringLiteral("medium")
+        || effort == QStringLiteral("high") || effort == QStringLiteral("xhigh")) {
         return effort;
     }
     return QStringLiteral("none");
@@ -365,8 +365,8 @@ QString SettingsStore::openAiEffort() const
 
 void SettingsStore::setOpenAiEffort(const QString &value)
 {
-    if (value == QStringLiteral("low") || value == QStringLiteral("medium") || value == QStringLiteral("high")
-        || value == QStringLiteral("xhigh")) {
+    if (value == QStringLiteral("none") || value == QStringLiteral("low") || value == QStringLiteral("medium")
+        || value == QStringLiteral("high") || value == QStringLiteral("xhigh")) {
         m_settings.setValue(QStringLiteral("openai/effort"), value);
         return;
     }

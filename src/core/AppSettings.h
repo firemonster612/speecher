@@ -42,7 +42,7 @@ struct AudioCaptureSettings {
 struct RefinementSettings {
     QString providerId = QStringLiteral("openai");
     QString style = QStringLiteral("balanced");
-    QString openAiModel = QStringLiteral("gpt-5.5");
+    QString openAiModel = QStringLiteral("gpt-5.6-luna");
     QString openAiAuthMode = QStringLiteral("auto");
     QString openAiEffort = QStringLiteral("none");
     QString anthropicModel = QStringLiteral("claude-sonnet-4-6");

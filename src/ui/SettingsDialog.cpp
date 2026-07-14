@@ -461,6 +461,9 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_refinementStyle->addItem(QStringLiteral("Balanced"), QStringLiteral("balanced"));
     m_refinementStyle->addItem(QStringLiteral("Light cleanup"), QStringLiteral("light_cleanup"));
     for (const QString &model : {
+             QStringLiteral("gpt-5.6-luna"),
+             QStringLiteral("gpt-5.6-terra"),
+             QStringLiteral("gpt-5.6-sol"),
              QStringLiteral("gpt-5.5"),
              QStringLiteral("gpt-5.4-nano"),
              QStringLiteral("gpt-5.4-mini"),
@@ -472,7 +475,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_openAiModel->setInsertPolicy(QComboBox::NoInsert);
     m_openAiModel->setMaxVisibleItems(6);
     m_openAiModel->setMinimumContentsLength(16);
-    m_openAiModel->setToolTip(QStringLiteral("Defaults to gpt-5.5. Use gpt-5.4-nano for fastest refinement, or type another model ID."));
+    m_openAiModel->setToolTip(QStringLiteral("Defaults to gpt-5.6-luna with no reasoning effort. Select another model or type another model ID."));
     m_openAiModel->view()->setMouseTracking(true);
     if (m_openAiModel->lineEdit()) {
         m_openAiModel->lineEdit()->setClearButtonEnabled(true);
