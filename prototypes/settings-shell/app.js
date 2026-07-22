@@ -97,11 +97,13 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
-function checkbox(path, text) {
+/* A checkbox setting rendered as a row: title (and optional description) on the
+   left, the bare checkbox aligned on the right — never a label beside the box. */
+function checkRow(path, title, help) {
   const input = el("input", { type: "checkbox", id: uid() });
   input.checked = get(path);
   input.onchange = () => set(path, input.checked);
-  return el("label", { class: "check", for: input.id }, input, text);
+  return row({ label: title, control: input, help });
 }
 
 function select(path, options, opts = {}) {
@@ -115,10 +117,12 @@ function select(path, options, opts = {}) {
   return node;
 }
 
-/* A labelled settings row. `help` is shown inline (A), as a tooltip (B), and in
-   the contextual pane (C); `context` overrides the pane text when given. */
-function row({ label, control, help, context }) {
-  const node = el("div", { class: "row" });
+/* A settings row: title + muted description on the left, control on the right.
+   `help` is the description (A/C), also the tooltip (B) and contextual-pane text
+   (C); `context` overrides the pane text when given. `wide` stacks the control
+   under the title at full card width — for list editors and other roomy controls. */
+function row({ label, control, help, context, wide }) {
+  const node = el("div", { class: wide ? "row wide" : "row" });
   const paneText = context ?? help;
   if (paneText) node.dataset.context = paneText;
   if (help) node.title = help;
@@ -130,14 +134,19 @@ function row({ label, control, help, context }) {
       : control.querySelector?.("input, select, button");
     labelCell.append(el("label", { for: target?.id }, label));
   }
+  if (help) labelCell.append(el("p", { class: "help" }, help));
   const controlCell = el("div", { class: "row-control" }, control);
-  if (help) controlCell.append(el("p", { class: "help" }, help));
   node.append(labelCell, controlCell);
   return node;
 }
 
+/* A settings group: a small muted uppercase heading above a rounded, bordered
+   card whose rows are separated by subtle dividers. */
 function group(title, ...rows) {
-  return el("fieldset", { class: "group" }, el("legend", {}, title), ...rows);
+  return el("fieldset", { class: "group" },
+    el("legend", {}, title),
+    el("div", { class: "card" }, ...rows),
+  );
 }
 
 /* Editable in-memory list. Columns: {key, label, options?} */
@@ -220,8 +229,8 @@ function buildGeneral() {
       }),
     ),
     group("Sounds",
-      row({ label: "", control: checkbox("general.startStopSounds", "Play start and stop sounds"), help: "Short cues when a Dictation Session starts and finishes." }),
-      row({ label: "", control: checkbox("general.errorSound", "Play a sound when a Dictation Session fails") }),
+      checkRow("general.startStopSounds", "Play start and stop sounds", "Short cues when a Dictation Session starts and finishes."),
+      checkRow("general.errorSound", "Play a sound when a Dictation Session fails"),
     ),
     group("Updates",
       row({
@@ -255,11 +264,11 @@ function buildAudio() {
         ]),
         help: "The microphone a Dictation Session records from.",
       }),
-      row({
-        label: "",
-        control: checkbox("audio.fallbackToDefault", "Fall back to the system default when this device is unavailable"),
-        help: "If the selected microphone disappears, recording continues on the system default instead of failing the session.",
-      }),
+      checkRow(
+        "audio.fallbackToDefault",
+        "Fall back to the system default when this device is unavailable",
+        "If the selected microphone disappears, recording continues on the system default instead of failing the session.",
+      ),
     ),
   ];
 }
@@ -291,11 +300,11 @@ function buildSpeech() {
       }),
     ),
     group("Reliability",
-      row({
-        label: "",
-        control: checkbox("speech.retryOnce", "Retry once with the full captured audio if the speech attempt fails"),
-        help: "One automatic replay of the whole recording on a transient failure. Never more than one retry, and never after cancellation.",
-      }),
+      checkRow(
+        "speech.retryOnce",
+        "Retry once with the full captured audio if the speech attempt fails",
+        "One automatic replay of the whole recording on a transient failure. Never more than one retry, and never after cancellation.",
+      ),
     ),
   ];
 }
@@ -351,28 +360,28 @@ function buildCleanup() {
 function buildContext() {
   return [
     group("Target context",
-      row({
-        label: "",
-        control: checkbox("context.appIdentity", "Capture the Target application's identity"),
-        help: "The application and window captured when a Dictation Session starts. Needed for Writing Profiles and per-app Paste Rules.",
-      }),
-      row({
-        label: "",
-        control: checkbox("context.caretText", "Read caret, selection, and nearby text at the Target"),
-        help: "A small bounded snippet around the caret via accessibility. Never whole documents, and never password fields.",
-      }),
+      checkRow(
+        "context.appIdentity",
+        "Capture the Target application's identity",
+        "The application and window captured when a Dictation Session starts. Needed for Writing Profiles and per-app Paste Rules.",
+      ),
+      checkRow(
+        "context.caretText",
+        "Read caret, selection, and nearby text at the Target",
+        "A small bounded snippet around the caret via accessibility. Never whole documents, and never password fields.",
+      ),
     ),
     group("Richer context",
-      row({
-        label: "",
-        control: checkbox("context.ideContext", "Use IDE plugin context when an IDE plugin is installed"),
-        help: "Opt-in editor plugins (VS Code, Kate, JetBrains) provide document, language, and selection context beyond what accessibility exposes.",
-      }),
-      row({
-        label: "",
-        control: checkbox("context.screenshot", "Attach a screenshot of the Target as cleanup context"),
-        help: "Off by default and available only with an image-capable cleanup model. The screenshot is sent for that session only and is not stored.",
-      }),
+      checkRow(
+        "context.ideContext",
+        "Use IDE plugin context when an IDE plugin is installed",
+        "Opt-in editor plugins (VS Code, Kate, JetBrains) provide document, language, and selection context beyond what accessibility exposes.",
+      ),
+      checkRow(
+        "context.screenshot",
+        "Attach a screenshot of the Target as cleanup context",
+        "Off by default and available only with an image-capable cleanup model. The screenshot is sent for that session only and is not stored.",
+      ),
     ),
   ];
 }
@@ -396,21 +405,19 @@ function buildOutput() {
       }),
     ),
     group("Clipboard",
-      row({
-        label: "",
-        control: checkbox("output.restoreClipboard", "Restore the previous clipboard contents after paste"),
-        help: "Only after Speecher verifies insertion. If delivery falls back to Copy, the transcript stays on the clipboard. Clipboard managers may still retain it.",
-      }),
+      checkRow(
+        "output.restoreClipboard",
+        "Restore the previous clipboard contents after paste",
+        "Only after Speecher verifies insertion. If delivery falls back to Copy, the transcript stays on the clipboard. Clipboard managers may still retain it.",
+      ),
     ),
     group("Delivery receipt",
-      row({
-        label: "",
-        control: checkbox("output.showReceipt", "Show the delivery receipt in the popup"),
-      }),
+      checkRow("output.showReceipt", "Show the delivery receipt in the popup"),
       row({
         label: "Receipt states",
         control: receiptLegend,
         help: "Speecher reports the strongest state it can prove and never collapses these into a single “Delivered”.",
+        wide: true,
       }),
     ),
     group("Paste Rules",
@@ -437,6 +444,7 @@ function buildOutput() {
           empty: "No application-specific rules.",
         }),
         help: "Per-application Paste Rules override the category and general rules above.",
+        wide: true,
       }),
     ),
   ];
@@ -445,11 +453,11 @@ function buildOutput() {
 function buildProfiles() {
   return [
     group("Classification",
-      row({
-        label: "",
-        control: checkbox("profiles.autoClassify", "Classify each Dictation Session automatically from the Target"),
-        help: "The Target application decides whether dictation reads as Work, Email, Personal, or Other.",
-      }),
+      checkRow(
+        "profiles.autoClassify",
+        "Classify each Dictation Session automatically from the Target",
+        "The Target application decides whether dictation reads as Work, Email, Personal, or Other.",
+      ),
       row({
         label: "Default Writing Profile",
         control: select("profiles.defaultProfile", PROFILE_OPTIONS),
@@ -469,6 +477,7 @@ function buildProfiles() {
           empty: "No per-application overrides.",
         }),
         help: "Force a specific Writing Profile for an application, regardless of classification.",
+        wide: true,
       }),
     ),
   ];
@@ -535,6 +544,7 @@ function buildVocabulary() {
           addLabel: "Add term",
         }),
         help: "Words and phrases the speech provider should recognize and preserve as written here.",
+        wide: true,
       }),
     ),
     group("Replacements",
@@ -546,6 +556,7 @@ function buildVocabulary() {
           addLabel: "Add replacement",
         }),
         help: "Applied to the transcript after capture: whenever the left side is heard, the right side is inserted.",
+        wide: true,
       }),
     ),
     group("Snippets",
@@ -557,18 +568,20 @@ function buildVocabulary() {
           addLabel: "Add Snippet",
         }),
         help: "A short spoken trigger that expands to longer text you wrote.",
+        wide: true,
       }),
     ),
     group("Learned Corrections",
-      row({
-        label: "",
-        control: checkbox("vocabulary.learningEnabled", "Learn corrections from my edits after insertion"),
-        help: "When a high-confidence edit matches recent dictation, Speecher automatically adds a local Learned Correction. Everything stays on this machine.",
-      }),
+      checkRow(
+        "vocabulary.learningEnabled",
+        "Learn corrections from my edits after insertion",
+        "When a high-confidence edit matches recent dictation, Speecher automatically adds a local Learned Correction. Everything stays on this machine.",
+      ),
       row({
         label: "Learned entries",
         control: learnedCorrectionsEditor(),
         help: "New entries work immediately and are marked for convenient review. You can keep, edit, disable, or delete them; deletion can be undone.",
+        wide: true,
       }),
     ),
   ];

@@ -16,9 +16,10 @@ Then open <http://localhost:4173/>. No dependencies, no lockfile.
 
 ## Variants (one route, `?variant=`)
 
-- **A — System Settings shell**: classic KDE System Settings / KConfigDialog
-  pattern. Flat category sidebar, one page at a time, form-column pages,
-  Defaults/Apply footer.
+- **A — System Settings shell**: the selected direction. It keeps the classic
+  KDE category sidebar, one page at a time, and Defaults/Apply footer. Inside a
+  page, settings use titled cards with descriptions on the left and native
+  controls on the right.
 - **B — Compact expert dialog**: dense single-scroll preferences dialog with a
   filter field and an anchor strip. No page switching; help lives in tooltips.
 - **C — Control-center master/detail**: wider three-pane layout. Grouped
