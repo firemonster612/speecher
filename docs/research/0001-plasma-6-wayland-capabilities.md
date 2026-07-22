@@ -2,6 +2,8 @@
 
 Status: decision report, 2026-07-22
 
+Decision ticket: [Research Plasma 6 Wayland activation, context, and insertion capabilities](https://github.com/firemonster612/speecher/issues/3)
+
 ## Decision
 
 Speecher can support press-and-release activation on Plasma 6 Wayland and can offer useful Target context in many applications. It cannot promise the same context, insertion, verification, or edit-observation behavior everywhere. Wayland deliberately provides no public client API for reading every window, choosing an arbitrary foreign input target, or learning what another application did with a synthetic key event.

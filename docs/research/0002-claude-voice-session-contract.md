@@ -2,7 +2,7 @@
 
 Date: 2026-07-22
 
-Decision ticket: [#5](https://github.com/firemonster612/speecher/issues/5)
+Decision ticket: [Define the Claude Voice session, cleanup, and output contract](https://github.com/firemonster612/speecher/issues/5)
 
 Status: decision-ready research; no product code changed
 
