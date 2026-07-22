@@ -1,0 +1,8 @@
+{
+  "name": "speecher-settings-shell-prototype",
+  "private": true,
+  "description": "Throwaway layout prototype. Not production code.",
+  "scripts": {
+    "serve": "bun serve.js"
+  }
+}

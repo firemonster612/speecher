@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Speecher settings-shell prototype (throwaway)</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <p class="prototype-banner">
+    Throwaway layout prototype — for judging structure and interaction only.
+    Web controls approximate the layout; they do not prove final Qt/Breeze rendering.
+  </p>
+
+  <main id="app" aria-live="polite"></main>
+
+  <div class="switcher" role="group" aria-label="Prototype variant switcher">
+    <button type="button" id="switch-prev" aria-label="Previous variant">‹</button>
+    <span id="switch-label">A · System Settings shell</span>
+    <button type="button" id="switch-next" aria-label="Next variant">›</button>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
