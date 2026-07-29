@@ -115,6 +115,19 @@ signals:
                             double confidence);
 };
 
+class ScreenshotContextProvider : public QObject {
+    Q_OBJECT
+
+public:
+    using QObject::QObject;
+    virtual void capture() = 0;
+    virtual void cancel() = 0;
+
+signals:
+    void captured(const QByteArray &data, const QString &mediaType);
+    void failed(const QString &message);
+};
+
 class SpeechTranscriber : public QObject {
     Q_OBJECT
 
@@ -156,6 +169,11 @@ public:
     }
     virtual void refresh(const RefinementSettings &settings) = 0;
     virtual RefinementPrepareResult prepare(const RefinementSettings &settings) = 0;
+    virtual bool supportsScreenshotContext(const RefinementSettings &settings) const
+    {
+        Q_UNUSED(settings);
+        return false;
+    }
     virtual void refine(const QString &rawTranscript,
                         const QStringList &vocabulary,
                         const RefinementContext &context,

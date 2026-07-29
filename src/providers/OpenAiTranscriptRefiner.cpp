@@ -33,6 +33,11 @@ bool OpenAiTranscriptRefiner::requiresRefresh(const RefinementSettings &settings
     return OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode).requiresCodexOauthRefresh();
 }
 
+bool OpenAiTranscriptRefiner::supportsScreenshotContext(const RefinementSettings &settings) const
+{
+    return !settings.openAiModel.trimmed().isEmpty();
+}
+
 std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(const RefinementSettings &settings)
 {
     if (!requiresRefresh(settings)) {

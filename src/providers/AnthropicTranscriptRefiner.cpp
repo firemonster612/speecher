@@ -56,6 +56,11 @@ bool AnthropicTranscriptRefiner::requiresRefresh(const RefinementSettings &setti
     return usesOauth(settings) && ClaudeCredentials::requiresRefresh(settings.claudeCredentialsPath);
 }
 
+bool AnthropicTranscriptRefiner::supportsScreenshotContext(const RefinementSettings &settings) const
+{
+    return usesOauth(settings) && !settings.anthropicModel.trimmed().isEmpty();
+}
+
 std::optional<RefinementRefreshJob> AnthropicTranscriptRefiner::createRefreshJob(const RefinementSettings &settings)
 {
     if (!requiresRefresh(settings)) {

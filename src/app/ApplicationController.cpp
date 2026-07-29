@@ -46,6 +46,8 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
                                      m_platform->createTextDelivery(targetProvider, this),
                                      m_providers,
                                      this);
+    m_session->setScreenshotContextProvider(
+        m_platform->createScreenshotContextProvider(this));
 
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
     connect(m_session, &DictationSession::statusChanged, this, &ApplicationController::statusChanged);

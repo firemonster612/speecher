@@ -111,6 +111,7 @@ set(SPEECHER_PLATFORM_SOURCES
   src/output/YdotoolSetup.cpp
   src/platform/PlatformIntegration.cpp
   src/platform/AtSpiTargetProvider.cpp
+  src/platform/PortalScreenshotContextProvider.cpp
   src/ui/WaylandLayerShell.cpp
 )
 
@@ -126,6 +127,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/output/YdotoolSetup.h
   src/platform/PlatformIntegration.h
   src/platform/AtSpiTargetProvider.h
+  src/platform/PortalScreenshotContextProvider.h
   src/ui/WaylandLayerShell.h
 )
 

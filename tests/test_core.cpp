@@ -24,6 +24,7 @@
 #include "output/YdotoolSetup.h"
 #include "platform/PlatformIntegration.h"
 #include "platform/AtSpiTargetProvider.h"
+#include "platform/PortalScreenshotContextProvider.h"
 #include "ui/TranscriberPopup.h"
 #include "ui/WaveformWidget.h"
 
@@ -164,6 +165,30 @@ public:
     bool directInsertionAvailable = false;
     bool inserted = false;
     QString insertedText;
+};
+
+class FakeScreenshotContextProvider final : public ScreenshotContextProvider {
+public:
+    using ScreenshotContextProvider::ScreenshotContextProvider;
+
+    void capture() override
+    {
+        ++captureCalls;
+        if (autoComplete) {
+            emit captured(data, mediaType);
+        }
+    }
+
+    void cancel() override
+    {
+        ++cancelCalls;
+    }
+
+    QByteArray data = QByteArrayLiteral("screenshot-bytes");
+    QString mediaType = QStringLiteral("image/png");
+    bool autoComplete = true;
+    int captureCalls = 0;
+    int cancelCalls = 0;
 };
 
 class FakeSpeechTranscriber final : public SpeechTranscriber {
@@ -336,6 +361,11 @@ public:
         return prepareResult;
     }
 
+    bool supportsScreenshotContext(const RefinementSettings &) const override
+    {
+        return screenshotCapable;
+    }
+
     void refine(const QString &rawTranscript,
                 const QStringList &vocabulary,
                 const RefinementContext &context,
@@ -376,6 +406,7 @@ public:
     bool backgroundRefresh = false;
     unsigned long backgroundRefreshDelayMs = 0;
     bool autoComplete = false;
+    bool screenshotCapable = true;
     QString autoCompleteText;
     RefinementRefreshResult refreshResult{true, {}};
     RefinementPrepareResult prepareResult{true, {}};
@@ -2010,6 +2041,74 @@ exit 0
         QCOMPARE(delivery->lastTarget.caretOffset, 42);
     }
 
+    void dictationSessionCapturesOptionalScreenshotOnlyForRefinement()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto targetProvider = std::make_unique<FakeTargetProvider>();
+        auto screenshots = std::make_unique<FakeScreenshotContextProvider>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(
+            &settings,
+            audio.get(),
+            media.get(),
+            targetProvider.get(),
+            delivery.get(),
+            &registry);
+        session.setScreenshotContextProvider(screenshots.get());
+
+        session.startListening();
+        QCOMPARE(screenshots->captureCalls, 0);
+        speech->emitFinalText(QStringLiteral("first"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 250);
+        QVERIFY(!refiner->lastContext.hasScreenshot());
+        refiner->emitCompletedText(QStringLiteral("first"));
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
+
+        settings.setIncludeScreenshotContext(true);
+        session.startListening();
+        QCOMPARE(screenshots->captureCalls, 1);
+        speech->emitFinalText(QStringLiteral("second"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 2, 250);
+        QCOMPARE(refiner->lastContext.screenshotData, screenshots->data);
+        QCOMPARE(refiner->lastContext.screenshotMediaType, screenshots->mediaType);
+        refiner->emitCompletedText(QStringLiteral("second"));
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 2, 250);
+        QVERIFY(screenshots->cancelCalls >= 2);
+    }
+
+    void livePortalScreenshotCapture()
+    {
+        if (qEnvironmentVariableIsEmpty("SPEECHER_LIVE_SCREENSHOT_TEST")) {
+            QSKIP("Set SPEECHER_LIVE_SCREENSHOT_TEST=1 inside a desktop session");
+        }
+
+        PortalScreenshotContextProvider screenshots;
+        QSignalSpy captured(&screenshots, &PortalScreenshotContextProvider::captured);
+        QSignalSpy failed(&screenshots, &PortalScreenshotContextProvider::failed);
+        screenshots.capture();
+
+        QTRY_VERIFY_WITH_TIMEOUT(!captured.isEmpty() || !failed.isEmpty(), 15000);
+        const QString failureMessage = failed.isEmpty()
+            ? QString()
+            : failed.first().first().toString();
+        QVERIFY2(failed.isEmpty(), qPrintable(failureMessage));
+        QVERIFY(captured.first().at(0).toByteArray().size() > 100);
+        QCOMPARE(captured.first().at(1).toString(), QStringLiteral("image/png"));
+    }
+
     void dictationSessionRetriesFullAudioOnceAndIgnoresRetiredAttempt()
     {
         SettingsStore settings;
@@ -2591,6 +2690,9 @@ exit 0
         QSignalSpy failed(&refiner, &OpenAiRefiner::failed);
 
         const QString rawTranscript = QStringLiteral("to make an apple pie, the first step is to gather your ingredients. You need apples, butter, cinnamon, caramel sauce, and pie crust. Then you assemble the ingredients. Then number three is you bake your apple pie for fifty minutes. And then the fourth step is take it out and enjoy.");
+        RefinementContext context;
+        context.screenshotData = QByteArrayLiteral("png-bytes");
+        context.screenshotMediaType = QStringLiteral("image/png");
         refiner.refine(rawTranscript,
                        QStringList{QStringLiteral("Qt"), QStringLiteral("Pie crust")},
                        QStringList{QStringLiteral("my email"), QStringLiteral("speecher repo")},
@@ -2603,7 +2705,7 @@ exit 0
                        QStringLiteral("gpt-test"),
                        QStringLiteral("high"),
                        QStringLiteral("balanced"),
-                       {});
+                       context);
 
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         QTcpSocket *socket = server.nextPendingConnection();
@@ -2650,10 +2752,19 @@ exit 0
         QCOMPARE(input.size(), 1);
         const QJsonObject user = input.at(0).toObject();
         QCOMPARE(user.value(QStringLiteral("role")).toString(), QStringLiteral("user"));
-        const QString content = user.value(QStringLiteral("content")).toString();
+        const QJsonArray contentBlocks = user.value(QStringLiteral("content")).toArray();
+        QCOMPARE(contentBlocks.size(), 2);
+        QCOMPARE(contentBlocks.at(0).toObject().value(QStringLiteral("type")).toString(),
+                 QStringLiteral("input_text"));
+        const QString content = contentBlocks.at(0).toObject().value(QStringLiteral("text")).toString();
         QVERIFY(content.contains(rawTranscript));
         QVERIFY(content.contains(QStringLiteral("Preferred vocabulary:\nQt, Pie crust")));
         QVERIFY(content.contains(QStringLiteral("Binding aliases:\nmy email, speecher repo")));
+        const QJsonObject image = contentBlocks.at(1).toObject();
+        QCOMPARE(image.value(QStringLiteral("type")).toString(), QStringLiteral("input_image"));
+        QCOMPARE(image.value(QStringLiteral("detail")).toString(), QStringLiteral("low"));
+        QCOMPARE(image.value(QStringLiteral("image_url")).toString(),
+                 QStringLiteral("data:image/png;base64,cG5nLWJ5dGVz"));
 
         const QByteArray sse = QByteArrayLiteral("event: response.output_text.delta\n"
                                                  "data: {\"delta\":\"1. Gather\"}\n\n"
@@ -2687,6 +2798,9 @@ exit 0
         QSignalSpy failed(&refiner, &AnthropicApiRefiner::failed);
 
         const QString rawTranscript = QStringLiteral("please clean this up");
+        RefinementContext context;
+        context.screenshotData = QByteArrayLiteral("png-bytes");
+        context.screenshotMediaType = QStringLiteral("image/png");
         refiner.refine(rawTranscript,
                        QStringList{QStringLiteral("Qt")},
                        QStringList{QStringLiteral("my email")},
@@ -2695,7 +2809,7 @@ exit 0
                        QStringLiteral("claude-sonnet-4-6"),
                        QStringLiteral("low"),
                        QStringLiteral("balanced"),
-                       {});
+                       context);
 
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         QTcpSocket *socket = server.nextPendingConnection();
@@ -2738,10 +2852,20 @@ exit 0
         QCOMPARE(messages.size(), 1);
         const QJsonObject user = messages.at(0).toObject();
         QCOMPARE(user.value(QStringLiteral("role")).toString(), QStringLiteral("user"));
-        const QString content = user.value(QStringLiteral("content")).toString();
+        const QJsonArray contentBlocks = user.value(QStringLiteral("content")).toArray();
+        QCOMPARE(contentBlocks.size(), 2);
+        QCOMPARE(contentBlocks.at(0).toObject().value(QStringLiteral("type")).toString(),
+                 QStringLiteral("text"));
+        const QString content = contentBlocks.at(0).toObject().value(QStringLiteral("text")).toString();
         QVERIFY(content.contains(rawTranscript));
         QVERIFY(content.contains(QStringLiteral("Preferred vocabulary:\nQt")));
         QVERIFY(content.contains(QStringLiteral("Binding aliases:\nmy email")));
+        const QJsonObject image = contentBlocks.at(1).toObject();
+        QCOMPARE(image.value(QStringLiteral("type")).toString(), QStringLiteral("image"));
+        const QJsonObject source = image.value(QStringLiteral("source")).toObject();
+        QCOMPARE(source.value(QStringLiteral("type")).toString(), QStringLiteral("base64"));
+        QCOMPARE(source.value(QStringLiteral("media_type")).toString(), QStringLiteral("image/png"));
+        QCOMPARE(source.value(QStringLiteral("data")).toString(), QStringLiteral("cG5nLWJ5dGVz"));
 
         const QByteArray sse = QByteArrayLiteral("event: content_block_delta\n"
                                                  "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"oauth-ok\"}}\n\n"

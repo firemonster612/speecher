@@ -295,7 +295,30 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
     body.insert(QStringLiteral("store"), false);
     QJsonObject user;
     user.insert(QStringLiteral("role"), QStringLiteral("user"));
-    user.insert(QStringLiteral("content"), transcriptRefinementUserMessage(rawTranscript, vocabulary, bindingVocabulary, context));
+    const QString userMessage = transcriptRefinementUserMessage(
+        rawTranscript,
+        vocabulary,
+        bindingVocabulary,
+        context);
+    if (context.hasScreenshot()) {
+        const QString imageUrl = QStringLiteral("data:%1;base64,%2")
+                                     .arg(context.screenshotMediaType,
+                                          QString::fromLatin1(context.screenshotData.toBase64()));
+        user.insert(QStringLiteral("content"),
+                    QJsonArray{
+                        QJsonObject{
+                            {QStringLiteral("type"), QStringLiteral("input_text")},
+                            {QStringLiteral("text"), userMessage},
+                        },
+                        QJsonObject{
+                            {QStringLiteral("type"), QStringLiteral("input_image")},
+                            {QStringLiteral("image_url"), imageUrl},
+                            {QStringLiteral("detail"), QStringLiteral("low")},
+                        },
+                    });
+    } else {
+        user.insert(QStringLiteral("content"), userMessage);
+    }
     body.insert(QStringLiteral("input"), QJsonArray{user});
 
     m_reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));

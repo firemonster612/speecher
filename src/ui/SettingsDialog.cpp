@@ -694,7 +694,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *anthropicSection = makeSectionLabel(QStringLiteral("Anthropic"), this);
     auto *vocabularySection = makeSectionLabel(QStringLiteral("Vocabulary"), this);
     auto *correctionsSection = makeSectionLabel(QStringLiteral("Learned Corrections"), this);
-    auto *bindingsSection = makeSectionLabel(QStringLiteral("Bindings"), this);
+    auto *bindingsSection = makeSectionLabel(QStringLiteral("Replacements & snippets"), this);
 
     auto *generalCard = makeSettingsCard(this);
     auto *generalLayout = qobject_cast<QVBoxLayout *>(generalCard->layout());
@@ -942,17 +942,19 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *bindingLayout = new QVBoxLayout(bindingSection);
     bindingLayout->setContentsMargins(20, 16, 20, 20);
     bindingLayout->setSpacing(8);
-    auto *bindingTitle = new QLabel(QStringLiteral("Phrase bindings"), bindingSection);
+    auto *bindingTitle = new QLabel(QStringLiteral("Replacements & snippets"), bindingSection);
     bindingTitle->setObjectName(QStringLiteral("rowTitle"));
     bindingTitle->setAlignment(Qt::AlignCenter);
     bindingTitle->setForegroundRole(QPalette::WindowText);
     bindingTitle->setAttribute(Qt::WA_StyledBackground, false);
-    auto *bindingDescription = new QLabel(QStringLiteral("Bindings replace spoken aliases after capture. Matching ignores case and treats punctuation as spaces; replacements are inserted exactly."), bindingSection);
+    auto *bindingDescription = new QLabel(
+        QStringLiteral("Replace a spoken phrase with exact text, including multi-line snippets. Matching ignores case and treats punctuation as spaces."),
+        bindingSection);
     bindingDescription->setObjectName(QStringLiteral("rowDescription"));
     bindingDescription->setAlignment(Qt::AlignCenter);
     bindingDescription->setWordWrap(true);
     bindingDescription->setAttribute(Qt::WA_StyledBackground, false);
-    m_addBindingButton = new QPushButton(QStringLiteral("Add binding"), bindingSection);
+    m_addBindingButton = new QPushButton(QStringLiteral("Add replacement"), bindingSection);
     m_addBindingButton->setIcon(QIcon::fromTheme(QStringLiteral("list-add")));
     m_addBindingButton->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     bindingLayout->addWidget(bindingTitle);
@@ -1290,7 +1292,7 @@ bool SettingsDialog::save()
     const BindingValidationResult bindingValidation = BindingProcessor::validateRules(bindingRules);
     if (!bindingValidation.ok()) {
         QMessageBox::warning(this,
-                             QStringLiteral("Bindings not saved"),
+                             QStringLiteral("Replacements not saved"),
                              bindingValidation.messages().join(QStringLiteral("\n")));
         return false;
     }
@@ -1646,16 +1648,16 @@ void SettingsDialog::editBinding(int row)
     const bool editing = row >= 0 && row < m_bindingRules.size();
 
     QDialog dialog(this);
-    dialog.setWindowTitle(editing ? QStringLiteral("Edit binding") : QStringLiteral("Add binding"));
+    dialog.setWindowTitle(editing ? QStringLiteral("Edit replacement") : QStringLiteral("Add replacement"));
     auto *layout = new QVBoxLayout(&dialog);
     layout->setContentsMargins(18, 18, 18, 14);
     layout->setSpacing(8);
 
-    auto *phraseLabel = new QLabel(QStringLiteral("Binding"), &dialog);
+    auto *phraseLabel = new QLabel(QStringLiteral("Spoken phrase"), &dialog);
     auto *phrase = new QLineEdit(&dialog);
     phrase->setClearButtonEnabled(true);
 
-    auto *replacementLabel = new QLabel(QStringLiteral("Replacement"), &dialog);
+    auto *replacementLabel = new QLabel(QStringLiteral("Exact replacement or snippet"), &dialog);
     auto *replacement = new QPlainTextEdit(&dialog);
     replacement->setMinimumHeight(240);
     replacement->setLineWrapMode(QPlainTextEdit::WidgetWidth);
@@ -1698,7 +1700,7 @@ void SettingsDialog::editBinding(int row)
             const BindingValidationResult validation = BindingProcessor::validateRules(candidate);
             if (!validation.ok()) {
                 QMessageBox::warning(&dialog,
-                                     QStringLiteral("Binding not saved"),
+                                     QStringLiteral("Replacement not saved"),
                                      validation.messages().join(QStringLiteral("\n")));
                 return;
             }
