@@ -42,7 +42,9 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const PlatformIntegration> 
         while (QLocalSocket *socket = m_server.nextPendingConnection()) {
             connect(socket, &QLocalSocket::readyRead, this, [this, socket] {
                 const QJsonObject object = QJsonDocument::fromJson(socket->readAll()).object();
-                emit commandReceived(object.value(QStringLiteral("command")).toString(), socket);
+                emit commandReceived(object.value(QStringLiteral("command")).toString(),
+                                     object.value(QStringLiteral("outputFormat")).toString(),
+                                     socket);
             });
             connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
         }
@@ -100,10 +102,20 @@ bool SingleInstanceIpc::sendCommand(const QString &command,
                                     int timeoutMs,
                                     std::shared_ptr<const PlatformIntegration> platform)
 {
-    return sendCommandDetailed(command, response, timeoutMs, std::move(platform)) == IpcCommandResult::Sent;
+    return sendCommandDetailed(command, std::nullopt, response, timeoutMs, std::move(platform)) == IpcCommandResult::Sent;
 }
 
 IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
+                                                        IpcResponse *response,
+                                                        int timeoutMs,
+                                                        std::shared_ptr<const PlatformIntegration> platform,
+                                                        QString *error)
+{
+    return sendCommandDetailed(command, std::nullopt, response, timeoutMs, std::move(platform), error);
+}
+
+IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
+                                                        std::optional<OutputFormat> outputFormat,
                                                         IpcResponse *response,
                                                         int timeoutMs,
                                                         std::shared_ptr<const PlatformIntegration> platform,
@@ -116,7 +128,10 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
         if (!socket.waitForConnected(timeoutMs)) {
             continue;
         }
-        const QJsonObject request{{QStringLiteral("command"), command}};
+        QJsonObject request{{QStringLiteral("command"), command}};
+        if (outputFormat) {
+            request.insert(QStringLiteral("outputFormat"), outputFormatName(*outputFormat));
+        }
         if (socket.write(QJsonDocument(request).toJson(QJsonDocument::Compact)) < 0) {
             if (error) {
                 *error = QStringLiteral("Could not write command to running Speecher instance");

@@ -29,12 +29,14 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/BindingProcessor.cpp
   src/core/CliToolDiscovery.cpp
   src/core/OutputMethod.cpp
+  src/core/OutputFormat.cpp
   src/core/SettingsStore.cpp
   src/core/SecretStore.cpp
   src/core/TranscriptState.cpp
   src/core/VocabularyLimit.cpp
   src/core/WordPreview.cpp
   src/dictation/DictationTypes.cpp
+  src/output/DeliveryContent.cpp
   src/providers/ProviderRegistry.cpp
 )
 
@@ -43,6 +45,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/BindingProcessor.h
   src/core/CliToolDiscovery.h
   src/core/OutputMethod.h
+  src/core/OutputFormat.h
   src/core/SettingsStore.h
   src/core/SecretStore.h
   src/core/TranscriptState.h
@@ -50,6 +53,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/WordPreview.h
   src/dictation/DictationInterfaces.h
   src/dictation/DictationTypes.h
+  src/output/DeliveryContent.h
   src/providers/ProviderRegistry.h
 )
 

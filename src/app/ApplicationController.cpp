@@ -118,13 +118,21 @@ void ApplicationController::showMain()
     showMainWindow();
 }
 
-void ApplicationController::handleIpcCommand(const QString &command, QLocalSocket *socket)
+void ApplicationController::handleIpcCommand(const QString &command,
+                                             const QString &outputFormat,
+                                             QLocalSocket *socket)
 {
+    const bool hasFormat = !outputFormat.isEmpty();
+    if (hasFormat && outputFormat != QStringLiteral("plain") && outputFormat != QStringLiteral("html")) {
+        SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown output format")));
+        return;
+    }
+    const OutputFormat format = outputFormatFromString(outputFormat);
     if (command == QStringLiteral("toggle")) {
-        toggle();
+        hasFormat ? m_session->toggleWithFormat(format) : toggle();
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("start")) {
-        startListening();
+        hasFormat ? m_session->startListeningWithFormat(format) : startListening();
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("stop")) {
         stopListening();

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/OutputFormat.h"
+
 #include <QString>
 #include <QStringList>
 #include <QList>
@@ -55,6 +57,7 @@ struct RefinementSettings {
 
 struct OutputSettings {
     QString method = QStringLiteral("automatic");
+    OutputFormat format = OutputFormat::PlainText;
     bool ydotoolEnabled = false;
     bool restoreClipboardAfterTyping = false;
 };

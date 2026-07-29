@@ -19,14 +19,16 @@ public:
     bool requiresRefresh(const SpeechSettings &settings) const override;
     std::optional<SpeechPrepareJob> createPrepareJob(const SpeechSettings &settings) override;
     SpeechPrepareResult prepare(const SpeechSettings &settings) override;
-    void start(const SpeechSettings &settings) override;
-    void sendAudio(const QByteArray &pcm) override;
-    void stop() override;
+    void startAttempt(quint64 attemptId, const SpeechSettings &settings) override;
+    void sendAudio(quint64 attemptId, const QByteArray &pcm) override;
+    void finishInput(quint64 attemptId) override;
+    void cancelAttempt(quint64 attemptId) override;
 
 private:
     QUrl voiceUrl(const SpeechSettings &settings) const;
 
     ClaudeVoiceClient *m_client = nullptr;
+    quint64 m_attemptId = 0;
     QString m_accessToken;
 };
 

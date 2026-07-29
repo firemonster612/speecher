@@ -158,7 +158,7 @@ public:
     {
     }
 
-    bool deliver(const QString &text, QString *error) override
+    bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
     {
         RestorableClipboard previousClipboard;
         if (m_restoreClipboardAfterTyping) {
@@ -166,7 +166,7 @@ public:
         }
 
         QString copyError;
-        if (!ClipboardDelivery().copy(text, &copyError)) {
+        if (!ClipboardDelivery().copy(content, htmlAvailable, &copyError)) {
             if (error) {
                 *error = copyError.isEmpty()
                     ? QStringLiteral("Could not copy text before ydotool paste")
@@ -184,7 +184,7 @@ public:
         };
 
         QString pasteError;
-        if (!YdotoolDelivery().pasteFromClipboard(text, &pasteError)) {
+        if (!YdotoolDelivery().pasteFromClipboard(content.plainText, &pasteError)) {
             restorePreviousClipboard();
             if (error) {
                 *error = pasteError;
@@ -201,17 +201,23 @@ private:
 
 class WlCopyBackend final : public DeliveryBackend {
 public:
-    bool deliver(const QString &text, QString *error) override
+    bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
     {
-        return WlClipboardDelivery().copy(text, error);
+        if (htmlAvailable) {
+            *htmlAvailable = false;
+        }
+        return WlClipboardDelivery().copy(content.plainText, error);
     }
 };
 
 class QtClipboardBackend final : public DeliveryBackend {
 public:
-    bool deliver(const QString &text, QString *error) override
+    bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
     {
-        return QtClipboardDelivery().copy(text, error);
+        if (htmlAvailable) {
+            *htmlAvailable = content.html.has_value();
+        }
+        return QtClipboardDelivery().copy(content, error);
     }
 };
 
@@ -243,7 +249,7 @@ TextDelivery::TextDelivery(BackendFactory backendFactory, QObject *parent)
 {
 }
 
-DeliveryResult TextDelivery::deliver(const OutputSettings &settings, const QString &text)
+DeliveryResult TextDelivery::deliver(const OutputSettings &settings, const DeliveryContent &content)
 {
     QString firstError;
     for (const QString &method : orderedMethods(settings)) {
@@ -253,18 +259,25 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings, const QStri
         }
 
         QString error;
-        if (backend->deliver(text, &error)) {
+        bool htmlAvailable = false;
+        if (backend->deliver(content, &htmlAvailable, &error)) {
+            const bool copied = method == QString::fromLatin1(OutputMethod::WlCopy)
+                || method == QString::fromLatin1(OutputMethod::QtClipboard);
+            const bool downgraded = content.html.has_value() && !htmlAvailable;
+            const QString message = copied ? QStringLiteral("Copied") : QStringLiteral("Input sent");
             return {true,
-                    method == QString::fromLatin1(OutputMethod::WlCopy) || method == QString::fromLatin1(OutputMethod::QtClipboard),
-                    method == QString::fromLatin1(OutputMethod::WlCopy) || method == QString::fromLatin1(OutputMethod::QtClipboard)
-                        ? QStringLiteral("Copied")
-                        : QStringLiteral("Delivered")};
+                    copied ? DeliveryReceipt::Copied : DeliveryReceipt::InputSent,
+                    downgraded,
+                    downgraded ? message + QStringLiteral(" as plain text") : message};
         }
         if (firstError.isEmpty()) {
             firstError = error;
         }
     }
-    return {false, false, firstError.isEmpty() ? QStringLiteral("No output method is available") : firstError};
+    return {false,
+            DeliveryReceipt::None,
+            false,
+            firstError.isEmpty() ? QStringLiteral("No output method is available") : firstError};
 }
 
 QStringList TextDelivery::orderedMethods(const OutputSettings &settings)

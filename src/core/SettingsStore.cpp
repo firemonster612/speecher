@@ -433,6 +433,16 @@ void SettingsStore::setOutputMethod(const QString &value)
     m_settings.setValue(QStringLiteral("output/method"), OutputMethod::normalized(value));
 }
 
+OutputFormat SettingsStore::outputFormat() const
+{
+    return outputFormatFromString(value(QStringLiteral("output/format"), QStringLiteral("plain")).toString());
+}
+
+void SettingsStore::setOutputFormat(OutputFormat value)
+{
+    m_settings.setValue(QStringLiteral("output/format"), outputFormatName(value));
+}
+
 bool SettingsStore::ydotoolEnabled() const
 {
     return value(QStringLiteral("output/ydotoolEnabled"), false).toBool();
@@ -513,6 +523,7 @@ AppSettings SettingsStore::snapshot() const
     settings.refinement.claudeCredentialsPath = claudeCredentialsPath();
 
     settings.output.method = outputMethod();
+    settings.output.format = outputFormat();
     settings.output.ydotoolEnabled = ydotoolEnabled();
     settings.output.restoreClipboardAfterTyping = restoreClipboardAfterTyping();
     return settings;

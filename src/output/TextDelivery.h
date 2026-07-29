@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dictation/DictationInterfaces.h"
+#include "output/DeliveryContent.h"
 
 #include <functional>
 #include <memory>
@@ -11,7 +12,7 @@ namespace speecher {
 class DeliveryBackend {
 public:
     virtual ~DeliveryBackend() = default;
-    virtual bool deliver(const QString &text, QString *error = nullptr) = 0;
+    virtual bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error = nullptr) = 0;
 };
 
 class TextDelivery : public TextDeliveryAdapter {
@@ -22,7 +23,7 @@ public:
 
     explicit TextDelivery(QObject *parent = nullptr);
     explicit TextDelivery(BackendFactory backendFactory, QObject *parent = nullptr);
-    DeliveryResult deliver(const OutputSettings &settings, const QString &text) override;
+    DeliveryResult deliver(const OutputSettings &settings, const DeliveryContent &content) override;
     static QStringList orderedMethods(const OutputSettings &settings);
 
 private:

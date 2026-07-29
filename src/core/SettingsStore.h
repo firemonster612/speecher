@@ -75,6 +75,8 @@ public:
 
     QString outputMethod() const;
     void setOutputMethod(const QString &value);
+    OutputFormat outputFormat() const;
+    void setOutputFormat(OutputFormat value);
     bool ydotoolEnabled() const;
     void setYdotoolEnabled(bool value);
     bool restoreClipboardAfterTyping() const;

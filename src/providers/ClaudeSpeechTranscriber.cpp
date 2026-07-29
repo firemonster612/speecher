@@ -28,11 +28,7 @@ SpeechPrepareResult loadClaudeAccessToken(const SpeechSettings &settings, QStrin
 
 ClaudeSpeechTranscriber::ClaudeSpeechTranscriber(QObject *parent)
     : SpeechTranscriber(parent)
-    , m_client(new ClaudeVoiceClient(this))
 {
-    connect(m_client, &ClaudeVoiceClient::partialTranscript, this, &ClaudeSpeechTranscriber::partialTranscript);
-    connect(m_client, &ClaudeVoiceClient::finalTranscript, this, &ClaudeSpeechTranscriber::finalTranscript);
-    connect(m_client, &ClaudeVoiceClient::failed, this, &ClaudeSpeechTranscriber::failed);
 }
 
 QString ClaudeSpeechTranscriber::id() const
@@ -73,19 +69,57 @@ SpeechPrepareResult ClaudeSpeechTranscriber::prepare(const SpeechSettings &setti
     return loadClaudeAccessToken(settings, &m_accessToken);
 }
 
-void ClaudeSpeechTranscriber::start(const SpeechSettings &settings)
+void ClaudeSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettings &settings)
 {
+    if (m_client) {
+        m_client->cancel();
+        m_client->deleteLater();
+    }
+    m_attemptId = attemptId;
+    m_client = new ClaudeVoiceClient(this);
+    ClaudeVoiceClient *client = m_client;
+    connect(client, &ClaudeVoiceClient::partialTranscript, this, [this, client, attemptId](const QString &text) {
+        if (m_client == client && m_attemptId == attemptId) {
+            emit partialTranscript(attemptId, text);
+        }
+    });
+    connect(client, &ClaudeVoiceClient::finalTranscript, this, [this, client, attemptId](const QString &text) {
+        if (m_client == client && m_attemptId == attemptId) {
+            emit finalTranscript(attemptId, text);
+        }
+    });
+    connect(client, &ClaudeVoiceClient::completed, this, [this, client, attemptId] {
+        if (m_client == client && m_attemptId == attemptId) {
+            emit attemptCompleted(attemptId);
+        }
+    });
+    connect(client, &ClaudeVoiceClient::failed, this, [this, client, attemptId](const QString &message, bool retryable) {
+        if (m_client == client && m_attemptId == attemptId) {
+            emit failed({attemptId, message, retryable});
+        }
+    });
     m_client->start(voiceUrl(settings), m_accessToken, settings.vocabulary);
 }
 
-void ClaudeSpeechTranscriber::sendAudio(const QByteArray &pcm)
+void ClaudeSpeechTranscriber::sendAudio(quint64 attemptId, const QByteArray &pcm)
 {
-    m_client->sendAudio(pcm);
+    if (m_client && attemptId == m_attemptId) {
+        m_client->sendAudio(pcm);
+    }
 }
 
-void ClaudeSpeechTranscriber::stop()
+void ClaudeSpeechTranscriber::finishInput(quint64 attemptId)
 {
-    m_client->stop();
+    if (m_client && attemptId == m_attemptId) {
+        m_client->stop();
+    }
+}
+
+void ClaudeSpeechTranscriber::cancelAttempt(quint64 attemptId)
+{
+    if (m_client && attemptId == m_attemptId) {
+        m_client->cancel();
+    }
 }
 
 QUrl ClaudeSpeechTranscriber::voiceUrl(const SpeechSettings &settings) const

@@ -58,10 +58,35 @@ static QString installLogHandler()
     return path;
 }
 
-static bool startDetachedToggle(const PlatformIntegration *platform)
+static std::optional<OutputFormat> requestedOutputFormat(const QStringList &arguments, QString *error)
 {
-    return QProcess::startDetached(platform->detachedExecutablePath(),
-                                   {QStringLiteral("--daemon"), QStringLiteral("--start-listening")});
+    const qsizetype optionIndex = arguments.indexOf(QStringLiteral("--format"));
+    if (optionIndex < 0) {
+        return std::nullopt;
+    }
+    if (optionIndex + 1 >= arguments.size()) {
+        if (error) {
+            *error = QStringLiteral("--format requires plain or html");
+        }
+        return std::nullopt;
+    }
+    const QString value = arguments.at(optionIndex + 1).trimmed().toLower();
+    if (value != QStringLiteral("plain") && value != QStringLiteral("html")) {
+        if (error) {
+            *error = QStringLiteral("Unknown output format: %1").arg(value);
+        }
+        return std::nullopt;
+    }
+    return outputFormatFromString(value);
+}
+
+static bool startDetachedToggle(const PlatformIntegration *platform, std::optional<OutputFormat> outputFormat)
+{
+    QStringList arguments{QStringLiteral("--daemon"), QStringLiteral("--start-listening")};
+    if (outputFormat) {
+        arguments << QStringLiteral("--format") << outputFormatName(*outputFormat);
+    }
+    return QProcess::startDetached(platform->detachedExecutablePath(), arguments);
 }
 
 int main(int argc, char **argv)
@@ -84,11 +109,18 @@ int main(int argc, char **argv)
     const bool toggleCli = args.size() >= 2 && args.at(1) == QStringLiteral("toggle");
     const bool daemon = args.contains(QStringLiteral("--daemon"));
     const bool startListening = args.contains(QStringLiteral("--start-listening"));
+    QString formatError;
+    const std::optional<OutputFormat> outputFormat = requestedOutputFormat(args, &formatError);
+    if (!formatError.isEmpty()) {
+        std::cerr << formatError.toStdString() << "\n";
+        return 2;
+    }
 
     if (toggleCli) {
         IpcResponse response;
         QString ipcError;
         const IpcCommandResult ipcResult = SingleInstanceIpc::sendCommandDetailed(QStringLiteral("toggle"),
+                                                                                  outputFormat,
                                                                                   &response,
                                                                                   1200,
                                                                                   platform,
@@ -101,7 +133,7 @@ int main(int argc, char **argv)
             std::cerr << ipcError.toStdString() << "\n";
             return 1;
         }
-        if (!startDetachedToggle(platform.get())) {
+        if (!startDetachedToggle(platform.get(), outputFormat)) {
             std::cerr << "Could not start speecher daemon\n";
             return 1;
         }
@@ -119,7 +151,13 @@ int main(int argc, char **argv)
     }
 
     if (startListening) {
-        QTimer::singleShot(0, &controller, &ApplicationController::startListening);
+        QTimer::singleShot(0, &controller, [&controller, outputFormat] {
+            if (outputFormat) {
+                controller.handleIpcCommand(QStringLiteral("start"), outputFormatName(*outputFormat), nullptr);
+            } else {
+                controller.startListening();
+            }
+        });
     }
     if (!daemon) {
         controller.showMainWindow();

@@ -12,6 +12,7 @@
 #include <QTimer>
 
 #include <memory>
+#include <utility>
 
 namespace speecher {
 namespace {
@@ -92,8 +93,9 @@ DictationSession::DictationSession(SettingsStore *settings,
     });
     connect(m_audio, &AudioInput::levelChanged, this, &DictationSession::audioLevelChanged);
     connect(m_audio, &AudioInput::audioChunk, this, [this](const QByteArray &pcm) {
-        if (m_transcriber) {
-            m_transcriber->sendAudio(pcm);
+        if (m_transcriber && m_state == DictationState::Listening) {
+            m_capturedAudio.append(pcm);
+            m_transcriber->sendAudio(m_attemptId, pcm);
         }
     });
     connect(m_audio, &AudioInput::failed, this, [this](const QString &message) {
@@ -112,8 +114,10 @@ DictationSession::DictationSession(SettingsStore *settings,
         const quint64 generation = m_generation;
         m_audio->stop();
         if (m_transcriber) {
-            m_transcriber->stop();
+            m_transcriber->cancelAttempt(m_attemptId);
         }
+        discardSessionAudio();
+        m_sessionSettings.reset();
         resumePausedMedia();
         setState(DictationState::Error, message);
         QTimer::singleShot(1800, this, [this, generation] {
@@ -128,6 +132,10 @@ DictationSession::DictationSession(SettingsStore *settings,
 
 DictationSession::~DictationSession()
 {
+    if (m_transcriber) {
+        m_transcriber->cancelAttempt(m_attemptId);
+    }
+    discardSessionAudio();
     if (m_startupPreparation && m_startupPreparation->thread) {
         m_startupPreparation->thread->requestInterruption();
         m_startupPreparation->thread->quit();
@@ -157,9 +165,19 @@ SessionResponse DictationSession::response(bool ok, const QString &message) cons
 
 void DictationSession::toggle()
 {
+    toggleSession(std::nullopt);
+}
+
+void DictationSession::toggleWithFormat(OutputFormat format)
+{
+    toggleSession(format);
+}
+
+void DictationSession::toggleSession(std::optional<OutputFormat> format)
+{
     qInfo().noquote() << "toggle requested state=" + stateName();
     if (m_state == DictationState::Idle || m_state == DictationState::Error) {
-        startListening();
+        startSession(format);
     } else if (m_state == DictationState::Starting || m_state == DictationState::Listening) {
         stopListening();
     }
@@ -167,11 +185,24 @@ void DictationSession::toggle()
 
 void DictationSession::startListening()
 {
+    startSession(std::nullopt);
+}
+
+void DictationSession::startListeningWithFormat(OutputFormat format)
+{
+    startSession(format);
+}
+
+void DictationSession::startSession(std::optional<OutputFormat> format)
+{
     if (m_state != DictationState::Idle && m_state != DictationState::Error) {
         return;
     }
 
-    const AppSettings settings = m_settings->snapshot();
+    AppSettings settings = m_settings->snapshot();
+    if (format) {
+        settings.output.format = *format;
+    }
     QString providerError;
     if (!selectSpeechTranscriber(settings.speech.providerId, &providerError)) {
         setState(DictationState::Error, providerError);
@@ -182,7 +213,11 @@ void DictationSession::startListening()
     }
 
     ++m_generation;
+    ++m_attemptId;
     const quint64 generation = m_generation;
+    m_sessionSettings = settings;
+    m_retryUsed = false;
+    discardSessionAudio();
     setState(DictationState::Starting);
     qInfo().noquote() << "startListening speechProvider=" + settings.speech.providerId
                       << "credentialsPath=" + settings.speech.claudeCredentialsPath
@@ -255,24 +290,22 @@ void DictationSession::stopListening()
         m_startupPreparation.reset();
         qInfo() << "startup preparation cancelled";
         if (m_transcriber) {
-            m_transcriber->stop();
+            m_transcriber->cancelAttempt(m_attemptId);
         }
+        discardSessionAudio();
+        m_sessionSettings.reset();
         resumePausedMedia();
         emit popupHideRequested();
         setState(DictationState::Idle);
         return;
     }
-    const quint64 generation = m_generation;
     setState(DictationState::Stopping);
     qInfo() << "stopListening transcriptLength=" << m_transcript->text().size();
     m_audio->stop();
     if (m_transcriber) {
-        m_transcriber->stop();
+        m_transcriber->finishInput(m_attemptId);
     }
     resumePausedMedia();
-    QTimer::singleShot(650, this, [this, generation] {
-        beginRefinement(generation);
-    });
 }
 
 void DictationSession::setState(DictationState state, const QString &message)
@@ -359,12 +392,14 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation, const
 
     emit popupListeningIndicatorRequested();
 
-    m_transcriber->start(settings.speech);
+    m_transcriber->startAttempt(m_attemptId, settings.speech);
 
     QString audioError;
     if (!m_audio->start(&audioError)) {
         qWarning().noquote() << "audio start failed message=" + audioError;
-        m_transcriber->stop();
+        m_transcriber->cancelAttempt(m_attemptId);
+        discardSessionAudio();
+        m_sessionSettings.reset();
         resumePausedMedia();
         setState(DictationState::Error, audioError);
         return;
@@ -380,6 +415,8 @@ void DictationSession::failStartup(quint64 generation, const QString &message)
     }
     qWarning().noquote() << "speech credentials unavailable message=" + message;
     emit previewDisplayChanged({});
+    discardSessionAudio();
+    m_sessionSettings.reset();
     resumePausedMedia();
     setState(DictationState::Error, message);
 }
@@ -392,6 +429,8 @@ void DictationSession::beginRefinement(quint64 generation)
     }
     if (m_transcript->isEmpty()) {
         qWarning() << "beginRefinement no transcript captured";
+        discardSessionAudio();
+        m_sessionSettings.reset();
         setState(DictationState::Error, QStringLiteral("No transcript captured"));
         QTimer::singleShot(1400, this, [this, generation] {
             if (generation != m_generation || m_state != DictationState::Error) {
@@ -403,7 +442,13 @@ void DictationSession::beginRefinement(quint64 generation)
         return;
     }
 
-    const AppSettings settings = m_settings->snapshot();
+    if (!m_sessionSettings) {
+        setState(DictationState::Error, QStringLiteral("Dictation session options are unavailable"));
+        discardSessionAudio();
+        m_sessionSettings.reset();
+        return;
+    }
+    const AppSettings &settings = *m_sessionSettings;
     const bool hasNoBindDirective = BindingProcessor::hasExplicitNoBindDirective(m_transcript->text());
     m_noBindPhrases = BindingProcessor::explicitNoBindPhrases(m_transcript->text(), settings.bindings);
     m_allowPostRefinementBindings = !hasNoBindDirective || !m_noBindPhrases.isEmpty();
@@ -457,11 +502,19 @@ void DictationSession::beginRefinement(quint64 generation)
 
 void DictationSession::deliverFinal(const QString &text)
 {
-    const AppSettings settings = m_settings->snapshot();
+    if (!m_sessionSettings) {
+        setState(DictationState::Error, QStringLiteral("Dictation session options are unavailable"));
+        discardSessionAudio();
+        m_sessionSettings.reset();
+        return;
+    }
+    const AppSettings settings = *m_sessionSettings;
     emit popupRefiningChanged(false);
     setState(DictationState::Delivering);
     qInfo() << "deliverFinal length=" << text.size();
-    const DeliveryResult result = m_delivery->deliver(settings.output, text);
+    const DeliveryResult result = m_delivery->deliver(settings.output, makeDeliveryContent(text, settings.output.format));
+    discardSessionAudio();
+    m_sessionSettings.reset();
     emit popupHidePreviewRequested();
     if (result.ok) {
         const quint64 generation = m_generation;
@@ -484,6 +537,75 @@ void DictationSession::deliverFinal(const QString &text)
 void DictationSession::resumePausedMedia()
 {
     m_mediaController->resumePaused();
+}
+
+void DictationSession::discardSessionAudio()
+{
+    m_capturedAudio.clear();
+    m_capturedAudio.squeeze();
+}
+
+void DictationSession::retrySpeechAttempt()
+{
+    if (!m_transcriber || !m_sessionSettings || m_capturedAudio.isEmpty()) {
+        return;
+    }
+
+    const quint64 retiredAttempt = m_attemptId;
+    m_retryUsed = true;
+    m_transcriber->cancelAttempt(retiredAttempt);
+    ++m_attemptId;
+    m_transcript->clear();
+    emit popupStatusChanged(QStringLiteral("Retrying transcription"));
+    qInfo() << "retrying speech attempt audioChunks=" << m_capturedAudio.size();
+
+    m_transcriber->startAttempt(m_attemptId, m_sessionSettings->speech);
+    for (const QByteArray &pcm : std::as_const(m_capturedAudio)) {
+        m_transcriber->sendAudio(m_attemptId, pcm);
+    }
+    if (m_state == DictationState::Stopping) {
+        m_transcriber->finishInput(m_attemptId);
+    }
+}
+
+void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
+{
+    if (failure.attemptId != m_attemptId) {
+        qInfo() << "ignored failure from retired speech attempt" << failure.attemptId;
+        return;
+    }
+    if (m_state != DictationState::Starting
+        && m_state != DictationState::Listening
+        && m_state != DictationState::Stopping) {
+        return;
+    }
+    if (failure.retryable && !m_retryUsed && !m_capturedAudio.isEmpty()) {
+        retrySpeechAttempt();
+        return;
+    }
+
+    qWarning().noquote() << "speech transcriber failed transcriptEmpty=" << m_transcript->isEmpty()
+                         << "message=" + failure.message;
+    if (m_state == DictationState::Stopping && !m_transcript->isEmpty()) {
+        m_lastMessage = failure.message;
+        beginRefinement(m_generation);
+        return;
+    }
+
+    const quint64 generation = m_generation;
+    m_audio->stop();
+    m_transcriber->cancelAttempt(m_attemptId);
+    discardSessionAudio();
+    m_sessionSettings.reset();
+    resumePausedMedia();
+    setState(DictationState::Error, failure.message);
+    QTimer::singleShot(1800, this, [this, generation] {
+        if (generation != m_generation || m_state != DictationState::Error) {
+            return;
+        }
+        emit popupHideRequested();
+        setState(DictationState::Idle);
+    });
 }
 
 bool DictationSession::selectSpeechTranscriber(const QString &providerId, QString *error)
@@ -523,26 +645,23 @@ void DictationSession::connectSpeechTranscriber(SpeechTranscriber *transcriber)
     }
     m_transcriberConnections.clear();
     m_transcriber = transcriber;
-    m_transcriberConnections << connect(m_transcriber, &SpeechTranscriber::partialTranscript, m_transcript, &TranscriptState::setPartial);
-    m_transcriberConnections << connect(m_transcriber, &SpeechTranscriber::finalTranscript, m_transcript, &TranscriptState::commitFinal);
-    m_transcriberConnections << connect(m_transcriber, &SpeechTranscriber::failed, this, [this](const QString &message) {
-        qWarning().noquote() << "speech transcriber failed transcriptEmpty=" << m_transcript->isEmpty() << "message=" + message;
-        if (m_transcript->isEmpty()) {
-            const quint64 generation = m_generation;
-            m_audio->stop();
-            resumePausedMedia();
-            setState(DictationState::Error, message);
-            QTimer::singleShot(1800, this, [this, generation] {
-                if (generation != m_generation || m_state != DictationState::Error) {
-                    return;
-                }
-                emit popupHideRequested();
-                setState(DictationState::Idle);
-            });
-        } else {
-            m_lastMessage = message;
+    m_transcriberConnections << connect(m_transcriber, &SpeechTranscriber::partialTranscript, this, [this](quint64 attemptId, const QString &text) {
+        if (attemptId == m_attemptId) {
+            m_transcript->setPartial(text);
         }
     });
+    m_transcriberConnections << connect(m_transcriber, &SpeechTranscriber::finalTranscript, this, [this](quint64 attemptId, const QString &text) {
+        if (attemptId == m_attemptId) {
+            m_transcript->commitFinal(text);
+        }
+    });
+    m_transcriberConnections << connect(m_transcriber, &SpeechTranscriber::attemptCompleted, this, [this](quint64 attemptId) {
+        if (attemptId == m_attemptId && m_state == DictationState::Stopping) {
+            emit popupFrozenChanged(true);
+            beginRefinement(m_generation);
+        }
+    });
+    m_transcriberConnections << connect(m_transcriber, &SpeechTranscriber::failed, this, &DictationSession::handleSpeechFailure);
 }
 
 void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)

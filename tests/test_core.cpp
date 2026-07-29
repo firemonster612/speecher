@@ -2,6 +2,7 @@
 #include "core/AppSettings.h"
 #include "core/BindingProcessor.h"
 #include "core/OutputMethod.h"
+#include "core/OutputFormat.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
@@ -170,35 +171,56 @@ public:
         return prepareResult;
     }
 
-    void start(const SpeechSettings &settings) override
+    void startAttempt(quint64 attemptId, const SpeechSettings &settings) override
     {
         ++startCalls;
+        currentAttemptId = attemptId;
         lastVocabulary = settings.vocabulary;
     }
 
-    void sendAudio(const QByteArray &pcm) override
+    void sendAudio(quint64 attemptId, const QByteArray &pcm) override
     {
-        audioChunks << pcm;
+        if (attemptId == currentAttemptId) {
+            audioChunks << pcm;
+        }
     }
 
-    void stop() override
+    void finishInput(quint64 attemptId) override
     {
         ++stopCalls;
+        if (autoCompleteOnFinish) {
+            emit attemptCompleted(attemptId);
+        }
+    }
+
+    void cancelAttempt(quint64 attemptId) override
+    {
+        cancelledAttempts.append(attemptId);
     }
 
     void emitPartialText(const QString &text)
     {
-        emit partialTranscript(text);
+        emit partialTranscript(currentAttemptId, text);
     }
 
     void emitFinalText(const QString &text)
     {
-        emit finalTranscript(text);
+        emit finalTranscript(currentAttemptId, text);
     }
 
-    void emitFailure(const QString &message)
+    void emitFailure(const QString &message, bool retryable = false)
     {
-        emit failed(message);
+        emit failed({currentAttemptId, message, retryable});
+    }
+
+    void emitCompletion()
+    {
+        emit attemptCompleted(currentAttemptId);
+    }
+
+    void emitRetiredFinalText(quint64 attemptId, const QString &text)
+    {
+        emit finalTranscript(attemptId, text);
     }
 
     bool refreshRequired = false;
@@ -209,6 +231,9 @@ public:
     int prepareCalls = 0;
     int startCalls = 0;
     int stopCalls = 0;
+    quint64 currentAttemptId = 0;
+    bool autoCompleteOnFinish = true;
+    QList<quint64> cancelledAttempts;
     QList<QByteArray> audioChunks;
     QStringList lastVocabulary;
 };
@@ -326,17 +351,19 @@ public:
     {
     }
 
-    DeliveryResult deliver(const OutputSettings &settings, const QString &text) override
+    DeliveryResult deliver(const OutputSettings &settings, const DeliveryContent &content) override
     {
         ++calls;
         lastSettings = settings;
-        lastText = text;
+        lastContent = content;
+        lastText = content.plainText;
         return result;
     }
 
-    DeliveryResult result{true, false, QStringLiteral("Delivered")};
+    DeliveryResult result{true, DeliveryReceipt::InputSent, false, QStringLiteral("Input sent")};
     int calls = 0;
     OutputSettings lastSettings;
+    DeliveryContent lastContent;
     QString lastText;
 };
 
@@ -349,9 +376,12 @@ public:
     {
     }
 
-    bool deliver(const QString &, QString *error) override
+    bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
     {
         m_attempts->append(m_method);
+        if (htmlAvailable) {
+            *htmlAvailable = content.html.has_value() && m_method == QString::fromLatin1(OutputMethod::QtClipboard);
+        }
         const bool ok = m_results->value(m_method, false);
         if (!ok && error) {
             *error = m_method + QStringLiteral(" failed");
@@ -740,6 +770,7 @@ private slots:
         QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("claude_code"));
         QCOMPARE(settings.anthropicEffort(), QStringLiteral("low"));
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
+        QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
         QCOMPARE(settings.ydotoolEnabled(), false);
         QCOMPARE(settings.restoreClipboardAfterTyping(), false);
         QCOMPARE(settings.audioInputDeviceId(), QString());
@@ -827,6 +858,10 @@ private slots:
         QCOMPARE(settings.restoreClipboardAfterTyping(), true);
         settings.setRestoreClipboardAfterTyping(false);
         QCOMPARE(settings.restoreClipboardAfterTyping(), false);
+        settings.setOutputFormat(OutputFormat::Html);
+        QCOMPARE(settings.outputFormat(), OutputFormat::Html);
+        settings.raw().setValue(QStringLiteral("output/format"), QStringLiteral("unsupported"));
+        QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
 
         settings.setAudioCaptureSettings({
             QStringLiteral(" mic-id "),
@@ -927,6 +962,7 @@ private slots:
         settings.setAnthropicModel(QStringLiteral("claude-opus-4-8"));
         settings.setAnthropicAuthMode(QStringLiteral("oauth"));
         settings.setAnthropicEffort(QStringLiteral("xhigh"));
+        settings.setOutputFormat(OutputFormat::Html);
         settings.setRestoreClipboardAfterTyping(true);
         settings.setAudioCaptureSettings({
             QStringLiteral("device-1"),
@@ -962,6 +998,7 @@ private slots:
         QCOMPARE(snapshot.refinement.anthropicEffort, QStringLiteral("xhigh"));
         QVERIFY(snapshot.refinement.claudeCredentialsPath.endsWith(QStringLiteral("/.claude/.credentials.json")));
         QCOMPARE(snapshot.output.method, QString::fromLatin1(OutputMethod::Automatic));
+        QCOMPARE(snapshot.output.format, OutputFormat::Html);
         QCOMPARE(snapshot.output.ydotoolEnabled, false);
         QCOMPARE(snapshot.output.restoreClipboardAfterTyping, true);
     }
@@ -1103,6 +1140,22 @@ private slots:
         QCOMPARE(TextDelivery::orderedMethods(settings), QStringList({QString::fromLatin1(OutputMethod::QtClipboard)}));
     }
 
+    void outputContentBuildsSafeDualMimeRepresentations()
+    {
+        const DeliveryContent plain = makeDeliveryContent(QStringLiteral("<b>Hello</b>"), OutputFormat::PlainText);
+        QCOMPARE(plain.plainText, QStringLiteral("<b>Hello</b>"));
+        QVERIFY(!plain.html);
+
+        const DeliveryContent rich = makeDeliveryContent(
+            QStringLiteral("<b>Hello</b>\nline two\n\nnext"),
+            OutputFormat::Html);
+        QCOMPARE(rich.plainText, QStringLiteral("<b>Hello</b>\nline two\n\nnext"));
+        QVERIFY(rich.html);
+        QCOMPARE(*rich.html,
+                 QStringLiteral("<p>&lt;b&gt;Hello&lt;/b&gt;<br>line two</p>\n<p>next</p>"));
+        QVERIFY(!rich.html->contains(QStringLiteral("<b>Hello</b>")));
+    }
+
     void outputAutomaticFallbackOrder()
     {
         QList<QString> attempts;
@@ -1121,9 +1174,9 @@ private slots:
         settings.method = QString::fromLatin1(OutputMethod::Automatic);
         settings.ydotoolEnabled = true;
         settings.restoreClipboardAfterTyping = true;
-        const DeliveryResult result = delivery.deliver(settings, QStringLiteral("hello"));
+        const DeliveryResult result = delivery.deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText));
         QVERIFY(result.ok);
-        QCOMPARE(result.copied, true);
+        QCOMPARE(result.receipt, DeliveryReceipt::Copied);
         QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::Ydotool), QString::fromLatin1(OutputMethod::WlCopy)}));
         QCOMPARE(restoreFlags, QList<bool>({true, true}));
     }
@@ -1142,7 +1195,7 @@ private slots:
         OutputSettings settings;
         settings.method = QString::fromLatin1(OutputMethod::WlCopy);
         settings.ydotoolEnabled = true;
-        const DeliveryResult result = delivery.deliver(settings, QStringLiteral("hello"));
+        const DeliveryResult result = delivery.deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText));
         QVERIFY(!result.ok);
         QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::WlCopy)}));
     }
@@ -1328,6 +1381,96 @@ exit 0
         QCOMPARE(delivery->lastSettings.restoreClipboardAfterTyping, false);
         QCOMPARE(media->resumeCalls, 1);
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
+    }
+
+    void dictationSessionWaitsForProviderCompletion()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        speech->autoCompleteOnFinish = false;
+        speech->emitFinalText(QStringLiteral("hello"));
+        session.stopListening();
+
+        QCOMPARE(int(session.state()), int(DictationState::Stopping));
+        QCOMPARE(delivery->calls, 0);
+
+        speech->emitFinalText(QStringLiteral("world"));
+        QCOMPARE(delivery->calls, 0);
+        speech->emitCompletion();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(delivery->lastText, QStringLiteral("hello world"));
+    }
+
+    void dictationSessionUsesPerSessionOutputFormatWithoutChangingDefault()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.setOutputFormat(OutputFormat::PlainText);
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListeningWithFormat(OutputFormat::Html);
+        speech->emitFinalText(QStringLiteral("<hello>"));
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(delivery->lastSettings.format, OutputFormat::Html);
+        QCOMPARE(delivery->lastContent.plainText, QStringLiteral("<hello>"));
+        QVERIFY(delivery->lastContent.html);
+        QCOMPARE(*delivery->lastContent.html, QStringLiteral("<p>&lt;hello&gt;</p>"));
+        QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
+    }
+
+    void dictationSessionRetriesFullAudioOnceAndIgnoresRetiredAttempt()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        speech->autoCompleteOnFinish = false;
+        const quint64 firstAttempt = speech->currentAttemptId;
+        audio->pushAudio(QByteArrayLiteral("pcm"));
+        session.stopListening();
+        speech->emitFailure(QStringLiteral("temporary disconnect"), true);
+
+        QCOMPARE(speech->startCalls, 2);
+        QCOMPARE(speech->audioChunks, QList<QByteArray>({QByteArrayLiteral("pcm"), QByteArrayLiteral("pcm")}));
+        QCOMPARE(speech->cancelledAttempts, QList<quint64>({firstAttempt}));
+
+        speech->emitRetiredFinalText(firstAttempt, QStringLiteral("stale"));
+        speech->emitFinalText(QStringLiteral("recovered"));
+        speech->emitCompletion();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(delivery->lastText, QStringLiteral("recovered"));
     }
 
     void dictationSessionBackgroundSpeechPreparationDoesNotBlockStartup()
@@ -1799,7 +1942,8 @@ exit 0
 
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Error), 200);
         QCOMPARE(audio->isActive(), false);
-        QCOMPARE(speech->stopCalls, 1);
+        QCOMPARE(speech->stopCalls, 0);
+        QCOMPARE(speech->cancelledAttempts, QList<quint64>({speech->currentAttemptId}));
         QCOMPARE(media->resumeCalls, 1);
         QCOMPARE(delivery->calls, 0);
         QCOMPARE(session.lastMessage(), QStringLiteral("microphone blocked"));
