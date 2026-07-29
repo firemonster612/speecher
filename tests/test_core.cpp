@@ -1001,6 +1001,75 @@ private slots:
         QCOMPARE(settings.bindingRules().size(), 2);
     }
 
+    void learnedCorrectionsPersistLocallyAndFeedSessionVocabulary()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        QCOMPARE(settings.correctionLearningEnabled(), false);
+        settings.setCorrectionLearningEnabled(true);
+        QVERIFY(settings.correctionLearningEnabled());
+
+        QVERIFY(!settings.addLearnedCorrection({}, QStringLiteral("Qt"), {}, 0.9));
+        QVERIFY(!settings.addLearnedCorrection(QStringLiteral("cute"), QStringLiteral("cute"), {}, 0.9));
+        QVERIFY(settings.addLearnedCorrection(
+            QStringLiteral("cute"),
+            QStringLiteral("Qt"),
+            QStringLiteral("org.kde.kate"),
+            0.94));
+
+        QList<LearnedCorrection> corrections = settings.learnedCorrections();
+        QCOMPARE(corrections.size(), 1);
+        QCOMPARE(corrections.first().original, QStringLiteral("cute"));
+        QCOMPARE(corrections.first().corrected, QStringLiteral("Qt"));
+        QCOMPARE(corrections.first().applicationId, QStringLiteral("org.kde.kate"));
+        QCOMPARE(corrections.first().confidence, 0.94);
+        QVERIFY(corrections.first().enabled);
+
+        AppSettings snapshot = settings.snapshot();
+        QVERIFY(snapshot.speech.vocabulary.contains(QStringLiteral("Qt")));
+        QVERIFY(snapshot.bindings.contains(BindingRule{QStringLiteral("cute"), QStringLiteral("Qt")}));
+
+        const QString id = corrections.first().id;
+        settings.setLearnedCorrectionEnabled(id, false);
+        snapshot = settings.snapshot();
+        QVERIFY(!snapshot.speech.vocabulary.contains(QStringLiteral("Qt")));
+        QVERIFY(!snapshot.bindings.contains(BindingRule{QStringLiteral("cute"), QStringLiteral("Qt")}));
+
+        settings.setLearnedCorrectionEnabled(id, true);
+        QVERIFY(settings.addLearnedCorrection(
+            QStringLiteral("CUTE"),
+            QStringLiteral("Qt 6"),
+            QStringLiteral("org.kde.kate"),
+            0.99));
+        corrections = settings.learnedCorrections();
+        QCOMPARE(corrections.size(), 1);
+        QCOMPARE(corrections.first().corrected, QStringLiteral("Qt 6"));
+
+        settings.removeLearnedCorrection(id);
+        QVERIFY(settings.learnedCorrections().isEmpty());
+    }
+
+    void learnedCorrectionRequiresUniqueStableAnchors()
+    {
+        const std::optional<QString> correction = correctionBetweenAnchors(
+            QStringLiteral("before text Qt 6 after text"),
+            QStringLiteral("before text "),
+            QStringLiteral(" after text"),
+            QStringLiteral("cute"));
+        QVERIFY(correction);
+        QCOMPARE(*correction, QStringLiteral("Qt 6"));
+        QVERIFY(!correctionBetweenAnchors(
+            QStringLiteral("short Qt short"),
+            QStringLiteral("short "),
+            QStringLiteral(" short"),
+            QStringLiteral("cute")));
+        QVERIFY(!correctionBetweenAnchors(
+            QStringLiteral("before text Qt after text before text duplicate after text"),
+            QStringLiteral("before text "),
+            QStringLiteral(" after text"),
+            QStringLiteral("cute")));
+    }
+
     void settingsSnapshot()
     {
         SettingsStore settings;

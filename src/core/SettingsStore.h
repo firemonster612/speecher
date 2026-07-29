@@ -48,6 +48,16 @@ public:
 
     QList<BindingRule> bindingRules() const;
     bool setBindingRules(const QList<BindingRule> &rules, QString *error = nullptr);
+    bool correctionLearningEnabled() const;
+    void setCorrectionLearningEnabled(bool value);
+    QList<LearnedCorrection> learnedCorrections() const;
+    void setLearnedCorrections(const QList<LearnedCorrection> &corrections);
+    bool addLearnedCorrection(const QString &original,
+                              const QString &corrected,
+                              const QString &applicationId,
+                              double confidence);
+    void setLearnedCorrectionEnabled(const QString &id, bool enabled);
+    void removeLearnedCorrection(const QString &id);
 
     QString refinementProvider() const;
     void setRefinementProvider(const QString &value);

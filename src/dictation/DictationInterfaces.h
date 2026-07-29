@@ -93,6 +93,12 @@ public:
         Q_UNUSED(plainText);
         return false;
     }
+
+signals:
+    void correctionObserved(const QString &original,
+                            const QString &corrected,
+                            const QString &applicationId,
+                            double confidence);
 };
 
 class SpeechTranscriber : public QObject {

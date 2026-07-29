@@ -16,8 +16,14 @@ public:
 
 private:
     void clearAccessible();
+    void observeCorrection(const Target &target,
+                           const QString &original,
+                           const QString &prefix,
+                           const QString &suffix,
+                           quint64 generation);
     void *m_accessible = nullptr;
     Target m_snapshot;
+    quint64 m_observationGeneration = 0;
 };
 
 } // namespace speecher

@@ -31,8 +31,10 @@ private:
     bool hasChanges() const;
     QStringList currentVocabulary() const;
     QList<BindingRule> currentBindingRules() const;
+    QList<LearnedCorrection> currentLearnedCorrections() const;
     void setVocabularyRows(const QStringList &terms);
     void setBindingRules(const QList<BindingRule> &rules);
+    void setLearnedCorrections(const QList<LearnedCorrection> &corrections);
     void refreshBindingList();
     void editBinding(int row);
     void refreshAudioDeviceList(const QString &selectedDeviceId);
@@ -69,6 +71,7 @@ private:
     QComboBox *m_globalPaste = nullptr;
     QComboBox *m_terminalPaste = nullptr;
     QCheckBox *m_restoreClipboardAfterTyping = nullptr;
+    QCheckBox *m_learnCorrections = nullptr;
     QComboBox *m_authMode = nullptr;
     QComboBox *m_anthropicAuthMode = nullptr;
     QStackedWidget *m_authControl = nullptr;
@@ -93,7 +96,11 @@ private:
     QSpinBox *m_readinessTimeoutMs = nullptr;
     QSpinBox *m_vadThreshold = nullptr;
     QTableWidget *m_vocab = nullptr;
+    QTableWidget *m_corrections = nullptr;
+    QPushButton *m_removeCorrectionButton = nullptr;
+    QPushButton *m_undoCorrectionButton = nullptr;
     QListWidget *m_bindings = nullptr;
+    QList<LearnedCorrection> m_removedCorrections;
     QList<BindingRule> m_bindingRules;
     bool m_updatingVocabulary = false;
 };

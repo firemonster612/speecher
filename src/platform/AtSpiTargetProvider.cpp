@@ -1,10 +1,13 @@
 #include "platform/AtSpiTargetProvider.h"
 
+#include "core/LearnedCorrection.h"
+
 #include <QCryptographicHash>
 #include <QCoreApplication>
 #include <QEventLoop>
 #include <QFile>
 #include <QThread>
+#include <QTimer>
 
 #ifdef SPEECHER_WITH_ATSPI
 #include <atspi/atspi.h>
@@ -152,6 +155,7 @@ AtSpiTargetProvider::~AtSpiTargetProvider()
 
 void AtSpiTargetProvider::clearAccessible()
 {
+    ++m_observationGeneration;
 #ifdef SPEECHER_WITH_ATSPI
     if (m_accessible) {
         g_object_unref(ATSPI_ACCESSIBLE(m_accessible));
@@ -284,7 +288,16 @@ bool AtSpiTargetProvider::verifyInsertion(const Target &target, const QString &p
         const int end = qMin(count, insertionOffset + plainText.size() + 32);
         const QString nearby = takeString(atspi_text_get_text(text, start, end, &error));
         clearError(&error);
-        if (nearby.contains(plainText)) {
+        const int insertedAt = nearby.indexOf(plainText);
+        if (insertedAt >= 0) {
+            const QString prefix = nearby.left(insertedAt).right(24);
+            const QString suffix = nearby.mid(insertedAt + plainText.size()).left(24);
+            if (prefix.size() >= 8 && suffix.size() >= 8) {
+                const quint64 generation = ++m_observationGeneration;
+                QTimer::singleShot(6500, this, [this, target, plainText, prefix, suffix, generation] {
+                    observeCorrection(target, plainText, prefix, suffix, generation);
+                });
+            }
             return true;
         }
     }
@@ -293,6 +306,60 @@ bool AtSpiTargetProvider::verifyInsertion(const Target &target, const QString &p
     Q_UNUSED(plainText)
 #endif
     return false;
+}
+
+void AtSpiTargetProvider::observeCorrection(const Target &target,
+                                            const QString &original,
+                                            const QString &prefix,
+                                            const QString &suffix,
+                                            quint64 generation)
+{
+#ifdef SPEECHER_WITH_ATSPI
+    if (generation != m_observationGeneration
+        || !m_accessible
+        || target.secure
+        || original.isEmpty()) {
+        return;
+    }
+    AtspiAccessible *accessible = ATSPI_ACCESSIBLE(m_accessible);
+    AtspiStateSet *states = atspi_accessible_get_state_set(accessible);
+    const bool focused = states && atspi_state_set_contains(states, ATSPI_STATE_FOCUSED);
+    if (states) {
+        g_object_unref(states);
+    }
+    if (!focused || !atspi_accessible_is_text(accessible)) {
+        return;
+    }
+
+    AtspiText *text = atspi_accessible_get_text(accessible);
+    GError *error = nullptr;
+    const int count = atspi_text_get_character_count(text, &error);
+    clearError(&error);
+    const int insertionOffset = target.selectionStart >= 0 ? target.selectionStart : target.caretOffset;
+    if (count < 0 || insertionOffset < 0) {
+        return;
+    }
+    const int start = qMax(0, insertionOffset - prefix.size() - 16);
+    const int end = qMin(count, insertionOffset + original.size() + 560 + suffix.size());
+    const QString window = takeString(atspi_text_get_text(text, start, end, &error));
+    clearError(&error);
+
+    const std::optional<QString> corrected = correctionBetweenAnchors(
+        window,
+        prefix,
+        suffix,
+        original);
+    if (!corrected) {
+        return;
+    }
+    emit correctionObserved(original, *corrected, target.applicationId, 0.92);
+#else
+    Q_UNUSED(target)
+    Q_UNUSED(original)
+    Q_UNUSED(prefix)
+    Q_UNUSED(suffix)
+    Q_UNUSED(generation)
+#endif
 }
 
 } // namespace speecher

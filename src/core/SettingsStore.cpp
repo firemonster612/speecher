@@ -9,6 +9,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QDateTime>
+#include <QUuid>
 
 #include <algorithm>
 
@@ -271,6 +273,122 @@ bool SettingsStore::setBindingRules(const QList<BindingRule> &rules, QString *er
     m_settings.setValue(QStringLiteral("bindings/rules"),
                         QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Compact)));
     return true;
+}
+
+bool SettingsStore::correctionLearningEnabled() const
+{
+    return value(QStringLiteral("vocabulary/correctionLearningEnabled"), false).toBool();
+}
+
+void SettingsStore::setCorrectionLearningEnabled(bool value)
+{
+    m_settings.setValue(QStringLiteral("vocabulary/correctionLearningEnabled"), value);
+}
+
+QList<LearnedCorrection> SettingsStore::learnedCorrections() const
+{
+    const QJsonDocument document = QJsonDocument::fromJson(
+        value(QStringLiteral("vocabulary/learnedCorrections"), QByteArray()).toByteArray());
+    QList<LearnedCorrection> corrections;
+    for (const QJsonValue &value : document.array()) {
+        const QJsonObject object = value.toObject();
+        LearnedCorrection correction;
+        correction.id = object.value(QStringLiteral("id")).toString();
+        correction.original = object.value(QStringLiteral("original")).toString();
+        correction.corrected = object.value(QStringLiteral("corrected")).toString();
+        correction.applicationId = object.value(QStringLiteral("applicationId")).toString();
+        correction.createdAtMs = qint64(object.value(QStringLiteral("createdAtMs")).toDouble());
+        correction.confidence = object.value(QStringLiteral("confidence")).toDouble();
+        correction.enabled = object.value(QStringLiteral("enabled")).toBool(true);
+        if (!correction.id.isEmpty()
+            && !correction.original.trimmed().isEmpty()
+            && !correction.corrected.trimmed().isEmpty()) {
+            corrections.append(correction);
+        }
+    }
+    return corrections;
+}
+
+static void storeLearnedCorrections(QSettings *settings, const QList<LearnedCorrection> &corrections)
+{
+    QJsonArray array;
+    for (const LearnedCorrection &correction : corrections) {
+        array.append(QJsonObject{
+            {QStringLiteral("id"), correction.id},
+            {QStringLiteral("original"), correction.original},
+            {QStringLiteral("corrected"), correction.corrected},
+            {QStringLiteral("applicationId"), correction.applicationId},
+            {QStringLiteral("createdAtMs"), double(correction.createdAtMs)},
+            {QStringLiteral("confidence"), correction.confidence},
+            {QStringLiteral("enabled"), correction.enabled},
+        });
+    }
+    settings->setValue(
+        QStringLiteral("vocabulary/learnedCorrections"),
+        QJsonDocument(array).toJson(QJsonDocument::Compact));
+}
+
+void SettingsStore::setLearnedCorrections(const QList<LearnedCorrection> &corrections)
+{
+    storeLearnedCorrections(&m_settings, corrections);
+}
+
+bool SettingsStore::addLearnedCorrection(const QString &original,
+                                         const QString &corrected,
+                                         const QString &applicationId,
+                                         double confidence)
+{
+    const QString from = original.trimmed();
+    const QString to = corrected.trimmed();
+    if (from.isEmpty() || to.isEmpty() || from == to || from.size() > 500 || to.size() > 500) {
+        return false;
+    }
+
+    QList<LearnedCorrection> corrections = learnedCorrections();
+    for (LearnedCorrection &correction : corrections) {
+        if (correction.original.compare(from, Qt::CaseInsensitive) == 0
+            && correction.applicationId.compare(applicationId, Qt::CaseInsensitive) == 0) {
+            correction.corrected = to;
+            correction.confidence = qBound(0.0, confidence, 1.0);
+            correction.createdAtMs = QDateTime::currentMSecsSinceEpoch();
+            correction.enabled = true;
+            storeLearnedCorrections(&m_settings, corrections);
+            return true;
+        }
+    }
+
+    corrections.prepend({
+        QUuid::createUuid().toString(QUuid::WithoutBraces),
+        from,
+        to,
+        applicationId.trimmed(),
+        QDateTime::currentMSecsSinceEpoch(),
+        qBound(0.0, confidence, 1.0),
+        true,
+    });
+    storeLearnedCorrections(&m_settings, corrections);
+    return true;
+}
+
+void SettingsStore::setLearnedCorrectionEnabled(const QString &id, bool enabled)
+{
+    QList<LearnedCorrection> corrections = learnedCorrections();
+    for (LearnedCorrection &correction : corrections) {
+        if (correction.id == id) {
+            correction.enabled = enabled;
+            storeLearnedCorrections(&m_settings, corrections);
+            return;
+        }
+    }
+}
+
+void SettingsStore::removeLearnedCorrection(const QString &id)
+{
+    QList<LearnedCorrection> corrections = learnedCorrections();
+    corrections.removeIf([&id](const LearnedCorrection &correction) {
+        return correction.id == id;
+    });
+    storeLearnedCorrections(&m_settings, corrections);
 }
 
 QString SettingsStore::refinementProvider() const
@@ -581,6 +699,16 @@ AppSettings SettingsStore::snapshot() const
     settings.speech.claudeVoicePath = claudeVoicePath();
     settings.audio = audioCaptureSettings();
     settings.bindings = bindingRules();
+    settings.learnedCorrections = learnedCorrections();
+    for (const LearnedCorrection &correction : settings.learnedCorrections) {
+        if (!correction.enabled) {
+            continue;
+        }
+        settings.bindings.append({correction.original, correction.corrected});
+        if (!settings.speech.vocabulary.contains(correction.corrected, Qt::CaseInsensitive)) {
+            settings.speech.vocabulary.append(correction.corrected);
+        }
+    }
 
     settings.refinement.providerId = refinementProvider();
     settings.refinement.style = refinementStyle();

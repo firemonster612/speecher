@@ -2,6 +2,7 @@
 
 #include "core/OutputFormat.h"
 #include "core/PasteRules.h"
+#include "core/LearnedCorrection.h"
 
 #include <QString>
 #include <QStringList>
@@ -74,6 +75,7 @@ struct AppSettings {
     RefinementSettings refinement;
     OutputSettings output;
     QList<BindingRule> bindings;
+    QList<LearnedCorrection> learnedCorrections;
 };
 
 } // namespace speecher

@@ -463,6 +463,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_globalPaste(new QComboBox(this))
     , m_terminalPaste(new QComboBox(this))
     , m_restoreClipboardAfterTyping(new QCheckBox(this))
+    , m_learnCorrections(new QCheckBox(this))
     , m_authMode(new QComboBox(this))
     , m_anthropicAuthMode(new QComboBox(this))
     , m_authControl(new QStackedWidget(this))
@@ -478,6 +479,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_readinessTimeoutMs(new QSpinBox(this))
     , m_vadThreshold(new QSpinBox(this))
     , m_vocab(new VocabularyTable(this))
+    , m_corrections(new QTableWidget(this))
     , m_bindings(new QListWidget(this))
 {
     setWindowTitle(QStringLiteral("Speecher Settings"));
@@ -572,6 +574,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     }
     m_restoreClipboardAfterTyping->setText(QStringLiteral("Restore"));
     m_restoreClipboardAfterTyping->setToolTip(QStringLiteral("Restore the previous clipboard after virtual-keyboard paste."));
+    m_learnCorrections->setText(QStringLiteral("Learn corrections"));
+    m_learnCorrections->setToolTip(QStringLiteral("Observe a verified inserted span briefly and save only high-confidence corrections."));
     m_authMode->addItem(QStringLiteral("Automatic"), QStringLiteral("auto"));
     m_authMode->addItem(QStringLiteral("Codex API key"), QStringLiteral("codex_api_key"));
     m_authMode->addItem(QStringLiteral("Codex OAuth"), QStringLiteral("codex_oauth"));
@@ -608,6 +612,22 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_vocab->setEditTriggers(QAbstractItemView::AllEditTriggers);
     m_vocab->setTabKeyNavigation(false);
     m_vocab->setMinimumHeight(120);
+    m_corrections->setObjectName(QStringLiteral("vocabInput"));
+    m_corrections->setColumnCount(4);
+    m_corrections->setHorizontalHeaderLabels({
+        QStringLiteral("Enabled"),
+        QStringLiteral("Heard"),
+        QStringLiteral("Corrected"),
+        QStringLiteral("App"),
+    });
+    m_corrections->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_corrections->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_corrections->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    m_corrections->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    m_corrections->verticalHeader()->hide();
+    m_corrections->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_corrections->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_corrections->setMinimumHeight(180);
     m_vocabLimit->setObjectName(QStringLiteral("statusText"));
     m_vocabLimit->setForegroundRole(QPalette::WindowText);
     m_vocabLimit->setAttribute(Qt::WA_StyledBackground, false);
@@ -641,6 +661,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *openAiSection = makeSectionLabel(QStringLiteral("OpenAI"), this);
     auto *anthropicSection = makeSectionLabel(QStringLiteral("Anthropic"), this);
     auto *vocabularySection = makeSectionLabel(QStringLiteral("Vocabulary"), this);
+    auto *correctionsSection = makeSectionLabel(QStringLiteral("Learned Corrections"), this);
     auto *bindingsSection = makeSectionLabel(QStringLiteral("Bindings"), this);
 
     auto *generalCard = makeSettingsCard(this);
@@ -834,6 +855,28 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     vocabLayout->addWidget(m_vocab);
     vocabLayout->addWidget(m_vocabLimit);
 
+    auto *correctionsCard = new QFrame(this);
+    correctionsCard->setObjectName(QStringLiteral("vocabSection"));
+    auto *correctionsLayout = new QVBoxLayout(correctionsCard);
+    correctionsLayout->setContentsMargins(20, 16, 20, 20);
+    correctionsLayout->setSpacing(8);
+    auto *correctionsDescription = new QLabel(
+        QStringLiteral("Source-marked corrections learned after verified insertion. Edit, disable, delete, or undo deletions here."),
+        correctionsCard);
+    correctionsDescription->setObjectName(QStringLiteral("rowDescription"));
+    correctionsDescription->setWordWrap(true);
+    m_removeCorrectionButton = new QPushButton(QStringLiteral("Delete selected"), correctionsCard);
+    m_undoCorrectionButton = new QPushButton(QStringLiteral("Undo delete"), correctionsCard);
+    m_undoCorrectionButton->setEnabled(false);
+    auto *correctionButtons = new QHBoxLayout;
+    correctionButtons->addWidget(m_learnCorrections);
+    correctionButtons->addStretch();
+    correctionButtons->addWidget(m_undoCorrectionButton);
+    correctionButtons->addWidget(m_removeCorrectionButton);
+    correctionsLayout->addWidget(correctionsDescription);
+    correctionsLayout->addWidget(m_corrections);
+    correctionsLayout->addLayout(correctionButtons);
+
     auto *bindingSection = new QFrame(this);
     bindingSection->setObjectName(QStringLiteral("bindingSection"));
     auto *bindingLayout = new QVBoxLayout(bindingSection);
@@ -877,6 +920,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     content->addWidget(anthropicCard);
     content->addWidget(vocabularySection);
     content->addWidget(vocabSection);
+    content->addWidget(correctionsSection);
+    content->addWidget(correctionsCard);
     content->addWidget(bindingsSection);
     content->addWidget(bindingSection);
     content->addWidget(note);
@@ -894,6 +939,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     openAiCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     anthropicCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     vocabSection->setStyleSheet(QString::fromLatin1(settingsStyle));
+    correctionsCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     bindingSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     generalSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     audioSection->setStyleSheet(QString::fromLatin1(settingsStyle));
@@ -902,6 +948,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     openAiSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     anthropicSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     vocabularySection->setStyleSheet(QString::fromLatin1(settingsStyle));
+    correctionsSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     bindingsSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     note->setStyleSheet(QString::fromLatin1(settingsStyle));
 
@@ -957,6 +1004,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(m_anthropicAuthMode, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_anthropicInfoButton, &QPushButton::clicked, this, &SettingsDialog::showAnthropicAuthInfo);
     connect(m_restoreClipboardAfterTyping, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
+    connect(m_learnCorrections, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
     connect(m_outputFormat, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_globalPaste, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_terminalPaste, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
@@ -979,6 +1027,31 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
         updateButtonState();
     });
     connect(m_apiKey, &QLineEdit::textChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_corrections, &QTableWidget::itemChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_corrections, &QTableWidget::itemSelectionChanged, this, [this] {
+        m_removeCorrectionButton->setEnabled(m_corrections->currentRow() >= 0);
+    });
+    connect(m_removeCorrectionButton, &QPushButton::clicked, this, [this] {
+        const int row = m_corrections->currentRow();
+        QList<LearnedCorrection> corrections = currentLearnedCorrections();
+        if (row < 0 || row >= corrections.size()) {
+            return;
+        }
+        m_removedCorrections.append(corrections.takeAt(row));
+        setLearnedCorrections(corrections);
+        m_undoCorrectionButton->setEnabled(true);
+        updateButtonState();
+    });
+    connect(m_undoCorrectionButton, &QPushButton::clicked, this, [this] {
+        if (m_removedCorrections.isEmpty()) {
+            return;
+        }
+        QList<LearnedCorrection> corrections = currentLearnedCorrections();
+        corrections.prepend(m_removedCorrections.takeLast());
+        setLearnedCorrections(corrections);
+        m_undoCorrectionButton->setEnabled(!m_removedCorrections.isEmpty());
+        updateButtonState();
+    });
     connect(m_previewWords, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
     connect(m_ydotoolSetupButton, &QPushButton::clicked, this, &SettingsDialog::setupOrEnableYdotool);
     connect(m_ydotoolStartButton, &QPushButton::clicked, this, [this] {
@@ -1049,6 +1122,10 @@ void SettingsDialog::load()
     m_apiKey->setText(m_controller->secretStore()->apiKey());
     setVocabularyRows(settings->customVocabulary());
     setBindingRules(settings->bindingRules());
+    m_learnCorrections->setChecked(settings->correctionLearningEnabled());
+    m_removedCorrections.clear();
+    m_undoCorrectionButton->setEnabled(false);
+    setLearnedCorrections(settings->learnedCorrections());
     updateVocabularyLimit();
     updateAudioControls();
     updateAuthControl();
@@ -1103,9 +1180,14 @@ bool SettingsDialog::save()
     settings->setAnthropicAuthMode(m_anthropicAuthMode->currentData().toString());
     settings->setPreviewWords(m_previewWords->value());
     settings->setCustomVocabulary(currentVocabulary());
+    settings->setCorrectionLearningEnabled(m_learnCorrections->isChecked());
+    settings->setLearnedCorrections(currentLearnedCorrections());
     settings->setBindingRules(bindingValidation.rules);
     setVocabularyRows(settings->customVocabulary());
     setBindingRules(settings->bindingRules());
+    setLearnedCorrections(settings->learnedCorrections());
+    m_removedCorrections.clear();
+    m_undoCorrectionButton->setEnabled(false);
     updateVocabularyLimit();
     if (settings->openAiAuthMode() == QStringLiteral("settings")) {
         if (!m_controller->secretStore()->saveApiKey(m_apiKey->text().trimmed())) {
@@ -1156,6 +1238,8 @@ bool SettingsDialog::hasChanges() const
         || m_anthropicAuthMode->currentData().toString() != settings->anthropicAuthMode()
         || m_previewWords->value() != settings->previewWords()
         || currentVocabulary() != settings->customVocabulary()
+        || m_learnCorrections->isChecked() != settings->correctionLearningEnabled()
+        || currentLearnedCorrections() != settings->learnedCorrections()
         || currentBindingRules() != settings->bindingRules()) {
         return true;
     }
@@ -1175,6 +1259,59 @@ QStringList SettingsDialog::currentVocabulary() const
         }
     }
     return VocabularyLimit::limited(vocabulary);
+}
+
+QList<LearnedCorrection> SettingsDialog::currentLearnedCorrections() const
+{
+    QList<LearnedCorrection> corrections;
+    for (int row = 0; row < m_corrections->rowCount(); ++row) {
+        const QTableWidgetItem *enabled = m_corrections->item(row, 0);
+        const QTableWidgetItem *original = m_corrections->item(row, 1);
+        const QTableWidgetItem *corrected = m_corrections->item(row, 2);
+        const QTableWidgetItem *application = m_corrections->item(row, 3);
+        if (!enabled || !original || !corrected || !application) {
+            continue;
+        }
+        LearnedCorrection correction;
+        correction.id = enabled->data(Qt::UserRole).toString();
+        correction.createdAtMs = enabled->data(Qt::UserRole + 1).toLongLong();
+        correction.confidence = enabled->data(Qt::UserRole + 2).toDouble();
+        correction.enabled = enabled->checkState() == Qt::Checked;
+        correction.original = original->text().trimmed();
+        correction.corrected = corrected->text().trimmed();
+        correction.applicationId = application->text().trimmed();
+        if (!correction.id.isEmpty() && !correction.original.isEmpty() && !correction.corrected.isEmpty()) {
+            corrections.append(correction);
+        }
+    }
+    return corrections;
+}
+
+void SettingsDialog::setLearnedCorrections(const QList<LearnedCorrection> &corrections)
+{
+    QSignalBlocker blocker(m_corrections);
+    m_corrections->setRowCount(0);
+    for (const LearnedCorrection &correction : corrections) {
+        const int row = m_corrections->rowCount();
+        m_corrections->insertRow(row);
+        auto *enabled = new QTableWidgetItem;
+        enabled->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
+        enabled->setCheckState(correction.enabled ? Qt::Checked : Qt::Unchecked);
+        enabled->setData(Qt::UserRole, correction.id);
+        enabled->setData(Qt::UserRole + 1, correction.createdAtMs);
+        enabled->setData(Qt::UserRole + 2, correction.confidence);
+        auto *original = new QTableWidgetItem(correction.original);
+        auto *corrected = new QTableWidgetItem(correction.corrected);
+        auto *application = new QTableWidgetItem(correction.applicationId);
+        application->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
+        application->setToolTip(QStringLiteral("Learned automatically · confidence %1%")
+                                    .arg(qRound(correction.confidence * 100.0)));
+        m_corrections->setItem(row, 0, enabled);
+        m_corrections->setItem(row, 1, original);
+        m_corrections->setItem(row, 2, corrected);
+        m_corrections->setItem(row, 3, application);
+    }
+    m_removeCorrectionButton->setEnabled(false);
 }
 
 QList<BindingRule> SettingsDialog::currentBindingRules() const

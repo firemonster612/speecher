@@ -28,6 +28,17 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
 {
     registerProviders();
     TargetProvider *targetProvider = m_platform->createTargetProvider(this);
+    connect(targetProvider,
+            &TargetProvider::correctionObserved,
+            this,
+            [this](const QString &original,
+                   const QString &corrected,
+                   const QString &applicationId,
+                   double confidence) {
+                if (m_settings->correctionLearningEnabled()) {
+                    m_settings->addLearnedCorrection(original, corrected, applicationId, confidence);
+                }
+            });
     m_session = new DictationSession(m_settings,
                                      m_platform->createAudioInput(m_settings, this),
                                      m_platform->createMediaController(this),

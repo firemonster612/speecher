@@ -32,6 +32,7 @@ endif()
 set(SPEECHER_DOMAIN_SOURCES
   src/core/BindingProcessor.cpp
   src/core/CliToolDiscovery.cpp
+  src/core/LearnedCorrection.cpp
   src/core/OutputMethod.cpp
   src/core/OutputFormat.cpp
   src/core/PasteRules.cpp
@@ -50,6 +51,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/AppSettings.h
   src/core/BindingProcessor.h
   src/core/CliToolDiscovery.h
+  src/core/LearnedCorrection.h
   src/core/OutputMethod.h
   src/core/OutputFormat.h
   src/core/PasteRules.h
