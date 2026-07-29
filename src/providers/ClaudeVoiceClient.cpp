@@ -71,7 +71,8 @@ static bool messageLooksFinal(const QJsonObject &object)
     return combined.contains(QStringLiteral("final"))
         || combined.contains(QStringLiteral("complete"))
         || object.value(QStringLiteral("is_final")).toBool()
-        || object.value(QStringLiteral("final")).isBool() && object.value(QStringLiteral("final")).toBool();
+        || (object.value(QStringLiteral("final")).isBool()
+            && object.value(QStringLiteral("final")).toBool());
 }
 
 static QString redactedErrorSummary(const QJsonObject &object)

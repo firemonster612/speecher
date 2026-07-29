@@ -130,8 +130,9 @@ QString formatLabel(const QAudioFormat &format)
                 return QStringLiteral("Float");
             case QAudioFormat::Unknown:
                 return QStringLiteral("Unknown");
+            default:
+                return QStringLiteral("Unknown");
             }
-            return QStringLiteral("Unknown");
         }());
 }
 
@@ -184,8 +185,9 @@ QString sourceErrorMessageForLabel(const QString &label, QAudio::Error error)
 #endif
     case QAudio::FatalError:
         return QStringLiteral("Microphone \"%1\" failed with a fatal audio error.").arg(microphone);
+    default:
+        return QStringLiteral("Microphone \"%1\" failed.").arg(microphone);
     }
-    return QStringLiteral("Microphone \"%1\" failed.").arg(microphone);
 }
 
 bool isIgnorableStoppedSourceError(QAudio::Error error)
@@ -246,8 +248,9 @@ float sampleAt(const char *data, QAudioFormat::SampleFormat format)
     }
     case QAudioFormat::Unknown:
         return 0.0f;
+    default:
+        return 0.0f;
     }
-    return 0.0f;
 }
 
 QVector<float> decodeMonoSamples(const QByteArray &data, const QAudioFormat &format, QString *error)

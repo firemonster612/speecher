@@ -72,6 +72,13 @@ void PortalScreenshotContextProvider::capture()
         const QDBusPendingReply<QDBusObjectPath> reply = *watcher;
         watcher->deleteLater();
         if (m_cancelled) {
+            if (!reply.isError()) {
+                QDBusInterface request(QStringLiteral("org.freedesktop.portal.Desktop"),
+                                       reply.value().path(),
+                                       QStringLiteral("org.freedesktop.portal.Request"),
+                                       QDBusConnection::sessionBus());
+                request.asyncCall(QStringLiteral("Close"));
+            }
             return;
         }
         if (reply.isError()) {

@@ -111,23 +111,6 @@ static QIcon informationIcon(QWidget *widget)
     return icon;
 }
 
-static QPixmap tintedInformationPixmap(QWidget *widget, const QSize &size, const QColor &color)
-{
-    const QIcon icon = informationIcon(widget);
-    QPixmap source = icon.pixmap(size - QSize(2, 2));
-    if (source.isNull()) {
-        return source;
-    }
-
-    QPixmap tinted(size);
-    tinted.fill(Qt::transparent);
-    QPainter painter(&tinted);
-    painter.drawPixmap((size.width() - source.width()) / 2, (size.height() - source.height()) / 2, source);
-    painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
-    painter.fillRect(tinted.rect(), color);
-    return tinted;
-}
-
 static QPixmap warningInformationPixmap(QWidget *widget, int logicalSize, const QColor &color)
 {
     const qreal dpr = widget ? widget->devicePixelRatioF() : qApp->devicePixelRatio();

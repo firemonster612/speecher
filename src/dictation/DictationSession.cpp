@@ -183,7 +183,11 @@ DictationSession::~DictationSession()
     if (m_transcriber) {
         m_transcriber->cancelAttempt(m_attemptId);
     }
+    if (m_refiner) {
+        m_refiner->cancel();
+    }
     discardSessionAudio();
+    clearScreenshotContext();
     if (m_startupPreparation && m_startupPreparation->thread) {
         m_startupPreparation->thread->requestInterruption();
         m_startupPreparation->thread->quit();
@@ -271,6 +275,9 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
     if (settings.refinement.includeScreenshotContext
         && settings.refinement.providerId != QStringLiteral("none")
         && m_screenshotProvider
+        && m_refiner
+        && m_refiner->id() == settings.refinement.providerId
+        && m_refiner->supportsScreenshotContext(settings.refinement)
         && !m_target.secure) {
         m_screenshotCaptureGeneration = generation;
         m_screenshotProvider->capture();

@@ -1436,7 +1436,9 @@ private slots:
         target.selectionEnd = 10;
         QCOMPARE(inferWritingProfile(target), WritingProfile::Email);
 
-        RefinementContext context{target, WritingProfile::Email, true};
+        RefinementContext context;
+        context.target = target;
+        context.writingProfile = WritingProfile::Email;
         const QString message = transcriptRefinementUserMessage(
             QStringLiteral("raw"),
             {},
@@ -2144,6 +2146,12 @@ exit 0
         refiner->emitCompletedText(QStringLiteral("second"));
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 2, 250);
         QVERIFY(screenshots->cancelCalls >= 2);
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
+
+        refiner->screenshotCapable = false;
+        session.startListening();
+        QCOMPARE(screenshots->captureCalls, 1);
+        session.stopListening();
     }
 
     void livePortalScreenshotCapture()
