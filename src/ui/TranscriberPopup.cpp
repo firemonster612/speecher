@@ -8,7 +8,6 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QEvent>
-#include <QFontMetrics>
 #include <QPainter>
 #include <QPalette>
 #include <QResizeEvent>
@@ -46,16 +45,18 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     setAutoFillBackground(false);
     m_positioner->configurePopup(this);
     setObjectName(QStringLiteral("transcriberPopup"));
+    m_preview->setObjectName(QStringLiteral("rawTranscript"));
     applyTheme();
 
     m_previewPill->setObjectName(QStringLiteral("previewPill"));
-    m_previewPill->setFixedHeight(48);
+    m_previewPill->setMinimumHeight(48);
+    m_previewPill->setMaximumHeight(92);
     m_previewPill->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     auto *previewLayout = new QHBoxLayout(m_previewPill);
-    previewLayout->setContentsMargins(24, 0, 24, 0);
+    previewLayout->setContentsMargins(24, 10, 24, 10);
     previewLayout->setSpacing(0);
 
-    m_preview->setWordWrap(false);
+    m_preview->setWordWrap(true);
     m_preview->setAlignment(Qt::AlignCenter);
     m_preview->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_preview->setText(QStringLiteral("---"));
@@ -86,24 +87,18 @@ void TranscriberPopup::setPreview(const QString &preview)
 {
     setRefreshLayout(false);
     m_waveform->setMode(WaveformWidget::Mode::Waveform);
-    QString cleaned = preview.simplified();
-    if (!cleaned.isEmpty()) {
-        const QFontMetrics metrics(m_preview->font());
-        const int maxTextWidth = 520;
-        while (metrics.horizontalAdvance(cleaned) > maxTextWidth) {
-            const int firstSpace = cleaned.indexOf(' ');
-            if (firstSpace < 0) {
-                cleaned.clear();
-                break;
-            }
-            cleaned = cleaned.mid(firstSpace + 1).trimmed();
-        }
+    const QString raw = preview.trimmed();
+    QString visible = raw.simplified();
+    constexpr qsizetype visibleCharacterLimit = 420;
+    if (visible.size() > visibleCharacterLimit) {
+        visible = QStringLiteral("… ") + visible.right(visibleCharacterLimit);
     }
-    m_preview->setText(cleaned.isEmpty() ? QStringLiteral("---") : cleaned);
+    m_preview->setText(visible.isEmpty() ? QStringLiteral("---") : visible);
+    m_preview->setToolTip(raw);
     m_preview->setVisible(true);
     m_previewPill->setVisible(true);
-    m_preview->setMaximumWidth(520);
-    m_previewPill->resize(m_previewPill->sizeHint().width(), 48);
+    m_preview->setFixedWidth(540);
+    m_previewPill->resize(588, qMin(m_previewPill->sizeHint().height(), 92));
     adjustSize();
     updateWindowMask();
 }

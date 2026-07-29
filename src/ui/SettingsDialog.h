@@ -95,7 +95,6 @@ private:
     QPushButton *m_addBindingButton = nullptr;
     QPushButton *m_openReleasesButton = nullptr;
     QScrollArea *m_scroll = nullptr;
-    QSpinBox *m_previewWords = nullptr;
     QSpinBox *m_preRollMs = nullptr;
     QSpinBox *m_postRollMs = nullptr;
     QSpinBox *m_readinessTimeoutMs = nullptr;

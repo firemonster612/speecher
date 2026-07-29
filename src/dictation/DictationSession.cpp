@@ -2,7 +2,6 @@
 
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
-#include "core/WordPreview.h"
 #include "providers/ProviderRegistry.h"
 
 #include <QDebug>
@@ -98,9 +97,8 @@ DictationSession::DictationSession(SettingsStore *settings,
     , m_transcript(new TranscriptState(this))
 {
     connect(m_transcript, &TranscriptState::changed, this, [this](const QString &text) {
-        const int words = m_settings ? m_settings->snapshot().ui.previewWords : 8;
-        emit previewDisplayChanged(WordPreview::lastWords(text, words));
-        qInfo() << "transcript changed length=" << text.size() << "previewWords=" << words;
+        emit previewDisplayChanged(text);
+        qInfo() << "transcript changed length=" << text.size();
         emit previewChanged(text);
     });
     connect(m_audio, &AudioInput::levelChanged, this, &DictationSession::audioLevelChanged);
@@ -498,7 +496,6 @@ void DictationSession::beginRefinement(quint64 generation)
 
     setState(DictationState::Refining);
     emit popupRefiningChanged(true);
-    emit popupHidePreviewRequested();
     m_refinedText.clear();
     const RefinementSettings refinement = refinementSettingsWithBindingVocabulary(settings);
     const QStringList vocabulary = refinementVocabulary(settings);
@@ -543,7 +540,6 @@ void DictationSession::deliverFinal(const QString &text)
     discardSessionAudio();
     m_sessionSettings.reset();
     m_target = {};
-    emit popupHidePreviewRequested();
     if (result.ok) {
         const quint64 generation = m_generation;
         emit popupMessageRequested(result.message);
@@ -701,10 +697,6 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
     m_refiner = refiner;
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::delta, this, [this](const QString &delta) {
         m_refinedText += delta;
-        if (m_state != DictationState::Refining) {
-            const int words = m_settings ? m_settings->snapshot().ui.previewWords : 8;
-            emit previewDisplayChanged(WordPreview::lastWords(m_refinedText, words));
-        }
     });
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::completed, this, [this](const QString &text) {
         const QString refined = text.trimmed();

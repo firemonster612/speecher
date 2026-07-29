@@ -187,7 +187,6 @@ void ApplicationController::wireSessionToPopup()
     connect(m_session, &DictationSession::popupStatusChanged, m_popup, &TranscriberPopup::setStatus);
     connect(m_session, &DictationSession::popupShowRequested, m_popup, &TranscriberPopup::showPopup);
     connect(m_session, &DictationSession::popupHideRequested, m_popup, &TranscriberPopup::hide);
-    connect(m_session, &DictationSession::popupHidePreviewRequested, m_popup, &TranscriberPopup::hidePreview);
     connect(m_session, &DictationSession::popupFrozenChanged, m_popup, &TranscriberPopup::setFrozen);
     connect(m_session, &DictationSession::popupRefiningChanged, m_popup, &TranscriberPopup::setRefining);
     connect(m_session, &DictationSession::popupOAuthRefreshRequested, m_popup, &TranscriberPopup::showOAuthRefreshIndicator);

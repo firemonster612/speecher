@@ -2008,9 +2008,11 @@ exit 0
         TranscriberPopup popup(new FakePopupPositioner);
         auto *layout = qobject_cast<QBoxLayout *>(popup.layout());
         auto *previewPill = popup.findChild<QFrame *>(QStringLiteral("previewPill"));
+        auto *rawTranscript = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
         auto *waveform = popup.findChild<WaveformWidget *>();
         QVERIFY(layout);
         QVERIFY(previewPill);
+        QVERIFY(rawTranscript);
         QVERIFY(waveform);
 
         popup.showOAuthRefreshIndicator();
@@ -2022,6 +2024,14 @@ exit 0
         popup.showOAuthRefreshIndicator();
         popup.hidePreview();
         QVERIFY(layout->indexOf(waveform) < layout->indexOf(previewPill));
+
+        const QString longRaw = QString(450, QLatin1Char('a')) + QStringLiteral(" final raw words");
+        popup.setPreview(longRaw);
+        QCOMPARE(rawTranscript->toolTip(), longRaw);
+        QVERIFY(rawTranscript->text().startsWith(QStringLiteral("… ")));
+        QVERIFY(rawTranscript->text().endsWith(QStringLiteral("final raw words")));
+        popup.setRefining(true);
+        QVERIFY(!rawTranscript->isHidden());
     }
 
     void dictationSessionRefinesTranscript()
@@ -2041,6 +2051,7 @@ exit 0
         registerFakeSpeechProvider(registry, &speech);
         registerFakeRefiner(registry, &refiner);
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy rawPreviewSpy(&session, &DictationSession::previewDisplayChanged);
 
         session.startListening();
         speech->emitFinalText(QStringLiteral("rough text"));
@@ -2054,6 +2065,7 @@ exit 0
         QCOMPARE(refiner->lastStyle, QStringLiteral("light_cleanup"));
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
         QCOMPARE(delivery->lastText, QStringLiteral("Polished text."));
+        QCOMPARE(rawPreviewSpy.last().at(0).toString(), QStringLiteral("rough text"));
     }
 
     void dictationSessionAppliesBindingsWhenRefinementDisabled()

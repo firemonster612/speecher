@@ -55,7 +55,6 @@ signals:
     void popupStatusChanged(const QString &status);
     void popupShowRequested();
     void popupHideRequested();
-    void popupHidePreviewRequested();
     void popupFrozenChanged(bool frozen);
     void popupRefiningChanged(bool refining);
     void popupOAuthRefreshRequested();

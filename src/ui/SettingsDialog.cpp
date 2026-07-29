@@ -484,7 +484,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_vocabLimit(new QLabel(this))
     , m_apiKey(new QLineEdit(this))
     , m_scroll(new QScrollArea(this))
-    , m_previewWords(new QSpinBox(this))
     , m_preRollMs(new QSpinBox(this))
     , m_postRollMs(new QSpinBox(this))
     , m_readinessTimeoutMs(new QSpinBox(this))
@@ -599,7 +598,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_apiKey->setPlaceholderText(QStringLiteral("Enter OpenAI API key"));
     m_authControl->addWidget(m_authStatus);
     m_authControl->addWidget(m_apiKey);
-    m_previewWords->setRange(1, 40);
     for (QSpinBox *spinBox : {m_preRollMs, m_postRollMs}) {
         spinBox->setRange(0, 1500);
         spinBox->setSingleStep(50);
@@ -740,7 +738,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     addRow(generalLayout, makeRow(QStringLiteral("Theme"), QStringLiteral("App colors."), m_theme, generalCard), generalCard);
     addRow(generalLayout, makeRow(QStringLiteral("Pause media"), QStringLiteral("Pause currently playing media while transcribing."), m_pauseMedia, generalCard), generalCard);
     addRow(generalLayout, makeRow(QStringLiteral("Sound cues"), QStringLiteral("Use the desktop sound for recording start and stop."), m_sounds, generalCard), generalCard);
-    addRow(generalLayout, makeRow(QStringLiteral("Preview words"), QStringLiteral("Trailing words shown in the popup."), m_previewWords, generalCard), generalCard);
     addRow(generalLayout, makeRow(QStringLiteral("Clipboard output"), QStringLiteral("Current platform clipboard path."), primaryOutput, generalCard), generalCard);
     addRow(generalLayout, makeRow(QStringLiteral("Updates"), QStringLiteral("Updates are manual; open the GitHub releases page when you want to check."), m_openReleasesButton, generalCard), generalCard, false);
 
@@ -1125,7 +1122,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
         m_undoCorrectionButton->setEnabled(!m_removedCorrections.isEmpty());
         updateButtonState();
     });
-    connect(m_previewWords, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
     connect(m_ydotoolSetupButton, &QPushButton::clicked, this, &SettingsDialog::setupOrEnableYdotool);
     connect(m_ydotoolStartButton, &QPushButton::clicked, this, [this] {
         QString error;
@@ -1193,7 +1189,6 @@ void SettingsDialog::load()
     m_restoreClipboardAfterTyping->setChecked(settings->restoreClipboardAfterTyping());
     selectData(m_authMode, settings->openAiAuthMode());
     selectData(m_anthropicAuthMode, settings->anthropicAuthMode());
-    m_previewWords->setValue(settings->previewWords());
     m_apiKey->setText(m_controller->secretStore()->apiKey());
     setVocabularyRows(settings->customVocabulary());
     setBindingRules(settings->bindingRules());
@@ -1267,7 +1262,6 @@ bool SettingsDialog::save()
     settings->setRestoreClipboardAfterTyping(m_restoreClipboardAfterTyping->isChecked());
     settings->setOpenAiAuthMode(m_authMode->currentData().toString());
     settings->setAnthropicAuthMode(m_anthropicAuthMode->currentData().toString());
-    settings->setPreviewWords(m_previewWords->value());
     settings->setCustomVocabulary(currentVocabulary());
     settings->setCorrectionLearningEnabled(m_learnCorrections->isChecked());
     settings->setLearnedCorrections(currentLearnedCorrections());
@@ -1327,7 +1321,6 @@ bool SettingsDialog::hasChanges() const
         || m_restoreClipboardAfterTyping->isChecked() != settings->restoreClipboardAfterTyping()
         || m_authMode->currentData().toString() != settings->openAiAuthMode()
         || m_anthropicAuthMode->currentData().toString() != settings->anthropicAuthMode()
-        || m_previewWords->value() != settings->previewWords()
         || currentVocabulary() != settings->customVocabulary()
         || m_learnCorrections->isChecked() != settings->correctionLearningEnabled()
         || currentLearnedCorrections() != settings->learnedCorrections()
