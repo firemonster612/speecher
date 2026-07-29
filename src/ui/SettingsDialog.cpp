@@ -35,6 +35,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStandardItemModel>
@@ -282,15 +283,22 @@ static PasteMethod pasteMethodFor(const QList<PasteRule> &rules,
     return fallback;
 }
 
-static QList<PasteRule> withBasePasteRules(const QList<PasteRule> &existing,
-                                           PasteMethod globalMethod,
-                                           PasteMethod terminalMethod)
+static void addPasteMethods(QComboBox *combo)
 {
-    QList<PasteRule> rules;
+    combo->addItem(QStringLiteral("Standard paste (Ctrl+V)"), pasteMethodName(PasteMethod::StandardPaste));
+    combo->addItem(QStringLiteral("Terminal paste (Ctrl+Shift+V)"), pasteMethodName(PasteMethod::TerminalPaste));
+    combo->addItem(QStringLiteral("Clipboard only"), pasteMethodName(PasteMethod::ClipboardOnly));
+}
+
+static QList<PasteRule> withPasteRules(const QList<PasteRule> &existing,
+                                      const QList<PasteRule> &applicationRules,
+                                      PasteMethod globalMethod,
+                                      PasteMethod terminalMethod)
+{
+    QList<PasteRule> rules = applicationRules;
     for (const PasteRule &rule : existing) {
-        if (rule.scope == PasteRuleScope::Global
-            || (rule.scope == PasteRuleScope::Category
-                && rule.match == appCategoryName(AppCategory::Terminal))) {
+        if (rule.scope != PasteRuleScope::Category
+            || rule.match == appCategoryName(AppCategory::Terminal)) {
             continue;
         }
         rules.append(rule);
@@ -483,6 +491,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_vadThreshold(new QSpinBox(this))
     , m_vocab(new VocabularyTable(this))
     , m_corrections(new QTableWidget(this))
+    , m_appPasteRules(new QTableWidget(this))
     , m_bindings(new QListWidget(this))
 {
     setWindowTitle(QStringLiteral("Speecher Settings"));
@@ -572,9 +581,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_outputFormat->addItem(QStringLiteral("Plain text"), QStringLiteral("plain"));
     m_outputFormat->addItem(QStringLiteral("HTML and plain text"), QStringLiteral("html"));
     for (QComboBox *combo : {m_globalPaste, m_terminalPaste}) {
-        combo->addItem(QStringLiteral("Standard paste (Ctrl+V)"), pasteMethodName(PasteMethod::StandardPaste));
-        combo->addItem(QStringLiteral("Terminal paste (Ctrl+Shift+V)"), pasteMethodName(PasteMethod::TerminalPaste));
-        combo->addItem(QStringLiteral("Clipboard only"), pasteMethodName(PasteMethod::ClipboardOnly));
+        addPasteMethods(combo);
     }
     m_restoreClipboardAfterTyping->setText(QStringLiteral("Restore"));
     m_restoreClipboardAfterTyping->setToolTip(QStringLiteral("Restore the previous clipboard after virtual-keyboard paste."));
@@ -632,6 +639,20 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_corrections->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_corrections->setSelectionMode(QAbstractItemView::SingleSelection);
     m_corrections->setMinimumHeight(180);
+    m_appPasteRules->setObjectName(QStringLiteral("vocabInput"));
+    m_appPasteRules->setColumnCount(3);
+    m_appPasteRules->setHorizontalHeaderLabels({
+        QStringLiteral("Enabled"),
+        QStringLiteral("Application ID"),
+        QStringLiteral("Paste behavior"),
+    });
+    m_appPasteRules->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_appPasteRules->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_appPasteRules->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    m_appPasteRules->verticalHeader()->hide();
+    m_appPasteRules->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_appPasteRules->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_appPasteRules->setMinimumHeight(150);
     m_vocabLimit->setObjectName(QStringLiteral("statusText"));
     m_vocabLimit->setForegroundRole(QPalette::WindowText);
     m_vocabLimit->setAttribute(Qt::WA_StyledBackground, false);
@@ -791,6 +812,32 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
                    m_terminalPaste,
                    outputCard),
            outputCard);
+
+    auto *appRulesControl = new QWidget(outputCard);
+    auto *appRulesLayout = new QVBoxLayout(appRulesControl);
+    appRulesLayout->setContentsMargins(20, 16, 20, 16);
+    appRulesLayout->setSpacing(8);
+    auto *appRulesTitle = new QLabel(QStringLiteral("App-specific paste rules"), appRulesControl);
+    appRulesTitle->setObjectName(QStringLiteral("rowTitle"));
+    auto *appRulesDescription = new QLabel(
+        QStringLiteral("Override paste behavior for an exact application ID, such as org.kde.konsole."),
+        appRulesControl);
+    appRulesDescription->setObjectName(QStringLiteral("rowDescription"));
+    appRulesDescription->setWordWrap(true);
+    m_addAppPasteRuleButton = new QPushButton(QStringLiteral("Add rule"), appRulesControl);
+    m_removeAppPasteRuleButton = new QPushButton(QStringLiteral("Delete selected"), appRulesControl);
+    m_removeAppPasteRuleButton->setEnabled(false);
+    auto *appRuleButtons = new QHBoxLayout;
+    appRuleButtons->addStretch();
+    appRuleButtons->addWidget(m_removeAppPasteRuleButton);
+    appRuleButtons->addWidget(m_addAppPasteRuleButton);
+    appRulesLayout->addWidget(appRulesTitle);
+    appRulesLayout->addWidget(appRulesDescription);
+    appRulesLayout->addWidget(m_appPasteRules);
+    appRulesLayout->addLayout(appRuleButtons);
+    outputLayout->addWidget(appRulesControl);
+    outputLayout->addWidget(makeSeparator(outputCard));
+
     addRow(outputLayout,
            makeRow(QStringLiteral("Restore clipboard"),
                    QStringLiteral("Restore the previous clipboard only after insertion is verified."),
@@ -1019,6 +1066,21 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(m_outputFormat, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_globalPaste, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_terminalPaste, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_appPasteRules, &QTableWidget::itemChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_appPasteRules, &QTableWidget::itemSelectionChanged, this, [this] {
+        m_removeAppPasteRuleButton->setEnabled(m_appPasteRules->currentRow() >= 0);
+    });
+    connect(m_addAppPasteRuleButton, &QPushButton::clicked, this, [this] {
+        addApplicationPasteRule();
+        updateButtonState();
+    });
+    connect(m_removeAppPasteRuleButton, &QPushButton::clicked, this, [this] {
+        const int row = m_appPasteRules->currentRow();
+        if (row >= 0) {
+            m_appPasteRules->removeRow(row);
+            updateButtonState();
+        }
+    });
     connect(m_outputMethod, &QComboBox::currentIndexChanged, this, [this] {
         if (m_outputMethod->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool)) {
             const YdotoolSetupStatus status = YdotoolSetup::probe(m_controller->settings()->ydotoolEnabled());
@@ -1127,6 +1189,7 @@ void SettingsDialog::load()
                    PasteRuleScope::Category,
                    appCategoryName(AppCategory::Terminal),
                    PasteMethod::TerminalPaste)));
+    setApplicationPasteRules(pasteRules);
     m_restoreClipboardAfterTyping->setChecked(settings->restoreClipboardAfterTyping());
     selectData(m_authMode, settings->openAiAuthMode());
     selectData(m_anthropicAuthMode, settings->anthropicAuthMode());
@@ -1157,6 +1220,18 @@ bool SettingsDialog::save()
                              bindingValidation.messages().join(QStringLiteral("\n")));
         return false;
     }
+    const QList<PasteRule> applicationPasteRules = currentApplicationPasteRules();
+    QSet<QString> applicationIds;
+    for (const PasteRule &rule : applicationPasteRules) {
+        const QString id = rule.match.toCaseFolded();
+        if (applicationIds.contains(id)) {
+            QMessageBox::warning(this,
+                                 QStringLiteral("Paste rules not saved"),
+                                 QStringLiteral("Each application ID can have only one paste rule."));
+            return false;
+        }
+        applicationIds.insert(id);
+    }
 
     settings->setTheme(m_theme->currentData().toString());
     Theme::apply(settings->theme());
@@ -1184,8 +1259,9 @@ bool SettingsDialog::save()
     settings->setAnthropicEffort(m_anthropicEffort->currentData().toString());
     settings->setOutputMethod(m_outputMethod->currentData().toString());
     settings->setOutputFormat(outputFormatFromString(m_outputFormat->currentData().toString()));
-    settings->setPasteRules(withBasePasteRules(
+    settings->setPasteRules(withPasteRules(
         settings->pasteRules(),
+        applicationPasteRules,
         pasteMethodFromName(m_globalPaste->currentData().toString()),
         pasteMethodFromName(m_terminalPaste->currentData().toString())));
     settings->setRestoreClipboardAfterTyping(m_restoreClipboardAfterTyping->isChecked());
@@ -1242,8 +1318,9 @@ bool SettingsDialog::hasChanges() const
         || m_anthropicEffort->currentData().toString() != settings->anthropicEffort()
         || m_outputMethod->currentData().toString() != settings->outputMethod()
         || m_outputFormat->currentData().toString() != outputFormatName(settings->outputFormat())
-        || withBasePasteRules(
+        || withPasteRules(
                settings->pasteRules(),
+               currentApplicationPasteRules(),
                pasteMethodFromName(m_globalPaste->currentData().toString()),
                pasteMethodFromName(m_terminalPaste->currentData().toString()))
             != settings->pasteRules()
@@ -1299,6 +1376,63 @@ QList<LearnedCorrection> SettingsDialog::currentLearnedCorrections() const
         }
     }
     return corrections;
+}
+
+QList<PasteRule> SettingsDialog::currentApplicationPasteRules() const
+{
+    QList<PasteRule> rules;
+    for (int row = 0; row < m_appPasteRules->rowCount(); ++row) {
+        const QTableWidgetItem *enabled = m_appPasteRules->item(row, 0);
+        const QTableWidgetItem *application = m_appPasteRules->item(row, 1);
+        const auto *method = qobject_cast<QComboBox *>(m_appPasteRules->cellWidget(row, 2));
+        const QString applicationId = application ? application->text().trimmed() : QString();
+        if (applicationId.isEmpty() || !method) {
+            continue;
+        }
+        rules.append({
+            PasteRuleScope::Application,
+            applicationId,
+            pasteMethodFromName(method->currentData().toString()),
+            enabled && enabled->checkState() == Qt::Checked,
+        });
+    }
+    return rules;
+}
+
+void SettingsDialog::setApplicationPasteRules(const QList<PasteRule> &rules)
+{
+    QSignalBlocker blocker(m_appPasteRules);
+    m_appPasteRules->setRowCount(0);
+    for (const PasteRule &rule : rules) {
+        if (rule.scope == PasteRuleScope::Application) {
+            addApplicationPasteRule(rule);
+        }
+    }
+    m_removeAppPasteRuleButton->setEnabled(false);
+}
+
+void SettingsDialog::addApplicationPasteRule(const PasteRule &rule)
+{
+    const int row = m_appPasteRules->rowCount();
+    m_appPasteRules->insertRow(row);
+
+    auto *enabled = new QTableWidgetItem;
+    enabled->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
+    enabled->setCheckState(rule.enabled ? Qt::Checked : Qt::Unchecked);
+    auto *application = new QTableWidgetItem(rule.match);
+    application->setToolTip(QStringLiteral("Use the desktop application ID reported by AT-SPI."));
+    auto *method = new QComboBox(m_appPasteRules);
+    addPasteMethods(method);
+    selectData(method, pasteMethodName(rule.method));
+    connect(method, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+
+    m_appPasteRules->setItem(row, 0, enabled);
+    m_appPasteRules->setItem(row, 1, application);
+    m_appPasteRules->setCellWidget(row, 2, method);
+    if (rule.match.isEmpty()) {
+        m_appPasteRules->setCurrentCell(row, 1);
+        m_appPasteRules->editItem(application);
+    }
 }
 
 void SettingsDialog::setLearnedCorrections(const QList<LearnedCorrection> &corrections)

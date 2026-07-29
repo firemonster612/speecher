@@ -32,9 +32,12 @@ private:
     QStringList currentVocabulary() const;
     QList<BindingRule> currentBindingRules() const;
     QList<LearnedCorrection> currentLearnedCorrections() const;
+    QList<PasteRule> currentApplicationPasteRules() const;
     void setVocabularyRows(const QStringList &terms);
     void setBindingRules(const QList<BindingRule> &rules);
     void setLearnedCorrections(const QList<LearnedCorrection> &corrections);
+    void setApplicationPasteRules(const QList<PasteRule> &rules);
+    void addApplicationPasteRule(const PasteRule &rule = {});
     void refreshBindingList();
     void editBinding(int row);
     void refreshAudioDeviceList(const QString &selectedDeviceId);
@@ -99,6 +102,9 @@ private:
     QSpinBox *m_vadThreshold = nullptr;
     QTableWidget *m_vocab = nullptr;
     QTableWidget *m_corrections = nullptr;
+    QTableWidget *m_appPasteRules = nullptr;
+    QPushButton *m_addAppPasteRuleButton = nullptr;
+    QPushButton *m_removeAppPasteRuleButton = nullptr;
     QPushButton *m_removeCorrectionButton = nullptr;
     QPushButton *m_undoCorrectionButton = nullptr;
     QListWidget *m_bindings = nullptr;
