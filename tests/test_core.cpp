@@ -22,6 +22,7 @@
 #include "output/YdotoolDelivery.h"
 #include "output/YdotoolSetup.h"
 #include "platform/PlatformIntegration.h"
+#include "platform/AtSpiTargetProvider.h"
 #include "ui/TranscriberPopup.h"
 #include "ui/WaveformWidget.h"
 
@@ -120,6 +121,32 @@ public:
 
     int pauseCalls = 0;
     int resumeCalls = 0;
+};
+
+class FakeTargetProvider final : public TargetProvider {
+public:
+    using TargetProvider::TargetProvider;
+
+    Target capture() override
+    {
+        ++captureCalls;
+        return target;
+    }
+
+    bool stillFocused(const Target &) override
+    {
+        return focused;
+    }
+
+    bool verifyInsertion(const Target &, const QString &) override
+    {
+        return verified;
+    }
+
+    Target target;
+    int captureCalls = 0;
+    bool focused = true;
+    bool verified = false;
 };
 
 class FakeSpeechTranscriber final : public SpeechTranscriber {
@@ -351,11 +378,14 @@ public:
     {
     }
 
-    DeliveryResult deliver(const OutputSettings &settings, const DeliveryContent &content) override
+    DeliveryResult deliver(const OutputSettings &settings,
+                           const DeliveryContent &content,
+                           const Target &target) override
     {
         ++calls;
         lastSettings = settings;
         lastContent = content;
+        lastTarget = target;
         lastText = content.plainText;
         return result;
     }
@@ -364,6 +394,7 @@ public:
     int calls = 0;
     OutputSettings lastSettings;
     DeliveryContent lastContent;
+    Target lastTarget;
     QString lastText;
 };
 
@@ -449,7 +480,12 @@ public:
         return nullptr;
     }
 
-    TextDeliveryAdapter *createTextDelivery(QObject *) const override
+    TargetProvider *createTargetProvider(QObject *) const override
+    {
+        return nullptr;
+    }
+
+    TextDeliveryAdapter *createTextDelivery(TargetProvider *, QObject *) const override
     {
         return nullptr;
     }
@@ -771,6 +807,7 @@ private slots:
         QCOMPARE(settings.anthropicEffort(), QStringLiteral("low"));
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
+        QCOMPARE(settings.pasteRules(), defaultPasteRules());
         QCOMPARE(settings.ydotoolEnabled(), false);
         QCOMPARE(settings.restoreClipboardAfterTyping(), false);
         QCOMPARE(settings.audioInputDeviceId(), QString());
@@ -862,6 +899,12 @@ private slots:
         QCOMPARE(settings.outputFormat(), OutputFormat::Html);
         settings.raw().setValue(QStringLiteral("output/format"), QStringLiteral("unsupported"));
         QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
+        settings.setPasteRules({
+            {PasteRuleScope::Application, QStringLiteral("org.kde.kate"), PasteMethod::ClipboardOnly, true},
+            {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
+        });
+        QCOMPARE(settings.pasteRules().size(), 2);
+        QCOMPARE(settings.pasteRules().first().match, QStringLiteral("org.kde.kate"));
 
         settings.setAudioCaptureSettings({
             QStringLiteral(" mic-id "),
@@ -963,6 +1006,10 @@ private slots:
         settings.setAnthropicAuthMode(QStringLiteral("oauth"));
         settings.setAnthropicEffort(QStringLiteral("xhigh"));
         settings.setOutputFormat(OutputFormat::Html);
+        settings.setPasteRules({
+            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
+            {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true},
+        });
         settings.setRestoreClipboardAfterTyping(true);
         settings.setAudioCaptureSettings({
             QStringLiteral("device-1"),
@@ -1001,6 +1048,8 @@ private slots:
         QCOMPARE(snapshot.output.format, OutputFormat::Html);
         QCOMPARE(snapshot.output.ydotoolEnabled, false);
         QCOMPARE(snapshot.output.restoreClipboardAfterTyping, true);
+        QCOMPARE(snapshot.output.pasteRules.size(), 2);
+        QCOMPARE(snapshot.output.pasteRules.last().method, PasteMethod::ClipboardOnly);
     }
 
     void providerRegistryReturnsSingletonAdapters()
@@ -1023,6 +1072,23 @@ private slots:
         QCOMPARE(registry.refinementProvider(QStringLiteral("openai")), refinementProvider);
         QCOMPARE(speechProvider, speech);
         QCOMPARE(refinementProvider, refiner);
+    }
+
+    void liveAtSpiTargetCapture()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI") != QStringLiteral("1")) {
+            QSKIP("Live Plasma AT-SPI check is opt-in");
+        }
+        AtSpiTargetProvider provider;
+        const Target target = provider.capture();
+        QVERIFY2(target.hasIdentity(), "No focused AT-SPI target was found");
+        QVERIFY(!target.applicationName.isEmpty() || !target.processName.isEmpty());
+        QVERIFY(target.nearbyTextBefore.size() <= 240);
+        QVERIFY(target.nearbyTextAfter.size() <= 240);
+        if (target.secure) {
+            QVERIFY(target.nearbyTextBefore.isEmpty());
+            QVERIFY(target.nearbyTextAfter.isEmpty());
+        }
     }
 
     void singleInstanceIpcDoesNotStealLiveSocket()
@@ -1132,12 +1198,47 @@ private slots:
                               QString::fromLatin1(OutputMethod::QtClipboard)}));
 
         settings.method = QString::fromLatin1(OutputMethod::Ydotool);
-        QCOMPARE(TextDelivery::orderedMethods(settings), QStringList());
+        QCOMPARE(TextDelivery::orderedMethods(settings),
+                 QStringList({
+                     QString::fromLatin1(OutputMethod::WlCopy),
+                     QString::fromLatin1(OutputMethod::QtClipboard),
+                 }));
         settings.ydotoolEnabled = true;
         QCOMPARE(TextDelivery::orderedMethods(settings), QStringList({QString::fromLatin1(OutputMethod::Ydotool)}));
 
         settings.method = QString::fromLatin1(OutputMethod::QtClipboard);
         QCOMPARE(TextDelivery::orderedMethods(settings), QStringList({QString::fromLatin1(OutputMethod::QtClipboard)}));
+    }
+
+    void pasteRulesPreferApplicationThenCategoryThenGlobal()
+    {
+        const QList<PasteRule> rules{
+            {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true},
+            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
+            {PasteRuleScope::Application, QStringLiteral("org.kde.konsole"), PasteMethod::StandardPaste, true},
+        };
+        Target target;
+        target.applicationId = QStringLiteral("ORG.KDE.KONSOLE");
+        target.category = AppCategory::Terminal;
+        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::StandardPaste);
+
+        target.applicationId = QStringLiteral("dev.warp.Warp");
+        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
+
+        target.category = AppCategory::General;
+        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::ClipboardOnly);
+    }
+
+    void outputUsesClipboardOnlyForMissingOrSecureTargets()
+    {
+        OutputSettings settings;
+        settings.method = QString::fromLatin1(OutputMethod::Automatic);
+        settings.ydotoolEnabled = true;
+        QCOMPARE(TextDelivery::orderedMethods(settings, PasteMethod::ClipboardOnly),
+                 QStringList({
+                     QString::fromLatin1(OutputMethod::WlCopy),
+                     QString::fromLatin1(OutputMethod::QtClipboard),
+                 }));
     }
 
     void outputContentBuildsSafeDualMimeRepresentations()
@@ -1165,16 +1266,26 @@ private slots:
         results.insert(QString::fromLatin1(OutputMethod::WlCopy), true);
         results.insert(QString::fromLatin1(OutputMethod::QtClipboard), true);
 
-        TextDelivery delivery([&attempts, &restoreFlags, &results](const QString &method, const OutputSettings &settings) {
+        FakeTargetProvider targetProvider;
+        TextDelivery delivery([&attempts, &restoreFlags, &results](
+                                  const QString &method,
+                                  const OutputSettings &settings,
+                                  PasteMethod) {
             restoreFlags.append(settings.restoreClipboardAfterTyping);
             return std::make_unique<FakeBackend>(method, &attempts, &results);
-        });
+        }, &targetProvider);
 
         OutputSettings settings;
         settings.method = QString::fromLatin1(OutputMethod::Automatic);
         settings.ydotoolEnabled = true;
         settings.restoreClipboardAfterTyping = true;
-        const DeliveryResult result = delivery.deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText));
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
+        target.category = AppCategory::CodeEditor;
+        const DeliveryResult result = delivery.deliver(
+            settings,
+            makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
+            target);
         QVERIFY(result.ok);
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
         QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::Ydotool), QString::fromLatin1(OutputMethod::WlCopy)}));
@@ -1188,15 +1299,80 @@ private slots:
         results.insert(QString::fromLatin1(OutputMethod::WlCopy), false);
         results.insert(QString::fromLatin1(OutputMethod::QtClipboard), true);
 
-        TextDelivery delivery([&attempts, &results](const QString &method, const OutputSettings &) {
+        TextDelivery delivery([&attempts, &results](
+                                  const QString &method,
+                                  const OutputSettings &,
+                                  PasteMethod) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         });
 
         OutputSettings settings;
         settings.method = QString::fromLatin1(OutputMethod::WlCopy);
         settings.ydotoolEnabled = true;
-        const DeliveryResult result = delivery.deliver(settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText));
+        const DeliveryResult result = delivery.deliver(
+            settings,
+            makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
+            {});
         QVERIFY(!result.ok);
+        QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::WlCopy)}));
+    }
+
+    void outputOnlyReportsVerifiedAfterTargetReadback()
+    {
+        QList<QString> attempts;
+        QHash<QString, bool> results{{QString::fromLatin1(OutputMethod::Ydotool), true}};
+        FakeTargetProvider targetProvider;
+        targetProvider.verified = true;
+        TextDelivery delivery([&attempts, &results](
+                                  const QString &method,
+                                  const OutputSettings &,
+                                  PasteMethod) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        }, &targetProvider);
+
+        OutputSettings settings;
+        settings.ydotoolEnabled = true;
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
+        target.category = AppCategory::CodeEditor;
+        const DeliveryResult result = delivery.deliver(
+            settings,
+            makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
+            target);
+
+        QVERIFY(result.ok);
+        QCOMPARE(result.receipt, DeliveryReceipt::VerifiedInTarget);
+        QCOMPARE(result.message, QStringLiteral("Verified in Target"));
+        QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::Ydotool)}));
+    }
+
+    void outputDoesNotPasteWhenTargetChanged()
+    {
+        QList<QString> attempts;
+        QHash<QString, bool> results{
+            {QString::fromLatin1(OutputMethod::Ydotool), true},
+            {QString::fromLatin1(OutputMethod::WlCopy), true},
+        };
+        FakeTargetProvider targetProvider;
+        targetProvider.focused = false;
+        TextDelivery delivery([&attempts, &results](
+                                  const QString &method,
+                                  const OutputSettings &,
+                                  PasteMethod) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        }, &targetProvider);
+
+        OutputSettings settings;
+        settings.ydotoolEnabled = true;
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
+        target.category = AppCategory::CodeEditor;
+        const DeliveryResult result = delivery.deliver(
+            settings,
+            makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
+            target);
+
+        QCOMPARE(result.receipt, DeliveryReceipt::Copied);
         QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::WlCopy)}));
     }
 
@@ -1307,7 +1483,7 @@ exit 0
             return arg.startsWith(QStringLiteral("--file="));
         }));
 
-        QCOMPARE(YdotoolDelivery::pasteShortcutArguments(),
+        QCOMPARE(YdotoolDelivery::pasteShortcutArguments(PasteMethod::TerminalPaste),
                  QStringList({QStringLiteral("key"),
                               QStringLiteral("--key-delay=2"),
                               QStringLiteral("29:1"),
@@ -1315,6 +1491,13 @@ exit 0
                               QStringLiteral("47:1"),
                               QStringLiteral("47:0"),
                               QStringLiteral("42:0"),
+                              QStringLiteral("29:0")}));
+        QCOMPARE(YdotoolDelivery::pasteShortcutArguments(PasteMethod::StandardPaste),
+                 QStringList({QStringLiteral("key"),
+                              QStringLiteral("--key-delay=2"),
+                              QStringLiteral("29:1"),
+                              QStringLiteral("47:1"),
+                              QStringLiteral("47:0"),
                               QStringLiteral("29:0")}));
     }
 
@@ -1438,6 +1621,40 @@ exit 0
         QVERIFY(delivery->lastContent.html);
         QCOMPARE(*delivery->lastContent.html, QStringLiteral("<p>&lt;hello&gt;</p>"));
         QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
+    }
+
+    void dictationSessionCapturesTargetAtStart()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto targetProvider = std::make_unique<FakeTargetProvider>();
+        targetProvider->target.applicationId = QStringLiteral("org.kde.kate");
+        targetProvider->target.category = AppCategory::CodeEditor;
+        targetProvider->target.caretOffset = 42;
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(
+            &settings,
+            audio.get(),
+            media.get(),
+            targetProvider.get(),
+            delivery.get(),
+            &registry);
+
+        session.startListening();
+        QCOMPARE(targetProvider->captureCalls, 1);
+        speech->emitFinalText(QStringLiteral("hello"));
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(delivery->lastTarget.applicationId, QStringLiteral("org.kde.kate"));
+        QCOMPARE(delivery->lastTarget.caretOffset, 42);
     }
 
     void dictationSessionRetriesFullAudioOnceAndIgnoresRetiredAttempt()

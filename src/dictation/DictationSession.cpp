@@ -77,10 +77,22 @@ DictationSession::DictationSession(SettingsStore *settings,
                                    TextDeliveryAdapter *delivery,
                                    ProviderRegistry *providers,
                                    QObject *parent)
+    : DictationSession(settings, audio, mediaController, nullptr, delivery, providers, parent)
+{
+}
+
+DictationSession::DictationSession(SettingsStore *settings,
+                                   AudioInput *audio,
+                                   MediaController *mediaController,
+                                   TargetProvider *targetProvider,
+                                   TextDeliveryAdapter *delivery,
+                                   ProviderRegistry *providers,
+                                   QObject *parent)
     : QObject(parent)
     , m_settings(settings)
     , m_audio(audio)
     , m_mediaController(mediaController)
+    , m_targetProvider(targetProvider)
     , m_delivery(delivery)
     , m_providers(providers)
     , m_transcript(new TranscriptState(this))
@@ -218,6 +230,7 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
     m_sessionSettings = settings;
     m_retryUsed = false;
     discardSessionAudio();
+    m_target = m_targetProvider ? m_targetProvider->capture() : Target{};
     setState(DictationState::Starting);
     qInfo().noquote() << "startListening speechProvider=" + settings.speech.providerId
                       << "credentialsPath=" + settings.speech.claudeCredentialsPath
@@ -512,9 +525,13 @@ void DictationSession::deliverFinal(const QString &text)
     emit popupRefiningChanged(false);
     setState(DictationState::Delivering);
     qInfo() << "deliverFinal length=" << text.size();
-    const DeliveryResult result = m_delivery->deliver(settings.output, makeDeliveryContent(text, settings.output.format));
+    const DeliveryResult result = m_delivery->deliver(
+        settings.output,
+        makeDeliveryContent(text, settings.output.format),
+        m_target);
     discardSessionAudio();
     m_sessionSettings.reset();
+    m_target = {};
     emit popupHidePreviewRequested();
     if (result.ok) {
         const quint64 generation = m_generation;

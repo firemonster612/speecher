@@ -26,6 +26,13 @@ public:
                      TextDeliveryAdapter *delivery,
                      ProviderRegistry *providers,
                      QObject *parent = nullptr);
+    DictationSession(SettingsStore *settings,
+                     AudioInput *audio,
+                     MediaController *mediaController,
+                     TargetProvider *targetProvider,
+                     TextDeliveryAdapter *delivery,
+                     ProviderRegistry *providers,
+                     QObject *parent = nullptr);
     ~DictationSession() override;
 
     DictationState state() const;
@@ -85,6 +92,7 @@ private:
     SettingsStore *m_settings = nullptr;
     AudioInput *m_audio = nullptr;
     MediaController *m_mediaController = nullptr;
+    TargetProvider *m_targetProvider = nullptr;
     TextDeliveryAdapter *m_delivery = nullptr;
     ProviderRegistry *m_providers = nullptr;
     TranscriptState *m_transcript = nullptr;
@@ -103,6 +111,7 @@ private:
     quint64 m_attemptId = 0;
     QList<QByteArray> m_capturedAudio;
     std::optional<AppSettings> m_sessionSettings;
+    Target m_target;
     bool m_retryUsed = false;
     std::shared_ptr<StartupPreparation> m_startupPreparation;
 };

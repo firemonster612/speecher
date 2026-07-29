@@ -81,6 +81,8 @@ public:
     void setYdotoolEnabled(bool value);
     bool restoreClipboardAfterTyping() const;
     void setRestoreClipboardAfterTyping(bool value);
+    QList<PasteRule> pasteRules() const;
+    void setPasteRules(const QList<PasteRule> &rules);
 
     QString claudeCredentialsPath() const;
     QString claudeEndpointBase() const;

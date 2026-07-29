@@ -7,13 +7,6 @@
 #include "output/WlClipboardDelivery.h"
 #include "output/YdotoolDelivery.h"
 
-#include <QApplication>
-#include <QClipboard>
-#include <QDebug>
-#include <QMimeData>
-#include <QThread>
-#include <QUrl>
-
 #include <memory>
 #include <utility>
 
@@ -21,150 +14,15 @@ namespace speecher {
 
 namespace {
 
-constexpr int clipboardRestoreDelayMs = 250;
-
-enum class ClipboardRestoreBackend {
-    None,
-    WlClipboard,
-    QtClipboard,
-};
-
-struct RestorableClipboard {
-    ClipboardRestoreBackend backend = ClipboardRestoreBackend::None;
-    WlClipboardSnapshot wlSnapshot;
-    std::unique_ptr<QMimeData> qtSnapshot;
-};
-
-QClipboard *applicationClipboard(QString *error)
-{
-    QClipboard *clipboard = QApplication::clipboard();
-    if (!clipboard && error) {
-        *error = QStringLiteral("Qt clipboard is not available");
-    }
-    return clipboard;
-}
-
-std::unique_ptr<QMimeData> cloneMimeData(const QMimeData *source)
-{
-    auto clone = std::make_unique<QMimeData>();
-    if (!source) {
-        return clone;
-    }
-
-    for (const QString &format : source->formats()) {
-        clone->setData(format, source->data(format));
-    }
-    if (source->hasText()) {
-        clone->setText(source->text());
-    }
-    if (source->hasHtml()) {
-        clone->setHtml(source->html());
-    }
-    if (source->hasUrls()) {
-        clone->setUrls(source->urls());
-    }
-    if (source->hasImage()) {
-        clone->setImageData(source->imageData());
-    }
-    if (source->hasColor()) {
-        clone->setColorData(source->colorData());
-    }
-    return clone;
-}
-
-std::unique_ptr<QMimeData> captureClipboardMimeData(QString *error)
-{
-    QClipboard *clipboard = applicationClipboard(error);
-    if (!clipboard) {
-        return nullptr;
-    }
-    return cloneMimeData(clipboard->mimeData(QClipboard::Clipboard));
-}
-
-bool restoreClipboardMimeData(std::unique_ptr<QMimeData> mimeData, QString *error)
-{
-    QClipboard *clipboard = applicationClipboard(error);
-    if (!clipboard) {
-        return false;
-    }
-    if (!mimeData) {
-        clipboard->clear(QClipboard::Clipboard);
-        return true;
-    }
-    clipboard->setMimeData(mimeData.release(), QClipboard::Clipboard);
-    return true;
-}
-
-RestorableClipboard captureRestorableClipboard()
-{
-    RestorableClipboard clipboard;
-    if (WlClipboardDelivery::canSnapshot()) {
-        QString wlError;
-        if (WlClipboardDelivery::capture(&clipboard.wlSnapshot, &wlError)) {
-            clipboard.backend = ClipboardRestoreBackend::WlClipboard;
-            return clipboard;
-        }
-        qWarning().noquote() << "wl-clipboard restore capture failed:" << wlError;
-    }
-
-    QString qtError;
-    clipboard.qtSnapshot = captureClipboardMimeData(&qtError);
-    if (clipboard.qtSnapshot) {
-        clipboard.backend = ClipboardRestoreBackend::QtClipboard;
-        return clipboard;
-    }
-
-    qWarning().noquote() << "clipboard restore capture failed:" << qtError;
-    return {};
-}
-
-void restoreClipboard(RestorableClipboard *clipboard)
-{
-    if (!clipboard) {
-        return;
-    }
-
-    switch (clipboard->backend) {
-    case ClipboardRestoreBackend::WlClipboard: {
-        QString restoreError;
-        if (!WlClipboardDelivery::restore(clipboard->wlSnapshot, &restoreError)) {
-            qWarning().noquote() << "wl-clipboard restore failed:" << restoreError;
-        }
-        clipboard->backend = ClipboardRestoreBackend::None;
-        break;
-    }
-    case ClipboardRestoreBackend::QtClipboard: {
-        QString restoreError;
-        if (!restoreClipboardMimeData(std::move(clipboard->qtSnapshot), &restoreError)) {
-            qWarning().noquote() << "clipboard restore failed:" << restoreError;
-        }
-        clipboard->backend = ClipboardRestoreBackend::None;
-        break;
-    }
-    case ClipboardRestoreBackend::None:
-        break;
-    }
-}
-
-bool hasRestorableClipboard(const RestorableClipboard &clipboard)
-{
-    return clipboard.backend != ClipboardRestoreBackend::None;
-}
-
 class YdotoolBackend final : public DeliveryBackend {
 public:
-    explicit YdotoolBackend(bool restoreClipboardAfterTyping)
-        : m_restoreClipboardAfterTyping(restoreClipboardAfterTyping)
+    explicit YdotoolBackend(PasteMethod pasteMethod)
+        : m_pasteMethod(pasteMethod)
     {
     }
 
     bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
     {
-        RestorableClipboard previousClipboard;
-        if (m_restoreClipboardAfterTyping) {
-            previousClipboard = captureRestorableClipboard();
-        }
-
         QString copyError;
         if (!ClipboardDelivery().copy(content, htmlAvailable, &copyError)) {
             if (error) {
@@ -175,28 +33,18 @@ public:
             return false;
         }
 
-        const auto restorePreviousClipboard = [&previousClipboard] {
-            if (!hasRestorableClipboard(previousClipboard)) {
-                return;
-            }
-            QThread::msleep(clipboardRestoreDelayMs);
-            restoreClipboard(&previousClipboard);
-        };
-
         QString pasteError;
-        if (!YdotoolDelivery().pasteFromClipboard(content.plainText, &pasteError)) {
-            restorePreviousClipboard();
+        if (!YdotoolDelivery().pasteFromClipboard(content.plainText, m_pasteMethod, &pasteError)) {
             if (error) {
                 *error = pasteError;
             }
             return false;
         }
-        restorePreviousClipboard();
         return true;
     }
 
 private:
-    bool m_restoreClipboardAfterTyping = false;
+    PasteMethod m_pasteMethod = PasteMethod::StandardPaste;
 };
 
 class WlCopyBackend final : public DeliveryBackend {
@@ -221,10 +69,13 @@ public:
     }
 };
 
-std::unique_ptr<DeliveryBackend> defaultBackendFactory(const QString &method, const OutputSettings &settings)
+std::unique_ptr<DeliveryBackend> defaultBackendFactory(const QString &method,
+                                                       const OutputSettings &settings,
+                                                       PasteMethod pasteMethod)
 {
+    Q_UNUSED(settings)
     if (method == QString::fromLatin1(OutputMethod::Ydotool)) {
-        return std::make_unique<YdotoolBackend>(settings.restoreClipboardAfterTyping);
+        return std::make_unique<YdotoolBackend>(pasteMethod);
     }
     if (method == QString::fromLatin1(OutputMethod::WlCopy)) {
         return std::make_unique<WlCopyBackend>();
@@ -243,17 +94,44 @@ TextDelivery::TextDelivery(QObject *parent)
 {
 }
 
-TextDelivery::TextDelivery(BackendFactory backendFactory, QObject *parent)
+TextDelivery::TextDelivery(TargetProvider *targetProvider, QObject *parent)
     : TextDeliveryAdapter(parent)
-    , m_backendFactory(std::move(backendFactory))
+    , m_backendFactory(defaultBackendFactory)
+    , m_targetProvider(targetProvider)
 {
 }
 
-DeliveryResult TextDelivery::deliver(const OutputSettings &settings, const DeliveryContent &content)
+TextDelivery::TextDelivery(BackendFactory backendFactory, QObject *parent)
+    : TextDelivery(std::move(backendFactory), nullptr, parent)
 {
+}
+
+TextDelivery::TextDelivery(BackendFactory backendFactory,
+                           TargetProvider *targetProvider,
+                           QObject *parent)
+    : TextDeliveryAdapter(parent)
+    , m_backendFactory(std::move(backendFactory))
+    , m_targetProvider(targetProvider)
+{
+}
+
+DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
+                                     const DeliveryContent &content,
+                                     const Target &target)
+{
+    PasteMethod pasteMethod = PasteMethod::ClipboardOnly;
+    if (target.hasIdentity() && !target.secure) {
+        pasteMethod = resolvePasteRule(settings.pasteRules, target).method;
+    }
+    if (pasteMethod != PasteMethod::ClipboardOnly
+        && (!m_targetProvider || !m_targetProvider->stillFocused(target))) {
+        pasteMethod = PasteMethod::ClipboardOnly;
+    }
     QString firstError;
-    for (const QString &method : orderedMethods(settings)) {
-        std::unique_ptr<DeliveryBackend> backend = m_backendFactory ? m_backendFactory(method, settings) : nullptr;
+    for (const QString &method : orderedMethods(settings, pasteMethod)) {
+        std::unique_ptr<DeliveryBackend> backend = m_backendFactory
+            ? m_backendFactory(method, settings, pasteMethod)
+            : nullptr;
         if (!backend) {
             continue;
         }
@@ -264,9 +142,15 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings, const Deliv
             const bool copied = method == QString::fromLatin1(OutputMethod::WlCopy)
                 || method == QString::fromLatin1(OutputMethod::QtClipboard);
             const bool downgraded = content.html.has_value() && !htmlAvailable;
-            const QString message = copied ? QStringLiteral("Copied") : QStringLiteral("Input sent");
+            const bool verified = !copied
+                && m_targetProvider
+                && m_targetProvider->verifyInsertion(target, content.plainText);
+            const QString message = copied
+                ? QStringLiteral("Copied")
+                : verified ? QStringLiteral("Verified in Target") : QStringLiteral("Input sent");
             return {true,
-                    copied ? DeliveryReceipt::Copied : DeliveryReceipt::InputSent,
+                    copied ? DeliveryReceipt::Copied
+                           : verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::InputSent,
                     downgraded,
                     downgraded ? message + QStringLiteral(" as plain text") : message};
         }
@@ -282,10 +166,15 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings, const Deliv
 
 QStringList TextDelivery::orderedMethods(const OutputSettings &settings)
 {
+    return orderedMethods(settings, PasteMethod::StandardPaste);
+}
+
+QStringList TextDelivery::orderedMethods(const OutputSettings &settings, PasteMethod pasteMethod)
+{
     const QString method = OutputMethod::normalized(settings.method);
     if (method == QString::fromLatin1(OutputMethod::Automatic)) {
         QStringList methods;
-        if (settings.ydotoolEnabled) {
+        if (pasteMethod != PasteMethod::ClipboardOnly && settings.ydotoolEnabled) {
             methods << QString::fromLatin1(OutputMethod::Ydotool);
         }
         methods << QString::fromLatin1(OutputMethod::WlCopy)
@@ -293,8 +182,12 @@ QStringList TextDelivery::orderedMethods(const OutputSettings &settings)
         return methods;
     }
 
-    if (method == QString::fromLatin1(OutputMethod::Ydotool) && !settings.ydotoolEnabled) {
-        return {};
+    if (method == QString::fromLatin1(OutputMethod::Ydotool)
+        && (!settings.ydotoolEnabled || pasteMethod == PasteMethod::ClipboardOnly)) {
+        return {
+            QString::fromLatin1(OutputMethod::WlCopy),
+            QString::fromLatin1(OutputMethod::QtClipboard),
+        };
     }
     return {method};
 }

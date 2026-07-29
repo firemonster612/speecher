@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/AppSettings.h"
+#include "core/Target.h"
 #include "output/DeliveryContent.h"
 #include "output/DeliveryResult.h"
 
@@ -75,6 +76,25 @@ public:
     virtual void resumePaused() = 0;
 };
 
+class TargetProvider : public QObject {
+    Q_OBJECT
+
+public:
+    using QObject::QObject;
+    virtual Target capture() = 0;
+    virtual bool stillFocused(const Target &target)
+    {
+        Q_UNUSED(target);
+        return false;
+    }
+    virtual bool verifyInsertion(const Target &target, const QString &plainText)
+    {
+        Q_UNUSED(target);
+        Q_UNUSED(plainText);
+        return false;
+    }
+};
+
 class SpeechTranscriber : public QObject {
     Q_OBJECT
 
@@ -132,7 +152,9 @@ class TextDeliveryAdapter : public QObject {
 
 public:
     using QObject::QObject;
-    virtual DeliveryResult deliver(const OutputSettings &settings, const DeliveryContent &content) = 0;
+    virtual DeliveryResult deliver(const OutputSettings &settings,
+                                   const DeliveryContent &content,
+                                   const Target &target) = 0;
 };
 
 } // namespace speecher

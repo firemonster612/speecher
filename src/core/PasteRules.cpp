@@ -1,0 +1,89 @@
+#include "core/PasteRules.h"
+
+namespace speecher {
+
+QString pasteRuleScopeName(PasteRuleScope scope)
+{
+    switch (scope) {
+    case PasteRuleScope::Application:
+        return QStringLiteral("application");
+    case PasteRuleScope::Category:
+        return QStringLiteral("category");
+    case PasteRuleScope::Global:
+        return QStringLiteral("global");
+    }
+    return QStringLiteral("global");
+}
+
+PasteRuleScope pasteRuleScopeFromName(const QString &name)
+{
+    if (name == QStringLiteral("application")) {
+        return PasteRuleScope::Application;
+    }
+    if (name == QStringLiteral("category")) {
+        return PasteRuleScope::Category;
+    }
+    return PasteRuleScope::Global;
+}
+
+QString pasteMethodName(PasteMethod method)
+{
+    switch (method) {
+    case PasteMethod::TerminalPaste:
+        return QStringLiteral("terminal_paste");
+    case PasteMethod::ClipboardOnly:
+        return QStringLiteral("clipboard_only");
+    case PasteMethod::StandardPaste:
+        return QStringLiteral("standard_paste");
+    }
+    return QStringLiteral("standard_paste");
+}
+
+PasteMethod pasteMethodFromName(const QString &name)
+{
+    if (name == QStringLiteral("terminal_paste")) {
+        return PasteMethod::TerminalPaste;
+    }
+    if (name == QStringLiteral("clipboard_only")) {
+        return PasteMethod::ClipboardOnly;
+    }
+    return PasteMethod::StandardPaste;
+}
+
+QList<PasteRule> defaultPasteRules()
+{
+    return {
+        {PasteRuleScope::Category, appCategoryName(AppCategory::Terminal), PasteMethod::TerminalPaste, true},
+        {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
+    };
+}
+
+PasteRule resolvePasteRule(const QList<PasteRule> &rules, const Target &target)
+{
+    const QString applicationId = target.applicationId.trimmed().toCaseFolded();
+    const QString category = appCategoryName(target.category);
+
+    for (const PasteRule &rule : rules) {
+        if (rule.enabled
+            && rule.scope == PasteRuleScope::Application
+            && !applicationId.isEmpty()
+            && rule.match.trimmed().toCaseFolded() == applicationId) {
+            return rule;
+        }
+    }
+    for (const PasteRule &rule : rules) {
+        if (rule.enabled
+            && rule.scope == PasteRuleScope::Category
+            && rule.match.trimmed().toLower() == category) {
+            return rule;
+        }
+    }
+    for (const PasteRule &rule : rules) {
+        if (rule.enabled && rule.scope == PasteRuleScope::Global) {
+            return rule;
+        }
+    }
+    return {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true};
+}
+
+} // namespace speecher

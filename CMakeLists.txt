@@ -17,6 +17,10 @@ option(SPEECHER_WITH_QKEYCHAIN "Use QKeychain when available" ON)
 option(SPEECHER_BUILD_TESTS "Build tests" ON)
 
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Multimedia DBus)
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+  pkg_check_modules(ATSPI QUIET IMPORTED_TARGET atspi-2 gobject-2.0)
+endif()
 find_package(Qt6 6.5 QUIET COMPONENTS WebSockets)
 if(SPEECHER_WITH_LAYER_SHELL)
   find_package(LayerShellQt QUIET)
@@ -30,9 +34,11 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/CliToolDiscovery.cpp
   src/core/OutputMethod.cpp
   src/core/OutputFormat.cpp
+  src/core/PasteRules.cpp
   src/core/SettingsStore.cpp
   src/core/SecretStore.cpp
   src/core/TranscriptState.cpp
+  src/core/Target.cpp
   src/core/VocabularyLimit.cpp
   src/core/WordPreview.cpp
   src/dictation/DictationTypes.cpp
@@ -46,9 +52,11 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/CliToolDiscovery.h
   src/core/OutputMethod.h
   src/core/OutputFormat.h
+  src/core/PasteRules.h
   src/core/SettingsStore.h
   src/core/SecretStore.h
   src/core/TranscriptState.h
+  src/core/Target.h
   src/core/VocabularyLimit.h
   src/core/WordPreview.h
   src/dictation/DictationInterfaces.h
@@ -100,6 +108,7 @@ set(SPEECHER_PLATFORM_SOURCES
   src/output/YdotoolDelivery.cpp
   src/output/YdotoolSetup.cpp
   src/platform/PlatformIntegration.cpp
+  src/platform/AtSpiTargetProvider.cpp
   src/ui/WaylandLayerShell.cpp
 )
 
@@ -114,6 +123,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/output/YdotoolDelivery.h
   src/output/YdotoolSetup.h
   src/platform/PlatformIntegration.h
+  src/platform/AtSpiTargetProvider.h
   src/ui/WaylandLayerShell.h
 )
 
@@ -164,6 +174,10 @@ add_library(speecher_platform STATIC
 )
 target_include_directories(speecher_platform PUBLIC src)
 target_link_libraries(speecher_platform PUBLIC speecher_domain Qt6::Widgets Qt6::Multimedia Qt6::DBus)
+if(ATSPI_FOUND)
+  target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_ATSPI=1)
+  target_link_libraries(speecher_platform PUBLIC PkgConfig::ATSPI)
+endif()
 
 add_library(speecher_app_ui STATIC
   ${SPEECHER_APP_UI_SOURCES}

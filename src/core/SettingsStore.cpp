@@ -466,6 +466,44 @@ void SettingsStore::setRestoreClipboardAfterTyping(bool value)
     m_settings.setValue(QStringLiteral("output/restoreClipboardAfterTyping"), value);
 }
 
+QList<PasteRule> SettingsStore::pasteRules() const
+{
+    const QByteArray encoded = value(QStringLiteral("output/pasteRules"), QByteArray()).toByteArray();
+    if (encoded.isEmpty()) {
+        return defaultPasteRules();
+    }
+    const QJsonDocument document = QJsonDocument::fromJson(encoded);
+    if (!document.isArray()) {
+        return defaultPasteRules();
+    }
+
+    QList<PasteRule> rules;
+    for (const QJsonValue &value : document.array()) {
+        const QJsonObject object = value.toObject();
+        PasteRule rule;
+        rule.scope = pasteRuleScopeFromName(object.value(QStringLiteral("scope")).toString());
+        rule.match = object.value(QStringLiteral("match")).toString().trimmed();
+        rule.method = pasteMethodFromName(object.value(QStringLiteral("method")).toString());
+        rule.enabled = object.value(QStringLiteral("enabled")).toBool(true);
+        rules.append(rule);
+    }
+    return rules.isEmpty() ? defaultPasteRules() : rules;
+}
+
+void SettingsStore::setPasteRules(const QList<PasteRule> &rules)
+{
+    QJsonArray array;
+    for (const PasteRule &rule : rules) {
+        array.append(QJsonObject{
+            {QStringLiteral("scope"), pasteRuleScopeName(rule.scope)},
+            {QStringLiteral("match"), rule.match.trimmed()},
+            {QStringLiteral("method"), pasteMethodName(rule.method)},
+            {QStringLiteral("enabled"), rule.enabled},
+        });
+    }
+    m_settings.setValue(QStringLiteral("output/pasteRules"), QJsonDocument(array).toJson(QJsonDocument::Compact));
+}
+
 QString SettingsStore::claudeCredentialsPath() const
 {
     return value(QStringLiteral("claude/credentialsPath"), QDir::homePath() + QStringLiteral("/.claude/.credentials.json")).toString();
@@ -526,6 +564,7 @@ AppSettings SettingsStore::snapshot() const
     settings.output.format = outputFormat();
     settings.output.ydotoolEnabled = ydotoolEnabled();
     settings.output.restoreClipboardAfterTyping = restoreClipboardAfterTyping();
+    settings.output.pasteRules = pasteRules();
     return settings;
 }
 

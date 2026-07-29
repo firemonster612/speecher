@@ -27,10 +27,12 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
     , m_ipc(new SingleInstanceIpc(m_platform, this))
 {
     registerProviders();
+    TargetProvider *targetProvider = m_platform->createTargetProvider(this);
     m_session = new DictationSession(m_settings,
                                      m_platform->createAudioInput(m_settings, this),
                                      m_platform->createMediaController(this),
-                                     m_platform->createTextDelivery(this),
+                                     targetProvider,
+                                     m_platform->createTextDelivery(targetProvider, this),
                                      m_providers,
                                      this);
 

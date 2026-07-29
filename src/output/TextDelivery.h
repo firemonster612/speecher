@@ -19,15 +19,24 @@ class TextDelivery : public TextDeliveryAdapter {
     Q_OBJECT
 
 public:
-    using BackendFactory = std::function<std::unique_ptr<DeliveryBackend>(const QString &method, const OutputSettings &settings)>;
+    using BackendFactory = std::function<std::unique_ptr<DeliveryBackend>(
+        const QString &method,
+        const OutputSettings &settings,
+        PasteMethod pasteMethod)>;
 
     explicit TextDelivery(QObject *parent = nullptr);
+    explicit TextDelivery(TargetProvider *targetProvider, QObject *parent = nullptr);
     explicit TextDelivery(BackendFactory backendFactory, QObject *parent = nullptr);
-    DeliveryResult deliver(const OutputSettings &settings, const DeliveryContent &content) override;
+    TextDelivery(BackendFactory backendFactory, TargetProvider *targetProvider, QObject *parent = nullptr);
+    DeliveryResult deliver(const OutputSettings &settings,
+                           const DeliveryContent &content,
+                           const Target &target) override;
     static QStringList orderedMethods(const OutputSettings &settings);
+    static QStringList orderedMethods(const OutputSettings &settings, PasteMethod pasteMethod);
 
 private:
     BackendFactory m_backendFactory;
+    TargetProvider *m_targetProvider = nullptr;
 };
 
 } // namespace speecher

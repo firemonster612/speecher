@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/OutputFormat.h"
+#include "core/PasteRules.h"
 
 #include <QString>
 #include <QStringList>
@@ -60,6 +61,7 @@ struct OutputSettings {
     OutputFormat format = OutputFormat::PlainText;
     bool ydotoolEnabled = false;
     bool restoreClipboardAfterTyping = false;
+    QList<PasteRule> pasteRules = defaultPasteRules();
 };
 
 struct AppSettings {
