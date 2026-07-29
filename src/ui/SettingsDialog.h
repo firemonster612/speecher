@@ -56,6 +56,7 @@ private:
     QComboBox *m_audioDevice = nullptr;
     QComboBox *m_captureMode = nullptr;
     QCheckBox *m_pauseMedia = nullptr;
+    QCheckBox *m_sounds = nullptr;
     QCheckBox *m_vadEnabled = nullptr;
     QComboBox *m_provider = nullptr;
     QComboBox *m_refinementStyle = nullptr;
@@ -89,6 +90,7 @@ private:
     QPushButton *m_ydotoolRemoveButton = nullptr;
     QPushButton *m_anthropicInfoButton = nullptr;
     QPushButton *m_addBindingButton = nullptr;
+    QPushButton *m_openReleasesButton = nullptr;
     QScrollArea *m_scroll = nullptr;
     QSpinBox *m_previewWords = nullptr;
     QSpinBox *m_preRollMs = nullptr;

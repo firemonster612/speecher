@@ -799,6 +799,7 @@ private slots:
         QCOMPARE(settings.previewWords(), 8);
         QCOMPARE(settings.theme(), QStringLiteral("system"));
         QCOMPARE(settings.pauseMediaDuringTranscription(), true);
+        QCOMPARE(settings.soundsEnabled(), false);
         QCOMPARE(settings.customVocabulary(), QStringList());
         QCOMPARE(settings.bindingRules().size(), 0);
         QCOMPARE(settings.refinementProvider(), QStringLiteral("openai"));
@@ -839,6 +840,10 @@ private slots:
         QCOMPARE(settings.useTargetContext(), false);
         settings.setIncludeScreenshotContext(true);
         QCOMPARE(settings.includeScreenshotContext(), true);
+        settings.setSoundsEnabled(true);
+        QCOMPARE(settings.soundsEnabled(), true);
+        settings.setSoundsEnabled(false);
+        QCOMPARE(settings.soundsEnabled(), false);
 
         settings.setOpenAiModel(QStringLiteral(" gpt-5.4-nano "));
         QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.4-nano"));
@@ -1077,6 +1082,7 @@ private slots:
         settings.setPreviewWords(12);
         settings.setTheme(QStringLiteral("dark"));
         settings.setPauseMediaDuringTranscription(false);
+        settings.setSoundsEnabled(true);
         settings.setSpeechProvider(QStringLiteral("claude"));
         settings.setCustomVocabulary({QStringLiteral("Deepgram Nova 3"), QStringLiteral("Speecher")});
         QVERIFY(settings.setBindingRules({{QStringLiteral("my email"), QStringLiteral("efox@example.com")}}));
@@ -1110,6 +1116,7 @@ private slots:
         QCOMPARE(snapshot.ui.previewWords, 12);
         QCOMPARE(snapshot.ui.theme, QStringLiteral("dark"));
         QCOMPARE(snapshot.ui.pauseMediaDuringTranscription, false);
+        QCOMPARE(snapshot.ui.soundsEnabled, true);
         QCOMPARE(snapshot.speech.providerId, QStringLiteral("claude"));
         QCOMPARE(snapshot.speech.vocabulary.size(), 2);
         QCOMPARE(snapshot.audio.deviceId, QStringLiteral("device-1"));

@@ -13,13 +13,13 @@ Be signed into Claude Code CLI (required) and Codex CLI (optionally) if you want
 
 ```sh
 # Arch
-sudo pacman -S cmake ninja gcc qt6-base qt6-multimedia qt6-websockets qt6-wayland layer-shell-qt qtkeychain-qt6 wl-clipboard
+sudo pacman -S cmake ninja gcc qt6-base qt6-multimedia qt6-websockets qt6-wayland layer-shell-qt qtkeychain-qt6 wl-clipboard at-spi2-core
 
 # Debian
-sudo apt install cmake ninja-build g++ qt6-base-dev qt6-multimedia-dev qt6-websockets-dev qt6-wayland liblayershellqtinterface-dev qtkeychain-qt6-dev wl-clipboard
+sudo apt install cmake ninja-build g++ qt6-base-dev qt6-multimedia-dev qt6-websockets-dev qt6-wayland liblayershellqtinterface-dev qtkeychain-qt6-dev wl-clipboard libatspi2.0-dev
 
 # Fedora
-sudo dnf install cmake ninja-build gcc-c++ qt6-qtbase-devel qt6-qtmultimedia-devel qt6-qtwebsockets-devel qt6-qtwayland layer-shell-qt-devel qtkeychain-qt6-devel wl-clipboard
+sudo dnf install cmake ninja-build gcc-c++ qt6-qtbase-devel qt6-qtmultimedia-devel qt6-qtwebsockets-devel qt6-qtwayland layer-shell-qt-devel qtkeychain-qt6-devel wl-clipboard at-spi2-core-devel
 ```
 
 ### Install
@@ -48,7 +48,7 @@ Resulting appimage: `./dist/Speecher-x86_64.AppImage`
 
 Install the appimage however you like
 
-### Keybind (optional)
+### KDE Plasma shortcut
 
 Use a custom keyboard shortcut to run:
 
@@ -68,34 +68,15 @@ If you installed and Appimage:
 /path/to/Speecher-x86_64.AppImage toggle
 ```
 
-#### KDE Plasma
-
 1. Open `System Settings > Keyboard > Shortcuts`.
 2. Select `Add New > Command or Script`.
 3. Set the command to `/path/to/speecher toggle`.
 4. Click `Add`.
 5. Assign your preferred shortcut under `Custom Shortcuts`.
 
-#### GNOME
+Speecher also has separate `start` and `stop` commands for press-and-hold setups. Bind the key-press action to `speecher start` and the matching key-release action to `speecher stop` in whichever Plasma shortcut tool or input remapper you use. Speecher itself doesn't register a global shortcut.
 
-1. Open `Settings`.
-2. Go to `Keyboard`.
-3. In `Keyboard Shortcuts`, select `View and Customize Shortcuts`.
-4. Select `Custom Shortcuts`.
-5. Click `Add Shortcut` or the `+` button.
-6. Set `Name` to `Speecher toggle`.
-7. Set `Command` to `/path/to/speecher toggle`.
-8. Click `Add Shortcut`, press the shortcut you want to use, then click `Add`.
-
-#### Cinnamon
-
-1. Open the Cinnamon menu and search for `Keyboard`, or open `System Settings > Keyboard`.
-2. Select the `Shortcuts` tab.
-3. Select `Custom Shortcuts`.
-4. Click `Add custom shortcut`.
-5. Set the name to `Speecher toggle`.
-6. Set the command to `/path/to/speecher toggle`.
-7. Add the shortcut, then double-click the unassigned keyboard binding row and press the shortcut you want to use.
+Add `--format html` or `--format plain` to `toggle` or `start` when you want a shortcut that overrides the saved output format for one dictation.
 
 ## Build
 
@@ -110,7 +91,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Required Qt modules: Core, Widgets, Network, Multimedia, Qt WebSockets development files
+Required Qt modules: Core, Widgets, Network, Multimedia, and Qt WebSockets. AT-SPI development files are used for Plasma target discovery, context, and paste verification.
 
 ## AppImage
 
@@ -127,10 +108,15 @@ The script creates `dist/Speecher-x86_64.AppImage`. It uses CMake install output
 ```sh
 ./build/speecher
 ./build/speecher toggle
+./build/speecher start
+./build/speecher stop
+./build/speecher status
 ./build/speecher --version
 ```
 
-`speecher toggle` contacts the running app through a per-user socket. Native binaries use one stable user socket so the desktop app and CLI keybind talk to the same instance after `make install`; the CLI also checks the older executable-path socket for compatibility with already-running older builds. AppImages use one stable AppImage socket, because the internal mounted executable path changes on every launch. If no compatible instance is running, the command starts a popup-only background process and begins listening.
+The four CLI commands contact the running app through a per-user socket. `toggle` switches recording on or off, `start` only starts it, `stop` only stops it, and `status` prints the current state. If `toggle` or `start` can't find a running instance, it starts a popup-only background process and begins listening. Calling `stop` or `status` without a running instance prints `idle`.
+
+Native binaries use one stable user socket, so the desktop app and CLI shortcut talk to the same instance after `make install`. AppImages have their own stable socket because their internal mounted path changes on each launch.
 
 ## Refinement
 

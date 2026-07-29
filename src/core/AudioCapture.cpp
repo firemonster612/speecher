@@ -148,10 +148,7 @@ QAudioDevice selectedDevice(const AudioCaptureSettings &settings, QString *error
     if (settings.deviceId.isEmpty()) {
         const QAudioDevice device = QMediaDevices::defaultAudioInput();
         if (device.isNull()) {
-            if (error) {
-                *error = QStringLiteral("No default microphone is available. Choose a microphone in Settings.");
-            }
-            return {};
+            return inputs.first();
         }
         return device;
     }
@@ -162,10 +159,11 @@ QAudioDevice selectedDevice(const AudioCaptureSettings &settings, QString *error
         }
     }
 
-    if (error) {
-        *error = QStringLiteral("The selected microphone is not available. Choose another input device in Settings.");
+    const QAudioDevice defaultDevice = QMediaDevices::defaultAudioInput();
+    if (!defaultDevice.isNull()) {
+        return defaultDevice;
     }
-    return {};
+    return inputs.first();
 }
 
 QString sourceErrorMessageForLabel(const QString &label, QAudio::Error error)

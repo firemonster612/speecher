@@ -18,6 +18,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QDesktopServices>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -45,6 +46,7 @@
 #include <QTimer>
 #include <QToolTip>
 #include <QVBoxLayout>
+#include <QUrl>
 #include <QtMath>
 
 namespace speecher {
@@ -448,6 +450,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_audioDevice(new QComboBox(this))
     , m_captureMode(new QComboBox(this))
     , m_pauseMedia(new QCheckBox(this))
+    , m_sounds(new QCheckBox(this))
     , m_vadEnabled(new QCheckBox(this))
     , m_provider(new QComboBox(this))
     , m_refinementStyle(new QComboBox(this))
@@ -489,6 +492,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_theme->addItem(QStringLiteral("Light"), QStringLiteral("light"));
     m_theme->addItem(QStringLiteral("Dark"), QStringLiteral("dark"));
     m_pauseMedia->setText(QStringLiteral("Pause"));
+    m_sounds->setText(QStringLiteral("Play sounds"));
     m_audioDevice->setMinimumContentsLength(28);
     m_audioDevice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_audioDevice->setToolTip(QStringLiteral("Microphone Speecher records from."));
@@ -678,6 +682,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *anthropicLayout = qobject_cast<QVBoxLayout *>(anthropicCard->layout());
 
     auto *primaryOutput = new QLabel(m_controller->primaryOutputStatus(), this);
+    m_openReleasesButton = new QPushButton(QStringLiteral("Open releases"), this);
     m_ydotoolSetupButton = new QPushButton(QStringLiteral("Set up"), this);
     m_ydotoolStartButton = new QPushButton(QStringLiteral("Start service"), this);
     m_ydotoolDisableButton = new QPushButton(QStringLiteral("Disable in Speecher"), this);
@@ -713,8 +718,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
 
     addRow(generalLayout, makeRow(QStringLiteral("Theme"), QStringLiteral("App colors."), m_theme, generalCard), generalCard);
     addRow(generalLayout, makeRow(QStringLiteral("Pause media"), QStringLiteral("Pause currently playing media while transcribing."), m_pauseMedia, generalCard), generalCard);
+    addRow(generalLayout, makeRow(QStringLiteral("Sound cues"), QStringLiteral("Use the desktop sound for recording start and stop."), m_sounds, generalCard), generalCard);
     addRow(generalLayout, makeRow(QStringLiteral("Preview words"), QStringLiteral("Trailing words shown in the popup."), m_previewWords, generalCard), generalCard);
-    addRow(generalLayout, makeRow(QStringLiteral("Clipboard output"), QStringLiteral("Current platform clipboard path."), primaryOutput, generalCard), generalCard, false);
+    addRow(generalLayout, makeRow(QStringLiteral("Clipboard output"), QStringLiteral("Current platform clipboard path."), primaryOutput, generalCard), generalCard);
+    addRow(generalLayout, makeRow(QStringLiteral("Updates"), QStringLiteral("Updates are manual; open the GitHub releases page when you want to check."), m_openReleasesButton, generalCard), generalCard, false);
 
     addRow(audioLayout,
            makeRow(QStringLiteral("Microphone"),
@@ -979,6 +986,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(m_theme, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_pauseMedia, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
+    connect(m_sounds, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
+    connect(m_openReleasesButton, &QPushButton::clicked, this, [] {
+        QDesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/firemonster612/speecher/releases")));
+    });
     connect(m_audioDevice, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_captureMode, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_vadEnabled, &QCheckBox::toggled, this, [this] {
@@ -1083,6 +1094,7 @@ void SettingsDialog::load()
     SettingsStore *settings = m_controller->settings();
     selectData(m_theme, settings->theme());
     m_pauseMedia->setChecked(settings->pauseMediaDuringTranscription());
+    m_sounds->setChecked(settings->soundsEnabled());
     const AudioCaptureSettings audio = settings->audioCaptureSettings();
     refreshAudioDeviceList(audio.deviceId);
     selectData(m_captureMode, audio.mode);
@@ -1149,6 +1161,7 @@ bool SettingsDialog::save()
     settings->setTheme(m_theme->currentData().toString());
     Theme::apply(settings->theme());
     settings->setPauseMediaDuringTranscription(m_pauseMedia->isChecked());
+    settings->setSoundsEnabled(m_sounds->isChecked());
     settings->setAudioCaptureSettings({
         m_audioDevice->currentData().toString(),
         m_captureMode->currentData().toString(),
@@ -1210,6 +1223,7 @@ bool SettingsDialog::hasChanges() const
     const AudioCaptureSettings audio = settings->audioCaptureSettings();
     if (m_theme->currentData().toString() != settings->theme()
         || m_pauseMedia->isChecked() != settings->pauseMediaDuringTranscription()
+        || m_sounds->isChecked() != settings->soundsEnabled()
         || m_audioDevice->currentData().toString() != audio.deviceId
         || m_captureMode->currentData().toString() != audio.mode
         || m_vadEnabled->isChecked() != audio.vadEnabled
