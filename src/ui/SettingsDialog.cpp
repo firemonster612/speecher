@@ -1125,7 +1125,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(m_postRollMs, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
     connect(m_readinessTimeoutMs, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
     connect(m_vadThreshold, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
-    connect(m_provider, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_provider, &QComboBox::currentIndexChanged, this, [this] {
+        updateScreenshotControl();
+        updateButtonState();
+    });
     connect(m_refinementStyle, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_writingProfile, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_useTargetContext, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
@@ -1137,7 +1140,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
         updateButtonState();
     });
     connect(m_anthropicEffort, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
-    connect(m_anthropicAuthMode, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_anthropicAuthMode, &QComboBox::currentIndexChanged, this, [this] {
+        updateScreenshotControl();
+        updateButtonState();
+    });
     connect(m_anthropicInfoButton, &QPushButton::clicked, this, &SettingsDialog::showAnthropicAuthInfo);
     connect(m_restoreClipboardAfterTyping, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
     connect(m_learnCorrections, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
@@ -1281,6 +1287,7 @@ void SettingsDialog::load()
     updateAudioControls();
     updateAuthControl();
     updateAnthropicControls();
+    updateScreenshotControl();
     refreshOutputControls();
     updateButtonState();
 }
@@ -1363,6 +1370,7 @@ bool SettingsDialog::save()
     }
     updateAuthControl();
     updateAnthropicControls();
+    updateScreenshotControl();
     refreshOutputControls();
     updateButtonState();
     return true;
@@ -1799,6 +1807,19 @@ void SettingsDialog::updateAnthropicControls()
     m_anthropicWarning->setText(haiku
                                     ? QStringLiteral("Haiku may treat transcript as instructions.")
                                     : QString());
+}
+
+void SettingsDialog::updateScreenshotControl()
+{
+    const QString provider = m_provider->currentData().toString();
+    const bool supported = provider == QStringLiteral("openai")
+        || (provider == QStringLiteral("anthropic")
+            && m_anthropicAuthMode->currentData().toString() == QStringLiteral("oauth"));
+    m_screenshotContext->setEnabled(supported);
+    m_screenshotContext->setToolTip(
+        supported
+            ? QStringLiteral("Captured through the desktop portal and kept only for the current dictation.")
+            : QStringLiteral("Choose OpenAI or Anthropic OAuth extra usage to send screenshot context."));
 }
 
 void SettingsDialog::showAnthropicAuthInfo()

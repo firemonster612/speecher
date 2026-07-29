@@ -36,6 +36,7 @@ struct Target {
     QString toolkit;
     QString nearbyTextBefore;
     QString nearbyTextAfter;
+    QString selectedText;
     QString fingerprint;
     qint64 processId = 0;
     int caretOffset = -1;

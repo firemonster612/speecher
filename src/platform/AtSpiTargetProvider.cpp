@@ -185,6 +185,15 @@ void populateText(Target *target, AtspiAccessible *object)
         if (selection) {
             target->selectionStart = selection->start_offset;
             target->selectionEnd = selection->end_offset;
+            if (selection->end_offset > selection->start_offset) {
+                target->selectedText = takeString(atspi_text_get_text(
+                    text,
+                    selection->start_offset,
+                    qMin(selection->end_offset,
+                         selection->start_offset + contextCharacters * 2),
+                    &error));
+                clearError(&error);
+            }
             g_free(selection);
         }
     } else {
@@ -197,8 +206,11 @@ QString targetFingerprint(const Target &target)
     const QByteArray material = target.applicationId.toUtf8()
         + '\0' + QByteArray::number(target.processId)
         + '\0' + QByteArray::number(target.caretOffset)
+        + '\0' + QByteArray::number(target.selectionStart)
+        + '\0' + QByteArray::number(target.selectionEnd)
         + '\0' + target.nearbyTextBefore.toUtf8()
-        + '\0' + target.nearbyTextAfter.toUtf8();
+        + '\0' + target.nearbyTextAfter.toUtf8()
+        + '\0' + target.selectedText.toUtf8();
     return QString::fromLatin1(QCryptographicHash::hash(material, QCryptographicHash::Sha256).toHex());
 }
 
@@ -307,6 +319,7 @@ bool AtSpiTargetProvider::matchesSnapshot(const Target &target, bool requireFocu
     Target current = m_snapshot;
     current.nearbyTextBefore.clear();
     current.nearbyTextAfter.clear();
+    current.selectedText.clear();
     current.caretOffset = -1;
     current.selectionStart = -1;
     current.selectionEnd = -1;

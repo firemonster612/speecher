@@ -44,6 +44,7 @@ private:
     void updateAudioControls();
     void updateAuthControl();
     void updateAnthropicControls();
+    void updateScreenshotControl();
     void showAnthropicAuthInfo();
     void refreshOutputControls();
     void updateYdotoolButtons();

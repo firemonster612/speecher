@@ -128,6 +128,8 @@ Refinement effort is configurable per provider. OpenAI effort maps to `reasoning
 
 Settings also includes output controls for choosing how Speecher delivers text, including setup for typing directly into focused text fields. When virtual-keyboard paste is enabled, Speecher can optionally restore the previous clipboard contents after delivery.
 
+Target context uses the focused application's AT-SPI data when it is available: app identity, control role, caret, selection, and a small amount of nearby text. Screenshot context is a separate setting and is off by default. On Plasma it uses the desktop screenshot portal, keeps the image in memory only for the active dictation, and sends it only through OpenAI or Anthropic's direct OAuth API path. Claude Code session refinement stays text-only.
+
 Refinement styles:
 
 - `Light cleanup`: applies always-on rules plus light cleanup. It stays close to the transcript while fixing punctuation, capitalization, spacing, obvious speech-to-text mistakes, minimal grammar accidents, and explicit corrections.

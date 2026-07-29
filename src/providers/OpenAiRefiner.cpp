@@ -228,6 +228,15 @@ QString transcriptRefinementUserMessage(const QString &rawTranscript,
     if (context.includeNearbyText && !context.target.secure) {
         targetContext.insert(QStringLiteral("text_before_caret"), context.target.nearbyTextBefore);
         targetContext.insert(QStringLiteral("text_after_caret"), context.target.nearbyTextAfter);
+        if (context.target.caretOffset >= 0) {
+            targetContext.insert(QStringLiteral("caret_offset"), context.target.caretOffset);
+        }
+        if (context.target.selectionStart >= 0
+            && context.target.selectionEnd > context.target.selectionStart) {
+            targetContext.insert(QStringLiteral("selection_start"), context.target.selectionStart);
+            targetContext.insert(QStringLiteral("selection_end"), context.target.selectionEnd);
+            targetContext.insert(QStringLiteral("selected_text"), context.target.selectedText);
+        }
     }
     return QStringLiteral(
                "Raw transcript:\n%1\n\nPreferred vocabulary:\n%2\n\nBinding aliases:\n%3\n\n"
