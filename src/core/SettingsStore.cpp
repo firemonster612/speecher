@@ -311,6 +311,39 @@ void SettingsStore::setRefinementStyle(const QString &value)
     m_settings.setValue(QStringLiteral("refinement/style"), QStringLiteral("balanced"));
 }
 
+QString SettingsStore::defaultWritingProfile() const
+{
+    const QString profile = value(QStringLiteral("refinement/defaultWritingProfile"), QStringLiteral("general")).toString();
+    return writingProfileName(writingProfileFromName(profile));
+}
+
+void SettingsStore::setDefaultWritingProfile(const QString &value)
+{
+    m_settings.setValue(
+        QStringLiteral("refinement/defaultWritingProfile"),
+        writingProfileName(writingProfileFromName(value)));
+}
+
+bool SettingsStore::useTargetContext() const
+{
+    return value(QStringLiteral("refinement/useTargetContext"), true).toBool();
+}
+
+void SettingsStore::setUseTargetContext(bool value)
+{
+    m_settings.setValue(QStringLiteral("refinement/useTargetContext"), value);
+}
+
+bool SettingsStore::includeScreenshotContext() const
+{
+    return value(QStringLiteral("refinement/includeScreenshotContext"), false).toBool();
+}
+
+void SettingsStore::setIncludeScreenshotContext(bool value)
+{
+    m_settings.setValue(QStringLiteral("refinement/includeScreenshotContext"), value);
+}
+
 QString SettingsStore::openAiModel() const
 {
     const QString model = value(QStringLiteral("openai/model"), QStringLiteral("gpt-5.6-luna")).toString().trimmed();
@@ -559,6 +592,9 @@ AppSettings SettingsStore::snapshot() const
     settings.refinement.anthropicEffort = anthropicEffort();
     settings.refinement.anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     settings.refinement.claudeCredentialsPath = claudeCredentialsPath();
+    settings.refinement.defaultWritingProfile = defaultWritingProfile();
+    settings.refinement.useTargetContext = useTargetContext();
+    settings.refinement.includeScreenshotContext = includeScreenshotContext();
 
     settings.output.method = outputMethod();
     settings.output.format = outputFormat();

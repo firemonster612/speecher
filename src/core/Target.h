@@ -14,8 +14,17 @@ enum class AppCategory {
     CodeEditor,
 };
 
+enum class WritingProfile {
+    General,
+    Email,
+    Technical,
+    Personal,
+};
+
 QString appCategoryName(AppCategory category);
 AppCategory appCategoryFromName(const QString &name);
+QString writingProfileName(WritingProfile profile);
+WritingProfile writingProfileFromName(const QString &name);
 
 struct Target {
     QString applicationId;
@@ -39,5 +48,12 @@ struct Target {
 };
 
 AppCategory classifyTarget(const Target &target);
+WritingProfile inferWritingProfile(const Target &target, WritingProfile fallback = WritingProfile::General);
+
+struct RefinementContext {
+    Target target;
+    WritingProfile writingProfile = WritingProfile::General;
+    bool includeNearbyText = true;
+};
 
 } // namespace speecher

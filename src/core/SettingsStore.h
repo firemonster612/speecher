@@ -54,6 +54,12 @@ public:
 
     QString refinementStyle() const;
     void setRefinementStyle(const QString &value);
+    QString defaultWritingProfile() const;
+    void setDefaultWritingProfile(const QString &value);
+    bool useTargetContext() const;
+    void setUseTargetContext(bool value);
+    bool includeScreenshotContext() const;
+    void setIncludeScreenshotContext(bool value);
 
     QString openAiModel() const;
     void setOpenAiModel(const QString &value);

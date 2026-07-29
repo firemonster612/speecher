@@ -267,6 +267,42 @@ static void selectData(QComboBox *combo, const QString &data)
     combo->setCurrentIndex(index >= 0 ? index : 0);
 }
 
+static PasteMethod pasteMethodFor(const QList<PasteRule> &rules,
+                                  PasteRuleScope scope,
+                                  const QString &match,
+                                  PasteMethod fallback)
+{
+    for (const PasteRule &rule : rules) {
+        if (rule.scope == scope && rule.match == match) {
+            return rule.method;
+        }
+    }
+    return fallback;
+}
+
+static QList<PasteRule> withBasePasteRules(const QList<PasteRule> &existing,
+                                           PasteMethod globalMethod,
+                                           PasteMethod terminalMethod)
+{
+    QList<PasteRule> rules;
+    for (const PasteRule &rule : existing) {
+        if (rule.scope == PasteRuleScope::Global
+            || (rule.scope == PasteRuleScope::Category
+                && rule.match == appCategoryName(AppCategory::Terminal))) {
+            continue;
+        }
+        rules.append(rule);
+    }
+    rules.append({
+        PasteRuleScope::Category,
+        appCategoryName(AppCategory::Terminal),
+        terminalMethod,
+        true,
+    });
+    rules.append({PasteRuleScope::Global, QString(), globalMethod, true});
+    return rules;
+}
+
 static void selectEditableText(QComboBox *combo, const QString &text)
 {
     const QString trimmed = text.trimmed();
@@ -415,11 +451,17 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_vadEnabled(new QCheckBox(this))
     , m_provider(new QComboBox(this))
     , m_refinementStyle(new QComboBox(this))
+    , m_writingProfile(new QComboBox(this))
+    , m_useTargetContext(new QCheckBox(this))
+    , m_screenshotContext(new QCheckBox(this))
     , m_openAiModel(new QComboBox(this))
     , m_openAiEffort(new QComboBox(this))
     , m_anthropicModel(new QComboBox(this))
     , m_anthropicEffort(new QComboBox(this))
     , m_outputMethod(new QComboBox(this))
+    , m_outputFormat(new QComboBox(this))
+    , m_globalPaste(new QComboBox(this))
+    , m_terminalPaste(new QComboBox(this))
     , m_restoreClipboardAfterTyping(new QCheckBox(this))
     , m_authMode(new QComboBox(this))
     , m_anthropicAuthMode(new QComboBox(this))
@@ -460,6 +502,12 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_refinementStyle->addItem(QStringLiteral("Strong polish"), QStringLiteral("strong_polish"));
     m_refinementStyle->addItem(QStringLiteral("Balanced"), QStringLiteral("balanced"));
     m_refinementStyle->addItem(QStringLiteral("Light cleanup"), QStringLiteral("light_cleanup"));
+    m_writingProfile->addItem(QStringLiteral("General"), QStringLiteral("general"));
+    m_writingProfile->addItem(QStringLiteral("Email"), QStringLiteral("email"));
+    m_writingProfile->addItem(QStringLiteral("Technical"), QStringLiteral("technical"));
+    m_writingProfile->addItem(QStringLiteral("Personal"), QStringLiteral("personal"));
+    m_useTargetContext->setText(QStringLiteral("Use context"));
+    m_screenshotContext->setText(QStringLiteral("Allow screenshots"));
     for (const QString &model : {
              QStringLiteral("gpt-5.6-luna"),
              QStringLiteral("gpt-5.6-terra"),
@@ -515,6 +563,13 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::QtClipboard)), QString::fromLatin1(OutputMethod::QtClipboard));
     m_outputMethod->setToolTip(QStringLiteral("How Speecher delivers final text."));
     m_outputMethod->view()->setMouseTracking(true);
+    m_outputFormat->addItem(QStringLiteral("Plain text"), QStringLiteral("plain"));
+    m_outputFormat->addItem(QStringLiteral("HTML and plain text"), QStringLiteral("html"));
+    for (QComboBox *combo : {m_globalPaste, m_terminalPaste}) {
+        combo->addItem(QStringLiteral("Standard paste (Ctrl+V)"), pasteMethodName(PasteMethod::StandardPaste));
+        combo->addItem(QStringLiteral("Terminal paste (Ctrl+Shift+V)"), pasteMethodName(PasteMethod::TerminalPaste));
+        combo->addItem(QStringLiteral("Clipboard only"), pasteMethodName(PasteMethod::ClipboardOnly));
+    }
     m_restoreClipboardAfterTyping->setText(QStringLiteral("Restore"));
     m_restoreClipboardAfterTyping->setToolTip(QStringLiteral("Restore the previous clipboard after virtual-keyboard paste."));
     m_authMode->addItem(QStringLiteral("Automatic"), QStringLiteral("auto"));
@@ -691,8 +746,26 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
                    outputCard),
            outputCard);
     addRow(outputLayout,
+           makeRow(QStringLiteral("Format"),
+                   QStringLiteral("Default clipboard representation. A CLI shortcut can override this per dictation."),
+                   m_outputFormat,
+                   outputCard),
+           outputCard);
+    addRow(outputLayout,
+           makeRow(QStringLiteral("Normal apps"),
+                   QStringLiteral("Paste behavior used unless a category or exact-app rule overrides it."),
+                   m_globalPaste,
+                   outputCard),
+           outputCard);
+    addRow(outputLayout,
+           makeRow(QStringLiteral("Terminals"),
+                   QStringLiteral("Paste behavior for terminal applications."),
+                   m_terminalPaste,
+                   outputCard),
+           outputCard);
+    addRow(outputLayout,
            makeRow(QStringLiteral("Restore clipboard"),
-                   QStringLiteral("After virtual-keyboard paste, put the previous clipboard contents back."),
+                   QStringLiteral("Restore the previous clipboard only after insertion is verified."),
                    m_restoreClipboardAfterTyping,
                    outputCard),
            outputCard);
@@ -710,7 +783,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
            false);
 
     addRow(refinementLayout, makeRow(QStringLiteral("Refinement"), QStringLiteral("Clean up dictated text after capture."), m_provider, refinementCard), refinementCard);
-    addRow(refinementLayout, makeRow(QStringLiteral("Refinement style"), QStringLiteral("How strongly dictated text is rewritten."), m_refinementStyle, refinementCard), refinementCard, false);
+    addRow(refinementLayout, makeRow(QStringLiteral("Refinement style"), QStringLiteral("How strongly dictated text is rewritten."), m_refinementStyle, refinementCard), refinementCard);
+    addRow(refinementLayout, makeRow(QStringLiteral("Fallback profile"), QStringLiteral("Writing profile used when the target app does not imply one."), m_writingProfile, refinementCard), refinementCard);
+    addRow(refinementLayout, makeRow(QStringLiteral("Target context"), QStringLiteral("Use the focused app, control, selection, and bounded nearby text for cleanup."), m_useTargetContext, refinementCard), refinementCard);
+    addRow(refinementLayout, makeRow(QStringLiteral("Screenshot context"), QStringLiteral("Off by default; used only with image-capable refinement models."), m_screenshotContext, refinementCard), refinementCard, false);
 
     addRow(openAiLayout, makeRow(QStringLiteral("OpenAI model"), QStringLiteral("Model used for refinement."), m_openAiModel, openAiCard), openAiCard);
     addRow(openAiLayout, makeRow(QStringLiteral("OpenAI effort"), QStringLiteral("Reasoning effort used for refinement."), m_openAiEffort, openAiCard), openAiCard);
@@ -868,6 +944,9 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(m_vadThreshold, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
     connect(m_provider, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_refinementStyle, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_writingProfile, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_useTargetContext, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
+    connect(m_screenshotContext, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
     connect(m_openAiModel, &QComboBox::currentTextChanged, this, &SettingsDialog::updateButtonState);
     connect(m_openAiEffort, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_anthropicModel, &QComboBox::currentTextChanged, this, [this] {
@@ -878,6 +957,9 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(m_anthropicAuthMode, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_anthropicInfoButton, &QPushButton::clicked, this, &SettingsDialog::showAnthropicAuthInfo);
     connect(m_restoreClipboardAfterTyping, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
+    connect(m_outputFormat, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_globalPaste, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_terminalPaste, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_outputMethod, &QComboBox::currentIndexChanged, this, [this] {
         if (m_outputMethod->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool)) {
             const YdotoolSetupStatus status = YdotoolSetup::probe(m_controller->settings()->ydotoolEnabled());
@@ -938,11 +1020,28 @@ void SettingsDialog::load()
     m_vadThreshold->setValue(audio.vadThresholdPercent);
     selectData(m_provider, settings->refinementProvider());
     selectData(m_refinementStyle, settings->refinementStyle());
+    selectData(m_writingProfile, settings->defaultWritingProfile());
+    m_useTargetContext->setChecked(settings->useTargetContext());
+    m_screenshotContext->setChecked(settings->includeScreenshotContext());
     selectEditableText(m_openAiModel, settings->openAiModel());
     selectData(m_openAiEffort, settings->openAiEffort());
     selectEditableText(m_anthropicModel, settings->anthropicModel());
     selectData(m_anthropicEffort, settings->anthropicEffort());
     selectData(m_outputMethod, settings->outputMethod());
+    selectData(m_outputFormat, outputFormatName(settings->outputFormat()));
+    const QList<PasteRule> pasteRules = settings->pasteRules();
+    selectData(m_globalPaste,
+               pasteMethodName(pasteMethodFor(
+                   pasteRules,
+                   PasteRuleScope::Global,
+                   QString(),
+                   PasteMethod::StandardPaste)));
+    selectData(m_terminalPaste,
+               pasteMethodName(pasteMethodFor(
+                   pasteRules,
+                   PasteRuleScope::Category,
+                   appCategoryName(AppCategory::Terminal),
+                   PasteMethod::TerminalPaste)));
     m_restoreClipboardAfterTyping->setChecked(settings->restoreClipboardAfterTyping());
     selectData(m_authMode, settings->openAiAuthMode());
     selectData(m_anthropicAuthMode, settings->anthropicAuthMode());
@@ -984,6 +1083,9 @@ bool SettingsDialog::save()
     });
     settings->setRefinementProvider(m_provider->currentData().toString());
     settings->setRefinementStyle(m_refinementStyle->currentData().toString());
+    settings->setDefaultWritingProfile(m_writingProfile->currentData().toString());
+    settings->setUseTargetContext(m_useTargetContext->isChecked());
+    settings->setIncludeScreenshotContext(m_screenshotContext->isChecked());
     settings->setOpenAiModel(editableComboValue(m_openAiModel));
     selectEditableText(m_openAiModel, settings->openAiModel());
     settings->setOpenAiEffort(m_openAiEffort->currentData().toString());
@@ -991,6 +1093,11 @@ bool SettingsDialog::save()
     selectEditableText(m_anthropicModel, settings->anthropicModel());
     settings->setAnthropicEffort(m_anthropicEffort->currentData().toString());
     settings->setOutputMethod(m_outputMethod->currentData().toString());
+    settings->setOutputFormat(outputFormatFromString(m_outputFormat->currentData().toString()));
+    settings->setPasteRules(withBasePasteRules(
+        settings->pasteRules(),
+        pasteMethodFromName(m_globalPaste->currentData().toString()),
+        pasteMethodFromName(m_terminalPaste->currentData().toString())));
     settings->setRestoreClipboardAfterTyping(m_restoreClipboardAfterTyping->isChecked());
     settings->setOpenAiAuthMode(m_authMode->currentData().toString());
     settings->setAnthropicAuthMode(m_anthropicAuthMode->currentData().toString());
@@ -1030,11 +1137,20 @@ bool SettingsDialog::hasChanges() const
         || m_vadThreshold->value() != audio.vadThresholdPercent
         || m_provider->currentData().toString() != settings->refinementProvider()
         || m_refinementStyle->currentData().toString() != settings->refinementStyle()
+        || m_writingProfile->currentData().toString() != settings->defaultWritingProfile()
+        || m_useTargetContext->isChecked() != settings->useTargetContext()
+        || m_screenshotContext->isChecked() != settings->includeScreenshotContext()
         || editableComboValue(m_openAiModel) != settings->openAiModel()
         || m_openAiEffort->currentData().toString() != settings->openAiEffort()
         || editableComboValue(m_anthropicModel) != settings->anthropicModel()
         || m_anthropicEffort->currentData().toString() != settings->anthropicEffort()
         || m_outputMethod->currentData().toString() != settings->outputMethod()
+        || m_outputFormat->currentData().toString() != outputFormatName(settings->outputFormat())
+        || withBasePasteRules(
+               settings->pasteRules(),
+               pasteMethodFromName(m_globalPaste->currentData().toString()),
+               pasteMethodFromName(m_terminalPaste->currentData().toString()))
+            != settings->pasteRules()
         || m_restoreClipboardAfterTyping->isChecked() != settings->restoreClipboardAfterTyping()
         || m_authMode->currentData().toString() != settings->openAiAuthMode()
         || m_anthropicAuthMode->currentData().toString() != settings->anthropicAuthMode()

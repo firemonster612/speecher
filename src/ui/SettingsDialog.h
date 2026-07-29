@@ -57,11 +57,17 @@ private:
     QCheckBox *m_vadEnabled = nullptr;
     QComboBox *m_provider = nullptr;
     QComboBox *m_refinementStyle = nullptr;
+    QComboBox *m_writingProfile = nullptr;
+    QCheckBox *m_useTargetContext = nullptr;
+    QCheckBox *m_screenshotContext = nullptr;
     QComboBox *m_openAiModel = nullptr;
     QComboBox *m_openAiEffort = nullptr;
     QComboBox *m_anthropicModel = nullptr;
     QComboBox *m_anthropicEffort = nullptr;
     QComboBox *m_outputMethod = nullptr;
+    QComboBox *m_outputFormat = nullptr;
+    QComboBox *m_globalPaste = nullptr;
+    QComboBox *m_terminalPaste = nullptr;
     QCheckBox *m_restoreClipboardAfterTyping = nullptr;
     QComboBox *m_authMode = nullptr;
     QComboBox *m_anthropicAuthMode = nullptr;

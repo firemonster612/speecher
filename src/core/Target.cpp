@@ -49,6 +49,35 @@ AppCategory appCategoryFromName(const QString &name)
     return AppCategory::Unknown;
 }
 
+QString writingProfileName(WritingProfile profile)
+{
+    switch (profile) {
+    case WritingProfile::Email:
+        return QStringLiteral("email");
+    case WritingProfile::Technical:
+        return QStringLiteral("technical");
+    case WritingProfile::Personal:
+        return QStringLiteral("personal");
+    case WritingProfile::General:
+        return QStringLiteral("general");
+    }
+    return QStringLiteral("general");
+}
+
+WritingProfile writingProfileFromName(const QString &name)
+{
+    if (name == QStringLiteral("email")) {
+        return WritingProfile::Email;
+    }
+    if (name == QStringLiteral("technical")) {
+        return WritingProfile::Technical;
+    }
+    if (name == QStringLiteral("personal")) {
+        return WritingProfile::Personal;
+    }
+    return WritingProfile::General;
+}
+
 bool Target::hasIdentity() const
 {
     return !applicationId.isEmpty() || processId > 0 || !applicationName.isEmpty();
@@ -92,6 +121,23 @@ AppCategory classifyTarget(const Target &target)
         return AppCategory::CodeEditor;
     }
     return target.hasIdentity() ? AppCategory::General : AppCategory::Unknown;
+}
+
+WritingProfile inferWritingProfile(const Target &target, WritingProfile fallback)
+{
+    switch (target.category) {
+    case AppCategory::Email:
+        return WritingProfile::Email;
+    case AppCategory::CodeEditor:
+    case AppCategory::Terminal:
+        return WritingProfile::Technical;
+    case AppCategory::Unknown:
+    case AppCategory::General:
+    case AppCategory::Browser:
+    case AppCategory::Office:
+        return fallback;
+    }
+    return fallback;
 }
 
 } // namespace speecher

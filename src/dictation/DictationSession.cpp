@@ -502,6 +502,16 @@ void DictationSession::beginRefinement(quint64 generation)
     m_refinedText.clear();
     const RefinementSettings refinement = refinementSettingsWithBindingVocabulary(settings);
     const QStringList vocabulary = refinementVocabulary(settings);
+    RefinementContext context;
+    context.target = m_target;
+    context.writingProfile = inferWritingProfile(
+        m_target,
+        writingProfileFromName(refinement.defaultWritingProfile));
+    context.includeNearbyText = refinement.useTargetContext && !m_target.secure;
+    if (!refinement.useTargetContext) {
+        context.target.nearbyTextBefore.clear();
+        context.target.nearbyTextAfter.clear();
+    }
     qInfo() << "refinement started provider=" << settings.refinement.providerId
             << "rawLength=" << m_transcript->text().size()
             << "placeholderLength=" << m_bindingResult.placeholderText.size()
@@ -510,6 +520,7 @@ void DictationSession::beginRefinement(quint64 generation)
             << "vocabularyCount=" << vocabulary.size();
     m_refiner->refine(m_bindingResult.placeholderText,
                       vocabulary,
+                      context,
                       refinement);
 }
 

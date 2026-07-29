@@ -138,6 +138,7 @@ public:
     virtual RefinementPrepareResult prepare(const RefinementSettings &settings) = 0;
     virtual void refine(const QString &rawTranscript,
                         const QStringList &vocabulary,
+                        const RefinementContext &context,
                         const RefinementSettings &settings) = 0;
     virtual void cancel() = 0;
 

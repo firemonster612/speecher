@@ -54,6 +54,9 @@ struct RefinementSettings {
     QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     QString claudeCredentialsPath;
     QStringList bindingVocabulary;
+    QString defaultWritingProfile = QStringLiteral("general");
+    bool useTargetContext = true;
+    bool includeScreenshotContext = false;
 };
 
 struct OutputSettings {

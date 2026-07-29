@@ -71,6 +71,7 @@ RefinementPrepareResult OpenAiTranscriptRefiner::prepare(const RefinementSetting
 
 void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
                                      const QStringList &vocabulary,
+                                     const RefinementContext &context,
                                      const RefinementSettings &settings)
 {
     if (!m_auth.ok) {
@@ -92,7 +93,8 @@ void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
                       m_auth.chatgptBackend,
                       settings.openAiModel,
                       settings.openAiEffort,
-                      settings.style);
+                      settings.style,
+                      context);
 }
 
 void OpenAiTranscriptRefiner::cancel()

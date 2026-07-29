@@ -6,6 +6,8 @@
 
 namespace speecher {
 
+struct RefinementContext;
+
 QString openAiRefinementInstructions(const QString &style);
 
 class OpenAiRefiner : public QObject {
@@ -25,7 +27,8 @@ public:
                 bool chatgptBackend,
                 const QString &model,
                 const QString &effort,
-                const QString &refinementStyle);
+                const QString &refinementStyle,
+                const RefinementContext &context);
     void cancel();
 
 signals:
