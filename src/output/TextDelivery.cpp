@@ -127,6 +127,13 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         && (!m_targetProvider || !m_targetProvider->stillFocused(target))) {
         pasteMethod = PasteMethod::ClipboardOnly;
     }
+
+    WlClipboardSnapshot previousClipboard;
+    const bool canRestoreClipboard = pasteMethod != PasteMethod::ClipboardOnly
+        && settings.restoreClipboardAfterTyping
+        && WlClipboardDelivery::canSnapshot()
+        && WlClipboardDelivery::capture(&previousClipboard);
+
     QString firstError;
     for (const QString &method : orderedMethods(settings, pasteMethod)) {
         std::unique_ptr<DeliveryBackend> backend = m_backendFactory
@@ -145,14 +152,21 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
             const bool verified = !copied
                 && m_targetProvider
                 && m_targetProvider->verifyInsertion(target, content.plainText);
+            QString restoreError;
+            const bool restored = !verified
+                || !canRestoreClipboard
+                || WlClipboardDelivery::restore(previousClipboard, &restoreError);
             const QString message = copied
                 ? QStringLiteral("Copied")
                 : verified ? QStringLiteral("Verified in Target") : QStringLiteral("Input sent");
+            const QString finalMessage = verified && canRestoreClipboard && !restored
+                ? message + QStringLiteral("; clipboard kept because it could not be restored")
+                : message;
             return {true,
                     copied ? DeliveryReceipt::Copied
                            : verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::InputSent,
                     downgraded,
-                    downgraded ? message + QStringLiteral(" as plain text") : message};
+                    downgraded ? finalMessage + QStringLiteral(" as plain text") : finalMessage};
         }
         if (firstError.isEmpty()) {
             firstError = error;

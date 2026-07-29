@@ -1501,6 +1501,121 @@ private slots:
         QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::WlCopy)}));
     }
 
+    void outputRestoresClipboardOnlyAfterVerifiedInsertion()
+    {
+        QTemporaryDir dir;
+        const QString copyArgsPath = dir.filePath(QStringLiteral("copy-args"));
+        const QString copyDataPath = dir.filePath(QStringLiteral("copy-data"));
+        QVERIFY(!writeFakeClaudeScript(dir.filePath(QStringLiteral("wl-paste")), QStringLiteral(R"SH(
+if test "$1" = "--list-types"; then
+  printf '%s\n' 'text/plain;charset=utf-8'
+  exit 0
+fi
+if test "$1" = "--no-newline" && test "$2" = "--type"; then
+  printf 'previous clipboard'
+  exit 0
+fi
+exit 9
+)SH")).isEmpty());
+        QVERIFY(!writeFakeClaudeScript(dir.filePath(QStringLiteral("wl-copy")), QStringLiteral(R"SH(
+printf '%s\n' "$*" > "$SPEECHER_TEST_WL_COPY_ARGS"
+cat > "$SPEECHER_TEST_WL_COPY_DATA"
+exit 0
+)SH")).isEmpty());
+
+        const QByteArray oldPath = qgetenv("PATH");
+        qputenv("PATH", QFile::encodeName(dir.path()) + QByteArrayLiteral(":") + oldPath);
+        qputenv("SPEECHER_TEST_WL_COPY_ARGS", QFile::encodeName(copyArgsPath));
+        qputenv("SPEECHER_TEST_WL_COPY_DATA", QFile::encodeName(copyDataPath));
+        const auto cleanup = qScopeGuard([oldPath] {
+            qputenv("PATH", oldPath);
+            qunsetenv("SPEECHER_TEST_WL_COPY_ARGS");
+            qunsetenv("SPEECHER_TEST_WL_COPY_DATA");
+        });
+
+        QList<QString> attempts;
+        QHash<QString, bool> results{{QString::fromLatin1(OutputMethod::Ydotool), true}};
+        FakeTargetProvider targetProvider;
+        targetProvider.verified = true;
+        TextDelivery delivery([&attempts, &results](
+                                  const QString &method,
+                                  const OutputSettings &,
+                                  PasteMethod) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        }, &targetProvider);
+
+        OutputSettings settings;
+        settings.ydotoolEnabled = true;
+        settings.restoreClipboardAfterTyping = true;
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
+        target.category = AppCategory::CodeEditor;
+
+        const DeliveryResult result = delivery.deliver(
+            settings,
+            makeDeliveryContent(QStringLiteral("new text"), OutputFormat::PlainText),
+            target);
+        QCOMPARE(result.receipt, DeliveryReceipt::VerifiedInTarget);
+
+        QFile argsFile(copyArgsPath);
+        QVERIFY(argsFile.open(QIODevice::ReadOnly));
+        QCOMPARE(QString::fromUtf8(argsFile.readAll()).trimmed(),
+                 QStringLiteral("--type text/plain;charset=utf-8"));
+        QFile dataFile(copyDataPath);
+        QVERIFY(dataFile.open(QIODevice::ReadOnly));
+        QCOMPARE(dataFile.readAll(), QByteArrayLiteral("previous clipboard"));
+    }
+
+    void outputKeepsDictationOnClipboardWhenInsertionIsNotVerified()
+    {
+        QTemporaryDir dir;
+        const QString restoreMarkerPath = dir.filePath(QStringLiteral("restore-marker"));
+        QVERIFY(!writeFakeClaudeScript(dir.filePath(QStringLiteral("wl-paste")), QStringLiteral(R"SH(
+if test "$1" = "--list-types"; then
+  printf '%s\n' 'text/plain'
+  exit 0
+fi
+printf 'previous clipboard'
+)SH")).isEmpty());
+        QVERIFY(!writeFakeClaudeScript(dir.filePath(QStringLiteral("wl-copy")), QStringLiteral(R"SH(
+touch "$SPEECHER_TEST_RESTORE_MARKER"
+cat >/dev/null
+)SH")).isEmpty());
+
+        const QByteArray oldPath = qgetenv("PATH");
+        qputenv("PATH", QFile::encodeName(dir.path()) + QByteArrayLiteral(":") + oldPath);
+        qputenv("SPEECHER_TEST_RESTORE_MARKER", QFile::encodeName(restoreMarkerPath));
+        const auto cleanup = qScopeGuard([oldPath] {
+            qputenv("PATH", oldPath);
+            qunsetenv("SPEECHER_TEST_RESTORE_MARKER");
+        });
+
+        QList<QString> attempts;
+        QHash<QString, bool> results{{QString::fromLatin1(OutputMethod::Ydotool), true}};
+        FakeTargetProvider targetProvider;
+        targetProvider.verified = false;
+        TextDelivery delivery([&attempts, &results](
+                                  const QString &method,
+                                  const OutputSettings &,
+                                  PasteMethod) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        }, &targetProvider);
+
+        OutputSettings settings;
+        settings.ydotoolEnabled = true;
+        settings.restoreClipboardAfterTyping = true;
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
+        target.category = AppCategory::CodeEditor;
+
+        const DeliveryResult result = delivery.deliver(
+            settings,
+            makeDeliveryContent(QStringLiteral("new text"), OutputFormat::PlainText),
+            target);
+        QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
+        QVERIFY(!QFileInfo::exists(restoreMarkerPath));
+    }
+
     void wlClipboardSnapshotCapturesAndRestoresPreferredMimeType()
     {
         QTemporaryDir dir;
