@@ -244,12 +244,6 @@ Target AtSpiTargetProvider::capture()
         if (!focused) {
             continue;
         }
-        if (!atspi_accessible_is_text(focused)
-            && !atspi_accessible_is_editable_text(focused)) {
-            g_object_unref(focused);
-            continue;
-        }
-
         GError *error = nullptr;
         AtspiAccessible *application = atspi_accessible_get_application(focused, &error);
         clearError(&error);

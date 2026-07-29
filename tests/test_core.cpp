@@ -1224,6 +1224,18 @@ private slots:
         }
         AtSpiTargetProvider provider;
         const Target target = provider.capture();
+        qInfo().noquote()
+            << QStringLiteral("target appId=%1 appName=%2 process=%3 role=%4 category=%5 accessible=%6 secure=%7 directInsert=%8 before=%9 after=%10")
+                   .arg(target.applicationId,
+                        target.applicationName,
+                        target.processName,
+                        target.role,
+                        appCategoryName(target.category),
+                        target.accessible ? QStringLiteral("yes") : QStringLiteral("no"),
+                        target.secure ? QStringLiteral("yes") : QStringLiteral("no"),
+                        provider.canInsertText(target) ? QStringLiteral("yes") : QStringLiteral("no"),
+                        QString::number(target.nearbyTextBefore.size()),
+                        QString::number(target.nearbyTextAfter.size()));
         QVERIFY2(target.hasIdentity(), "No focused AT-SPI target was found");
         QVERIFY(!target.applicationName.isEmpty() || !target.processName.isEmpty());
         QVERIFY(target.nearbyTextBefore.size() <= 240);
@@ -1255,6 +1267,21 @@ private slots:
         QString error;
         QVERIFY2(provider.insertText(target, QStringLiteral("inserted"), &error), qPrintable(error));
         QVERIFY(provider.verifyInsertion(target, QStringLiteral("inserted")));
+    }
+
+    void liveAtSpiPasswordTargetIsPrivate()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI_PASSWORD") != QStringLiteral("1")) {
+            QSKIP("Live Plasma AT-SPI password check is opt-in");
+        }
+
+        AtSpiTargetProvider provider;
+        const Target target = provider.capture();
+        QVERIFY2(target.hasIdentity(), "No focused password target was found");
+        QVERIFY(target.secure);
+        QVERIFY(target.nearbyTextBefore.isEmpty());
+        QVERIFY(target.nearbyTextAfter.isEmpty());
+        QVERIFY(!provider.canInsertText(target));
     }
 
     void singleInstanceIpcDoesNotStealLiveSocket()
@@ -1423,6 +1450,29 @@ private slots:
             {},
             context);
         QVERIFY(!secureMessage.contains(QStringLiteral("secret-value")));
+    }
+
+    void applicationMatrixClassifiesWritingProfiles()
+    {
+        const auto classified = [](const QString &applicationId) {
+            Target target;
+            target.applicationId = applicationId;
+            target.category = classifyTarget(target);
+            return target;
+        };
+
+        QCOMPARE(classified(QStringLiteral("kate")).category, AppCategory::CodeEditor);
+        QCOMPARE(classified(QStringLiteral("konsole")).category, AppCategory::Terminal);
+        QCOMPARE(classified(QStringLiteral("firefox")).category, AppCategory::Browser);
+        QCOMPARE(classified(QStringLiteral("helium")).category, AppCategory::Browser);
+        QCOMPARE(classified(QStringLiteral("thunderbird")).category, AppCategory::Email);
+        QCOMPARE(classified(QStringLiteral("soffice.bin")).category, AppCategory::Office);
+        QCOMPARE(classified(QStringLiteral("t3-code")).category, AppCategory::CodeEditor);
+
+        QCOMPARE(inferWritingProfile(classified(QStringLiteral("kate"))), WritingProfile::Technical);
+        QCOMPARE(inferWritingProfile(classified(QStringLiteral("konsole"))), WritingProfile::Technical);
+        QCOMPARE(inferWritingProfile(classified(QStringLiteral("thunderbird"))), WritingProfile::Email);
+        QCOMPARE(inferWritingProfile(classified(QStringLiteral("t3-code"))), WritingProfile::Technical);
     }
 
     void outputUsesClipboardOnlyForMissingOrSecureTargets()

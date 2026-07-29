@@ -13,6 +13,10 @@ int main(int argc, char **argv)
     auto *layout = new QVBoxLayout(&window);
     auto *target = new QLineEdit(QStringLiteral("prefix text suffix text"), &window);
     target->setObjectName(QStringLiteral("savedTarget"));
+    if (app.arguments().contains(QStringLiteral("--password"))) {
+        target->setEchoMode(QLineEdit::Password);
+        target->setText(QStringLiteral("not-a-real-secret"));
+    }
     target->setCursorPosition(12);
     layout->addWidget(target);
 
