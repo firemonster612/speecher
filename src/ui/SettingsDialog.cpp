@@ -434,10 +434,10 @@ static QWidget *makeAnthropicModelControl(QComboBox *model, QLabel *warning, QWi
 
 static QLabel *makeSectionLabel(const QString &text, QWidget *parent)
 {
-    auto *section = new QLabel(text, parent);
+    auto *section = new QLabel(text.toUpper(), parent);
     section->setObjectName(QStringLiteral("sectionLabel"));
     section->setAttribute(Qt::WA_StyledBackground, false);
-    section->setAlignment(Qt::AlignCenter);
+    section->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     return section;
 }
 
@@ -449,6 +449,22 @@ static QFrame *makeSettingsCard(QWidget *parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
     return card;
+}
+
+static QVBoxLayout *makeSettingsPage(QScrollArea *scroll)
+{
+    scroll->setObjectName(QStringLiteral("settingsScroll"));
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setAutoFillBackground(false);
+    scroll->viewport()->setAutoFillBackground(false);
+
+    auto *page = new QWidget(scroll);
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(24, 24, 24, 24);
+    layout->setSpacing(12);
+    scroll->setWidget(page);
+    return layout;
 }
 
 SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *parent)
@@ -484,6 +500,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_vocabLimit(new QLabel(this))
     , m_apiKey(new QLineEdit(this))
     , m_scroll(new QScrollArea(this))
+    , m_categories(new QListWidget(this))
+    , m_pages(new QStackedWidget(this))
     , m_preRollMs(new QSpinBox(this))
     , m_postRollMs(new QSpinBox(this))
     , m_readinessTimeoutMs(new QSpinBox(this))
@@ -494,8 +512,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_bindings(new QListWidget(this))
 {
     setWindowTitle(QStringLiteral("Speecher Settings"));
-    resize(720, 780);
-    setMinimumWidth(640);
+    resize(980, 780);
+    setMinimumSize(820, 620);
     m_theme->addItem(QStringLiteral("System"), QStringLiteral("system"));
     m_theme->addItem(QStringLiteral("Light"), QStringLiteral("light"));
     m_theme->addItem(QStringLiteral("Dark"), QStringLiteral("dark"));
@@ -662,20 +680,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_bindings->setMinimumHeight(180);
 
     auto *root = new QVBoxLayout(this);
-    root->setContentsMargins(24, 20, 24, 20);
-    root->setSpacing(12);
-
-    auto *scroll = m_scroll;
-    scroll->setObjectName(QStringLiteral("settingsScroll"));
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setAutoFillBackground(false);
-    scroll->viewport()->setAutoFillBackground(false);
-
-    auto *scrollContent = new QWidget(scroll);
-    auto *content = new QVBoxLayout(scrollContent);
-    content->setContentsMargins(0, 0, 0, 0);
-    content->setSpacing(12);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
 
     auto *generalSection = makeSectionLabel(QStringLiteral("General"), this);
     auto *audioSection = makeSectionLabel(QStringLiteral("Audio"), this);
@@ -957,31 +963,97 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     note->setForegroundRole(QPalette::WindowText);
     note->setAttribute(Qt::WA_StyledBackground, false);
 
-    content->addWidget(generalSection);
-    content->addWidget(generalCard);
-    content->addWidget(audioSection);
-    content->addWidget(audioCard);
-    content->addWidget(outputSection);
-    content->addWidget(outputCard);
-    content->addWidget(refinementSection);
-    content->addWidget(refinementCard);
-    content->addWidget(openAiSection);
-    content->addWidget(openAiCard);
-    content->addWidget(anthropicSection);
-    content->addWidget(anthropicCard);
-    content->addWidget(vocabularySection);
-    content->addWidget(vocabSection);
-    content->addWidget(correctionsSection);
-    content->addWidget(correctionsCard);
-    content->addWidget(bindingsSection);
-    content->addWidget(bindingSection);
-    content->addWidget(note);
-    scroll->setWidget(scrollContent);
-    root->addWidget(scroll, 1);
+    auto *generalPage = new QScrollArea(m_pages);
+    auto *generalPageLayout = makeSettingsPage(generalPage);
+    generalPageLayout->addWidget(generalSection);
+    generalPageLayout->addWidget(generalCard);
+    generalPageLayout->addStretch();
+
+    auto *audioPage = new QScrollArea(m_pages);
+    auto *audioPageLayout = makeSettingsPage(audioPage);
+    audioPageLayout->addWidget(audioSection);
+    audioPageLayout->addWidget(audioCard);
+    audioPageLayout->addStretch();
+
+    auto *outputPage = new QScrollArea(m_pages);
+    auto *outputPageLayout = makeSettingsPage(outputPage);
+    outputPageLayout->addWidget(outputSection);
+    outputPageLayout->addWidget(outputCard);
+    outputPageLayout->addStretch();
+
+    auto *refinementPage = new QScrollArea(m_pages);
+    auto *refinementPageLayout = makeSettingsPage(refinementPage);
+    refinementPageLayout->addWidget(refinementSection);
+    refinementPageLayout->addWidget(refinementCard);
+    refinementPageLayout->addStretch();
+
+    auto *providersPage = new QScrollArea(m_pages);
+    auto *providersPageLayout = makeSettingsPage(providersPage);
+    providersPageLayout->addWidget(openAiSection);
+    providersPageLayout->addWidget(openAiCard);
+    providersPageLayout->addWidget(anthropicSection);
+    providersPageLayout->addWidget(anthropicCard);
+    providersPageLayout->addWidget(note);
+    providersPageLayout->addStretch();
+
+    auto *vocabularyPageLayout = makeSettingsPage(m_scroll);
+    vocabularyPageLayout->addWidget(vocabularySection);
+    vocabularyPageLayout->addWidget(vocabSection);
+    vocabularyPageLayout->addWidget(correctionsSection);
+    vocabularyPageLayout->addWidget(correctionsCard);
+    vocabularyPageLayout->addWidget(bindingsSection);
+    vocabularyPageLayout->addWidget(bindingSection);
+    vocabularyPageLayout->addStretch();
+
+    const QList<QPair<QString, QString>> categories{
+        {QStringLiteral("General"), QStringLiteral("preferences-system")},
+        {QStringLiteral("Audio"), QStringLiteral("audio-input-microphone")},
+        {QStringLiteral("Output"), QStringLiteral("edit-paste")},
+        {QStringLiteral("Refinement"), QStringLiteral("document-edit")},
+        {QStringLiteral("Providers"), QStringLiteral("network-server")},
+        {QStringLiteral("Vocabulary"), QStringLiteral("tools-check-spelling")},
+    };
+    for (const auto &[label, iconName] : categories) {
+        auto *item = new QListWidgetItem(QIcon::fromTheme(iconName), label, m_categories);
+        item->setSizeHint(QSize(176, 44));
+    }
+    m_categories->setObjectName(QStringLiteral("settingsCategories"));
+    m_categories->setFrameShape(QFrame::NoFrame);
+    m_categories->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_categories->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_categories->setFixedWidth(196);
+    m_categories->setIconSize(QSize(18, 18));
+
+    for (QWidget *page : {
+             static_cast<QWidget *>(generalPage),
+             static_cast<QWidget *>(audioPage),
+             static_cast<QWidget *>(outputPage),
+             static_cast<QWidget *>(refinementPage),
+             static_cast<QWidget *>(providersPage),
+             static_cast<QWidget *>(m_scroll),
+         }) {
+        m_pages->addWidget(page);
+    }
+    connect(m_categories, &QListWidget::currentRowChanged, m_pages, &QStackedWidget::setCurrentIndex);
+    m_categories->setCurrentRow(0);
+
+    auto *body = new QWidget(this);
+    auto *bodyLayout = new QHBoxLayout(body);
+    bodyLayout->setContentsMargins(0, 0, 0, 0);
+    bodyLayout->setSpacing(0);
+    bodyLayout->addWidget(m_categories);
+    bodyLayout->addWidget(m_pages, 1);
+    root->addWidget(body, 1);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply, this);
     buttons->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
-    root->addWidget(buttons, 0, Qt::AlignRight);
+    auto *footer = new QFrame(this);
+    footer->setFrameShape(QFrame::NoFrame);
+    auto *footerLayout = new QHBoxLayout(footer);
+    footerLayout->setContentsMargins(16, 12, 16, 12);
+    footerLayout->addStretch();
+    footerLayout->addWidget(buttons);
+    root->addWidget(footer);
 
     generalCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     audioCard->setStyleSheet(QString::fromLatin1(settingsStyle));
@@ -1002,6 +1074,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     correctionsSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     bindingsSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     note->setStyleSheet(QString::fromLatin1(settingsStyle));
+    m_categories->setStyleSheet(QStringLiteral(
+        "QListWidget#settingsCategories{background:palette(window);border-right:1px solid palette(mid);padding:12px 8px;}"
+        "QListWidget#settingsCategories::item{border-radius:6px;padding:7px 10px;}"
+        "QListWidget#settingsCategories::item:selected{background:palette(highlight);color:palette(highlighted-text);}"));
 
     if (QPushButton *ok = buttons->button(QDialogButtonBox::Ok)) {
         m_okButton = ok;
