@@ -283,10 +283,13 @@ static PasteMethod pasteMethodFor(const QList<PasteRule> &rules,
     return fallback;
 }
 
-static void addPasteMethods(QComboBox *combo)
+static void addPasteMethods(QComboBox *combo, bool includeDirectInsert = false)
 {
     combo->addItem(QStringLiteral("Standard paste (Ctrl+V)"), pasteMethodName(PasteMethod::StandardPaste));
     combo->addItem(QStringLiteral("Terminal paste (Ctrl+Shift+V)"), pasteMethodName(PasteMethod::TerminalPaste));
+    if (includeDirectInsert) {
+        combo->addItem(QStringLiteral("Direct insertion (AT-SPI)"), pasteMethodName(PasteMethod::DirectInsert));
+    }
     combo->addItem(QStringLiteral("Clipboard only"), pasteMethodName(PasteMethod::ClipboardOnly));
 }
 
@@ -1491,7 +1494,7 @@ void SettingsDialog::addApplicationPasteRule(const PasteRule &rule)
     auto *application = new QTableWidgetItem(rule.match);
     application->setToolTip(QStringLiteral("Use the desktop application ID reported by AT-SPI."));
     auto *method = new QComboBox(m_appPasteRules);
-    addPasteMethods(method);
+    addPasteMethods(method, true);
     selectData(method, pasteMethodName(rule.method));
     connect(method, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
 

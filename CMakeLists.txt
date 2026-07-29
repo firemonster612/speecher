@@ -312,4 +312,9 @@ if(SPEECHER_BUILD_TESTS)
   )
   add_test(NAME speecher_tests COMMAND speecher_tests)
   set_tests_properties(speecher_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+  qt_add_executable(speecher_atspi_fixture
+    tests/atspi_fixture.cpp
+  )
+  target_link_libraries(speecher_atspi_fixture PRIVATE Qt6::Widgets)
 endif()

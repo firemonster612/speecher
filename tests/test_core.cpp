@@ -144,10 +144,26 @@ public:
         return verified;
     }
 
+    bool canInsertText(const Target &) override
+    {
+        return directInsertionAvailable;
+    }
+
+    bool insertText(const Target &, const QString &text, QString *) override
+    {
+        ++insertCalls;
+        insertedText = text;
+        return inserted;
+    }
+
     Target target;
     int captureCalls = 0;
+    int insertCalls = 0;
     bool focused = true;
     bool verified = false;
+    bool directInsertionAvailable = false;
+    bool inserted = false;
+    QString insertedText;
 };
 
 class FakeSpeechTranscriber final : public SpeechTranscriber {
@@ -918,11 +934,12 @@ private slots:
         settings.raw().setValue(QStringLiteral("output/format"), QStringLiteral("unsupported"));
         QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
         settings.setPasteRules({
-            {PasteRuleScope::Application, QStringLiteral("org.kde.kate"), PasteMethod::ClipboardOnly, true},
+            {PasteRuleScope::Application, QStringLiteral("org.kde.kate"), PasteMethod::DirectInsert, true},
             {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
         });
         QCOMPARE(settings.pasteRules().size(), 2);
         QCOMPARE(settings.pasteRules().first().match, QStringLiteral("org.kde.kate"));
+        QCOMPARE(settings.pasteRules().first().method, PasteMethod::DirectInsert);
 
         settings.setAudioCaptureSettings({
             QStringLiteral(" mic-id "),
@@ -1184,6 +1201,29 @@ private slots:
             QVERIFY(target.nearbyTextBefore.isEmpty());
             QVERIFY(target.nearbyTextAfter.isEmpty());
         }
+    }
+
+    void liveAtSpiDirectInsertionIntoSavedUnfocusedControl()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI_EDIT") != QStringLiteral("1")) {
+            QSKIP("Live Plasma AT-SPI direct-edit check is opt-in");
+        }
+
+        AtSpiTargetProvider provider;
+        const Target target = provider.capture();
+        QVERIFY2(target.hasIdentity(), "No focused external AT-SPI target was found");
+        QVERIFY2(target.role.contains(QStringLiteral("text"), Qt::CaseInsensitive),
+                 qPrintable(QStringLiteral("Unexpected focused target: %1 / %2 / %3")
+                                .arg(target.applicationName, target.processName, target.role)));
+        QVERIFY2(provider.canInsertText(target), "The focused external target is not directly editable");
+
+        qInfo().noquote() << "captured external edit target; change focus now";
+        QTest::qWait(2500);
+        QVERIFY(!provider.stillFocused(target));
+
+        QString error;
+        QVERIFY2(provider.insertText(target, QStringLiteral("inserted"), &error), qPrintable(error));
+        QVERIFY(provider.verifyInsertion(target, QStringLiteral("inserted")));
     }
 
     void singleInstanceIpcDoesNotStealLiveSocket()
@@ -1499,6 +1539,79 @@ private slots:
 
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
         QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::WlCopy)}));
+    }
+
+    void outputUsesSavedAccessibleTargetAfterFocusChanges()
+    {
+        QList<QString> attempts;
+        QHash<QString, bool> results;
+        FakeTargetProvider targetProvider;
+        targetProvider.focused = false;
+        targetProvider.directInsertionAvailable = true;
+        targetProvider.inserted = true;
+        targetProvider.verified = true;
+        TextDelivery delivery([&attempts, &results](
+                                  const QString &method,
+                                  const OutputSettings &,
+                                  PasteMethod) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        }, &targetProvider);
+
+        OutputSettings settings;
+        settings.pasteRules = {
+            {PasteRuleScope::Application,
+             QStringLiteral("org.kde.kate"),
+             PasteMethod::DirectInsert,
+             true},
+            {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
+        };
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
+        target.category = AppCategory::CodeEditor;
+        const DeliveryResult result = delivery.deliver(
+            settings,
+            makeDeliveryContent(QStringLiteral("insert me"), OutputFormat::PlainText),
+            target);
+
+        QCOMPARE(result.receipt, DeliveryReceipt::VerifiedInTarget);
+        QCOMPARE(targetProvider.insertCalls, 1);
+        QCOMPARE(targetProvider.insertedText, QStringLiteral("insert me"));
+        QVERIFY(attempts.isEmpty());
+    }
+
+    void outputKeepsCopiedTextWhenAccessibleTargetRejectsInsertion()
+    {
+        QList<QString> attempts;
+        QHash<QString, bool> results;
+        FakeTargetProvider targetProvider;
+        targetProvider.focused = false;
+        targetProvider.directInsertionAvailable = true;
+        targetProvider.inserted = false;
+        TextDelivery delivery([&attempts, &results](
+                                  const QString &method,
+                                  const OutputSettings &,
+                                  PasteMethod) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        }, &targetProvider);
+
+        OutputSettings settings;
+        settings.pasteRules = {
+            {PasteRuleScope::Application,
+             QStringLiteral("org.kde.kate"),
+             PasteMethod::DirectInsert,
+             true},
+            {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
+        };
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
+        const DeliveryResult result = delivery.deliver(
+            settings,
+            makeDeliveryContent(QStringLiteral("keep copied"), OutputFormat::PlainText),
+            target);
+
+        QCOMPARE(result.receipt, DeliveryReceipt::Copied);
+        QCOMPARE(targetProvider.insertCalls, 1);
+        QVERIFY(attempts.isEmpty());
     }
 
     void outputRestoresClipboardOnlyAfterVerifiedInsertion()
