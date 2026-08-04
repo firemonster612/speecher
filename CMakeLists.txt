@@ -77,11 +77,13 @@ set(SPEECHER_DOMAIN_HEADERS
 
 set(SPEECHER_WORKFLOW_SOURCES
   src/dictation/DictationSession.cpp
+  src/dictation/StartupPreparationRunner.cpp
   src/dictation/TranscriptPipeline.cpp
 )
 
 set(SPEECHER_WORKFLOW_HEADERS
   src/dictation/DictationSession.h
+  src/dictation/StartupPreparationRunner.h
   src/dictation/TranscriptPipeline.h
 )
 
