@@ -1,8 +1,8 @@
 #pragma once
 
-#include "core/BindingProcessor.h"
 #include "dictation/DictationInterfaces.h"
 #include "dictation/DictationTypes.h"
+#include "dictation/TranscriptPipeline.h"
 
 #include <QMetaObject>
 #include <QVector>
@@ -103,10 +103,7 @@ private:
     DictationState m_state = DictationState::Idle;
     QString m_lastMessage;
     QString m_refinedText;
-    BindingProcessingResult m_bindingResult;
-    QList<BindingRule> m_activeBindingRules;
-    QStringList m_noBindPhrases;
-    bool m_allowPostRefinementBindings = true;
+    TranscriptPipelineResult m_transcriptPipeline;
     quint64 m_generation = 0;
     quint64 m_attemptId = 0;
     std::optional<AppSettings> m_sessionSettings;
