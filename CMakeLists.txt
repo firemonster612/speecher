@@ -37,6 +37,8 @@ endif()
 
 set(SPEECHER_DOMAIN_SOURCES
   src/core/BindingProcessor.cpp
+  src/core/bindings/BindingMatcher.cpp
+  src/core/bindings/NoBindDirectiveParser.cpp
   src/core/CliToolDiscovery.cpp
   src/core/LearnedCorrection.cpp
   src/core/OutputMethod.cpp
@@ -57,6 +59,8 @@ set(SPEECHER_DOMAIN_SOURCES
 set(SPEECHER_DOMAIN_HEADERS
   src/core/AppSettings.h
   src/core/BindingProcessor.h
+  src/core/bindings/BindingMatcher.h
+  src/core/bindings/NoBindDirectiveParser.h
   src/core/CliToolDiscovery.h
   src/core/LearnedCorrection.h
   src/core/OutputMethod.h
