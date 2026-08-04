@@ -1,0 +1,189 @@
+#include "common/test_doubles.h"
+#include "common/test_http.h"
+#include "common/test_auth.h"
+
+using namespace speecher::test;
+
+
+class UiTests : public QObject {
+    Q_OBJECT
+
+private slots:
+    void initTestCase()
+    {
+        QStandardPaths::setTestModeEnabled(true);
+    }
+
+    void wordPreview()
+    {
+        QCOMPARE(WordPreview::lastWords(QStringLiteral(" one  two, three\nfour "), 2), QStringLiteral("three four"));
+        QCOMPARE(WordPreview::lastWords(QStringLiteral("short"), 8), QStringLiteral("short"));
+        QCOMPARE(WordPreview::lastWords(QString(), 8), QString());
+        QCOMPARE(WordPreview::lastWords(QStringLiteral("alpha beta gamma"), 1), QStringLiteral("gamma"));
+        QCOMPARE(WordPreview::lastWords(QStringLiteral("alpha beta gamma"), 0), QString());
+    }
+
+    void systemThemePreservesTheDesktopPalette()
+    {
+        const QPalette original = qApp->palette();
+        QPalette desktop = original;
+        const QColor desktopBase(34, 34, 51);
+        desktop.setColor(QPalette::Base, desktopBase);
+        qApp->setPalette(desktop);
+
+        Theme::apply(QStringLiteral("system"));
+        QCOMPARE(qApp->palette().color(QPalette::Base), desktopBase);
+
+        Theme::apply(QStringLiteral("dark"));
+        QVERIFY(qApp->palette().color(QPalette::Base) != desktopBase);
+        Theme::apply(QStringLiteral("system"));
+        QCOMPARE(qApp->palette().color(QPalette::Base), desktopBase);
+
+        qApp->setPalette(original);
+    }
+
+    void settingsDialogUsesKdePageWidgetOnPlasma()
+    {
+#ifdef SPEECHER_WITH_KPAGEWIDGET
+        const QByteArray previousDesktop = qgetenv("XDG_CURRENT_DESKTOP");
+        qputenv("XDG_CURRENT_DESKTOP", "KDE");
+        const auto restoreDesktop = qScopeGuard([previousDesktop] {
+            if (previousDesktop.isNull()) {
+                qunsetenv("XDG_CURRENT_DESKTOP");
+            } else {
+                qputenv("XDG_CURRENT_DESKTOP", previousDesktop);
+            }
+        });
+
+        ApplicationController controller(true);
+        SettingsDialog dialog(&controller);
+        auto *pages = dialog.findChild<KPageWidget *>(QStringLiteral("settingsPages"));
+        QVERIFY(pages);
+        QCOMPARE(pages->faceType(), KPageView::FlatList);
+        QCOMPARE(pages->model()->rowCount(), 6);
+        auto *resizeHandle = pages->findChild<QWidget *>(
+            QStringLiteral("settingsSidebarResizeHandle"));
+        QVERIFY(resizeHandle);
+        QCOMPARE(resizeHandle->cursor().shape(), Qt::SplitHCursor);
+        dialog.resize(1200, 780);
+        dialog.show();
+        QCoreApplication::processEvents();
+        auto *searchContainer = pages->findChild<QWidget *>(
+            QStringLiteral("KPageView::Search"));
+        QVERIFY(searchContainer);
+        auto *headerSeparator = pages->findChild<QWidget *>(
+            QStringLiteral("settingsHeaderSeparator"));
+        QVERIFY(headerSeparator);
+        QCOMPARE(headerSeparator->height(), 1);
+        QCOMPARE(headerSeparator->width(), pages->width());
+        auto *navigationView = pages->findChild<QAbstractItemView *>(
+            QString(),
+            Qt::FindDirectChildrenOnly);
+        QVERIFY(navigationView);
+        QImage separatorImage(resizeHandle->size(), QImage::Format_ARGB32_Premultiplied);
+        separatorImage.fill(Qt::transparent);
+        resizeHandle->render(
+            &separatorImage,
+            QPoint(),
+            QRegion(),
+            QWidget::DrawChildren);
+        const int separatorX = resizeHandle->width() / 2;
+        QVector<QPair<int, int>> paintedRuns;
+        int runStart = -1;
+        for (int y = 0; y < separatorImage.height(); ++y) {
+            const bool painted = separatorImage.pixelColor(separatorX, y).alpha() > 0;
+            if (painted && runStart < 0) {
+                runStart = y;
+            } else if (!painted && runStart >= 0) {
+                paintedRuns.append({runStart, y - 1});
+                runStart = -1;
+            }
+        }
+        if (runStart >= 0) {
+            paintedRuns.append({runStart, separatorImage.height() - 1});
+        }
+        QCOMPARE(paintedRuns.size(), 2);
+        QVERIFY(paintedRuns.first().first > 0);
+        QVERIFY(paintedRuns.first().second
+                < searchContainer->geometry().bottom());
+        QVERIFY(paintedRuns.last().first
+                <= searchContainer->geometry().bottom() + 1);
+        QCOMPARE(paintedRuns.last().second, separatorImage.height() - 1);
+        const int initialSidebarWidth = searchContainer->width();
+        const int initialNavigationWidth = navigationView->width();
+        const QPointF localPosition = resizeHandle->rect().center();
+        const QPointF globalPosition = resizeHandle->mapToGlobal(
+            localPosition.toPoint());
+        QMouseEvent press(QEvent::MouseButtonPress,
+                          localPosition,
+                          globalPosition,
+                          Qt::LeftButton,
+                          Qt::LeftButton,
+                          Qt::NoModifier);
+        QCoreApplication::sendEvent(resizeHandle, &press);
+        QMouseEvent move(QEvent::MouseMove,
+                         localPosition,
+                         globalPosition + QPointF(60, 0),
+                         Qt::NoButton,
+                         Qt::LeftButton,
+                         Qt::NoModifier);
+        QCoreApplication::sendEvent(resizeHandle, &move);
+        QVERIFY(searchContainer->width() > initialSidebarWidth);
+        QVERIFY(navigationView->width() > initialNavigationWidth);
+        QCOMPARE(navigationView->width(), searchContainer->width());
+        QVERIFY(dialog.findChildren<QComboBox *>(
+                          QString(),
+                          Qt::FindDirectChildrenOnly)
+                    .isEmpty());
+#else
+        QSKIP("KPageWidget is not available in this build");
+#endif
+    }
+
+    void settingsDialogUsesPlatformStyledSidebarOutsidePlasma()
+    {
+        const QByteArray previousDesktop = qgetenv("XDG_CURRENT_DESKTOP");
+        qputenv("XDG_CURRENT_DESKTOP", "GNOME");
+        const auto restoreDesktop = qScopeGuard([previousDesktop] {
+            if (previousDesktop.isNull()) {
+                qunsetenv("XDG_CURRENT_DESKTOP");
+            } else {
+                qputenv("XDG_CURRENT_DESKTOP", previousDesktop);
+            }
+        });
+
+        ApplicationController controller(true);
+        SettingsDialog dialog(&controller);
+        auto *categories = dialog.findChild<QListWidget *>(
+            QStringLiteral("settingsCategories"));
+        QVERIFY(categories);
+        QCOMPARE(categories->count(), 6);
+        QVERIFY(categories->styleSheet().isEmpty());
+        QVERIFY(!dialog.findChild<QWidget *>(
+            QStringLiteral("settingsSidebarResizeHandle")));
+#ifdef SPEECHER_WITH_KPAGEWIDGET
+        QVERIFY(!dialog.findChild<KPageWidget *>(QStringLiteral("settingsPages")));
+#endif
+    }
+
+    void settingsDialogLeavesControlsToThePlatformStyle()
+    {
+        ApplicationController controller(true);
+        SettingsDialog dialog(&controller);
+        for (QWidget *widget : dialog.findChildren<QWidget *>()) {
+            QVERIFY2(widget->styleSheet().isEmpty(),
+                     qPrintable(QStringLiteral("%1 has an application stylesheet")
+                                    .arg(widget->objectName().isEmpty()
+                                             ? QString::fromLatin1(widget->metaObject()->className())
+                                             : widget->objectName())));
+        }
+    }
+};
+
+int runUiTests(int argc, char **argv)
+{
+    UiTests tests;
+    return runTestSuite(&tests, argc, argv);
+}
+
+#include "test_ui.moc"
