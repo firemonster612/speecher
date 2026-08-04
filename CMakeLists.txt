@@ -45,6 +45,9 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/OutputFormat.cpp
   src/core/PasteRules.cpp
   src/core/SettingsStore.cpp
+  src/core/settings/CorrectionSettingsCodec.cpp
+  src/core/settings/SettingsCodecs.cpp
+  src/core/settings/VocabularySettingsCodec.cpp
   src/core/SecretStore.cpp
   src/core/TranscriptState.cpp
   src/core/Target.cpp
@@ -67,6 +70,10 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/OutputFormat.h
   src/core/PasteRules.h
   src/core/SettingsStore.h
+  src/core/settings/CorrectionSettingsCodec.h
+  src/core/settings/SettingsCodecs.h
+  src/core/settings/SettingsKeys.h
+  src/core/settings/VocabularySettingsCodec.h
   src/core/SecretStore.h
   src/core/TranscriptState.h
   src/core/Target.h
