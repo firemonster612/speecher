@@ -17,8 +17,18 @@ struct BindingRule {
     bool operator==(const BindingRule &other) const = default;
 };
 
+struct VocabularyEntry {
+    QString term;
+    QString source = QStringLiteral("manual");
+    bool starred = false;
+    int frequency = 0;
+    qint64 lastUsedMs = 0;
+
+    bool operator==(const VocabularyEntry &other) const = default;
+};
+
 struct UiSettings {
-    int previewWords = 8;
+    int previewWords = 7;
     QString theme = QStringLiteral("system");
     bool pauseMediaDuringTranscription = true;
     bool soundsEnabled = false;
@@ -26,6 +36,7 @@ struct UiSettings {
 
 struct SpeechSettings {
     QString providerId = QStringLiteral("claude");
+    QString language = QStringLiteral("en");
     QStringList vocabulary;
     QString claudeCredentialsPath;
     QString claudeEndpointBase;
@@ -51,12 +62,15 @@ struct RefinementSettings {
     QString openAiAuthMode = QStringLiteral("auto");
     QString openAiEffort = QStringLiteral("none");
     QString anthropicModel = QStringLiteral("claude-sonnet-4-6");
-    QString anthropicAuthMode = QStringLiteral("claude_code");
+    QString anthropicAuthMode = QStringLiteral("oauth");
     QString anthropicEffort = QStringLiteral("low");
     QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     QString claudeCredentialsPath;
     QStringList bindingVocabulary;
-    QString defaultWritingProfile = QStringLiteral("general");
+    QString defaultWritingProfile = QStringLiteral("other");
+    QList<WritingProfileSettings> writingProfiles = defaultWritingProfileSettings();
+    QList<WritingProfileOverride> writingProfileOverrides;
+    QString tone = QStringLiteral("none");
     bool useTargetContext = true;
     bool includeScreenshotContext = false;
 };

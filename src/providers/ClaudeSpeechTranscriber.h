@@ -25,6 +25,7 @@ public:
     void cancelAttempt(quint64 attemptId) override;
 
 private:
+    void createClient(quint64 attemptId, const SpeechSettings &settings);
     QUrl voiceUrl(const SpeechSettings &settings) const;
 
     ClaudeVoiceClient *m_client = nullptr;

@@ -52,30 +52,57 @@ AppCategory appCategoryFromName(const QString &name)
 QString writingProfileName(WritingProfile profile)
 {
     switch (profile) {
+    case WritingProfile::Work:
+        return QStringLiteral("work");
     case WritingProfile::Email:
         return QStringLiteral("email");
-    case WritingProfile::Technical:
-        return QStringLiteral("technical");
     case WritingProfile::Personal:
         return QStringLiteral("personal");
-    case WritingProfile::General:
-        return QStringLiteral("general");
+    case WritingProfile::Other:
+        return QStringLiteral("other");
     }
-    return QStringLiteral("general");
+    return QStringLiteral("other");
 }
 
 WritingProfile writingProfileFromName(const QString &name)
 {
-    if (name == QStringLiteral("email")) {
+    const QString normalized = name.trimmed().toLower();
+    if (normalized == QStringLiteral("work") || normalized == QStringLiteral("technical")) {
+        return WritingProfile::Work;
+    }
+    if (normalized == QStringLiteral("email")) {
         return WritingProfile::Email;
     }
-    if (name == QStringLiteral("technical")) {
-        return WritingProfile::Technical;
-    }
-    if (name == QStringLiteral("personal")) {
+    if (normalized == QStringLiteral("personal")) {
         return WritingProfile::Personal;
     }
-    return WritingProfile::General;
+    return WritingProfile::Other;
+}
+
+QList<WritingProfileSettings> defaultWritingProfileSettings()
+{
+    return {
+        {WritingProfile::Work, QStringLiteral("balanced"), QStringLiteral("none")},
+        {WritingProfile::Email, QStringLiteral("balanced"), QStringLiteral("none")},
+        {WritingProfile::Personal, QStringLiteral("balanced"), QStringLiteral("none")},
+        {WritingProfile::Other, QStringLiteral("balanced"), QStringLiteral("none")},
+    };
+}
+
+WritingProfileSettings writingProfileSettingsFor(const QList<WritingProfileSettings> &settings,
+                                                  WritingProfile profile)
+{
+    for (const WritingProfileSettings &candidate : settings) {
+        if (candidate.profile == profile) {
+            return candidate;
+        }
+    }
+    for (const WritingProfileSettings &candidate : defaultWritingProfileSettings()) {
+        if (candidate.profile == profile) {
+            return candidate;
+        }
+    }
+    return {};
 }
 
 bool Target::hasIdentity() const
@@ -125,19 +152,54 @@ AppCategory classifyTarget(const Target &target)
 
 WritingProfile inferWritingProfile(const Target &target, WritingProfile fallback)
 {
+    const QString identity = QStringList{
+        target.applicationId,
+        target.applicationName,
+        target.processName,
+        target.windowTitle,
+    }.join(QLatin1Char(' ')).toLower();
+    if (identity.contains(QStringLiteral("signal"))
+        || identity.contains(QStringLiteral("discord"))
+        || identity.contains(QStringLiteral("telegram"))
+        || identity.contains(QStringLiteral("whatsapp"))
+        || identity.contains(QStringLiteral("messenger"))
+        || identity.contains(QStringLiteral("element"))) {
+        return WritingProfile::Personal;
+    }
+    if (identity.contains(QStringLiteral("slack"))
+        || identity.contains(QStringLiteral("microsoft teams"))
+        || identity.contains(QStringLiteral("linear"))
+        || identity.contains(QStringLiteral("notion"))) {
+        return WritingProfile::Work;
+    }
+
     switch (target.category) {
     case AppCategory::Email:
         return WritingProfile::Email;
     case AppCategory::CodeEditor:
     case AppCategory::Terminal:
-        return WritingProfile::Technical;
+    case AppCategory::Office:
+        return WritingProfile::Work;
     case AppCategory::Unknown:
     case AppCategory::General:
     case AppCategory::Browser:
-    case AppCategory::Office:
         return fallback;
     }
     return fallback;
+}
+
+WritingProfile resolveWritingProfile(const Target &target,
+                                     const QList<WritingProfileOverride> &overrides,
+                                     WritingProfile fallback)
+{
+    for (const WritingProfileOverride &override : overrides) {
+        if (override.enabled
+            && !override.applicationId.trimmed().isEmpty()
+            && override.applicationId.compare(target.applicationId, Qt::CaseInsensitive) == 0) {
+            return override.profile;
+        }
+    }
+    return inferWritingProfile(target, fallback);
 }
 
 } // namespace speecher

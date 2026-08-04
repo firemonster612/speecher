@@ -15,6 +15,23 @@
 namespace speecher {
 
 QUrlQuery claudeVoiceStreamQuery(const QStringList &vocabulary);
+QByteArray claudeVoiceKeytermsHeader(const QStringList &vocabulary);
+
+enum class ClaudeVoiceEventKind {
+    Unknown,
+    Working,
+    Endpoint,
+    TranscriptError,
+    Error,
+};
+
+struct ClaudeVoiceEvent {
+    ClaudeVoiceEventKind kind = ClaudeVoiceEventKind::Unknown;
+    QString data;
+    QString errorSummary;
+};
+
+ClaudeVoiceEvent parseClaudeVoiceEvent(const QString &message);
 
 class ClaudeVoiceClient : public QObject {
     Q_OBJECT
@@ -34,7 +51,7 @@ signals:
     void completed();
     void connected();
     void closed();
-    void failed(const QString &message, bool retryable);
+    void failed(const QString &message, bool retryable, const QString &phase);
     void debugSchema(const QString &message);
 
 private:
@@ -42,6 +59,8 @@ private:
     void queueAudio(const QByteArray &pcm);
     void flushPendingAudio();
     void clearPendingAudio();
+    void requestFinalization();
+    void fail(const QString &message, bool retryable, const QString &phase);
     void handleTextMessage(const QString &message);
 
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
@@ -51,6 +70,7 @@ private:
     QList<QByteArray> m_pendingAudio;
     QString m_lastInterim;
     qsizetype m_pendingAudioBytes = 0;
+    bool m_finishRequested = false;
     bool m_finalizing = false;
     bool m_completed = false;
     bool m_cancelled = false;

@@ -9,6 +9,7 @@
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/MainWindow.h"
+#include "ui/SettingsDialog.h"
 #include "ui/TranscriberPopup.h"
 
 #include <QApplication>
@@ -120,6 +121,17 @@ void ApplicationController::showMainWindow()
     m_mainWindow->activateWindow();
 }
 
+void ApplicationController::showSettingsWindow()
+{
+    if (!m_settingsDialog) {
+        m_settingsDialog = new SettingsDialog(this);
+        m_settingsDialog->setAttribute(Qt::WA_DeleteOnClose);
+    }
+    m_settingsDialog->show();
+    m_settingsDialog->raise();
+    m_settingsDialog->activateWindow();
+}
+
 void ApplicationController::toggle()
 {
     m_session->toggle();
@@ -138,6 +150,11 @@ void ApplicationController::stopListening()
 void ApplicationController::showMain()
 {
     showMainWindow();
+}
+
+void ApplicationController::showSettings()
+{
+    showSettingsWindow();
 }
 
 void ApplicationController::handleIpcCommand(const QString &command,
@@ -161,6 +178,9 @@ void ApplicationController::handleIpcCommand(const QString &command,
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("showMain")) {
         showMain();
+        SingleInstanceIpc::writeResponse(socket, response());
+    } else if (command == QStringLiteral("showSettings")) {
+        showSettings();
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("status")) {
         SingleInstanceIpc::writeResponse(socket, response());
@@ -194,6 +214,8 @@ void ApplicationController::wireSessionToPopup()
     connect(m_session, &DictationSession::popupOAuthRefreshRequested, m_popup, &TranscriberPopup::showOAuthRefreshIndicator);
     connect(m_session, &DictationSession::popupListeningIndicatorRequested, m_popup, &TranscriberPopup::showListeningIndicator);
     connect(m_session, &DictationSession::popupMessageRequested, m_popup, &TranscriberPopup::showMessage);
+    connect(m_session, &DictationSession::popupErrorRequested, m_popup, &TranscriberPopup::showErrorMessage);
+    connect(m_popup, &TranscriberPopup::errorDismissed, m_session, &DictationSession::stopListening);
 }
 
 } // namespace speecher

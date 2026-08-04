@@ -61,6 +61,7 @@ signals:
     void popupOAuthRefreshRequested();
     void popupListeningIndicatorRequested();
     void popupMessageRequested(const QString &message);
+    void popupErrorRequested(const QString &message);
 
 private:
     struct StartupPreparation;
@@ -77,10 +78,8 @@ private:
     void continueStartupAfterPreparation(quint64 generation, const AppSettings &settings);
     void failStartup(quint64 generation, const QString &message);
     void beginRefinement(quint64 generation);
-    void retrySpeechAttempt();
     void handleSpeechFailure(const SpeechFailure &failure);
     void deliverFinal(const QString &text);
-    void discardSessionAudio();
     void clearScreenshotContext();
     void resumePausedMedia();
     bool selectSpeechTranscriber(const QString &providerId, QString *error);
@@ -89,7 +88,6 @@ private:
     void connectTranscriptRefiner(TranscriptRefiner *refiner);
     void toggleSession(std::optional<OutputFormat> format);
     void startSession(std::optional<OutputFormat> format);
-
     SettingsStore *m_settings = nullptr;
     AudioInput *m_audio = nullptr;
     MediaController *m_mediaController = nullptr;
@@ -111,13 +109,12 @@ private:
     bool m_allowPostRefinementBindings = true;
     quint64 m_generation = 0;
     quint64 m_attemptId = 0;
-    QList<QByteArray> m_capturedAudio;
     std::optional<AppSettings> m_sessionSettings;
     Target m_target;
     QByteArray m_screenshotData;
     QString m_screenshotMediaType;
     quint64 m_screenshotCaptureGeneration = 0;
-    bool m_retryUsed = false;
+    bool m_heardSpeech = false;
     std::shared_ptr<StartupPreparation> m_startupPreparation;
 };
 

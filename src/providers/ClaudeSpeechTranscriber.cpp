@@ -71,6 +71,12 @@ SpeechPrepareResult ClaudeSpeechTranscriber::prepare(const SpeechSettings &setti
 
 void ClaudeSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettings &settings)
 {
+    createClient(attemptId, settings);
+}
+
+void ClaudeSpeechTranscriber::createClient(quint64 attemptId,
+                                           const SpeechSettings &settings)
+{
     if (m_client) {
         m_client->cancel();
         m_client->deleteLater();
@@ -93,9 +99,9 @@ void ClaudeSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettin
             emit attemptCompleted(attemptId);
         }
     });
-    connect(client, &ClaudeVoiceClient::failed, this, [this, client, attemptId](const QString &message, bool retryable) {
+    connect(client, &ClaudeVoiceClient::failed, this, [this, client, attemptId](const QString &message, bool retryable, const QString &phase) {
         if (m_client == client && m_attemptId == attemptId) {
-            emit failed({attemptId, message, retryable});
+            emit failed({attemptId, message, retryable, phase});
         }
     });
     m_client->start(voiceUrl(settings), m_accessToken, settings.vocabulary);

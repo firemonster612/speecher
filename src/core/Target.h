@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QList>
 #include <QString>
 
 namespace speecher {
@@ -16,10 +17,10 @@ enum class AppCategory {
 };
 
 enum class WritingProfile {
-    General,
+    Work,
     Email,
-    Technical,
     Personal,
+    Other,
 };
 
 QString appCategoryName(AppCategory category);
@@ -27,10 +28,32 @@ AppCategory appCategoryFromName(const QString &name);
 QString writingProfileName(WritingProfile profile);
 WritingProfile writingProfileFromName(const QString &name);
 
+struct WritingProfileOverride {
+    QString applicationId;
+    WritingProfile profile = WritingProfile::Other;
+    bool enabled = true;
+
+    bool operator==(const WritingProfileOverride &other) const = default;
+};
+
+struct WritingProfileSettings {
+    WritingProfile profile = WritingProfile::Other;
+    QString cleanupStrength = QStringLiteral("balanced");
+    QString tone = QStringLiteral("none");
+
+    bool operator==(const WritingProfileSettings &other) const = default;
+};
+
+QList<WritingProfileSettings> defaultWritingProfileSettings();
+WritingProfileSettings writingProfileSettingsFor(const QList<WritingProfileSettings> &settings,
+                                                  WritingProfile profile);
+
 struct Target {
     QString applicationId;
     QString applicationName;
     QString processName;
+    QString windowTitle;
+    QString documentUrl;
     QString controlName;
     QString role;
     QString toolkit;
@@ -50,11 +73,15 @@ struct Target {
 };
 
 AppCategory classifyTarget(const Target &target);
-WritingProfile inferWritingProfile(const Target &target, WritingProfile fallback = WritingProfile::General);
+WritingProfile inferWritingProfile(const Target &target, WritingProfile fallback = WritingProfile::Other);
+WritingProfile resolveWritingProfile(const Target &target,
+                                     const QList<WritingProfileOverride> &overrides,
+                                     WritingProfile fallback = WritingProfile::Other);
 
 struct RefinementContext {
     Target target;
-    WritingProfile writingProfile = WritingProfile::General;
+    WritingProfile writingProfile = WritingProfile::Other;
+    QString tone = QStringLiteral("none");
     bool includeNearbyText = true;
     QByteArray screenshotData;
     QString screenshotMediaType;

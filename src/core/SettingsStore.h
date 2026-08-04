@@ -30,6 +30,9 @@ public:
 
     QStringList customVocabulary() const;
     void setCustomVocabulary(const QStringList &value);
+    QList<VocabularyEntry> vocabularyEntries() const;
+    void setVocabularyEntries(const QList<VocabularyEntry> &entries);
+    void recordVocabularyUsage(const QString &text);
 
     QString audioInputDeviceId() const;
     void setAudioInputDeviceId(const QString &value);
@@ -68,6 +71,10 @@ public:
     void setRefinementStyle(const QString &value);
     QString defaultWritingProfile() const;
     void setDefaultWritingProfile(const QString &value);
+    QList<WritingProfileSettings> writingProfileSettings() const;
+    void setWritingProfileSettings(const QList<WritingProfileSettings> &value);
+    QList<WritingProfileOverride> writingProfileOverrides() const;
+    void setWritingProfileOverrides(const QList<WritingProfileOverride> &value);
     bool useTargetContext() const;
     void setUseTargetContext(bool value);
     bool includeScreenshotContext() const;

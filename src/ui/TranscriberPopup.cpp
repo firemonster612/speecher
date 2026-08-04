@@ -5,11 +5,13 @@
 
 #include <QApplication>
 #include <QColor>
+#include <QEasingCurve>
 #include <QFrame>
-#include <QHBoxLayout>
 #include <QEvent>
-#include <QPainter>
+#include <QFontMetrics>
 #include <QPalette>
+#include <QProgressBar>
+#include <QPropertyAnimation>
 #include <QResizeEvent>
 #include <QVBoxLayout>
 
@@ -34,6 +36,7 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     : QWidget(parent)
     , m_previewPill(new QFrame(this))
     , m_preview(new QLabel(this))
+    , m_errorDismissProgress(new QProgressBar(m_previewPill))
     , m_waveform(new WaveformWidget(this))
     , m_positioner(positioner ? positioner : PlatformFactory::create()->createPopupPositioner(this))
 {
@@ -49,18 +52,38 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     applyTheme();
 
     m_previewPill->setObjectName(QStringLiteral("previewPill"));
-    m_previewPill->setMinimumHeight(48);
-    m_previewPill->setMaximumHeight(92);
+    m_previewPill->setFixedHeight(48);
     m_previewPill->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-    auto *previewLayout = new QHBoxLayout(m_previewPill);
-    previewLayout->setContentsMargins(24, 10, 24, 10);
+    auto *previewLayout = new QVBoxLayout(m_previewPill);
+    previewLayout->setContentsMargins(24, 0, 24, 0);
     previewLayout->setSpacing(0);
 
-    m_preview->setWordWrap(true);
+    m_preview->setWordWrap(false);
     m_preview->setAlignment(Qt::AlignCenter);
     m_preview->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_preview->setText(QStringLiteral("---"));
-    previewLayout->addWidget(m_preview);
+    previewLayout->addWidget(m_preview, 1);
+
+    m_errorDismissProgress->setObjectName(QStringLiteral("errorDismissProgress"));
+    m_errorDismissProgress->setRange(0, 1000);
+    m_errorDismissProgress->setValue(m_errorDismissProgress->maximum());
+    m_errorDismissProgress->setTextVisible(false);
+    m_errorDismissProgress->setFixedHeight(3);
+    m_errorDismissProgress->hide();
+    previewLayout->addWidget(m_errorDismissProgress);
+
+    m_errorDismissAnimation = new QPropertyAnimation(
+        m_errorDismissProgress,
+        QByteArrayLiteral("value"),
+        this);
+    m_errorDismissAnimation->setDuration(5000);
+    m_errorDismissAnimation->setStartValue(m_errorDismissProgress->maximum());
+    m_errorDismissAnimation->setEndValue(m_errorDismissProgress->minimum());
+    m_errorDismissAnimation->setEasingCurve(QEasingCurve::Linear);
+    connect(m_errorDismissAnimation, &QPropertyAnimation::finished, this, [this] {
+        hide();
+        emit errorDismissed();
+    });
 
     m_layout = new QVBoxLayout(this);
     m_layout->setContentsMargins(2, 2, 2, 2);
@@ -85,20 +108,27 @@ void TranscriberPopup::setStatus(const QString &status)
 
 void TranscriberPopup::setPreview(const QString &preview)
 {
+    restoreStandardLayout();
     setRefreshLayout(false);
     m_waveform->setMode(WaveformWidget::Mode::Waveform);
-    const QString raw = preview.trimmed();
-    QString visible = raw.simplified();
-    constexpr qsizetype visibleCharacterLimit = 420;
-    if (visible.size() > visibleCharacterLimit) {
-        visible = QStringLiteral("… ") + visible.right(visibleCharacterLimit);
+    QString visible = preview.simplified();
+    if (!visible.isEmpty()) {
+        const QFontMetrics metrics(m_preview->font());
+        constexpr int maxTextWidth = 520;
+        while (metrics.horizontalAdvance(visible) > maxTextWidth) {
+            const int firstSpace = visible.indexOf(QLatin1Char(' '));
+            if (firstSpace < 0) {
+                visible.clear();
+                break;
+            }
+            visible = visible.mid(firstSpace + 1).trimmed();
+        }
     }
     m_preview->setText(visible.isEmpty() ? QStringLiteral("---") : visible);
-    m_preview->setToolTip(raw);
     m_preview->setVisible(true);
     m_previewPill->setVisible(true);
-    m_preview->setFixedWidth(540);
-    m_previewPill->resize(588, qMin(m_previewPill->sizeHint().height(), 92));
+    m_preview->setMaximumWidth(520);
+    m_previewPill->resize(m_previewPill->sizeHint().width(), 48);
     adjustSize();
     updateWindowMask();
 }
@@ -131,6 +161,7 @@ void TranscriberPopup::setFrozen(bool frozen)
 
 void TranscriberPopup::showOAuthRefreshIndicator()
 {
+    restoreStandardLayout();
     setRefreshLayout(true);
     m_preview->setText(QStringLiteral("Refreshing OAuth token"));
     m_preview->setVisible(true);
@@ -144,6 +175,7 @@ void TranscriberPopup::showOAuthRefreshIndicator()
 
 void TranscriberPopup::showListeningIndicator()
 {
+    restoreStandardLayout();
     setRefreshLayout(false);
     m_waveform->setMode(WaveformWidget::Mode::Waveform);
     adjustSize();
@@ -155,6 +187,32 @@ void TranscriberPopup::showMessage(const QString &message)
     setRefreshLayout(false);
     m_waveform->setMessage(message);
     updateWindowMask();
+}
+
+void TranscriberPopup::showErrorMessage(const QString &message)
+{
+    setRefreshLayout(false);
+    m_errorDismissAnimation->stop();
+    m_waveform->hide();
+    m_preview->setText(message.simplified());
+    m_preview->setWordWrap(true);
+    m_preview->setFixedWidth(520);
+    m_preview->setVisible(true);
+    m_previewPill->setVisible(true);
+    m_errorDismissProgress->setValue(m_errorDismissProgress->maximum());
+    m_errorDismissProgress->show();
+
+    const QFontMetrics metrics(m_preview->font());
+    const int textHeight = metrics.boundingRect(
+                                      QRect(0, 0, m_preview->width(), 1000),
+                                      Qt::AlignCenter | Qt::TextWordWrap,
+                                      m_preview->text())
+                               .height();
+    m_previewPill->setFixedHeight(qMax(48, textHeight + 27));
+    m_previewPill->resize(m_previewPill->sizeHint());
+    adjustSize();
+    updateWindowMask();
+    m_errorDismissAnimation->start();
 }
 
 void TranscriberPopup::showPopup()
@@ -189,12 +247,29 @@ void TranscriberPopup::applyTheme()
     const QColor pill = p.color(QPalette::Base);
     const QString stroke = rgbaString(p.color(QPalette::Mid), 150);
     const QColor text = p.color(QPalette::Text);
+    const QColor accent = p.color(QPalette::Highlight);
     setStyleSheet(QStringLiteral(
                       "#transcriberPopup{background:transparent;}"
                       "QFrame#previewPill{background:%1;border:1px solid %2;border-radius:24px;}"
-                      "QLabel{color:%3;font:14px 'Inter','Noto Sans',sans-serif;}")
-                      .arg(pill.name(QColor::HexRgb), stroke, text.name(QColor::HexRgb)));
+                      "QLabel{color:%3;font:14px 'Inter','Noto Sans',sans-serif;}"
+                      "QProgressBar#errorDismissProgress{border:0;background:transparent;}"
+                      "QProgressBar#errorDismissProgress::chunk{background:%4;border-radius:1px;}")
+                      .arg(pill.name(QColor::HexRgb),
+                           stroke,
+                           text.name(QColor::HexRgb),
+                           accent.name(QColor::HexRgb)));
     m_applyingTheme = false;
+}
+
+void TranscriberPopup::restoreStandardLayout()
+{
+    m_errorDismissAnimation->stop();
+    m_errorDismissProgress->hide();
+    m_waveform->show();
+    m_preview->setWordWrap(false);
+    m_preview->setMinimumWidth(0);
+    m_preview->setMaximumWidth(520);
+    m_previewPill->setFixedHeight(48);
 }
 
 void TranscriberPopup::setRefreshLayout(bool refreshLayout)
