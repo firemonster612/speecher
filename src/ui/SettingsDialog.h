@@ -18,6 +18,7 @@ class QTableWidget;
 namespace speecher {
 
 class ApplicationController;
+class GeneralSettingsPage;
 
 class SettingsDialog : public QDialog {
     Q_OBJECT
@@ -64,11 +65,8 @@ private:
     bool verifyYdotoolTyping();
 
     ApplicationController *m_controller = nullptr;
-    QComboBox *m_theme = nullptr;
     QComboBox *m_audioDevice = nullptr;
     QComboBox *m_captureMode = nullptr;
-    QCheckBox *m_pauseMedia = nullptr;
-    QCheckBox *m_sounds = nullptr;
     QCheckBox *m_vadEnabled = nullptr;
     QComboBox *m_provider = nullptr;
     QComboBox *m_writingProfile = nullptr;
@@ -106,11 +104,9 @@ private:
     QPushButton *m_addVocabularyButton = nullptr;
     QPushButton *m_importVocabularyButton = nullptr;
     QPushButton *m_removeVocabularyButton = nullptr;
-    QPushButton *m_openReleasesButton = nullptr;
     QScrollArea *m_scroll = nullptr;
     QListWidget *m_categories = nullptr;
     QStackedWidget *m_pages = nullptr;
-    QSpinBox *m_previewWords = nullptr;
     QSpinBox *m_preRollMs = nullptr;
     QSpinBox *m_postRollMs = nullptr;
     QSpinBox *m_readinessTimeoutMs = nullptr;
@@ -130,6 +126,7 @@ private:
     QListWidget *m_bindings = nullptr;
     QList<LearnedCorrection> m_removedCorrections;
     QList<BindingRule> m_bindingRules;
+    GeneralSettingsPage *m_generalPage = nullptr;
     bool m_updatingVocabulary = false;
 };
 

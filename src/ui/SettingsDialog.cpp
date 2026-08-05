@@ -13,6 +13,7 @@
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/Theme.h"
+#include "ui/settings/GeneralSettingsPage.h"
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QAbstractItemView>
@@ -299,11 +300,8 @@ static QWidget *makeAnthropicModelControl(QComboBox *model, QLabel *warning, QWi
 SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *parent)
     : QDialog(parent)
     , m_controller(controller)
-    , m_theme(new QComboBox(this))
     , m_audioDevice(new QComboBox(this))
     , m_captureMode(new QComboBox(this))
-    , m_pauseMedia(new QCheckBox(this))
-    , m_sounds(new QCheckBox(this))
     , m_vadEnabled(new QCheckBox(this))
     , m_provider(new QComboBox(this))
     , m_writingProfile(new QComboBox(this))
@@ -327,7 +325,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_vocabLimit(new QLabel(this))
     , m_apiKey(new QLineEdit(this))
     , m_scroll(new QScrollArea(this))
-    , m_previewWords(new QSpinBox(this))
     , m_preRollMs(new QSpinBox(this))
     , m_postRollMs(new QSpinBox(this))
     , m_readinessTimeoutMs(new QSpinBox(this))
@@ -342,11 +339,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     setWindowTitle(QStringLiteral("Speecher Settings"));
     resize(980, 780);
     setMinimumSize(820, 620);
-    m_theme->addItem(QStringLiteral("System"), QStringLiteral("system"));
-    m_theme->addItem(QStringLiteral("Light"), QStringLiteral("light"));
-    m_theme->addItem(QStringLiteral("Dark"), QStringLiteral("dark"));
-    m_pauseMedia->setText(QStringLiteral("Pause"));
-    m_sounds->setText(QStringLiteral("Play sounds"));
     m_audioDevice->setMinimumContentsLength(28);
     m_audioDevice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_audioDevice->setToolTip(QStringLiteral("Microphone Speecher records from."));
@@ -440,8 +432,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_apiKey->setPlaceholderText(QStringLiteral("Enter OpenAI API key"));
     m_authControl->addWidget(m_authStatus);
     m_authControl->addWidget(m_apiKey);
-    m_previewWords->setObjectName(QStringLiteral("previewWords"));
-    m_previewWords->setRange(1, 40);
     for (QSpinBox *spinBox : {m_preRollMs, m_postRollMs}) {
         spinBox->setRange(0, 1500);
         spinBox->setSingleStep(50);
@@ -546,7 +536,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    auto *generalSection = makeSectionLabel(QStringLiteral("General"), this);
     auto *audioSection = makeSectionLabel(QStringLiteral("Audio"), this);
     auto *refinementSection = makeSectionLabel(QStringLiteral("Refinement"), this);
     auto *outputSection = makeSectionLabel(QStringLiteral("Output"), this);
@@ -556,8 +545,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *correctionsSection = makeSectionLabel(QStringLiteral("Learned Corrections"), this);
     auto *bindingsSection = makeSectionLabel(QStringLiteral("Replacements & snippets"), this);
 
-    auto *generalCard = makeSettingsCard(this);
-    auto *generalLayout = qobject_cast<QVBoxLayout *>(generalCard->layout());
     auto *audioCard = makeSettingsCard(this);
     auto *audioLayout = qobject_cast<QVBoxLayout *>(audioCard->layout());
     auto *refinementCard = makeSettingsCard(this);
@@ -569,8 +556,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *anthropicCard = makeSettingsCard(this);
     auto *anthropicLayout = qobject_cast<QVBoxLayout *>(anthropicCard->layout());
 
-    auto *primaryOutput = new QLabel(m_controller->primaryOutputStatus(), this);
-    m_openReleasesButton = new QPushButton(QStringLiteral("Open releases"), this);
     m_ydotoolSetupButton = new QPushButton(QStringLiteral("Set up"), this);
     m_ydotoolStartButton = new QPushButton(QStringLiteral("Start service"), this);
     m_ydotoolDisableButton = new QPushButton(QStringLiteral("Disable in Speecher"), this);
@@ -595,17 +580,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_anthropicInfoButton->setFixedSize(22, 22);
     m_anthropicInfoButton->setToolTip(QStringLiteral("How Anthropic OAuth is used."));
     m_anthropicInfoButton->setAccessibleName(QStringLiteral("Anthropic auth info"));
-    primaryOutput->setObjectName(QStringLiteral("statusText"));
-    for (QLabel *label : {m_authStatus, primaryOutput}) {
-        label->setForegroundRole(QPalette::WindowText);
-    }
-
-    addRow(generalLayout, makeRow(QStringLiteral("Theme"), QStringLiteral("App colors."), m_theme, generalCard), generalCard);
-    addRow(generalLayout, makeRow(QStringLiteral("Pause media"), QStringLiteral("Pause currently playing media while transcribing."), m_pauseMedia, generalCard), generalCard);
-    addRow(generalLayout, makeRow(QStringLiteral("Sound cues"), QStringLiteral("Use the desktop sound for recording start and stop."), m_sounds, generalCard), generalCard);
-    addRow(generalLayout, makeRow(QStringLiteral("Preview words"), QStringLiteral("Trailing words shown in the popup."), m_previewWords, generalCard), generalCard);
-    addRow(generalLayout, makeRow(QStringLiteral("Clipboard output"), QStringLiteral("Current platform clipboard path."), primaryOutput, generalCard), generalCard);
-    addRow(generalLayout, makeRow(QStringLiteral("Updates"), QStringLiteral("Updates are manual; open the GitHub releases page when you want to check."), m_openReleasesButton, generalCard), generalCard, false);
+    m_authStatus->setForegroundRole(QPalette::WindowText);
 
     addRow(audioLayout,
            makeRow(QStringLiteral("Microphone"),
@@ -876,11 +851,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     note->setForegroundRole(QPalette::WindowText);
     note->setAttribute(Qt::WA_StyledBackground, false);
 
-    auto *generalPage = new QScrollArea(this);
-    auto *generalPageLayout = makeSettingsPage(generalPage);
-    generalPageLayout->addWidget(generalSection);
-    generalPageLayout->addWidget(generalCard);
-    generalPageLayout->addStretch();
+    m_generalPage = new GeneralSettingsPage(m_controller->primaryOutputStatus(), this);
 
     auto *audioPage = new QScrollArea(this);
     auto *audioPageLayout = makeSettingsPage(audioPage);
@@ -927,7 +898,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
         {QStringLiteral("Vocabulary"), QStringLiteral("tools-check-spelling")},
     };
     const QList<QWidget *> pages{
-        generalPage,
+        m_generalPage,
         audioPage,
         outputPage,
         refinementPage,
@@ -1004,13 +975,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
             [this](const QString &status) {
                 m_runtimeStatus->setText(QStringLiteral("Dictation: %1").arg(status));
             });
-    connect(m_theme, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
-    connect(m_pauseMedia, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
-    connect(m_sounds, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
-    connect(m_previewWords, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
-    connect(m_openReleasesButton, &QPushButton::clicked, this, [] {
-        QDesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/firemonster612/speecher/releases")));
-    });
+    connect(m_generalPage, &GeneralSettingsPage::changed, this, &SettingsDialog::updateButtonState);
     connect(m_audioDevice, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_captureMode, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_vadEnabled, &QCheckBox::toggled, this, [this] {
@@ -1215,10 +1180,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
 void SettingsDialog::load()
 {
     SettingsStore *settings = m_controller->settings();
-    selectData(m_theme, settings->theme());
-    m_pauseMedia->setChecked(settings->pauseMediaDuringTranscription());
-    m_sounds->setChecked(settings->soundsEnabled());
-    m_previewWords->setValue(settings->previewWords());
+    m_generalPage->load(settings->snapshot());
     const AudioCaptureSettings audio = settings->audioCaptureSettings();
     refreshAudioDeviceList(audio.deviceId);
     selectData(m_captureMode, audio.mode);
@@ -1314,11 +1276,13 @@ bool SettingsDialog::save()
         profileApplicationIds.insert(id);
     }
 
-    settings->setTheme(m_theme->currentData().toString());
+    AppSettings draft = settings->snapshot();
+    m_generalPage->appendToDraft(draft);
+    settings->setTheme(draft.ui.theme);
     Theme::apply(settings->theme());
-    settings->setPauseMediaDuringTranscription(m_pauseMedia->isChecked());
-    settings->setSoundsEnabled(m_sounds->isChecked());
-    settings->setPreviewWords(m_previewWords->value());
+    settings->setPauseMediaDuringTranscription(draft.ui.pauseMediaDuringTranscription);
+    settings->setSoundsEnabled(draft.ui.soundsEnabled);
+    settings->setPreviewWords(draft.ui.previewWords);
     settings->setAudioCaptureSettings({
         m_audioDevice->currentData().toString(),
         m_captureMode->currentData().toString(),
@@ -1380,10 +1344,7 @@ bool SettingsDialog::hasChanges() const
 {
     const SettingsStore *settings = m_controller->settings();
     const AudioCaptureSettings audio = settings->audioCaptureSettings();
-    if (m_theme->currentData().toString() != settings->theme()
-        || m_pauseMedia->isChecked() != settings->pauseMediaDuringTranscription()
-        || m_sounds->isChecked() != settings->soundsEnabled()
-        || m_previewWords->value() != settings->previewWords()
+    if (m_generalPage->hasChanges(settings->snapshot())
         || m_audioDevice->currentData().toString() != audio.deviceId
         || m_captureMode->currentData().toString() != audio.mode
         || m_vadEnabled->isChecked() != audio.vadEnabled
