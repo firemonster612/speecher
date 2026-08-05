@@ -55,8 +55,6 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/Vocabulary.cpp
   src/core/WordPreview.cpp
   src/dictation/DictationTypes.cpp
-  src/output/DeliveryContent.cpp
-  src/providers/ProviderRegistry.cpp
 )
 
 set(SPEECHER_DOMAIN_HEADERS
@@ -80,22 +78,23 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/VocabularyLimit.h
   src/core/Vocabulary.h
   src/core/WordPreview.h
-  src/dictation/DictationInterfaces.h
   src/dictation/DictationTypes.h
-  src/output/DeliveryContent.h
-  src/providers/ProviderRegistry.h
 )
 
 set(SPEECHER_WORKFLOW_SOURCES
   src/dictation/DictationSession.cpp
   src/dictation/StartupPreparationRunner.cpp
   src/dictation/TranscriptPipeline.cpp
+  src/output/DeliveryContent.cpp
+  src/providers/ProviderRegistry.cpp
 )
 
 set(SPEECHER_WORKFLOW_HEADERS
+  src/dictation/DictationPorts.h
   src/dictation/DictationSession.h
   src/dictation/StartupPreparationRunner.h
   src/dictation/TranscriptPipeline.h
+  src/providers/ProviderRegistry.h
 )
 
 set(SPEECHER_PROVIDER_SOURCES
@@ -134,7 +133,6 @@ set(SPEECHER_PLATFORM_SOURCES
   src/output/WlClipboardDelivery.cpp
   src/output/YdotoolDelivery.cpp
   src/output/YdotoolSetup.cpp
-  src/platform/PlatformIntegration.cpp
   src/platform/AtSpiTargetProvider.cpp
   src/platform/atspi/AtSpiAccess.cpp
   src/platform/atspi/AtSpiCorrectionObserver.cpp
@@ -142,13 +140,12 @@ set(SPEECHER_PLATFORM_SOURCES
   src/platform/PortalScreenshotContextProvider.cpp
   src/platform/audio/AudioPcmConverter.cpp
   src/platform/audio/QtAudioInput.cpp
-  src/ui/WaylandLayerShell.cpp
+  src/platform/WaylandLayerShell.cpp
 )
 
 set(SPEECHER_PLATFORM_HEADERS
   src/core/MediaPauseController.h
   src/output/ClipboardDelivery.h
-  src/output/DeliveryResult.h
   src/output/QtClipboardDelivery.h
   src/output/TextDelivery.h
   src/output/WaylandClipboardOwner.h
@@ -156,7 +153,6 @@ set(SPEECHER_PLATFORM_HEADERS
   src/output/WlClipboardDelivery.h
   src/output/YdotoolDelivery.h
   src/output/YdotoolSetup.h
-  src/platform/PlatformIntegration.h
   src/platform/AtSpiTargetProvider.h
   src/platform/atspi/AtSpiAccess.h
   src/platform/atspi/AtSpiCorrectionObserver.h
@@ -164,11 +160,12 @@ set(SPEECHER_PLATFORM_HEADERS
   src/platform/PortalScreenshotContextProvider.h
   src/platform/audio/AudioPcmConverter.h
   src/platform/audio/QtAudioInput.h
-  src/ui/WaylandLayerShell.h
+  src/platform/WaylandLayerShell.h
 )
 
 set(SPEECHER_APP_UI_SOURCES
   src/app/ApplicationController.cpp
+  src/app/LinuxComposition.cpp
   src/app/SingleInstanceIpc.cpp
   src/ui/MainWindow.cpp
   src/ui/SettingsDialog.cpp
@@ -188,8 +185,10 @@ set(SPEECHER_APP_UI_SOURCES
 
 set(SPEECHER_APP_UI_HEADERS
   src/app/ApplicationController.h
+  src/app/LinuxComposition.h
   src/app/SingleInstanceIpc.h
   src/ui/MainWindow.h
+  src/ui/PopupPositioner.h
   src/ui/SettingsDialog.h
   src/ui/settings/AudioSettingsPage.h
   src/ui/settings/BindingsSettingsPage.h
@@ -224,14 +223,14 @@ add_library(speecher_providers STATIC
   ${SPEECHER_PROVIDER_HEADERS}
 )
 target_include_directories(speecher_providers PUBLIC src)
-target_link_libraries(speecher_providers PUBLIC speecher_domain Qt6::Network)
+target_link_libraries(speecher_providers PUBLIC speecher_workflow Qt6::Network)
 
 add_library(speecher_platform STATIC
   ${SPEECHER_PLATFORM_SOURCES}
   ${SPEECHER_PLATFORM_HEADERS}
 )
 target_include_directories(speecher_platform PUBLIC src)
-target_link_libraries(speecher_platform PUBLIC speecher_domain Qt6::Widgets Qt6::Multimedia Qt6::DBus)
+target_link_libraries(speecher_platform PUBLIC speecher_workflow Qt6::Widgets Qt6::Multimedia Qt6::DBus)
 if(ATSPI_FOUND)
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_ATSPI=1)
   target_link_libraries(speecher_platform PUBLIC PkgConfig::ATSPI)

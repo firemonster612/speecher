@@ -1,6 +1,6 @@
 #include "output/QtClipboardDelivery.h"
 
-#include "output/DeliveryContent.h"
+#include "dictation/DictationPorts.h"
 
 #include <QApplication>
 #include <QClipboard>

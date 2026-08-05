@@ -1,6 +1,6 @@
 #include "output/ClipboardDelivery.h"
 
-#include "output/DeliveryContent.h"
+#include "dictation/DictationPorts.h"
 namespace speecher {
 
 ClipboardDelivery::ClipboardDelivery(QObject *parent)

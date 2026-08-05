@@ -1,6 +1,6 @@
 #include "output/WlClipboardDelivery.h"
 
-#include "output/DeliveryContent.h"
+#include "dictation/DictationPorts.h"
 #include "output/WaylandClipboardOwner.h"
 #include "output/WaylandClipboardProcess.h"
 

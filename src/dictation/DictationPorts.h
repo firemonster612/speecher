@@ -1,17 +1,39 @@
 #pragma once
 
 #include "core/AppSettings.h"
+#include "core/OutputFormat.h"
 #include "core/Target.h"
-#include "output/DeliveryContent.h"
-#include "output/DeliveryResult.h"
 
 #include <functional>
-#include <QObject>
-#include <QList>
-#include <QStringList>
 #include <optional>
 
+#include <QList>
+#include <QObject>
+#include <QStringList>
+
 namespace speecher {
+
+struct DeliveryContent {
+    QString plainText;
+    std::optional<QString> html;
+};
+
+DeliveryContent makeDeliveryContent(const QString &text, OutputFormat format);
+
+enum class DeliveryReceipt {
+    None,
+    Copied,
+    InputSent,
+    AcceptedByTarget,
+    VerifiedInTarget,
+};
+
+struct DeliveryResult {
+    bool ok = false;
+    DeliveryReceipt receipt = DeliveryReceipt::None;
+    bool formatDowngraded = false;
+    QString message;
+};
 
 struct SpeechPrepareResult {
     bool ok = false;

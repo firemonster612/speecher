@@ -1,8 +1,7 @@
 #pragma once
 
-#include "dictation/DictationInterfaces.h"
+#include "dictation/DictationPorts.h"
 #include "output/ClipboardDelivery.h"
-#include "output/DeliveryContent.h"
 
 #include <functional>
 #include <memory>

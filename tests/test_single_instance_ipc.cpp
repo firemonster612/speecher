@@ -4,28 +4,13 @@
 
 using namespace speecher::test;
 
-class FakePlatformIntegration final : public PlatformIntegration {
+class FakeSingleInstancePlatform final : public SingleInstancePlatform {
 public:
-    FakePlatformIntegration(QString listenName, QStringList candidates = {}, QString detachedPath = {})
+    FakeSingleInstancePlatform(QString listenName, QStringList candidates = {}, QString detachedPath = {})
         : m_listenName(std::move(listenName))
         , m_candidates(candidates.isEmpty() ? QStringList{m_listenName} : std::move(candidates))
         , m_detachedPath(detachedPath.isEmpty() ? QCoreApplication::applicationFilePath() : std::move(detachedPath))
     {
-    }
-
-    QString id() const override
-    {
-        return QStringLiteral("test");
-    }
-
-    QString outputSummary() const override
-    {
-        return QStringLiteral("test output");
-    }
-
-    QString primaryOutputStatus() const override
-    {
-        return QStringLiteral("test output ready");
     }
 
     QString ipcListenName() const override
@@ -41,36 +26,6 @@ public:
     QString detachedExecutablePath() const override
     {
         return m_detachedPath;
-    }
-
-    QList<AudioInputDeviceInfo> availableAudioInputDevices() const override
-    {
-        return {};
-    }
-
-    AudioInput *createAudioInput(SettingsStore *, QObject *) const override
-    {
-        return nullptr;
-    }
-
-    MediaController *createMediaController(QObject *) const override
-    {
-        return nullptr;
-    }
-
-    TargetProvider *createTargetProvider(QObject *) const override
-    {
-        return nullptr;
-    }
-
-    TextDeliveryAdapter *createTextDelivery(TargetProvider *, QObject *) const override
-    {
-        return nullptr;
-    }
-
-    PopupPositioner *createPopupPositioner(QObject *) const override
-    {
-        return nullptr;
     }
 
 private:
@@ -116,7 +71,7 @@ private slots:
         QLocalServer existing;
         QVERIFY(existing.listen(name));
 
-        const auto platform = std::make_shared<FakePlatformIntegration>(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc second(platform);
         QString error;
         QVERIFY(!second.listen(&error));
@@ -139,7 +94,7 @@ private slots:
         QLocalServer existing;
         QVERIFY(existing.listen(legacyName));
 
-        const auto platform = std::make_shared<FakePlatformIntegration>(
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(
             listenName,
             QStringList{listenName, legacyName});
         SingleInstanceIpc second(platform);
@@ -166,7 +121,7 @@ private slots:
         stale.close();
         QVERIFY(QFileInfo::exists(name));
 
-        const auto platform = std::make_shared<FakePlatformIntegration>(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         SingleInstanceIpc ipc(platform);
         QString error;
         QVERIFY2(ipc.listen(&error), qPrintable(error));
@@ -185,7 +140,7 @@ private slots:
         QLocalServer existing;
         QVERIFY(existing.listen(name));
 
-        const auto platform = std::make_shared<FakePlatformIntegration>(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
         IpcResponse response;
         QString error;
         const IpcCommandResult result = SingleInstanceIpc::sendCommandDetailed(QStringLiteral("toggle"),

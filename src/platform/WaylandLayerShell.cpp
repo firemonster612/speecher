@@ -1,4 +1,4 @@
-#include "ui/WaylandLayerShell.h"
+#include "platform/WaylandLayerShell.h"
 
 #include <QGuiApplication>
 #include <QScreen>

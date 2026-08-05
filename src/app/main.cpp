@@ -1,7 +1,7 @@
 #include "app/ApplicationController.h"
+#include "app/LinuxComposition.h"
 #include "app/SingleInstanceIpc.h"
 #include "core/SettingsStore.h"
-#include "platform/PlatformIntegration.h"
 #include "ui/Theme.h"
 
 #include <QApplication>
@@ -80,7 +80,7 @@ static std::optional<OutputFormat> requestedOutputFormat(const QStringList &argu
     return outputFormatFromString(value);
 }
 
-static bool startDetachedListening(const PlatformIntegration *platform, std::optional<OutputFormat> outputFormat)
+static bool startDetachedListening(const SingleInstancePlatform *platform, std::optional<OutputFormat> outputFormat)
 {
     QStringList arguments{QStringLiteral("--daemon"), QStringLiteral("--start-listening")};
     if (outputFormat) {
@@ -89,7 +89,7 @@ static bool startDetachedListening(const PlatformIntegration *platform, std::opt
     return QProcess::startDetached(platform->detachedExecutablePath(), arguments);
 }
 
-static bool startDetachedSettings(const PlatformIntegration *platform)
+static bool startDetachedSettings(const SingleInstancePlatform *platform)
 {
     return QProcess::startDetached(
         platform->detachedExecutablePath(),
@@ -98,7 +98,7 @@ static bool startDetachedSettings(const PlatformIntegration *platform)
 
 static int runCliCommand(const QString &command,
                          std::optional<OutputFormat> outputFormat,
-                         const std::shared_ptr<const PlatformIntegration> &platform)
+                         const std::shared_ptr<const SingleInstancePlatform> &platform)
 {
     IpcResponse response;
     QString ipcError;
@@ -139,7 +139,7 @@ int main(int argc, char **argv)
     QApplication::setOrganizationName(QStringLiteral("local.speecher"));
     Theme::apply(SettingsStore().theme());
     const QString logPath = installLogHandler();
-    const std::shared_ptr<const PlatformIntegration> platform = PlatformFactory::create();
+    const std::shared_ptr<const LinuxComposition> platform = linuxComposition();
 
     const QStringList args = app.arguments();
     if (args.contains(QStringLiteral("--version"))) {

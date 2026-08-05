@@ -8,7 +8,7 @@
 #include <QScopedPointer>
 #include "platform/audio/AudioPcmConverter.h"
 
-#include "dictation/DictationInterfaces.h"
+#include "dictation/DictationPorts.h"
 
 namespace speecher {
 

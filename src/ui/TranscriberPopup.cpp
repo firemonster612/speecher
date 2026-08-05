@@ -1,6 +1,6 @@
 #include "ui/TranscriberPopup.h"
 
-#include "platform/PlatformIntegration.h"
+#include "platform/WaylandLayerShell.h"
 #include "ui/WaveformWidget.h"
 
 #include <QApplication>
@@ -38,7 +38,7 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     , m_preview(new QLabel(this))
     , m_errorDismissProgress(new QProgressBar(m_previewPill))
     , m_waveform(new WaveformWidget(this))
-    , m_positioner(positioner ? positioner : PlatformFactory::create()->createPopupPositioner(this))
+    , m_positioner(positioner ? positioner : new WaylandLayerShell(this))
 {
     if (m_positioner->parent() != this) {
         m_positioner->setParent(this);

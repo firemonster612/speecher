@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dictation/DictationInterfaces.h"
+#include "dictation/DictationPorts.h"
 #include "platform/atspi/AtSpiAccess.h"
 
 namespace speecher::atspi {

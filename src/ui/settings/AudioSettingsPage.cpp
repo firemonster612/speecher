@@ -1,6 +1,6 @@
 #include "ui/settings/AudioSettingsPage.h"
 
-#include "platform/PlatformIntegration.h"
+#include "app/LinuxComposition.h"
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QCheckBox>
@@ -12,7 +12,7 @@
 
 namespace speecher {
 
-AudioSettingsPage::AudioSettingsPage(const PlatformIntegration &platform,
+AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
                                      QWidget *parent)
     : QScrollArea(parent)
     , m_platform(platform)
