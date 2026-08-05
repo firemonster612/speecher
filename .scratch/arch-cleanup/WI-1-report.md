@@ -50,3 +50,23 @@ Vocabulary, Corrections, Bindings, Output, Refinement, Provider, and Audio were 
 - `SettingsDialog.cpp` line count: 426.
 - Extracted `AudioSettingsPage` in `refactor(ui): extract AudioSettingsPage`.
 - `SettingsDialog.cpp` line count: 263.
+
+## Final coordinator cleanup
+
+- Removed construction-only widget members, dead forward declarations, and dead includes from `SettingsDialog`.
+- Final `SettingsDialog.cpp` line count: 263.
+- Function inventory: no removals versus `.scratch/arch-cleanup/functions-baseline.txt` (102 current functions; 97 baseline functions plus five pre-existing startup-preparation-runner tests).
+
+```text
+$ cmake --build build
+[1/6] Automatic MOC and UIC for target speecher_app_ui
+[2/5] Building CXX object CMakeFiles/speecher_app_ui.dir/src/ui/SettingsDialog.cpp.o
+[3/5] Linking CXX static library libspeecher_app_ui.a
+[4/5] Linking CXX executable speecher
+[5/5] Linking CXX executable speecher_tests
+
+$ ctest --test-dir build --output-on-failure
+1/1 Test #1: speecher_tests ...................   Passed   14.84 sec
+100% tests passed, 0 tests failed out of 1
+Total Test time (real) = 14.84 sec
+```

@@ -1,15 +1,8 @@
 #pragma once
 
-#include "core/AppSettings.h"
-
 #include <QDialog>
 
-class QLabel;
-class QListWidget;
 class QPushButton;
-class QScrollArea;
-class QStackedWidget;
-class QTableWidget;
 
 namespace speecher {
 
@@ -36,12 +29,8 @@ private:
     void updateButtonState();
 
     ApplicationController *m_controller = nullptr;
-    QLabel *m_runtimeStatus = nullptr;
     QPushButton *m_okButton = nullptr;
     QPushButton *m_applyButton = nullptr;
-    QScrollArea *m_scroll = nullptr;
-    QListWidget *m_categories = nullptr;
-    QStackedWidget *m_pages = nullptr;
     AudioSettingsPage *m_audioPage = nullptr;
     BindingsSettingsPage *m_bindingsPage = nullptr;
     GeneralSettingsPage *m_generalPage = nullptr;

@@ -1,6 +1,7 @@
 #include "ui/SettingsDialog.h"
 
 #include "app/ApplicationController.h"
+#include "core/AppSettings.h"
 #include "core/SettingsStore.h"
 #include "ui/Theme.h"
 #include "ui/settings/AudioSettingsPage.h"
@@ -18,13 +19,10 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
-#include <QListWidget>
-#include <QListWidgetItem>
 #include <QPalette>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSizePolicy>
-#include <QStackedWidget>
 #include <QVBoxLayout>
 
 namespace speecher {
@@ -34,8 +32,8 @@ using namespace settings;
 SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *parent)
     : QDialog(parent)
     , m_controller(controller)
-    , m_scroll(new QScrollArea(this))
 {
+    auto *scroll = new QScrollArea(this);
     setWindowTitle(QStringLiteral("Speecher Settings"));
     resize(980, 780);
     setMinimumSize(820, 620);
@@ -49,7 +47,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
 
     m_vocabularyPage = new VocabularySettingsPage(this);
     m_correctionsPage = new CorrectionsSettingsPage(this);
-    m_bindingsPage = new BindingsSettingsPage(m_scroll, this);
+    m_bindingsPage = new BindingsSettingsPage(scroll, this);
 
     m_generalPage = new GeneralSettingsPage(m_controller->primaryOutputStatus(), this);
     m_audioPage = new AudioSettingsPage(*m_controller->platform(), this);
@@ -57,7 +55,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_providerPage = new ProviderSettingsPage(*m_controller->settings(), *m_controller->secretStore(), this);
     m_refinementPage = new RefinementSettingsPage(*m_controller->providerRegistry(), this);
 
-    auto *vocabularyPageLayout = makeSettingsPage(m_scroll);
+    auto *vocabularyPageLayout = makeSettingsPage(scroll);
     vocabularyPageLayout->addWidget(vocabularySection);
     vocabularyPageLayout->addWidget(m_vocabularyPage);
     vocabularyPageLayout->addWidget(correctionsSection);
@@ -80,7 +78,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
         m_outputPage,
         m_refinementPage,
         m_providerPage,
-        m_scroll,
+        scroll,
     };
 
     auto *body = new QWidget(this);
@@ -88,11 +86,13 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     bodyLayout->setContentsMargins(0, 0, 0, 0);
     bodyLayout->setSpacing(0);
 
+    QListWidget *categoriesWidget = nullptr;
+    QStackedWidget *pagesWidget = nullptr;
     addPageContainer(bodyLayout,
                      categories,
                      pages,
-                     &m_categories,
-                     &m_pages,
+                     &categoriesWidget,
+                     &pagesWidget,
                      body);
     root->addWidget(body, 1);
 
@@ -102,10 +102,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     footer->setFrameShape(QFrame::NoFrame);
     auto *footerLayout = new QHBoxLayout(footer);
     footerLayout->setContentsMargins(16, 12, 16, 12);
-    m_runtimeStatus = new QLabel(
+    auto *runtimeStatus = new QLabel(
         QStringLiteral("Dictation: %1").arg(m_controller->stateName()),
         footer);
-    footerLayout->addWidget(m_runtimeStatus);
+    footerLayout->addWidget(runtimeStatus);
     footerLayout->addStretch();
     footerLayout->addWidget(buttons);
     root->addWidget(footer);
@@ -148,9 +148,9 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(m_controller,
             &ApplicationController::statusChanged,
-            m_runtimeStatus,
-            [this](const QString &status) {
-                m_runtimeStatus->setText(QStringLiteral("Dictation: %1").arg(status));
+            runtimeStatus,
+            [runtimeStatus](const QString &status) {
+                runtimeStatus->setText(QStringLiteral("Dictation: %1").arg(status));
             });
     connect(m_generalPage, &GeneralSettingsPage::changed, this, &SettingsDialog::updateButtonState);
     connect(m_audioPage, &AudioSettingsPage::changed, this, &SettingsDialog::updateButtonState);
