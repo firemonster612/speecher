@@ -15,19 +15,17 @@ void CorrectionObserver::cancel()
 void CorrectionObserver::schedule(
     QObject *context,
     const TargetSnapshot *snapshot,
-    const Target &target,
-    const QString &original,
-    const QString &prefix,
-    const QString &suffix,
+    CorrectionWindow window,
     std::function<void(const QString &, const QString &, const QString &, double)> observed)
 {
     const quint64 generation = ++m_generation;
-    QTimer::singleShot(6500, context, [this, snapshot, target, original, prefix, suffix,
+    QTimer::singleShot(6500, context, [this, snapshot, window = std::move(window),
                                       generation, observed = std::move(observed)] {
+        const auto &[target, original, prefix, suffix] = window;
         if (generation != m_generation || !snapshot || target.secure || original.isEmpty()) return;
-        const QString window = snapshot->correctionWindow(target, original, prefix, suffix);
-        if (window.isEmpty()) return;
-        const std::optional<QString> corrected = correctionBetweenAnchors(window, prefix, suffix, original);
+        const QString text = snapshot->correctionWindow(window);
+        if (text.isEmpty()) return;
+        const std::optional<QString> corrected = correctionBetweenAnchors(text, prefix, suffix, original);
         if (corrected) observed(original, *corrected, target.applicationId, 0.92);
     });
 }

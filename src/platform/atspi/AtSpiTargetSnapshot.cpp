@@ -444,9 +444,9 @@ QString TargetSnapshot::insertionWindow(int insertionOffset, int textLength) con
 #endif
 }
 
-QString TargetSnapshot::correctionWindow(const Target &target, const QString &original,
-                                         const QString &prefix, const QString &suffix) const
+QString TargetSnapshot::correctionWindow(const CorrectionWindow &window) const
 {
+    const auto &[target, original, prefix, suffix] = window;
 #ifdef SPEECHER_WITH_ATSPI
     const int insertionOffset = target.selectionStart >= 0 ? target.selectionStart : target.caretOffset;
     if (!m_accessible || insertionOffset < 0 || !isFocusedText()) return {};

@@ -85,7 +85,7 @@ bool AtSpiTargetProvider::verifyInsertion(const Target &target, const QString &p
         if (prefix.size() >= 8 && suffix.size() >= 8) {
             if (!m_correctionObserver) m_correctionObserver = std::make_unique<atspi::CorrectionObserver>();
             m_correctionObserver->schedule(
-                this, m_snapshot.get(), target, plainText, prefix, suffix,
+                this, m_snapshot.get(), {target, plainText, prefix, suffix},
                 [this](const QString &original, const QString &corrected,
                        const QString &applicationId, double confidence) {
                     emit correctionObserved(original, corrected, applicationId, confidence);

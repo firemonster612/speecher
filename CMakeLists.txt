@@ -83,9 +83,9 @@ set(SPEECHER_DOMAIN_HEADERS
 
 set(SPEECHER_WORKFLOW_SOURCES
   src/dictation/DictationSession.cpp
+  src/dictation/DictationPorts.cpp
   src/dictation/StartupPreparationRunner.cpp
   src/dictation/TranscriptPipeline.cpp
-  src/output/DeliveryContent.cpp
   src/providers/ProviderRegistry.cpp
 )
 

@@ -5,6 +5,13 @@
 
 namespace speecher::atspi {
 
+struct CorrectionWindow {
+    Target target;
+    QString original;
+    QString prefix;
+    QString suffix;
+};
+
 class TargetSnapshot {
 public:
     static TargetSnapshot capture();
@@ -15,10 +22,7 @@ public:
     bool canInsert(const Target &target) const;
     bool insert(const Target &target, const QString &plainText, QString *error) const;
     QString insertionWindow(int insertionOffset, int textLength) const;
-    QString correctionWindow(const Target &target,
-                             const QString &original,
-                             const QString &prefix,
-                             const QString &suffix) const;
+    QString correctionWindow(const CorrectionWindow &window) const;
     bool isFocusedText() const;
 
 private:

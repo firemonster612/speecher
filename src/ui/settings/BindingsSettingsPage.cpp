@@ -18,12 +18,9 @@
 #include <QPalette>
 #include <QPlainTextEdit>
 #include <QPushButton>
-#include <QScrollArea>
-#include <QScrollBar>
 #include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QStyle>
-#include <QTimer>
 #include <QVBoxLayout>
 
 namespace speecher {
@@ -53,9 +50,8 @@ static QString bindingPreview(const QString &replacement)
     return preview.simplified();
 }
 
-BindingsSettingsPage::BindingsSettingsPage(QScrollArea *scrollArea, QWidget *parent)
+BindingsSettingsPage::BindingsSettingsPage(QWidget *parent)
     : QFrame(parent)
-    , m_scrollArea(scrollArea)
     , m_bindings(new QListWidget(this))
 {
     setObjectName(QStringLiteral("bindingSection"));
@@ -158,8 +154,7 @@ bool BindingsSettingsPage::hasChanges(const QList<BindingRule> &rules) const
 
 void BindingsSettingsPage::refreshBindingList()
 {
-    QScrollBar *scrollBar = m_scrollArea ? m_scrollArea->verticalScrollBar() : nullptr;
-    const int scrollValue = scrollBar ? scrollBar->value() : 0;
+    emit preserveScrollRequested(true);
 
     QSignalBlocker blocker(m_bindings);
     m_bindings->clear();
@@ -226,15 +221,7 @@ void BindingsSettingsPage::refreshBindingList()
         });
     }
 
-    if (scrollBar) {
-        scrollBar->setValue(qMin(scrollValue, scrollBar->maximum()));
-        QTimer::singleShot(0, this, [this, scrollValue] {
-            QScrollBar *delayedScrollBar = m_scrollArea ? m_scrollArea->verticalScrollBar() : nullptr;
-            if (delayedScrollBar) {
-                delayedScrollBar->setValue(qMin(scrollValue, delayedScrollBar->maximum()));
-            }
-        });
-    }
+    emit preserveScrollRequested(false);
 }
 
 void BindingsSettingsPage::editBinding(int row)

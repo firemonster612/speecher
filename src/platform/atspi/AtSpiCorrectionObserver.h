@@ -9,16 +9,14 @@ class QObject;
 namespace speecher::atspi {
 
 class TargetSnapshot;
+struct CorrectionWindow;
 
 class CorrectionObserver {
 public:
     void cancel();
     void schedule(QObject *context,
                   const TargetSnapshot *snapshot,
-                  const Target &target,
-                  const QString &original,
-                  const QString &prefix,
-                  const QString &suffix,
+                  CorrectionWindow window,
                   std::function<void(const QString &, const QString &, const QString &, double)> observed);
 
 private:

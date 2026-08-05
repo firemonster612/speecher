@@ -22,8 +22,10 @@
 #include <QPalette>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSizePolicy>
 #include <QVBoxLayout>
+#include <QTimer>
 
 namespace speecher {
 
@@ -47,7 +49,21 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
 
     m_vocabularyPage = new VocabularySettingsPage(this);
     m_correctionsPage = new CorrectionsSettingsPage(this);
-    m_bindingsPage = new BindingsSettingsPage(scroll, this);
+    m_bindingsPage = new BindingsSettingsPage(this);
+    connect(m_bindingsPage, &BindingsSettingsPage::preserveScrollRequested, scroll,
+            [this, scroll](bool rebuilding) {
+                QScrollBar *scrollBar = scroll->verticalScrollBar();
+                if (rebuilding) {
+                    m_preservedScrollValue = scrollBar->value();
+                    return;
+                }
+                const auto restore = [this, scroll] {
+                    QScrollBar *bar = scroll->verticalScrollBar();
+                    bar->setValue(qMin(m_preservedScrollValue, bar->maximum()));
+                };
+                restore();
+                QTimer::singleShot(0, scroll, restore);
+            });
 
     m_generalPage = new GeneralSettingsPage(m_controller->primaryOutputStatus(), this);
     m_audioPage = new AudioSettingsPage(*m_controller->platform(), this);
@@ -198,27 +214,14 @@ bool SettingsDialog::save()
     m_audioPage->appendToDraft(draft);
     m_outputPage->appendToDraft(draft);
     m_refinementPage->appendToDraft(draft);
-    settings->setTheme(draft.ui.theme);
+    m_providerPage->appendToDraft(draft);
+    m_correctionsPage->appendToDraft(draft);
+    settings->applySnapshot(draft);
     Theme::apply(settings->theme());
-    settings->setPauseMediaDuringTranscription(draft.ui.pauseMediaDuringTranscription);
-    settings->setSoundsEnabled(draft.ui.soundsEnabled);
-    settings->setPreviewWords(draft.ui.previewWords);
-    settings->setAudioCaptureSettings(draft.audio);
-    settings->setRefinementProvider(draft.refinement.providerId);
-    settings->setDefaultWritingProfile(draft.refinement.defaultWritingProfile);
-    settings->setWritingProfileSettings(draft.refinement.writingProfiles);
-    settings->setWritingProfileOverrides(draft.refinement.writingProfileOverrides);
-    settings->setUseTargetContext(draft.refinement.useTargetContext);
-    settings->setIncludeScreenshotContext(draft.refinement.includeScreenshotContext);
-    m_providerPage->saveModels();
-    settings->setOutputMethod(draft.output.method);
-    settings->setOutputFormat(draft.output.format);
-    settings->setPasteRules(draft.output.pasteRules);
-    settings->setRestoreClipboardAfterTyping(draft.output.restoreClipboardAfterTyping);
+    m_providerPage->loadModels();
     m_providerPage->saveAuthModes();
     settings->setVocabularyEntries(m_vocabularyPage->entries());
     settings->setCorrectionLearningEnabled(m_correctionsPage->learningEnabled());
-    settings->setLearnedCorrections(m_correctionsPage->corrections());
     settings->setBindingRules(bindingRules);
     m_vocabularyPage->load(settings->vocabularyEntries());
     m_bindingsPage->load(settings->bindingRules());
