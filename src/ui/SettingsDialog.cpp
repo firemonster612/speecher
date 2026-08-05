@@ -11,6 +11,7 @@
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/Theme.h"
+#include "ui/settings/CorrectionsSettingsPage.h"
 #include "ui/settings/GeneralSettingsPage.h"
 #include "ui/settings/SettingsPageSupport.h"
 #include "ui/settings/VocabularySettingsPage.h"
@@ -288,7 +289,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_outputFormat(new QComboBox(this))
     , m_globalPaste(new QComboBox(this))
     , m_restoreClipboardAfterTyping(new QCheckBox(this))
-    , m_learnCorrections(new QCheckBox(this))
     , m_authMode(new QComboBox(this))
     , m_anthropicAuthMode(new QComboBox(this))
     , m_authControl(new QStackedWidget(this))
@@ -301,7 +301,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_postRollMs(new QSpinBox(this))
     , m_readinessTimeoutMs(new QSpinBox(this))
     , m_vadThreshold(new QSpinBox(this))
-    , m_corrections(new QTableWidget(this))
     , m_appPasteRules(new QTableWidget(this))
     , m_profileSettings(new QTableWidget(this))
     , m_appProfileOverrides(new QTableWidget(this))
@@ -390,8 +389,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     }
     m_restoreClipboardAfterTyping->setText(QStringLiteral("Restore"));
     m_restoreClipboardAfterTyping->setToolTip(QStringLiteral("Restore the previous clipboard after virtual-keyboard paste."));
-    m_learnCorrections->setText(QStringLiteral("Learn corrections"));
-    m_learnCorrections->setToolTip(QStringLiteral("Observe a verified inserted span briefly and save only high-confidence corrections."));
     m_authMode->addItem(QStringLiteral("Automatic"), QStringLiteral("auto"));
     m_authMode->addItem(QStringLiteral("Codex API key"), QStringLiteral("codex_api_key"));
     m_authMode->addItem(QStringLiteral("Codex OAuth"), QStringLiteral("codex_oauth"));
@@ -413,22 +410,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_readinessTimeoutMs->setSuffix(QStringLiteral(" ms"));
     m_vadThreshold->setRange(1, 20);
     m_vadThreshold->setSuffix(QStringLiteral("%"));
-    m_corrections->setObjectName(QStringLiteral("vocabInput"));
-    m_corrections->setColumnCount(4);
-    m_corrections->setHorizontalHeaderLabels({
-        QStringLiteral("Enabled"),
-        QStringLiteral("Heard"),
-        QStringLiteral("Corrected"),
-        QStringLiteral("App"),
-    });
-    m_corrections->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    m_corrections->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
-    m_corrections->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
-    m_corrections->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
-    m_corrections->verticalHeader()->hide();
-    m_corrections->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_corrections->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_corrections->setMinimumHeight(180);
     m_appPasteRules->setObjectName(QStringLiteral("vocabInput"));
     m_appPasteRules->setColumnCount(3);
     m_appPasteRules->setHorizontalHeaderLabels({
@@ -719,28 +700,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
            false);
 
     m_vocabularyPage = new VocabularySettingsPage(this);
-
-    auto *correctionsCard = new QFrame(this);
-    correctionsCard->setObjectName(QStringLiteral("vocabSection"));
-    auto *correctionsLayout = new QVBoxLayout(correctionsCard);
-    auto *correctionsDescription = new QLabel(
-        QStringLiteral("Source-marked corrections learned after verified insertion. Edit, disable, delete, or undo deletions here."),
-        correctionsCard);
-    correctionsDescription->setObjectName(QStringLiteral("rowDescription"));
-    correctionsDescription->setWordWrap(true);
-    m_removeCorrectionButton = new QPushButton(QStringLiteral("Delete selected"), correctionsCard);
-    m_undoCorrectionButton = new QPushButton(QStringLiteral("Undo delete"), correctionsCard);
-    m_undoLatestLearnButton = new QPushButton(QStringLiteral("Undo latest learn"), correctionsCard);
-    m_undoCorrectionButton->setEnabled(false);
-    auto *correctionButtons = new QHBoxLayout;
-    correctionButtons->addWidget(m_learnCorrections);
-    correctionButtons->addStretch();
-    correctionButtons->addWidget(m_undoLatestLearnButton);
-    correctionButtons->addWidget(m_undoCorrectionButton);
-    correctionButtons->addWidget(m_removeCorrectionButton);
-    correctionsLayout->addWidget(correctionsDescription);
-    correctionsLayout->addWidget(m_corrections);
-    correctionsLayout->addLayout(correctionButtons);
+    m_correctionsPage = new CorrectionsSettingsPage(this);
 
     auto *bindingSection = new QFrame(this);
     bindingSection->setObjectName(QStringLiteral("bindingSection"));
@@ -806,7 +766,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     vocabularyPageLayout->addWidget(vocabularySection);
     vocabularyPageLayout->addWidget(m_vocabularyPage);
     vocabularyPageLayout->addWidget(correctionsSection);
-    vocabularyPageLayout->addWidget(correctionsCard);
+    vocabularyPageLayout->addWidget(m_correctionsPage);
     vocabularyPageLayout->addWidget(bindingsSection);
     vocabularyPageLayout->addWidget(bindingSection);
     vocabularyPageLayout->addStretch();
@@ -943,7 +903,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     });
     connect(m_anthropicInfoButton, &QPushButton::clicked, this, &SettingsDialog::showAnthropicAuthInfo);
     connect(m_restoreClipboardAfterTyping, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
-    connect(m_learnCorrections, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
+    connect(m_correctionsPage, &CorrectionsSettingsPage::changed, this, &SettingsDialog::updateButtonState);
     connect(m_outputFormat, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_globalPaste, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     for (const auto &[category, combo] : std::as_const(m_categoryPasteControls)) {
@@ -984,41 +944,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
         updateButtonState();
     });
     connect(m_apiKey, &QLineEdit::textChanged, this, &SettingsDialog::updateButtonState);
-    connect(m_corrections, &QTableWidget::itemChanged, this, &SettingsDialog::updateButtonState);
-    connect(m_corrections, &QTableWidget::itemSelectionChanged, this, [this] {
-        m_removeCorrectionButton->setEnabled(m_corrections->currentRow() >= 0);
-    });
-    connect(m_removeCorrectionButton, &QPushButton::clicked, this, [this] {
-        const int row = m_corrections->currentRow();
-        QList<LearnedCorrection> corrections = currentLearnedCorrections();
-        if (row < 0 || row >= corrections.size()) {
-            return;
-        }
-        m_removedCorrections.append(corrections.takeAt(row));
-        setLearnedCorrections(corrections);
-        m_undoCorrectionButton->setEnabled(true);
-        updateButtonState();
-    });
-    connect(m_undoCorrectionButton, &QPushButton::clicked, this, [this] {
-        if (m_removedCorrections.isEmpty()) {
-            return;
-        }
-        QList<LearnedCorrection> corrections = currentLearnedCorrections();
-        corrections.prepend(m_removedCorrections.takeLast());
-        setLearnedCorrections(corrections);
-        m_undoCorrectionButton->setEnabled(!m_removedCorrections.isEmpty());
-        updateButtonState();
-    });
-    connect(m_undoLatestLearnButton, &QPushButton::clicked, this, [this] {
-        QList<LearnedCorrection> corrections = currentLearnedCorrections();
-        if (corrections.isEmpty()) {
-            return;
-        }
-        m_removedCorrections.append(corrections.takeFirst());
-        setLearnedCorrections(corrections);
-        m_undoCorrectionButton->setEnabled(true);
-        updateButtonState();
-    });
     connect(m_ydotoolSetupButton, &QPushButton::clicked, this, &SettingsDialog::setupOrEnableYdotool);
     connect(m_ydotoolStartButton, &QPushButton::clicked, this, [this] {
         QString error;
@@ -1123,11 +1048,7 @@ void SettingsDialog::load()
     m_apiKey->setText(m_controller->secretStore()->apiKey());
     m_vocabularyPage->load(settings->vocabularyEntries());
     setBindingRules(settings->bindingRules());
-    m_learnCorrections->setChecked(settings->correctionLearningEnabled());
-    m_removedCorrections.clear();
-    m_undoCorrectionButton->setEnabled(false);
-    setLearnedCorrections(settings->learnedCorrections());
-    m_undoLatestLearnButton->setEnabled(!settings->learnedCorrections().isEmpty());
+    m_correctionsPage->load(settings->correctionLearningEnabled(), settings->learnedCorrections());
     updateAudioControls();
     updateAuthControl();
     updateAnthropicControls();
@@ -1211,14 +1132,12 @@ bool SettingsDialog::save()
     settings->setOpenAiAuthMode(m_authMode->currentData().toString());
     settings->setAnthropicAuthMode(m_anthropicAuthMode->currentData().toString());
     settings->setVocabularyEntries(m_vocabularyPage->entries());
-    settings->setCorrectionLearningEnabled(m_learnCorrections->isChecked());
-    settings->setLearnedCorrections(currentLearnedCorrections());
+    settings->setCorrectionLearningEnabled(m_correctionsPage->learningEnabled());
+    settings->setLearnedCorrections(m_correctionsPage->corrections());
     settings->setBindingRules(bindingValidation.rules);
     m_vocabularyPage->load(settings->vocabularyEntries());
     setBindingRules(settings->bindingRules());
-    setLearnedCorrections(settings->learnedCorrections());
-    m_removedCorrections.clear();
-    m_undoCorrectionButton->setEnabled(false);
+    m_correctionsPage->load(settings->correctionLearningEnabled(), settings->learnedCorrections());
     if (settings->openAiAuthMode() == QStringLiteral("settings")) {
         if (!m_controller->secretStore()->saveApiKey(m_apiKey->text().trimmed())) {
             QMessageBox::warning(this,
@@ -1269,40 +1188,13 @@ bool SettingsDialog::hasChanges() const
         || m_authMode->currentData().toString() != settings->openAiAuthMode()
         || m_anthropicAuthMode->currentData().toString() != settings->anthropicAuthMode()
         || m_vocabularyPage->hasChanges(settings->vocabularyEntries())
-        || m_learnCorrections->isChecked() != settings->correctionLearningEnabled()
-        || currentLearnedCorrections() != settings->learnedCorrections()
+        || m_correctionsPage->hasChanges(settings->correctionLearningEnabled(), settings->learnedCorrections())
         || currentBindingRules() != settings->bindingRules()) {
         return true;
     }
 
     return m_authMode->currentData().toString() == QStringLiteral("settings")
         && m_apiKey->text().trimmed() != m_controller->secretStore()->apiKey();
-}
-
-QList<LearnedCorrection> SettingsDialog::currentLearnedCorrections() const
-{
-    QList<LearnedCorrection> corrections;
-    for (int row = 0; row < m_corrections->rowCount(); ++row) {
-        const QTableWidgetItem *enabled = m_corrections->item(row, 0);
-        const QTableWidgetItem *original = m_corrections->item(row, 1);
-        const QTableWidgetItem *corrected = m_corrections->item(row, 2);
-        const QTableWidgetItem *application = m_corrections->item(row, 3);
-        if (!enabled || !original || !corrected || !application) {
-            continue;
-        }
-        LearnedCorrection correction;
-        correction.id = enabled->data(Qt::UserRole).toString();
-        correction.createdAtMs = enabled->data(Qt::UserRole + 1).toLongLong();
-        correction.confidence = enabled->data(Qt::UserRole + 2).toDouble();
-        correction.enabled = enabled->checkState() == Qt::Checked;
-        correction.original = original->text().trimmed();
-        correction.corrected = corrected->text().trimmed();
-        correction.applicationId = application->text().trimmed();
-        if (!correction.id.isEmpty() && !correction.original.isEmpty() && !correction.corrected.isEmpty()) {
-            corrections.append(correction);
-        }
-    }
-    return corrections;
 }
 
 QList<PasteRule> SettingsDialog::currentApplicationPasteRules() const
@@ -1472,36 +1364,6 @@ void SettingsDialog::addApplicationPasteRule(const PasteRule &rule)
     if (rule.match.isEmpty()) {
         m_appPasteRules->setCurrentCell(row, 1);
         m_appPasteRules->editItem(application);
-    }
-}
-
-void SettingsDialog::setLearnedCorrections(const QList<LearnedCorrection> &corrections)
-{
-    QSignalBlocker blocker(m_corrections);
-    m_corrections->setRowCount(0);
-    for (const LearnedCorrection &correction : corrections) {
-        const int row = m_corrections->rowCount();
-        m_corrections->insertRow(row);
-        auto *enabled = new QTableWidgetItem;
-        enabled->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
-        enabled->setCheckState(correction.enabled ? Qt::Checked : Qt::Unchecked);
-        enabled->setData(Qt::UserRole, correction.id);
-        enabled->setData(Qt::UserRole + 1, correction.createdAtMs);
-        enabled->setData(Qt::UserRole + 2, correction.confidence);
-        auto *original = new QTableWidgetItem(correction.original);
-        auto *corrected = new QTableWidgetItem(correction.corrected);
-        auto *application = new QTableWidgetItem(correction.applicationId);
-        application->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
-        application->setToolTip(QStringLiteral("Learned automatically · confidence %1%")
-                                    .arg(qRound(correction.confidence * 100.0)));
-        m_corrections->setItem(row, 0, enabled);
-        m_corrections->setItem(row, 1, original);
-        m_corrections->setItem(row, 2, corrected);
-        m_corrections->setItem(row, 3, application);
-    }
-    m_removeCorrectionButton->setEnabled(false);
-    if (m_undoLatestLearnButton) {
-        m_undoLatestLearnButton->setEnabled(!corrections.isEmpty());
     }
 }
 

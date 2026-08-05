@@ -18,6 +18,7 @@ class QTableWidget;
 namespace speecher {
 
 class ApplicationController;
+class CorrectionsSettingsPage;
 class GeneralSettingsPage;
 class VocabularySettingsPage;
 
@@ -32,13 +33,11 @@ private:
     bool save();
     bool hasChanges() const;
     QList<BindingRule> currentBindingRules() const;
-    QList<LearnedCorrection> currentLearnedCorrections() const;
     QList<PasteRule> currentApplicationPasteRules() const;
     QList<PasteRule> currentCategoryPasteRules() const;
     QList<WritingProfileSettings> currentWritingProfileSettings() const;
     QList<WritingProfileOverride> currentWritingProfileOverrides() const;
     void setBindingRules(const QList<BindingRule> &rules);
-    void setLearnedCorrections(const QList<LearnedCorrection> &corrections);
     void setApplicationPasteRules(const QList<PasteRule> &rules);
     void setWritingProfileSettings(const QList<WritingProfileSettings> &settings);
     void setWritingProfileOverrides(const QList<WritingProfileOverride> &overrides);
@@ -77,7 +76,6 @@ private:
     QComboBox *m_globalPaste = nullptr;
     QList<QPair<AppCategory, QComboBox *>> m_categoryPasteControls;
     QCheckBox *m_restoreClipboardAfterTyping = nullptr;
-    QCheckBox *m_learnCorrections = nullptr;
     QComboBox *m_authMode = nullptr;
     QComboBox *m_anthropicAuthMode = nullptr;
     QStackedWidget *m_authControl = nullptr;
@@ -103,7 +101,6 @@ private:
     QSpinBox *m_postRollMs = nullptr;
     QSpinBox *m_readinessTimeoutMs = nullptr;
     QSpinBox *m_vadThreshold = nullptr;
-    QTableWidget *m_corrections = nullptr;
     QTableWidget *m_appPasteRules = nullptr;
     QTableWidget *m_profileSettings = nullptr;
     QTableWidget *m_appProfileOverrides = nullptr;
@@ -111,14 +108,11 @@ private:
     QPushButton *m_removeAppPasteRuleButton = nullptr;
     QPushButton *m_addAppProfileOverrideButton = nullptr;
     QPushButton *m_removeAppProfileOverrideButton = nullptr;
-    QPushButton *m_removeCorrectionButton = nullptr;
-    QPushButton *m_undoCorrectionButton = nullptr;
-    QPushButton *m_undoLatestLearnButton = nullptr;
     QListWidget *m_bindings = nullptr;
-    QList<LearnedCorrection> m_removedCorrections;
     QList<BindingRule> m_bindingRules;
     GeneralSettingsPage *m_generalPage = nullptr;
     VocabularySettingsPage *m_vocabularyPage = nullptr;
+    CorrectionsSettingsPage *m_correctionsPage = nullptr;
 };
 
 } // namespace speecher

@@ -157,6 +157,7 @@ set(SPEECHER_APP_UI_SOURCES
   src/app/SingleInstanceIpc.cpp
   src/ui/MainWindow.cpp
   src/ui/SettingsDialog.cpp
+  src/ui/settings/CorrectionsSettingsPage.cpp
   src/ui/settings/GeneralSettingsPage.cpp
   src/ui/settings/SettingsPageSupport.cpp
   src/ui/settings/VocabularySettingsPage.cpp
@@ -170,6 +171,7 @@ set(SPEECHER_APP_UI_HEADERS
   src/app/SingleInstanceIpc.h
   src/ui/MainWindow.h
   src/ui/SettingsDialog.h
+  src/ui/settings/CorrectionsSettingsPage.h
   src/ui/settings/GeneralSettingsPage.h
   src/ui/settings/SettingsPageSupport.h
   src/ui/settings/VocabularySettingsPage.h
