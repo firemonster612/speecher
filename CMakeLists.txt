@@ -125,7 +125,6 @@ set(SPEECHER_PROVIDER_HEADERS
 )
 
 set(SPEECHER_PLATFORM_SOURCES
-  src/core/AudioCapture.cpp
   src/core/MediaPauseController.cpp
   src/output/ClipboardDelivery.cpp
   src/output/QtClipboardDelivery.cpp
@@ -136,11 +135,12 @@ set(SPEECHER_PLATFORM_SOURCES
   src/platform/PlatformIntegration.cpp
   src/platform/AtSpiTargetProvider.cpp
   src/platform/PortalScreenshotContextProvider.cpp
+  src/platform/audio/AudioPcmConverter.cpp
+  src/platform/audio/QtAudioInput.cpp
   src/ui/WaylandLayerShell.cpp
 )
 
 set(SPEECHER_PLATFORM_HEADERS
-  src/core/AudioCapture.h
   src/core/MediaPauseController.h
   src/output/ClipboardDelivery.h
   src/output/DeliveryResult.h
@@ -152,6 +152,8 @@ set(SPEECHER_PLATFORM_HEADERS
   src/platform/PlatformIntegration.h
   src/platform/AtSpiTargetProvider.h
   src/platform/PortalScreenshotContextProvider.h
+  src/platform/audio/AudioPcmConverter.h
+  src/platform/audio/QtAudioInput.h
   src/ui/WaylandLayerShell.h
 )
 
@@ -416,6 +418,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_vocabulary.cpp
     tests/test_provider_auth.cpp
     tests/test_claude_voice.cpp
+    tests/test_audio_pcm_converter.cpp
   )
   target_include_directories(speecher_tests PRIVATE src)
   target_compile_definitions(speecher_tests PRIVATE SPEECHER_VERSION="${PROJECT_VERSION}")

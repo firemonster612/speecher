@@ -1,11 +1,12 @@
 #include "platform/PlatformIntegration.h"
 
-#include "core/AudioCapture.h"
 #include "core/MediaPauseController.h"
+#include "core/SettingsStore.h"
 #include "output/TextDelivery.h"
 #include "output/WlClipboardDelivery.h"
 #include "platform/AtSpiTargetProvider.h"
 #include "platform/PortalScreenshotContextProvider.h"
+#include "platform/audio/QtAudioInput.h"
 #include "ui/WaylandLayerShell.h"
 
 #include <QCoreApplication>
@@ -117,12 +118,17 @@ public:
 
     QList<AudioInputDeviceInfo> availableAudioInputDevices() const override
     {
-        return AudioCapture::availableInputDevices();
+        return QtAudioInput::availableInputDevices();
     }
 
     AudioInput *createAudioInput(SettingsStore *settings, QObject *parent) const override
     {
-        return new AudioCapture(settings, parent);
+        auto *input = new QtAudioInput(settings->audioCaptureSettings(), parent);
+        QObject::connect(settings,
+                         &SettingsStore::audioCaptureSettingsChanged,
+                         input,
+                         &QtAudioInput::applySettings);
+        return input;
     }
 
     MediaController *createMediaController(QObject *parent) const override

@@ -24,5 +24,6 @@ int main(int argc, char **argv)
     result |= runVocabularyTests(argc, argv);
     result |= runProviderAuthTests(argc, argv);
     result |= runClaudeVoiceTests(argc, argv);
+    result |= runAudioPcmConverterTests(argc, argv);
     return result;
 }
