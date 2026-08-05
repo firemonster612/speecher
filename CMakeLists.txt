@@ -104,9 +104,11 @@ set(SPEECHER_PROVIDER_SOURCES
   src/providers/ClaudeCredentials.cpp
   src/providers/ClaudeSpeechTranscriber.cpp
   src/providers/ClaudeVoiceClient.cpp
+  src/providers/ClaudeVoiceProtocol.cpp
   src/providers/OpenAiAuthProvider.cpp
   src/providers/OpenAiRefiner.cpp
   src/providers/OpenAiTranscriptRefiner.cpp
+  src/providers/TranscriptRefinementPrompt.cpp
 )
 
 set(SPEECHER_PROVIDER_HEADERS
@@ -115,6 +117,7 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/ClaudeCredentials.h
   src/providers/ClaudeSpeechTranscriber.h
   src/providers/ClaudeVoiceClient.h
+  src/providers/ClaudeVoiceProtocol.h
   src/providers/OpenAiAuthProvider.h
   src/providers/OpenAiRefiner.h
   src/providers/OpenAiTranscriptRefiner.h
