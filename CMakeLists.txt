@@ -160,6 +160,7 @@ set(SPEECHER_APP_UI_SOURCES
   src/ui/settings/BindingsSettingsPage.cpp
   src/ui/settings/CorrectionsSettingsPage.cpp
   src/ui/settings/GeneralSettingsPage.cpp
+  src/ui/settings/OutputSettingsPage.cpp
   src/ui/settings/SettingsPageSupport.cpp
   src/ui/settings/VocabularySettingsPage.cpp
   src/ui/Theme.cpp
@@ -175,6 +176,7 @@ set(SPEECHER_APP_UI_HEADERS
   src/ui/settings/BindingsSettingsPage.h
   src/ui/settings/CorrectionsSettingsPage.h
   src/ui/settings/GeneralSettingsPage.h
+  src/ui/settings/OutputSettingsPage.h
   src/ui/settings/SettingsPageSupport.h
   src/ui/settings/VocabularySettingsPage.h
   src/ui/Theme.h
