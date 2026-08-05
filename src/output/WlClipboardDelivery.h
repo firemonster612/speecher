@@ -5,9 +5,12 @@
 #include <QString>
 #include <QList>
 
+#include <memory>
+
 namespace speecher {
 
 struct DeliveryContent;
+class WaylandClipboardOwner;
 
 struct ClipboardMimePart {
     QString mimeType;
@@ -26,7 +29,7 @@ class WlClipboardDelivery : public QObject {
 
 public:
     explicit WlClipboardDelivery(QObject *parent = nullptr);
-    bool copy(const QString &text, QString *error = nullptr);
+    ~WlClipboardDelivery() override;
     bool copy(const DeliveryContent &content, bool *htmlAvailable = nullptr,
               QString *error = nullptr);
     static bool isAvailable();
@@ -34,6 +37,9 @@ public:
     static bool canSnapshot();
     static bool capture(WlClipboardSnapshot *snapshot, QString *error = nullptr);
     static bool restore(const WlClipboardSnapshot &snapshot, QString *error = nullptr);
+
+private:
+    std::unique_ptr<WaylandClipboardOwner> m_owner;
 };
 
 } // namespace speecher

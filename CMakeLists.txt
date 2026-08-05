@@ -129,6 +129,8 @@ set(SPEECHER_PLATFORM_SOURCES
   src/output/ClipboardDelivery.cpp
   src/output/QtClipboardDelivery.cpp
   src/output/TextDelivery.cpp
+  src/output/WaylandClipboardOwner.cpp
+  src/output/WaylandClipboardProcess.cpp
   src/output/WlClipboardDelivery.cpp
   src/output/YdotoolDelivery.cpp
   src/output/YdotoolSetup.cpp
@@ -149,6 +151,8 @@ set(SPEECHER_PLATFORM_HEADERS
   src/output/DeliveryResult.h
   src/output/QtClipboardDelivery.h
   src/output/TextDelivery.h
+  src/output/WaylandClipboardOwner.h
+  src/output/WaylandClipboardProcess.h
   src/output/WlClipboardDelivery.h
   src/output/YdotoolDelivery.h
   src/output/YdotoolSetup.h

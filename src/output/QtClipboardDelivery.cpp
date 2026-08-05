@@ -13,11 +13,6 @@ QtClipboardDelivery::QtClipboardDelivery(QObject *parent)
 {
 }
 
-bool QtClipboardDelivery::copy(const QString &text, QString *error)
-{
-    return copy(DeliveryContent{text, std::nullopt}, error);
-}
-
 bool QtClipboardDelivery::copy(const DeliveryContent &content, QString *error)
 {
     QClipboard *clipboard = QApplication::clipboard();
