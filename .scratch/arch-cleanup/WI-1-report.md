@@ -46,3 +46,5 @@ Vocabulary, Corrections, Bindings, Output, Refinement, Provider, and Audio were 
 - `SettingsDialog.cpp` line count: 980.
 - Extracted `RefinementSettingsPage` in `refactor(ui): extract RefinementSettingsPage`.
 - `SettingsDialog.cpp` line count: 698.
+- Extracted `ProviderSettingsPage` in `refactor(ui): extract ProviderSettingsPage`.
+- `SettingsDialog.cpp` line count: 426.
