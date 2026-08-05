@@ -134,6 +134,9 @@ set(SPEECHER_PLATFORM_SOURCES
   src/output/YdotoolSetup.cpp
   src/platform/PlatformIntegration.cpp
   src/platform/AtSpiTargetProvider.cpp
+  src/platform/atspi/AtSpiAccess.cpp
+  src/platform/atspi/AtSpiCorrectionObserver.cpp
+  src/platform/atspi/AtSpiTargetSnapshot.cpp
   src/platform/PortalScreenshotContextProvider.cpp
   src/platform/audio/AudioPcmConverter.cpp
   src/platform/audio/QtAudioInput.cpp
@@ -151,6 +154,9 @@ set(SPEECHER_PLATFORM_HEADERS
   src/output/YdotoolSetup.h
   src/platform/PlatformIntegration.h
   src/platform/AtSpiTargetProvider.h
+  src/platform/atspi/AtSpiAccess.h
+  src/platform/atspi/AtSpiCorrectionObserver.h
+  src/platform/atspi/AtSpiTargetSnapshot.h
   src/platform/PortalScreenshotContextProvider.h
   src/platform/audio/AudioPcmConverter.h
   src/platform/audio/QtAudioInput.h

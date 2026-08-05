@@ -2,13 +2,20 @@
 
 #include "dictation/DictationInterfaces.h"
 
+#include <memory>
+
 namespace speecher {
+
+namespace atspi {
+class CorrectionObserver;
+class TargetSnapshot;
+}
 
 class AtSpiTargetProvider final : public TargetProvider {
     Q_OBJECT
 
 public:
-    using TargetProvider::TargetProvider;
+    explicit AtSpiTargetProvider(QObject *parent = nullptr);
     ~AtSpiTargetProvider() override;
     Target capture() override;
     bool stillFocused(const Target &target) override;
@@ -17,16 +24,9 @@ public:
     bool verifyInsertion(const Target &target, const QString &plainText) override;
 
 private:
-    bool matchesSnapshot(const Target &target, bool requireFocus) const;
     void clearAccessible();
-    void observeCorrection(const Target &target,
-                           const QString &original,
-                           const QString &prefix,
-                           const QString &suffix,
-                           quint64 generation);
-    void *m_accessible = nullptr;
-    Target m_snapshot;
-    quint64 m_observationGeneration = 0;
+    std::unique_ptr<atspi::TargetSnapshot> m_snapshot;
+    std::unique_ptr<atspi::CorrectionObserver> m_correctionObserver;
 };
 
 } // namespace speecher
