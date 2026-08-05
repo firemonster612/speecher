@@ -18,6 +18,7 @@ class QTableWidget;
 namespace speecher {
 
 class ApplicationController;
+class BindingsSettingsPage;
 class CorrectionsSettingsPage;
 class GeneralSettingsPage;
 class VocabularySettingsPage;
@@ -32,19 +33,15 @@ private:
     void load();
     bool save();
     bool hasChanges() const;
-    QList<BindingRule> currentBindingRules() const;
     QList<PasteRule> currentApplicationPasteRules() const;
     QList<PasteRule> currentCategoryPasteRules() const;
     QList<WritingProfileSettings> currentWritingProfileSettings() const;
     QList<WritingProfileOverride> currentWritingProfileOverrides() const;
-    void setBindingRules(const QList<BindingRule> &rules);
     void setApplicationPasteRules(const QList<PasteRule> &rules);
     void setWritingProfileSettings(const QList<WritingProfileSettings> &settings);
     void setWritingProfileOverrides(const QList<WritingProfileOverride> &overrides);
     void addApplicationPasteRule(const PasteRule &rule = {});
     void addWritingProfileOverride(const WritingProfileOverride &override = {});
-    void refreshBindingList();
-    void editBinding(int row);
     void refreshAudioDeviceList(const QString &selectedDeviceId);
     void updateAudioControls();
     void updateAuthControl();
@@ -92,8 +89,6 @@ private:
     QPushButton *m_ydotoolDisableButton = nullptr;
     QPushButton *m_ydotoolRemoveButton = nullptr;
     QPushButton *m_anthropicInfoButton = nullptr;
-    QPushButton *m_addBindingButton = nullptr;
-    QPushButton *m_importSnippetsButton = nullptr;
     QScrollArea *m_scroll = nullptr;
     QListWidget *m_categories = nullptr;
     QStackedWidget *m_pages = nullptr;
@@ -108,8 +103,7 @@ private:
     QPushButton *m_removeAppPasteRuleButton = nullptr;
     QPushButton *m_addAppProfileOverrideButton = nullptr;
     QPushButton *m_removeAppProfileOverrideButton = nullptr;
-    QListWidget *m_bindings = nullptr;
-    QList<BindingRule> m_bindingRules;
+    BindingsSettingsPage *m_bindingsPage = nullptr;
     GeneralSettingsPage *m_generalPage = nullptr;
     VocabularySettingsPage *m_vocabularyPage = nullptr;
     CorrectionsSettingsPage *m_correctionsPage = nullptr;

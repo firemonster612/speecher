@@ -1,7 +1,6 @@
 #include "ui/SettingsDialog.h"
 
 #include "app/ApplicationController.h"
-#include "core/BindingProcessor.h"
 #include "core/OutputMethod.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
@@ -11,6 +10,7 @@
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/Theme.h"
+#include "ui/settings/BindingsSettingsPage.h"
 #include "ui/settings/CorrectionsSettingsPage.h"
 #include "ui/settings/GeneralSettingsPage.h"
 #include "ui/settings/SettingsPageSupport.h"
@@ -21,8 +21,6 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDesktopServices>
-#include <QFile>
-#include <QFileDialog>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -33,12 +31,9 @@
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QMessageBox>
-#include <QPainter>
 #include <QPalette>
-#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollArea>
-#include <QScrollBar>
 #include <QSet>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -68,31 +63,6 @@ static QIcon informationIcon(QWidget *widget)
         icon = widget->style()->standardIcon(QStyle::SP_MessageBoxInformation, nullptr, widget);
     }
     return icon;
-}
-
-class ElidedLabel : public QLabel {
-public:
-    explicit ElidedLabel(QWidget *parent = nullptr)
-        : QLabel(parent)
-    {
-        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    }
-
-protected:
-    void paintEvent(QPaintEvent *) override
-    {
-        QPainter painter(this);
-        painter.setFont(font());
-        painter.setPen(palette().color(foregroundRole()));
-        painter.drawText(rect(), alignment(), fontMetrics().elidedText(text(), Qt::ElideRight, width()));
-    }
-};
-
-static QString bindingPreview(const QString &replacement)
-{
-    QString preview = replacement;
-    preview.replace(QLatin1Char('\n'), QStringLiteral(" / "));
-    return preview.simplified();
 }
 
 static PasteMethod pasteMethodFor(const QList<PasteRule> &rules,
@@ -304,7 +274,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_appPasteRules(new QTableWidget(this))
     , m_profileSettings(new QTableWidget(this))
     , m_appProfileOverrides(new QTableWidget(this))
-    , m_bindings(new QListWidget(this))
 {
     setWindowTitle(QStringLiteral("Speecher Settings"));
     resize(980, 780);
@@ -452,13 +421,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_appProfileOverrides->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_appProfileOverrides->setSelectionMode(QAbstractItemView::SingleSelection);
     m_appProfileOverrides->setMinimumHeight(150);
-    m_bindings->setObjectName(QStringLiteral("bindingList"));
-    m_bindings->setUniformItemSizes(false);
-    m_bindings->setAlternatingRowColors(false);
-    m_bindings->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_bindings->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_bindings->setMinimumHeight(180);
-
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
@@ -701,31 +663,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
 
     m_vocabularyPage = new VocabularySettingsPage(this);
     m_correctionsPage = new CorrectionsSettingsPage(this);
-
-    auto *bindingSection = new QFrame(this);
-    bindingSection->setObjectName(QStringLiteral("bindingSection"));
-    auto *bindingLayout = new QVBoxLayout(bindingSection);
-    auto *bindingTitle = new QLabel(QStringLiteral("Replacements & snippets"), bindingSection);
-    bindingTitle->setObjectName(QStringLiteral("subsectionLabel"));
-    bindingTitle->setForegroundRole(QPalette::WindowText);
-    bindingTitle->setAttribute(Qt::WA_StyledBackground, false);
-    auto *bindingDescription = new QLabel(
-        QStringLiteral("Replace a spoken phrase with exact text, including multi-line snippets. Matching ignores case and treats punctuation as spaces."),
-        bindingSection);
-    bindingDescription->setObjectName(QStringLiteral("rowDescription"));
-    bindingDescription->setWordWrap(true);
-    bindingDescription->setAttribute(Qt::WA_StyledBackground, false);
-    m_addBindingButton = new QPushButton(QStringLiteral("Add replacement"), bindingSection);
-    m_importSnippetsButton = new QPushButton(QStringLiteral("Import snippets JSON"), bindingSection);
-    m_addBindingButton->setIcon(QIcon::fromTheme(QStringLiteral("list-add")));
-    auto *bindingButtons = new QHBoxLayout;
-    bindingButtons->addStretch();
-    bindingButtons->addWidget(m_importSnippetsButton);
-    bindingButtons->addWidget(m_addBindingButton);
-    bindingLayout->addWidget(bindingTitle);
-    bindingLayout->addWidget(bindingDescription);
-    bindingLayout->addWidget(m_bindings);
-    bindingLayout->addLayout(bindingButtons);
+    m_bindingsPage = new BindingsSettingsPage(m_scroll, this);
 
     auto *note = new QLabel(QStringLiteral("Automatic OpenAI auth follows the Codex auth mode when available, then falls back to Codex API key, Codex OAuth, OPENAI_API_KEY, and the app settings key. Codex OAuth uses the ChatGPT Codex backend. The app settings key is stored in the desktop keyring through QtKeychain when available."), this);
     note->setObjectName(QStringLiteral("noteText"));
@@ -768,7 +706,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     vocabularyPageLayout->addWidget(correctionsSection);
     vocabularyPageLayout->addWidget(m_correctionsPage);
     vocabularyPageLayout->addWidget(bindingsSection);
-    vocabularyPageLayout->addWidget(bindingSection);
+    vocabularyPageLayout->addWidget(m_bindingsPage);
     vocabularyPageLayout->addStretch();
 
     const QList<QPair<QString, QString>> categories{
@@ -955,47 +893,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(m_ydotoolDisableButton, &QPushButton::clicked, this, &SettingsDialog::disableYdotool);
     connect(m_ydotoolRemoveButton, &QPushButton::clicked, this, &SettingsDialog::removeYdotoolSetup);
     connect(m_vocabularyPage, &VocabularySettingsPage::changed, this, &SettingsDialog::updateButtonState);
-    connect(m_addBindingButton, &QPushButton::clicked, this, [this] {
-        editBinding(-1);
-    });
-    connect(m_importSnippetsButton, &QPushButton::clicked, this, [this] {
-        const QString path = QFileDialog::getOpenFileName(
-            this,
-            QStringLiteral("Import snippets"),
-            QString(),
-            QStringLiteral("JSON files (*.json);;All files (*)"));
-        if (path.isEmpty()) {
-            return;
-        }
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly)) {
-            QMessageBox::warning(this,
-                                 QStringLiteral("Snippets not imported"),
-                                 QStringLiteral("Could not read %1.").arg(path));
-            return;
-        }
-        QString error;
-        const QList<BindingRule> imported = BindingProcessor::parseJsonImport(file.readAll(), &error);
-        if (!error.isEmpty()) {
-            QMessageBox::warning(this, QStringLiteral("Snippets not imported"), error);
-            return;
-        }
-        const BindingValidationResult merged = BindingProcessor::validateRules(m_bindingRules + imported);
-        if (!merged.ok()) {
-            QMessageBox::warning(this,
-                                 QStringLiteral("Snippets not imported"),
-                                 merged.messages().join(QStringLiteral("\n")));
-            return;
-        }
-        m_bindingRules = merged.rules;
-        refreshBindingList();
-        updateButtonState();
-    });
-    connect(m_bindings, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
-        if (item) {
-            editBinding(item->data(Qt::UserRole).toInt());
-        }
-    });
+    connect(m_bindingsPage, &BindingsSettingsPage::changed, this, &SettingsDialog::updateButtonState);
     load();
 }
 
@@ -1047,7 +945,7 @@ void SettingsDialog::load()
     selectData(m_anthropicAuthMode, settings->anthropicAuthMode());
     m_apiKey->setText(m_controller->secretStore()->apiKey());
     m_vocabularyPage->load(settings->vocabularyEntries());
-    setBindingRules(settings->bindingRules());
+    m_bindingsPage->load(settings->bindingRules());
     m_correctionsPage->load(settings->correctionLearningEnabled(), settings->learnedCorrections());
     updateAudioControls();
     updateAuthControl();
@@ -1060,12 +958,8 @@ void SettingsDialog::load()
 bool SettingsDialog::save()
 {
     SettingsStore *settings = m_controller->settings();
-    const QList<BindingRule> bindingRules = currentBindingRules();
-    const BindingValidationResult bindingValidation = BindingProcessor::validateRules(bindingRules);
-    if (!bindingValidation.ok()) {
-        QMessageBox::warning(this,
-                             QStringLiteral("Replacements not saved"),
-                             bindingValidation.messages().join(QStringLiteral("\n")));
+    QList<BindingRule> bindingRules;
+    if (!m_bindingsPage->validate(&bindingRules)) {
         return false;
     }
     const QList<PasteRule> applicationPasteRules = currentApplicationPasteRules();
@@ -1134,9 +1028,9 @@ bool SettingsDialog::save()
     settings->setVocabularyEntries(m_vocabularyPage->entries());
     settings->setCorrectionLearningEnabled(m_correctionsPage->learningEnabled());
     settings->setLearnedCorrections(m_correctionsPage->corrections());
-    settings->setBindingRules(bindingValidation.rules);
+    settings->setBindingRules(bindingRules);
     m_vocabularyPage->load(settings->vocabularyEntries());
-    setBindingRules(settings->bindingRules());
+    m_bindingsPage->load(settings->bindingRules());
     m_correctionsPage->load(settings->correctionLearningEnabled(), settings->learnedCorrections());
     if (settings->openAiAuthMode() == QStringLiteral("settings")) {
         if (!m_controller->secretStore()->saveApiKey(m_apiKey->text().trimmed())) {
@@ -1189,7 +1083,7 @@ bool SettingsDialog::hasChanges() const
         || m_anthropicAuthMode->currentData().toString() != settings->anthropicAuthMode()
         || m_vocabularyPage->hasChanges(settings->vocabularyEntries())
         || m_correctionsPage->hasChanges(settings->correctionLearningEnabled(), settings->learnedCorrections())
-        || currentBindingRules() != settings->bindingRules()) {
+        || m_bindingsPage->hasChanges(settings->bindingRules())) {
         return true;
     }
 
@@ -1365,182 +1259,6 @@ void SettingsDialog::addApplicationPasteRule(const PasteRule &rule)
         m_appPasteRules->setCurrentCell(row, 1);
         m_appPasteRules->editItem(application);
     }
-}
-
-QList<BindingRule> SettingsDialog::currentBindingRules() const
-{
-    return m_bindingRules;
-}
-
-void SettingsDialog::setBindingRules(const QList<BindingRule> &rules)
-{
-    m_bindingRules = rules;
-    refreshBindingList();
-}
-
-void SettingsDialog::refreshBindingList()
-{
-    QScrollBar *scrollBar = m_scroll ? m_scroll->verticalScrollBar() : nullptr;
-    const int scrollValue = scrollBar ? scrollBar->value() : 0;
-
-    QSignalBlocker blocker(m_bindings);
-    m_bindings->clear();
-
-    for (int row = 0; row < m_bindingRules.size(); ++row) {
-        const BindingRule rule = m_bindingRules.at(row);
-        auto *item = new QListWidgetItem(m_bindings);
-        item->setData(Qt::UserRole, row);
-        item->setSizeHint(QSize(0, 56));
-
-        auto *rowWidget = new QWidget(m_bindings);
-        rowWidget->setObjectName(QStringLiteral("bindingRow"));
-        auto *layout = new QHBoxLayout(rowWidget);
-        layout->setContentsMargins(10, 6, 8, 6);
-        layout->setSpacing(8);
-
-        auto *phrase = new ElidedLabel(rowWidget);
-        phrase->setText(rule.phrase);
-        phrase->setToolTip(rule.phrase);
-        phrase->setMinimumWidth(120);
-        phrase->setForegroundRole(QPalette::WindowText);
-        QFont phraseFont = phrase->font();
-        phraseFont.setBold(true);
-        phrase->setFont(phraseFont);
-
-        auto *arrow = new QLabel(rowWidget);
-        arrow->setAlignment(Qt::AlignCenter);
-        arrow->setPixmap(style()->standardIcon(QStyle::SP_ArrowRight).pixmap(16, 16));
-        arrow->setFixedWidth(18);
-
-        auto *preview = new ElidedLabel(rowWidget);
-        preview->setText(bindingPreview(rule.replacement));
-        preview->setToolTip(rule.replacement);
-        preview->setForegroundRole(QPalette::WindowText);
-
-        auto *edit = new QPushButton(QStringLiteral("Edit"), rowWidget);
-        edit->setIcon(QIcon::fromTheme(QStringLiteral("document-edit")));
-        edit->setMinimumWidth(edit->fontMetrics().horizontalAdvance(edit->text()) + 32);
-        edit->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
-
-        auto *remove = new QPushButton(QStringLiteral("Remove"), rowWidget);
-        remove->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
-        remove->setMinimumWidth(remove->fontMetrics().horizontalAdvance(remove->text()) + 32);
-        remove->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
-
-        layout->addWidget(phrase, 1);
-        layout->addWidget(arrow, 0);
-        layout->addWidget(preview, 4);
-        layout->addWidget(edit, 0);
-        layout->addWidget(remove, 0);
-
-        m_bindings->setItemWidget(item, rowWidget);
-
-        connect(edit, &QPushButton::clicked, this, [this, row] {
-            editBinding(row);
-        });
-        connect(remove, &QPushButton::clicked, this, [this, row] {
-            if (row < 0 || row >= m_bindingRules.size()) {
-                return;
-            }
-            m_bindingRules.removeAt(row);
-            refreshBindingList();
-            updateButtonState();
-        });
-    }
-
-    if (scrollBar) {
-        scrollBar->setValue(qMin(scrollValue, scrollBar->maximum()));
-        QTimer::singleShot(0, this, [this, scrollValue] {
-            QScrollBar *delayedScrollBar = m_scroll ? m_scroll->verticalScrollBar() : nullptr;
-            if (delayedScrollBar) {
-                delayedScrollBar->setValue(qMin(scrollValue, delayedScrollBar->maximum()));
-            }
-        });
-    }
-}
-
-void SettingsDialog::editBinding(int row)
-{
-    const bool editing = row >= 0 && row < m_bindingRules.size();
-
-    QDialog dialog(this);
-    dialog.setWindowTitle(editing ? QStringLiteral("Edit replacement") : QStringLiteral("Add replacement"));
-    auto *layout = new QVBoxLayout(&dialog);
-    layout->setContentsMargins(18, 18, 18, 14);
-    layout->setSpacing(8);
-
-    auto *phraseLabel = new QLabel(QStringLiteral("Spoken phrase"), &dialog);
-    auto *phrase = new QLineEdit(&dialog);
-    phrase->setClearButtonEnabled(true);
-
-    auto *replacementLabel = new QLabel(QStringLiteral("Exact replacement or snippet"), &dialog);
-    auto *replacement = new QPlainTextEdit(&dialog);
-    replacement->setMinimumHeight(240);
-    replacement->setLineWrapMode(QPlainTextEdit::WidgetWidth);
-
-    if (editing) {
-        phrase->setText(m_bindingRules.at(row).phrase);
-        replacement->setPlainText(m_bindingRules.at(row).replacement);
-    }
-
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
-    QPushButton *saveButton = buttons->button(QDialogButtonBox::Ok);
-    if (saveButton) {
-        saveButton->setText(QStringLiteral("Save"));
-        saveButton->setIcon(QIcon::fromTheme(QStringLiteral("document-save")));
-    }
-    QPushButton *deleteButton = nullptr;
-    if (editing) {
-        deleteButton = buttons->addButton(QStringLiteral("Delete"), QDialogButtonBox::DestructiveRole);
-        deleteButton->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
-    }
-
-    layout->addWidget(phraseLabel);
-    layout->addWidget(phrase);
-    layout->addSpacing(8);
-    layout->addWidget(replacementLabel);
-    layout->addWidget(replacement, 1);
-    layout->addWidget(buttons);
-
-    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    if (saveButton) {
-        connect(saveButton, &QPushButton::clicked, &dialog, [this, row, editing, phrase, replacement, &dialog] {
-            QList<BindingRule> candidate = m_bindingRules;
-            const BindingRule updated{phrase->text().trimmed(), replacement->toPlainText()};
-            if (editing) {
-                candidate[row] = updated;
-            } else {
-                candidate.append(updated);
-            }
-
-            const BindingValidationResult validation = BindingProcessor::validateRules(candidate);
-            if (!validation.ok()) {
-                QMessageBox::warning(&dialog,
-                                     QStringLiteral("Replacement not saved"),
-                                     validation.messages().join(QStringLiteral("\n")));
-                return;
-            }
-
-            m_bindingRules = validation.rules;
-            refreshBindingList();
-            updateButtonState();
-            dialog.accept();
-        });
-    }
-    if (deleteButton) {
-        connect(deleteButton, &QPushButton::clicked, &dialog, [this, row, &dialog] {
-            if (row >= 0 && row < m_bindingRules.size()) {
-                m_bindingRules.removeAt(row);
-                refreshBindingList();
-                updateButtonState();
-            }
-            dialog.accept();
-        });
-    }
-
-    dialog.resize(560, 430);
-    phrase->setFocus(Qt::OtherFocusReason);
-    dialog.exec();
 }
 
 void SettingsDialog::refreshAudioDeviceList(const QString &selectedDeviceId)
