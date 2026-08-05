@@ -5,8 +5,6 @@
 #include "core/OutputMethod.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
-#include "core/Vocabulary.h"
-#include "core/VocabularyLimit.h"
 #include "output/YdotoolDelivery.h"
 #include "output/YdotoolSetup.h"
 #include "platform/PlatformIntegration.h"
@@ -15,13 +13,13 @@
 #include "ui/Theme.h"
 #include "ui/settings/GeneralSettingsPage.h"
 #include "ui/settings/SettingsPageSupport.h"
+#include "ui/settings/VocabularySettingsPage.h"
 
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDesktopServices>
-#include <QDateTime>
 #include <QFile>
 #include <QFileDialog>
 #include <QFrame>
@@ -29,12 +27,10 @@
 #include <QHeaderView>
 #include <QHash>
 #include <QIcon>
-#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QListWidgetItem>
-#include <QLocale>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPalette>
@@ -61,29 +57,6 @@
 namespace speecher {
 
 using namespace settings;
-static QTableWidgetItem *makeVocabularyItem(const QString &text = QString());
-
-class VocabularyTable : public QTableWidget {
-public:
-    explicit VocabularyTable(QWidget *parent = nullptr)
-        : QTableWidget(parent)
-    {
-    }
-
-protected:
-    void keyPressEvent(QKeyEvent *event) override
-    {
-        QTableWidget::keyPressEvent(event);
-    }
-};
-
-static QTableWidgetItem *makeVocabularyItem(const QString &text)
-{
-    auto *item = new QTableWidgetItem(text);
-    item->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEditable | Qt::ItemIsEnabled);
-    return item;
-}
-
 static QIcon informationIcon(QWidget *widget)
 {
     QIcon icon = QIcon::fromTheme(QStringLiteral("dialog-information-symbolic"));
@@ -322,14 +295,12 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_authStatus(new QLabel(this))
     , m_anthropicWarning(new QLabel(this))
     , m_ydotoolStatus(new QLabel(this))
-    , m_vocabLimit(new QLabel(this))
     , m_apiKey(new QLineEdit(this))
     , m_scroll(new QScrollArea(this))
     , m_preRollMs(new QSpinBox(this))
     , m_postRollMs(new QSpinBox(this))
     , m_readinessTimeoutMs(new QSpinBox(this))
     , m_vadThreshold(new QSpinBox(this))
-    , m_vocab(new VocabularyTable(this))
     , m_corrections(new QTableWidget(this))
     , m_appPasteRules(new QTableWidget(this))
     , m_profileSettings(new QTableWidget(this))
@@ -442,28 +413,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_readinessTimeoutMs->setSuffix(QStringLiteral(" ms"));
     m_vadThreshold->setRange(1, 20);
     m_vadThreshold->setSuffix(QStringLiteral("%"));
-    m_vocab->setObjectName(QStringLiteral("vocabInput"));
-    m_vocab->setColumnCount(5);
-    m_vocab->setHorizontalHeaderLabels({
-        QStringLiteral("Star"),
-        QStringLiteral("Term"),
-        QStringLiteral("Source"),
-        QStringLiteral("Uses"),
-        QStringLiteral("Last used"),
-    });
-    m_vocab->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    m_vocab->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
-    m_vocab->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    m_vocab->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
-    m_vocab->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
-    m_vocab->verticalHeader()->hide();
-    m_vocab->setShowGrid(true);
-    m_vocab->setAlternatingRowColors(false);
-    m_vocab->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_vocab->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    m_vocab->setEditTriggers(QAbstractItemView::AllEditTriggers);
-    m_vocab->setTabKeyNavigation(false);
-    m_vocab->setMinimumHeight(120);
     m_corrections->setObjectName(QStringLiteral("vocabInput"));
     m_corrections->setColumnCount(4);
     m_corrections->setHorizontalHeaderLabels({
@@ -522,9 +471,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_appProfileOverrides->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_appProfileOverrides->setSelectionMode(QAbstractItemView::SingleSelection);
     m_appProfileOverrides->setMinimumHeight(150);
-    m_vocabLimit->setObjectName(QStringLiteral("statusText"));
-    m_vocabLimit->setForegroundRole(QPalette::WindowText);
-    m_vocabLimit->setAttribute(Qt::WA_StyledBackground, false);
     m_bindings->setObjectName(QStringLiteral("bindingList"));
     m_bindings->setUniformItemSizes(false);
     m_bindings->setAlternatingRowColors(false);
@@ -772,31 +718,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
            anthropicCard,
            false);
 
-    auto *vocabSection = new QFrame(this);
-    vocabSection->setObjectName(QStringLiteral("vocabSection"));
-    auto *vocabLayout = new QVBoxLayout(vocabSection);
-    auto *vocabTitle = new QLabel(QStringLiteral("Extra vocabulary"), vocabSection);
-    vocabTitle->setObjectName(QStringLiteral("subsectionLabel"));
-    vocabTitle->setForegroundRole(QPalette::WindowText);
-    vocabTitle->setAttribute(Qt::WA_StyledBackground, false);
-    auto *vocabDescription = new QLabel(QStringLiteral("One term per line. Claude voice uses Deepgram Nova-3 keyterms: 500 tokens and 100 keyterms maximum."), vocabSection);
-    vocabDescription->setObjectName(QStringLiteral("rowDescription"));
-    vocabDescription->setWordWrap(true);
-    vocabDescription->setAttribute(Qt::WA_StyledBackground, false);
-    vocabLayout->addWidget(vocabTitle);
-    vocabLayout->addWidget(vocabDescription);
-    vocabLayout->addWidget(m_vocab);
-    vocabLayout->addWidget(m_vocabLimit);
-    m_addVocabularyButton = new QPushButton(QStringLiteral("Add"), vocabSection);
-    m_importVocabularyButton = new QPushButton(QStringLiteral("Import CSV"), vocabSection);
-    m_removeVocabularyButton = new QPushButton(QStringLiteral("Delete selected"), vocabSection);
-    m_removeVocabularyButton->setEnabled(false);
-    auto *vocabularyButtons = new QHBoxLayout;
-    vocabularyButtons->addWidget(m_addVocabularyButton);
-    vocabularyButtons->addWidget(m_importVocabularyButton);
-    vocabularyButtons->addStretch();
-    vocabularyButtons->addWidget(m_removeVocabularyButton);
-    vocabLayout->addLayout(vocabularyButtons);
+    m_vocabularyPage = new VocabularySettingsPage(this);
 
     auto *correctionsCard = new QFrame(this);
     correctionsCard->setObjectName(QStringLiteral("vocabSection"));
@@ -882,7 +804,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
 
     auto *vocabularyPageLayout = makeSettingsPage(m_scroll);
     vocabularyPageLayout->addWidget(vocabularySection);
-    vocabularyPageLayout->addWidget(vocabSection);
+    vocabularyPageLayout->addWidget(m_vocabularyPage);
     vocabularyPageLayout->addWidget(correctionsSection);
     vocabularyPageLayout->addWidget(correctionsCard);
     vocabularyPageLayout->addWidget(bindingsSection);
@@ -1107,32 +1029,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     });
     connect(m_ydotoolDisableButton, &QPushButton::clicked, this, &SettingsDialog::disableYdotool);
     connect(m_ydotoolRemoveButton, &QPushButton::clicked, this, &SettingsDialog::removeYdotoolSetup);
-    connect(m_vocab, &QTableWidget::itemChanged, this, [this] {
-        updateVocabularyLimit();
-        updateButtonState();
-    });
-    connect(m_vocab, &QTableWidget::itemSelectionChanged, this, [this] {
-        m_removeVocabularyButton->setEnabled(!m_vocab->selectionModel()->selectedRows().isEmpty());
-    });
-    connect(m_addVocabularyButton, &QPushButton::clicked, this, [this] {
-        addVocabularyEntry();
-        const int row = m_vocab->rowCount() - 1;
-        m_vocab->setCurrentCell(row, 1);
-        m_vocab->editItem(m_vocab->item(row, 1));
-        updateButtonState();
-    });
-    connect(m_importVocabularyButton, &QPushButton::clicked, this, &SettingsDialog::importVocabularyCsv);
-    connect(m_removeVocabularyButton, &QPushButton::clicked, this, [this] {
-        QModelIndexList rows = m_vocab->selectionModel()->selectedRows();
-        std::sort(rows.begin(), rows.end(), [](const QModelIndex &left, const QModelIndex &right) {
-            return left.row() > right.row();
-        });
-        for (const QModelIndex &row : rows) {
-            m_vocab->removeRow(row.row());
-        }
-        updateVocabularyLimit();
-        updateButtonState();
-    });
+    connect(m_vocabularyPage, &VocabularySettingsPage::changed, this, &SettingsDialog::updateButtonState);
     connect(m_addBindingButton, &QPushButton::clicked, this, [this] {
         editBinding(-1);
     });
@@ -1224,14 +1121,13 @@ void SettingsDialog::load()
     selectData(m_authMode, settings->openAiAuthMode());
     selectData(m_anthropicAuthMode, settings->anthropicAuthMode());
     m_apiKey->setText(m_controller->secretStore()->apiKey());
-    setVocabularyRows(settings->vocabularyEntries());
+    m_vocabularyPage->load(settings->vocabularyEntries());
     setBindingRules(settings->bindingRules());
     m_learnCorrections->setChecked(settings->correctionLearningEnabled());
     m_removedCorrections.clear();
     m_undoCorrectionButton->setEnabled(false);
     setLearnedCorrections(settings->learnedCorrections());
     m_undoLatestLearnButton->setEnabled(!settings->learnedCorrections().isEmpty());
-    updateVocabularyLimit();
     updateAudioControls();
     updateAuthControl();
     updateAnthropicControls();
@@ -1314,16 +1210,15 @@ bool SettingsDialog::save()
     settings->setRestoreClipboardAfterTyping(m_restoreClipboardAfterTyping->isChecked());
     settings->setOpenAiAuthMode(m_authMode->currentData().toString());
     settings->setAnthropicAuthMode(m_anthropicAuthMode->currentData().toString());
-    settings->setVocabularyEntries(currentVocabularyEntries());
+    settings->setVocabularyEntries(m_vocabularyPage->entries());
     settings->setCorrectionLearningEnabled(m_learnCorrections->isChecked());
     settings->setLearnedCorrections(currentLearnedCorrections());
     settings->setBindingRules(bindingValidation.rules);
-    setVocabularyRows(settings->vocabularyEntries());
+    m_vocabularyPage->load(settings->vocabularyEntries());
     setBindingRules(settings->bindingRules());
     setLearnedCorrections(settings->learnedCorrections());
     m_removedCorrections.clear();
     m_undoCorrectionButton->setEnabled(false);
-    updateVocabularyLimit();
     if (settings->openAiAuthMode() == QStringLiteral("settings")) {
         if (!m_controller->secretStore()->saveApiKey(m_apiKey->text().trimmed())) {
             QMessageBox::warning(this,
@@ -1373,7 +1268,7 @@ bool SettingsDialog::hasChanges() const
         || m_restoreClipboardAfterTyping->isChecked() != settings->restoreClipboardAfterTyping()
         || m_authMode->currentData().toString() != settings->openAiAuthMode()
         || m_anthropicAuthMode->currentData().toString() != settings->anthropicAuthMode()
-        || currentVocabularyEntries() != settings->vocabularyEntries()
+        || m_vocabularyPage->hasChanges(settings->vocabularyEntries())
         || m_learnCorrections->isChecked() != settings->correctionLearningEnabled()
         || currentLearnedCorrections() != settings->learnedCorrections()
         || currentBindingRules() != settings->bindingRules()) {
@@ -1382,28 +1277,6 @@ bool SettingsDialog::hasChanges() const
 
     return m_authMode->currentData().toString() == QStringLiteral("settings")
         && m_apiKey->text().trimmed() != m_controller->secretStore()->apiKey();
-}
-
-QList<VocabularyEntry> SettingsDialog::currentVocabularyEntries() const
-{
-    QList<VocabularyEntry> entries;
-    for (int row = 0; row < m_vocab->rowCount(); ++row) {
-        const QTableWidgetItem *starred = m_vocab->item(row, 0);
-        const QTableWidgetItem *term = m_vocab->item(row, 1);
-        const QTableWidgetItem *source = m_vocab->item(row, 2);
-        const QTableWidgetItem *frequency = m_vocab->item(row, 3);
-        const QTableWidgetItem *lastUsed = m_vocab->item(row, 4);
-        if (term && !term->text().trimmed().isEmpty()) {
-            entries.append({
-                term->text(),
-                source ? source->text() : QStringLiteral("manual"),
-                starred && starred->checkState() == Qt::Checked,
-                frequency ? frequency->data(Qt::UserRole).toInt() : 0,
-                lastUsed ? lastUsed->data(Qt::UserRole).toLongLong() : 0,
-            });
-        }
-    }
-    return normalizeVocabularyEntries(entries);
 }
 
 QList<LearnedCorrection> SettingsDialog::currentLearnedCorrections() const
@@ -1635,78 +1508,6 @@ void SettingsDialog::setLearnedCorrections(const QList<LearnedCorrection> &corre
 QList<BindingRule> SettingsDialog::currentBindingRules() const
 {
     return m_bindingRules;
-}
-
-void SettingsDialog::setVocabularyRows(const QList<VocabularyEntry> &entries)
-{
-    QSignalBlocker blocker(m_vocab);
-    m_updatingVocabulary = true;
-
-    m_vocab->clearContents();
-    m_vocab->setRowCount(0);
-    for (const VocabularyEntry &entry : normalizeVocabularyEntries(entries)) {
-        addVocabularyEntry(entry);
-    }
-    if (m_vocab->rowCount() > 0) {
-        m_vocab->setCurrentCell(0, 1);
-    }
-
-    m_updatingVocabulary = false;
-}
-
-void SettingsDialog::addVocabularyEntry(const VocabularyEntry &entry)
-{
-    const int row = m_vocab->rowCount();
-    m_vocab->insertRow(row);
-    auto *starred = new QTableWidgetItem;
-    starred->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
-    starred->setCheckState(entry.starred ? Qt::Checked : Qt::Unchecked);
-    auto *term = makeVocabularyItem(entry.term);
-    auto *source = makeVocabularyItem(entry.source.isEmpty() ? QStringLiteral("manual") : entry.source);
-    auto *frequency = new QTableWidgetItem(QString::number(qMax(0, entry.frequency)));
-    frequency->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
-    frequency->setData(Qt::UserRole, qMax(0, entry.frequency));
-    auto *lastUsed = new QTableWidgetItem(
-        entry.lastUsedMs > 0
-            ? QLocale().toString(
-                  QDateTime::fromMSecsSinceEpoch(entry.lastUsedMs),
-                  QLocale::ShortFormat)
-            : QStringLiteral("Never"));
-    lastUsed->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
-    lastUsed->setData(Qt::UserRole, entry.lastUsedMs);
-    m_vocab->setItem(row, 0, starred);
-    m_vocab->setItem(row, 1, term);
-    m_vocab->setItem(row, 2, source);
-    m_vocab->setItem(row, 3, frequency);
-    m_vocab->setItem(row, 4, lastUsed);
-}
-
-void SettingsDialog::importVocabularyCsv()
-{
-    const QString path = QFileDialog::getOpenFileName(
-        this,
-        QStringLiteral("Import vocabulary"),
-        QString(),
-        QStringLiteral("CSV files (*.csv);;All files (*)"));
-    if (path.isEmpty()) {
-        return;
-    }
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        QMessageBox::warning(this,
-                             QStringLiteral("Vocabulary not imported"),
-                             QStringLiteral("Could not read %1.").arg(path));
-        return;
-    }
-    QString error;
-    const QList<VocabularyEntry> imported = parseVocabularyCsv(file.readAll(), &error);
-    if (!error.isEmpty()) {
-        QMessageBox::warning(this, QStringLiteral("Vocabulary not imported"), error);
-        return;
-    }
-    setVocabularyRows(currentVocabularyEntries() + imported);
-    updateVocabularyLimit();
-    updateButtonState();
 }
 
 void SettingsDialog::setBindingRules(const QList<BindingRule> &rules)
@@ -2145,32 +1946,6 @@ bool SettingsDialog::verifyYdotoolTyping()
     dialog.resize(420, dialog.sizeHint().height());
     field->setFocus(Qt::OtherFocusReason);
     return dialog.exec() == QDialog::Accepted;
-}
-
-void SettingsDialog::updateVocabularyLimit()
-{
-    if (m_updatingVocabulary) {
-        return;
-    }
-
-    QStringList terms;
-    for (int row = 0; row < m_vocab->rowCount(); ++row) {
-        const QTableWidgetItem *item = m_vocab->item(row, 1);
-        const QString term = item ? item->text().trimmed() : QString();
-        if (!term.isEmpty()) {
-            terms << term;
-        }
-    }
-    const QList<VocabularyEntry> normalized = currentVocabularyEntries();
-    if (normalized.size() != terms.size()) {
-        setVocabularyRows(normalized);
-    }
-
-    QStringList limitedTerms;
-    for (const VocabularyEntry &entry : normalized) {
-        limitedTerms.append(entry.term);
-    }
-    m_vocabLimit->setText(VocabularyLimit::summary(limitedTerms));
 }
 
 } // namespace speecher

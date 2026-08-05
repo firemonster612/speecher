@@ -159,6 +159,7 @@ set(SPEECHER_APP_UI_SOURCES
   src/ui/SettingsDialog.cpp
   src/ui/settings/GeneralSettingsPage.cpp
   src/ui/settings/SettingsPageSupport.cpp
+  src/ui/settings/VocabularySettingsPage.cpp
   src/ui/Theme.cpp
   src/ui/TranscriberPopup.cpp
   src/ui/WaveformWidget.cpp
@@ -171,6 +172,7 @@ set(SPEECHER_APP_UI_HEADERS
   src/ui/SettingsDialog.h
   src/ui/settings/GeneralSettingsPage.h
   src/ui/settings/SettingsPageSupport.h
+  src/ui/settings/VocabularySettingsPage.h
   src/ui/Theme.h
   src/ui/TranscriberPopup.h
   src/ui/WaveformWidget.h

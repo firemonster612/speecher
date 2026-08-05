@@ -19,6 +19,7 @@ namespace speecher {
 
 class ApplicationController;
 class GeneralSettingsPage;
+class VocabularySettingsPage;
 
 class SettingsDialog : public QDialog {
     Q_OBJECT
@@ -30,16 +31,12 @@ private:
     void load();
     bool save();
     bool hasChanges() const;
-    QList<VocabularyEntry> currentVocabularyEntries() const;
     QList<BindingRule> currentBindingRules() const;
     QList<LearnedCorrection> currentLearnedCorrections() const;
     QList<PasteRule> currentApplicationPasteRules() const;
     QList<PasteRule> currentCategoryPasteRules() const;
     QList<WritingProfileSettings> currentWritingProfileSettings() const;
     QList<WritingProfileOverride> currentWritingProfileOverrides() const;
-    void setVocabularyRows(const QList<VocabularyEntry> &entries);
-    void addVocabularyEntry(const VocabularyEntry &entry = {});
-    void importVocabularyCsv();
     void setBindingRules(const QList<BindingRule> &rules);
     void setLearnedCorrections(const QList<LearnedCorrection> &corrections);
     void setApplicationPasteRules(const QList<PasteRule> &rules);
@@ -58,7 +55,6 @@ private:
     void refreshOutputControls();
     void updateYdotoolButtons();
     void updateButtonState();
-    void updateVocabularyLimit();
     void setupOrEnableYdotool();
     void disableYdotool();
     void removeYdotoolSetup();
@@ -89,7 +85,6 @@ private:
     QLabel *m_anthropicWarning = nullptr;
     QWidget *m_anthropicWarningRow = nullptr;
     QLabel *m_ydotoolStatus = nullptr;
-    QLabel *m_vocabLimit = nullptr;
     QLabel *m_runtimeStatus = nullptr;
     QLineEdit *m_apiKey = nullptr;
     QPushButton *m_okButton = nullptr;
@@ -101,9 +96,6 @@ private:
     QPushButton *m_anthropicInfoButton = nullptr;
     QPushButton *m_addBindingButton = nullptr;
     QPushButton *m_importSnippetsButton = nullptr;
-    QPushButton *m_addVocabularyButton = nullptr;
-    QPushButton *m_importVocabularyButton = nullptr;
-    QPushButton *m_removeVocabularyButton = nullptr;
     QScrollArea *m_scroll = nullptr;
     QListWidget *m_categories = nullptr;
     QStackedWidget *m_pages = nullptr;
@@ -111,7 +103,6 @@ private:
     QSpinBox *m_postRollMs = nullptr;
     QSpinBox *m_readinessTimeoutMs = nullptr;
     QSpinBox *m_vadThreshold = nullptr;
-    QTableWidget *m_vocab = nullptr;
     QTableWidget *m_corrections = nullptr;
     QTableWidget *m_appPasteRules = nullptr;
     QTableWidget *m_profileSettings = nullptr;
@@ -127,7 +118,7 @@ private:
     QList<LearnedCorrection> m_removedCorrections;
     QList<BindingRule> m_bindingRules;
     GeneralSettingsPage *m_generalPage = nullptr;
-    bool m_updatingVocabulary = false;
+    VocabularySettingsPage *m_vocabularyPage = nullptr;
 };
 
 } // namespace speecher
