@@ -2,6 +2,7 @@
 
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
+#include "core/WordPreview.h"
 #include "providers/ProviderRegistry.h"
 
 #include <QDebug>
@@ -97,8 +98,9 @@ DictationSession::DictationSession(SettingsStore *settings,
     , m_transcript(new TranscriptState(this))
 {
     connect(m_transcript, &TranscriptState::changed, this, [this](const QString &text) {
-        emit previewDisplayChanged(text);
-        qInfo() << "transcript changed length=" << text.size();
+        const int words = m_settings ? m_settings->previewWords() : 7;
+        emit previewDisplayChanged(WordPreview::lastWords(text, words));
+        qInfo() << "transcript changed length=" << text.size() << "previewWords=" << words;
         emit previewChanged(text);
     });
     connect(m_audio, &AudioInput::levelChanged, this, &DictationSession::audioLevelChanged);

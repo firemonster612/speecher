@@ -843,7 +843,7 @@ private slots:
 
         SettingsStore settings;
         settings.raw().clear();
-        QCOMPARE(settings.previewWords(), 8);
+        QCOMPARE(settings.previewWords(), 7);
         QCOMPARE(settings.theme(), QStringLiteral("system"));
         QCOMPARE(settings.pauseMediaDuringTranscription(), true);
         QCOMPARE(settings.soundsEnabled(), false);
@@ -2340,6 +2340,7 @@ exit 0
         settings.setRefinementProvider(QStringLiteral("openai"));
         settings.setRefinementStyle(QStringLiteral("light_cleanup"));
         settings.setCustomVocabulary({QStringLiteral("Qt")});
+        settings.setPreviewWords(2);
 
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
@@ -2353,13 +2354,13 @@ exit 0
         QSignalSpy rawPreviewSpy(&session, &DictationSession::previewDisplayChanged);
 
         session.startListening();
-        speech->emitFinalText(QStringLiteral("rough text"));
+        speech->emitFinalText(QStringLiteral("one two rough text"));
         refiner->autoComplete = true;
         refiner->autoCompleteText = QStringLiteral("Polished text.");
         session.stopListening();
 
         QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
-        QCOMPARE(refiner->lastRawTranscript, QStringLiteral("rough text"));
+        QCOMPARE(refiner->lastRawTranscript, QStringLiteral("one two rough text"));
         QCOMPARE(refiner->lastVocabulary, QStringList{QStringLiteral("Qt")});
         QCOMPARE(refiner->lastStyle, QStringLiteral("light_cleanup"));
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);

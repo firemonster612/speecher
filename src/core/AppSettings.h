@@ -18,7 +18,7 @@ struct BindingRule {
 };
 
 struct UiSettings {
-    int previewWords = 8;
+    int previewWords = 7;
     QString theme = QStringLiteral("system");
     bool pauseMediaDuringTranscription = true;
     bool soundsEnabled = false;

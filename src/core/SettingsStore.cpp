@@ -63,7 +63,7 @@ QVariant SettingsStore::value(const QString &key, const QVariant &fallback) cons
 
 int SettingsStore::previewWords() const
 {
-    return std::clamp(value(QStringLiteral("ui/previewWords"), 8).toInt(), 1, 40);
+    return std::clamp(value(QStringLiteral("ui/previewWords"), 7).toInt(), 1, 40);
 }
 
 void SettingsStore::setPreviewWords(int value)
