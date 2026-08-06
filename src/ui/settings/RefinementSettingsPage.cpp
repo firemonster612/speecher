@@ -125,17 +125,18 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     cardLayout->addWidget(profileSettingsControl);
     cardLayout->addWidget(settings::makeSeparator(card));
 
-    auto *profileOverridesControl = new QWidget(card);
-    auto *profileOverridesLayout = new QVBoxLayout(profileOverridesControl);
-    auto *profileOverridesTitle = new QLabel(QStringLiteral("App-specific profile overrides"), profileOverridesControl);
+    m_profileOverridesControl = new QWidget(card);
+    m_profileOverridesControl->setObjectName(QStringLiteral("applicationProfileOverrides"));
+    auto *profileOverridesLayout = new QVBoxLayout(m_profileOverridesControl);
+    auto *profileOverridesTitle = new QLabel(QStringLiteral("App-specific profile overrides"), m_profileOverridesControl);
     profileOverridesTitle->setObjectName(QStringLiteral("subsectionLabel"));
     auto *profileOverridesDescription = new QLabel(
         QStringLiteral("An exact application ID overrides automatic category detection and the fallback profile."),
-        profileOverridesControl);
+        m_profileOverridesControl);
     profileOverridesDescription->setObjectName(QStringLiteral("rowDescription"));
     profileOverridesDescription->setWordWrap(true);
-    m_addAppProfileOverrideButton = new QPushButton(QStringLiteral("Add override"), profileOverridesControl);
-    m_removeAppProfileOverrideButton = new QPushButton(QStringLiteral("Delete selected"), profileOverridesControl);
+    m_addAppProfileOverrideButton = new QPushButton(QStringLiteral("Add override"), m_profileOverridesControl);
+    m_removeAppProfileOverrideButton = new QPushButton(QStringLiteral("Delete selected"), m_profileOverridesControl);
     m_removeAppProfileOverrideButton->setEnabled(false);
     auto *profileOverrideButtons = new QHBoxLayout;
     profileOverrideButtons->addStretch();
@@ -145,10 +146,16 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     profileOverridesLayout->addWidget(profileOverridesDescription);
     profileOverridesLayout->addWidget(m_appProfileOverrides);
     profileOverridesLayout->addLayout(profileOverrideButtons);
-    cardLayout->addWidget(profileOverridesControl);
+    cardLayout->addWidget(m_profileOverridesControl);
     cardLayout->addWidget(settings::makeSeparator(card));
 
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Target context"), QStringLiteral("Use the focused app, control, selection, and bounded nearby text for cleanup."), m_useTargetContext, card), card);
+    m_targetContextControl = settings::makeRow(
+        QStringLiteral("Target context"),
+        QStringLiteral("Use the focused app, control, selection, and bounded nearby text for cleanup."),
+        m_useTargetContext,
+        card);
+    m_targetContextControl->setObjectName(QStringLiteral("targetContextControl"));
+    settings::addRow(cardLayout, m_targetContextControl, card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Screenshot context"), QStringLiteral("Off by default; used only with image-capable refinement models."), m_screenshotContext, card), card, false);
 
     auto *pageLayout = settings::makeSettingsPage(this);
@@ -178,6 +185,17 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     });
     connect(m_useTargetContext, &QCheckBox::toggled, this, &RefinementSettingsPage::changed);
     connect(m_screenshotContext, &QCheckBox::toggled, this, &RefinementSettingsPage::changed);
+}
+
+void RefinementSettingsPage::setTargetAccessibilityAvailable(bool available)
+{
+    const QString explanation = available
+        ? QString()
+        : QStringLiteral("Enable desktop accessibility (AT-SPI) to use target-aware refinement.");
+    m_profileOverridesControl->setEnabled(available);
+    m_profileOverridesControl->setToolTip(explanation);
+    m_targetContextControl->setEnabled(available);
+    m_targetContextControl->setToolTip(explanation);
 }
 
 void RefinementSettingsPage::load(const AppSettings &settings)

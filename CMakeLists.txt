@@ -167,6 +167,7 @@ set(SPEECHER_APP_UI_SOURCES
   src/app/ApplicationController.cpp
   src/app/LinuxComposition.cpp
   src/app/SingleInstanceIpc.cpp
+  src/ui/AccessibilityNotice.cpp
   src/ui/MainWindow.cpp
   src/ui/SettingsDialog.cpp
   src/ui/settings/AudioSettingsPage.cpp
@@ -187,6 +188,7 @@ set(SPEECHER_APP_UI_HEADERS
   src/app/ApplicationController.h
   src/app/LinuxComposition.h
   src/app/SingleInstanceIpc.h
+  src/ui/AccessibilityNotice.h
   src/ui/MainWindow.h
   src/ui/PopupPositioner.h
   src/ui/SettingsDialog.h

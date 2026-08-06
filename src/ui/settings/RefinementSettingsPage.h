@@ -6,6 +6,7 @@
 
 class QCheckBox;
 class QComboBox;
+class QFrame;
 class QPushButton;
 class QTableWidget;
 
@@ -23,6 +24,7 @@ public:
     bool validate() const;
     void appendToDraft(AppSettings &draft) const;
     bool hasChanges(const AppSettings &settings) const;
+    void setTargetAccessibilityAvailable(bool available);
 
 signals:
     void changed();
@@ -43,6 +45,8 @@ private:
     QTableWidget *m_appProfileOverrides;
     QPushButton *m_addAppProfileOverrideButton;
     QPushButton *m_removeAppProfileOverrideButton;
+    QWidget *m_profileOverridesControl = nullptr;
+    QFrame *m_targetContextControl = nullptr;
 };
 
 } // namespace speecher

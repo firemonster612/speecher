@@ -84,6 +84,36 @@ private slots:
         QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::ClipboardOnly);
     }
 
+    void accessibleTerminalWithoutApplicationIdUsesTerminalPaste()
+    {
+        PasteMethod attemptedMethod = PasteMethod::ClipboardOnly;
+        QList<QString> attempts;
+        QHash<QString, bool> results{{QString::fromLatin1(OutputMethod::Ydotool), true}};
+        FakeTargetProvider targetProvider;
+        TextDelivery delivery(
+            [&attemptedMethod, &attempts, &results](const QString &method,
+                                                   const OutputSettings &,
+                                                   PasteMethod pasteMethod) {
+                attemptedMethod = pasteMethod;
+                return std::make_unique<FakeBackend>(method, &attempts, &results);
+            },
+            &targetProvider);
+        OutputSettings settings;
+        settings.method = QString::fromLatin1(OutputMethod::Ydotool);
+        settings.ydotoolEnabled = true;
+        settings.pasteRules = defaultPasteRules();
+        Target target;
+        target.accessible = true;
+        target.role = QStringLiteral("terminal");
+        target.category = classifyTarget(target);
+
+        delivery.deliver(settings,
+                         makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
+                         target);
+
+        QCOMPARE(attemptedMethod, PasteMethod::TerminalPaste);
+    }
+
     void writingProfilesAndPromptUseBoundedUntrustedContext()
     {
         Target target;
@@ -186,6 +216,7 @@ private slots:
 
         QCOMPARE(classified(QStringLiteral("kate")).category, AppCategory::CodeEditor);
         QCOMPARE(classified(QStringLiteral("konsole")).category, AppCategory::Terminal);
+        QCOMPARE(classified(QStringLiteral("com.mitchellh.ghostty")).category, AppCategory::Terminal);
         QCOMPARE(classified(QStringLiteral("firefox")).category, AppCategory::Browser);
         QCOMPARE(classified(QStringLiteral("helium")).category, AppCategory::Browser);
         QCOMPARE(classified(QStringLiteral("thunderbird")).category, AppCategory::Email);

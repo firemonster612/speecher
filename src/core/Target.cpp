@@ -129,6 +129,7 @@ AppCategory classifyTarget(const Target &target)
 
     if (identity.contains(QStringLiteral("terminal"))
         || identity.contains(QStringLiteral("konsole"))
+        || identity.contains(QStringLiteral("ghostty"))
         || identity.contains(QStringLiteral("alacritty"))
         || identity.contains(QStringLiteral("kitty"))) {
         return AppCategory::Terminal;

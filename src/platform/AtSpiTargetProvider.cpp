@@ -61,7 +61,6 @@ QString copiedKTextEditorSelection()
 AtSpiTargetProvider::AtSpiTargetProvider(QObject *parent)
     : TargetProvider(parent)
 {
-    atspi::requestAccessibility();
 }
 
 AtSpiTargetProvider::~AtSpiTargetProvider()

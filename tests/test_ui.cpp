@@ -1,6 +1,13 @@
 #include "common/test_doubles.h"
 #include "common/test_http.h"
 #include "common/test_auth.h"
+#include "ui/AccessibilityNotice.h"
+#include "ui/settings/CorrectionsSettingsPage.h"
+#include "ui/settings/OutputSettingsPage.h"
+#include "ui/settings/RefinementSettingsPage.h"
+
+#include <QLabel>
+#include <QPushButton>
 
 using namespace speecher::test;
 
@@ -40,6 +47,60 @@ private slots:
         QCOMPARE(qApp->palette().color(QPalette::Base), desktopBase);
 
         qApp->setPalette(original);
+    }
+
+    void accessibilityNoticeExplainsAndOffersTheFix()
+    {
+        QWidget window;
+        auto *layout = new QVBoxLayout(&window);
+        auto *notice = new AccessibilityNotice(&window);
+        layout->addWidget(notice);
+        window.show();
+
+        notice->setState(false, false);
+        QVERIFY(notice->isVisible());
+        auto *message = notice->findChild<QLabel *>(QStringLiteral("accessibilityNoticeMessage"));
+        auto *button = notice->findChild<QPushButton *>(QStringLiteral("enableAccessibilityButton"));
+        QVERIFY(message);
+        QVERIFY(button);
+        QVERIFY(message->text().contains(QStringLiteral("AT-SPI")));
+        QCOMPARE(button->text(), QStringLiteral("Enable permanently"));
+        QSignalSpy requested(notice, &AccessibilityNotice::enableRequested);
+        button->click();
+        QCOMPARE(requested.count(), 1);
+
+        notice->setState(true, false);
+        QVERIFY(notice->isVisible());
+        QVERIFY(message->text().contains(QStringLiteral("only for this session")));
+
+        notice->setState(true, true);
+        QVERIFY(!notice->isVisible());
+    }
+
+    void targetAwareSettingsDisableWithoutAtSpi()
+    {
+        SettingsStore settings;
+        ProviderRegistry providers;
+        OutputSettingsPage output(settings);
+        RefinementSettingsPage refinement(providers);
+        CorrectionsSettingsPage corrections;
+
+        output.setTargetAccessibilityAvailable(false);
+        refinement.setTargetAccessibilityAvailable(false);
+        corrections.setTargetAccessibilityAvailable(false);
+
+        QVERIFY(!output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
+        QVERIFY(!refinement.findChild<QWidget *>(QStringLiteral("applicationProfileOverrides"))->isEnabled());
+        QVERIFY(!refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
+        QVERIFY(!corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
+
+        output.setTargetAccessibilityAvailable(true);
+        refinement.setTargetAccessibilityAvailable(true);
+        corrections.setTargetAccessibilityAvailable(true);
+        QVERIFY(output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
+        QVERIFY(refinement.findChild<QWidget *>(QStringLiteral("applicationProfileOverrides"))->isEnabled());
+        QVERIFY(refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
+        QVERIFY(corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
     }
 
     void settingsDialogUsesKdePageWidgetOnPlasma()

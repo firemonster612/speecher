@@ -34,6 +34,10 @@ public:
     IpcResponse response(bool ok = true, const QString &message = {}) const;
     QString outputSummary() const;
     QString primaryOutputStatus() const;
+    bool accessibilitySupported() const;
+    bool accessibilityEnabled() const;
+    bool accessibilityPersistent() const;
+    bool enableAccessibility(QString *error = nullptr);
 
     void showMainWindow();
     void showSettingsWindow();
@@ -50,10 +54,12 @@ public slots:
 signals:
     void statusChanged(const QString &status);
     void previewChanged(const QString &preview);
+    void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
 
 private:
     void registerProviders();
     void wireSessionToPopup();
+    void refreshAccessibilityState();
 
     bool m_popupOnly = false;
     std::shared_ptr<const LinuxComposition> m_platform;
@@ -65,6 +71,9 @@ private:
     MainWindow *m_mainWindow = nullptr;
     QPointer<SettingsDialog> m_settingsDialog;
     SingleInstanceIpc *m_ipc = nullptr;
+    bool m_accessibilitySupported = false;
+    bool m_accessibilityEnabled = false;
+    bool m_accessibilityPersistent = false;
 };
 
 } // namespace speecher

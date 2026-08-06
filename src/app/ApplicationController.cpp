@@ -11,6 +11,7 @@
 #include "ui/MainWindow.h"
 #include "ui/SettingsDialog.h"
 #include "ui/TranscriberPopup.h"
+#include "platform/atspi/AtSpiAccess.h"
 
 #include <QApplication>
 #include <QDebug>
@@ -27,6 +28,10 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
     , m_popup(new TranscriberPopup(m_platform->createPopupPositioner(nullptr)))
     , m_ipc(new SingleInstanceIpc(m_platform, this))
 {
+    const atspi::AccessibilityState initialAccessibility = atspi::accessibilityState();
+    if (initialAccessibility.persistent) {
+        atspi::requestAccessibility();
+    }
     registerProviders();
     TargetProvider *targetProvider = m_platform->createTargetProvider(this);
     connect(targetProvider,
@@ -61,6 +66,16 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
         }
     });
     wireSessionToPopup();
+    if (initialAccessibility.persistent) {
+        refreshAccessibilityState();
+    } else {
+        m_accessibilitySupported = initialAccessibility.supported;
+        m_accessibilityEnabled = initialAccessibility.enabled;
+        m_accessibilityPersistent = false;
+        emit accessibilityStateChanged(m_accessibilitySupported,
+                                       m_accessibilityEnabled,
+                                       m_accessibilityPersistent);
+    }
 }
 
 SettingsStore *ApplicationController::settings() const
@@ -102,6 +117,28 @@ QString ApplicationController::outputSummary() const
 QString ApplicationController::primaryOutputStatus() const
 {
     return m_platform->primaryOutputStatus();
+}
+
+bool ApplicationController::accessibilitySupported() const
+{
+    return m_accessibilitySupported;
+}
+
+bool ApplicationController::accessibilityEnabled() const
+{
+    return m_accessibilityEnabled;
+}
+
+bool ApplicationController::accessibilityPersistent() const
+{
+    return m_accessibilityPersistent;
+}
+
+bool ApplicationController::enableAccessibility(QString *error)
+{
+    const bool enabled = atspi::enableAccessibilityPermanently(error);
+    refreshAccessibilityState();
+    return enabled;
 }
 
 bool ApplicationController::startIpc(QString *error)
@@ -216,6 +253,27 @@ void ApplicationController::wireSessionToPopup()
     connect(m_session, &DictationSession::popupMessageRequested, m_popup, &TranscriberPopup::showMessage);
     connect(m_session, &DictationSession::popupErrorRequested, m_popup, &TranscriberPopup::showErrorMessage);
     connect(m_popup, &TranscriberPopup::errorDismissed, m_session, &DictationSession::stopListening);
+    connect(m_popup, &TranscriberPopup::enableAccessibilityRequested, this, [this] {
+        QString error;
+        if (!enableAccessibility(&error)) {
+            m_popup->showAccessibilityError(error);
+        }
+    });
+    connect(this,
+            &ApplicationController::accessibilityStateChanged,
+            m_popup,
+            &TranscriberPopup::setAccessibilityState);
+}
+
+void ApplicationController::refreshAccessibilityState()
+{
+    const atspi::AccessibilityState state = atspi::accessibilityState();
+    m_accessibilitySupported = state.supported;
+    m_accessibilityEnabled = state.enabled;
+    m_accessibilityPersistent = state.persistent;
+    emit accessibilityStateChanged(m_accessibilitySupported,
+                                   m_accessibilityEnabled,
+                                   m_accessibilityPersistent);
 }
 
 } // namespace speecher

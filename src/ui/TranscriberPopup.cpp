@@ -1,6 +1,7 @@
 #include "ui/TranscriberPopup.h"
 
 #include "platform/WaylandLayerShell.h"
+#include "ui/AccessibilityNotice.h"
 #include "ui/WaveformWidget.h"
 
 #include <QApplication>
@@ -38,6 +39,7 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     , m_preview(new QLabel(this))
     , m_errorDismissProgress(new QProgressBar(m_previewPill))
     , m_waveform(new WaveformWidget(this))
+    , m_accessibilityNotice(new AccessibilityNotice(this))
     , m_positioner(positioner ? positioner : new WaylandLayerShell(this))
 {
     if (m_positioner->parent() != this) {
@@ -90,13 +92,23 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     m_layout->setSpacing(10);
     m_layout->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
 
+    m_accessibilityNotice->setCompact(true);
+    m_accessibilityNotice->setMaximumWidth(620);
+    connect(m_accessibilityNotice,
+            &AccessibilityNotice::enableRequested,
+            this,
+            &TranscriberPopup::enableAccessibilityRequested);
+    m_layout->addWidget(m_accessibilityNotice, 0, Qt::AlignHCenter);
     m_layout->addWidget(m_waveform, 0, Qt::AlignHCenter);
     m_layout->addWidget(m_previewPill, 0, Qt::AlignHCenter);
 }
 
 QSize TranscriberPopup::sizeHint() const
 {
-    return QSize(620, 110);
+    const int noticeHeight = m_accessibilityNotice->isHidden()
+        ? 0
+        : m_accessibilityNotice->sizeHint().height() + m_layout->spacing();
+    return QSize(620, 110 + noticeHeight);
 }
 
 void TranscriberPopup::setStatus(const QString &status)
@@ -221,6 +233,26 @@ void TranscriberPopup::showPopup()
     updateWindowMask();
     show();
     raise();
+}
+
+void TranscriberPopup::setAccessibilityState(bool supported,
+                                             bool enabled,
+                                             bool persistent)
+{
+    m_accessibilityNotice->setState(supported, enabled, persistent);
+    adjustSize();
+    if (isVisible()) {
+        m_positioner->positionBottomCenter(this);
+    }
+}
+
+void TranscriberPopup::showAccessibilityError(const QString &message)
+{
+    m_accessibilityNotice->showError(message);
+    adjustSize();
+    if (isVisible()) {
+        m_positioner->positionBottomCenter(this);
+    }
 }
 
 void TranscriberPopup::changeEvent(QEvent *event)

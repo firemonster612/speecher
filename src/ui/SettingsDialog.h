@@ -7,6 +7,7 @@ class QPushButton;
 namespace speecher {
 
 class ApplicationController;
+class AccessibilityNotice;
 class AudioSettingsPage;
 class BindingsSettingsPage;
 class CorrectionsSettingsPage;
@@ -27,10 +28,12 @@ private:
     bool save();
     bool hasChanges() const;
     void updateButtonState();
+    void updateAccessibilityState(bool supported, bool enabled, bool persistent);
 
     ApplicationController *m_controller = nullptr;
     QPushButton *m_okButton = nullptr;
     QPushButton *m_applyButton = nullptr;
+    AccessibilityNotice *m_accessibilityNotice = nullptr;
     int m_preservedScrollValue = 0;
     AudioSettingsPage *m_audioPage = nullptr;
     BindingsSettingsPage *m_bindingsPage = nullptr;

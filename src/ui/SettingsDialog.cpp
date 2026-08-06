@@ -4,6 +4,7 @@
 #include "core/AppSettings.h"
 #include "core/SettingsStore.h"
 #include "ui/Theme.h"
+#include "ui/AccessibilityNotice.h"
 #include "ui/settings/AudioSettingsPage.h"
 #include "ui/settings/BindingsSettingsPage.h"
 #include "ui/settings/CorrectionsSettingsPage.h"
@@ -42,6 +43,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
+    m_accessibilityNotice = new AccessibilityNotice(this);
+    root->addWidget(m_accessibilityNotice);
 
     auto *vocabularySection = makeSectionLabel(QStringLiteral("Vocabulary"), this);
     auto *correctionsSection = makeSectionLabel(QStringLiteral("Learned Corrections"), this);
@@ -176,6 +179,19 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(m_refinementPage, &RefinementSettingsPage::changed, this, &SettingsDialog::updateButtonState);
     connect(m_vocabularyPage, &VocabularySettingsPage::changed, this, &SettingsDialog::updateButtonState);
     connect(m_bindingsPage, &BindingsSettingsPage::changed, this, &SettingsDialog::updateButtonState);
+    connect(m_accessibilityNotice, &AccessibilityNotice::enableRequested, this, [this] {
+        QString error;
+        if (!m_controller->enableAccessibility(&error)) {
+            m_accessibilityNotice->showError(error);
+        }
+    });
+    connect(m_controller,
+            &ApplicationController::accessibilityStateChanged,
+            this,
+            &SettingsDialog::updateAccessibilityState);
+    updateAccessibilityState(m_controller->accessibilitySupported(),
+                             m_controller->accessibilityEnabled(),
+                             m_controller->accessibilityPersistent());
     load();
 }
 
@@ -261,6 +277,17 @@ void SettingsDialog::updateButtonState()
     if (m_applyButton) {
         m_applyButton->setEnabled(changed);
     }
+}
+
+void SettingsDialog::updateAccessibilityState(bool supported,
+                                              bool enabled,
+                                              bool persistent)
+{
+    m_accessibilityNotice->setState(supported, enabled, persistent);
+    const bool available = supported && enabled;
+    m_outputPage->setTargetAccessibilityAvailable(available);
+    m_refinementPage->setTargetAccessibilityAvailable(available);
+    m_correctionsPage->setTargetAccessibilityAvailable(available);
 }
 
 } // namespace speecher

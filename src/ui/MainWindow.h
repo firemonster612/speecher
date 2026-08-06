@@ -7,6 +7,7 @@ class QPushButton;
 namespace speecher {
 
 class ApplicationController;
+class AccessibilityNotice;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -20,6 +21,7 @@ public slots:
 private:
     ApplicationController *m_controller = nullptr;
     QPushButton *m_toggle = nullptr;
+    AccessibilityNotice *m_accessibilityNotice = nullptr;
 };
 
 } // namespace speecher
