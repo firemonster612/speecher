@@ -1461,6 +1461,28 @@ private slots:
         QVERIFY(!secureMessage.contains(QStringLiteral("secret-value")));
     }
 
+    void selectionEditingPromptUsesTranscriptAsInstructions()
+    {
+        RefinementContext context;
+        context.target.applicationId = QStringLiteral("org.kde.kate");
+        context.target.category = AppCategory::CodeEditor;
+        context.target.selectedText = QStringLiteral("The deployment failed completely.");
+        context.target.selectionStart = 0;
+        context.target.selectionEnd = context.target.selectedText.size();
+        context.writingProfile = WritingProfile::Technical;
+
+        const QString message = transcriptRefinementUserMessage(
+            QStringLiteral("Rewrite this to say the deployment succeeded."),
+            {QStringLiteral("Speecher")},
+            {},
+            context);
+
+        QVERIFY(message.contains(QStringLiteral("\"mode\":\"edit_selection\"")));
+        QVERIFY(message.contains(QStringLiteral("\"selected_text\":\"The deployment failed completely.\"")));
+        QVERIFY(message.contains(QStringLiteral("\"spoken_editing_instructions\":\"Rewrite this to say the deployment succeeded.\"")));
+        QVERIFY(message.contains(QStringLiteral("\"writing_profile\":\"technical\"")));
+    }
+
     void applicationMatrixClassifiesWritingProfiles()
     {
         const auto classified = [](const QString &applicationId) {
@@ -2343,6 +2365,90 @@ exit 0
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
         QCOMPARE(delivery->lastText, QStringLiteral("Polished text."));
         QCOMPARE(rawPreviewSpy.last().at(0).toString(), QStringLiteral("rough text"));
+    }
+
+    void dictationSessionEditsSelectedTextFromSpokenInstructions()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto targetProvider = std::make_unique<FakeTargetProvider>();
+        targetProvider->target.applicationId = QStringLiteral("org.kde.kate");
+        targetProvider->target.category = AppCategory::CodeEditor;
+        targetProvider->target.selectedText = QStringLiteral("The deployment failed completely.");
+        targetProvider->target.selectionStart = 0;
+        targetProvider->target.selectionEnd = targetProvider->target.selectedText.size();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(
+            &settings,
+            audio.get(),
+            media.get(),
+            targetProvider.get(),
+            delivery.get(),
+            &registry);
+
+        session.startListening();
+        speech->emitFinalText(QStringLiteral("Rewrite this to say the deployment succeeded."));
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
+        QCOMPARE(refiner->lastRawTranscript,
+                 QStringLiteral("Rewrite this to say the deployment succeeded."));
+        QCOMPARE(refiner->lastContext.target.selectedText,
+                 QStringLiteral("The deployment failed completely."));
+        QCOMPARE(refiner->lastContext.writingProfile, WritingProfile::Technical);
+
+        refiner->emitCompletedText(QStringLiteral("The deployment succeeded completely."));
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText, QStringLiteral("The deployment succeeded completely."));
+        QCOMPARE(delivery->lastTarget.selectedText,
+                 QStringLiteral("The deployment failed completely."));
+    }
+
+    void selectionEditingFailurePreservesSelectedText()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto targetProvider = std::make_unique<FakeTargetProvider>();
+        targetProvider->target.applicationId = QStringLiteral("org.kde.kate");
+        targetProvider->target.selectedText = QStringLiteral("Keep this text.");
+        targetProvider->target.selectionStart = 0;
+        targetProvider->target.selectionEnd = targetProvider->target.selectedText.size();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(
+            &settings,
+            audio.get(),
+            media.get(),
+            targetProvider.get(),
+            delivery.get(),
+            &registry);
+
+        session.startListening();
+        speech->emitFinalText(QStringLiteral("Make this shorter."));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
+
+        refiner->emitFailure(QStringLiteral("refinement unavailable"));
+
+        QCOMPARE(delivery->calls, 0);
+        QCOMPARE(session.state(), DictationState::Error);
     }
 
     void dictationSessionAppliesBindingsWhenRefinementDisabled()

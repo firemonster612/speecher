@@ -77,6 +77,7 @@ private:
     void continueStartupAfterPreparation(quint64 generation, const AppSettings &settings);
     void failStartup(quint64 generation, const QString &message);
     void beginRefinement(quint64 generation);
+    void failSelectionEdit(const QString &message);
     void retrySpeechAttempt();
     void handleSpeechFailure(const SpeechFailure &failure);
     void deliverFinal(const QString &text);
@@ -109,6 +110,7 @@ private:
     QList<BindingRule> m_activeBindingRules;
     QStringList m_noBindPhrases;
     bool m_allowPostRefinementBindings = true;
+    bool m_editsSelection = false;
     quint64 m_generation = 0;
     quint64 m_attemptId = 0;
     QList<QByteArray> m_capturedAudio;

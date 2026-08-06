@@ -292,6 +292,7 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
     m_activeBindingRules.clear();
     m_noBindPhrases.clear();
     m_allowPostRefinementBindings = true;
+    m_editsSelection = false;
     emit previewDisplayChanged({});
     emit popupFrozenChanged(false);
     emit popupRefiningChanged(false);
@@ -523,14 +524,22 @@ void DictationSession::beginRefinement(quint64 generation)
     m_allowPostRefinementBindings = !hasNoBindDirective || !m_noBindPhrases.isEmpty();
     m_activeBindingRules = withoutNoBindPhrases(settings.bindings, m_noBindPhrases);
     m_bindingResult = BindingProcessor::process(m_transcript->text(), m_activeBindingRules);
+    m_editsSelection = m_target.hasSelection();
+    if (m_editsSelection) {
+        m_allowPostRefinementBindings = false;
+    }
     if (settings.refinement.providerId == QStringLiteral("none")) {
+        if (m_editsSelection) {
+            failSelectionEdit(QStringLiteral("Selection editing requires refinement to be enabled"));
+            return;
+        }
         qInfo() << "refinement disabled delivering bound length=" << m_bindingResult.boundText.size()
                 << "bindingCount=" << m_bindingResult.placeholders.size();
         deliverFinal(m_bindingResult.boundText);
         return;
     }
 
-    if (m_bindingResult.canSkipRefinement) {
+    if (!m_editsSelection && m_bindingResult.canSkipRefinement) {
         qInfo() << "bindings covered transcript; skipping refinement bindingCount=" << m_bindingResult.placeholders.size();
         deliverFinal(m_bindingResult.boundText);
         return;
@@ -539,6 +548,10 @@ void DictationSession::beginRefinement(quint64 generation)
     QString providerError;
     if (!selectTranscriptRefiner(settings.refinement.providerId, &providerError)) {
         qWarning().noquote() << "refinement provider unavailable message=" + providerError;
+        if (m_editsSelection) {
+            failSelectionEdit(providerError);
+            return;
+        }
         m_lastMessage = providerError;
         deliverFinal(m_bindingResult.boundText);
         return;
@@ -547,6 +560,10 @@ void DictationSession::beginRefinement(quint64 generation)
     const RefinementPrepareResult prepared = m_refiner->prepare(settings.refinement);
     if (!prepared.ok) {
         qWarning().noquote() << "refinement auth unavailable status=" + prepared.message;
+        if (m_editsSelection) {
+            failSelectionEdit(prepared.message);
+            return;
+        }
         m_lastMessage = prepared.message;
         deliverFinal(m_bindingResult.boundText);
         return;
@@ -587,6 +604,17 @@ void DictationSession::beginRefinement(quint64 generation)
                       refinement);
 }
 
+void DictationSession::failSelectionEdit(const QString &message)
+{
+    emit popupRefiningChanged(false);
+    discardSessionAudio();
+    clearScreenshotContext();
+    m_sessionSettings.reset();
+    m_target = {};
+    m_editsSelection = false;
+    setState(DictationState::Error, message);
+}
+
 void DictationSession::deliverFinal(const QString &text)
 {
     if (!m_sessionSettings) {
@@ -608,6 +636,7 @@ void DictationSession::deliverFinal(const QString &text)
     clearScreenshotContext();
     m_sessionSettings.reset();
     m_target = {};
+    m_editsSelection = false;
     if (result.ok) {
         const quint64 generation = m_generation;
         emit popupMessageRequested(result.message);
@@ -780,6 +809,10 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::completed, this, [this](const QString &text) {
         const QString refined = text.trimmed();
         if (refined.isEmpty()) {
+            if (m_editsSelection) {
+                failSelectionEdit(QStringLiteral("The refinement model returned an unusable selection edit"));
+                return;
+            }
             deliverFinal(m_bindingResult.boundText);
             return;
         }
@@ -788,9 +821,19 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
             ? BindingProcessor::applyBindingsOutsidePlaceholders(refined, m_activeBindingRules)
             : refined;
         const BindingRestoreResult restored = BindingProcessor::restorePlaceholders(postBound, m_bindingResult.placeholders);
-        deliverFinal(restored.ok ? restored.text : m_bindingResult.boundText);
+        if (restored.ok) {
+            deliverFinal(restored.text);
+        } else if (m_editsSelection) {
+            failSelectionEdit(QStringLiteral("The refinement model returned an unusable selection edit"));
+        } else {
+            deliverFinal(m_bindingResult.boundText);
+        }
     });
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::failed, this, [this](const QString &message) {
+        if (m_editsSelection) {
+            failSelectionEdit(message);
+            return;
+        }
         m_lastMessage = message;
         deliverFinal(m_bindingResult.boundText);
     });

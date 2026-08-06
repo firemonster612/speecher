@@ -47,6 +47,7 @@ struct Target {
     bool secure = false;
 
     bool hasIdentity() const;
+    bool hasSelection() const;
 };
 
 AppCategory classifyTarget(const Target &target);
