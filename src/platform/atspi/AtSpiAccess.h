@@ -8,6 +8,8 @@
 
 namespace speecher::atspi {
 
+void requestAccessibility();
+
 class AccessibleHandle {
 public:
     AccessibleHandle() = default;

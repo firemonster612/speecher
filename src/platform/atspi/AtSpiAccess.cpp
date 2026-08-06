@@ -1,8 +1,26 @@
 #include "platform/atspi/AtSpiAccess.h"
 
+#include <QDBusConnection>
+#include <QDBusInterface>
+#include <QDBusVariant>
+
 #include <utility>
 
 namespace speecher::atspi {
+
+void requestAccessibility()
+{
+    QDBusInterface properties(
+        QStringLiteral("org.a11y.Bus"),
+        QStringLiteral("/org/a11y/bus"),
+        QStringLiteral("org.freedesktop.DBus.Properties"),
+        QDBusConnection::sessionBus());
+    properties.asyncCall(
+        QStringLiteral("Set"),
+        QStringLiteral("org.a11y.Status"),
+        QStringLiteral("IsEnabled"),
+        QVariant::fromValue(QDBusVariant(true)));
+}
 
 #ifdef SPEECHER_WITH_ATSPI
 AccessibleHandle::AccessibleHandle(AtspiAccessible *accessible)

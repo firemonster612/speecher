@@ -179,6 +179,18 @@ QStringList YdotoolDelivery::pasteShortcutArguments(PasteMethod method)
     return arguments;
 }
 
+QStringList YdotoolDelivery::copyShortcutArguments()
+{
+    return {
+        QStringLiteral("key"),
+        QStringLiteral("--key-delay=%1").arg(shortcutKeyDelayMs),
+        QStringLiteral("29:1"),
+        QStringLiteral("46:1"),
+        QStringLiteral("46:0"),
+        QStringLiteral("29:0"),
+    };
+}
+
 QString YdotoolDelivery::withoutTrailingWhitespace(const QString &text)
 {
     QString cleaned = text;
@@ -248,6 +260,31 @@ bool YdotoolDelivery::pasteFromClipboard(const QString &text, PasteMethod method
 
     releaseModifierKeys(executable, env);
     if (!runYdotool(executable, env, pasteShortcutArguments(method), 5000, error)) {
+        releaseModifierKeys(executable, env);
+        return false;
+    }
+    releaseModifierKeys(executable, env);
+    return true;
+}
+
+bool YdotoolDelivery::copySelection(QString *error)
+{
+    const QString executable = QStandardPaths::findExecutable(QStringLiteral("ydotool"));
+    if (executable.isEmpty()) {
+        if (error) {
+            *error = QStringLiteral("ydotool is not installed");
+        }
+        return false;
+    }
+
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    const QString socket = socketPath();
+    if (!socket.isEmpty()) {
+        env.insert(QStringLiteral("YDOTOOL_SOCKET"), socket);
+    }
+
+    releaseModifierKeys(executable, env);
+    if (!runYdotool(executable, env, copyShortcutArguments(), 5000, error)) {
         releaseModifierKeys(executable, env);
         return false;
     }
