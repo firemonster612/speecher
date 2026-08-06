@@ -270,7 +270,7 @@ void populateText(Target *target, AtspiAccessible *object)
             if (selection->end_offset > selection->start_offset) {
                 target->selectedText = takeString(atspi_text_get_text(
                     text, selection->start_offset,
-                    qMin(selection->end_offset, selection->start_offset + contextCharacters * 2),
+                    selection->end_offset,
                     &error));
                 clearError(&error);
             }

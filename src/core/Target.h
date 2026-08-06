@@ -70,6 +70,7 @@ struct Target {
     bool secure = false;
 
     bool hasIdentity() const;
+    bool hasSelection() const;
 };
 
 AppCategory classifyTarget(const Target &target);
@@ -83,6 +84,7 @@ struct RefinementContext {
     WritingProfile writingProfile = WritingProfile::Other;
     QString tone = QStringLiteral("none");
     bool includeNearbyText = true;
+    bool editSelection = false;
     QByteArray screenshotData;
     QString screenshotMediaType;
 

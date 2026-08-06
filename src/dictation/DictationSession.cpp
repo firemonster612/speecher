@@ -415,13 +415,17 @@ void DictationSession::beginRefinement(quint64 generation)
     const RefinementSettings &refinement = pipeline.refinementSettings;
     if (settings.refinement.providerId == QStringLiteral("none")
         || refinement.style == QStringLiteral("none")) {
+        if (pipeline.editsSelection) {
+            failSelectionEdit(QStringLiteral("Selection editing requires refinement to be enabled"));
+            return;
+        }
         qInfo() << "refinement disabled delivering bound length=" << pipeline.deliveryFallback.size()
                 << "bindingCount=" << pipeline.bindingResult.placeholders.size();
         deliverFinal(pipeline.deliveryFallback);
         return;
     }
 
-    if (pipeline.bindingResult.canSkipRefinement) {
+    if (!pipeline.editsSelection && pipeline.bindingResult.canSkipRefinement) {
         qInfo() << "bindings covered transcript; skipping refinement bindingCount=" << pipeline.bindingResult.placeholders.size();
         deliverFinal(pipeline.deliveryFallback);
         return;
@@ -430,6 +434,10 @@ void DictationSession::beginRefinement(quint64 generation)
     QString providerError;
     if (!selectTranscriptRefiner(settings.refinement.providerId, &providerError)) {
         qWarning().noquote() << "refinement provider unavailable message=" + providerError;
+        if (pipeline.editsSelection) {
+            failSelectionEdit(providerError);
+            return;
+        }
         m_lastMessage = providerError;
         deliverFinal(pipeline.deliveryFallback);
         return;
@@ -438,6 +446,10 @@ void DictationSession::beginRefinement(quint64 generation)
     const RefinementPrepareResult prepared = m_refiner->prepare(refinement);
     if (!prepared.ok) {
         qWarning().noquote() << "refinement auth unavailable status=" + prepared.message;
+        if (pipeline.editsSelection) {
+            failSelectionEdit(prepared.message);
+            return;
+        }
         m_lastMessage = prepared.message;
         deliverFinal(pipeline.deliveryFallback);
         return;
@@ -460,6 +472,16 @@ void DictationSession::beginRefinement(quint64 generation)
                       pipeline.refinementVocabulary,
                       pipeline.refinementContext,
                       refinement);
+}
+
+void DictationSession::failSelectionEdit(const QString &message)
+{
+    emit popupRefiningChanged(false);
+    clearScreenshotContext();
+    m_sessionSettings.reset();
+    m_target = {};
+    m_transcriptPipeline = {};
+    setState(DictationState::Error, message);
 }
 
 void DictationSession::deliverFinal(const QString &text)
@@ -613,9 +635,22 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
         m_refinedText += delta;
     });
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::completed, this, [this](const QString &text) {
-        deliverFinal(TranscriptPipeline::restoreRefinedResult(m_transcriptPipeline, text));
+        const std::optional<QString> refined = TranscriptPipeline::restoreRefinedResult(
+            m_transcriptPipeline,
+            text);
+        if (refined) {
+            deliverFinal(*refined);
+        } else if (m_transcriptPipeline.editsSelection) {
+            failSelectionEdit(QStringLiteral("The refinement model returned an unusable selection edit"));
+        } else {
+            deliverFinal(m_transcriptPipeline.deliveryFallback);
+        }
     });
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::failed, this, [this](const QString &message) {
+        if (m_transcriptPipeline.editsSelection) {
+            failSelectionEdit(message);
+            return;
+        }
         m_lastMessage = message;
         deliverFinal(m_transcriptPipeline.deliveryFallback);
     });

@@ -110,6 +110,14 @@ bool Target::hasIdentity() const
     return !applicationId.isEmpty() || processId > 0 || !applicationName.isEmpty();
 }
 
+bool Target::hasSelection() const
+{
+    return !secure
+        && selectionStart >= 0
+        && selectionEnd > selectionStart
+        && !selectedText.isEmpty();
+}
+
 AppCategory classifyTarget(const Target &target)
 {
     const QString identity = QStringList{

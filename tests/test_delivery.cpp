@@ -129,6 +129,52 @@ private slots:
         QVERIFY(!secureMessage.contains(QStringLiteral("secret-value")));
     }
 
+    void selectionEditingUsesDictationAsInstructionsAndSelectionAsSource()
+    {
+        AppSettings settings;
+        settings.refinement.useTargetContext = false;
+        settings.refinement.writingProfiles = {
+            {WritingProfile::Work, QStringLiteral("balanced"), QStringLiteral("formal")},
+            {WritingProfile::Email, QStringLiteral("strong_polish"), QStringLiteral("excited")},
+            {WritingProfile::Personal, QStringLiteral("light_cleanup"), QStringLiteral("casual")},
+            {WritingProfile::Other, QStringLiteral("balanced"), QStringLiteral("none")},
+        };
+
+        Target target;
+        target.applicationId = QStringLiteral("org.mozilla.Thunderbird");
+        target.category = AppCategory::Email;
+        target.selectedText = QStringLiteral("the release is tomorrow");
+        target.selectionStart = 4;
+        target.selectionEnd = 27;
+
+        const QString instructions = QStringLiteral("Make this more confident and add a greeting");
+        const TranscriptPipelineResult pipeline = TranscriptPipeline::prepare(
+            instructions,
+            settings,
+            target);
+
+        QVERIFY(pipeline.editsSelection);
+        QCOMPARE(pipeline.refinementInput, instructions);
+        QCOMPARE(pipeline.deliveryFallback, target.selectedText);
+        QVERIFY(!pipeline.allowPostRefinementBindings);
+        QVERIFY(pipeline.refinementContext.editSelection);
+        QCOMPARE(pipeline.refinementContext.target.selectedText, target.selectedText);
+        QCOMPARE(pipeline.refinementContext.writingProfile, WritingProfile::Email);
+        QCOMPARE(pipeline.refinementContext.tone, QStringLiteral("excited"));
+
+        const QString message = transcriptRefinementUserMessage(
+            pipeline.refinementInput,
+            {},
+            {},
+            pipeline.refinementContext);
+        QVERIFY(message.contains(QStringLiteral("\"mode\":\"edit_selection\"")));
+        QVERIFY(message.contains(QStringLiteral("\"selected_text\":\"the release is tomorrow\"")));
+        QVERIFY(message.contains(QStringLiteral("\"spoken_editing_instructions\":\"Make this more confident and add a greeting\"")));
+        QVERIFY(message.contains(QStringLiteral("Return the complete revised selection only")));
+        QVERIFY(message.contains(QStringLiteral("\"writing_profile\":\"email\"")));
+        QVERIFY(message.contains(QStringLiteral("\"requested_tone\":\"excited\"")));
+    }
+
     void applicationMatrixClassifiesWritingProfiles()
     {
         const auto classified = [](const QString &applicationId) {

@@ -69,8 +69,14 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
     result.allowPostRefinementBindings = !hasNoBindDirective || !result.noBindPhrases.isEmpty();
     result.activeBindingRules = withoutNoBindPhrases(settings.bindings, result.noBindPhrases);
     result.bindingResult = BindingProcessor::process(rawTranscript, result.activeBindingRules);
-    result.deliveryFallback = result.bindingResult.boundText;
+    result.editsSelection = target.hasSelection();
+    result.deliveryFallback = result.editsSelection
+        ? target.selectedText
+        : result.bindingResult.boundText;
     result.refinementInput = result.bindingResult.placeholderText;
+    if (result.editsSelection) {
+        result.allowPostRefinementBindings = false;
+    }
     result.refinementSettings = effectiveRefinementSettings(settings, target);
     result.refinementVocabulary = refinementVocabulary(settings);
 
@@ -81,6 +87,7 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
         writingProfileFromName(result.refinementSettings.defaultWritingProfile));
     result.refinementContext.tone = result.refinementSettings.tone;
     result.refinementContext.includeNearbyText = result.refinementSettings.useTargetContext && !target.secure;
+    result.refinementContext.editSelection = result.editsSelection;
     if (!result.refinementSettings.useTargetContext) {
         result.refinementContext.target.nearbyTextBefore.clear();
         result.refinementContext.target.nearbyTextAfter.clear();
@@ -103,12 +110,13 @@ void TranscriptPipeline::includeScreenshotContext(TranscriptPipelineResult &pipe
     }
 }
 
-QString TranscriptPipeline::restoreRefinedResult(const TranscriptPipelineResult &pipeline,
-                                                 const QString &refinedText)
+std::optional<QString> TranscriptPipeline::restoreRefinedResult(
+    const TranscriptPipelineResult &pipeline,
+    const QString &refinedText)
 {
     const QString refined = refinedText.trimmed();
     if (refined.isEmpty()) {
-        return pipeline.deliveryFallback;
+        return std::nullopt;
     }
 
     const QString postBound = pipeline.allowPostRefinementBindings
@@ -117,7 +125,7 @@ QString TranscriptPipeline::restoreRefinedResult(const TranscriptPipelineResult 
     const BindingRestoreResult restored = BindingProcessor::restorePlaceholders(
         postBound,
         pipeline.bindingResult.placeholders);
-    return restored.ok ? restored.text : pipeline.deliveryFallback;
+    return restored.ok ? std::optional<QString>(restored.text) : std::nullopt;
 }
 
 } // namespace speecher
