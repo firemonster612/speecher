@@ -6,12 +6,8 @@
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
-#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
-#include <QMessageBox>
-#include <QPushButton>
-#include <QSet>
 #include <QSignalBlocker>
 #include <QTableWidget>
 #include <QTableWidgetItem>
@@ -67,7 +63,6 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     , m_useTargetContext(new QCheckBox(this))
     , m_screenshotContext(new QCheckBox(this))
     , m_profileSettings(new QTableWidget(this))
-    , m_appProfileOverrides(new QTableWidget(this))
 {
     for (const ProviderDescriptor &provider : providers.refinementProviders()) {
         m_provider->addItem(provider.label, provider.id);
@@ -90,21 +85,6 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     m_profileSettings->setSelectionMode(QAbstractItemView::NoSelection);
     m_profileSettings->setMinimumHeight(172);
     m_profileSettings->setMaximumHeight(172);
-    m_appProfileOverrides->setObjectName(QStringLiteral("vocabInput"));
-    m_appProfileOverrides->setColumnCount(3);
-    m_appProfileOverrides->setHorizontalHeaderLabels({
-        QStringLiteral("Enabled"),
-        QStringLiteral("Application ID"),
-        QStringLiteral("Profile"),
-    });
-    m_appProfileOverrides->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    m_appProfileOverrides->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
-    m_appProfileOverrides->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    m_appProfileOverrides->verticalHeader()->hide();
-    m_appProfileOverrides->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_appProfileOverrides->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_appProfileOverrides->setMinimumHeight(150);
-
     auto *section = settings::makeSectionLabel(QStringLiteral("Refinement"), this);
     auto *card = settings::makeSettingsCard(this);
     auto *cardLayout = qobject_cast<QVBoxLayout *>(card->layout());
@@ -123,30 +103,6 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     profileSettingsLayout->addWidget(profileSettingsDescription);
     profileSettingsLayout->addWidget(m_profileSettings);
     cardLayout->addWidget(profileSettingsControl);
-    cardLayout->addWidget(settings::makeSeparator(card));
-
-    m_profileOverridesControl = new QWidget(card);
-    m_profileOverridesControl->setObjectName(QStringLiteral("applicationProfileOverrides"));
-    auto *profileOverridesLayout = new QVBoxLayout(m_profileOverridesControl);
-    auto *profileOverridesTitle = new QLabel(QStringLiteral("App-specific profile overrides"), m_profileOverridesControl);
-    profileOverridesTitle->setObjectName(QStringLiteral("subsectionLabel"));
-    auto *profileOverridesDescription = new QLabel(
-        QStringLiteral("An exact application ID overrides automatic category detection and the fallback profile."),
-        m_profileOverridesControl);
-    profileOverridesDescription->setObjectName(QStringLiteral("rowDescription"));
-    profileOverridesDescription->setWordWrap(true);
-    m_addAppProfileOverrideButton = new QPushButton(QStringLiteral("Add override"), m_profileOverridesControl);
-    m_removeAppProfileOverrideButton = new QPushButton(QStringLiteral("Delete selected"), m_profileOverridesControl);
-    m_removeAppProfileOverrideButton->setEnabled(false);
-    auto *profileOverrideButtons = new QHBoxLayout;
-    profileOverrideButtons->addStretch();
-    profileOverrideButtons->addWidget(m_removeAppProfileOverrideButton);
-    profileOverrideButtons->addWidget(m_addAppProfileOverrideButton);
-    profileOverridesLayout->addWidget(profileOverridesTitle);
-    profileOverridesLayout->addWidget(profileOverridesDescription);
-    profileOverridesLayout->addWidget(m_appProfileOverrides);
-    profileOverridesLayout->addLayout(profileOverrideButtons);
-    cardLayout->addWidget(m_profileOverridesControl);
     cardLayout->addWidget(settings::makeSeparator(card));
 
     m_targetContextControl = settings::makeRow(
@@ -168,21 +124,6 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
         emit changed();
     });
     connect(m_writingProfile, &QComboBox::currentIndexChanged, this, &RefinementSettingsPage::changed);
-    connect(m_appProfileOverrides, &QTableWidget::itemChanged, this, &RefinementSettingsPage::changed);
-    connect(m_appProfileOverrides, &QTableWidget::itemSelectionChanged, this, [this] {
-        m_removeAppProfileOverrideButton->setEnabled(m_appProfileOverrides->currentRow() >= 0);
-    });
-    connect(m_addAppProfileOverrideButton, &QPushButton::clicked, this, [this] {
-        addWritingProfileOverride();
-        emit changed();
-    });
-    connect(m_removeAppProfileOverrideButton, &QPushButton::clicked, this, [this] {
-        const int row = m_appProfileOverrides->currentRow();
-        if (row >= 0) {
-            m_appProfileOverrides->removeRow(row);
-            emit changed();
-        }
-    });
     connect(m_useTargetContext, &QCheckBox::toggled, this, &RefinementSettingsPage::changed);
     connect(m_screenshotContext, &QCheckBox::toggled, this, &RefinementSettingsPage::changed);
 }
@@ -192,8 +133,6 @@ void RefinementSettingsPage::setTargetAccessibilityAvailable(bool available)
     const QString explanation = available
         ? QString()
         : QStringLiteral("Enable desktop accessibility (AT-SPI) to use target-aware refinement.");
-    m_profileOverridesControl->setEnabled(available);
-    m_profileOverridesControl->setToolTip(explanation);
     m_targetContextControl->setEnabled(available);
     m_targetContextControl->setToolTip(explanation);
 }
@@ -203,26 +142,9 @@ void RefinementSettingsPage::load(const AppSettings &settings)
     settings::selectData(m_provider, settings.refinement.providerId);
     settings::selectData(m_writingProfile, settings.refinement.defaultWritingProfile);
     setWritingProfileSettings(settings.refinement.writingProfiles);
-    setWritingProfileOverrides(settings.refinement.writingProfileOverrides);
     m_useTargetContext->setChecked(settings.refinement.useTargetContext);
     m_screenshotContext->setChecked(settings.refinement.includeScreenshotContext);
     updateScreenshotControl();
-}
-
-bool RefinementSettingsPage::validate() const
-{
-    QSet<QString> applicationIds;
-    for (const WritingProfileOverride &override : currentWritingProfileOverrides()) {
-        const QString id = override.applicationId.toCaseFolded();
-        if (applicationIds.contains(id)) {
-            QMessageBox::warning(const_cast<RefinementSettingsPage *>(this),
-                                 QStringLiteral("Writing profiles not saved"),
-                                 QStringLiteral("Each application ID can have only one Writing Profile override."));
-            return false;
-        }
-        applicationIds.insert(id);
-    }
-    return true;
 }
 
 void RefinementSettingsPage::appendToDraft(AppSettings &draft) const
@@ -230,7 +152,6 @@ void RefinementSettingsPage::appendToDraft(AppSettings &draft) const
     draft.refinement.providerId = m_provider->currentData().toString();
     draft.refinement.defaultWritingProfile = m_writingProfile->currentData().toString();
     draft.refinement.writingProfiles = currentWritingProfileSettings();
-    draft.refinement.writingProfileOverrides = currentWritingProfileOverrides();
     draft.refinement.useTargetContext = m_useTargetContext->isChecked();
     draft.refinement.includeScreenshotContext = m_screenshotContext->isChecked();
 }
@@ -242,7 +163,6 @@ bool RefinementSettingsPage::hasChanges(const AppSettings &settings) const
     return draft.refinement.providerId != settings.refinement.providerId
         || draft.refinement.defaultWritingProfile != settings.refinement.defaultWritingProfile
         || draft.refinement.writingProfiles != settings.refinement.writingProfiles
-        || draft.refinement.writingProfileOverrides != settings.refinement.writingProfileOverrides
         || draft.refinement.useTargetContext != settings.refinement.useTargetContext
         || draft.refinement.includeScreenshotContext != settings.refinement.includeScreenshotContext;
 }
@@ -264,26 +184,6 @@ QList<WritingProfileSettings> RefinementSettingsPage::currentWritingProfileSetti
         });
     }
     return settings;
-}
-
-QList<WritingProfileOverride> RefinementSettingsPage::currentWritingProfileOverrides() const
-{
-    QList<WritingProfileOverride> overrides;
-    for (int row = 0; row < m_appProfileOverrides->rowCount(); ++row) {
-        const QTableWidgetItem *enabled = m_appProfileOverrides->item(row, 0);
-        const QTableWidgetItem *application = m_appProfileOverrides->item(row, 1);
-        const auto *profile = qobject_cast<QComboBox *>(m_appProfileOverrides->cellWidget(row, 2));
-        const QString applicationId = application ? application->text().trimmed() : QString();
-        if (applicationId.isEmpty() || !profile) {
-            continue;
-        }
-        overrides.append({
-            applicationId,
-            writingProfileFromName(profile->currentData().toString()),
-            enabled && enabled->checkState() == Qt::Checked,
-        });
-    }
-    return overrides;
 }
 
 void RefinementSettingsPage::setWritingProfileSettings(const QList<WritingProfileSettings> &settings)
@@ -308,38 +208,6 @@ void RefinementSettingsPage::setWritingProfileSettings(const QList<WritingProfil
         m_profileSettings->setItem(row, 0, profile);
         m_profileSettings->setCellWidget(row, 1, strength);
         m_profileSettings->setCellWidget(row, 2, tone);
-    }
-}
-
-void RefinementSettingsPage::setWritingProfileOverrides(const QList<WritingProfileOverride> &overrides)
-{
-    QSignalBlocker blocker(m_appProfileOverrides);
-    m_appProfileOverrides->setRowCount(0);
-    for (const WritingProfileOverride &override : overrides) {
-        addWritingProfileOverride(override);
-    }
-    m_removeAppProfileOverrideButton->setEnabled(false);
-}
-
-void RefinementSettingsPage::addWritingProfileOverride(const WritingProfileOverride &override)
-{
-    const int row = m_appProfileOverrides->rowCount();
-    m_appProfileOverrides->insertRow(row);
-    auto *enabled = new QTableWidgetItem;
-    enabled->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
-    enabled->setCheckState(override.enabled ? Qt::Checked : Qt::Unchecked);
-    auto *application = new QTableWidgetItem(override.applicationId);
-    application->setToolTip(QStringLiteral("Use the desktop application ID reported by AT-SPI."));
-    auto *profile = new QComboBox(m_appProfileOverrides);
-    addWritingProfiles(profile);
-    settings::selectData(profile, writingProfileName(override.profile));
-    connect(profile, &QComboBox::currentIndexChanged, this, &RefinementSettingsPage::changed);
-    m_appProfileOverrides->setItem(row, 0, enabled);
-    m_appProfileOverrides->setItem(row, 1, application);
-    m_appProfileOverrides->setCellWidget(row, 2, profile);
-    if (override.applicationId.isEmpty()) {
-        m_appProfileOverrides->setCurrentCell(row, 1);
-        m_appProfileOverrides->editItem(application);
     }
 }
 

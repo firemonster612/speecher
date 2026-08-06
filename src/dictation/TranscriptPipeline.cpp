@@ -50,6 +50,7 @@ RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSett
     const WritingProfile resolved = resolveWritingProfile(
         target,
         refinement.writingProfileOverrides,
+        settings.appRecognitionRules,
         writingProfileFromName(refinement.defaultWritingProfile));
     const WritingProfileSettings profileSettings = writingProfileSettingsFor(
         refinement.writingProfiles,
@@ -84,6 +85,7 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
     result.refinementContext.writingProfile = resolveWritingProfile(
         target,
         result.refinementSettings.writingProfileOverrides,
+        settings.appRecognitionRules,
         writingProfileFromName(result.refinementSettings.defaultWritingProfile));
     result.refinementContext.tone = result.refinementSettings.tone;
     result.refinementContext.includeNearbyText = result.refinementSettings.useTargetContext && !target.secure;
@@ -101,6 +103,7 @@ void TranscriptPipeline::includeScreenshotContext(TranscriptPipelineResult &pipe
                                                   const QString &screenshotMediaType)
 {
     if (pipeline.refinementSettings.includeScreenshotContext
+        && !pipeline.editsSelection
         && !pipeline.refinementContext.target.secure
         && supportsScreenshotContext
         && !screenshotData.isEmpty()

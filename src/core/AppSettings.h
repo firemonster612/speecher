@@ -87,6 +87,7 @@ struct AppSettings {
     UiSettings ui;
     SpeechSettings speech;
     AudioCaptureSettings audio;
+    QList<AppRecognitionRule> appRecognitionRules;
     RefinementSettings refinement;
     OutputSettings output;
     QList<BindingRule> bindings;

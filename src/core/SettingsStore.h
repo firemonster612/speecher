@@ -18,6 +18,7 @@ public:
     using SettingsCodecs::anthropicAuthMode;
     using SettingsCodecs::anthropicEffort;
     using SettingsCodecs::anthropicModel;
+    using SettingsCodecs::appRecognitionRules;
     using SettingsCodecs::audioCaptureSettings;
     using SettingsCodecs::bindingRules;
     using SettingsCodecs::claudeCredentialsPath;
@@ -45,6 +46,7 @@ public:
     using SettingsCodecs::setAnthropicAuthMode;
     using SettingsCodecs::setAnthropicEffort;
     using SettingsCodecs::setAnthropicModel;
+    using SettingsCodecs::setAppRecognitionRules;
     using SettingsCodecs::setBindingRules;
     using SettingsCodecs::setCorrectionLearningEnabled;
     using SettingsCodecs::setCustomVocabulary;

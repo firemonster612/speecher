@@ -4,6 +4,8 @@
 #include <QList>
 #include <QString>
 
+#include <optional>
+
 namespace speecher {
 
 enum class AppCategory {
@@ -44,6 +46,14 @@ struct WritingProfileSettings {
     bool operator==(const WritingProfileSettings &other) const = default;
 };
 
+struct AppRecognitionRule {
+    QString match;
+    std::optional<AppCategory> category;
+    std::optional<WritingProfile> writingProfile;
+
+    bool operator==(const AppRecognitionRule &other) const = default;
+};
+
 QList<WritingProfileSettings> defaultWritingProfileSettings();
 WritingProfileSettings writingProfileSettingsFor(const QList<WritingProfileSettings> &settings,
                                                   WritingProfile profile);
@@ -73,10 +83,16 @@ struct Target {
     bool hasSelection() const;
 };
 
-AppCategory classifyTarget(const Target &target);
+QList<AppRecognitionRule> builtInAppRecognitionRules();
+AppCategory classifyTarget(const Target &target,
+                           const QList<AppRecognitionRule> &customRules = {});
 WritingProfile inferWritingProfile(const Target &target, WritingProfile fallback = WritingProfile::Other);
 WritingProfile resolveWritingProfile(const Target &target,
                                      const QList<WritingProfileOverride> &overrides,
+                                     WritingProfile fallback = WritingProfile::Other);
+WritingProfile resolveWritingProfile(const Target &target,
+                                     const QList<WritingProfileOverride> &overrides,
+                                     const QList<AppRecognitionRule> &recognitionRules,
                                      WritingProfile fallback = WritingProfile::Other);
 
 struct RefinementContext {

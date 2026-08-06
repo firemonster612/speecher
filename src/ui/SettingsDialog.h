@@ -8,6 +8,7 @@ namespace speecher {
 
 class ApplicationController;
 class AccessibilityNotice;
+class ApplicationSettingsPage;
 class AudioSettingsPage;
 class BindingsSettingsPage;
 class CorrectionsSettingsPage;
@@ -36,6 +37,7 @@ private:
     AccessibilityNotice *m_accessibilityNotice = nullptr;
     int m_preservedScrollValue = 0;
     AudioSettingsPage *m_audioPage = nullptr;
+    ApplicationSettingsPage *m_applicationPage = nullptr;
     BindingsSettingsPage *m_bindingsPage = nullptr;
     GeneralSettingsPage *m_generalPage = nullptr;
     OutputSettingsPage *m_outputPage = nullptr;

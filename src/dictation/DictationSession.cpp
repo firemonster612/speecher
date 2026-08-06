@@ -207,6 +207,7 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
     m_heardSpeech = false;
     clearScreenshotContext();
     m_target = m_targetProvider ? m_targetProvider->capture() : Target{};
+    m_target.category = classifyTarget(m_target, settings.appRecognitionRules);
     const RefinementSettings effectiveRefinement = TranscriptPipeline::effectiveRefinementSettings(settings, m_target);
     if (settings.refinement.includeScreenshotContext
         && settings.refinement.providerId != QStringLiteral("none")
@@ -465,6 +466,10 @@ void DictationSession::beginRefinement(quint64 generation)
     qInfo() << "refinement started provider=" << settings.refinement.providerId
             << "rawLength=" << m_transcript->text().size()
             << "placeholderLength=" << pipeline.refinementInput.size()
+            << "selectionEdit=" << pipeline.editsSelection
+            << "selectedLength=" << pipeline.refinementContext.target.selectedText.size()
+            << "writingProfile=" << writingProfileName(pipeline.refinementContext.writingProfile)
+            << "screenshotIncluded=" << pipeline.refinementContext.hasScreenshot()
             << "bindingCount=" << pipeline.bindingResult.placeholders.size()
             << "noBindCount=" << pipeline.noBindPhrases.size()
             << "vocabularyCount=" << pipeline.refinementVocabulary.size();

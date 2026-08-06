@@ -21,6 +21,7 @@ inline const QString AudioPreRollMs = QStringLiteral("audio/preRollMs");
 inline const QString AudioPostRollMs = QStringLiteral("audio/postRollMs");
 inline const QString AudioReadinessTimeoutMs = QStringLiteral("audio/readinessTimeoutMs");
 inline const QString AudioVadThresholdPercent = QStringLiteral("audio/vadThresholdPercent");
+inline const QString AppRecognitionRules = QStringLiteral("target/appRecognitionRules");
 inline const QString BindingRules = QStringLiteral("bindings/rules");
 inline const QString CorrectionLearningEnabled = QStringLiteral("vocabulary/correctionLearningEnabled");
 inline const QString LearnedCorrections = QStringLiteral("vocabulary/learnedCorrections");

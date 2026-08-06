@@ -162,7 +162,8 @@ private slots:
     void selectionEditingUsesDictationAsInstructionsAndSelectionAsSource()
     {
         AppSettings settings;
-        settings.refinement.useTargetContext = false;
+        settings.refinement.useTargetContext = true;
+        settings.refinement.includeScreenshotContext = true;
         settings.refinement.writingProfiles = {
             {WritingProfile::Work, QStringLiteral("balanced"), QStringLiteral("formal")},
             {WritingProfile::Email, QStringLiteral("strong_polish"), QStringLiteral("excited")},
@@ -173,6 +174,9 @@ private slots:
         Target target;
         target.applicationId = QStringLiteral("org.mozilla.Thunderbird");
         target.category = AppCategory::Email;
+        target.windowTitle = QStringLiteral("T3 Code — Project update");
+        target.nearbyTextBefore = QStringLiteral("Hey Benjamin, how is the project going?");
+        target.nearbyTextAfter = QStringLiteral("Could you give me an update?");
         target.selectedText = QStringLiteral("the release is tomorrow");
         target.selectionStart = 4;
         target.selectionEnd = 27;
@@ -192,6 +196,13 @@ private slots:
         QCOMPARE(pipeline.refinementContext.writingProfile, WritingProfile::Email);
         QCOMPARE(pipeline.refinementContext.tone, QStringLiteral("excited"));
 
+        TranscriptPipelineResult screenshotPipeline = pipeline;
+        TranscriptPipeline::includeScreenshotContext(screenshotPipeline,
+                                                     true,
+                                                     QByteArrayLiteral("screenshot"),
+                                                     QStringLiteral("image/png"));
+        QVERIFY(!screenshotPipeline.refinementContext.hasScreenshot());
+
         const QString message = transcriptRefinementUserMessage(
             pipeline.refinementInput,
             {},
@@ -203,6 +214,13 @@ private slots:
         QVERIFY(message.contains(QStringLiteral("Return the complete revised selection only")));
         QVERIFY(message.contains(QStringLiteral("\"writing_profile\":\"email\"")));
         QVERIFY(message.contains(QStringLiteral("\"requested_tone\":\"excited\"")));
+        QVERIFY(!message.contains(QStringLiteral("how is the project going")));
+        QVERIFY(!message.contains(QStringLiteral("Could you give me an update")));
+        QVERIFY(!message.contains(QStringLiteral("T3 Code — Project update")));
+
+        const QString systemPrompt = transcriptRefinementInstructions(QStringLiteral("strong_polish"));
+        QVERIFY(systemPrompt.contains(QStringLiteral("style signals only")));
+        QVERIFY(systemPrompt.contains(QStringLiteral("lengthen or expand")));
     }
 
     void applicationMatrixClassifiesWritingProfiles()
@@ -238,6 +256,19 @@ private slots:
         QCOMPARE(resolveWritingProfile(classified(QStringLiteral("firefox")), overrides, WritingProfile::Other),
                  WritingProfile::Personal);
         QCOMPARE(resolveWritingProfile(classified(QStringLiteral("kate")), overrides, WritingProfile::Other),
+                 WritingProfile::Work);
+
+        const QList<AppRecognitionRule> recognitionRules{
+            {QStringLiteral("com.acme.shell"), AppCategory::Terminal, WritingProfile::Work},
+        };
+        Target customTerminal;
+        customTerminal.applicationId = QStringLiteral("com.acme.shell-nightly");
+        customTerminal.category = classifyTarget(customTerminal, recognitionRules);
+        QCOMPARE(customTerminal.category, AppCategory::Terminal);
+        QCOMPARE(resolveWritingProfile(customTerminal,
+                                       {},
+                                       recognitionRules,
+                                       WritingProfile::Other),
                  WritingProfile::Work);
         QCOMPARE(writingProfileFromName(QStringLiteral("technical")), WritingProfile::Work);
         QCOMPARE(writingProfileFromName(QStringLiteral("general")), WritingProfile::Other);
