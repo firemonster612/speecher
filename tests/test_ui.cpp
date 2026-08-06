@@ -161,7 +161,7 @@ private slots:
         auto *pages = dialog.findChild<KPageWidget *>(QStringLiteral("settingsPages"));
         QVERIFY(pages);
         QCOMPARE(pages->faceType(), KPageView::FlatList);
-        QCOMPARE(pages->model()->rowCount(), 6);
+        QCOMPARE(pages->model()->rowCount(), 7);
         auto *resizeHandle = pages->findChild<QWidget *>(
             QStringLiteral("settingsSidebarResizeHandle"));
         QVERIFY(resizeHandle);
