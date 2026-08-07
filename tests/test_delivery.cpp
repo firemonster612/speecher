@@ -114,6 +114,24 @@ private slots:
         QCOMPARE(attemptedMethod, PasteMethod::TerminalPaste);
     }
 
+    void aiCodingAgentInTerminalKeepsTerminalPasteBehavior()
+    {
+        const QList<PasteRule> rules{
+            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
+            {PasteRuleScope::Category, QStringLiteral("ai_coding"), PasteMethod::StandardPaste, true},
+            {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true},
+        };
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.konsole");
+        target.role = QStringLiteral("terminal");
+        target.aiCodingToolActive = true;
+        target.category = classifyTarget(target);
+
+        QCOMPARE(target.category, AppCategory::AiCoding);
+        QVERIFY(isTerminalTarget(target));
+        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
+    }
+
     void writingProfilesAndPromptUseBoundedUntrustedContext()
     {
         Target target;
@@ -254,7 +272,22 @@ private slots:
         QCOMPARE(classified(QStringLiteral("helium")).category, AppCategory::Browser);
         QCOMPARE(classified(QStringLiteral("thunderbird")).category, AppCategory::Email);
         QCOMPARE(classified(QStringLiteral("soffice.bin")).category, AppCategory::Office);
-        QCOMPARE(classified(QStringLiteral("t3-code")).category, AppCategory::CodeEditor);
+        for (const QString &application : {
+                 QStringLiteral("t3-code"),
+                 QStringLiteral("chatgpt"),
+                 QStringLiteral("codex"),
+                 QStringLiteral("cursor"),
+                 QStringLiteral("windsurf"),
+                 QStringLiteral("kiro"),
+                 QStringLiteral("opencode"),
+                 QStringLiteral("aider"),
+                 QStringLiteral("goose"),
+                 QStringLiteral("qwen-code"),
+                 QStringLiteral("mistral-vibe"),
+                 QStringLiteral("cline"),
+             }) {
+            QCOMPARE(classified(application).category, AppCategory::AiCoding);
+        }
 
         QCOMPARE(inferWritingProfile(classified(QStringLiteral("kate"))), WritingProfile::Work);
         QCOMPARE(inferWritingProfile(classified(QStringLiteral("konsole"))), WritingProfile::Work);
@@ -287,6 +320,30 @@ private slots:
                  WritingProfile::Work);
         QCOMPARE(writingProfileFromName(QStringLiteral("technical")), WritingProfile::Work);
         QCOMPARE(writingProfileFromName(QStringLiteral("general")), WritingProfile::Other);
+        QCOMPARE(appCategoryFromName(QStringLiteral("ai_coding")), AppCategory::AiCoding);
+        QCOMPARE(appCategoryName(AppCategory::AiCoding), QStringLiteral("ai_coding"));
+    }
+
+    void aiCodingRefinementProducesAgentPromptsInsteadOfAnsweringThem()
+    {
+        RefinementContext context;
+        context.target.applicationId = QStringLiteral("t3-code");
+        context.target.category = AppCategory::AiCoding;
+        context.writingProfile = WritingProfile::Work;
+
+        const QString dictationPrompt = dictationRefinementSystemPrompt(
+            QStringLiteral("balanced"), context);
+        QVERIFY(dictationPrompt.contains(QStringLiteral("Rule: ai_coding_prompt")));
+        QVERIFY(dictationPrompt.contains(QStringLiteral("Do not solve, execute, or answer the prompt")));
+        QVERIFY(dictationPrompt.contains(QStringLiteral("goal, relevant context, constraints")));
+
+        context.editSelection = true;
+        context.target.selectedText = QStringLiteral("Fix login");
+        context.target.selectionStart = 0;
+        context.target.selectionEnd = context.target.selectedText.size();
+        const QString editingPrompt = selectedDocumentEditingSystemPrompt(
+            QStringLiteral("balanced"), context);
+        QVERIFY(editingPrompt.contains(QStringLiteral("Rule: ai_coding_prompt")));
     }
 
     void outputUsesClipboardOnlyForMissingOrSecureTargets()

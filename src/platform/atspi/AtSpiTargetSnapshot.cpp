@@ -3,6 +3,7 @@
 #include <QCryptographicHash>
 #include <QFile>
 #include <QRegularExpression>
+#include <QSet>
 
 #ifdef SPEECHER_WITH_ATSPI
 #include <unistd.h>
@@ -16,6 +17,7 @@ namespace {
 constexpr int contextCharacters = 240;
 constexpr int maximumVisitedObjects = 4000;
 constexpr int maximumTreeDepth = 40;
+constexpr int maximumDescendantProcesses = 64;
 
 bool isForeignPrivilegedProcess(qint64 processId)
 {
@@ -257,6 +259,94 @@ QString processName(qint64 processId)
     return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()).trimmed() : QString();
 }
 
+QString executableName(const QString &path)
+{
+    return path.sliced(path.lastIndexOf(QLatin1Char('/')) + 1).trimmed().toLower();
+}
+
+bool processLooksLikeAiCodingTool(qint64 processId)
+{
+    static const QSet<QString> commands{
+        QStringLiteral("aider"),
+        QStringLiteral("amp"),
+        QStringLiteral("auggie"),
+        QStringLiteral("claude"),
+        QStringLiteral("cline"),
+        QStringLiteral("codex"),
+        QStringLiteral("copilot"),
+        QStringLiteral("crush"),
+        QStringLiteral("cursor-agent"),
+        QStringLiteral("droid"),
+        QStringLiteral("gemini"),
+        QStringLiteral("goose"),
+        QStringLiteral("kiro-cli"),
+        QStringLiteral("kilocode"),
+        QStringLiteral("kimi"),
+        QStringLiteral("opencode"),
+        QStringLiteral("openhands"),
+        QStringLiteral("pi"),
+        QStringLiteral("q"),
+        QStringLiteral("qwen"),
+        QStringLiteral("replit"),
+        QStringLiteral("roo"),
+        QStringLiteral("trae"),
+        QStringLiteral("vibe"),
+        QStringLiteral("windsurf"),
+    };
+    if (commands.contains(processName(processId).toLower())) {
+        return true;
+    }
+
+    QFile file(QStringLiteral("/proc/%1/cmdline").arg(processId));
+    if (!file.open(QIODevice::ReadOnly)) return false;
+    const QList<QByteArray> arguments = file.read(16 * 1024).split('\0');
+    QStringList executableParts;
+    for (int index = 0; index < arguments.size() && index < 2; ++index) {
+        const QString argument = QString::fromLocal8Bit(arguments.at(index)).trimmed();
+        if (!argument.isEmpty()) {
+            executableParts.append(argument);
+            executableParts.append(executableName(argument));
+        }
+    }
+    if (executableParts.isEmpty()) return false;
+    if (commands.contains(executableName(executableParts.first()))) {
+        return true;
+    }
+
+    Target probe;
+    probe.processName = executableParts.join(QLatin1Char(' '));
+    return classifyTarget(probe) == AppCategory::AiCoding;
+}
+
+bool terminalHasAiCodingTool(const Target &target)
+{
+    Target titleProbe;
+    titleProbe.applicationName = target.windowTitle;
+    if (classifyTarget(titleProbe) == AppCategory::AiCoding) {
+        return true;
+    }
+
+    QList<qint64> pending{target.processId};
+    QSet<qint64> visited;
+    while (!pending.isEmpty() && visited.size() < maximumDescendantProcesses) {
+        const qint64 processId = pending.takeFirst();
+        if (processId <= 0 || visited.contains(processId)) continue;
+        visited.insert(processId);
+        if (processLooksLikeAiCodingTool(processId)) return true;
+
+        QFile children(QStringLiteral("/proc/%1/task/%1/children").arg(processId));
+        if (!children.open(QIODevice::ReadOnly)) continue;
+        const QStringList childIds = QString::fromLatin1(children.readAll()).split(
+            QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+        for (const QString &childId : childIds) {
+            bool valid = false;
+            const qint64 childProcessId = childId.toLongLong(&valid);
+            if (valid && !visited.contains(childProcessId)) pending.append(childProcessId);
+        }
+    }
+    return false;
+}
+
 void populateText(Target *target, AtspiAccessible *object)
 {
     if (!atspi_accessible_is_text(object)) return;
@@ -355,6 +445,9 @@ TargetSnapshot TargetSnapshot::capture()
         if (!target.secure) {
             populateAncestorContext(&target, focused);
             populateText(&target, focused);
+        }
+        if (isTerminalTarget(target)) {
+            target.aiCodingToolActive = terminalHasAiCodingTool(target);
         }
         target.category = classifyTarget(target);
         target.fingerprint = fingerprint(target);

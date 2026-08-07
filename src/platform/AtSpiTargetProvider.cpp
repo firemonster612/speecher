@@ -28,7 +28,7 @@ QString copiedSelection(const Target &target)
 
     const QString marker = QUuid::createUuid().toString(QUuid::WithoutBraces);
     WlClipboardDelivery clipboard;
-    const PasteMethod copyMethod = target.category == AppCategory::Terminal
+    const PasteMethod copyMethod = isTerminalTarget(target)
         ? PasteMethod::TerminalPaste
         : PasteMethod::StandardPaste;
     if (!clipboard.copy({marker, std::nullopt})
