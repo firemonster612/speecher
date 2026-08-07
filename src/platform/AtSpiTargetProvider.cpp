@@ -15,15 +15,17 @@ namespace speecher {
 
 namespace {
 
-bool isKTextEditorTarget(const Target &target)
+bool usesClipboardSelectionFallback(const Target &target)
 {
     const QString identity = target.applicationId + QLatin1Char(' ')
         + target.applicationName + QLatin1Char(' ') + target.processName;
     return identity.contains(QStringLiteral("kate"), Qt::CaseInsensitive)
-        || identity.contains(QStringLiteral("kwrite"), Qt::CaseInsensitive);
+        || identity.contains(QStringLiteral("kwrite"), Qt::CaseInsensitive)
+        || identity.contains(QStringLiteral("t3code"), Qt::CaseInsensitive)
+        || identity.contains(QStringLiteral("t3 code"), Qt::CaseInsensitive);
 }
 
-QString copiedKTextEditorSelection()
+QString copiedSelection()
 {
     if (!WlClipboardDelivery::canSnapshot() || !YdotoolDelivery::isAvailable()) {
         return {};
@@ -79,8 +81,8 @@ Target AtSpiTargetProvider::capture()
     clearAccessible();
     m_snapshot = std::make_unique<atspi::TargetSnapshot>(atspi::TargetSnapshot::capture());
     Target target = m_snapshot->target();
-    if (!target.hasSelection() && !target.secure && isKTextEditorTarget(target)) {
-        target.selectedText = copiedKTextEditorSelection();
+    if (!target.hasSelection() && !target.secure && usesClipboardSelectionFallback(target)) {
+        target.selectedText = copiedSelection();
         if (!target.selectedText.isEmpty()) {
             target.selectionStart = 0;
             target.selectionEnd = target.selectedText.size();

@@ -61,6 +61,8 @@ AtspiAccessible *focusedObjectInActiveWindow(AtspiAccessible *desktop)
     if (!desktop) {
         return nullptr;
     }
+    AtspiAccessible *fallbackWindow = nullptr;
+    int fallbackScore = -1;
     GError *error = nullptr;
     const int applicationCount = atspi_accessible_get_child_count(desktop, &error);
     clearError(&error);
@@ -73,11 +75,11 @@ AtspiAccessible *focusedObjectInActiveWindow(AtspiAccessible *desktop)
         if (hasState(application, ATSPI_STATE_ACTIVE)) {
             int visited = 0;
             AtspiAccessible *focused = focusedObject(application, 0, &visited);
-            g_object_unref(application);
             if (focused) {
+                if (fallbackWindow) g_object_unref(fallbackWindow);
+                g_object_unref(application);
                 return focused;
             }
-            continue;
         }
         const int windowCount = atspi_accessible_get_child_count(application, &error);
         clearError(&error);
@@ -90,15 +92,28 @@ AtspiAccessible *focusedObjectInActiveWindow(AtspiAccessible *desktop)
             if (hasState(window, ATSPI_STATE_ACTIVE)) {
                 int visited = 0;
                 AtspiAccessible *focused = focusedObject(window, 0, &visited);
-                g_object_unref(window);
-                g_object_unref(application);
-                return focused;
+                if (focused) {
+                    if (fallbackWindow) g_object_unref(fallbackWindow);
+                    g_object_unref(window);
+                    g_object_unref(application);
+                    return focused;
+                }
+                const QString name = takeString(atspi_accessible_get_name(window, &error)).trimmed();
+                clearError(&error);
+                const int score = (name.isEmpty() ? 0 : 100)
+                    + (hasState(window, ATSPI_STATE_SHOWING) ? 20 : 0)
+                    + (hasState(window, ATSPI_STATE_VISIBLE) ? 10 : 0);
+                if (score > fallbackScore) {
+                    if (fallbackWindow) g_object_unref(fallbackWindow);
+                    fallbackWindow = ATSPI_ACCESSIBLE(g_object_ref(window));
+                    fallbackScore = score;
+                }
             }
             g_object_unref(window);
         }
         g_object_unref(application);
     }
-    return nullptr;
+    return fallbackWindow;
 }
 
 void findBestEditableText(AtspiAccessible *object, int depth, int *visited,
