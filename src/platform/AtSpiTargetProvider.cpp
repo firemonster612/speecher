@@ -15,17 +15,7 @@ namespace speecher {
 
 namespace {
 
-bool usesClipboardSelectionFallback(const Target &target)
-{
-    const QString identity = target.applicationId + QLatin1Char(' ')
-        + target.applicationName + QLatin1Char(' ') + target.processName;
-    return identity.contains(QStringLiteral("kate"), Qt::CaseInsensitive)
-        || identity.contains(QStringLiteral("kwrite"), Qt::CaseInsensitive)
-        || identity.contains(QStringLiteral("t3code"), Qt::CaseInsensitive)
-        || identity.contains(QStringLiteral("t3 code"), Qt::CaseInsensitive);
-}
-
-QString copiedSelection()
+QString copiedSelection(const Target &target)
 {
     if (!WlClipboardDelivery::canSnapshot() || !YdotoolDelivery::isAvailable()) {
         return {};
@@ -38,7 +28,11 @@ QString copiedSelection()
 
     const QString marker = QUuid::createUuid().toString(QUuid::WithoutBraces);
     WlClipboardDelivery clipboard;
-    if (!clipboard.copy({marker, std::nullopt}) || !YdotoolDelivery().copySelection()) {
+    const PasteMethod copyMethod = target.category == AppCategory::Terminal
+        ? PasteMethod::TerminalPaste
+        : PasteMethod::StandardPaste;
+    if (!clipboard.copy({marker, std::nullopt})
+        || !YdotoolDelivery().copySelection(copyMethod)) {
         WlClipboardDelivery::restore(previous);
         return {};
     }
@@ -81,8 +75,8 @@ Target AtSpiTargetProvider::capture()
     clearAccessible();
     m_snapshot = std::make_unique<atspi::TargetSnapshot>(atspi::TargetSnapshot::capture());
     Target target = m_snapshot->target();
-    if (!target.hasSelection() && !target.secure && usesClipboardSelectionFallback(target)) {
-        target.selectedText = copiedSelection();
+    if (!target.hasSelection() && !target.secure) {
+        target.selectedText = copiedSelection(target);
         if (!target.selectedText.isEmpty()) {
             target.selectionStart = 0;
             target.selectionEnd = target.selectedText.size();

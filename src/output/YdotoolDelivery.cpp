@@ -179,16 +179,22 @@ QStringList YdotoolDelivery::pasteShortcutArguments(PasteMethod method)
     return arguments;
 }
 
-QStringList YdotoolDelivery::copyShortcutArguments()
+QStringList YdotoolDelivery::copyShortcutArguments(PasteMethod method)
 {
-    return {
+    QStringList arguments{
         QStringLiteral("key"),
         QStringLiteral("--key-delay=%1").arg(shortcutKeyDelayMs),
         QStringLiteral("29:1"),
-        QStringLiteral("46:1"),
-        QStringLiteral("46:0"),
-        QStringLiteral("29:0"),
     };
+    if (method == PasteMethod::TerminalPaste) {
+        arguments << QStringLiteral("42:1");
+    }
+    arguments << QStringLiteral("46:1") << QStringLiteral("46:0");
+    if (method == PasteMethod::TerminalPaste) {
+        arguments << QStringLiteral("42:0");
+    }
+    arguments << QStringLiteral("29:0");
+    return arguments;
 }
 
 QString YdotoolDelivery::withoutTrailingWhitespace(const QString &text)
@@ -267,7 +273,7 @@ bool YdotoolDelivery::pasteFromClipboard(const QString &text, PasteMethod method
     return true;
 }
 
-bool YdotoolDelivery::copySelection(QString *error)
+bool YdotoolDelivery::copySelection(PasteMethod method, QString *error)
 {
     const QString executable = QStandardPaths::findExecutable(QStringLiteral("ydotool"));
     if (executable.isEmpty()) {
@@ -284,7 +290,7 @@ bool YdotoolDelivery::copySelection(QString *error)
     }
 
     releaseModifierKeys(executable, env);
-    if (!runYdotool(executable, env, copyShortcutArguments(), 5000, error)) {
+    if (!runYdotool(executable, env, copyShortcutArguments(method), 5000, error)) {
         releaseModifierKeys(executable, env);
         return false;
     }

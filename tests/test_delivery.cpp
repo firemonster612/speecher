@@ -680,12 +680,21 @@ private slots:
                               QStringLiteral("47:1"),
                               QStringLiteral("47:0"),
                               QStringLiteral("29:0")}));
-        QCOMPARE(YdotoolDelivery::copyShortcutArguments(),
+        QCOMPARE(YdotoolDelivery::copyShortcutArguments(PasteMethod::StandardPaste),
                  QStringList({QStringLiteral("key"),
                               QStringLiteral("--key-delay=2"),
                               QStringLiteral("29:1"),
                               QStringLiteral("46:1"),
                               QStringLiteral("46:0"),
+                              QStringLiteral("29:0")}));
+        QCOMPARE(YdotoolDelivery::copyShortcutArguments(PasteMethod::TerminalPaste),
+                 QStringList({QStringLiteral("key"),
+                              QStringLiteral("--key-delay=2"),
+                              QStringLiteral("29:1"),
+                              QStringLiteral("42:1"),
+                              QStringLiteral("46:1"),
+                              QStringLiteral("46:0"),
+                              QStringLiteral("42:0"),
                               QStringLiteral("29:0")}));
     }
 
