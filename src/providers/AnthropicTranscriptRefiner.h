@@ -21,6 +21,7 @@ public:
     RefinementPrepareResult prepare(const RefinementSettings &settings) override;
     void refine(const QString &rawTranscript,
                 const QStringList &vocabulary,
+                const RefinementContext &context,
                 const RefinementSettings &settings) override;
     void cancel() override;
 

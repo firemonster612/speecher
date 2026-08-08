@@ -267,6 +267,42 @@ static void selectData(QComboBox *combo, const QString &data)
     combo->setCurrentIndex(index >= 0 ? index : 0);
 }
 
+static PasteMethod pasteMethodFor(const QList<PasteRule> &rules,
+                                  PasteRuleScope scope,
+                                  const QString &match,
+                                  PasteMethod fallback)
+{
+    for (const PasteRule &rule : rules) {
+        if (rule.scope == scope && rule.match == match) {
+            return rule.method;
+        }
+    }
+    return fallback;
+}
+
+static QList<PasteRule> withBasePasteRules(const QList<PasteRule> &existing,
+                                           PasteMethod globalMethod,
+                                           PasteMethod terminalMethod)
+{
+    QList<PasteRule> rules;
+    for (const PasteRule &rule : existing) {
+        if (rule.scope == PasteRuleScope::Global
+            || (rule.scope == PasteRuleScope::Category
+                && rule.match == appCategoryName(AppCategory::Terminal))) {
+            continue;
+        }
+        rules.append(rule);
+    }
+    rules.append({
+        PasteRuleScope::Category,
+        appCategoryName(AppCategory::Terminal),
+        terminalMethod,
+        true,
+    });
+    rules.append({PasteRuleScope::Global, QString(), globalMethod, true});
+    return rules;
+}
+
 static void selectEditableText(QComboBox *combo, const QString &text)
 {
     const QString trimmed = text.trimmed();
@@ -415,12 +451,19 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_vadEnabled(new QCheckBox(this))
     , m_provider(new QComboBox(this))
     , m_refinementStyle(new QComboBox(this))
+    , m_writingProfile(new QComboBox(this))
+    , m_useTargetContext(new QCheckBox(this))
+    , m_screenshotContext(new QCheckBox(this))
     , m_openAiModel(new QComboBox(this))
     , m_openAiEffort(new QComboBox(this))
     , m_anthropicModel(new QComboBox(this))
     , m_anthropicEffort(new QComboBox(this))
     , m_outputMethod(new QComboBox(this))
+    , m_outputFormat(new QComboBox(this))
+    , m_globalPaste(new QComboBox(this))
+    , m_terminalPaste(new QComboBox(this))
     , m_restoreClipboardAfterTyping(new QCheckBox(this))
+    , m_learnCorrections(new QCheckBox(this))
     , m_authMode(new QComboBox(this))
     , m_anthropicAuthMode(new QComboBox(this))
     , m_authControl(new QStackedWidget(this))
@@ -436,6 +479,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_readinessTimeoutMs(new QSpinBox(this))
     , m_vadThreshold(new QSpinBox(this))
     , m_vocab(new VocabularyTable(this))
+    , m_corrections(new QTableWidget(this))
     , m_bindings(new QListWidget(this))
 {
     setWindowTitle(QStringLiteral("Speecher Settings"));
@@ -460,6 +504,12 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_refinementStyle->addItem(QStringLiteral("Strong polish"), QStringLiteral("strong_polish"));
     m_refinementStyle->addItem(QStringLiteral("Balanced"), QStringLiteral("balanced"));
     m_refinementStyle->addItem(QStringLiteral("Light cleanup"), QStringLiteral("light_cleanup"));
+    m_writingProfile->addItem(QStringLiteral("General"), QStringLiteral("general"));
+    m_writingProfile->addItem(QStringLiteral("Email"), QStringLiteral("email"));
+    m_writingProfile->addItem(QStringLiteral("Technical"), QStringLiteral("technical"));
+    m_writingProfile->addItem(QStringLiteral("Personal"), QStringLiteral("personal"));
+    m_useTargetContext->setText(QStringLiteral("Use context"));
+    m_screenshotContext->setText(QStringLiteral("Allow screenshots"));
     for (const QString &model : {
              QStringLiteral("gpt-5.6-luna"),
              QStringLiteral("gpt-5.6-terra"),
@@ -515,8 +565,17 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::QtClipboard)), QString::fromLatin1(OutputMethod::QtClipboard));
     m_outputMethod->setToolTip(QStringLiteral("How Speecher delivers final text."));
     m_outputMethod->view()->setMouseTracking(true);
+    m_outputFormat->addItem(QStringLiteral("Plain text"), QStringLiteral("plain"));
+    m_outputFormat->addItem(QStringLiteral("HTML and plain text"), QStringLiteral("html"));
+    for (QComboBox *combo : {m_globalPaste, m_terminalPaste}) {
+        combo->addItem(QStringLiteral("Standard paste (Ctrl+V)"), pasteMethodName(PasteMethod::StandardPaste));
+        combo->addItem(QStringLiteral("Terminal paste (Ctrl+Shift+V)"), pasteMethodName(PasteMethod::TerminalPaste));
+        combo->addItem(QStringLiteral("Clipboard only"), pasteMethodName(PasteMethod::ClipboardOnly));
+    }
     m_restoreClipboardAfterTyping->setText(QStringLiteral("Restore"));
     m_restoreClipboardAfterTyping->setToolTip(QStringLiteral("Restore the previous clipboard after virtual-keyboard paste."));
+    m_learnCorrections->setText(QStringLiteral("Learn corrections"));
+    m_learnCorrections->setToolTip(QStringLiteral("Observe a verified inserted span briefly and save only high-confidence corrections."));
     m_authMode->addItem(QStringLiteral("Automatic"), QStringLiteral("auto"));
     m_authMode->addItem(QStringLiteral("Codex API key"), QStringLiteral("codex_api_key"));
     m_authMode->addItem(QStringLiteral("Codex OAuth"), QStringLiteral("codex_oauth"));
@@ -553,6 +612,22 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_vocab->setEditTriggers(QAbstractItemView::AllEditTriggers);
     m_vocab->setTabKeyNavigation(false);
     m_vocab->setMinimumHeight(120);
+    m_corrections->setObjectName(QStringLiteral("vocabInput"));
+    m_corrections->setColumnCount(4);
+    m_corrections->setHorizontalHeaderLabels({
+        QStringLiteral("Enabled"),
+        QStringLiteral("Heard"),
+        QStringLiteral("Corrected"),
+        QStringLiteral("App"),
+    });
+    m_corrections->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_corrections->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_corrections->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    m_corrections->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    m_corrections->verticalHeader()->hide();
+    m_corrections->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_corrections->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_corrections->setMinimumHeight(180);
     m_vocabLimit->setObjectName(QStringLiteral("statusText"));
     m_vocabLimit->setForegroundRole(QPalette::WindowText);
     m_vocabLimit->setAttribute(Qt::WA_StyledBackground, false);
@@ -586,6 +661,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *openAiSection = makeSectionLabel(QStringLiteral("OpenAI"), this);
     auto *anthropicSection = makeSectionLabel(QStringLiteral("Anthropic"), this);
     auto *vocabularySection = makeSectionLabel(QStringLiteral("Vocabulary"), this);
+    auto *correctionsSection = makeSectionLabel(QStringLiteral("Learned Corrections"), this);
     auto *bindingsSection = makeSectionLabel(QStringLiteral("Bindings"), this);
 
     auto *generalCard = makeSettingsCard(this);
@@ -691,8 +767,26 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
                    outputCard),
            outputCard);
     addRow(outputLayout,
+           makeRow(QStringLiteral("Format"),
+                   QStringLiteral("Default clipboard representation. A CLI shortcut can override this per dictation."),
+                   m_outputFormat,
+                   outputCard),
+           outputCard);
+    addRow(outputLayout,
+           makeRow(QStringLiteral("Normal apps"),
+                   QStringLiteral("Paste behavior used unless a category or exact-app rule overrides it."),
+                   m_globalPaste,
+                   outputCard),
+           outputCard);
+    addRow(outputLayout,
+           makeRow(QStringLiteral("Terminals"),
+                   QStringLiteral("Paste behavior for terminal applications."),
+                   m_terminalPaste,
+                   outputCard),
+           outputCard);
+    addRow(outputLayout,
            makeRow(QStringLiteral("Restore clipboard"),
-                   QStringLiteral("After virtual-keyboard paste, put the previous clipboard contents back."),
+                   QStringLiteral("Restore the previous clipboard only after insertion is verified."),
                    m_restoreClipboardAfterTyping,
                    outputCard),
            outputCard);
@@ -710,7 +804,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
            false);
 
     addRow(refinementLayout, makeRow(QStringLiteral("Refinement"), QStringLiteral("Clean up dictated text after capture."), m_provider, refinementCard), refinementCard);
-    addRow(refinementLayout, makeRow(QStringLiteral("Refinement style"), QStringLiteral("How strongly dictated text is rewritten."), m_refinementStyle, refinementCard), refinementCard, false);
+    addRow(refinementLayout, makeRow(QStringLiteral("Refinement style"), QStringLiteral("How strongly dictated text is rewritten."), m_refinementStyle, refinementCard), refinementCard);
+    addRow(refinementLayout, makeRow(QStringLiteral("Fallback profile"), QStringLiteral("Writing profile used when the target app does not imply one."), m_writingProfile, refinementCard), refinementCard);
+    addRow(refinementLayout, makeRow(QStringLiteral("Target context"), QStringLiteral("Use the focused app, control, selection, and bounded nearby text for cleanup."), m_useTargetContext, refinementCard), refinementCard);
+    addRow(refinementLayout, makeRow(QStringLiteral("Screenshot context"), QStringLiteral("Off by default; used only with image-capable refinement models."), m_screenshotContext, refinementCard), refinementCard, false);
 
     addRow(openAiLayout, makeRow(QStringLiteral("OpenAI model"), QStringLiteral("Model used for refinement."), m_openAiModel, openAiCard), openAiCard);
     addRow(openAiLayout, makeRow(QStringLiteral("OpenAI effort"), QStringLiteral("Reasoning effort used for refinement."), m_openAiEffort, openAiCard), openAiCard);
@@ -758,6 +855,28 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     vocabLayout->addWidget(m_vocab);
     vocabLayout->addWidget(m_vocabLimit);
 
+    auto *correctionsCard = new QFrame(this);
+    correctionsCard->setObjectName(QStringLiteral("vocabSection"));
+    auto *correctionsLayout = new QVBoxLayout(correctionsCard);
+    correctionsLayout->setContentsMargins(20, 16, 20, 20);
+    correctionsLayout->setSpacing(8);
+    auto *correctionsDescription = new QLabel(
+        QStringLiteral("Source-marked corrections learned after verified insertion. Edit, disable, delete, or undo deletions here."),
+        correctionsCard);
+    correctionsDescription->setObjectName(QStringLiteral("rowDescription"));
+    correctionsDescription->setWordWrap(true);
+    m_removeCorrectionButton = new QPushButton(QStringLiteral("Delete selected"), correctionsCard);
+    m_undoCorrectionButton = new QPushButton(QStringLiteral("Undo delete"), correctionsCard);
+    m_undoCorrectionButton->setEnabled(false);
+    auto *correctionButtons = new QHBoxLayout;
+    correctionButtons->addWidget(m_learnCorrections);
+    correctionButtons->addStretch();
+    correctionButtons->addWidget(m_undoCorrectionButton);
+    correctionButtons->addWidget(m_removeCorrectionButton);
+    correctionsLayout->addWidget(correctionsDescription);
+    correctionsLayout->addWidget(m_corrections);
+    correctionsLayout->addLayout(correctionButtons);
+
     auto *bindingSection = new QFrame(this);
     bindingSection->setObjectName(QStringLiteral("bindingSection"));
     auto *bindingLayout = new QVBoxLayout(bindingSection);
@@ -801,6 +920,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     content->addWidget(anthropicCard);
     content->addWidget(vocabularySection);
     content->addWidget(vocabSection);
+    content->addWidget(correctionsSection);
+    content->addWidget(correctionsCard);
     content->addWidget(bindingsSection);
     content->addWidget(bindingSection);
     content->addWidget(note);
@@ -818,6 +939,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     openAiCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     anthropicCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     vocabSection->setStyleSheet(QString::fromLatin1(settingsStyle));
+    correctionsCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     bindingSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     generalSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     audioSection->setStyleSheet(QString::fromLatin1(settingsStyle));
@@ -826,6 +948,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     openAiSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     anthropicSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     vocabularySection->setStyleSheet(QString::fromLatin1(settingsStyle));
+    correctionsSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     bindingsSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     note->setStyleSheet(QString::fromLatin1(settingsStyle));
 
@@ -868,6 +991,9 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(m_vadThreshold, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
     connect(m_provider, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_refinementStyle, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_writingProfile, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_useTargetContext, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
+    connect(m_screenshotContext, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
     connect(m_openAiModel, &QComboBox::currentTextChanged, this, &SettingsDialog::updateButtonState);
     connect(m_openAiEffort, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_anthropicModel, &QComboBox::currentTextChanged, this, [this] {
@@ -878,6 +1004,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(m_anthropicAuthMode, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_anthropicInfoButton, &QPushButton::clicked, this, &SettingsDialog::showAnthropicAuthInfo);
     connect(m_restoreClipboardAfterTyping, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
+    connect(m_learnCorrections, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
+    connect(m_outputFormat, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_globalPaste, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_terminalPaste, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_outputMethod, &QComboBox::currentIndexChanged, this, [this] {
         if (m_outputMethod->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool)) {
             const YdotoolSetupStatus status = YdotoolSetup::probe(m_controller->settings()->ydotoolEnabled());
@@ -897,6 +1027,31 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
         updateButtonState();
     });
     connect(m_apiKey, &QLineEdit::textChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_corrections, &QTableWidget::itemChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_corrections, &QTableWidget::itemSelectionChanged, this, [this] {
+        m_removeCorrectionButton->setEnabled(m_corrections->currentRow() >= 0);
+    });
+    connect(m_removeCorrectionButton, &QPushButton::clicked, this, [this] {
+        const int row = m_corrections->currentRow();
+        QList<LearnedCorrection> corrections = currentLearnedCorrections();
+        if (row < 0 || row >= corrections.size()) {
+            return;
+        }
+        m_removedCorrections.append(corrections.takeAt(row));
+        setLearnedCorrections(corrections);
+        m_undoCorrectionButton->setEnabled(true);
+        updateButtonState();
+    });
+    connect(m_undoCorrectionButton, &QPushButton::clicked, this, [this] {
+        if (m_removedCorrections.isEmpty()) {
+            return;
+        }
+        QList<LearnedCorrection> corrections = currentLearnedCorrections();
+        corrections.prepend(m_removedCorrections.takeLast());
+        setLearnedCorrections(corrections);
+        m_undoCorrectionButton->setEnabled(!m_removedCorrections.isEmpty());
+        updateButtonState();
+    });
     connect(m_previewWords, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
     connect(m_ydotoolSetupButton, &QPushButton::clicked, this, &SettingsDialog::setupOrEnableYdotool);
     connect(m_ydotoolStartButton, &QPushButton::clicked, this, [this] {
@@ -938,11 +1093,28 @@ void SettingsDialog::load()
     m_vadThreshold->setValue(audio.vadThresholdPercent);
     selectData(m_provider, settings->refinementProvider());
     selectData(m_refinementStyle, settings->refinementStyle());
+    selectData(m_writingProfile, settings->defaultWritingProfile());
+    m_useTargetContext->setChecked(settings->useTargetContext());
+    m_screenshotContext->setChecked(settings->includeScreenshotContext());
     selectEditableText(m_openAiModel, settings->openAiModel());
     selectData(m_openAiEffort, settings->openAiEffort());
     selectEditableText(m_anthropicModel, settings->anthropicModel());
     selectData(m_anthropicEffort, settings->anthropicEffort());
     selectData(m_outputMethod, settings->outputMethod());
+    selectData(m_outputFormat, outputFormatName(settings->outputFormat()));
+    const QList<PasteRule> pasteRules = settings->pasteRules();
+    selectData(m_globalPaste,
+               pasteMethodName(pasteMethodFor(
+                   pasteRules,
+                   PasteRuleScope::Global,
+                   QString(),
+                   PasteMethod::StandardPaste)));
+    selectData(m_terminalPaste,
+               pasteMethodName(pasteMethodFor(
+                   pasteRules,
+                   PasteRuleScope::Category,
+                   appCategoryName(AppCategory::Terminal),
+                   PasteMethod::TerminalPaste)));
     m_restoreClipboardAfterTyping->setChecked(settings->restoreClipboardAfterTyping());
     selectData(m_authMode, settings->openAiAuthMode());
     selectData(m_anthropicAuthMode, settings->anthropicAuthMode());
@@ -950,6 +1122,10 @@ void SettingsDialog::load()
     m_apiKey->setText(m_controller->secretStore()->apiKey());
     setVocabularyRows(settings->customVocabulary());
     setBindingRules(settings->bindingRules());
+    m_learnCorrections->setChecked(settings->correctionLearningEnabled());
+    m_removedCorrections.clear();
+    m_undoCorrectionButton->setEnabled(false);
+    setLearnedCorrections(settings->learnedCorrections());
     updateVocabularyLimit();
     updateAudioControls();
     updateAuthControl();
@@ -984,6 +1160,9 @@ bool SettingsDialog::save()
     });
     settings->setRefinementProvider(m_provider->currentData().toString());
     settings->setRefinementStyle(m_refinementStyle->currentData().toString());
+    settings->setDefaultWritingProfile(m_writingProfile->currentData().toString());
+    settings->setUseTargetContext(m_useTargetContext->isChecked());
+    settings->setIncludeScreenshotContext(m_screenshotContext->isChecked());
     settings->setOpenAiModel(editableComboValue(m_openAiModel));
     selectEditableText(m_openAiModel, settings->openAiModel());
     settings->setOpenAiEffort(m_openAiEffort->currentData().toString());
@@ -991,14 +1170,24 @@ bool SettingsDialog::save()
     selectEditableText(m_anthropicModel, settings->anthropicModel());
     settings->setAnthropicEffort(m_anthropicEffort->currentData().toString());
     settings->setOutputMethod(m_outputMethod->currentData().toString());
+    settings->setOutputFormat(outputFormatFromString(m_outputFormat->currentData().toString()));
+    settings->setPasteRules(withBasePasteRules(
+        settings->pasteRules(),
+        pasteMethodFromName(m_globalPaste->currentData().toString()),
+        pasteMethodFromName(m_terminalPaste->currentData().toString())));
     settings->setRestoreClipboardAfterTyping(m_restoreClipboardAfterTyping->isChecked());
     settings->setOpenAiAuthMode(m_authMode->currentData().toString());
     settings->setAnthropicAuthMode(m_anthropicAuthMode->currentData().toString());
     settings->setPreviewWords(m_previewWords->value());
     settings->setCustomVocabulary(currentVocabulary());
+    settings->setCorrectionLearningEnabled(m_learnCorrections->isChecked());
+    settings->setLearnedCorrections(currentLearnedCorrections());
     settings->setBindingRules(bindingValidation.rules);
     setVocabularyRows(settings->customVocabulary());
     setBindingRules(settings->bindingRules());
+    setLearnedCorrections(settings->learnedCorrections());
+    m_removedCorrections.clear();
+    m_undoCorrectionButton->setEnabled(false);
     updateVocabularyLimit();
     if (settings->openAiAuthMode() == QStringLiteral("settings")) {
         if (!m_controller->secretStore()->saveApiKey(m_apiKey->text().trimmed())) {
@@ -1030,16 +1219,27 @@ bool SettingsDialog::hasChanges() const
         || m_vadThreshold->value() != audio.vadThresholdPercent
         || m_provider->currentData().toString() != settings->refinementProvider()
         || m_refinementStyle->currentData().toString() != settings->refinementStyle()
+        || m_writingProfile->currentData().toString() != settings->defaultWritingProfile()
+        || m_useTargetContext->isChecked() != settings->useTargetContext()
+        || m_screenshotContext->isChecked() != settings->includeScreenshotContext()
         || editableComboValue(m_openAiModel) != settings->openAiModel()
         || m_openAiEffort->currentData().toString() != settings->openAiEffort()
         || editableComboValue(m_anthropicModel) != settings->anthropicModel()
         || m_anthropicEffort->currentData().toString() != settings->anthropicEffort()
         || m_outputMethod->currentData().toString() != settings->outputMethod()
+        || m_outputFormat->currentData().toString() != outputFormatName(settings->outputFormat())
+        || withBasePasteRules(
+               settings->pasteRules(),
+               pasteMethodFromName(m_globalPaste->currentData().toString()),
+               pasteMethodFromName(m_terminalPaste->currentData().toString()))
+            != settings->pasteRules()
         || m_restoreClipboardAfterTyping->isChecked() != settings->restoreClipboardAfterTyping()
         || m_authMode->currentData().toString() != settings->openAiAuthMode()
         || m_anthropicAuthMode->currentData().toString() != settings->anthropicAuthMode()
         || m_previewWords->value() != settings->previewWords()
         || currentVocabulary() != settings->customVocabulary()
+        || m_learnCorrections->isChecked() != settings->correctionLearningEnabled()
+        || currentLearnedCorrections() != settings->learnedCorrections()
         || currentBindingRules() != settings->bindingRules()) {
         return true;
     }
@@ -1059,6 +1259,59 @@ QStringList SettingsDialog::currentVocabulary() const
         }
     }
     return VocabularyLimit::limited(vocabulary);
+}
+
+QList<LearnedCorrection> SettingsDialog::currentLearnedCorrections() const
+{
+    QList<LearnedCorrection> corrections;
+    for (int row = 0; row < m_corrections->rowCount(); ++row) {
+        const QTableWidgetItem *enabled = m_corrections->item(row, 0);
+        const QTableWidgetItem *original = m_corrections->item(row, 1);
+        const QTableWidgetItem *corrected = m_corrections->item(row, 2);
+        const QTableWidgetItem *application = m_corrections->item(row, 3);
+        if (!enabled || !original || !corrected || !application) {
+            continue;
+        }
+        LearnedCorrection correction;
+        correction.id = enabled->data(Qt::UserRole).toString();
+        correction.createdAtMs = enabled->data(Qt::UserRole + 1).toLongLong();
+        correction.confidence = enabled->data(Qt::UserRole + 2).toDouble();
+        correction.enabled = enabled->checkState() == Qt::Checked;
+        correction.original = original->text().trimmed();
+        correction.corrected = corrected->text().trimmed();
+        correction.applicationId = application->text().trimmed();
+        if (!correction.id.isEmpty() && !correction.original.isEmpty() && !correction.corrected.isEmpty()) {
+            corrections.append(correction);
+        }
+    }
+    return corrections;
+}
+
+void SettingsDialog::setLearnedCorrections(const QList<LearnedCorrection> &corrections)
+{
+    QSignalBlocker blocker(m_corrections);
+    m_corrections->setRowCount(0);
+    for (const LearnedCorrection &correction : corrections) {
+        const int row = m_corrections->rowCount();
+        m_corrections->insertRow(row);
+        auto *enabled = new QTableWidgetItem;
+        enabled->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
+        enabled->setCheckState(correction.enabled ? Qt::Checked : Qt::Unchecked);
+        enabled->setData(Qt::UserRole, correction.id);
+        enabled->setData(Qt::UserRole + 1, correction.createdAtMs);
+        enabled->setData(Qt::UserRole + 2, correction.confidence);
+        auto *original = new QTableWidgetItem(correction.original);
+        auto *corrected = new QTableWidgetItem(correction.corrected);
+        auto *application = new QTableWidgetItem(correction.applicationId);
+        application->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
+        application->setToolTip(QStringLiteral("Learned automatically · confidence %1%")
+                                    .arg(qRound(correction.confidence * 100.0)));
+        m_corrections->setItem(row, 0, enabled);
+        m_corrections->setItem(row, 1, original);
+        m_corrections->setItem(row, 2, corrected);
+        m_corrections->setItem(row, 3, application);
+    }
+    m_removeCorrectionButton->setEnabled(false);
 }
 
 QList<BindingRule> SettingsDialog::currentBindingRules() const

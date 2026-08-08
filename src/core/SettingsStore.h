@@ -48,12 +48,28 @@ public:
 
     QList<BindingRule> bindingRules() const;
     bool setBindingRules(const QList<BindingRule> &rules, QString *error = nullptr);
+    bool correctionLearningEnabled() const;
+    void setCorrectionLearningEnabled(bool value);
+    QList<LearnedCorrection> learnedCorrections() const;
+    void setLearnedCorrections(const QList<LearnedCorrection> &corrections);
+    bool addLearnedCorrection(const QString &original,
+                              const QString &corrected,
+                              const QString &applicationId,
+                              double confidence);
+    void setLearnedCorrectionEnabled(const QString &id, bool enabled);
+    void removeLearnedCorrection(const QString &id);
 
     QString refinementProvider() const;
     void setRefinementProvider(const QString &value);
 
     QString refinementStyle() const;
     void setRefinementStyle(const QString &value);
+    QString defaultWritingProfile() const;
+    void setDefaultWritingProfile(const QString &value);
+    bool useTargetContext() const;
+    void setUseTargetContext(bool value);
+    bool includeScreenshotContext() const;
+    void setIncludeScreenshotContext(bool value);
 
     QString openAiModel() const;
     void setOpenAiModel(const QString &value);
@@ -75,10 +91,14 @@ public:
 
     QString outputMethod() const;
     void setOutputMethod(const QString &value);
+    OutputFormat outputFormat() const;
+    void setOutputFormat(OutputFormat value);
     bool ydotoolEnabled() const;
     void setYdotoolEnabled(bool value);
     bool restoreClipboardAfterTyping() const;
     void setRestoreClipboardAfterTyping(bool value);
+    QList<PasteRule> pasteRules() const;
+    void setPasteRules(const QList<PasteRule> &rules);
 
     QString claudeCredentialsPath() const;
     QString claudeEndpointBase() const;

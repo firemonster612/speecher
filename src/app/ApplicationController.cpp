@@ -27,10 +27,23 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
     , m_ipc(new SingleInstanceIpc(m_platform, this))
 {
     registerProviders();
+    TargetProvider *targetProvider = m_platform->createTargetProvider(this);
+    connect(targetProvider,
+            &TargetProvider::correctionObserved,
+            this,
+            [this](const QString &original,
+                   const QString &corrected,
+                   const QString &applicationId,
+                   double confidence) {
+                if (m_settings->correctionLearningEnabled()) {
+                    m_settings->addLearnedCorrection(original, corrected, applicationId, confidence);
+                }
+            });
     m_session = new DictationSession(m_settings,
                                      m_platform->createAudioInput(m_settings, this),
                                      m_platform->createMediaController(this),
-                                     m_platform->createTextDelivery(this),
+                                     targetProvider,
+                                     m_platform->createTextDelivery(targetProvider, this),
                                      m_providers,
                                      this);
 
@@ -118,13 +131,21 @@ void ApplicationController::showMain()
     showMainWindow();
 }
 
-void ApplicationController::handleIpcCommand(const QString &command, QLocalSocket *socket)
+void ApplicationController::handleIpcCommand(const QString &command,
+                                             const QString &outputFormat,
+                                             QLocalSocket *socket)
 {
+    const bool hasFormat = !outputFormat.isEmpty();
+    if (hasFormat && outputFormat != QStringLiteral("plain") && outputFormat != QStringLiteral("html")) {
+        SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown output format")));
+        return;
+    }
+    const OutputFormat format = outputFormatFromString(outputFormat);
     if (command == QStringLiteral("toggle")) {
-        toggle();
+        hasFormat ? m_session->toggleWithFormat(format) : toggle();
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("start")) {
-        startListening();
+        hasFormat ? m_session->startListeningWithFormat(format) : startListening();
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("stop")) {
         stopListening();

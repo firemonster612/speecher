@@ -6,6 +6,8 @@
 
 namespace speecher {
 
+struct RefinementContext;
+
 class ClaudeCodeSessionRefiner final : public QObject {
     Q_OBJECT
 
@@ -16,7 +18,8 @@ public:
     bool prepare(const QString &model, const QString &effort, const QString &refinementStyle, QString *error = nullptr);
     void refine(const QString &rawTranscript,
                 const QStringList &vocabulary,
-                const QStringList &bindingVocabulary);
+                const QStringList &bindingVocabulary,
+                const RefinementContext &context);
     void cancel();
 
 signals:

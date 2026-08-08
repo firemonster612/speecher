@@ -26,12 +26,21 @@ public:
                      TextDeliveryAdapter *delivery,
                      ProviderRegistry *providers,
                      QObject *parent = nullptr);
+    DictationSession(SettingsStore *settings,
+                     AudioInput *audio,
+                     MediaController *mediaController,
+                     TargetProvider *targetProvider,
+                     TextDeliveryAdapter *delivery,
+                     ProviderRegistry *providers,
+                     QObject *parent = nullptr);
     ~DictationSession() override;
 
     DictationState state() const;
     QString stateName() const;
     QString lastMessage() const;
     SessionResponse response(bool ok = true, const QString &message = {}) const;
+    void toggleWithFormat(OutputFormat format);
+    void startListeningWithFormat(OutputFormat format);
 
 public slots:
     void toggle();
@@ -68,16 +77,22 @@ private:
     void continueStartupAfterPreparation(quint64 generation, const AppSettings &settings);
     void failStartup(quint64 generation, const QString &message);
     void beginRefinement(quint64 generation);
+    void retrySpeechAttempt();
+    void handleSpeechFailure(const SpeechFailure &failure);
     void deliverFinal(const QString &text);
+    void discardSessionAudio();
     void resumePausedMedia();
     bool selectSpeechTranscriber(const QString &providerId, QString *error);
     bool selectTranscriptRefiner(const QString &providerId, QString *error);
     void connectSpeechTranscriber(SpeechTranscriber *transcriber);
     void connectTranscriptRefiner(TranscriptRefiner *refiner);
+    void toggleSession(std::optional<OutputFormat> format);
+    void startSession(std::optional<OutputFormat> format);
 
     SettingsStore *m_settings = nullptr;
     AudioInput *m_audio = nullptr;
     MediaController *m_mediaController = nullptr;
+    TargetProvider *m_targetProvider = nullptr;
     TextDeliveryAdapter *m_delivery = nullptr;
     ProviderRegistry *m_providers = nullptr;
     TranscriptState *m_transcript = nullptr;
@@ -93,6 +108,11 @@ private:
     QStringList m_noBindPhrases;
     bool m_allowPostRefinementBindings = true;
     quint64 m_generation = 0;
+    quint64 m_attemptId = 0;
+    QList<QByteArray> m_capturedAudio;
+    std::optional<AppSettings> m_sessionSettings;
+    Target m_target;
+    bool m_retryUsed = false;
     std::shared_ptr<StartupPreparation> m_startupPreparation;
 };
 

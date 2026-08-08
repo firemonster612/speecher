@@ -102,6 +102,7 @@ RefinementPrepareResult AnthropicTranscriptRefiner::prepare(const RefinementSett
 
 void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,
                                         const QStringList &vocabulary,
+                                        const RefinementContext &context,
                                         const RefinementSettings &settings)
 {
     if (usesOauth(settings)) {
@@ -120,7 +121,8 @@ void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,
                              settings.anthropicEndpointBase,
                              settings.anthropicModel,
                              settings.anthropicEffort,
-                             settings.style);
+                             settings.style,
+                             context);
         return;
     }
 
@@ -128,7 +130,8 @@ void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,
                       << "effort=" + settings.anthropicEffort;
     m_codeSession->refine(rawTranscript,
                           vocabulary,
-                          settings.bindingVocabulary);
+                          settings.bindingVocabulary,
+                          context);
 }
 
 void AnthropicTranscriptRefiner::cancel()

@@ -89,7 +89,8 @@ bool ClaudeCodeSessionRefiner::prepare(const QString &model, const QString &effo
 
 void ClaudeCodeSessionRefiner::refine(const QString &rawTranscript,
                                       const QStringList &vocabulary,
-                                      const QStringList &bindingVocabulary)
+                                      const QStringList &bindingVocabulary,
+                                      const RefinementContext &context)
 {
     if (m_process.state() == QProcess::NotRunning) {
         QString error;
@@ -109,7 +110,7 @@ void ClaudeCodeSessionRefiner::refine(const QString &rawTranscript,
     m_accumulated.clear();
     m_failedCurrentTurn = false;
     m_turnState = TurnState::Refining;
-    sendUserMessage(transcriptRefinementUserMessage(rawTranscript, vocabulary, bindingVocabulary));
+    sendUserMessage(transcriptRefinementUserMessage(rawTranscript, vocabulary, bindingVocabulary, context));
 }
 
 void ClaudeCodeSessionRefiner::cancel()

@@ -25,14 +25,16 @@ public:
     void start(const QUrl &url, const QString &accessToken, const QStringList &vocabulary);
     void sendAudio(const QByteArray &pcm);
     void stop();
+    void cancel();
     bool isConnected() const;
 
 signals:
     void partialTranscript(const QString &text);
     void finalTranscript(const QString &text);
+    void completed();
     void connected();
     void closed();
-    void failed(const QString &message);
+    void failed(const QString &message, bool retryable);
     void debugSchema(const QString &message);
 
 private:
@@ -50,6 +52,9 @@ private:
     QString m_lastInterim;
     qsizetype m_pendingAudioBytes = 0;
     bool m_finalizing = false;
+    bool m_completed = false;
+    bool m_cancelled = false;
+    bool m_failureEmitted = false;
     bool m_connected = false;
     bool m_debugSchema = false;
     quint64 m_sessionId = 0;

@@ -33,7 +33,8 @@ public:
     virtual QList<AudioInputDeviceInfo> availableAudioInputDevices() const = 0;
     virtual AudioInput *createAudioInput(SettingsStore *settings, QObject *parent) const = 0;
     virtual MediaController *createMediaController(QObject *parent) const = 0;
-    virtual TextDeliveryAdapter *createTextDelivery(QObject *parent) const = 0;
+    virtual TargetProvider *createTargetProvider(QObject *parent) const = 0;
+    virtual TextDeliveryAdapter *createTextDelivery(TargetProvider *targetProvider, QObject *parent) const = 0;
     virtual PopupPositioner *createPopupPositioner(QObject *parent) const = 0;
 };
 

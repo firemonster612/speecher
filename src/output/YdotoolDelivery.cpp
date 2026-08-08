@@ -161,18 +161,22 @@ QStringList YdotoolDelivery::commandArguments(const QString &text)
     };
 }
 
-QStringList YdotoolDelivery::pasteShortcutArguments()
+QStringList YdotoolDelivery::pasteShortcutArguments(PasteMethod method)
 {
-    return {
+    QStringList arguments{
         QStringLiteral("key"),
         QStringLiteral("--key-delay=%1").arg(shortcutKeyDelayMs),
         QStringLiteral("29:1"),
-        QStringLiteral("42:1"),
-        QStringLiteral("47:1"),
-        QStringLiteral("47:0"),
-        QStringLiteral("42:0"),
-        QStringLiteral("29:0"),
     };
+    if (method == PasteMethod::TerminalPaste) {
+        arguments << QStringLiteral("42:1");
+    }
+    arguments << QStringLiteral("47:1") << QStringLiteral("47:0");
+    if (method == PasteMethod::TerminalPaste) {
+        arguments << QStringLiteral("42:0");
+    }
+    arguments << QStringLiteral("29:0");
+    return arguments;
 }
 
 QString YdotoolDelivery::withoutTrailingWhitespace(const QString &text)
@@ -218,7 +222,7 @@ bool YdotoolDelivery::type(const QString &text, QString *error)
     return true;
 }
 
-bool YdotoolDelivery::pasteFromClipboard(const QString &text, QString *error)
+bool YdotoolDelivery::pasteFromClipboard(const QString &text, PasteMethod method, QString *error)
 {
     if (text.isEmpty()) {
         return true;
@@ -243,7 +247,7 @@ bool YdotoolDelivery::pasteFromClipboard(const QString &text, QString *error)
     }
 
     releaseModifierKeys(executable, env);
-    if (!runYdotool(executable, env, pasteShortcutArguments(), 5000, error)) {
+    if (!runYdotool(executable, env, pasteShortcutArguments(method), 5000, error)) {
         releaseModifierKeys(executable, env);
         return false;
     }

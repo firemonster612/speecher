@@ -8,6 +8,8 @@ class QNetworkReply;
 
 namespace speecher {
 
+struct RefinementContext;
+
 class AnthropicApiRefiner final : public QObject {
     Q_OBJECT
 
@@ -21,7 +23,8 @@ public:
                 const QString &endpointBase,
                 const QString &model,
                 const QString &effort,
-                const QString &refinementStyle);
+                const QString &refinementStyle,
+                const RefinementContext &context);
     void cancel();
 
 signals:

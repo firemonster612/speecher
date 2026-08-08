@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/PasteRules.h"
+
 #include <QObject>
 #include <QString>
 
@@ -11,11 +13,11 @@ class YdotoolDelivery : public QObject {
 public:
     explicit YdotoolDelivery(QObject *parent = nullptr);
     bool type(const QString &text, QString *error = nullptr);
-    bool pasteFromClipboard(const QString &text, QString *error = nullptr);
+    bool pasteFromClipboard(const QString &text, PasteMethod method, QString *error = nullptr);
     static bool isAvailable();
     static QString socketPath();
     static QStringList commandArguments(const QString &text);
-    static QStringList pasteShortcutArguments();
+    static QStringList pasteShortcutArguments(PasteMethod method);
     static QString withoutTrailingWhitespace(const QString &text);
 };
 
