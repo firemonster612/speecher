@@ -52,7 +52,10 @@ public slots:
     void stopListening();
     void showMain();
     void showSettings();
-    void handleIpcCommand(const QString &command, const QString &outputFormat, QLocalSocket *socket);
+    void handleIpcCommand(const QString &command,
+                          const QString &outputFormat,
+                          const QString &uiPrototype,
+                          QLocalSocket *socket);
 
 signals:
     void statusChanged(const QString &status);

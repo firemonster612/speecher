@@ -22,10 +22,8 @@
 #include <QPalette>
 #include <QPushButton>
 #include <QScrollArea>
-#include <QScrollBar>
 #include <QSizePolicy>
 #include <QVBoxLayout>
-#include <QTimer>
 
 namespace speecher {
 
@@ -50,20 +48,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *correctionsSection = makeSectionLabel(QStringLiteral("Learned Corrections"), this);
     auto *bindingsSection = makeSectionLabel(QStringLiteral("Replacements & snippets"), this);
 
-    connect(m_pages->bindings(), &BindingsSettingsPage::preserveScrollRequested, scroll,
-            [this, scroll](bool rebuilding) {
-                QScrollBar *scrollBar = scroll->verticalScrollBar();
-                if (rebuilding) {
-                    m_preservedScrollValue = scrollBar->value();
-                    return;
-                }
-                const auto restore = [this, scroll] {
-                    QScrollBar *bar = scroll->verticalScrollBar();
-                    bar->setValue(qMin(m_preservedScrollValue, bar->maximum()));
-                };
-                restore();
-                QTimer::singleShot(0, scroll, restore);
-            });
+    m_pages->preserveBindingScroll(scroll);
 
     auto *vocabularyPageLayout = makeSettingsPage(scroll);
     vocabularyPageLayout->addWidget(vocabularySection);
@@ -178,12 +163,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     updateAccessibilityState(m_controller->accessibilitySupported(),
                              m_controller->accessibilityEnabled(),
                              m_controller->accessibilityPersistent());
-    load();
-}
-
-void SettingsDialog::load()
-{
-    m_pages->load();
     updateButtonState();
 }
 

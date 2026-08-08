@@ -193,6 +193,7 @@ set(SPEECHER_APP_UI_HEADERS
   src/app/LinuxComposition.h
   src/app/SingleInstanceIpc.h
   src/ui/AccessibilityNotice.h
+  src/ui/AppPage.h
   src/ui/AppWindow.h
   src/ui/DictationPage.h
   src/ui/MainWindow.h

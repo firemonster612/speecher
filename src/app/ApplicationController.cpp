@@ -174,6 +174,7 @@ void ApplicationController::showMainWindow()
             m_mainWindow = nullptr;
         }
         if (m_appWindow && m_appWindow->prototype() != prototype) {
+            m_appWindow->flushPendingAutoSave();
             m_appWindow->rememberGeometry();
             m_appWindow->hide();
             m_appWindow->deleteLater();
@@ -188,6 +189,7 @@ void ApplicationController::showMainWindow()
         return;
     }
     if (m_appWindow) {
+        m_appWindow->flushPendingAutoSave();
         m_appWindow->rememberGeometry();
         m_appWindow->hide();
         m_appWindow->deleteLater();
@@ -226,6 +228,7 @@ void ApplicationController::switchUiPrototype(const QString &prototype)
     }
     m_settings->setUiPrototype(prototype);
     if (m_appWindow) {
+        m_appWindow->flushPendingAutoSave();
         m_appWindow->rememberGeometry();
         m_appWindow->hide();
         m_appWindow->deleteLater();
@@ -269,6 +272,7 @@ void ApplicationController::showSettings()
 
 void ApplicationController::handleIpcCommand(const QString &command,
                                              const QString &outputFormat,
+                                             const QString &uiPrototype,
                                              QLocalSocket *socket)
 {
     const bool hasFormat = !outputFormat.isEmpty();
@@ -287,9 +291,11 @@ void ApplicationController::handleIpcCommand(const QString &command,
         stopListening();
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("showMain")) {
+        if (!uiPrototype.isEmpty()) switchUiPrototype(uiPrototype);
         showMain();
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("showSettings")) {
+        if (!uiPrototype.isEmpty()) switchUiPrototype(uiPrototype);
         showSettings();
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("status")) {

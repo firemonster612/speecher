@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui/AppPage.h"
+
 #include <QMainWindow>
 
 class QActionGroup;
@@ -7,6 +9,7 @@ class QCloseEvent;
 class QFrame;
 class QLabel;
 class QListWidget;
+class QPushButton;
 class QStackedWidget;
 class QTimer;
 
@@ -27,7 +30,8 @@ public:
     QString prototype() const;
     QStringList pageTitles() const;
     int pageCount() const;
-    void navigateToSettings(int page = 0);
+    void navigateToSettings(AppPageId page = AppPageId::General);
+    void flushPendingAutoSave();
     void rememberGeometry();
 
 protected:
@@ -40,6 +44,7 @@ private:
     void buildCompactShell();
     QWidget *createPrototypeSwitcher(QWidget *parent);
     QWidget *createPendingBanner(QWidget *parent, bool compact = false);
+    void runAutoSave();
     void updatePendingBanner();
     void showCompactPage(int page);
     void finishCompactBack();
@@ -53,9 +58,13 @@ private:
     QStackedWidget *m_compactStack = nullptr;
     QStackedWidget *m_drillPages = nullptr;
     QListWidget *m_compactList = nullptr;
+    QListWidget *m_navigation = nullptr;
+    QActionGroup *m_navigationActions = nullptr;
     QLabel *m_drillTitle = nullptr;
     QFrame *m_pendingBanner = nullptr;
     QFrame *m_autoSaveWarning = nullptr;
+    QLabel *m_autoSaveWarningText = nullptr;
+    QPushButton *m_pendingApplyButton = nullptr;
     QTimer *m_autoSaveTimer = nullptr;
     bool m_pendingCompactBack = false;
 };

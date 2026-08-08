@@ -25,8 +25,8 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QScrollArea>
-#include <QScrollBar>
 #include <QStackedWidget>
+#include <QStyle>
 #include <QTabWidget>
 #include <QTimer>
 #include <QToolBar>
@@ -62,6 +62,12 @@ QWidget *detachedContent(QScrollArea *page)
     QWidget *content = page->takeWidget();
     page->hide();
     return content;
+}
+
+QIcon themedIcon(const QString &name, QStyle::StandardPixmap fallback, QWidget *widget)
+{
+    const QIcon icon = QIcon::fromTheme(name);
+    return icon.isNull() ? widget->style()->standardIcon(fallback) : icon;
 }
 
 } // namespace
@@ -111,18 +117,39 @@ QStringList AppWindow::pageTitles() const
 
 int AppWindow::pageCount() const { return kPages.size(); }
 
-void AppWindow::navigateToSettings(int page)
+void AppWindow::navigateToSettings(AppPageId page)
 {
-    const int boundedPage = qBound(0, page, kPages.size() - 2);
+    const int settingsIndex = static_cast<int>(page);
     if (m_prototype == QStringLiteral("c")) {
-        showCompactPage(boundedPage);
-    } else if (m_stack) {
-        m_stack->setCurrentIndex(boundedPage + 1);
+        showCompactPage(settingsIndex);
+    } else if (m_navigation) {
+        for (int row = 0; row < m_navigation->count(); ++row) {
+            QListWidgetItem *item = m_navigation->item(row);
+            if (item->data(Qt::UserRole).toInt() == settingsIndex + 1) {
+                m_navigation->setCurrentItem(item);
+                break;
+            }
+        }
+    } else if (m_navigationActions) {
+        for (QAction *action : m_navigationActions->actions()) {
+            if (action->data().toInt() == settingsIndex + 1) {
+                action->trigger();
+                break;
+            }
+        }
     }
+}
+
+void AppWindow::flushPendingAutoSave()
+{
+    if (!m_autoSaveTimer || !m_autoSaveTimer->isActive()) return;
+    m_autoSaveTimer->stop();
+    runAutoSave();
 }
 
 void AppWindow::closeEvent(QCloseEvent *event)
 {
+    flushPendingAutoSave();
     rememberGeometry();
     QMainWindow::closeEvent(event);
 }
@@ -146,18 +173,7 @@ void AppWindow::buildSharedPages()
     addTab(m_pages->corrections(), QStringLiteral("Learned corrections"));
     auto *bindingsScroll = scrollingPage(m_pages->bindings(), tabs);
     tabs->addTab(bindingsScroll, QStringLiteral("Replacements & snippets"));
-    connect(m_pages->bindings(), &BindingsSettingsPage::preserveScrollRequested,
-            bindingsScroll, [bindingsScroll](bool rebuilding) {
-                if (rebuilding) {
-                    bindingsScroll->setProperty("preservedScroll",
-                                                bindingsScroll->verticalScrollBar()->value());
-                } else {
-                    QTimer::singleShot(0, bindingsScroll, [bindingsScroll] {
-                        bindingsScroll->verticalScrollBar()->setValue(
-                            bindingsScroll->property("preservedScroll").toInt());
-                    });
-                }
-            });
+    m_pages->preserveBindingScroll(bindingsScroll);
 
     m_pageWidgets = {
         m_dictation,
@@ -180,13 +196,21 @@ void AppWindow::buildSidebarShell()
     auto *body = new QWidget(central);
     auto *bodyLayout = new QHBoxLayout(body);
     bodyLayout->setContentsMargins(0, 0, 0, 0);
-    auto *rail = new QListWidget(body);
-    rail->setObjectName(QStringLiteral("appNavigation"));
-    rail->setFrameShape(QFrame::NoFrame);
-    rail->setFixedWidth(200);
-    for (const auto &page : kPages) {
-        auto *item = new QListWidgetItem(QIcon::fromTheme(page.second), page.first, rail);
+    m_navigation = new QListWidget(body);
+    m_navigation->setObjectName(QStringLiteral("appNavigation"));
+    m_navigation->setFrameShape(QFrame::NoFrame);
+    m_navigation->setFixedWidth(200);
+    for (int index = 0; index < kPages.size(); ++index) {
+        const auto &page = kPages.at(index);
+        auto *item = new QListWidgetItem(QIcon::fromTheme(page.second), page.first, m_navigation);
+        item->setData(Qt::UserRole, index);
         item->setSizeHint(QSize(0, 40));
+        if (index == 0) {
+            auto *separator = new QListWidgetItem(m_navigation);
+            separator->setFlags(Qt::NoItemFlags);
+            separator->setSizeHint(QSize(0, 8));
+            separator->setData(Qt::UserRole, -1);
+        }
     }
     m_stack = new QStackedWidget(body);
     m_stack->setObjectName(QStringLiteral("appPageStack"));
@@ -200,26 +224,29 @@ void AppWindow::buildSidebarShell()
     m_autoSaveWarning->setObjectName(QStringLiteral("autoSaveWarning"));
     m_autoSaveWarning->setFrameShape(QFrame::StyledPanel);
     auto *warningLayout = new QHBoxLayout(m_autoSaveWarning);
-    warningLayout->addWidget(new QLabel(QStringLiteral("Fix invalid replacement rules to save"), m_autoSaveWarning));
+    m_autoSaveWarningText = new QLabel(m_autoSaveWarning);
+    warningLayout->addWidget(m_autoSaveWarningText);
     m_autoSaveWarning->hide();
     rightLayout->addWidget(m_autoSaveWarning);
     rightLayout->addWidget(m_stack, 1);
-    bodyLayout->addWidget(rail);
+    bodyLayout->addWidget(m_navigation);
     bodyLayout->addWidget(right, 1);
     root->addWidget(body, 1);
     root->addWidget(createPrototypeSwitcher(central));
     setCentralWidget(central);
-    rail->setCurrentRow(0);
-    connect(rail, &QListWidget::currentRowChanged, m_stack, &QStackedWidget::setCurrentIndex);
+    m_navigation->setCurrentRow(0);
+    connect(m_navigation, &QListWidget::currentItemChanged, this,
+            [this](QListWidgetItem *item) {
+                if (item && item->data(Qt::UserRole).toInt() >= 0) {
+                    m_stack->setCurrentIndex(item->data(Qt::UserRole).toInt());
+                }
+            });
 
     m_autoSaveTimer = new QTimer(this);
     m_autoSaveTimer->setSingleShot(true);
     m_autoSaveTimer->setInterval(600);
     connect(m_pages, &SettingsPageSet::changed, m_autoSaveTimer, qOverload<>(&QTimer::start));
-    connect(m_autoSaveTimer, &QTimer::timeout, this, [this] {
-        m_autoSaveWarning->setVisible(!m_pages->save(false, false));
-        m_dictation->refreshSummary();
-    });
+    connect(m_autoSaveTimer, &QTimer::timeout, this, &AppWindow::runAutoSave);
 }
 
 void AppWindow::buildToolbarShell()
@@ -229,13 +256,14 @@ void AppWindow::buildToolbarShell()
     auto *toolbar = addToolBar(QStringLiteral("Pages"));
     toolbar->setMovable(false);
     toolbar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-    auto *actions = new QActionGroup(this);
-    actions->setExclusive(true);
+    m_navigationActions = new QActionGroup(this);
+    m_navigationActions->setExclusive(true);
     for (int index = 0; index < kPages.size(); ++index) {
         const auto &page = kPages.at(index);
         QAction *action = toolbar->addAction(QIcon::fromTheme(page.second), page.first);
         action->setCheckable(true);
-        actions->addAction(action);
+        action->setData(index);
+        m_navigationActions->addAction(action);
         connect(action, &QAction::triggered, this, [this, index] { m_stack->setCurrentIndex(index); });
         if (index == 0) action->setChecked(true);
     }
@@ -255,6 +283,7 @@ void AppWindow::buildToolbarShell()
 
 void AppWindow::buildCompactShell()
 {
+    m_dictation->setCompactShell(true);
     resize(420, 560);
     setMinimumSize(400, 480);
     setMaximumWidth(520);
@@ -272,8 +301,21 @@ void AppWindow::buildCompactShell()
     m_compactList->setFrameShape(QFrame::NoFrame);
     for (int index = 1; index < kPages.size(); ++index) {
         const auto &page = kPages.at(index);
-        auto *item = new QListWidgetItem(QIcon::fromTheme(page.second), page.first + QStringLiteral("    ›"), m_compactList);
+        auto *item = new QListWidgetItem(m_compactList);
+        item->setData(Qt::UserRole, index - 1);
         item->setSizeHint(QSize(0, 42));
+        auto *row = new QWidget(m_compactList);
+        auto *rowLayout = new QHBoxLayout(row);
+        auto *icon = new QLabel(row);
+        icon->setPixmap(themedIcon(page.second, QStyle::SP_FileIcon, row).pixmap(16, 16));
+        auto *title = new QLabel(page.first, row);
+        auto *arrow = new QLabel(row);
+        arrow->setPixmap(themedIcon(QStringLiteral("go-next"), QStyle::SP_ArrowRight, row).pixmap(16, 16));
+        rowLayout->addWidget(icon);
+        rowLayout->addWidget(title);
+        rowLayout->addStretch();
+        rowLayout->addWidget(arrow);
+        m_compactList->setItemWidget(item, row);
     }
     homeLayout->addWidget(m_compactList);
 
@@ -281,7 +323,8 @@ void AppWindow::buildCompactShell()
     auto *drillLayout = new QVBoxLayout(drill);
     auto *header = new QWidget(drill);
     auto *headerLayout = new QHBoxLayout(header);
-    auto *back = new QPushButton(QStringLiteral("‹ Back"), header);
+    auto *back = new QPushButton(QStringLiteral("Back"), header);
+    back->setIcon(themedIcon(QStringLiteral("go-previous"), QStyle::SP_ArrowLeft, back));
     m_drillTitle = new QLabel(header);
     QFont titleFont = m_drillTitle->font();
     titleFont.setBold(true);
@@ -301,15 +344,16 @@ void AppWindow::buildCompactShell()
     root->addWidget(createPrototypeSwitcher(central));
     setCentralWidget(central);
     connect(m_compactList, &QListWidget::itemActivated, this, [this](QListWidgetItem *item) {
-        showCompactPage(m_compactList->row(item));
+        showCompactPage(item->data(Qt::UserRole).toInt());
     });
     connect(m_compactList, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
-        showCompactPage(m_compactList->row(item));
+        showCompactPage(item->data(Qt::UserRole).toInt());
     });
     connect(back, &QPushButton::clicked, this, [this] {
         if (m_pages->hasChanges()) {
             m_pendingCompactBack = true;
             updatePendingBanner();
+            m_pendingApplyButton->setFocus(Qt::OtherFocusReason);
         } else {
             finishCompactBack();
         }
@@ -349,9 +393,21 @@ QWidget *AppWindow::createPendingBanner(QWidget *parent, bool compact)
     m_pendingBanner->setFrameShape(QFrame::StyledPanel);
     auto *layout = new QHBoxLayout(m_pendingBanner);
     layout->setContentsMargins(compact ? 6 : 12, 6, compact ? 6 : 12, 6);
-    layout->addWidget(new QLabel(QStringLiteral("You have unsaved changes"), m_pendingBanner));
+    if (compact) {
+        auto *icon = new QLabel(m_pendingBanner);
+        icon->setPixmap(style()->standardIcon(QStyle::SP_MessageBoxWarning).pixmap(16, 16));
+        layout->addWidget(icon);
+    }
+    auto *message = new QLabel(QStringLiteral("You have unsaved changes"), m_pendingBanner);
+    if (compact) {
+        QFont font = message->font();
+        font.setBold(true);
+        message->setFont(font);
+    }
+    layout->addWidget(message);
     layout->addStretch();
     auto *apply = new QPushButton(QStringLiteral("Apply"), m_pendingBanner);
+    if (compact) m_pendingApplyButton = apply;
     auto *discard = new QPushButton(QStringLiteral("Discard"), m_pendingBanner);
     layout->addWidget(apply);
     layout->addWidget(discard);
@@ -369,6 +425,24 @@ QWidget *AppWindow::createPendingBanner(QWidget *parent, bool compact)
         if (m_pendingCompactBack) finishCompactBack();
     });
     return m_pendingBanner;
+}
+
+void AppWindow::runAutoSave()
+{
+    SettingsPageSet::SaveFailure failure;
+    const bool saved = m_pages->save(false, false, &failure);
+    if (!saved) {
+        if (failure == SettingsPageSet::SaveFailure::DuplicatePasteRuleIds) {
+            m_autoSaveWarningText->setText(
+                QStringLiteral("Remove duplicate application paste-rule IDs to save"));
+        } else if (failure == SettingsPageSet::SaveFailure::ProviderSecret) {
+            m_autoSaveWarningText->setText(QStringLiteral("Could not save provider credentials"));
+        } else {
+            m_autoSaveWarningText->setText(QStringLiteral("Fix invalid replacement rules to save"));
+        }
+    }
+    m_autoSaveWarning->setVisible(!saved);
+    m_dictation->refreshSummary();
 }
 
 void AppWindow::updatePendingBanner()

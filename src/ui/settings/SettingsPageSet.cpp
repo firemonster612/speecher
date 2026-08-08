@@ -14,6 +14,10 @@
 #include "ui/settings/RefinementSettingsPage.h"
 #include "ui/settings/VocabularySettingsPage.h"
 
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QTimer>
+
 namespace speecher {
 
 SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *parent)
@@ -75,12 +79,19 @@ void SettingsPageSet::load()
     m_output->refreshControls();
 }
 
-bool SettingsPageSet::save(bool showValidationErrors, bool refreshPages)
+bool SettingsPageSet::save(bool showValidationErrors,
+                           bool refreshPages,
+                           SaveFailure *failure)
 {
+    if (failure) *failure = SaveFailure::None;
     SettingsStore *settings = m_controller->settings();
     QList<BindingRule> bindingRules;
-    if (!m_bindings->validate(&bindingRules, showValidationErrors)
-        || !m_output->validate(showValidationErrors)) {
+    if (!m_bindings->validate(&bindingRules, showValidationErrors)) {
+        if (failure) *failure = SaveFailure::InvalidReplacementRules;
+        return false;
+    }
+    if (!m_output->validate(showValidationErrors)) {
+        if (failure) *failure = SaveFailure::DuplicatePasteRuleIds;
         return false;
     }
     AppSettings draft = settings->snapshot();
@@ -98,6 +109,7 @@ bool SettingsPageSet::save(bool showValidationErrors, bool refreshPages)
     settings->setCorrectionLearningEnabled(m_corrections->learningEnabled());
     settings->setBindingRules(bindingRules);
     if (!m_providers->saveSecret()) {
+        if (failure) *failure = SaveFailure::ProviderSecret;
         return false;
     }
     if (refreshPages) {
@@ -107,6 +119,25 @@ bool SettingsPageSet::save(bool showValidationErrors, bool refreshPages)
         m_output->refreshControls();
     }
     return true;
+}
+
+void SettingsPageSet::preserveBindingScroll(QScrollArea *scroll)
+{
+    connect(m_bindings, &BindingsSettingsPage::preserveScrollRequested,
+            scroll, [scroll](bool rebuilding) {
+                QScrollBar *bar = scroll->verticalScrollBar();
+                if (rebuilding) {
+                    scroll->setProperty("preservedScroll", bar->value());
+                    return;
+                }
+                const auto restore = [scroll] {
+                    QScrollBar *currentBar = scroll->verticalScrollBar();
+                    currentBar->setValue(qMin(scroll->property("preservedScroll").toInt(),
+                                              currentBar->maximum()));
+                };
+                restore();
+                QTimer::singleShot(0, scroll, restore);
+            });
 }
 
 bool SettingsPageSet::hasChanges() const

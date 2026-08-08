@@ -122,6 +122,7 @@ static bool startDetachedSettings(const SingleInstancePlatform *platform)
 
 static int runCliCommand(const QString &command,
                          std::optional<OutputFormat> outputFormat,
+                         const QString &uiPrototype,
                          const std::shared_ptr<const SingleInstancePlatform> &platform)
 {
     IpcResponse response;
@@ -131,7 +132,8 @@ static int runCliCommand(const QString &command,
                                                                               &response,
                                                                               1200,
                                                                               platform,
-                                                                              &ipcError);
+                                                                              &ipcError,
+                                                                              uiPrototype);
     if (ipcResult == IpcCommandResult::Sent) {
         std::cout << response.state.toStdString() << "\n";
         return response.ok ? 0 : 1;
@@ -221,13 +223,28 @@ int main(int argc, char **argv)
                                  ? QStringLiteral("showSettings")
                                  : cliCommand,
                              outputFormat,
+                             requestedPrototype,
                              platform);
     }
 
     ApplicationController controller(daemon);
     QString ipcError;
     if (!controller.startIpc(&ipcError)) {
-        if (!daemon && SingleInstanceIpc::sendCommand(QStringLiteral("showMain"), nullptr)) {
+        if (!grabPath.isEmpty()) {
+            if (ipcError.startsWith(QStringLiteral("Another Speecher instance"))) {
+                std::cerr << "--grab cannot be used while another Speecher instance is running\n";
+            } else {
+                std::cerr << ipcError.toStdString() << "\n";
+            }
+            return 1;
+        }
+        const QString showCommand = showSettings ? QStringLiteral("showSettings")
+                                                 : QStringLiteral("showMain");
+        if (!daemon && SingleInstanceIpc::sendCommand(showCommand,
+                                                       nullptr,
+                                                       1200,
+                                                       {},
+                                                       requestedPrototype)) {
             return 0;
         }
         std::cerr << ipcError.toStdString() << "\n";
@@ -237,7 +254,10 @@ int main(int argc, char **argv)
     if (startListening) {
         QTimer::singleShot(0, &controller, [&controller, outputFormat] {
             if (outputFormat) {
-                controller.handleIpcCommand(QStringLiteral("start"), outputFormatName(*outputFormat), nullptr);
+                controller.handleIpcCommand(QStringLiteral("start"),
+                                            outputFormatName(*outputFormat),
+                                            {},
+                                            nullptr);
             } else {
                 controller.startListening();
             }

@@ -42,6 +42,7 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                 const QJsonObject object = QJsonDocument::fromJson(socket->readAll()).object();
                 emit commandReceived(object.value(QStringLiteral("command")).toString(),
                                      object.value(QStringLiteral("outputFormat")).toString(),
+                                     object.value(QStringLiteral("uiPrototype")).toString(),
                                      socket);
             });
             connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
@@ -98,9 +99,16 @@ bool SingleInstanceIpc::listen(QString *error)
 bool SingleInstanceIpc::sendCommand(const QString &command,
                                     IpcResponse *response,
                                     int timeoutMs,
-                                    std::shared_ptr<const SingleInstancePlatform> platform)
+                                    std::shared_ptr<const SingleInstancePlatform> platform,
+                                    const QString &uiPrototype)
 {
-    return sendCommandDetailed(command, std::nullopt, response, timeoutMs, std::move(platform)) == IpcCommandResult::Sent;
+    return sendCommandDetailed(command,
+                               std::nullopt,
+                               response,
+                               timeoutMs,
+                               std::move(platform),
+                               nullptr,
+                               uiPrototype) == IpcCommandResult::Sent;
 }
 
 IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
@@ -117,7 +125,8 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
                                                         IpcResponse *response,
                                                         int timeoutMs,
                                                         std::shared_ptr<const SingleInstancePlatform> platform,
-                                                        QString *error)
+                                                        QString *error,
+                                                        const QString &uiPrototype)
 {
     const std::shared_ptr<const SingleInstancePlatform> resolved = platform ? std::move(platform) : linuxComposition();
     for (const QString &candidate : resolved->ipcConnectCandidates()) {
@@ -129,6 +138,9 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
         QJsonObject request{{QStringLiteral("command"), command}};
         if (outputFormat) {
             request.insert(QStringLiteral("outputFormat"), outputFormatName(*outputFormat));
+        }
+        if (!uiPrototype.isEmpty()) {
+            request.insert(QStringLiteral("uiPrototype"), uiPrototype);
         }
         if (socket.write(QJsonDocument(request).toJson(QJsonDocument::Compact)) < 0) {
             if (error) {

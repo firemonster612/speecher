@@ -2,9 +2,14 @@
 
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
+#include "ui/AppPage.h"
 #include "ui/AppWindow.h"
+#include "ui/settings/BindingsSettingsPage.h"
+#include "ui/settings/SettingsPageSet.h"
 
+#include <QAction>
 #include <QComboBox>
+#include <QListWidget>
 
 using namespace speecher;
 
@@ -57,6 +62,60 @@ private slots:
         QVERIFY(theme);
         theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
         QTRY_COMPARE_WITH_TIMEOUT(controller.settings()->theme(), QStringLiteral("dark"), 1500);
+    }
+
+    void sidebarFlushesPendingAutoSaveOnClose()
+    {
+        ApplicationController controller(true);
+        controller.settings()->setTheme(QStringLiteral("system"));
+        AppWindow window(&controller, QStringLiteral("a"));
+        auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
+        QVERIFY(theme);
+        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
+        window.show();
+        window.close();
+        QCOMPARE(controller.settings()->theme(), QStringLiteral("dark"));
+    }
+
+    void programmaticNavigationUpdatesShellChrome()
+    {
+        ApplicationController controller(true);
+        AppWindow sidebar(&controller, QStringLiteral("a"));
+        sidebar.navigateToSettings(AppPageId::Output);
+        QCOMPARE(sidebar.findChild<QListWidget *>(QStringLiteral("appNavigation"))->currentItem()->text(),
+                 QStringLiteral("Output"));
+
+        AppWindow toolbar(&controller, QStringLiteral("b"));
+        toolbar.navigateToSettings(AppPageId::Output);
+        QAction *selected = nullptr;
+        for (QAction *action : toolbar.findChildren<QAction *>()) {
+            if (action->isChecked()) selected = action;
+        }
+        QVERIFY(selected);
+        QCOMPARE(selected->text(), QStringLiteral("Output"));
+    }
+
+    void saveReportsFailedValidator()
+    {
+        ApplicationController controller(true);
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        pages.bindings()->load({
+            {QStringLiteral("my,email"), QStringLiteral("one")},
+            {QStringLiteral("MY email"), QStringLiteral("two")},
+        });
+        SettingsPageSet::SaveFailure failure = SettingsPageSet::SaveFailure::None;
+        QVERIFY(!pages.save(false, true, &failure));
+        QCOMPARE(failure, SettingsPageSet::SaveFailure::InvalidReplacementRules);
+
+        controller.settings()->setBindingRules({});
+        controller.settings()->setPasteRules({
+            {PasteRuleScope::Application, QStringLiteral("org.example.App"), PasteMethod::StandardPaste, true},
+            {PasteRuleScope::Application, QStringLiteral("ORG.EXAMPLE.APP"), PasteMethod::ClipboardOnly, true},
+        });
+        pages.load();
+        QVERIFY(!pages.save(false, true, &failure));
+        QCOMPARE(failure, SettingsPageSet::SaveFailure::DuplicatePasteRuleIds);
     }
 };
 

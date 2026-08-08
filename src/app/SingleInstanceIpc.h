@@ -36,7 +36,8 @@ public:
     static bool sendCommand(const QString &command,
                             IpcResponse *response,
                             int timeoutMs = 1200,
-                            std::shared_ptr<const SingleInstancePlatform> platform = {});
+                            std::shared_ptr<const SingleInstancePlatform> platform = {},
+                            const QString &uiPrototype = {});
     static IpcCommandResult sendCommandDetailed(const QString &command,
                                                 IpcResponse *response,
                                                 int timeoutMs = 1200,
@@ -47,10 +48,14 @@ public:
                                                 IpcResponse *response,
                                                 int timeoutMs = 1200,
                                                 std::shared_ptr<const SingleInstancePlatform> platform = {},
-                                                QString *error = nullptr);
+                                                QString *error = nullptr,
+                                                const QString &uiPrototype = {});
 
 signals:
-    void commandReceived(const QString &command, const QString &outputFormat, QLocalSocket *socket);
+    void commandReceived(const QString &command,
+                         const QString &outputFormat,
+                         const QString &uiPrototype,
+                         QLocalSocket *socket);
 
 public slots:
     static void writeResponse(QLocalSocket *socket, const IpcResponse &response);

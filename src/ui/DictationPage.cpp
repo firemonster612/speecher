@@ -7,6 +7,8 @@
 #include "ui/WaveformWidget.h"
 
 #include <QFormLayout>
+#include <QEvent>
+#include <QFontMetrics>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -18,7 +20,7 @@ namespace speecher {
 
 namespace {
 
-QWidget *summaryRow(QLabel *value, const QString &buttonText, int page,
+QWidget *summaryRow(QLabel *value, const QString &buttonText, AppPageId page,
                     DictationPage *owner, QWidget *parent)
 {
     auto *row = new QWidget(parent);
@@ -47,13 +49,15 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     , m_theme(new QLabel(this))
 {
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(18, 18, 18, 18);
     layout->setSpacing(style()->pixelMetric(QStyle::PM_LayoutVerticalSpacing));
     m_accessibilityNotice->setCompact(true);
     layout->addWidget(m_accessibilityNotice);
 
     m_toggle->setMinimumHeight(56);
+    m_toggle->setMinimumWidth(480);
+    m_toggle->setMaximumWidth(480);
     layout->addWidget(m_toggle);
+    layout->setAlignment(m_toggle, Qt::AlignHCenter);
     m_status->setAlignment(Qt::AlignHCenter);
     m_status->setForegroundRole(QPalette::PlaceholderText);
     layout->addWidget(m_status);
@@ -62,11 +66,11 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     auto *summary = new QGroupBox(QStringLiteral("At a glance"), this);
     auto *form = new QFormLayout(summary);
     form->addRow(QStringLiteral("Refinement"),
-                 summaryRow(m_provider, QStringLiteral("Change…"), 4, this, summary));
+                 summaryRow(m_provider, QStringLiteral("Change…"), AppPageId::Refinement, this, summary));
     form->addRow(QStringLiteral("Output"),
-                 summaryRow(m_output, QStringLiteral("Change…"), 3, this, summary));
+                 summaryRow(m_output, QStringLiteral("Change…"), AppPageId::Output, this, summary));
     form->addRow(QStringLiteral("Theme"),
-                 summaryRow(m_theme, QStringLiteral("Change…"), 0, this, summary));
+                 summaryRow(m_theme, QStringLiteral("Change…"), AppPageId::General, this, summary));
     layout->addWidget(summary);
     layout->addStretch();
 
@@ -79,13 +83,24 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
             m_accessibilityNotice->showError(error);
         }
     });
-    connect(controller,
-            &ApplicationController::accessibilityStateChanged,
-            m_accessibilityNotice,
-            qOverload<bool, bool, bool>(&AccessibilityNotice::setState));
-    m_accessibilityNotice->setState(controller->accessibilitySupported(),
-                                    controller->accessibilityEnabled(),
-                                    controller->accessibilityPersistent());
+    connect(controller, &ApplicationController::accessibilityStateChanged, this,
+            [this](bool supported, bool enabled, bool persistent) {
+                if (!supported) {
+                    m_accessibilityNotice->hide();
+                } else {
+                    m_accessibilityNotice->setState(supported, enabled, persistent);
+                }
+            });
+    if (controller->accessibilitySupported()) {
+        m_accessibilityNotice->setState(true,
+                                        controller->accessibilityEnabled(),
+                                        controller->accessibilityPersistent());
+    } else {
+        m_accessibilityNotice->hide();
+    }
+    for (QLabel *label : {m_provider, m_output, m_theme}) {
+        label->installEventFilter(this);
+    }
     setStatus(controller->stateName());
     refreshSummary();
 }
@@ -95,7 +110,20 @@ void DictationPage::setStatus(const QString &status)
     const QString state = status.toCaseFolded();
     const bool active = state == QStringLiteral("starting") || state == QStringLiteral("listening");
     m_toggle->setText(active ? QStringLiteral("Stop") : QStringLiteral("Start"));
-    m_status->setText(status);
+    static const QStringList states{
+        QStringLiteral("idle"),
+        QStringLiteral("starting"),
+        QStringLiteral("listening"),
+        QStringLiteral("stopping"),
+        QStringLiteral("refining"),
+        QStringLiteral("delivering"),
+        QStringLiteral("error"),
+    };
+    m_status->setText(states.contains(state)
+                          ? state.left(1).toUpper() + state.mid(1)
+                          : status);
+    const bool muted = state == QStringLiteral("idle");
+    m_status->setForegroundRole(muted ? QPalette::PlaceholderText : QPalette::WindowText);
     m_waveform->setVisible(active);
     if (!active) {
         m_waveform->setLevel(0.0f);
@@ -112,10 +140,39 @@ void DictationPage::refreshSummary()
             break;
         }
     }
-    m_provider->setText(providerName);
-    m_output->setText(m_controller->primaryOutputStatus());
+    setSummaryText(m_provider, providerName);
+    setSummaryText(m_output, m_controller->primaryOutputStatus());
     const QString theme = m_controller->settings()->theme();
-    m_theme->setText(theme.left(1).toUpper() + theme.mid(1));
+    setSummaryText(m_theme, theme.left(1).toUpper() + theme.mid(1));
+}
+
+void DictationPage::setCompactShell(bool compact)
+{
+    m_toggle->setMinimumWidth(compact ? 0 : 480);
+    m_toggle->setMaximumWidth(compact ? QWIDGETSIZE_MAX : 480);
+    layout()->setAlignment(m_toggle, compact ? Qt::Alignment{} : Qt::AlignHCenter);
+}
+
+bool DictationPage::eventFilter(QObject *watched, QEvent *event)
+{
+    if (event->type() == QEvent::Resize) {
+        if (auto *label = qobject_cast<QLabel *>(watched)) {
+            const QString fullText = label->property("fullText").toString();
+            if (!fullText.isEmpty()) {
+                label->setText(label->fontMetrics().elidedText(fullText,
+                                                                Qt::ElideRight,
+                                                                label->width()));
+            }
+        }
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+void DictationPage::setSummaryText(QLabel *label, const QString &text)
+{
+    label->setProperty("fullText", text);
+    label->setToolTip(text);
+    label->setText(label->fontMetrics().elidedText(text, Qt::ElideRight, label->width()));
 }
 
 } // namespace speecher

@@ -17,7 +17,6 @@ public:
     explicit SettingsDialog(ApplicationController *controller, QWidget *parent = nullptr);
 
 private:
-    void load();
     bool save();
     void updateButtonState();
     void updateAccessibilityState(bool supported, bool enabled, bool persistent);
@@ -26,7 +25,6 @@ private:
     QPushButton *m_okButton = nullptr;
     QPushButton *m_applyButton = nullptr;
     AccessibilityNotice *m_accessibilityNotice = nullptr;
-    int m_preservedScrollValue = 0;
     SettingsPageSet *m_pages = nullptr;
 };
 

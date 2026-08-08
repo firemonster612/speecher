@@ -2,6 +2,8 @@
 
 #include <QObject>
 
+class QScrollArea;
+
 namespace speecher {
 
 class ApplicationController;
@@ -19,6 +21,13 @@ class SettingsPageSet : public QObject {
     Q_OBJECT
 
 public:
+    enum class SaveFailure {
+        None,
+        InvalidReplacementRules,
+        DuplicatePasteRuleIds,
+        ProviderSecret,
+    };
+
     SettingsPageSet(ApplicationController *controller, QWidget *parent);
 
     GeneralSettingsPage *general() const;
@@ -32,8 +41,11 @@ public:
     BindingsSettingsPage *bindings() const;
 
     void load();
-    bool save(bool showValidationErrors = true, bool refreshPages = true);
+    bool save(bool showValidationErrors = true,
+              bool refreshPages = true,
+              SaveFailure *failure = nullptr);
     bool hasChanges() const;
+    void preserveBindingScroll(QScrollArea *scroll);
 
 signals:
     void changed();
