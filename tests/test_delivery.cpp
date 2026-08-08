@@ -197,6 +197,7 @@ private slots:
             {WritingProfile::Work, QStringLiteral("balanced"), QStringLiteral("formal")},
             {WritingProfile::Email, QStringLiteral("strong_polish"), QStringLiteral("excited")},
             {WritingProfile::Personal, QStringLiteral("light_cleanup"), QStringLiteral("casual")},
+            {WritingProfile::AiCoding, QStringLiteral("balanced"), QStringLiteral("none")},
             {WritingProfile::Other, QStringLiteral("balanced"), QStringLiteral("none")},
         };
 
@@ -333,7 +334,7 @@ private slots:
         QCOMPARE(inferWritingProfile(classified(QStringLiteral("kate"))), WritingProfile::Work);
         QCOMPARE(inferWritingProfile(classified(QStringLiteral("konsole"))), WritingProfile::Work);
         QCOMPARE(inferWritingProfile(classified(QStringLiteral("thunderbird"))), WritingProfile::Email);
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("t3-code"))), WritingProfile::Work);
+        QCOMPARE(inferWritingProfile(classified(QStringLiteral("t3-code"))), WritingProfile::AiCoding);
         QCOMPARE(inferWritingProfile(classified(QStringLiteral("libreoffice"))), WritingProfile::Work);
         QCOMPARE(inferWritingProfile(classified(QStringLiteral("org.signal.Signal"))), WritingProfile::Personal);
         QCOMPARE(inferWritingProfile(classified(QStringLiteral("firefox")), WritingProfile::Other), WritingProfile::Other);
@@ -360,6 +361,8 @@ private slots:
                                        WritingProfile::Other),
                  WritingProfile::Work);
         QCOMPARE(writingProfileFromName(QStringLiteral("technical")), WritingProfile::Work);
+        QCOMPARE(writingProfileFromName(QStringLiteral("ai_coding")), WritingProfile::AiCoding);
+        QCOMPARE(writingProfileName(WritingProfile::AiCoding), QStringLiteral("ai_coding"));
         QCOMPARE(writingProfileFromName(QStringLiteral("general")), WritingProfile::Other);
         QCOMPARE(appCategoryFromName(QStringLiteral("ai_coding")), AppCategory::AiCoding);
         QCOMPARE(appCategoryName(AppCategory::AiCoding), QStringLiteral("ai_coding"));
@@ -370,7 +373,7 @@ private slots:
         RefinementContext context;
         context.target.applicationId = QStringLiteral("t3-code");
         context.target.category = AppCategory::AiCoding;
-        context.writingProfile = WritingProfile::Work;
+        context.writingProfile = WritingProfile::AiCoding;
 
         const QString lightPrompt = dictationRefinementSystemPrompt(
             QStringLiteral("light_cleanup"), context);

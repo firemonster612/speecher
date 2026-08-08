@@ -65,6 +65,8 @@ QString writingProfileName(WritingProfile profile)
         return QStringLiteral("personal");
     case WritingProfile::Other:
         return QStringLiteral("other");
+    case WritingProfile::AiCoding:
+        return QStringLiteral("ai_coding");
     }
     return QStringLiteral("other");
 }
@@ -81,6 +83,9 @@ WritingProfile writingProfileFromName(const QString &name)
     if (normalized == QStringLiteral("personal")) {
         return WritingProfile::Personal;
     }
+    if (normalized == QStringLiteral("ai_coding")) {
+        return WritingProfile::AiCoding;
+    }
     return WritingProfile::Other;
 }
 
@@ -90,6 +95,7 @@ QList<WritingProfileSettings> defaultWritingProfileSettings()
         {WritingProfile::Work, QStringLiteral("balanced"), QStringLiteral("none")},
         {WritingProfile::Email, QStringLiteral("balanced"), QStringLiteral("none")},
         {WritingProfile::Personal, QStringLiteral("balanced"), QStringLiteral("none")},
+        {WritingProfile::AiCoding, QStringLiteral("balanced"), QStringLiteral("none")},
         {WritingProfile::Other, QStringLiteral("balanced"), QStringLiteral("none")},
     };
 }
@@ -126,36 +132,36 @@ bool Target::hasSelection() const
 QList<AppRecognitionRule> builtInAppRecognitionRules()
 {
     return {
-        {QStringLiteral("t3code"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("chatgpt"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("codex"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("cursor"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("windsurf"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("kiro"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("zed"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("opencode"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("aider"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("claude code"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("gemini cli"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("github copilot"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("replit agent"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("amazon q developer"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("qwen code"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("mistral vibe"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("goose"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("ampcode"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("augment code"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("sourcegraph cody"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("cline"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("roo code"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("kilo code"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("factory droid"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("auggie"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("kimi code"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("pearai"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("trae"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("google antigravity"), AppCategory::AiCoding, WritingProfile::Work},
-        {QStringLiteral("tabnine"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("t3code"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("chatgpt"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("codex"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("cursor"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("windsurf"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("kiro"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("zed"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("opencode"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("aider"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("claude code"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("gemini cli"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("github copilot"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("replit agent"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("amazon q developer"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("qwen code"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("mistral vibe"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("goose"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("ampcode"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("augment code"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("sourcegraph cody"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("cline"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("roo code"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("kilo code"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("factory droid"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("auggie"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("kimi code"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("pearai"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("trae"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("google antigravity"), AppCategory::AiCoding, WritingProfile::AiCoding},
+        {QStringLiteral("tabnine"), AppCategory::AiCoding, WritingProfile::AiCoding},
         {QStringLiteral("terminal"), AppCategory::Terminal, WritingProfile::Work},
         {QStringLiteral("konsole"), AppCategory::Terminal, WritingProfile::Work},
         {QStringLiteral("ghostty"), AppCategory::Terminal, WritingProfile::Work},
@@ -263,8 +269,9 @@ WritingProfile inferWritingProfile(const Target &target, WritingProfile fallback
     switch (target.category) {
     case AppCategory::Email:
         return WritingProfile::Email;
-    case AppCategory::CodeEditor:
     case AppCategory::AiCoding:
+        return WritingProfile::AiCoding;
+    case AppCategory::CodeEditor:
     case AppCategory::Terminal:
     case AppCategory::Office:
         return WritingProfile::Work;
