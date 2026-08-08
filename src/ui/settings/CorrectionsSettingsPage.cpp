@@ -106,6 +106,11 @@ void CorrectionsSettingsPage::load(bool learningEnabled, const QList<LearnedCorr
     m_undoLatestLearnButton->setEnabled(!corrections.isEmpty());
 }
 
+void CorrectionsSettingsPage::appendToDraft(AppSettings &draft) const
+{
+    draft.learnedCorrections = corrections();
+}
+
 bool CorrectionsSettingsPage::learningEnabled() const
 {
     return m_learnCorrections->isChecked();

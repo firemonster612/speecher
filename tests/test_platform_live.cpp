@@ -73,7 +73,7 @@ private slots:
         audio.vadEnabled = false;
         settings.setAudioCaptureSettings(audio);
 
-        AudioCapture capture(&settings);
+        QtAudioInput capture(audio);
         QSignalSpy chunks(&capture, &AudioInput::audioChunk);
         QSignalSpy failed(&capture, &AudioInput::failed);
         QString error;

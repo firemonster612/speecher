@@ -2,9 +2,6 @@
 
 #include "core/AppSettings.h"
 #include "core/OutputMethod.h"
-#include "output/ClipboardDelivery.h"
-#include "output/QtClipboardDelivery.h"
-#include "output/WlClipboardDelivery.h"
 #include "output/YdotoolDelivery.h"
 
 #include <memory>
@@ -16,15 +13,16 @@ namespace {
 
 class YdotoolBackend final : public DeliveryBackend {
 public:
-    explicit YdotoolBackend(PasteMethod pasteMethod)
-        : m_pasteMethod(pasteMethod)
+    YdotoolBackend(ClipboardDelivery *clipboardDelivery, PasteMethod pasteMethod)
+        : m_clipboardDelivery(clipboardDelivery)
+        , m_pasteMethod(pasteMethod)
     {
     }
 
     bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
     {
         QString copyError;
-        if (!ClipboardDelivery().copy(content, htmlAvailable, &copyError)) {
+        if (!m_clipboardDelivery->copy(content, htmlAvailable, &copyError)) {
             if (error) {
                 *error = copyError.isEmpty()
                     ? QStringLiteral("Could not copy text before ydotool paste")
@@ -44,58 +42,55 @@ public:
     }
 
 private:
+    ClipboardDelivery *m_clipboardDelivery = nullptr;
     PasteMethod m_pasteMethod = PasteMethod::StandardPaste;
 };
 
 class WlCopyBackend final : public DeliveryBackend {
 public:
+    explicit WlCopyBackend(ClipboardDelivery *clipboardDelivery)
+        : m_clipboardDelivery(clipboardDelivery)
+    {
+    }
+
     bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
     {
-        return WlClipboardDelivery().copy(content, htmlAvailable, error);
+        return m_clipboardDelivery->copyWayland(content, htmlAvailable, error);
     }
+
+private:
+    ClipboardDelivery *m_clipboardDelivery = nullptr;
 };
 
 class QtClipboardBackend final : public DeliveryBackend {
 public:
+    explicit QtClipboardBackend(ClipboardDelivery *clipboardDelivery)
+        : m_clipboardDelivery(clipboardDelivery)
+    {
+    }
+
     bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
     {
-        if (htmlAvailable) {
-            *htmlAvailable = content.html.has_value();
-        }
-        return QtClipboardDelivery().copy(content, error);
+        return m_clipboardDelivery->copyQt(content, htmlAvailable, error);
     }
-};
 
-std::unique_ptr<DeliveryBackend> defaultBackendFactory(const QString &method,
-                                                       const OutputSettings &settings,
-                                                       PasteMethod pasteMethod)
-{
-    Q_UNUSED(settings)
-    if (method == QString::fromLatin1(OutputMethod::Ydotool)) {
-        return std::make_unique<YdotoolBackend>(pasteMethod);
-    }
-    if (method == QString::fromLatin1(OutputMethod::WlCopy)) {
-        return std::make_unique<WlCopyBackend>();
-    }
-    if (method == QString::fromLatin1(OutputMethod::QtClipboard)) {
-        return std::make_unique<QtClipboardBackend>();
-    }
-    return nullptr;
-}
+private:
+    ClipboardDelivery *m_clipboardDelivery = nullptr;
+};
 
 } // namespace
 
 TextDelivery::TextDelivery(QObject *parent)
     : TextDeliveryAdapter(parent)
-    , m_backendFactory(defaultBackendFactory)
 {
+    useDefaultBackendFactory();
 }
 
 TextDelivery::TextDelivery(TargetProvider *targetProvider, QObject *parent)
     : TextDeliveryAdapter(parent)
-    , m_backendFactory(defaultBackendFactory)
     , m_targetProvider(targetProvider)
 {
+    useDefaultBackendFactory();
 }
 
 TextDelivery::TextDelivery(BackendFactory backendFactory, QObject *parent)
@@ -110,6 +105,25 @@ TextDelivery::TextDelivery(BackendFactory backendFactory,
     , m_backendFactory(std::move(backendFactory))
     , m_targetProvider(targetProvider)
 {
+}
+
+void TextDelivery::useDefaultBackendFactory()
+{
+    m_backendFactory = [this](const QString &method,
+                              const OutputSettings &settings,
+                              PasteMethod pasteMethod) -> std::unique_ptr<DeliveryBackend> {
+        Q_UNUSED(settings)
+        if (method == QString::fromLatin1(OutputMethod::Ydotool)) {
+            return std::make_unique<YdotoolBackend>(&m_clipboardDelivery, pasteMethod);
+        }
+        if (method == QString::fromLatin1(OutputMethod::WlCopy)) {
+            return std::make_unique<WlCopyBackend>(&m_clipboardDelivery);
+        }
+        if (method == QString::fromLatin1(OutputMethod::QtClipboard)) {
+            return std::make_unique<QtClipboardBackend>(&m_clipboardDelivery);
+        }
+        return nullptr;
+    };
 }
 
 DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
@@ -133,11 +147,11 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
     WlClipboardSnapshot previousClipboard;
     const bool canRestoreClipboard = pasteMethod != PasteMethod::ClipboardOnly
         && settings.restoreClipboardAfterTyping
-        && WlClipboardDelivery::canSnapshot()
-        && WlClipboardDelivery::capture(&previousClipboard);
+        && m_clipboardDelivery.canSnapshot()
+        && m_clipboardDelivery.capture(&previousClipboard);
     bool initiallyHtmlAvailable = false;
     QString initialCopyError;
-    if (!ClipboardDelivery().copy(content, &initiallyHtmlAvailable, &initialCopyError)) {
+    if (!m_clipboardDelivery.copy(content, &initiallyHtmlAvailable, &initialCopyError)) {
         return {
             false,
             DeliveryReceipt::None,
@@ -155,7 +169,7 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
                 QString restoreError;
                 const bool restored = !verified
                     || !canRestoreClipboard
-                    || WlClipboardDelivery::restore(previousClipboard, &restoreError);
+                    || m_clipboardDelivery.restore(previousClipboard, &restoreError);
                 QString message = verified
                     ? QStringLiteral("Verified in Target")
                     : QStringLiteral("Accepted by Target");
@@ -215,7 +229,7 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
             QString restoreError;
             const bool restored = !verified
                 || !canRestoreClipboard
-                || WlClipboardDelivery::restore(previousClipboard, &restoreError);
+                || m_clipboardDelivery.restore(previousClipboard, &restoreError);
             const QString message = copied
                 ? QStringLiteral("Copied")
                 : verified ? QStringLiteral("Verified in Target") : QStringLiteral("Input sent");

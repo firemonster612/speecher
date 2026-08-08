@@ -10,13 +10,13 @@ class QSpinBox;
 
 namespace speecher {
 
-class PlatformIntegration;
+class LinuxComposition;
 
 class AudioSettingsPage : public QScrollArea {
     Q_OBJECT
 
 public:
-    explicit AudioSettingsPage(const PlatformIntegration &platform,
+    explicit AudioSettingsPage(const LinuxComposition &platform,
                                QWidget *parent = nullptr);
 
     void load(const AppSettings &settings);
@@ -30,7 +30,7 @@ private:
     void refreshAudioDeviceList(const QString &selectedDeviceId);
     void updateAudioControls();
 
-    const PlatformIntegration &m_platform;
+    const LinuxComposition &m_platform;
     QComboBox *m_audioDevice;
     QComboBox *m_captureMode;
     QCheckBox *m_vadEnabled;

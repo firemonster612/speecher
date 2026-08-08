@@ -11,7 +11,7 @@ class RefinersTests : public QObject {
 private slots:
     void refinementInstructionsCompose()
     {
-        const QString light = openAiRefinementInstructions(QStringLiteral("light_cleanup"));
+        const QString light = transcriptRefinementInstructions(QStringLiteral("light_cleanup"));
         QVERIFY(light.startsWith(QStringLiteral("You are Speecher's transcript refinement engine.")));
         QVERIFY(light.contains(QStringLiteral("Output only the refined text. Do not add anything before or after it")));
         QVERIFY(light.contains(QStringLiteral("by following the rules below")));
@@ -45,14 +45,14 @@ private slots:
         QVERIFY(!light.contains(QStringLiteral("Rule: useful_organization.")));
         QVERIFY(!light.contains(QStringLiteral("plain_sentences")));
 
-        const QString balanced = openAiRefinementInstructions(QStringLiteral("balanced"));
+        const QString balanced = transcriptRefinementInstructions(QStringLiteral("balanced"));
         QVERIFY(balanced.contains(QStringLiteral("Rule: no_inferred_structure.")));
         QVERIFY(balanced.contains(QStringLiteral("Rule: infer_simple_structure.")));
         QVERIFY(balanced.contains(QStringLiteral("Rule: adaptive_markdown.")));
         QVERIFY(balanced.contains(QStringLiteral("Use hyphen bullets for unordered multi-item lists.")));
         QVERIFY(!balanced.contains(QStringLiteral("Rule: useful_organization.")));
 
-        const QString strong = openAiRefinementInstructions(QStringLiteral("strong_polish"));
+        const QString strong = transcriptRefinementInstructions(QStringLiteral("strong_polish"));
         QVERIFY(strong.contains(QStringLiteral("Rule: no_inferred_structure.")));
         QVERIFY(strong.contains(QStringLiteral("Rule: infer_simple_structure.")));
         QVERIFY(strong.contains(QStringLiteral("Rule: useful_organization.")));

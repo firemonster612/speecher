@@ -8,6 +8,30 @@ SettingsStore::SettingsStore(QObject *parent)
 {
 }
 
+void SettingsStore::applySnapshot(const AppSettings &draft)
+{
+    setTheme(draft.ui.theme);
+    setPauseMediaDuringTranscription(draft.ui.pauseMediaDuringTranscription);
+    setSoundsEnabled(draft.ui.soundsEnabled);
+    setPreviewWords(draft.ui.previewWords);
+    setAudioCaptureSettings(draft.audio);
+    setRefinementProvider(draft.refinement.providerId);
+    setDefaultWritingProfile(draft.refinement.defaultWritingProfile);
+    setWritingProfileSettings(draft.refinement.writingProfiles);
+    setWritingProfileOverrides(draft.refinement.writingProfileOverrides);
+    setUseTargetContext(draft.refinement.useTargetContext);
+    setIncludeScreenshotContext(draft.refinement.includeScreenshotContext);
+    setOpenAiModel(draft.refinement.openAiModel);
+    setOpenAiEffort(draft.refinement.openAiEffort);
+    setAnthropicModel(draft.refinement.anthropicModel);
+    setAnthropicEffort(draft.refinement.anthropicEffort);
+    setOutputMethod(draft.output.method);
+    setOutputFormat(draft.output.format);
+    setPasteRules(draft.output.pasteRules);
+    setRestoreClipboardAfterTyping(draft.output.restoreClipboardAfterTyping);
+    setLearnedCorrections(draft.learnedCorrections);
+}
+
 QString SettingsStore::audioInputDeviceId() const
 {
     return audioCaptureSettings().deviceId;

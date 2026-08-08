@@ -13,7 +13,7 @@ namespace speecher {
 
 class DictationSession;
 class MainWindow;
-class PlatformIntegration;
+class LinuxComposition;
 class ProviderRegistry;
 class SecretStore;
 class SettingsDialog;
@@ -29,7 +29,7 @@ public:
     SettingsStore *settings() const;
     SecretStore *secretStore() const;
     ProviderRegistry *providerRegistry() const;
-    const PlatformIntegration *platform() const;
+    const LinuxComposition *platform() const;
     QString stateName() const;
     IpcResponse response(bool ok = true, const QString &message = {}) const;
     QString outputSummary() const;
@@ -56,7 +56,7 @@ private:
     void wireSessionToPopup();
 
     bool m_popupOnly = false;
-    std::shared_ptr<const PlatformIntegration> m_platform;
+    std::shared_ptr<const LinuxComposition> m_platform;
     SettingsStore *m_settings = nullptr;
     SecretStore *m_secrets = nullptr;
     ProviderRegistry *m_providers = nullptr;

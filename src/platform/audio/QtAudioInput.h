@@ -6,30 +6,30 @@
 #include <QList>
 #include <QMediaDevices>
 #include <QScopedPointer>
-#include <QVector>
+#include "platform/audio/AudioPcmConverter.h"
 
-#include "dictation/DictationInterfaces.h"
+#include "dictation/DictationPorts.h"
 
 namespace speecher {
 
-class SettingsStore;
-
-class AudioCapture : public AudioInput {
+class QtAudioInput : public AudioInput {
     Q_OBJECT
 
 public:
-    explicit AudioCapture(SettingsStore *settings = nullptr, QObject *parent = nullptr);
+    explicit QtAudioInput(const AudioCaptureSettings &settings = {}, QObject *parent = nullptr);
     static QList<AudioInputDeviceInfo> availableInputDevices();
 
     bool start(QString *error = nullptr) override;
     void stop() override;
     bool isActive() const override;
 
+public slots:
+    void applySettings(const AudioCaptureSettings &settings);
+
 signals:
     void firstSampleObserved();
 
 private:
-    void handleSettingsChanged(const AudioCaptureSettings &settings);
     void handleAudioInputsChanged();
     void syncWarmSource();
     AudioCaptureSettings currentSettings() const;
@@ -41,26 +41,21 @@ private:
     void onReadyRead();
     void handleSourceStateChanged(QAudio::State state);
     void failCapture(const QString &message);
-    QByteArray toOutputPcm(const QByteArray &data, QString *error);
-    QByteArray encodeOutputSamples(const QVector<float> &samples);
     void processOutputChunk(const QByteArray &pcm, float rms);
     void appendPreRoll(const QByteArray &pcm);
     void flushPreRoll();
     void flushPendingPostRoll();
     bool sourceMatches(const AudioCaptureSettings &settings) const;
 
-    SettingsStore *m_settings = nullptr;
     QMediaDevices m_mediaDevices;
     QScopedPointer<QAudioSource> m_source;
     QIODevice *m_device = nullptr;
-    QAudioFormat m_sourceFormat;
+    AudioPcmConverter m_converter;
     QString m_currentDeviceId;
     QString m_currentDeviceLabel;
     AudioCaptureSettings m_captureSettings;
     QByteArray m_preRollBuffer;
     QByteArray m_pendingPostRoll;
-    QVector<float> m_resampleBuffer;
-    double m_nextInputPosition = 0.0;
     bool m_captureActive = false;
     bool m_sourceStopping = false;
     bool m_seenFirstSample = false;

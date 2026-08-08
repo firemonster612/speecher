@@ -1,7 +1,5 @@
 #include "app/SingleInstanceIpc.h"
 
-#include "platform/PlatformIntegration.h"
-
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -34,9 +32,9 @@ QString activeInstanceMessage(const QString &name)
 
 } // namespace
 
-SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const PlatformIntegration> platform, QObject *parent)
+SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatform> platform, QObject *parent)
     : QObject(parent)
-    , m_platform(platform ? std::move(platform) : PlatformFactory::create())
+    , m_platform(platform ? std::move(platform) : linuxComposition())
 {
     connect(&m_server, &QLocalServer::newConnection, this, [this] {
         while (QLocalSocket *socket = m_server.nextPendingConnection()) {
@@ -56,9 +54,9 @@ QString SingleInstanceIpc::socketName() const
     return m_platform->ipcListenName();
 }
 
-QString SingleInstanceIpc::socketName(std::shared_ptr<const PlatformIntegration> platform)
+QString SingleInstanceIpc::socketName(std::shared_ptr<const SingleInstancePlatform> platform)
 {
-    const std::shared_ptr<const PlatformIntegration> resolved = platform ? std::move(platform) : PlatformFactory::create();
+    const std::shared_ptr<const SingleInstancePlatform> resolved = platform ? std::move(platform) : linuxComposition();
     return resolved->ipcListenName();
 }
 
@@ -100,7 +98,7 @@ bool SingleInstanceIpc::listen(QString *error)
 bool SingleInstanceIpc::sendCommand(const QString &command,
                                     IpcResponse *response,
                                     int timeoutMs,
-                                    std::shared_ptr<const PlatformIntegration> platform)
+                                    std::shared_ptr<const SingleInstancePlatform> platform)
 {
     return sendCommandDetailed(command, std::nullopt, response, timeoutMs, std::move(platform)) == IpcCommandResult::Sent;
 }
@@ -108,7 +106,7 @@ bool SingleInstanceIpc::sendCommand(const QString &command,
 IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
                                                         IpcResponse *response,
                                                         int timeoutMs,
-                                                        std::shared_ptr<const PlatformIntegration> platform,
+                                                        std::shared_ptr<const SingleInstancePlatform> platform,
                                                         QString *error)
 {
     return sendCommandDetailed(command, std::nullopt, response, timeoutMs, std::move(platform), error);
@@ -118,10 +116,10 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
                                                         std::optional<OutputFormat> outputFormat,
                                                         IpcResponse *response,
                                                         int timeoutMs,
-                                                        std::shared_ptr<const PlatformIntegration> platform,
+                                                        std::shared_ptr<const SingleInstancePlatform> platform,
                                                         QString *error)
 {
-    const std::shared_ptr<const PlatformIntegration> resolved = platform ? std::move(platform) : PlatformFactory::create();
+    const std::shared_ptr<const SingleInstancePlatform> resolved = platform ? std::move(platform) : linuxComposition();
     for (const QString &candidate : resolved->ipcConnectCandidates()) {
         QLocalSocket socket;
         socket.connectToServer(candidate);

@@ -252,14 +252,12 @@ void ProviderSettingsPage::loadAuth()
     updateAnthropicControls();
 }
 
-void ProviderSettingsPage::saveModels()
+void ProviderSettingsPage::appendToDraft(AppSettings &draft) const
 {
-    m_settings.setOpenAiModel(settings::editableComboValue(m_openAiModel));
-    settings::selectEditableText(m_openAiModel, m_settings.openAiModel());
-    m_settings.setOpenAiEffort(m_openAiEffort->currentData().toString());
-    m_settings.setAnthropicModel(settings::editableComboValue(m_anthropicModel));
-    settings::selectEditableText(m_anthropicModel, m_settings.anthropicModel());
-    m_settings.setAnthropicEffort(m_anthropicEffort->currentData().toString());
+    draft.refinement.openAiModel = settings::editableComboValue(m_openAiModel);
+    draft.refinement.openAiEffort = m_openAiEffort->currentData().toString();
+    draft.refinement.anthropicModel = settings::editableComboValue(m_anthropicModel);
+    draft.refinement.anthropicEffort = m_anthropicEffort->currentData().toString();
 }
 
 void ProviderSettingsPage::saveAuthModes()
