@@ -18,7 +18,6 @@ class DictationPage : public QWidget {
 
 public:
     explicit DictationPage(ApplicationController *controller, QWidget *parent = nullptr);
-    void setCompactShell(bool compact);
 
 public slots:
     void setStatus(const QString &status);

@@ -358,6 +358,25 @@ void setComboItemEnabled(QComboBox *combo, int index, bool enabled, const QStrin
     item->setToolTip(toolTip);
 }
 
+void applyPageMargins(QLayout *layout)
+{
+    layout->setContentsMargins(20, 20, 20, 20);
+}
+
+void applyLabelHierarchy(QWidget *root)
+{
+    for (QLabel *label : root->findChildren<QLabel *>()) {
+        if (label->objectName() == QStringLiteral("subsectionLabel")) {
+            QFont font = label->font();
+            font.setBold(true);
+            label->setFont(font);
+        } else if (label->objectName() == QStringLiteral("rowDescription")
+                   || label->objectName() == QStringLiteral("noteText")) {
+            label->setForegroundRole(QPalette::PlaceholderText);
+        }
+    }
+}
+
 QLabel *makeSectionLabel(const QString &text, QWidget *parent)
 {
     auto *section = new QLabel(text, parent);
@@ -392,6 +411,7 @@ QVBoxLayout *makeSettingsPage(QScrollArea *scroll)
 
     auto *page = new QWidget(scroll);
     auto *layout = new QVBoxLayout(page);
+    applyPageMargins(layout);
     scroll->setWidget(page);
     return layout;
 }

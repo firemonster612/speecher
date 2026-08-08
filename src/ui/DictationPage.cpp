@@ -5,14 +5,15 @@
 #include "providers/ProviderRegistry.h"
 #include "ui/AccessibilityNotice.h"
 #include "ui/WaveformWidget.h"
+#include "ui/settings/SettingsPageSupport.h"
 
-#include <QFormLayout>
 #include <QEvent>
 #include <QFontMetrics>
-#include <QGroupBox>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QSizePolicy>
 #include <QStyle>
 #include <QVBoxLayout>
 
@@ -20,19 +21,23 @@ namespace speecher {
 
 namespace {
 
-QWidget *summaryRow(QLabel *value, const QString &buttonText, AppPageId page,
-                    DictationPage *owner, QWidget *parent)
+void addSummaryRow(QGridLayout *grid,
+                   int row,
+                   const QString &labelText,
+                   QLabel *value,
+                   AppPageId page,
+                   DictationPage *owner,
+                   QWidget *parent)
 {
-    auto *row = new QWidget(parent);
-    auto *layout = new QHBoxLayout(row);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->addWidget(value, 1);
-    auto *change = new QPushButton(buttonText, row);
-    layout->addWidget(change);
+    auto *label = new QLabel(labelText, parent);
+    auto *change = new QPushButton(QStringLiteral("Change…"), parent);
+    value->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    grid->addWidget(label, row, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    grid->addWidget(value, row, 1, Qt::AlignLeft | Qt::AlignVCenter);
+    grid->addWidget(change, row, 2, Qt::AlignLeft | Qt::AlignVCenter);
     QObject::connect(change, &QPushButton::clicked, owner, [owner, page] {
         emit owner->navigateRequested(page);
     });
-    return row;
 }
 
 } // namespace
@@ -48,31 +53,51 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     , m_output(new QLabel(this))
     , m_theme(new QLabel(this))
 {
-    auto *layout = new QVBoxLayout(this);
+    auto *pageLayout = new QVBoxLayout(this);
+    settings::applyPageMargins(pageLayout);
+    auto *column = new QWidget(this);
+    column->setObjectName(QStringLiteral("dictationContentColumn"));
+    column->setMaximumWidth(560);
+    column->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto *layout = new QVBoxLayout(column);
+    layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(style()->pixelMetric(QStyle::PM_LayoutVerticalSpacing));
     m_accessibilityNotice->setCompact(true);
     layout->addWidget(m_accessibilityNotice);
 
-    m_toggle->setMinimumHeight(56);
-    m_toggle->setMinimumWidth(480);
-    m_toggle->setMaximumWidth(480);
+    m_toggle->setFixedHeight(48);
+    m_toggle->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     layout->addWidget(m_toggle);
-    layout->setAlignment(m_toggle, Qt::AlignHCenter);
     m_status->setAlignment(Qt::AlignHCenter);
-    m_status->setForegroundRole(QPalette::PlaceholderText);
+    m_status->setForegroundRole(QPalette::WindowText);
     layout->addWidget(m_status);
     layout->addWidget(m_waveform, 0, Qt::AlignHCenter);
 
-    auto *summary = new QGroupBox(QStringLiteral("At a glance"), this);
-    auto *form = new QFormLayout(summary);
-    form->addRow(QStringLiteral("Refinement"),
-                 summaryRow(m_provider, QStringLiteral("Change…"), AppPageId::Refinement, this, summary));
-    form->addRow(QStringLiteral("Output"),
-                 summaryRow(m_output, QStringLiteral("Change…"), AppPageId::Output, this, summary));
-    form->addRow(QStringLiteral("Theme"),
-                 summaryRow(m_theme, QStringLiteral("Change…"), AppPageId::General, this, summary));
+    auto *summaryLabel = new QLabel(QStringLiteral("At a glance"), column);
+    QFont summaryFont = summaryLabel->font();
+    summaryFont.setBold(true);
+    summaryLabel->setFont(summaryFont);
+    summaryLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    layout->addWidget(summaryLabel);
+    auto *summary = new QWidget(column);
+    auto *grid = new QGridLayout(summary);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setColumnStretch(1, 1);
+    addSummaryRow(grid, 0, QStringLiteral("Refinement"), m_provider,
+                  AppPageId::Refinement, this, summary);
+    addSummaryRow(grid, 1, QStringLiteral("Output"), m_output,
+                  AppPageId::Output, this, summary);
+    addSummaryRow(grid, 2, QStringLiteral("Theme"), m_theme,
+                  AppPageId::General, this, summary);
     layout->addWidget(summary);
     layout->addStretch();
+    auto *contentRow = new QHBoxLayout;
+    contentRow->setContentsMargins(0, 0, 0, 0);
+    contentRow->addStretch();
+    contentRow->addWidget(column, 1);
+    contentRow->addStretch();
+    pageLayout->addLayout(contentRow);
+    pageLayout->addStretch();
 
     connect(m_toggle, &QPushButton::clicked, controller, &ApplicationController::toggle);
     connect(controller, &ApplicationController::statusChanged, this, &DictationPage::setStatus);
@@ -122,8 +147,7 @@ void DictationPage::setStatus(const QString &status)
     m_status->setText(states.contains(state)
                           ? state.left(1).toUpper() + state.mid(1)
                           : status);
-    const bool muted = state == QStringLiteral("idle");
-    m_status->setForegroundRole(muted ? QPalette::PlaceholderText : QPalette::WindowText);
+    m_status->setForegroundRole(QPalette::WindowText);
     m_waveform->setVisible(active);
     if (!active) {
         m_waveform->setLevel(0.0f);
@@ -144,13 +168,6 @@ void DictationPage::refreshSummary()
     setSummaryText(m_output, m_controller->primaryOutputStatus());
     const QString theme = m_controller->settings()->theme();
     setSummaryText(m_theme, theme.left(1).toUpper() + theme.mid(1));
-}
-
-void DictationPage::setCompactShell(bool compact)
-{
-    m_toggle->setMinimumWidth(compact ? 0 : 480);
-    m_toggle->setMaximumWidth(compact ? QWIDGETSIZE_MAX : 480);
-    layout()->setAlignment(m_toggle, compact ? Qt::Alignment{} : Qt::AlignHCenter);
 }
 
 bool DictationPage::eventFilter(QObject *watched, QEvent *event)

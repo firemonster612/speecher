@@ -19,7 +19,6 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
-#include <QPalette>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSizePolicy>
@@ -107,16 +106,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     footerLayout->addWidget(buttons);
     root->addWidget(footer);
 
-    for (QLabel *label : findChildren<QLabel *>()) {
-        if (label->objectName() == QStringLiteral("subsectionLabel")) {
-            QFont font = label->font();
-            font.setBold(true);
-            label->setFont(font);
-        } else if (label->objectName() == QStringLiteral("rowDescription")
-                   || label->objectName() == QStringLiteral("noteText")) {
-            label->setForegroundRole(QPalette::PlaceholderText);
-        }
-    }
+    applyLabelHierarchy(this);
 
     if (QPushButton *ok = buttons->button(QDialogButtonBox::Ok)) {
         m_okButton = ok;

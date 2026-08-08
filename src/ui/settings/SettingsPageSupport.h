@@ -8,6 +8,7 @@ class QComboBox;
 class QFrame;
 class QHBoxLayout;
 class QLabel;
+class QLayout;
 class QListWidget;
 class QScrollArea;
 class QStackedWidget;
@@ -33,6 +34,8 @@ void setComboItemEnabled(QComboBox *combo,
                          int index,
                          bool enabled,
                          const QString &toolTip = QString());
+void applyPageMargins(QLayout *layout);
+void applyLabelHierarchy(QWidget *root);
 QLabel *makeSectionLabel(const QString &text, QWidget *parent);
 QFrame *makeSettingsCard(QWidget *parent);
 QVBoxLayout *makeSettingsPage(QScrollArea *scroll);

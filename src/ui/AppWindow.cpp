@@ -25,6 +25,7 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QShowEvent>
 #include <QStackedWidget>
 #include <QStyle>
 #include <QTabWidget>
@@ -60,6 +61,7 @@ QScrollArea *scrollingPage(QWidget *content, QWidget *parent)
 QWidget *detachedContent(QScrollArea *page)
 {
     QWidget *content = page->takeWidget();
+    content->layout()->setContentsMargins(0, 0, 0, 0);
     page->hide();
     return content;
 }
@@ -69,6 +71,28 @@ QIcon themedIcon(const QString &name, QStyle::StandardPixmap fallback, QWidget *
     const QIcon icon = QIcon::fromTheme(name);
     return icon.isNull() ? widget->style()->standardIcon(fallback) : icon;
 }
+
+class DprIconLabel final : public QLabel {
+public:
+    DprIconLabel(const QIcon &icon, const QSize &size, QWidget *parent)
+        : QLabel(parent)
+        , m_icon(icon)
+        , m_size(size)
+    {
+        setFixedSize(size);
+    }
+
+protected:
+    void showEvent(QShowEvent *event) override
+    {
+        QLabel::showEvent(event);
+        setPixmap(m_icon.pixmap(m_size, devicePixelRatio()));
+    }
+
+private:
+    QIcon m_icon;
+    QSize m_size;
+};
 
 } // namespace
 
@@ -95,6 +119,7 @@ AppWindow::AppWindow(ApplicationController *controller,
         m_prototype = QStringLiteral("a");
         buildSidebarShell();
     }
+    settings::applyLabelHierarchy(this);
 
     const QByteArray geometry = m_controller->settings()->raw()
                                     .value(QStringLiteral("ui/appWindow/%1/geometry").arg(m_prototype))
@@ -158,6 +183,7 @@ void AppWindow::buildSharedPages()
 {
     auto *refinementContent = new QWidget(this);
     auto *refinementLayout = new QVBoxLayout(refinementContent);
+    settings::applyPageMargins(refinementLayout);
     refinementLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Refinement"), refinementContent));
     refinementLayout->addWidget(detachedContent(m_pages->refinement()));
     refinementLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Provider accounts"), refinementContent));
@@ -167,6 +193,7 @@ void AppWindow::buildSharedPages()
 
     auto *tabs = new QTabWidget(this);
     auto addTab = [tabs](QWidget *page, const QString &title) {
+        settings::applyPageMargins(page->layout());
         tabs->addTab(scrollingPage(page, tabs), title);
     };
     addTab(m_pages->vocabulary(), QStringLiteral("Vocabulary"));
@@ -199,16 +226,19 @@ void AppWindow::buildSidebarShell()
     m_navigation = new QListWidget(body);
     m_navigation->setObjectName(QStringLiteral("appNavigation"));
     m_navigation->setFrameShape(QFrame::NoFrame);
-    m_navigation->setFixedWidth(200);
+    m_navigation->setFixedWidth(220);
+    m_navigation->setIconSize(QSize(22, 22));
     for (int index = 0; index < kPages.size(); ++index) {
         const auto &page = kPages.at(index);
-        auto *item = new QListWidgetItem(QIcon::fromTheme(page.second), page.first, m_navigation);
+        auto *item = new QListWidgetItem(themedIcon(page.second, QStyle::SP_FileIcon, m_navigation),
+                                         page.first,
+                                         m_navigation);
         item->setData(Qt::UserRole, index);
-        item->setSizeHint(QSize(0, 40));
+        item->setSizeHint(QSize(0, 36));
         if (index == 0) {
             auto *separator = new QListWidgetItem(m_navigation);
             separator->setFlags(Qt::NoItemFlags);
-            separator->setSizeHint(QSize(0, 8));
+            separator->setSizeHint(QSize(0, 12));
             separator->setData(Qt::UserRole, -1);
         }
     }
@@ -256,11 +286,14 @@ void AppWindow::buildToolbarShell()
     auto *toolbar = addToolBar(QStringLiteral("Pages"));
     toolbar->setMovable(false);
     toolbar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+    const int toolbarIconSize = style()->pixelMetric(QStyle::PM_ToolBarIconSize, nullptr, toolbar);
+    toolbar->setIconSize(QSize(toolbarIconSize, toolbarIconSize));
     m_navigationActions = new QActionGroup(this);
     m_navigationActions->setExclusive(true);
     for (int index = 0; index < kPages.size(); ++index) {
         const auto &page = kPages.at(index);
-        QAction *action = toolbar->addAction(QIcon::fromTheme(page.second), page.first);
+        QAction *action = toolbar->addAction(
+            themedIcon(page.second, QStyle::SP_FileIcon, toolbar), page.first);
         action->setCheckable(true);
         action->setData(index);
         m_navigationActions->addAction(action);
@@ -283,7 +316,6 @@ void AppWindow::buildToolbarShell()
 
 void AppWindow::buildCompactShell()
 {
-    m_dictation->setCompactShell(true);
     resize(420, 560);
     setMinimumSize(400, 480);
     setMaximumWidth(520);
@@ -299,19 +331,21 @@ void AppWindow::buildCompactShell()
     m_compactList = new QListWidget(home);
     m_compactList->setObjectName(QStringLiteral("compactSettingsList"));
     m_compactList->setFrameShape(QFrame::NoFrame);
+    m_compactList->setIconSize(QSize(20, 20));
     for (int index = 1; index < kPages.size(); ++index) {
         const auto &page = kPages.at(index);
         auto *item = new QListWidgetItem(m_compactList);
+        item->setIcon(themedIcon(page.second, QStyle::SP_FileIcon, m_compactList));
         item->setData(Qt::UserRole, index - 1);
-        item->setSizeHint(QSize(0, 42));
+        item->setSizeHint(QSize(0, 36));
         auto *row = new QWidget(m_compactList);
         auto *rowLayout = new QHBoxLayout(row);
-        auto *icon = new QLabel(row);
-        icon->setPixmap(themedIcon(page.second, QStyle::SP_FileIcon, row).pixmap(16, 16));
+        const int rowSpacing = qMax(
+            0, row->style()->pixelMetric(QStyle::PM_LayoutHorizontalSpacing, nullptr, row));
+        rowLayout->setContentsMargins(20 + rowSpacing, 0, 0, 0);
         auto *title = new QLabel(page.first, row);
-        auto *arrow = new QLabel(row);
-        arrow->setPixmap(themedIcon(QStringLiteral("go-next"), QStyle::SP_ArrowRight, row).pixmap(16, 16));
-        rowLayout->addWidget(icon);
+        auto *arrow = new DprIconLabel(
+            themedIcon(QStringLiteral("go-next"), QStyle::SP_ArrowRight, row), QSize(16, 16), row);
         rowLayout->addWidget(title);
         rowLayout->addStretch();
         rowLayout->addWidget(arrow);
@@ -394,8 +428,8 @@ QWidget *AppWindow::createPendingBanner(QWidget *parent, bool compact)
     auto *layout = new QHBoxLayout(m_pendingBanner);
     layout->setContentsMargins(compact ? 6 : 12, 6, compact ? 6 : 12, 6);
     if (compact) {
-        auto *icon = new QLabel(m_pendingBanner);
-        icon->setPixmap(style()->standardIcon(QStyle::SP_MessageBoxWarning).pixmap(16, 16));
+        auto *icon = new DprIconLabel(
+            style()->standardIcon(QStyle::SP_MessageBoxWarning), QSize(16, 16), m_pendingBanner);
         layout->addWidget(icon);
     }
     auto *message = new QLabel(QStringLiteral("You have unsaved changes"), m_pendingBanner);
