@@ -17,6 +17,7 @@ public:
     explicit CorrectionsSettingsPage(QWidget *parent = nullptr);
 
     void load(bool learningEnabled, const QList<LearnedCorrection> &corrections);
+    void appendToDraft(AppSettings &draft) const;
     bool learningEnabled() const;
     QList<LearnedCorrection> corrections() const;
     bool hasChanges(bool learningEnabled, const QList<LearnedCorrection> &corrections) const;

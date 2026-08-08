@@ -1,7 +1,7 @@
 #pragma once
 
-#include "dictation/DictationInterfaces.h"
-#include "output/DeliveryContent.h"
+#include "dictation/DictationPorts.h"
+#include "output/ClipboardDelivery.h"
 
 #include <functional>
 #include <memory>
@@ -35,6 +35,9 @@ public:
     static QStringList orderedMethods(const OutputSettings &settings, PasteMethod pasteMethod);
 
 private:
+    void useDefaultBackendFactory();
+
+    ClipboardDelivery m_clipboardDelivery;
     BackendFactory m_backendFactory;
     TargetProvider *m_targetProvider = nullptr;
 };

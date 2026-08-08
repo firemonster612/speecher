@@ -1,6 +1,4 @@
-#include "core/AudioCapture.h"
-
-#include "core/SettingsStore.h"
+#include "platform/audio/QtAudioInput.h"
 
 #include <QAudioDevice>
 #include <QDebug>
@@ -9,9 +7,6 @@
 #include <QTimer>
 
 #include <algorithm>
-#include <cmath>
-#include <cstring>
-#include <limits>
 
 namespace speecher {
 namespace {
@@ -207,116 +202,21 @@ QString sourceErrorMessage(const QAudioDevice &device, QAudio::Error error)
     return sourceErrorMessageForLabel(deviceLabel(device), error);
 }
 
-qint16 int16FromFloat(float sample)
-{
-    if (sample <= -1.0f) {
-        return std::numeric_limits<qint16>::min();
-    }
-    if (sample >= 1.0f) {
-        return std::numeric_limits<qint16>::max();
-    }
-    return static_cast<qint16>(std::lrint(sample * std::numeric_limits<qint16>::max()));
-}
-
-void appendInt16(QByteArray &buffer, float sample)
-{
-    const qint16 value = int16FromFloat(std::clamp(sample, -1.0f, 1.0f));
-    buffer.append(reinterpret_cast<const char *>(&value), int(sizeof(value)));
-}
-
-float sampleAt(const char *data, QAudioFormat::SampleFormat format)
-{
-    switch (format) {
-    case QAudioFormat::UInt8: {
-        const auto value = *reinterpret_cast<const quint8 *>(data);
-        return (float(value) - 128.0f) / 128.0f;
-    }
-    case QAudioFormat::Int16: {
-        qint16 value = 0;
-        std::memcpy(&value, data, sizeof(value));
-        return float(value) / 32768.0f;
-    }
-    case QAudioFormat::Int32: {
-        qint32 value = 0;
-        std::memcpy(&value, data, sizeof(value));
-        return float(double(value) / 2147483648.0);
-    }
-    case QAudioFormat::Float: {
-        float value = 0.0f;
-        std::memcpy(&value, data, sizeof(value));
-        return std::clamp(value, -1.0f, 1.0f);
-    }
-    case QAudioFormat::Unknown:
-        return 0.0f;
-    default:
-        return 0.0f;
-    }
-}
-
-QVector<float> decodeMonoSamples(const QByteArray &data, const QAudioFormat &format, QString *error)
-{
-    if (!usableFormat(format)) {
-        if (error) {
-            *error = QStringLiteral("The microphone reported an unsupported audio format.");
-        }
-        return {};
-    }
-
-    const int bytesPerFrame = format.bytesPerFrame();
-    const int bytesPerSample = format.bytesPerSample();
-    const int channels = format.channelCount();
-    const int frameCount = data.size() / bytesPerFrame;
-    QVector<float> samples;
-    samples.reserve(frameCount);
-
-    for (int frame = 0; frame < frameCount; ++frame) {
-        const char *frameData = data.constData() + frame * bytesPerFrame;
-        double sum = 0.0;
-        for (int channel = 0; channel < channels; ++channel) {
-            sum += sampleAt(frameData + channel * bytesPerSample, format.sampleFormat());
-        }
-        samples.append(float(sum / channels));
-    }
-
-    return samples;
-}
-
-float rmsForPcm16(const QByteArray &pcm)
-{
-    const int samples = pcm.size() / int(sizeof(qint16));
-    if (samples <= 0) {
-        return 0.0f;
-    }
-
-    double sum = 0.0;
-    for (int i = 0; i < samples; ++i) {
-        qint16 value = 0;
-        std::memcpy(&value, pcm.constData() + i * int(sizeof(qint16)), sizeof(value));
-        const double normalized = double(value) / 32768.0;
-        sum += normalized * normalized;
-    }
-    return float(std::sqrt(sum / samples));
-}
-
 } // namespace
 
-AudioCapture::AudioCapture(SettingsStore *settings, QObject *parent)
+QtAudioInput::QtAudioInput(const AudioCaptureSettings &settings, QObject *parent)
     : AudioInput(parent)
-    , m_settings(settings)
     , m_mediaDevices(this)
-    , m_captureSettings(currentSettings())
+    , m_captureSettings(settings)
 {
-    if (m_settings) {
-        connect(m_settings, &SettingsStore::audioCaptureSettingsChanged, this, &AudioCapture::handleSettingsChanged);
-    }
     connect(&m_mediaDevices,
             &QMediaDevices::audioInputsChanged,
             this,
-            &AudioCapture::handleAudioInputsChanged);
-    QTimer::singleShot(0, this, &AudioCapture::syncWarmSource);
+            &QtAudioInput::handleAudioInputsChanged);
+    QTimer::singleShot(0, this, &QtAudioInput::syncWarmSource);
 }
 
-QList<AudioInputDeviceInfo> AudioCapture::availableInputDevices()
+QList<AudioInputDeviceInfo> QtAudioInput::availableInputDevices()
 {
     const QAudioDevice defaultDevice = QMediaDevices::defaultAudioInput();
     QList<AudioInputDeviceInfo> devices;
@@ -330,7 +230,7 @@ QList<AudioInputDeviceInfo> AudioCapture::availableInputDevices()
     return devices;
 }
 
-bool AudioCapture::start(QString *error)
+bool QtAudioInput::start(QString *error)
 {
     if (m_captureActive) {
         stop();
@@ -368,7 +268,7 @@ bool AudioCapture::start(QString *error)
     return true;
 }
 
-void AudioCapture::stop()
+void QtAudioInput::stop()
 {
     if (!m_captureActive) {
         if (currentSettings().mode != QStringLiteral("warm")) {
@@ -400,12 +300,12 @@ void AudioCapture::stop()
     }
 }
 
-bool AudioCapture::isActive() const
+bool QtAudioInput::isActive() const
 {
     return m_captureActive;
 }
 
-void AudioCapture::handleSettingsChanged(const AudioCaptureSettings &settings)
+void QtAudioInput::applySettings(const AudioCaptureSettings &settings)
 {
     m_captureSettings = settings;
     if (m_captureActive) {
@@ -421,7 +321,7 @@ void AudioCapture::handleSettingsChanged(const AudioCaptureSettings &settings)
     }
 }
 
-void AudioCapture::handleAudioInputsChanged()
+void QtAudioInput::handleAudioInputsChanged()
 {
     if (!m_currentDeviceId.isEmpty()) {
         const bool currentStillAvailable = std::ranges::any_of(
@@ -441,7 +341,7 @@ void AudioCapture::handleAudioInputsChanged()
     }
 }
 
-void AudioCapture::syncWarmSource()
+void QtAudioInput::syncWarmSource()
 {
     if (m_captureActive) {
         return;
@@ -460,12 +360,12 @@ void AudioCapture::syncWarmSource()
     }
 }
 
-AudioCaptureSettings AudioCapture::currentSettings() const
+AudioCaptureSettings QtAudioInput::currentSettings() const
 {
-    return m_settings ? m_settings->audioCaptureSettings() : AudioCaptureSettings{};
+    return m_captureSettings;
 }
 
-bool AudioCapture::ensureSourceRunning(const AudioCaptureSettings &settings, QString *error)
+bool QtAudioInput::ensureSourceRunning(const AudioCaptureSettings &settings, QString *error)
 {
     if (sourceMatches(settings)) {
         return true;
@@ -492,17 +392,15 @@ bool AudioCapture::ensureSourceRunning(const AudioCaptureSettings &settings, QSt
     }
 
     m_source.reset(new QAudioSource(device, format, this));
-    m_sourceFormat = format;
+    m_converter.reset(format);
     m_currentDeviceId = encodedDeviceId(device);
     m_currentDeviceLabel = deviceLabel(device);
     m_seenFirstSample = false;
     m_conversionFailed = false;
-    m_resampleBuffer.clear();
-    m_nextInputPosition = 0.0;
 
     const int bufferBytes = std::clamp(format.sampleRate() * format.bytesPerFrame() / 20, 4096, 32768);
     m_source->setBufferSize(bufferBytes);
-    connect(m_source.data(), &QAudioSource::stateChanged, this, &AudioCapture::handleSourceStateChanged);
+    connect(m_source.data(), &QAudioSource::stateChanged, this, &QtAudioInput::handleSourceStateChanged);
 
     m_device = m_source->start();
     if (!m_device) {
@@ -513,7 +411,7 @@ bool AudioCapture::ensureSourceRunning(const AudioCaptureSettings &settings, QSt
         }
         return false;
     }
-    connect(m_device, &QIODevice::readyRead, this, &AudioCapture::onReadyRead);
+    connect(m_device, &QIODevice::readyRead, this, &QtAudioInput::onReadyRead);
 
     qInfo().noquote() << "audio capture source started device=\"" + deviceLabel(device)
                       + "\" format=\"" + formatLabel(format)
@@ -522,7 +420,7 @@ bool AudioCapture::ensureSourceRunning(const AudioCaptureSettings &settings, QSt
     return true;
 }
 
-bool AudioCapture::waitForFirstSample(const AudioCaptureSettings &settings, QString *error)
+bool QtAudioInput::waitForFirstSample(const AudioCaptureSettings &settings, QString *error)
 {
     if (m_seenFirstSample) {
         return true;
@@ -538,7 +436,7 @@ bool AudioCapture::waitForFirstSample(const AudioCaptureSettings &settings, QStr
     QTimer timeout;
     timeout.setSingleShot(true);
     connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
-    connect(this, &AudioCapture::firstSampleObserved, &loop, &QEventLoop::quit);
+    connect(this, &QtAudioInput::firstSampleObserved, &loop, &QEventLoop::quit);
     connect(m_source.data(), &QAudioSource::stateChanged, &loop, [&loop](QAudio::State state) {
         if (state == QAudio::StoppedState) {
             loop.quit();
@@ -565,7 +463,7 @@ bool AudioCapture::waitForFirstSample(const AudioCaptureSettings &settings, QStr
     return false;
 }
 
-void AudioCapture::waitForPostRoll(const AudioCaptureSettings &settings)
+void QtAudioInput::waitForPostRoll(const AudioCaptureSettings &settings)
 {
     if (settings.postRollMs <= 0 || !m_source || !m_device) {
         return;
@@ -579,7 +477,7 @@ void AudioCapture::waitForPostRoll(const AudioCaptureSettings &settings)
     loop.exec(QEventLoop::AllEvents);
 }
 
-void AudioCapture::stopSource()
+void QtAudioInput::stopSource()
 {
     if (!m_source && !m_device) {
         return;
@@ -596,12 +494,10 @@ void AudioCapture::stopSource()
     m_conversionFailed = false;
     m_currentDeviceId.clear();
     m_currentDeviceLabel.clear();
-    m_sourceFormat = {};
-    m_resampleBuffer.clear();
-    m_nextInputPosition = 0.0;
+    m_converter.reset({});
 }
 
-void AudioCapture::resetCaptureGate(bool keepPreRoll)
+void QtAudioInput::resetCaptureGate(bool keepPreRoll)
 {
     if (!keepPreRoll) {
         m_preRollBuffer.clear();
@@ -610,7 +506,7 @@ void AudioCapture::resetCaptureGate(bool keepPreRoll)
     m_vadSpeaking = false;
 }
 
-void AudioCapture::onReadyRead()
+void QtAudioInput::onReadyRead()
 {
     if (!m_device) {
         return;
@@ -626,30 +522,29 @@ void AudioCapture::onReadyRead()
         emit firstSampleObserved();
     }
 
-    QString conversionError;
-    const QByteArray pcm = toOutputPcm(data, &conversionError);
-    if (!conversionError.isEmpty()) {
+    const AudioPcmConversion conversion = m_converter.convert(data);
+    if (!conversion.error.isEmpty()) {
         if (!m_conversionFailed) {
             m_conversionFailed = true;
-            failCapture(conversionError);
+            failCapture(conversion.error);
         }
         return;
     }
+    const QByteArray &pcm = conversion.pcm16Mono16k;
     if (pcm.isEmpty()) {
         return;
     }
 
-    const float rms = rmsForPcm16(pcm);
     if (!m_captureActive) {
         appendPreRoll(pcm);
         return;
     }
 
-    emit levelChanged(std::min(1.0f, rms * 8.0f));
-    processOutputChunk(pcm, rms);
+    emit levelChanged(std::min(1.0f, conversion.rms * 8.0f));
+    processOutputChunk(pcm, conversion.rms);
 }
 
-void AudioCapture::handleSourceStateChanged(QAudio::State state)
+void QtAudioInput::handleSourceStateChanged(QAudio::State state)
 {
     if (m_sourceStopping || state != QAudio::StoppedState || !m_source) {
         return;
@@ -665,7 +560,7 @@ void AudioCapture::handleSourceStateChanged(QAudio::State state)
     failCapture(message);
 }
 
-void AudioCapture::failCapture(const QString &message)
+void QtAudioInput::failCapture(const QString &message)
 {
     const bool wasActive = m_captureActive;
     m_captureActive = false;
@@ -677,62 +572,7 @@ void AudioCapture::failCapture(const QString &message)
     }
 }
 
-QByteArray AudioCapture::toOutputPcm(const QByteArray &data, QString *error)
-{
-    if (m_sourceFormat.sampleRate() == kOutputSampleRate
-        && m_sourceFormat.channelCount() == 1
-        && m_sourceFormat.sampleFormat() == QAudioFormat::Int16) {
-        return data.left(data.size() - data.size() % int(sizeof(qint16)));
-    }
-
-    const QVector<float> samples = decodeMonoSamples(data, m_sourceFormat, error);
-    if (samples.isEmpty()) {
-        return {};
-    }
-    return encodeOutputSamples(samples);
-}
-
-QByteArray AudioCapture::encodeOutputSamples(const QVector<float> &samples)
-{
-    if (samples.isEmpty()) {
-        return {};
-    }
-
-    if (m_sourceFormat.sampleRate() == kOutputSampleRate) {
-        QByteArray pcm;
-        pcm.reserve(samples.size() * int(sizeof(qint16)));
-        for (float sample : samples) {
-            appendInt16(pcm, sample);
-        }
-        return pcm;
-    }
-
-    m_resampleBuffer += samples;
-    if (m_resampleBuffer.size() < 2) {
-        return {};
-    }
-
-    const double inputStep = double(m_sourceFormat.sampleRate()) / double(kOutputSampleRate);
-    QByteArray pcm;
-    while (m_nextInputPosition + 1.0 < double(m_resampleBuffer.size())) {
-        const int index = int(std::floor(m_nextInputPosition));
-        const double fraction = m_nextInputPosition - double(index);
-        const float sample = float(double(m_resampleBuffer.at(index)) * (1.0 - fraction)
-                                   + double(m_resampleBuffer.at(index + 1)) * fraction);
-        appendInt16(pcm, sample);
-        m_nextInputPosition += inputStep;
-    }
-
-    const int removable = std::min(int(std::floor(m_nextInputPosition)), int(m_resampleBuffer.size()) - 1);
-    if (removable > 0) {
-        m_resampleBuffer.remove(0, removable);
-        m_nextInputPosition -= removable;
-    }
-
-    return pcm;
-}
-
-void AudioCapture::processOutputChunk(const QByteArray &pcm, float rms)
+void QtAudioInput::processOutputChunk(const QByteArray &pcm, float rms)
 {
     if (!m_captureSettings.vadEnabled) {
         emit audioChunk(pcm);
@@ -784,12 +624,12 @@ void AudioCapture::processOutputChunk(const QByteArray &pcm, float rms)
     }
 }
 
-void AudioCapture::appendPreRoll(const QByteArray &pcm)
+void QtAudioInput::appendPreRoll(const QByteArray &pcm)
 {
     appendLimited(m_preRollBuffer, pcm, bytesForMs(m_captureSettings.preRollMs));
 }
 
-void AudioCapture::flushPreRoll()
+void QtAudioInput::flushPreRoll()
 {
     if (!m_captureActive || m_preRollBuffer.isEmpty()) {
         m_preRollBuffer.clear();
@@ -800,7 +640,7 @@ void AudioCapture::flushPreRoll()
     m_preRollBuffer.clear();
 }
 
-void AudioCapture::flushPendingPostRoll()
+void QtAudioInput::flushPendingPostRoll()
 {
     if (!m_captureActive || m_pendingPostRoll.isEmpty()) {
         m_pendingPostRoll.clear();
@@ -812,7 +652,7 @@ void AudioCapture::flushPendingPostRoll()
     m_pendingPostRoll.clear();
 }
 
-bool AudioCapture::sourceMatches(const AudioCaptureSettings &settings) const
+bool QtAudioInput::sourceMatches(const AudioCaptureSettings &settings) const
 {
     if (!m_source || !m_device) {
         return false;

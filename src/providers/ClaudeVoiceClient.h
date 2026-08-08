@@ -8,30 +8,13 @@
 #include <QUrl>
 #include <QUrlQuery>
 
+#include "providers/ClaudeVoiceProtocol.h"
+
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
 #include <QWebSocket>
 #endif
 
 namespace speecher {
-
-QUrlQuery claudeVoiceStreamQuery(const QStringList &vocabulary);
-QByteArray claudeVoiceKeytermsHeader(const QStringList &vocabulary);
-
-enum class ClaudeVoiceEventKind {
-    Unknown,
-    Working,
-    Endpoint,
-    TranscriptError,
-    Error,
-};
-
-struct ClaudeVoiceEvent {
-    ClaudeVoiceEventKind kind = ClaudeVoiceEventKind::Unknown;
-    QString data;
-    QString errorSummary;
-};
-
-ClaudeVoiceEvent parseClaudeVoiceEvent(const QString &message);
 
 class ClaudeVoiceClient : public QObject {
     Q_OBJECT

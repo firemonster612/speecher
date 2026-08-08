@@ -2,7 +2,7 @@
 
 #include <QStringList>
 
-#include "dictation/DictationInterfaces.h"
+#include "dictation/DictationPorts.h"
 
 namespace speecher {
 

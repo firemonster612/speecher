@@ -1,6 +1,6 @@
 #include "output/QtClipboardDelivery.h"
 
-#include "output/DeliveryContent.h"
+#include "dictation/DictationPorts.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -11,11 +11,6 @@ namespace speecher {
 QtClipboardDelivery::QtClipboardDelivery(QObject *parent)
     : QObject(parent)
 {
-}
-
-bool QtClipboardDelivery::copy(const QString &text, QString *error)
-{
-    return copy(DeliveryContent{text, std::nullopt}, error);
 }
 
 bool QtClipboardDelivery::copy(const DeliveryContent &content, QString *error)

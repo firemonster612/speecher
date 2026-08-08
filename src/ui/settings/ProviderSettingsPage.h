@@ -9,6 +9,7 @@ class QStackedWidget;
 
 namespace speecher {
 
+struct AppSettings;
 class SecretStore;
 class SettingsStore;
 
@@ -20,7 +21,7 @@ public:
 
     void loadModels();
     void loadAuth();
-    void saveModels();
+    void appendToDraft(AppSettings &draft) const;
     void saveAuthModes();
     bool saveSecret();
     bool hasModelChanges() const;

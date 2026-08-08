@@ -12,7 +12,6 @@ class QtClipboardDelivery : public QObject {
 
 public:
     explicit QtClipboardDelivery(QObject *parent = nullptr);
-    bool copy(const QString &text, QString *error = nullptr);
     bool copy(const DeliveryContent &content, QString *error = nullptr);
 };
 

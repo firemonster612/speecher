@@ -55,8 +55,6 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/Vocabulary.cpp
   src/core/WordPreview.cpp
   src/dictation/DictationTypes.cpp
-  src/output/DeliveryContent.cpp
-  src/providers/ProviderRegistry.cpp
 )
 
 set(SPEECHER_DOMAIN_HEADERS
@@ -80,22 +78,23 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/VocabularyLimit.h
   src/core/Vocabulary.h
   src/core/WordPreview.h
-  src/dictation/DictationInterfaces.h
   src/dictation/DictationTypes.h
-  src/output/DeliveryContent.h
-  src/providers/ProviderRegistry.h
 )
 
 set(SPEECHER_WORKFLOW_SOURCES
   src/dictation/DictationSession.cpp
+  src/dictation/DictationPorts.cpp
   src/dictation/StartupPreparationRunner.cpp
   src/dictation/TranscriptPipeline.cpp
+  src/providers/ProviderRegistry.cpp
 )
 
 set(SPEECHER_WORKFLOW_HEADERS
+  src/dictation/DictationPorts.h
   src/dictation/DictationSession.h
   src/dictation/StartupPreparationRunner.h
   src/dictation/TranscriptPipeline.h
+  src/providers/ProviderRegistry.h
 )
 
 set(SPEECHER_PROVIDER_SOURCES
@@ -104,9 +103,11 @@ set(SPEECHER_PROVIDER_SOURCES
   src/providers/ClaudeCredentials.cpp
   src/providers/ClaudeSpeechTranscriber.cpp
   src/providers/ClaudeVoiceClient.cpp
+  src/providers/ClaudeVoiceProtocol.cpp
   src/providers/OpenAiAuthProvider.cpp
   src/providers/OpenAiRefiner.cpp
   src/providers/OpenAiTranscriptRefiner.cpp
+  src/providers/TranscriptRefinementPrompt.cpp
 )
 
 set(SPEECHER_PROVIDER_HEADERS
@@ -115,6 +116,7 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/ClaudeCredentials.h
   src/providers/ClaudeSpeechTranscriber.h
   src/providers/ClaudeVoiceClient.h
+  src/providers/ClaudeVoiceProtocol.h
   src/providers/OpenAiAuthProvider.h
   src/providers/OpenAiRefiner.h
   src/providers/OpenAiTranscriptRefiner.h
@@ -122,38 +124,48 @@ set(SPEECHER_PROVIDER_HEADERS
 )
 
 set(SPEECHER_PLATFORM_SOURCES
-  src/core/AudioCapture.cpp
   src/core/MediaPauseController.cpp
   src/output/ClipboardDelivery.cpp
   src/output/QtClipboardDelivery.cpp
   src/output/TextDelivery.cpp
+  src/output/WaylandClipboardOwner.cpp
+  src/output/WaylandClipboardProcess.cpp
   src/output/WlClipboardDelivery.cpp
   src/output/YdotoolDelivery.cpp
   src/output/YdotoolSetup.cpp
-  src/platform/PlatformIntegration.cpp
   src/platform/AtSpiTargetProvider.cpp
+  src/platform/atspi/AtSpiAccess.cpp
+  src/platform/atspi/AtSpiCorrectionObserver.cpp
+  src/platform/atspi/AtSpiTargetSnapshot.cpp
   src/platform/PortalScreenshotContextProvider.cpp
-  src/ui/WaylandLayerShell.cpp
+  src/platform/audio/AudioPcmConverter.cpp
+  src/platform/audio/QtAudioInput.cpp
+  src/platform/WaylandLayerShell.cpp
 )
 
 set(SPEECHER_PLATFORM_HEADERS
-  src/core/AudioCapture.h
   src/core/MediaPauseController.h
   src/output/ClipboardDelivery.h
-  src/output/DeliveryResult.h
   src/output/QtClipboardDelivery.h
   src/output/TextDelivery.h
+  src/output/WaylandClipboardOwner.h
+  src/output/WaylandClipboardProcess.h
   src/output/WlClipboardDelivery.h
   src/output/YdotoolDelivery.h
   src/output/YdotoolSetup.h
-  src/platform/PlatformIntegration.h
   src/platform/AtSpiTargetProvider.h
+  src/platform/atspi/AtSpiAccess.h
+  src/platform/atspi/AtSpiCorrectionObserver.h
+  src/platform/atspi/AtSpiTargetSnapshot.h
   src/platform/PortalScreenshotContextProvider.h
-  src/ui/WaylandLayerShell.h
+  src/platform/audio/AudioPcmConverter.h
+  src/platform/audio/QtAudioInput.h
+  src/platform/WaylandLayerShell.h
 )
 
 set(SPEECHER_APP_UI_SOURCES
   src/app/ApplicationController.cpp
+  src/app/LinuxComposition.cpp
   src/app/SingleInstanceIpc.cpp
   src/ui/MainWindow.cpp
   src/ui/SettingsDialog.cpp
@@ -173,8 +185,10 @@ set(SPEECHER_APP_UI_SOURCES
 
 set(SPEECHER_APP_UI_HEADERS
   src/app/ApplicationController.h
+  src/app/LinuxComposition.h
   src/app/SingleInstanceIpc.h
   src/ui/MainWindow.h
+  src/ui/PopupPositioner.h
   src/ui/SettingsDialog.h
   src/ui/settings/AudioSettingsPage.h
   src/ui/settings/BindingsSettingsPage.h
@@ -209,14 +223,14 @@ add_library(speecher_providers STATIC
   ${SPEECHER_PROVIDER_HEADERS}
 )
 target_include_directories(speecher_providers PUBLIC src)
-target_link_libraries(speecher_providers PUBLIC speecher_domain Qt6::Network)
+target_link_libraries(speecher_providers PUBLIC speecher_workflow Qt6::Network)
 
 add_library(speecher_platform STATIC
   ${SPEECHER_PLATFORM_SOURCES}
   ${SPEECHER_PLATFORM_HEADERS}
 )
 target_include_directories(speecher_platform PUBLIC src)
-target_link_libraries(speecher_platform PUBLIC speecher_domain Qt6::Widgets Qt6::Multimedia Qt6::DBus)
+target_link_libraries(speecher_platform PUBLIC speecher_workflow Qt6::Widgets Qt6::Multimedia Qt6::DBus)
 if(ATSPI_FOUND)
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_ATSPI=1)
   target_link_libraries(speecher_platform PUBLIC PkgConfig::ATSPI)
@@ -413,6 +427,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_vocabulary.cpp
     tests/test_provider_auth.cpp
     tests/test_claude_voice.cpp
+    tests/test_audio_pcm_converter.cpp
   )
   target_include_directories(speecher_tests PRIVATE src)
   target_compile_definitions(speecher_tests PRIVATE SPEECHER_VERSION="${PROJECT_VERSION}")

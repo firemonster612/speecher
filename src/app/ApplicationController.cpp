@@ -1,9 +1,9 @@
 #include "app/ApplicationController.h"
+#include "app/LinuxComposition.h"
 
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
-#include "platform/PlatformIntegration.h"
 #include "providers/AnthropicTranscriptRefiner.h"
 #include "providers/ClaudeSpeechTranscriber.h"
 #include "providers/OpenAiTranscriptRefiner.h"
@@ -20,7 +20,7 @@ namespace speecher {
 ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
     : QObject(parent)
     , m_popupOnly(popupOnly)
-    , m_platform(PlatformFactory::create())
+    , m_platform(linuxComposition())
     , m_settings(new SettingsStore(this))
     , m_secrets(new SecretStore(m_settings, this))
     , m_providers(new ProviderRegistry(this))
@@ -78,7 +78,7 @@ ProviderRegistry *ApplicationController::providerRegistry() const
     return m_providers;
 }
 
-const PlatformIntegration *ApplicationController::platform() const
+const LinuxComposition *ApplicationController::platform() const
 {
     return m_platform.get();
 }

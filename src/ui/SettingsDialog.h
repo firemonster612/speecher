@@ -31,6 +31,7 @@ private:
     ApplicationController *m_controller = nullptr;
     QPushButton *m_okButton = nullptr;
     QPushButton *m_applyButton = nullptr;
+    int m_preservedScrollValue = 0;
     AudioSettingsPage *m_audioPage = nullptr;
     BindingsSettingsPage *m_bindingsPage = nullptr;
     GeneralSettingsPage *m_generalPage = nullptr;

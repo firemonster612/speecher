@@ -8,8 +8,6 @@ namespace speecher {
 
 struct RefinementContext;
 
-QString openAiRefinementInstructions(const QString &style);
-
 class OpenAiRefiner : public QObject {
     Q_OBJECT
 

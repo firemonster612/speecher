@@ -12,6 +12,7 @@ class SettingsStore : public QObject, private SettingsCodecs {
 
 public:
     explicit SettingsStore(QObject *parent = nullptr);
+    void applySnapshot(const AppSettings &draft);
 
     using SettingsCodecs::addLearnedCorrection;
     using SettingsCodecs::anthropicAuthMode;
