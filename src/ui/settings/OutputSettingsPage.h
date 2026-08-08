@@ -21,7 +21,7 @@ public:
     explicit OutputSettingsPage(SettingsStore &settings, QWidget *parent = nullptr);
 
     void load(const AppSettings &settings);
-    bool validate() const;
+    bool validate(bool showError = true) const;
     void appendToDraft(AppSettings &draft) const;
     bool hasChanges(const AppSettings &settings) const;
     void refreshControls();

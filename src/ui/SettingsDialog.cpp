@@ -1,9 +1,6 @@
 #include "ui/SettingsDialog.h"
 
 #include "app/ApplicationController.h"
-#include "core/AppSettings.h"
-#include "core/SettingsStore.h"
-#include "ui/Theme.h"
 #include "ui/AccessibilityNotice.h"
 #include "ui/settings/ApplicationSettingsPage.h"
 #include "ui/settings/AudioSettingsPage.h"
@@ -14,6 +11,7 @@
 #include "ui/settings/ProviderSettingsPage.h"
 #include "ui/settings/RefinementSettingsPage.h"
 #include "ui/settings/SettingsPageSupport.h"
+#include "ui/settings/SettingsPageSet.h"
 #include "ui/settings/VocabularySettingsPage.h"
 
 #include <QDialogButtonBox>
@@ -46,15 +44,13 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     root->setSpacing(0);
     m_accessibilityNotice = new AccessibilityNotice(this);
     root->addWidget(m_accessibilityNotice);
+    m_pages = new SettingsPageSet(m_controller, this);
 
     auto *vocabularySection = makeSectionLabel(QStringLiteral("Vocabulary"), this);
     auto *correctionsSection = makeSectionLabel(QStringLiteral("Learned Corrections"), this);
     auto *bindingsSection = makeSectionLabel(QStringLiteral("Replacements & snippets"), this);
 
-    m_vocabularyPage = new VocabularySettingsPage(this);
-    m_correctionsPage = new CorrectionsSettingsPage(this);
-    m_bindingsPage = new BindingsSettingsPage(this);
-    connect(m_bindingsPage, &BindingsSettingsPage::preserveScrollRequested, scroll,
+    connect(m_pages->bindings(), &BindingsSettingsPage::preserveScrollRequested, scroll,
             [this, scroll](bool rebuilding) {
                 QScrollBar *scrollBar = scroll->verticalScrollBar();
                 if (rebuilding) {
@@ -69,20 +65,13 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
                 QTimer::singleShot(0, scroll, restore);
             });
 
-    m_generalPage = new GeneralSettingsPage(m_controller->primaryOutputStatus(), this);
-    m_audioPage = new AudioSettingsPage(*m_controller->platform(), this);
-    m_applicationPage = new ApplicationSettingsPage(this);
-    m_outputPage = new OutputSettingsPage(*m_controller->settings(), this);
-    m_providerPage = new ProviderSettingsPage(*m_controller->settings(), *m_controller->secretStore(), this);
-    m_refinementPage = new RefinementSettingsPage(*m_controller->providerRegistry(), this);
-
     auto *vocabularyPageLayout = makeSettingsPage(scroll);
     vocabularyPageLayout->addWidget(vocabularySection);
-    vocabularyPageLayout->addWidget(m_vocabularyPage);
+    vocabularyPageLayout->addWidget(m_pages->vocabulary());
     vocabularyPageLayout->addWidget(correctionsSection);
-    vocabularyPageLayout->addWidget(m_correctionsPage);
+    vocabularyPageLayout->addWidget(m_pages->corrections());
     vocabularyPageLayout->addWidget(bindingsSection);
-    vocabularyPageLayout->addWidget(m_bindingsPage);
+    vocabularyPageLayout->addWidget(m_pages->bindings());
     vocabularyPageLayout->addStretch();
 
     const QList<QPair<QString, QString>> categories{
@@ -95,12 +84,12 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
         {QStringLiteral("Vocabulary"), QStringLiteral("tools-check-spelling")},
     };
     const QList<QWidget *> pages{
-        m_generalPage,
-        m_audioPage,
-        m_applicationPage,
-        m_outputPage,
-        m_refinementPage,
-        m_providerPage,
+        m_pages->general(),
+        m_pages->audio(),
+        m_pages->applications(),
+        m_pages->output(),
+        m_pages->refinement(),
+        m_pages->providers(),
         scroll,
     };
 
@@ -175,15 +164,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
             [runtimeStatus](const QString &status) {
                 runtimeStatus->setText(QStringLiteral("Dictation: %1").arg(status));
             });
-    connect(m_generalPage, &GeneralSettingsPage::changed, this, &SettingsDialog::updateButtonState);
-    connect(m_audioPage, &AudioSettingsPage::changed, this, &SettingsDialog::updateButtonState);
-    connect(m_applicationPage, &ApplicationSettingsPage::changed, this, &SettingsDialog::updateButtonState);
-    connect(m_correctionsPage, &CorrectionsSettingsPage::changed, this, &SettingsDialog::updateButtonState);
-    connect(m_outputPage, &OutputSettingsPage::changed, this, &SettingsDialog::updateButtonState);
-    connect(m_providerPage, &ProviderSettingsPage::changed, this, &SettingsDialog::updateButtonState);
-    connect(m_refinementPage, &RefinementSettingsPage::changed, this, &SettingsDialog::updateButtonState);
-    connect(m_vocabularyPage, &VocabularySettingsPage::changed, this, &SettingsDialog::updateButtonState);
-    connect(m_bindingsPage, &BindingsSettingsPage::changed, this, &SettingsDialog::updateButtonState);
+    connect(m_pages, &SettingsPageSet::changed, this, &SettingsDialog::updateButtonState);
     connect(m_accessibilityNotice, &AccessibilityNotice::enableRequested, this, [this] {
         QString error;
         if (!m_controller->enableAccessibility(&error)) {
@@ -202,79 +183,22 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
 
 void SettingsDialog::load()
 {
-    SettingsStore *settings = m_controller->settings();
-    m_generalPage->load(settings->snapshot());
-    m_audioPage->load(settings->snapshot());
-    m_applicationPage->load(settings->snapshot());
-    m_refinementPage->load(settings->snapshot());
-    m_providerPage->loadModels();
-    m_outputPage->load(settings->snapshot());
-    m_providerPage->loadAuth();
-    m_vocabularyPage->load(settings->vocabularyEntries());
-    m_bindingsPage->load(settings->bindingRules());
-    m_correctionsPage->load(settings->correctionLearningEnabled(), settings->learnedCorrections());
-    m_outputPage->refreshControls();
+    m_pages->load();
     updateButtonState();
 }
 
 bool SettingsDialog::save()
 {
-    SettingsStore *settings = m_controller->settings();
-    QList<BindingRule> bindingRules;
-    if (!m_bindingsPage->validate(&bindingRules)) {
+    if (!m_pages->save()) {
         return false;
     }
-    if (!m_outputPage->validate()) {
-        return false;
-    }
-    AppSettings draft = settings->snapshot();
-    m_generalPage->appendToDraft(draft);
-    m_audioPage->appendToDraft(draft);
-    m_applicationPage->appendToDraft(draft);
-    m_outputPage->appendToDraft(draft);
-    m_refinementPage->appendToDraft(draft);
-    m_providerPage->appendToDraft(draft);
-    m_correctionsPage->appendToDraft(draft);
-    settings->applySnapshot(draft);
-    Theme::apply(settings->theme());
-    m_providerPage->loadModels();
-    m_providerPage->saveAuthModes();
-    settings->setVocabularyEntries(m_vocabularyPage->entries());
-    settings->setCorrectionLearningEnabled(m_correctionsPage->learningEnabled());
-    settings->setBindingRules(bindingRules);
-    m_vocabularyPage->load(settings->vocabularyEntries());
-    m_bindingsPage->load(settings->bindingRules());
-    m_correctionsPage->load(settings->correctionLearningEnabled(), settings->learnedCorrections());
-    if (!m_providerPage->saveSecret()) {
-        return false;
-    }
-    m_outputPage->refreshControls();
     updateButtonState();
     return true;
 }
 
-bool SettingsDialog::hasChanges() const
-{
-    const SettingsStore *settings = m_controller->settings();
-    if (m_generalPage->hasChanges(settings->snapshot())
-        || m_audioPage->hasChanges(settings->snapshot())
-        || m_applicationPage->hasChanges(settings->snapshot())
-        || m_refinementPage->hasChanges(settings->snapshot())
-        || m_providerPage->hasModelChanges()
-        || m_outputPage->hasChanges(settings->snapshot())
-        || m_providerPage->hasAuthChanges()
-        || m_vocabularyPage->hasChanges(settings->vocabularyEntries())
-        || m_correctionsPage->hasChanges(settings->correctionLearningEnabled(), settings->learnedCorrections())
-        || m_bindingsPage->hasChanges(settings->bindingRules())) {
-        return true;
-    }
-
-    return false;
-}
-
 void SettingsDialog::updateButtonState()
 {
-    const bool changed = hasChanges();
+    const bool changed = m_pages->hasChanges();
     if (m_okButton) {
         m_okButton->setEnabled(changed);
     }
@@ -288,11 +212,6 @@ void SettingsDialog::updateAccessibilityState(bool supported,
                                               bool persistent)
 {
     m_accessibilityNotice->setState(supported, enabled, persistent);
-    const bool available = supported && enabled;
-    m_outputPage->setTargetAccessibilityAvailable(available);
-    m_applicationPage->setTargetAccessibilityAvailable(available);
-    m_refinementPage->setTargetAccessibilityAvailable(available);
-    m_correctionsPage->setTargetAccessibilityAvailable(available);
 }
 
 } // namespace speecher

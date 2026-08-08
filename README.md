@@ -111,10 +111,13 @@ The script creates `dist/Speecher-x86_64.AppImage`. It uses CMake install output
 ./build/speecher start
 ./build/speecher stop
 ./build/speecher status
+./build/speecher --ui a
 ./build/speecher --version
 ```
 
 The four CLI commands contact the running app through a per-user socket. `toggle` switches recording on or off, `start` only starts it, `stop` only stops it, and `status` prints the current state. If `toggle` or `start` can't find a running instance, it starts a popup-only background process and begins listening. Calling `stop` or `status` without a running instance prints `idle`.
+
+Use `--ui legacy`, `--ui a`, `--ui b`, or `--ui c` to select and remember the window layout prototype.
 
 Native binaries use one stable user socket, so the desktop app and CLI shortcut talk to the same instance after `make install`. AppImages have their own stable socket because their internal mounted path changes on each launch.
 

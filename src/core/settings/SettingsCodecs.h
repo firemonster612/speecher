@@ -12,6 +12,7 @@ public:
 
     int previewWords() const; void setPreviewWords(int value);
     QString theme() const; void setTheme(const QString &value);
+    QString uiPrototype() const; void setUiPrototype(const QString &value);
     bool pauseMediaDuringTranscription() const; void setPauseMediaDuringTranscription(bool value);
     bool soundsEnabled() const; void setSoundsEnabled(bool value);
     QString speechProvider() const; void setSpeechProvider(const QString &value);

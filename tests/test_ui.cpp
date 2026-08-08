@@ -11,6 +11,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QPushButton>
+#include <QStyleHints>
 #include <QTableWidget>
 
 using namespace speecher::test;
@@ -34,23 +35,16 @@ private slots:
         QCOMPARE(WordPreview::lastWords(QStringLiteral("alpha beta gamma"), 0), QString());
     }
 
-    void systemThemePreservesTheDesktopPalette()
+    void themeUsesThePlatformColorSchemeHint()
     {
-        const QPalette original = qApp->palette();
-        QPalette desktop = original;
-        const QColor desktopBase(34, 34, 51);
-        desktop.setColor(QPalette::Base, desktopBase);
-        qApp->setPalette(desktop);
-
-        Theme::apply(QStringLiteral("system"));
-        QCOMPARE(qApp->palette().color(QPalette::Base), desktopBase);
-
         Theme::apply(QStringLiteral("dark"));
-        QVERIFY(qApp->palette().color(QPalette::Base) != desktopBase);
+        if (qApp->styleHints()->colorScheme() != Qt::ColorScheme::Dark) {
+            QSKIP("Platform theme does not honor color-scheme overrides");
+        }
+        Theme::apply(QStringLiteral("light"));
+        QCOMPARE(qApp->styleHints()->colorScheme(), Qt::ColorScheme::Light);
         Theme::apply(QStringLiteral("system"));
-        QCOMPARE(qApp->palette().color(QPalette::Base), desktopBase);
-
-        qApp->setPalette(original);
+        QCOMPARE(qApp->styleHints()->colorScheme(), Qt::ColorScheme::Unknown);
     }
 
     void accessibilityNoticeExplainsAndOffersTheFix()

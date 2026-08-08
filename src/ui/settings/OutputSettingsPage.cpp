@@ -285,13 +285,15 @@ void OutputSettingsPage::load(const AppSettings &settings)
     m_restoreClipboardAfterTyping->setChecked(settings.output.restoreClipboardAfterTyping);
 }
 
-bool OutputSettingsPage::validate() const
+bool OutputSettingsPage::validate(bool showError) const
 {
     QSet<QString> applicationIds;
     for (const PasteRule &rule : currentApplicationPasteRules()) {
         const QString id = rule.match.toCaseFolded();
         if (applicationIds.contains(id)) {
-            QMessageBox::warning(const_cast<OutputSettingsPage *>(this), QStringLiteral("Paste rules not saved"), QStringLiteral("Each application ID can have only one paste rule."));
+            if (showError) {
+                QMessageBox::warning(const_cast<OutputSettingsPage *>(this), QStringLiteral("Paste rules not saved"), QStringLiteral("Each application ID can have only one paste rule."));
+            }
             return false;
         }
         applicationIds.insert(id);

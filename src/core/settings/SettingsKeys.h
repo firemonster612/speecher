@@ -9,6 +9,7 @@ inline constexpr auto Application = "speecher";
 
 inline const QString UiPreviewWords = QStringLiteral("ui/previewWords");
 inline const QString UiTheme = QStringLiteral("ui/theme");
+inline const QString UiPrototype = QStringLiteral("ui/prototype");
 inline const QString UiPauseMedia = QStringLiteral("ui/pauseMediaDuringTranscription");
 inline const QString UiSoundsEnabled = QStringLiteral("ui/soundsEnabled");
 inline const QString SpeechProvider = QStringLiteral("stt/provider");

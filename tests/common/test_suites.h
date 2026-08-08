@@ -49,6 +49,7 @@ inline int runTestSuite(QObject *suite, int argc, char **argv)
 }
 
 int runUiTests(int argc, char **argv);
+int runAppWindowTests(int argc, char **argv);
 int runTranscriptStateTests(int argc, char **argv);
 int runBindingsTests(int argc, char **argv);
 int runSettingsTests(int argc, char **argv);

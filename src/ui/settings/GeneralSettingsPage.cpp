@@ -24,6 +24,7 @@ GeneralSettingsPage::GeneralSettingsPage(const QString &primaryOutputStatus,
     m_theme->addItem(QStringLiteral("System"), QStringLiteral("system"));
     m_theme->addItem(QStringLiteral("Light"), QStringLiteral("light"));
     m_theme->addItem(QStringLiteral("Dark"), QStringLiteral("dark"));
+    m_theme->setObjectName(QStringLiteral("themeControl"));
     m_pauseMedia->setText(QStringLiteral("Pause"));
     m_sounds->setText(QStringLiteral("Play sounds"));
     m_previewWords->setObjectName(QStringLiteral("previewWords"));

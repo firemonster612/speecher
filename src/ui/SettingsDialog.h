@@ -8,15 +8,7 @@ namespace speecher {
 
 class ApplicationController;
 class AccessibilityNotice;
-class ApplicationSettingsPage;
-class AudioSettingsPage;
-class BindingsSettingsPage;
-class CorrectionsSettingsPage;
-class GeneralSettingsPage;
-class OutputSettingsPage;
-class ProviderSettingsPage;
-class RefinementSettingsPage;
-class VocabularySettingsPage;
+class SettingsPageSet;
 
 class SettingsDialog : public QDialog {
     Q_OBJECT
@@ -27,7 +19,6 @@ public:
 private:
     void load();
     bool save();
-    bool hasChanges() const;
     void updateButtonState();
     void updateAccessibilityState(bool supported, bool enabled, bool persistent);
 
@@ -36,15 +27,7 @@ private:
     QPushButton *m_applyButton = nullptr;
     AccessibilityNotice *m_accessibilityNotice = nullptr;
     int m_preservedScrollValue = 0;
-    AudioSettingsPage *m_audioPage = nullptr;
-    ApplicationSettingsPage *m_applicationPage = nullptr;
-    BindingsSettingsPage *m_bindingsPage = nullptr;
-    GeneralSettingsPage *m_generalPage = nullptr;
-    OutputSettingsPage *m_outputPage = nullptr;
-    ProviderSettingsPage *m_providerPage = nullptr;
-    RefinementSettingsPage *m_refinementPage = nullptr;
-    VocabularySettingsPage *m_vocabularyPage = nullptr;
-    CorrectionsSettingsPage *m_correctionsPage = nullptr;
+    SettingsPageSet *m_pages = nullptr;
 };
 
 } // namespace speecher

@@ -9,12 +9,14 @@
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/MainWindow.h"
+#include "ui/AppWindow.h"
 #include "ui/SettingsDialog.h"
 #include "ui/TranscriberPopup.h"
 #include "platform/atspi/AtSpiAccess.h"
 
 #include <QApplication>
 #include <QDebug>
+#include <QTimer>
 
 namespace speecher {
 
@@ -66,6 +68,7 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
     connect(m_session, &DictationSession::statusChanged, this, &ApplicationController::statusChanged);
     connect(m_session, &DictationSession::previewChanged, this, &ApplicationController::previewChanged);
+    connect(m_session, &DictationSession::audioLevelChanged, this, &ApplicationController::audioLevelChanged);
     connect(m_session, &DictationSession::statusChanged, this, [this](const QString &status) {
         if (m_settings->soundsEnabled()
             && (status == QStringLiteral("Listening")
@@ -149,6 +152,13 @@ bool ApplicationController::enableAccessibility(QString *error)
     return enabled;
 }
 
+bool ApplicationController::grabMainWindow(const QString &path) const
+{
+    QWidget *window = m_appWindow ? static_cast<QWidget *>(m_appWindow)
+                                  : static_cast<QWidget *>(m_mainWindow);
+    return window && window->grab().save(path);
+}
+
 bool ApplicationController::startIpc(QString *error)
 {
     return m_ipc->listen(error);
@@ -156,6 +166,33 @@ bool ApplicationController::startIpc(QString *error)
 
 void ApplicationController::showMainWindow()
 {
+    const QString prototype = m_settings->uiPrototype();
+    if (prototype != QStringLiteral("legacy")) {
+        if (m_mainWindow) {
+            m_mainWindow->hide();
+            m_mainWindow->deleteLater();
+            m_mainWindow = nullptr;
+        }
+        if (m_appWindow && m_appWindow->prototype() != prototype) {
+            m_appWindow->rememberGeometry();
+            m_appWindow->hide();
+            m_appWindow->deleteLater();
+            m_appWindow = nullptr;
+        }
+        if (!m_appWindow) {
+            m_appWindow = new AppWindow(this, prototype);
+        }
+        m_appWindow->show();
+        m_appWindow->raise();
+        m_appWindow->activateWindow();
+        return;
+    }
+    if (m_appWindow) {
+        m_appWindow->rememberGeometry();
+        m_appWindow->hide();
+        m_appWindow->deleteLater();
+        m_appWindow = nullptr;
+    }
     if (!m_mainWindow) {
         m_mainWindow = new MainWindow(this);
         connect(this, &ApplicationController::statusChanged, m_mainWindow, &MainWindow::setStatusText);
@@ -168,6 +205,11 @@ void ApplicationController::showMainWindow()
 
 void ApplicationController::showSettingsWindow()
 {
+    if (m_settings->uiPrototype() != QStringLiteral("legacy")) {
+        showMainWindow();
+        m_appWindow->navigateToSettings();
+        return;
+    }
     if (!m_settingsDialog) {
         m_settingsDialog = new SettingsDialog(this);
         m_settingsDialog->setAttribute(Qt::WA_DeleteOnClose);
@@ -175,6 +217,29 @@ void ApplicationController::showSettingsWindow()
     m_settingsDialog->show();
     m_settingsDialog->raise();
     m_settingsDialog->activateWindow();
+}
+
+void ApplicationController::switchUiPrototype(const QString &prototype)
+{
+    if (prototype == m_settings->uiPrototype()) {
+        return;
+    }
+    m_settings->setUiPrototype(prototype);
+    if (m_appWindow) {
+        m_appWindow->rememberGeometry();
+        m_appWindow->hide();
+        m_appWindow->deleteLater();
+        m_appWindow = nullptr;
+    }
+    if (m_mainWindow) {
+        m_mainWindow->hide();
+        m_mainWindow->deleteLater();
+        m_mainWindow = nullptr;
+    }
+    if (m_settingsDialog) {
+        m_settingsDialog->close();
+    }
+    QTimer::singleShot(0, this, &ApplicationController::showMainWindow);
 }
 
 void ApplicationController::toggle()

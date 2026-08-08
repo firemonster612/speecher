@@ -12,6 +12,7 @@ class QLocalSocket;
 namespace speecher {
 
 class DictationSession;
+class AppWindow;
 class MainWindow;
 class LinuxComposition;
 class ProviderRegistry;
@@ -38,9 +39,11 @@ public:
     bool accessibilityEnabled() const;
     bool accessibilityPersistent() const;
     bool enableAccessibility(QString *error = nullptr);
+    bool grabMainWindow(const QString &path) const;
 
     void showMainWindow();
     void showSettingsWindow();
+    void switchUiPrototype(const QString &prototype);
     bool startIpc(QString *error = nullptr);
 
 public slots:
@@ -54,6 +57,7 @@ public slots:
 signals:
     void statusChanged(const QString &status);
     void previewChanged(const QString &preview);
+    void audioLevelChanged(float level);
     void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
 
 private:
@@ -68,6 +72,7 @@ private:
     ProviderRegistry *m_providers = nullptr;
     DictationSession *m_session = nullptr;
     TranscriberPopup *m_popup = nullptr;
+    AppWindow *m_appWindow = nullptr;
     MainWindow *m_mainWindow = nullptr;
     QPointer<SettingsDialog> m_settingsDialog;
     SingleInstanceIpc *m_ipc = nullptr;
