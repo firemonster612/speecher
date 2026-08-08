@@ -303,11 +303,16 @@ float rmsForPcm16(const QByteArray &pcm)
 AudioCapture::AudioCapture(SettingsStore *settings, QObject *parent)
     : AudioInput(parent)
     , m_settings(settings)
+    , m_mediaDevices(this)
     , m_captureSettings(currentSettings())
 {
     if (m_settings) {
         connect(m_settings, &SettingsStore::audioCaptureSettingsChanged, this, &AudioCapture::handleSettingsChanged);
     }
+    connect(&m_mediaDevices,
+            &QMediaDevices::audioInputsChanged,
+            this,
+            &AudioCapture::handleAudioInputsChanged);
     QTimer::singleShot(0, this, &AudioCapture::syncWarmSource);
 }
 
@@ -413,6 +418,26 @@ void AudioCapture::handleSettingsChanged(const AudioCaptureSettings &settings)
         }
     } else {
         stopSource();
+    }
+}
+
+void AudioCapture::handleAudioInputsChanged()
+{
+    if (!m_currentDeviceId.isEmpty()) {
+        const bool currentStillAvailable = std::ranges::any_of(
+            QMediaDevices::audioInputs(),
+            [this](const QAudioDevice &device) {
+                return encodedDeviceId(device) == m_currentDeviceId;
+            });
+        if (!currentStillAvailable && m_captureActive) {
+            failCapture(QStringLiteral(
+                "Microphone \"%1\" was disconnected. Reconnect it or choose another input in Settings.")
+                            .arg(m_currentDeviceLabel));
+            return;
+        }
+    }
+    if (!m_captureActive) {
+        syncWarmSource();
     }
 }
 

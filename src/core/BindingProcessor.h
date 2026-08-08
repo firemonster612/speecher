@@ -3,6 +3,7 @@
 #include "core/AppSettings.h"
 
 #include <QList>
+#include <QByteArray>
 #include <QString>
 #include <QStringList>
 
@@ -54,6 +55,7 @@ public:
     static QString normalizedPhrase(const QString &text);
 
     static BindingValidationResult validateRules(const QList<BindingRule> &rules);
+    static QList<BindingRule> parseJsonImport(const QByteArray &json, QString *error = nullptr);
     static QStringList refinementVocabulary(const QList<BindingRule> &rules);
     static bool hasExplicitNoBindDirective(const QString &transcript);
     static QStringList explicitNoBindPhrases(const QString &transcript, const QList<BindingRule> &rules);

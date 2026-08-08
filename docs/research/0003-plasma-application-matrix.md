@@ -1,26 +1,40 @@
-# Plasma application compatibility check
+# Plasma 6 Wayland application matrix
 
-Status: live check, 2026-07-29
+Status: live check on `cachy`, 2026-07-30
 
-Matrix ticket: [Choose the first Plasma application compatibility matrix](https://github.com/firemonster612/speecher/issues/6)
+All checks ran in the active Plasma 6 Wayland session. Test documents and
+browser profiles contained only disposable text. The user's existing Helium
+profile was not modified; Helium and Thunderbird used isolated temporary
+profiles. Speecher's CLI `start`/`stop` pair was exercised while each target was
+focused, and the non-activating popup preserved the target. Daemon `toggle`,
+idempotent `start`/`stop`, format overrides, and background startup are also
+covered by the automated session/IPC tests.
 
-The checks below ran in a Plasma 6 Wayland session on `cachy`. Test applications used temporary documents or profiles. The existing Helium session was left alone; a separate temporary Helium profile was used for the check.
+“Context” below reports only lengths and capabilities, not captured contents.
+“Both” means distinct `text/plain;charset=utf-8` and `text/html` clipboard
+offers were published through the native Wayland data-control helper.
 
-| Application | Target seen through AT-SPI | Category and profile | Nearby text | Direct insertion |
-| --- | --- | --- | --- | --- |
-| Kate | `kate`, focused role `list item` | Code editor, Technical | Not exposed by the focused object | No |
-| Konsole | `konsole`, focused role `terminal` | Terminal, Technical | Exposed around the cursor | No |
-| Firefox | `firefox`, focused browser control | Browser, configured default profile | Not exposed in this check | No |
-| Helium | `helium`, focused role `entry` | Browser, configured default profile | Exposed after the caret | No |
-| LibreOffice Writer | `soffice.bin`, focused role `page tab list` | Office, configured default profile | Not exposed by the focused object | No |
-| Thunderbird | Not installed on the test host | Email, Email | Not live-tested | Not live-tested |
-| T3 Code | Not installed on the test host | Code editor, Technical | Not live-tested | Not live-tested |
-| Qt password fixture | Secure password-text target | Secure deny case | Withheld | Refused |
+| Application | Captured target | Category / profile | Bounded context | Paste rule / method | Clipboard | Strongest receipt | Restore | Correction observation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Kate | `kate`, text control | Code editor / Work | title 40, caret 20, before 20 | global / standard paste | Both | Verified in Target | Restored after verification | Eligible |
+| Konsole | `konsole`, terminal | Terminal / Work | title 19, caret 8, before 9, after 1 | terminal category / terminal paste | Both | Verified in Target | Restored after verification | Ineligible: no reliable direct span |
+| Firefox | `firefox`, combo box | Browser / Other | title 15, control 35, caret 20, before 20 | global / standard paste | Both | Verified in Target | Restored after verification | Eligible |
+| Helium | `helium`, entry | Browser / Other | title 20, control 22, caret 20, before 20 | global / standard paste | Both | Input Sent | Kept Speecher result because readback was unavailable | Ineligible: unverified |
+| Thunderbird | `thunderbird`, entry | Email / Email | title 26, control 10, caret 28, before 28 | global / standard paste | Both | Verified in Target | Restored after verification | Eligible |
+| LibreOffice Writer | `soffice.bin`, paragraph | Office / Work | title 31, caret 20, before 20 | global / standard paste | Both | Input Sent | Kept Speecher result because readback was unavailable | Ineligible: unverified |
+| T3 Code | `t3code`, initial list item | Code editor / Work | title 15, control 36; no editable caret on initial surface | global / standard paste | Both | Input Sent | Kept Speecher result because readback was unavailable | Ineligible: no verified editable span |
+| Qt password fixture | secure password-text control | General / Other | All text, selection, screenshot, and direct-insert context withheld | secure refusal / clipboard only | Both | Copied | Kept Speecher result | Refused |
 
-The Kate result exposed an important fallback case: an application can be known even when its focused control does not implement the AT-SPI text interfaces. Speecher now keeps that application identity so exact-app Paste Rules and profile inference still work. It does not invent caret or text context, and it does not offer direct insertion for that control.
+The matrix deliberately preserves honest differences between applications.
+Synthetic input is not promoted to “Verified in Target” unless bounded AT-SPI
+readback finds the inserted text. When readback is unavailable, the transcription
+remains on the clipboard and clipboard restoration does not remove the user's
+only copy.
 
-The Qt fixture also confirmed the privacy boundary in a live session. Speecher identified the control as secure, returned no nearby text, and refused direct insertion.
+The password fixture additionally passed focused live checks proving that
+Speecher does not capture screenshot context, attempt insertion, verify text, or
+start correction observation for a secure target.
 
-Plain text, sanitized HTML clipboard data, Paste Rule precedence, delivery receipts, clipboard restoration, and correction-learning gates are covered by the automated suite. Their behavior is shared across applications. A result is only called `Verified in Target` when bounded AT-SPI readback finds the inserted text; otherwise Speecher reports `Input sent` or `Copied`. Rich-editor autoformatting still belongs to the target application and is not treated as verified Speecher formatting.
-
-AT-SPI exposure depends on the application and sometimes on how it was launched. The browser checks used accessibility-enabled temporary profiles. On a session where an application does not expose an accessibility tree, Speecher falls back to clipboard delivery instead of guessing.
+The native Wayland clipboard check independently verified distinct plain and
+HTML byte streams and restoration of the original multi-MIME selection. The
+full Qt test executable also passed on the same Plasma host.

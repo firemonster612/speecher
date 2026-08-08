@@ -139,7 +139,10 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
             return IpcCommandResult::NoResponse;
         }
         socket.flush();
-        if (!socket.waitForReadyRead(timeoutMs)) {
+        if (!socket.waitForReadyRead(timeoutMs) && socket.bytesAvailable() == 0) {
+            socket.waitForDisconnected(timeoutMs);
+        }
+        if (socket.bytesAvailable() == 0) {
             if (error) {
                 *error = QStringLiteral("Running Speecher instance did not respond");
             }

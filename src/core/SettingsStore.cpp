@@ -3,6 +3,7 @@
 #include "core/BindingProcessor.h"
 #include "core/CliToolDiscovery.h"
 #include "core/OutputMethod.h"
+#include "core/Vocabulary.h"
 #include "core/VocabularyLimit.h"
 
 #include <QDir>
@@ -63,7 +64,7 @@ QVariant SettingsStore::value(const QString &key, const QVariant &fallback) cons
 
 int SettingsStore::previewWords() const
 {
-    return std::clamp(value(QStringLiteral("ui/previewWords"), 8).toInt(), 1, 40);
+    return std::clamp(value(QStringLiteral("ui/previewWords"), 7).toInt(), 1, 40);
 }
 
 void SettingsStore::setPreviewWords(int value)
@@ -122,12 +123,86 @@ void SettingsStore::setSpeechProvider(const QString &value)
 
 QStringList SettingsStore::customVocabulary() const
 {
-    return VocabularyLimit::limited(value(QStringLiteral("stt/customVocabulary"), QStringList()).toStringList());
+    QStringList terms;
+    for (const VocabularyEntry &entry : vocabularyEntries()) {
+        terms.append(entry.term);
+    }
+    return terms;
 }
 
 void SettingsStore::setCustomVocabulary(const QStringList &value)
 {
-    m_settings.setValue(QStringLiteral("stt/customVocabulary"), VocabularyLimit::limited(value));
+    QList<VocabularyEntry> entries;
+    for (const QString &term : value) {
+        entries.append({term, QStringLiteral("manual"), false, 0, 0});
+    }
+    setVocabularyEntries(entries);
+}
+
+QList<VocabularyEntry> SettingsStore::vocabularyEntries() const
+{
+    const QByteArray stored = value(QStringLiteral("stt/vocabularyEntries"), QByteArray()).toByteArray();
+    const QJsonDocument document = QJsonDocument::fromJson(stored);
+    QList<VocabularyEntry> entries;
+    if (document.isArray()) {
+        for (const QJsonValue &value : document.array()) {
+            const QJsonObject object = value.toObject();
+            entries.append({
+                object.value(QStringLiteral("term")).toString(),
+                object.value(QStringLiteral("source")).toString(QStringLiteral("manual")),
+                object.value(QStringLiteral("starred")).toBool(false),
+                object.value(QStringLiteral("frequency")).toInt(0),
+                qint64(object.value(QStringLiteral("lastUsedMs")).toDouble()),
+            });
+        }
+    } else {
+        for (const QString &term : value(
+                 QStringLiteral("stt/customVocabulary"),
+                 QStringList()).toStringList()) {
+            entries.append({term, QStringLiteral("legacy"), false, 0, 0});
+        }
+    }
+    return normalizeVocabularyEntries(entries);
+}
+
+void SettingsStore::setVocabularyEntries(const QList<VocabularyEntry> &entries)
+{
+    const QList<VocabularyEntry> normalized = normalizeVocabularyEntries(entries);
+    QJsonArray array;
+    QStringList legacyTerms;
+    for (const VocabularyEntry &entry : normalized) {
+        array.append(QJsonObject{
+            {QStringLiteral("term"), entry.term},
+            {QStringLiteral("source"), entry.source},
+            {QStringLiteral("starred"), entry.starred},
+            {QStringLiteral("frequency"), entry.frequency},
+            {QStringLiteral("lastUsedMs"), double(entry.lastUsedMs)},
+        });
+        legacyTerms.append(entry.term);
+    }
+    m_settings.setValue(
+        QStringLiteral("stt/vocabularyEntries"),
+        QJsonDocument(array).toJson(QJsonDocument::Compact));
+    m_settings.setValue(QStringLiteral("stt/customVocabulary"), legacyTerms);
+}
+
+void SettingsStore::recordVocabularyUsage(const QString &text)
+{
+    if (text.trimmed().isEmpty()) {
+        return;
+    }
+    QList<VocabularyEntry> entries = vocabularyEntries();
+    bool changed = false;
+    for (VocabularyEntry &entry : entries) {
+        if (text.contains(entry.term, Qt::CaseInsensitive)) {
+            ++entry.frequency;
+            entry.lastUsedMs = QDateTime::currentMSecsSinceEpoch();
+            changed = true;
+        }
+    }
+    if (changed) {
+        setVocabularyEntries(entries);
+    }
 }
 
 QString SettingsStore::audioInputDeviceId() const
@@ -441,7 +516,7 @@ void SettingsStore::setRefinementStyle(const QString &value)
 
 QString SettingsStore::defaultWritingProfile() const
 {
-    const QString profile = value(QStringLiteral("refinement/defaultWritingProfile"), QStringLiteral("general")).toString();
+    const QString profile = value(QStringLiteral("refinement/defaultWritingProfile"), QStringLiteral("other")).toString();
     return writingProfileName(writingProfileFromName(profile));
 }
 
@@ -450,6 +525,115 @@ void SettingsStore::setDefaultWritingProfile(const QString &value)
     m_settings.setValue(
         QStringLiteral("refinement/defaultWritingProfile"),
         writingProfileName(writingProfileFromName(value)));
+}
+
+static QString cleanupStrength(const QString &value)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized == QStringLiteral("none")
+        || normalized == QStringLiteral("light_cleanup")
+        || normalized == QStringLiteral("balanced")
+        || normalized == QStringLiteral("strong_polish")) {
+        return normalized;
+    }
+    return QStringLiteral("balanced");
+}
+
+static QString writingTone(const QString &value)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized == QStringLiteral("formal")
+        || normalized == QStringLiteral("casual")
+        || normalized == QStringLiteral("very_casual")
+        || normalized == QStringLiteral("excited")
+        || normalized == QStringLiteral("gen_z")) {
+        return normalized;
+    }
+    return QStringLiteral("none");
+}
+
+QList<WritingProfileSettings> SettingsStore::writingProfileSettings() const
+{
+    const QByteArray encoded = value(QStringLiteral("refinement/writingProfiles"), QByteArray()).toByteArray();
+    if (encoded.isEmpty()) {
+        QList<WritingProfileSettings> defaults = defaultWritingProfileSettings();
+        const QString legacyStrength = refinementStyle();
+        for (WritingProfileSettings &settings : defaults) {
+            settings.cleanupStrength = legacyStrength;
+        }
+        return defaults;
+    }
+
+    const QJsonDocument document = QJsonDocument::fromJson(encoded);
+    if (!document.isArray()) {
+        return defaultWritingProfileSettings();
+    }
+    QList<WritingProfileSettings> settings;
+    for (const QJsonValue &item : document.array()) {
+        const QJsonObject object = item.toObject();
+        settings.append({
+            writingProfileFromName(object.value(QStringLiteral("profile")).toString()),
+            cleanupStrength(object.value(QStringLiteral("cleanupStrength")).toString()),
+            writingTone(object.value(QStringLiteral("tone")).toString()),
+        });
+    }
+    QList<WritingProfileSettings> complete;
+    for (const WritingProfileSettings &fallback : defaultWritingProfileSettings()) {
+        complete.append(writingProfileSettingsFor(settings, fallback.profile));
+    }
+    return complete;
+}
+
+void SettingsStore::setWritingProfileSettings(const QList<WritingProfileSettings> &value)
+{
+    QJsonArray array;
+    for (const WritingProfileSettings &fallback : defaultWritingProfileSettings()) {
+        const WritingProfileSettings settings = writingProfileSettingsFor(value, fallback.profile);
+        array.append(QJsonObject{
+            {QStringLiteral("profile"), writingProfileName(fallback.profile)},
+            {QStringLiteral("cleanupStrength"), cleanupStrength(settings.cleanupStrength)},
+            {QStringLiteral("tone"), writingTone(settings.tone)},
+        });
+    }
+    m_settings.setValue(QStringLiteral("refinement/writingProfiles"),
+                        QJsonDocument(array).toJson(QJsonDocument::Compact));
+}
+
+QList<WritingProfileOverride> SettingsStore::writingProfileOverrides() const
+{
+    const QJsonDocument document = QJsonDocument::fromJson(
+        value(QStringLiteral("refinement/writingProfileOverrides"), QByteArray()).toByteArray());
+    QList<WritingProfileOverride> overrides;
+    for (const QJsonValue &item : document.array()) {
+        const QJsonObject object = item.toObject();
+        const QString applicationId = object.value(QStringLiteral("applicationId")).toString().trimmed();
+        if (!applicationId.isEmpty()) {
+            overrides.append({
+                applicationId,
+                writingProfileFromName(object.value(QStringLiteral("profile")).toString()),
+                object.value(QStringLiteral("enabled")).toBool(true),
+            });
+        }
+    }
+    return overrides;
+}
+
+void SettingsStore::setWritingProfileOverrides(const QList<WritingProfileOverride> &value)
+{
+    QJsonArray array;
+    for (const WritingProfileOverride &override : value) {
+        const QString applicationId = override.applicationId.trimmed();
+        if (applicationId.isEmpty()) {
+            continue;
+        }
+        array.append(QJsonObject{
+            {QStringLiteral("applicationId"), applicationId},
+            {QStringLiteral("profile"), writingProfileName(override.profile)},
+            {QStringLiteral("enabled"), override.enabled},
+        });
+    }
+    m_settings.setValue(QStringLiteral("refinement/writingProfileOverrides"),
+                        QJsonDocument(array).toJson(QJsonDocument::Compact));
 }
 
 bool SettingsStore::useTargetContext() const
@@ -549,17 +733,13 @@ void SettingsStore::setAnthropicModel(const QString &value)
 
 QString SettingsStore::anthropicAuthMode() const
 {
-    const QString mode = value(QStringLiteral("anthropic/auth/mode"), QStringLiteral("claude_code")).toString();
-    if (mode == QStringLiteral("oauth") || mode == QStringLiteral("claude_code")) {
-        return mode;
-    }
-    return QStringLiteral("claude_code");
+    return QStringLiteral("oauth");
 }
 
 void SettingsStore::setAnthropicAuthMode(const QString &value)
 {
-    m_settings.setValue(QStringLiteral("anthropic/auth/mode"),
-                        value == QStringLiteral("oauth") ? QStringLiteral("oauth") : QStringLiteral("claude_code"));
+    Q_UNUSED(value)
+    m_settings.setValue(QStringLiteral("anthropic/auth/mode"), QStringLiteral("oauth"));
 }
 
 QString SettingsStore::anthropicEffort() const
@@ -732,6 +912,8 @@ AppSettings SettingsStore::snapshot() const
     settings.refinement.anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     settings.refinement.claudeCredentialsPath = claudeCredentialsPath();
     settings.refinement.defaultWritingProfile = defaultWritingProfile();
+    settings.refinement.writingProfiles = writingProfileSettings();
+    settings.refinement.writingProfileOverrides = writingProfileOverrides();
     settings.refinement.useTargetContext = useTargetContext();
     settings.refinement.includeScreenshotContext = includeScreenshotContext();
 

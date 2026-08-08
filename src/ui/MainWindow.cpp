@@ -1,7 +1,6 @@
 #include "ui/MainWindow.h"
 
 #include "app/ApplicationController.h"
-#include "ui/SettingsDialog.h"
 
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -27,10 +26,7 @@ MainWindow::MainWindow(ApplicationController *controller, QWidget *parent)
     setCentralWidget(central);
 
     connect(m_toggle, &QPushButton::clicked, m_controller, &ApplicationController::toggle);
-    connect(settings, &QPushButton::clicked, this, [this] {
-        SettingsDialog dialog(m_controller, this);
-        dialog.exec();
-    });
+    connect(settings, &QPushButton::clicked, m_controller, &ApplicationController::showSettings);
 }
 
 void MainWindow::setStatusText(const QString &status)

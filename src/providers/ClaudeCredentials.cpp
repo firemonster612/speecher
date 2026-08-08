@@ -2,37 +2,29 @@
 
 #include "core/CliToolDiscovery.h"
 
-#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QSaveFile>
+#include <QTimer>
 #include <QTimeZone>
-
-#include <cerrno>
-#include <cstring>
-#include <vector>
-
-#ifdef Q_OS_UNIX
-#include <fcntl.h>
-#include <poll.h>
-#include <signal.h>
-#include <sys/ioctl.h>
-#include <sys/wait.h>
-#include <termios.h>
-#include <unistd.h>
-#endif
+#include <QUrl>
 
 namespace speecher {
 
 namespace {
 
-constexpr int refreshStartupTimeoutMs = 250;
-constexpr int refreshSessionTimeoutMs = 15000;
-constexpr int refreshExitFallbackMs = 7000;
+constexpr auto claudeOauthClientId = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+constexpr auto claudeOauthTokenUrl = "https://platform.claude.com/v1/oauth/token";
+constexpr int refreshTimeoutMs = 30000;
 
 ClaudeCredentialResult readCredentials(const QString &path)
 {
@@ -80,199 +72,166 @@ QString findClaudeExecutable()
     return CliToolDiscovery::claudeCodeExecutable();
 }
 
-#ifdef Q_OS_UNIX
-QString lastSystemError(const char *operation)
+QStringList defaultOauthScopes()
 {
-    return QStringLiteral("%1: %2").arg(QString::fromUtf8(operation), QString::fromLocal8Bit(std::strerror(errno)));
+    return {
+        QStringLiteral("user:profile"),
+        QStringLiteral("user:inference"),
+        QStringLiteral("user:sessions:claude_code"),
+        QStringLiteral("user:mcp_servers"),
+        QStringLiteral("user:file_upload"),
+    };
 }
 
-bool writeAll(int fd, QByteArrayView data)
+QString tokenUrl()
 {
-    while (!data.empty()) {
-        const ssize_t written = ::write(fd, data.data(), static_cast<size_t>(data.size()));
-        if (written < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            return false;
+    const QByteArray testUrl = qgetenv("SPEECHER_TEST_CLAUDE_TOKEN_URL");
+    if (!testUrl.isEmpty()) {
+        return QString::fromUtf8(testUrl);
+    }
+    return QString::fromLatin1(claudeOauthTokenUrl);
+}
+
+bool saveRefreshedCredentials(const QString &path,
+                              const QString &accessToken,
+                              const QString &refreshToken,
+                              qint64 expiresAtMs,
+                              const QStringList &scopes,
+                              QString *error)
+{
+    QFile source(path);
+    if (!source.open(QIODevice::ReadOnly)) {
+        if (error) {
+            *error = QStringLiteral("Could not reopen Claude credentials after refresh");
         }
-        data = data.sliced(static_cast<qsizetype>(written));
+        return false;
+    }
+    QJsonParseError parseError;
+    QJsonDocument document = QJsonDocument::fromJson(source.readAll(), &parseError);
+    source.close();
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        if (error) {
+            *error = QStringLiteral("Claude credentials changed during refresh and are no longer valid JSON");
+        }
+        return false;
+    }
+
+    QJsonObject root = document.object();
+    QJsonObject oauth = root.value(QStringLiteral("claudeAiOauth")).toObject();
+    oauth.insert(QStringLiteral("accessToken"), accessToken);
+    oauth.insert(QStringLiteral("refreshToken"), refreshToken);
+    oauth.insert(QStringLiteral("expiresAt"), double(expiresAtMs));
+    QJsonArray scopeArray;
+    for (const QString &scope : scopes) {
+        scopeArray.append(scope);
+    }
+    oauth.insert(QStringLiteral("scopes"), scopeArray);
+    root.insert(QStringLiteral("claudeAiOauth"), oauth);
+
+    QSaveFile destination(path);
+    destination.setDirectWriteFallback(false);
+    if (!destination.open(QIODevice::WriteOnly)) {
+        if (error) {
+            *error = QStringLiteral("Could not safely save refreshed Claude credentials");
+        }
+        return false;
+    }
+    destination.setPermissions(QFileInfo(path).permissions());
+    if (destination.write(QJsonDocument(root).toJson()) < 0
+        || !destination.commit()) {
+        if (error) {
+            *error = QStringLiteral("Could not safely save refreshed Claude credentials");
+        }
+        return false;
     }
     return true;
 }
 
-bool waitForProcess(pid_t pid, int timeoutMs, int *status)
+bool refreshClaudeAuth(const QString &path, const ClaudeCredentialResult &credentials, QString *error)
 {
-    QElapsedTimer timer;
-    timer.start();
-    while (timer.elapsed() < timeoutMs) {
-        const pid_t result = ::waitpid(pid, status, WNOHANG);
-        if (result == pid) {
-            return true;
-        }
-        if (result < 0 && errno != EINTR) {
-            return true;
-        }
-        ::usleep(50000);
-    }
-    return false;
-}
-
-bool launchInteractiveClaudeRefresh(const QString &executable, QString *error)
-{
-    const int masterFd = ::posix_openpt(O_RDWR | O_NOCTTY);
-    if (masterFd < 0) {
+    if (credentials.refreshToken.isEmpty()) {
         if (error) {
-            *error = QStringLiteral("Could not create Claude refresh terminal; %1").arg(lastSystemError("posix_openpt"));
+            *error = QStringLiteral("Claude login cannot be refreshed; run `claude /login` or `claude auth login`");
         }
         return false;
     }
 
-    if (::grantpt(masterFd) != 0 || ::unlockpt(masterFd) != 0) {
+    const QStringList requestedScopes = credentials.scopes.isEmpty()
+        ? defaultOauthScopes()
+        : credentials.scopes;
+    const QJsonObject body{
+        {QStringLiteral("grant_type"), QStringLiteral("refresh_token")},
+        {QStringLiteral("refresh_token"), credentials.refreshToken},
+        {QStringLiteral("client_id"), QString::fromLatin1(claudeOauthClientId)},
+        {QStringLiteral("scope"), requestedScopes.join(QLatin1Char(' '))},
+    };
+
+    QNetworkAccessManager manager;
+    QNetworkRequest request{QUrl(tokenUrl())};
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    QNetworkReply *reply = manager.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+
+    QEventLoop loop;
+    QTimer timeout;
+    timeout.setSingleShot(true);
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QObject::connect(&timeout, &QTimer::timeout, reply, &QNetworkReply::abort);
+    timeout.start(refreshTimeoutMs);
+    loop.exec();
+    const bool timedOut = !timeout.isActive();
+    timeout.stop();
+
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const QByteArray responseBytes = reply->readAll();
+    const QNetworkReply::NetworkError networkError = reply->error();
+    reply->deleteLater();
+    if (timedOut) {
         if (error) {
-            *error = QStringLiteral("Could not prepare Claude refresh terminal; %1").arg(lastSystemError("grantpt/unlockpt"));
-        }
-        ::close(masterFd);
-        return false;
-    }
-
-    char *slaveName = ::ptsname(masterFd);
-    if (!slaveName) {
-        if (error) {
-            *error = QStringLiteral("Could not locate Claude refresh terminal; %1").arg(lastSystemError("ptsname"));
-        }
-        ::close(masterFd);
-        return false;
-    }
-
-    const pid_t child = ::fork();
-    if (child < 0) {
-        if (error) {
-            *error = QStringLiteral("Could not start Claude refresh session; %1").arg(lastSystemError("fork"));
-        }
-        ::close(masterFd);
-        return false;
-    }
-
-    if (child == 0) {
-        ::setsid();
-        const int slaveFd = ::open(slaveName, O_RDWR);
-        if (slaveFd < 0) {
-            _exit(127);
-        }
-        termios terminal{};
-        if (::tcgetattr(slaveFd, &terminal) == 0) {
-            terminal.c_lflag &= ~ECHO;
-            ::tcsetattr(slaveFd, TCSANOW, &terminal);
-        }
-        ::ioctl(slaveFd, TIOCSCTTY, 0);
-        ::dup2(slaveFd, STDIN_FILENO);
-        ::dup2(slaveFd, STDOUT_FILENO);
-        ::dup2(slaveFd, STDERR_FILENO);
-        if (slaveFd > STDERR_FILENO) {
-            ::close(slaveFd);
-        }
-        ::close(masterFd);
-
-        std::vector<QByteArray> argvStorage{
-            QFile::encodeName(executable),
-            QByteArrayLiteral("--tools"),
-            QByteArray(),
-            QByteArrayLiteral("--permission-mode"),
-            QByteArrayLiteral("dontAsk"),
-            QByteArrayLiteral("--no-chrome"),
-        };
-        std::vector<char *> argv;
-        argv.reserve(argvStorage.size() + 1);
-        for (QByteArray &arg : argvStorage) {
-            argv.push_back(arg.data());
-        }
-        argv.push_back(nullptr);
-        ::execv(argv.front(), argv.data());
-        _exit(127);
-    }
-
-    const int flags = ::fcntl(masterFd, F_GETFL, 0);
-    if (flags >= 0) {
-        ::fcntl(masterFd, F_SETFL, flags | O_NONBLOCK);
-    }
-
-    QElapsedTimer timer;
-    timer.start();
-    bool promptSent = false;
-    bool exitSent = false;
-    qint64 promptSentAt = -1;
-    QByteArray output;
-    int status = 0;
-    while (timer.elapsed() < refreshSessionTimeoutMs) {
-        if (::waitpid(child, &status, WNOHANG) == child) {
-            ::close(masterFd);
-            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-                return true;
-            }
-            if (error) {
-                *error = QStringLiteral("Claude refresh session exited unsuccessfully");
-            }
-            return false;
-        }
-
-        pollfd pfd{masterFd, static_cast<short>(POLLIN | POLLOUT), 0};
-        const int polled = ::poll(&pfd, 1, 100);
-        if (polled < 0 && errno != EINTR) {
-            break;
-        }
-        if (polled > 0 && (pfd.revents & POLLIN)) {
-            char buffer[1024];
-            const ssize_t readCount = ::read(masterFd, buffer, sizeof(buffer));
-            if (readCount > 0) {
-                output.append(buffer, static_cast<qsizetype>(readCount));
-            }
-        }
-
-        if (!promptSent && timer.elapsed() >= refreshStartupTimeoutMs) {
-            promptSent = writeAll(masterFd, QByteArrayLiteral("Reply OK only.\n"));
-            promptSentAt = timer.elapsed();
-        } else if (promptSent && !exitSent
-                   && (output.contains("OK") || timer.elapsed() - promptSentAt >= refreshExitFallbackMs)) {
-            exitSent = writeAll(masterFd, QByteArrayLiteral("/exit\n"));
-        }
-    }
-
-    ::kill(child, SIGTERM);
-    if (!waitForProcess(child, 1000, &status)) {
-        ::kill(child, SIGKILL);
-        waitForProcess(child, 1000, &status);
-    }
-    ::close(masterFd);
-    if (error) {
-        const QString summary = QString::fromUtf8(output.left(240)).simplified();
-        *error = summary.isEmpty()
-            ? QStringLiteral("Timed out refreshing Claude login with an interactive Claude session")
-            : QStringLiteral("Timed out refreshing Claude login with an interactive Claude session: %1").arg(summary);
-    }
-    return false;
-}
-#else
-bool launchInteractiveClaudeRefresh(const QString &, QString *error)
-{
-    if (error) {
-        *error = QStringLiteral("Interactive Claude login refresh is only supported on Unix-like systems");
-    }
-    return false;
-}
-#endif
-
-bool refreshClaudeAuth(QString *error)
-{
-    const QString executable = findClaudeExecutable();
-    if (executable.isEmpty()) {
-        if (error) {
-            *error = QStringLiteral("Could not find Claude Code; install it and ensure `claude` is on PATH");
+            *error = QStringLiteral("Timed out refreshing Claude login; check the network and try again");
         }
         return false;
     }
 
-    return launchInteractiveClaudeRefresh(executable, error);
+    QJsonParseError parseError;
+    const QJsonObject response = QJsonDocument::fromJson(responseBytes, &parseError).object();
+    if (status < 200 || status >= 300 || networkError != QNetworkReply::NoError) {
+        if (error) {
+            const QString code = response.value(QStringLiteral("error")).toString();
+            *error = code == QStringLiteral("invalid_grant")
+                ? QStringLiteral("Claude login expired; re-authenticate with `claude /login` or `claude auth login`")
+                : QStringLiteral("Could not refresh Claude login (HTTP %1); check the network and try again").arg(status);
+        }
+        return false;
+    }
+    if (parseError.error != QJsonParseError::NoError) {
+        if (error) {
+            *error = QStringLiteral("Claude login refresh returned invalid JSON");
+        }
+        return false;
+    }
+
+    const QString accessToken = response.value(QStringLiteral("access_token")).toString();
+    const QString refreshToken = response.value(QStringLiteral("refresh_token")).toString(credentials.refreshToken);
+    const qint64 expiresIn = qRound64(response.value(QStringLiteral("expires_in")).toDouble());
+    if (accessToken.isEmpty() || expiresIn <= 0) {
+        if (error) {
+            *error = QStringLiteral("Claude login refresh response was incomplete");
+        }
+        return false;
+    }
+
+    QStringList refreshedScopes = response.value(QStringLiteral("scope")).toString().split(
+        QRegularExpression(QStringLiteral("\\s+")),
+        Qt::SkipEmptyParts);
+    if (refreshedScopes.isEmpty()) {
+        refreshedScopes = requestedScopes;
+    }
+    return saveRefreshedCredentials(path,
+                                    accessToken,
+                                    refreshToken,
+                                    QDateTime::currentMSecsSinceEpoch() + expiresIn * 1000,
+                                    refreshedScopes,
+                                    error);
 }
 
 } // namespace
@@ -321,7 +280,7 @@ ClaudeCredentialResult ClaudeCredentials::load(const QString &path, bool refresh
     }
 
     QString refreshError;
-    if (!refreshClaudeAuth(&refreshError)) {
+    if (!refreshClaudeAuth(path, result, &refreshError)) {
         result.error = refreshError;
         return result;
     }

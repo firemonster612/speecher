@@ -6,11 +6,13 @@
 #include <QCoreApplication>
 #include <QEventLoop>
 #include <QFile>
+#include <QRegularExpression>
 #include <QThread>
 #include <QTimer>
 
 #ifdef SPEECHER_WITH_ATSPI
 #include <atspi/atspi.h>
+#include <unistd.h>
 #endif
 
 namespace speecher {
@@ -21,6 +23,20 @@ namespace {
 constexpr int contextCharacters = 240;
 constexpr int maximumVisitedObjects = 4000;
 constexpr int maximumTreeDepth = 40;
+
+bool isForeignPrivilegedProcess(qint64 processId)
+{
+    if (processId <= 0) {
+        return false;
+    }
+    QFile status(QStringLiteral("/proc/%1/status").arg(processId));
+    if (!status.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return false;
+    }
+    const QRegularExpressionMatch match = QRegularExpression(
+        QStringLiteral("(?m)^Uid:\\s+(\\d+)")).match(QString::fromUtf8(status.readAll()));
+    return match.hasMatch() && match.captured(1).toUInt() != uint(getuid());
+}
 
 QString takeString(gchar *value)
 {
@@ -124,6 +140,104 @@ AtspiAccessible *focusedObjectInActiveWindow(AtspiAccessible *desktop)
     return nullptr;
 }
 
+void findBestEditableText(AtspiAccessible *object,
+                          int depth,
+                          int *visited,
+                          AtspiAccessible **best,
+                          int *bestScore)
+{
+    if (!object || depth > maximumTreeDepth || ++(*visited) > maximumVisitedObjects) {
+        return;
+    }
+
+    if (atspi_accessible_is_editable_text(object)
+        && atspi_accessible_is_text(object)) {
+        AtspiText *text = atspi_accessible_get_text(object);
+        GError *error = nullptr;
+        const int caret = text ? atspi_text_get_caret_offset(text, &error) : -1;
+        clearError(&error);
+        const int count = text ? atspi_text_get_character_count(text, &error) : -1;
+        clearError(&error);
+        if (caret >= 0 && count >= 0) {
+            int score = 1000 + qMin(count, 500);
+            if (caret > 0) {
+                score += 200;
+            }
+            if (hasState(object, ATSPI_STATE_MULTI_LINE)) {
+                score += 100;
+            }
+            if (hasState(object, ATSPI_STATE_FOCUSED)) {
+                score += 2000;
+            }
+            if (score > *bestScore) {
+                if (*best) {
+                    g_object_unref(*best);
+                }
+                *best = ATSPI_ACCESSIBLE(g_object_ref(object));
+                *bestScore = score;
+            }
+        }
+    }
+
+    GError *error = nullptr;
+    const int childCount = atspi_accessible_get_child_count(object, &error);
+    clearError(&error);
+    for (int index = 0; index < childCount; ++index) {
+        AtspiAccessible *child = atspi_accessible_get_child_at_index(object, index, &error);
+        clearError(&error);
+        if (!child) {
+            continue;
+        }
+        findBestEditableText(child, depth + 1, visited, best, bestScore);
+        g_object_unref(child);
+    }
+}
+
+AtspiAccessible *activeWindowAncestor(AtspiAccessible *object)
+{
+    AtspiAccessible *current = object
+        ? ATSPI_ACCESSIBLE(g_object_ref(object))
+        : nullptr;
+    for (int depth = 0; current && depth < maximumTreeDepth; ++depth) {
+        if (hasState(current, ATSPI_STATE_ACTIVE)) {
+            return current;
+        }
+        GError *error = nullptr;
+        AtspiAccessible *parent = atspi_accessible_get_parent(current, &error);
+        clearError(&error);
+        g_object_unref(current);
+        current = parent;
+    }
+    if (current) {
+        g_object_unref(current);
+    }
+    return nullptr;
+}
+
+AtspiAccessible *kTextEditorFallback(AtspiAccessible *focused,
+                                    const QString &applicationName,
+                                    const QString &process)
+{
+    const QString identity = applicationName + QLatin1Char(' ') + process;
+    if (!focused
+        || atspi_accessible_is_editable_text(focused)
+        || (!identity.contains(QStringLiteral("kate"), Qt::CaseInsensitive)
+            && !identity.contains(QStringLiteral("kwrite"), Qt::CaseInsensitive))) {
+        return nullptr;
+    }
+
+    AtspiAccessible *window = activeWindowAncestor(focused);
+    if (!window) {
+        return nullptr;
+    }
+    int visited = 0;
+    int bestScore = -1;
+    AtspiAccessible *best = nullptr;
+    findBestEditableText(window, 0, &visited, &best, &bestScore);
+    g_object_unref(window);
+    return best;
+}
+
 QString applicationAttribute(AtspiAccessible *application)
 {
     GError *error = nullptr;
@@ -143,6 +257,65 @@ QString applicationAttribute(AtspiAccessible *application)
     }
     g_hash_table_unref(attributes);
     return result;
+}
+
+QString accessibleAttribute(AtspiAccessible *object, const QList<QByteArray> &keys)
+{
+    GError *error = nullptr;
+    GHashTable *attributes = atspi_accessible_get_attributes(object, &error);
+    clearError(&error);
+    if (!attributes) {
+        return {};
+    }
+    QString result;
+    for (const QByteArray &key : keys) {
+        if (const auto *value = static_cast<const char *>(g_hash_table_lookup(attributes, key.constData()))) {
+            result = QString::fromUtf8(value).trimmed();
+            if (!result.isEmpty()) {
+                break;
+            }
+        }
+    }
+    g_hash_table_unref(attributes);
+    return result;
+}
+
+void populateAncestorContext(Target *target, AtspiAccessible *focused)
+{
+    if (!target || !focused) {
+        return;
+    }
+
+    AtspiAccessible *current = ATSPI_ACCESSIBLE(g_object_ref(focused));
+    for (int depth = 0; current && depth < maximumTreeDepth; ++depth) {
+        GError *error = nullptr;
+        const QString role = takeString(atspi_accessible_get_role_name(current, &error)).toLower();
+        clearError(&error);
+        const QString name = takeString(atspi_accessible_get_name(current, &error)).trimmed();
+        clearError(&error);
+
+        if (target->windowTitle.isEmpty()
+            && !name.isEmpty()
+            && (role.contains(QStringLiteral("frame"))
+                || role.contains(QStringLiteral("window"))
+                || role.contains(QStringLiteral("dialog")))) {
+            target->windowTitle = name;
+        }
+        if (target->documentUrl.isEmpty()) {
+            target->documentUrl = accessibleAttribute(
+                current,
+                {QByteArrayLiteral("DocURL"),
+                 QByteArrayLiteral("doc-url"),
+                 QByteArrayLiteral("document-url"),
+                 QByteArrayLiteral("url"),
+                 QByteArrayLiteral("uri")});
+        }
+
+        AtspiAccessible *parent = atspi_accessible_get_parent(current, &error);
+        clearError(&error);
+        g_object_unref(current);
+        current = parent;
+    }
 }
 
 QString processName(qint64 processId)
@@ -205,6 +378,8 @@ QString targetFingerprint(const Target &target)
 {
     const QByteArray material = target.applicationId.toUtf8()
         + '\0' + QByteArray::number(target.processId)
+        + '\0' + target.windowTitle.toUtf8()
+        + '\0' + target.documentUrl.toUtf8()
         + '\0' + QByteArray::number(target.caretOffset)
         + '\0' + QByteArray::number(target.selectionStart)
         + '\0' + QByteArray::number(target.selectionEnd)
@@ -265,6 +440,13 @@ Target AtSpiTargetProvider::capture()
         target.processId = application ? atspi_accessible_get_process_id(application, &error) : 0;
         clearError(&error);
         target.processName = processName(target.processId);
+        if (AtspiAccessible *editor = kTextEditorFallback(
+                focused,
+                target.applicationName,
+                target.processName)) {
+            g_object_unref(focused);
+            focused = editor;
+        }
         if (target.applicationId.isEmpty()) {
             target.applicationId = target.processName.toLower();
         }
@@ -276,8 +458,10 @@ Target AtSpiTargetProvider::capture()
         clearError(&error);
         target.secure = atspi_accessible_get_role(focused, &error) == ATSPI_ROLE_PASSWORD_TEXT;
         clearError(&error);
+        target.secure = target.secure || isForeignPrivilegedProcess(target.processId);
         target.accessible = true;
         if (!target.secure) {
+            populateAncestorContext(&target, focused);
             populateText(&target, focused);
         }
         target.category = classifyTarget(target);
@@ -403,20 +587,37 @@ bool AtSpiTargetProvider::verifyInsertion(const Target &target, const QString &p
         || plainText.isEmpty()) {
         return false;
     }
-    AtspiAccessible *accessible = ATSPI_ACCESSIBLE(m_accessible);
-    if (!atspi_accessible_is_text(accessible)) {
-        return false;
-    }
-    AtspiText *text = atspi_accessible_get_text(accessible);
-    const int insertionOffset = target.selectionStart >= 0 ? target.selectionStart : target.caretOffset;
-    if (!text || insertionOffset < 0) {
+    int insertionOffset = target.selectionStart >= 0 ? target.selectionStart : target.caretOffset;
+    if (insertionOffset < 0) {
         return false;
     }
 
-    for (int attempt = 0; attempt < 5; ++attempt) {
+    for (int attempt = 0; attempt < 9; ++attempt) {
         QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         if (attempt > 0) {
-            QThread::msleep(40);
+            QThread::msleep(50);
+        }
+        if (attempt == 3) {
+            const Target current = capture();
+            const bool sameProcess = target.processId > 0
+                && current.processId == target.processId;
+            const bool sameApplication = !target.applicationId.isEmpty()
+                && current.applicationId.compare(target.applicationId, Qt::CaseInsensitive) == 0;
+            if (current.secure || (!sameProcess && !sameApplication)) {
+                return false;
+            }
+            if (current.caretOffset >= plainText.size()) {
+                insertionOffset = current.caretOffset - plainText.size();
+            }
+        }
+
+        AtspiAccessible *accessible = ATSPI_ACCESSIBLE(m_accessible);
+        if (!accessible || !atspi_accessible_is_text(accessible)) {
+            continue;
+        }
+        AtspiText *text = atspi_accessible_get_text(accessible);
+        if (!text) {
+            continue;
         }
         GError *error = nullptr;
         const int count = atspi_text_get_character_count(text, &error);

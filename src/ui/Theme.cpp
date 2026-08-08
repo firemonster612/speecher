@@ -7,6 +7,12 @@
 
 namespace speecher::Theme {
 
+static const QPalette &systemPalette()
+{
+    static const QPalette palette = qApp ? qApp->palette() : QPalette();
+    return palette;
+}
+
 static QPalette lightPalette()
 {
     QPalette p = qApp && qApp->style() ? qApp->style()->standardPalette() : QPalette();
@@ -77,6 +83,7 @@ void apply(const QString &theme)
     if (!qApp) {
         return;
     }
+    const QPalette &desktopPalette = systemPalette();
     if (theme == QStringLiteral("light")) {
         qApp->setPalette(lightPalette());
         repolishWidgets();
@@ -87,7 +94,7 @@ void apply(const QString &theme)
         repolishWidgets();
         return;
     }
-    qApp->setPalette(qApp->style()->standardPalette());
+    qApp->setPalette(desktopPalette);
     repolishWidgets();
 }
 
