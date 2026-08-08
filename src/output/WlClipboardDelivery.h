@@ -35,6 +35,7 @@ public:
     static bool isAvailable();
     static bool isWaylandSession();
     static bool canSnapshot();
+    static bool readText(QString *text, QString *error = nullptr);
     static bool capture(WlClipboardSnapshot *snapshot, QString *error = nullptr);
     static bool restore(const WlClipboardSnapshot &snapshot, QString *error = nullptr);
 

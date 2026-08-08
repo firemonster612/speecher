@@ -72,13 +72,16 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
     QJsonObject body;
     body.insert(QStringLiteral("model"), model);
     body.insert(QStringLiteral("reasoning"), QJsonObject{{QStringLiteral("effort"), effort.isEmpty() ? QStringLiteral("none") : effort}});
-    body.insert(QStringLiteral("instructions"), transcriptRefinementInstructions(refinementStyle));
+    body.insert(QStringLiteral("instructions"),
+                context.editSelection
+                    ? selectedDocumentEditingSystemPrompt(refinementStyle, context)
+                    : dictationRefinementSystemPrompt(refinementStyle, context));
     body.insert(QStringLiteral("stream"), true);
     body.insert(QStringLiteral("store"), false);
     QJsonObject user;
     user.insert(QStringLiteral("role"), QStringLiteral("user"));
     const QString userMessage = transcriptRefinementUserMessage(rawTranscript, vocabulary, bindingVocabulary, context);
-    if (context.hasScreenshot()) {
+    if (context.hasScreenshot() && !context.editSelection) {
         const QString imageUrl = QStringLiteral("data:%1;base64,%2").arg(context.screenshotMediaType, QString::fromLatin1(context.screenshotData.toBase64()));
         user.insert(QStringLiteral("content"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("input_text")}, {QStringLiteral("text"), userMessage}}, QJsonObject{{QStringLiteral("type"), QStringLiteral("input_image")}, {QStringLiteral("image_url"), imageUrl}, {QStringLiteral("detail"), QStringLiteral("low")}}});
     } else {

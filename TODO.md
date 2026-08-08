@@ -80,6 +80,13 @@ complete.
   input, capture interruption, and microphone changes still produce an
   actionable message rather than hanging or silently delivering an empty
   result.
+- [x] **B9 — Selection editing.** When a non-secure editable Target has selected
+  text, the Raw Transcript is treated as spoken editing instructions. The
+  refinement model receives the complete selection plus the inferred Writing
+  Profile, tone, vocabulary, and normal refinement rules, and returns only the
+  complete revised selection. Delivery replaces the saved selection when the
+  configured Paste Rule permits it, always copies the result first, and leaves
+  the original selection untouched when refinement fails.
 
 ### C. Target context and Writing Profiles
 

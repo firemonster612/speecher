@@ -64,10 +64,13 @@ QString apiEffortForModel(const QString &model, const QString &effort)
     return QStringLiteral("high");
 }
 
-QString claudeCodeSystemPrompt(const QString &refinementStyle)
+QString claudeCodeSystemPrompt(const QString &refinementStyle,
+    const RefinementContext &context)
 {
     return QStringLiteral("You are Claude Code, Anthropic's official CLI for Claude.\n\n")
-        + transcriptRefinementInstructions(refinementStyle);
+        + (context.editSelection
+               ? selectedDocumentEditingSystemPrompt(refinementStyle, context)
+               : dictationRefinementSystemPrompt(refinementStyle, context));
 }
 
 } // namespace
@@ -123,14 +126,14 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
     qInfo().noquote() << "anthropic oauth refinement request model=" + model
                       << "effort=" + (body.value(QStringLiteral("output_config")).toObject().value(QStringLiteral("effort")).toString(QStringLiteral("default")))
                       << "endpoint=" + endpoint.toString(QUrl::RemoveUserInfo);
-    body.insert(QStringLiteral("system"), claudeCodeSystemPrompt(refinementStyle));
+    body.insert(QStringLiteral("system"), claudeCodeSystemPrompt(refinementStyle, context));
     const QString userMessage = transcriptRefinementUserMessage(
         rawTranscript,
         vocabulary,
         bindingVocabulary,
         context);
     QJsonValue content = userMessage;
-    if (context.hasScreenshot()) {
+    if (context.hasScreenshot() && !context.editSelection) {
         content = QJsonArray{
             QJsonObject{
                 {QStringLiteral("type"), QStringLiteral("text")},

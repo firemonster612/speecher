@@ -110,67 +110,87 @@ bool Target::hasIdentity() const
     return !applicationId.isEmpty() || processId > 0 || !applicationName.isEmpty();
 }
 
-AppCategory classifyTarget(const Target &target)
+bool Target::hasSelection() const
 {
-    const QString identity = QStringList{
+    return !secure
+        && selectionStart >= 0
+        && selectionEnd > selectionStart
+        && !selectedText.isEmpty();
+}
+
+QList<AppRecognitionRule> builtInAppRecognitionRules()
+{
+    return {
+        {QStringLiteral("terminal"), AppCategory::Terminal, WritingProfile::Work},
+        {QStringLiteral("konsole"), AppCategory::Terminal, WritingProfile::Work},
+        {QStringLiteral("ghostty"), AppCategory::Terminal, WritingProfile::Work},
+        {QStringLiteral("alacritty"), AppCategory::Terminal, WritingProfile::Work},
+        {QStringLiteral("kitty"), AppCategory::Terminal, WritingProfile::Work},
+        {QStringLiteral("thunderbird"), AppCategory::Email, WritingProfile::Email},
+        {QStringLiteral("kmail"), AppCategory::Email, WritingProfile::Email},
+        {QStringLiteral("mail"), AppCategory::Email, WritingProfile::Email},
+        {QStringLiteral("firefox"), AppCategory::Browser, std::nullopt},
+        {QStringLiteral("chrom"), AppCategory::Browser, std::nullopt},
+        {QStringLiteral("helium"), AppCategory::Browser, std::nullopt},
+        {QStringLiteral("browser"), AppCategory::Browser, std::nullopt},
+        {QStringLiteral("libreoffice"), AppCategory::Office, WritingProfile::Work},
+        {QStringLiteral("writer"), AppCategory::Office, WritingProfile::Work},
+        {QStringLiteral("office"), AppCategory::Office, WritingProfile::Work},
+        {QStringLiteral("kate"), AppCategory::CodeEditor, WritingProfile::Work},
+        {QStringLiteral("code"), AppCategory::CodeEditor, WritingProfile::Work},
+        {QStringLiteral("editor"), AppCategory::CodeEditor, WritingProfile::Work},
+        {QStringLiteral("jetbrains"), AppCategory::CodeEditor, WritingProfile::Work},
+        {QStringLiteral("signal"), std::nullopt, WritingProfile::Personal},
+        {QStringLiteral("discord"), std::nullopt, WritingProfile::Personal},
+        {QStringLiteral("telegram"), std::nullopt, WritingProfile::Personal},
+        {QStringLiteral("whatsapp"), std::nullopt, WritingProfile::Personal},
+        {QStringLiteral("messenger"), std::nullopt, WritingProfile::Personal},
+        {QStringLiteral("element"), std::nullopt, WritingProfile::Personal},
+        {QStringLiteral("slack"), std::nullopt, WritingProfile::Work},
+        {QStringLiteral("microsoft teams"), std::nullopt, WritingProfile::Work},
+        {QStringLiteral("linear"), std::nullopt, WritingProfile::Work},
+        {QStringLiteral("notion"), std::nullopt, WritingProfile::Work},
+    };
+}
+
+static bool ruleMatches(const AppRecognitionRule &rule,
+                        const Target &target,
+                        bool includeWindowTitle)
+{
+    QStringList identityParts{
         target.applicationId,
         target.applicationName,
         target.processName,
         target.role,
-    }.join(QLatin1Char(' ')).toLower();
+    };
+    if (includeWindowTitle) {
+        identityParts.append(target.windowTitle);
+    }
+    return identityParts.join(QLatin1Char(' ')).contains(rule.match, Qt::CaseInsensitive);
+}
 
-    if (identity.contains(QStringLiteral("terminal"))
-        || identity.contains(QStringLiteral("konsole"))
-        || identity.contains(QStringLiteral("alacritty"))
-        || identity.contains(QStringLiteral("kitty"))) {
-        return AppCategory::Terminal;
+AppCategory classifyTarget(const Target &target,
+                           const QList<AppRecognitionRule> &customRules)
+{
+    for (const AppRecognitionRule &rule : customRules) {
+        if (rule.category && ruleMatches(rule, target, false)) {
+            return *rule.category;
+        }
     }
-    if (identity.contains(QStringLiteral("thunderbird"))
-        || identity.contains(QStringLiteral("kmail"))
-        || identity.contains(QStringLiteral("mail"))) {
-        return AppCategory::Email;
-    }
-    if (identity.contains(QStringLiteral("firefox"))
-        || identity.contains(QStringLiteral("chrom"))
-        || identity.contains(QStringLiteral("helium"))
-        || identity.contains(QStringLiteral("browser"))) {
-        return AppCategory::Browser;
-    }
-    if (identity.contains(QStringLiteral("libreoffice"))
-        || identity.contains(QStringLiteral("writer"))
-        || identity.contains(QStringLiteral("office"))) {
-        return AppCategory::Office;
-    }
-    if (identity.contains(QStringLiteral("kate"))
-        || identity.contains(QStringLiteral("code"))
-        || identity.contains(QStringLiteral("editor"))
-        || identity.contains(QStringLiteral("jetbrains"))) {
-        return AppCategory::CodeEditor;
+    for (const AppRecognitionRule &rule : builtInAppRecognitionRules()) {
+        if (rule.category && ruleMatches(rule, target, false)) {
+            return *rule.category;
+        }
     }
     return target.hasIdentity() ? AppCategory::General : AppCategory::Unknown;
 }
 
 WritingProfile inferWritingProfile(const Target &target, WritingProfile fallback)
 {
-    const QString identity = QStringList{
-        target.applicationId,
-        target.applicationName,
-        target.processName,
-        target.windowTitle,
-    }.join(QLatin1Char(' ')).toLower();
-    if (identity.contains(QStringLiteral("signal"))
-        || identity.contains(QStringLiteral("discord"))
-        || identity.contains(QStringLiteral("telegram"))
-        || identity.contains(QStringLiteral("whatsapp"))
-        || identity.contains(QStringLiteral("messenger"))
-        || identity.contains(QStringLiteral("element"))) {
-        return WritingProfile::Personal;
-    }
-    if (identity.contains(QStringLiteral("slack"))
-        || identity.contains(QStringLiteral("microsoft teams"))
-        || identity.contains(QStringLiteral("linear"))
-        || identity.contains(QStringLiteral("notion"))) {
-        return WritingProfile::Work;
+    for (const AppRecognitionRule &rule : builtInAppRecognitionRules()) {
+        if (rule.writingProfile && ruleMatches(rule, target, true)) {
+            return *rule.writingProfile;
+        }
     }
 
     switch (target.category) {
@@ -192,11 +212,24 @@ WritingProfile resolveWritingProfile(const Target &target,
                                      const QList<WritingProfileOverride> &overrides,
                                      WritingProfile fallback)
 {
+    return resolveWritingProfile(target, overrides, {}, fallback);
+}
+
+WritingProfile resolveWritingProfile(const Target &target,
+                                     const QList<WritingProfileOverride> &overrides,
+                                     const QList<AppRecognitionRule> &recognitionRules,
+                                     WritingProfile fallback)
+{
     for (const WritingProfileOverride &override : overrides) {
         if (override.enabled
             && !override.applicationId.trimmed().isEmpty()
             && override.applicationId.compare(target.applicationId, Qt::CaseInsensitive) == 0) {
             return override.profile;
+        }
+    }
+    for (const AppRecognitionRule &rule : recognitionRules) {
+        if (rule.writingProfile && ruleMatches(rule, target, true)) {
+            return *rule.writingProfile;
         }
     }
     return inferWritingProfile(target, fallback);

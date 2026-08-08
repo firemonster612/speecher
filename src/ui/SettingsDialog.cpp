@@ -4,6 +4,8 @@
 #include "core/AppSettings.h"
 #include "core/SettingsStore.h"
 #include "ui/Theme.h"
+#include "ui/AccessibilityNotice.h"
+#include "ui/settings/ApplicationSettingsPage.h"
 #include "ui/settings/AudioSettingsPage.h"
 #include "ui/settings/BindingsSettingsPage.h"
 #include "ui/settings/CorrectionsSettingsPage.h"
@@ -42,6 +44,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
+    m_accessibilityNotice = new AccessibilityNotice(this);
+    root->addWidget(m_accessibilityNotice);
 
     auto *vocabularySection = makeSectionLabel(QStringLiteral("Vocabulary"), this);
     auto *correctionsSection = makeSectionLabel(QStringLiteral("Learned Corrections"), this);
@@ -67,6 +71,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
 
     m_generalPage = new GeneralSettingsPage(m_controller->primaryOutputStatus(), this);
     m_audioPage = new AudioSettingsPage(*m_controller->platform(), this);
+    m_applicationPage = new ApplicationSettingsPage(this);
     m_outputPage = new OutputSettingsPage(*m_controller->settings(), this);
     m_providerPage = new ProviderSettingsPage(*m_controller->settings(), *m_controller->secretStore(), this);
     m_refinementPage = new RefinementSettingsPage(*m_controller->providerRegistry(), this);
@@ -83,6 +88,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     const QList<QPair<QString, QString>> categories{
         {QStringLiteral("General"), QStringLiteral("preferences-system")},
         {QStringLiteral("Audio"), QStringLiteral("audio-input-microphone")},
+        {QStringLiteral("Applications"), QStringLiteral("applications-system")},
         {QStringLiteral("Output"), QStringLiteral("edit-paste")},
         {QStringLiteral("Refinement"), QStringLiteral("document-edit")},
         {QStringLiteral("Providers"), QStringLiteral("network-server")},
@@ -91,6 +97,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     const QList<QWidget *> pages{
         m_generalPage,
         m_audioPage,
+        m_applicationPage,
         m_outputPage,
         m_refinementPage,
         m_providerPage,
@@ -170,12 +177,26 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
             });
     connect(m_generalPage, &GeneralSettingsPage::changed, this, &SettingsDialog::updateButtonState);
     connect(m_audioPage, &AudioSettingsPage::changed, this, &SettingsDialog::updateButtonState);
+    connect(m_applicationPage, &ApplicationSettingsPage::changed, this, &SettingsDialog::updateButtonState);
     connect(m_correctionsPage, &CorrectionsSettingsPage::changed, this, &SettingsDialog::updateButtonState);
     connect(m_outputPage, &OutputSettingsPage::changed, this, &SettingsDialog::updateButtonState);
     connect(m_providerPage, &ProviderSettingsPage::changed, this, &SettingsDialog::updateButtonState);
     connect(m_refinementPage, &RefinementSettingsPage::changed, this, &SettingsDialog::updateButtonState);
     connect(m_vocabularyPage, &VocabularySettingsPage::changed, this, &SettingsDialog::updateButtonState);
     connect(m_bindingsPage, &BindingsSettingsPage::changed, this, &SettingsDialog::updateButtonState);
+    connect(m_accessibilityNotice, &AccessibilityNotice::enableRequested, this, [this] {
+        QString error;
+        if (!m_controller->enableAccessibility(&error)) {
+            m_accessibilityNotice->showError(error);
+        }
+    });
+    connect(m_controller,
+            &ApplicationController::accessibilityStateChanged,
+            this,
+            &SettingsDialog::updateAccessibilityState);
+    updateAccessibilityState(m_controller->accessibilitySupported(),
+                             m_controller->accessibilityEnabled(),
+                             m_controller->accessibilityPersistent());
     load();
 }
 
@@ -184,6 +205,7 @@ void SettingsDialog::load()
     SettingsStore *settings = m_controller->settings();
     m_generalPage->load(settings->snapshot());
     m_audioPage->load(settings->snapshot());
+    m_applicationPage->load(settings->snapshot());
     m_refinementPage->load(settings->snapshot());
     m_providerPage->loadModels();
     m_outputPage->load(settings->snapshot());
@@ -205,13 +227,10 @@ bool SettingsDialog::save()
     if (!m_outputPage->validate()) {
         return false;
     }
-    if (!m_refinementPage->validate()) {
-        return false;
-    }
-
     AppSettings draft = settings->snapshot();
     m_generalPage->appendToDraft(draft);
     m_audioPage->appendToDraft(draft);
+    m_applicationPage->appendToDraft(draft);
     m_outputPage->appendToDraft(draft);
     m_refinementPage->appendToDraft(draft);
     m_providerPage->appendToDraft(draft);
@@ -239,6 +258,7 @@ bool SettingsDialog::hasChanges() const
     const SettingsStore *settings = m_controller->settings();
     if (m_generalPage->hasChanges(settings->snapshot())
         || m_audioPage->hasChanges(settings->snapshot())
+        || m_applicationPage->hasChanges(settings->snapshot())
         || m_refinementPage->hasChanges(settings->snapshot())
         || m_providerPage->hasModelChanges()
         || m_outputPage->hasChanges(settings->snapshot())
@@ -261,6 +281,18 @@ void SettingsDialog::updateButtonState()
     if (m_applyButton) {
         m_applyButton->setEnabled(changed);
     }
+}
+
+void SettingsDialog::updateAccessibilityState(bool supported,
+                                              bool enabled,
+                                              bool persistent)
+{
+    m_accessibilityNotice->setState(supported, enabled, persistent);
+    const bool available = supported && enabled;
+    m_outputPage->setTargetAccessibilityAvailable(available);
+    m_applicationPage->setTargetAccessibilityAvailable(available);
+    m_refinementPage->setTargetAccessibilityAvailable(available);
+    m_correctionsPage->setTargetAccessibilityAvailable(available);
 }
 
 } // namespace speecher

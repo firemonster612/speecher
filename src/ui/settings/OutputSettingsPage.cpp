@@ -174,6 +174,11 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Method"), QStringLiteral("How Speecher delivers final text."), m_outputMethod, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Format"), QStringLiteral("Default clipboard representation. A CLI shortcut can override this per dictation."), m_outputFormat, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Global fallback"), QStringLiteral("Paste behavior used unless a category or exact-app rule overrides it."), m_globalPaste, card), card);
+    m_targetPasteControls = new QWidget(card);
+    m_targetPasteControls->setObjectName(QStringLiteral("targetPasteControls"));
+    auto *targetPasteLayout = new QVBoxLayout(m_targetPasteControls);
+    targetPasteLayout->setContentsMargins(0, 0, 0, 0);
+    targetPasteLayout->setSpacing(0);
     const QHash<AppCategory, QString> categoryLabels{
         {AppCategory::Terminal, QStringLiteral("Terminals")},
         {AppCategory::Browser, QStringLiteral("Browsers")},
@@ -183,9 +188,14 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
         {AppCategory::General, QStringLiteral("Other apps")},
     };
     for (const auto &[category, combo] : std::as_const(m_categoryPasteControls)) {
-        settings::addRow(cardLayout, settings::makeRow(categoryLabels.value(category), QStringLiteral("Override the fallback for this application category."), combo, card), card);
+        settings::addRow(targetPasteLayout,
+                         settings::makeRow(categoryLabels.value(category),
+                                           QStringLiteral("Override the fallback for this application category."),
+                                           combo,
+                                           m_targetPasteControls),
+                         m_targetPasteControls);
     }
-    auto *appRulesControl = new QWidget(card);
+    auto *appRulesControl = new QWidget(m_targetPasteControls);
     auto *appRulesLayout = new QVBoxLayout(appRulesControl);
     auto *appRulesTitle = new QLabel(QStringLiteral("App-specific paste rules"), appRulesControl);
     appRulesTitle->setObjectName(QStringLiteral("subsectionLabel"));
@@ -201,8 +211,9 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     appRulesLayout->addWidget(appRulesDescription);
     appRulesLayout->addWidget(m_appPasteRules);
     appRulesLayout->addLayout(appRuleButtons);
-    cardLayout->addWidget(appRulesControl);
-    cardLayout->addWidget(settings::makeSeparator(card));
+    targetPasteLayout->addWidget(appRulesControl);
+    targetPasteLayout->addWidget(settings::makeSeparator(m_targetPasteControls));
+    cardLayout->addWidget(m_targetPasteControls);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Restore clipboard"), QStringLiteral("Restore the previous clipboard only after insertion is verified."), m_restoreClipboardAfterTyping, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Virtual keyboard"), QString(), makeYdotoolControl(m_ydotoolStatus, m_ydotoolSetupButton, m_ydotoolStartButton, m_ydotoolDisableButton, m_ydotoolRemoveButton, card), card), card, false);
     auto *pageLayout = settings::makeSettingsPage(this);
@@ -244,6 +255,15 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     });
     connect(m_ydotoolDisableButton, &QPushButton::clicked, this, &OutputSettingsPage::disableYdotool);
     connect(m_ydotoolRemoveButton, &QPushButton::clicked, this, &OutputSettingsPage::removeYdotoolSetup);
+}
+
+void OutputSettingsPage::setTargetAccessibilityAvailable(bool available)
+{
+    m_targetPasteControls->setEnabled(available);
+    m_targetPasteControls->setToolTip(
+        available
+            ? QString()
+            : QStringLiteral("Enable desktop accessibility (AT-SPI) to identify the target application."));
 }
 
 void OutputSettingsPage::load(const AppSettings &settings)

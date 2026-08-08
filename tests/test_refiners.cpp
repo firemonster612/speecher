@@ -11,7 +11,7 @@ class RefinersTests : public QObject {
 private slots:
     void refinementInstructionsCompose()
     {
-        const QString light = transcriptRefinementInstructions(QStringLiteral("light_cleanup"));
+        const QString light = dictationRefinementSystemPrompt(QStringLiteral("light_cleanup"));
         QVERIFY(light.startsWith(QStringLiteral("You are Speecher's transcript refinement engine.")));
         QVERIFY(light.contains(QStringLiteral("Output only the refined text. Do not add anything before or after it")));
         QVERIFY(light.contains(QStringLiteral("by following the rules below")));
@@ -45,18 +45,48 @@ private slots:
         QVERIFY(!light.contains(QStringLiteral("Rule: useful_organization.")));
         QVERIFY(!light.contains(QStringLiteral("plain_sentences")));
 
-        const QString balanced = transcriptRefinementInstructions(QStringLiteral("balanced"));
+        const QString balanced = dictationRefinementSystemPrompt(QStringLiteral("balanced"));
         QVERIFY(balanced.contains(QStringLiteral("Rule: no_inferred_structure.")));
         QVERIFY(balanced.contains(QStringLiteral("Rule: infer_simple_structure.")));
         QVERIFY(balanced.contains(QStringLiteral("Rule: adaptive_markdown.")));
         QVERIFY(balanced.contains(QStringLiteral("Use hyphen bullets for unordered multi-item lists.")));
         QVERIFY(!balanced.contains(QStringLiteral("Rule: useful_organization.")));
 
-        const QString strong = transcriptRefinementInstructions(QStringLiteral("strong_polish"));
+        const QString strong = dictationRefinementSystemPrompt(QStringLiteral("strong_polish"));
         QVERIFY(strong.contains(QStringLiteral("Rule: no_inferred_structure.")));
         QVERIFY(strong.contains(QStringLiteral("Rule: infer_simple_structure.")));
         QVERIFY(strong.contains(QStringLiteral("Rule: useful_organization.")));
         QVERIFY(strong.contains(QStringLiteral("Rule: technical_literal_priority.")));
+
+        RefinementContext editingContext;
+        editingContext.editSelection = true;
+        editingContext.includeNearbyText = true;
+        editingContext.writingProfile = WritingProfile::Email;
+        editingContext.tone = QStringLiteral("formal");
+        editingContext.target.applicationId = QStringLiteral("dev.t3code.T3Code");
+        editingContext.target.applicationName = QStringLiteral("T3 Code");
+        editingContext.target.category = AppCategory::CodeEditor;
+        editingContext.target.role = QStringLiteral("text");
+        editingContext.target.windowTitle = QStringLiteral("Benjamin email");
+        editingContext.target.nearbyTextBefore = QStringLiteral("Previous paragraph");
+        editingContext.target.nearbyTextAfter = QStringLiteral("Next paragraph");
+        editingContext.target.selectedText = QStringLiteral("Dear Benjamin, please remove the cockroaches.");
+        editingContext.target.selectionStart = 10;
+        editingContext.target.selectionEnd = 57;
+        const QString editing = selectedDocumentEditingSystemPrompt(
+            QStringLiteral("strong_polish"),
+            editingContext);
+        QVERIFY(editing.startsWith(QStringLiteral("You are Speecher's document editor and writer.")));
+        QVERIFY(!editing.contains(QStringLiteral("transcript refinement engine")));
+        QVERIFY(editing.contains(QStringLiteral("selected document is the authoritative source")));
+        QVERIFY(editing.contains(QStringLiteral("spoken editing instructions")));
+        QVERIFY(editing.contains(QStringLiteral("Return only the complete revised document")));
+        QVERIFY(editing.contains(QStringLiteral("Strong polish permits substantial rewriting")));
+        QVERIFY(editing.contains(QStringLiteral("\"refinement_style\":\"strong_polish\"")));
+        QVERIFY(editing.contains(QStringLiteral("\"writing_profile\":\"email\"")));
+        QVERIFY(editing.contains(QStringLiteral("\"application_name\":\"T3 Code\"")));
+        QVERIFY(editing.contains(QStringLiteral("\"text_before_caret\":\"Previous paragraph\"")));
+        QVERIFY(!editing.contains(editingContext.target.selectedText));
     }
 
     void openAiRefinerSendsAdaptiveInstructions()
@@ -70,6 +100,16 @@ private slots:
 
         const QString rawTranscript = QStringLiteral("to make an apple pie, the first step is to gather your ingredients. You need apples, butter, cinnamon, caramel sauce, and pie crust. Then you assemble the ingredients. Then number three is you bake your apple pie for fifty minutes. And then the fourth step is take it out and enjoy.");
         RefinementContext context;
+        context.includeNearbyText = true;
+        context.writingProfile = WritingProfile::Work;
+        context.tone = QStringLiteral("formal");
+        context.target.applicationId = QStringLiteral("dev.t3code.T3Code");
+        context.target.applicationName = QStringLiteral("T3 Code");
+        context.target.category = AppCategory::CodeEditor;
+        context.target.role = QStringLiteral("text");
+        context.target.windowTitle = QStringLiteral("Recipe notes");
+        context.target.nearbyTextBefore = QStringLiteral("Dinner plan");
+        context.target.nearbyTextAfter = QStringLiteral("Shopping list");
         context.screenshotData = QByteArrayLiteral("png-bytes");
         context.screenshotMediaType = QStringLiteral("image/png");
         refiner.refine(rawTranscript,
@@ -115,6 +155,12 @@ private slots:
         QCOMPARE(body.value(QStringLiteral("store")).toBool(), false);
 
         const QString instructions = body.value(QStringLiteral("instructions")).toString();
+        QVERIFY(instructions.startsWith(QStringLiteral("You are Speecher's transcript refinement engine.")));
+        QVERIFY(!instructions.contains(QStringLiteral("document editor and writer")));
+        QVERIFY(instructions.contains(QStringLiteral("\"refinement_style\":\"balanced\"")));
+        QVERIFY(instructions.contains(QStringLiteral("\"writing_profile\":\"work\"")));
+        QVERIFY(instructions.contains(QStringLiteral("\"application_name\":\"T3 Code\"")));
+        QVERIFY(instructions.contains(QStringLiteral("\"text_before_caret\":\"Dinner plan\"")));
         QVERIFY(instructions.contains(QStringLiteral("Rule: preserve_speecher_binding_placeholders.")));
         QVERIFY(instructions.contains(QStringLiteral("Do not change their case, punctuation, spacing, digits, or underscores.")));
         QVERIFY(instructions.contains(QStringLiteral("Rule: binding_alias_near_matches.")));
@@ -176,8 +222,20 @@ private slots:
         QSignalSpy completed(&refiner, &AnthropicApiRefiner::completed);
         QSignalSpy failed(&refiner, &AnthropicApiRefiner::failed);
 
-        const QString rawTranscript = QStringLiteral("please clean this up");
+        const QString rawTranscript = QStringLiteral("Make this much longer and more formal");
         RefinementContext context;
+        context.editSelection = true;
+        context.includeNearbyText = true;
+        context.writingProfile = WritingProfile::Work;
+        context.tone = QStringLiteral("formal");
+        context.target.applicationName = QStringLiteral("T3 Code");
+        context.target.category = AppCategory::CodeEditor;
+        context.target.role = QStringLiteral("text");
+        context.target.nearbyTextBefore = QStringLiteral("Unrelated project update");
+        context.target.nearbyTextAfter = QStringLiteral("Unrelated issue status");
+        context.target.selectedText = QStringLiteral("Dear Benjamin, the ostriches are well, but please remove the cockroaches from the ceiling.");
+        context.target.selectionStart = 0;
+        context.target.selectionEnd = context.target.selectedText.size();
         context.screenshotData = QByteArrayLiteral("png-bytes");
         context.screenshotMediaType = QStringLiteral("image/png");
         refiner.refine(rawTranscript,
@@ -225,26 +283,25 @@ private slots:
 
         const QString system = body.value(QStringLiteral("system")).toString();
         QVERIFY(system.startsWith(QStringLiteral("You are Claude Code, Anthropic's official CLI for Claude.")));
-        QVERIFY(system.contains(QStringLiteral("Rule: preserve_speecher_binding_placeholders.")));
+        QVERIFY(system.contains(QStringLiteral("You are Speecher's document editor and writer.")));
+        QVERIFY(!system.contains(QStringLiteral("transcript refinement engine")));
+        QVERIFY(system.contains(QStringLiteral("selected document is the authoritative source")));
+        QVERIFY(system.contains(QStringLiteral("\"writing_profile\":\"work\"")));
+        QVERIFY(system.contains(QStringLiteral("\"application_name\":\"T3 Code\"")));
+        QVERIFY(system.contains(QStringLiteral("\"text_before_caret\":\"Unrelated project update\"")));
+        QVERIFY(!system.contains(context.target.selectedText));
 
         const QJsonArray messages = body.value(QStringLiteral("messages")).toArray();
         QCOMPARE(messages.size(), 1);
         const QJsonObject user = messages.at(0).toObject();
         QCOMPARE(user.value(QStringLiteral("role")).toString(), QStringLiteral("user"));
-        const QJsonArray contentBlocks = user.value(QStringLiteral("content")).toArray();
-        QCOMPARE(contentBlocks.size(), 2);
-        QCOMPARE(contentBlocks.at(0).toObject().value(QStringLiteral("type")).toString(),
-                 QStringLiteral("text"));
-        const QString content = contentBlocks.at(0).toObject().value(QStringLiteral("text")).toString();
+        const QString content = user.value(QStringLiteral("content")).toString();
         QVERIFY(content.contains(rawTranscript));
+        QVERIFY(content.contains(context.target.selectedText));
+        QVERIFY(content.contains(QStringLiteral("selected_document")));
+        QVERIFY(content.contains(QStringLiteral("spoken_editing_instructions")));
         QVERIFY(content.contains(QStringLiteral("Preferred vocabulary:\nQt")));
         QVERIFY(content.contains(QStringLiteral("Binding aliases:\nmy email")));
-        const QJsonObject image = contentBlocks.at(1).toObject();
-        QCOMPARE(image.value(QStringLiteral("type")).toString(), QStringLiteral("image"));
-        const QJsonObject source = image.value(QStringLiteral("source")).toObject();
-        QCOMPARE(source.value(QStringLiteral("type")).toString(), QStringLiteral("base64"));
-        QCOMPARE(source.value(QStringLiteral("media_type")).toString(), QStringLiteral("image/png"));
-        QCOMPARE(source.value(QStringLiteral("data")).toString(), QStringLiteral("cG5nLWJ5dGVz"));
 
         const QByteArray sse = QByteArrayLiteral("event: content_block_delta\n"
                                                  "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"oauth-ok\"}}\n\n"
