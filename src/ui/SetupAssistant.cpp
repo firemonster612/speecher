@@ -56,14 +56,14 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
     auto *profiles = new WritingProfilesSetupPage(*controller->settings(), this);
 
 #ifdef SPEECHER_WITH_KASSISTANT
-    addPage(welcome, QStringLiteral("Welcome"));
+    addPage(welcome, QStringLiteral("Welcome to Speecher"));
     addPage(signIn, QStringLiteral("Claude sign-in"));
     addPage(m_microphonePage, QStringLiteral("Microphone"));
-    addPage(accessibility, QStringLiteral("Accessibility"));
+    addPage(accessibility, QStringLiteral("Desktop accessibility"));
     addPage(m_deliveryPage, QStringLiteral("Text delivery"));
     addPage(refinement, QStringLiteral("Refinement"));
     addPage(profiles, QStringLiteral("Writing profiles"));
-    addPage(m_finishPage, QStringLiteral("Finish"));
+    addPage(m_finishPage, QStringLiteral("Ready to dictate"));
     auto *skip = new QPushButton(QStringLiteral("Skip setup"), this);
     addActionButton(skip);
     connect(skip, &QPushButton::clicked, this, &SetupAssistant::skipSetup);
@@ -78,45 +78,56 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
     setOption(QWizard::NoBackButtonOnStartPage);
     setOption(QWizard::HaveCustomButton1);
     setButtonText(QWizard::CustomButton1, QStringLiteral("Skip setup"));
-    addPage(wizardPage(welcome, QStringLiteral("Welcome")));
-    addPage(wizardPage(signIn, QStringLiteral("Claude sign-in")));
-    addPage(wizardPage(m_microphonePage, QStringLiteral("Microphone")));
-    addPage(wizardPage(accessibility, QStringLiteral("Accessibility")));
-    addPage(wizardPage(m_deliveryPage, QStringLiteral("Text delivery")));
-    addPage(wizardPage(refinement, QStringLiteral("Refinement")));
-    addPage(wizardPage(profiles, QStringLiteral("Writing profiles")));
-    addPage(wizardPage(m_finishPage, QStringLiteral("Finish")));
+    const auto addSetupPage = [this](QWidget *content, const QString &title) {
+        const int id = addPage(wizardPage(content, title));
+        m_pageContents.insert(id, content);
+    };
+    addSetupPage(welcome, QStringLiteral("Welcome to Speecher"));
+    addSetupPage(signIn, QStringLiteral("Claude sign-in"));
+    addSetupPage(m_microphonePage, QStringLiteral("Microphone"));
+    addSetupPage(accessibility, QStringLiteral("Desktop accessibility"));
+    addSetupPage(m_deliveryPage, QStringLiteral("Text delivery"));
+    addSetupPage(refinement, QStringLiteral("Refinement"));
+    addSetupPage(profiles, QStringLiteral("Writing profiles"));
+    addSetupPage(m_finishPage, QStringLiteral("Ready to dictate"));
     connect(this, &QWizard::customButtonClicked, this, [this](int button) {
         if (button == QWizard::CustomButton1) {
             skipSetup();
         }
     });
     connect(this, &QWizard::currentIdChanged, this, [this](int id) {
-        QWizardPage *current = page(id);
-        updateActivePage(current && current->layout()
-                             ? current->layout()->itemAt(0)->widget()
-                             : nullptr);
+        updateActivePage(m_pageContents.value(id, nullptr));
     });
 #endif
 
-    connect(this, &QDialog::accepted, this, &SetupAssistant::completeSetup);
+    connect(m_deliveryPage,
+            &TextDeliverySetupPage::signInRequirementChanged,
+            m_finishPage,
+            &FinishSetupPage::setSignInRequired);
     updateActivePage(welcome);
 }
 
 void SetupAssistant::skipSetup()
 {
     m_skipping = true;
-    m_controller->settings()->setSetupCompleted(true);
     accept();
 }
 
-void SetupAssistant::completeSetup()
+void SetupAssistant::accept()
 {
     m_microphonePage->setActive(false);
     if (!m_skipping) {
-        m_finishPage->applyShortcut();
-        m_controller->settings()->setSetupCompleted(true);
+        m_finishPage->setSignInRequired(m_deliveryPage->needsSignIn());
+        if (!m_finishPage->applyShortcut()) {
+            return;
+        }
     }
+    m_controller->settings()->setSetupCompleted(true);
+#ifdef SPEECHER_WITH_KASSISTANT
+    KAssistantDialog::accept();
+#else
+    QWizard::accept();
+#endif
 }
 
 void SetupAssistant::updateActivePage(QWidget *page)

@@ -40,6 +40,17 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
     m_globalShortcutAction->setProperty("componentName", QStringLiteral("local.speecher"));
     m_globalShortcutAction->setProperty("componentDisplayName", QStringLiteral("Speecher"));
     connect(m_globalShortcutAction, &QAction::triggered, this, &ApplicationController::toggle);
+    const QKeySequence savedShortcut = globalShortcut();
+    KGlobalAccel::self()->setDefaultShortcut(
+        m_globalShortcutAction,
+        {QKeySequence(Qt::META | Qt::ALT | Qt::Key_D)});
+    if (!savedShortcut.isEmpty()
+        && !KGlobalAccel::self()->setShortcut(
+            m_globalShortcutAction,
+            {savedShortcut},
+            KGlobalAccel::Autoloading)) {
+        qWarning() << "Could not restore the saved global shortcut";
+    }
 #endif
     const atspi::AccessibilityState initialAccessibility = atspi::accessibilityState();
     if (initialAccessibility.persistent) {
@@ -194,9 +205,6 @@ bool ApplicationController::setGlobalShortcut(const QKeySequence &shortcut, QStr
         }
         return false;
     }
-    KGlobalAccel::self()->setDefaultShortcut(
-        m_globalShortcutAction,
-        {QKeySequence(Qt::META | Qt::ALT | Qt::Key_D)});
     if (!KGlobalAccel::self()->setShortcut(
             m_globalShortcutAction,
             {shortcut},

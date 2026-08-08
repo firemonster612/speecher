@@ -4,15 +4,21 @@
 #include <QPair>
 #include <QString>
 
+class QColor;
 class QComboBox;
 class QFrame;
 class QHBoxLayout;
 class QLabel;
 class QListWidget;
+class QPalette;
 class QScrollArea;
 class QStackedWidget;
 class QVBoxLayout;
 class QWidget;
+
+namespace speecher {
+struct AudioInputDeviceInfo;
+}
 
 namespace speecher::settings {
 
@@ -33,6 +39,10 @@ void setComboItemEnabled(QComboBox *combo,
                          int index,
                          bool enabled,
                          const QString &toolTip = QString());
+void populateAudioInputDevices(QComboBox *combo,
+                               const QList<AudioInputDeviceInfo> &devices,
+                               const QString &selectedDeviceId);
+QColor positiveTextColor(const QPalette &palette);
 QLabel *makeSectionLabel(const QString &text, QWidget *parent);
 QFrame *makeSettingsCard(QWidget *parent);
 QVBoxLayout *makeSettingsPage(QScrollArea *scroll);

@@ -2,10 +2,10 @@
 
 #include "app/ApplicationController.h"
 #include "app/LinuxComposition.h"
-#include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationPorts.h"
 #include "output/YdotoolSetup.h"
+#include "output/YdotoolSetupFlow.h"
 #include "providers/ClaudeCredentials.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/settings/SettingsPageSupport.h"
@@ -14,34 +14,22 @@
 #include <QColor>
 #include <QComboBox>
 #include <QGridLayout>
-#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QPalette>
 #include <QProgressBar>
 #include <QPushButton>
-#include <QSignalBlocker>
-#include <QThread>
 #include <QVBoxLayout>
-
-#include <memory>
 
 namespace speecher {
 namespace {
 
-QVBoxLayout *makePage(QWidget *page, const QString &title, const QString &description)
+QVBoxLayout *makePage(QWidget *page, const QString &description)
 {
     auto *layout = new QVBoxLayout(page);
     layout->setContentsMargins(24, 24, 24, 24);
     layout->setSpacing(16);
-
-    auto *heading = new QLabel(title, page);
-    QFont font = heading->font();
-    font.setPointSize(font.pointSize() + 4);
-    font.setBold(true);
-    heading->setFont(font);
-    layout->addWidget(heading);
 
     auto *intro = new QLabel(description, page);
     intro->setWordWrap(true);
@@ -53,7 +41,7 @@ void setStatusColor(QLabel *label, bool positive)
 {
     QPalette palette = label->palette();
     palette.setColor(QPalette::WindowText,
-                     positive ? QColor(35, 135, 65)
+                     positive ? settings::positiveTextColor(palette)
                               : label->parentWidget()->palette().color(QPalette::WindowText));
     label->setPalette(palette);
 }
@@ -106,7 +94,6 @@ WelcomeSetupPage::WelcomeSetupPage(QWidget *parent)
 {
     QVBoxLayout *layout = makePage(
         this,
-        QStringLiteral("Welcome to Speecher"),
         QStringLiteral("Speecher records a short dictation, turns it into text, and sends it to the app you were using."));
     auto *checks = new QLabel(
         QStringLiteral("This assistant checks your Claude sign-in, microphone, desktop accessibility, text delivery, refinement, and writing profiles."),
@@ -123,11 +110,10 @@ ClaudeSignInSetupPage::ClaudeSignInSetupPage(SettingsStore &settings, QWidget *p
 {
     QVBoxLayout *layout = makePage(
         this,
-        QStringLiteral("Claude sign-in"),
         QStringLiteral("Claude Voice is required for transcription. Speecher uses the Claude Code OAuth session stored in ~/.claude/.credentials.json."));
     m_status->setWordWrap(true);
     auto *instructions = new QLabel(
-        QStringLiteral("If sign-in is missing or expired, open a terminal and run `claude /login` or `claude auth login`, then check again."),
+        QStringLiteral("If sign-in is missing or expired, run `claude` in a terminal and use the `/login` command, then check again."),
         this);
     instructions->setWordWrap(true);
     auto *checkAgain = new QPushButton(QStringLiteral("Check again"), this);
@@ -161,7 +147,6 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
 {
     QVBoxLayout *layout = makePage(
         this,
-        QStringLiteral("Microphone"),
         QStringLiteral("Choose the input Speecher should record. Speak normally and check that the level moves."));
     m_device->setMinimumContentsLength(28);
     m_level->setRange(0, 100);
@@ -222,24 +207,9 @@ void MicrophoneSetupPage::setActive(bool active)
 
 void MicrophoneSetupPage::refreshDevices()
 {
-    const QString selected = m_settings.audioInputDeviceId();
-    const QSignalBlocker blocker(m_device);
-    m_device->clear();
-    m_device->addItem(QStringLiteral("System default"), QString());
-    for (const AudioInputDeviceInfo &device : m_platform.availableAudioInputDevices()) {
-        m_device->addItem(device.isDefault
-                              ? QStringLiteral("%1 (default)").arg(device.label)
-                              : device.label,
-                          device.id);
-    }
-    if (!selected.isEmpty() && m_device->findData(selected) < 0) {
-        m_device->addItem(QStringLiteral("Missing microphone"), selected);
-        settings::setComboItemEnabled(m_device,
-                                      m_device->count() - 1,
-                                      false,
-                                      QStringLiteral("This saved microphone is not currently available."));
-    }
-    settings::selectData(m_device, selected);
+    settings::populateAudioInputDevices(m_device,
+                                        m_platform.availableAudioInputDevices(),
+                                        m_settings.audioInputDeviceId());
 }
 
 void MicrophoneSetupPage::startMeter()
@@ -263,7 +233,6 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
 {
     QVBoxLayout *layout = makePage(
         this,
-        QStringLiteral("Desktop accessibility"),
         QStringLiteral("AT-SPI lets Speecher identify the target app, paste into compatible fields, edit selected text, and learn corrections."));
     m_status->setWordWrap(true);
     m_enable->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
@@ -318,7 +287,6 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
 {
     QVBoxLayout *layout = makePage(
         this,
-        QStringLiteral("Text delivery"),
         QStringLiteral("Speecher can set up ydotool for virtual-keyboard paste. Administrator approval is required once; Speecher remains unprivileged while dictating."));
     m_status->setWordWrap(true);
     m_progress->setRange(0, 0);
@@ -351,65 +319,52 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
 
 bool TextDeliverySetupPage::needsSignIn() const
 {
-    return m_needsSignIn;
+    return YdotoolSetup::probe(m_settings.ydotoolEnabled()).state
+        == YdotoolSetupState::NeedsSignOut;
 }
 
 void TextDeliverySetupPage::refreshStatus()
 {
     const YdotoolSetupStatus status = YdotoolSetup::probe(m_settings.ydotoolEnabled());
-    m_needsSignIn = status.state == YdotoolSetupState::NeedsSignOut;
-    m_status->setText(m_needsSignIn
+    const bool needsSignIn = status.state == YdotoolSetupState::NeedsSignOut;
+    m_status->setText(needsSignIn
                           ? QStringLiteral("Set up — activates after your next sign-in.")
                           : status.label + QStringLiteral(". ") + status.detail);
-    m_setup->setEnabled(!status.ready() && !m_needsSignIn);
+    m_setup->setEnabled(!status.ready() && !needsSignIn);
     m_setup->setText(status.ready() ? QStringLiteral("Virtual keyboard ready")
                                     : QStringLiteral("Set up virtual keyboard"));
 }
 
 void TextDeliverySetupPage::runSetup()
 {
-    struct SetupResult {
-        bool helperOk = false;
-        QString helperError;
-        QString serviceError;
-    };
-    const auto result = std::make_shared<SetupResult>();
     m_setup->setEnabled(false);
     m_progress->setVisible(true);
     m_status->setText(QStringLiteral("Setting up ydotool…"));
+    startYdotoolSetup(
+        m_settings,
+        this,
+        false,
+        this,
+        [this](const YdotoolSetupFlowResult &result) {
+            m_progress->setVisible(false);
+            if (!result.helperOk) {
+                m_status->setText(
+                    QStringLiteral("Setup failed: %1").arg(result.helperError));
+                m_setup->setEnabled(true);
+                return;
+            }
 
-    QThread *thread = QThread::create([result] {
-        result->helperOk = YdotoolSetup::runHelper(
-            YdotoolSetup::HelperAction::Install,
-            &result->helperError);
-        if (result->helperOk) {
-            YdotoolSetup::startUserService(&result->serviceError);
-        }
-    });
-    connect(thread, &QThread::finished, this, [this, result] {
-        m_progress->setVisible(false);
-        if (!result->helperOk) {
-            m_status->setText(QStringLiteral("Setup failed: %1").arg(result->helperError));
-            m_setup->setEnabled(true);
-            return;
-        }
-
-        const YdotoolSetupStatus status = YdotoolSetup::probe(true);
-        m_settings.setOutputMethod(QString::fromLatin1(OutputMethod::Automatic));
-        if (status.ready() || status.state == YdotoolSetupState::NeedsSignOut) {
-            m_settings.setYdotoolEnabled(true);
-        }
-        refreshStatus();
-        if (!result->serviceError.isEmpty()
-            && status.state != YdotoolSetupState::NeedsSignOut
-            && !status.ready()) {
-            m_status->setText(QStringLiteral("Setup installed, but the service could not start: %1")
-                                  .arg(result->serviceError));
-            m_setup->setEnabled(true);
-        }
-    });
-    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    thread->start();
+            refreshStatus();
+            if (!result.serviceError.isEmpty()
+                && result.status.state != YdotoolSetupState::NeedsSignOut
+                && !result.status.ready()) {
+                m_status->setText(
+                    QStringLiteral("Setup installed, but the service could not start: %1")
+                        .arg(result.serviceError));
+                m_setup->setEnabled(true);
+            }
+            emit signInRequirementChanged(needsSignIn());
+        });
 }
 
 RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
@@ -421,7 +376,6 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
 {
     QVBoxLayout *layout = makePage(
         this,
-        QStringLiteral("Refinement"),
         QStringLiteral("Refinement can clean up a raw transcript after dictation. The detected provider is selected by default."));
     for (const ProviderDescriptor &provider : providers.refinementProviders()) {
         m_provider->addItem(provider.label, provider.id);
@@ -446,7 +400,6 @@ WritingProfilesSetupPage::WritingProfilesSetupPage(SettingsStore &settings, QWid
 {
     QVBoxLayout *layout = makePage(
         this,
-        QStringLiteral("Writing profiles"),
         QStringLiteral("Choose the fallback Writing Profile and how much cleanup and tone adjustment each profile receives."));
     addProfiles(m_defaultProfile);
     settings::selectData(m_defaultProfile, m_settings.defaultWritingProfile());
@@ -506,7 +459,6 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
 {
     QVBoxLayout *layout = makePage(
         this,
-        QStringLiteral("Ready to dictate"),
         QStringLiteral("Put the cursor in a text field, trigger dictation, speak, then trigger it again to stop and insert the transcript."));
     m_shortcutStatus->setWordWrap(true);
     m_signInNote->setWordWrap(true);
@@ -524,6 +476,12 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
         shortcutRow->addWidget(m_shortcut, 1);
         layout->addLayout(shortcutRow);
         connect(m_createShortcut, &QCheckBox::toggled, m_shortcut, &QWidget::setEnabled);
+        const auto resetShortcutFailure = [this] {
+            m_shortcutFailureAcknowledged = false;
+            m_shortcutStatus->setText(QStringLiteral("The shortcut triggers `speecher toggle`."));
+        };
+        connect(m_createShortcut, &QCheckBox::toggled, this, resetShortcutFailure);
+        connect(m_shortcut, &QKeySequenceEdit::keySequenceChanged, this, resetShortcutFailure);
         m_shortcutStatus->setText(QStringLiteral("The shortcut triggers `speecher toggle`."));
     } else {
         m_shortcutStatus->setText(
@@ -542,15 +500,24 @@ void FinishSetupPage::setSignInRequired(bool required)
                               : QString());
 }
 
-void FinishSetupPage::applyShortcut()
+bool FinishSetupPage::applyShortcut()
 {
     if (!m_createShortcut || !m_createShortcut->isChecked()) {
-        return;
+        return true;
+    }
+    if (m_shortcutFailureAcknowledged) {
+        return true;
     }
     QString error;
     if (!m_controller.setGlobalShortcut(m_shortcut->keySequence(), &error)) {
-        m_shortcutStatus->setText(QStringLiteral("Could not register the shortcut: %1").arg(error));
+        m_shortcutFailureAcknowledged = true;
+        m_shortcutStatus->setText(
+            QStringLiteral("Could not register the shortcut: %1. You can bind `speecher toggle` in your desktop environment's shortcut settings. Change the sequence and try again, or click Finish again to continue without it.")
+                .arg(error));
+        return false;
     }
+    m_shortcutStatus->setText(QStringLiteral("Dictation shortcut registered."));
+    return true;
 }
 
 } // namespace speecher

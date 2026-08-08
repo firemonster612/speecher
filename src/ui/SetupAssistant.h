@@ -3,6 +3,7 @@
 #ifdef SPEECHER_WITH_KASSISTANT
 #include <KAssistantDialog>
 #else
+#include <QHash>
 #include <QWizard>
 #endif
 
@@ -22,15 +23,20 @@ public:
     explicit SetupAssistant(ApplicationController *controller,
                             QWidget *parent = nullptr);
 
+protected:
+    void accept() override;
+
 private:
     void skipSetup();
-    void completeSetup();
     void updateActivePage(QWidget *page);
 
     ApplicationController *m_controller;
     MicrophoneSetupPage *m_microphonePage;
     TextDeliverySetupPage *m_deliveryPage;
     FinishSetupPage *m_finishPage;
+#ifndef SPEECHER_WITH_KASSISTANT
+    QHash<int, QWidget *> m_pageContents;
+#endif
     bool m_skipping = false;
 };
 

@@ -72,10 +72,15 @@ private:
 };
 
 class TextDeliverySetupPage final : public QWidget {
+    Q_OBJECT
+
 public:
     explicit TextDeliverySetupPage(SettingsStore &settings, QWidget *parent = nullptr);
 
     bool needsSignIn() const;
+
+signals:
+    void signInRequirementChanged(bool required);
 
 private:
     void refreshStatus();
@@ -87,7 +92,6 @@ private:
     QProgressBar *m_progress;
     QCheckBox *m_restoreClipboard;
     QComboBox *m_format;
-    bool m_needsSignIn = false;
 };
 
 class RefinementSetupPage final : public QWidget {
@@ -126,7 +130,7 @@ public:
                              QWidget *parent = nullptr);
 
     void setSignInRequired(bool required);
-    void applyShortcut();
+    bool applyShortcut();
 
 private:
     ApplicationController &m_controller;
@@ -134,6 +138,7 @@ private:
     QKeySequenceEdit *m_shortcut = nullptr;
     QLabel *m_shortcutStatus;
     QLabel *m_signInNote;
+    bool m_shortcutFailureAcknowledged = false;
 };
 
 } // namespace speecher
