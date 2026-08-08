@@ -37,12 +37,17 @@ endif()
 
 set(SPEECHER_DOMAIN_SOURCES
   src/core/BindingProcessor.cpp
+  src/core/bindings/BindingMatcher.cpp
+  src/core/bindings/NoBindDirectiveParser.cpp
   src/core/CliToolDiscovery.cpp
   src/core/LearnedCorrection.cpp
   src/core/OutputMethod.cpp
   src/core/OutputFormat.cpp
   src/core/PasteRules.cpp
   src/core/SettingsStore.cpp
+  src/core/settings/CorrectionSettingsCodec.cpp
+  src/core/settings/SettingsCodecs.cpp
+  src/core/settings/VocabularySettingsCodec.cpp
   src/core/SecretStore.cpp
   src/core/TranscriptState.cpp
   src/core/Target.cpp
@@ -57,12 +62,18 @@ set(SPEECHER_DOMAIN_SOURCES
 set(SPEECHER_DOMAIN_HEADERS
   src/core/AppSettings.h
   src/core/BindingProcessor.h
+  src/core/bindings/BindingMatcher.h
+  src/core/bindings/NoBindDirectiveParser.h
   src/core/CliToolDiscovery.h
   src/core/LearnedCorrection.h
   src/core/OutputMethod.h
   src/core/OutputFormat.h
   src/core/PasteRules.h
   src/core/SettingsStore.h
+  src/core/settings/CorrectionSettingsCodec.h
+  src/core/settings/SettingsCodecs.h
+  src/core/settings/SettingsKeys.h
+  src/core/settings/VocabularySettingsCodec.h
   src/core/SecretStore.h
   src/core/TranscriptState.h
   src/core/Target.h
@@ -77,10 +88,14 @@ set(SPEECHER_DOMAIN_HEADERS
 
 set(SPEECHER_WORKFLOW_SOURCES
   src/dictation/DictationSession.cpp
+  src/dictation/StartupPreparationRunner.cpp
+  src/dictation/TranscriptPipeline.cpp
 )
 
 set(SPEECHER_WORKFLOW_HEADERS
   src/dictation/DictationSession.h
+  src/dictation/StartupPreparationRunner.h
+  src/dictation/TranscriptPipeline.h
 )
 
 set(SPEECHER_PROVIDER_SOURCES
