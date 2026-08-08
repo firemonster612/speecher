@@ -365,7 +365,21 @@ install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/post-install.cmake")
 if(SPEECHER_BUILD_TESTS)
   enable_testing()
   qt_add_executable(speecher_tests
-    tests/test_core.cpp
+    tests/test_main.cpp
+    tests/test_ui.cpp
+    tests/test_transcript_state.cpp
+    tests/test_bindings.cpp
+    tests/test_settings.cpp
+    tests/test_provider_registry.cpp
+    tests/test_platform_live.cpp
+    tests/test_single_instance_ipc.cpp
+    tests/test_delivery.cpp
+    tests/test_dictation_session_lifecycle.cpp
+    tests/test_dictation_session_refinement.cpp
+    tests/test_refiners.cpp
+    tests/test_vocabulary.cpp
+    tests/test_provider_auth.cpp
+    tests/test_claude_voice.cpp
   )
   target_include_directories(speecher_tests PRIVATE src)
   target_compile_definitions(speecher_tests PRIVATE SPEECHER_VERSION="${PROJECT_VERSION}")
