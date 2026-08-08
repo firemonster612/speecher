@@ -2,7 +2,6 @@
 
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
-#include "core/WordPreview.h"
 #include "providers/ProviderRegistry.h"
 
 #include <QDebug>
@@ -98,9 +97,8 @@ DictationSession::DictationSession(SettingsStore *settings,
     , m_transcript(new TranscriptState(this))
 {
     connect(m_transcript, &TranscriptState::changed, this, [this](const QString &text) {
-        const int words = m_settings ? m_settings->snapshot().ui.previewWords : 8;
-        emit previewDisplayChanged(WordPreview::lastWords(text, words));
-        qInfo() << "transcript changed length=" << text.size() << "previewWords=" << words;
+        emit previewDisplayChanged(text);
+        qInfo() << "transcript changed length=" << text.size();
         emit previewChanged(text);
     });
     connect(m_audio, &AudioInput::levelChanged, this, &DictationSession::audioLevelChanged);
@@ -129,6 +127,7 @@ DictationSession::DictationSession(SettingsStore *settings,
             m_transcriber->cancelAttempt(m_attemptId);
         }
         discardSessionAudio();
+        clearScreenshotContext();
         m_sessionSettings.reset();
         resumePausedMedia();
         setState(DictationState::Error, message);
@@ -142,12 +141,53 @@ DictationSession::DictationSession(SettingsStore *settings,
     });
 }
 
+void DictationSession::setScreenshotContextProvider(ScreenshotContextProvider *provider)
+{
+    if (m_screenshotProvider == provider) {
+        return;
+    }
+    if (m_screenshotProvider) {
+        m_screenshotProvider->cancel();
+        disconnect(m_screenshotProvider, nullptr, this, nullptr);
+    }
+    m_screenshotProvider = provider;
+    if (!m_screenshotProvider) {
+        clearScreenshotContext();
+        return;
+    }
+    connect(m_screenshotProvider,
+            &ScreenshotContextProvider::captured,
+            this,
+            [this](const QByteArray &data, const QString &mediaType) {
+                if (!m_sessionSettings
+                    || m_screenshotCaptureGeneration != m_generation
+                    || !m_sessionSettings->refinement.includeScreenshotContext) {
+                    return;
+                }
+                m_screenshotData = data;
+                m_screenshotMediaType = mediaType;
+                qInfo() << "screenshot context captured bytes=" << data.size();
+            });
+    connect(m_screenshotProvider,
+            &ScreenshotContextProvider::failed,
+            this,
+            [this](const QString &message) {
+                if (m_screenshotCaptureGeneration == m_generation) {
+                    qInfo().noquote() << "screenshot context omitted reason=" + message;
+                }
+            });
+}
+
 DictationSession::~DictationSession()
 {
     if (m_transcriber) {
         m_transcriber->cancelAttempt(m_attemptId);
     }
+    if (m_refiner) {
+        m_refiner->cancel();
+    }
     discardSessionAudio();
+    clearScreenshotContext();
     if (m_startupPreparation && m_startupPreparation->thread) {
         m_startupPreparation->thread->requestInterruption();
         m_startupPreparation->thread->quit();
@@ -230,7 +270,18 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
     m_sessionSettings = settings;
     m_retryUsed = false;
     discardSessionAudio();
+    clearScreenshotContext();
     m_target = m_targetProvider ? m_targetProvider->capture() : Target{};
+    if (settings.refinement.includeScreenshotContext
+        && settings.refinement.providerId != QStringLiteral("none")
+        && m_screenshotProvider
+        && m_refiner
+        && m_refiner->id() == settings.refinement.providerId
+        && m_refiner->supportsScreenshotContext(settings.refinement)
+        && !m_target.secure) {
+        m_screenshotCaptureGeneration = generation;
+        m_screenshotProvider->capture();
+    }
     setState(DictationState::Starting);
     qInfo().noquote() << "startListening speechProvider=" + settings.speech.providerId
                       << "credentialsPath=" + settings.speech.claudeCredentialsPath
@@ -306,6 +357,7 @@ void DictationSession::stopListening()
             m_transcriber->cancelAttempt(m_attemptId);
         }
         discardSessionAudio();
+        clearScreenshotContext();
         m_sessionSettings.reset();
         resumePausedMedia();
         emit popupHideRequested();
@@ -412,6 +464,7 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation, const
         qWarning().noquote() << "audio start failed message=" + audioError;
         m_transcriber->cancelAttempt(m_attemptId);
         discardSessionAudio();
+        clearScreenshotContext();
         m_sessionSettings.reset();
         resumePausedMedia();
         setState(DictationState::Error, audioError);
@@ -429,6 +482,7 @@ void DictationSession::failStartup(quint64 generation, const QString &message)
     qWarning().noquote() << "speech credentials unavailable message=" + message;
     emit previewDisplayChanged({});
     discardSessionAudio();
+    clearScreenshotContext();
     m_sessionSettings.reset();
     resumePausedMedia();
     setState(DictationState::Error, message);
@@ -443,6 +497,7 @@ void DictationSession::beginRefinement(quint64 generation)
     if (m_transcript->isEmpty()) {
         qWarning() << "beginRefinement no transcript captured";
         discardSessionAudio();
+        clearScreenshotContext();
         m_sessionSettings.reset();
         setState(DictationState::Error, QStringLiteral("No transcript captured"));
         QTimer::singleShot(1400, this, [this, generation] {
@@ -458,6 +513,7 @@ void DictationSession::beginRefinement(quint64 generation)
     if (!m_sessionSettings) {
         setState(DictationState::Error, QStringLiteral("Dictation session options are unavailable"));
         discardSessionAudio();
+        clearScreenshotContext();
         m_sessionSettings.reset();
         return;
     }
@@ -498,7 +554,6 @@ void DictationSession::beginRefinement(quint64 generation)
 
     setState(DictationState::Refining);
     emit popupRefiningChanged(true);
-    emit popupHidePreviewRequested();
     m_refinedText.clear();
     const RefinementSettings refinement = refinementSettingsWithBindingVocabulary(settings);
     const QStringList vocabulary = refinementVocabulary(settings);
@@ -508,6 +563,14 @@ void DictationSession::beginRefinement(quint64 generation)
         m_target,
         writingProfileFromName(refinement.defaultWritingProfile));
     context.includeNearbyText = refinement.useTargetContext && !m_target.secure;
+    if (refinement.includeScreenshotContext
+        && !m_target.secure
+        && m_refiner->supportsScreenshotContext(refinement)
+        && !m_screenshotData.isEmpty()
+        && !m_screenshotMediaType.isEmpty()) {
+        context.screenshotData = m_screenshotData;
+        context.screenshotMediaType = m_screenshotMediaType;
+    }
     if (!refinement.useTargetContext) {
         context.target.nearbyTextBefore.clear();
         context.target.nearbyTextAfter.clear();
@@ -529,6 +592,7 @@ void DictationSession::deliverFinal(const QString &text)
     if (!m_sessionSettings) {
         setState(DictationState::Error, QStringLiteral("Dictation session options are unavailable"));
         discardSessionAudio();
+        clearScreenshotContext();
         m_sessionSettings.reset();
         return;
     }
@@ -541,9 +605,9 @@ void DictationSession::deliverFinal(const QString &text)
         makeDeliveryContent(text, settings.output.format),
         m_target);
     discardSessionAudio();
+    clearScreenshotContext();
     m_sessionSettings.reset();
     m_target = {};
-    emit popupHidePreviewRequested();
     if (result.ok) {
         const quint64 generation = m_generation;
         emit popupMessageRequested(result.message);
@@ -571,6 +635,16 @@ void DictationSession::discardSessionAudio()
 {
     m_capturedAudio.clear();
     m_capturedAudio.squeeze();
+}
+
+void DictationSession::clearScreenshotContext()
+{
+    if (m_screenshotProvider) {
+        m_screenshotProvider->cancel();
+    }
+    m_screenshotData.clear();
+    m_screenshotMediaType.clear();
+    m_screenshotCaptureGeneration = 0;
 }
 
 void DictationSession::retrySpeechAttempt()
@@ -624,6 +698,7 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
     m_audio->stop();
     m_transcriber->cancelAttempt(m_attemptId);
     discardSessionAudio();
+    clearScreenshotContext();
     m_sessionSettings.reset();
     resumePausedMedia();
     setState(DictationState::Error, failure.message);
@@ -701,10 +776,6 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
     m_refiner = refiner;
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::delta, this, [this](const QString &delta) {
         m_refinedText += delta;
-        if (m_state != DictationState::Refining) {
-            const int words = m_settings ? m_settings->snapshot().ui.previewWords : 8;
-            emit previewDisplayChanged(WordPreview::lastWords(m_refinedText, words));
-        }
     });
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::completed, this, [this](const QString &text) {
         const QString refined = text.trimmed();

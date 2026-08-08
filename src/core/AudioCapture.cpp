@@ -130,8 +130,9 @@ QString formatLabel(const QAudioFormat &format)
                 return QStringLiteral("Float");
             case QAudioFormat::Unknown:
                 return QStringLiteral("Unknown");
+            default:
+                return QStringLiteral("Unknown");
             }
-            return QStringLiteral("Unknown");
         }());
 }
 
@@ -148,10 +149,7 @@ QAudioDevice selectedDevice(const AudioCaptureSettings &settings, QString *error
     if (settings.deviceId.isEmpty()) {
         const QAudioDevice device = QMediaDevices::defaultAudioInput();
         if (device.isNull()) {
-            if (error) {
-                *error = QStringLiteral("No default microphone is available. Choose a microphone in Settings.");
-            }
-            return {};
+            return inputs.first();
         }
         return device;
     }
@@ -162,10 +160,11 @@ QAudioDevice selectedDevice(const AudioCaptureSettings &settings, QString *error
         }
     }
 
-    if (error) {
-        *error = QStringLiteral("The selected microphone is not available. Choose another input device in Settings.");
+    const QAudioDevice defaultDevice = QMediaDevices::defaultAudioInput();
+    if (!defaultDevice.isNull()) {
+        return defaultDevice;
     }
-    return {};
+    return inputs.first();
 }
 
 QString sourceErrorMessageForLabel(const QString &label, QAudio::Error error)
@@ -186,8 +185,9 @@ QString sourceErrorMessageForLabel(const QString &label, QAudio::Error error)
 #endif
     case QAudio::FatalError:
         return QStringLiteral("Microphone \"%1\" failed with a fatal audio error.").arg(microphone);
+    default:
+        return QStringLiteral("Microphone \"%1\" failed.").arg(microphone);
     }
-    return QStringLiteral("Microphone \"%1\" failed.").arg(microphone);
 }
 
 bool isIgnorableStoppedSourceError(QAudio::Error error)
@@ -248,8 +248,9 @@ float sampleAt(const char *data, QAudioFormat::SampleFormat format)
     }
     case QAudioFormat::Unknown:
         return 0.0f;
+    default:
+        return 0.0f;
     }
-    return 0.0f;
 }
 
 QVector<float> decodeMonoSamples(const QByteArray &data, const QAudioFormat &format, QString *error)

@@ -22,6 +22,8 @@ public:
 
     bool pauseMediaDuringTranscription() const;
     void setPauseMediaDuringTranscription(bool value);
+    bool soundsEnabled() const;
+    void setSoundsEnabled(bool value);
 
     QString speechProvider() const;
     void setSpeechProvider(const QString &value);

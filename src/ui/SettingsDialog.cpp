@@ -18,6 +18,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QDesktopServices>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -34,6 +35,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStandardItemModel>
@@ -45,6 +47,7 @@
 #include <QTimer>
 #include <QToolTip>
 #include <QVBoxLayout>
+#include <QUrl>
 #include <QtMath>
 
 namespace speecher {
@@ -106,23 +109,6 @@ static QIcon informationIcon(QWidget *widget)
         icon = widget->style()->standardIcon(QStyle::SP_MessageBoxInformation, nullptr, widget);
     }
     return icon;
-}
-
-static QPixmap tintedInformationPixmap(QWidget *widget, const QSize &size, const QColor &color)
-{
-    const QIcon icon = informationIcon(widget);
-    QPixmap source = icon.pixmap(size - QSize(2, 2));
-    if (source.isNull()) {
-        return source;
-    }
-
-    QPixmap tinted(size);
-    tinted.fill(Qt::transparent);
-    QPainter painter(&tinted);
-    painter.drawPixmap((size.width() - source.width()) / 2, (size.height() - source.height()) / 2, source);
-    painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
-    painter.fillRect(tinted.rect(), color);
-    return tinted;
 }
 
 static QPixmap warningInformationPixmap(QWidget *widget, int logicalSize, const QColor &color)
@@ -280,15 +266,25 @@ static PasteMethod pasteMethodFor(const QList<PasteRule> &rules,
     return fallback;
 }
 
-static QList<PasteRule> withBasePasteRules(const QList<PasteRule> &existing,
-                                           PasteMethod globalMethod,
-                                           PasteMethod terminalMethod)
+static void addPasteMethods(QComboBox *combo, bool includeDirectInsert = false)
 {
-    QList<PasteRule> rules;
+    combo->addItem(QStringLiteral("Standard paste (Ctrl+V)"), pasteMethodName(PasteMethod::StandardPaste));
+    combo->addItem(QStringLiteral("Terminal paste (Ctrl+Shift+V)"), pasteMethodName(PasteMethod::TerminalPaste));
+    if (includeDirectInsert) {
+        combo->addItem(QStringLiteral("Direct insertion (AT-SPI)"), pasteMethodName(PasteMethod::DirectInsert));
+    }
+    combo->addItem(QStringLiteral("Clipboard only"), pasteMethodName(PasteMethod::ClipboardOnly));
+}
+
+static QList<PasteRule> withPasteRules(const QList<PasteRule> &existing,
+                                      const QList<PasteRule> &applicationRules,
+                                      PasteMethod globalMethod,
+                                      PasteMethod terminalMethod)
+{
+    QList<PasteRule> rules = applicationRules;
     for (const PasteRule &rule : existing) {
-        if (rule.scope == PasteRuleScope::Global
-            || (rule.scope == PasteRuleScope::Category
-                && rule.match == appCategoryName(AppCategory::Terminal))) {
+        if (rule.scope != PasteRuleScope::Category
+            || rule.match == appCategoryName(AppCategory::Terminal)) {
             continue;
         }
         rules.append(rule);
@@ -424,10 +420,10 @@ static QWidget *makeAnthropicModelControl(QComboBox *model, QLabel *warning, QWi
 
 static QLabel *makeSectionLabel(const QString &text, QWidget *parent)
 {
-    auto *section = new QLabel(text, parent);
+    auto *section = new QLabel(text.toUpper(), parent);
     section->setObjectName(QStringLiteral("sectionLabel"));
     section->setAttribute(Qt::WA_StyledBackground, false);
-    section->setAlignment(Qt::AlignCenter);
+    section->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     return section;
 }
 
@@ -441,6 +437,22 @@ static QFrame *makeSettingsCard(QWidget *parent)
     return card;
 }
 
+static QVBoxLayout *makeSettingsPage(QScrollArea *scroll)
+{
+    scroll->setObjectName(QStringLiteral("settingsScroll"));
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setAutoFillBackground(false);
+    scroll->viewport()->setAutoFillBackground(false);
+
+    auto *page = new QWidget(scroll);
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(24, 24, 24, 24);
+    layout->setSpacing(12);
+    scroll->setWidget(page);
+    return layout;
+}
+
 SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *parent)
     : QDialog(parent)
     , m_controller(controller)
@@ -448,6 +460,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_audioDevice(new QComboBox(this))
     , m_captureMode(new QComboBox(this))
     , m_pauseMedia(new QCheckBox(this))
+    , m_sounds(new QCheckBox(this))
     , m_vadEnabled(new QCheckBox(this))
     , m_provider(new QComboBox(this))
     , m_refinementStyle(new QComboBox(this))
@@ -473,22 +486,25 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     , m_vocabLimit(new QLabel(this))
     , m_apiKey(new QLineEdit(this))
     , m_scroll(new QScrollArea(this))
-    , m_previewWords(new QSpinBox(this))
+    , m_categories(new QListWidget(this))
+    , m_pages(new QStackedWidget(this))
     , m_preRollMs(new QSpinBox(this))
     , m_postRollMs(new QSpinBox(this))
     , m_readinessTimeoutMs(new QSpinBox(this))
     , m_vadThreshold(new QSpinBox(this))
     , m_vocab(new VocabularyTable(this))
     , m_corrections(new QTableWidget(this))
+    , m_appPasteRules(new QTableWidget(this))
     , m_bindings(new QListWidget(this))
 {
     setWindowTitle(QStringLiteral("Speecher Settings"));
-    resize(720, 780);
-    setMinimumWidth(640);
+    resize(980, 780);
+    setMinimumSize(820, 620);
     m_theme->addItem(QStringLiteral("System"), QStringLiteral("system"));
     m_theme->addItem(QStringLiteral("Light"), QStringLiteral("light"));
     m_theme->addItem(QStringLiteral("Dark"), QStringLiteral("dark"));
     m_pauseMedia->setText(QStringLiteral("Pause"));
+    m_sounds->setText(QStringLiteral("Play sounds"));
     m_audioDevice->setMinimumContentsLength(28);
     m_audioDevice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_audioDevice->setToolTip(QStringLiteral("Microphone Speecher records from."));
@@ -568,9 +584,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_outputFormat->addItem(QStringLiteral("Plain text"), QStringLiteral("plain"));
     m_outputFormat->addItem(QStringLiteral("HTML and plain text"), QStringLiteral("html"));
     for (QComboBox *combo : {m_globalPaste, m_terminalPaste}) {
-        combo->addItem(QStringLiteral("Standard paste (Ctrl+V)"), pasteMethodName(PasteMethod::StandardPaste));
-        combo->addItem(QStringLiteral("Terminal paste (Ctrl+Shift+V)"), pasteMethodName(PasteMethod::TerminalPaste));
-        combo->addItem(QStringLiteral("Clipboard only"), pasteMethodName(PasteMethod::ClipboardOnly));
+        addPasteMethods(combo);
     }
     m_restoreClipboardAfterTyping->setText(QStringLiteral("Restore"));
     m_restoreClipboardAfterTyping->setToolTip(QStringLiteral("Restore the previous clipboard after virtual-keyboard paste."));
@@ -588,7 +602,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_apiKey->setPlaceholderText(QStringLiteral("Enter OpenAI API key"));
     m_authControl->addWidget(m_authStatus);
     m_authControl->addWidget(m_apiKey);
-    m_previewWords->setRange(1, 40);
     for (QSpinBox *spinBox : {m_preRollMs, m_postRollMs}) {
         spinBox->setRange(0, 1500);
         spinBox->setSingleStep(50);
@@ -628,6 +641,20 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_corrections->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_corrections->setSelectionMode(QAbstractItemView::SingleSelection);
     m_corrections->setMinimumHeight(180);
+    m_appPasteRules->setObjectName(QStringLiteral("vocabInput"));
+    m_appPasteRules->setColumnCount(3);
+    m_appPasteRules->setHorizontalHeaderLabels({
+        QStringLiteral("Enabled"),
+        QStringLiteral("Application ID"),
+        QStringLiteral("Paste behavior"),
+    });
+    m_appPasteRules->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_appPasteRules->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_appPasteRules->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    m_appPasteRules->verticalHeader()->hide();
+    m_appPasteRules->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_appPasteRules->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_appPasteRules->setMinimumHeight(150);
     m_vocabLimit->setObjectName(QStringLiteral("statusText"));
     m_vocabLimit->setForegroundRole(QPalette::WindowText);
     m_vocabLimit->setAttribute(Qt::WA_StyledBackground, false);
@@ -639,20 +666,8 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     m_bindings->setMinimumHeight(180);
 
     auto *root = new QVBoxLayout(this);
-    root->setContentsMargins(24, 20, 24, 20);
-    root->setSpacing(12);
-
-    auto *scroll = m_scroll;
-    scroll->setObjectName(QStringLiteral("settingsScroll"));
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setAutoFillBackground(false);
-    scroll->viewport()->setAutoFillBackground(false);
-
-    auto *scrollContent = new QWidget(scroll);
-    auto *content = new QVBoxLayout(scrollContent);
-    content->setContentsMargins(0, 0, 0, 0);
-    content->setSpacing(12);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
 
     auto *generalSection = makeSectionLabel(QStringLiteral("General"), this);
     auto *audioSection = makeSectionLabel(QStringLiteral("Audio"), this);
@@ -662,7 +677,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *anthropicSection = makeSectionLabel(QStringLiteral("Anthropic"), this);
     auto *vocabularySection = makeSectionLabel(QStringLiteral("Vocabulary"), this);
     auto *correctionsSection = makeSectionLabel(QStringLiteral("Learned Corrections"), this);
-    auto *bindingsSection = makeSectionLabel(QStringLiteral("Bindings"), this);
+    auto *bindingsSection = makeSectionLabel(QStringLiteral("Replacements & snippets"), this);
 
     auto *generalCard = makeSettingsCard(this);
     auto *generalLayout = qobject_cast<QVBoxLayout *>(generalCard->layout());
@@ -678,6 +693,7 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *anthropicLayout = qobject_cast<QVBoxLayout *>(anthropicCard->layout());
 
     auto *primaryOutput = new QLabel(m_controller->primaryOutputStatus(), this);
+    m_openReleasesButton = new QPushButton(QStringLiteral("Open releases"), this);
     m_ydotoolSetupButton = new QPushButton(QStringLiteral("Set up"), this);
     m_ydotoolStartButton = new QPushButton(QStringLiteral("Start service"), this);
     m_ydotoolDisableButton = new QPushButton(QStringLiteral("Disable in Speecher"), this);
@@ -713,8 +729,9 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
 
     addRow(generalLayout, makeRow(QStringLiteral("Theme"), QStringLiteral("App colors."), m_theme, generalCard), generalCard);
     addRow(generalLayout, makeRow(QStringLiteral("Pause media"), QStringLiteral("Pause currently playing media while transcribing."), m_pauseMedia, generalCard), generalCard);
-    addRow(generalLayout, makeRow(QStringLiteral("Preview words"), QStringLiteral("Trailing words shown in the popup."), m_previewWords, generalCard), generalCard);
-    addRow(generalLayout, makeRow(QStringLiteral("Clipboard output"), QStringLiteral("Current platform clipboard path."), primaryOutput, generalCard), generalCard, false);
+    addRow(generalLayout, makeRow(QStringLiteral("Sound cues"), QStringLiteral("Use the desktop sound for recording start and stop."), m_sounds, generalCard), generalCard);
+    addRow(generalLayout, makeRow(QStringLiteral("Clipboard output"), QStringLiteral("Current platform clipboard path."), primaryOutput, generalCard), generalCard);
+    addRow(generalLayout, makeRow(QStringLiteral("Updates"), QStringLiteral("Updates are manual; open the GitHub releases page when you want to check."), m_openReleasesButton, generalCard), generalCard, false);
 
     addRow(audioLayout,
            makeRow(QStringLiteral("Microphone"),
@@ -784,6 +801,32 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
                    m_terminalPaste,
                    outputCard),
            outputCard);
+
+    auto *appRulesControl = new QWidget(outputCard);
+    auto *appRulesLayout = new QVBoxLayout(appRulesControl);
+    appRulesLayout->setContentsMargins(20, 16, 20, 16);
+    appRulesLayout->setSpacing(8);
+    auto *appRulesTitle = new QLabel(QStringLiteral("App-specific paste rules"), appRulesControl);
+    appRulesTitle->setObjectName(QStringLiteral("rowTitle"));
+    auto *appRulesDescription = new QLabel(
+        QStringLiteral("Override paste behavior for an exact application ID, such as org.kde.konsole."),
+        appRulesControl);
+    appRulesDescription->setObjectName(QStringLiteral("rowDescription"));
+    appRulesDescription->setWordWrap(true);
+    m_addAppPasteRuleButton = new QPushButton(QStringLiteral("Add rule"), appRulesControl);
+    m_removeAppPasteRuleButton = new QPushButton(QStringLiteral("Delete selected"), appRulesControl);
+    m_removeAppPasteRuleButton->setEnabled(false);
+    auto *appRuleButtons = new QHBoxLayout;
+    appRuleButtons->addStretch();
+    appRuleButtons->addWidget(m_removeAppPasteRuleButton);
+    appRuleButtons->addWidget(m_addAppPasteRuleButton);
+    appRulesLayout->addWidget(appRulesTitle);
+    appRulesLayout->addWidget(appRulesDescription);
+    appRulesLayout->addWidget(m_appPasteRules);
+    appRulesLayout->addLayout(appRuleButtons);
+    outputLayout->addWidget(appRulesControl);
+    outputLayout->addWidget(makeSeparator(outputCard));
+
     addRow(outputLayout,
            makeRow(QStringLiteral("Restore clipboard"),
                    QStringLiteral("Restore the previous clipboard only after insertion is verified."),
@@ -882,17 +925,19 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     auto *bindingLayout = new QVBoxLayout(bindingSection);
     bindingLayout->setContentsMargins(20, 16, 20, 20);
     bindingLayout->setSpacing(8);
-    auto *bindingTitle = new QLabel(QStringLiteral("Phrase bindings"), bindingSection);
+    auto *bindingTitle = new QLabel(QStringLiteral("Replacements & snippets"), bindingSection);
     bindingTitle->setObjectName(QStringLiteral("rowTitle"));
     bindingTitle->setAlignment(Qt::AlignCenter);
     bindingTitle->setForegroundRole(QPalette::WindowText);
     bindingTitle->setAttribute(Qt::WA_StyledBackground, false);
-    auto *bindingDescription = new QLabel(QStringLiteral("Bindings replace spoken aliases after capture. Matching ignores case and treats punctuation as spaces; replacements are inserted exactly."), bindingSection);
+    auto *bindingDescription = new QLabel(
+        QStringLiteral("Replace a spoken phrase with exact text, including multi-line snippets. Matching ignores case and treats punctuation as spaces."),
+        bindingSection);
     bindingDescription->setObjectName(QStringLiteral("rowDescription"));
     bindingDescription->setAlignment(Qt::AlignCenter);
     bindingDescription->setWordWrap(true);
     bindingDescription->setAttribute(Qt::WA_StyledBackground, false);
-    m_addBindingButton = new QPushButton(QStringLiteral("Add binding"), bindingSection);
+    m_addBindingButton = new QPushButton(QStringLiteral("Add replacement"), bindingSection);
     m_addBindingButton->setIcon(QIcon::fromTheme(QStringLiteral("list-add")));
     m_addBindingButton->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     bindingLayout->addWidget(bindingTitle);
@@ -906,31 +951,97 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     note->setForegroundRole(QPalette::WindowText);
     note->setAttribute(Qt::WA_StyledBackground, false);
 
-    content->addWidget(generalSection);
-    content->addWidget(generalCard);
-    content->addWidget(audioSection);
-    content->addWidget(audioCard);
-    content->addWidget(outputSection);
-    content->addWidget(outputCard);
-    content->addWidget(refinementSection);
-    content->addWidget(refinementCard);
-    content->addWidget(openAiSection);
-    content->addWidget(openAiCard);
-    content->addWidget(anthropicSection);
-    content->addWidget(anthropicCard);
-    content->addWidget(vocabularySection);
-    content->addWidget(vocabSection);
-    content->addWidget(correctionsSection);
-    content->addWidget(correctionsCard);
-    content->addWidget(bindingsSection);
-    content->addWidget(bindingSection);
-    content->addWidget(note);
-    scroll->setWidget(scrollContent);
-    root->addWidget(scroll, 1);
+    auto *generalPage = new QScrollArea(m_pages);
+    auto *generalPageLayout = makeSettingsPage(generalPage);
+    generalPageLayout->addWidget(generalSection);
+    generalPageLayout->addWidget(generalCard);
+    generalPageLayout->addStretch();
+
+    auto *audioPage = new QScrollArea(m_pages);
+    auto *audioPageLayout = makeSettingsPage(audioPage);
+    audioPageLayout->addWidget(audioSection);
+    audioPageLayout->addWidget(audioCard);
+    audioPageLayout->addStretch();
+
+    auto *outputPage = new QScrollArea(m_pages);
+    auto *outputPageLayout = makeSettingsPage(outputPage);
+    outputPageLayout->addWidget(outputSection);
+    outputPageLayout->addWidget(outputCard);
+    outputPageLayout->addStretch();
+
+    auto *refinementPage = new QScrollArea(m_pages);
+    auto *refinementPageLayout = makeSettingsPage(refinementPage);
+    refinementPageLayout->addWidget(refinementSection);
+    refinementPageLayout->addWidget(refinementCard);
+    refinementPageLayout->addStretch();
+
+    auto *providersPage = new QScrollArea(m_pages);
+    auto *providersPageLayout = makeSettingsPage(providersPage);
+    providersPageLayout->addWidget(openAiSection);
+    providersPageLayout->addWidget(openAiCard);
+    providersPageLayout->addWidget(anthropicSection);
+    providersPageLayout->addWidget(anthropicCard);
+    providersPageLayout->addWidget(note);
+    providersPageLayout->addStretch();
+
+    auto *vocabularyPageLayout = makeSettingsPage(m_scroll);
+    vocabularyPageLayout->addWidget(vocabularySection);
+    vocabularyPageLayout->addWidget(vocabSection);
+    vocabularyPageLayout->addWidget(correctionsSection);
+    vocabularyPageLayout->addWidget(correctionsCard);
+    vocabularyPageLayout->addWidget(bindingsSection);
+    vocabularyPageLayout->addWidget(bindingSection);
+    vocabularyPageLayout->addStretch();
+
+    const QList<QPair<QString, QString>> categories{
+        {QStringLiteral("General"), QStringLiteral("preferences-system")},
+        {QStringLiteral("Audio"), QStringLiteral("audio-input-microphone")},
+        {QStringLiteral("Output"), QStringLiteral("edit-paste")},
+        {QStringLiteral("Refinement"), QStringLiteral("document-edit")},
+        {QStringLiteral("Providers"), QStringLiteral("network-server")},
+        {QStringLiteral("Vocabulary"), QStringLiteral("tools-check-spelling")},
+    };
+    for (const auto &[label, iconName] : categories) {
+        auto *item = new QListWidgetItem(QIcon::fromTheme(iconName), label, m_categories);
+        item->setSizeHint(QSize(176, 44));
+    }
+    m_categories->setObjectName(QStringLiteral("settingsCategories"));
+    m_categories->setFrameShape(QFrame::NoFrame);
+    m_categories->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_categories->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_categories->setFixedWidth(196);
+    m_categories->setIconSize(QSize(18, 18));
+
+    for (QWidget *page : {
+             static_cast<QWidget *>(generalPage),
+             static_cast<QWidget *>(audioPage),
+             static_cast<QWidget *>(outputPage),
+             static_cast<QWidget *>(refinementPage),
+             static_cast<QWidget *>(providersPage),
+             static_cast<QWidget *>(m_scroll),
+         }) {
+        m_pages->addWidget(page);
+    }
+    connect(m_categories, &QListWidget::currentRowChanged, m_pages, &QStackedWidget::setCurrentIndex);
+    m_categories->setCurrentRow(0);
+
+    auto *body = new QWidget(this);
+    auto *bodyLayout = new QHBoxLayout(body);
+    bodyLayout->setContentsMargins(0, 0, 0, 0);
+    bodyLayout->setSpacing(0);
+    bodyLayout->addWidget(m_categories);
+    bodyLayout->addWidget(m_pages, 1);
+    root->addWidget(body, 1);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply, this);
     buttons->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
-    root->addWidget(buttons, 0, Qt::AlignRight);
+    auto *footer = new QFrame(this);
+    footer->setFrameShape(QFrame::NoFrame);
+    auto *footerLayout = new QHBoxLayout(footer);
+    footerLayout->setContentsMargins(16, 12, 16, 12);
+    footerLayout->addStretch();
+    footerLayout->addWidget(buttons);
+    root->addWidget(footer);
 
     generalCard->setStyleSheet(QString::fromLatin1(settingsStyle));
     audioCard->setStyleSheet(QString::fromLatin1(settingsStyle));
@@ -951,6 +1062,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     correctionsSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     bindingsSection->setStyleSheet(QString::fromLatin1(settingsStyle));
     note->setStyleSheet(QString::fromLatin1(settingsStyle));
+    m_categories->setStyleSheet(QStringLiteral(
+        "QListWidget#settingsCategories{background:palette(window);border-right:1px solid palette(mid);padding:12px 8px;}"
+        "QListWidget#settingsCategories::item{border-radius:6px;padding:7px 10px;}"
+        "QListWidget#settingsCategories::item:selected{background:palette(highlight);color:palette(highlighted-text);}"));
 
     if (QPushButton *ok = buttons->button(QDialogButtonBox::Ok)) {
         m_okButton = ok;
@@ -979,6 +1094,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(m_theme, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_pauseMedia, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
+    connect(m_sounds, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
+    connect(m_openReleasesButton, &QPushButton::clicked, this, [] {
+        QDesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/firemonster612/speecher/releases")));
+    });
     connect(m_audioDevice, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_captureMode, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_vadEnabled, &QCheckBox::toggled, this, [this] {
@@ -989,7 +1108,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
     connect(m_postRollMs, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
     connect(m_readinessTimeoutMs, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
     connect(m_vadThreshold, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
-    connect(m_provider, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_provider, &QComboBox::currentIndexChanged, this, [this] {
+        updateScreenshotControl();
+        updateButtonState();
+    });
     connect(m_refinementStyle, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_writingProfile, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_useTargetContext, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
@@ -1001,13 +1123,31 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
         updateButtonState();
     });
     connect(m_anthropicEffort, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
-    connect(m_anthropicAuthMode, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_anthropicAuthMode, &QComboBox::currentIndexChanged, this, [this] {
+        updateScreenshotControl();
+        updateButtonState();
+    });
     connect(m_anthropicInfoButton, &QPushButton::clicked, this, &SettingsDialog::showAnthropicAuthInfo);
     connect(m_restoreClipboardAfterTyping, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
     connect(m_learnCorrections, &QCheckBox::toggled, this, &SettingsDialog::updateButtonState);
     connect(m_outputFormat, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_globalPaste, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
     connect(m_terminalPaste, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_appPasteRules, &QTableWidget::itemChanged, this, &SettingsDialog::updateButtonState);
+    connect(m_appPasteRules, &QTableWidget::itemSelectionChanged, this, [this] {
+        m_removeAppPasteRuleButton->setEnabled(m_appPasteRules->currentRow() >= 0);
+    });
+    connect(m_addAppPasteRuleButton, &QPushButton::clicked, this, [this] {
+        addApplicationPasteRule();
+        updateButtonState();
+    });
+    connect(m_removeAppPasteRuleButton, &QPushButton::clicked, this, [this] {
+        const int row = m_appPasteRules->currentRow();
+        if (row >= 0) {
+            m_appPasteRules->removeRow(row);
+            updateButtonState();
+        }
+    });
     connect(m_outputMethod, &QComboBox::currentIndexChanged, this, [this] {
         if (m_outputMethod->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool)) {
             const YdotoolSetupStatus status = YdotoolSetup::probe(m_controller->settings()->ydotoolEnabled());
@@ -1052,7 +1192,6 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
         m_undoCorrectionButton->setEnabled(!m_removedCorrections.isEmpty());
         updateButtonState();
     });
-    connect(m_previewWords, &QSpinBox::valueChanged, this, &SettingsDialog::updateButtonState);
     connect(m_ydotoolSetupButton, &QPushButton::clicked, this, &SettingsDialog::setupOrEnableYdotool);
     connect(m_ydotoolStartButton, &QPushButton::clicked, this, [this] {
         QString error;
@@ -1083,6 +1222,7 @@ void SettingsDialog::load()
     SettingsStore *settings = m_controller->settings();
     selectData(m_theme, settings->theme());
     m_pauseMedia->setChecked(settings->pauseMediaDuringTranscription());
+    m_sounds->setChecked(settings->soundsEnabled());
     const AudioCaptureSettings audio = settings->audioCaptureSettings();
     refreshAudioDeviceList(audio.deviceId);
     selectData(m_captureMode, audio.mode);
@@ -1115,10 +1255,10 @@ void SettingsDialog::load()
                    PasteRuleScope::Category,
                    appCategoryName(AppCategory::Terminal),
                    PasteMethod::TerminalPaste)));
+    setApplicationPasteRules(pasteRules);
     m_restoreClipboardAfterTyping->setChecked(settings->restoreClipboardAfterTyping());
     selectData(m_authMode, settings->openAiAuthMode());
     selectData(m_anthropicAuthMode, settings->anthropicAuthMode());
-    m_previewWords->setValue(settings->previewWords());
     m_apiKey->setText(m_controller->secretStore()->apiKey());
     setVocabularyRows(settings->customVocabulary());
     setBindingRules(settings->bindingRules());
@@ -1130,6 +1270,7 @@ void SettingsDialog::load()
     updateAudioControls();
     updateAuthControl();
     updateAnthropicControls();
+    updateScreenshotControl();
     refreshOutputControls();
     updateButtonState();
 }
@@ -1141,14 +1282,27 @@ bool SettingsDialog::save()
     const BindingValidationResult bindingValidation = BindingProcessor::validateRules(bindingRules);
     if (!bindingValidation.ok()) {
         QMessageBox::warning(this,
-                             QStringLiteral("Bindings not saved"),
+                             QStringLiteral("Replacements not saved"),
                              bindingValidation.messages().join(QStringLiteral("\n")));
         return false;
+    }
+    const QList<PasteRule> applicationPasteRules = currentApplicationPasteRules();
+    QSet<QString> applicationIds;
+    for (const PasteRule &rule : applicationPasteRules) {
+        const QString id = rule.match.toCaseFolded();
+        if (applicationIds.contains(id)) {
+            QMessageBox::warning(this,
+                                 QStringLiteral("Paste rules not saved"),
+                                 QStringLiteral("Each application ID can have only one paste rule."));
+            return false;
+        }
+        applicationIds.insert(id);
     }
 
     settings->setTheme(m_theme->currentData().toString());
     Theme::apply(settings->theme());
     settings->setPauseMediaDuringTranscription(m_pauseMedia->isChecked());
+    settings->setSoundsEnabled(m_sounds->isChecked());
     settings->setAudioCaptureSettings({
         m_audioDevice->currentData().toString(),
         m_captureMode->currentData().toString(),
@@ -1171,14 +1325,14 @@ bool SettingsDialog::save()
     settings->setAnthropicEffort(m_anthropicEffort->currentData().toString());
     settings->setOutputMethod(m_outputMethod->currentData().toString());
     settings->setOutputFormat(outputFormatFromString(m_outputFormat->currentData().toString()));
-    settings->setPasteRules(withBasePasteRules(
+    settings->setPasteRules(withPasteRules(
         settings->pasteRules(),
+        applicationPasteRules,
         pasteMethodFromName(m_globalPaste->currentData().toString()),
         pasteMethodFromName(m_terminalPaste->currentData().toString())));
     settings->setRestoreClipboardAfterTyping(m_restoreClipboardAfterTyping->isChecked());
     settings->setOpenAiAuthMode(m_authMode->currentData().toString());
     settings->setAnthropicAuthMode(m_anthropicAuthMode->currentData().toString());
-    settings->setPreviewWords(m_previewWords->value());
     settings->setCustomVocabulary(currentVocabulary());
     settings->setCorrectionLearningEnabled(m_learnCorrections->isChecked());
     settings->setLearnedCorrections(currentLearnedCorrections());
@@ -1199,6 +1353,7 @@ bool SettingsDialog::save()
     }
     updateAuthControl();
     updateAnthropicControls();
+    updateScreenshotControl();
     refreshOutputControls();
     updateButtonState();
     return true;
@@ -1210,6 +1365,7 @@ bool SettingsDialog::hasChanges() const
     const AudioCaptureSettings audio = settings->audioCaptureSettings();
     if (m_theme->currentData().toString() != settings->theme()
         || m_pauseMedia->isChecked() != settings->pauseMediaDuringTranscription()
+        || m_sounds->isChecked() != settings->soundsEnabled()
         || m_audioDevice->currentData().toString() != audio.deviceId
         || m_captureMode->currentData().toString() != audio.mode
         || m_vadEnabled->isChecked() != audio.vadEnabled
@@ -1228,15 +1384,15 @@ bool SettingsDialog::hasChanges() const
         || m_anthropicEffort->currentData().toString() != settings->anthropicEffort()
         || m_outputMethod->currentData().toString() != settings->outputMethod()
         || m_outputFormat->currentData().toString() != outputFormatName(settings->outputFormat())
-        || withBasePasteRules(
+        || withPasteRules(
                settings->pasteRules(),
+               currentApplicationPasteRules(),
                pasteMethodFromName(m_globalPaste->currentData().toString()),
                pasteMethodFromName(m_terminalPaste->currentData().toString()))
             != settings->pasteRules()
         || m_restoreClipboardAfterTyping->isChecked() != settings->restoreClipboardAfterTyping()
         || m_authMode->currentData().toString() != settings->openAiAuthMode()
         || m_anthropicAuthMode->currentData().toString() != settings->anthropicAuthMode()
-        || m_previewWords->value() != settings->previewWords()
         || currentVocabulary() != settings->customVocabulary()
         || m_learnCorrections->isChecked() != settings->correctionLearningEnabled()
         || currentLearnedCorrections() != settings->learnedCorrections()
@@ -1285,6 +1441,63 @@ QList<LearnedCorrection> SettingsDialog::currentLearnedCorrections() const
         }
     }
     return corrections;
+}
+
+QList<PasteRule> SettingsDialog::currentApplicationPasteRules() const
+{
+    QList<PasteRule> rules;
+    for (int row = 0; row < m_appPasteRules->rowCount(); ++row) {
+        const QTableWidgetItem *enabled = m_appPasteRules->item(row, 0);
+        const QTableWidgetItem *application = m_appPasteRules->item(row, 1);
+        const auto *method = qobject_cast<QComboBox *>(m_appPasteRules->cellWidget(row, 2));
+        const QString applicationId = application ? application->text().trimmed() : QString();
+        if (applicationId.isEmpty() || !method) {
+            continue;
+        }
+        rules.append({
+            PasteRuleScope::Application,
+            applicationId,
+            pasteMethodFromName(method->currentData().toString()),
+            enabled && enabled->checkState() == Qt::Checked,
+        });
+    }
+    return rules;
+}
+
+void SettingsDialog::setApplicationPasteRules(const QList<PasteRule> &rules)
+{
+    QSignalBlocker blocker(m_appPasteRules);
+    m_appPasteRules->setRowCount(0);
+    for (const PasteRule &rule : rules) {
+        if (rule.scope == PasteRuleScope::Application) {
+            addApplicationPasteRule(rule);
+        }
+    }
+    m_removeAppPasteRuleButton->setEnabled(false);
+}
+
+void SettingsDialog::addApplicationPasteRule(const PasteRule &rule)
+{
+    const int row = m_appPasteRules->rowCount();
+    m_appPasteRules->insertRow(row);
+
+    auto *enabled = new QTableWidgetItem;
+    enabled->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
+    enabled->setCheckState(rule.enabled ? Qt::Checked : Qt::Unchecked);
+    auto *application = new QTableWidgetItem(rule.match);
+    application->setToolTip(QStringLiteral("Use the desktop application ID reported by AT-SPI."));
+    auto *method = new QComboBox(m_appPasteRules);
+    addPasteMethods(method, true);
+    selectData(method, pasteMethodName(rule.method));
+    connect(method, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateButtonState);
+
+    m_appPasteRules->setItem(row, 0, enabled);
+    m_appPasteRules->setItem(row, 1, application);
+    m_appPasteRules->setCellWidget(row, 2, method);
+    if (rule.match.isEmpty()) {
+        m_appPasteRules->setCurrentCell(row, 1);
+        m_appPasteRules->editItem(application);
+    }
 }
 
 void SettingsDialog::setLearnedCorrections(const QList<LearnedCorrection> &corrections)
@@ -1426,16 +1639,16 @@ void SettingsDialog::editBinding(int row)
     const bool editing = row >= 0 && row < m_bindingRules.size();
 
     QDialog dialog(this);
-    dialog.setWindowTitle(editing ? QStringLiteral("Edit binding") : QStringLiteral("Add binding"));
+    dialog.setWindowTitle(editing ? QStringLiteral("Edit replacement") : QStringLiteral("Add replacement"));
     auto *layout = new QVBoxLayout(&dialog);
     layout->setContentsMargins(18, 18, 18, 14);
     layout->setSpacing(8);
 
-    auto *phraseLabel = new QLabel(QStringLiteral("Binding"), &dialog);
+    auto *phraseLabel = new QLabel(QStringLiteral("Spoken phrase"), &dialog);
     auto *phrase = new QLineEdit(&dialog);
     phrase->setClearButtonEnabled(true);
 
-    auto *replacementLabel = new QLabel(QStringLiteral("Replacement"), &dialog);
+    auto *replacementLabel = new QLabel(QStringLiteral("Exact replacement or snippet"), &dialog);
     auto *replacement = new QPlainTextEdit(&dialog);
     replacement->setMinimumHeight(240);
     replacement->setLineWrapMode(QPlainTextEdit::WidgetWidth);
@@ -1478,7 +1691,7 @@ void SettingsDialog::editBinding(int row)
             const BindingValidationResult validation = BindingProcessor::validateRules(candidate);
             if (!validation.ok()) {
                 QMessageBox::warning(&dialog,
-                                     QStringLiteral("Binding not saved"),
+                                     QStringLiteral("Replacement not saved"),
                                      validation.messages().join(QStringLiteral("\n")));
                 return;
             }
@@ -1577,6 +1790,19 @@ void SettingsDialog::updateAnthropicControls()
     m_anthropicWarning->setText(haiku
                                     ? QStringLiteral("Haiku may treat transcript as instructions.")
                                     : QString());
+}
+
+void SettingsDialog::updateScreenshotControl()
+{
+    const QString provider = m_provider->currentData().toString();
+    const bool supported = provider == QStringLiteral("openai")
+        || (provider == QStringLiteral("anthropic")
+            && m_anthropicAuthMode->currentData().toString() == QStringLiteral("oauth"));
+    m_screenshotContext->setEnabled(supported);
+    m_screenshotContext->setToolTip(
+        supported
+            ? QStringLiteral("Captured through the desktop portal and kept only for the current dictation.")
+            : QStringLiteral("Choose OpenAI or Anthropic OAuth extra usage to send screenshot context."));
 }
 
 void SettingsDialog::showAnthropicAuthInfo()

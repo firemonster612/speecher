@@ -34,6 +34,11 @@ public:
     virtual AudioInput *createAudioInput(SettingsStore *settings, QObject *parent) const = 0;
     virtual MediaController *createMediaController(QObject *parent) const = 0;
     virtual TargetProvider *createTargetProvider(QObject *parent) const = 0;
+    virtual ScreenshotContextProvider *createScreenshotContextProvider(QObject *parent) const
+    {
+        Q_UNUSED(parent);
+        return nullptr;
+    }
     virtual TextDeliveryAdapter *createTextDelivery(TargetProvider *targetProvider, QObject *parent) const = 0;
     virtual PopupPositioner *createPopupPositioner(QObject *parent) const = 0;
 };

@@ -111,6 +111,7 @@ set(SPEECHER_PLATFORM_SOURCES
   src/output/YdotoolSetup.cpp
   src/platform/PlatformIntegration.cpp
   src/platform/AtSpiTargetProvider.cpp
+  src/platform/PortalScreenshotContextProvider.cpp
   src/ui/WaylandLayerShell.cpp
 )
 
@@ -126,6 +127,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/output/YdotoolSetup.h
   src/platform/PlatformIntegration.h
   src/platform/AtSpiTargetProvider.h
+  src/platform/PortalScreenshotContextProvider.h
   src/ui/WaylandLayerShell.h
 )
 
@@ -312,4 +314,9 @@ if(SPEECHER_BUILD_TESTS)
   )
   add_test(NAME speecher_tests COMMAND speecher_tests)
   set_tests_properties(speecher_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+  qt_add_executable(speecher_atspi_fixture
+    tests/atspi_fixture.cpp
+  )
+  target_link_libraries(speecher_atspi_fixture PRIVATE Qt6::Widgets)
 endif()

@@ -124,10 +124,33 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
                       << "effort=" + (body.value(QStringLiteral("output_config")).toObject().value(QStringLiteral("effort")).toString(QStringLiteral("default")))
                       << "endpoint=" + endpoint.toString(QUrl::RemoveUserInfo);
     body.insert(QStringLiteral("system"), claudeCodeSystemPrompt(refinementStyle));
+    const QString userMessage = transcriptRefinementUserMessage(
+        rawTranscript,
+        vocabulary,
+        bindingVocabulary,
+        context);
+    QJsonValue content = userMessage;
+    if (context.hasScreenshot()) {
+        content = QJsonArray{
+            QJsonObject{
+                {QStringLiteral("type"), QStringLiteral("text")},
+                {QStringLiteral("text"), userMessage},
+            },
+            QJsonObject{
+                {QStringLiteral("type"), QStringLiteral("image")},
+                {QStringLiteral("source"),
+                 QJsonObject{
+                     {QStringLiteral("type"), QStringLiteral("base64")},
+                     {QStringLiteral("media_type"), context.screenshotMediaType},
+                     {QStringLiteral("data"), QString::fromLatin1(context.screenshotData.toBase64())},
+                 }},
+            },
+        };
+    }
     body.insert(QStringLiteral("messages"),
                 QJsonArray{QJsonObject{
                     {QStringLiteral("role"), QStringLiteral("user")},
-                    {QStringLiteral("content"), transcriptRefinementUserMessage(rawTranscript, vocabulary, bindingVocabulary, context)},
+                    {QStringLiteral("content"), content},
                 }});
 
     m_reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));

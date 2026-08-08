@@ -37,6 +37,16 @@ void clearError(GError **error)
     }
 }
 
+bool hasState(AtspiAccessible *object, AtspiStateType state)
+{
+    AtspiStateSet *states = object ? atspi_accessible_get_state_set(object) : nullptr;
+    const bool present = states && atspi_state_set_contains(states, state);
+    if (states) {
+        g_object_unref(states);
+    }
+    return present;
+}
+
 AtspiAccessible *focusedObject(AtspiAccessible *object, int depth, int *visited)
 {
     if (!object || depth > maximumTreeDepth || ++(*visited) > maximumVisitedObjects) {
@@ -59,12 +69,59 @@ AtspiAccessible *focusedObject(AtspiAccessible *object, int depth, int *visited)
         }
     }
 
-    AtspiStateSet *states = atspi_accessible_get_state_set(object);
-    const bool focused = states && atspi_state_set_contains(states, ATSPI_STATE_FOCUSED);
-    if (states) {
-        g_object_unref(states);
+    return hasState(object, ATSPI_STATE_FOCUSED)
+        ? ATSPI_ACCESSIBLE(g_object_ref(object))
+        : nullptr;
+}
+
+AtspiAccessible *focusedObjectInActiveWindow(AtspiAccessible *desktop)
+{
+    if (!desktop) {
+        return nullptr;
     }
-    return focused ? ATSPI_ACCESSIBLE(g_object_ref(object)) : nullptr;
+    GError *error = nullptr;
+    const int applicationCount = atspi_accessible_get_child_count(desktop, &error);
+    clearError(&error);
+    for (int applicationIndex = 0; applicationIndex < applicationCount; ++applicationIndex) {
+        AtspiAccessible *application = atspi_accessible_get_child_at_index(desktop, applicationIndex, &error);
+        clearError(&error);
+        if (!application) {
+            continue;
+        }
+
+        if (hasState(application, ATSPI_STATE_ACTIVE)) {
+            int visited = 0;
+            AtspiAccessible *focused = focusedObject(application, 0, &visited);
+            g_object_unref(application);
+            if (focused) {
+                return focused;
+            }
+            continue;
+        }
+
+        const int windowCount = atspi_accessible_get_child_count(application, &error);
+        clearError(&error);
+        for (int windowIndex = 0; windowIndex < windowCount; ++windowIndex) {
+            AtspiAccessible *window = atspi_accessible_get_child_at_index(application, windowIndex, &error);
+            clearError(&error);
+            if (!window) {
+                continue;
+            }
+            if (hasState(window, ATSPI_STATE_ACTIVE)) {
+                int visited = 0;
+                AtspiAccessible *focused = focusedObject(window, 0, &visited);
+                g_object_unref(window);
+                g_object_unref(application);
+                if (focused) {
+                    return focused;
+                }
+                return nullptr;
+            }
+            g_object_unref(window);
+        }
+        g_object_unref(application);
+    }
+    return nullptr;
 }
 
 QString applicationAttribute(AtspiAccessible *application)
@@ -128,6 +185,15 @@ void populateText(Target *target, AtspiAccessible *object)
         if (selection) {
             target->selectionStart = selection->start_offset;
             target->selectionEnd = selection->end_offset;
+            if (selection->end_offset > selection->start_offset) {
+                target->selectedText = takeString(atspi_text_get_text(
+                    text,
+                    selection->start_offset,
+                    qMin(selection->end_offset,
+                         selection->start_offset + contextCharacters * 2),
+                    &error));
+                clearError(&error);
+            }
             g_free(selection);
         }
     } else {
@@ -140,8 +206,11 @@ QString targetFingerprint(const Target &target)
     const QByteArray material = target.applicationId.toUtf8()
         + '\0' + QByteArray::number(target.processId)
         + '\0' + QByteArray::number(target.caretOffset)
+        + '\0' + QByteArray::number(target.selectionStart)
+        + '\0' + QByteArray::number(target.selectionEnd)
         + '\0' + target.nearbyTextBefore.toUtf8()
-        + '\0' + target.nearbyTextAfter.toUtf8();
+        + '\0' + target.nearbyTextAfter.toUtf8()
+        + '\0' + target.selectedText.toUtf8();
     return QString::fromLatin1(QCryptographicHash::hash(material, QCryptographicHash::Sha256).toHex());
 }
 
@@ -176,15 +245,17 @@ Target AtSpiTargetProvider::capture()
 
     for (int desktopIndex = 0; desktopIndex < atspi_get_desktop_count(); ++desktopIndex) {
         AtspiAccessible *desktop = atspi_get_desktop(desktopIndex);
-        int visited = 0;
-        AtspiAccessible *focused = focusedObject(desktop, 0, &visited);
+        AtspiAccessible *focused = focusedObjectInActiveWindow(desktop);
+        if (!focused) {
+            int visited = 0;
+            focused = focusedObject(desktop, 0, &visited);
+        }
         if (desktop) {
             g_object_unref(desktop);
         }
         if (!focused) {
             continue;
         }
-
         GError *error = nullptr;
         AtspiAccessible *application = atspi_accessible_get_application(focused, &error);
         clearError(&error);
@@ -225,6 +296,11 @@ Target AtSpiTargetProvider::capture()
 
 bool AtSpiTargetProvider::stillFocused(const Target &target)
 {
+    return matchesSnapshot(target, true);
+}
+
+bool AtSpiTargetProvider::matchesSnapshot(const Target &target, bool requireFocus) const
+{
 #ifdef SPEECHER_WITH_ATSPI
     if (!m_accessible || target.secure || target.fingerprint != m_snapshot.fingerprint) {
         return false;
@@ -232,16 +308,18 @@ bool AtSpiTargetProvider::stillFocused(const Target &target)
     AtspiAccessible *accessible = ATSPI_ACCESSIBLE(m_accessible);
     AtspiStateSet *states = atspi_accessible_get_state_set(accessible);
     const bool focused = states && atspi_state_set_contains(states, ATSPI_STATE_FOCUSED);
+    const bool defunct = !states || atspi_state_set_contains(states, ATSPI_STATE_DEFUNCT);
     if (states) {
         g_object_unref(states);
     }
-    if (!focused) {
+    if (defunct || (requireFocus && !focused)) {
         return false;
     }
 
     Target current = m_snapshot;
     current.nearbyTextBefore.clear();
     current.nearbyTextAfter.clear();
+    current.selectedText.clear();
     current.caretOffset = -1;
     current.selectionStart = -1;
     current.selectionEnd = -1;
@@ -250,6 +328,68 @@ bool AtSpiTargetProvider::stillFocused(const Target &target)
     return current.fingerprint == target.fingerprint;
 #else
     Q_UNUSED(target)
+    return false;
+#endif
+}
+
+bool AtSpiTargetProvider::canInsertText(const Target &target)
+{
+#ifdef SPEECHER_WITH_ATSPI
+    if (!m_accessible
+        || target.secure
+        || target.caretOffset < 0
+        || (target.selectionStart >= 0 && target.selectionEnd > target.selectionStart)) {
+        return false;
+    }
+    AtspiAccessible *accessible = ATSPI_ACCESSIBLE(m_accessible);
+    return atspi_accessible_is_editable_text(accessible)
+        && matchesSnapshot(target, false);
+#else
+    Q_UNUSED(target)
+    return false;
+#endif
+}
+
+bool AtSpiTargetProvider::insertText(const Target &target, const QString &plainText, QString *error)
+{
+#ifdef SPEECHER_WITH_ATSPI
+    if (plainText.isEmpty() || !canInsertText(target)) {
+        if (error) {
+            *error = QStringLiteral("The saved accessible target is no longer safe to edit");
+        }
+        return false;
+    }
+
+    AtspiEditableText *editable = atspi_accessible_get_editable_text(ATSPI_ACCESSIBLE(m_accessible));
+    if (!editable) {
+        if (error) {
+            *error = QStringLiteral("The saved target does not expose editable text");
+        }
+        return false;
+    }
+
+    const int position = target.selectionStart >= 0 ? target.selectionStart : target.caretOffset;
+    const QByteArray utf8 = plainText.toUtf8();
+    GError *atspiError = nullptr;
+    const bool inserted = atspi_editable_text_insert_text(
+        editable,
+        position,
+        utf8.constData(),
+        utf8.size(),
+        &atspiError);
+    if (!inserted && error) {
+        *error = atspiError && atspiError->message
+            ? QString::fromUtf8(atspiError->message)
+            : QStringLiteral("The target rejected direct text insertion");
+    }
+    clearError(&atspiError);
+    return inserted;
+#else
+    Q_UNUSED(target)
+    Q_UNUSED(plainText)
+    if (error) {
+        *error = QStringLiteral("AT-SPI support is not available in this build");
+    }
     return false;
 #endif
 }

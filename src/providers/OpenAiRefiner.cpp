@@ -228,6 +228,15 @@ QString transcriptRefinementUserMessage(const QString &rawTranscript,
     if (context.includeNearbyText && !context.target.secure) {
         targetContext.insert(QStringLiteral("text_before_caret"), context.target.nearbyTextBefore);
         targetContext.insert(QStringLiteral("text_after_caret"), context.target.nearbyTextAfter);
+        if (context.target.caretOffset >= 0) {
+            targetContext.insert(QStringLiteral("caret_offset"), context.target.caretOffset);
+        }
+        if (context.target.selectionStart >= 0
+            && context.target.selectionEnd > context.target.selectionStart) {
+            targetContext.insert(QStringLiteral("selection_start"), context.target.selectionStart);
+            targetContext.insert(QStringLiteral("selection_end"), context.target.selectionEnd);
+            targetContext.insert(QStringLiteral("selected_text"), context.target.selectedText);
+        }
     }
     return QStringLiteral(
                "Raw transcript:\n%1\n\nPreferred vocabulary:\n%2\n\nBinding aliases:\n%3\n\n"
@@ -295,7 +304,30 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
     body.insert(QStringLiteral("store"), false);
     QJsonObject user;
     user.insert(QStringLiteral("role"), QStringLiteral("user"));
-    user.insert(QStringLiteral("content"), transcriptRefinementUserMessage(rawTranscript, vocabulary, bindingVocabulary, context));
+    const QString userMessage = transcriptRefinementUserMessage(
+        rawTranscript,
+        vocabulary,
+        bindingVocabulary,
+        context);
+    if (context.hasScreenshot()) {
+        const QString imageUrl = QStringLiteral("data:%1;base64,%2")
+                                     .arg(context.screenshotMediaType,
+                                          QString::fromLatin1(context.screenshotData.toBase64()));
+        user.insert(QStringLiteral("content"),
+                    QJsonArray{
+                        QJsonObject{
+                            {QStringLiteral("type"), QStringLiteral("input_text")},
+                            {QStringLiteral("text"), userMessage},
+                        },
+                        QJsonObject{
+                            {QStringLiteral("type"), QStringLiteral("input_image")},
+                            {QStringLiteral("image_url"), imageUrl},
+                            {QStringLiteral("detail"), QStringLiteral("low")},
+                        },
+                    });
+    } else {
+        user.insert(QStringLiteral("content"), userMessage);
+    }
     body.insert(QStringLiteral("input"), QJsonArray{user});
 
     m_reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
