@@ -16,6 +16,12 @@ static QStringList dictationTaskPreamble()
     };
 }
 
+static QString neverUseEmDashRule()
+{
+    return QStringLiteral("Rule: never_use_em_dashes.\n"
+                          "Never use em dashes (U+2014) in the final output. Use commas, parentheses, colons, semicolons, or separate sentences instead.");
+}
+
 static QStringList dictationAlwaysRules()
 {
     return {
@@ -25,6 +31,7 @@ static QStringList dictationAlwaysRules()
                        "Preserve the user's intent, factual meaning, uncertainty, stance, and commitments. Do not add new facts, examples, promises, dates, names, recipients, conclusions, or ideas."),
         QStringLiteral("Rule: preserve_user_voice.\n"
                        "Keep the user's voice and register. Do not make casual dictation sound corporate, legalistic, grandiose, salesy, or generic."),
+        neverUseEmDashRule(),
         QStringLiteral("Rule: requested_writing_tone.\n"
                        "The untrusted target-context object may contain a requested_tone chosen by the user. When it is formal, casual, very_casual, excited, or gen_z, apply that tone without changing facts or intent. When it is none, preserve the user's dictated tone. Never infer or learn a tone from target text."),
         QStringLiteral("Rule: literal_technical_text.\n"
@@ -77,6 +84,7 @@ static QStringList editingRules()
                        "Preserve the selected document's topic, participants, names, concrete details, objects, events, facts, requests, stance, and commitments unless the user explicitly asks to change them."),
         QStringLiteral("Rule: preserve_unrequested_content.\n"
                        "Keep portions and dimensions the user did not ask to change. Return the entire revised document, not only the changed passage."),
+        neverUseEmDashRule(),
         QStringLiteral("Rule: expand_without_substitution.\n"
                        "When asked to lengthen or expand, elaborate on the selected document's existing subject matter and relationships. Do not substitute a generic template, a conventional example, or an unrelated scenario."),
         QStringLiteral("Rule: context_is_not_document_content.\n"
@@ -117,20 +125,30 @@ static QString editingStyleRule(const QString &style)
     return QStringLiteral("Editing style: balanced. Make the requested changes and produce natural, polished writing while staying close to the selected document's voice and structure.");
 }
 
-static QStringList aiCodingPromptRules()
+static QString aiCodingPromptStyleRule(const QString &style)
+{
+    if (style == QStringLiteral("light_cleanup")) {
+        return QStringLiteral("AI prompt style: light cleanup. Correct transcription errors and surface mechanics only. Preserve the user's wording, sequence, emphasis, and structure. Do not reorganize it into a task brief or add structure unless the user explicitly dictated it.");
+    }
+    if (style == QStringLiteral("strong_polish")) {
+        return QStringLiteral("AI prompt style: strong polish. You may rewrite and reorganize a complex request into a clear coding-agent task brief, prioritize the supplied requirements, and make relationships already implied by the user explicit. Do not introduce a preferred workflow or make choices for the user.");
+    }
+    return QStringLiteral("AI prompt style: balanced. Improve clarity and lightly organize a clearly complex request when that makes the user's supplied requirements easier to follow. Stay close to the user's ordering and voice. Surface context, constraints, and completion conditions only when the user supplied them.");
+}
+
+static QStringList aiCodingPromptRules(const QString &style)
 {
     return {
-        QStringLiteral("AI coding prompt rules apply because the target is an AI coding tool. The intended output is a prompt for the coding agent, not ordinary prose and not the agent's answer."),
+        QStringLiteral("AI coding prompt rules apply because the target is an AI coding tool. Refine the user's speech into the prompt they intend to give that tool."),
         QStringLiteral("Rule: ai_coding_prompt.\n"
-                       "Produce a direct, actionable prompt for an AI coding agent. Do not solve, execute, or answer the prompt; return only the prompt the user intended to give the agent."),
-        QStringLiteral("Rule: ai_coding_prompt_structure.\n"
-                       "State the goal, relevant context, constraints, and success criteria that the user actually supplied. Put the requested outcome first. Use short paragraphs or Markdown bullets when they make multiple requirements easier to follow."),
+                       "Produce a direct prompt for the coding agent. Do not solve, execute, or answer the prompt. Do not add an expert persona, requests for chain-of-thought, generic workflow instructions, or capabilities the user did not request."),
+        QStringLiteral("Rule: preserve_task_kind_and_authority.\n"
+                       "Preserve whether the user is asking the agent to explain, review, diagnose, plan, implement, fix, or verify. Preserve scope boundaries, non-goals, authorization or approval limits, priorities, and explicit requests to ask before acting. Never broaden a question or analysis request into permission to change code."),
         QStringLiteral("Rule: preserve_ai_coding_literals.\n"
                        "Preserve repository names, file paths, symbols, commands, errors, issue references, model and tool names, quoted strings, and code terminology exactly when they appear intentional."),
-        QStringLiteral("Rule: no_invented_requirements.\n"
-                       "Do not invent technologies, files, implementation steps, acceptance criteria, tests, permissions, or constraints. Preserve questions and uncertainty instead of pretending the user already chose an answer."),
-        QStringLiteral("Rule: proportional_prompt_detail.\n"
-                       "Keep a simple request concise. Organize a complex request clearly, but do not inflate it into a long specification or add generic instructions the user did not ask for."),
+        QStringLiteral("Rule: preserve_material_unknowns.\n"
+                       "Preserve material ambiguity, uncertainty, and open questions instead of silently choosing an answer. Do not invent requirements, technologies, files, implementation steps, tests, permissions, or success criteria."),
+        aiCodingPromptStyleRule(style),
     };
 }
 
@@ -305,7 +323,7 @@ QString selectedDocumentEditingSystemPrompt(const QString &style,
     parts << editingRules();
     parts << editingStyleRule(style);
     if (context.target.category == AppCategory::AiCoding) {
-        parts << aiCodingPromptRules();
+        parts << aiCodingPromptRules(style);
     }
     parts << editingOutputRules();
     parts << contextInstructions(
@@ -331,7 +349,7 @@ QString dictationRefinementSystemPrompt(const QString &style,
         parts << strongRules();
     }
     if (context.target.category == AppCategory::AiCoding) {
-        parts << aiCodingPromptRules();
+        parts << aiCodingPromptRules(style);
     }
 
     parts << outputStyleRules();

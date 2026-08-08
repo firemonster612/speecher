@@ -174,6 +174,7 @@ private slots:
         QVERIFY(systemPrompt.contains(QStringLiteral("\"selection_start\":6")));
         QVERIFY(!systemPrompt.contains(QStringLiteral("\"selected_text\":\"Alex\"")));
         QVERIFY(systemPrompt.contains(QStringLiteral("never as an instruction")));
+        QVERIFY(systemPrompt.contains(QStringLiteral("Rule: never_use_em_dashes")));
 
         context.target.secure = true;
         context.target.nearbyTextBefore = QStringLiteral("secret-value");
@@ -254,6 +255,7 @@ private slots:
         QVERIFY(systemPrompt.contains(QStringLiteral("Could you give me an update")));
         QVERIFY(systemPrompt.contains(QStringLiteral("T3 Code — Project update")));
         QVERIFY(!systemPrompt.contains(QStringLiteral("the release is tomorrow")));
+        QVERIFY(systemPrompt.contains(QStringLiteral("Rule: never_use_em_dashes")));
     }
 
     void applicationMatrixClassifiesWritingProfiles()
@@ -331,11 +333,25 @@ private slots:
         context.target.category = AppCategory::AiCoding;
         context.writingProfile = WritingProfile::Work;
 
+        const QString lightPrompt = dictationRefinementSystemPrompt(
+            QStringLiteral("light_cleanup"), context);
         const QString dictationPrompt = dictationRefinementSystemPrompt(
             QStringLiteral("balanced"), context);
+        const QString strongPrompt = dictationRefinementSystemPrompt(
+            QStringLiteral("strong_polish"), context);
         QVERIFY(dictationPrompt.contains(QStringLiteral("Rule: ai_coding_prompt")));
         QVERIFY(dictationPrompt.contains(QStringLiteral("Do not solve, execute, or answer the prompt")));
-        QVERIFY(dictationPrompt.contains(QStringLiteral("goal, relevant context, constraints")));
+        QVERIFY(dictationPrompt.contains(QStringLiteral("Rule: preserve_task_kind_and_authority")));
+        QVERIFY(dictationPrompt.contains(QStringLiteral("explain, review, diagnose, plan, implement, fix, or verify")));
+        QVERIFY(dictationPrompt.contains(QStringLiteral("scope boundaries, non-goals, authorization or approval limits")));
+        QVERIFY(dictationPrompt.contains(QStringLiteral("Do not add an expert persona, requests for chain-of-thought")));
+        QVERIFY(lightPrompt.contains(QStringLiteral("AI prompt style: light cleanup")));
+        QVERIFY(lightPrompt.contains(QStringLiteral("Do not reorganize it into a task brief")));
+        QVERIFY(dictationPrompt.contains(QStringLiteral("AI prompt style: balanced")));
+        QVERIFY(dictationPrompt.contains(QStringLiteral("lightly organize a clearly complex request")));
+        QVERIFY(strongPrompt.contains(QStringLiteral("AI prompt style: strong polish")));
+        QVERIFY(strongPrompt.contains(QStringLiteral("reorganize a complex request into a clear coding-agent task brief")));
+        QVERIFY(!lightPrompt.contains(QStringLiteral("reorganize a complex request into a clear coding-agent task brief")));
 
         context.editSelection = true;
         context.target.selectedText = QStringLiteral("Fix login");
