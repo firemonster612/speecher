@@ -290,12 +290,6 @@ void SettingsCodecs::setLearnedCorrections(const QList<LearnedCorrection> &corre
     CorrectionSettingsCodec::store(m_settings, corrections);
 }
 
-bool SettingsCodecs::addLearnedCorrection(const QString &original, const QString &corrected,
-                                          const QString &applicationId, double confidence)
-{
-    return CorrectionSettingsCodec::add(m_settings, original, corrected, applicationId, confidence);
-}
-
 void SettingsCodecs::setLearnedCorrectionEnabled(const QString &id, bool enabled)
 {
     CorrectionSettingsCodec::setEnabled(m_settings, id, enabled);
@@ -726,7 +720,6 @@ AppSettings SettingsCodecs::snapshot() const
         if (!correction.enabled) {
             continue;
         }
-        settings.bindings.append({correction.original, correction.corrected});
         if (!settings.speech.vocabulary.contains(correction.corrected, Qt::CaseInsensitive)) {
             settings.speech.vocabulary.append(correction.corrected);
         }

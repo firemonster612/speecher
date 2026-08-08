@@ -22,11 +22,13 @@ public:
     bool canInsertText(const Target &target) override;
     bool insertText(const Target &target, const QString &plainText, QString *error = nullptr) override;
     bool verifyInsertion(const Target &target, const QString &plainText) override;
+    void setCorrectionObservationEnabled(bool enabled) override;
 
 private:
     void clearAccessible();
     std::unique_ptr<atspi::TargetSnapshot> m_snapshot;
     std::unique_ptr<atspi::CorrectionObserver> m_correctionObserver;
+    bool m_correctionObservationEnabled = true;
 };
 
 } // namespace speecher

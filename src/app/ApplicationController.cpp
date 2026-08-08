@@ -34,6 +34,13 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
     }
     registerProviders();
     TargetProvider *targetProvider = m_platform->createTargetProvider(this);
+    targetProvider->setCorrectionObservationEnabled(m_settings->correctionLearningEnabled());
+    connect(m_settings,
+            &SettingsStore::correctionLearningEnabledChanged,
+            targetProvider,
+            [targetProvider](bool enabled) {
+                targetProvider->setCorrectionObservationEnabled(enabled);
+            });
     connect(targetProvider,
             &TargetProvider::correctionObserved,
             this,
@@ -42,7 +49,8 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
                    const QString &applicationId,
                    double confidence) {
                 if (m_settings->correctionLearningEnabled()) {
-                    m_settings->addLearnedCorrection(original, corrected, applicationId, confidence);
+                    m_settings->recordCorrectionEvidence(
+                        {original, corrected, confidence}, applicationId);
                 }
             });
     m_session = new DictationSession(m_settings,

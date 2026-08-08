@@ -25,6 +25,7 @@ inline const QString AppRecognitionRules = QStringLiteral("target/appRecognition
 inline const QString BindingRules = QStringLiteral("bindings/rules");
 inline const QString CorrectionLearningEnabled = QStringLiteral("vocabulary/correctionLearningEnabled");
 inline const QString LearnedCorrections = QStringLiteral("vocabulary/learnedCorrections");
+inline const QString CorrectionEvidence = QStringLiteral("vocabulary/correctionEvidence");
 inline const QString RefinementProvider = QStringLiteral("refinement/provider");
 inline const QString RefinementStyle = QStringLiteral("refinement/style");
 inline const QString DefaultWritingProfile = QStringLiteral("refinement/defaultWritingProfile");

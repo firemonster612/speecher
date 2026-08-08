@@ -29,6 +29,8 @@
 #include "output/YdotoolDelivery.h"
 #include "output/YdotoolSetup.h"
 #include "platform/AtSpiTargetProvider.h"
+#include "platform/atspi/AtSpiCorrectionObserver.h"
+#include "platform/atspi/AtSpiTargetSnapshot.h"
 #include "platform/PortalScreenshotContextProvider.h"
 #include "platform/audio/AudioPcmConverter.h"
 #include "platform/audio/QtAudioInput.h"

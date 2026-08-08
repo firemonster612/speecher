@@ -9,6 +9,105 @@ class PlatformLiveTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void correctionObserverSettlesSamplesWithoutRealTimeWaits()
+    {
+        atspi::CorrectionObserver observer;
+        atspi::CorrectionWindow window;
+        window.target.applicationId = QStringLiteral("org.kde.kate");
+        window.original = QStringLiteral("I use cute every day");
+        window.prefix = QStringLiteral("before text ");
+        window.suffix = QStringLiteral(" after text");
+
+        QList<CorrectionEvidence> observed;
+        observer.begin(window, [&observed](const QString &original,
+                                           const QString &corrected,
+                                           const QString &,
+                                           double confidence) {
+            observed.append({original, corrected, confidence});
+        });
+        observer.sample(QStringLiteral("before text I use cute every day after text"));
+        observer.sample(QStringLiteral("before text I use Qt every day after text"));
+        QCOMPARE(observed.size(), 0);
+        observer.sample(QStringLiteral("before text I use Qt every day after text"));
+
+        QCOMPARE(observed.size(), 1);
+        QCOMPARE(observed.first().original, QStringLiteral("cute"));
+        QCOMPARE(observed.first().corrected, QStringLiteral("Qt"));
+    }
+
+    void correctionObserverCancelsUnsettledOrUnreadableSamples()
+    {
+        atspi::CorrectionObserver observer;
+        atspi::CorrectionWindow window;
+        window.target.applicationId = QStringLiteral("org.kde.kate");
+        window.original = QStringLiteral("cute");
+        window.prefix = QStringLiteral("before text ");
+        window.suffix = QStringLiteral(" after text");
+        int observations = 0;
+        observer.begin(window, [&observations](const QString &, const QString &,
+                                               const QString &, double) {
+            ++observations;
+        });
+        observer.sample(QStringLiteral("before text Qt after text"));
+        observer.cancel();
+        observer.sample(QStringLiteral("before text Qt after text"));
+        QCOMPARE(observations, 0);
+
+        observer.begin(window, [&observations](const QString &, const QString &,
+                                               const QString &, double) {
+            ++observations;
+        });
+        observer.sample(QStringLiteral(
+            "before text Qt after text before text duplicate after text"));
+        observer.sample(QStringLiteral("before text Qt after text"));
+        QCOMPARE(observations, 0);
+
+        window.target.selectionStart = 0;
+        window.target.selectionEnd = 4;
+        window.target.selectedText = QStringLiteral("cute");
+        observer.begin(window, [&observations](const QString &, const QString &,
+                                               const QString &, double) {
+            ++observations;
+        });
+        observer.sample(QStringLiteral("before text Qt after text"));
+        observer.sample(QStringLiteral("before text Qt after text"));
+        QCOMPARE(observations, 0);
+    }
+
+    void correctionObserverDisablePreventsAndCancelsObservation()
+    {
+        atspi::CorrectionObserver observer;
+        atspi::CorrectionWindow window;
+        window.target.applicationId = QStringLiteral("org.kde.kate");
+        window.original = QStringLiteral("cute");
+        window.prefix = QStringLiteral("before text ");
+        window.suffix = QStringLiteral(" after text");
+        int observations = 0;
+        const auto observed = [&observations](const QString &, const QString &,
+                                              const QString &, double) {
+            ++observations;
+        };
+
+        observer.setEnabled(false);
+        observer.begin(window, observed);
+        observer.sample(QStringLiteral("before text Qt after text"));
+        observer.sample(QStringLiteral("before text Qt after text"));
+        QCOMPARE(observations, 0);
+
+        observer.setEnabled(true);
+        observer.begin(window, observed);
+        observer.sample(QStringLiteral("before text Qt after text"));
+        observer.setEnabled(false);
+        observer.sample(QStringLiteral("before text Qt after text"));
+        QCOMPARE(observations, 0);
+
+        observer.setEnabled(true);
+        observer.begin(window, observed);
+        observer.sample(QStringLiteral("before text Qt after text"));
+        observer.sample(QStringLiteral("before text Qt after text"));
+        QCOMPARE(observations, 1);
+    }
+
     void liveAtSpiTargetCapture()
     {
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI") != QStringLiteral("1")) {

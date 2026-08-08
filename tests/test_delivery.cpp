@@ -258,6 +258,41 @@ private slots:
         QVERIFY(systemPrompt.contains(QStringLiteral("Rule: never_use_em_dashes")));
     }
 
+    void transcriptPipelineScopesLearnedCorrectionsAndPreservesUserBindingPrecedence()
+    {
+        AppSettings settings;
+        settings.bindings = {
+            {QStringLiteral("cute"), QStringLiteral("user choice")},
+        };
+        settings.learnedCorrections = {
+            {QStringLiteral("0"), QStringLiteral("post grass"), QStringLiteral("global choice"),
+             QString(), 1, 0.98, true, 1, 1},
+            {QStringLiteral("1"), QStringLiteral("cute"), QStringLiteral("Qt"),
+             QStringLiteral("org.kde.kate"), 1, 0.98, true, 1, 1},
+            {QStringLiteral("2"), QStringLiteral("post grass"), QStringLiteral("Postgres"),
+             QStringLiteral("org.kde.kate"), 1, 0.75, true, 2, 2},
+            {QStringLiteral("3"), QStringLiteral("open ai"), QStringLiteral("OpenAI"),
+             QString(), 1, 0.98, true, 2, 2},
+        };
+
+        Target kate;
+        kate.applicationId = QStringLiteral("ORG.KDE.KATE");
+        const TranscriptPipelineResult inKate = TranscriptPipeline::prepare(
+            QStringLiteral("cute uses post grass and open ai"), settings, kate);
+        QCOMPARE(inKate.bindingResult.boundText,
+                 QStringLiteral("user choice uses Postgres and OpenAI"));
+        QVERIFY(inKate.refinementVocabulary.contains(QStringLiteral("Qt")));
+        QVERIFY(inKate.refinementVocabulary.contains(QStringLiteral("Postgres")));
+        QVERIFY(inKate.refinementVocabulary.contains(QStringLiteral("OpenAI")));
+
+        Target firefox;
+        firefox.applicationId = QStringLiteral("org.mozilla.firefox");
+        const TranscriptPipelineResult inFirefox = TranscriptPipeline::prepare(
+            QStringLiteral("cute uses post grass and open ai"), settings, firefox);
+        QCOMPARE(inFirefox.bindingResult.boundText,
+                 QStringLiteral("user choice uses global choice and OpenAI"));
+    }
+
     void applicationMatrixClassifiesWritingProfiles()
     {
         const auto classified = [](const QString &applicationId) {
@@ -613,7 +648,7 @@ private slots:
         QVERIFY(attempts.isEmpty());
     }
 
-    void outputRestoresClipboardOnlyAfterVerifiedInsertion()
+    void selectedTextDeliveryRestoresClipboardAfterVerifiedInsertion()
     {
         auto *previous = new QMimeData;
         previous->setText(QStringLiteral("previous clipboard"));
@@ -638,6 +673,9 @@ private slots:
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
         target.category = AppCategory::CodeEditor;
+        target.selectedText = QStringLiteral("replace me");
+        target.selectionStart = 7;
+        target.selectionEnd = 17;
 
         const DeliveryResult result = delivery.deliver(
             settings,
