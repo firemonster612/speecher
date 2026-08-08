@@ -1,13 +1,13 @@
 #pragma once
 
-#include "core/BindingProcessor.h"
 #include "dictation/DictationInterfaces.h"
 #include "dictation/DictationTypes.h"
+#include "dictation/StartupPreparationRunner.h"
+#include "dictation/TranscriptPipeline.h"
 
 #include <QMetaObject>
 #include <QVector>
 
-#include <memory>
 #include <optional>
 
 namespace speecher {
@@ -64,17 +64,8 @@ signals:
     void popupErrorRequested(const QString &message);
 
 private:
-    struct StartupPreparation;
-
     void setState(DictationState state, const QString &message = {});
-    void startPreparationWorker(quint64 generation,
-                                const AppSettings &settings,
-                                std::optional<SpeechPrepareJob> speechPrepareJob,
-                                std::optional<RefinementRefreshJob> refinerRefreshJob,
-                                const SpeechPrepareResult &speechPrepared);
-    void finishStartupPreparation(quint64 generation,
-                                  const AppSettings &settings,
-                                  const std::shared_ptr<StartupPreparation> &preparation);
+    void finishStartupPreparation(const StartupPreparationResult &result);
     void continueStartupAfterPreparation(quint64 generation, const AppSettings &settings);
     void failStartup(quint64 generation, const QString &message);
     void beginRefinement(quint64 generation);
@@ -96,6 +87,7 @@ private:
     TextDeliveryAdapter *m_delivery = nullptr;
     ProviderRegistry *m_providers = nullptr;
     TranscriptState *m_transcript = nullptr;
+    StartupPreparationRunner *m_startupRunner = nullptr;
     SpeechTranscriber *m_transcriber = nullptr;
     TranscriptRefiner *m_refiner = nullptr;
     QVector<QMetaObject::Connection> m_transcriberConnections;
@@ -103,10 +95,7 @@ private:
     DictationState m_state = DictationState::Idle;
     QString m_lastMessage;
     QString m_refinedText;
-    BindingProcessingResult m_bindingResult;
-    QList<BindingRule> m_activeBindingRules;
-    QStringList m_noBindPhrases;
-    bool m_allowPostRefinementBindings = true;
+    TranscriptPipelineResult m_transcriptPipeline;
     quint64 m_generation = 0;
     quint64 m_attemptId = 0;
     std::optional<AppSettings> m_sessionSettings;
@@ -115,7 +104,6 @@ private:
     QString m_screenshotMediaType;
     quint64 m_screenshotCaptureGeneration = 0;
     bool m_heardSpeech = false;
-    std::shared_ptr<StartupPreparation> m_startupPreparation;
 };
 
 } // namespace speecher
