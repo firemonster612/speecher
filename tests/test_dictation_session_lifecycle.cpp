@@ -1,0 +1,524 @@
+#include "common/test_doubles.h"
+#include "common/test_http.h"
+#include "common/test_auth.h"
+
+using namespace speecher::test;
+
+class FakePopupPositioner final : public PopupPositioner {
+public:
+    explicit FakePopupPositioner(QObject *parent = nullptr)
+        : PopupPositioner(parent)
+    {
+    }
+
+    void configurePopup(QWidget *) override
+    {
+    }
+
+    void positionBottomCenter(QWidget *) override
+    {
+    }
+};
+
+
+class DictationSessionLifecycleTests : public QObject {
+    Q_OBJECT
+
+private slots:
+    void dictationSessionDeliversRawTranscript()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setPreviewWords(7);
+        settings.setPauseMediaDuringTranscription(true);
+        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.setCustomVocabulary({QStringLiteral("Speecher")});
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy previewDisplay(&session, &DictationSession::previewDisplayChanged);
+
+        session.startListening();
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QVERIFY(audio->started);
+        QCOMPARE(media->pauseCalls, 1);
+        QCOMPARE(speech->prepareCalls, 1);
+        QCOMPARE(speech->startCalls, 1);
+        QCOMPARE(speech->lastVocabulary, QStringList{QStringLiteral("Speecher")});
+
+        audio->pushAudio(QByteArrayLiteral("pcm"));
+        QCOMPARE(speech->audioChunks.size(), 1);
+        speech->emitFinalText(QStringLiteral("one two three four five six seven eight nine"));
+        QCOMPARE(previewDisplay.last().first().toString(),
+                 QStringLiteral("three four five six seven eight nine"));
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText, QStringLiteral("one two three four five six seven eight nine"));
+        QCOMPARE(delivery->lastSettings.method, QString::fromLatin1(OutputMethod::Automatic));
+        QCOMPARE(delivery->lastSettings.restoreClipboardAfterTyping, false);
+        QCOMPARE(media->resumeCalls, 1);
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
+    }
+
+    void dictationSessionToggleAndPushToTalkCommandsAreIdempotent()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.setOutputFormat(OutputFormat::PlainText);
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.toggleWithFormat(OutputFormat::Html);
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QCOMPARE(speech->startCalls, 1);
+
+        session.startListening();
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QCOMPARE(speech->startCalls, 1);
+
+        speech->emitFinalText(QStringLiteral("toggle result"));
+        session.toggle();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(delivery->lastSettings.format, OutputFormat::Html);
+        QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
+
+        session.stopListening();
+        QCOMPARE(delivery->calls, 1);
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
+
+        session.stopListening();
+        QCOMPARE(int(session.state()), int(DictationState::Idle));
+    }
+
+    void dictationSessionWaitsForProviderCompletion()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        speech->autoCompleteOnFinish = false;
+        speech->emitFinalText(QStringLiteral("hello"));
+        session.stopListening();
+
+        QCOMPARE(int(session.state()), int(DictationState::Stopping));
+        QCOMPARE(delivery->calls, 0);
+
+        speech->emitFinalText(QStringLiteral("world"));
+        QCOMPARE(delivery->calls, 0);
+        speech->emitCompletion();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(delivery->lastText, QStringLiteral("hello world"));
+    }
+
+    void dictationSessionUsesPerSessionOutputFormatWithoutChangingDefault()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.setOutputFormat(OutputFormat::PlainText);
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListeningWithFormat(OutputFormat::Html);
+        speech->emitFinalText(QStringLiteral("<hello>"));
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(delivery->lastSettings.format, OutputFormat::Html);
+        QCOMPARE(delivery->lastContent.plainText, QStringLiteral("<hello>"));
+        QVERIFY(delivery->lastContent.html);
+        QCOMPARE(*delivery->lastContent.html, QStringLiteral("<p>&lt;hello&gt;</p>"));
+        QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
+    }
+
+    void dictationSessionCapturesTargetAtStart()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto targetProvider = std::make_unique<FakeTargetProvider>();
+        targetProvider->target.applicationId = QStringLiteral("org.kde.kate");
+        targetProvider->target.category = AppCategory::CodeEditor;
+        targetProvider->target.caretOffset = 42;
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(
+            &settings,
+            audio.get(),
+            media.get(),
+            targetProvider.get(),
+            delivery.get(),
+            &registry);
+
+        session.startListening();
+        QCOMPARE(targetProvider->captureCalls, 1);
+        speech->emitFinalText(QStringLiteral("hello"));
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(delivery->lastTarget.applicationId, QStringLiteral("org.kde.kate"));
+        QCOMPARE(delivery->lastTarget.caretOffset, 42);
+    }
+
+    void dictationSessionCapturesOptionalScreenshotOnlyForRefinement()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto targetProvider = std::make_unique<FakeTargetProvider>();
+        auto screenshots = std::make_unique<FakeScreenshotContextProvider>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(
+            &settings,
+            audio.get(),
+            media.get(),
+            targetProvider.get(),
+            delivery.get(),
+            &registry);
+        session.setScreenshotContextProvider(screenshots.get());
+
+        session.startListening();
+        QCOMPARE(screenshots->captureCalls, 0);
+        speech->emitFinalText(QStringLiteral("first"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 250);
+        QVERIFY(!refiner->lastContext.hasScreenshot());
+        refiner->emitCompletedText(QStringLiteral("first"));
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
+
+        settings.setIncludeScreenshotContext(true);
+        session.startListening();
+        QCOMPARE(screenshots->captureCalls, 1);
+        speech->emitFinalText(QStringLiteral("second"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 2, 250);
+        QCOMPARE(refiner->lastContext.screenshotData, screenshots->data);
+        QCOMPARE(refiner->lastContext.screenshotMediaType, screenshots->mediaType);
+        refiner->emitCompletedText(QStringLiteral("second"));
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 2, 250);
+        QVERIFY(screenshots->cancelCalls >= 2);
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
+
+        refiner->screenshotCapable = false;
+        session.startListening();
+        QCOMPARE(screenshots->captureCalls, 1);
+        session.stopListening();
+    }
+
+    void dictationSessionNeverCapturesScreenshotForSecureTarget()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.setIncludeScreenshotContext(true);
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto targetProvider = std::make_unique<FakeTargetProvider>();
+        targetProvider->target.applicationId = QStringLiteral("secure-fixture");
+        targetProvider->target.accessible = true;
+        targetProvider->target.secure = true;
+        auto screenshots = std::make_unique<FakeScreenshotContextProvider>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(
+            &settings,
+            audio.get(),
+            media.get(),
+            targetProvider.get(),
+            delivery.get(),
+            &registry);
+        session.setScreenshotContextProvider(screenshots.get());
+
+        session.startListening();
+        QCOMPARE(screenshots->captureCalls, 0);
+        session.stopListening();
+    }
+
+    void livePortalScreenshotCapture()
+    {
+        if (qEnvironmentVariableIsEmpty("SPEECHER_LIVE_SCREENSHOT_TEST")) {
+            QSKIP("Set SPEECHER_LIVE_SCREENSHOT_TEST=1 inside a desktop session");
+        }
+
+        PortalScreenshotContextProvider screenshots;
+        QSignalSpy captured(&screenshots, &PortalScreenshotContextProvider::captured);
+        QSignalSpy failed(&screenshots, &PortalScreenshotContextProvider::failed);
+        screenshots.capture();
+
+        QTRY_VERIFY_WITH_TIMEOUT(!captured.isEmpty() || !failed.isEmpty(), 15000);
+        const QString failureMessage = failed.isEmpty()
+            ? QString()
+            : failed.first().first().toString();
+        QVERIFY2(failed.isEmpty(), qPrintable(failureMessage));
+        QVERIFY(captured.first().at(0).toByteArray().size() > 100);
+        QCOMPARE(captured.first().at(1).toString(), QStringLiteral("image/png"));
+    }
+
+    void dictationSessionDoesNotReplayAudioAfterProviderFailure()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        speech->autoCompleteOnFinish = false;
+        audio->pushAudio(QByteArrayLiteral("pcm"));
+        session.stopListening();
+        speech->emitFailure(QStringLiteral("temporary disconnect"), true);
+
+        QCOMPARE(speech->startCalls, 1);
+        QCOMPARE(speech->audioChunks, QList<QByteArray>({QByteArrayLiteral("pcm")}));
+        QCOMPARE(delivery->calls, 0);
+        QCOMPARE(int(session.state()), int(DictationState::Error));
+    }
+
+    void dictationSessionBackgroundSpeechPreparationDoesNotBlockStartup()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registry.speechProvider(QStringLiteral("claude"));
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        speech->backgroundPrepare = true;
+        speech->backgroundPrepareDelayMs = 180;
+        speech->refreshRequired = true;
+
+        QSignalSpy refreshSpy(&session, &DictationSession::popupOAuthRefreshRequested);
+        QElapsedTimer timer;
+        timer.start();
+        session.startListening();
+
+        QVERIFY(timer.elapsed() < 100);
+        QCOMPARE(int(session.state()), int(DictationState::Starting));
+        QCOMPARE(refreshSpy.count(), 1);
+        QVERIFY(!audio->started);
+
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 1000);
+        QCOMPARE(speech->backgroundPrepareCalls, 1);
+        QCOMPARE(speech->prepareCalls, 1);
+        QCOMPARE(speech->startCalls, 1);
+        QVERIFY(audio->started);
+    }
+
+    void dictationStartupFailureKeepsPopupOpenWithMessage()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registry.speechProvider(QStringLiteral("claude"));
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        speech->prepareResult = {
+            false,
+            QStringLiteral("Claude login cannot be refreshed"),
+        };
+
+        QSignalSpy shown(&session, &DictationSession::popupShowRequested);
+        QSignalSpy hidden(&session, &DictationSession::popupHideRequested);
+        const int errorSignalIndex = session.metaObject()->indexOfSignal(
+            "popupErrorRequested(QString)");
+        QVERIFY(errorSignalIndex >= 0);
+        QSignalSpy message(
+            &session,
+            session.metaObject()->method(errorSignalIndex));
+
+        session.startListening();
+
+        QCOMPARE(int(session.state()), int(DictationState::Error));
+        QCOMPARE(shown.count(), 1);
+        QCOMPARE(message.count(), 1);
+        QCOMPARE(message.first().first().toString(),
+                 QStringLiteral("Claude login cannot be refreshed"));
+        QTest::qWait(1900);
+        QCOMPARE(int(session.state()), int(DictationState::Error));
+        QCOMPARE(hidden.count(), 0);
+
+        session.stopListening();
+        QCOMPARE(int(session.state()), int(DictationState::Idle));
+        QCOMPARE(hidden.count(), 1);
+    }
+
+    void dictationSessionBackgroundRefinerRefreshDoesNotBlockStartup()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        registry.speechProvider(QStringLiteral("claude"));
+        registry.refinementProvider(QStringLiteral("openai"));
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        refiner->backgroundRefresh = true;
+        refiner->backgroundRefreshDelayMs = 180;
+        refiner->refreshRequired = true;
+
+        QSignalSpy refreshSpy(&session, &DictationSession::popupOAuthRefreshRequested);
+        QElapsedTimer timer;
+        timer.start();
+        session.startListening();
+
+        QVERIFY(timer.elapsed() < 100);
+        QCOMPARE(int(session.state()), int(DictationState::Starting));
+        QCOMPARE(refreshSpy.count(), 1);
+        QVERIFY(!audio->started);
+
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 1000);
+        QCOMPARE(refiner->backgroundRefreshCalls, 1);
+        QCOMPARE(refiner->refreshCalls, 1);
+        QCOMPARE(speech->startCalls, 1);
+        QVERIFY(audio->started);
+    }
+
+    void transcriberPopupRestoresPreviewLayoutAfterOAuthIndicator()
+    {
+        TranscriberPopup popup(new FakePopupPositioner);
+        auto *layout = qobject_cast<QBoxLayout *>(popup.layout());
+        auto *previewPill = popup.findChild<QFrame *>(QStringLiteral("previewPill"));
+        auto *rawTranscript = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
+        auto *waveform = popup.findChild<WaveformWidget *>();
+        QVERIFY(layout);
+        QVERIFY(previewPill);
+        QVERIFY(rawTranscript);
+        QVERIFY(waveform);
+        QVERIFY(!popup.findChild<QLabel *>(QStringLiteral("popupStatus")));
+        QVERIFY(!popup.findChild<QLabel *>(QStringLiteral("popupMetadata")));
+        QCOMPARE(previewPill->minimumHeight(), 48);
+        QCOMPARE(previewPill->maximumHeight(), 48);
+        QVERIFY(!rawTranscript->wordWrap());
+
+        popup.showOAuthRefreshIndicator();
+        QVERIFY(layout->indexOf(previewPill) < layout->indexOf(waveform));
+
+        popup.setPreview(QStringLiteral("hello world"));
+        QVERIFY(layout->indexOf(waveform) < layout->indexOf(previewPill));
+
+        popup.showOAuthRefreshIndicator();
+        popup.hidePreview();
+        QVERIFY(layout->indexOf(waveform) < layout->indexOf(previewPill));
+
+        const QString longRaw = QStringLiteral(
+            "one two three four five six seven eight nine ten eleven twelve");
+        popup.setPreview(longRaw);
+        QVERIFY(!rawTranscript->text().contains(QLatin1Char('\n')));
+        popup.setRefining(true);
+        QVERIFY(!rawTranscript->isHidden());
+    }
+
+    void transcriberPopupShowsLongErrorsInOneReadablePill()
+    {
+        TranscriberPopup popup(new FakePopupPositioner);
+        auto *previewPill = popup.findChild<QFrame *>(QStringLiteral("previewPill"));
+        auto *rawTranscript = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
+        auto *waveform = popup.findChild<WaveformWidget *>();
+        auto *dismissProgress = popup.findChild<QProgressBar *>(
+            QStringLiteral("errorDismissProgress"));
+        QVERIFY(previewPill);
+        QVERIFY(rawTranscript);
+        QVERIFY(waveform);
+        QVERIFY(dismissProgress);
+        const QString error = QStringLiteral(
+            "Claude login cannot be refreshed; run `claude /login` or `claude auth login`");
+
+        popup.show();
+        QVERIFY(QMetaObject::invokeMethod(
+            &popup,
+            "showErrorMessage",
+            Q_ARG(QString, error)));
+
+        QVERIFY(waveform->isHidden());
+        QVERIFY(!previewPill->isHidden());
+        QVERIFY(rawTranscript->wordWrap());
+        QCOMPARE(rawTranscript->text(), error);
+        QVERIFY(previewPill->width() > waveform->width());
+        QVERIFY(dismissProgress->isVisible());
+        QCOMPARE(dismissProgress->value(), dismissProgress->maximum());
+        QTest::qWait(150);
+        QVERIFY(dismissProgress->value() < dismissProgress->maximum());
+        QVERIFY(dismissProgress->value() > dismissProgress->minimum());
+        QTRY_VERIFY_WITH_TIMEOUT(popup.isHidden(), 5500);
+    }
+};
+
+int runDictationSessionLifecycleTests(int argc, char **argv)
+{
+    DictationSessionLifecycleTests tests;
+    return runTestSuite(&tests, argc, argv);
+}
+
+#include "test_dictation_session_lifecycle.moc"
