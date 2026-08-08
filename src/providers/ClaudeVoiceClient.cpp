@@ -161,10 +161,15 @@ ClaudeVoiceClient::ClaudeVoiceClient(QObject *parent)
         emit connected();
     });
     connect(&m_socket, &QWebSocket::disconnected, this, [this] {
+        const bool incompleteFinalization = m_finalizing && !m_completed && !m_cancelled && !m_failureEmitted;
         m_connected = false;
         m_finalizing = false;
         m_keepAliveTimer.stop();
         qInfo() << "claude websocket disconnected";
+        if (incompleteFinalization) {
+            m_failureEmitted = true;
+            emit failed(QStringLiteral("Claude voice stream closed before final transcript completion"), true);
+        }
         emit closed();
     });
     connect(&m_socket, &QWebSocket::textMessageReceived, this, &ClaudeVoiceClient::handleTextMessage);
@@ -176,7 +181,10 @@ ClaudeVoiceClient::ClaudeVoiceClient(QObject *parent)
     });
     connect(&m_socket, &QWebSocket::errorOccurred, this, [this](QAbstractSocket::SocketError) {
         qWarning().noquote() << "claude websocket error=" + m_socket.errorString();
-        emit failed(QStringLiteral("Claude voice API changed or connection failed: %1").arg(m_socket.errorString()));
+        if (!m_cancelled && !m_failureEmitted) {
+            m_failureEmitted = true;
+            emit failed(QStringLiteral("Claude voice API changed or connection failed: %1").arg(m_socket.errorString()), true);
+        }
     });
 #endif
 }
@@ -189,6 +197,9 @@ void ClaudeVoiceClient::start(const QUrl &url, const QString &accessToken, const
 
     m_lastInterim.clear();
     m_finalizing = false;
+    m_completed = false;
+    m_cancelled = false;
+    m_failureEmitted = false;
     clearPendingAudio();
     ++m_sessionId;
     QNetworkRequest request(streamUrl);
@@ -243,6 +254,10 @@ void ClaudeVoiceClient::stop()
         QTimer::singleShot(5000, this, [this, sessionId] {
             if (sessionId == m_sessionId && m_finalizing && m_socket.state() == QAbstractSocket::ConnectedState) {
                 qWarning() << "claude finalize timeout closing websocket";
+                if (!m_failureEmitted) {
+                    m_failureEmitted = true;
+                    emit failed(QStringLiteral("Claude voice finalization timed out"), true);
+                }
                 m_socket.close();
             }
         });
@@ -253,6 +268,17 @@ void ClaudeVoiceClient::stop()
         }
     }
     qInfo() << "claude close requested connected=" << m_connected;
+#endif
+}
+
+void ClaudeVoiceClient::cancel()
+{
+#ifdef SPEECHER_WITH_QT_WEBSOCKETS
+    m_cancelled = true;
+    m_finalizing = false;
+    clearPendingAudio();
+    m_keepAliveTimer.stop();
+    m_socket.abort();
 #endif
 }
 
@@ -316,7 +342,15 @@ void ClaudeVoiceClient::handleTextMessage(const QString &message)
     const QString type = object.value(QStringLiteral("type")).toString();
     if (type == QStringLiteral("error") || object.contains(QStringLiteral("error"))) {
         qWarning().noquote() << "claude server error " + redactedErrorSummary(object);
-        emit failed(QStringLiteral("Claude voice server error: %1").arg(redactedErrorSummary(object)));
+        if (!m_failureEmitted) {
+            m_failureEmitted = true;
+            const QString summary = redactedErrorSummary(object);
+            const bool retryable = !summary.contains(QStringLiteral("401"))
+                && !summary.contains(QStringLiteral("403"))
+                && !summary.contains(QStringLiteral("unauthorized"), Qt::CaseInsensitive)
+                && !summary.contains(QStringLiteral("forbidden"), Qt::CaseInsensitive);
+            emit failed(QStringLiteral("Claude voice server error: %1").arg(summary), retryable);
+        }
         return;
     }
     if (type == QStringLiteral("TranscriptEndpoint")) {
@@ -326,6 +360,8 @@ void ClaudeVoiceClient::handleTextMessage(const QString &message)
             m_lastInterim.clear();
         }
         if (m_finalizing) {
+            m_completed = true;
+            emit completed();
             m_socket.close();
         }
         return;
@@ -333,7 +369,10 @@ void ClaudeVoiceClient::handleTextMessage(const QString &message)
     if (type == QStringLiteral("TranscriptError")) {
         const QString summary = redactedErrorSummary(object);
         qWarning().noquote() << "claude transcript error " + summary;
-        emit failed(summary.isEmpty() ? QStringLiteral("Claude transcript error") : summary);
+        if (!m_failureEmitted) {
+            m_failureEmitted = true;
+            emit failed(summary.isEmpty() ? QStringLiteral("Claude transcript error") : summary, true);
+        }
         return;
     }
     const QString text = firstTranscriptText(object).simplified();

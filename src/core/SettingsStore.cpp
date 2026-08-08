@@ -9,6 +9,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QDateTime>
+#include <QUuid>
 
 #include <algorithm>
 
@@ -273,6 +275,122 @@ bool SettingsStore::setBindingRules(const QList<BindingRule> &rules, QString *er
     return true;
 }
 
+bool SettingsStore::correctionLearningEnabled() const
+{
+    return value(QStringLiteral("vocabulary/correctionLearningEnabled"), false).toBool();
+}
+
+void SettingsStore::setCorrectionLearningEnabled(bool value)
+{
+    m_settings.setValue(QStringLiteral("vocabulary/correctionLearningEnabled"), value);
+}
+
+QList<LearnedCorrection> SettingsStore::learnedCorrections() const
+{
+    const QJsonDocument document = QJsonDocument::fromJson(
+        value(QStringLiteral("vocabulary/learnedCorrections"), QByteArray()).toByteArray());
+    QList<LearnedCorrection> corrections;
+    for (const QJsonValue &value : document.array()) {
+        const QJsonObject object = value.toObject();
+        LearnedCorrection correction;
+        correction.id = object.value(QStringLiteral("id")).toString();
+        correction.original = object.value(QStringLiteral("original")).toString();
+        correction.corrected = object.value(QStringLiteral("corrected")).toString();
+        correction.applicationId = object.value(QStringLiteral("applicationId")).toString();
+        correction.createdAtMs = qint64(object.value(QStringLiteral("createdAtMs")).toDouble());
+        correction.confidence = object.value(QStringLiteral("confidence")).toDouble();
+        correction.enabled = object.value(QStringLiteral("enabled")).toBool(true);
+        if (!correction.id.isEmpty()
+            && !correction.original.trimmed().isEmpty()
+            && !correction.corrected.trimmed().isEmpty()) {
+            corrections.append(correction);
+        }
+    }
+    return corrections;
+}
+
+static void storeLearnedCorrections(QSettings *settings, const QList<LearnedCorrection> &corrections)
+{
+    QJsonArray array;
+    for (const LearnedCorrection &correction : corrections) {
+        array.append(QJsonObject{
+            {QStringLiteral("id"), correction.id},
+            {QStringLiteral("original"), correction.original},
+            {QStringLiteral("corrected"), correction.corrected},
+            {QStringLiteral("applicationId"), correction.applicationId},
+            {QStringLiteral("createdAtMs"), double(correction.createdAtMs)},
+            {QStringLiteral("confidence"), correction.confidence},
+            {QStringLiteral("enabled"), correction.enabled},
+        });
+    }
+    settings->setValue(
+        QStringLiteral("vocabulary/learnedCorrections"),
+        QJsonDocument(array).toJson(QJsonDocument::Compact));
+}
+
+void SettingsStore::setLearnedCorrections(const QList<LearnedCorrection> &corrections)
+{
+    storeLearnedCorrections(&m_settings, corrections);
+}
+
+bool SettingsStore::addLearnedCorrection(const QString &original,
+                                         const QString &corrected,
+                                         const QString &applicationId,
+                                         double confidence)
+{
+    const QString from = original.trimmed();
+    const QString to = corrected.trimmed();
+    if (from.isEmpty() || to.isEmpty() || from == to || from.size() > 500 || to.size() > 500) {
+        return false;
+    }
+
+    QList<LearnedCorrection> corrections = learnedCorrections();
+    for (LearnedCorrection &correction : corrections) {
+        if (correction.original.compare(from, Qt::CaseInsensitive) == 0
+            && correction.applicationId.compare(applicationId, Qt::CaseInsensitive) == 0) {
+            correction.corrected = to;
+            correction.confidence = qBound(0.0, confidence, 1.0);
+            correction.createdAtMs = QDateTime::currentMSecsSinceEpoch();
+            correction.enabled = true;
+            storeLearnedCorrections(&m_settings, corrections);
+            return true;
+        }
+    }
+
+    corrections.prepend({
+        QUuid::createUuid().toString(QUuid::WithoutBraces),
+        from,
+        to,
+        applicationId.trimmed(),
+        QDateTime::currentMSecsSinceEpoch(),
+        qBound(0.0, confidence, 1.0),
+        true,
+    });
+    storeLearnedCorrections(&m_settings, corrections);
+    return true;
+}
+
+void SettingsStore::setLearnedCorrectionEnabled(const QString &id, bool enabled)
+{
+    QList<LearnedCorrection> corrections = learnedCorrections();
+    for (LearnedCorrection &correction : corrections) {
+        if (correction.id == id) {
+            correction.enabled = enabled;
+            storeLearnedCorrections(&m_settings, corrections);
+            return;
+        }
+    }
+}
+
+void SettingsStore::removeLearnedCorrection(const QString &id)
+{
+    QList<LearnedCorrection> corrections = learnedCorrections();
+    corrections.removeIf([&id](const LearnedCorrection &correction) {
+        return correction.id == id;
+    });
+    storeLearnedCorrections(&m_settings, corrections);
+}
+
 QString SettingsStore::refinementProvider() const
 {
     const QString key = QStringLiteral("refinement/provider");
@@ -309,6 +427,39 @@ void SettingsStore::setRefinementStyle(const QString &value)
         return;
     }
     m_settings.setValue(QStringLiteral("refinement/style"), QStringLiteral("balanced"));
+}
+
+QString SettingsStore::defaultWritingProfile() const
+{
+    const QString profile = value(QStringLiteral("refinement/defaultWritingProfile"), QStringLiteral("general")).toString();
+    return writingProfileName(writingProfileFromName(profile));
+}
+
+void SettingsStore::setDefaultWritingProfile(const QString &value)
+{
+    m_settings.setValue(
+        QStringLiteral("refinement/defaultWritingProfile"),
+        writingProfileName(writingProfileFromName(value)));
+}
+
+bool SettingsStore::useTargetContext() const
+{
+    return value(QStringLiteral("refinement/useTargetContext"), true).toBool();
+}
+
+void SettingsStore::setUseTargetContext(bool value)
+{
+    m_settings.setValue(QStringLiteral("refinement/useTargetContext"), value);
+}
+
+bool SettingsStore::includeScreenshotContext() const
+{
+    return value(QStringLiteral("refinement/includeScreenshotContext"), false).toBool();
+}
+
+void SettingsStore::setIncludeScreenshotContext(bool value)
+{
+    m_settings.setValue(QStringLiteral("refinement/includeScreenshotContext"), value);
 }
 
 QString SettingsStore::openAiModel() const
@@ -433,6 +584,16 @@ void SettingsStore::setOutputMethod(const QString &value)
     m_settings.setValue(QStringLiteral("output/method"), OutputMethod::normalized(value));
 }
 
+OutputFormat SettingsStore::outputFormat() const
+{
+    return outputFormatFromString(value(QStringLiteral("output/format"), QStringLiteral("plain")).toString());
+}
+
+void SettingsStore::setOutputFormat(OutputFormat value)
+{
+    m_settings.setValue(QStringLiteral("output/format"), outputFormatName(value));
+}
+
 bool SettingsStore::ydotoolEnabled() const
 {
     return value(QStringLiteral("output/ydotoolEnabled"), false).toBool();
@@ -454,6 +615,44 @@ bool SettingsStore::restoreClipboardAfterTyping() const
 void SettingsStore::setRestoreClipboardAfterTyping(bool value)
 {
     m_settings.setValue(QStringLiteral("output/restoreClipboardAfterTyping"), value);
+}
+
+QList<PasteRule> SettingsStore::pasteRules() const
+{
+    const QByteArray encoded = value(QStringLiteral("output/pasteRules"), QByteArray()).toByteArray();
+    if (encoded.isEmpty()) {
+        return defaultPasteRules();
+    }
+    const QJsonDocument document = QJsonDocument::fromJson(encoded);
+    if (!document.isArray()) {
+        return defaultPasteRules();
+    }
+
+    QList<PasteRule> rules;
+    for (const QJsonValue &value : document.array()) {
+        const QJsonObject object = value.toObject();
+        PasteRule rule;
+        rule.scope = pasteRuleScopeFromName(object.value(QStringLiteral("scope")).toString());
+        rule.match = object.value(QStringLiteral("match")).toString().trimmed();
+        rule.method = pasteMethodFromName(object.value(QStringLiteral("method")).toString());
+        rule.enabled = object.value(QStringLiteral("enabled")).toBool(true);
+        rules.append(rule);
+    }
+    return rules.isEmpty() ? defaultPasteRules() : rules;
+}
+
+void SettingsStore::setPasteRules(const QList<PasteRule> &rules)
+{
+    QJsonArray array;
+    for (const PasteRule &rule : rules) {
+        array.append(QJsonObject{
+            {QStringLiteral("scope"), pasteRuleScopeName(rule.scope)},
+            {QStringLiteral("match"), rule.match.trimmed()},
+            {QStringLiteral("method"), pasteMethodName(rule.method)},
+            {QStringLiteral("enabled"), rule.enabled},
+        });
+    }
+    m_settings.setValue(QStringLiteral("output/pasteRules"), QJsonDocument(array).toJson(QJsonDocument::Compact));
 }
 
 QString SettingsStore::claudeCredentialsPath() const
@@ -500,6 +699,16 @@ AppSettings SettingsStore::snapshot() const
     settings.speech.claudeVoicePath = claudeVoicePath();
     settings.audio = audioCaptureSettings();
     settings.bindings = bindingRules();
+    settings.learnedCorrections = learnedCorrections();
+    for (const LearnedCorrection &correction : settings.learnedCorrections) {
+        if (!correction.enabled) {
+            continue;
+        }
+        settings.bindings.append({correction.original, correction.corrected});
+        if (!settings.speech.vocabulary.contains(correction.corrected, Qt::CaseInsensitive)) {
+            settings.speech.vocabulary.append(correction.corrected);
+        }
+    }
 
     settings.refinement.providerId = refinementProvider();
     settings.refinement.style = refinementStyle();
@@ -511,10 +720,15 @@ AppSettings SettingsStore::snapshot() const
     settings.refinement.anthropicEffort = anthropicEffort();
     settings.refinement.anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     settings.refinement.claudeCredentialsPath = claudeCredentialsPath();
+    settings.refinement.defaultWritingProfile = defaultWritingProfile();
+    settings.refinement.useTargetContext = useTargetContext();
+    settings.refinement.includeScreenshotContext = includeScreenshotContext();
 
     settings.output.method = outputMethod();
+    settings.output.format = outputFormat();
     settings.output.ydotoolEnabled = ydotoolEnabled();
     settings.output.restoreClipboardAfterTyping = restoreClipboardAfterTyping();
+    settings.output.pasteRules = pasteRules();
     return settings;
 }
 

@@ -1,9 +1,12 @@
 #pragma once
 
+#include "core/OutputFormat.h"
+
 #include <QLocalServer>
 #include <QObject>
 
 #include <memory>
+#include <optional>
 
 namespace speecher {
 
@@ -40,9 +43,15 @@ public:
                                                 int timeoutMs = 1200,
                                                 std::shared_ptr<const PlatformIntegration> platform = {},
                                                 QString *error = nullptr);
+    static IpcCommandResult sendCommandDetailed(const QString &command,
+                                                std::optional<OutputFormat> outputFormat,
+                                                IpcResponse *response,
+                                                int timeoutMs = 1200,
+                                                std::shared_ptr<const PlatformIntegration> platform = {},
+                                                QString *error = nullptr);
 
 signals:
-    void commandReceived(const QString &command, QLocalSocket *socket);
+    void commandReceived(const QString &command, const QString &outputFormat, QLocalSocket *socket);
 
 public slots:
     static void writeResponse(QLocalSocket *socket, const IpcResponse &response);

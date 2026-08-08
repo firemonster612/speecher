@@ -1,6 +1,8 @@
 #pragma once
 
 #include "core/AppSettings.h"
+#include "core/Target.h"
+#include "output/DeliveryContent.h"
 #include "output/DeliveryResult.h"
 
 #include <functional>
@@ -44,6 +46,12 @@ struct AudioInputDeviceInfo {
     bool isDefault = false;
 };
 
+struct SpeechFailure {
+    quint64 attemptId = 0;
+    QString message;
+    bool retryable = false;
+};
+
 class AudioInput : public QObject {
     Q_OBJECT
 
@@ -68,6 +76,31 @@ public:
     virtual void resumePaused() = 0;
 };
 
+class TargetProvider : public QObject {
+    Q_OBJECT
+
+public:
+    using QObject::QObject;
+    virtual Target capture() = 0;
+    virtual bool stillFocused(const Target &target)
+    {
+        Q_UNUSED(target);
+        return false;
+    }
+    virtual bool verifyInsertion(const Target &target, const QString &plainText)
+    {
+        Q_UNUSED(target);
+        Q_UNUSED(plainText);
+        return false;
+    }
+
+signals:
+    void correctionObserved(const QString &original,
+                            const QString &corrected,
+                            const QString &applicationId,
+                            double confidence);
+};
+
 class SpeechTranscriber : public QObject {
     Q_OBJECT
 
@@ -82,14 +115,16 @@ public:
         return std::nullopt;
     }
     virtual SpeechPrepareResult prepare(const SpeechSettings &settings) = 0;
-    virtual void start(const SpeechSettings &settings) = 0;
-    virtual void sendAudio(const QByteArray &pcm) = 0;
-    virtual void stop() = 0;
+    virtual void startAttempt(quint64 attemptId, const SpeechSettings &settings) = 0;
+    virtual void sendAudio(quint64 attemptId, const QByteArray &pcm) = 0;
+    virtual void finishInput(quint64 attemptId) = 0;
+    virtual void cancelAttempt(quint64 attemptId) = 0;
 
 signals:
-    void partialTranscript(const QString &text);
-    void finalTranscript(const QString &text);
-    void failed(const QString &message);
+    void partialTranscript(quint64 attemptId, const QString &text);
+    void finalTranscript(quint64 attemptId, const QString &text);
+    void attemptCompleted(quint64 attemptId);
+    void failed(const speecher::SpeechFailure &failure);
 };
 
 class TranscriptRefiner : public QObject {
@@ -109,6 +144,7 @@ public:
     virtual RefinementPrepareResult prepare(const RefinementSettings &settings) = 0;
     virtual void refine(const QString &rawTranscript,
                         const QStringList &vocabulary,
+                        const RefinementContext &context,
                         const RefinementSettings &settings) = 0;
     virtual void cancel() = 0;
 
@@ -123,7 +159,9 @@ class TextDeliveryAdapter : public QObject {
 
 public:
     using QObject::QObject;
-    virtual DeliveryResult deliver(const OutputSettings &settings, const QString &text) = 0;
+    virtual DeliveryResult deliver(const OutputSettings &settings,
+                                   const DeliveryContent &content,
+                                   const Target &target) = 0;
 };
 
 } // namespace speecher

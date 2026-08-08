@@ -84,7 +84,8 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
                                  const QString &endpointBase,
                                  const QString &model,
                                  const QString &effort,
-                                 const QString &refinementStyle)
+                                 const QString &refinementStyle,
+                                 const RefinementContext &context)
 {
     cancel();
     m_accumulated.clear();
@@ -126,7 +127,7 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
     body.insert(QStringLiteral("messages"),
                 QJsonArray{QJsonObject{
                     {QStringLiteral("role"), QStringLiteral("user")},
-                    {QStringLiteral("content"), transcriptRefinementUserMessage(rawTranscript, vocabulary, bindingVocabulary)},
+                    {QStringLiteral("content"), transcriptRefinementUserMessage(rawTranscript, vocabulary, bindingVocabulary, context)},
                 }});
 
     m_reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));

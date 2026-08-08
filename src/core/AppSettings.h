@@ -1,5 +1,9 @@
 #pragma once
 
+#include "core/OutputFormat.h"
+#include "core/PasteRules.h"
+#include "core/LearnedCorrection.h"
+
 #include <QString>
 #include <QStringList>
 #include <QList>
@@ -51,12 +55,17 @@ struct RefinementSettings {
     QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     QString claudeCredentialsPath;
     QStringList bindingVocabulary;
+    QString defaultWritingProfile = QStringLiteral("general");
+    bool useTargetContext = true;
+    bool includeScreenshotContext = false;
 };
 
 struct OutputSettings {
     QString method = QStringLiteral("automatic");
+    OutputFormat format = OutputFormat::PlainText;
     bool ydotoolEnabled = false;
     bool restoreClipboardAfterTyping = false;
+    QList<PasteRule> pasteRules = defaultPasteRules();
 };
 
 struct AppSettings {
@@ -66,6 +75,7 @@ struct AppSettings {
     RefinementSettings refinement;
     OutputSettings output;
     QList<BindingRule> bindings;
+    QList<LearnedCorrection> learnedCorrections;
 };
 
 } // namespace speecher
