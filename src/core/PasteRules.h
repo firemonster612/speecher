@@ -16,6 +16,7 @@ enum class PasteRuleScope {
 enum class PasteMethod {
     StandardPaste,
     TerminalPaste,
+    DirectInsert,
     ClipboardOnly,
 };
 

@@ -12,9 +12,12 @@ public:
     ~AtSpiTargetProvider() override;
     Target capture() override;
     bool stillFocused(const Target &target) override;
+    bool canInsertText(const Target &target) override;
+    bool insertText(const Target &target, const QString &plainText, QString *error = nullptr) override;
     bool verifyInsertion(const Target &target, const QString &plainText) override;
 
 private:
+    bool matchesSnapshot(const Target &target, bool requireFocus) const;
     void clearAccessible();
     void observeCorrection(const Target &target,
                            const QString &original,

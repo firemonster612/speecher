@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QString>
 
 namespace speecher {
@@ -35,6 +36,7 @@ struct Target {
     QString toolkit;
     QString nearbyTextBefore;
     QString nearbyTextAfter;
+    QString selectedText;
     QString fingerprint;
     qint64 processId = 0;
     int caretOffset = -1;
@@ -54,6 +56,13 @@ struct RefinementContext {
     Target target;
     WritingProfile writingProfile = WritingProfile::General;
     bool includeNearbyText = true;
+    QByteArray screenshotData;
+    QString screenshotMediaType;
+
+    bool hasScreenshot() const
+    {
+        return !screenshotData.isEmpty() && !screenshotMediaType.isEmpty();
+    }
 };
 
 } // namespace speecher

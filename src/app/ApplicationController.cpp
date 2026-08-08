@@ -46,10 +46,19 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
                                      m_platform->createTextDelivery(targetProvider, this),
                                      m_providers,
                                      this);
+    m_session->setScreenshotContextProvider(
+        m_platform->createScreenshotContextProvider(this));
 
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
     connect(m_session, &DictationSession::statusChanged, this, &ApplicationController::statusChanged);
     connect(m_session, &DictationSession::previewChanged, this, &ApplicationController::previewChanged);
+    connect(m_session, &DictationSession::statusChanged, this, [this](const QString &status) {
+        if (m_settings->soundsEnabled()
+            && (status == QStringLiteral("Listening")
+                || status == QStringLiteral("Stopping"))) {
+            QApplication::beep();
+        }
+    });
     wireSessionToPopup();
 }
 
@@ -180,7 +189,6 @@ void ApplicationController::wireSessionToPopup()
     connect(m_session, &DictationSession::popupStatusChanged, m_popup, &TranscriberPopup::setStatus);
     connect(m_session, &DictationSession::popupShowRequested, m_popup, &TranscriberPopup::showPopup);
     connect(m_session, &DictationSession::popupHideRequested, m_popup, &TranscriberPopup::hide);
-    connect(m_session, &DictationSession::popupHidePreviewRequested, m_popup, &TranscriberPopup::hidePreview);
     connect(m_session, &DictationSession::popupFrozenChanged, m_popup, &TranscriberPopup::setFrozen);
     connect(m_session, &DictationSession::popupRefiningChanged, m_popup, &TranscriberPopup::setRefining);
     connect(m_session, &DictationSession::popupOAuthRefreshRequested, m_popup, &TranscriberPopup::showOAuthRefreshIndicator);

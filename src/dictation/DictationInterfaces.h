@@ -87,6 +87,20 @@ public:
         Q_UNUSED(target);
         return false;
     }
+    virtual bool canInsertText(const Target &target)
+    {
+        Q_UNUSED(target);
+        return false;
+    }
+    virtual bool insertText(const Target &target, const QString &plainText, QString *error = nullptr)
+    {
+        Q_UNUSED(target);
+        Q_UNUSED(plainText);
+        if (error) {
+            *error = QStringLiteral("Direct text insertion is unavailable");
+        }
+        return false;
+    }
     virtual bool verifyInsertion(const Target &target, const QString &plainText)
     {
         Q_UNUSED(target);
@@ -99,6 +113,19 @@ signals:
                             const QString &corrected,
                             const QString &applicationId,
                             double confidence);
+};
+
+class ScreenshotContextProvider : public QObject {
+    Q_OBJECT
+
+public:
+    using QObject::QObject;
+    virtual void capture() = 0;
+    virtual void cancel() = 0;
+
+signals:
+    void captured(const QByteArray &data, const QString &mediaType);
+    void failed(const QString &message);
 };
 
 class SpeechTranscriber : public QObject {
@@ -142,6 +169,11 @@ public:
     }
     virtual void refresh(const RefinementSettings &settings) = 0;
     virtual RefinementPrepareResult prepare(const RefinementSettings &settings) = 0;
+    virtual bool supportsScreenshotContext(const RefinementSettings &settings) const
+    {
+        Q_UNUSED(settings);
+        return false;
+    }
     virtual void refine(const QString &rawTranscript,
                         const QStringList &vocabulary,
                         const RefinementContext &context,

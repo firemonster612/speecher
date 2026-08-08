@@ -123,10 +123,67 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
     if (target.hasIdentity() && !target.secure) {
         pasteMethod = resolvePasteRule(settings.pasteRules, target).method;
     }
-    if (pasteMethod != PasteMethod::ClipboardOnly
-        && (!m_targetProvider || !m_targetProvider->stillFocused(target))) {
+    const bool directInsertRequested = pasteMethod == PasteMethod::DirectInsert;
+    const bool targetFocused = pasteMethod != PasteMethod::ClipboardOnly
+        && m_targetProvider
+        && m_targetProvider->stillFocused(target);
+    if (directInsertRequested) {
+        if (m_targetProvider && m_targetProvider->canInsertText(target)) {
+            WlClipboardSnapshot previousClipboard;
+            const bool canRestoreClipboard = settings.restoreClipboardAfterTyping
+                && WlClipboardDelivery::canSnapshot()
+                && WlClipboardDelivery::capture(&previousClipboard);
+            bool htmlAvailable = false;
+            QString copyError;
+            if (!ClipboardDelivery().copy(content, &htmlAvailable, &copyError)) {
+                return {
+                    false,
+                    DeliveryReceipt::None,
+                    false,
+                    copyError.isEmpty() ? QStringLiteral("Could not copy text before direct insertion") : copyError,
+                };
+            }
+            QString insertionError;
+            if (m_targetProvider->insertText(target, content.plainText, &insertionError)) {
+                const bool verified = m_targetProvider->verifyInsertion(target, content.plainText);
+                QString restoreError;
+                const bool restored = !verified
+                    || !canRestoreClipboard
+                    || WlClipboardDelivery::restore(previousClipboard, &restoreError);
+                QString message = verified
+                    ? QStringLiteral("Verified in Target")
+                    : QStringLiteral("Accepted by Target");
+                if (verified && canRestoreClipboard && !restored) {
+                    message += QStringLiteral("; clipboard kept because it could not be restored");
+                }
+                const bool downgraded = content.html.has_value() && !htmlAvailable;
+                return {
+                    true,
+                    verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::AcceptedByTarget,
+                    downgraded,
+                    downgraded ? message + QStringLiteral(" as plain text") : message,
+                };
+            }
+            return {
+                true,
+                DeliveryReceipt::Copied,
+                content.html.has_value() && !htmlAvailable,
+                insertionError.isEmpty()
+                    ? QStringLiteral("Copied")
+                    : QStringLiteral("Copied; direct insertion was rejected"),
+            };
+        }
+        pasteMethod = PasteMethod::ClipboardOnly;
+    } else if (pasteMethod != PasteMethod::ClipboardOnly && !targetFocused) {
         pasteMethod = PasteMethod::ClipboardOnly;
     }
+
+    WlClipboardSnapshot previousClipboard;
+    const bool canRestoreClipboard = pasteMethod != PasteMethod::ClipboardOnly
+        && settings.restoreClipboardAfterTyping
+        && WlClipboardDelivery::canSnapshot()
+        && WlClipboardDelivery::capture(&previousClipboard);
+
     QString firstError;
     for (const QString &method : orderedMethods(settings, pasteMethod)) {
         std::unique_ptr<DeliveryBackend> backend = m_backendFactory
@@ -145,14 +202,21 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
             const bool verified = !copied
                 && m_targetProvider
                 && m_targetProvider->verifyInsertion(target, content.plainText);
+            QString restoreError;
+            const bool restored = !verified
+                || !canRestoreClipboard
+                || WlClipboardDelivery::restore(previousClipboard, &restoreError);
             const QString message = copied
                 ? QStringLiteral("Copied")
                 : verified ? QStringLiteral("Verified in Target") : QStringLiteral("Input sent");
+            const QString finalMessage = verified && canRestoreClipboard && !restored
+                ? message + QStringLiteral("; clipboard kept because it could not be restored")
+                : message;
             return {true,
                     copied ? DeliveryReceipt::Copied
                            : verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::InputSent,
                     downgraded,
-                    downgraded ? message + QStringLiteral(" as plain text") : message};
+                    downgraded ? finalMessage + QStringLiteral(" as plain text") : finalMessage};
         }
         if (firstError.isEmpty()) {
             firstError = error;

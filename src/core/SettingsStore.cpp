@@ -99,6 +99,16 @@ void SettingsStore::setPauseMediaDuringTranscription(bool value)
     m_settings.setValue(QStringLiteral("ui/pauseMediaDuringTranscription"), value);
 }
 
+bool SettingsStore::soundsEnabled() const
+{
+    return value(QStringLiteral("ui/soundsEnabled"), false).toBool();
+}
+
+void SettingsStore::setSoundsEnabled(bool value)
+{
+    m_settings.setValue(QStringLiteral("ui/soundsEnabled"), value);
+}
+
 QString SettingsStore::speechProvider() const
 {
     const QString provider = value(QStringLiteral("stt/provider"), QStringLiteral("claude")).toString();
@@ -691,6 +701,7 @@ AppSettings SettingsStore::snapshot() const
     settings.ui.previewWords = previewWords();
     settings.ui.theme = theme();
     settings.ui.pauseMediaDuringTranscription = pauseMediaDuringTranscription();
+    settings.ui.soundsEnabled = soundsEnabled();
 
     settings.speech.providerId = speechProvider();
     settings.speech.vocabulary = customVocabulary();

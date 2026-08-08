@@ -21,6 +21,7 @@ struct UiSettings {
     int previewWords = 8;
     QString theme = QStringLiteral("system");
     bool pauseMediaDuringTranscription = true;
+    bool soundsEnabled = false;
 };
 
 struct SpeechSettings {

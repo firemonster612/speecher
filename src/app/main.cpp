@@ -80,13 +80,45 @@ static std::optional<OutputFormat> requestedOutputFormat(const QStringList &argu
     return outputFormatFromString(value);
 }
 
-static bool startDetachedToggle(const PlatformIntegration *platform, std::optional<OutputFormat> outputFormat)
+static bool startDetachedListening(const PlatformIntegration *platform, std::optional<OutputFormat> outputFormat)
 {
     QStringList arguments{QStringLiteral("--daemon"), QStringLiteral("--start-listening")};
     if (outputFormat) {
         arguments << QStringLiteral("--format") << outputFormatName(*outputFormat);
     }
     return QProcess::startDetached(platform->detachedExecutablePath(), arguments);
+}
+
+static int runCliCommand(const QString &command,
+                         std::optional<OutputFormat> outputFormat,
+                         const std::shared_ptr<const PlatformIntegration> &platform)
+{
+    IpcResponse response;
+    QString ipcError;
+    const IpcCommandResult ipcResult = SingleInstanceIpc::sendCommandDetailed(command,
+                                                                              outputFormat,
+                                                                              &response,
+                                                                              1200,
+                                                                              platform,
+                                                                              &ipcError);
+    if (ipcResult == IpcCommandResult::Sent) {
+        std::cout << response.state.toStdString() << "\n";
+        return response.ok ? 0 : 1;
+    }
+    if (ipcResult != IpcCommandResult::Unavailable) {
+        std::cerr << ipcError.toStdString() << "\n";
+        return 1;
+    }
+
+    if (command == QStringLiteral("stop") || command == QStringLiteral("status")) {
+        std::cout << "idle\n";
+        return 0;
+    }
+    if (!startDetachedListening(platform.get(), outputFormat)) {
+        std::cerr << "Could not start speecher daemon\n";
+        return 1;
+    }
+    return 0;
 }
 
 int main(int argc, char **argv)
@@ -106,7 +138,11 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    const bool toggleCli = args.size() >= 2 && args.at(1) == QStringLiteral("toggle");
+    const QString cliCommand = args.size() >= 2 ? args.at(1).trimmed().toLower() : QString();
+    const bool isCliCommand = cliCommand == QStringLiteral("toggle")
+        || cliCommand == QStringLiteral("start")
+        || cliCommand == QStringLiteral("stop")
+        || cliCommand == QStringLiteral("status");
     const bool daemon = args.contains(QStringLiteral("--daemon"));
     const bool startListening = args.contains(QStringLiteral("--start-listening"));
     QString formatError;
@@ -116,28 +152,12 @@ int main(int argc, char **argv)
         return 2;
     }
 
-    if (toggleCli) {
-        IpcResponse response;
-        QString ipcError;
-        const IpcCommandResult ipcResult = SingleInstanceIpc::sendCommandDetailed(QStringLiteral("toggle"),
-                                                                                  outputFormat,
-                                                                                  &response,
-                                                                                  1200,
-                                                                                  platform,
-                                                                                  &ipcError);
-        if (ipcResult == IpcCommandResult::Sent) {
-            std::cout << response.state.toStdString() << "\n";
-            return response.ok ? 0 : 1;
+    if (isCliCommand) {
+        if (outputFormat && cliCommand != QStringLiteral("toggle") && cliCommand != QStringLiteral("start")) {
+            std::cerr << "--format can only be used with toggle or start\n";
+            return 2;
         }
-        if (ipcResult != IpcCommandResult::Unavailable) {
-            std::cerr << ipcError.toStdString() << "\n";
-            return 1;
-        }
-        if (!startDetachedToggle(platform.get(), outputFormat)) {
-            std::cerr << "Could not start speecher daemon\n";
-            return 1;
-        }
-        return 0;
+        return runCliCommand(cliCommand, outputFormat, platform);
     }
 
     ApplicationController controller(daemon);

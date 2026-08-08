@@ -41,6 +41,7 @@ public:
     SessionResponse response(bool ok = true, const QString &message = {}) const;
     void toggleWithFormat(OutputFormat format);
     void startListeningWithFormat(OutputFormat format);
+    void setScreenshotContextProvider(ScreenshotContextProvider *provider);
 
 public slots:
     void toggle();
@@ -55,7 +56,6 @@ signals:
     void popupStatusChanged(const QString &status);
     void popupShowRequested();
     void popupHideRequested();
-    void popupHidePreviewRequested();
     void popupFrozenChanged(bool frozen);
     void popupRefiningChanged(bool refining);
     void popupOAuthRefreshRequested();
@@ -81,6 +81,7 @@ private:
     void handleSpeechFailure(const SpeechFailure &failure);
     void deliverFinal(const QString &text);
     void discardSessionAudio();
+    void clearScreenshotContext();
     void resumePausedMedia();
     bool selectSpeechTranscriber(const QString &providerId, QString *error);
     bool selectTranscriptRefiner(const QString &providerId, QString *error);
@@ -93,6 +94,7 @@ private:
     AudioInput *m_audio = nullptr;
     MediaController *m_mediaController = nullptr;
     TargetProvider *m_targetProvider = nullptr;
+    ScreenshotContextProvider *m_screenshotProvider = nullptr;
     TextDeliveryAdapter *m_delivery = nullptr;
     ProviderRegistry *m_providers = nullptr;
     TranscriptState *m_transcript = nullptr;
@@ -112,6 +114,9 @@ private:
     QList<QByteArray> m_capturedAudio;
     std::optional<AppSettings> m_sessionSettings;
     Target m_target;
+    QByteArray m_screenshotData;
+    QString m_screenshotMediaType;
+    quint64 m_screenshotCaptureGeneration = 0;
     bool m_retryUsed = false;
     std::shared_ptr<StartupPreparation> m_startupPreparation;
 };

@@ -5,6 +5,7 @@
 #include "output/TextDelivery.h"
 #include "output/WlClipboardDelivery.h"
 #include "platform/AtSpiTargetProvider.h"
+#include "platform/PortalScreenshotContextProvider.h"
 #include "ui/WaylandLayerShell.h"
 
 #include <QCoreApplication>
@@ -130,6 +131,11 @@ public:
     TargetProvider *createTargetProvider(QObject *parent) const override
     {
         return new AtSpiTargetProvider(parent);
+    }
+
+    ScreenshotContextProvider *createScreenshotContextProvider(QObject *parent) const override
+    {
+        return new PortalScreenshotContextProvider(parent);
     }
 
     TextDeliveryAdapter *createTextDelivery(TargetProvider *targetProvider, QObject *parent) const override
