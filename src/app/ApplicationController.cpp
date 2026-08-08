@@ -9,12 +9,18 @@
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/MainWindow.h"
+#include "ui/SetupAssistant.h"
 #include "ui/SettingsDialog.h"
 #include "ui/TranscriberPopup.h"
 #include "platform/atspi/AtSpiAccess.h"
 
 #include <QApplication>
+#include <QAction>
 #include <QDebug>
+
+#ifdef SPEECHER_WITH_KGLOBALACCEL
+#include <KGlobalAccel>
+#endif
 
 namespace speecher {
 
@@ -28,6 +34,13 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
     , m_popup(new TranscriberPopup(m_platform->createPopupPositioner(nullptr)))
     , m_ipc(new SingleInstanceIpc(m_platform, this))
 {
+#ifdef SPEECHER_WITH_KGLOBALACCEL
+    m_globalShortcutAction = new QAction(QStringLiteral("Toggle dictation"), this);
+    m_globalShortcutAction->setObjectName(QStringLiteral("toggle-dictation"));
+    m_globalShortcutAction->setProperty("componentName", QStringLiteral("local.speecher"));
+    m_globalShortcutAction->setProperty("componentDisplayName", QStringLiteral("Speecher"));
+    connect(m_globalShortcutAction, &QAction::triggered, this, &ApplicationController::toggle);
+#endif
     const atspi::AccessibilityState initialAccessibility = atspi::accessibilityState();
     if (initialAccessibility.persistent) {
         atspi::requestAccessibility();
@@ -149,6 +162,60 @@ bool ApplicationController::enableAccessibility(QString *error)
     return enabled;
 }
 
+bool ApplicationController::globalShortcutsSupported() const
+{
+#ifdef SPEECHER_WITH_KGLOBALACCEL
+    return qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains(
+        QStringLiteral("KDE"),
+        Qt::CaseInsensitive);
+#else
+    return false;
+#endif
+}
+
+QKeySequence ApplicationController::globalShortcut() const
+{
+#ifdef SPEECHER_WITH_KGLOBALACCEL
+    const QList<QKeySequence> shortcuts = KGlobalAccel::self()->globalShortcut(
+        QStringLiteral("local.speecher"),
+        QStringLiteral("toggle-dictation"));
+    return shortcuts.isEmpty() ? QKeySequence() : shortcuts.first();
+#else
+    return {};
+#endif
+}
+
+bool ApplicationController::setGlobalShortcut(const QKeySequence &shortcut, QString *error)
+{
+#ifdef SPEECHER_WITH_KGLOBALACCEL
+    if (shortcut.isEmpty()) {
+        if (error) {
+            *error = QStringLiteral("Choose a key sequence");
+        }
+        return false;
+    }
+    KGlobalAccel::self()->setDefaultShortcut(
+        m_globalShortcutAction,
+        {QKeySequence(Qt::META | Qt::ALT | Qt::Key_D)});
+    if (!KGlobalAccel::self()->setShortcut(
+            m_globalShortcutAction,
+            {shortcut},
+            KGlobalAccel::NoAutoloading)) {
+        if (error) {
+            *error = QStringLiteral("The desktop global-shortcut service rejected the key sequence");
+        }
+        return false;
+    }
+    return true;
+#else
+    Q_UNUSED(shortcut)
+    if (error) {
+        *error = QStringLiteral("KGlobalAccel is unavailable");
+    }
+    return false;
+#endif
+}
+
 bool ApplicationController::startIpc(QString *error)
 {
     return m_ipc->listen(error);
@@ -177,13 +244,35 @@ void ApplicationController::showSettingsWindow()
     m_settingsDialog->activateWindow();
 }
 
+void ApplicationController::showSetupAssistant()
+{
+    if (!m_setupAssistant) {
+        m_setupAssistant = new SetupAssistant(this);
+        m_setupAssistant->setAttribute(Qt::WA_DeleteOnClose);
+        connect(m_setupAssistant, &QDialog::accepted, this, [this] {
+            if (!m_popupOnly) {
+                showMainWindow();
+            }
+        });
+    }
+    m_setupAssistant->show();
+    m_setupAssistant->raise();
+    m_setupAssistant->activateWindow();
+}
+
 void ApplicationController::toggle()
 {
+    if (!ensureSetupCompleted()) {
+        return;
+    }
     m_session->toggle();
 }
 
 void ApplicationController::startListening()
 {
+    if (!ensureSetupCompleted()) {
+        return;
+    }
     m_session->startListening();
 }
 
@@ -194,12 +283,23 @@ void ApplicationController::stopListening()
 
 void ApplicationController::showMain()
 {
+    if (!ensureSetupCompleted()) {
+        return;
+    }
     showMainWindow();
 }
 
 void ApplicationController::showSettings()
 {
+    if (!ensureSetupCompleted()) {
+        return;
+    }
     showSettingsWindow();
+}
+
+void ApplicationController::showSetup()
+{
+    showSetupAssistant();
 }
 
 void ApplicationController::handleIpcCommand(const QString &command,
@@ -213,10 +313,18 @@ void ApplicationController::handleIpcCommand(const QString &command,
     }
     const OutputFormat format = outputFormatFromString(outputFormat);
     if (command == QStringLiteral("toggle")) {
-        hasFormat ? m_session->toggleWithFormat(format) : toggle();
+        if (!ensureSetupCompleted()) {
+            SingleInstanceIpc::writeResponse(socket, response());
+            return;
+        }
+        hasFormat ? m_session->toggleWithFormat(format) : m_session->toggle();
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("start")) {
-        hasFormat ? m_session->startListeningWithFormat(format) : startListening();
+        if (!ensureSetupCompleted()) {
+            SingleInstanceIpc::writeResponse(socket, response());
+            return;
+        }
+        hasFormat ? m_session->startListeningWithFormat(format) : m_session->startListening();
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("stop")) {
         stopListening();
@@ -227,11 +335,23 @@ void ApplicationController::handleIpcCommand(const QString &command,
     } else if (command == QStringLiteral("showSettings")) {
         showSettings();
         SingleInstanceIpc::writeResponse(socket, response());
+    } else if (command == QStringLiteral("showSetup")) {
+        showSetup();
+        SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("status")) {
         SingleInstanceIpc::writeResponse(socket, response());
     } else {
         SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown command")));
     }
+}
+
+bool ApplicationController::ensureSetupCompleted()
+{
+    if (m_settings->setupCompleted()) {
+        return true;
+    }
+    showSetupAssistant();
+    return false;
 }
 
 void ApplicationController::registerProviders()

@@ -4,10 +4,12 @@
 
 #include <QObject>
 #include <QPointer>
+#include <QKeySequence>
 
 #include "app/SingleInstanceIpc.h"
 
 class QLocalSocket;
+class QAction;
 
 namespace speecher {
 
@@ -18,6 +20,7 @@ class ProviderRegistry;
 class SecretStore;
 class SettingsDialog;
 class SettingsStore;
+class SetupAssistant;
 class TranscriberPopup;
 
 class ApplicationController : public QObject {
@@ -38,9 +41,13 @@ public:
     bool accessibilityEnabled() const;
     bool accessibilityPersistent() const;
     bool enableAccessibility(QString *error = nullptr);
+    bool globalShortcutsSupported() const;
+    QKeySequence globalShortcut() const;
+    bool setGlobalShortcut(const QKeySequence &shortcut, QString *error = nullptr);
 
     void showMainWindow();
     void showSettingsWindow();
+    void showSetupAssistant();
     bool startIpc(QString *error = nullptr);
 
 public slots:
@@ -49,6 +56,7 @@ public slots:
     void stopListening();
     void showMain();
     void showSettings();
+    void showSetup();
     void handleIpcCommand(const QString &command, const QString &outputFormat, QLocalSocket *socket);
 
 signals:
@@ -60,6 +68,7 @@ private:
     void registerProviders();
     void wireSessionToPopup();
     void refreshAccessibilityState();
+    bool ensureSetupCompleted();
 
     bool m_popupOnly = false;
     std::shared_ptr<const LinuxComposition> m_platform;
@@ -70,6 +79,8 @@ private:
     TranscriberPopup *m_popup = nullptr;
     MainWindow *m_mainWindow = nullptr;
     QPointer<SettingsDialog> m_settingsDialog;
+    QPointer<SetupAssistant> m_setupAssistant;
+    QAction *m_globalShortcutAction = nullptr;
     SingleInstanceIpc *m_ipc = nullptr;
     bool m_accessibilitySupported = false;
     bool m_accessibilityEnabled = false;

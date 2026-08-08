@@ -68,6 +68,7 @@ public:
     using SettingsCodecs::setRestoreClipboardAfterTyping;
     using SettingsCodecs::setSoundsEnabled;
     using SettingsCodecs::setSpeechProvider;
+    using SettingsCodecs::setSetupCompleted;
     using SettingsCodecs::setStoredApiKeyFallback;
     using SettingsCodecs::setTheme;
     using SettingsCodecs::setUseTargetContext;
@@ -78,6 +79,7 @@ public:
     using SettingsCodecs::snapshot;
     using SettingsCodecs::soundsEnabled;
     using SettingsCodecs::speechProvider;
+    using SettingsCodecs::setupCompleted;
     using SettingsCodecs::storedApiKeyFallback;
     using SettingsCodecs::theme;
     using SettingsCodecs::useTargetContext;

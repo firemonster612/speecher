@@ -10,6 +10,7 @@ class SettingsCodecs {
 public:
     SettingsCodecs();
 
+    bool setupCompleted() const; void setSetupCompleted(bool value);
     int previewWords() const; void setPreviewWords(int value);
     QString theme() const; void setTheme(const QString &value);
     bool pauseMediaDuringTranscription() const; void setPauseMediaDuringTranscription(bool value);

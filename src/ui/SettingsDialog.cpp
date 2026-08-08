@@ -176,6 +176,10 @@ SettingsDialog::SettingsDialog(ApplicationController *controller, QWidget *paren
                 runtimeStatus->setText(QStringLiteral("Dictation: %1").arg(status));
             });
     connect(m_generalPage, &GeneralSettingsPage::changed, this, &SettingsDialog::updateButtonState);
+    connect(m_generalPage,
+            &GeneralSettingsPage::setupRequested,
+            m_controller,
+            &ApplicationController::showSetupAssistant);
     connect(m_audioPage, &AudioSettingsPage::changed, this, &SettingsDialog::updateButtonState);
     connect(m_applicationPage, &ApplicationSettingsPage::changed, this, &SettingsDialog::updateButtonState);
     connect(m_correctionsPage, &CorrectionsSettingsPage::changed, this, &SettingsDialog::updateButtonState);
