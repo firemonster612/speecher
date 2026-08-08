@@ -122,12 +122,16 @@ private slots:
             {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true},
         };
         Target target;
-        target.applicationId = QStringLiteral("org.kde.konsole");
-        target.role = QStringLiteral("terminal");
+        target.terminalHost = true;
         target.aiCodingToolActive = true;
         target.category = classifyTarget(target);
 
         QCOMPARE(target.category, AppCategory::AiCoding);
+        QVERIFY(isTerminalTarget(target));
+        QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
+
+        target.aiCodingToolActive = false;
+        target.category = AppCategory::General;
         QVERIFY(isTerminalTarget(target));
         QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
     }

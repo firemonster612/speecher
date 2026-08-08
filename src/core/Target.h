@@ -79,6 +79,7 @@ struct Target {
     AppCategory category = AppCategory::Unknown;
     bool accessible = false;
     bool secure = false;
+    bool terminalHost = false;
     bool aiCodingToolActive = false;
 
     bool hasIdentity() const;

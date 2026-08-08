@@ -218,7 +218,9 @@ static bool ruleMatches(const AppRecognitionRule &rule,
 
 bool isTerminalTarget(const Target &target)
 {
-    if (target.category == AppCategory::Terminal
+    if (target.terminalHost
+        || target.aiCodingToolActive
+        || target.category == AppCategory::Terminal
         || target.role.contains(QStringLiteral("terminal"), Qt::CaseInsensitive)) {
         return true;
     }

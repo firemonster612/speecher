@@ -18,6 +18,7 @@ constexpr int contextCharacters = 240;
 constexpr int maximumVisitedObjects = 4000;
 constexpr int maximumTreeDepth = 40;
 constexpr int maximumDescendantProcesses = 64;
+constexpr int maximumAncestorProcesses = 16;
 
 bool isForeignPrivilegedProcess(qint64 processId)
 {
@@ -259,6 +260,15 @@ QString processName(qint64 processId)
     return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()).trimmed() : QString();
 }
 
+qint64 parentProcessId(qint64 processId)
+{
+    QFile file(QStringLiteral("/proc/%1/status").arg(processId));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return 0;
+    const QRegularExpressionMatch match = QRegularExpression(
+        QStringLiteral("(?m)^PPid:\\s+(\\d+)")).match(QString::fromUtf8(file.readAll()));
+    return match.hasMatch() ? match.captured(1).toLongLong() : 0;
+}
+
 QString executableName(const QString &path)
 {
     return path.sliced(path.lastIndexOf(QLatin1Char('/')) + 1).trimmed().toLower();
@@ -316,6 +326,40 @@ bool processLooksLikeAiCodingTool(qint64 processId)
     Target probe;
     probe.processName = executableParts.join(QLatin1Char(' '));
     return classifyTarget(probe) == AppCategory::AiCoding;
+}
+
+bool processHasTerminalAncestor(qint64 processId)
+{
+    static const QSet<QString> shells{
+        QStringLiteral("bash"),
+        QStringLiteral("dash"),
+        QStringLiteral("fish"),
+        QStringLiteral("nu"),
+        QStringLiteral("screen"),
+        QStringLiteral("sh"),
+        QStringLiteral("tmux"),
+        QStringLiteral("zsh"),
+    };
+    const QString currentProcess = processName(processId).toLower();
+    if (!shells.contains(currentProcess) && !processLooksLikeAiCodingTool(processId)) {
+        return false;
+    }
+
+    QSet<qint64> visited;
+    for (int depth = 0; processId > 1 && depth < maximumAncestorProcesses; ++depth) {
+        processId = parentProcessId(processId);
+        if (processId <= 1 || visited.contains(processId)) break;
+        visited.insert(processId);
+
+        Target ancestor;
+        ancestor.processName = processName(processId);
+        QFile cmdline(QStringLiteral("/proc/%1/cmdline").arg(processId));
+        if (cmdline.open(QIODevice::ReadOnly)) {
+            ancestor.applicationName = QString::fromLocal8Bit(cmdline.read(4096)).replace(QChar::Null, QLatin1Char(' '));
+        }
+        if (isTerminalTarget(ancestor)) return true;
+    }
+    return false;
 }
 
 bool terminalHasAiCodingTool(const Target &target)
@@ -446,7 +490,9 @@ TargetSnapshot TargetSnapshot::capture()
             populateAncestorContext(&target, focused);
             populateText(&target, focused);
         }
-        if (isTerminalTarget(target)) {
+        target.terminalHost = isTerminalTarget(target)
+            || processHasTerminalAncestor(target.processId);
+        if (target.terminalHost) {
             target.aiCodingToolActive = terminalHasAiCodingTool(target);
         }
         target.category = classifyTarget(target);
