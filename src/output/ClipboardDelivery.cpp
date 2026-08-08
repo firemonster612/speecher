@@ -21,6 +21,18 @@ bool ClipboardDelivery::copy(const DeliveryContent &content, bool *htmlAvailable
     if (htmlAvailable) {
         *htmlAvailable = false;
     }
+    if (WlClipboardDelivery::isWaylandSession()) {
+        WlClipboardDelivery waylandClipboard;
+        QString waylandError;
+        if (waylandClipboard.copy(content, htmlAvailable, &waylandError)) {
+            return true;
+        }
+        if (error) {
+            *error = waylandError;
+        }
+        return false;
+    }
+
     if (content.html) {
         QtClipboardDelivery qtClipboard;
         QString qtError;
@@ -30,12 +42,6 @@ bool ClipboardDelivery::copy(const DeliveryContent &content, bool *htmlAvailable
             }
             return true;
         }
-    }
-
-    QString wlCopyError;
-    WlClipboardDelivery wlCopy;
-    if (wlCopy.copy(content.plainText, &wlCopyError)) {
-        return true;
     }
 
     QtClipboardDelivery qtClipboard;
@@ -48,7 +54,7 @@ bool ClipboardDelivery::copy(const DeliveryContent &content, bool *htmlAvailable
     }
 
     if (error) {
-        *error = wlCopyError.isEmpty() ? qtError : wlCopyError;
+        *error = qtError;
     }
     return false;
 }

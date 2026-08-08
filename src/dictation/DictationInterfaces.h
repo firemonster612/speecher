@@ -50,6 +50,7 @@ struct SpeechFailure {
     quint64 attemptId = 0;
     QString message;
     bool retryable = false;
+    QString phase;
 };
 
 class AudioInput : public QObject {

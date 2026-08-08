@@ -1,5 +1,7 @@
+#include "app/ApplicationController.h"
 #include "app/SingleInstanceIpc.h"
 #include "core/AppSettings.h"
+#include "core/AudioCapture.h"
 #include "core/BindingProcessor.h"
 #include "core/OutputMethod.h"
 #include "core/OutputFormat.h"
@@ -7,12 +9,12 @@
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
 #include "core/VocabularyLimit.h"
+#include "core/Vocabulary.h"
 #include "core/WordPreview.h"
 #include "dictation/DictationSession.h"
 #include "dictation/DictationTypes.h"
 #include "providers/AnthropicApiRefiner.h"
 #include "providers/ClaudeCredentials.h"
-#include "providers/ClaudeCodeSessionRefiner.h"
 #include "providers/ClaudeVoiceClient.h"
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/OpenAiRefiner.h"
@@ -25,10 +27,16 @@
 #include "platform/PlatformIntegration.h"
 #include "platform/AtSpiTargetProvider.h"
 #include "platform/PortalScreenshotContextProvider.h"
+#include "ui/Theme.h"
+#include "ui/SettingsDialog.h"
 #include "ui/TranscriberPopup.h"
 #include "ui/WaveformWidget.h"
 
 #include <QBoxLayout>
+#include <QApplication>
+#include <QClipboard>
+#include <QColor>
+#include <QComboBox>
 #include <QDir>
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -37,22 +45,38 @@
 #include <QFileInfo>
 #include <QFrame>
 #include <QHostAddress>
+#include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QListWidget>
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <QMimeData>
+#include <QMouseEvent>
+#include <QPalette>
+#include <QProgressBar>
 #include <QRegularExpression>
 #include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTcpServer>
 #include <QTcpSocket>
+#ifdef SPEECHER_WITH_QT_WEBSOCKETS
+#include <QWebSocket>
+#include <QWebSocketServer>
+#endif
 #include <QTemporaryDir>
 #include <QTextStream>
 #include <QThread>
 #include <QUuid>
 #include <QtTest>
 
+#ifdef SPEECHER_WITH_KPAGEWIDGET
+#include <KPageWidget>
+#endif
+
+#include <algorithm>
+#include <future>
 #include <utility>
 
 using namespace speecher;
@@ -287,11 +311,6 @@ public:
         emit attemptCompleted(currentAttemptId);
     }
 
-    void emitRetiredFinalText(quint64 attemptId, const QString &text)
-    {
-        emit finalTranscript(attemptId, text);
-    }
-
     bool refreshRequired = false;
     bool backgroundPrepare = false;
     unsigned long backgroundPrepareDelayMs = 0;
@@ -377,6 +396,7 @@ public:
         lastContext = context;
         lastBindingVocabulary = settings.bindingVocabulary;
         lastStyle = settings.style;
+        lastTone = settings.tone;
         if (autoComplete) {
             emit completed(autoCompleteText);
         }
@@ -420,6 +440,7 @@ public:
     QStringList lastBindingVocabulary;
     RefinementContext lastContext;
     QString lastStyle;
+    QString lastTone;
 };
 
 class FakeDelivery final : public TextDeliveryAdapter {
@@ -708,6 +729,162 @@ private slots:
         QCOMPARE(WordPreview::lastWords(QStringLiteral("alpha beta gamma"), 0), QString());
     }
 
+    void systemThemePreservesTheDesktopPalette()
+    {
+        const QPalette original = qApp->palette();
+        QPalette desktop = original;
+        const QColor desktopBase(34, 34, 51);
+        desktop.setColor(QPalette::Base, desktopBase);
+        qApp->setPalette(desktop);
+
+        Theme::apply(QStringLiteral("system"));
+        QCOMPARE(qApp->palette().color(QPalette::Base), desktopBase);
+
+        Theme::apply(QStringLiteral("dark"));
+        QVERIFY(qApp->palette().color(QPalette::Base) != desktopBase);
+        Theme::apply(QStringLiteral("system"));
+        QCOMPARE(qApp->palette().color(QPalette::Base), desktopBase);
+
+        qApp->setPalette(original);
+    }
+
+    void settingsDialogUsesKdePageWidgetOnPlasma()
+    {
+#ifdef SPEECHER_WITH_KPAGEWIDGET
+        const QByteArray previousDesktop = qgetenv("XDG_CURRENT_DESKTOP");
+        qputenv("XDG_CURRENT_DESKTOP", "KDE");
+        const auto restoreDesktop = qScopeGuard([previousDesktop] {
+            if (previousDesktop.isNull()) {
+                qunsetenv("XDG_CURRENT_DESKTOP");
+            } else {
+                qputenv("XDG_CURRENT_DESKTOP", previousDesktop);
+            }
+        });
+
+        ApplicationController controller(true);
+        SettingsDialog dialog(&controller);
+        auto *pages = dialog.findChild<KPageWidget *>(QStringLiteral("settingsPages"));
+        QVERIFY(pages);
+        QCOMPARE(pages->faceType(), KPageView::FlatList);
+        QCOMPARE(pages->model()->rowCount(), 6);
+        auto *resizeHandle = pages->findChild<QWidget *>(
+            QStringLiteral("settingsSidebarResizeHandle"));
+        QVERIFY(resizeHandle);
+        QCOMPARE(resizeHandle->cursor().shape(), Qt::SplitHCursor);
+        dialog.resize(1200, 780);
+        dialog.show();
+        QCoreApplication::processEvents();
+        auto *searchContainer = pages->findChild<QWidget *>(
+            QStringLiteral("KPageView::Search"));
+        QVERIFY(searchContainer);
+        auto *headerSeparator = pages->findChild<QWidget *>(
+            QStringLiteral("settingsHeaderSeparator"));
+        QVERIFY(headerSeparator);
+        QCOMPARE(headerSeparator->height(), 1);
+        QCOMPARE(headerSeparator->width(), pages->width());
+        auto *navigationView = pages->findChild<QAbstractItemView *>(
+            QString(),
+            Qt::FindDirectChildrenOnly);
+        QVERIFY(navigationView);
+        QImage separatorImage(resizeHandle->size(), QImage::Format_ARGB32_Premultiplied);
+        separatorImage.fill(Qt::transparent);
+        resizeHandle->render(
+            &separatorImage,
+            QPoint(),
+            QRegion(),
+            QWidget::DrawChildren);
+        const int separatorX = resizeHandle->width() / 2;
+        QVector<QPair<int, int>> paintedRuns;
+        int runStart = -1;
+        for (int y = 0; y < separatorImage.height(); ++y) {
+            const bool painted = separatorImage.pixelColor(separatorX, y).alpha() > 0;
+            if (painted && runStart < 0) {
+                runStart = y;
+            } else if (!painted && runStart >= 0) {
+                paintedRuns.append({runStart, y - 1});
+                runStart = -1;
+            }
+        }
+        if (runStart >= 0) {
+            paintedRuns.append({runStart, separatorImage.height() - 1});
+        }
+        QCOMPARE(paintedRuns.size(), 2);
+        QVERIFY(paintedRuns.first().first > 0);
+        QVERIFY(paintedRuns.first().second
+                < searchContainer->geometry().bottom());
+        QVERIFY(paintedRuns.last().first
+                <= searchContainer->geometry().bottom() + 1);
+        QCOMPARE(paintedRuns.last().second, separatorImage.height() - 1);
+        const int initialSidebarWidth = searchContainer->width();
+        const int initialNavigationWidth = navigationView->width();
+        const QPointF localPosition = resizeHandle->rect().center();
+        const QPointF globalPosition = resizeHandle->mapToGlobal(
+            localPosition.toPoint());
+        QMouseEvent press(QEvent::MouseButtonPress,
+                          localPosition,
+                          globalPosition,
+                          Qt::LeftButton,
+                          Qt::LeftButton,
+                          Qt::NoModifier);
+        QCoreApplication::sendEvent(resizeHandle, &press);
+        QMouseEvent move(QEvent::MouseMove,
+                         localPosition,
+                         globalPosition + QPointF(60, 0),
+                         Qt::NoButton,
+                         Qt::LeftButton,
+                         Qt::NoModifier);
+        QCoreApplication::sendEvent(resizeHandle, &move);
+        QVERIFY(searchContainer->width() > initialSidebarWidth);
+        QVERIFY(navigationView->width() > initialNavigationWidth);
+        QCOMPARE(navigationView->width(), searchContainer->width());
+        QVERIFY(dialog.findChildren<QComboBox *>(
+                          QString(),
+                          Qt::FindDirectChildrenOnly)
+                    .isEmpty());
+#else
+        QSKIP("KPageWidget is not available in this build");
+#endif
+    }
+
+    void settingsDialogUsesPlatformStyledSidebarOutsidePlasma()
+    {
+        const QByteArray previousDesktop = qgetenv("XDG_CURRENT_DESKTOP");
+        qputenv("XDG_CURRENT_DESKTOP", "GNOME");
+        const auto restoreDesktop = qScopeGuard([previousDesktop] {
+            if (previousDesktop.isNull()) {
+                qunsetenv("XDG_CURRENT_DESKTOP");
+            } else {
+                qputenv("XDG_CURRENT_DESKTOP", previousDesktop);
+            }
+        });
+
+        ApplicationController controller(true);
+        SettingsDialog dialog(&controller);
+        auto *categories = dialog.findChild<QListWidget *>(
+            QStringLiteral("settingsCategories"));
+        QVERIFY(categories);
+        QCOMPARE(categories->count(), 6);
+        QVERIFY(categories->styleSheet().isEmpty());
+        QVERIFY(!dialog.findChild<QWidget *>(
+            QStringLiteral("settingsSidebarResizeHandle")));
+#ifdef SPEECHER_WITH_KPAGEWIDGET
+        QVERIFY(!dialog.findChild<KPageWidget *>(QStringLiteral("settingsPages")));
+#endif
+    }
+
+    void settingsDialogLeavesControlsToThePlatformStyle()
+    {
+        ApplicationController controller(true);
+        SettingsDialog dialog(&controller);
+        for (QWidget *widget : dialog.findChildren<QWidget *>()) {
+            QVERIFY2(widget->styleSheet().isEmpty(),
+                     qPrintable(QStringLiteral("%1 has an application stylesheet")
+                                    .arg(widget->objectName().isEmpty()
+                                             ? QString::fromLatin1(widget->metaObject()->className())
+                                             : widget->objectName())));
+        }
+    }
+
     void transcriptStateMerges()
     {
         TranscriptState state;
@@ -760,6 +937,24 @@ private slots:
                  QStringList({QStringLiteral("my phone")}));
         QVERIFY(BindingProcessor::hasExplicitNoBindDirective(
             QStringLiteral("please write my evil but don't turn that into a binding")));
+    }
+
+    void snippetJsonImportSupportsArraysAndMappings()
+    {
+        QString error;
+        QList<BindingRule> rules = BindingProcessor::parseJsonImport(
+            QByteArrayLiteral(R"({"snippets":[{"trigger":"sign off","expansion":"Regards,\nEfox"}]})"),
+            &error);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QCOMPARE(rules, QList<BindingRule>({
+                            {QStringLiteral("sign off"), QStringLiteral("Regards,\nEfox")},
+                        }));
+
+        rules = BindingProcessor::parseJsonImport(
+            QByteArrayLiteral(R"({"home address":"123 Main Street","email me":"efox@example.com"})"),
+            &error);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QCOMPARE(rules.size(), 2);
     }
 
     void bindingProcessorMatchesCasePunctuationAndSkipsCoveredText()
@@ -843,7 +1038,7 @@ private slots:
 
         SettingsStore settings;
         settings.raw().clear();
-        QCOMPARE(settings.previewWords(), 8);
+        QCOMPARE(settings.previewWords(), 7);
         QCOMPARE(settings.theme(), QStringLiteral("system"));
         QCOMPARE(settings.pauseMediaDuringTranscription(), true);
         QCOMPARE(settings.soundsEnabled(), false);
@@ -851,14 +1046,16 @@ private slots:
         QCOMPARE(settings.bindingRules().size(), 0);
         QCOMPARE(settings.refinementProvider(), QStringLiteral("openai"));
         QCOMPARE(settings.refinementStyle(), QStringLiteral("balanced"));
-        QCOMPARE(settings.defaultWritingProfile(), QStringLiteral("general"));
+        QCOMPARE(settings.defaultWritingProfile(), QStringLiteral("other"));
+        QCOMPARE(settings.writingProfileSettings(), defaultWritingProfileSettings());
+        QVERIFY(settings.writingProfileOverrides().isEmpty());
         QCOMPARE(settings.useTargetContext(), true);
         QCOMPARE(settings.includeScreenshotContext(), false);
         QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.6-luna"));
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("auto"));
         QCOMPARE(settings.openAiEffort(), QStringLiteral("none"));
         QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-sonnet-4-6"));
-        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("claude_code"));
+        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
         QCOMPARE(settings.anthropicEffort(), QStringLiteral("low"));
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
@@ -883,6 +1080,22 @@ private slots:
         QCOMPARE(settings.refinementStyle(), QStringLiteral("balanced"));
         settings.setDefaultWritingProfile(QStringLiteral("personal"));
         QCOMPARE(settings.defaultWritingProfile(), QStringLiteral("personal"));
+        settings.setWritingProfileSettings({
+            {WritingProfile::Work, QStringLiteral("strong_polish"), QStringLiteral("formal")},
+            {WritingProfile::Email, QStringLiteral("balanced"), QStringLiteral("casual")},
+            {WritingProfile::Personal, QStringLiteral("light_cleanup"), QStringLiteral("very_casual")},
+            {WritingProfile::Other, QStringLiteral("balanced"), QStringLiteral("none")},
+        });
+        QCOMPARE(writingProfileSettingsFor(settings.writingProfileSettings(), WritingProfile::Work).cleanupStrength,
+                 QStringLiteral("strong_polish"));
+        QCOMPARE(writingProfileSettingsFor(settings.writingProfileSettings(), WritingProfile::Personal).tone,
+                 QStringLiteral("very_casual"));
+        settings.setWritingProfileOverrides({
+            {QStringLiteral("org.mozilla.firefox"), WritingProfile::Personal, true},
+            {QStringLiteral("org.kde.kate"), WritingProfile::Other, false},
+        });
+        QCOMPARE(settings.writingProfileOverrides().size(), 2);
+        QCOMPARE(settings.writingProfileOverrides().first().profile, WritingProfile::Personal);
         settings.setUseTargetContext(false);
         QCOMPARE(settings.useTargetContext(), false);
         settings.setIncludeScreenshotContext(true);
@@ -930,7 +1143,7 @@ private slots:
         settings.setAnthropicAuthMode(QStringLiteral("oauth"));
         QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
         settings.setAnthropicAuthMode(QStringLiteral("unknown"));
-        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("claude_code"));
+        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
         settings.setAnthropicEffort(QStringLiteral("high"));
         QCOMPARE(settings.anthropicEffort(), QStringLiteral("high"));
         settings.setAnthropicEffort(QStringLiteral("max"));
@@ -1137,6 +1350,15 @@ private slots:
         settings.setRefinementProvider(QStringLiteral("openai"));
         settings.setRefinementStyle(QStringLiteral("strong_polish"));
         settings.setDefaultWritingProfile(QStringLiteral("personal"));
+        settings.setWritingProfileSettings({
+            {WritingProfile::Work, QStringLiteral("strong_polish"), QStringLiteral("formal")},
+            {WritingProfile::Email, QStringLiteral("balanced"), QStringLiteral("none")},
+            {WritingProfile::Personal, QStringLiteral("light_cleanup"), QStringLiteral("casual")},
+            {WritingProfile::Other, QStringLiteral("balanced"), QStringLiteral("none")},
+        });
+        settings.setWritingProfileOverrides({
+            {QStringLiteral("org.mozilla.firefox"), WritingProfile::Personal, true},
+        });
         settings.setUseTargetContext(false);
         settings.setIncludeScreenshotContext(true);
         settings.setOpenAiAuthMode(QStringLiteral("env"));
@@ -1179,6 +1401,11 @@ private slots:
         QCOMPARE(snapshot.refinement.providerId, QStringLiteral("openai"));
         QCOMPARE(snapshot.refinement.style, QStringLiteral("strong_polish"));
         QCOMPARE(snapshot.refinement.defaultWritingProfile, QStringLiteral("personal"));
+        QCOMPARE(snapshot.refinement.writingProfileOverrides.size(), 1);
+        QCOMPARE(snapshot.refinement.writingProfileOverrides.first().applicationId,
+                 QStringLiteral("org.mozilla.firefox"));
+        QCOMPARE(writingProfileSettingsFor(snapshot.refinement.writingProfiles, WritingProfile::Work).tone,
+                 QStringLiteral("formal"));
         QCOMPARE(snapshot.refinement.useTargetContext, false);
         QCOMPARE(snapshot.refinement.includeScreenshotContext, true);
         QCOMPARE(snapshot.refinement.openAiAuthMode, QStringLiteral("env"));
@@ -1224,18 +1451,39 @@ private slots:
         }
         AtSpiTargetProvider provider;
         const Target target = provider.capture();
+        const AppSettings settings = SettingsStore().snapshot();
+        const WritingProfile profile = resolveWritingProfile(
+            target,
+            settings.refinement.writingProfileOverrides,
+            writingProfileFromName(settings.refinement.defaultWritingProfile));
+        const PasteRule pasteRule = resolvePasteRule(settings.output.pasteRules, target);
+        const bool directInsert = provider.canInsertText(target);
         qInfo().noquote()
-            << QStringLiteral("target appId=%1 appName=%2 process=%3 role=%4 category=%5 accessible=%6 secure=%7 directInsert=%8 before=%9 after=%10")
+            << QStringLiteral("target appId=%1 appName=%2 process=%3 role=%4 category=%5 profile=%6 accessible=%7 secure=%8 focused=%9 directInsert=%10 titleChars=%11 urlChars=%12 controlChars=%13 caret=%14 selectionStart=%15 selectionEnd=%16 selectedChars=%17 before=%18 after=%19 pasteScope=%20 pasteMethod=%21 correctionEligible=%22")
                    .arg(target.applicationId,
                         target.applicationName,
                         target.processName,
                         target.role,
                         appCategoryName(target.category),
+                        writingProfileName(profile),
                         target.accessible ? QStringLiteral("yes") : QStringLiteral("no"),
                         target.secure ? QStringLiteral("yes") : QStringLiteral("no"),
-                        provider.canInsertText(target) ? QStringLiteral("yes") : QStringLiteral("no"),
+                        provider.stillFocused(target) ? QStringLiteral("yes") : QStringLiteral("no"))
+                   .arg(directInsert ? QStringLiteral("yes") : QStringLiteral("no"),
+                        QString::number(target.windowTitle.size()),
+                        QString::number(target.documentUrl.size()),
+                        QString::number(target.controlName.size()),
+                        QString::number(target.caretOffset),
+                        QString::number(target.selectionStart),
+                        QString::number(target.selectionEnd),
+                        QString::number(target.selectedText.size()),
                         QString::number(target.nearbyTextBefore.size()),
-                        QString::number(target.nearbyTextAfter.size()));
+                        QString::number(target.nearbyTextAfter.size()),
+                        pasteRuleScopeName(pasteRule.scope),
+                        pasteMethodName(pasteRule.method),
+                        target.accessible && !target.secure && directInsert && target.caretOffset >= 0
+                            ? QStringLiteral("yes")
+                            : QStringLiteral("no"));
         QVERIFY2(target.hasIdentity(), "No focused AT-SPI target was found");
         QVERIFY(!target.applicationName.isEmpty() || !target.processName.isEmpty());
         QVERIFY(target.nearbyTextBefore.size() <= 240);
@@ -1244,6 +1492,34 @@ private slots:
             QVERIFY(target.nearbyTextBefore.isEmpty());
             QVERIFY(target.nearbyTextAfter.isEmpty());
         }
+    }
+
+    void liveAudioCaptureUsesDefaultWhenSavedDeviceIsMissing()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_AUDIO") != QStringLiteral("1")) {
+            QSKIP("Live Plasma audio-capture check is opt-in");
+        }
+
+        SettingsStore settings;
+        settings.raw().clear();
+        AudioCaptureSettings audio = settings.audioCaptureSettings();
+        audio.deviceId = QStringLiteral("missing-live-test-device");
+        audio.mode = QStringLiteral("on_demand");
+        audio.vadEnabled = false;
+        settings.setAudioCaptureSettings(audio);
+
+        AudioCapture capture(&settings);
+        QSignalSpy chunks(&capture, &AudioInput::audioChunk);
+        QSignalSpy failed(&capture, &AudioInput::failed);
+        QString error;
+        QVERIFY2(capture.start(&error), qPrintable(error));
+        QTRY_VERIFY_WITH_TIMEOUT(!chunks.isEmpty(), 2000);
+        QCOMPARE(failed.count(), 0);
+        const QByteArray pcm = chunks.first().first().toByteArray();
+        QVERIFY(!pcm.isEmpty());
+        QCOMPARE(pcm.size() % int(sizeof(qint16)), 0);
+        capture.stop();
+        QVERIFY(!capture.isActive());
     }
 
     void liveAtSpiDirectInsertionIntoSavedUnfocusedControl()
@@ -1269,6 +1545,151 @@ private slots:
         QVERIFY(provider.verifyInsertion(target, QStringLiteral("inserted")));
     }
 
+    void livePlasmaDeliveryToFocusedControl()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_DELIVERY") != QStringLiteral("1")) {
+            QSKIP("Live Plasma delivery check is opt-in");
+        }
+
+        AtSpiTargetProvider provider;
+        const Target target = provider.capture();
+        QVERIFY2(target.hasIdentity(), "No focused Plasma target was found");
+        QVERIFY2(!target.secure, "Live delivery refuses secure targets");
+
+        OutputSettings output = SettingsStore().snapshot().output;
+        output.method = QString::fromLatin1(OutputMethod::Automatic);
+        output.ydotoolEnabled = true;
+        output.restoreClipboardAfterTyping = true;
+        output.pasteRules = defaultPasteRules();
+        const PasteRule rule = resolvePasteRule(output.pasteRules, target);
+
+        WlClipboardSnapshot before;
+        const bool capturedBefore = WlClipboardDelivery::capture(&before);
+        TextDelivery delivery(&provider);
+        const DeliveryResult result = delivery.deliver(
+            output,
+            makeDeliveryContent(QStringLiteral(" Speecher matrix insertion "), OutputFormat::Html),
+            target);
+        QVERIFY2(result.ok, qPrintable(result.message));
+        QVERIFY(result.receipt != DeliveryReceipt::None);
+
+        WlClipboardSnapshot after;
+        const bool capturedAfter = WlClipboardDelivery::capture(&after);
+        const bool restored = capturedBefore
+            && capturedAfter
+            && result.receipt == DeliveryReceipt::VerifiedInTarget
+            && before.hasData == after.hasData
+            && std::all_of(
+                before.parts.cbegin(),
+                before.parts.cend(),
+                [&after](const ClipboardMimePart &expected) {
+                    return std::any_of(
+                        after.parts.cbegin(),
+                        after.parts.cend(),
+                        [&expected](const ClipboardMimePart &actual) {
+                            return actual.mimeType == expected.mimeType
+                                && actual.data == expected.data;
+                        });
+                });
+        const bool plainAvailable = std::any_of(
+            after.parts.cbegin(),
+            after.parts.cend(),
+            [](const ClipboardMimePart &part) {
+                return part.mimeType.startsWith(QStringLiteral("text/plain"));
+            });
+        const bool htmlAvailable = std::any_of(
+            after.parts.cbegin(),
+            after.parts.cend(),
+            [](const ClipboardMimePart &part) {
+                return part.mimeType == QStringLiteral("text/html");
+            });
+        qInfo().noquote()
+            << QStringLiteral("delivery appId=%1 category=%2 pasteScope=%3 pasteMethod=%4 receipt=%5 downgraded=%6 clipboardRestored=%7 clipboardPlain=%8 clipboardHtml=%9")
+                   .arg(target.applicationId,
+                        appCategoryName(target.category),
+                        pasteRuleScopeName(rule.scope),
+                        pasteMethodName(rule.method),
+                        result.message,
+                        result.formatDowngraded ? QStringLiteral("yes") : QStringLiteral("no"),
+                        restored ? QStringLiteral("yes") : QStringLiteral("no"),
+                        plainAvailable ? QStringLiteral("yes") : QStringLiteral("no"),
+                        htmlAvailable ? QStringLiteral("yes") : QStringLiteral("no"));
+    }
+
+    void liveWaylandClipboardOffersDistinctFormatsAndRestores()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_CLIPBOARD") != QStringLiteral("1")) {
+            QSKIP("Live Wayland clipboard check is opt-in");
+        }
+
+        WlClipboardSnapshot original;
+        QString error;
+        QVERIFY2(WlClipboardDelivery::capture(&original, &error), qPrintable(error));
+        struct OriginalClipboardRestorer {
+            WlClipboardSnapshot snapshot;
+            ~OriginalClipboardRestorer()
+            {
+                QString ignored;
+                WlClipboardDelivery::restore(snapshot, &ignored);
+            }
+        } restorer{original};
+
+        const DeliveryContent content{
+            QStringLiteral("Speecher plain clipboard probe"),
+            QStringLiteral("<p><strong>Speecher HTML clipboard probe</strong></p>"),
+        };
+        WlClipboardDelivery clipboard;
+        bool htmlAvailable = false;
+        QVERIFY2(clipboard.copy(content, &htmlAvailable, &error), qPrintable(error));
+        QVERIFY(htmlAvailable);
+
+        WlClipboardSnapshot published;
+        QVERIFY2(WlClipboardDelivery::capture(&published, &error), qPrintable(error));
+        const auto part = [&published](const QString &mimeType) {
+            return std::find_if(
+                published.parts.cbegin(),
+                published.parts.cend(),
+                [&mimeType](const ClipboardMimePart &candidate) {
+                    return candidate.mimeType == mimeType;
+                });
+        };
+        const auto plain = part(QStringLiteral("text/plain;charset=utf-8"));
+        const auto html = part(QStringLiteral("text/html"));
+        QVERIFY(plain != published.parts.cend());
+        QVERIFY(html != published.parts.cend());
+        QCOMPARE(plain->data, content.plainText.toUtf8());
+        QCOMPARE(html->data, content.html->toUtf8());
+        QVERIFY(plain->data != html->data);
+
+        QVERIFY2(WlClipboardDelivery::restore(original, &error), qPrintable(error));
+        WlClipboardSnapshot restored;
+        QVERIFY2(WlClipboardDelivery::capture(&restored, &error), qPrintable(error));
+        QCOMPARE(restored.hasData, original.hasData);
+        for (const ClipboardMimePart &expected : std::as_const(original.parts)) {
+            const bool matched = std::any_of(
+                restored.parts.cbegin(),
+                restored.parts.cend(),
+                [&expected](const ClipboardMimePart &actual) {
+                    return actual.mimeType == expected.mimeType
+                        && actual.data == expected.data;
+                });
+            if (!matched) {
+                QStringList actualParts;
+                for (const ClipboardMimePart &actual : std::as_const(restored.parts)) {
+                    actualParts.append(QStringLiteral("%1:%2")
+                                           .arg(actual.mimeType)
+                                           .arg(actual.data.size()));
+                }
+                qWarning().noquote()
+                    << QStringLiteral("clipboard restore mismatch expected=%1:%2 actual=%3")
+                           .arg(expected.mimeType)
+                           .arg(expected.data.size())
+                           .arg(actualParts.join(QLatin1Char(',')));
+            }
+            QVERIFY(matched);
+        }
+    }
+
     void liveAtSpiPasswordTargetIsPrivate()
     {
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI_PASSWORD") != QStringLiteral("1")) {
@@ -1281,6 +1702,37 @@ private slots:
         QVERIFY(target.secure);
         QVERIFY(target.nearbyTextBefore.isEmpty());
         QVERIFY(target.nearbyTextAfter.isEmpty());
+        QVERIFY(!provider.canInsertText(target));
+    }
+
+    void liveSecureTargetUsesClipboardOnly()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI_PASSWORD") != QStringLiteral("1")) {
+            QSKIP("Live Plasma secure-delivery check is opt-in");
+        }
+
+        AtSpiTargetProvider provider;
+        const Target target = provider.capture();
+        QVERIFY2(target.hasIdentity(), "No focused password target was found");
+        QVERIFY(target.secure);
+
+        OutputSettings output;
+        output.method = QString::fromLatin1(OutputMethod::Automatic);
+        output.ydotoolEnabled = true;
+        output.restoreClipboardAfterTyping = true;
+        output.pasteRules = defaultPasteRules();
+        QSignalSpy corrections(&provider, &TargetProvider::correctionObserved);
+        TextDelivery delivery(&provider);
+        const DeliveryResult result = delivery.deliver(
+            output,
+            makeDeliveryContent(QStringLiteral("Speecher secure-target probe"),
+                                OutputFormat::Html),
+            target);
+
+        QVERIFY2(result.ok, qPrintable(result.message));
+        QCOMPARE(result.receipt, DeliveryReceipt::Copied);
+        QCOMPARE(result.message, QStringLiteral("Copied"));
+        QCOMPARE(corrections.count(), 0);
         QVERIFY(!provider.canInsertText(target));
     }
 
@@ -1426,6 +1878,8 @@ private slots:
     {
         Target target;
         target.applicationId = QStringLiteral("org.mozilla.Thunderbird");
+        target.windowTitle = QStringLiteral("Write: Project update");
+        target.documentUrl = QStringLiteral("https://mail.example.test/compose");
         target.category = AppCategory::Email;
         target.role = QStringLiteral("text");
         target.nearbyTextBefore = QStringLiteral("Hello Alex");
@@ -1439,12 +1893,16 @@ private slots:
         RefinementContext context;
         context.target = target;
         context.writingProfile = WritingProfile::Email;
+        context.tone = QStringLiteral("formal");
         const QString message = transcriptRefinementUserMessage(
             QStringLiteral("raw"),
             {},
             {},
             context);
         QVERIFY(message.contains(QStringLiteral("\"writing_profile\":\"email\"")));
+        QVERIFY(message.contains(QStringLiteral("\"requested_tone\":\"formal\"")));
+        QVERIFY(message.contains(QStringLiteral("\"window_title\":\"Write: Project update\"")));
+        QVERIFY(message.contains(QStringLiteral("\"document_url\":\"https://mail.example.test/compose\"")));
         QVERIFY(message.contains(QStringLiteral("\"text_before_caret\":\"Hello Alex\"")));
         QVERIFY(message.contains(QStringLiteral("\"caret_offset\":10")));
         QVERIFY(message.contains(QStringLiteral("\"selected_text\":\"Alex\"")));
@@ -1478,10 +1936,24 @@ private slots:
         QCOMPARE(classified(QStringLiteral("soffice.bin")).category, AppCategory::Office);
         QCOMPARE(classified(QStringLiteral("t3-code")).category, AppCategory::CodeEditor);
 
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("kate"))), WritingProfile::Technical);
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("konsole"))), WritingProfile::Technical);
+        QCOMPARE(inferWritingProfile(classified(QStringLiteral("kate"))), WritingProfile::Work);
+        QCOMPARE(inferWritingProfile(classified(QStringLiteral("konsole"))), WritingProfile::Work);
         QCOMPARE(inferWritingProfile(classified(QStringLiteral("thunderbird"))), WritingProfile::Email);
-        QCOMPARE(inferWritingProfile(classified(QStringLiteral("t3-code"))), WritingProfile::Technical);
+        QCOMPARE(inferWritingProfile(classified(QStringLiteral("t3-code"))), WritingProfile::Work);
+        QCOMPARE(inferWritingProfile(classified(QStringLiteral("libreoffice"))), WritingProfile::Work);
+        QCOMPARE(inferWritingProfile(classified(QStringLiteral("org.signal.Signal"))), WritingProfile::Personal);
+        QCOMPARE(inferWritingProfile(classified(QStringLiteral("firefox")), WritingProfile::Other), WritingProfile::Other);
+
+        const QList<WritingProfileOverride> overrides{
+            {QStringLiteral("firefox"), WritingProfile::Personal, true},
+            {QStringLiteral("kate"), WritingProfile::Other, false},
+        };
+        QCOMPARE(resolveWritingProfile(classified(QStringLiteral("firefox")), overrides, WritingProfile::Other),
+                 WritingProfile::Personal);
+        QCOMPARE(resolveWritingProfile(classified(QStringLiteral("kate")), overrides, WritingProfile::Other),
+                 WritingProfile::Work);
+        QCOMPARE(writingProfileFromName(QStringLiteral("technical")), WritingProfile::Work);
+        QCOMPARE(writingProfileFromName(QStringLiteral("general")), WritingProfile::Other);
     }
 
     void outputUsesClipboardOnlyForMissingOrSecureTargets()
@@ -1543,8 +2015,38 @@ private slots:
             target);
         QVERIFY(result.ok);
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
-        QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::Ydotool), QString::fromLatin1(OutputMethod::WlCopy)}));
-        QCOMPARE(restoreFlags, QList<bool>({true, true}));
+        QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::Ydotool)}));
+        QCOMPARE(restoreFlags, QList<bool>({true}));
+        QCOMPARE(result.receipt, DeliveryReceipt::Copied);
+    }
+
+    void outputUsesExplicitGlobalPasteRuleWithoutCapturedTarget()
+    {
+        QList<QString> attempts;
+        QHash<QString, bool> results{{QString::fromLatin1(OutputMethod::Ydotool), true}};
+        FakeTargetProvider targetProvider;
+        targetProvider.focused = false;
+        TextDelivery delivery([&attempts, &results](
+                                  const QString &method,
+                                  const OutputSettings &,
+                                  PasteMethod) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        }, &targetProvider);
+
+        OutputSettings settings;
+        settings.method = QString::fromLatin1(OutputMethod::Automatic);
+        settings.ydotoolEnabled = true;
+        settings.pasteRules = {
+            {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
+        };
+
+        const DeliveryResult result = delivery.deliver(
+            settings,
+            makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
+            {});
+
+        QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::Ydotool)}));
+        QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
     }
 
     void outputExplicitMethodDoesNotFallback()
@@ -1568,7 +2070,8 @@ private slots:
             settings,
             makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
             {});
-        QVERIFY(!result.ok);
+        QVERIFY(result.ok);
+        QCOMPARE(result.receipt, DeliveryReceipt::Copied);
         QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::WlCopy)}));
     }
 
@@ -1628,7 +2131,7 @@ private slots:
             target);
 
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
-        QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::WlCopy)}));
+        QVERIFY(attempts.isEmpty());
     }
 
     void outputUsesSavedAccessibleTargetAfterFocusChanges()
@@ -1706,35 +2209,11 @@ private slots:
 
     void outputRestoresClipboardOnlyAfterVerifiedInsertion()
     {
-        QTemporaryDir dir;
-        const QString copyArgsPath = dir.filePath(QStringLiteral("copy-args"));
-        const QString copyDataPath = dir.filePath(QStringLiteral("copy-data"));
-        QVERIFY(!writeFakeClaudeScript(dir.filePath(QStringLiteral("wl-paste")), QStringLiteral(R"SH(
-if test "$1" = "--list-types"; then
-  printf '%s\n' 'text/plain;charset=utf-8'
-  exit 0
-fi
-if test "$1" = "--no-newline" && test "$2" = "--type"; then
-  printf 'previous clipboard'
-  exit 0
-fi
-exit 9
-)SH")).isEmpty());
-        QVERIFY(!writeFakeClaudeScript(dir.filePath(QStringLiteral("wl-copy")), QStringLiteral(R"SH(
-printf '%s\n' "$*" > "$SPEECHER_TEST_WL_COPY_ARGS"
-cat > "$SPEECHER_TEST_WL_COPY_DATA"
-exit 0
-)SH")).isEmpty());
-
-        const QByteArray oldPath = qgetenv("PATH");
-        qputenv("PATH", QFile::encodeName(dir.path()) + QByteArrayLiteral(":") + oldPath);
-        qputenv("SPEECHER_TEST_WL_COPY_ARGS", QFile::encodeName(copyArgsPath));
-        qputenv("SPEECHER_TEST_WL_COPY_DATA", QFile::encodeName(copyDataPath));
-        const auto cleanup = qScopeGuard([oldPath] {
-            qputenv("PATH", oldPath);
-            qunsetenv("SPEECHER_TEST_WL_COPY_ARGS");
-            qunsetenv("SPEECHER_TEST_WL_COPY_DATA");
-        });
+        auto *previous = new QMimeData;
+        previous->setText(QStringLiteral("previous clipboard"));
+        previous->setHtml(QStringLiteral("<b>previous clipboard</b>"));
+        previous->setData(QStringLiteral("image/png"), QByteArrayLiteral("fake-image"));
+        QApplication::clipboard()->setMimeData(previous);
 
         QList<QString> attempts;
         QHash<QString, bool> results{{QString::fromLatin1(OutputMethod::Ydotool), true}};
@@ -1756,42 +2235,18 @@ exit 0
 
         const DeliveryResult result = delivery.deliver(
             settings,
-            makeDeliveryContent(QStringLiteral("new text"), OutputFormat::PlainText),
+            makeDeliveryContent(QStringLiteral("new text"), OutputFormat::Html),
             target);
         QCOMPARE(result.receipt, DeliveryReceipt::VerifiedInTarget);
-
-        QFile argsFile(copyArgsPath);
-        QVERIFY(argsFile.open(QIODevice::ReadOnly));
-        QCOMPARE(QString::fromUtf8(argsFile.readAll()).trimmed(),
-                 QStringLiteral("--type text/plain;charset=utf-8"));
-        QFile dataFile(copyDataPath);
-        QVERIFY(dataFile.open(QIODevice::ReadOnly));
-        QCOMPARE(dataFile.readAll(), QByteArrayLiteral("previous clipboard"));
+        const QMimeData *restored = QApplication::clipboard()->mimeData();
+        QCOMPARE(restored->text(), QStringLiteral("previous clipboard"));
+        QCOMPARE(restored->html(), QStringLiteral("<b>previous clipboard</b>"));
+        QCOMPARE(restored->data(QStringLiteral("image/png")), QByteArrayLiteral("fake-image"));
     }
 
     void outputKeepsDictationOnClipboardWhenInsertionIsNotVerified()
     {
-        QTemporaryDir dir;
-        const QString restoreMarkerPath = dir.filePath(QStringLiteral("restore-marker"));
-        QVERIFY(!writeFakeClaudeScript(dir.filePath(QStringLiteral("wl-paste")), QStringLiteral(R"SH(
-if test "$1" = "--list-types"; then
-  printf '%s\n' 'text/plain'
-  exit 0
-fi
-printf 'previous clipboard'
-)SH")).isEmpty());
-        QVERIFY(!writeFakeClaudeScript(dir.filePath(QStringLiteral("wl-copy")), QStringLiteral(R"SH(
-touch "$SPEECHER_TEST_RESTORE_MARKER"
-cat >/dev/null
-)SH")).isEmpty());
-
-        const QByteArray oldPath = qgetenv("PATH");
-        qputenv("PATH", QFile::encodeName(dir.path()) + QByteArrayLiteral(":") + oldPath);
-        qputenv("SPEECHER_TEST_RESTORE_MARKER", QFile::encodeName(restoreMarkerPath));
-        const auto cleanup = qScopeGuard([oldPath] {
-            qputenv("PATH", oldPath);
-            qunsetenv("SPEECHER_TEST_RESTORE_MARKER");
-        });
+        QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
 
         QList<QString> attempts;
         QHash<QString, bool> results{{QString::fromLatin1(OutputMethod::Ydotool), true}};
@@ -1813,98 +2268,48 @@ cat >/dev/null
 
         const DeliveryResult result = delivery.deliver(
             settings,
-            makeDeliveryContent(QStringLiteral("new text"), OutputFormat::PlainText),
+            makeDeliveryContent(QStringLiteral("new text"), OutputFormat::Html),
             target);
         QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
-        QVERIFY(!QFileInfo::exists(restoreMarkerPath));
+        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("new text"));
+        QVERIFY(QApplication::clipboard()->mimeData()->hasHtml());
     }
 
-    void wlClipboardSnapshotCapturesAndRestoresPreferredMimeType()
+    void wlClipboardSnapshotCapturesAndRestoresEveryMimeType()
     {
-        QTemporaryDir dir;
-        const QString copyArgsPath = dir.filePath(QStringLiteral("copy-args"));
-        const QString copyDataPath = dir.filePath(QStringLiteral("copy-data"));
-        const QString fakePaste = writeFakeClaudeScript(dir.filePath(QStringLiteral("wl-paste")), QStringLiteral(R"SH(
-if test "$1" = "--list-types"; then
-  printf '%s\n' 'image/png' 'text/plain;charset=utf-8' 'text/html'
-  exit 0
-fi
-if test "$1" = "--no-newline" && test "$2" = "--type"; then
-  printf 'old clipboard from %s' "$3"
-  exit 0
-fi
-echo unexpected wl-paste args "$@" >&2
-exit 9
-)SH"));
-        const QString fakeCopy = writeFakeClaudeScript(dir.filePath(QStringLiteral("wl-copy")), QStringLiteral(R"SH(
-printf '%s\n' "$*" > "$SPEECHER_TEST_WL_COPY_ARGS"
-cat > "$SPEECHER_TEST_WL_COPY_DATA"
-exit 0
-)SH"));
-        QVERIFY(!fakePaste.isEmpty());
-        QVERIFY(!fakeCopy.isEmpty());
-
-        const QByteArray oldPath = qgetenv("PATH");
-        qputenv("PATH", QFile::encodeName(dir.path()) + QByteArrayLiteral(":") + oldPath);
-        qputenv("SPEECHER_TEST_WL_COPY_ARGS", QFile::encodeName(copyArgsPath));
-        qputenv("SPEECHER_TEST_WL_COPY_DATA", QFile::encodeName(copyDataPath));
-        const auto cleanup = qScopeGuard([oldPath] {
-            qputenv("PATH", oldPath);
-            qunsetenv("SPEECHER_TEST_WL_COPY_ARGS");
-            qunsetenv("SPEECHER_TEST_WL_COPY_DATA");
-        });
+        auto *original = new QMimeData;
+        original->setText(QStringLiteral("old clipboard"));
+        original->setHtml(QStringLiteral("<i>old clipboard</i>"));
+        original->setData(QStringLiteral("image/png"), QByteArrayLiteral("png-bytes"));
+        QApplication::clipboard()->setMimeData(original);
 
         WlClipboardSnapshot snapshot;
         QString error;
         QVERIFY2(WlClipboardDelivery::capture(&snapshot, &error), qPrintable(error));
         QVERIFY(snapshot.hasData);
-        QCOMPARE(snapshot.mimeType, QStringLiteral("text/plain;charset=utf-8"));
-        QCOMPARE(snapshot.data, QByteArrayLiteral("old clipboard from text/plain;charset=utf-8"));
+        QVERIFY(snapshot.parts.size() >= 3);
 
+        QApplication::clipboard()->setText(QStringLiteral("replacement"));
         QVERIFY2(WlClipboardDelivery::restore(snapshot, &error), qPrintable(error));
-
-        QFile argsFile(copyArgsPath);
-        QVERIFY(argsFile.open(QIODevice::ReadOnly));
-        QCOMPARE(QString::fromUtf8(argsFile.readAll()).trimmed(), QStringLiteral("--type text/plain;charset=utf-8"));
-
-        QFile dataFile(copyDataPath);
-        QVERIFY(dataFile.open(QIODevice::ReadOnly));
-        QCOMPARE(dataFile.readAll(), QByteArrayLiteral("old clipboard from text/plain;charset=utf-8"));
+        const QMimeData *restored = QApplication::clipboard()->mimeData();
+        QCOMPARE(restored->text(), QStringLiteral("old clipboard"));
+        QCOMPARE(restored->html(), QStringLiteral("<i>old clipboard</i>"));
+        QCOMPARE(restored->data(QStringLiteral("image/png")), QByteArrayLiteral("png-bytes"));
     }
 
     void wlClipboardSnapshotRestoresEmptyClipboard()
     {
-        QTemporaryDir dir;
-        const QString copyArgsPath = dir.filePath(QStringLiteral("copy-args"));
-        const QString fakePaste = writeFakeClaudeScript(dir.filePath(QStringLiteral("wl-paste")), QStringLiteral(R"SH(
-echo 'Nothing is copied' >&2
-exit 1
-)SH"));
-        const QString fakeCopy = writeFakeClaudeScript(dir.filePath(QStringLiteral("wl-copy")), QStringLiteral(R"SH(
-printf '%s\n' "$*" > "$SPEECHER_TEST_WL_COPY_ARGS"
-exit 0
-)SH"));
-        QVERIFY(!fakePaste.isEmpty());
-        QVERIFY(!fakeCopy.isEmpty());
-
-        const QByteArray oldPath = qgetenv("PATH");
-        qputenv("PATH", QFile::encodeName(dir.path()) + QByteArrayLiteral(":") + oldPath);
-        qputenv("SPEECHER_TEST_WL_COPY_ARGS", QFile::encodeName(copyArgsPath));
-        const auto cleanup = qScopeGuard([oldPath] {
-            qputenv("PATH", oldPath);
-            qunsetenv("SPEECHER_TEST_WL_COPY_ARGS");
-        });
+        QApplication::clipboard()->setMimeData(new QMimeData);
+        QCoreApplication::processEvents();
 
         WlClipboardSnapshot snapshot;
         QString error;
         QVERIFY2(WlClipboardDelivery::capture(&snapshot, &error), qPrintable(error));
         QVERIFY(!snapshot.hasData);
 
+        QApplication::clipboard()->setText(QStringLiteral("replacement"));
         QVERIFY2(WlClipboardDelivery::restore(snapshot, &error), qPrintable(error));
-
-        QFile argsFile(copyArgsPath);
-        QVERIFY(argsFile.open(QIODevice::ReadOnly));
-        QCOMPARE(QString::fromUtf8(argsFile.readAll()).trimmed(), QStringLiteral("--clear"));
+        QVERIFY(QApplication::clipboard()->text().isEmpty());
     }
 
     void ydotoolDeliveryBuildsTypeAndPasteCommands()
@@ -1976,6 +2381,7 @@ exit 0
     {
         SettingsStore settings;
         settings.raw().clear();
+        settings.setPreviewWords(7);
         settings.setPauseMediaDuringTranscription(true);
         settings.setRefinementProvider(QStringLiteral("none"));
         settings.setCustomVocabulary({QStringLiteral("Speecher")});
@@ -1987,6 +2393,7 @@ exit 0
         FakeSpeechTranscriber *speech = nullptr;
         registerFakeSpeechProvider(registry, &speech);
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy previewDisplay(&session, &DictationSession::previewDisplayChanged);
 
         session.startListening();
         QCOMPARE(int(session.state()), int(DictationState::Listening));
@@ -1998,15 +2405,54 @@ exit 0
 
         audio->pushAudio(QByteArrayLiteral("pcm"));
         QCOMPARE(speech->audioChunks.size(), 1);
-        speech->emitFinalText(QStringLiteral("hello world"));
+        speech->emitFinalText(QStringLiteral("one two three four five six seven eight nine"));
+        QCOMPARE(previewDisplay.last().first().toString(),
+                 QStringLiteral("three four five six seven eight nine"));
         session.stopListening();
 
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
-        QCOMPARE(delivery->lastText, QStringLiteral("hello world"));
+        QCOMPARE(delivery->lastText, QStringLiteral("one two three four five six seven eight nine"));
         QCOMPARE(delivery->lastSettings.method, QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(delivery->lastSettings.restoreClipboardAfterTyping, false);
         QCOMPARE(media->resumeCalls, 1);
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
+    }
+
+    void dictationSessionToggleAndPushToTalkCommandsAreIdempotent()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.setOutputFormat(OutputFormat::PlainText);
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.toggleWithFormat(OutputFormat::Html);
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QCOMPARE(speech->startCalls, 1);
+
+        session.startListening();
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QCOMPARE(speech->startCalls, 1);
+
+        speech->emitFinalText(QStringLiteral("toggle result"));
+        session.toggle();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(delivery->lastSettings.format, OutputFormat::Html);
+        QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
+
+        session.stopListening();
+        QCOMPARE(delivery->calls, 1);
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
+
+        session.stopListening();
+        QCOMPARE(int(session.state()), int(DictationState::Idle));
     }
 
     void dictationSessionWaitsForProviderCompletion()
@@ -2154,6 +2600,40 @@ exit 0
         session.stopListening();
     }
 
+    void dictationSessionNeverCapturesScreenshotForSecureTarget()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.setIncludeScreenshotContext(true);
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto targetProvider = std::make_unique<FakeTargetProvider>();
+        targetProvider->target.applicationId = QStringLiteral("secure-fixture");
+        targetProvider->target.accessible = true;
+        targetProvider->target.secure = true;
+        auto screenshots = std::make_unique<FakeScreenshotContextProvider>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(
+            &settings,
+            audio.get(),
+            media.get(),
+            targetProvider.get(),
+            delivery.get(),
+            &registry);
+        session.setScreenshotContextProvider(screenshots.get());
+
+        session.startListening();
+        QCOMPARE(screenshots->captureCalls, 0);
+        session.stopListening();
+    }
+
     void livePortalScreenshotCapture()
     {
         if (qEnvironmentVariableIsEmpty("SPEECHER_LIVE_SCREENSHOT_TEST")) {
@@ -2174,7 +2654,7 @@ exit 0
         QCOMPARE(captured.first().at(1).toString(), QStringLiteral("image/png"));
     }
 
-    void dictationSessionRetriesFullAudioOnceAndIgnoresRetiredAttempt()
+    void dictationSessionDoesNotReplayAudioAfterProviderFailure()
     {
         SettingsStore settings;
         settings.raw().clear();
@@ -2190,21 +2670,14 @@ exit 0
 
         session.startListening();
         speech->autoCompleteOnFinish = false;
-        const quint64 firstAttempt = speech->currentAttemptId;
         audio->pushAudio(QByteArrayLiteral("pcm"));
         session.stopListening();
         speech->emitFailure(QStringLiteral("temporary disconnect"), true);
 
-        QCOMPARE(speech->startCalls, 2);
-        QCOMPARE(speech->audioChunks, QList<QByteArray>({QByteArrayLiteral("pcm"), QByteArrayLiteral("pcm")}));
-        QCOMPARE(speech->cancelledAttempts, QList<quint64>({firstAttempt}));
-
-        speech->emitRetiredFinalText(firstAttempt, QStringLiteral("stale"));
-        speech->emitFinalText(QStringLiteral("recovered"));
-        speech->emitCompletion();
-
-        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
-        QCOMPARE(delivery->lastText, QStringLiteral("recovered"));
+        QCOMPARE(speech->startCalls, 1);
+        QCOMPARE(speech->audioChunks, QList<QByteArray>({QByteArrayLiteral("pcm")}));
+        QCOMPARE(delivery->calls, 0);
+        QCOMPARE(int(session.state()), int(DictationState::Error));
     }
 
     void dictationSessionBackgroundSpeechPreparationDoesNotBlockStartup()
@@ -2240,6 +2713,50 @@ exit 0
         QCOMPARE(speech->prepareCalls, 1);
         QCOMPARE(speech->startCalls, 1);
         QVERIFY(audio->started);
+    }
+
+    void dictationStartupFailureKeepsPopupOpenWithMessage()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registry.speechProvider(QStringLiteral("claude"));
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        speech->prepareResult = {
+            false,
+            QStringLiteral("Claude login cannot be refreshed"),
+        };
+
+        QSignalSpy shown(&session, &DictationSession::popupShowRequested);
+        QSignalSpy hidden(&session, &DictationSession::popupHideRequested);
+        const int errorSignalIndex = session.metaObject()->indexOfSignal(
+            "popupErrorRequested(QString)");
+        QVERIFY(errorSignalIndex >= 0);
+        QSignalSpy message(
+            &session,
+            session.metaObject()->method(errorSignalIndex));
+
+        session.startListening();
+
+        QCOMPARE(int(session.state()), int(DictationState::Error));
+        QCOMPARE(shown.count(), 1);
+        QCOMPARE(message.count(), 1);
+        QCOMPARE(message.first().first().toString(),
+                 QStringLiteral("Claude login cannot be refreshed"));
+        QTest::qWait(1900);
+        QCOMPARE(int(session.state()), int(DictationState::Error));
+        QCOMPARE(hidden.count(), 0);
+
+        session.stopListening();
+        QCOMPARE(int(session.state()), int(DictationState::Idle));
+        QCOMPARE(hidden.count(), 1);
     }
 
     void dictationSessionBackgroundRefinerRefreshDoesNotBlockStartup()
@@ -2291,6 +2808,11 @@ exit 0
         QVERIFY(previewPill);
         QVERIFY(rawTranscript);
         QVERIFY(waveform);
+        QVERIFY(!popup.findChild<QLabel *>(QStringLiteral("popupStatus")));
+        QVERIFY(!popup.findChild<QLabel *>(QStringLiteral("popupMetadata")));
+        QCOMPARE(previewPill->minimumHeight(), 48);
+        QCOMPARE(previewPill->maximumHeight(), 48);
+        QVERIFY(!rawTranscript->wordWrap());
 
         popup.showOAuthRefreshIndicator();
         QVERIFY(layout->indexOf(previewPill) < layout->indexOf(waveform));
@@ -2302,13 +2824,46 @@ exit 0
         popup.hidePreview();
         QVERIFY(layout->indexOf(waveform) < layout->indexOf(previewPill));
 
-        const QString longRaw = QString(450, QLatin1Char('a')) + QStringLiteral(" final raw words");
+        const QString longRaw = QStringLiteral(
+            "one two three four five six seven eight nine ten eleven twelve");
         popup.setPreview(longRaw);
-        QCOMPARE(rawTranscript->toolTip(), longRaw);
-        QVERIFY(rawTranscript->text().startsWith(QStringLiteral("… ")));
-        QVERIFY(rawTranscript->text().endsWith(QStringLiteral("final raw words")));
+        QVERIFY(!rawTranscript->text().contains(QLatin1Char('\n')));
         popup.setRefining(true);
         QVERIFY(!rawTranscript->isHidden());
+    }
+
+    void transcriberPopupShowsLongErrorsInOneReadablePill()
+    {
+        TranscriberPopup popup(new FakePopupPositioner);
+        auto *previewPill = popup.findChild<QFrame *>(QStringLiteral("previewPill"));
+        auto *rawTranscript = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
+        auto *waveform = popup.findChild<WaveformWidget *>();
+        auto *dismissProgress = popup.findChild<QProgressBar *>(
+            QStringLiteral("errorDismissProgress"));
+        QVERIFY(previewPill);
+        QVERIFY(rawTranscript);
+        QVERIFY(waveform);
+        QVERIFY(dismissProgress);
+        const QString error = QStringLiteral(
+            "Claude login cannot be refreshed; run `claude /login` or `claude auth login`");
+
+        popup.show();
+        QVERIFY(QMetaObject::invokeMethod(
+            &popup,
+            "showErrorMessage",
+            Q_ARG(QString, error)));
+
+        QVERIFY(waveform->isHidden());
+        QVERIFY(!previewPill->isHidden());
+        QVERIFY(rawTranscript->wordWrap());
+        QCOMPARE(rawTranscript->text(), error);
+        QVERIFY(previewPill->width() > waveform->width());
+        QVERIFY(dismissProgress->isVisible());
+        QCOMPARE(dismissProgress->value(), dismissProgress->maximum());
+        QTest::qWait(150);
+        QVERIFY(dismissProgress->value() < dismissProgress->maximum());
+        QVERIFY(dismissProgress->value() > dismissProgress->minimum());
+        QTRY_VERIFY_WITH_TIMEOUT(popup.isHidden(), 5500);
     }
 
     void dictationSessionRefinesTranscript()
@@ -2343,6 +2898,52 @@ exit 0
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
         QCOMPARE(delivery->lastText, QStringLiteral("Polished text."));
         QCOMPARE(rawPreviewSpy.last().at(0).toString(), QStringLiteral("rough text"));
+    }
+
+    void dictationSessionAppliesDetectedProfileSettingsAndOverrides()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.setWritingProfileSettings({
+            {WritingProfile::Work, QStringLiteral("strong_polish"), QStringLiteral("formal")},
+            {WritingProfile::Email, QStringLiteral("balanced"), QStringLiteral("none")},
+            {WritingProfile::Personal, QStringLiteral("light_cleanup"), QStringLiteral("casual")},
+            {WritingProfile::Other, QStringLiteral("none"), QStringLiteral("none")},
+        });
+        settings.setWritingProfileOverrides({
+            {QStringLiteral("firefox"), WritingProfile::Work, true},
+        });
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto target = std::make_unique<FakeTargetProvider>();
+        target->target.applicationId = QStringLiteral("firefox");
+        target->target.category = AppCategory::Browser;
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings,
+                                 audio.get(),
+                                 media.get(),
+                                 target.get(),
+                                 delivery.get(),
+                                 &registry);
+
+        session.startListening();
+        speech->emitFinalText(QStringLiteral("profile text"));
+        refiner->autoComplete = true;
+        refiner->autoCompleteText = QStringLiteral("Profile text.");
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
+        QCOMPARE(refiner->lastStyle, QStringLiteral("strong_polish"));
+        QCOMPARE(refiner->lastTone, QStringLiteral("formal"));
+        QCOMPARE(refiner->lastContext.writingProfile, WritingProfile::Work);
+        QCOMPARE(refiner->lastContext.tone, QStringLiteral("formal"));
     }
 
     void dictationSessionAppliesBindingsWhenRefinementDisabled()
@@ -2695,6 +3296,30 @@ exit 0
         QCOMPARE(session.lastMessage(), QStringLiteral("microphone blocked"));
     }
 
+    void dictationStopClearsAnErrorAndRemainsIdempotent()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        audio->emitFailure(QStringLiteral("microphone blocked"));
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Error), 200);
+
+        session.stopListening();
+        QCOMPARE(int(session.state()), int(DictationState::Idle));
+        session.stopListening();
+        QCOMPARE(int(session.state()), int(DictationState::Idle));
+    }
+
     void refinementInstructionsCompose()
     {
         const QString light = openAiRefinementInstructions(QStringLiteral("light_cleanup"));
@@ -3036,6 +3661,44 @@ exit 0
         QCOMPARE(settings.customVocabulary().size(), VocabularyLimit::maxKeyterms);
     }
 
+    void vocabularyMetadataPersistsImportsDeduplicatesAndTracksUsage()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setVocabularyEntries({
+            {QStringLiteral("KWin"), QStringLiteral("manual"), true, 2, 10},
+            {QStringLiteral("kwin"), QStringLiteral("csv"), false, 7, 20},
+            {QStringLiteral("Wayland"), QStringLiteral("manual"), false, 0, 0},
+        });
+
+        QList<VocabularyEntry> entries = settings.vocabularyEntries();
+        QCOMPARE(entries.size(), 2);
+        QCOMPARE(entries.first().term, QStringLiteral("KWin"));
+        QVERIFY(entries.first().starred);
+        QCOMPARE(entries.first().frequency, 7);
+        QCOMPARE(entries.first().lastUsedMs, 20);
+
+        settings.recordVocabularyUsage(QStringLiteral("KWin works on Wayland."));
+        entries = settings.vocabularyEntries();
+        QCOMPARE(entries.size(), 2);
+        QCOMPARE(entries.at(0).frequency, 8);
+        QCOMPARE(entries.at(1).frequency, 1);
+        QVERIFY(entries.at(0).lastUsedMs > 20);
+
+        QString error;
+        const QList<VocabularyEntry> imported = parseVocabularyCsv(
+            QByteArrayLiteral("term,source,starred,frequency,last_used_ms\n"
+                              "\"Nova, Three\",research,yes,4,123\n"
+                              "Plasma,csv,no,2,99\n"),
+            &error);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QCOMPARE(imported.size(), 2);
+        QCOMPARE(imported.first().term, QStringLiteral("Nova, Three"));
+        QVERIFY(imported.first().starred);
+        QCOMPARE(imported.first().source, QStringLiteral("research"));
+        QCOMPARE(imported.first().frequency, 4);
+    }
+
     void claudeCredentialsParse()
     {
         QTemporaryDir dir;
@@ -3071,131 +3734,136 @@ exit 0
         QVERIFY(result.error.contains(QStringLiteral("claude")));
     }
 
-    void claudeCredentialsInteractiveRefresh()
+    void claudeCredentialsOauthRefresh()
     {
         QTemporaryDir dir;
         const QString credentialsPath = dir.filePath(QStringLiteral("credentials.json"));
-        QVERIFY(writeJsonCredentials(credentialsPath,
-                                     QStringLiteral("expired-token"),
-                                     QDateTime::currentDateTimeUtc().addSecs(-60)));
-        const QString fakeClaude = writeFakeClaudeScript(dir.filePath(QStringLiteral("claude-fake")), QStringLiteral(R"(
-read prompt
-cat > "$SPEECHER_TEST_CREDENTIALS_PATH" <<'JSON'
-{"claudeAiOauth":{"accessToken":"refreshed-token","expiresAt":4102444800}}
-JSON
-echo OK
-read command
-exit 0
-)"));
-        QVERIFY(!fakeClaude.isEmpty());
+        QFile credentialsFile(credentialsPath);
+        QVERIFY(credentialsFile.open(QIODevice::WriteOnly));
+        credentialsFile.write(QJsonDocument(QJsonObject{
+                                                {QStringLiteral("unrelated"), true},
+                                                {QStringLiteral("claudeAiOauth"),
+                                                 QJsonObject{
+                                                     {QStringLiteral("accessToken"), QStringLiteral("expired-token")},
+                                                     {QStringLiteral("refreshToken"), QStringLiteral("old-refresh-token")},
+                                                     {QStringLiteral("expiresAt"),
+                                                      double(QDateTime::currentDateTimeUtc().addSecs(-60).toMSecsSinceEpoch())},
+                                                     {QStringLiteral("scopes"),
+                                                      QJsonArray{
+                                                          QStringLiteral("user:profile"),
+                                                          QStringLiteral("user:inference"),
+                                                      }},
+                                                     {QStringLiteral("subscriptionType"), QStringLiteral("pro")},
+                                                 }},
+                                            })
+                                  .toJson());
+        credentialsFile.close();
 
-        qputenv("SPEECHER_TEST_CLAUDE_EXECUTABLE", QFile::encodeName(fakeClaude));
-        qputenv("SPEECHER_TEST_CREDENTIALS_PATH", QFile::encodeName(credentialsPath));
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        qputenv("SPEECHER_TEST_CLAUDE_TOKEN_URL",
+                QStringLiteral("http://127.0.0.1:%1/token").arg(server.serverPort()).toUtf8());
         const auto cleanup = qScopeGuard([] {
-            qunsetenv("SPEECHER_TEST_CLAUDE_EXECUTABLE");
-            qunsetenv("SPEECHER_TEST_CREDENTIALS_PATH");
+            qunsetenv("SPEECHER_TEST_CLAUDE_TOKEN_URL");
         });
 
-        const ClaudeCredentialResult result = ClaudeCredentials::load(credentialsPath, true);
+        auto refresh = std::async(std::launch::async, [&] {
+            return ClaudeCredentials::load(credentialsPath, true);
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(socket);
+        const QByteArray request = readHttpRequest(socket, 1000);
+        const int headerEnd = request.indexOf("\r\n\r\n");
+        QVERIFY2(headerEnd >= 0, request.constData());
+        QCOMPARE(request.left(request.indexOf('\n')).trimmed(), QByteArrayLiteral("POST /token HTTP/1.1"));
+        QVERIFY(request.left(headerEnd).toLower().contains(QByteArrayLiteral("content-type: application/json")));
+
+        const int contentLength = httpContentLength(request.left(headerEnd));
+        const QJsonObject body = QJsonDocument::fromJson(request.mid(headerEnd + 4, contentLength)).object();
+        QCOMPARE(body.value(QStringLiteral("grant_type")).toString(), QStringLiteral("refresh_token"));
+        QCOMPARE(body.value(QStringLiteral("refresh_token")).toString(), QStringLiteral("old-refresh-token"));
+        QCOMPARE(body.value(QStringLiteral("client_id")).toString(),
+                 QStringLiteral("9d1c250a-e61b-44d9-88ed-5944d1962f5e"));
+        QCOMPARE(body.value(QStringLiteral("scope")).toString(),
+                 QStringLiteral("user:profile user:inference"));
+
+        const QByteArray responseBody = QJsonDocument(QJsonObject{
+                                                          {QStringLiteral("access_token"), QStringLiteral("refreshed-token")},
+                                                          {QStringLiteral("refresh_token"), QStringLiteral("rotated-refresh-token")},
+                                                          {QStringLiteral("expires_in"), 3600},
+                                                          {QStringLiteral("scope"),
+                                                           QStringLiteral("user:profile user:inference")},
+                                                      })
+                                            .toJson(QJsonDocument::Compact);
+        socket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ")
+                      + QByteArray::number(responseBody.size())
+                      + QByteArrayLiteral("\r\nConnection: close\r\n\r\n")
+                      + responseBody);
+        QVERIFY(socket->waitForBytesWritten(1000));
+        socket->disconnectFromHost();
+
+        const ClaudeCredentialResult result = refresh.get();
         QVERIFY2(result.ok, qPrintable(result.error));
         QCOMPARE(result.accessToken, QStringLiteral("refreshed-token"));
+        QCOMPARE(result.refreshToken, QStringLiteral("rotated-refresh-token"));
+        QVERIFY(result.expiresAt > QDateTime::currentDateTimeUtc().addSecs(3500));
+
+        QVERIFY(credentialsFile.open(QIODevice::ReadOnly));
+        const QJsonObject saved = QJsonDocument::fromJson(credentialsFile.readAll()).object();
+        QVERIFY(saved.value(QStringLiteral("unrelated")).toBool());
+        const QJsonObject savedOauth = saved.value(QStringLiteral("claudeAiOauth")).toObject();
+        QCOMPARE(savedOauth.value(QStringLiteral("accessToken")).toString(), QStringLiteral("refreshed-token"));
+        QCOMPARE(savedOauth.value(QStringLiteral("refreshToken")).toString(), QStringLiteral("rotated-refresh-token"));
+        QCOMPARE(savedOauth.value(QStringLiteral("subscriptionType")).toString(), QStringLiteral("pro"));
     }
 
-    void claudeCredentialsInteractiveRefreshFailure()
+    void claudeCredentialsOauthRefreshFailureIsSanitized()
     {
         QTemporaryDir dir;
         const QString credentialsPath = dir.filePath(QStringLiteral("credentials.json"));
-        QVERIFY(writeJsonCredentials(credentialsPath,
-                                     QStringLiteral("expired-token"),
-                                     QDateTime::currentDateTimeUtc().addSecs(-60)));
-        const QString fakeClaude = writeFakeClaudeScript(dir.filePath(QStringLiteral("claude-fake")), QStringLiteral(R"(
-read prompt
-exit 12
-)"));
-        QVERIFY(!fakeClaude.isEmpty());
+        QFile credentialsFile(credentialsPath);
+        QVERIFY(credentialsFile.open(QIODevice::WriteOnly));
+        credentialsFile.write(QJsonDocument(QJsonObject{
+                                                {QStringLiteral("claudeAiOauth"),
+                                                 QJsonObject{
+                                                     {QStringLiteral("accessToken"), QStringLiteral("expired-token")},
+                                                     {QStringLiteral("refreshToken"), QStringLiteral("secret-refresh-token")},
+                                                     {QStringLiteral("expiresAt"),
+                                                      double(QDateTime::currentDateTimeUtc().addSecs(-60).toMSecsSinceEpoch())},
+                                                 }},
+                                            })
+                                  .toJson());
+        credentialsFile.close();
 
-        qputenv("SPEECHER_TEST_CLAUDE_EXECUTABLE", QFile::encodeName(fakeClaude));
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        qputenv("SPEECHER_TEST_CLAUDE_TOKEN_URL",
+                QStringLiteral("http://127.0.0.1:%1/token").arg(server.serverPort()).toUtf8());
         const auto cleanup = qScopeGuard([] {
-            qunsetenv("SPEECHER_TEST_CLAUDE_EXECUTABLE");
+            qunsetenv("SPEECHER_TEST_CLAUDE_TOKEN_URL");
         });
 
-        const ClaudeCredentialResult result = ClaudeCredentials::load(credentialsPath, true);
+        auto refresh = std::async(std::launch::async, [&] {
+            return ClaudeCredentials::load(credentialsPath, true);
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(socket);
+        readHttpRequest(socket, 1000);
+        const QByteArray responseBody = QByteArrayLiteral(
+            "{\"error\":\"invalid_grant\",\"error_description\":\"secret-refresh-token was rejected\"}");
+        socket->write(QByteArrayLiteral("HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: ")
+                      + QByteArray::number(responseBody.size())
+                      + QByteArrayLiteral("\r\nConnection: close\r\n\r\n")
+                      + responseBody);
+        QVERIFY(socket->waitForBytesWritten(1000));
+        socket->disconnectFromHost();
+
+        const ClaudeCredentialResult result = refresh.get();
         QVERIFY(!result.ok);
-        QVERIFY(result.error.contains(QStringLiteral("Claude refresh session")));
-    }
-
-    void claudeCodeSessionRefinerUsesInteractiveStreamJson()
-    {
-        QTemporaryDir dir;
-        const QString argsPath = dir.filePath(QStringLiteral("claude-args.txt"));
-        const QString stdinPath = dir.filePath(QStringLiteral("claude-stdin.txt"));
-        const QString fakeClaude = writeFakeClaudeScript(dir.filePath(QStringLiteral("claude-fake")), QStringLiteral(R"SH(
-printf '%s\n' "$@" > "$SPEECHER_TEST_CLAUDE_ARGS"
-while IFS= read -r line; do
-  printf '%s\n' "$line" >> "$SPEECHER_TEST_CLAUDE_STDIN"
-  case "$line" in
-    *'/clear'*)
-      printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"","session_id":"fake"}'
-      ;;
-    *)
-      printf '%s\n' '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Refined text"}}}'
-      printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"Refined text","session_id":"fake"}'
-      ;;
-  esac
-done
-exit 0
-)SH"));
-        QVERIFY(!fakeClaude.isEmpty());
-
-        qputenv("SPEECHER_TEST_CLAUDE_EXECUTABLE", QFile::encodeName(fakeClaude));
-        qputenv("SPEECHER_TEST_CLAUDE_ARGS", QFile::encodeName(argsPath));
-        qputenv("SPEECHER_TEST_CLAUDE_STDIN", QFile::encodeName(stdinPath));
-        const auto cleanup = qScopeGuard([] {
-            qunsetenv("SPEECHER_TEST_CLAUDE_EXECUTABLE");
-            qunsetenv("SPEECHER_TEST_CLAUDE_ARGS");
-            qunsetenv("SPEECHER_TEST_CLAUDE_STDIN");
-        });
-
-        ClaudeCodeSessionRefiner refiner;
-        QString error;
-        QVERIFY2(refiner.prepare(QStringLiteral("claude-sonnet-4-6"), QStringLiteral("high"), QStringLiteral("balanced"), &error),
-                 qPrintable(error));
-        QSignalSpy completed(&refiner, &ClaudeCodeSessionRefiner::completed);
-        QSignalSpy delta(&refiner, &ClaudeCodeSessionRefiner::delta);
-
-        refiner.refine(QStringLiteral("raw transcript"),
-                       {QStringLiteral("Speecher")},
-                       {QStringLiteral("my email")},
-                       {});
-
-        QVERIFY(completed.wait(2000));
-        QCOMPARE(completed.first().at(0).toString(), QStringLiteral("Refined text"));
-        QCOMPARE(delta.first().at(0).toString(), QStringLiteral("Refined text"));
-
-        QTRY_VERIFY(QFileInfo::exists(argsPath));
-        QFile argsFile(argsPath);
-        QVERIFY(argsFile.open(QIODevice::ReadOnly));
-        const QStringList args = QString::fromUtf8(argsFile.readAll()).split('\n', Qt::SkipEmptyParts);
-        QVERIFY(args.contains(QStringLiteral("--input-format")));
-        QVERIFY(args.contains(QStringLiteral("stream-json")));
-        QVERIFY(args.contains(QStringLiteral("--output-format")));
-        QVERIFY(args.contains(QStringLiteral("--verbose")));
-        QVERIFY(args.contains(QStringLiteral("--effort")));
-        QVERIFY(args.contains(QStringLiteral("high")));
-        QVERIFY(!args.contains(QStringLiteral("-p")));
-        QVERIFY(!args.contains(QStringLiteral("--print")));
-
-        auto readFileText = [](const QString &path) {
-            QFile file(path);
-            if (!file.open(QIODevice::ReadOnly)) {
-                return QString();
-            }
-            return QString::fromUtf8(file.readAll());
-        };
-        QTRY_VERIFY(readFileText(stdinPath).contains(QStringLiteral("/clear")));
-        const QString stdinLog = readFileText(stdinPath);
-        QVERIFY(stdinLog.contains(QStringLiteral("Raw transcript")));
-        QVERIFY(stdinLog.contains(QStringLiteral("raw transcript")));
+        QVERIFY(result.error.contains(QStringLiteral("re-authenticate"), Qt::CaseInsensitive));
+        QVERIFY(!result.error.contains(QStringLiteral("secret-refresh-token")));
     }
 
     void claudeInstalledVersion()
@@ -3377,8 +4045,192 @@ exit 12
         QCOMPARE(query.queryItemValue(QStringLiteral("use_conversation_engine")), QStringLiteral("true"));
         QCOMPARE(query.queryItemValue(QStringLiteral("forward_interims")), QStringLiteral("typed"));
         QCOMPARE(query.queryItemValue(QStringLiteral("stt_provider")), QStringLiteral("deepgram-nova3"));
-        QCOMPARE(query.allQueryItemValues(QStringLiteral("keyterms")).size(), 2);
+        QVERIFY(query.allQueryItemValues(QStringLiteral("keyterms")).isEmpty());
+        QCOMPARE(claudeVoiceKeytermsHeader({
+                     QStringLiteral(" Deepgram   Nova 3 "),
+                     QStringLiteral("Speecher"),
+                     QStringLiteral("speecher"),
+                     QString::fromUtf8("café"),
+                 }),
+                 QByteArrayLiteral("Deepgram Nova 3,Speecher,caf"));
+        QCOMPARE(claudeVoiceKeytermsHeader({QString(1100, QLatin1Char('a'))}).size(), 1024);
     }
+
+    void claudeVoiceEventsUseOnlyTheObservedSchema()
+    {
+        ClaudeVoiceEvent event = parseClaudeVoiceEvent(
+            QStringLiteral(R"({"type":"TranscriptInterim","data":"working"})"));
+        QCOMPARE(event.kind, ClaudeVoiceEventKind::Working);
+        QCOMPARE(event.data, QStringLiteral("working"));
+
+        event = parseClaudeVoiceEvent(
+            QStringLiteral(R"({"type":"TranscriptText","data":"replacement"})"));
+        QCOMPARE(event.kind, ClaudeVoiceEventKind::Working);
+        QCOMPARE(event.data, QStringLiteral("replacement"));
+
+        event = parseClaudeVoiceEvent(
+            QStringLiteral(R"({"type":"TranscriptEndpoint","data":"endpoint text"})"));
+        QCOMPARE(event.kind, ClaudeVoiceEventKind::Endpoint);
+        QCOMPARE(event.data, QStringLiteral("endpoint text"));
+
+        event = parseClaudeVoiceEvent(
+            QStringLiteral(R"({"type":"TranscriptError","error":{"code":"stream_failed"}})"));
+        QCOMPARE(event.kind, ClaudeVoiceEventKind::TranscriptError);
+        QVERIFY(event.errorSummary.contains(QStringLiteral("stream_failed")));
+
+        event = parseClaudeVoiceEvent(
+            QStringLiteral(R"({"type":"unrelated","nested":{"text":"must not become a transcript"}})"));
+        QCOMPARE(event.kind, ClaudeVoiceEventKind::Unknown);
+        QVERIFY(event.data.isEmpty());
+    }
+
+#ifdef SPEECHER_WITH_QT_WEBSOCKETS
+    void liveClaudeVoiceProvider()
+    {
+        const QString pcmPath = qEnvironmentVariable("SPEECHER_TEST_LIVE_CLAUDE_PCM");
+        if (pcmPath.isEmpty()) {
+            QSKIP("Live Claude Voice check is opt-in");
+        }
+
+        const SpeechSettings speech = SettingsStore().snapshot().speech;
+        const ClaudeCredentialResult credentials = ClaudeCredentials::load(
+            speech.claudeCredentialsPath,
+            true);
+        QVERIFY2(credentials.ok, qPrintable(credentials.error));
+
+        QFile pcmFile(pcmPath);
+        QVERIFY2(pcmFile.open(QIODevice::ReadOnly), "Could not read live Claude PCM input");
+        const QByteArray pcm = pcmFile.readAll();
+        QVERIFY2(pcm.size() >= 3200 && pcm.size() % 2 == 0,
+                 "Live Claude PCM must be mono 16 kHz signed 16-bit raw audio");
+
+        QUrl voiceUrl(speech.claudeEndpointBase);
+        voiceUrl.setScheme(voiceUrl.scheme() == QStringLiteral("http")
+                               ? QStringLiteral("ws")
+                               : QStringLiteral("wss"));
+        voiceUrl.setPath(speech.claudeVoicePath);
+
+        {
+            ClaudeVoiceClient client;
+            QSignalSpy final(&client, &ClaudeVoiceClient::finalTranscript);
+            QSignalSpy completed(&client, &ClaudeVoiceClient::completed);
+            QSignalSpy failed(&client, &ClaudeVoiceClient::failed);
+            QTimer sender;
+            sender.setInterval(100);
+            qsizetype offset = 0;
+            connect(&client, &ClaudeVoiceClient::connected, &sender,
+                    qOverload<>(&QTimer::start));
+            connect(&sender, &QTimer::timeout, &client,
+                    [&client, &sender, &pcm, &offset] {
+                        constexpr qsizetype bytesPerTick = 3200;
+                        const QByteArray chunk = pcm.mid(offset, bytesPerTick);
+                        offset += chunk.size();
+                        if (!chunk.isEmpty()) {
+                            client.sendAudio(chunk);
+                        }
+                        if (offset >= pcm.size()) {
+                            sender.stop();
+                            client.stop();
+                        }
+                    });
+
+            client.start(voiceUrl, credentials.accessToken, speech.vocabulary);
+            const int audioDurationMs = qRound(pcm.size() * 1000.0 / 32000.0);
+            QTRY_VERIFY_WITH_TIMEOUT(!completed.isEmpty() || !failed.isEmpty(),
+                                     audioDurationMs + 10000);
+            const QString failure = failed.isEmpty()
+                ? QString()
+                : failed.first().first().toString();
+            QVERIFY2(failed.isEmpty(), qPrintable(failure));
+            QCOMPARE(completed.count(), 1);
+            QVERIFY(!final.isEmpty());
+            QVERIFY(!final.last().first().toString().trimmed().isEmpty());
+        }
+
+        {
+            ClaudeVoiceClient client;
+            QSignalSpy completed(&client, &ClaudeVoiceClient::completed);
+            QSignalSpy failed(&client, &ClaudeVoiceClient::failed);
+            connect(&client, &ClaudeVoiceClient::connected, &client,
+                    &ClaudeVoiceClient::stop);
+            client.start(voiceUrl, credentials.accessToken, speech.vocabulary);
+            QTRY_VERIFY_WITH_TIMEOUT(!completed.isEmpty() || !failed.isEmpty(), 8000);
+            if (!failed.isEmpty()) {
+                QVERIFY(!failed.first().at(2).toString().isEmpty());
+            }
+        }
+    }
+
+    void claudeVoiceClientHandlesPauseEndpointsAndFinalization()
+    {
+        QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        ClaudeVoiceClient client;
+        QSignalSpy connected(&client, &ClaudeVoiceClient::connected);
+        QSignalSpy partial(&client, &ClaudeVoiceClient::partialTranscript);
+        QSignalSpy final(&client, &ClaudeVoiceClient::finalTranscript);
+        QSignalSpy completed(&client, &ClaudeVoiceClient::completed);
+        QSignalSpy failed(&client, &ClaudeVoiceClient::failed);
+
+        client.start(
+            QUrl(QStringLiteral("ws://127.0.0.1:%1/voice").arg(server.serverPort())),
+            QStringLiteral("test-token"),
+            {QStringLiteral("Speecher")});
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        std::unique_ptr<QWebSocket> socket(server.nextPendingConnection());
+        QVERIFY(socket);
+        QTRY_COMPARE_WITH_TIMEOUT(connected.count(), 1, 1000);
+
+        socket->sendTextMessage(QStringLiteral(
+            R"({"type":"TranscriptInterim","data":"first phrase"})"));
+        QTRY_COMPARE_WITH_TIMEOUT(partial.count(), 1, 1000);
+        socket->sendTextMessage(QStringLiteral(
+            R"({"type":"TranscriptEndpoint","data":"first phrase"})"));
+        QTRY_COMPARE_WITH_TIMEOUT(final.count(), 1, 1000);
+        QCOMPARE(completed.count(), 0);
+
+        socket->sendTextMessage(QStringLiteral(
+            R"({"type":"TranscriptText","data":"second phrase"})"));
+        QTRY_COMPARE_WITH_TIMEOUT(partial.count(), 2, 1000);
+
+        QSignalSpy clientMessages(socket.get(), &QWebSocket::textMessageReceived);
+        client.stop();
+        QTRY_VERIFY_WITH_TIMEOUT(!clientMessages.isEmpty(), 1000);
+        QCOMPARE(clientMessages.last().first().toString(),
+                 QStringLiteral("{\"type\":\"CloseStream\"}"));
+        socket->sendTextMessage(QStringLiteral(
+            R"({"type":"TranscriptEndpoint","data":"second phrase"})"));
+
+        QTRY_COMPARE_WITH_TIMEOUT(final.count(), 2, 1000);
+        QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 1000);
+        QCOMPARE(failed.count(), 0);
+    }
+
+    void claudeVoiceClientClassifiesAuthenticationRefusal()
+    {
+        QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        ClaudeVoiceClient client;
+        QSignalSpy failed(&client, &ClaudeVoiceClient::failed);
+        client.start(
+            QUrl(QStringLiteral("ws://127.0.0.1:%1/voice").arg(server.serverPort())),
+            QStringLiteral("invalid-token"),
+            {});
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        std::unique_ptr<QWebSocket> socket(server.nextPendingConnection());
+        QVERIFY(socket);
+        socket->sendTextMessage(QStringLiteral(
+            R"({"type":"error","error":{"code":"401","message":"unauthorized"}})"));
+
+        QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
+        QCOMPARE(failed.first().at(1).toBool(), false);
+        QCOMPARE(failed.first().at(2).toString(), QStringLiteral("authentication"));
+    }
+
+#endif
 };
 
 QTEST_MAIN(CoreTests)

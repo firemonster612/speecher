@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(speecher VERSION 0.1.0 LANGUAGES CXX)
+project(speecher VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,10 +20,16 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Multimedia DBus)
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
   pkg_check_modules(ATSPI QUIET IMPORTED_TARGET atspi-2 gobject-2.0)
+  pkg_check_modules(WAYLAND_CLIENT QUIET IMPORTED_TARGET wayland-client)
+  pkg_get_variable(WAYLAND_PROTOCOLS_DATA_DIR wayland-protocols pkgdatadir)
 endif()
 find_package(Qt6 6.5 QUIET COMPONENTS WebSockets)
 if(SPEECHER_WITH_LAYER_SHELL)
   find_package(LayerShellQt QUIET)
+endif()
+if(UNIX AND NOT APPLE)
+  find_package(KF6WidgetsAddons QUIET)
+  find_package(KF6ColorScheme QUIET)
 endif()
 if(SPEECHER_BUILD_TESTS)
   find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
@@ -41,6 +47,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/TranscriptState.cpp
   src/core/Target.cpp
   src/core/VocabularyLimit.cpp
+  src/core/Vocabulary.cpp
   src/core/WordPreview.cpp
   src/dictation/DictationTypes.cpp
   src/output/DeliveryContent.cpp
@@ -60,6 +67,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/TranscriptState.h
   src/core/Target.h
   src/core/VocabularyLimit.h
+  src/core/Vocabulary.h
   src/core/WordPreview.h
   src/dictation/DictationInterfaces.h
   src/dictation/DictationTypes.h
@@ -79,7 +87,6 @@ set(SPEECHER_PROVIDER_SOURCES
   src/providers/AnthropicApiRefiner.cpp
   src/providers/AnthropicTranscriptRefiner.cpp
   src/providers/ClaudeCredentials.cpp
-  src/providers/ClaudeCodeSessionRefiner.cpp
   src/providers/ClaudeSpeechTranscriber.cpp
   src/providers/ClaudeVoiceClient.cpp
   src/providers/OpenAiAuthProvider.cpp
@@ -91,7 +98,6 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/AnthropicApiRefiner.h
   src/providers/AnthropicTranscriptRefiner.h
   src/providers/ClaudeCredentials.h
-  src/providers/ClaudeCodeSessionRefiner.h
   src/providers/ClaudeSpeechTranscriber.h
   src/providers/ClaudeVoiceClient.h
   src/providers/OpenAiAuthProvider.h
@@ -192,6 +198,14 @@ target_compile_definitions(speecher_app_ui PUBLIC SPEECHER_VERSION="${PROJECT_VE
 target_link_libraries(speecher_app_ui PUBLIC
   speecher_domain speecher_workflow speecher_providers speecher_platform Qt6::Widgets
 )
+if(KF6WidgetsAddons_FOUND)
+  target_compile_definitions(speecher_app_ui PUBLIC SPEECHER_WITH_KPAGEWIDGET=1)
+  target_link_libraries(speecher_app_ui PUBLIC KF6::WidgetsAddons)
+endif()
+if(KF6WidgetsAddons_FOUND AND KF6ColorScheme_FOUND)
+  target_compile_definitions(speecher_app_ui PRIVATE SPEECHER_WITH_KCOLORSCHEME=1)
+  target_link_libraries(speecher_app_ui PRIVATE KF6::ColorScheme)
+endif()
 
 qt_add_executable(speecher
   src/app/main.cpp
@@ -207,6 +221,40 @@ qt_add_executable(speecher-ydotool-setup
   src/setup/YdotoolSetupHelper.cpp
 )
 target_link_libraries(speecher-ydotool-setup PRIVATE Qt6::Core)
+
+find_program(WAYLAND_SCANNER_EXECUTABLE wayland-scanner)
+set(SPEECHER_EXT_DATA_CONTROL_XML
+  "${WAYLAND_PROTOCOLS_DATA_DIR}/staging/ext-data-control/ext-data-control-v1.xml"
+)
+if(WAYLAND_CLIENT_FOUND AND WAYLAND_SCANNER_EXECUTABLE
+   AND EXISTS "${SPEECHER_EXT_DATA_CONTROL_XML}")
+  set(SPEECHER_EXT_DATA_CONTROL_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/ext-data-control-v1-client-protocol.h"
+  )
+  set(SPEECHER_EXT_DATA_CONTROL_CODE
+    "${CMAKE_CURRENT_BINARY_DIR}/ext-data-control-v1-protocol.c"
+  )
+  add_custom_command(
+    OUTPUT "${SPEECHER_EXT_DATA_CONTROL_HEADER}" "${SPEECHER_EXT_DATA_CONTROL_CODE}"
+    COMMAND "${WAYLAND_SCANNER_EXECUTABLE}" client-header
+      "${SPEECHER_EXT_DATA_CONTROL_XML}" "${SPEECHER_EXT_DATA_CONTROL_HEADER}"
+    COMMAND "${WAYLAND_SCANNER_EXECUTABLE}" private-code
+      "${SPEECHER_EXT_DATA_CONTROL_XML}" "${SPEECHER_EXT_DATA_CONTROL_CODE}"
+    DEPENDS "${SPEECHER_EXT_DATA_CONTROL_XML}"
+    VERBATIM
+  )
+  qt_add_executable(speecher-wayland-clipboard
+    src/helpers/WaylandClipboardHelper.cpp
+    "${SPEECHER_EXT_DATA_CONTROL_CODE}"
+    "${SPEECHER_EXT_DATA_CONTROL_HEADER}"
+  )
+  target_include_directories(speecher-wayland-clipboard PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+  target_link_libraries(speecher-wayland-clipboard PRIVATE
+    Qt6::Core PkgConfig::WAYLAND_CLIENT
+  )
+endif()
 if(Qt6WebSockets_FOUND)
   target_compile_definitions(speecher_providers PUBLIC SPEECHER_WITH_QT_WEBSOCKETS=1)
   target_link_libraries(speecher_providers PUBLIC Qt6::WebSockets)
@@ -278,6 +326,14 @@ set(SPEECHER_YDOTOOL_HELPER_PATH "${CMAKE_INSTALL_FULL_LIBEXECDIR}/speecher/spee
 target_compile_definitions(speecher_platform PUBLIC
   SPEECHER_YDOTOOL_HELPER_PATH="${SPEECHER_YDOTOOL_HELPER_PATH}"
 )
+if(TARGET speecher-wayland-clipboard)
+  set(SPEECHER_WAYLAND_CLIPBOARD_HELPER_PATH
+    "${CMAKE_INSTALL_FULL_LIBEXECDIR}/speecher/speecher-wayland-clipboard"
+  )
+  target_compile_definitions(speecher_platform PUBLIC
+    SPEECHER_WAYLAND_CLIPBOARD_HELPER_PATH="${SPEECHER_WAYLAND_CLIPBOARD_HELPER_PATH}"
+  )
+endif()
 configure_file(
   packaging/local.speecher.desktop
   "${CMAKE_CURRENT_BINARY_DIR}/local.speecher.desktop"
@@ -297,6 +353,10 @@ configure_file(
 )
 install(TARGETS speecher RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(TARGETS speecher-ydotool-setup RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/speecher)
+if(TARGET speecher-wayland-clipboard)
+  install(TARGETS speecher-wayland-clipboard
+    RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/speecher)
+endif()
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/local.speecher.desktop" DESTINATION ${SPEECHER_INSTALL_APPLICATIONS_DIR})
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/local.speecher.setup-ydotool.policy" DESTINATION ${CMAKE_INSTALL_DATADIR}/polkit-1/actions)
 install(FILES packaging/local.speecher.svg DESTINATION ${SPEECHER_INSTALL_HICOLOR_DIR}/scalable/apps)

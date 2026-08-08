@@ -1,6 +1,9 @@
 #include "core/BindingProcessor.h"
 
 #include <QHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QRegularExpression>
 #include <QSet>
 #include <QVector>
@@ -457,6 +460,61 @@ BindingValidationResult BindingProcessor::validateRules(const QList<BindingRule>
     }
 
     return result;
+}
+
+QList<BindingRule> BindingProcessor::parseJsonImport(const QByteArray &json, QString *error)
+{
+    if (error) {
+        error->clear();
+    }
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(json, &parseError);
+    if (parseError.error != QJsonParseError::NoError) {
+        if (error) {
+            *error = QStringLiteral("Invalid JSON: %1").arg(parseError.errorString());
+        }
+        return {};
+    }
+
+    QList<BindingRule> rules;
+    const auto appendArray = [&rules](const QJsonArray &array) {
+        for (const QJsonValue &value : array) {
+            const QJsonObject object = value.toObject();
+            const QString phrase = object.value(QStringLiteral("phrase")).toString(
+                object.value(QStringLiteral("trigger")).toString());
+            const QString replacement = object.value(QStringLiteral("replacement")).toString(
+                object.value(QStringLiteral("expansion")).toString(
+                    object.value(QStringLiteral("text")).toString()));
+            rules.append({phrase, replacement});
+        }
+    };
+
+    if (document.isArray()) {
+        appendArray(document.array());
+    } else if (document.isObject()) {
+        const QJsonObject object = document.object();
+        if (object.value(QStringLiteral("snippets")).isArray()) {
+            appendArray(object.value(QStringLiteral("snippets")).toArray());
+        } else {
+            for (auto iterator = object.constBegin(); iterator != object.constEnd(); ++iterator) {
+                if (iterator.value().isString()) {
+                    rules.append({iterator.key(), iterator.value().toString()});
+                }
+            }
+        }
+    } else if (error) {
+        *error = QStringLiteral("Snippet JSON must be an array or object.");
+        return {};
+    }
+
+    const BindingValidationResult validation = validateRules(rules);
+    if (!validation.ok()) {
+        if (error) {
+            *error = validation.messages().join(QStringLiteral("\n"));
+        }
+        return {};
+    }
+    return validation.rules;
 }
 
 QStringList BindingProcessor::refinementVocabulary(const QList<BindingRule> &rules)

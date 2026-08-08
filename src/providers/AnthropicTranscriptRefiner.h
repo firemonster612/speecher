@@ -5,7 +5,6 @@
 namespace speecher {
 
 class AnthropicApiRefiner;
-class ClaudeCodeSessionRefiner;
 
 class AnthropicTranscriptRefiner final : public TranscriptRefiner {
     Q_OBJECT
@@ -27,10 +26,7 @@ public:
     void cancel() override;
 
 private:
-    bool usesOauth(const RefinementSettings &settings) const;
-
     AnthropicApiRefiner *m_apiRefiner = nullptr;
-    ClaudeCodeSessionRefiner *m_codeSession = nullptr;
     QString m_accessToken;
 };
 

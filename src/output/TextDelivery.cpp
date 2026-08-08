@@ -51,10 +51,7 @@ class WlCopyBackend final : public DeliveryBackend {
 public:
     bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
     {
-        if (htmlAvailable) {
-            *htmlAvailable = false;
-        }
-        return WlClipboardDelivery().copy(content.plainText, error);
+        return WlClipboardDelivery().copy(content, htmlAvailable, error);
     }
 };
 
@@ -119,30 +116,39 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
                                      const DeliveryContent &content,
                                      const Target &target)
 {
+    const PasteRule pasteRule = resolvePasteRule(settings.pasteRules, target);
+    const bool currentFocusFallback = !target.hasIdentity()
+        && pasteRule.scope == PasteRuleScope::Global
+        && (pasteRule.method == PasteMethod::StandardPaste
+            || pasteRule.method == PasteMethod::TerminalPaste);
     PasteMethod pasteMethod = PasteMethod::ClipboardOnly;
-    if (target.hasIdentity() && !target.secure) {
-        pasteMethod = resolvePasteRule(settings.pasteRules, target).method;
+    if (!target.secure && (target.hasIdentity() || currentFocusFallback)) {
+        pasteMethod = pasteRule.method;
     }
     const bool directInsertRequested = pasteMethod == PasteMethod::DirectInsert;
     const bool targetFocused = pasteMethod != PasteMethod::ClipboardOnly
-        && m_targetProvider
-        && m_targetProvider->stillFocused(target);
+        && (currentFocusFallback
+            || (m_targetProvider && m_targetProvider->stillFocused(target)));
+
+    WlClipboardSnapshot previousClipboard;
+    const bool canRestoreClipboard = pasteMethod != PasteMethod::ClipboardOnly
+        && settings.restoreClipboardAfterTyping
+        && WlClipboardDelivery::canSnapshot()
+        && WlClipboardDelivery::capture(&previousClipboard);
+    bool initiallyHtmlAvailable = false;
+    QString initialCopyError;
+    if (!ClipboardDelivery().copy(content, &initiallyHtmlAvailable, &initialCopyError)) {
+        return {
+            false,
+            DeliveryReceipt::None,
+            false,
+            initialCopyError.isEmpty() ? QStringLiteral("Could not copy the transcription")
+                                       : initialCopyError,
+        };
+    }
+
     if (directInsertRequested) {
         if (m_targetProvider && m_targetProvider->canInsertText(target)) {
-            WlClipboardSnapshot previousClipboard;
-            const bool canRestoreClipboard = settings.restoreClipboardAfterTyping
-                && WlClipboardDelivery::canSnapshot()
-                && WlClipboardDelivery::capture(&previousClipboard);
-            bool htmlAvailable = false;
-            QString copyError;
-            if (!ClipboardDelivery().copy(content, &htmlAvailable, &copyError)) {
-                return {
-                    false,
-                    DeliveryReceipt::None,
-                    false,
-                    copyError.isEmpty() ? QStringLiteral("Could not copy text before direct insertion") : copyError,
-                };
-            }
             QString insertionError;
             if (m_targetProvider->insertText(target, content.plainText, &insertionError)) {
                 const bool verified = m_targetProvider->verifyInsertion(target, content.plainText);
@@ -156,7 +162,7 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
                 if (verified && canRestoreClipboard && !restored) {
                     message += QStringLiteral("; clipboard kept because it could not be restored");
                 }
-                const bool downgraded = content.html.has_value() && !htmlAvailable;
+                const bool downgraded = content.html.has_value() && !initiallyHtmlAvailable;
                 return {
                     true,
                     verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::AcceptedByTarget,
@@ -167,7 +173,7 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
             return {
                 true,
                 DeliveryReceipt::Copied,
-                content.html.has_value() && !htmlAvailable,
+                content.html.has_value() && !initiallyHtmlAvailable,
                 insertionError.isEmpty()
                     ? QStringLiteral("Copied")
                     : QStringLiteral("Copied; direct insertion was rejected"),
@@ -178,11 +184,15 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         pasteMethod = PasteMethod::ClipboardOnly;
     }
 
-    WlClipboardSnapshot previousClipboard;
-    const bool canRestoreClipboard = pasteMethod != PasteMethod::ClipboardOnly
-        && settings.restoreClipboardAfterTyping
-        && WlClipboardDelivery::canSnapshot()
-        && WlClipboardDelivery::capture(&previousClipboard);
+    if (pasteMethod == PasteMethod::ClipboardOnly) {
+        const bool downgraded = content.html.has_value() && !initiallyHtmlAvailable;
+        return {
+            true,
+            DeliveryReceipt::Copied,
+            downgraded,
+            downgraded ? QStringLiteral("Copied as plain text") : QStringLiteral("Copied"),
+        };
+    }
 
     QString firstError;
     for (const QString &method : orderedMethods(settings, pasteMethod)) {
@@ -221,11 +231,19 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         if (firstError.isEmpty()) {
             firstError = error;
         }
+        if (method == QString::fromLatin1(OutputMethod::Ydotool)) {
+            break;
+        }
     }
-    return {false,
-            DeliveryReceipt::None,
-            false,
-            firstError.isEmpty() ? QStringLiteral("No output method is available") : firstError};
+    const bool downgraded = content.html.has_value() && !initiallyHtmlAvailable;
+    return {
+        true,
+        DeliveryReceipt::Copied,
+        downgraded,
+        firstError.isEmpty()
+            ? (downgraded ? QStringLiteral("Copied as plain text") : QStringLiteral("Copied"))
+            : QStringLiteral("Copied; insertion failed: %1").arg(firstError),
+    };
 }
 
 QStringList TextDelivery::orderedMethods(const OutputSettings &settings)

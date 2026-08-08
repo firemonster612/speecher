@@ -4,10 +4,7 @@
 
 #include <QApplication>
 #include <QClipboard>
-#include <QCoreApplication>
-#include <QEventLoop>
 #include <QMimeData>
-#include <QThread>
 
 namespace speecher {
 
@@ -31,20 +28,12 @@ bool QtClipboardDelivery::copy(const DeliveryContent &content, QString *error)
         return false;
     }
 
-    constexpr int maxAttempts = 3;
-    for (int attempt = 0; attempt < maxAttempts; ++attempt) {
-        auto *mimeData = new QMimeData;
-        mimeData->setText(content.plainText);
-        if (content.html) {
-            mimeData->setHtml(*content.html);
-        }
-        clipboard->setMimeData(mimeData);
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-        if (attempt + 1 < maxAttempts) {
-            QThread::msleep(40);
-            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-        }
+    auto *mimeData = new QMimeData;
+    mimeData->setText(content.plainText);
+    if (content.html) {
+        mimeData->setHtml(*content.html);
     }
+    clipboard->setMimeData(mimeData);
     return true;
 }
 

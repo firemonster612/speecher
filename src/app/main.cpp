@@ -89,6 +89,13 @@ static bool startDetachedListening(const PlatformIntegration *platform, std::opt
     return QProcess::startDetached(platform->detachedExecutablePath(), arguments);
 }
 
+static bool startDetachedSettings(const PlatformIntegration *platform)
+{
+    return QProcess::startDetached(
+        platform->detachedExecutablePath(),
+        {QStringLiteral("--daemon"), QStringLiteral("--show-settings")});
+}
+
 static int runCliCommand(const QString &command,
                          std::optional<OutputFormat> outputFormat,
                          const std::shared_ptr<const PlatformIntegration> &platform)
@@ -114,7 +121,10 @@ static int runCliCommand(const QString &command,
         std::cout << "idle\n";
         return 0;
     }
-    if (!startDetachedListening(platform.get(), outputFormat)) {
+    const bool started = command == QStringLiteral("showSettings")
+        ? startDetachedSettings(platform.get())
+        : startDetachedListening(platform.get(), outputFormat);
+    if (!started) {
         std::cerr << "Could not start speecher daemon\n";
         return 1;
     }
@@ -142,9 +152,12 @@ int main(int argc, char **argv)
     const bool isCliCommand = cliCommand == QStringLiteral("toggle")
         || cliCommand == QStringLiteral("start")
         || cliCommand == QStringLiteral("stop")
-        || cliCommand == QStringLiteral("status");
+        || cliCommand == QStringLiteral("status")
+        || cliCommand == QStringLiteral("settings");
     const bool daemon = args.contains(QStringLiteral("--daemon"));
     const bool startListening = args.contains(QStringLiteral("--start-listening"));
+    const bool showSettings = args.contains(QStringLiteral("--show-settings"));
+    app.setQuitOnLastWindowClosed(!daemon);
     QString formatError;
     const std::optional<OutputFormat> outputFormat = requestedOutputFormat(args, &formatError);
     if (!formatError.isEmpty()) {
@@ -157,7 +170,11 @@ int main(int argc, char **argv)
             std::cerr << "--format can only be used with toggle or start\n";
             return 2;
         }
-        return runCliCommand(cliCommand, outputFormat, platform);
+        return runCliCommand(cliCommand == QStringLiteral("settings")
+                                 ? QStringLiteral("showSettings")
+                                 : cliCommand,
+                             outputFormat,
+                             platform);
     }
 
     ApplicationController controller(daemon);
@@ -178,6 +195,9 @@ int main(int argc, char **argv)
                 controller.startListening();
             }
         });
+    }
+    if (showSettings) {
+        QTimer::singleShot(0, &controller, &ApplicationController::showSettings);
     }
     if (!daemon) {
         controller.showMainWindow();

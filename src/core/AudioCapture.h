@@ -4,6 +4,7 @@
 #include <QAudioSource>
 #include <QIODevice>
 #include <QList>
+#include <QMediaDevices>
 #include <QScopedPointer>
 #include <QVector>
 
@@ -29,6 +30,7 @@ signals:
 
 private:
     void handleSettingsChanged(const AudioCaptureSettings &settings);
+    void handleAudioInputsChanged();
     void syncWarmSource();
     AudioCaptureSettings currentSettings() const;
     bool ensureSourceRunning(const AudioCaptureSettings &settings, QString *error);
@@ -48,6 +50,7 @@ private:
     bool sourceMatches(const AudioCaptureSettings &settings) const;
 
     SettingsStore *m_settings = nullptr;
+    QMediaDevices m_mediaDevices;
     QScopedPointer<QAudioSource> m_source;
     QIODevice *m_device = nullptr;
     QAudioFormat m_sourceFormat;

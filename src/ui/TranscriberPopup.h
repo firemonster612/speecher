@@ -5,6 +5,8 @@
 
 class QFrame;
 class QEvent;
+class QProgressBar;
+class QPropertyAnimation;
 class QResizeEvent;
 class QVBoxLayout;
 
@@ -30,7 +32,11 @@ public slots:
     void showOAuthRefreshIndicator();
     void showListeningIndicator();
     void showMessage(const QString &message);
+    void showErrorMessage(const QString &message);
     void showPopup();
+
+signals:
+    void errorDismissed();
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -38,12 +44,15 @@ protected:
 
 private:
     void applyTheme();
+    void restoreStandardLayout();
     void setRefreshLayout(bool refreshLayout);
     void updateWindowMask();
 
     QVBoxLayout *m_layout = nullptr;
     QFrame *m_previewPill = nullptr;
     QLabel *m_preview = nullptr;
+    QProgressBar *m_errorDismissProgress = nullptr;
+    QPropertyAnimation *m_errorDismissAnimation = nullptr;
     WaveformWidget *m_waveform = nullptr;
     PopupPositioner *m_positioner = nullptr;
     bool m_applyingTheme = false;

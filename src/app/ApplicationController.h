@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <QObject>
+#include <QPointer>
 
 #include "app/SingleInstanceIpc.h"
 
@@ -15,6 +16,7 @@ class MainWindow;
 class PlatformIntegration;
 class ProviderRegistry;
 class SecretStore;
+class SettingsDialog;
 class SettingsStore;
 class TranscriberPopup;
 
@@ -34,6 +36,7 @@ public:
     QString primaryOutputStatus() const;
 
     void showMainWindow();
+    void showSettingsWindow();
     bool startIpc(QString *error = nullptr);
 
 public slots:
@@ -41,6 +44,7 @@ public slots:
     void startListening();
     void stopListening();
     void showMain();
+    void showSettings();
     void handleIpcCommand(const QString &command, const QString &outputFormat, QLocalSocket *socket);
 
 signals:
@@ -59,6 +63,7 @@ private:
     DictationSession *m_session = nullptr;
     TranscriberPopup *m_popup = nullptr;
     MainWindow *m_mainWindow = nullptr;
+    QPointer<SettingsDialog> m_settingsDialog;
     SingleInstanceIpc *m_ipc = nullptr;
 };
 

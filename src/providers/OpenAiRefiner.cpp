@@ -36,6 +36,8 @@ static QStringList alwaysRules()
                        "Preserve the user's intent, factual meaning, uncertainty, stance, and commitments. Do not add new facts, examples, promises, dates, names, recipients, conclusions, or ideas."),
         QStringLiteral("Rule: preserve_user_voice.\n"
                        "Keep the user's voice and register. Do not make casual dictation sound corporate, legalistic, grandiose, salesy, or generic."),
+        QStringLiteral("Rule: requested_writing_tone.\n"
+                       "The untrusted target-context object may contain a requested_tone chosen by the user. When it is formal, casual, very_casual, excited, or gen_z, apply that tone without changing facts or intent. When it is none, preserve the user's dictated tone. Never infer or learn a tone from target text."),
         QStringLiteral("Rule: literal_technical_text.\n"
                        "Preserve commands, file paths, URLs, environment variables, package names, identifiers, function names, issue IDs, error messages, config values, and quoted code-like text mostly literally."),
         QStringLiteral("Rule: spoken_symbols_to_literals.\n"
@@ -220,9 +222,12 @@ QString transcriptRefinementUserMessage(const QString &rawTranscript,
 {
     QJsonObject targetContext{
         {QStringLiteral("writing_profile"), writingProfileName(context.writingProfile)},
+        {QStringLiteral("requested_tone"), context.tone},
         {QStringLiteral("application_id"), context.target.applicationId},
         {QStringLiteral("application_name"), context.target.applicationName},
         {QStringLiteral("application_category"), appCategoryName(context.target.category)},
+        {QStringLiteral("window_title"), context.target.windowTitle},
+        {QStringLiteral("document_url"), context.target.documentUrl},
         {QStringLiteral("control_role"), context.target.role},
     };
     if (context.includeNearbyText && !context.target.secure) {

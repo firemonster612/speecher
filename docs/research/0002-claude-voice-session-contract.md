@@ -6,6 +6,11 @@ Decision ticket: [Define the Claude Voice session, cleanup, and output contract]
 
 Status: decision-ready research; no product code changed
 
+Update, 2026-07-30: Live use showed that replaying the complete recording made
+transcription finish unacceptably slowly. Speecher now streams each PCM chunk
+once and reports provider failures without replaying the recording. The retry
+discussion below is retained as historical protocol research.
+
 ## Decision
 
 Keep the existing provider split, but make the Dictation Session—not the Claude adapter—the owner of transcript lifecycle, retry policy, captured audio, and output choice.

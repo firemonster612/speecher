@@ -75,12 +75,14 @@ public:
 
     QString outputSummary() const override
     {
-        return QStringLiteral("Automatic: ydotool paste when enabled, wl-copy, Qt clipboard");
+        return QStringLiteral("Automatic: Wayland multi-format clipboard, optional ydotool paste, Qt fallback");
     }
 
     QString primaryOutputStatus() const override
     {
-        return WlClipboardDelivery::isAvailable() ? QStringLiteral("wl-copy available") : QStringLiteral("Qt clipboard fallback");
+        return WlClipboardDelivery::isAvailable()
+            ? QStringLiteral("Wayland multi-format clipboard available")
+            : QStringLiteral("Qt clipboard fallback");
     }
 
     QString ipcListenName() const override
