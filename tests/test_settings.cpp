@@ -31,6 +31,7 @@ private slots:
         QCOMPARE(settings.defaultWritingProfile(), QStringLiteral("other"));
         QCOMPARE(settings.writingProfileSettings(), defaultWritingProfileSettings());
         QVERIFY(settings.writingProfileOverrides().isEmpty());
+        QVERIFY(settings.appRecognitionRules().isEmpty());
         QCOMPARE(settings.useTargetContext(), true);
         QCOMPARE(settings.includeScreenshotContext(), false);
         QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.6-luna"));
@@ -78,6 +79,14 @@ private slots:
         });
         QCOMPARE(settings.writingProfileOverrides().size(), 2);
         QCOMPARE(settings.writingProfileOverrides().first().profile, WritingProfile::Personal);
+        settings.setAppRecognitionRules({
+            {QStringLiteral("com.acme.shell"), AppCategory::Terminal, WritingProfile::Work},
+            {QStringLiteral("chat.example"), std::nullopt, WritingProfile::Personal},
+        });
+        QCOMPARE(settings.appRecognitionRules().size(), 2);
+        QCOMPARE(settings.appRecognitionRules().first().category, AppCategory::Terminal);
+        QCOMPARE(settings.appRecognitionRules().last().writingProfile, WritingProfile::Personal);
+        QCOMPARE(settings.snapshot().appRecognitionRules.size(), 2);
         settings.setUseTargetContext(false);
         QCOMPARE(settings.useTargetContext(), false);
         settings.setIncludeScreenshotContext(true);

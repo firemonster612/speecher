@@ -178,6 +178,54 @@ void SettingsCodecs::setAudioCaptureSettings(const AudioCaptureSettings &value)
     m_settings.setValue(SettingsKeys::AudioVadThresholdPercent, settings.vadThresholdPercent);
 }
 
+QList<AppRecognitionRule> SettingsCodecs::appRecognitionRules() const
+{
+    const QJsonDocument document = QJsonDocument::fromJson(
+        value(SettingsKeys::AppRecognitionRules, QByteArray()).toByteArray());
+    QList<AppRecognitionRule> rules;
+    for (const QJsonValue &value : document.array()) {
+        const QJsonObject object = value.toObject();
+        AppRecognitionRule rule;
+        rule.match = object.value(QStringLiteral("match")).toString().trimmed();
+        const QString category = object.value(QStringLiteral("category")).toString();
+        if (!category.isEmpty()) {
+            const AppCategory parsed = appCategoryFromName(category);
+            if (parsed != AppCategory::Unknown) {
+                rule.category = parsed;
+            }
+        }
+        const QString profile = object.value(QStringLiteral("writingProfile")).toString();
+        if (!profile.isEmpty()) {
+            rule.writingProfile = writingProfileFromName(profile);
+        }
+        if (!rule.match.isEmpty() && (rule.category || rule.writingProfile)) {
+            rules.append(rule);
+        }
+    }
+    return rules;
+}
+
+void SettingsCodecs::setAppRecognitionRules(const QList<AppRecognitionRule> &rules)
+{
+    QJsonArray array;
+    for (const AppRecognitionRule &rule : rules) {
+        const QString match = rule.match.trimmed();
+        if (match.isEmpty() || (!rule.category && !rule.writingProfile)) {
+            continue;
+        }
+        QJsonObject object{{QStringLiteral("match"), match}};
+        if (rule.category) {
+            object.insert(QStringLiteral("category"), appCategoryName(*rule.category));
+        }
+        if (rule.writingProfile) {
+            object.insert(QStringLiteral("writingProfile"), writingProfileName(*rule.writingProfile));
+        }
+        array.append(object);
+    }
+    m_settings.setValue(SettingsKeys::AppRecognitionRules,
+                        QJsonDocument(array).toJson(QJsonDocument::Compact));
+}
+
 QList<BindingRule> SettingsCodecs::bindingRules() const
 {
     const QString stored = value(SettingsKeys::BindingRules, QString()).toString();
@@ -671,6 +719,7 @@ AppSettings SettingsCodecs::snapshot() const
     settings.speech.claudeEndpointBase = claudeEndpointBase();
     settings.speech.claudeVoicePath = claudeVoicePath();
     settings.audio = audioCaptureSettings();
+    settings.appRecognitionRules = appRecognitionRules();
     settings.bindings = bindingRules();
     settings.learnedCorrections = learnedCorrections();
     for (const LearnedCorrection &correction : settings.learnedCorrections) {

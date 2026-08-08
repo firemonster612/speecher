@@ -8,6 +8,16 @@
 
 namespace speecher::atspi {
 
+struct AccessibilityState {
+    bool supported = false;
+    bool enabled = false;
+    bool persistent = false;
+};
+
+AccessibilityState accessibilityState();
+bool requestAccessibility(QString *error = nullptr);
+bool enableAccessibilityPermanently(QString *error = nullptr);
+
 class AccessibleHandle {
 public:
     AccessibleHandle() = default;

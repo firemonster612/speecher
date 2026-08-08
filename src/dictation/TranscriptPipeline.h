@@ -7,6 +7,8 @@
 #include <QByteArray>
 #include <QString>
 
+#include <optional>
+
 namespace speecher {
 
 struct TranscriptPipelineResult {
@@ -19,6 +21,7 @@ struct TranscriptPipelineResult {
     QString deliveryFallback;
     QString refinementInput;
     bool allowPostRefinementBindings = true;
+    bool editsSelection = false;
 };
 
 class TranscriptPipeline {
@@ -32,8 +35,8 @@ public:
                                          bool supportsScreenshotContext,
                                          const QByteArray &screenshotData,
                                          const QString &screenshotMediaType);
-    static QString restoreRefinedResult(const TranscriptPipelineResult &pipeline,
-                                        const QString &refinedText);
+    static std::optional<QString> restoreRefinedResult(const TranscriptPipelineResult &pipeline,
+                                                       const QString &refinedText);
 };
 
 } // namespace speecher

@@ -69,6 +69,7 @@ private:
     void continueStartupAfterPreparation(quint64 generation, const AppSettings &settings);
     void failStartup(quint64 generation, const QString &message);
     void beginRefinement(quint64 generation);
+    void failSelectionEdit(const QString &message);
     void handleSpeechFailure(const SpeechFailure &failure);
     void deliverFinal(const QString &text);
     void clearScreenshotContext();

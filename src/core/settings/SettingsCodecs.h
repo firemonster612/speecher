@@ -19,6 +19,7 @@ public:
     QList<VocabularyEntry> vocabularyEntries() const; void setVocabularyEntries(const QList<VocabularyEntry> &entries);
     void recordVocabularyUsage(const QString &text);
     AudioCaptureSettings audioCaptureSettings() const; void setAudioCaptureSettings(const AudioCaptureSettings &value);
+    QList<AppRecognitionRule> appRecognitionRules() const; void setAppRecognitionRules(const QList<AppRecognitionRule> &rules);
     QList<BindingRule> bindingRules() const; bool setBindingRules(const QList<BindingRule> &rules, QString *error = nullptr);
     bool correctionLearningEnabled() const; void setCorrectionLearningEnabled(bool value);
     QList<LearnedCorrection> learnedCorrections() const; void setLearnedCorrections(const QList<LearnedCorrection> &corrections);

@@ -21,6 +21,7 @@ public:
     bool learningEnabled() const;
     QList<LearnedCorrection> corrections() const;
     bool hasChanges(bool learningEnabled, const QList<LearnedCorrection> &corrections) const;
+    void setTargetAccessibilityAvailable(bool available);
 
 signals:
     void changed();

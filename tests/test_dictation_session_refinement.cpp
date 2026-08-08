@@ -43,6 +43,99 @@ private slots:
         QCOMPARE(rawPreviewSpy.last().at(0).toString(), QStringLiteral("rough text"));
     }
 
+    void dictationSessionEditsSelectedTextFromSpokenInstructions()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.setCustomVocabulary({QStringLiteral("Speecher")});
+        settings.setWritingProfileSettings({
+            {WritingProfile::Work, QStringLiteral("strong_polish"), QStringLiteral("formal")},
+            {WritingProfile::Email, QStringLiteral("balanced"), QStringLiteral("excited")},
+            {WritingProfile::Personal, QStringLiteral("light_cleanup"), QStringLiteral("casual")},
+            {WritingProfile::Other, QStringLiteral("balanced"), QStringLiteral("none")},
+        });
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto target = std::make_unique<FakeTargetProvider>();
+        target->target.applicationId = QStringLiteral("org.mozilla.Thunderbird");
+        target->target.category = AppCategory::Email;
+        target->target.selectedText = QStringLiteral("the release is tomorrow");
+        target->target.selectionStart = 10;
+        target->target.selectionEnd = 33;
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings,
+                                 audio.get(),
+                                 media.get(),
+                                 target.get(),
+                                 delivery.get(),
+                                 &registry);
+
+        session.startListening();
+        speech->emitFinalText(QStringLiteral("Make this more confident and add a greeting"));
+        refiner->autoComplete = true;
+        refiner->autoCompleteText = QStringLiteral("Hello team—the release is tomorrow!");
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
+        QCOMPARE(refiner->lastRawTranscript,
+                 QStringLiteral("Make this more confident and add a greeting"));
+        QCOMPARE(refiner->lastVocabulary, QStringList{QStringLiteral("Speecher")});
+        QVERIFY(refiner->lastContext.editSelection);
+        QCOMPARE(refiner->lastContext.target.selectedText,
+                 QStringLiteral("the release is tomorrow"));
+        QCOMPARE(refiner->lastContext.writingProfile, WritingProfile::Email);
+        QCOMPARE(refiner->lastContext.tone, QStringLiteral("excited"));
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText,
+                 QStringLiteral("Hello team—the release is tomorrow!"));
+        QCOMPARE(delivery->lastTarget.selectionStart, 10);
+        QCOMPARE(delivery->lastTarget.selectionEnd, 33);
+    }
+
+    void selectionEditingFailurePreservesTheSelectedText()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto target = std::make_unique<FakeTargetProvider>();
+        target->target.applicationId = QStringLiteral("org.kde.kate");
+        target->target.selectedText = QStringLiteral("Keep this original text");
+        target->target.selectionStart = 0;
+        target->target.selectionEnd = 23;
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings,
+                                 audio.get(),
+                                 media.get(),
+                                 target.get(),
+                                 delivery.get(),
+                                 &registry);
+
+        session.startListening();
+        speech->emitFinalText(QStringLiteral("Make this shorter"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
+        refiner->emitFailure(QStringLiteral("refinement unavailable"));
+
+        QCOMPARE(delivery->calls, 0);
+        QCOMPARE(int(session.state()), int(DictationState::Error));
+        QCOMPARE(session.lastMessage(), QStringLiteral("refinement unavailable"));
+    }
+
     void dictationSessionAppliesDetectedProfileSettingsAndOverrides()
     {
         SettingsStore settings;

@@ -23,6 +23,7 @@ CorrectionsSettingsPage::CorrectionsSettingsPage(QWidget *parent)
     , m_undoLatestLearnButton(new QPushButton(QStringLiteral("Undo latest learn"), this))
 {
     setObjectName(QStringLiteral("vocabSection"));
+    m_learnCorrections->setObjectName(QStringLiteral("correctionLearningControl"));
     m_learnCorrections->setText(QStringLiteral("Learn corrections"));
     m_learnCorrections->setToolTip(QStringLiteral("Observe a verified inserted span briefly and save only high-confidence corrections."));
     m_corrections->setObjectName(QStringLiteral("vocabInput"));
@@ -95,6 +96,15 @@ CorrectionsSettingsPage::CorrectionsSettingsPage(QWidget *parent)
         m_undoCorrectionButton->setEnabled(true);
         emit changed();
     });
+}
+
+void CorrectionsSettingsPage::setTargetAccessibilityAvailable(bool available)
+{
+    m_learnCorrections->setEnabled(available);
+    m_learnCorrections->setToolTip(
+        available
+            ? QStringLiteral("Observe a verified inserted span briefly and save only high-confidence corrections.")
+            : QStringLiteral("Enable desktop accessibility (AT-SPI) to learn corrections after insertion."));
 }
 
 void CorrectionsSettingsPage::load(bool learningEnabled, const QList<LearnedCorrection> &corrections)

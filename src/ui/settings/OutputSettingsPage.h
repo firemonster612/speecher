@@ -25,6 +25,7 @@ public:
     void appendToDraft(AppSettings &draft) const;
     bool hasChanges(const AppSettings &settings) const;
     void refreshControls();
+    void setTargetAccessibilityAvailable(bool available);
 
 signals:
     void changed();
@@ -54,6 +55,7 @@ private:
     QPushButton *m_ydotoolStartButton;
     QPushButton *m_ydotoolDisableButton;
     QPushButton *m_ydotoolRemoveButton;
+    QWidget *m_targetPasteControls = nullptr;
 };
 
 } // namespace speecher

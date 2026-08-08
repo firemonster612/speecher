@@ -1,13 +1,58 @@
 #include "platform/AtSpiTargetProvider.h"
 
+#include "output/WlClipboardDelivery.h"
+#include "output/YdotoolDelivery.h"
+#include "platform/atspi/AtSpiAccess.h"
 #include "platform/atspi/AtSpiCorrectionObserver.h"
 #include "platform/atspi/AtSpiTargetSnapshot.h"
 
 #include <QCoreApplication>
 #include <QEventLoop>
 #include <QThread>
+#include <QUuid>
 
 namespace speecher {
+
+namespace {
+
+QString copiedSelection(const Target &target)
+{
+    if (!WlClipboardDelivery::canSnapshot() || !YdotoolDelivery::isAvailable()) {
+        return {};
+    }
+
+    WlClipboardSnapshot previous;
+    if (!WlClipboardDelivery::capture(&previous)) {
+        return {};
+    }
+
+    const QString marker = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    WlClipboardDelivery clipboard;
+    const PasteMethod copyMethod = target.category == AppCategory::Terminal
+        ? PasteMethod::TerminalPaste
+        : PasteMethod::StandardPaste;
+    if (!clipboard.copy({marker, std::nullopt})
+        || !YdotoolDelivery().copySelection(copyMethod)) {
+        WlClipboardDelivery::restore(previous);
+        return {};
+    }
+
+    QString selectedText;
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        if (attempt > 0) {
+            QThread::msleep(20);
+        }
+        QString text;
+        if (WlClipboardDelivery::readText(&text) && !text.isEmpty() && text != marker) {
+            selectedText = text;
+            break;
+        }
+    }
+    WlClipboardDelivery::restore(previous);
+    return selectedText;
+}
+
+} // namespace
 
 AtSpiTargetProvider::AtSpiTargetProvider(QObject *parent)
     : TargetProvider(parent)
@@ -29,7 +74,15 @@ Target AtSpiTargetProvider::capture()
 {
     clearAccessible();
     m_snapshot = std::make_unique<atspi::TargetSnapshot>(atspi::TargetSnapshot::capture());
-    return m_snapshot->target();
+    Target target = m_snapshot->target();
+    if (!target.hasSelection() && !target.secure) {
+        target.selectedText = copiedSelection(target);
+        if (!target.selectedText.isEmpty()) {
+            target.selectionStart = 0;
+            target.selectionEnd = target.selectedText.size();
+        }
+    }
+    return target;
 }
 
 bool AtSpiTargetProvider::stillFocused(const Target &target)

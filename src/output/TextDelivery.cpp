@@ -131,12 +131,13 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
                                      const Target &target)
 {
     const PasteRule pasteRule = resolvePasteRule(settings.pasteRules, target);
-    const bool currentFocusFallback = !target.hasIdentity()
+    const bool trackableTarget = target.hasIdentity() || target.accessible;
+    const bool currentFocusFallback = !trackableTarget
         && pasteRule.scope == PasteRuleScope::Global
         && (pasteRule.method == PasteMethod::StandardPaste
             || pasteRule.method == PasteMethod::TerminalPaste);
     PasteMethod pasteMethod = PasteMethod::ClipboardOnly;
-    if (!target.secure && (target.hasIdentity() || currentFocusFallback)) {
+    if (!target.secure && (trackableTarget || currentFocusFallback)) {
         pasteMethod = pasteRule.method;
     }
     const bool directInsertRequested = pasteMethod == PasteMethod::DirectInsert;

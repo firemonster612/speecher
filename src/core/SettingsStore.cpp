@@ -15,6 +15,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setSoundsEnabled(draft.ui.soundsEnabled);
     setPreviewWords(draft.ui.previewWords);
     setAudioCaptureSettings(draft.audio);
+    setAppRecognitionRules(draft.appRecognitionRules);
     setRefinementProvider(draft.refinement.providerId);
     setDefaultWritingProfile(draft.refinement.defaultWritingProfile);
     setWritingProfileSettings(draft.refinement.writingProfiles);

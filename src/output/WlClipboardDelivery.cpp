@@ -91,6 +91,40 @@ bool WlClipboardDelivery::canSnapshot()
     return qApp && QApplication::clipboard();
 }
 
+bool WlClipboardDelivery::readText(QString *text, QString *error)
+{
+    if (!text) {
+        if (error) {
+            *error = QStringLiteral("No clipboard text destination");
+        }
+        return false;
+    }
+    if (!isWaylandSession() && qApp && QApplication::clipboard()) {
+        *text = QApplication::clipboard()->text(QClipboard::Clipboard);
+        return true;
+    }
+
+    const QString executable = WaylandClipboardProcess::wlPasteExecutable();
+    if (executable.isEmpty()) {
+        if (error) {
+            *error = QStringLiteral("wl-paste is not installed");
+        }
+        return false;
+    }
+    QByteArray output;
+    if (!WaylandClipboardProcess::run(
+            executable,
+            QStringLiteral("wl-paste"),
+            {QStringLiteral("--no-newline"), QStringLiteral("--type"), QStringLiteral("text/plain")},
+            nullptr,
+            &output,
+            error)) {
+        return false;
+    }
+    *text = QString::fromUtf8(output);
+    return true;
+}
+
 bool WlClipboardDelivery::copy(const DeliveryContent &content, bool *htmlAvailable,
                                QString *error)
 {
