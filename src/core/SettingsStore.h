@@ -13,8 +13,10 @@ class SettingsStore : public QObject, private SettingsCodecs {
 public:
     explicit SettingsStore(QObject *parent = nullptr);
     void applySnapshot(const AppSettings &draft);
+    void setCorrectionLearningEnabled(bool enabled);
+    bool recordCorrectionEvidence(const CorrectionEvidence &evidence,
+                                  const QString &applicationId);
 
-    using SettingsCodecs::addLearnedCorrection;
     using SettingsCodecs::anthropicAuthMode;
     using SettingsCodecs::anthropicEffort;
     using SettingsCodecs::anthropicModel;
@@ -48,7 +50,6 @@ public:
     using SettingsCodecs::setAnthropicModel;
     using SettingsCodecs::setAppRecognitionRules;
     using SettingsCodecs::setBindingRules;
-    using SettingsCodecs::setCorrectionLearningEnabled;
     using SettingsCodecs::setCustomVocabulary;
     using SettingsCodecs::setDefaultWritingProfile;
     using SettingsCodecs::setIncludeScreenshotContext;
@@ -105,6 +106,7 @@ public:
 
 signals:
     void audioCaptureSettingsChanged(const AudioCaptureSettings &settings);
+    void correctionLearningEnabledChanged(bool enabled);
 
 private:
     void emitAudioCaptureSettingsChangedIfNeeded(const AudioCaptureSettings &previous);

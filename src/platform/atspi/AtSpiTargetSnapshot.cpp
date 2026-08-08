@@ -3,6 +3,7 @@
 #include <QCryptographicHash>
 #include <QFile>
 #include <QRegularExpression>
+#include <QSet>
 
 #ifdef SPEECHER_WITH_ATSPI
 #include <unistd.h>
@@ -16,6 +17,8 @@ namespace {
 constexpr int contextCharacters = 240;
 constexpr int maximumVisitedObjects = 4000;
 constexpr int maximumTreeDepth = 40;
+constexpr int maximumDescendantProcesses = 64;
+constexpr int maximumAncestorProcesses = 16;
 
 bool isForeignPrivilegedProcess(qint64 processId)
 {
@@ -257,6 +260,137 @@ QString processName(qint64 processId)
     return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()).trimmed() : QString();
 }
 
+qint64 parentProcessId(qint64 processId)
+{
+    QFile file(QStringLiteral("/proc/%1/status").arg(processId));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return 0;
+    const QRegularExpressionMatch match = QRegularExpression(
+        QStringLiteral("(?m)^PPid:\\s+(\\d+)")).match(QString::fromUtf8(file.readAll()));
+    return match.hasMatch() ? match.captured(1).toLongLong() : 0;
+}
+
+QString executableName(const QString &path)
+{
+    return path.sliced(path.lastIndexOf(QLatin1Char('/')) + 1).trimmed().toLower();
+}
+
+bool processLooksLikeAiCodingTool(qint64 processId)
+{
+    static const QSet<QString> commands{
+        QStringLiteral("aider"),
+        QStringLiteral("amp"),
+        QStringLiteral("auggie"),
+        QStringLiteral("claude"),
+        QStringLiteral("cline"),
+        QStringLiteral("codex"),
+        QStringLiteral("copilot"),
+        QStringLiteral("crush"),
+        QStringLiteral("cursor-agent"),
+        QStringLiteral("droid"),
+        QStringLiteral("gemini"),
+        QStringLiteral("goose"),
+        QStringLiteral("kiro-cli"),
+        QStringLiteral("kilocode"),
+        QStringLiteral("kimi"),
+        QStringLiteral("opencode"),
+        QStringLiteral("openhands"),
+        QStringLiteral("pi"),
+        QStringLiteral("q"),
+        QStringLiteral("qwen"),
+        QStringLiteral("replit"),
+        QStringLiteral("roo"),
+        QStringLiteral("trae"),
+        QStringLiteral("vibe"),
+        QStringLiteral("windsurf"),
+    };
+    if (commands.contains(processName(processId).toLower())) {
+        return true;
+    }
+
+    QFile file(QStringLiteral("/proc/%1/cmdline").arg(processId));
+    if (!file.open(QIODevice::ReadOnly)) return false;
+    const QList<QByteArray> arguments = file.read(16 * 1024).split('\0');
+    QStringList executableParts;
+    for (int index = 0; index < arguments.size() && index < 2; ++index) {
+        const QString argument = QString::fromLocal8Bit(arguments.at(index)).trimmed();
+        if (!argument.isEmpty()) {
+            executableParts.append(argument);
+            executableParts.append(executableName(argument));
+        }
+    }
+    if (executableParts.isEmpty()) return false;
+    if (commands.contains(executableName(executableParts.first()))) {
+        return true;
+    }
+
+    Target probe;
+    probe.processName = executableParts.join(QLatin1Char(' '));
+    return classifyTarget(probe) == AppCategory::AiCoding;
+}
+
+bool processHasTerminalAncestor(qint64 processId)
+{
+    static const QSet<QString> shells{
+        QStringLiteral("bash"),
+        QStringLiteral("dash"),
+        QStringLiteral("fish"),
+        QStringLiteral("nu"),
+        QStringLiteral("screen"),
+        QStringLiteral("sh"),
+        QStringLiteral("tmux"),
+        QStringLiteral("zsh"),
+    };
+    const QString currentProcess = processName(processId).toLower();
+    if (!shells.contains(currentProcess) && !processLooksLikeAiCodingTool(processId)) {
+        return false;
+    }
+
+    QSet<qint64> visited;
+    for (int depth = 0; processId > 1 && depth < maximumAncestorProcesses; ++depth) {
+        processId = parentProcessId(processId);
+        if (processId <= 1 || visited.contains(processId)) break;
+        visited.insert(processId);
+
+        Target ancestor;
+        ancestor.processName = processName(processId);
+        QFile cmdline(QStringLiteral("/proc/%1/cmdline").arg(processId));
+        if (cmdline.open(QIODevice::ReadOnly)) {
+            ancestor.applicationName = QString::fromLocal8Bit(cmdline.read(4096)).replace(QChar::Null, QLatin1Char(' '));
+        }
+        if (isTerminalTarget(ancestor)) return true;
+    }
+    return false;
+}
+
+bool terminalHasAiCodingTool(const Target &target)
+{
+    Target titleProbe;
+    titleProbe.applicationName = target.windowTitle;
+    if (classifyTarget(titleProbe) == AppCategory::AiCoding) {
+        return true;
+    }
+
+    QList<qint64> pending{target.processId};
+    QSet<qint64> visited;
+    while (!pending.isEmpty() && visited.size() < maximumDescendantProcesses) {
+        const qint64 processId = pending.takeFirst();
+        if (processId <= 0 || visited.contains(processId)) continue;
+        visited.insert(processId);
+        if (processLooksLikeAiCodingTool(processId)) return true;
+
+        QFile children(QStringLiteral("/proc/%1/task/%1/children").arg(processId));
+        if (!children.open(QIODevice::ReadOnly)) continue;
+        const QStringList childIds = QString::fromLatin1(children.readAll()).split(
+            QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+        for (const QString &childId : childIds) {
+            bool valid = false;
+            const qint64 childProcessId = childId.toLongLong(&valid);
+            if (valid && !visited.contains(childProcessId)) pending.append(childProcessId);
+        }
+    }
+    return false;
+}
+
 void populateText(Target *target, AtspiAccessible *object)
 {
     if (!atspi_accessible_is_text(object)) return;
@@ -355,6 +489,11 @@ TargetSnapshot TargetSnapshot::capture()
         if (!target.secure) {
             populateAncestorContext(&target, focused);
             populateText(&target, focused);
+        }
+        target.terminalHost = isTerminalTarget(target)
+            || processHasTerminalAncestor(target.processId);
+        if (target.terminalHost) {
+            target.aiCodingToolActive = terminalHasAiCodingTool(target);
         }
         target.category = classifyTarget(target);
         target.fingerprint = fingerprint(target);

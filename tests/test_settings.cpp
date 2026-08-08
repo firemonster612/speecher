@@ -258,73 +258,182 @@ private slots:
         QCOMPARE(settings.bindingRules().size(), 2);
     }
 
-    void learnedCorrectionsPersistLocallyAndFeedSessionVocabulary()
+    void correctionEvidenceActivatesByConfidenceWithoutExposingPendingEvidence()
     {
         SettingsStore settings;
         settings.raw().clear();
-        QCOMPARE(settings.correctionLearningEnabled(), false);
-        settings.setCorrectionLearningEnabled(true);
         QVERIFY(settings.correctionLearningEnabled());
 
-        QVERIFY(!settings.addLearnedCorrection({}, QStringLiteral("Qt"), {}, 0.9));
-        QVERIFY(!settings.addLearnedCorrection(QStringLiteral("cute"), QStringLiteral("cute"), {}, 0.9));
-        QVERIFY(settings.addLearnedCorrection(
-            QStringLiteral("cute"),
-            QStringLiteral("Qt"),
-            QStringLiteral("org.kde.kate"),
-            0.94));
+        const CorrectionEvidence medium{QStringLiteral("cute"), QStringLiteral("Qt"), 0.75};
+        QVERIFY(!settings.recordCorrectionEvidence(medium, QStringLiteral("org.kde.kate")));
+        QVERIFY(settings.learnedCorrections().isEmpty());
+        QVERIFY(settings.snapshot().learnedCorrections.isEmpty());
+
+        QVERIFY(settings.recordCorrectionEvidence(medium, QStringLiteral("org.kde.kate")));
 
         QList<LearnedCorrection> corrections = settings.learnedCorrections();
         QCOMPARE(corrections.size(), 1);
         QCOMPARE(corrections.first().original, QStringLiteral("cute"));
         QCOMPARE(corrections.first().corrected, QStringLiteral("Qt"));
         QCOMPARE(corrections.first().applicationId, QStringLiteral("org.kde.kate"));
-        QCOMPARE(corrections.first().confidence, 0.94);
+        QCOMPARE(corrections.first().confidence, 0.75);
+        QCOMPARE(corrections.first().evidenceCount, 2);
         QVERIFY(corrections.first().enabled);
 
         AppSettings snapshot = settings.snapshot();
         QVERIFY(snapshot.speech.vocabulary.contains(QStringLiteral("Qt")));
-        QVERIFY(snapshot.bindings.contains(BindingRule{QStringLiteral("cute"), QStringLiteral("Qt")}));
+        QVERIFY(!snapshot.bindings.contains(BindingRule{QStringLiteral("cute"), QStringLiteral("Qt")}));
 
         const QString id = corrections.first().id;
         settings.setLearnedCorrectionEnabled(id, false);
         snapshot = settings.snapshot();
         QVERIFY(!snapshot.speech.vocabulary.contains(QStringLiteral("Qt")));
-        QVERIFY(!snapshot.bindings.contains(BindingRule{QStringLiteral("cute"), QStringLiteral("Qt")}));
 
         settings.setLearnedCorrectionEnabled(id, true);
-        QVERIFY(settings.addLearnedCorrection(
-            QStringLiteral("CUTE"),
-            QStringLiteral("Qt 6"),
-            QStringLiteral("org.kde.kate"),
-            0.99));
+        QVERIFY(settings.recordCorrectionEvidence(medium, QStringLiteral("org.kde.kate")));
         corrections = settings.learnedCorrections();
         QCOMPARE(corrections.size(), 1);
-        QCOMPARE(corrections.first().corrected, QStringLiteral("Qt 6"));
+        QCOMPARE(corrections.first().corrected, QStringLiteral("Qt"));
+        QCOMPARE(corrections.first().evidenceCount, 3);
 
         settings.removeLearnedCorrection(id);
         QVERIFY(settings.learnedCorrections().isEmpty());
     }
 
-    void learnedCorrectionRequiresUniqueStableAnchors()
+    void correctionLearningSettingChangesAreObservableWithoutRestart()
     {
-        const std::optional<QString> correction = correctionBetweenAnchors(
-            QStringLiteral("before text Qt 6 after text"),
-            QStringLiteral("before text "),
-            QStringLiteral(" after text"),
-            QStringLiteral("cute"));
-        QVERIFY(correction);
-        QCOMPARE(*correction, QStringLiteral("Qt 6"));
-        QVERIFY(!correctionBetweenAnchors(
-            QStringLiteral("short Qt short"),
-            QStringLiteral("short "),
-            QStringLiteral(" short"),
-            QStringLiteral("cute")));
-        QVERIFY(!correctionBetweenAnchors(
-            QStringLiteral("before text Qt after text before text duplicate after text"),
-            QStringLiteral("before text "),
-            QStringLiteral(" after text"),
-            QStringLiteral("cute")));
+        SettingsStore settings;
+        settings.raw().clear();
+        QSignalSpy changed(&settings, &SettingsStore::correctionLearningEnabledChanged);
+
+        settings.setCorrectionLearningEnabled(false);
+        QCOMPARE(changed.count(), 1);
+        QCOMPARE(changed.takeFirst().first().toBool(), false);
+
+        settings.setCorrectionLearningEnabled(false);
+        QCOMPARE(changed.count(), 0);
+
+        settings.setCorrectionLearningEnabled(true);
+        QCOMPARE(changed.count(), 1);
+        QCOMPARE(changed.takeFirst().first().toBool(), true);
+    }
+
+    void highConfidenceEvidenceActivatesImmediatelyAndContradictionsDoNotOverwrite()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+
+        QVERIFY(settings.recordCorrectionEvidence(
+            {QStringLiteral("open ai"), QStringLiteral("OpenAI"), 0.98},
+            QStringLiteral("org.kde.kate")));
+        QVERIFY(!settings.recordCorrectionEvidence(
+            {QStringLiteral("open ai"), QStringLiteral("Open API"), 0.98},
+            QStringLiteral("org.kde.kate")));
+
+        const QList<LearnedCorrection> corrections = settings.learnedCorrections();
+        QCOMPARE(corrections.size(), 1);
+        QCOMPARE(corrections.first().corrected, QStringLiteral("OpenAI"));
+        QCOMPARE(corrections.first().evidenceCount, 1);
+    }
+
+    void correctionEvidenceHonorsDisableAndPromotesMatchingCrossApplicationEvidence()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        const CorrectionEvidence evidence{
+            QStringLiteral("open ai"), QStringLiteral("OpenAI"), 0.98};
+
+        settings.setCorrectionLearningEnabled(false);
+        QVERIFY(!settings.recordCorrectionEvidence(evidence, QStringLiteral("org.kde.kate")));
+        QVERIFY(settings.learnedCorrections().isEmpty());
+
+        settings.setCorrectionLearningEnabled(true);
+        QVERIFY(settings.recordCorrectionEvidence(evidence, QStringLiteral("org.kde.kate")));
+        QVERIFY(settings.recordCorrectionEvidence(evidence, QStringLiteral("org.mozilla.firefox")));
+
+        const QList<LearnedCorrection> corrections = settings.learnedCorrections();
+        QCOMPARE(corrections.size(), 1);
+        QVERIFY(corrections.first().applicationId.isEmpty());
+        QCOMPARE(corrections.first().evidenceCount, 2);
+        QVERIFY(corrections.first().lastObservedAtMs >= corrections.first().createdAtMs);
+
+        settings.raw().clear();
+        const CorrectionEvidence medium{
+            QStringLiteral("cute"), QStringLiteral("Qt"), 0.75};
+        QVERIFY(!settings.recordCorrectionEvidence(medium, QStringLiteral("org.kde.kate")));
+        QVERIFY(settings.recordCorrectionEvidence(medium, QStringLiteral("org.mozilla.firefox")));
+        QCOMPARE(settings.learnedCorrections().size(), 1);
+        QVERIFY(settings.learnedCorrections().first().applicationId.isEmpty());
+    }
+
+    void lowConfidenceEvidenceIsDiscarded()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+
+        QVERIFY(!settings.recordCorrectionEvidence(
+            {QStringLiteral("cute"), QStringLiteral("Qt"), 0.4},
+            QStringLiteral("org.kde.kate")));
+        QVERIFY(settings.learnedCorrections().isEmpty());
+        QVERIFY(!settings.raw().contains(QStringLiteral("vocabulary/correctionEvidence")));
+        QVERIFY(!settings.recordCorrectionEvidence(
+            {QStringLiteral("open ai"), QStringLiteral("OpenAI"), 0.98}, {}));
+    }
+
+    void correctionAnalysisExtractsLocalizedEvidence()
+    {
+        const std::optional<CorrectionEvidence> evidence = analyzeCorrection(
+            QStringLiteral("I use cute every day"),
+            QStringLiteral("I use Qt every day"));
+
+        QVERIFY(evidence);
+        QCOMPARE(evidence->original, QStringLiteral("cute"));
+        QCOMPARE(evidence->corrected, QStringLiteral("Qt"));
+        QVERIFY(evidence->confidence >= 0.65);
+    }
+
+    void correctionAnalysisRejectsUnsafeOrAmbiguousEdits()
+    {
+        QVERIFY(!analyzeCorrection(QStringLiteral("unchanged"), QStringLiteral("unchanged")));
+        QVERIFY(!analyzeCorrection(QStringLiteral("hello"), QStringLiteral("hello there")));
+        QVERIFY(!analyzeCorrection(QStringLiteral("hello there"), QStringLiteral("hello")));
+        QVERIFY(!analyzeCorrection(QStringLiteral("file"), QStringLiteral("files")));
+        QVERIFY(!analyzeCorrection(QStringLiteral("files"), QStringLiteral("file")));
+        QVERIFY(!analyzeCorrection(QStringLiteral("hello"), QStringLiteral("hello!")));
+        QVERIFY(!analyzeCorrection(QStringLiteral("hello!"), QStringLiteral("hello")));
+        QVERIFY(!analyzeCorrection(
+            QStringLiteral("cute and plasma"),
+            QStringLiteral("Qt and Plasma")));
+        QVERIFY(!analyzeCorrection(QStringLiteral("cat dog"), QStringLiteral("bat fog")));
+        QVERIFY(!analyzeCorrection(
+            QStringLiteral("token=old-value"),
+            QStringLiteral("token=abcdefghijklmnopqrstuv")));
+        QVERIFY(!analyzeCorrection(
+            QStringLiteral("email a@example.test"),
+            QStringLiteral("email b@example.test")));
+        QVERIFY(!analyzeCorrection(
+            QStringLiteral("card 4111 1111 1111 1111"),
+            QStringLiteral("card 4111 1111 1111 1112")));
+        QVERIFY(!analyzeCorrection(
+            QStringLiteral("card 4111-1111-1111-1111"),
+            QStringLiteral("card 4111-1111-1111-1112")));
+        QVERIFY(!analyzeCorrection(
+            QStringLiteral("this entire sentence is being rewritten into something else"),
+            QStringLiteral("a completely unrelated and substantially different paragraph")));
+
+        const auto casing = analyzeCorrection(QStringLiteral("qt"), QStringLiteral("Qt"));
+        QVERIFY(casing);
+        QCOMPARE(casing->original, QStringLiteral("qt"));
+        QCOMPARE(casing->corrected, QStringLiteral("Qt"));
+        QVERIFY(casing->confidence >= 0.9);
+
+        const auto spacing = analyzeCorrection(
+            QStringLiteral("Use open ai here"),
+            QStringLiteral("Use OpenAI here"));
+        QVERIFY(spacing);
+        QCOMPARE(spacing->original, QStringLiteral("open ai"));
+        QCOMPARE(spacing->corrected, QStringLiteral("OpenAI"));
+        QVERIFY(spacing->confidence >= 0.9);
     }
 
     void settingsSnapshot()

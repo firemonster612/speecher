@@ -27,9 +27,21 @@ QString openAiErrorMessage(const QByteArray &payload, const QString &fallback)
 
 } // namespace
 
-OpenAiRefiner::OpenAiRefiner(QObject *parent)
+OpenAiRefiner::OpenAiRefiner(QObject *parent, int inactivityTimeoutMs)
     : QObject(parent)
+    , m_inactivityTimeoutMs(inactivityTimeoutMs)
 {
+    m_inactivityTimer.setSingleShot(true);
+    connect(&m_inactivityTimer, &QTimer::timeout, this, [this] {
+        if (!m_reply || m_failed || m_completed) {
+            return;
+        }
+        QNetworkReply *reply = m_reply;
+        m_reply = nullptr;
+        m_failed = true;
+        reply->abort();
+        emit failed(QStringLiteral("OpenAI refinement timed out waiting for response activity"));
+    });
 }
 
 void OpenAiRefiner::refine(const QString &rawTranscript,
@@ -89,10 +101,22 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
     }
     body.insert(QStringLiteral("input"), QJsonArray{user});
 
-    m_reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
-    connect(m_reply, &QNetworkReply::readyRead, this, [this] { parseSseChunk(m_reply->readAll()); });
-    connect(m_reply, &QNetworkReply::finished, this, [this] {
-        const auto reply = m_reply;
+    QNetworkReply *reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    m_reply = reply;
+    m_inactivityTimer.start(m_inactivityTimeoutMs);
+    connect(reply, &QNetworkReply::readyRead, this, [this, reply] {
+        if (reply != m_reply) {
+            return;
+        }
+        m_inactivityTimer.start();
+        parseSseChunk(reply->readAll());
+    });
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        if (reply != m_reply) {
+            reply->deleteLater();
+            return;
+        }
+        m_inactivityTimer.stop();
         m_reply = nullptr;
         if (m_failed || m_completed) {
             reply->deleteLater();
@@ -112,10 +136,11 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
 
 void OpenAiRefiner::cancel()
 {
+    m_inactivityTimer.stop();
     if (m_reply) {
-        m_reply->abort();
-        m_reply->deleteLater();
+        QNetworkReply *reply = m_reply;
         m_reply = nullptr;
+        reply->abort();
     }
 }
 
@@ -139,6 +164,7 @@ void OpenAiRefiner::parseSseChunk(const QByteArray &chunk)
             }
         }
         if (eventName == "error") {
+            m_inactivityTimer.stop();
             m_failed = true;
             emit failed(openAiErrorMessage(data, QStringLiteral("OpenAI refinement error")));
             continue;
@@ -159,6 +185,7 @@ void OpenAiRefiner::completeIfReady()
     if (m_completed || m_accumulated.isEmpty()) {
         return;
     }
+    m_inactivityTimer.stop();
     m_completed = true;
     emit completed(m_accumulated);
 }

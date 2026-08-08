@@ -28,7 +28,7 @@ QString copiedSelection(const Target &target)
 
     const QString marker = QUuid::createUuid().toString(QUuid::WithoutBraces);
     WlClipboardDelivery clipboard;
-    const PasteMethod copyMethod = target.category == AppCategory::Terminal
+    const PasteMethod copyMethod = isTerminalTarget(target)
         ? PasteMethod::TerminalPaste
         : PasteMethod::StandardPaste;
     if (!clipboard.copy({marker, std::nullopt})
@@ -135,8 +135,10 @@ bool AtSpiTargetProvider::verifyInsertion(const Target &target, const QString &p
         if (insertedAt < 0) continue;
         const QString prefix = nearby.left(insertedAt).right(24);
         const QString suffix = nearby.mid(insertedAt + plainText.size()).left(24);
-        if (prefix.size() >= 8 && suffix.size() >= 8) {
-            if (!m_correctionObserver) m_correctionObserver = std::make_unique<atspi::CorrectionObserver>();
+        if (m_correctionObservationEnabled && prefix.size() >= 8 && suffix.size() >= 8) {
+            if (!m_correctionObserver) {
+                m_correctionObserver = std::make_unique<atspi::CorrectionObserver>();
+            }
             m_correctionObserver->schedule(
                 this, m_snapshot.get(), {target, plainText, prefix, suffix},
                 [this](const QString &original, const QString &corrected,
@@ -147,6 +149,14 @@ bool AtSpiTargetProvider::verifyInsertion(const Target &target, const QString &p
         return true;
     }
     return false;
+}
+
+void AtSpiTargetProvider::setCorrectionObservationEnabled(bool enabled)
+{
+    m_correctionObservationEnabled = enabled;
+    if (m_correctionObserver) {
+        m_correctionObserver->setEnabled(enabled);
+    }
 }
 
 } // namespace speecher

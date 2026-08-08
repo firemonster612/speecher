@@ -8,6 +8,7 @@
 #include "ui/settings/RefinementSettingsPage.h"
 
 #include <QLabel>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QPushButton>
 #include <QTableWidget>
@@ -88,6 +89,11 @@ private slots:
         ApplicationSettingsPage applications;
         RefinementSettingsPage refinement(providers);
         CorrectionsSettingsPage corrections;
+        auto *correctionLearning = corrections.findChild<QCheckBox *>(
+            QStringLiteral("correctionLearningControl"));
+        QVERIFY(correctionLearning);
+        QVERIFY(correctionLearning->toolTip().contains(QStringLiteral("repeated")));
+        QVERIFY(!correctionLearning->toolTip().contains(QStringLiteral("only high-confidence")));
 
         output.setTargetAccessibilityAvailable(false);
         applications.setTargetAccessibilityAvailable(false);
@@ -103,6 +109,8 @@ private slots:
         applications.setTargetAccessibilityAvailable(true);
         refinement.setTargetAccessibilityAvailable(true);
         corrections.setTargetAccessibilityAvailable(true);
+        QVERIFY(correctionLearning->toolTip().contains(QStringLiteral("repeated")));
+        QVERIFY(!correctionLearning->toolTip().contains(QStringLiteral("only high-confidence")));
         QVERIFY(output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
         QVERIFY(applications.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
         QVERIFY(refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());

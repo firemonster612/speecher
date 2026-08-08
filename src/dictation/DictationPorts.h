@@ -130,6 +130,10 @@ public:
         Q_UNUSED(plainText);
         return false;
     }
+    virtual void setCorrectionObservationEnabled(bool enabled)
+    {
+        Q_UNUSED(enabled);
+    }
 
 signals:
     void correctionObserved(const QString &original,
