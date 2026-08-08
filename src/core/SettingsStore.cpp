@@ -1,4 +1,5 @@
 #include "core/SettingsStore.h"
+#include "core/settings/CorrectionSettingsCodec.h"
 
 namespace speecher {
 
@@ -31,6 +32,24 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setPasteRules(draft.output.pasteRules);
     setRestoreClipboardAfterTyping(draft.output.restoreClipboardAfterTyping);
     setLearnedCorrections(draft.learnedCorrections);
+}
+
+void SettingsStore::setCorrectionLearningEnabled(bool enabled)
+{
+    if (correctionLearningEnabled() == enabled) {
+        return;
+    }
+    SettingsCodecs::setCorrectionLearningEnabled(enabled);
+    emit correctionLearningEnabledChanged(enabled);
+}
+
+bool SettingsStore::recordCorrectionEvidence(const CorrectionEvidence &evidence,
+                                             const QString &applicationId)
+{
+    if (!correctionLearningEnabled()) {
+        return false;
+    }
+    return CorrectionSettingsCodec::recordEvidence(m_settings, evidence, applicationId);
 }
 
 QString SettingsStore::audioInputDeviceId() const

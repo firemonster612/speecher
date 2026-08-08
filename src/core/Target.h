@@ -16,6 +16,7 @@ enum class AppCategory {
     Email,
     Office,
     CodeEditor,
+    AiCoding,
 };
 
 enum class WritingProfile {
@@ -78,12 +79,15 @@ struct Target {
     AppCategory category = AppCategory::Unknown;
     bool accessible = false;
     bool secure = false;
+    bool terminalHost = false;
+    bool aiCodingToolActive = false;
 
     bool hasIdentity() const;
     bool hasSelection() const;
 };
 
 QList<AppRecognitionRule> builtInAppRecognitionRules();
+bool isTerminalTarget(const Target &target);
 AppCategory classifyTarget(const Target &target,
                            const QList<AppRecognitionRule> &customRules = {});
 WritingProfile inferWritingProfile(const Target &target, WritingProfile fallback = WritingProfile::Other);

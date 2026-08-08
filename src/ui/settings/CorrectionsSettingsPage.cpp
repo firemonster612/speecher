@@ -25,7 +25,7 @@ CorrectionsSettingsPage::CorrectionsSettingsPage(QWidget *parent)
     setObjectName(QStringLiteral("vocabSection"));
     m_learnCorrections->setObjectName(QStringLiteral("correctionLearningControl"));
     m_learnCorrections->setText(QStringLiteral("Learn corrections"));
-    m_learnCorrections->setToolTip(QStringLiteral("Observe a verified inserted span briefly and save only high-confidence corrections."));
+    m_learnCorrections->setToolTip(QStringLiteral("Observe a verified inserted span briefly and automatically learn high-confidence or repeated corrections."));
     m_corrections->setObjectName(QStringLiteral("vocabInput"));
     m_corrections->setColumnCount(4);
     m_corrections->setHorizontalHeaderLabels({
@@ -103,7 +103,7 @@ void CorrectionsSettingsPage::setTargetAccessibilityAvailable(bool available)
     m_learnCorrections->setEnabled(available);
     m_learnCorrections->setToolTip(
         available
-            ? QStringLiteral("Observe a verified inserted span briefly and save only high-confidence corrections.")
+            ? QStringLiteral("Observe a verified inserted span briefly and automatically learn high-confidence or repeated corrections.")
             : QStringLiteral("Enable desktop accessibility (AT-SPI) to learn corrections after insertion."));
 }
 
@@ -141,6 +141,8 @@ QList<LearnedCorrection> CorrectionsSettingsPage::corrections() const
         correction.id = enabled->data(Qt::UserRole).toString();
         correction.createdAtMs = enabled->data(Qt::UserRole + 1).toLongLong();
         correction.confidence = enabled->data(Qt::UserRole + 2).toDouble();
+        correction.evidenceCount = enabled->data(Qt::UserRole + 3).toInt();
+        correction.lastObservedAtMs = enabled->data(Qt::UserRole + 4).toLongLong();
         correction.enabled = enabled->checkState() == Qt::Checked;
         correction.original = original->text().trimmed();
         correction.corrected = corrected->text().trimmed();
@@ -170,6 +172,8 @@ void CorrectionsSettingsPage::setCorrections(const QList<LearnedCorrection> &cor
         enabled->setData(Qt::UserRole, correction.id);
         enabled->setData(Qt::UserRole + 1, correction.createdAtMs);
         enabled->setData(Qt::UserRole + 2, correction.confidence);
+        enabled->setData(Qt::UserRole + 3, correction.evidenceCount);
+        enabled->setData(Qt::UserRole + 4, correction.lastObservedAtMs);
         auto *original = new QTableWidgetItem(correction.original);
         auto *corrected = new QTableWidgetItem(correction.corrected);
         auto *application = new QTableWidgetItem(correction.applicationId);

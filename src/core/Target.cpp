@@ -19,6 +19,8 @@ QString appCategoryName(AppCategory category)
         return QStringLiteral("office");
     case AppCategory::CodeEditor:
         return QStringLiteral("code_editor");
+    case AppCategory::AiCoding:
+        return QStringLiteral("ai_coding");
     case AppCategory::Unknown:
         return QStringLiteral("unknown");
     }
@@ -45,6 +47,9 @@ AppCategory appCategoryFromName(const QString &name)
     }
     if (normalized == QStringLiteral("code_editor")) {
         return AppCategory::CodeEditor;
+    }
+    if (normalized == QStringLiteral("ai_coding")) {
+        return AppCategory::AiCoding;
     }
     return AppCategory::Unknown;
 }
@@ -121,6 +126,36 @@ bool Target::hasSelection() const
 QList<AppRecognitionRule> builtInAppRecognitionRules()
 {
     return {
+        {QStringLiteral("t3code"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("chatgpt"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("codex"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("cursor"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("windsurf"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("kiro"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("zed"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("opencode"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("aider"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("claude code"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("gemini cli"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("github copilot"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("replit agent"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("amazon q developer"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("qwen code"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("mistral vibe"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("goose"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("ampcode"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("augment code"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("sourcegraph cody"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("cline"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("roo code"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("kilo code"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("factory droid"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("auggie"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("kimi code"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("pearai"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("trae"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("google antigravity"), AppCategory::AiCoding, WritingProfile::Work},
+        {QStringLiteral("tabnine"), AppCategory::AiCoding, WritingProfile::Work},
         {QStringLiteral("terminal"), AppCategory::Terminal, WritingProfile::Work},
         {QStringLiteral("konsole"), AppCategory::Terminal, WritingProfile::Work},
         {QStringLiteral("ghostty"), AppCategory::Terminal, WritingProfile::Work},
@@ -166,7 +201,35 @@ static bool ruleMatches(const AppRecognitionRule &rule,
     if (includeWindowTitle) {
         identityParts.append(target.windowTitle);
     }
-    return identityParts.join(QLatin1Char(' ')).contains(rule.match, Qt::CaseInsensitive);
+    const QString identity = identityParts.join(QLatin1Char(' '));
+    if (identity.contains(rule.match, Qt::CaseInsensitive)) {
+        return true;
+    }
+    const auto compact = [](const QString &value) {
+        QString result;
+        result.reserve(value.size());
+        for (const QChar character : value) {
+            if (character.isLetterOrNumber()) result.append(character.toCaseFolded());
+        }
+        return result;
+    };
+    return compact(identity).contains(compact(rule.match));
+}
+
+bool isTerminalTarget(const Target &target)
+{
+    if (target.terminalHost
+        || target.aiCodingToolActive
+        || target.category == AppCategory::Terminal
+        || target.role.contains(QStringLiteral("terminal"), Qt::CaseInsensitive)) {
+        return true;
+    }
+    for (const AppRecognitionRule &rule : builtInAppRecognitionRules()) {
+        if (rule.category == AppCategory::Terminal && ruleMatches(rule, target, false)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 AppCategory classifyTarget(const Target &target,
@@ -176,6 +239,9 @@ AppCategory classifyTarget(const Target &target,
         if (rule.category && ruleMatches(rule, target, false)) {
             return *rule.category;
         }
+    }
+    if (target.aiCodingToolActive) {
+        return AppCategory::AiCoding;
     }
     for (const AppRecognitionRule &rule : builtInAppRecognitionRules()) {
         if (rule.category && ruleMatches(rule, target, false)) {
@@ -188,7 +254,8 @@ AppCategory classifyTarget(const Target &target,
 WritingProfile inferWritingProfile(const Target &target, WritingProfile fallback)
 {
     for (const AppRecognitionRule &rule : builtInAppRecognitionRules()) {
-        if (rule.writingProfile && ruleMatches(rule, target, true)) {
+        const bool includeWindowTitle = rule.category != AppCategory::AiCoding;
+        if (rule.writingProfile && ruleMatches(rule, target, includeWindowTitle)) {
             return *rule.writingProfile;
         }
     }
@@ -197,6 +264,7 @@ WritingProfile inferWritingProfile(const Target &target, WritingProfile fallback
     case AppCategory::Email:
         return WritingProfile::Email;
     case AppCategory::CodeEditor:
+    case AppCategory::AiCoding:
     case AppCategory::Terminal:
     case AppCategory::Office:
         return WritingProfile::Work;

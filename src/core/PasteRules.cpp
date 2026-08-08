@@ -76,6 +76,15 @@ PasteRule resolvePasteRule(const QList<PasteRule> &rules, const Target &target)
             return rule;
         }
     }
+    if (isTerminalTarget(target)) {
+        for (const PasteRule &rule : rules) {
+            if (rule.enabled
+                && rule.scope == PasteRuleScope::Category
+                && rule.match.trimmed().toLower() == appCategoryName(AppCategory::Terminal)) {
+                return rule;
+            }
+        }
+    }
     for (const PasteRule &rule : rules) {
         if (rule.enabled
             && rule.scope == PasteRuleScope::Category

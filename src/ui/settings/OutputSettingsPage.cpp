@@ -67,6 +67,7 @@ static QList<AppCategory> managedPasteCategories()
         AppCategory::Email,
         AppCategory::Office,
         AppCategory::CodeEditor,
+        AppCategory::AiCoding,
         AppCategory::General,
     };
 }
@@ -185,6 +186,7 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
         {AppCategory::Email, QStringLiteral("Email apps")},
         {AppCategory::Office, QStringLiteral("Office apps")},
         {AppCategory::CodeEditor, QStringLiteral("Code editors")},
+        {AppCategory::AiCoding, QStringLiteral("AI coding apps")},
         {AppCategory::General, QStringLiteral("Other apps")},
     };
     for (const auto &[category, combo] : std::as_const(m_categoryPasteControls)) {

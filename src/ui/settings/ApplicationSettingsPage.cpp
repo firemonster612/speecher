@@ -31,6 +31,8 @@ QString categoryLabel(AppCategory category)
         return QStringLiteral("Office");
     case AppCategory::CodeEditor:
         return QStringLiteral("Code editor");
+    case AppCategory::AiCoding:
+        return QStringLiteral("AI coding");
     case AppCategory::Unknown:
         return QStringLiteral("Automatic");
     }
@@ -61,7 +63,8 @@ QComboBox *makeCategoryCombo(QWidget *parent)
                                        AppCategory::Browser,
                                        AppCategory::Email,
                                        AppCategory::Office,
-                                       AppCategory::CodeEditor}) {
+                                       AppCategory::CodeEditor,
+                                       AppCategory::AiCoding}) {
         combo->addItem(categoryLabel(category), appCategoryName(category));
     }
     return combo;

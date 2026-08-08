@@ -10,8 +10,8 @@ bool learningEnabled(const QSettings &settings);
 void storeLearningEnabled(QSettings &settings, bool value);
 QList<LearnedCorrection> load(const QSettings &settings);
 void store(QSettings &settings, const QList<LearnedCorrection> &corrections);
-bool add(QSettings &settings, const QString &original, const QString &corrected,
-         const QString &applicationId, double confidence);
+bool recordEvidence(QSettings &settings, const CorrectionEvidence &evidence,
+                    const QString &applicationId);
 void setEnabled(QSettings &settings, const QString &id, bool enabled);
 void remove(QSettings &settings, const QString &id);
 

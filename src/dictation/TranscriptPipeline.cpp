@@ -37,7 +37,41 @@ QStringList refinementVocabulary(const AppSettings &settings)
             deduplicated.append(cleaned);
         }
     }
+    for (const LearnedCorrection &correction : settings.learnedCorrections) {
+        const QString cleaned = correction.corrected.simplified();
+        const QString key = cleaned.toCaseFolded();
+        if (correction.enabled && !cleaned.isEmpty() && !seen.contains(key)) {
+            seen.insert(key);
+            deduplicated.append(cleaned);
+        }
+    }
     return deduplicated;
+}
+
+QList<BindingRule> activeBindings(const AppSettings &settings, const Target &target)
+{
+    QList<BindingRule> rules = settings.bindings;
+    QSet<QString> claimedPhrases;
+    for (const BindingRule &rule : settings.bindings) {
+        claimedPhrases.insert(BindingProcessor::normalizedPhrase(rule.phrase));
+    }
+
+    const auto appendCorrections = [&](bool exactApplication) {
+        for (const LearnedCorrection &correction : settings.learnedCorrections) {
+            const bool exact = !correction.applicationId.isEmpty()
+                && correction.applicationId.compare(target.applicationId, Qt::CaseInsensitive) == 0;
+            const bool applies = exactApplication ? exact : correction.applicationId.isEmpty();
+            const QString phrase = BindingProcessor::normalizedPhrase(correction.original);
+            if (correction.enabled && applies && !phrase.isEmpty()
+                && !claimedPhrases.contains(phrase)) {
+                rules.append({correction.original, correction.corrected});
+                claimedPhrases.insert(phrase);
+            }
+        }
+    };
+    appendCorrections(true);
+    appendCorrections(false);
+    return rules;
 }
 
 } // namespace
@@ -46,7 +80,8 @@ RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSett
                                                                    const Target &target)
 {
     RefinementSettings refinement = settings.refinement;
-    refinement.bindingVocabulary = BindingProcessor::refinementVocabulary(settings.bindings);
+    refinement.bindingVocabulary = BindingProcessor::refinementVocabulary(
+        activeBindings(settings, target));
     const WritingProfile resolved = resolveWritingProfile(
         target,
         refinement.writingProfileOverrides,
@@ -65,10 +100,11 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
                                                      const Target &target)
 {
     TranscriptPipelineResult result;
+    const QList<BindingRule> bindings = activeBindings(settings, target);
     const bool hasNoBindDirective = BindingProcessor::hasExplicitNoBindDirective(rawTranscript);
-    result.noBindPhrases = BindingProcessor::explicitNoBindPhrases(rawTranscript, settings.bindings);
+    result.noBindPhrases = BindingProcessor::explicitNoBindPhrases(rawTranscript, bindings);
     result.allowPostRefinementBindings = !hasNoBindDirective || !result.noBindPhrases.isEmpty();
-    result.activeBindingRules = withoutNoBindPhrases(settings.bindings, result.noBindPhrases);
+    result.activeBindingRules = withoutNoBindPhrases(bindings, result.noBindPhrases);
     result.bindingResult = BindingProcessor::process(rawTranscript, result.activeBindingRules);
     result.editsSelection = target.hasSelection();
     result.deliveryFallback = result.editsSelection
