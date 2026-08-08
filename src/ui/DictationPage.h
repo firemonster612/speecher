@@ -18,6 +18,7 @@ class DictationPage : public QWidget {
 
 public:
     explicit DictationPage(ApplicationController *controller, QWidget *parent = nullptr);
+    QPushButton *toggleButton() const;
 
 public slots:
     void setStatus(const QString &status);
@@ -38,6 +39,7 @@ private:
     QLabel *m_status;
     WaveformWidget *m_waveform;
     QLabel *m_provider;
+    QLabel *m_microphone;
     QLabel *m_output;
     QLabel *m_theme;
 };

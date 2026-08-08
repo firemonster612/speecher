@@ -4,6 +4,7 @@
 
 #include <QAbstractItemView>
 #include <QComboBox>
+#include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -131,7 +132,7 @@ ApplicationSettingsPage::ApplicationSettingsPage(QWidget *parent)
 
     auto *title = settings::makePageTitle(QStringLiteral("Applications"), this);
     auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QVBoxLayout *>(card->layout());
+    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
     m_controls = new QWidget(card);
     auto *controlsLayout = new QVBoxLayout(m_controls);
     auto *description = new QLabel(
@@ -146,7 +147,7 @@ ApplicationSettingsPage::ApplicationSettingsPage(QWidget *parent)
     controlsLayout->addWidget(description);
     controlsLayout->addWidget(m_rules);
     controlsLayout->addLayout(buttons);
-    cardLayout->addWidget(m_controls);
+    cardLayout->addRow(m_controls);
 
     auto *pageLayout = settings::makeSettingsPage(this);
     pageLayout->setSpacing(0);

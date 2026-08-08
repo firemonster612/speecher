@@ -42,6 +42,7 @@ private:
     void buildSidebarShell();
     void buildToolbarShell();
     void buildCompactShell();
+    QWidget *createPageHeader(QWidget *parent);
     QWidget *createPrototypeSwitcher(QWidget *parent);
     QWidget *createPendingBanner(QWidget *parent, bool compact = false);
     void runAutoSave();
@@ -61,6 +62,7 @@ private:
     QListWidget *m_navigation = nullptr;
     QActionGroup *m_navigationActions = nullptr;
     QLabel *m_drillTitle = nullptr;
+    QLabel *m_pageTitle = nullptr;
     QFrame *m_pendingBanner = nullptr;
     QFrame *m_autoSaveWarning = nullptr;
     QLabel *m_autoSaveWarningText = nullptr;

@@ -43,8 +43,8 @@ namespace {
 const QList<QPair<QString, QString>> kPages{
     {QStringLiteral("Dictation"), QStringLiteral("audio-input-microphone")},
     {QStringLiteral("General"), QStringLiteral("preferences-system")},
-    {QStringLiteral("Audio"), QStringLiteral("audio-card")},
-    {QStringLiteral("Applications"), QStringLiteral("applications-system")},
+    {QStringLiteral("Audio"), QStringLiteral("preferences-desktop-sound")},
+    {QStringLiteral("Applications"), QStringLiteral("preferences-desktop-default-applications")},
     {QStringLiteral("Output"), QStringLiteral("edit-paste")},
     {QStringLiteral("Refinement"), QStringLiteral("document-edit")},
     {QStringLiteral("Vocabulary"), QStringLiteral("tools-check-spelling")},
@@ -213,6 +213,8 @@ void AppWindow::buildSharedPages()
     refinementLayout->addSpacing(settings::tightSpacing());
     refinementLayout->addWidget(detachedContent(m_pages->refinement(), true));
     refinementLayout->addSpacing(settings::groupGap());
+    refinementLayout->addWidget(settings::makeCenteredSeparator(refinementContent));
+    refinementLayout->addSpacing(settings::groupGap());
     refinementLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Provider accounts"), refinementContent));
     refinementLayout->addSpacing(settings::tightSpacing());
     refinementLayout->addWidget(detachedContent(m_pages->providers(), true));
@@ -248,6 +250,9 @@ void AppWindow::buildSharedPages()
         refinement,
         vocabularyContent,
     };
+    for (QWidget *page : std::as_const(m_pageWidgets)) {
+        removeEmbeddedPageTitle(page);
+    }
 }
 
 void AppWindow::buildSidebarShell()
@@ -260,12 +265,19 @@ void AppWindow::buildSidebarShell()
     auto *body = new QWidget(central);
     auto *bodyLayout = new QHBoxLayout(body);
     bodyLayout->setContentsMargins(0, 0, 0, 0);
-    m_navigation = new QListWidget(body);
+    auto *sidebar = new QWidget(body);
+    sidebar->setBackgroundRole(QPalette::Base);
+    sidebar->setAutoFillBackground(true);
+    sidebar->setFixedWidth(220);
+    auto *sidebarLayout = new QVBoxLayout(sidebar);
+    sidebarLayout->setContentsMargins(0, settings::relatedSpacing(), 0, 0);
+    sidebarLayout->setSpacing(0);
+    m_navigation = new QListWidget(sidebar);
     m_navigation->setObjectName(QStringLiteral("appNavigation"));
     m_navigation->setBackgroundRole(QPalette::Base);
     m_navigation->setAutoFillBackground(true);
     m_navigation->setFrameShape(QFrame::NoFrame);
-    m_navigation->setFixedWidth(220);
+    m_navigation->setSpacing(0);
     m_navigation->setIconSize(QSize(22, 22));
     for (int index = 0; index < kPages.size(); ++index) {
         const auto &page = kPages.at(index);
@@ -273,14 +285,10 @@ void AppWindow::buildSidebarShell()
                                          page.first,
                                          m_navigation);
         item->setData(Qt::UserRole, index);
-        item->setSizeHint(QSize(0, 36));
-        if (index == 0) {
-            auto *separator = new QListWidgetItem(m_navigation);
-            separator->setFlags(Qt::NoItemFlags);
-            separator->setSizeHint(QSize(0, 12));
-            separator->setData(Qt::UserRole, -1);
-        }
+        item->setSizeHint(QSize(0, 32));
     }
+    sidebarLayout->addWidget(m_navigation, 1);
+    sidebarLayout->addWidget(createPrototypeSwitcher(sidebar), 0, Qt::AlignLeft);
     m_stack = new QStackedWidget(body);
     m_stack->setObjectName(QStringLiteral("appPageStack"));
     for (QWidget *page : std::as_const(m_pageWidgets)) {
@@ -298,16 +306,16 @@ void AppWindow::buildSidebarShell()
     m_autoSaveWarningText = new QLabel(m_autoSaveWarning);
     warningLayout->addWidget(m_autoSaveWarningText);
     m_autoSaveWarning->hide();
+    rightLayout->addWidget(createPageHeader(right));
     rightLayout->addWidget(m_autoSaveWarning);
     rightLayout->addWidget(m_stack, 1);
-    bodyLayout->addWidget(m_navigation);
+    bodyLayout->addWidget(sidebar);
     auto *separator = new QFrame(body);
     separator->setFrameShape(QFrame::VLine);
     separator->setFrameShadow(QFrame::Plain);
     bodyLayout->addWidget(separator);
     bodyLayout->addWidget(right, 1);
     root->addWidget(body, 1);
-    root->addWidget(createPrototypeSwitcher(central));
     setCentralWidget(central);
     m_navigation->setCurrentRow(0);
     connect(m_navigation, &QListWidget::currentItemChanged, this,
@@ -352,9 +360,11 @@ void AppWindow::buildToolbarShell()
     m_stack = new QStackedWidget(central);
     m_stack->setObjectName(QStringLiteral("appPageStack"));
     for (QWidget *page : std::as_const(m_pageWidgets)) m_stack->addWidget(page);
+    root->addWidget(createPageHeader(central));
     root->addWidget(m_stack, 1);
     root->addWidget(createPendingBanner(central));
-    root->addWidget(createPrototypeSwitcher(central));
+    toolbar->addSeparator();
+    toolbar->addWidget(createPrototypeSwitcher(toolbar));
     setCentralWidget(central);
     connect(m_pages, &SettingsPageSet::changed, this, &AppWindow::updatePendingBanner);
 }
@@ -406,8 +416,14 @@ void AppWindow::buildCompactShell()
 
     auto *drill = new QWidget(m_compactStack);
     auto *drillLayout = new QVBoxLayout(drill);
+    drillLayout->setContentsMargins(0, 0, 0, 0);
+    drillLayout->setSpacing(0);
     auto *header = new QWidget(drill);
     auto *headerLayout = new QHBoxLayout(header);
+    headerLayout->setContentsMargins(settings::relatedSpacing(),
+                                     settings::relatedSpacing(),
+                                     settings::relatedSpacing(),
+                                     settings::relatedSpacing());
     auto *back = new QPushButton(QStringLiteral("Back"), header);
     back->setIcon(themedIcon(QStringLiteral("go-previous"), QStyle::SP_ArrowLeft, back));
     m_drillTitle = settings::makePageTitle(QString(), header);
@@ -415,6 +431,10 @@ void AppWindow::buildCompactShell()
     headerLayout->addWidget(m_drillTitle);
     headerLayout->addStretch();
     drillLayout->addWidget(header);
+    auto *headerLine = new QFrame(drill);
+    headerLine->setFrameShape(QFrame::HLine);
+    headerLine->setFrameShadow(QFrame::Plain);
+    drillLayout->addWidget(headerLine);
     m_drillPages = new QStackedWidget(drill);
     for (int index = 1; index < m_pageWidgets.size(); ++index) {
         QWidget *page = m_pageWidgets.at(index);
@@ -450,8 +470,10 @@ QWidget *AppWindow::createPrototypeSwitcher(QWidget *parent)
 {
     auto *bar = new QWidget(parent);
     auto *layout = new QHBoxLayout(bar);
-    layout->setContentsMargins(8, 4, 8, 4);
-    layout->addStretch();
+    layout->setContentsMargins(settings::relatedSpacing(),
+                               settings::tightSpacing(),
+                               settings::relatedSpacing(),
+                               settings::tightSpacing());
     auto *label = new QLabel(QStringLiteral("UI:"), bar);
     auto *combo = new QComboBox(bar);
     combo->setObjectName(QStringLiteral("uiPrototypeSwitcher"));
@@ -470,6 +492,38 @@ QWidget *AppWindow::createPrototypeSwitcher(QWidget *parent)
         m_controller->switchUiPrototype(combo->currentData().toString());
     });
     return bar;
+}
+
+QWidget *AppWindow::createPageHeader(QWidget *parent)
+{
+    auto *band = new QWidget(parent);
+    band->setObjectName(QStringLiteral("pageHeaderBand"));
+    auto *layout = new QVBoxLayout(band);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    auto *content = new QWidget(band);
+    auto *contentLayout = new QHBoxLayout(content);
+    contentLayout->setContentsMargins(settings::relatedSpacing(),
+                                      settings::relatedSpacing(),
+                                      settings::relatedSpacing(),
+                                      settings::relatedSpacing());
+    m_pageTitle = settings::makePageTitle(kPages.first().first, content);
+    contentLayout->addWidget(m_pageTitle);
+    contentLayout->addStretch();
+    contentLayout->addWidget(m_dictation->toggleButton());
+    layout->addWidget(content);
+
+    auto *line = new QFrame(band);
+    line->setFrameShape(QFrame::HLine);
+    line->setFrameShadow(QFrame::Plain);
+    layout->addWidget(line);
+
+    connect(m_stack, &QStackedWidget::currentChanged, this, [this](int index) {
+        m_pageTitle->setText(kPages.at(index).first);
+        m_dictation->toggleButton()->setVisible(index == 0);
+    });
+    return band;
 }
 
 QWidget *AppWindow::createPendingBanner(QWidget *parent, bool compact)

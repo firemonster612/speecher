@@ -5,6 +5,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFormLayout>
 #include <QLabel>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -45,7 +46,7 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
 
     auto *title = settings::makePageTitle(QStringLiteral("Audio"), this);
     auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QVBoxLayout *>(card->layout());
+    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
 
     settings::addRow(cardLayout,
                      settings::makeRow(QStringLiteral("Microphone"),

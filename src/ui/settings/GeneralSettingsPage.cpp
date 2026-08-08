@@ -5,6 +5,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDesktopServices>
+#include <QFormLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QSpinBox>
@@ -32,7 +33,7 @@ GeneralSettingsPage::GeneralSettingsPage(const QString &primaryOutputStatus,
 
     auto *title = settings::makePageTitle(QStringLiteral("General"), this);
     auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QVBoxLayout *>(card->layout());
+    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
     auto *primaryOutput = new QLabel(primaryOutputStatus, this);
     primaryOutput->setObjectName(QStringLiteral("statusText"));
     primaryOutput->setForegroundRole(QPalette::WindowText);

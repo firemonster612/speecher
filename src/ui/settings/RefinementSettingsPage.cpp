@@ -6,6 +6,7 @@
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFormLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QSignalBlocker>
@@ -87,7 +88,7 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     m_profileSettings->setMaximumHeight(172);
     auto *title = settings::makePageTitle(QStringLiteral("Refinement"), this);
     auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QVBoxLayout *>(card->layout());
+    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Refinement"), QStringLiteral("Clean up dictated text after capture."), m_provider, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Fallback profile"), QStringLiteral("Writing profile used when the target app does not imply one."), m_writingProfile, card), card);
     auto *profileSettingsControl = new QWidget(card);
@@ -103,7 +104,7 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     profileSettingsLayout->addWidget(profileSettingsDescription);
     profileSettingsLayout->addWidget(m_profileSettings);
     cardLayout->addWidget(profileSettingsControl);
-    cardLayout->addWidget(settings::makeSeparator(card));
+    cardLayout->addRow(settings::makeCenteredSeparator(card));
 
     m_targetContextControl = settings::makeRow(
         QStringLiteral("Target context"),

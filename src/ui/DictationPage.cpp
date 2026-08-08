@@ -1,5 +1,6 @@
 #include "ui/DictationPage.h"
 
+#include "app/LinuxComposition.h"
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
 #include "providers/ProviderRegistry.h"
@@ -9,7 +10,7 @@
 
 #include <QEvent>
 #include <QFontMetrics>
-#include <QGridLayout>
+#include <QFormLayout>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
@@ -22,20 +23,21 @@ namespace speecher {
 
 namespace {
 
-void addSummaryRow(QGridLayout *grid,
-                   int row,
+void addSummaryRow(QFormLayout *form,
                    const QString &labelText,
                    QLabel *value,
                    AppPageId page,
                    DictationPage *owner,
                    QWidget *parent)
 {
-    auto *label = new QLabel(labelText, parent);
     auto *change = new QPushButton(QStringLiteral("Change…"), parent);
-    value->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    grid->addWidget(label, row, 0, Qt::AlignLeft | Qt::AlignVCenter);
-    grid->addWidget(value, row, 1, Qt::AlignVCenter);
-    grid->addWidget(change, row, 2, Qt::AlignLeft | Qt::AlignVCenter);
+    auto *field = new QWidget(parent);
+    auto *layout = new QHBoxLayout(field);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(settings::relatedSpacing());
+    layout->addWidget(value, 0, Qt::AlignVCenter);
+    layout->addWidget(change, 0, Qt::AlignVCenter);
+    form->addRow(labelText + QLatin1Char(':'), field);
     QObject::connect(change, &QPushButton::clicked, owner, [owner, page] {
         emit owner->navigateRequested(page);
     });
@@ -51,66 +53,48 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     , m_status(new QLabel(this))
     , m_waveform(new WaveformWidget(this))
     , m_provider(new QLabel(this))
+    , m_microphone(new QLabel(this))
     , m_output(new QLabel(this))
     , m_theme(new QLabel(this))
 {
     auto *pageLayout = new QVBoxLayout(this);
     settings::applyPageMargins(pageLayout);
-    auto *column = new QWidget(this);
-    column->setObjectName(QStringLiteral("dictationContentColumn"));
-    column->setMaximumWidth(560);
-    column->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    auto *layout = new QVBoxLayout(column);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
-    layout->addWidget(settings::makePageTitle(QStringLiteral("Dictation"), column));
-    layout->addSpacing(settings::sectionGap());
-
-    auto *groups = new QWidget(column);
-    auto *groupsLayout = new QVBoxLayout(groups);
-    groupsLayout->setContentsMargins(0, 0, 0, 0);
-    groupsLayout->setSpacing(settings::groupGap());
-    m_accessibilityNotice->setCompact(true);
-    groupsLayout->addWidget(m_accessibilityNotice);
-
-    auto *dictationControls = new QWidget(groups);
-    auto *dictationLayout = new QVBoxLayout(dictationControls);
-    dictationLayout->setContentsMargins(0, 0, 0, 0);
-    dictationLayout->setSpacing(settings::relatedSpacing());
+    pageLayout->setSpacing(settings::relatedSpacing());
     m_toggle->setMinimumWidth(0);
     m_toggle->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    dictationLayout->addWidget(m_toggle, 0, Qt::AlignHCenter);
-    m_status->setAlignment(Qt::AlignHCenter);
-    m_status->setForegroundRole(QPalette::WindowText);
-    dictationLayout->addWidget(m_status);
-    dictationLayout->addWidget(m_waveform, 0, Qt::AlignHCenter);
-    groupsLayout->addWidget(dictationControls);
+    pageLayout->addWidget(m_toggle, 0, Qt::AlignHCenter);
 
-    auto *summaryGroup = new QWidget(groups);
-    auto *summaryLayout = new QVBoxLayout(summaryGroup);
-    summaryLayout->setContentsMargins(0, 0, 0, 0);
-    summaryLayout->setSpacing(settings::tightSpacing());
-    summaryLayout->addWidget(settings::makeSectionLabel(QStringLiteral("At a glance"), summaryGroup));
-    auto *summary = new QWidget(summaryGroup);
-    auto *grid = new QGridLayout(summary);
-    grid->setContentsMargins(0, 0, 0, 0);
-    grid->setColumnStretch(1, 1);
-    addSummaryRow(grid, 0, QStringLiteral("Refinement"), m_provider,
-                  AppPageId::Refinement, this, summary);
-    addSummaryRow(grid, 1, QStringLiteral("Output"), m_output,
-                  AppPageId::Output, this, summary);
-    addSummaryRow(grid, 2, QStringLiteral("Theme"), m_theme,
-                  AppPageId::General, this, summary);
-    summaryLayout->addWidget(summary);
-    groupsLayout->addWidget(summaryGroup);
-    layout->addWidget(groups);
-    layout->addStretch();
-    auto *contentRow = new QHBoxLayout;
-    contentRow->setContentsMargins(0, 0, 0, 0);
-    contentRow->addStretch();
-    contentRow->addWidget(column, 1);
-    contentRow->addStretch();
-    pageLayout->addLayout(contentRow);
+    auto *formWidget = new QWidget(this);
+    auto *form = new QFormLayout(formWidget);
+    settings::configureFormLayout(form);
+
+    m_accessibilityNotice->setCompact(true);
+    form->addRow(QString(), m_accessibilityNotice);
+
+    auto *statusField = new QWidget(formWidget);
+    auto *statusLayout = new QVBoxLayout(statusField);
+    statusLayout->setContentsMargins(0, 0, 0, 0);
+    statusLayout->setSpacing(settings::tightSpacing());
+    m_status->setForegroundRole(QPalette::WindowText);
+    statusLayout->addWidget(m_status, 0, Qt::AlignLeft);
+    statusLayout->addWidget(m_waveform, 0, Qt::AlignLeft);
+    form->addRow(QStringLiteral("Status:"), statusField);
+
+    const int valueWidth = fontMetrics().horizontalAdvance(QString(40, QLatin1Char('x')));
+    for (QLabel *label : {m_provider, m_microphone, m_output, m_theme}) {
+        label->setMaximumWidth(valueWidth);
+        label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+        label->installEventFilter(this);
+    }
+    addSummaryRow(form, QStringLiteral("Refinement"), m_provider,
+                  AppPageId::Refinement, this, formWidget);
+    addSummaryRow(form, QStringLiteral("Microphone"), m_microphone,
+                  AppPageId::Audio, this, formWidget);
+    addSummaryRow(form, QStringLiteral("Output"), m_output,
+                  AppPageId::Output, this, formWidget);
+    addSummaryRow(form, QStringLiteral("Theme"), m_theme,
+                  AppPageId::General, this, formWidget);
+    pageLayout->addWidget(formWidget);
     pageLayout->addStretch();
 
     connect(m_toggle, &QPushButton::clicked, controller, &ApplicationController::toggle);
@@ -137,11 +121,13 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     } else {
         m_accessibilityNotice->hide();
     }
-    for (QLabel *label : {m_provider, m_output, m_theme}) {
-        label->installEventFilter(this);
-    }
     setStatus(controller->stateName());
     refreshSummary();
+}
+
+QPushButton *DictationPage::toggleButton() const
+{
+    return m_toggle;
 }
 
 void DictationPage::setStatus(const QString &status)
@@ -182,6 +168,17 @@ void DictationPage::refreshSummary()
         }
     }
     setSummaryText(m_provider, providerName);
+    QString microphone = QStringLiteral("System default");
+    const QString deviceId = m_controller->settings()->audioInputDeviceId();
+    if (!deviceId.isEmpty()) {
+        for (const AudioInputDeviceInfo &device : m_controller->platform()->availableAudioInputDevices()) {
+            if (device.id == deviceId) {
+                microphone = device.label;
+                break;
+            }
+        }
+    }
+    setSummaryText(m_microphone, microphone);
     setSummaryText(m_output, m_controller->primaryOutputStatus());
     const QString theme = m_controller->settings()->theme();
     setSummaryText(m_theme, theme.left(1).toUpper() + theme.mid(1));
@@ -195,7 +192,7 @@ bool DictationPage::eventFilter(QObject *watched, QEvent *event)
             if (!fullText.isEmpty()) {
                 label->setText(label->fontMetrics().elidedText(fullText,
                                                                 Qt::ElideRight,
-                                                                label->width()));
+                                                                label->maximumWidth()));
             }
         }
     }
@@ -206,7 +203,7 @@ void DictationPage::setSummaryText(QLabel *label, const QString &text)
 {
     label->setProperty("fullText", text);
     label->setToolTip(text);
-    label->setText(label->fontMetrics().elidedText(text, Qt::ElideRight, label->width()));
+    label->setText(label->fontMetrics().elidedText(text, Qt::ElideRight, label->maximumWidth()));
 }
 
 } // namespace speecher

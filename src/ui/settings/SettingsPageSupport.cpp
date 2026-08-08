@@ -250,6 +250,25 @@ QFrame *makeSeparator(QWidget *parent)
     return line;
 }
 
+QWidget *makeCenteredSeparator(QWidget *parent)
+{
+    auto *container = new QWidget(parent);
+    auto *layout = new QHBoxLayout(container);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addStretch(1);
+    layout->addWidget(makeSeparator(container), 3);
+    layout->addStretch(1);
+    return container;
+}
+
+void configureFormLayout(QFormLayout *form)
+{
+    form->setRowWrapPolicy(QFormLayout::DontWrapRows);
+    form->setFieldGrowthPolicy(QFormLayout::FieldsStayAtSizeHint);
+    form->setFormAlignment(Qt::AlignHCenter | Qt::AlignTop);
+    form->setLabelAlignment(Qt::AlignRight);
+}
+
 QFrame *makeRow(const QString &label,
                 const QString &description,
                 QWidget *control,
@@ -260,59 +279,49 @@ QFrame *makeRow(const QString &label,
     row->setObjectName(QStringLiteral("settingsRow"));
     row->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
 
-    auto *layout = new QFormLayout(row);
-
-    auto *text = new QWidget(row);
-    text->setObjectName(QStringLiteral("rowText"));
-    auto *textLayout = new QVBoxLayout(text);
-    textLayout->setContentsMargins(0, 0, 0, 0);
-    textLayout->setSpacing(tightSpacing());
-
-    auto *title = new QLabel(label, text);
+    auto *title = new QLabel(label.endsWith(QLatin1Char(':'))
+                                 ? label
+                                 : label + QLatin1Char(':'),
+                             row);
     title->setObjectName(QStringLiteral("rowTitle"));
-    auto *subtitle = new QLabel(description, text);
-    subtitle->setObjectName(QStringLiteral("rowDescription"));
-    subtitle->setWordWrap(true);
-    subtitle->setForegroundRole(QPalette::PlaceholderText);
+    QWidget *labelField = title;
     if (titleAccessory) {
-        auto *titleRow = new QWidget(text);
+        auto *titleRow = new QWidget(row);
         titleRow->setObjectName(QStringLiteral("rowText"));
         auto *titleLayout = new QHBoxLayout(titleRow);
         titleLayout->setContentsMargins(0, 0, 0, 0);
         titleLayout->addWidget(title, 0, Qt::AlignVCenter);
         titleLayout->addWidget(titleAccessory, 0, Qt::AlignVCenter);
-        titleLayout->addStretch();
-        textLayout->addWidget(titleRow);
-    } else {
-        textLayout->addWidget(title);
+        labelField = titleRow;
     }
-    if (!description.isEmpty()) {
-        textLayout->addWidget(subtitle);
-    }
+    labelField->setObjectName(QStringLiteral("rowLabelCell"));
 
-    QWidget *field = control;
-    if (qobject_cast<QCheckBox *>(control)
-        || qobject_cast<QComboBox *>(control)
-        || qobject_cast<QSpinBox *>(control)
-        || qobject_cast<QPushButton *>(control)
-        || qobject_cast<QLabel *>(control)) {
-        auto *fieldContainer = new QWidget(row);
-        auto *fieldLayout = new QHBoxLayout(fieldContainer);
-        fieldLayout->setContentsMargins(0, 0, 0, 0);
+    auto *fieldLayout = new QVBoxLayout(row);
+    fieldLayout->setContentsMargins(0, 0, 0, 0);
+    fieldLayout->setSpacing(tightSpacing());
+    if (control->sizePolicy().horizontalPolicy() == QSizePolicy::Expanding) {
         fieldLayout->addWidget(control);
-        fieldLayout->addStretch();
-        field = fieldContainer;
+    } else {
+        fieldLayout->addWidget(control, 0, Qt::AlignLeft);
     }
 
-    layout->addRow(text, field);
+    auto *subtitle = new QLabel(description, row);
+    subtitle->setObjectName(QStringLiteral("rowDescription"));
+    subtitle->setWordWrap(true);
+    subtitle->setForegroundRole(QPalette::PlaceholderText);
+    if (!description.isEmpty()) {
+        fieldLayout->addWidget(subtitle);
+    }
     return row;
 }
 
-void addRow(QVBoxLayout *layout, QFrame *row, QWidget *parent, bool addSeparator)
+void addRow(QFormLayout *layout, QFrame *row, QWidget *parent, bool addSeparator)
 {
-    layout->addWidget(row);
+    QWidget *label = row->findChild<QWidget *>(QStringLiteral("rowLabelCell"),
+                                               Qt::FindDirectChildrenOnly);
+    layout->addRow(label, row);
     if (addSeparator) {
-        layout->addWidget(makeSeparator(parent));
+        layout->addRow(makeCenteredSeparator(parent));
     }
 }
 
@@ -418,7 +427,7 @@ QLabel *makePageTitle(const QString &text, QWidget *parent)
     } else if (font.pixelSize() > 0) {
         font.setPixelSize(qRound(font.pixelSize() * 1.4));
     }
-    font.setBold(true);
+    font.setBold(false);
     title->setFont(font);
     return title;
 }
@@ -427,9 +436,9 @@ QFrame *makeSettingsCard(QWidget *parent)
 {
     auto *card = new QFrame(parent);
     card->setObjectName(QStringLiteral("settingsCard"));
-    auto *layout = new QVBoxLayout(card);
+    auto *layout = new QFormLayout(card);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
+    configureFormLayout(layout);
     return card;
 }
 

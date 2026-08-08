@@ -7,6 +7,7 @@
 
 #include <QAbstractItemView>
 #include <QComboBox>
+#include <QFormLayout>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
@@ -175,9 +176,9 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     auto *openAiSection = settings::makeSectionLabel(QStringLiteral("OpenAI"), this);
     auto *anthropicSection = settings::makeSectionLabel(QStringLiteral("Anthropic"), this);
     auto *openAiCard = settings::makeSettingsCard(this);
-    auto *openAiLayout = qobject_cast<QVBoxLayout *>(openAiCard->layout());
+    auto *openAiLayout = qobject_cast<QFormLayout *>(openAiCard->layout());
     auto *anthropicCard = settings::makeSettingsCard(this);
-    auto *anthropicLayout = qobject_cast<QVBoxLayout *>(anthropicCard->layout());
+    auto *anthropicLayout = qobject_cast<QFormLayout *>(anthropicCard->layout());
 
     settings::addRow(openAiLayout, settings::makeRow(QStringLiteral("OpenAI model"), QStringLiteral("Model used for refinement."), m_openAiModel, openAiCard), openAiCard);
     settings::addRow(openAiLayout, settings::makeRow(QStringLiteral("OpenAI effort"), QStringLiteral("Reasoning effort used for refinement."), m_openAiEffort, openAiCard), openAiCard);
@@ -218,6 +219,8 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     pageLayout->addWidget(openAiSection);
     pageLayout->addSpacing(settings::tightSpacing());
     pageLayout->addWidget(openAiCard);
+    pageLayout->addSpacing(settings::groupGap());
+    pageLayout->addWidget(settings::makeCenteredSeparator(this));
     pageLayout->addSpacing(settings::groupGap());
     pageLayout->addWidget(anthropicSection);
     pageLayout->addSpacing(settings::tightSpacing());
