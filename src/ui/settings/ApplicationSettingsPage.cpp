@@ -129,7 +129,7 @@ ApplicationSettingsPage::ApplicationSettingsPage(QWidget *parent)
     m_rules->setMinimumHeight(440);
     m_deleteButton->setEnabled(false);
 
-    auto *section = settings::makeSectionLabel(QStringLiteral("Applications"), this);
+    auto *title = settings::makePageTitle(QStringLiteral("Applications"), this);
     auto *card = settings::makeSettingsCard(this);
     auto *cardLayout = qobject_cast<QVBoxLayout *>(card->layout());
     m_controls = new QWidget(card);
@@ -149,7 +149,9 @@ ApplicationSettingsPage::ApplicationSettingsPage(QWidget *parent)
     cardLayout->addWidget(m_controls);
 
     auto *pageLayout = settings::makeSettingsPage(this);
-    pageLayout->addWidget(section);
+    pageLayout->setSpacing(0);
+    pageLayout->addWidget(title);
+    pageLayout->addSpacing(settings::sectionGap());
     pageLayout->addWidget(card);
     pageLayout->addStretch();
 

@@ -169,7 +169,7 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
         button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
     }
 
-    auto *section = settings::makeSectionLabel(QStringLiteral("Output"), this);
+    auto *title = settings::makePageTitle(QStringLiteral("Output"), this);
     auto *card = settings::makeSettingsCard(this);
     auto *cardLayout = qobject_cast<QVBoxLayout *>(card->layout());
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Method"), QStringLiteral("How Speecher delivers final text."), m_outputMethod, card), card);
@@ -219,7 +219,9 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Restore clipboard"), QStringLiteral("Restore the previous clipboard only after insertion is verified."), m_restoreClipboardAfterTyping, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Virtual keyboard"), QString(), makeYdotoolControl(m_ydotoolStatus, m_ydotoolSetupButton, m_ydotoolStartButton, m_ydotoolDisableButton, m_ydotoolRemoveButton, card), card), card, false);
     auto *pageLayout = settings::makeSettingsPage(this);
-    pageLayout->addWidget(section);
+    pageLayout->setSpacing(0);
+    pageLayout->addWidget(title);
+    pageLayout->addSpacing(settings::sectionGap());
     pageLayout->addWidget(card);
     pageLayout->addStretch();
 

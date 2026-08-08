@@ -30,7 +30,7 @@ GeneralSettingsPage::GeneralSettingsPage(const QString &primaryOutputStatus,
     m_previewWords->setObjectName(QStringLiteral("previewWords"));
     m_previewWords->setRange(1, 40);
 
-    auto *section = settings::makeSectionLabel(QStringLiteral("General"), this);
+    auto *title = settings::makePageTitle(QStringLiteral("General"), this);
     auto *card = settings::makeSettingsCard(this);
     auto *cardLayout = qobject_cast<QVBoxLayout *>(card->layout());
     auto *primaryOutput = new QLabel(primaryOutputStatus, this);
@@ -46,7 +46,9 @@ GeneralSettingsPage::GeneralSettingsPage(const QString &primaryOutputStatus,
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Updates"), QStringLiteral("Updates are manual; open the GitHub releases page when you want to check."), openReleases, card), card, false);
 
     auto *pageLayout = settings::makeSettingsPage(this);
-    pageLayout->addWidget(section);
+    pageLayout->setSpacing(0);
+    pageLayout->addWidget(title);
+    pageLayout->addSpacing(settings::sectionGap());
     pageLayout->addWidget(card);
     pageLayout->addStretch();
 

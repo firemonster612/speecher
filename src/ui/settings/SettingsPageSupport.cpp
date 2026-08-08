@@ -1,7 +1,10 @@
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QAbstractItemView>
+#include <QApplication>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QFormLayout>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -10,8 +13,10 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPalette>
+#include <QPushButton>
 #include <QScrollArea>
 #include <QSizePolicy>
+#include <QSpinBox>
 #include <QStackedWidget>
 #include <QStandardItemModel>
 #include <QStyle>
@@ -255,14 +260,13 @@ QFrame *makeRow(const QString &label,
     row->setObjectName(QStringLiteral("settingsRow"));
     row->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
 
-    auto *layout = new QHBoxLayout(row);
-    layout->setContentsMargins(0, 8, 0, 8);
+    auto *layout = new QFormLayout(row);
 
     auto *text = new QWidget(row);
     text->setObjectName(QStringLiteral("rowText"));
-    text->setMinimumWidth(240);
     auto *textLayout = new QVBoxLayout(text);
     textLayout->setContentsMargins(0, 0, 0, 0);
+    textLayout->setSpacing(tightSpacing());
 
     auto *title = new QLabel(label, text);
     title->setObjectName(QStringLiteral("rowTitle"));
@@ -286,17 +290,21 @@ QFrame *makeRow(const QString &label,
         textLayout->addWidget(subtitle);
     }
 
-    if (auto *labelControl = qobject_cast<QLabel *>(control)) {
-        labelControl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        labelControl->setWordWrap(false);
-        labelControl->setMinimumWidth(170);
-    } else {
-        control->setMinimumWidth(180);
-        control->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    QWidget *field = control;
+    if (qobject_cast<QCheckBox *>(control)
+        || qobject_cast<QComboBox *>(control)
+        || qobject_cast<QSpinBox *>(control)
+        || qobject_cast<QPushButton *>(control)
+        || qobject_cast<QLabel *>(control)) {
+        auto *fieldContainer = new QWidget(row);
+        auto *fieldLayout = new QHBoxLayout(fieldContainer);
+        fieldLayout->setContentsMargins(0, 0, 0, 0);
+        fieldLayout->addWidget(control);
+        fieldLayout->addStretch();
+        field = fieldContainer;
     }
 
-    layout->addWidget(text, 1, Qt::AlignVCenter);
-    layout->addWidget(control, 0, Qt::AlignRight | Qt::AlignVCenter);
+    layout->addRow(text, field);
     return row;
 }
 
@@ -358,9 +366,20 @@ void setComboItemEnabled(QComboBox *combo, int index, bool enabled, const QStrin
     item->setToolTip(toolTip);
 }
 
+int tightSpacing() { return 4; }
+int relatedSpacing() { return 8; }
+int groupGap() { return 18; }
+int sectionGap() { return 24; }
+
 void applyPageMargins(QLayout *layout)
 {
-    layout->setContentsMargins(20, 20, 20, 20);
+    QWidget *widget = layout->parentWidget();
+    QStyle *style = widget ? widget->style() : QApplication::style();
+    layout->setContentsMargins(
+        style->pixelMetric(QStyle::PM_LayoutLeftMargin, nullptr, widget),
+        style->pixelMetric(QStyle::PM_LayoutTopMargin, nullptr, widget),
+        style->pixelMetric(QStyle::PM_LayoutRightMargin, nullptr, widget),
+        style->pixelMetric(QStyle::PM_LayoutBottomMargin, nullptr, widget));
 }
 
 void applyLabelHierarchy(QWidget *root)
@@ -384,11 +403,24 @@ QLabel *makeSectionLabel(const QString &text, QWidget *parent)
     section->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     QFont font = section->font();
     font.setBold(true);
-    if (font.pointSizeF() > 0) {
-        font.setPointSizeF(font.pointSizeF() + 2);
-    }
     section->setFont(font);
     return section;
+}
+
+QLabel *makePageTitle(const QString &text, QWidget *parent)
+{
+    auto *title = new QLabel(text, parent);
+    title->setObjectName(QStringLiteral("pageTitle"));
+    title->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    QFont font = QApplication::font();
+    if (font.pointSizeF() > 0) {
+        font.setPointSizeF(font.pointSizeF() * 1.4);
+    } else if (font.pixelSize() > 0) {
+        font.setPixelSize(qRound(font.pixelSize() * 1.4));
+    }
+    font.setBold(true);
+    title->setFont(font);
+    return title;
 }
 
 QFrame *makeSettingsCard(QWidget *parent)
@@ -406,10 +438,11 @@ QVBoxLayout *makeSettingsPage(QScrollArea *scroll)
     scroll->setObjectName(QStringLiteral("settingsScroll"));
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setAutoFillBackground(false);
-    scroll->viewport()->setAutoFillBackground(false);
+    scroll->setBackgroundRole(QPalette::Window);
+    scroll->viewport()->setBackgroundRole(QPalette::Window);
 
     auto *page = new QWidget(scroll);
+    page->setAutoFillBackground(false);
     auto *layout = new QVBoxLayout(page);
     applyPageMargins(layout);
     scroll->setWidget(page);
@@ -446,6 +479,8 @@ void addPageContainer(QHBoxLayout *layout,
         (*pagesWidget)->addWidget(pages.at(index));
     }
     (*categoriesWidget)->setObjectName(QStringLiteral("settingsCategories"));
+    (*categoriesWidget)->setBackgroundRole(QPalette::Base);
+    (*categoriesWidget)->setAutoFillBackground(true);
     (*categoriesWidget)->setFrameShape(QFrame::NoFrame);
     (*categoriesWidget)->setSelectionMode(QAbstractItemView::SingleSelection);
     (*categoriesWidget)->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -458,6 +493,10 @@ void addPageContainer(QHBoxLayout *layout,
                      &QStackedWidget::setCurrentIndex);
     (*categoriesWidget)->setCurrentRow(0);
     layout->addWidget(*categoriesWidget);
+    auto *separator = new QFrame(parent);
+    separator->setFrameShape(QFrame::VLine);
+    separator->setFrameShadow(QFrame::Plain);
+    layout->addWidget(separator);
     layout->addWidget(*pagesWidget, 1);
 }
 

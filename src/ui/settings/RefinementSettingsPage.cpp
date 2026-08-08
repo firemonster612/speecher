@@ -85,7 +85,7 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     m_profileSettings->setSelectionMode(QAbstractItemView::NoSelection);
     m_profileSettings->setMinimumHeight(172);
     m_profileSettings->setMaximumHeight(172);
-    auto *section = settings::makeSectionLabel(QStringLiteral("Refinement"), this);
+    auto *title = settings::makePageTitle(QStringLiteral("Refinement"), this);
     auto *card = settings::makeSettingsCard(this);
     auto *cardLayout = qobject_cast<QVBoxLayout *>(card->layout());
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Refinement"), QStringLiteral("Clean up dictated text after capture."), m_provider, card), card);
@@ -115,7 +115,9 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Screenshot context"), QStringLiteral("Off by default; used only with image-capable refinement models."), m_screenshotContext, card), card, false);
 
     auto *pageLayout = settings::makeSettingsPage(this);
-    pageLayout->addWidget(section);
+    pageLayout->setSpacing(0);
+    pageLayout->addWidget(title);
+    pageLayout->addSpacing(settings::sectionGap());
     pageLayout->addWidget(card);
     pageLayout->addStretch();
 

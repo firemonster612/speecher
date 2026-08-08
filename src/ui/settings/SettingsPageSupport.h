@@ -34,8 +34,13 @@ void setComboItemEnabled(QComboBox *combo,
                          int index,
                          bool enabled,
                          const QString &toolTip = QString());
+int tightSpacing();
+int relatedSpacing();
+int groupGap();
+int sectionGap();
 void applyPageMargins(QLayout *layout);
 void applyLabelHierarchy(QWidget *root);
+QLabel *makePageTitle(const QString &text, QWidget *parent);
 QLabel *makeSectionLabel(const QString &text, QWidget *parent);
 QFrame *makeSettingsCard(QWidget *parent);
 QVBoxLayout *makeSettingsPage(QScrollArea *scroll);

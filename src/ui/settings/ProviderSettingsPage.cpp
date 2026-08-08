@@ -155,9 +155,8 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     m_authControl->addWidget(m_apiKey);
 
     m_authStatus->setObjectName(QStringLiteral("statusText"));
-    m_authStatus->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_authStatus->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     m_authStatus->setWordWrap(false);
-    m_authStatus->setMinimumWidth(170);
     m_authStatus->setAttribute(Qt::WA_StyledBackground, false);
     m_authStatus->setAutoFillBackground(false);
     m_anthropicWarning->setObjectName(QStringLiteral("statusText"));
@@ -172,6 +171,7 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     anthropicInfoButton->setAccessibleName(QStringLiteral("Anthropic auth info"));
     m_authStatus->setForegroundRole(QPalette::WindowText);
 
+    auto *title = settings::makePageTitle(QStringLiteral("Providers"), this);
     auto *openAiSection = settings::makeSectionLabel(QStringLiteral("OpenAI"), this);
     auto *anthropicSection = settings::makeSectionLabel(QStringLiteral("Anthropic"), this);
     auto *openAiCard = settings::makeSettingsCard(this);
@@ -212,10 +212,17 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     note->setAttribute(Qt::WA_StyledBackground, false);
 
     auto *pageLayout = settings::makeSettingsPage(this);
+    pageLayout->setSpacing(0);
+    pageLayout->addWidget(title);
+    pageLayout->addSpacing(settings::sectionGap());
     pageLayout->addWidget(openAiSection);
+    pageLayout->addSpacing(settings::tightSpacing());
     pageLayout->addWidget(openAiCard);
+    pageLayout->addSpacing(settings::groupGap());
     pageLayout->addWidget(anthropicSection);
+    pageLayout->addSpacing(settings::tightSpacing());
     pageLayout->addWidget(anthropicCard);
+    pageLayout->addSpacing(settings::relatedSpacing());
     pageLayout->addWidget(note);
     pageLayout->addStretch();
 

@@ -11,6 +11,7 @@
 #include <QFontMetrics>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QPushButton>
 #include <QSizePolicy>
@@ -33,7 +34,7 @@ void addSummaryRow(QGridLayout *grid,
     auto *change = new QPushButton(QStringLiteral("Change…"), parent);
     value->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     grid->addWidget(label, row, 0, Qt::AlignLeft | Qt::AlignVCenter);
-    grid->addWidget(value, row, 1, Qt::AlignLeft | Qt::AlignVCenter);
+    grid->addWidget(value, row, 1, Qt::AlignVCenter);
     grid->addWidget(change, row, 2, Qt::AlignLeft | Qt::AlignVCenter);
     QObject::connect(change, &QPushButton::clicked, owner, [owner, page] {
         emit owner->navigateRequested(page);
@@ -61,25 +62,36 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     column->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     auto *layout = new QVBoxLayout(column);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(style()->pixelMetric(QStyle::PM_LayoutVerticalSpacing));
-    m_accessibilityNotice->setCompact(true);
-    layout->addWidget(m_accessibilityNotice);
+    layout->setSpacing(0);
+    layout->addWidget(settings::makePageTitle(QStringLiteral("Dictation"), column));
+    layout->addSpacing(settings::sectionGap());
 
-    m_toggle->setFixedHeight(48);
-    m_toggle->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    layout->addWidget(m_toggle);
+    auto *groups = new QWidget(column);
+    auto *groupsLayout = new QVBoxLayout(groups);
+    groupsLayout->setContentsMargins(0, 0, 0, 0);
+    groupsLayout->setSpacing(settings::groupGap());
+    m_accessibilityNotice->setCompact(true);
+    groupsLayout->addWidget(m_accessibilityNotice);
+
+    auto *dictationControls = new QWidget(groups);
+    auto *dictationLayout = new QVBoxLayout(dictationControls);
+    dictationLayout->setContentsMargins(0, 0, 0, 0);
+    dictationLayout->setSpacing(settings::relatedSpacing());
+    m_toggle->setMinimumWidth(0);
+    m_toggle->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    dictationLayout->addWidget(m_toggle, 0, Qt::AlignHCenter);
     m_status->setAlignment(Qt::AlignHCenter);
     m_status->setForegroundRole(QPalette::WindowText);
-    layout->addWidget(m_status);
-    layout->addWidget(m_waveform, 0, Qt::AlignHCenter);
+    dictationLayout->addWidget(m_status);
+    dictationLayout->addWidget(m_waveform, 0, Qt::AlignHCenter);
+    groupsLayout->addWidget(dictationControls);
 
-    auto *summaryLabel = new QLabel(QStringLiteral("At a glance"), column);
-    QFont summaryFont = summaryLabel->font();
-    summaryFont.setBold(true);
-    summaryLabel->setFont(summaryFont);
-    summaryLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    layout->addWidget(summaryLabel);
-    auto *summary = new QWidget(column);
+    auto *summaryGroup = new QWidget(groups);
+    auto *summaryLayout = new QVBoxLayout(summaryGroup);
+    summaryLayout->setContentsMargins(0, 0, 0, 0);
+    summaryLayout->setSpacing(settings::tightSpacing());
+    summaryLayout->addWidget(settings::makeSectionLabel(QStringLiteral("At a glance"), summaryGroup));
+    auto *summary = new QWidget(summaryGroup);
     auto *grid = new QGridLayout(summary);
     grid->setContentsMargins(0, 0, 0, 0);
     grid->setColumnStretch(1, 1);
@@ -89,7 +101,9 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
                   AppPageId::Output, this, summary);
     addSummaryRow(grid, 2, QStringLiteral("Theme"), m_theme,
                   AppPageId::General, this, summary);
-    layout->addWidget(summary);
+    summaryLayout->addWidget(summary);
+    groupsLayout->addWidget(summaryGroup);
+    layout->addWidget(groups);
     layout->addStretch();
     auto *contentRow = new QHBoxLayout;
     contentRow->setContentsMargins(0, 0, 0, 0);
@@ -134,7 +148,10 @@ void DictationPage::setStatus(const QString &status)
 {
     const QString state = status.toCaseFolded();
     const bool active = state == QStringLiteral("starting") || state == QStringLiteral("listening");
-    m_toggle->setText(active ? QStringLiteral("Stop") : QStringLiteral("Start"));
+    m_toggle->setText(active ? QStringLiteral("Stop Dictation")
+                             : QStringLiteral("Start Dictation"));
+    m_toggle->setIcon(QIcon::fromTheme(active ? QStringLiteral("media-playback-stop")
+                                               : QStringLiteral("media-record")));
     static const QStringList states{
         QStringLiteral("idle"),
         QStringLiteral("starting"),

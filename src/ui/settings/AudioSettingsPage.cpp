@@ -43,7 +43,7 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
     m_vadThreshold->setRange(1, 20);
     m_vadThreshold->setSuffix(QStringLiteral("%"));
 
-    auto *section = settings::makeSectionLabel(QStringLiteral("Audio"), this);
+    auto *title = settings::makePageTitle(QStringLiteral("Audio"), this);
     auto *card = settings::makeSettingsCard(this);
     auto *cardLayout = qobject_cast<QVBoxLayout *>(card->layout());
 
@@ -92,7 +92,9 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
                      false);
 
     auto *pageLayout = settings::makeSettingsPage(this);
-    pageLayout->addWidget(section);
+    pageLayout->setSpacing(0);
+    pageLayout->addWidget(title);
+    pageLayout->addSpacing(settings::sectionGap());
     pageLayout->addWidget(card);
     pageLayout->addStretch();
 
