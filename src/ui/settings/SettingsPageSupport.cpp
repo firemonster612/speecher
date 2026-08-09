@@ -16,10 +16,12 @@
 #include <QPalette>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSettings>
 #include <QSizePolicy>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QStandardItemModel>
+#include <QStandardPaths>
 #include <QStyle>
 #include <QVBoxLayout>
 
@@ -386,6 +388,41 @@ int tightSpacing() { return 4; }
 int relatedSpacing() { return 8; }
 int groupGap() { return 18; }
 int sectionGap() { return 24; }
+
+QPalette kdeHeaderPalette(const QPalette &base)
+{
+    QPalette result(base);
+    QSettings kdeGlobals(
+        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+            + QStringLiteral("/kdeglobals"),
+        QSettings::IniFormat);
+    kdeGlobals.beginGroup(QStringLiteral("Colors:Header"));
+
+    const auto colorValue = [&kdeGlobals](const QString &key) {
+        const QStringList channels = kdeGlobals.value(key).toString().split(QLatin1Char(','));
+        if (channels.size() != 3) {
+            return QColor();
+        }
+        bool valid = true;
+        int rgb[3];
+        for (int index = 0; index < 3; ++index) {
+            bool channelValid = false;
+            rgb[index] = channels.at(index).trimmed().toInt(&channelValid);
+            valid = valid && channelValid && rgb[index] >= 0 && rgb[index] <= 255;
+        }
+        return valid ? QColor(rgb[0], rgb[1], rgb[2]) : QColor();
+    };
+
+    const QColor background = colorValue(QStringLiteral("BackgroundNormal"));
+    const QColor foreground = colorValue(QStringLiteral("ForegroundNormal"));
+    result.setColor(QPalette::Window,
+                    background.isValid()
+                        ? background
+                        : base.color(QPalette::Window).darker(110));
+    result.setColor(QPalette::WindowText,
+                    foreground.isValid() ? foreground : base.color(QPalette::WindowText));
+    return result;
+}
 
 void applyPageMargins(QLayout *layout)
 {

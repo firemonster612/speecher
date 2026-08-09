@@ -17,19 +17,25 @@
 
 #include <QActionGroup>
 #include <QCloseEvent>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QFrame>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QPalette>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QShortcut>
 #include <QShowEvent>
+#include <QSplitter>
 #include <QStackedWidget>
 #include <QStyle>
 #include <QTabWidget>
+#include <QTextDocument>
 #include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
@@ -275,22 +281,76 @@ void AppWindow::buildSidebarShell()
     auto *central = new QWidget(this);
     auto *root = new QVBoxLayout(central);
     root->setContentsMargins(0, 0, 0, 0);
-    auto *body = new QWidget(central);
-    auto *bodyLayout = new QHBoxLayout(body);
-    bodyLayout->setContentsMargins(0, 0, 0, 0);
-    auto *sidebar = new QWidget(body);
-    sidebar->setBackgroundRole(QPalette::Base);
+    root->setSpacing(0);
+    auto *header = new QWidget(central);
+    header->setObjectName(QStringLiteral("sidebarHeaderStrip"));
+    header->setPalette(settings::kdeHeaderPalette(palette()));
+    header->setBackgroundRole(QPalette::Window);
+    header->setAutoFillBackground(true);
+    auto *headerLayout = new QHBoxLayout(header);
+    headerLayout->setContentsMargins(0, 0, 0, 0);
+    headerLayout->setSpacing(0);
+
+    auto *searchContainer = new QWidget(header);
+    searchContainer->setObjectName(QStringLiteral("sidebarSearchContainer"));
+    auto *searchLayout = new QHBoxLayout(searchContainer);
+    searchLayout->setContentsMargins(settings::relatedSpacing(),
+                                     settings::relatedSpacing(),
+                                     settings::relatedSpacing(),
+                                     settings::relatedSpacing());
+    auto *search = new QLineEdit(searchContainer);
+    search->setObjectName(QStringLiteral("appSearch"));
+    search->setPlaceholderText(QStringLiteral("Search…"));
+    search->setClearButtonEnabled(true);
+    search->addAction(QIcon::fromTheme(
+                          QStringLiteral("search"),
+                          QIcon::fromTheme(QStringLiteral("edit-find"))),
+                      QLineEdit::LeadingPosition);
+    searchLayout->addWidget(search);
+    headerLayout->addWidget(searchContainer);
+
+    auto *headerRight = new QWidget(header);
+    auto *headerRightLayout = new QHBoxLayout(headerRight);
+    headerRightLayout->setContentsMargins(settings::relatedSpacing(),
+                                          settings::relatedSpacing(),
+                                          settings::relatedSpacing(),
+                                          settings::relatedSpacing());
+    m_pageTitle = settings::makePageTitle(kPages.first().title, headerRight);
+    headerRightLayout->addWidget(m_pageTitle);
+    headerRightLayout->addStretch();
+    headerRightLayout->addWidget(m_dictation->toggleButton());
+    headerLayout->addWidget(headerRight, 1);
+    root->addWidget(header);
+
+    auto *headerLine = new QFrame(central);
+    headerLine->setFrameShape(QFrame::HLine);
+    headerLine->setFrameShadow(QFrame::Plain);
+    headerLine->setFixedHeight(1);
+    root->addWidget(headerLine);
+
+    m_sidebarSplitter = new QSplitter(Qt::Horizontal, central);
+    m_sidebarSplitter->setObjectName(QStringLiteral("sidebarSplitter"));
+    m_sidebarSplitter->setHandleWidth(1);
+    m_sidebarSplitter->setChildrenCollapsible(false);
+    auto *sidebar = new QWidget(m_sidebarSplitter);
+    sidebar->setBackgroundRole(QPalette::Window);
     sidebar->setAutoFillBackground(true);
-    sidebar->setFixedWidth(220);
+    sidebar->setMinimumWidth(180);
+    sidebar->setMaximumWidth(320);
     auto *sidebarLayout = new QVBoxLayout(sidebar);
-    sidebarLayout->setContentsMargins(0, settings::relatedSpacing(), 0, 0);
+    sidebarLayout->setContentsMargins(settings::relatedSpacing(),
+                                      settings::relatedSpacing(),
+                                      settings::relatedSpacing(),
+                                      0);
     sidebarLayout->setSpacing(0);
     m_navigation = new QListWidget(sidebar);
     m_navigation->setObjectName(QStringLiteral("appNavigation"));
-    m_navigation->setBackgroundRole(QPalette::Base);
+    m_navigation->setBackgroundRole(QPalette::Window);
     m_navigation->setAutoFillBackground(true);
+    m_navigation->viewport()->setBackgroundRole(QPalette::Window);
+    m_navigation->viewport()->setAutoFillBackground(true);
     m_navigation->setFrameShape(QFrame::NoFrame);
-    m_navigation->setSpacing(0);
+    m_navigation->setSpacing(2);
     m_navigation->setIconSize(QSize(22, 22));
     for (int index = 0; index < kPages.size(); ++index) {
         const auto &page = kPages.at(index);
@@ -302,14 +362,15 @@ void AppWindow::buildSidebarShell()
     }
     sidebarLayout->addWidget(m_navigation, 1);
     sidebarLayout->addWidget(createPrototypeSwitcher(sidebar), 0, Qt::AlignLeft);
-    m_stack = new QStackedWidget(body);
+    m_stack = new QStackedWidget(m_sidebarSplitter);
     m_stack->setObjectName(QStringLiteral("appPageStack"));
     for (QWidget *page : std::as_const(m_pageWidgets)) {
         m_stack->addWidget(page);
     }
-    auto *right = new QWidget(body);
+    auto *right = new QWidget(m_sidebarSplitter);
     right->setBackgroundRole(QPalette::Window);
     right->setAutoFillBackground(true);
+    right->setMinimumWidth(480);
     auto *rightLayout = new QVBoxLayout(right);
     rightLayout->setContentsMargins(0, 0, 0, 0);
     m_autoSaveWarning = new QFrame(right);
@@ -319,17 +380,24 @@ void AppWindow::buildSidebarShell()
     m_autoSaveWarningText = new QLabel(m_autoSaveWarning);
     warningLayout->addWidget(m_autoSaveWarningText);
     m_autoSaveWarning->hide();
-    rightLayout->addWidget(createPageHeader(right));
     rightLayout->addWidget(m_autoSaveWarning);
     rightLayout->addWidget(m_stack, 1);
-    bodyLayout->addWidget(sidebar);
-    auto *separator = new QFrame(body);
-    separator->setFrameShape(QFrame::VLine);
-    separator->setFrameShadow(QFrame::Plain);
-    bodyLayout->addWidget(separator);
-    bodyLayout->addWidget(right, 1);
-    root->addWidget(body, 1);
+    m_sidebarSplitter->addWidget(sidebar);
+    m_sidebarSplitter->addWidget(right);
+    m_sidebarSplitter->setStretchFactor(0, 0);
+    m_sidebarSplitter->setStretchFactor(1, 1);
+    connect(m_sidebarSplitter, &QSplitter::splitterMoved, searchContainer,
+            [searchContainer, sidebar] { searchContainer->setFixedWidth(sidebar->width()); });
+    root->addWidget(m_sidebarSplitter, 1);
     setCentralWidget(central);
+    m_sidebarSplitter->setSizes({220, 680});
+    const QByteArray splitterState = m_controller->settings()->raw()
+                                         .value(QStringLiteral("ui/appWindow/a/splitter"))
+                                         .toByteArray();
+    if (!splitterState.isEmpty()) {
+        m_sidebarSplitter->restoreState(splitterState);
+    }
+    searchContainer->setFixedWidth(sidebar->width());
     m_navigation->setCurrentRow(0);
     connect(m_navigation, &QListWidget::currentItemChanged, this,
             [this](QListWidgetItem *item) {
@@ -337,12 +405,83 @@ void AppWindow::buildSidebarShell()
                     m_stack->setCurrentIndex(item->data(Qt::UserRole).toInt());
                 }
             });
+    connect(m_stack, &QStackedWidget::currentChanged, this, [this](int index) {
+        m_pageTitle->setText(kPages.at(index).title);
+        m_dictation->toggleButton()->setVisible(index == 0);
+    });
+    connect(search, &QLineEdit::textChanged, this, &AppWindow::filterSidebarPages);
+    connect(search, &QLineEdit::returnPressed, this, [this] {
+        for (int row = 0; row < m_navigation->count(); ++row) {
+            if (!m_navigation->item(row)->isHidden()) {
+                m_navigation->setCurrentRow(row);
+                return;
+            }
+        }
+    });
+    auto *clearSearch = new QShortcut(QKeySequence(Qt::Key_Escape), search);
+    clearSearch->setContext(Qt::WidgetShortcut);
+    connect(clearSearch, &QShortcut::activated, search, &QLineEdit::clear);
 
     m_autoSaveTimer = new QTimer(this);
     m_autoSaveTimer->setSingleShot(true);
     m_autoSaveTimer->setInterval(600);
     connect(m_pages, &SettingsPageSet::changed, m_autoSaveTimer, qOverload<>(&QTimer::start));
     connect(m_autoSaveTimer, &QTimer::timeout, this, &AppWindow::runAutoSave);
+}
+
+void AppWindow::filterSidebarPages(const QString &query)
+{
+    if (query.isEmpty()) {
+        for (int row = 0; row < m_navigation->count(); ++row) {
+            m_navigation->item(row)->setHidden(false);
+        }
+        return;
+    }
+
+    if (m_pageKeywords.isEmpty()) {
+        const auto cleanText = [](QString text) {
+            text = text.trimmed();
+            while (text.endsWith(QLatin1Char(':')) || text.endsWith(QChar(0x2026))) {
+                text.chop(1);
+                text = text.trimmed();
+            }
+            return text;
+        };
+        for (int pageIndex = 0; pageIndex < m_pageWidgets.size(); ++pageIndex) {
+            QStringList keywords{kPages.at(pageIndex).title};
+            QWidget *page = m_pageWidgets.at(pageIndex);
+            for (QLabel *label : page->findChildren<QLabel *>()) {
+                if (!label->isHidden() && !Qt::mightBeRichText(label->text())) {
+                    const QString text = cleanText(label->text());
+                    if (!text.isEmpty()) keywords.append(text);
+                }
+            }
+            for (QCheckBox *checkBox : page->findChildren<QCheckBox *>()) {
+                if (!checkBox->isHidden()) {
+                    const QString text = cleanText(checkBox->text());
+                    if (!text.isEmpty()) keywords.append(text);
+                }
+            }
+            for (QGroupBox *group : page->findChildren<QGroupBox *>()) {
+                if (!group->isHidden()) {
+                    const QString text = cleanText(group->title());
+                    if (!text.isEmpty()) keywords.append(text);
+                }
+            }
+            for (QPushButton *button : page->findChildren<QPushButton *>()) {
+                if (!button->isHidden()) {
+                    const QString text = cleanText(button->text());
+                    if (!text.isEmpty()) keywords.append(text);
+                }
+            }
+            m_pageKeywords.append(keywords.join(QLatin1Char('\n')));
+        }
+    }
+
+    for (int row = 0; row < m_navigation->count(); ++row) {
+        m_navigation->item(row)->setHidden(
+            !m_pageKeywords.at(row).contains(query, Qt::CaseInsensitive));
+    }
 }
 
 void AppWindow::buildToolbarShell()
@@ -624,6 +763,10 @@ void AppWindow::rememberGeometry()
 {
     m_controller->settings()->raw().setValue(
         QStringLiteral("ui/appWindow/%1/geometry").arg(m_prototype), saveGeometry());
+    if (m_sidebarSplitter) {
+        m_controller->settings()->raw().setValue(
+            QStringLiteral("ui/appWindow/a/splitter"), m_sidebarSplitter->saveState());
+    }
 }
 
 } // namespace speecher

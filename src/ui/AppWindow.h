@@ -8,8 +8,10 @@ class QActionGroup;
 class QCloseEvent;
 class QFrame;
 class QLabel;
+class QLineEdit;
 class QListWidget;
 class QPushButton;
+class QSplitter;
 class QStackedWidget;
 class QTimer;
 
@@ -47,6 +49,7 @@ private:
     QWidget *createPendingBanner(QWidget *parent, bool compact = false);
     void runAutoSave();
     void updatePendingBanner();
+    void filterSidebarPages(const QString &query);
     void showCompactPage(int page);
     void finishCompactBack();
 
@@ -60,6 +63,8 @@ private:
     QStackedWidget *m_drillPages = nullptr;
     QListWidget *m_compactList = nullptr;
     QListWidget *m_navigation = nullptr;
+    QSplitter *m_sidebarSplitter = nullptr;
+    QStringList m_pageKeywords;
     QActionGroup *m_navigationActions = nullptr;
     QLabel *m_drillTitle = nullptr;
     QLabel *m_pageTitle = nullptr;

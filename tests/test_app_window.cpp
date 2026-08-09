@@ -9,7 +9,9 @@
 
 #include <QAction>
 #include <QComboBox>
+#include <QLineEdit>
 #include <QListWidget>
+#include <QSplitter>
 
 using namespace speecher;
 
@@ -75,6 +77,19 @@ private slots:
         window.show();
         window.close();
         QCOMPARE(controller.settings()->theme(), QStringLiteral("dark"));
+    }
+
+    void sidebarShellSupportsPageSearch()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller, QStringLiteral("a"));
+        auto *search = window.findChild<QLineEdit *>(QStringLiteral("appSearch"));
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        QVERIFY(window.findChild<QSplitter *>() && search);
+
+        search->setText(QStringLiteral("Microphone"));
+        QVERIFY(navigation && navigation->item(1)->isHidden()
+                && !navigation->item(2)->isHidden());
     }
 
     void programmaticNavigationUpdatesShellChrome()
