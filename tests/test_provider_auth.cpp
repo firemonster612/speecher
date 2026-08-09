@@ -172,7 +172,7 @@ private slots:
 
         const ClaudeCredentialResult result = refresh.get();
         QVERIFY(!result.ok);
-        QVERIFY(result.error.contains(QStringLiteral("re-authenticate"), Qt::CaseInsensitive));
+        QVERIFY(result.error.contains(QStringLiteral("/login")));
         QVERIFY(!result.error.contains(QStringLiteral("secret-refresh-token")));
     }
 
