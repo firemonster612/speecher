@@ -249,7 +249,7 @@ void AppWindow::buildSharedPages()
     addTab(m_pages->corrections(), QStringLiteral("Learned corrections"));
     settings::applyPageMargins(m_pages->bindings()->layout());
     auto *bindingsScroll = scrollingPage(m_pages->bindings(), tabs);
-    tabs->addTab(bindingsScroll, QStringLiteral("Replacements & snippets"));
+    tabs->addTab(bindingsScroll, QStringLiteral("Replacements && snippets"));
     m_pages->preserveBindingScroll(bindingsScroll);
 
     auto *vocabularyContent = new QWidget(this);
@@ -322,11 +322,7 @@ void AppWindow::buildSidebarShell()
     headerLayout->addWidget(headerRight, 1);
     root->addWidget(header);
 
-    auto *headerLine = new QFrame(central);
-    headerLine->setFrameShape(QFrame::HLine);
-    headerLine->setFrameShadow(QFrame::Plain);
-    headerLine->setFixedHeight(1);
-    root->addWidget(headerLine);
+    root->addWidget(settings::makeSeparator(central));
 
     m_sidebarSplitter = new QSplitter(Qt::Horizontal, central);
     m_sidebarSplitter->setObjectName(QStringLiteral("sidebarSplitter"));
@@ -560,10 +556,7 @@ void AppWindow::buildCompactShell()
         rowLayout->addWidget(arrow);
         m_compactList->setItemWidget(item, row);
     }
-    auto *homeSeparator = new QFrame(home);
-    homeSeparator->setFrameShape(QFrame::HLine);
-    homeSeparator->setFrameShadow(QFrame::Plain);
-    homeLayout->addWidget(homeSeparator);
+    homeLayout->addWidget(settings::makeSeparator(home));
     homeLayout->addWidget(m_compactList);
 
     auto *drill = new QWidget(m_compactStack);
@@ -583,10 +576,7 @@ void AppWindow::buildCompactShell()
     headerLayout->addWidget(m_drillTitle);
     headerLayout->addStretch();
     drillLayout->addWidget(header);
-    auto *headerLine = new QFrame(drill);
-    headerLine->setFrameShape(QFrame::HLine);
-    headerLine->setFrameShadow(QFrame::Plain);
-    drillLayout->addWidget(headerLine);
+    drillLayout->addWidget(settings::makeSeparator(drill));
     m_drillPages = new QStackedWidget(drill);
     for (int index = 1; index < m_pageWidgets.size(); ++index) {
         QWidget *page = m_pageWidgets.at(index);
@@ -666,10 +656,7 @@ QWidget *AppWindow::createPageHeader(QWidget *parent)
     contentLayout->addWidget(m_dictation->toggleButton());
     layout->addWidget(content);
 
-    auto *line = new QFrame(band);
-    line->setFrameShape(QFrame::HLine);
-    line->setFrameShadow(QFrame::Plain);
-    layout->addWidget(line);
+    layout->addWidget(settings::makeSeparator(band));
 
     connect(m_stack, &QStackedWidget::currentChanged, this, [this](int index) {
         m_pageTitle->setText(kPages.at(index).title);

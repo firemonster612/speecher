@@ -248,7 +248,18 @@ QFrame *makeSeparator(QWidget *parent)
     auto *line = new QFrame(parent);
     line->setObjectName(QStringLiteral("settingsSeparator"));
     line->setFrameShape(QFrame::HLine);
-    line->setFrameShadow(QFrame::Sunken);
+    line->setFrameShadow(QFrame::Plain);
+    line->setFixedHeight(1);
+    // Sunken frames vanish on dark schemes; blend a quarter of the text
+    // color into the window color, the way Kirigami derives separators.
+    const QColor window = parent->palette().color(QPalette::Window);
+    const QColor text = parent->palette().color(QPalette::WindowText);
+    QPalette blended(parent->palette());
+    blended.setColor(QPalette::WindowText,
+                     QColor((window.red() * 3 + text.red()) / 4,
+                            (window.green() * 3 + text.green()) / 4,
+                            (window.blue() * 3 + text.blue()) / 4));
+    line->setPalette(blended);
     line->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     return line;
 }
@@ -399,7 +410,12 @@ QPalette kdeHeaderPalette(const QPalette &base)
     kdeGlobals.beginGroup(QStringLiteral("Colors:Header"));
 
     const auto colorValue = [&kdeGlobals](const QString &key) {
-        const QStringList channels = kdeGlobals.value(key).toString().split(QLatin1Char(','));
+        // QSettings parses comma-separated INI values as QStringList, and
+        // QVariant::toString() on a multi-element list yields an empty string.
+        const QVariant value = kdeGlobals.value(key);
+        const QStringList channels = value.userType() == QMetaType::QStringList
+                                         ? value.toStringList()
+                                         : value.toString().split(QLatin1Char(','));
         if (channels.size() != 3) {
             return QColor();
         }
@@ -413,8 +429,18 @@ QPalette kdeHeaderPalette(const QPalette &base)
         return valid ? QColor(rgb[0], rgb[1], rgb[2]) : QColor();
     };
 
-    const QColor background = colorValue(QStringLiteral("BackgroundNormal"));
-    const QColor foreground = colorValue(QStringLiteral("ForegroundNormal"));
+    QColor background = colorValue(QStringLiteral("BackgroundNormal"));
+    QColor foreground = colorValue(QStringLiteral("ForegroundNormal"));
+    if (!background.isValid()) {
+        // Schemes that don't inline a Header group still carry the titlebar
+        // color under [WM] — the strip must match the titlebar.
+        kdeGlobals.endGroup();
+        kdeGlobals.beginGroup(QStringLiteral("WM"));
+        background = colorValue(QStringLiteral("activeBackground"));
+        if (!foreground.isValid()) {
+            foreground = colorValue(QStringLiteral("activeForeground"));
+        }
+    }
     result.setColor(QPalette::Window,
                     background.isValid()
                         ? background
