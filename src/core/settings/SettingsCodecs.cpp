@@ -89,26 +89,6 @@ void SettingsCodecs::setTheme(const QString &value)
     m_settings.setValue(SettingsKeys::UiTheme, QStringLiteral("system"));
 }
 
-QString SettingsCodecs::uiPrototype() const
-{
-    const QString prototype = value(SettingsKeys::UiPrototype, QStringLiteral("a")).toString().toLower();
-    if (prototype == QStringLiteral("a") || prototype == QStringLiteral("b")
-        || prototype == QStringLiteral("c") || prototype == QStringLiteral("legacy")) {
-        return prototype;
-    }
-    return QStringLiteral("a");
-}
-
-void SettingsCodecs::setUiPrototype(const QString &value)
-{
-    const QString prototype = value.toLower();
-    m_settings.setValue(SettingsKeys::UiPrototype,
-                        prototype == QStringLiteral("b") || prototype == QStringLiteral("c")
-                                || prototype == QStringLiteral("legacy")
-                            ? prototype
-                            : QStringLiteral("a"));
-}
-
 bool SettingsCodecs::pauseMediaDuringTranscription() const
 {
     return value(SettingsKeys::UiPauseMedia, true).toBool();

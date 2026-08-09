@@ -8,15 +8,12 @@
 #include "providers/ClaudeSpeechTranscriber.h"
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
-#include "ui/MainWindow.h"
 #include "ui/AppWindow.h"
-#include "ui/SettingsDialog.h"
 #include "ui/TranscriberPopup.h"
 #include "platform/atspi/AtSpiAccess.h"
 
 #include <QApplication>
 #include <QDebug>
-#include <QTimer>
 
 namespace speecher {
 
@@ -154,9 +151,7 @@ bool ApplicationController::enableAccessibility(QString *error)
 
 bool ApplicationController::grabMainWindow(const QString &path) const
 {
-    QWidget *window = m_appWindow ? static_cast<QWidget *>(m_appWindow)
-                                  : static_cast<QWidget *>(m_mainWindow);
-    return window && window->grab().save(path);
+    return m_appWindow && m_appWindow->grab().save(path);
 }
 
 bool ApplicationController::startIpc(QString *error)
@@ -166,83 +161,18 @@ bool ApplicationController::startIpc(QString *error)
 
 void ApplicationController::showMainWindow()
 {
-    const QString prototype = m_settings->uiPrototype();
-    if (prototype != QStringLiteral("legacy")) {
-        if (m_mainWindow) {
-            m_mainWindow->hide();
-            m_mainWindow->deleteLater();
-            m_mainWindow = nullptr;
-        }
-        if (m_appWindow && m_appWindow->prototype() != prototype) {
-            m_appWindow->flushPendingAutoSave();
-            m_appWindow->rememberGeometry();
-            m_appWindow->hide();
-            m_appWindow->deleteLater();
-            m_appWindow = nullptr;
-        }
-        if (!m_appWindow) {
-            m_appWindow = new AppWindow(this, prototype);
-        }
-        m_appWindow->show();
-        m_appWindow->raise();
-        m_appWindow->activateWindow();
-        return;
+    if (!m_appWindow) {
+        m_appWindow = new AppWindow(this);
     }
-    if (m_appWindow) {
-        m_appWindow->flushPendingAutoSave();
-        m_appWindow->rememberGeometry();
-        m_appWindow->hide();
-        m_appWindow->deleteLater();
-        m_appWindow = nullptr;
-    }
-    if (!m_mainWindow) {
-        m_mainWindow = new MainWindow(this);
-        connect(this, &ApplicationController::statusChanged, m_mainWindow, &MainWindow::setStatusText);
-        m_mainWindow->setStatusText(stateName());
-    }
-    m_mainWindow->show();
-    m_mainWindow->raise();
-    m_mainWindow->activateWindow();
+    m_appWindow->show();
+    m_appWindow->raise();
+    m_appWindow->activateWindow();
 }
 
 void ApplicationController::showSettingsWindow()
 {
-    if (m_settings->uiPrototype() != QStringLiteral("legacy")) {
-        showMainWindow();
-        m_appWindow->navigateToSettings();
-        return;
-    }
-    if (!m_settingsDialog) {
-        m_settingsDialog = new SettingsDialog(this);
-        m_settingsDialog->setAttribute(Qt::WA_DeleteOnClose);
-    }
-    m_settingsDialog->show();
-    m_settingsDialog->raise();
-    m_settingsDialog->activateWindow();
-}
-
-void ApplicationController::switchUiPrototype(const QString &prototype)
-{
-    if (prototype == m_settings->uiPrototype()) {
-        return;
-    }
-    m_settings->setUiPrototype(prototype);
-    if (m_appWindow) {
-        m_appWindow->flushPendingAutoSave();
-        m_appWindow->rememberGeometry();
-        m_appWindow->hide();
-        m_appWindow->deleteLater();
-        m_appWindow = nullptr;
-    }
-    if (m_mainWindow) {
-        m_mainWindow->hide();
-        m_mainWindow->deleteLater();
-        m_mainWindow = nullptr;
-    }
-    if (m_settingsDialog) {
-        m_settingsDialog->close();
-    }
-    QTimer::singleShot(0, this, &ApplicationController::showMainWindow);
+    showMainWindow();
+    m_appWindow->navigateToSettings();
 }
 
 void ApplicationController::toggle()
@@ -272,7 +202,6 @@ void ApplicationController::showSettings()
 
 void ApplicationController::handleIpcCommand(const QString &command,
                                              const QString &outputFormat,
-                                             const QString &uiPrototype,
                                              QLocalSocket *socket)
 {
     const bool hasFormat = !outputFormat.isEmpty();
@@ -291,11 +220,9 @@ void ApplicationController::handleIpcCommand(const QString &command,
         stopListening();
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("showMain")) {
-        if (!uiPrototype.isEmpty()) switchUiPrototype(uiPrototype);
         showMain();
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("showSettings")) {
-        if (!uiPrototype.isEmpty()) switchUiPrototype(uiPrototype);
         showSettings();
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("status")) {

@@ -1,20 +1,15 @@
 #pragma once
 
 #include <QColor>
-#include <QList>
-#include <QPair>
 #include <QString>
 
 class QComboBox;
 class QFrame;
 class QFormLayout;
-class QHBoxLayout;
 class QLabel;
 class QLayout;
-class QListWidget;
 class QPalette;
 class QScrollArea;
-class QStackedWidget;
 class QVBoxLayout;
 class QWidget;
 
@@ -51,11 +46,5 @@ QLabel *makePageTitle(const QString &text, QWidget *parent);
 QLabel *makeSectionLabel(const QString &text, QWidget *parent);
 QFrame *makeSettingsCard(QWidget *parent);
 QVBoxLayout *makeSettingsPage(QScrollArea *scroll);
-void addPageContainer(QHBoxLayout *layout,
-                      const QList<QPair<QString, QString>> &categories,
-                      const QList<QWidget *> &pages,
-                      QListWidget **categoriesWidget,
-                      QStackedWidget **pagesWidget,
-                      QWidget *parent);
 
 } // namespace speecher::settings

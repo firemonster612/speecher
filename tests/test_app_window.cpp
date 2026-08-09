@@ -7,7 +7,6 @@
 #include "ui/settings/BindingsSettingsPage.h"
 #include "ui/settings/SettingsPageSet.h"
 
-#include <QAction>
 #include <QComboBox>
 #include <QLineEdit>
 #include <QListWidget>
@@ -25,7 +24,7 @@ private slots:
         settings.raw().clear();
     }
 
-    void shellsConstructWithSharedPageTitles()
+    void sidebarShellConstructsWithSharedPageTitles()
     {
         ApplicationController controller(true);
         const QStringList titles{
@@ -37,29 +36,16 @@ private slots:
             QStringLiteral("Refinement"),
             QStringLiteral("Vocabulary"),
         };
-        for (const QString &prototype : {QStringLiteral("a"), QStringLiteral("b"), QStringLiteral("c")}) {
-            AppWindow window(&controller, prototype);
-            QCOMPARE(window.prototype(), prototype);
-            QCOMPARE(window.pageCount(), 7);
-            QCOMPARE(window.pageTitles(), titles);
-        }
-    }
-
-    void prototypePersistsAcrossStores()
-    {
-        SettingsStore settings;
-        QCOMPARE(settings.uiPrototype(), QStringLiteral("a"));
-        settings.setUiPrototype(QStringLiteral("c"));
-        SettingsStore reopened;
-        QCOMPARE(reopened.uiPrototype(), QStringLiteral("c"));
+        AppWindow window(&controller);
+        QCOMPARE(window.pageCount(), 7);
+        QCOMPARE(window.pageTitles(), titles);
     }
 
     void sidebarAutoSavesAfterDebounce()
     {
         ApplicationController controller(true);
-        controller.settings()->setUiPrototype(QStringLiteral("a"));
         controller.settings()->setTheme(QStringLiteral("system"));
-        AppWindow window(&controller, QStringLiteral("a"));
+        AppWindow window(&controller);
         auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
         QVERIFY(theme);
         theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
@@ -70,7 +56,7 @@ private slots:
     {
         ApplicationController controller(true);
         controller.settings()->setTheme(QStringLiteral("system"));
-        AppWindow window(&controller, QStringLiteral("a"));
+        AppWindow window(&controller);
         auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
         QVERIFY(theme);
         theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
@@ -82,7 +68,7 @@ private slots:
     void sidebarShellSupportsPageSearch()
     {
         ApplicationController controller(true);
-        AppWindow window(&controller, QStringLiteral("a"));
+        AppWindow window(&controller);
         auto *search = window.findChild<QLineEdit *>(QStringLiteral("appSearch"));
         auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
         QVERIFY(window.findChild<QSplitter *>() && search);
@@ -95,19 +81,10 @@ private slots:
     void programmaticNavigationUpdatesShellChrome()
     {
         ApplicationController controller(true);
-        AppWindow sidebar(&controller, QStringLiteral("a"));
-        sidebar.navigateToSettings(AppPageId::Output);
-        QCOMPARE(sidebar.findChild<QListWidget *>(QStringLiteral("appNavigation"))->currentItem()->text(),
+        AppWindow window(&controller);
+        window.navigateToSettings(AppPageId::Output);
+        QCOMPARE(window.findChild<QListWidget *>(QStringLiteral("appNavigation"))->currentItem()->text(),
                  QStringLiteral("Output"));
-
-        AppWindow toolbar(&controller, QStringLiteral("b"));
-        toolbar.navigateToSettings(AppPageId::Output);
-        QAction *selected = nullptr;
-        for (QAction *action : toolbar.findChildren<QAction *>()) {
-            if (action->isChecked()) selected = action;
-        }
-        QVERIFY(selected);
-        QCOMPARE(selected->text(), QStringLiteral("Output"));
     }
 
     void saveReportsFailedValidator()

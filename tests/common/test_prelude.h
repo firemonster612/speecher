@@ -36,7 +36,6 @@
 #include "platform/audio/QtAudioInput.h"
 #include "ui/Theme.h"
 #include "ui/PopupPositioner.h"
-#include "ui/SettingsDialog.h"
 #include "ui/TranscriberPopup.h"
 #include "ui/WaveformWidget.h"
 
@@ -53,7 +52,6 @@
 #include <QFileInfo>
 #include <QFrame>
 #include <QHostAddress>
-#include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -61,7 +59,6 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QMimeData>
-#include <QMouseEvent>
 #include <QPalette>
 #include <QProgressBar>
 #include <QRegularExpression>
@@ -78,10 +75,6 @@
 #include <QThread>
 #include <QUuid>
 #include <QtTest>
-
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-#include <KPageWidget>
-#endif
 
 #include <algorithm>
 #include <future>

@@ -15,11 +15,9 @@
 #include "ui/settings/SettingsPageSupport.h"
 #include "ui/settings/VocabularySettingsPage.h"
 
-#include <QActionGroup>
 #include <QCloseEvent>
 #include <QEvent>
 #include <QCheckBox>
-#include <QComboBox>
 #include <QFrame>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -31,14 +29,12 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QShortcut>
-#include <QShowEvent>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStyle>
 #include <QTabWidget>
 #include <QTextDocument>
 #include <QTimer>
-#include <QToolBar>
 #include <QVBoxLayout>
 
 #include <utility>
@@ -101,12 +97,6 @@ QWidget *detachedContent(QScrollArea *page, bool removeTitle = false)
     return content;
 }
 
-QIcon themedIcon(const QString &name, QStyle::StandardPixmap fallback, QWidget *widget)
-{
-    const QIcon icon = QIcon::fromTheme(name);
-    return icon.isNull() ? widget->style()->standardIcon(fallback) : icon;
-}
-
 QIcon pageIcon(const PageDefinition &page, QWidget *widget)
 {
     const QIcon icon = QIcon::fromTheme(
@@ -114,36 +104,11 @@ QIcon pageIcon(const PageDefinition &page, QWidget *widget)
     return icon.isNull() ? widget->style()->standardIcon(QStyle::SP_FileIcon) : icon;
 }
 
-class DprIconLabel final : public QLabel {
-public:
-    DprIconLabel(const QIcon &icon, const QSize &size, QWidget *parent)
-        : QLabel(parent)
-        , m_icon(icon)
-        , m_size(size)
-    {
-        setFixedSize(size);
-    }
-
-protected:
-    void showEvent(QShowEvent *event) override
-    {
-        QLabel::showEvent(event);
-        setPixmap(m_icon.pixmap(m_size, devicePixelRatio()));
-    }
-
-private:
-    QIcon m_icon;
-    QSize m_size;
-};
-
 } // namespace
 
-AppWindow::AppWindow(ApplicationController *controller,
-                     const QString &prototype,
-                     QWidget *parent)
+AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
     : QMainWindow(parent)
     , m_controller(controller)
-    , m_prototype(prototype)
     , m_pages(new SettingsPageSet(controller, this))
     , m_dictation(new DictationPage(controller, this))
 {
@@ -153,25 +118,16 @@ AppWindow::AppWindow(ApplicationController *controller,
     connect(m_pages, &SettingsPageSet::changed, m_dictation, &DictationPage::refreshSummary);
     connect(m_dictation, &DictationPage::navigateRequested, this, &AppWindow::navigateToSettings);
 
-    if (m_prototype == QStringLiteral("b")) {
-        buildToolbarShell();
-    } else if (m_prototype == QStringLiteral("c")) {
-        buildCompactShell();
-    } else {
-        m_prototype = QStringLiteral("a");
-        buildSidebarShell();
-    }
+    buildSidebarShell();
     settings::applyLabelHierarchy(this);
 
     const QByteArray geometry = m_controller->settings()->raw()
-                                    .value(QStringLiteral("ui/appWindow/%1/geometry").arg(m_prototype))
+                                    .value(QStringLiteral("ui/appWindow/a/geometry"))
                                     .toByteArray();
     if (!geometry.isEmpty()) {
         restoreGeometry(geometry);
     }
 }
-
-QString AppWindow::prototype() const { return m_prototype; }
 
 QStringList AppWindow::pageTitles() const
 {
@@ -187,22 +143,11 @@ int AppWindow::pageCount() const { return kPages.size(); }
 void AppWindow::navigateToSettings(AppPageId page)
 {
     const int settingsIndex = static_cast<int>(page);
-    if (m_prototype == QStringLiteral("c")) {
-        showCompactPage(settingsIndex);
-    } else if (m_navigation) {
-        for (int row = 0; row < m_navigation->count(); ++row) {
-            QListWidgetItem *item = m_navigation->item(row);
-            if (item->data(Qt::UserRole).toInt() == settingsIndex + 1) {
-                m_navigation->setCurrentItem(item);
-                break;
-            }
-        }
-    } else if (m_navigationActions) {
-        for (QAction *action : m_navigationActions->actions()) {
-            if (action->data().toInt() == settingsIndex + 1) {
-                action->trigger();
-                break;
-            }
+    for (int row = 0; row < m_navigation->count(); ++row) {
+        QListWidgetItem *item = m_navigation->item(row);
+        if (item->data(Qt::UserRole).toInt() == settingsIndex + 1) {
+            m_navigation->setCurrentItem(item);
+            break;
         }
     }
 }
@@ -391,7 +336,6 @@ void AppWindow::buildSidebarShell()
         item->setSizeHint(QSize(0, 32));
     }
     sidebarLayout->addWidget(m_navigation, 1);
-    sidebarLayout->addWidget(createPrototypeSwitcher(sidebar), 0, Qt::AlignLeft);
     m_stack = new QStackedWidget(m_sidebarSplitter);
     m_stack->setObjectName(QStringLiteral("appPageStack"));
     for (QWidget *page : std::as_const(m_pageWidgets)) {
@@ -527,233 +471,6 @@ void AppWindow::filterSidebarPages(const QString &query)
     }
 }
 
-void AppWindow::buildToolbarShell()
-{
-    resize(900, 640);
-    setMinimumSize(760, 520);
-    auto *toolbar = addToolBar(QStringLiteral("Pages"));
-    toolbar->setMovable(false);
-    toolbar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-    const int toolbarIconSize = style()->pixelMetric(QStyle::PM_ToolBarIconSize, nullptr, toolbar);
-    toolbar->setIconSize(QSize(toolbarIconSize, toolbarIconSize));
-    m_navigationActions = new QActionGroup(this);
-    m_navigationActions->setExclusive(true);
-    for (int index = 0; index < kPages.size(); ++index) {
-        const auto &page = kPages.at(index);
-        QAction *action = toolbar->addAction(
-            pageIcon(page, toolbar), page.title);
-        action->setCheckable(true);
-        action->setData(index);
-        m_navigationActions->addAction(action);
-        connect(action, &QAction::triggered, this, [this, index] { m_stack->setCurrentIndex(index); });
-        if (index == 0) action->setChecked(true);
-    }
-
-    auto *central = new QWidget(this);
-    auto *root = new QVBoxLayout(central);
-    root->setContentsMargins(0, 0, 0, 0);
-    m_stack = new QStackedWidget(central);
-    m_stack->setObjectName(QStringLiteral("appPageStack"));
-    for (QWidget *page : std::as_const(m_pageWidgets)) m_stack->addWidget(page);
-    root->addWidget(createPageHeader(central));
-    root->addWidget(m_stack, 1);
-    root->addWidget(createPendingBanner(central));
-    toolbar->addSeparator();
-    toolbar->addWidget(createPrototypeSwitcher(toolbar));
-    setCentralWidget(central);
-    connect(m_pages, &SettingsPageSet::changed, this, &AppWindow::updatePendingBanner);
-}
-
-void AppWindow::buildCompactShell()
-{
-    resize(420, 560);
-    setMinimumSize(400, 480);
-    setMaximumWidth(520);
-    auto *central = new QWidget(this);
-    auto *root = new QVBoxLayout(central);
-    root->setContentsMargins(0, 0, 0, 0);
-    m_compactStack = new QStackedWidget(central);
-
-    auto *home = new QWidget(m_compactStack);
-    auto *homeLayout = new QVBoxLayout(home);
-    homeLayout->setContentsMargins(0, 0, 0, 0);
-    homeLayout->addWidget(m_dictation, 1);
-    m_compactList = new QListWidget(home);
-    m_compactList->setObjectName(QStringLiteral("compactSettingsList"));
-    m_compactList->setBackgroundRole(QPalette::Base);
-    m_compactList->setAutoFillBackground(true);
-    m_compactList->setFrameShape(QFrame::NoFrame);
-    m_compactList->setIconSize(QSize(22, 22));
-    for (int index = 1; index < kPages.size(); ++index) {
-        const auto &page = kPages.at(index);
-        auto *item = new QListWidgetItem(m_compactList);
-        item->setIcon(pageIcon(page, m_compactList));
-        item->setData(Qt::UserRole, index - 1);
-        item->setSizeHint(QSize(0, 36));
-        auto *row = new QWidget(m_compactList);
-        auto *rowLayout = new QHBoxLayout(row);
-        const int rowSpacing = qMax(
-            0, row->style()->pixelMetric(QStyle::PM_LayoutHorizontalSpacing, nullptr, row));
-        rowLayout->setContentsMargins(20 + rowSpacing, 0, 0, 0);
-        auto *title = new QLabel(page.title, row);
-        auto *arrow = new DprIconLabel(
-            themedIcon(QStringLiteral("go-next"), QStyle::SP_ArrowRight, row), QSize(16, 16), row);
-        rowLayout->addWidget(title);
-        rowLayout->addStretch();
-        rowLayout->addWidget(arrow);
-        m_compactList->setItemWidget(item, row);
-    }
-    homeLayout->addWidget(settings::makeSeparator(home));
-    homeLayout->addWidget(m_compactList);
-
-    auto *drill = new QWidget(m_compactStack);
-    auto *drillLayout = new QVBoxLayout(drill);
-    drillLayout->setContentsMargins(0, 0, 0, 0);
-    drillLayout->setSpacing(0);
-    auto *header = new QWidget(drill);
-    auto *headerLayout = new QHBoxLayout(header);
-    headerLayout->setContentsMargins(settings::relatedSpacing(),
-                                     settings::relatedSpacing(),
-                                     settings::relatedSpacing(),
-                                     settings::relatedSpacing());
-    auto *back = new QPushButton(QStringLiteral("Back"), header);
-    back->setIcon(themedIcon(QStringLiteral("go-previous"), QStyle::SP_ArrowLeft, back));
-    m_drillTitle = settings::makePageTitle(QString(), header);
-    headerLayout->addWidget(back);
-    headerLayout->addWidget(m_drillTitle);
-    headerLayout->addStretch();
-    drillLayout->addWidget(header);
-    drillLayout->addWidget(settings::makeSeparator(drill));
-    m_drillPages = new QStackedWidget(drill);
-    for (int index = 1; index < m_pageWidgets.size(); ++index) {
-        QWidget *page = m_pageWidgets.at(index);
-        removeEmbeddedPageTitle(page);
-        m_drillPages->addWidget(page);
-    }
-    drillLayout->addWidget(m_drillPages, 1);
-    drillLayout->addWidget(createPendingBanner(drill, true));
-
-    m_compactStack->addWidget(home);
-    m_compactStack->addWidget(drill);
-    root->addWidget(m_compactStack, 1);
-    root->addWidget(createPrototypeSwitcher(central));
-    setCentralWidget(central);
-    connect(m_compactList, &QListWidget::itemActivated, this, [this](QListWidgetItem *item) {
-        showCompactPage(item->data(Qt::UserRole).toInt());
-    });
-    connect(m_compactList, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
-        showCompactPage(item->data(Qt::UserRole).toInt());
-    });
-    connect(back, &QPushButton::clicked, this, [this] {
-        if (m_pages->hasChanges()) {
-            m_pendingCompactBack = true;
-            updatePendingBanner();
-            m_pendingApplyButton->setFocus(Qt::OtherFocusReason);
-        } else {
-            finishCompactBack();
-        }
-    });
-}
-
-QWidget *AppWindow::createPrototypeSwitcher(QWidget *parent)
-{
-    auto *bar = new QWidget(parent);
-    auto *layout = new QHBoxLayout(bar);
-    layout->setContentsMargins(settings::relatedSpacing(),
-                               settings::tightSpacing(),
-                               settings::relatedSpacing(),
-                               settings::tightSpacing());
-    auto *label = new QLabel(QStringLiteral("UI:"), bar);
-    auto *combo = new QComboBox(bar);
-    combo->setObjectName(QStringLiteral("uiPrototypeSwitcher"));
-    combo->addItem(QStringLiteral("A"), QStringLiteral("a"));
-    combo->addItem(QStringLiteral("B"), QStringLiteral("b"));
-    combo->addItem(QStringLiteral("C"), QStringLiteral("c"));
-    combo->addItem(QStringLiteral("Legacy"), QStringLiteral("legacy"));
-    combo->setCurrentIndex(combo->findData(m_prototype));
-    QFont font = combo->font();
-    font.setPointSize(qMax(7, font.pointSize() - 1));
-    combo->setFont(font);
-    label->setFont(font);
-    layout->addWidget(label);
-    layout->addWidget(combo);
-    connect(combo, &QComboBox::currentIndexChanged, this, [this, combo] {
-        m_controller->switchUiPrototype(combo->currentData().toString());
-    });
-    return bar;
-}
-
-QWidget *AppWindow::createPageHeader(QWidget *parent)
-{
-    auto *band = new QWidget(parent);
-    band->setObjectName(QStringLiteral("pageHeaderBand"));
-    auto *layout = new QVBoxLayout(band);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
-
-    auto *content = new QWidget(band);
-    auto *contentLayout = new QHBoxLayout(content);
-    contentLayout->setContentsMargins(settings::relatedSpacing(),
-                                      settings::relatedSpacing(),
-                                      settings::relatedSpacing(),
-                                      settings::relatedSpacing());
-    m_pageTitle = settings::makePageTitle(kPages.first().title, content);
-    contentLayout->addWidget(m_pageTitle);
-    contentLayout->addStretch();
-    contentLayout->addWidget(m_dictation->toggleButton());
-    layout->addWidget(content);
-
-    layout->addWidget(settings::makeSeparator(band));
-
-    connect(m_stack, &QStackedWidget::currentChanged, this, [this](int index) {
-        m_pageTitle->setText(kPages.at(index).title);
-        m_dictation->toggleButton()->setVisible(index == 0);
-    });
-    return band;
-}
-
-QWidget *AppWindow::createPendingBanner(QWidget *parent, bool compact)
-{
-    m_pendingBanner = new QFrame(parent);
-    m_pendingBanner->setObjectName(QStringLiteral("pendingChangesBanner"));
-    m_pendingBanner->setFrameShape(QFrame::StyledPanel);
-    m_pendingBanner->setFrameShadow(QFrame::Plain);
-    auto *layout = new QHBoxLayout(m_pendingBanner);
-    layout->setContentsMargins(compact ? 6 : 12, 6, compact ? 6 : 12, 6);
-    if (compact) {
-        auto *icon = new DprIconLabel(
-            style()->standardIcon(QStyle::SP_MessageBoxWarning), QSize(16, 16), m_pendingBanner);
-        layout->addWidget(icon);
-    }
-    auto *message = new QLabel(QStringLiteral("You have unsaved changes"), m_pendingBanner);
-    if (compact) {
-        QFont font = message->font();
-        font.setBold(true);
-        message->setFont(font);
-    }
-    layout->addWidget(message);
-    layout->addStretch();
-    auto *apply = new QPushButton(QStringLiteral("Apply"), m_pendingBanner);
-    if (compact) m_pendingApplyButton = apply;
-    auto *discard = new QPushButton(QStringLiteral("Discard"), m_pendingBanner);
-    layout->addWidget(apply);
-    layout->addWidget(discard);
-    m_pendingBanner->hide();
-    connect(apply, &QPushButton::clicked, this, [this] {
-        if (m_pages->save()) {
-            m_pendingBanner->hide();
-            m_dictation->refreshSummary();
-            if (m_pendingCompactBack) finishCompactBack();
-        }
-    });
-    connect(discard, &QPushButton::clicked, this, [this] {
-        m_pages->load();
-        m_pendingBanner->hide();
-        if (m_pendingCompactBack) finishCompactBack();
-    });
-    return m_pendingBanner;
-}
-
 void AppWindow::runAutoSave()
 {
     SettingsPageSet::SaveFailure failure;
@@ -772,31 +489,10 @@ void AppWindow::runAutoSave()
     m_dictation->refreshSummary();
 }
 
-void AppWindow::updatePendingBanner()
-{
-    if (m_pendingBanner) m_pendingBanner->setVisible(m_pages->hasChanges());
-}
-
-void AppWindow::showCompactPage(int page)
-{
-    const int boundedPage = qBound(0, page, kPages.size() - 2);
-    m_drillPages->setCurrentIndex(boundedPage);
-    m_drillTitle->setText(kPages.at(boundedPage + 1).title);
-    m_compactStack->setCurrentIndex(1);
-    m_pendingCompactBack = false;
-    m_pendingBanner->hide();
-}
-
-void AppWindow::finishCompactBack()
-{
-    m_pendingCompactBack = false;
-    m_compactStack->setCurrentIndex(0);
-}
-
 void AppWindow::rememberGeometry()
 {
     m_controller->settings()->raw().setValue(
-        QStringLiteral("ui/appWindow/%1/geometry").arg(m_prototype), saveGeometry());
+        QStringLiteral("ui/appWindow/a/geometry"), saveGeometry());
     if (m_sidebarSplitter) {
         m_controller->settings()->raw().setValue(
             QStringLiteral("ui/appWindow/a/splitter"), m_sidebarSplitter->saveState());

@@ -70,7 +70,6 @@ public:
     using SettingsCodecs::setSpeechProvider;
     using SettingsCodecs::setStoredApiKeyFallback;
     using SettingsCodecs::setTheme;
-    using SettingsCodecs::setUiPrototype;
     using SettingsCodecs::setUseTargetContext;
     using SettingsCodecs::setVocabularyEntries;
     using SettingsCodecs::setWritingProfileOverrides;
@@ -81,7 +80,6 @@ public:
     using SettingsCodecs::speechProvider;
     using SettingsCodecs::storedApiKeyFallback;
     using SettingsCodecs::theme;
-    using SettingsCodecs::uiPrototype;
     using SettingsCodecs::useTargetContext;
     using SettingsCodecs::vocabularyEntries;
     using SettingsCodecs::writingProfileOverrides;

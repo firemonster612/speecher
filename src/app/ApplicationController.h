@@ -3,7 +3,6 @@
 #include <memory>
 
 #include <QObject>
-#include <QPointer>
 
 #include "app/SingleInstanceIpc.h"
 
@@ -13,11 +12,9 @@ namespace speecher {
 
 class DictationSession;
 class AppWindow;
-class MainWindow;
 class LinuxComposition;
 class ProviderRegistry;
 class SecretStore;
-class SettingsDialog;
 class SettingsStore;
 class TranscriberPopup;
 
@@ -43,7 +40,6 @@ public:
 
     void showMainWindow();
     void showSettingsWindow();
-    void switchUiPrototype(const QString &prototype);
     bool startIpc(QString *error = nullptr);
 
 public slots:
@@ -54,7 +50,6 @@ public slots:
     void showSettings();
     void handleIpcCommand(const QString &command,
                           const QString &outputFormat,
-                          const QString &uiPrototype,
                           QLocalSocket *socket);
 
 signals:
@@ -76,8 +71,6 @@ private:
     DictationSession *m_session = nullptr;
     TranscriberPopup *m_popup = nullptr;
     AppWindow *m_appWindow = nullptr;
-    MainWindow *m_mainWindow = nullptr;
-    QPointer<SettingsDialog> m_settingsDialog;
     SingleInstanceIpc *m_ipc = nullptr;
     bool m_accessibilitySupported = false;
     bool m_accessibilityEnabled = false;

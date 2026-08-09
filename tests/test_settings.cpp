@@ -22,7 +22,6 @@ private slots:
         settings.raw().clear();
         QCOMPARE(settings.previewWords(), 7);
         QCOMPARE(settings.theme(), QStringLiteral("system"));
-        QCOMPARE(settings.uiPrototype(), QStringLiteral("a"));
         QCOMPARE(settings.pauseMediaDuringTranscription(), true);
         QCOMPARE(settings.soundsEnabled(), false);
         QCOMPARE(settings.customVocabulary(), QStringList());

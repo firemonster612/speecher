@@ -122,7 +122,6 @@ static bool startDetachedSettings(const SingleInstancePlatform *platform)
 
 static int runCliCommand(const QString &command,
                          std::optional<OutputFormat> outputFormat,
-                         const QString &uiPrototype,
                          const std::shared_ptr<const SingleInstancePlatform> &platform)
 {
     IpcResponse response;
@@ -132,8 +131,7 @@ static int runCliCommand(const QString &command,
                                                                               &response,
                                                                               1200,
                                                                               platform,
-                                                                              &ipcError,
-                                                                              uiPrototype);
+                                                                              &ipcError);
     if (ipcResult == IpcCommandResult::Sent) {
         std::cout << response.state.toStdString() << "\n";
         return response.ok ? 0 : 1;
@@ -176,21 +174,6 @@ int main(int argc, char **argv)
     }
 
     QString optionError;
-    const QString requestedPrototype = requestedOption(args, QStringLiteral("--ui"), &optionError).toLower();
-    if (!optionError.isEmpty()) {
-        std::cerr << optionError.toStdString() << "\n";
-        return 2;
-    }
-    if (!requestedPrototype.isEmpty()) {
-        if (requestedPrototype != QStringLiteral("legacy")
-            && requestedPrototype != QStringLiteral("a")
-            && requestedPrototype != QStringLiteral("b")
-            && requestedPrototype != QStringLiteral("c")) {
-            std::cerr << "Unknown UI prototype: " << requestedPrototype.toStdString() << "\n";
-            return 2;
-        }
-        startupSettings.setUiPrototype(requestedPrototype);
-    }
     const QString grabPath = requestedOption(args, QStringLiteral("--grab"), &optionError);
     if (!optionError.isEmpty()) {
         std::cerr << optionError.toStdString() << "\n";
@@ -223,7 +206,6 @@ int main(int argc, char **argv)
                                  ? QStringLiteral("showSettings")
                                  : cliCommand,
                              outputFormat,
-                             requestedPrototype,
                              platform);
     }
 
@@ -240,11 +222,7 @@ int main(int argc, char **argv)
         }
         const QString showCommand = showSettings ? QStringLiteral("showSettings")
                                                  : QStringLiteral("showMain");
-        if (!daemon && SingleInstanceIpc::sendCommand(showCommand,
-                                                       nullptr,
-                                                       1200,
-                                                       {},
-                                                       requestedPrototype)) {
+        if (!daemon && SingleInstanceIpc::sendCommand(showCommand, nullptr)) {
             return 0;
         }
         std::cerr << ipcError.toStdString() << "\n";
@@ -256,7 +234,6 @@ int main(int argc, char **argv)
             if (outputFormat) {
                 controller.handleIpcCommand(QStringLiteral("start"),
                                             outputFormatName(*outputFormat),
-                                            {},
                                             nullptr);
             } else {
                 controller.startListening();
