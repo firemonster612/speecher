@@ -245,6 +245,15 @@ private:
 };
 #endif
 
+QColor separatorColor(const QPalette &palette)
+{
+    const QColor window = palette.color(QPalette::Window);
+    const QColor text = palette.color(QPalette::WindowText);
+    return QColor((window.red() * 3 + text.red()) / 4,
+                  (window.green() * 3 + text.green()) / 4,
+                  (window.blue() * 3 + text.blue()) / 4);
+}
+
 QFrame *makeSeparator(QWidget *parent)
 {
     auto *line = new QFrame(parent);
@@ -254,13 +263,8 @@ QFrame *makeSeparator(QWidget *parent)
     line->setFixedHeight(1);
     // Sunken frames vanish on dark schemes; blend a quarter of the text
     // color into the window color, the way Kirigami derives separators.
-    const QColor window = parent->palette().color(QPalette::Window);
-    const QColor text = parent->palette().color(QPalette::WindowText);
     QPalette blended(parent->palette());
-    blended.setColor(QPalette::WindowText,
-                     QColor((window.red() * 3 + text.red()) / 4,
-                            (window.green() * 3 + text.green()) / 4,
-                            (window.blue() * 3 + text.blue()) / 4));
+    blended.setColor(QPalette::WindowText, separatorColor(parent->palette()));
     line->setPalette(blended);
     line->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     return line;

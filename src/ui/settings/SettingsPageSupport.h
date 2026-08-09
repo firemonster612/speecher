@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QColor>
 #include <QList>
 #include <QPair>
 #include <QString>
@@ -20,6 +21,7 @@ class QWidget;
 namespace speecher::settings {
 
 QFrame *makeSeparator(QWidget *parent);
+QColor separatorColor(const QPalette &palette);
 QWidget *makeCenteredSeparator(QWidget *parent);
 void configureFormLayout(QFormLayout *form);
 QFrame *makeRow(const QString &label,

@@ -382,6 +382,16 @@ void AppWindow::buildSidebarShell()
     m_sidebarSplitter->addWidget(right);
     m_sidebarSplitter->setStretchFactor(0, 0);
     m_sidebarSplitter->setStretchFactor(1, 1);
+    if (QWidget *handle = m_sidebarSplitter->handle(1)) {
+        // Breeze paints splitter handles in plain window color — invisible.
+        // Fill the 1px handle with the separator blend so the sidebar/content
+        // boundary reads as a hairline, like System Settings.
+        QPalette handlePalette(handle->palette());
+        handlePalette.setColor(QPalette::Window,
+                               settings::separatorColor(handle->palette()));
+        handle->setPalette(handlePalette);
+        handle->setAutoFillBackground(true);
+    }
     connect(m_sidebarSplitter, &QSplitter::splitterMoved, searchContainer,
             [searchContainer, sidebar] { searchContainer->setFixedWidth(sidebar->width()); });
     root->addWidget(m_sidebarSplitter, 1);
