@@ -70,8 +70,6 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     }
     m_provider->addItem(QStringLiteral("None"), QStringLiteral("none"));
     addWritingProfiles(m_writingProfile);
-    m_useTargetContext->setText(QStringLiteral("Use context"));
-    m_screenshotContext->setText(QStringLiteral("Allow screenshots"));
     m_profileSettings->setObjectName(QStringLiteral("vocabInput"));
     m_profileSettings->setColumnCount(3);
     m_profileSettings->setHorizontalHeaderLabels({
@@ -107,13 +105,13 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     cardLayout->addRow(settings::makeCenteredSeparator(card));
 
     m_targetContextControl = settings::makeRow(
-        QStringLiteral("Target context"),
-        QStringLiteral("Use the focused app, control, selection, and bounded nearby text for cleanup."),
+        QStringLiteral("Context"),
+        QStringLiteral("Send the target app's context to the refiner"),
         m_useTargetContext,
         card);
     m_targetContextControl->setObjectName(QStringLiteral("targetContextControl"));
     settings::addRow(cardLayout, m_targetContextControl, card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Screenshot context"), QStringLiteral("Off by default; used only with image-capable refinement models."), m_screenshotContext, card), card, false);
+    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Screenshots"), QStringLiteral("Allow screenshots as refinement context"), m_screenshotContext, card), card, false);
 
     auto *pageLayout = settings::makeSettingsPage(this);
     pageLayout->setSpacing(0);

@@ -153,7 +153,6 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
         addPasteMethods(combo, false, true);
         m_categoryPasteControls.append({category, combo});
     }
-    m_restoreClipboardAfterTyping->setText(QStringLiteral("Restore"));
     m_restoreClipboardAfterTyping->setToolTip(QStringLiteral("Restore the previous clipboard after virtual-keyboard paste."));
     m_appPasteRules->setObjectName(QStringLiteral("vocabInput"));
     m_appPasteRules->setColumnCount(3);
@@ -217,7 +216,7 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     targetPasteLayout->addRow(appRulesControl);
     targetPasteLayout->addRow(settings::makeCenteredSeparator(m_targetPasteControls));
     cardLayout->addRow(m_targetPasteControls);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Restore clipboard"), QStringLiteral("Restore the previous clipboard only after insertion is verified."), m_restoreClipboardAfterTyping, card), card);
+    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Clipboard"), QStringLiteral("Restore previous clipboard contents after typing"), m_restoreClipboardAfterTyping, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Virtual keyboard"), QString(), makeYdotoolControl(m_ydotoolStatus, m_ydotoolSetupButton, m_ydotoolStartButton, m_ydotoolDisableButton, m_ydotoolRemoveButton, card), card), card, false);
     auto *pageLayout = settings::makeSettingsPage(this);
     pageLayout->setSpacing(0);

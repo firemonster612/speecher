@@ -6,10 +6,12 @@
 #include "ui/settings/CorrectionsSettingsPage.h"
 #include "ui/settings/OutputSettingsPage.h"
 #include "ui/settings/RefinementSettingsPage.h"
+#include "ui/settings/SettingsPageSupport.h"
 
 #include <QLabel>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFontMetrics>
 #include <QPushButton>
 #include <QStyleHints>
 #include <QTableWidget>
@@ -280,6 +282,34 @@ private slots:
                                              ? QString::fromLatin1(widget->metaObject()->className())
                                              : widget->objectName())));
         }
+    }
+
+    void sharedSettingsRowsFollowSystemSettingsLayout()
+    {
+        QWidget parent;
+        auto *control = new QPushButton(QStringLiteral("Control"), &parent);
+        const QString description = QStringLiteral(
+            "A long description whose deterministic wrap width lets the form row grow to fit.");
+        QFrame *describedRow = settings::makeRow(
+            QStringLiteral("Category"), description, control, &parent);
+        auto *descriptionLabel = describedRow->findChild<QLabel *>(
+            QStringLiteral("rowDescription"));
+        auto *titleLabel = describedRow->findChild<QLabel *>(
+            QStringLiteral("rowLabelCell"));
+        QVERIFY(descriptionLabel);
+        QVERIFY(titleLabel);
+        QVERIFY(descriptionLabel->wordWrap());
+        QCOMPARE(descriptionLabel->width(),
+                 qMin(descriptionLabel->fontMetrics().horizontalAdvance(description),
+                      descriptionLabel->fontMetrics().averageCharWidth() * 45));
+        QCOMPARE(titleLabel->alignment(), Qt::AlignRight | Qt::AlignVCenter);
+
+        auto *checkBox = new QCheckBox(QStringLiteral("Short label"), &parent);
+        const QString sentence = QStringLiteral("Enable the complete setting sentence");
+        QFrame *checkBoxRow = settings::makeRow(
+            QStringLiteral("Setting"), sentence, checkBox, &parent);
+        QCOMPARE(checkBox->text(), sentence);
+        QVERIFY(!checkBoxRow->findChild<QLabel *>(QStringLiteral("rowDescription")));
     }
 };
 

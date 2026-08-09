@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFontMetrics>
 #include <QFormLayout>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -284,6 +285,7 @@ QFrame *makeRow(const QString &label,
                                  : label + QLatin1Char(':'),
                              row);
     title->setObjectName(QStringLiteral("rowTitle"));
+    title->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     QWidget *labelField = title;
     if (titleAccessory) {
         auto *titleRow = new QWidget(row);
@@ -305,11 +307,16 @@ QFrame *makeRow(const QString &label,
         fieldLayout->addWidget(control, 0, Qt::AlignLeft);
     }
 
-    auto *subtitle = new QLabel(description, row);
-    subtitle->setObjectName(QStringLiteral("rowDescription"));
-    subtitle->setWordWrap(true);
-    subtitle->setForegroundRole(QPalette::PlaceholderText);
-    if (!description.isEmpty()) {
+    if (auto *checkBox = qobject_cast<QCheckBox *>(control); checkBox && !description.isEmpty()) {
+        checkBox->setText(description);
+    } else if (!description.isEmpty()) {
+        auto *subtitle = new QLabel(description, row);
+        subtitle->setObjectName(QStringLiteral("rowDescription"));
+        subtitle->setWordWrap(true);
+        const int naturalTextWidth = subtitle->fontMetrics().horizontalAdvance(description);
+        subtitle->setFixedWidth(qMin(
+            naturalTextWidth, subtitle->fontMetrics().averageCharWidth() * 45));
+        subtitle->setForegroundRole(QPalette::PlaceholderText);
         fieldLayout->addWidget(subtitle);
     }
     return row;

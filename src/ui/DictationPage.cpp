@@ -37,7 +37,9 @@ void addSummaryRow(QFormLayout *form,
     layout->setSpacing(settings::relatedSpacing());
     layout->addWidget(value, 0, Qt::AlignVCenter);
     layout->addWidget(change, 0, Qt::AlignVCenter);
-    form->addRow(labelText + QLatin1Char(':'), field);
+    auto *label = new QLabel(labelText + QLatin1Char(':'), parent);
+    label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    form->addRow(label, field);
     QObject::connect(change, &QPushButton::clicked, owner, [owner, page] {
         emit owner->navigateRequested(page);
     });

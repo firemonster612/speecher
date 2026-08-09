@@ -40,14 +40,20 @@ namespace speecher {
 
 namespace {
 
-const QList<QPair<QString, QString>> kPages{
-    {QStringLiteral("Dictation"), QStringLiteral("audio-input-microphone")},
-    {QStringLiteral("General"), QStringLiteral("preferences-system")},
-    {QStringLiteral("Audio"), QStringLiteral("preferences-desktop-sound")},
-    {QStringLiteral("Applications"), QStringLiteral("preferences-desktop-default-applications")},
-    {QStringLiteral("Output"), QStringLiteral("edit-paste")},
-    {QStringLiteral("Refinement"), QStringLiteral("document-edit")},
-    {QStringLiteral("Vocabulary"), QStringLiteral("tools-check-spelling")},
+struct PageDefinition {
+    QString title;
+    QString iconName;
+    QString fallbackIconName;
+};
+
+const QList<PageDefinition> kPages{
+    {QStringLiteral("Dictation"), QStringLiteral("audio-input-microphone"), QString()},
+    {QStringLiteral("General"), QStringLiteral("preferences-system"), QString()},
+    {QStringLiteral("Audio"), QStringLiteral("preferences-desktop-sound"), QString()},
+    {QStringLiteral("Applications"), QStringLiteral("preferences-desktop-default-applications"), QString()},
+    {QStringLiteral("Output"), QStringLiteral("klipper"), QStringLiteral("edit-paste")},
+    {QStringLiteral("Refinement"), QStringLiteral("tools-wizard"), QStringLiteral("document-edit")},
+    {QStringLiteral("Vocabulary"), QStringLiteral("accessories-dictionary"), QStringLiteral("tools-check-spelling")},
 };
 
 QScrollArea *scrollingPage(QWidget *content, QWidget *parent)
@@ -92,6 +98,13 @@ QIcon themedIcon(const QString &name, QStyle::StandardPixmap fallback, QWidget *
 {
     const QIcon icon = QIcon::fromTheme(name);
     return icon.isNull() ? widget->style()->standardIcon(fallback) : icon;
+}
+
+QIcon pageIcon(const PageDefinition &page, QWidget *widget)
+{
+    const QIcon icon = QIcon::fromTheme(
+        page.iconName, QIcon::fromTheme(page.fallbackIconName));
+    return icon.isNull() ? widget->style()->standardIcon(QStyle::SP_FileIcon) : icon;
 }
 
 class DprIconLabel final : public QLabel {
@@ -157,7 +170,7 @@ QStringList AppWindow::pageTitles() const
 {
     QStringList titles;
     for (const auto &page : kPages) {
-        titles << page.first;
+        titles << page.title;
     }
     return titles;
 }
@@ -281,8 +294,8 @@ void AppWindow::buildSidebarShell()
     m_navigation->setIconSize(QSize(22, 22));
     for (int index = 0; index < kPages.size(); ++index) {
         const auto &page = kPages.at(index);
-        auto *item = new QListWidgetItem(themedIcon(page.second, QStyle::SP_FileIcon, m_navigation),
-                                         page.first,
+        auto *item = new QListWidgetItem(pageIcon(page, m_navigation),
+                                         page.title,
                                          m_navigation);
         item->setData(Qt::UserRole, index);
         item->setSizeHint(QSize(0, 32));
@@ -346,7 +359,7 @@ void AppWindow::buildToolbarShell()
     for (int index = 0; index < kPages.size(); ++index) {
         const auto &page = kPages.at(index);
         QAction *action = toolbar->addAction(
-            themedIcon(page.second, QStyle::SP_FileIcon, toolbar), page.first);
+            pageIcon(page, toolbar), page.title);
         action->setCheckable(true);
         action->setData(index);
         m_navigationActions->addAction(action);
@@ -392,7 +405,7 @@ void AppWindow::buildCompactShell()
     for (int index = 1; index < kPages.size(); ++index) {
         const auto &page = kPages.at(index);
         auto *item = new QListWidgetItem(m_compactList);
-        item->setIcon(themedIcon(page.second, QStyle::SP_FileIcon, m_compactList));
+        item->setIcon(pageIcon(page, m_compactList));
         item->setData(Qt::UserRole, index - 1);
         item->setSizeHint(QSize(0, 36));
         auto *row = new QWidget(m_compactList);
@@ -400,7 +413,7 @@ void AppWindow::buildCompactShell()
         const int rowSpacing = qMax(
             0, row->style()->pixelMetric(QStyle::PM_LayoutHorizontalSpacing, nullptr, row));
         rowLayout->setContentsMargins(20 + rowSpacing, 0, 0, 0);
-        auto *title = new QLabel(page.first, row);
+        auto *title = new QLabel(page.title, row);
         auto *arrow = new DprIconLabel(
             themedIcon(QStringLiteral("go-next"), QStyle::SP_ArrowRight, row), QSize(16, 16), row);
         rowLayout->addWidget(title);
@@ -508,7 +521,7 @@ QWidget *AppWindow::createPageHeader(QWidget *parent)
                                       settings::relatedSpacing(),
                                       settings::relatedSpacing(),
                                       settings::relatedSpacing());
-    m_pageTitle = settings::makePageTitle(kPages.first().first, content);
+    m_pageTitle = settings::makePageTitle(kPages.first().title, content);
     contentLayout->addWidget(m_pageTitle);
     contentLayout->addStretch();
     contentLayout->addWidget(m_dictation->toggleButton());
@@ -520,7 +533,7 @@ QWidget *AppWindow::createPageHeader(QWidget *parent)
     layout->addWidget(line);
 
     connect(m_stack, &QStackedWidget::currentChanged, this, [this](int index) {
-        m_pageTitle->setText(kPages.at(index).first);
+        m_pageTitle->setText(kPages.at(index).title);
         m_dictation->toggleButton()->setVisible(index == 0);
     });
     return band;
@@ -595,7 +608,7 @@ void AppWindow::showCompactPage(int page)
 {
     const int boundedPage = qBound(0, page, kPages.size() - 2);
     m_drillPages->setCurrentIndex(boundedPage);
-    m_drillTitle->setText(kPages.at(boundedPage + 1).first);
+    m_drillTitle->setText(kPages.at(boundedPage + 1).title);
     m_compactStack->setCurrentIndex(1);
     m_pendingCompactBack = false;
     m_pendingBanner->hide();

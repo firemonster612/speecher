@@ -31,7 +31,6 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
     m_captureMode->addItem(QStringLiteral("On demand"), QStringLiteral("on_demand"));
     m_captureMode->addItem(QStringLiteral("Warm"), QStringLiteral("warm"));
     m_captureMode->setToolTip(QStringLiteral("Warm keeps the microphone stream open between captures for lower startup latency."));
-    m_vadEnabled->setText(QStringLiteral("Trim silence"));
     m_vadEnabled->setToolTip(QStringLiteral("Suppress leading, trailing, and long in-between silence before audio is sent."));
     for (QSpinBox *spinBox : {m_preRollMs, m_postRollMs}) {
         spinBox->setRange(0, 1500);
@@ -79,8 +78,8 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
                                        card),
                      card);
     settings::addRow(cardLayout,
-                     settings::makeRow(QStringLiteral("Silence trimming"),
-                                       QStringLiteral("Optional VAD gate before sending audio to the speech provider."),
+                     settings::makeRow(QStringLiteral("Silence"),
+                                       QStringLiteral("Trim leading and trailing silence"),
                                        m_vadEnabled,
                                        card),
                      card);

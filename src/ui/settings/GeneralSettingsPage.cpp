@@ -26,8 +26,6 @@ GeneralSettingsPage::GeneralSettingsPage(const QString &primaryOutputStatus,
     m_theme->addItem(QStringLiteral("Light"), QStringLiteral("light"));
     m_theme->addItem(QStringLiteral("Dark"), QStringLiteral("dark"));
     m_theme->setObjectName(QStringLiteral("themeControl"));
-    m_pauseMedia->setText(QStringLiteral("Pause"));
-    m_sounds->setText(QStringLiteral("Play sounds"));
     m_previewWords->setObjectName(QStringLiteral("previewWords"));
     m_previewWords->setRange(1, 40);
 
@@ -39,9 +37,9 @@ GeneralSettingsPage::GeneralSettingsPage(const QString &primaryOutputStatus,
     primaryOutput->setForegroundRole(QPalette::WindowText);
     auto *openReleases = new QPushButton(QStringLiteral("Open releases"), this);
 
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Theme"), QStringLiteral("App colors."), m_theme, card), card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Pause media"), QStringLiteral("Pause currently playing media while transcribing."), m_pauseMedia, card), card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Sound cues"), QStringLiteral("Use the desktop sound for recording start and stop."), m_sounds, card), card);
+    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Theme"), QString(), m_theme, card), card);
+    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Media"), QStringLiteral("Pause playing media while dictating"), m_pauseMedia, card), card);
+    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Sounds"), QStringLiteral("Play sounds when dictation starts and stops"), m_sounds, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Preview words"), QStringLiteral("Trailing words shown in the popup."), m_previewWords, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Clipboard output"), QStringLiteral("Current platform clipboard path."), primaryOutput, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Updates"), QStringLiteral("Updates are manual; open the GitHub releases page when you want to check."), openReleases, card), card, false);
