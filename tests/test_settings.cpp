@@ -20,6 +20,7 @@ private slots:
 
         SettingsStore settings;
         settings.raw().clear();
+        QCOMPARE(settings.setupCompleted(), false);
         QCOMPARE(settings.previewWords(), 7);
         QCOMPARE(settings.theme(), QStringLiteral("system"));
         QCOMPARE(settings.pauseMediaDuringTranscription(), true);
@@ -53,6 +54,10 @@ private slots:
         QCOMPARE(settings.audioPostRollMs(), 200);
         QCOMPARE(settings.audioReadinessTimeoutMs(), 900);
         QCOMPARE(settings.audioVadThresholdPercent(), 2);
+
+        settings.setSetupCompleted(true);
+        QCOMPARE(settings.setupCompleted(), true);
+        QCOMPARE(settings.snapshot().setupCompleted, true);
 
         settings.setRefinementStyle(QStringLiteral("strong_polish"));
         QCOMPARE(settings.refinementStyle(), QStringLiteral("strong_polish"));

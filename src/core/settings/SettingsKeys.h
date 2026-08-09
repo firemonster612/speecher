@@ -7,6 +7,7 @@ namespace speecher::SettingsKeys {
 inline constexpr auto Organization = "local.speecher";
 inline constexpr auto Application = "speecher";
 
+inline const QString SetupCompleted = QStringLiteral("app/setupCompleted");
 inline const QString UiPreviewWords = QStringLiteral("ui/previewWords");
 inline const QString UiTheme = QStringLiteral("ui/theme");
 inline const QString UiPauseMedia = QStringLiteral("ui/pauseMediaDuringTranscription");

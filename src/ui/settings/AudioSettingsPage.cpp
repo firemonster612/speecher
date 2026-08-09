@@ -6,7 +6,6 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QLabel>
-#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QVBoxLayout>
 
@@ -143,47 +142,9 @@ bool AudioSettingsPage::hasChanges(const AppSettings &settings) const
 
 void AudioSettingsPage::refreshAudioDeviceList(const QString &selectedDeviceId)
 {
-    const QSignalBlocker blocker(m_audioDevice);
-    m_audioDevice->clear();
-
-    const QList<AudioInputDeviceInfo> devices = m_platform.availableAudioInputDevices();
-    if (devices.isEmpty()) {
-        m_audioDevice->addItem(QStringLiteral("No microphones found"), QString());
-        settings::setComboItemEnabled(m_audioDevice,
-                                      0,
-                                      false,
-                                      QStringLiteral("Connect or enable an input device, then reopen Settings."));
-        if (!selectedDeviceId.isEmpty()) {
-            m_audioDevice->addItem(QStringLiteral("Missing microphone"), selectedDeviceId);
-            settings::setComboItemEnabled(m_audioDevice,
-                                          1,
-                                          false,
-                                          QStringLiteral("This saved microphone is not currently available."));
-            settings::selectData(m_audioDevice, selectedDeviceId);
-        }
-        return;
-    }
-
-    m_audioDevice->addItem(QStringLiteral("System default"), QString());
-    bool selectedFound = selectedDeviceId.isEmpty();
-    for (const AudioInputDeviceInfo &device : devices) {
-        const QString label = device.isDefault
-            ? QStringLiteral("%1 (default)").arg(device.label)
-            : device.label;
-        m_audioDevice->addItem(label, device.id);
-        selectedFound = selectedFound || device.id == selectedDeviceId;
-    }
-
-    if (!selectedFound) {
-        m_audioDevice->addItem(QStringLiteral("Missing microphone"), selectedDeviceId);
-        const int missingIndex = m_audioDevice->count() - 1;
-        settings::setComboItemEnabled(m_audioDevice,
-                                      missingIndex,
-                                      false,
-                                      QStringLiteral("This saved microphone is not currently available."));
-    }
-
-    settings::selectData(m_audioDevice, selectedDeviceId);
+    settings::populateAudioInputDevices(m_audioDevice,
+                                        m_platform.availableAudioInputDevices(),
+                                        selectedDeviceId);
 }
 
 void AudioSettingsPage::updateAudioControls()

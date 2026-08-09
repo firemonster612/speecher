@@ -30,6 +30,7 @@ endif()
 if(UNIX AND NOT APPLE)
   find_package(KF6WidgetsAddons QUIET)
   find_package(KF6ColorScheme QUIET)
+  find_package(KF6GlobalAccel QUIET)
 endif()
 if(SPEECHER_BUILD_TESTS)
   find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
@@ -167,9 +168,12 @@ set(SPEECHER_APP_UI_SOURCES
   src/app/ApplicationController.cpp
   src/app/LinuxComposition.cpp
   src/app/SingleInstanceIpc.cpp
+  src/output/YdotoolSetupFlow.cpp
   src/ui/AccessibilityNotice.cpp
   src/ui/MainWindow.cpp
   src/ui/SettingsDialog.cpp
+  src/ui/SetupAssistant.cpp
+  src/ui/setup/SetupPages.cpp
   src/ui/settings/ApplicationSettingsPage.cpp
   src/ui/settings/AudioSettingsPage.cpp
   src/ui/settings/BindingsSettingsPage.cpp
@@ -189,10 +193,13 @@ set(SPEECHER_APP_UI_HEADERS
   src/app/ApplicationController.h
   src/app/LinuxComposition.h
   src/app/SingleInstanceIpc.h
+  src/output/YdotoolSetupFlow.h
   src/ui/AccessibilityNotice.h
   src/ui/MainWindow.h
   src/ui/PopupPositioner.h
   src/ui/SettingsDialog.h
+  src/ui/SetupAssistant.h
+  src/ui/setup/SetupPages.h
   src/ui/settings/ApplicationSettingsPage.h
   src/ui/settings/AudioSettingsPage.h
   src/ui/settings/BindingsSettingsPage.h
@@ -250,8 +257,15 @@ target_link_libraries(speecher_app_ui PUBLIC
   speecher_domain speecher_workflow speecher_providers speecher_platform Qt6::Widgets
 )
 if(KF6WidgetsAddons_FOUND)
-  target_compile_definitions(speecher_app_ui PUBLIC SPEECHER_WITH_KPAGEWIDGET=1)
+  target_compile_definitions(speecher_app_ui PUBLIC
+    SPEECHER_WITH_KASSISTANT=1
+    SPEECHER_WITH_KPAGEWIDGET=1
+  )
   target_link_libraries(speecher_app_ui PUBLIC KF6::WidgetsAddons)
+endif()
+if(KF6GlobalAccel_FOUND)
+  target_compile_definitions(speecher_app_ui PRIVATE SPEECHER_WITH_KGLOBALACCEL=1)
+  target_link_libraries(speecher_app_ui PRIVATE KF6::GlobalAccel)
 endif()
 if(KF6WidgetsAddons_FOUND AND KF6ColorScheme_FOUND)
   target_compile_definitions(speecher_app_ui PRIVATE SPEECHER_WITH_KCOLORSCHEME=1)

@@ -6,3 +6,8 @@ Exec=@SPEECHER_DESKTOP_EXEC@
 Icon=local.speecher
 Terminal=false
 Categories=Utility;Accessibility;
+Actions=ToggleDictation;
+
+[Desktop Action ToggleDictation]
+Name=Toggle Dictation
+Exec=@SPEECHER_DESKTOP_EXEC@ toggle

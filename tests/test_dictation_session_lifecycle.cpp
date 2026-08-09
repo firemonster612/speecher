@@ -647,7 +647,7 @@ private slots:
         QVERIFY(waveform);
         QVERIFY(dismissProgress);
         const QString error = QStringLiteral(
-            "Claude login cannot be refreshed; run `claude /login` or `claude auth login`");
+            "Claude login cannot be refreshed; run `claude` in a terminal and use the `/login` command");
 
         popup.show();
         QVERIFY(QMetaObject::invokeMethod(

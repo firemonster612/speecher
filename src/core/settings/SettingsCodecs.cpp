@@ -61,6 +61,16 @@ QVariant SettingsCodecs::value(const QString &key, const QVariant &fallback) con
     return m_settings.value(key, fallback);
 }
 
+bool SettingsCodecs::setupCompleted() const
+{
+    return value(SettingsKeys::SetupCompleted, false).toBool();
+}
+
+void SettingsCodecs::setSetupCompleted(bool value)
+{
+    m_settings.setValue(SettingsKeys::SetupCompleted, value);
+}
+
 int SettingsCodecs::previewWords() const
 {
     return std::clamp(value(SettingsKeys::UiPreviewWords, 7).toInt(), 1, 40);
@@ -716,6 +726,7 @@ void SettingsCodecs::clearStoredApiKeyFallback()
 AppSettings SettingsCodecs::snapshot() const
 {
     AppSettings settings;
+    settings.setupCompleted = setupCompleted();
     settings.ui.previewWords = previewWords();
     settings.ui.theme = theme();
     settings.ui.pauseMediaDuringTranscription = pauseMediaDuringTranscription();
