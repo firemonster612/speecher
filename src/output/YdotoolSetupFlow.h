@@ -18,9 +18,14 @@ struct YdotoolSetupFlowResult {
     YdotoolSetupStatus status;
 };
 
+struct YdotoolSetupFlowOptions {
+    bool confirmInstall;
+    bool applyAutomaticOutputMethod;
+};
+
 bool startYdotoolSetup(SettingsStore &settings,
                        QWidget *dialogParent,
-                       bool confirmInstall,
+                       YdotoolSetupFlowOptions options,
                        QObject *callbackContext,
                        std::function<void(const YdotoolSetupFlowResult &)> finished);
 

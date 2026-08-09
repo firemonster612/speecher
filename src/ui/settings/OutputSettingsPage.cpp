@@ -405,7 +405,10 @@ void OutputSettingsPage::setupOrEnableYdotool()
     if (!startYdotoolSetup(
             m_settings,
             this,
-            true,
+            YdotoolSetupFlowOptions{
+                .confirmInstall = true,
+                .applyAutomaticOutputMethod = false,
+            },
             this,
             [this](const YdotoolSetupFlowResult &result) {
                 if (!result.helperOk) {
@@ -413,9 +416,7 @@ void OutputSettingsPage::setupOrEnableYdotool()
                         this,
                         QStringLiteral("ydotool setup failed"),
                         result.helperError);
-                } else if (!result.serviceError.isEmpty()
-                           && result.status.state != YdotoolSetupState::NeedsSignOut
-                           && !result.status.ready()) {
+                } else if (!result.serviceError.isEmpty()) {
                     QMessageBox::warning(
                         this,
                         QStringLiteral("ydotool service"),

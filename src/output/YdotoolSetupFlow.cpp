@@ -20,6 +20,8 @@
 namespace speecher {
 namespace {
 
+bool setupInProgress = false;
+
 bool verifyYdotoolTyping(QWidget *parent)
 {
     QDialog dialog(parent);
@@ -72,10 +74,15 @@ bool verifyYdotoolTyping(QWidget *parent)
 
 bool startYdotoolSetup(SettingsStore &settings,
                        QWidget *dialogParent,
-                       bool confirmInstall,
+                       YdotoolSetupFlowOptions options,
                        QObject *callbackContext,
                        std::function<void(const YdotoolSetupFlowResult &)> finished)
 {
+    if (setupInProgress) {
+        return false;
+    }
+    setupInProgress = true;
+
     const YdotoolSetupStatus current = YdotoolSetup::probe(settings.ydotoolEnabled());
     if (current.state == YdotoolSetupState::Disabled
         && current.speecherManagedSetupInstalled) {
@@ -85,11 +92,12 @@ bool startYdotoolSetup(SettingsStore &settings,
         if (verifyYdotoolTyping(dialogParent)) {
             settings.setYdotoolEnabled(true);
         }
+        setupInProgress = false;
         finished(result);
         return true;
     }
 
-    if (confirmInstall
+    if (options.confirmInstall
         && QMessageBox::question(
                dialogParent,
                QStringLiteral("Set up virtual keyboard"),
@@ -97,6 +105,7 @@ bool startYdotoolSetup(SettingsStore &settings,
                QMessageBox::Cancel | QMessageBox::Ok,
                QMessageBox::Ok)
             != QMessageBox::Ok) {
+        setupInProgress = false;
         return false;
     }
 
@@ -111,16 +120,19 @@ bool startYdotoolSetup(SettingsStore &settings,
             YdotoolSetup::startUserService(&result->serviceError);
         }
     });
-    QObject::connect(thread, &QThread::finished, &settings, [&, result, parentGuard, callbackGuard, finished = std::move(finished)] {
+    QObject::connect(thread, &QThread::finished, &settings, [&settings, options, result, parentGuard, callbackGuard, finished = std::move(finished)] {
         if (result->helperOk) {
             result->status = YdotoolSetup::probe(true);
-            settings.setOutputMethod(QString::fromLatin1(OutputMethod::Automatic));
+            if (options.applyAutomaticOutputMethod) {
+                settings.setOutputMethod(QString::fromLatin1(OutputMethod::Automatic));
+            }
             if (result->status.state == YdotoolSetupState::NeedsSignOut
                 || (result->status.ready()
                     && (!parentGuard || verifyYdotoolTyping(parentGuard)))) {
                 settings.setYdotoolEnabled(true);
             }
         }
+        setupInProgress = false;
         if (callbackGuard) {
             finished(*result);
         }

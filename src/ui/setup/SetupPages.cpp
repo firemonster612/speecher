@@ -340,12 +340,15 @@ void TextDeliverySetupPage::runSetup()
     m_setup->setEnabled(false);
     m_progress->setVisible(true);
     m_status->setText(QStringLiteral("Setting up ydotool…"));
-    startYdotoolSetup(
-        m_settings,
-        this,
-        false,
-        this,
-        [this](const YdotoolSetupFlowResult &result) {
+    if (!startYdotoolSetup(
+            m_settings,
+            this,
+            YdotoolSetupFlowOptions{
+                .confirmInstall = false,
+                .applyAutomaticOutputMethod = true,
+            },
+            this,
+            [this](const YdotoolSetupFlowResult &result) {
             m_progress->setVisible(false);
             if (!result.helperOk) {
                 m_status->setText(
@@ -355,16 +358,25 @@ void TextDeliverySetupPage::runSetup()
             }
 
             refreshStatus();
-            if (!result.serviceError.isEmpty()
-                && result.status.state != YdotoolSetupState::NeedsSignOut
-                && !result.status.ready()) {
-                m_status->setText(
-                    QStringLiteral("Setup installed, but the service could not start: %1")
-                        .arg(result.serviceError));
-                m_setup->setEnabled(true);
+            if (!result.serviceError.isEmpty()) {
+                if (result.status.state == YdotoolSetupState::NeedsSignOut) {
+                    m_status->setText(
+                        QStringLiteral("Set up — activates after your next sign-in. The service could not start: %1")
+                            .arg(result.serviceError));
+                } else {
+                    m_status->setText(
+                        QStringLiteral("Setup installed, but the service could not start: %1")
+                            .arg(result.serviceError));
+                    if (!result.status.ready()) {
+                        m_setup->setEnabled(true);
+                    }
+                }
             }
             emit signInRequirementChanged(needsSignIn());
-        });
+        })) {
+        m_progress->setVisible(false);
+        refreshStatus();
+    }
 }
 
 RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
