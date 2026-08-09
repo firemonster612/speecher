@@ -38,6 +38,7 @@ public:
 
 protected:
     void closeEvent(QCloseEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     void buildSharedPages();
@@ -64,6 +65,8 @@ private:
     QListWidget *m_compactList = nullptr;
     QListWidget *m_navigation = nullptr;
     QSplitter *m_sidebarSplitter = nullptr;
+    QWidget *m_sidebarPane = nullptr;
+    QWidget *m_searchSection = nullptr;
     QStringList m_pageKeywords;
     QActionGroup *m_navigationActions = nullptr;
     QLabel *m_drillTitle = nullptr;

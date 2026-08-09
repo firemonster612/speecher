@@ -17,6 +17,7 @@
 
 #include <QActionGroup>
 #include <QCloseEvent>
+#include <QEvent>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFrame>
@@ -220,6 +221,17 @@ void AppWindow::closeEvent(QCloseEvent *event)
     QMainWindow::closeEvent(event);
 }
 
+bool AppWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    // Keep the header's search section exactly as wide as the sidebar pane,
+    // whatever resizes it (layout settling, splitter drag, window resize).
+    if (watched == m_sidebarPane && event->type() == QEvent::Resize
+        && m_searchSection) {
+        m_searchSection->setFixedWidth(m_sidebarPane->width());
+    }
+    return QMainWindow::eventFilter(watched, event);
+}
+
 void AppWindow::buildSharedPages()
 {
     auto *refinementContent = new QWidget(this);
@@ -309,6 +321,20 @@ void AppWindow::buildSidebarShell()
     searchLayout->addWidget(search);
     headerLayout->addWidget(searchContainer);
 
+    // Short floating divider at the sidebar boundary, inset from the strip's
+    // top and bottom edges — the System Settings header treatment.
+    auto *headerDivider = new QWidget(header);
+    auto *dividerLayout = new QVBoxLayout(headerDivider);
+    dividerLayout->setContentsMargins(0, settings::relatedSpacing(), 0, settings::relatedSpacing());
+    auto *dividerLine = new QWidget(headerDivider);
+    dividerLine->setFixedWidth(1);
+    QPalette dividerPalette(dividerLine->palette());
+    dividerPalette.setColor(QPalette::Window, settings::separatorColor(header->palette()));
+    dividerLine->setPalette(dividerPalette);
+    dividerLine->setAutoFillBackground(true);
+    dividerLayout->addWidget(dividerLine);
+    headerLayout->addWidget(headerDivider);
+
     auto *headerRight = new QWidget(header);
     auto *headerRightLayout = new QHBoxLayout(headerRight);
     headerRightLayout->setContentsMargins(settings::relatedSpacing(),
@@ -322,7 +348,15 @@ void AppWindow::buildSidebarShell()
     headerLayout->addWidget(headerRight, 1);
     root->addWidget(header);
 
-    root->addWidget(settings::makeSeparator(central));
+    // Same fill mechanism and color as the splitter handle, so the strip's
+    // bottom edge and the sidebar/content hairline match exactly.
+    auto *headerUnderline = new QWidget(central);
+    headerUnderline->setFixedHeight(1);
+    QPalette underlinePalette(headerUnderline->palette());
+    underlinePalette.setColor(QPalette::Window, settings::separatorColor(central->palette()));
+    headerUnderline->setPalette(underlinePalette);
+    headerUnderline->setAutoFillBackground(true);
+    root->addWidget(headerUnderline);
 
     m_sidebarSplitter = new QSplitter(Qt::Horizontal, central);
     m_sidebarSplitter->setObjectName(QStringLiteral("sidebarSplitter"));
@@ -392,6 +426,9 @@ void AppWindow::buildSidebarShell()
         handle->setPalette(handlePalette);
         handle->setAutoFillBackground(true);
     }
+    m_sidebarPane = sidebar;
+    m_searchSection = searchContainer;
+    sidebar->installEventFilter(this);
     connect(m_sidebarSplitter, &QSplitter::splitterMoved, searchContainer,
             [searchContainer, sidebar] { searchContainer->setFixedWidth(sidebar->width()); });
     root->addWidget(m_sidebarSplitter, 1);
