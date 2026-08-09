@@ -52,6 +52,7 @@ void addProfiles(QComboBox *combo)
     combo->addItem(QStringLiteral("Email"), QStringLiteral("email"));
     combo->addItem(QStringLiteral("Personal"), QStringLiteral("personal"));
     combo->addItem(QStringLiteral("Other"), QStringLiteral("other"));
+    combo->addItem(QStringLiteral("AI coding"), QStringLiteral("ai_coding"));
 }
 
 void addCleanupLevels(QComboBox *combo)
@@ -83,6 +84,8 @@ QString profileLabel(WritingProfile profile)
         return QStringLiteral("Personal");
     case WritingProfile::Other:
         return QStringLiteral("Other");
+    case WritingProfile::AiCoding:
+        return QStringLiteral("AI coding");
     }
     return QStringLiteral("Other");
 }
