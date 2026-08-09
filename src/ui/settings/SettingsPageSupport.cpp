@@ -16,7 +16,9 @@
 #include <QPalette>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QFile>
 #include <QSettings>
+#include <QTextStream>
 #include <QSizePolicy>
 #include <QSpinBox>
 #include <QStackedWidget>
@@ -400,45 +402,61 @@ int relatedSpacing() { return 8; }
 int groupGap() { return 18; }
 int sectionGap() { return 24; }
 
+// kdeglobals is a KConfig file, not valid QSettings INI: subgroup section
+// lines like "[Colors:Header][Inactive]" derail QSettings' parser and its
+// group lookup. Scan for the exact section header line instead.
+static QColor kdeGlobalsColor(const QString &section, const QString &key)
+{
+    QFile file(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+               + QStringLiteral("/kdeglobals"));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return {};
+    }
+    const QString wantedHeader = QLatin1Char('[') + section + QLatin1Char(']');
+    bool inSection = false;
+    QTextStream stream(&file);
+    while (!stream.atEnd()) {
+        const QString line = stream.readLine().trimmed();
+        if (line.startsWith(QLatin1Char('['))) {
+            inSection = line == wantedHeader;
+            continue;
+        }
+        if (!inSection || !line.startsWith(key + QLatin1Char('='))) {
+            continue;
+        }
+        const QStringList channels =
+            line.mid(key.size() + 1).split(QLatin1Char(','));
+        if (channels.size() != 3) {
+            return {};
+        }
+        int rgb[3];
+        for (int index = 0; index < 3; ++index) {
+            bool valid = false;
+            rgb[index] = channels.at(index).trimmed().toInt(&valid);
+            if (!valid || rgb[index] < 0 || rgb[index] > 255) {
+                return {};
+            }
+        }
+        return QColor(rgb[0], rgb[1], rgb[2]);
+    }
+    return {};
+}
+
 QPalette kdeHeaderPalette(const QPalette &base)
 {
     QPalette result(base);
-    QSettings kdeGlobals(
-        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
-            + QStringLiteral("/kdeglobals"),
-        QSettings::IniFormat);
-    kdeGlobals.beginGroup(QStringLiteral("Colors:Header"));
-
-    const auto colorValue = [&kdeGlobals](const QString &key) {
-        // QSettings parses comma-separated INI values as QStringList, and
-        // QVariant::toString() on a multi-element list yields an empty string.
-        const QVariant value = kdeGlobals.value(key);
-        const QStringList channels = value.userType() == QMetaType::QStringList
-                                         ? value.toStringList()
-                                         : value.toString().split(QLatin1Char(','));
-        if (channels.size() != 3) {
-            return QColor();
-        }
-        bool valid = true;
-        int rgb[3];
-        for (int index = 0; index < 3; ++index) {
-            bool channelValid = false;
-            rgb[index] = channels.at(index).trimmed().toInt(&channelValid);
-            valid = valid && channelValid && rgb[index] >= 0 && rgb[index] <= 255;
-        }
-        return valid ? QColor(rgb[0], rgb[1], rgb[2]) : QColor();
-    };
-
-    QColor background = colorValue(QStringLiteral("BackgroundNormal"));
-    QColor foreground = colorValue(QStringLiteral("ForegroundNormal"));
+    QColor background = kdeGlobalsColor(QStringLiteral("Colors:Header"),
+                                        QStringLiteral("BackgroundNormal"));
+    QColor foreground = kdeGlobalsColor(QStringLiteral("Colors:Header"),
+                                        QStringLiteral("ForegroundNormal"));
     if (!background.isValid()) {
         // Schemes that don't inline a Header group still carry the titlebar
         // color under [WM] — the strip must match the titlebar.
-        kdeGlobals.endGroup();
-        kdeGlobals.beginGroup(QStringLiteral("WM"));
-        background = colorValue(QStringLiteral("activeBackground"));
+        background = kdeGlobalsColor(QStringLiteral("WM"),
+                                     QStringLiteral("activeBackground"));
         if (!foreground.isValid()) {
-            foreground = colorValue(QStringLiteral("activeForeground"));
+            foreground = kdeGlobalsColor(QStringLiteral("WM"),
+                                         QStringLiteral("activeForeground"));
         }
     }
     result.setColor(QPalette::Window,
