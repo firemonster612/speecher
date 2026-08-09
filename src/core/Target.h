@@ -24,6 +24,7 @@ enum class WritingProfile {
     Email,
     Personal,
     Other,
+    AiCoding,
 };
 
 QString appCategoryName(AppCategory category);

@@ -411,9 +411,23 @@ QList<WritingProfileSettings> SettingsCodecs::writingProfileSettings() const
             writingTone(object.value(QStringLiteral("tone")).toString()),
         });
     }
+    bool hasAiCoding = false;
+    for (const WritingProfileSettings &entry : settings) {
+        if (entry.profile == WritingProfile::AiCoding) {
+            hasAiCoding = true;
+            break;
+        }
+    }
     QList<WritingProfileSettings> complete;
     for (const WritingProfileSettings &fallback : defaultWritingProfileSettings()) {
-        complete.append(writingProfileSettingsFor(settings, fallback.profile));
+        WritingProfileSettings resolved = writingProfileSettingsFor(settings, fallback.profile);
+        // Settings saved before the AI coding profile existed inherit Work's
+        // tuning, since AI coding apps used the Work profile back then.
+        if (fallback.profile == WritingProfile::AiCoding && !hasAiCoding) {
+            resolved = writingProfileSettingsFor(settings, WritingProfile::Work);
+            resolved.profile = WritingProfile::AiCoding;
+        }
+        complete.append(resolved);
     }
     return complete;
 }

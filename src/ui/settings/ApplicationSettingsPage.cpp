@@ -48,6 +48,8 @@ QString profileLabel(WritingProfile profile)
         return QStringLiteral("Email");
     case WritingProfile::Personal:
         return QStringLiteral("Personal");
+    case WritingProfile::AiCoding:
+        return QStringLiteral("AI coding");
     case WritingProfile::Other:
         return QStringLiteral("Other");
     }
@@ -77,6 +79,7 @@ QComboBox *makeProfileCombo(QWidget *parent)
     for (const WritingProfile profile : {WritingProfile::Work,
                                          WritingProfile::Email,
                                          WritingProfile::Personal,
+                                         WritingProfile::AiCoding,
                                          WritingProfile::Other}) {
         combo->addItem(profileLabel(profile), writingProfileName(profile));
     }

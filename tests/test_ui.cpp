@@ -92,6 +92,10 @@ private slots:
         auto *correctionLearning = corrections.findChild<QCheckBox *>(
             QStringLiteral("correctionLearningControl"));
         QVERIFY(correctionLearning);
+        refinement.load(settings.snapshot());
+        auto *profileSettings = refinement.findChild<QTableWidget *>(QStringLiteral("vocabInput"));
+        QVERIFY(profileSettings);
+        QCOMPARE(profileSettings->rowCount(), 5);
         QVERIFY(correctionLearning->toolTip().contains(QStringLiteral("repeated")));
         QVERIFY(!correctionLearning->toolTip().contains(QStringLiteral("only high-confidence")));
 
