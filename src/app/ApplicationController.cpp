@@ -97,11 +97,9 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
         }
 #endif
         const atspi::AccessibilityState state = atspi::accessibilityState();
-        if (state.persistent) {
-            atspi::requestAccessibility();
-        }
+        const bool requestSucceeded = state.persistent && atspi::requestAccessibility();
         m_accessibilitySupported = state.supported;
-        m_accessibilityEnabled = state.enabled;
+        m_accessibilityEnabled = state.enabled || requestSucceeded;
         m_accessibilityPersistent = state.persistent;
         emit accessibilityStateChanged(m_accessibilitySupported,
                                        m_accessibilityEnabled,
