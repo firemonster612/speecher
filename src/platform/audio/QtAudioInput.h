@@ -30,6 +30,7 @@ signals:
     void firstSampleObserved();
 
 private:
+    void ensureMediaDevicesInitialized();
     void handleAudioInputsChanged();
     void syncWarmSource();
     AudioCaptureSettings currentSettings() const;
@@ -61,6 +62,7 @@ private:
     bool m_seenFirstSample = false;
     bool m_vadSpeaking = false;
     bool m_conversionFailed = false;
+    bool m_mediaDevicesInitialized = false;
 };
 
 } // namespace speecher

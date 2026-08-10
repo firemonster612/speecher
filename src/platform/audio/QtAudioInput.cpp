@@ -209,11 +209,7 @@ QtAudioInput::QtAudioInput(const AudioCaptureSettings &settings, QObject *parent
     , m_mediaDevices(this)
     , m_captureSettings(settings)
 {
-    connect(&m_mediaDevices,
-            &QMediaDevices::audioInputsChanged,
-            this,
-            &QtAudioInput::handleAudioInputsChanged);
-    QTimer::singleShot(0, this, &QtAudioInput::syncWarmSource);
+    QTimer::singleShot(300, this, &QtAudioInput::syncWarmSource);
 }
 
 QList<AudioInputDeviceInfo> QtAudioInput::availableInputDevices()
@@ -321,6 +317,18 @@ void QtAudioInput::applySettings(const AudioCaptureSettings &settings)
     }
 }
 
+void QtAudioInput::ensureMediaDevicesInitialized()
+{
+    if (m_mediaDevicesInitialized) {
+        return;
+    }
+    m_mediaDevicesInitialized = true;
+    connect(&m_mediaDevices,
+            &QMediaDevices::audioInputsChanged,
+            this,
+            &QtAudioInput::handleAudioInputsChanged);
+}
+
 void QtAudioInput::handleAudioInputsChanged()
 {
     if (!m_currentDeviceId.isEmpty()) {
@@ -343,6 +351,7 @@ void QtAudioInput::handleAudioInputsChanged()
 
 void QtAudioInput::syncWarmSource()
 {
+    ensureMediaDevicesInitialized();
     if (m_captureActive) {
         return;
     }
@@ -367,6 +376,7 @@ AudioCaptureSettings QtAudioInput::currentSettings() const
 
 bool QtAudioInput::ensureSourceRunning(const AudioCaptureSettings &settings, QString *error)
 {
+    ensureMediaDevicesInitialized();
     if (sourceMatches(settings)) {
         return true;
     }
