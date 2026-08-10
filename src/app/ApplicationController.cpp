@@ -16,6 +16,7 @@
 #include <QApplication>
 #include <QAction>
 #include <QDebug>
+#include <QTimer>
 
 #ifdef SPEECHER_WITH_KGLOBALACCEL
 #include <KGlobalAccel>
@@ -33,28 +34,6 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
     , m_popup(new TranscriberPopup(m_platform->createPopupPositioner(nullptr)))
     , m_ipc(new SingleInstanceIpc(m_platform, this))
 {
-#ifdef SPEECHER_WITH_KGLOBALACCEL
-    m_globalShortcutAction = new QAction(QStringLiteral("Toggle dictation"), this);
-    m_globalShortcutAction->setObjectName(QStringLiteral("toggle-dictation"));
-    m_globalShortcutAction->setProperty("componentName", QStringLiteral("local.speecher"));
-    m_globalShortcutAction->setProperty("componentDisplayName", QStringLiteral("Speecher"));
-    connect(m_globalShortcutAction, &QAction::triggered, this, &ApplicationController::toggle);
-    const QKeySequence savedShortcut = globalShortcut();
-    KGlobalAccel::self()->setDefaultShortcut(
-        m_globalShortcutAction,
-        {QKeySequence(Qt::META | Qt::ALT | Qt::Key_D)});
-    if (!savedShortcut.isEmpty()
-        && !KGlobalAccel::self()->setShortcut(
-            m_globalShortcutAction,
-            {savedShortcut},
-            KGlobalAccel::Autoloading)) {
-        qWarning() << "Could not restore the saved global shortcut";
-    }
-#endif
-    const atspi::AccessibilityState initialAccessibility = atspi::accessibilityState();
-    if (initialAccessibility.persistent) {
-        atspi::requestAccessibility();
-    }
     registerProviders();
     TargetProvider *targetProvider = m_platform->createTargetProvider(this);
     targetProvider->setCorrectionObservationEnabled(m_settings->correctionLearningEnabled());
@@ -98,16 +77,36 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
         }
     });
     wireSessionToPopup();
-    if (initialAccessibility.persistent) {
-        refreshAccessibilityState();
-    } else {
-        m_accessibilitySupported = initialAccessibility.supported;
-        m_accessibilityEnabled = initialAccessibility.enabled;
-        m_accessibilityPersistent = false;
+    QTimer::singleShot(0, this, [this] {
+#ifdef SPEECHER_WITH_KGLOBALACCEL
+        m_globalShortcutAction = new QAction(QStringLiteral("Toggle dictation"), this);
+        m_globalShortcutAction->setObjectName(QStringLiteral("toggle-dictation"));
+        m_globalShortcutAction->setProperty("componentName", QStringLiteral("local.speecher"));
+        m_globalShortcutAction->setProperty("componentDisplayName", QStringLiteral("Speecher"));
+        connect(m_globalShortcutAction, &QAction::triggered, this, &ApplicationController::toggle);
+        const QKeySequence savedShortcut = globalShortcut();
+        KGlobalAccel::self()->setDefaultShortcut(
+            m_globalShortcutAction,
+            {QKeySequence(Qt::META | Qt::ALT | Qt::Key_D)});
+        if (!savedShortcut.isEmpty()
+            && !KGlobalAccel::self()->setShortcut(
+                m_globalShortcutAction,
+                {savedShortcut},
+                KGlobalAccel::Autoloading)) {
+            qWarning() << "Could not restore the saved global shortcut";
+        }
+#endif
+        const atspi::AccessibilityState state = atspi::accessibilityState();
+        if (state.persistent) {
+            atspi::requestAccessibility();
+        }
+        m_accessibilitySupported = state.supported;
+        m_accessibilityEnabled = state.enabled;
+        m_accessibilityPersistent = state.persistent;
         emit accessibilityStateChanged(m_accessibilitySupported,
                                        m_accessibilityEnabled,
                                        m_accessibilityPersistent);
-    }
+    });
 }
 
 SettingsStore *ApplicationController::settings() const
