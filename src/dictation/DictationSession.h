@@ -65,6 +65,7 @@ signals:
 
 private:
     void setState(DictationState state, const QString &message = {});
+    void continueStartupAfterPopup(quint64 generation);
     void finishStartupPreparation(const StartupPreparationResult &result);
     void continueStartupAfterPreparation(quint64 generation, const AppSettings &settings);
     void failStartup(quint64 generation, const QString &message);

@@ -29,6 +29,7 @@ private slots:
         QSignalSpy rawPreviewSpy(&session, &DictationSession::previewDisplayChanged);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("rough text"));
         refiner->autoComplete = true;
         refiner->autoCompleteText = QStringLiteral("Polished text.");
@@ -78,6 +79,7 @@ private slots:
                                  &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("Make this more confident and add a greeting"));
         refiner->autoComplete = true;
         refiner->autoCompleteText = QStringLiteral("Hello team—the release is tomorrow!");
@@ -126,6 +128,7 @@ private slots:
                                  &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("Make this shorter"));
         session.stopListening();
         QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
@@ -170,6 +173,7 @@ private slots:
                                  &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("profile text"));
         refiner->autoComplete = true;
         refiner->autoCompleteText = QStringLiteral("Profile text.");
@@ -198,6 +202,7 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("My, email!"));
         session.stopListening();
 
@@ -226,6 +231,7 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("my email, my phone"));
         session.stopListening();
 
@@ -254,6 +260,7 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("please send my email to Alex"));
         refiner->autoComplete = true;
         refiner->autoCompleteText = QStringLiteral("Please send SPEECHER_BINDING_0 to Alex.");
@@ -288,6 +295,7 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("please send my evil to Alex"));
         refiner->autoComplete = true;
         refiner->autoCompleteText = QStringLiteral("Please send my email to Alex.");
@@ -324,6 +332,7 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("please send my email and my evil"));
         refiner->autoComplete = true;
         refiner->autoCompleteText = QStringLiteral("Please send SPEECHER_BINDING_0 and my email.");
@@ -356,6 +365,7 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("please write my email but don't turn that into a binding"));
         refiner->autoComplete = true;
         refiner->autoCompleteText = QStringLiteral("Please write my email.");
@@ -387,6 +397,7 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("please write my evil but don't turn that into a binding"));
         refiner->autoComplete = true;
         refiner->autoCompleteText = QStringLiteral("Please write my email.");
@@ -418,6 +429,7 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("please send my email"));
         session.stopListening();
 
@@ -446,6 +458,7 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("please send my email"));
         refiner->autoComplete = true;
         refiner->autoCompleteText = QStringLiteral("Please send SPEECHER_BINDING_ZERO.");
@@ -472,6 +485,7 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("raw fallback"));
         refiner->prepareResult = {false, QStringLiteral("No OpenAI credential found")};
         session.stopListening();
@@ -497,6 +511,7 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFailure(QStringLiteral("provider failed"));
 
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Error), 200);
@@ -521,6 +536,7 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         audio->emitFailure(QStringLiteral("microphone blocked"));
 
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Error), 200);
@@ -547,6 +563,7 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         audio->emitFailure(QStringLiteral("microphone blocked"));
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Error), 200);
 

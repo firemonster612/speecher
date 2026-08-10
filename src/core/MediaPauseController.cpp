@@ -23,6 +23,7 @@ QStringList mprisPlayingPlayers()
         qInfo() << "media pause skipped session dbus unavailable";
         return {};
     }
+    busInterface->setTimeout(1000);
 
     const QDBusReply<QStringList> namesReply = busInterface->registeredServiceNames();
     if (!namesReply.isValid()) {
@@ -40,6 +41,7 @@ QStringList mprisPlayingPlayers()
                                   QLatin1String(mprisPath),
                                   QStringLiteral("org.freedesktop.DBus.Properties"),
                                   bus);
+        properties.setTimeout(1000);
         const QDBusReply<QDBusVariant> statusReply = properties.call(QStringLiteral("Get"),
                                                                      QLatin1String(mprisPlayerInterface),
                                                                      QStringLiteral("PlaybackStatus"));
@@ -62,6 +64,7 @@ bool runMprisPlayerCommand(const QString &player, const QString &command)
                                    QLatin1String(mprisPath),
                                    QLatin1String(mprisPlayerInterface),
                                    QDBusConnection::sessionBus());
+    playerInterface.setTimeout(1000);
     if (!playerInterface.isValid()) {
         return false;
     }

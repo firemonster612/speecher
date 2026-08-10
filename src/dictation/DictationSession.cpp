@@ -205,21 +205,7 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
     const quint64 generation = m_generation;
     m_sessionSettings = settings;
     m_heardSpeech = false;
-    clearScreenshotContext();
-    m_target = m_targetProvider ? m_targetProvider->capture() : Target{};
-    m_target.category = classifyTarget(m_target, settings.appRecognitionRules);
-    const RefinementSettings effectiveRefinement = TranscriptPipeline::effectiveRefinementSettings(settings, m_target);
-    if (settings.refinement.includeScreenshotContext
-        && settings.refinement.providerId != QStringLiteral("none")
-        && effectiveRefinement.style != QStringLiteral("none")
-        && m_screenshotProvider
-        && m_refiner
-        && m_refiner->id() == settings.refinement.providerId
-        && m_refiner->supportsScreenshotContext(settings.refinement)
-        && !m_target.secure) {
-        m_screenshotCaptureGeneration = generation;
-        m_screenshotProvider->capture();
-    }
+    m_target = {};
     setState(DictationState::Starting);
     qInfo().noquote() << "startListening speechProvider=" + settings.speech.providerId
                       << "credentialsPath=" + settings.speech.claudeCredentialsPath
@@ -232,6 +218,43 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
     emit popupRefiningChanged(false);
     emit popupStatusChanged(QStringLiteral("Listening"));
     emit popupShowRequested();
+    QTimer::singleShot(0, this, [this, generation] {
+        continueStartupAfterPopup(generation);
+    });
+}
+
+void DictationSession::continueStartupAfterPopup(quint64 generation)
+{
+    if (generation != m_generation
+        || m_state != DictationState::Starting
+        || !m_sessionSettings) {
+        return;
+    }
+
+    const AppSettings settings = *m_sessionSettings;
+    clearScreenshotContext();
+    m_target = m_targetProvider ? m_targetProvider->capture() : Target{};
+    if (generation != m_generation || m_state != DictationState::Starting) {
+        m_target = {};
+        return;
+    }
+    m_target.category = classifyTarget(m_target, settings.appRecognitionRules);
+    const RefinementSettings effectiveRefinement =
+        TranscriptPipeline::effectiveRefinementSettings(settings, m_target);
+    if (settings.refinement.includeScreenshotContext
+        && settings.refinement.providerId != QStringLiteral("none")
+        && effectiveRefinement.style != QStringLiteral("none")
+        && m_screenshotProvider
+        && m_refiner
+        && m_refiner->id() == settings.refinement.providerId
+        && m_refiner->supportsScreenshotContext(settings.refinement)
+        && !m_target.secure) {
+        m_screenshotCaptureGeneration = generation;
+        m_screenshotProvider->capture();
+    }
+    if (generation != m_generation || m_state != DictationState::Starting) {
+        return;
+    }
     if (settings.ui.pauseMediaDuringTranscription) {
         m_mediaController->pausePlaying();
     }
