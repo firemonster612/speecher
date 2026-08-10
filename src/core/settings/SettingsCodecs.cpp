@@ -61,6 +61,16 @@ QVariant SettingsCodecs::value(const QString &key, const QVariant &fallback) con
     return m_settings.value(key, fallback);
 }
 
+bool SettingsCodecs::setupCompleted() const
+{
+    return value(SettingsKeys::SetupCompleted, false).toBool();
+}
+
+void SettingsCodecs::setSetupCompleted(bool value)
+{
+    m_settings.setValue(SettingsKeys::SetupCompleted, value);
+}
+
 int SettingsCodecs::previewWords() const
 {
     return std::clamp(value(SettingsKeys::UiPreviewWords, 7).toInt(), 1, 40);
@@ -401,9 +411,23 @@ QList<WritingProfileSettings> SettingsCodecs::writingProfileSettings() const
             writingTone(object.value(QStringLiteral("tone")).toString()),
         });
     }
+    bool hasAiCoding = false;
+    for (const WritingProfileSettings &entry : settings) {
+        if (entry.profile == WritingProfile::AiCoding) {
+            hasAiCoding = true;
+            break;
+        }
+    }
     QList<WritingProfileSettings> complete;
     for (const WritingProfileSettings &fallback : defaultWritingProfileSettings()) {
-        complete.append(writingProfileSettingsFor(settings, fallback.profile));
+        WritingProfileSettings resolved = writingProfileSettingsFor(settings, fallback.profile);
+        // Settings saved before the AI coding profile existed inherit Work's
+        // tuning, since AI coding apps used the Work profile back then.
+        if (fallback.profile == WritingProfile::AiCoding && !hasAiCoding) {
+            resolved = writingProfileSettingsFor(settings, WritingProfile::Work);
+            resolved.profile = WritingProfile::AiCoding;
+        }
+        complete.append(resolved);
     }
     return complete;
 }
@@ -702,6 +726,7 @@ void SettingsCodecs::clearStoredApiKeyFallback()
 AppSettings SettingsCodecs::snapshot() const
 {
     AppSettings settings;
+    settings.setupCompleted = setupCompleted();
     settings.ui.previewWords = previewWords();
     settings.ui.theme = theme();
     settings.ui.pauseMediaDuringTranscription = pauseMediaDuringTranscription();

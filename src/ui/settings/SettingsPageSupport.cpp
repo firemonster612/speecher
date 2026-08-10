@@ -2,6 +2,9 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include "dictation/DictationPorts.h"
+
+#include <QAbstractItemView>
 #include <QComboBox>
 #include <QFontMetrics>
 #include <QFormLayout>
@@ -12,6 +15,7 @@
 #include <QScrollArea>
 #include <QFile>
 #include <QTextStream>
+#include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QStandardItemModel>
 #include <QStandardPaths>
@@ -270,6 +274,60 @@ void applyLabelHierarchy(QWidget *root)
             label->setForegroundRole(QPalette::PlaceholderText);
         }
     }
+}
+
+void populateAudioInputDevices(QComboBox *combo,
+                               const QList<AudioInputDeviceInfo> &devices,
+                               const QString &selectedDeviceId)
+{
+    const QSignalBlocker blocker(combo);
+    combo->clear();
+
+    if (devices.isEmpty()) {
+        combo->addItem(QStringLiteral("No microphones found"), QString());
+        setComboItemEnabled(combo,
+                            0,
+                            false,
+                            QStringLiteral("Connect or enable an input device, then try again."));
+        if (!selectedDeviceId.isEmpty()) {
+            combo->addItem(QStringLiteral("Missing microphone"), selectedDeviceId);
+            setComboItemEnabled(combo,
+                                1,
+                                false,
+                                QStringLiteral("This saved microphone is not currently available."));
+            selectData(combo, selectedDeviceId);
+        }
+        return;
+    }
+
+    combo->addItem(QStringLiteral("System default"), QString());
+    bool selectedFound = selectedDeviceId.isEmpty();
+    for (const AudioInputDeviceInfo &device : devices) {
+        combo->addItem(device.isDefault
+                           ? QStringLiteral("%1 (default)").arg(device.label)
+                           : device.label,
+                       device.id);
+        selectedFound = selectedFound || device.id == selectedDeviceId;
+    }
+
+    if (!selectedFound) {
+        combo->addItem(QStringLiteral("Missing microphone"), selectedDeviceId);
+        setComboItemEnabled(combo,
+                            combo->count() - 1,
+                            false,
+                            QStringLiteral("This saved microphone is not currently available."));
+    }
+    selectData(combo, selectedDeviceId);
+}
+
+QColor positiveTextColor(const QPalette &palette)
+{
+#ifdef SPEECHER_WITH_KCOLORSCHEME
+    const KColorScheme colors(palette.currentColorGroup(), KColorScheme::View);
+    return colors.foreground(KColorScheme::PositiveText).color();
+#else
+    return palette.color(QPalette::Link);
+#endif
 }
 
 QLabel *makeSectionLabel(const QString &text, QWidget *parent)

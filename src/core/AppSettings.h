@@ -84,6 +84,7 @@ struct OutputSettings {
 };
 
 struct AppSettings {
+    bool setupCompleted = false;
     UiSettings ui;
     SpeechSettings speech;
     AudioCaptureSettings audio;

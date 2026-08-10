@@ -20,6 +20,7 @@ private slots:
 
         SettingsStore settings;
         settings.raw().clear();
+        QCOMPARE(settings.setupCompleted(), false);
         QCOMPARE(settings.previewWords(), 7);
         QCOMPARE(settings.theme(), QStringLiteral("system"));
         QCOMPARE(settings.pauseMediaDuringTranscription(), true);
@@ -30,6 +31,7 @@ private slots:
         QCOMPARE(settings.refinementStyle(), QStringLiteral("balanced"));
         QCOMPARE(settings.defaultWritingProfile(), QStringLiteral("other"));
         QCOMPARE(settings.writingProfileSettings(), defaultWritingProfileSettings());
+        QCOMPARE(settings.writingProfileSettings().size(), 5);
         QVERIFY(settings.writingProfileOverrides().isEmpty());
         QVERIFY(settings.appRecognitionRules().isEmpty());
         QCOMPARE(settings.useTargetContext(), true);
@@ -53,6 +55,10 @@ private slots:
         QCOMPARE(settings.audioReadinessTimeoutMs(), 900);
         QCOMPARE(settings.audioVadThresholdPercent(), 2);
 
+        settings.setSetupCompleted(true);
+        QCOMPARE(settings.setupCompleted(), true);
+        QCOMPARE(settings.snapshot().setupCompleted, true);
+
         settings.setRefinementStyle(QStringLiteral("strong_polish"));
         QCOMPARE(settings.refinementStyle(), QStringLiteral("strong_polish"));
         settings.setRefinementStyle(QStringLiteral("balanced"));
@@ -63,16 +69,30 @@ private slots:
         QCOMPARE(settings.refinementStyle(), QStringLiteral("balanced"));
         settings.setDefaultWritingProfile(QStringLiteral("personal"));
         QCOMPARE(settings.defaultWritingProfile(), QStringLiteral("personal"));
+        settings.setDefaultWritingProfile(QStringLiteral("ai_coding"));
+        QCOMPARE(settings.defaultWritingProfile(), QStringLiteral("ai_coding"));
+        settings.raw().setValue(QStringLiteral("refinement/writingProfiles"),
+                                QByteArray(R"([{"profile":"work","cleanupStrength":"strong_polish","tone":"formal"},)"
+                                           R"({"profile":"email","cleanupStrength":"balanced","tone":"casual"},)"
+                                           R"({"profile":"personal","cleanupStrength":"light_cleanup","tone":"very_casual"},)"
+                                           R"({"profile":"other","cleanupStrength":"balanced","tone":"none"}])"));
+        const WritingProfileSettings migratedAiCoding =
+            writingProfileSettingsFor(settings.writingProfileSettings(), WritingProfile::AiCoding);
+        QCOMPARE(migratedAiCoding.cleanupStrength, QStringLiteral("strong_polish"));
+        QCOMPARE(migratedAiCoding.tone, QStringLiteral("formal"));
         settings.setWritingProfileSettings({
             {WritingProfile::Work, QStringLiteral("strong_polish"), QStringLiteral("formal")},
             {WritingProfile::Email, QStringLiteral("balanced"), QStringLiteral("casual")},
             {WritingProfile::Personal, QStringLiteral("light_cleanup"), QStringLiteral("very_casual")},
+            {WritingProfile::AiCoding, QStringLiteral("none"), QStringLiteral("casual")},
             {WritingProfile::Other, QStringLiteral("balanced"), QStringLiteral("none")},
         });
         QCOMPARE(writingProfileSettingsFor(settings.writingProfileSettings(), WritingProfile::Work).cleanupStrength,
                  QStringLiteral("strong_polish"));
         QCOMPARE(writingProfileSettingsFor(settings.writingProfileSettings(), WritingProfile::Personal).tone,
                  QStringLiteral("very_casual"));
+        QCOMPARE(writingProfileSettingsFor(settings.writingProfileSettings(), WritingProfile::AiCoding).cleanupStrength,
+                 QStringLiteral("none"));
         settings.setWritingProfileOverrides({
             {QStringLiteral("org.mozilla.firefox"), WritingProfile::Personal, true},
             {QStringLiteral("org.kde.kate"), WritingProfile::Other, false},
@@ -454,6 +474,7 @@ private slots:
             {WritingProfile::Work, QStringLiteral("strong_polish"), QStringLiteral("formal")},
             {WritingProfile::Email, QStringLiteral("balanced"), QStringLiteral("none")},
             {WritingProfile::Personal, QStringLiteral("light_cleanup"), QStringLiteral("casual")},
+            {WritingProfile::AiCoding, QStringLiteral("none"), QStringLiteral("formal")},
             {WritingProfile::Other, QStringLiteral("balanced"), QStringLiteral("none")},
         });
         settings.setWritingProfileOverrides({
@@ -505,6 +526,8 @@ private slots:
         QCOMPARE(snapshot.refinement.writingProfileOverrides.first().applicationId,
                  QStringLiteral("org.mozilla.firefox"));
         QCOMPARE(writingProfileSettingsFor(snapshot.refinement.writingProfiles, WritingProfile::Work).tone,
+                 QStringLiteral("formal"));
+        QCOMPARE(writingProfileSettingsFor(snapshot.refinement.writingProfiles, WritingProfile::AiCoding).tone,
                  QStringLiteral("formal"));
         QCOMPARE(snapshot.refinement.useTargetContext, false);
         QCOMPARE(snapshot.refinement.includeScreenshotContext, true);

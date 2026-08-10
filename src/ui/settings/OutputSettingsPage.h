@@ -39,7 +39,6 @@ private:
     void setupOrEnableYdotool();
     void disableYdotool();
     void removeYdotoolSetup();
-    bool verifyYdotoolTyping();
 
     SettingsStore &m_settings;
     QComboBox *m_outputMethod;

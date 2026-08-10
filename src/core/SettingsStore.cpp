@@ -11,6 +11,7 @@ SettingsStore::SettingsStore(QObject *parent)
 
 void SettingsStore::applySnapshot(const AppSettings &draft)
 {
+    setSetupCompleted(draft.setupCompleted);
     setTheme(draft.ui.theme);
     setPauseMediaDuringTranscription(draft.ui.pauseMediaDuringTranscription);
     setSoundsEnabled(draft.ui.soundsEnabled);

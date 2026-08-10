@@ -23,6 +23,7 @@ public:
 
 signals:
     void changed();
+    void setupRequested();
 
 private:
     QComboBox *m_theme;

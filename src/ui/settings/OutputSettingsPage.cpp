@@ -2,8 +2,8 @@
 
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
-#include "output/YdotoolDelivery.h"
 #include "output/YdotoolSetup.h"
+#include "output/YdotoolSetupFlow.h"
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QAbstractItemView>
@@ -16,7 +16,6 @@
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSet>
@@ -24,7 +23,6 @@
 #include <QSizePolicy>
 #include <QTableWidget>
 #include <QTableWidgetItem>
-#include <QTimer>
 #include <QToolTip>
 #include <QVBoxLayout>
 
@@ -409,19 +407,32 @@ void OutputSettingsPage::updateYdotoolButtons()
 
 void OutputSettingsPage::setupOrEnableYdotool()
 {
-    const YdotoolSetupStatus status = YdotoolSetup::probe(m_settings.ydotoolEnabled());
-    if (status.state == YdotoolSetupState::Disabled && status.speecherManagedSetupInstalled) {
-        if (verifyYdotoolTyping()) { m_settings.setYdotoolEnabled(true); refreshControls(); emit changed(); }
-        return;
+    m_ydotoolSetupButton->setEnabled(false);
+    if (!startYdotoolSetup(
+            m_settings,
+            this,
+            YdotoolSetupFlowOptions{
+                .confirmInstall = true,
+                .applyAutomaticOutputMethod = false,
+            },
+            this,
+            [this](const YdotoolSetupFlowResult &result) {
+                if (!result.helperOk) {
+                    QMessageBox::warning(
+                        this,
+                        QStringLiteral("ydotool setup failed"),
+                        result.helperError);
+                } else if (!result.serviceError.isEmpty()) {
+                    QMessageBox::warning(
+                        this,
+                        QStringLiteral("ydotool service"),
+                        result.serviceError);
+                }
+                refreshControls();
+                emit changed();
+            })) {
+        refreshControls();
     }
-    const int answer = QMessageBox::question(this, QStringLiteral("Set up virtual keyboard"), QStringLiteral("Speecher will ask for administrator permission to install ydotool if needed, load uinput, configure a speecher-uinput group, install udev rules, and install a user-level ydotoold service. Speecher itself remains unprivileged at runtime."), QMessageBox::Cancel | QMessageBox::Ok, QMessageBox::Ok);
-    if (answer != QMessageBox::Ok) return;
-    QString error;
-    if (!YdotoolSetup::runHelper(YdotoolSetup::HelperAction::Install, &error)) { QMessageBox::warning(this, QStringLiteral("ydotool setup failed"), error); refreshControls(); return; }
-    if (!YdotoolSetup::startUserService(&error)) QMessageBox::warning(this, QStringLiteral("ydotool service"), error);
-    if (verifyYdotoolTyping()) m_settings.setYdotoolEnabled(true);
-    refreshControls();
-    emit changed();
 }
 
 void OutputSettingsPage::disableYdotool()
@@ -448,35 +459,6 @@ void OutputSettingsPage::removeYdotoolSetup()
     settings::selectData(m_outputMethod, m_settings.outputMethod());
     refreshControls();
     emit changed();
-}
-
-bool OutputSettingsPage::verifyYdotoolTyping()
-{
-    QDialog dialog(this);
-    dialog.setWindowTitle(QStringLiteral("Verify ydotool"));
-    auto *layout = new QVBoxLayout(&dialog);
-    auto *label = new QLabel(QStringLiteral("Keep this field focused while Speecher tests virtual keyboard input."), &dialog);
-    label->setWordWrap(true);
-    auto *field = new QLineEdit(&dialog);
-    field->setClearButtonEnabled(true);
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
-    auto *run = buttons->addButton(QStringLiteral("Run test"), QDialogButtonBox::AcceptRole);
-    layout->addWidget(label); layout->addWidget(field); layout->addWidget(buttons);
-    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    connect(run, &QPushButton::clicked, &dialog, [field, &dialog] {
-        field->clear(); field->setFocus(Qt::OtherFocusReason);
-        QTimer::singleShot(150, field, [field, &dialog] {
-            QString error; YdotoolDelivery ydotool; const QString expected = QStringLiteral("speecher test");
-            if (!ydotool.type(expected, &error)) { QMessageBox::warning(&dialog, QStringLiteral("ydotool verification failed"), error); return; }
-            QTimer::singleShot(350, field, [field, expected, &dialog] {
-                if (field->text() == expected) dialog.accept();
-                else QMessageBox::warning(&dialog, QStringLiteral("ydotool verification failed"), QStringLiteral("The test field did not receive the expected text."));
-            });
-        });
-    });
-    dialog.resize(420, dialog.sizeHint().height());
-    field->setFocus(Qt::OtherFocusReason);
-    return dialog.exec() == QDialog::Accepted;
 }
 
 } // namespace speecher

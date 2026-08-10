@@ -3,15 +3,21 @@
 #include <QColor>
 #include <QString>
 
+class QColor;
 class QComboBox;
 class QFrame;
 class QFormLayout;
 class QLabel;
 class QLayout;
+class QListWidget;
 class QPalette;
 class QScrollArea;
 class QVBoxLayout;
 class QWidget;
+
+namespace speecher {
+struct AudioInputDeviceInfo;
+}
 
 namespace speecher::settings {
 
@@ -43,6 +49,10 @@ QPalette kdeHeaderPalette(const QPalette &base);
 void applyPageMargins(QLayout *layout);
 void applyLabelHierarchy(QWidget *root);
 QLabel *makePageTitle(const QString &text, QWidget *parent);
+void populateAudioInputDevices(QComboBox *combo,
+                               const QList<AudioInputDeviceInfo> &devices,
+                               const QString &selectedDeviceId);
+QColor positiveTextColor(const QPalette &palette);
 QLabel *makeSectionLabel(const QString &text, QWidget *parent);
 QFrame *makeSettingsCard(QWidget *parent);
 QVBoxLayout *makeSettingsPage(QScrollArea *scroll);

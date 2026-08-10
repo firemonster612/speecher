@@ -39,6 +39,7 @@ static void addWritingProfiles(QComboBox *combo)
     combo->addItem(QStringLiteral("Work"), QStringLiteral("work"));
     combo->addItem(QStringLiteral("Email"), QStringLiteral("email"));
     combo->addItem(QStringLiteral("Personal"), QStringLiteral("personal"));
+    combo->addItem(QStringLiteral("AI coding"), QStringLiteral("ai_coding"));
     combo->addItem(QStringLiteral("Other"), QStringLiteral("other"));
 }
 
@@ -51,6 +52,8 @@ static QString writingProfileLabel(WritingProfile profile)
         return QStringLiteral("Email");
     case WritingProfile::Personal:
         return QStringLiteral("Personal");
+    case WritingProfile::AiCoding:
+        return QStringLiteral("AI coding");
     case WritingProfile::Other:
         return QStringLiteral("Other");
     }
@@ -82,8 +85,8 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     m_profileSettings->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
     m_profileSettings->verticalHeader()->hide();
     m_profileSettings->setSelectionMode(QAbstractItemView::NoSelection);
-    m_profileSettings->setMinimumHeight(172);
-    m_profileSettings->setMaximumHeight(172);
+    m_profileSettings->setMinimumHeight(207);
+    m_profileSettings->setMaximumHeight(207);
     auto *title = settings::makePageTitle(QStringLiteral("Refinement"), this);
     auto *card = settings::makeSettingsCard(this);
     auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());

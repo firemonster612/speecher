@@ -117,6 +117,8 @@ AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
     buildSharedPages();
     connect(m_pages, &SettingsPageSet::changed, m_dictation, &DictationPage::refreshSummary);
     connect(m_dictation, &DictationPage::navigateRequested, this, &AppWindow::navigateToSettings);
+    connect(m_pages->general(), &GeneralSettingsPage::setupRequested,
+            m_controller, &ApplicationController::showSetupAssistant);
 
     buildSidebarShell();
     settings::applyLabelHierarchy(this);

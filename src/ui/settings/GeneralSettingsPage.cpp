@@ -36,12 +36,14 @@ GeneralSettingsPage::GeneralSettingsPage(const QString &primaryOutputStatus,
     primaryOutput->setObjectName(QStringLiteral("statusText"));
     primaryOutput->setForegroundRole(QPalette::WindowText);
     auto *openReleases = new QPushButton(QStringLiteral("Open releases"), this);
+    auto *runSetup = new QPushButton(QStringLiteral("Run setup assistant…"), this);
 
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Theme"), QString(), m_theme, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Media"), QStringLiteral("Pause playing media while dictating"), m_pauseMedia, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Sounds"), QStringLiteral("Play sounds when dictation starts and stops"), m_sounds, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Preview words"), QStringLiteral("Trailing words shown in the popup."), m_previewWords, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Clipboard output"), QStringLiteral("Current platform clipboard path."), primaryOutput, card), card);
+    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Setup assistant"), QStringLiteral("Check sign-in, microphone, accessibility, delivery, and refinement again."), runSetup, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Updates"), QStringLiteral("Updates are manual; open the GitHub releases page when you want to check."), openReleases, card), card, false);
 
     auto *pageLayout = settings::makeSettingsPage(this);
@@ -58,6 +60,7 @@ GeneralSettingsPage::GeneralSettingsPage(const QString &primaryOutputStatus,
     connect(openReleases, &QPushButton::clicked, this, [] {
         QDesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/firemonster612/speecher/releases")));
     });
+    connect(runSetup, &QPushButton::clicked, this, &GeneralSettingsPage::setupRequested);
 }
 
 void GeneralSettingsPage::load(const AppSettings &settings)
