@@ -10,6 +10,7 @@
 #endif
 
 #include <QEventLoop>
+#include <QTimer>
 #endif
 
 namespace speecher {
@@ -24,10 +25,26 @@ template <typename Job>
 bool runKeychainJob(Job &job, QString *error)
 {
     QEventLoop loop;
+    QTimer watchdog;
+    bool finished = false;
     job.setAutoDelete(false);
-    QObject::connect(&job, &Job::finished, &loop, &QEventLoop::quit);
+    QObject::connect(&job, &Job::finished, &loop, [&finished, &loop] {
+        finished = true;
+        loop.quit();
+    });
+    watchdog.setSingleShot(true);
+    QObject::connect(&watchdog, &QTimer::timeout, &loop, &QEventLoop::quit);
     job.start();
-    loop.exec();
+    if (!finished) {
+        watchdog.start(10000);
+        loop.exec();
+    }
+    if (!finished) {
+        if (error) {
+            *error = QStringLiteral("Desktop keyring request timed out");
+        }
+        return false;
+    }
     if (job.error() == QKeychain::NoError) {
         return true;
     }

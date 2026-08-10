@@ -49,7 +49,6 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *par
     updateAccessibilityState(controller->accessibilitySupported(),
                              controller->accessibilityEnabled(),
                              controller->accessibilityPersistent());
-    load();
 }
 
 GeneralSettingsPage *SettingsPageSet::general() const { return m_general; }

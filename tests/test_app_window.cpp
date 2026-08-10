@@ -44,10 +44,13 @@ private slots:
     void sidebarAutoSavesAfterDebounce()
     {
         ApplicationController controller(true);
-        controller.settings()->setTheme(QStringLiteral("system"));
+        controller.settings()->setTheme(QStringLiteral("light"));
         AppWindow window(&controller);
         auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
         QVERIFY(theme);
+        QCOMPARE(theme->currentData().toString(), QStringLiteral("system"));
+        window.show();
+        QTRY_COMPARE_WITH_TIMEOUT(theme->currentData().toString(), QStringLiteral("light"), 250);
         theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
         QTRY_COMPARE_WITH_TIMEOUT(controller.settings()->theme(), QStringLiteral("dark"), 1500);
     }
@@ -59,8 +62,9 @@ private slots:
         AppWindow window(&controller);
         auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
         QVERIFY(theme);
-        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
         window.show();
+        QTRY_COMPARE_WITH_TIMEOUT(theme->currentData().toString(), QStringLiteral("system"), 250);
+        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
         window.close();
         QCOMPARE(controller.settings()->theme(), QStringLiteral("dark"));
     }

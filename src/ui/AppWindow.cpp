@@ -29,6 +29,8 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QShortcut>
+#include <QShowEvent>
+#include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStyle>
@@ -166,6 +168,20 @@ void AppWindow::closeEvent(QCloseEvent *event)
     flushPendingAutoSave();
     rememberGeometry();
     QMainWindow::closeEvent(event);
+}
+
+void AppWindow::showEvent(QShowEvent *event)
+{
+    QMainWindow::showEvent(event);
+    if (m_pageLoadScheduled) {
+        return;
+    }
+    m_pageLoadScheduled = true;
+    QTimer::singleShot(0, this, [this] {
+        const QSignalBlocker blocker(m_pages);
+        m_pages->load();
+        m_dictation->refreshSummary();
+    });
 }
 
 bool AppWindow::eventFilter(QObject *watched, QEvent *event)
