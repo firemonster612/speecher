@@ -2,6 +2,7 @@
 
 #include <QCryptographicHash>
 #include <QFile>
+#include <QHash>
 #include <QRegularExpression>
 #include <QSet>
 
@@ -20,6 +21,63 @@ constexpr int maximumTreeDepth = 40;
 constexpr int maximumDescendantProcesses = 64;
 constexpr int maximumAncestorProcesses = 16;
 
+qint64 processIdForBusName(const QString &busName, QHash<QString, qint64> *cache)
+{
+    const auto cached = cache->constFind(busName);
+    if (cached != cache->cend()) {
+        return *cached;
+    }
+
+    qint64 processId = -1;
+    DBusConnection *bus = atspi_get_a11y_bus();
+    DBusMessage *message = dbus_message_new_method_call(
+        "org.freedesktop.DBus",
+        "/org/freedesktop/DBus",
+        "org.freedesktop.DBus",
+        "GetConnectionUnixProcessID");
+    const QByteArray utf8 = busName.toUtf8();
+    const char *name = utf8.constData();
+    if (bus && message
+        && dbus_message_append_args(message,
+                                    DBUS_TYPE_STRING,
+                                    &name,
+                                    DBUS_TYPE_INVALID)) {
+        DBusError error = DBUS_ERROR_INIT;
+        DBusMessage *reply = dbus_connection_send_with_reply_and_block(
+            bus, message, 2000, &error);
+        if (reply) {
+            dbus_uint32_t value = 0;
+            if (dbus_message_get_args(reply,
+                                      nullptr,
+                                      DBUS_TYPE_UINT32,
+                                      &value,
+                                      DBUS_TYPE_INVALID)) {
+                processId = value;
+            }
+            dbus_message_unref(reply);
+        }
+        if (dbus_error_is_set(&error)) {
+            dbus_error_free(&error);
+        }
+    }
+    if (message) {
+        dbus_message_unref(message);
+    }
+    cache->insert(busName, processId);
+    return processId;
+}
+
+bool isSelfAccessible(AtspiAccessible *accessible, QHash<QString, qint64> *processIds)
+{
+    if (!accessible) {
+        return false;
+    }
+    AtspiObject *object = ATSPI_OBJECT(accessible);
+    const char *busName = object && object->app ? object->app->bus_name : nullptr;
+    return busName && *busName
+        && processIdForBusName(QString::fromUtf8(busName), processIds) == getpid();
+}
+
 bool isForeignPrivilegedProcess(qint64 processId)
 {
     if (processId <= 0) {
@@ -34,9 +92,13 @@ bool isForeignPrivilegedProcess(qint64 processId)
     return match.hasMatch() && match.captured(1).toUInt() != uint(getuid());
 }
 
-AtspiAccessible *focusedObject(AtspiAccessible *object, int depth, int *visited)
+AtspiAccessible *focusedObject(AtspiAccessible *object,
+                               int depth,
+                               int *visited,
+                               QHash<QString, qint64> *processIds)
 {
-    if (!object || depth > maximumTreeDepth || ++(*visited) > maximumVisitedObjects) {
+    if (!object || depth > maximumTreeDepth || ++(*visited) > maximumVisitedObjects
+        || isSelfAccessible(object, processIds)) {
         return nullptr;
     }
     GError *error = nullptr;
@@ -48,7 +110,7 @@ AtspiAccessible *focusedObject(AtspiAccessible *object, int depth, int *visited)
         if (!child) {
             continue;
         }
-        AtspiAccessible *focused = focusedObject(child, depth + 1, visited);
+        AtspiAccessible *focused = focusedObject(child, depth + 1, visited, processIds);
         g_object_unref(child);
         if (focused) {
             return focused;
@@ -59,7 +121,8 @@ AtspiAccessible *focusedObject(AtspiAccessible *object, int depth, int *visited)
         : nullptr;
 }
 
-AtspiAccessible *focusedObjectInActiveWindow(AtspiAccessible *desktop)
+AtspiAccessible *focusedObjectInActiveWindow(AtspiAccessible *desktop,
+                                             QHash<QString, qint64> *processIds)
 {
     if (!desktop) {
         return nullptr;
@@ -72,12 +135,13 @@ AtspiAccessible *focusedObjectInActiveWindow(AtspiAccessible *desktop)
     for (int applicationIndex = 0; applicationIndex < applicationCount; ++applicationIndex) {
         AtspiAccessible *application = atspi_accessible_get_child_at_index(desktop, applicationIndex, &error);
         clearError(&error);
-        if (!application) {
+        if (!application || isSelfAccessible(application, processIds)) {
+            if (application) g_object_unref(application);
             continue;
         }
         if (hasState(application, ATSPI_STATE_ACTIVE)) {
             int visited = 0;
-            AtspiAccessible *focused = focusedObject(application, 0, &visited);
+            AtspiAccessible *focused = focusedObject(application, 0, &visited, processIds);
             if (focused) {
                 if (fallbackWindow) g_object_unref(fallbackWindow);
                 g_object_unref(application);
@@ -89,12 +153,13 @@ AtspiAccessible *focusedObjectInActiveWindow(AtspiAccessible *desktop)
         for (int windowIndex = 0; windowIndex < windowCount; ++windowIndex) {
             AtspiAccessible *window = atspi_accessible_get_child_at_index(application, windowIndex, &error);
             clearError(&error);
-            if (!window) {
+            if (!window || isSelfAccessible(window, processIds)) {
+                if (window) g_object_unref(window);
                 continue;
             }
             if (hasState(window, ATSPI_STATE_ACTIVE)) {
                 int visited = 0;
-                AtspiAccessible *focused = focusedObject(window, 0, &visited);
+                AtspiAccessible *focused = focusedObject(window, 0, &visited, processIds);
                 if (focused) {
                     if (fallbackWindow) g_object_unref(fallbackWindow);
                     g_object_unref(window);
@@ -120,9 +185,11 @@ AtspiAccessible *focusedObjectInActiveWindow(AtspiAccessible *desktop)
 }
 
 void findBestEditableText(AtspiAccessible *object, int depth, int *visited,
-                          AtspiAccessible **best, int *bestScore)
+                          AtspiAccessible **best, int *bestScore,
+                          QHash<QString, qint64> *processIds)
 {
-    if (!object || depth > maximumTreeDepth || ++(*visited) > maximumVisitedObjects) {
+    if (!object || depth > maximumTreeDepth || ++(*visited) > maximumVisitedObjects
+        || isSelfAccessible(object, processIds)) {
         return;
     }
     if (atspi_accessible_is_editable_text(object) && atspi_accessible_is_text(object)) {
@@ -151,16 +218,18 @@ void findBestEditableText(AtspiAccessible *object, int depth, int *visited,
         AtspiAccessible *child = atspi_accessible_get_child_at_index(object, index, &error);
         clearError(&error);
         if (child) {
-            findBestEditableText(child, depth + 1, visited, best, bestScore);
+            findBestEditableText(child, depth + 1, visited, best, bestScore, processIds);
             g_object_unref(child);
         }
     }
 }
 
-AtspiAccessible *activeWindowAncestor(AtspiAccessible *object)
+AtspiAccessible *activeWindowAncestor(AtspiAccessible *object,
+                                      QHash<QString, qint64> *processIds)
 {
     AtspiAccessible *current = object ? ATSPI_ACCESSIBLE(g_object_ref(object)) : nullptr;
     for (int depth = 0; current && depth < maximumTreeDepth; ++depth) {
+        if (isSelfAccessible(current, processIds)) break;
         if (hasState(current, ATSPI_STATE_ACTIVE)) return current;
         GError *error = nullptr;
         AtspiAccessible *parent = atspi_accessible_get_parent(current, &error);
@@ -174,7 +243,8 @@ AtspiAccessible *activeWindowAncestor(AtspiAccessible *object)
 
 AtspiAccessible *kTextEditorFallback(AtspiAccessible *focused,
                                     const QString &applicationName,
-                                    const QString &process)
+                                    const QString &process,
+                                    QHash<QString, qint64> *processIds)
 {
     const QString identity = applicationName + QLatin1Char(' ') + process;
     if (!focused || atspi_accessible_is_editable_text(focused)
@@ -182,12 +252,12 @@ AtspiAccessible *kTextEditorFallback(AtspiAccessible *focused,
             && !identity.contains(QStringLiteral("kwrite"), Qt::CaseInsensitive))) {
         return nullptr;
     }
-    AtspiAccessible *window = activeWindowAncestor(focused);
+    AtspiAccessible *window = activeWindowAncestor(focused, processIds);
     if (!window) return nullptr;
     int visited = 0;
     int bestScore = -1;
     AtspiAccessible *best = nullptr;
-    findBestEditableText(window, 0, &visited, &best, &bestScore);
+    findBestEditableText(window, 0, &visited, &best, &bestScore, processIds);
     g_object_unref(window);
     return best;
 }
@@ -226,10 +296,13 @@ QString accessibleAttribute(AtspiAccessible *object, const QList<QByteArray> &ke
     return result;
 }
 
-void populateAncestorContext(Target *target, AtspiAccessible *focused)
+void populateAncestorContext(Target *target,
+                             AtspiAccessible *focused,
+                             QHash<QString, qint64> *processIds)
 {
     AtspiAccessible *current = focused ? ATSPI_ACCESSIBLE(g_object_ref(focused)) : nullptr;
     for (int depth = 0; current && depth < maximumTreeDepth; ++depth) {
+        if (isSelfAccessible(current, processIds)) break;
         GError *error = nullptr;
         const QString role = takeString(atspi_accessible_get_role_name(current, &error)).toLower();
         clearError(&error);
@@ -453,17 +526,22 @@ TargetSnapshot TargetSnapshot::capture()
     TargetSnapshot snapshot;
 #ifdef SPEECHER_WITH_ATSPI
     if (!atspi_is_initialized() && atspi_init() != 0) return snapshot;
+    QHash<QString, qint64> processIds;
     for (int desktopIndex = 0; desktopIndex < atspi_get_desktop_count(); ++desktopIndex) {
         AccessibleHandle desktop(atspi_get_desktop(desktopIndex));
-        AtspiAccessible *focused = focusedObjectInActiveWindow(desktop.get());
+        AtspiAccessible *focused = focusedObjectInActiveWindow(desktop.get(), &processIds);
         if (!focused) {
             int visited = 0;
-            focused = focusedObject(desktop.get(), 0, &visited);
+            focused = focusedObject(desktop.get(), 0, &visited, &processIds);
         }
         if (!focused) continue;
         GError *error = nullptr;
         AccessibleHandle application(atspi_accessible_get_application(focused, &error));
         clearError(&error);
+        if (!application || isSelfAccessible(application.get(), &processIds)) {
+            g_object_unref(focused);
+            continue;
+        }
         Target &target = snapshot.m_target;
         target.applicationName = application ? takeString(atspi_accessible_get_name(application.get(), &error)) : QString();
         clearError(&error);
@@ -471,7 +549,8 @@ TargetSnapshot TargetSnapshot::capture()
         target.processId = application ? atspi_accessible_get_process_id(application.get(), &error) : 0;
         clearError(&error);
         target.processName = processName(target.processId);
-        if (AtspiAccessible *editor = kTextEditorFallback(focused, target.applicationName, target.processName)) {
+        if (AtspiAccessible *editor = kTextEditorFallback(
+                focused, target.applicationName, target.processName, &processIds)) {
             g_object_unref(focused);
             focused = editor;
         }
@@ -487,7 +566,7 @@ TargetSnapshot TargetSnapshot::capture()
         target.secure = target.secure || isForeignPrivilegedProcess(target.processId);
         target.accessible = true;
         if (!target.secure) {
-            populateAncestorContext(&target, focused);
+            populateAncestorContext(&target, focused, &processIds);
             populateText(&target, focused);
         }
         target.terminalHost = isTerminalTarget(target)
