@@ -15,6 +15,7 @@
 #include <QMessageBox>
 #include <QPalette>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QStackedWidget>
 #include <QStyle>
@@ -242,6 +243,9 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
         updateAuthControl();
         emit changed();
     });
+    connect(m_apiKey, &QLineEdit::textEdited, this, [this] {
+        ++m_apiKeyEditRevision;
+    });
     connect(m_apiKey, &QLineEdit::textChanged, this, &ProviderSettingsPage::changed);
 }
 
@@ -253,13 +257,28 @@ void ProviderSettingsPage::loadModels()
     settings::selectData(m_anthropicEffort, m_settings.anthropicEffort());
 }
 
-void ProviderSettingsPage::loadAuth()
+void ProviderSettingsPage::loadAuthModes()
 {
     settings::selectData(m_authMode, m_settings.openAiAuthMode());
     settings::selectData(m_anthropicAuthMode, m_settings.anthropicAuthMode());
-    m_apiKey->setText(m_secrets.apiKey());
-    updateAuthControl();
+    m_authControl->setCurrentWidget(
+        m_authMode->currentData().toString() == QStringLiteral("settings")
+            ? static_cast<QWidget *>(m_apiKey)
+            : static_cast<QWidget *>(m_authStatus));
     updateAnthropicControls();
+}
+
+void ProviderSettingsPage::loadSecret()
+{
+    const quint64 editRevision = m_apiKeyEditRevision;
+    const QString apiKey = m_secrets.apiKey();
+    m_secretLoaded = true;
+    if (editRevision == m_apiKeyEditRevision) {
+        const QSignalBlocker blocker(m_apiKey);
+        m_loadedApiKey = apiKey;
+        m_apiKey->setText(apiKey);
+    }
+    updateAuthControl();
 }
 
 void ProviderSettingsPage::appendToDraft(AppSettings &draft) const
@@ -278,15 +297,20 @@ void ProviderSettingsPage::saveAuthModes()
 
 bool ProviderSettingsPage::saveSecret()
 {
-    if (m_settings.openAiAuthMode() == QStringLiteral("settings")) {
+    if (m_settings.openAiAuthMode() == QStringLiteral("settings")
+        && (m_secretLoaded || m_apiKeyEditRevision > 0)) {
         if (!m_secrets.saveApiKey(m_apiKey->text().trimmed())) {
             QMessageBox::warning(this,
                                  QStringLiteral("OpenAI key not saved"),
                                  m_secrets.status());
             return false;
         }
+        m_loadedApiKey = m_apiKey->text().trimmed();
+        m_secretLoaded = true;
     }
-    updateAuthControl();
+    if (m_secretLoaded || m_apiKeyEditRevision > 0) {
+        updateAuthControl();
+    }
     updateAnthropicControls();
     return true;
 }
@@ -304,7 +328,8 @@ bool ProviderSettingsPage::hasAuthChanges() const
     return m_authMode->currentData().toString() != m_settings.openAiAuthMode()
         || m_anthropicAuthMode->currentData().toString() != m_settings.anthropicAuthMode()
         || (m_authMode->currentData().toString() == QStringLiteral("settings")
-            && m_apiKey->text().trimmed() != m_secrets.apiKey());
+            && ((!m_secretLoaded && m_apiKeyEditRevision > 0)
+                || (m_secretLoaded && m_apiKey->text().trimmed() != m_loadedApiKey)));
 }
 
 void ProviderSettingsPage::updateAuthControl()
@@ -312,7 +337,9 @@ void ProviderSettingsPage::updateAuthControl()
     const QString mode = m_authMode->currentData().toString();
     if (mode == QStringLiteral("settings")) {
         m_authControl->setCurrentWidget(m_apiKey);
-        m_apiKey->setPlaceholderText(m_secrets.status());
+        m_apiKey->setPlaceholderText(m_secretLoaded
+                                         ? m_secrets.status()
+                                         : QStringLiteral("Loading app settings key…"));
         return;
     }
     m_authStatus->setText(OpenAiAuthProvider(&m_secrets, mode).status());

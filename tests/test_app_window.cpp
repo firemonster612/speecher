@@ -8,6 +8,7 @@
 #include "ui/settings/SettingsPageSet.h"
 
 #include <QComboBox>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QSplitter>
@@ -55,15 +56,29 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(controller.settings()->theme(), QStringLiteral("dark"), 1500);
     }
 
+    void dictationSummaryDefersSavedMicrophoneResolutionUntilShow()
+    {
+        ApplicationController controller(true);
+        AppSettings settings = controller.settings()->snapshot();
+        settings.audio.deviceId = QStringLiteral("saved-device");
+        controller.settings()->applySnapshot(settings);
+
+        AppWindow window(&controller);
+        auto *microphone = window.findChild<QLabel *>(QStringLiteral("microphoneSummary"));
+        QVERIFY(microphone);
+        QCOMPARE(microphone->property("fullText").toString(),
+                 QStringLiteral("Selected microphone"));
+    }
+
     void sidebarFlushesPendingAutoSaveOnClose()
     {
         ApplicationController controller(true);
-        controller.settings()->setTheme(QStringLiteral("system"));
+        controller.settings()->setTheme(QStringLiteral("light"));
         AppWindow window(&controller);
         auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
         QVERIFY(theme);
         window.show();
-        QTRY_COMPARE_WITH_TIMEOUT(theme->currentData().toString(), QStringLiteral("system"), 250);
+        QCOMPARE(theme->currentData().toString(), QStringLiteral("light"));
         theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
         window.close();
         QCOMPARE(controller.settings()->theme(), QStringLiteral("dark"));

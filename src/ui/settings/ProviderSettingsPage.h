@@ -20,7 +20,8 @@ public:
     explicit ProviderSettingsPage(SettingsStore &settings, SecretStore &secrets, QWidget *parent = nullptr);
 
     void loadModels();
-    void loadAuth();
+    void loadAuthModes();
+    void loadSecret();
     void appendToDraft(AppSettings &draft) const;
     void saveAuthModes();
     bool saveSecret();
@@ -48,6 +49,9 @@ private:
     QLabel *m_anthropicWarning;
     QWidget *m_anthropicWarningRow = nullptr;
     QLineEdit *m_apiKey;
+    QString m_loadedApiKey;
+    quint64 m_apiKeyEditRevision = 0;
+    bool m_secretLoaded = false;
 };
 
 } // namespace speecher

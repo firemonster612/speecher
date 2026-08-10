@@ -177,9 +177,12 @@ void AppWindow::showEvent(QShowEvent *event)
         return;
     }
     m_pageLoadScheduled = true;
-    QTimer::singleShot(0, this, [this] {
+    {
         const QSignalBlocker blocker(m_pages);
-        m_pages->load();
+        m_pages->loadBeforeShow();
+    }
+    QTimer::singleShot(0, this, [this] {
+        m_pages->loadAfterShow();
         m_dictation->refreshSummary();
     });
 }

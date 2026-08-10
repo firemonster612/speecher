@@ -66,11 +66,12 @@ SecretStore::SecretStore(SettingsStore *settings, QObject *parent)
 
 QString SecretStore::apiKey() const
 {
-    const QString key = keyringApiKey();
-    if (!key.isEmpty()) {
-        return key;
+    m_lastApiKey = keyringApiKey();
+    if (m_lastApiKey.isEmpty() && m_settings) {
+        m_lastApiKey = m_settings->storedApiKeyFallback();
     }
-    return m_settings ? m_settings->storedApiKeyFallback() : QString();
+    m_hasApiKeyResult = true;
+    return m_lastApiKey;
 }
 
 bool SecretStore::saveApiKey(const QString &apiKey)
@@ -81,13 +82,18 @@ bool SecretStore::saveApiKey(const QString &apiKey)
     if (ok && m_settings) {
         m_settings->clearStoredApiKeyFallback();
     }
+    if (ok) {
+        m_lastApiKey = cleaned;
+        m_hasApiKeyResult = true;
+    }
     return ok;
 }
 
 QString SecretStore::status() const
 {
 #ifdef SPEECHER_WITH_QKEYCHAIN
-    if (!apiKey().isEmpty()) {
+    const QString key = m_hasApiKeyResult ? m_lastApiKey : apiKey();
+    if (!key.isEmpty()) {
         return usesInsecureSettingsFallback() ? QStringLiteral("Settings API key found in legacy plaintext settings")
                                              : QStringLiteral("Settings API key stored in desktop keyring");
     }
