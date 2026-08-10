@@ -50,7 +50,9 @@ public:
                                                 QString *error = nullptr);
 
 signals:
-    void commandReceived(const QString &command, const QString &outputFormat, QLocalSocket *socket);
+    void commandReceived(const QString &command,
+                         const QString &outputFormat,
+                         QLocalSocket *socket);
 
 public slots:
     static void writeResponse(QLocalSocket *socket, const IpcResponse &response);

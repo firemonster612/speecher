@@ -80,6 +80,30 @@ static std::optional<OutputFormat> requestedOutputFormat(const QStringList &argu
     return outputFormatFromString(value);
 }
 
+static QString requestedOption(const QStringList &arguments, const QString &name, QString *error)
+{
+    for (qsizetype index = 1; index < arguments.size(); ++index) {
+        const QString argument = arguments.at(index);
+        if (argument.startsWith(name + QStringLiteral("="))) {
+            const QString value = argument.mid(name.size() + 1);
+            if (!value.isEmpty()) {
+                return value;
+            }
+        } else if (argument == name) {
+            if (index + 1 < arguments.size() && !arguments.at(index + 1).startsWith(QLatin1Char('-'))) {
+                return arguments.at(index + 1);
+            }
+        } else {
+            continue;
+        }
+        if (error) {
+            *error = QStringLiteral("%1 requires a value").arg(name);
+        }
+        return {};
+    }
+    return {};
+}
+
 static bool startDetachedListening(const SingleInstancePlatform *platform, std::optional<OutputFormat> outputFormat)
 {
     QStringList arguments{QStringLiteral("--daemon"), QStringLiteral("--start-listening")};
@@ -146,7 +170,8 @@ int main(int argc, char **argv)
     QApplication::setApplicationName(QStringLiteral("speecher"));
     QApplication::setDesktopFileName(QStringLiteral("local.speecher"));
     QApplication::setOrganizationName(QStringLiteral("local.speecher"));
-    Theme::apply(SettingsStore().theme());
+    SettingsStore startupSettings;
+    Theme::apply(startupSettings.theme());
     const QString logPath = installLogHandler();
     const std::shared_ptr<const LinuxComposition> platform = linuxComposition();
 
@@ -155,6 +180,13 @@ int main(int argc, char **argv)
         std::cout << "speecher " << SPEECHER_VERSION << "\n";
         std::cout << "log " << logPath.toStdString() << "\n";
         return 0;
+    }
+
+    QString optionError;
+    const QString grabPath = requestedOption(args, QStringLiteral("--grab"), &optionError);
+    if (!optionError.isEmpty()) {
+        std::cerr << optionError.toStdString() << "\n";
+        return 2;
     }
 
     const QString cliCommand = args.size() >= 2 ? args.at(1).trimmed().toLower() : QString();
@@ -194,20 +226,32 @@ int main(int argc, char **argv)
     ApplicationController controller(daemon);
     QString ipcError;
     if (!controller.startIpc(&ipcError)) {
-        if (!daemon && SingleInstanceIpc::sendCommand(QStringLiteral("showMain"), nullptr)) {
+        if (!grabPath.isEmpty()) {
+            if (ipcError.startsWith(QStringLiteral("Another Speecher instance"))) {
+                std::cerr << "--grab cannot be used while another Speecher instance is running\n";
+            } else {
+                std::cerr << ipcError.toStdString() << "\n";
+            }
+            return 1;
+        }
+        const QString showCommand = showSettings ? QStringLiteral("showSettings")
+                                                 : QStringLiteral("showMain");
+        if (!daemon && SingleInstanceIpc::sendCommand(showCommand, nullptr)) {
             return 0;
         }
         std::cerr << ipcError.toStdString() << "\n";
         return 1;
     }
 
-    if (!controller.settings()->setupCompleted() || showSetup) {
+    if ((!controller.settings()->setupCompleted() && grabPath.isEmpty()) || showSetup) {
         QTimer::singleShot(0, &controller, &ApplicationController::showSetupAssistant);
     } else {
         if (startListening) {
             QTimer::singleShot(0, &controller, [&controller, outputFormat] {
                 if (outputFormat) {
-                    controller.handleIpcCommand(QStringLiteral("start"), outputFormatName(*outputFormat), nullptr);
+                    controller.handleIpcCommand(QStringLiteral("start"),
+                                                outputFormatName(*outputFormat),
+                                                nullptr);
                 } else {
                     controller.startListening();
                 }
@@ -216,9 +260,14 @@ int main(int argc, char **argv)
         if (showSettings) {
             QTimer::singleShot(0, &controller, &ApplicationController::showSettings);
         }
-        if (!daemon) {
+        if (!daemon || !grabPath.isEmpty()) {
             controller.showMainWindow();
         }
+    }
+    if (!grabPath.isEmpty()) {
+        QTimer::singleShot(600, &controller, [&controller, &app, grabPath] {
+            app.exit(controller.grabMainWindow(grabPath) ? 0 : 1);
+        });
     }
     return app.exec();
 }

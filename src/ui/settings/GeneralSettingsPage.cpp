@@ -5,6 +5,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDesktopServices>
+#include <QFormLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QSpinBox>
@@ -24,30 +25,31 @@ GeneralSettingsPage::GeneralSettingsPage(const QString &primaryOutputStatus,
     m_theme->addItem(QStringLiteral("System"), QStringLiteral("system"));
     m_theme->addItem(QStringLiteral("Light"), QStringLiteral("light"));
     m_theme->addItem(QStringLiteral("Dark"), QStringLiteral("dark"));
-    m_pauseMedia->setText(QStringLiteral("Pause"));
-    m_sounds->setText(QStringLiteral("Play sounds"));
+    m_theme->setObjectName(QStringLiteral("themeControl"));
     m_previewWords->setObjectName(QStringLiteral("previewWords"));
     m_previewWords->setRange(1, 40);
 
-    auto *section = settings::makeSectionLabel(QStringLiteral("General"), this);
+    auto *title = settings::makePageTitle(QStringLiteral("General"), this);
     auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QVBoxLayout *>(card->layout());
+    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
     auto *primaryOutput = new QLabel(primaryOutputStatus, this);
     primaryOutput->setObjectName(QStringLiteral("statusText"));
     primaryOutput->setForegroundRole(QPalette::WindowText);
     auto *openReleases = new QPushButton(QStringLiteral("Open releases"), this);
     auto *runSetup = new QPushButton(QStringLiteral("Run setup assistant…"), this);
 
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Theme"), QStringLiteral("App colors."), m_theme, card), card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Pause media"), QStringLiteral("Pause currently playing media while transcribing."), m_pauseMedia, card), card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Sound cues"), QStringLiteral("Use the desktop sound for recording start and stop."), m_sounds, card), card);
+    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Theme"), QString(), m_theme, card), card);
+    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Media"), QStringLiteral("Pause playing media while dictating"), m_pauseMedia, card), card);
+    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Sounds"), QStringLiteral("Play sounds when dictation starts and stops"), m_sounds, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Preview words"), QStringLiteral("Trailing words shown in the popup."), m_previewWords, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Clipboard output"), QStringLiteral("Current platform clipboard path."), primaryOutput, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Setup assistant"), QStringLiteral("Check sign-in, microphone, accessibility, delivery, and refinement again."), runSetup, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Updates"), QStringLiteral("Updates are manual; open the GitHub releases page when you want to check."), openReleases, card), card, false);
 
     auto *pageLayout = settings::makeSettingsPage(this);
-    pageLayout->addWidget(section);
+    pageLayout->setSpacing(0);
+    pageLayout->addWidget(title);
+    pageLayout->addSpacing(settings::sectionGap());
     pageLayout->addWidget(card);
     pageLayout->addStretch();
 

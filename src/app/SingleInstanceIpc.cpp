@@ -100,7 +100,12 @@ bool SingleInstanceIpc::sendCommand(const QString &command,
                                     int timeoutMs,
                                     std::shared_ptr<const SingleInstancePlatform> platform)
 {
-    return sendCommandDetailed(command, std::nullopt, response, timeoutMs, std::move(platform)) == IpcCommandResult::Sent;
+    return sendCommandDetailed(command,
+                               std::nullopt,
+                               response,
+                               timeoutMs,
+                               std::move(platform),
+                               nullptr) == IpcCommandResult::Sent;
 }
 
 IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,

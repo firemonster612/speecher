@@ -8,9 +8,8 @@
 #include "providers/ClaudeSpeechTranscriber.h"
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
-#include "ui/MainWindow.h"
+#include "ui/AppWindow.h"
 #include "ui/SetupAssistant.h"
-#include "ui/SettingsDialog.h"
 #include "ui/TranscriberPopup.h"
 #include "platform/atspi/AtSpiAccess.h"
 
@@ -90,6 +89,7 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
     connect(m_session, &DictationSession::statusChanged, this, &ApplicationController::statusChanged);
     connect(m_session, &DictationSession::previewChanged, this, &ApplicationController::previewChanged);
+    connect(m_session, &DictationSession::audioLevelChanged, this, &ApplicationController::audioLevelChanged);
     connect(m_session, &DictationSession::statusChanged, this, [this](const QString &status) {
         if (m_settings->soundsEnabled()
             && (status == QStringLiteral("Listening")
@@ -173,6 +173,11 @@ bool ApplicationController::enableAccessibility(QString *error)
     return enabled;
 }
 
+bool ApplicationController::grabMainWindow(const QString &path) const
+{
+    return m_appWindow && m_appWindow->grab().save(path);
+}
+
 bool ApplicationController::globalShortcutsSupported() const
 {
 #ifdef SPEECHER_WITH_KGLOBALACCEL
@@ -231,25 +236,18 @@ bool ApplicationController::startIpc(QString *error)
 
 void ApplicationController::showMainWindow()
 {
-    if (!m_mainWindow) {
-        m_mainWindow = new MainWindow(this);
-        connect(this, &ApplicationController::statusChanged, m_mainWindow, &MainWindow::setStatusText);
-        m_mainWindow->setStatusText(stateName());
+    if (!m_appWindow) {
+        m_appWindow = new AppWindow(this);
     }
-    m_mainWindow->show();
-    m_mainWindow->raise();
-    m_mainWindow->activateWindow();
+    m_appWindow->show();
+    m_appWindow->raise();
+    m_appWindow->activateWindow();
 }
 
 void ApplicationController::showSettingsWindow()
 {
-    if (!m_settingsDialog) {
-        m_settingsDialog = new SettingsDialog(this);
-        m_settingsDialog->setAttribute(Qt::WA_DeleteOnClose);
-    }
-    m_settingsDialog->show();
-    m_settingsDialog->raise();
-    m_settingsDialog->activateWindow();
+    showMainWindow();
+    m_appWindow->navigateToSettings();
 }
 
 void ApplicationController::showSetupAssistant()

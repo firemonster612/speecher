@@ -134,13 +134,15 @@ void BindingsSettingsPage::load(const QList<BindingRule> &rules)
     refreshBindingList();
 }
 
-bool BindingsSettingsPage::validate(QList<BindingRule> *validatedRules)
+bool BindingsSettingsPage::validate(QList<BindingRule> *validatedRules, bool showError)
 {
     const BindingValidationResult validation = BindingProcessor::validateRules(m_bindingRules);
     if (!validation.ok()) {
-        QMessageBox::warning(this,
-                             QStringLiteral("Replacements not saved"),
-                             validation.messages().join(QStringLiteral("\n")));
+        if (showError) {
+            QMessageBox::warning(this,
+                                 QStringLiteral("Replacements not saved"),
+                                 validation.messages().join(QStringLiteral("\n")));
+        }
         return false;
     }
     *validatedRules = validation.rules;

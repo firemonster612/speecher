@@ -11,6 +11,7 @@ int main(int argc, char **argv)
 
     int result = 0;
     result |= runUiTests(argc, argv);
+    result |= runAppWindowTests(argc, argv);
     result |= runTranscriptStateTests(argc, argv);
     result |= runBindingsTests(argc, argv);
     result |= runSettingsTests(argc, argv);

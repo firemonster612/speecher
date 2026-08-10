@@ -5,6 +5,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFormLayout>
 #include <QLabel>
 #include <QSpinBox>
 #include <QVBoxLayout>
@@ -29,7 +30,6 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
     m_captureMode->addItem(QStringLiteral("On demand"), QStringLiteral("on_demand"));
     m_captureMode->addItem(QStringLiteral("Warm"), QStringLiteral("warm"));
     m_captureMode->setToolTip(QStringLiteral("Warm keeps the microphone stream open between captures for lower startup latency."));
-    m_vadEnabled->setText(QStringLiteral("Trim silence"));
     m_vadEnabled->setToolTip(QStringLiteral("Suppress leading, trailing, and long in-between silence before audio is sent."));
     for (QSpinBox *spinBox : {m_preRollMs, m_postRollMs}) {
         spinBox->setRange(0, 1500);
@@ -42,9 +42,9 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
     m_vadThreshold->setRange(1, 20);
     m_vadThreshold->setSuffix(QStringLiteral("%"));
 
-    auto *section = settings::makeSectionLabel(QStringLiteral("Audio"), this);
+    auto *title = settings::makePageTitle(QStringLiteral("Audio"), this);
     auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QVBoxLayout *>(card->layout());
+    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
 
     settings::addRow(cardLayout,
                      settings::makeRow(QStringLiteral("Microphone"),
@@ -77,8 +77,8 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
                                        card),
                      card);
     settings::addRow(cardLayout,
-                     settings::makeRow(QStringLiteral("Silence trimming"),
-                                       QStringLiteral("Optional VAD gate before sending audio to the speech provider."),
+                     settings::makeRow(QStringLiteral("Silence"),
+                                       QStringLiteral("Trim leading and trailing silence"),
                                        m_vadEnabled,
                                        card),
                      card);
@@ -91,7 +91,9 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
                      false);
 
     auto *pageLayout = settings::makeSettingsPage(this);
-    pageLayout->addWidget(section);
+    pageLayout->setSpacing(0);
+    pageLayout->addWidget(title);
+    pageLayout->addSpacing(settings::sectionGap());
     pageLayout->addWidget(card);
     pageLayout->addStretch();
 

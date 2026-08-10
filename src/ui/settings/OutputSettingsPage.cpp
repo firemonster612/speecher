@@ -9,6 +9,9 @@
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QHash>
 #include <QHeaderView>
 #include <QHBoxLayout>
@@ -148,7 +151,6 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
         addPasteMethods(combo, false, true);
         m_categoryPasteControls.append({category, combo});
     }
-    m_restoreClipboardAfterTyping->setText(QStringLiteral("Restore"));
     m_restoreClipboardAfterTyping->setToolTip(QStringLiteral("Restore the previous clipboard after virtual-keyboard paste."));
     m_appPasteRules->setObjectName(QStringLiteral("vocabInput"));
     m_appPasteRules->setColumnCount(3);
@@ -165,17 +167,17 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
         button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
     }
 
-    auto *section = settings::makeSectionLabel(QStringLiteral("Output"), this);
+    auto *title = settings::makePageTitle(QStringLiteral("Output"), this);
     auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QVBoxLayout *>(card->layout());
+    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Method"), QStringLiteral("How Speecher delivers final text."), m_outputMethod, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Format"), QStringLiteral("Default clipboard representation. A CLI shortcut can override this per dictation."), m_outputFormat, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Global fallback"), QStringLiteral("Paste behavior used unless a category or exact-app rule overrides it."), m_globalPaste, card), card);
     m_targetPasteControls = new QWidget(card);
     m_targetPasteControls->setObjectName(QStringLiteral("targetPasteControls"));
-    auto *targetPasteLayout = new QVBoxLayout(m_targetPasteControls);
+    auto *targetPasteLayout = new QFormLayout(m_targetPasteControls);
     targetPasteLayout->setContentsMargins(0, 0, 0, 0);
-    targetPasteLayout->setSpacing(0);
+    settings::configureFormLayout(targetPasteLayout);
     const QHash<AppCategory, QString> categoryLabels{
         {AppCategory::Terminal, QStringLiteral("Terminals")},
         {AppCategory::Browser, QStringLiteral("Browsers")},
@@ -209,13 +211,15 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     appRulesLayout->addWidget(appRulesDescription);
     appRulesLayout->addWidget(m_appPasteRules);
     appRulesLayout->addLayout(appRuleButtons);
-    targetPasteLayout->addWidget(appRulesControl);
-    targetPasteLayout->addWidget(settings::makeSeparator(m_targetPasteControls));
-    cardLayout->addWidget(m_targetPasteControls);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Restore clipboard"), QStringLiteral("Restore the previous clipboard only after insertion is verified."), m_restoreClipboardAfterTyping, card), card);
+    targetPasteLayout->addRow(appRulesControl);
+    targetPasteLayout->addRow(settings::makeCenteredSeparator(m_targetPasteControls));
+    cardLayout->addRow(m_targetPasteControls);
+    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Clipboard"), QStringLiteral("Restore previous clipboard contents after typing"), m_restoreClipboardAfterTyping, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Virtual keyboard"), QString(), makeYdotoolControl(m_ydotoolStatus, m_ydotoolSetupButton, m_ydotoolStartButton, m_ydotoolDisableButton, m_ydotoolRemoveButton, card), card), card, false);
     auto *pageLayout = settings::makeSettingsPage(this);
-    pageLayout->addWidget(section);
+    pageLayout->setSpacing(0);
+    pageLayout->addWidget(title);
+    pageLayout->addSpacing(settings::sectionGap());
     pageLayout->addWidget(card);
     pageLayout->addStretch();
 
@@ -281,13 +285,15 @@ void OutputSettingsPage::load(const AppSettings &settings)
     m_restoreClipboardAfterTyping->setChecked(settings.output.restoreClipboardAfterTyping);
 }
 
-bool OutputSettingsPage::validate() const
+bool OutputSettingsPage::validate(bool showError) const
 {
     QSet<QString> applicationIds;
     for (const PasteRule &rule : currentApplicationPasteRules()) {
         const QString id = rule.match.toCaseFolded();
         if (applicationIds.contains(id)) {
-            QMessageBox::warning(const_cast<OutputSettingsPage *>(this), QStringLiteral("Paste rules not saved"), QStringLiteral("Each application ID can have only one paste rule."));
+            if (showError) {
+                QMessageBox::warning(const_cast<OutputSettingsPage *>(this), QStringLiteral("Paste rules not saved"), QStringLiteral("Each application ID can have only one paste rule."));
+            }
             return false;
         }
         applicationIds.insert(id);

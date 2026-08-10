@@ -170,8 +170,8 @@ set(SPEECHER_APP_UI_SOURCES
   src/app/SingleInstanceIpc.cpp
   src/output/YdotoolSetupFlow.cpp
   src/ui/AccessibilityNotice.cpp
-  src/ui/MainWindow.cpp
-  src/ui/SettingsDialog.cpp
+  src/ui/AppWindow.cpp
+  src/ui/DictationPage.cpp
   src/ui/SetupAssistant.cpp
   src/ui/setup/SetupPages.cpp
   src/ui/settings/ApplicationSettingsPage.cpp
@@ -183,6 +183,7 @@ set(SPEECHER_APP_UI_SOURCES
   src/ui/settings/ProviderSettingsPage.cpp
   src/ui/settings/RefinementSettingsPage.cpp
   src/ui/settings/SettingsPageSupport.cpp
+  src/ui/settings/SettingsPageSet.cpp
   src/ui/settings/VocabularySettingsPage.cpp
   src/ui/Theme.cpp
   src/ui/TranscriberPopup.cpp
@@ -195,9 +196,10 @@ set(SPEECHER_APP_UI_HEADERS
   src/app/SingleInstanceIpc.h
   src/output/YdotoolSetupFlow.h
   src/ui/AccessibilityNotice.h
-  src/ui/MainWindow.h
+  src/ui/AppPage.h
+  src/ui/AppWindow.h
+  src/ui/DictationPage.h
   src/ui/PopupPositioner.h
-  src/ui/SettingsDialog.h
   src/ui/SetupAssistant.h
   src/ui/setup/SetupPages.h
   src/ui/settings/ApplicationSettingsPage.h
@@ -209,6 +211,7 @@ set(SPEECHER_APP_UI_HEADERS
   src/ui/settings/ProviderSettingsPage.h
   src/ui/settings/RefinementSettingsPage.h
   src/ui/settings/SettingsPageSupport.h
+  src/ui/settings/SettingsPageSet.h
   src/ui/settings/VocabularySettingsPage.h
   src/ui/Theme.h
   src/ui/TranscriberPopup.h
@@ -432,6 +435,7 @@ if(SPEECHER_BUILD_TESTS)
   qt_add_executable(speecher_tests
     tests/test_main.cpp
     tests/test_ui.cpp
+    tests/test_app_window.cpp
     tests/test_transcript_state.cpp
     tests/test_bindings.cpp
     tests/test_settings.cpp

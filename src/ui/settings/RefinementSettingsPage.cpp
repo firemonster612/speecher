@@ -6,6 +6,7 @@
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFormLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QSignalBlocker>
@@ -72,8 +73,6 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     }
     m_provider->addItem(QStringLiteral("None"), QStringLiteral("none"));
     addWritingProfiles(m_writingProfile);
-    m_useTargetContext->setText(QStringLiteral("Use context"));
-    m_screenshotContext->setText(QStringLiteral("Allow screenshots"));
     m_profileSettings->setObjectName(QStringLiteral("vocabInput"));
     m_profileSettings->setColumnCount(3);
     m_profileSettings->setHorizontalHeaderLabels({
@@ -88,9 +87,9 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     m_profileSettings->setSelectionMode(QAbstractItemView::NoSelection);
     m_profileSettings->setMinimumHeight(207);
     m_profileSettings->setMaximumHeight(207);
-    auto *section = settings::makeSectionLabel(QStringLiteral("Refinement"), this);
+    auto *title = settings::makePageTitle(QStringLiteral("Refinement"), this);
     auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QVBoxLayout *>(card->layout());
+    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Refinement"), QStringLiteral("Clean up dictated text after capture."), m_provider, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Fallback profile"), QStringLiteral("Writing profile used when the target app does not imply one."), m_writingProfile, card), card);
     auto *profileSettingsControl = new QWidget(card);
@@ -106,19 +105,21 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     profileSettingsLayout->addWidget(profileSettingsDescription);
     profileSettingsLayout->addWidget(m_profileSettings);
     cardLayout->addWidget(profileSettingsControl);
-    cardLayout->addWidget(settings::makeSeparator(card));
+    cardLayout->addRow(settings::makeCenteredSeparator(card));
 
     m_targetContextControl = settings::makeRow(
-        QStringLiteral("Target context"),
-        QStringLiteral("Use the focused app, control, selection, and bounded nearby text for cleanup."),
+        QStringLiteral("Context"),
+        QStringLiteral("Send the target app's context to the refiner"),
         m_useTargetContext,
         card);
     m_targetContextControl->setObjectName(QStringLiteral("targetContextControl"));
     settings::addRow(cardLayout, m_targetContextControl, card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Screenshot context"), QStringLiteral("Off by default; used only with image-capable refinement models."), m_screenshotContext, card), card, false);
+    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Screenshots"), QStringLiteral("Allow screenshots as refinement context"), m_screenshotContext, card), card, false);
 
     auto *pageLayout = settings::makeSettingsPage(this);
-    pageLayout->addWidget(section);
+    pageLayout->setSpacing(0);
+    pageLayout->addWidget(title);
+    pageLayout->addSpacing(settings::sectionGap());
     pageLayout->addWidget(card);
     pageLayout->addStretch();
 
