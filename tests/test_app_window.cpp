@@ -11,6 +11,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QSignalSpy>
 #include <QSplitter>
 
 using namespace speecher;
@@ -40,6 +41,21 @@ private slots:
         AppWindow window(&controller);
         QCOMPARE(window.pageCount(), 7);
         QCOMPARE(window.pageTitles(), titles);
+    }
+
+    void startupDesktopIntegrationWaitsForFirstWindowExposure()
+    {
+        ApplicationController controller(true);
+        QSignalSpy accessibilityChanged(
+            &controller,
+            &ApplicationController::accessibilityStateChanged);
+
+        QTest::qWait(20);
+        QCOMPARE(accessibilityChanged.count(), 0);
+
+        AppWindow window(&controller);
+        window.show();
+        QTRY_COMPARE_WITH_TIMEOUT(accessibilityChanged.count(), 1, 250);
     }
 
     void sidebarAutoSavesAfterDebounce()

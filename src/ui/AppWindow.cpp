@@ -181,6 +181,15 @@ void AppWindow::showEvent(QShowEvent *event)
         const QSignalBlocker blocker(m_pages);
         m_pages->loadBeforeShow();
     }
+}
+
+void AppWindow::paintEvent(QPaintEvent *event)
+{
+    QMainWindow::paintEvent(event);
+    if (!m_pageLoadScheduled || m_afterShowLoadScheduled) {
+        return;
+    }
+    m_afterShowLoadScheduled = true;
     QTimer::singleShot(0, this, [this] {
         m_pages->loadAfterShow();
         m_dictation->refreshSummary();

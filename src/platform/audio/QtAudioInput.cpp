@@ -209,7 +209,6 @@ QtAudioInput::QtAudioInput(const AudioCaptureSettings &settings, QObject *parent
     , m_mediaDevices(this)
     , m_captureSettings(settings)
 {
-    QTimer::singleShot(300, this, &QtAudioInput::syncWarmSource);
 }
 
 QList<AudioInputDeviceInfo> QtAudioInput::availableInputDevices()
@@ -224,6 +223,11 @@ QList<AudioInputDeviceInfo> QtAudioInput::availableInputDevices()
         });
     }
     return devices;
+}
+
+void QtAudioInput::warmUp()
+{
+    syncWarmSource();
 }
 
 bool QtAudioInput::start(QString *error)

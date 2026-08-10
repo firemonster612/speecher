@@ -7,6 +7,7 @@ class QFrame;
 class QEvent;
 class QProgressBar;
 class QPropertyAnimation;
+class QPaintEvent;
 class QResizeEvent;
 class QVBoxLayout;
 
@@ -34,16 +35,18 @@ public slots:
     void showListeningIndicator();
     void showMessage(const QString &message);
     void showErrorMessage(const QString &message);
-    void showPopup();
+    void showPopup(quint64 generation);
     void setAccessibilityState(bool supported, bool enabled, bool persistent);
     void showAccessibilityError(const QString &message);
 
 signals:
     void errorDismissed();
     void enableAccessibilityRequested();
+    void popupPresented(quint64 generation);
 
 protected:
     void changeEvent(QEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
 
 private:
@@ -60,6 +63,7 @@ private:
     WaveformWidget *m_waveform = nullptr;
     AccessibilityNotice *m_accessibilityNotice = nullptr;
     PopupPositioner *m_positioner = nullptr;
+    quint64 m_pendingPresentationGeneration = 0;
     bool m_applyingTheme = false;
 };
 

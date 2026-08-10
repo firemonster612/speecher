@@ -14,6 +14,7 @@ class QAction;
 namespace speecher {
 
 class DictationSession;
+class AudioInput;
 class AppWindow;
 class LinuxComposition;
 class ProviderRegistry;
@@ -67,10 +68,14 @@ signals:
     void audioLevelChanged(float level);
     void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
 
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 private:
     void registerProviders();
     void wireSessionToPopup();
     void refreshAccessibilityState();
+    void runDeferredStartup();
     bool ensureSetupCompleted();
 
     bool m_popupOnly = false;
@@ -78,6 +83,7 @@ private:
     SettingsStore *m_settings = nullptr;
     SecretStore *m_secrets = nullptr;
     ProviderRegistry *m_providers = nullptr;
+    AudioInput *m_audio = nullptr;
     DictationSession *m_session = nullptr;
     TranscriberPopup *m_popup = nullptr;
     AppWindow *m_appWindow = nullptr;
@@ -87,6 +93,8 @@ private:
     bool m_accessibilitySupported = false;
     bool m_accessibilityEnabled = false;
     bool m_accessibilityPersistent = false;
+    bool m_deferredStartupScheduled = false;
+    bool m_deferredStartupDone = false;
 };
 
 } // namespace speecher

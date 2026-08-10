@@ -390,6 +390,38 @@ private slots:
         QCOMPARE(delivery->lastTarget.caretOffset, 42);
     }
 
+    void dictationSessionDefersTargetCaptureUntilPopupCanPaint()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto targetProvider = std::make_unique<FakeTargetProvider>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(
+            &settings,
+            audio.get(),
+            media.get(),
+            targetProvider.get(),
+            delivery.get(),
+            &registry);
+        QSignalSpy shown(&session, &DictationSession::popupShowRequested);
+
+        session.startListening();
+        QCOMPARE(int(session.state()), int(DictationState::Starting));
+        QCOMPARE(shown.count(), 1);
+        QTest::qWait(20);
+        QCOMPARE(targetProvider->captureCalls, 0);
+        session.popupPresented(shown.first().first().toULongLong());
+        QTRY_COMPARE_WITH_TIMEOUT(targetProvider->captureCalls, 1, 250);
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
+    }
+
     void dictationSessionCapturesOptionalScreenshotOnlyForRefinement()
     {
         SettingsStore settings;

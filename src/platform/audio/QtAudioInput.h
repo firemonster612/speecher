@@ -19,6 +19,7 @@ public:
     explicit QtAudioInput(const AudioCaptureSettings &settings = {}, QObject *parent = nullptr);
     static QList<AudioInputDeviceInfo> availableInputDevices();
 
+    void warmUp() override;
     bool start(QString *error = nullptr) override;
     void stop() override;
     bool isActive() const override;

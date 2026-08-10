@@ -166,7 +166,6 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
     layout->addWidget(m_status);
     layout->addStretch();
 
-    refreshDevices();
     m_input = m_platform.createAudioInput(&m_settings, this);
     connect(m_input, &AudioInput::levelChanged, this, [this](float level) {
         m_level->setValue(qBound(0, qRound(level * 100.0f), 100));
@@ -200,11 +199,28 @@ void MicrophoneSetupPage::setActive(bool active)
     }
     m_active = active;
     if (active) {
-        refreshDevices();
-        startMeter();
+        if (isVisible()) {
+            if (!m_devicesLoaded) {
+                refreshDevices();
+                m_devicesLoaded = true;
+            }
+            startMeter();
+        }
     } else if (m_input) {
         m_input->stop();
         m_level->setValue(0);
+    }
+}
+
+void MicrophoneSetupPage::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    if (!m_devicesLoaded) {
+        refreshDevices();
+        m_devicesLoaded = true;
+    }
+    if (m_active) {
+        startMeter();
     }
 }
 

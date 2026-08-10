@@ -217,19 +217,26 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
     emit popupFrozenChanged(false);
     emit popupRefiningChanged(false);
     emit popupStatusChanged(QStringLiteral("Listening"));
-    emit popupShowRequested();
-    QTimer::singleShot(0, this, [this, generation] {
+    emit popupShowRequested(generation);
+    QTimer::singleShot(50, this, [this, generation] {
         continueStartupAfterPopup(generation);
     });
+}
+
+void DictationSession::popupPresented(quint64 generation)
+{
+    continueStartupAfterPopup(generation);
 }
 
 void DictationSession::continueStartupAfterPopup(quint64 generation)
 {
     if (generation != m_generation
+        || generation == m_continuedStartupGeneration
         || m_state != DictationState::Starting
         || !m_sessionSettings) {
         return;
     }
+    m_continuedStartupGeneration = generation;
 
     const AppSettings settings = *m_sessionSettings;
     clearScreenshotContext();
