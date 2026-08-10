@@ -40,7 +40,7 @@ private:
     QNetworkAccessManager m_network;
     QTimer m_inactivityTimer;
     QNetworkReply *m_reply = nullptr;
-    int m_inactivityTimeoutMs = 20000;
+    int m_inactivityTimeoutMs;
     QByteArray m_buffer;
     QString m_accumulated;
     bool m_failed = false;

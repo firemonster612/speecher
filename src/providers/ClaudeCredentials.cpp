@@ -249,6 +249,7 @@ QString ClaudeCredentials::installedVersion()
         QDateTime modified;
         QString version;
     };
+    // installedVersion() and its process-local cache are GUI-thread-only.
     static QHash<QString, VersionCacheEntry> cache;
     const QString cacheKey = executableInfo.absoluteFilePath();
     const QDateTime modified = executableInfo.lastModified();
