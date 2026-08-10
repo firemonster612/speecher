@@ -22,6 +22,10 @@
 #include <QStyle>
 #include <QVBoxLayout>
 
+#ifdef SPEECHER_WITH_KCOLORSCHEME
+#include <KColorScheme>
+#endif
+
 namespace speecher::settings {
 
 QColor separatorColor(const QPalette &palette)
