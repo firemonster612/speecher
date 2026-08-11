@@ -5,8 +5,10 @@
 #include "ui/settings/ApplicationSettingsPage.h"
 #include "ui/settings/CorrectionsSettingsPage.h"
 #include "ui/settings/OutputSettingsPage.h"
+#include "ui/settings/AudioSettingsPage.h"
 #include "ui/settings/RefinementSettingsPage.h"
 #include "ui/settings/SettingsPageSupport.h"
+#include "ui/setup/SetupPages.h"
 
 #include <QLabel>
 #include <QCheckBox>
@@ -115,6 +117,49 @@ private slots:
         QVERIFY(applications.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
         QVERIFY(refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
+    }
+
+    void speechProviderChoicesComeFromTheRegistry()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setSpeechProvider(QStringLiteral("claude"));
+
+        ProviderRegistry providers;
+        providers.registerSpeechProvider(
+            {QStringLiteral("claude"),
+             QStringLiteral("Claude Voice"),
+             QStringLiteral("Sign in with Claude Code, then check again.")},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        providers.registerSpeechProvider(
+            {QStringLiteral("codex"),
+             QStringLiteral("ChatGPT Codex"),
+             QStringLiteral("Sign in with the ChatGPT app or Codex CLI, then check again.")},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+
+        SpeechProviderSetupPage setup(settings, providers);
+        auto *setupChoice = setup.findChild<QComboBox *>(QStringLiteral("speechProvider"));
+        auto *setupHint = setup.findChild<QLabel *>(QStringLiteral("speechProviderHint"));
+        QVERIFY(setupChoice);
+        QVERIFY(setupHint);
+        QCOMPARE(setupChoice->count(), 2);
+        setupChoice->setCurrentIndex(setupChoice->findData(QStringLiteral("codex")));
+        QCOMPARE(settings.speechProvider(), QStringLiteral("codex"));
+        QVERIFY(setupHint->text().contains(QStringLiteral("ChatGPT app")));
+
+        AudioSettingsPage audio(*linuxComposition(), providers);
+        AppSettings snapshot = settings.snapshot();
+        audio.load(snapshot);
+        auto *settingsChoice = audio.findChild<QComboBox *>(QStringLiteral("speechProvider"));
+        QVERIFY(settingsChoice);
+        QCOMPARE(settingsChoice->count(), 2);
+        QCOMPARE(settingsChoice->currentData().toString(), QStringLiteral("codex"));
+
+        settingsChoice->setCurrentIndex(settingsChoice->findData(QStringLiteral("claude")));
+        audio.appendToDraft(snapshot);
+        QCOMPARE(snapshot.speech.providerId, QStringLiteral("claude"));
+        settings.applySnapshot(snapshot);
+        QCOMPARE(settings.speechProvider(), QStringLiteral("claude"));
     }
 
     void applicationSettingsShowsBuiltInsAndAddsCustomRules()

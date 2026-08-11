@@ -1,6 +1,7 @@
 #include "ui/settings/AudioSettingsPage.h"
 
 #include "app/LinuxComposition.h"
+#include "providers/ProviderRegistry.h"
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QCheckBox>
@@ -13,9 +14,11 @@
 namespace speecher {
 
 AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
+                                     const ProviderRegistry &providers,
                                      QWidget *parent)
     : QScrollArea(parent)
     , m_platform(platform)
+    , m_speechProvider(new QComboBox(this))
     , m_audioDevice(new QComboBox(this))
     , m_captureMode(new QComboBox(this))
     , m_vadEnabled(new QCheckBox(this))
@@ -24,6 +27,11 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
     , m_readinessTimeoutMs(new QSpinBox(this))
     , m_vadThreshold(new QSpinBox(this))
 {
+    m_speechProvider->setObjectName(QStringLiteral("speechProvider"));
+    m_speechProvider->setMinimumContentsLength(24);
+    for (const ProviderDescriptor &provider : providers.speechProviders()) {
+        m_speechProvider->addItem(provider.label, provider.id);
+    }
     m_audioDevice->setMinimumContentsLength(28);
     m_audioDevice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_audioDevice->setToolTip(QStringLiteral("Microphone Speecher records from."));
@@ -46,6 +54,12 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
     auto *card = settings::makeSettingsCard(this);
     auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
 
+    settings::addRow(cardLayout,
+                     settings::makeRow(QStringLiteral("Transcription"),
+                                       QStringLiteral("Service used to turn speech into a Raw Transcript."),
+                                       m_speechProvider,
+                                       card),
+                     card);
     settings::addRow(cardLayout,
                      settings::makeRow(QStringLiteral("Microphone"),
                                        QStringLiteral("Input device used for dictation."),
@@ -97,6 +111,7 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
     pageLayout->addWidget(card);
     pageLayout->addStretch();
 
+    connect(m_speechProvider, &QComboBox::currentIndexChanged, this, &AudioSettingsPage::changed);
     connect(m_audioDevice, &QComboBox::currentIndexChanged, this, &AudioSettingsPage::changed);
     connect(m_captureMode, &QComboBox::currentIndexChanged, this, &AudioSettingsPage::changed);
     connect(m_vadEnabled, &QCheckBox::toggled, this, [this] {
@@ -112,6 +127,7 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
 void AudioSettingsPage::load(const AppSettings &settings)
 {
     const AudioCaptureSettings &audio = settings.audio;
+    settings::selectData(m_speechProvider, settings.speech.providerId);
     refreshAudioDeviceList(audio.deviceId);
     settings::selectData(m_captureMode, audio.mode);
     m_vadEnabled->setChecked(audio.vadEnabled);
@@ -124,6 +140,7 @@ void AudioSettingsPage::load(const AppSettings &settings)
 
 void AudioSettingsPage::appendToDraft(AppSettings &draft) const
 {
+    draft.speech.providerId = m_speechProvider->currentData().toString();
     draft.audio = {
         m_audioDevice->currentData().toString(),
         m_captureMode->currentData().toString(),
@@ -139,7 +156,8 @@ bool AudioSettingsPage::hasChanges(const AppSettings &settings) const
 {
     AppSettings draft = settings;
     appendToDraft(draft);
-    return draft.audio != settings.audio;
+    return draft.speech.providerId != settings.speech.providerId
+        || draft.audio != settings.audio;
 }
 
 void AudioSettingsPage::refreshAudioDeviceList(const QString &selectedDeviceId)

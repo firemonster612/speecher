@@ -11,6 +11,7 @@ namespace speecher {
 struct ProviderDescriptor {
     QString id;
     QString label;
+    QString setupHint;
 };
 
 class ProviderRegistry : public QObject {

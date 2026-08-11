@@ -9,7 +9,7 @@
 ## Quick start
 
 ### Prerequisites
-Be signed into Claude Code CLI (required) and Codex CLI (optionally) if you want refinement through Codex OAuth. Speecher can refresh expired Claude logins through Claude Code, and can ask Codex CLI to refresh an expired Codex OAuth token, so `claude` and `codex` should be available on `PATH`; it also checks common install locations such as `~/.local/bin`.
+Sign in to at least one transcription service: Claude Code for Claude Voice, or the Linux ChatGPT app or Codex CLI for ChatGPT Codex dictation. Speecher can refresh expired logins through the matching CLI. It looks for `claude` and `codex` on `PATH`, common locations such as `~/.local/bin`, and the CLI bundled with the Linux ChatGPT app.
 
 ```sh
 # Arch
@@ -118,6 +118,12 @@ The four CLI commands contact the running app through a per-user socket. `toggle
 
 Speecher uses one window with a KDE-style sidebar, searchable settings pages, and dictation controls. Running `speecher settings` opens that window on General settings.
 
+## Transcription
+
+Choose Claude Voice or ChatGPT Codex under `Settings > Audio > Transcription`. The setup assistant reads the same provider registry, so newly registered transcription services appear in both places without separate wizard changes.
+
+ChatGPT Codex dictation uses the same streaming protocol as Codex for Linux and reads its ChatGPT OAuth session from `~/.codex/auth.json`. An OpenAI API key cannot authorize this endpoint. The desktop package launcher is `/usr/bin/chatgpt`; its bundled CLI is `/usr/lib/chatgpt/resources/codex`, which Speecher can use to refresh an expired login. A standalone Codex CLI on `PATH` also works.
+
 Native binaries use one stable user socket, so the desktop app and CLI shortcut talk to the same instance after `make install`. AppImages have their own stable socket because their internal mounted path changes on each launch.
 
 ## Refinement
@@ -165,7 +171,7 @@ Authentication is resolved in this order:
 
 1. If `~/.codex/auth.json` says `auth_mode` is `chatgpt`, use its Codex OAuth token against the ChatGPT Codex backend.
 2. `~/.codex/auth.json` `OPENAI_API_KEY`, when it starts with `sk-`.
-3. `~/.codex/auth.json` Codex OAuth token against the ChatGPT Codex backend. If the OAuth access token is expired, Speecher asks the Codex CLI to refresh it and reloads the auth file.
+3. `~/.codex/auth.json` Codex OAuth token against the ChatGPT Codex backend. If the OAuth access token is expired, Speecher asks a standalone or ChatGPT-bundled Codex CLI to refresh it and reloads the auth file.
 4. The `OPENAI_API_KEY` environment variable, when it starts with `sk-`.
 5. The API key saved in the app settings.
 

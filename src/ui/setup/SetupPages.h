@@ -26,14 +26,20 @@ public:
     explicit WelcomeSetupPage(QWidget *parent = nullptr);
 };
 
-class ClaudeSignInSetupPage final : public QWidget {
+class SpeechProviderSetupPage final : public QWidget {
 public:
-    explicit ClaudeSignInSetupPage(SettingsStore &settings, QWidget *parent = nullptr);
+    SpeechProviderSetupPage(SettingsStore &settings,
+                            ProviderRegistry &providers,
+                            QWidget *parent = nullptr);
 
 private:
-    void checkCredentials();
+    void updateProvider();
+    void checkProvider();
 
     SettingsStore &m_settings;
+    ProviderRegistry &m_providers;
+    QComboBox *m_provider;
+    QLabel *m_hint;
     QLabel *m_status;
 };
 

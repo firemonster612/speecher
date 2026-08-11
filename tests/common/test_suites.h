@@ -63,4 +63,5 @@ int runRefinersTests(int argc, char **argv);
 int runVocabularyTests(int argc, char **argv);
 int runProviderAuthTests(int argc, char **argv);
 int runClaudeVoiceTests(int argc, char **argv);
+int runCodexDictationTests(int argc, char **argv);
 int runAudioPcmConverterTests(int argc, char **argv);

@@ -105,6 +105,8 @@ set(SPEECHER_PROVIDER_SOURCES
   src/providers/ClaudeSpeechTranscriber.cpp
   src/providers/ClaudeVoiceClient.cpp
   src/providers/ClaudeVoiceProtocol.cpp
+  src/providers/CodexDictationClient.cpp
+  src/providers/CodexSpeechTranscriber.cpp
   src/providers/OpenAiAuthProvider.cpp
   src/providers/OpenAiRefiner.cpp
   src/providers/OpenAiTranscriptRefiner.cpp
@@ -118,6 +120,8 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/ClaudeSpeechTranscriber.h
   src/providers/ClaudeVoiceClient.h
   src/providers/ClaudeVoiceProtocol.h
+  src/providers/CodexDictationClient.h
+  src/providers/CodexSpeechTranscriber.h
   src/providers/OpenAiAuthProvider.h
   src/providers/OpenAiRefiner.h
   src/providers/OpenAiTranscriptRefiner.h
@@ -449,6 +453,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_vocabulary.cpp
     tests/test_provider_auth.cpp
     tests/test_claude_voice.cpp
+    tests/test_codex_dictation.cpp
     tests/test_audio_pcm_converter.cpp
   )
   target_include_directories(speecher_tests PRIVATE src)

@@ -48,7 +48,9 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
     setMinimumSize(620, 460);
 
     auto *welcome = new WelcomeSetupPage(this);
-    auto *signIn = new ClaudeSignInSetupPage(*controller->settings(), this);
+    auto *speechProvider = new SpeechProviderSetupPage(*controller->settings(),
+                                                       *controller->providerRegistry(),
+                                                       this);
     auto *accessibility = new AccessibilitySetupPage(*controller, this);
     auto *refinement = new RefinementSetupPage(*controller->settings(),
                                                *controller->providerRegistry(),
@@ -57,7 +59,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
 
 #ifdef SPEECHER_WITH_KASSISTANT
     addPage(welcome, QStringLiteral("Welcome to Speecher"));
-    addPage(signIn, QStringLiteral("Claude sign-in"));
+    addPage(speechProvider, QStringLiteral("Transcription"));
     addPage(m_microphonePage, QStringLiteral("Microphone"));
     addPage(accessibility, QStringLiteral("Desktop accessibility"));
     addPage(m_deliveryPage, QStringLiteral("Text delivery"));
@@ -83,7 +85,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
         m_pageContents.insert(id, content);
     };
     addSetupPage(welcome, QStringLiteral("Welcome to Speecher"));
-    addSetupPage(signIn, QStringLiteral("Claude sign-in"));
+    addSetupPage(speechProvider, QStringLiteral("Transcription"));
     addSetupPage(m_microphonePage, QStringLiteral("Microphone"));
     addSetupPage(accessibility, QStringLiteral("Desktop accessibility"));
     addSetupPage(m_deliveryPage, QStringLiteral("Text delivery"));

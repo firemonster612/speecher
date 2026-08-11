@@ -6,6 +6,7 @@
 #include "dictation/DictationSession.h"
 #include "providers/AnthropicTranscriptRefiner.h"
 #include "providers/ClaudeSpeechTranscriber.h"
+#include "providers/CodexSpeechTranscriber.h"
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/AppWindow.h"
@@ -389,9 +390,20 @@ bool ApplicationController::ensureSetupCompleted()
 
 void ApplicationController::registerProviders()
 {
-    m_providers->registerSpeechProvider({QStringLiteral("claude"), QStringLiteral("Claude Voice")}, [](QObject *parent) {
-        return new ClaudeSpeechTranscriber(parent);
-    });
+    m_providers->registerSpeechProvider(
+        {QStringLiteral("claude"),
+         QStringLiteral("Claude Voice"),
+         QStringLiteral("Sign in with Claude Code. If needed, run `claude` and use `/login`, then check again.")},
+        [](QObject *parent) {
+            return new ClaudeSpeechTranscriber(parent);
+        });
+    m_providers->registerSpeechProvider(
+        {QStringLiteral("codex"),
+         QStringLiteral("ChatGPT Codex"),
+         QStringLiteral("Sign in with ChatGPT using the ChatGPT app (`/usr/bin/chatgpt`) or Codex CLI, then check again.")},
+        [](QObject *parent) {
+            return new CodexSpeechTranscriber(parent);
+        });
     m_providers->registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("OpenAI")}, [this](QObject *parent) {
         return new OpenAiTranscriptRefiner(m_secrets, parent);
     });
