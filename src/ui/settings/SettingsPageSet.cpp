@@ -25,7 +25,9 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *par
     : QObject(parent)
     , m_controller(controller)
     , m_general(new GeneralSettingsPage(controller->primaryOutputStatus(), parent))
-    , m_audio(new AudioSettingsPage(*controller->platform(), parent))
+    , m_audio(new AudioSettingsPage(*controller->platform(),
+                                    *controller->providerRegistry(),
+                                    parent))
     , m_applications(new ApplicationSettingsPage(parent))
     , m_output(new OutputSettingsPage(*controller->settings(), parent))
     , m_refinement(new RefinementSettingsPage(*controller->providerRegistry(), parent))

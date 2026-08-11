@@ -6,7 +6,6 @@
 #include "dictation/DictationPorts.h"
 #include "output/YdotoolSetup.h"
 #include "output/YdotoolSetupFlow.h"
-#include "providers/ClaudeCredentials.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/settings/SettingsPageSupport.h"
 
@@ -21,6 +20,8 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 namespace speecher {
 namespace {
@@ -99,43 +100,81 @@ WelcomeSetupPage::WelcomeSetupPage(QWidget *parent)
         this,
         QStringLiteral("Speecher records a short dictation, turns it into text, and sends it to the app you were using."));
     auto *checks = new QLabel(
-        QStringLiteral("This assistant checks your Claude sign-in, microphone, desktop accessibility, text delivery, refinement, and writing profiles."),
+        QStringLiteral("This assistant checks your transcription provider, microphone, desktop accessibility, text delivery, refinement, and writing profiles."),
         this);
     checks->setWordWrap(true);
     layout->addWidget(checks);
     layout->addStretch();
 }
 
-ClaudeSignInSetupPage::ClaudeSignInSetupPage(SettingsStore &settings, QWidget *parent)
+SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
+                                                 ProviderRegistry &providers,
+                                                 QWidget *parent)
     : QWidget(parent)
     , m_settings(settings)
+    , m_providers(providers)
+    , m_provider(new QComboBox(this))
+    , m_hint(new QLabel(this))
     , m_status(new QLabel(this))
 {
     QVBoxLayout *layout = makePage(
         this,
-        QStringLiteral("Claude Voice is required for transcription. Speecher uses the Claude Code OAuth session stored in ~/.claude/.credentials.json."));
+        QStringLiteral("Choose the service Speecher uses to turn speech into a Raw Transcript."));
+    m_provider->setObjectName(QStringLiteral("speechProvider"));
+    m_provider->setMinimumContentsLength(24);
+    for (const ProviderDescriptor &provider : m_providers.speechProviders()) {
+        m_provider->addItem(provider.label, provider.id);
+    }
+    settings::selectData(m_provider, m_settings.speechProvider());
+
+    m_hint->setObjectName(QStringLiteral("speechProviderHint"));
+    m_hint->setWordWrap(true);
     m_status->setWordWrap(true);
-    auto *instructions = new QLabel(
-        QStringLiteral("If sign-in is missing or expired, run `claude` in a terminal and use the `/login` command, then check again."),
-        this);
-    instructions->setWordWrap(true);
     auto *checkAgain = new QPushButton(QStringLiteral("Check again"), this);
     checkAgain->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    auto *providerRow = new QHBoxLayout;
+    providerRow->addWidget(new QLabel(QStringLiteral("Transcription service"), this));
+    providerRow->addWidget(m_provider, 1);
+    layout->addLayout(providerRow);
     layout->addWidget(m_status);
-    layout->addWidget(instructions);
+    layout->addWidget(m_hint);
     layout->addWidget(checkAgain, 0, Qt::AlignLeft);
     layout->addStretch();
-    connect(checkAgain, &QPushButton::clicked, this, &ClaudeSignInSetupPage::checkCredentials);
-    checkCredentials();
+    connect(m_provider, &QComboBox::currentIndexChanged,
+            this, &SpeechProviderSetupPage::updateProvider);
+    connect(checkAgain, &QPushButton::clicked,
+            this, &SpeechProviderSetupPage::checkProvider);
+    updateProvider();
 }
 
-void ClaudeSignInSetupPage::checkCredentials()
+void SpeechProviderSetupPage::updateProvider()
 {
-    const ClaudeCredentialResult result = ClaudeCredentials::load(m_settings.claudeCredentialsPath());
+    const QString providerId = m_provider->currentData().toString();
+    m_settings.setSpeechProvider(providerId);
+    const QList<ProviderDescriptor> providers = m_providers.speechProviders();
+    const auto it = std::find_if(providers.cbegin(), providers.cend(),
+                                 [&providerId](const ProviderDescriptor &provider) {
+                                     return provider.id == providerId;
+                                 });
+    m_hint->setText(it == providers.cend() ? QString() : it->setupHint);
+    checkProvider();
+}
+
+void SpeechProviderSetupPage::checkProvider()
+{
+    SpeechTranscriber *provider = m_providers.speechProvider(
+        m_provider->currentData().toString());
+    if (!provider) {
+        setStatusColor(m_status, false);
+        m_status->setText(QStringLiteral("No transcription service is available."));
+        return;
+    }
+
+    const SpeechPrepareResult result = provider->prepare(m_settings.snapshot().speech);
     setStatusColor(m_status, result.ok);
     m_status->setText(result.ok
-                          ? QStringLiteral("Signed in to Claude Code. Credentials are valid.")
-                          : result.error);
+                          ? QStringLiteral("%1 is ready.").arg(provider->label())
+                          : result.message);
 }
 
 MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,

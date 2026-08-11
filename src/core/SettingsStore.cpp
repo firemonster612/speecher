@@ -16,6 +16,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setPauseMediaDuringTranscription(draft.ui.pauseMediaDuringTranscription);
     setSoundsEnabled(draft.ui.soundsEnabled);
     setPreviewWords(draft.ui.previewWords);
+    setSpeechProvider(draft.speech.providerId);
     setAudioCaptureSettings(draft.audio);
     setAppRecognitionRules(draft.appRecognitionRules);
     setRefinementProvider(draft.refinement.providerId);

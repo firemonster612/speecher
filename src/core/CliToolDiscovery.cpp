@@ -63,6 +63,7 @@ QString CliToolDiscovery::codexExecutable()
                                         QDir::homePath() + QStringLiteral("/.local/bin/codex"),
                                         QStringLiteral("/usr/local/bin/codex"),
                                         QStringLiteral("/usr/bin/codex"),
+                                        QStringLiteral("/usr/lib/chatgpt/resources/codex"),
                                     });
 }
 
