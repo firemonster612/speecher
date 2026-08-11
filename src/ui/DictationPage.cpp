@@ -38,6 +38,7 @@ void addSummaryRow(QFormLayout *form,
     layout->addWidget(value, 0, Qt::AlignVCenter);
     layout->addWidget(change, 0, Qt::AlignVCenter);
     auto *label = new QLabel(labelText + QLatin1Char(':'), parent);
+    label->setMinimumHeight(change->sizeHint().height());
     label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     form->addRow(label, field);
     QObject::connect(change, &QPushButton::clicked, owner, [owner, page] {
@@ -88,6 +89,7 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
         label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
         label->installEventFilter(this);
     }
+    m_provider->setObjectName(QStringLiteral("refinementSummary"));
     m_microphone->setObjectName(QStringLiteral("microphoneSummary"));
     addSummaryRow(form, QStringLiteral("Refinement"), m_provider,
                   AppPageId::Refinement, this, formWidget);

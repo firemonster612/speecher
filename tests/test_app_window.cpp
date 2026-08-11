@@ -4,6 +4,7 @@
 #include "core/SettingsStore.h"
 #include "ui/AppPage.h"
 #include "ui/AppWindow.h"
+#include "ui/DictationPage.h"
 #include "ui/settings/BindingsSettingsPage.h"
 #include "ui/settings/SettingsPageSet.h"
 
@@ -13,6 +14,7 @@
 #include <QListWidget>
 #include <QSignalSpy>
 #include <QSplitter>
+#include <QVBoxLayout>
 
 using namespace speecher;
 
@@ -84,6 +86,33 @@ private slots:
         QVERIFY(microphone);
         QCOMPARE(microphone->property("fullText").toString(),
                  QStringLiteral("Selected microphone"));
+    }
+
+    void dictationSummaryTitleSharesFieldVerticalCenter()
+    {
+        ApplicationController controller(true);
+        QWidget surface;
+        surface.setStyleSheet(QStringLiteral("QPushButton { min-height: 40px; }"));
+        auto *layout = new QVBoxLayout(&surface);
+        auto *page = new DictationPage(&controller, &surface);
+        layout->addWidget(page);
+        surface.show();
+        QCoreApplication::processEvents();
+
+        QLabel *title = nullptr;
+        for (QLabel *candidate : page->findChildren<QLabel *>()) {
+            if (candidate->text() == QStringLiteral("Refinement:")) {
+                title = candidate;
+                break;
+            }
+        }
+        QVERIFY(title);
+        QLabel *value = page->findChild<QLabel *>(QStringLiteral("refinementSummary"));
+        QVERIFY(value);
+
+        const int titleCenter = title->mapTo(page, title->rect().center()).y();
+        const int valueCenter = value->mapTo(page, value->rect().center()).y();
+        QVERIFY(qAbs(titleCenter - valueCenter) <= 1);
     }
 
     void sidebarFlushesPendingAutoSaveOnClose()
