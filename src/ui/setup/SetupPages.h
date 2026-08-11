@@ -137,6 +137,9 @@ public:
     void setSignInRequired(bool required);
     bool applyShortcut();
 
+protected:
+    void showEvent(QShowEvent *event) override;
+
 private:
     ApplicationController &m_controller;
     QCheckBox *m_createShortcut = nullptr;
@@ -144,6 +147,7 @@ private:
     QLabel *m_shortcutStatus;
     QLabel *m_signInNote;
     bool m_shortcutFailureAcknowledged = false;
+    bool m_shortcutLoaded = false;
 };
 
 } // namespace speecher
