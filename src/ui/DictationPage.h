@@ -31,6 +31,7 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+    void updateSummary(bool resolveMicrophone);
     void setSummaryText(QLabel *label, const QString &text);
 
     ApplicationController *m_controller;

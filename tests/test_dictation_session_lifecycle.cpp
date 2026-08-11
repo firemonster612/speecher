@@ -198,7 +198,8 @@ private slots:
         QSignalSpy previewDisplay(&session, &DictationSession::previewDisplayChanged);
 
         session.startListening();
-        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QCOMPARE(int(session.state()), int(DictationState::Starting));
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         QVERIFY(audio->started);
         QCOMPARE(media->pauseCalls, 1);
         QCOMPARE(speech->prepareCalls, 1);
@@ -236,7 +237,8 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.toggleWithFormat(OutputFormat::Html);
-        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QCOMPARE(int(session.state()), int(DictationState::Starting));
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         QCOMPARE(speech->startCalls, 1);
 
         session.startListening();
@@ -257,6 +259,41 @@ private slots:
         QCOMPARE(int(session.state()), int(DictationState::Idle));
     }
 
+    void dictationSessionCancelsDeferredStartupOnFastRestart()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setPauseMediaDuringTranscription(true);
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto target = std::make_unique<FakeTargetProvider>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings,
+                                 audio.get(),
+                                 media.get(),
+                                 target.get(),
+                                 delivery.get(),
+                                 &registry);
+
+        session.startListening();
+        QCOMPARE(int(session.state()), int(DictationState::Starting));
+        QCOMPARE(target->captureCalls, 0);
+        session.stopListening();
+        QCOMPARE(int(session.state()), int(DictationState::Idle));
+
+        session.startListening();
+        QCOMPARE(int(session.state()), int(DictationState::Starting));
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        QCOMPARE(target->captureCalls, 1);
+        QCOMPARE(media->pauseCalls, 1);
+        QCOMPARE(speech->startCalls, 1);
+    }
+
     void dictationSessionWaitsForProviderCompletion()
     {
         SettingsStore settings;
@@ -272,6 +309,7 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->autoCompleteOnFinish = false;
         speech->emitFinalText(QStringLiteral("hello"));
         session.stopListening();
@@ -303,6 +341,7 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.startListeningWithFormat(OutputFormat::Html);
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("<hello>"));
         session.stopListening();
 
@@ -339,13 +378,52 @@ private slots:
             &registry);
 
         session.startListening();
-        QCOMPARE(targetProvider->captureCalls, 1);
+        QCOMPARE(int(session.state()), int(DictationState::Starting));
+        QCOMPARE(targetProvider->captureCalls, 0);
+        QTRY_COMPARE_WITH_TIMEOUT(targetProvider->captureCalls, 1, 250);
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
         speech->emitFinalText(QStringLiteral("hello"));
         session.stopListening();
 
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
         QCOMPARE(delivery->lastTarget.applicationId, QStringLiteral("org.kde.kate"));
         QCOMPARE(delivery->lastTarget.caretOffset, 42);
+    }
+
+    void dictationSessionDefersTargetCaptureUntilPopupCanPaint()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto targetProvider = std::make_unique<FakeTargetProvider>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(
+            &settings,
+            audio.get(),
+            media.get(),
+            targetProvider.get(),
+            delivery.get(),
+            &registry);
+        QSignalSpy shown(&session, &DictationSession::popupShowRequested);
+
+        session.startListening();
+        QCOMPARE(int(session.state()), int(DictationState::Starting));
+        QCOMPARE(shown.count(), 1);
+        QTest::qWait(20);
+        QCOMPARE(targetProvider->captureCalls, 0);
+        const quint64 generation = shown.first().first().toULongLong();
+        session.popupPresented(generation + 1);
+        QTest::qWait(20);
+        QCOMPARE(targetProvider->captureCalls, 0);
+        session.popupPresented(generation);
+        QTRY_COMPARE_WITH_TIMEOUT(targetProvider->captureCalls, 1, 250);
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
     }
 
     void dictationSessionCapturesOptionalScreenshotOnlyForRefinement()
@@ -374,6 +452,7 @@ private slots:
         session.setScreenshotContextProvider(screenshots.get());
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         QCOMPARE(screenshots->captureCalls, 0);
         speech->emitFinalText(QStringLiteral("first"));
         session.stopListening();
@@ -385,7 +464,8 @@ private slots:
 
         settings.setIncludeScreenshotContext(true);
         session.startListening();
-        QCOMPARE(screenshots->captureCalls, 1);
+        QTRY_COMPARE_WITH_TIMEOUT(screenshots->captureCalls, 1, 250);
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
         speech->emitFinalText(QStringLiteral("second"));
         session.stopListening();
         QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 2, 250);
@@ -398,6 +478,7 @@ private slots:
 
         refiner->screenshotCapable = false;
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         QCOMPARE(screenshots->captureCalls, 1);
         session.stopListening();
     }
@@ -432,6 +513,7 @@ private slots:
         session.setScreenshotContextProvider(screenshots.get());
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         QCOMPARE(screenshots->captureCalls, 0);
         session.stopListening();
     }
@@ -471,6 +553,7 @@ private slots:
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
         session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->autoCompleteOnFinish = false;
         audio->pushAudio(QByteArrayLiteral("pcm"));
         session.stopListening();
@@ -507,9 +590,10 @@ private slots:
 
         QVERIFY(timer.elapsed() < 100);
         QCOMPARE(int(session.state()), int(DictationState::Starting));
-        QCOMPARE(refreshSpy.count(), 1);
+        QCOMPARE(refreshSpy.count(), 0);
         QVERIFY(!audio->started);
 
+        QTRY_COMPARE_WITH_TIMEOUT(refreshSpy.count(), 1, 250);
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 1000);
         QCOMPARE(speech->backgroundPrepareCalls, 1);
         QCOMPARE(speech->prepareCalls, 1);
@@ -547,8 +631,10 @@ private slots:
 
         session.startListening();
 
-        QCOMPARE(int(session.state()), int(DictationState::Error));
+        QCOMPARE(int(session.state()), int(DictationState::Starting));
         QCOMPARE(shown.count(), 1);
+        QCOMPARE(message.count(), 0);
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Error), 250);
         QCOMPARE(message.count(), 1);
         QCOMPARE(message.first().first().toString(),
                  QStringLiteral("Claude login cannot be refreshed"));
@@ -589,9 +675,10 @@ private slots:
 
         QVERIFY(timer.elapsed() < 100);
         QCOMPARE(int(session.state()), int(DictationState::Starting));
-        QCOMPARE(refreshSpy.count(), 1);
+        QCOMPARE(refreshSpy.count(), 0);
         QVERIFY(!audio->started);
 
+        QTRY_COMPARE_WITH_TIMEOUT(refreshSpy.count(), 1, 250);
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 1000);
         QCOMPARE(refiner->backgroundRefreshCalls, 1);
         QCOMPARE(refiner->refreshCalls, 1);

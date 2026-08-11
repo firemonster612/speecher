@@ -9,6 +9,7 @@ class QCheckBox;
 class QComboBox;
 class QKeySequenceEdit;
 class QLabel;
+class QShowEvent;
 class QProgressBar;
 class QPushButton;
 
@@ -45,6 +46,9 @@ public:
 
     void setActive(bool active);
 
+protected:
+    void showEvent(QShowEvent *event) override;
+
 private:
     void refreshDevices();
     void startMeter();
@@ -56,6 +60,7 @@ private:
     QProgressBar *m_level;
     QLabel *m_status;
     bool m_active = false;
+    bool m_devicesLoaded = false;
 };
 
 class AccessibilitySetupPage final : public QWidget {
@@ -132,6 +137,9 @@ public:
     void setSignInRequired(bool required);
     bool applyShortcut();
 
+protected:
+    void showEvent(QShowEvent *event) override;
+
 private:
     ApplicationController &m_controller;
     QCheckBox *m_createShortcut = nullptr;
@@ -139,6 +147,7 @@ private:
     QLabel *m_shortcutStatus;
     QLabel *m_signInNote;
     bool m_shortcutFailureAcknowledged = false;
+    bool m_shortcutLoaded = false;
 };
 
 } // namespace speecher

@@ -184,6 +184,40 @@ private slots:
         }
     }
 
+    void claudeInstalledVersionIsCachedUntilExecutableChanges()
+    {
+        QTemporaryDir dir;
+        const QString countPath = dir.filePath(QStringLiteral("version-count"));
+        const QString fakeClaude = writeFakeClaudeScript(
+            dir.filePath(QStringLiteral("claude-fake")),
+            QStringLiteral("printf x >> \"$SPEECHER_TEST_VERSION_COUNT\"\nprintf '1.2.3\\n'\n"));
+        QVERIFY(!fakeClaude.isEmpty());
+
+        qputenv("SPEECHER_TEST_CLAUDE_EXECUTABLE", QFile::encodeName(fakeClaude));
+        qputenv("SPEECHER_TEST_VERSION_COUNT", QFile::encodeName(countPath));
+        const auto cleanup = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_CLAUDE_EXECUTABLE");
+            qunsetenv("SPEECHER_TEST_VERSION_COUNT");
+        });
+
+        QCOMPARE(ClaudeCredentials::installedVersion(), QStringLiteral("1.2.3"));
+        QCOMPARE(ClaudeCredentials::installedVersion(), QStringLiteral("1.2.3"));
+        QFile count(countPath);
+        QVERIFY(count.open(QIODevice::ReadOnly));
+        QCOMPARE(count.readAll(), QByteArrayLiteral("x"));
+        count.close();
+
+        QFile executable(fakeClaude);
+        QVERIFY(executable.open(QIODevice::ReadWrite));
+        QVERIFY(executable.setFileTime(QDateTime::currentDateTimeUtc().addSecs(5),
+                                       QFileDevice::FileModificationTime));
+        executable.close();
+
+        QCOMPARE(ClaudeCredentials::installedVersion(), QStringLiteral("1.2.3"));
+        QVERIFY(count.open(QIODevice::ReadOnly));
+        QCOMPARE(count.readAll(), QByteArrayLiteral("xx"));
+    }
+
     void codexOauthRefreshesExpiredToken()
     {
         QTemporaryDir dir;

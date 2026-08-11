@@ -10,6 +10,7 @@
 #endif
 
 #include <QEventLoop>
+#include <QTimer>
 #endif
 
 namespace speecher {
@@ -24,10 +25,26 @@ template <typename Job>
 bool runKeychainJob(Job &job, QString *error)
 {
     QEventLoop loop;
+    QTimer watchdog;
+    bool finished = false;
     job.setAutoDelete(false);
-    QObject::connect(&job, &Job::finished, &loop, &QEventLoop::quit);
+    QObject::connect(&job, &Job::finished, &loop, [&finished, &loop] {
+        finished = true;
+        loop.quit();
+    });
+    watchdog.setSingleShot(true);
+    QObject::connect(&watchdog, &QTimer::timeout, &loop, &QEventLoop::quit);
     job.start();
-    loop.exec();
+    if (!finished) {
+        watchdog.start(10000);
+        loop.exec();
+    }
+    if (!finished) {
+        if (error) {
+            *error = QStringLiteral("Desktop keyring request timed out");
+        }
+        return false;
+    }
     if (job.error() == QKeychain::NoError) {
         return true;
     }
@@ -49,11 +66,12 @@ SecretStore::SecretStore(SettingsStore *settings, QObject *parent)
 
 QString SecretStore::apiKey() const
 {
-    const QString key = keyringApiKey();
-    if (!key.isEmpty()) {
-        return key;
+    m_lastApiKey = keyringApiKey();
+    if (m_lastApiKey.isEmpty() && m_settings) {
+        m_lastApiKey = m_settings->storedApiKeyFallback();
     }
-    return m_settings ? m_settings->storedApiKeyFallback() : QString();
+    m_hasApiKeyResult = true;
+    return m_lastApiKey;
 }
 
 bool SecretStore::saveApiKey(const QString &apiKey)
@@ -64,13 +82,18 @@ bool SecretStore::saveApiKey(const QString &apiKey)
     if (ok && m_settings) {
         m_settings->clearStoredApiKeyFallback();
     }
+    if (ok) {
+        m_lastApiKey = cleaned;
+        m_hasApiKeyResult = true;
+    }
     return ok;
 }
 
 QString SecretStore::status() const
 {
 #ifdef SPEECHER_WITH_QKEYCHAIN
-    if (!apiKey().isEmpty()) {
+    const QString key = m_hasApiKeyResult ? m_lastApiKey : apiKey();
+    if (!key.isEmpty()) {
         return usesInsecureSettingsFallback() ? QStringLiteral("Settings API key found in legacy plaintext settings")
                                              : QStringLiteral("Settings API key stored in desktop keyring");
     }

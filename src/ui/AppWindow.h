@@ -9,6 +9,8 @@ class QFrame;
 class QLabel;
 class QLineEdit;
 class QListWidget;
+class QPaintEvent;
+class QShowEvent;
 class QSplitter;
 class QStackedWidget;
 class QTimer;
@@ -33,6 +35,8 @@ public:
 
 protected:
     void closeEvent(QCloseEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
+    void showEvent(QShowEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
@@ -55,6 +59,8 @@ private:
     QFrame *m_autoSaveWarning = nullptr;
     QLabel *m_autoSaveWarningText = nullptr;
     QTimer *m_autoSaveTimer = nullptr;
+    bool m_pageLoadScheduled = false;
+    bool m_afterShowLoadScheduled = false;
 };
 
 } // namespace speecher

@@ -19,6 +19,7 @@ public:
     explicit QtAudioInput(const AudioCaptureSettings &settings = {}, QObject *parent = nullptr);
     static QList<AudioInputDeviceInfo> availableInputDevices();
 
+    void warmUp() override;
     bool start(QString *error = nullptr) override;
     void stop() override;
     bool isActive() const override;
@@ -30,6 +31,7 @@ signals:
     void firstSampleObserved();
 
 private:
+    void ensureMediaDevicesInitialized();
     void handleAudioInputsChanged();
     void syncWarmSource();
     AudioCaptureSettings currentSettings() const;
@@ -61,6 +63,7 @@ private:
     bool m_seenFirstSample = false;
     bool m_vadSpeaking = false;
     bool m_conversionFailed = false;
+    bool m_mediaDevicesInitialized = false;
 };
 
 } // namespace speecher

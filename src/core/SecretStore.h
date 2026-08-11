@@ -27,6 +27,8 @@ private:
 
     SettingsStore *m_settings;
     mutable QString m_lastError;
+    mutable QString m_lastApiKey;
+    mutable bool m_hasApiKeyResult = false;
 };
 
 } // namespace speecher

@@ -80,6 +80,7 @@ class AudioInput : public QObject {
 
 public:
     using QObject::QObject;
+    virtual void warmUp() {}
     virtual bool start(QString *error = nullptr) = 0;
     virtual void stop() = 0;
     virtual bool isActive() const = 0;

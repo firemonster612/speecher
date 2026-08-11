@@ -67,6 +67,7 @@ bool runtimeAccessibilityEnabled()
         QStringLiteral("/org/a11y/bus"),
         QStringLiteral("org.freedesktop.DBus.Properties"),
         QDBusConnection::sessionBus());
+    properties.setTimeout(2000);
     const QDBusMessage reply = properties.call(
         QStringLiteral("Get"),
         QStringLiteral("org.a11y.Status"),
@@ -99,6 +100,7 @@ bool requestAccessibility(QString *error)
         QStringLiteral("/org/a11y/bus"),
         QStringLiteral("org.freedesktop.DBus.Properties"),
         QDBusConnection::sessionBus());
+    properties.setTimeout(2000);
     const QDBusMessage reply = properties.call(
         QStringLiteral("Set"),
         QStringLiteral("org.a11y.Status"),

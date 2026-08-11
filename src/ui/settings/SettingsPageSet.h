@@ -41,6 +41,8 @@ public:
     BindingsSettingsPage *bindings() const;
 
     void load();
+    void loadBeforeShow();
+    void loadAfterShow();
     bool save(bool showValidationErrors = true,
               bool refreshPages = true,
               SaveFailure *failure = nullptr);

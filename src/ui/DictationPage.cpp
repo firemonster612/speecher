@@ -88,6 +88,7 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
         label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
         label->installEventFilter(this);
     }
+    m_microphone->setObjectName(QStringLiteral("microphoneSummary"));
     addSummaryRow(form, QStringLiteral("Refinement"), m_provider,
                   AppPageId::Refinement, this, formWidget);
     addSummaryRow(form, QStringLiteral("Microphone"), m_microphone,
@@ -124,7 +125,7 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
         m_accessibilityNotice->hide();
     }
     setStatus(controller->stateName());
-    refreshSummary();
+    updateSummary(false);
 }
 
 QPushButton *DictationPage::toggleButton() const
@@ -161,6 +162,11 @@ void DictationPage::setStatus(const QString &status)
 
 void DictationPage::refreshSummary()
 {
+    updateSummary(true);
+}
+
+void DictationPage::updateSummary(bool resolveMicrophone)
+{
     const QString providerId = m_controller->settings()->refinementProvider();
     QString providerName = QStringLiteral("None");
     for (const ProviderDescriptor &provider : m_controller->providerRegistry()->refinementProviders()) {
@@ -172,7 +178,9 @@ void DictationPage::refreshSummary()
     setSummaryText(m_provider, providerName);
     QString microphone = QStringLiteral("System default");
     const QString deviceId = m_controller->settings()->audioInputDeviceId();
-    if (!deviceId.isEmpty()) {
+    if (!deviceId.isEmpty() && !resolveMicrophone) {
+        microphone = QStringLiteral("Selected microphone");
+    } else if (!deviceId.isEmpty()) {
         for (const AudioInputDeviceInfo &device : m_controller->platform()->availableAudioInputDevices()) {
             if (device.id == deviceId) {
                 microphone = device.label;

@@ -3,6 +3,7 @@
 #include <QNetworkAccessManager>
 #include <QObject>
 #include <QStringList>
+#include <QTimer>
 
 class QNetworkReply;
 
@@ -14,7 +15,7 @@ class AnthropicApiRefiner final : public QObject {
     Q_OBJECT
 
 public:
-    explicit AnthropicApiRefiner(QObject *parent = nullptr);
+    explicit AnthropicApiRefiner(QObject *parent = nullptr, int inactivityTimeoutMs = 20000);
 
     void refine(const QString &rawTranscript,
                 const QStringList &vocabulary,
@@ -37,7 +38,9 @@ private:
     void completeIfReady();
 
     QNetworkAccessManager m_network;
+    QTimer m_inactivityTimer;
     QNetworkReply *m_reply = nullptr;
+    int m_inactivityTimeoutMs;
     QByteArray m_buffer;
     QString m_accumulated;
     bool m_failed = false;

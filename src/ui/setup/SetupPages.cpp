@@ -166,7 +166,6 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
     layout->addWidget(m_status);
     layout->addStretch();
 
-    refreshDevices();
     m_input = m_platform.createAudioInput(&m_settings, this);
     connect(m_input, &AudioInput::levelChanged, this, [this](float level) {
         m_level->setValue(qBound(0, qRound(level * 100.0f), 100));
@@ -200,11 +199,28 @@ void MicrophoneSetupPage::setActive(bool active)
     }
     m_active = active;
     if (active) {
-        refreshDevices();
-        startMeter();
+        if (isVisible()) {
+            if (!m_devicesLoaded) {
+                refreshDevices();
+                m_devicesLoaded = true;
+            }
+            startMeter();
+        }
     } else if (m_input) {
         m_input->stop();
         m_level->setValue(0);
+    }
+}
+
+void MicrophoneSetupPage::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    if (!m_devicesLoaded) {
+        refreshDevices();
+        m_devicesLoaded = true;
+    }
+    if (m_active) {
+        startMeter();
     }
 }
 
@@ -482,10 +498,7 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
         m_createShortcut = new QCheckBox(QStringLiteral("Set up a dictation shortcut"), this);
         m_createShortcut->setChecked(true);
         m_shortcut = new QKeySequenceEdit(this);
-        const QKeySequence existing = m_controller.globalShortcut();
-        m_shortcut->setKeySequence(existing.isEmpty()
-                                       ? QKeySequence(Qt::META | Qt::ALT | Qt::Key_D)
-                                       : existing);
+        m_shortcut->setKeySequence(QKeySequence(Qt::META | Qt::ALT | Qt::Key_D));
         auto *shortcutRow = new QHBoxLayout;
         shortcutRow->addWidget(m_createShortcut);
         shortcutRow->addWidget(m_shortcut, 1);
@@ -505,6 +518,19 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
     layout->addWidget(m_shortcutStatus);
     layout->addWidget(m_signInNote);
     layout->addStretch();
+}
+
+void FinishSetupPage::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    if (!m_shortcut || m_shortcutLoaded) {
+        return;
+    }
+    m_shortcutLoaded = true;
+    const QKeySequence existing = m_controller.globalShortcut();
+    if (!existing.isEmpty()) {
+        m_shortcut->setKeySequence(existing);
+    }
 }
 
 void FinishSetupPage::setSignInRequired(bool required)

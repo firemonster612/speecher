@@ -11,9 +11,11 @@
 #include <QEvent>
 #include <QFontMetrics>
 #include <QPalette>
+#include <QPaintEvent>
 #include <QProgressBar>
 #include <QPropertyAnimation>
 #include <QResizeEvent>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -227,12 +229,14 @@ void TranscriberPopup::showErrorMessage(const QString &message)
     m_errorDismissAnimation->start();
 }
 
-void TranscriberPopup::showPopup()
+void TranscriberPopup::showPopup(quint64 generation)
 {
+    m_pendingPresentationGeneration = generation;
     m_positioner->positionBottomCenter(this);
     updateWindowMask();
     show();
     raise();
+    update();
 }
 
 void TranscriberPopup::setAccessibilityState(bool supported,
@@ -261,6 +265,19 @@ void TranscriberPopup::changeEvent(QEvent *event)
         applyTheme();
     }
     QWidget::changeEvent(event);
+}
+
+void TranscriberPopup::paintEvent(QPaintEvent *event)
+{
+    QWidget::paintEvent(event);
+    if (m_pendingPresentationGeneration == 0) {
+        return;
+    }
+    const quint64 generation = m_pendingPresentationGeneration;
+    m_pendingPresentationGeneration = 0;
+    QTimer::singleShot(0, this, [this, generation] {
+        emit popupPresented(generation);
+    });
 }
 
 void TranscriberPopup::resizeEvent(QResizeEvent *event)

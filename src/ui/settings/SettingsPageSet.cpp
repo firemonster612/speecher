@@ -16,6 +16,7 @@
 
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSignalBlocker>
 #include <QTimer>
 
 namespace speecher {
@@ -49,7 +50,6 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *par
     updateAccessibilityState(controller->accessibilitySupported(),
                              controller->accessibilityEnabled(),
                              controller->accessibilityPersistent());
-    load();
 }
 
 GeneralSettingsPage *SettingsPageSet::general() const { return m_general; }
@@ -64,19 +64,33 @@ BindingsSettingsPage *SettingsPageSet::bindings() const { return m_bindings; }
 
 void SettingsPageSet::load()
 {
+    loadBeforeShow();
+    loadAfterShow();
+}
+
+void SettingsPageSet::loadBeforeShow()
+{
     SettingsStore *settings = m_controller->settings();
     const AppSettings snapshot = settings->snapshot();
     m_general->load(snapshot);
-    m_audio->load(snapshot);
     m_applications->load(snapshot);
     m_refinement->load(snapshot);
     m_providers->loadModels();
     m_output->load(snapshot);
-    m_providers->loadAuth();
+    m_providers->loadAuthModes();
     m_vocabulary->load(settings->vocabularyEntries());
     m_bindings->load(settings->bindingRules());
     m_corrections->load(settings->correctionLearningEnabled(), settings->learnedCorrections());
     m_output->refreshControls();
+}
+
+void SettingsPageSet::loadAfterShow()
+{
+    {
+        const QSignalBlocker blocker(m_audio);
+        m_audio->load(m_controller->settings()->snapshot());
+    }
+    m_providers->loadSecret();
 }
 
 bool SettingsPageSet::save(bool showValidationErrors,

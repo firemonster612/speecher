@@ -356,6 +356,35 @@ private slots:
         QCOMPARE(failed.size(), 0);
     }
 
+    void anthropicApiRefinerFailsWhenResponseStalls()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        AnthropicApiRefiner refiner(nullptr, 50);
+        QSignalSpy completed(&refiner, &AnthropicApiRefiner::completed);
+        QSignalSpy failed(&refiner, &AnthropicApiRefiner::failed);
+
+        refiner.refine(QStringLiteral("Make this formal"),
+                       {},
+                       {},
+                       QStringLiteral("test-token"),
+                       QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()),
+                       QStringLiteral("claude-sonnet-4-6"),
+                       QStringLiteral("low"),
+                       QStringLiteral("balanced"),
+                       {});
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(socket);
+        QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
+
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
+        QVERIFY(failed.at(0).at(0).toString().contains(QStringLiteral("timed out")));
+        QCOMPARE(completed.size(), 0);
+    }
+
     void anthropicApiRefinerDoesNotTreatUnavailableModelsAsEffortSupported()
     {
         QTcpServer server;

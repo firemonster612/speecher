@@ -8,8 +8,10 @@
 #include "ui/settings/SettingsPageSet.h"
 
 #include <QComboBox>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QSignalSpy>
 #include <QSplitter>
 
 using namespace speecher;
@@ -41,26 +43,59 @@ private slots:
         QCOMPARE(window.pageTitles(), titles);
     }
 
+    void startupDesktopIntegrationWaitsForFirstWindowExposure()
+    {
+        ApplicationController controller(true);
+        QSignalSpy accessibilityChanged(
+            &controller,
+            &ApplicationController::accessibilityStateChanged);
+
+        QTest::qWait(20);
+        QCOMPARE(accessibilityChanged.count(), 0);
+
+        AppWindow window(&controller);
+        window.show();
+        QTRY_COMPARE_WITH_TIMEOUT(accessibilityChanged.count(), 1, 250);
+    }
+
     void sidebarAutoSavesAfterDebounce()
     {
         ApplicationController controller(true);
-        controller.settings()->setTheme(QStringLiteral("system"));
+        controller.settings()->setTheme(QStringLiteral("light"));
         AppWindow window(&controller);
         auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
         QVERIFY(theme);
+        QCOMPARE(theme->currentData().toString(), QStringLiteral("system"));
+        window.show();
+        QTRY_COMPARE_WITH_TIMEOUT(theme->currentData().toString(), QStringLiteral("light"), 250);
         theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
         QTRY_COMPARE_WITH_TIMEOUT(controller.settings()->theme(), QStringLiteral("dark"), 1500);
+    }
+
+    void dictationSummaryDefersSavedMicrophoneResolutionUntilShow()
+    {
+        ApplicationController controller(true);
+        AppSettings settings = controller.settings()->snapshot();
+        settings.audio.deviceId = QStringLiteral("saved-device");
+        controller.settings()->applySnapshot(settings);
+
+        AppWindow window(&controller);
+        auto *microphone = window.findChild<QLabel *>(QStringLiteral("microphoneSummary"));
+        QVERIFY(microphone);
+        QCOMPARE(microphone->property("fullText").toString(),
+                 QStringLiteral("Selected microphone"));
     }
 
     void sidebarFlushesPendingAutoSaveOnClose()
     {
         ApplicationController controller(true);
-        controller.settings()->setTheme(QStringLiteral("system"));
+        controller.settings()->setTheme(QStringLiteral("light"));
         AppWindow window(&controller);
         auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
         QVERIFY(theme);
-        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
         window.show();
+        QCOMPARE(theme->currentData().toString(), QStringLiteral("light"));
+        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
         window.close();
         QCOMPARE(controller.settings()->theme(), QStringLiteral("dark"));
     }

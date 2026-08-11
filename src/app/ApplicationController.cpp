@@ -16,6 +16,10 @@
 #include <QApplication>
 #include <QAction>
 #include <QDebug>
+#include <QEvent>
+#include <QTimer>
+#include <QWidget>
+#include <QWindow>
 
 #ifdef SPEECHER_WITH_KGLOBALACCEL
 #include <KGlobalAccel>
@@ -33,28 +37,6 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
     , m_popup(new TranscriberPopup(m_platform->createPopupPositioner(nullptr)))
     , m_ipc(new SingleInstanceIpc(m_platform, this))
 {
-#ifdef SPEECHER_WITH_KGLOBALACCEL
-    m_globalShortcutAction = new QAction(QStringLiteral("Toggle dictation"), this);
-    m_globalShortcutAction->setObjectName(QStringLiteral("toggle-dictation"));
-    m_globalShortcutAction->setProperty("componentName", QStringLiteral("local.speecher"));
-    m_globalShortcutAction->setProperty("componentDisplayName", QStringLiteral("Speecher"));
-    connect(m_globalShortcutAction, &QAction::triggered, this, &ApplicationController::toggle);
-    const QKeySequence savedShortcut = globalShortcut();
-    KGlobalAccel::self()->setDefaultShortcut(
-        m_globalShortcutAction,
-        {QKeySequence(Qt::META | Qt::ALT | Qt::Key_D)});
-    if (!savedShortcut.isEmpty()
-        && !KGlobalAccel::self()->setShortcut(
-            m_globalShortcutAction,
-            {savedShortcut},
-            KGlobalAccel::Autoloading)) {
-        qWarning() << "Could not restore the saved global shortcut";
-    }
-#endif
-    const atspi::AccessibilityState initialAccessibility = atspi::accessibilityState();
-    if (initialAccessibility.persistent) {
-        atspi::requestAccessibility();
-    }
     registerProviders();
     TargetProvider *targetProvider = m_platform->createTargetProvider(this);
     targetProvider->setCorrectionObservationEnabled(m_settings->correctionLearningEnabled());
@@ -76,8 +58,9 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
                         {original, corrected, confidence}, applicationId);
                 }
             });
+    m_audio = m_platform->createAudioInput(m_settings, this);
     m_session = new DictationSession(m_settings,
-                                     m_platform->createAudioInput(m_settings, this),
+                                     m_audio,
                                      m_platform->createMediaController(this),
                                      targetProvider,
                                      m_platform->createTextDelivery(targetProvider, this),
@@ -98,16 +81,60 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
         }
     });
     wireSessionToPopup();
-    if (initialAccessibility.persistent) {
-        refreshAccessibilityState();
-    } else {
-        m_accessibilitySupported = initialAccessibility.supported;
-        m_accessibilityEnabled = initialAccessibility.enabled;
-        m_accessibilityPersistent = false;
-        emit accessibilityStateChanged(m_accessibilitySupported,
-                                       m_accessibilityEnabled,
-                                       m_accessibilityPersistent);
+    qApp->installEventFilter(this);
+    QTimer::singleShot(2000, this, &ApplicationController::runDeferredStartup);
+}
+
+bool ApplicationController::eventFilter(QObject *watched, QEvent *event)
+{
+    if (!m_deferredStartupScheduled) {
+        const auto *window = qobject_cast<QWindow *>(watched);
+        const auto *widget = qobject_cast<QWidget *>(watched);
+        const bool exposed = event->type() == QEvent::Expose
+            && window && window->isExposed();
+        const bool painted = event->type() == QEvent::Paint
+            && widget && widget->isWindow() && widget->isVisible();
+        if (exposed || painted) {
+            m_deferredStartupScheduled = true;
+            QTimer::singleShot(0, this, &ApplicationController::runDeferredStartup);
+        }
     }
+    return QObject::eventFilter(watched, event);
+}
+
+void ApplicationController::runDeferredStartup()
+{
+    if (m_deferredStartupDone) {
+        return;
+    }
+    m_deferredStartupDone = true;
+    m_audio->warmUp();
+#ifdef SPEECHER_WITH_KGLOBALACCEL
+    m_globalShortcutAction = new QAction(QStringLiteral("Toggle dictation"), this);
+    m_globalShortcutAction->setObjectName(QStringLiteral("toggle-dictation"));
+    m_globalShortcutAction->setProperty("componentName", QStringLiteral("local.speecher"));
+    m_globalShortcutAction->setProperty("componentDisplayName", QStringLiteral("Speecher"));
+    connect(m_globalShortcutAction, &QAction::triggered, this, &ApplicationController::toggle);
+    const QKeySequence savedShortcut = globalShortcut();
+    KGlobalAccel::self()->setDefaultShortcut(
+        m_globalShortcutAction,
+        {QKeySequence(Qt::META | Qt::ALT | Qt::Key_D)});
+    if (!savedShortcut.isEmpty()
+        && !KGlobalAccel::self()->setShortcut(
+            m_globalShortcutAction,
+            {savedShortcut},
+            KGlobalAccel::Autoloading)) {
+        qWarning() << "Could not restore the saved global shortcut";
+    }
+#endif
+    const atspi::AccessibilityState state = atspi::accessibilityState();
+    const bool requestSucceeded = state.persistent && atspi::requestAccessibility();
+    m_accessibilitySupported = state.supported;
+    m_accessibilityEnabled = state.enabled || requestSucceeded;
+    m_accessibilityPersistent = state.persistent;
+    emit accessibilityStateChanged(m_accessibilitySupported,
+                                   m_accessibilityEnabled,
+                                   m_accessibilityPersistent);
 }
 
 SettingsStore *ApplicationController::settings() const
@@ -379,6 +406,7 @@ void ApplicationController::wireSessionToPopup()
     connect(m_session, &DictationSession::audioLevelChanged, m_popup, &TranscriberPopup::setLevel);
     connect(m_session, &DictationSession::popupStatusChanged, m_popup, &TranscriberPopup::setStatus);
     connect(m_session, &DictationSession::popupShowRequested, m_popup, &TranscriberPopup::showPopup);
+    connect(m_popup, &TranscriberPopup::popupPresented, m_session, &DictationSession::popupPresented);
     connect(m_session, &DictationSession::popupHideRequested, m_popup, &TranscriberPopup::hide);
     connect(m_session, &DictationSession::popupFrozenChanged, m_popup, &TranscriberPopup::setFrozen);
     connect(m_session, &DictationSession::popupRefiningChanged, m_popup, &TranscriberPopup::setRefining);

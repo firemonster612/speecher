@@ -5,6 +5,7 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -244,31 +245,49 @@ QString ClaudeCredentials::installedVersion()
     }
 
     const QFileInfo executableInfo(executable);
+    struct VersionCacheEntry {
+        QDateTime modified;
+        QString version;
+    };
+    // installedVersion() and its process-local cache are GUI-thread-only.
+    static QHash<QString, VersionCacheEntry> cache;
+    const QString cacheKey = executableInfo.absoluteFilePath();
+    const QDateTime modified = executableInfo.lastModified();
+    const auto cached = cache.constFind(cacheKey);
+    if (cached != cache.cend() && cached->modified == modified) {
+        return cached->version;
+    }
+
     static const QRegularExpression versionPattern(QStringLiteral("\\b\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9._-]+)?\\b"));
-    const QRegularExpressionMatch pathMatch = versionPattern.match(executableInfo.fileName());
-    if (pathMatch.hasMatch()) {
-        return pathMatch.captured(0);
-    }
+    const QString version = [&] {
+        const QRegularExpressionMatch pathMatch = versionPattern.match(executableInfo.fileName());
+        if (pathMatch.hasMatch()) {
+            return pathMatch.captured(0);
+        }
 
-    QProcess process;
-    process.setProgram(executable);
-    process.setArguments({QStringLiteral("--version")});
-    process.start();
-    if (!process.waitForStarted(1000)) {
-        return {};
-    }
-    if (!process.waitForFinished(2000)) {
-        process.kill();
-        process.waitForFinished(1000);
-        return {};
-    }
-    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
-        return {};
-    }
+        QProcess process;
+        process.setProgram(executable);
+        process.setArguments({QStringLiteral("--version")});
+        process.start();
+        if (!process.waitForStarted(1000)) {
+            return QString();
+        }
+        if (!process.waitForFinished(2000)) {
+            process.kill();
+            process.waitForFinished(1000);
+            return QString();
+        }
+        if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+            return QString();
+        }
 
-    const QString output = QString::fromUtf8(process.readAllStandardOutput() + process.readAllStandardError());
-    const QRegularExpressionMatch outputMatch = versionPattern.match(output);
-    return outputMatch.hasMatch() ? outputMatch.captured(0) : QString();
+        const QString output = QString::fromUtf8(
+            process.readAllStandardOutput() + process.readAllStandardError());
+        const QRegularExpressionMatch outputMatch = versionPattern.match(output);
+        return outputMatch.hasMatch() ? outputMatch.captured(0) : QString();
+    }();
+    cache.insert(cacheKey, {modified, version});
+    return version;
 }
 
 ClaudeCredentialResult ClaudeCredentials::load(const QString &path, bool refreshExpired)
