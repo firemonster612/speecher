@@ -417,7 +417,11 @@ private slots:
         QCOMPARE(shown.count(), 1);
         QTest::qWait(20);
         QCOMPARE(targetProvider->captureCalls, 0);
-        session.popupPresented(shown.first().first().toULongLong());
+        const quint64 generation = shown.first().first().toULongLong();
+        session.popupPresented(generation + 1);
+        QTest::qWait(20);
+        QCOMPARE(targetProvider->captureCalls, 0);
+        session.popupPresented(generation);
         QTRY_COMPARE_WITH_TIMEOUT(targetProvider->captureCalls, 1, 250);
         QCOMPARE(int(session.state()), int(DictationState::Listening));
     }
