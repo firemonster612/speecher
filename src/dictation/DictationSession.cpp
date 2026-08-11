@@ -37,7 +37,17 @@ DictationSession::DictationSession(SettingsStore *settings,
     , m_providers(providers)
     , m_transcript(new TranscriptState(this))
     , m_startupRunner(new StartupPreparationRunner(this))
+    , m_completionTimer(new QTimer(this))
 {
+    m_completionTimer->setSingleShot(true);
+    m_completionTimer->setTimerType(Qt::PreciseTimer);
+    connect(m_completionTimer, &QTimer::timeout, this, [this] {
+        if (m_state != DictationState::Delivering) {
+            return;
+        }
+        emit popupHideRequested();
+        setState(DictationState::Idle);
+    });
     connect(m_startupRunner,
             &StartupPreparationRunner::completed,
             this,
@@ -534,19 +544,12 @@ void DictationSession::deliverFinal(const QString &text)
     m_sessionSettings.reset();
     m_target = {};
     if (result.ok) {
-        const quint64 generation = m_generation;
         const QString outcome = usedFallback
             ? QStringLiteral("Used raw transcript • %1").arg(result.message)
             : result.message;
         emit popupMessageRequested(outcome);
         emit statusChanged(outcome);
-        QTimer::singleShot(1300, this, [this, generation] {
-            if (generation != m_generation || m_state != DictationState::Delivering) {
-                return;
-            }
-            emit popupHideRequested();
-            setState(DictationState::Idle);
-        });
+        m_completionTimer->start(settings.output.completionStatusDurationMs);
     } else {
         emit popupFrozenChanged(false);
         qWarning().noquote() << "text delivery failed message=" + result.message;

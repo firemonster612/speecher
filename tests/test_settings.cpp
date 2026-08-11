@@ -47,6 +47,7 @@ private slots:
         QCOMPARE(settings.pasteRules(), defaultPasteRules());
         QCOMPARE(settings.ydotoolEnabled(), false);
         QCOMPARE(settings.restoreClipboardAfterTyping(), false);
+        QCOMPARE(settings.snapshot().output.completionStatusDurationMs, 500);
         QCOMPARE(settings.audioInputDeviceId(), QString());
         QCOMPARE(settings.audioCaptureMode(), QStringLiteral("on_demand"));
         QCOMPARE(settings.audioVadEnabled(), false);
@@ -493,6 +494,7 @@ private slots:
             {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true},
         });
         settings.setRestoreClipboardAfterTyping(true);
+        settings.setCompletionStatusDurationMs(900);
         settings.setAudioCaptureSettings({
             QStringLiteral("device-1"),
             QStringLiteral("warm"),
@@ -541,6 +543,7 @@ private slots:
         QCOMPARE(snapshot.output.format, OutputFormat::Html);
         QCOMPARE(snapshot.output.ydotoolEnabled, false);
         QCOMPARE(snapshot.output.restoreClipboardAfterTyping, true);
+        QCOMPARE(snapshot.output.completionStatusDurationMs, 900);
         QCOMPARE(snapshot.output.pasteRules.size(), 2);
         QCOMPARE(snapshot.output.pasteRules.last().method, PasteMethod::ClipboardOnly);
     }

@@ -22,6 +22,7 @@
 #include <QSet>
 #include <QSignalBlocker>
 #include <QSizePolicy>
+#include <QSpinBox>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QToolTip>
@@ -153,6 +154,7 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     , m_outputFormat(new QComboBox(this))
     , m_globalPaste(new QComboBox(this))
     , m_restoreClipboardAfterTyping(new QCheckBox(this))
+    , m_completionStatusDuration(new QSpinBox(this))
     , m_ydotoolStatus(new WrappedStatusLabel(this))
     , m_appPasteRules(new QTableWidget(this))
     , m_addAppPasteRuleButton(new QPushButton(QStringLiteral("Add rule"), this))
@@ -177,6 +179,10 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
         m_categoryPasteControls.append({category, combo});
     }
     m_restoreClipboardAfterTyping->setToolTip(QStringLiteral("Restore the previous clipboard after virtual-keyboard paste."));
+    m_completionStatusDuration->setObjectName(QStringLiteral("completionStatusDuration"));
+    m_completionStatusDuration->setRange(0, 5000);
+    m_completionStatusDuration->setSingleStep(50);
+    m_completionStatusDuration->setSuffix(QStringLiteral(" ms"));
     m_appPasteRules->setObjectName(QStringLiteral("vocabInput"));
     m_appPasteRules->setColumnCount(3);
     m_appPasteRules->setHorizontalHeaderLabels({QStringLiteral("Enabled"), QStringLiteral("Application ID"), QStringLiteral("Paste behavior")});
@@ -197,6 +203,7 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Method"), QStringLiteral("How Speecher delivers final text."), m_outputMethod, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Format"), QStringLiteral("Default clipboard representation. A CLI shortcut can override this per dictation."), m_outputFormat, card), card);
+    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Status duration"), QStringLiteral("How long the completed delivery result stays visible."), m_completionStatusDuration, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Global fallback"), QStringLiteral("Paste behavior used unless a category or exact-app rule overrides it."), m_globalPaste, card), card);
     m_targetPasteControls = new QWidget(card);
     m_targetPasteControls->setObjectName(QStringLiteral("targetPasteControls"));
@@ -249,6 +256,7 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     pageLayout->addStretch();
 
     connect(m_restoreClipboardAfterTyping, &QCheckBox::toggled, this, &OutputSettingsPage::changed);
+    connect(m_completionStatusDuration, &QSpinBox::valueChanged, this, &OutputSettingsPage::changed);
     connect(m_outputFormat, &QComboBox::currentIndexChanged, this, &OutputSettingsPage::changed);
     connect(m_globalPaste, &QComboBox::currentIndexChanged, this, &OutputSettingsPage::changed);
     for (const auto &[category, combo] : std::as_const(m_categoryPasteControls)) {
@@ -308,6 +316,7 @@ void OutputSettingsPage::load(const AppSettings &settings)
     }
     setApplicationPasteRules(pasteRules);
     m_restoreClipboardAfterTyping->setChecked(settings.output.restoreClipboardAfterTyping);
+    m_completionStatusDuration->setValue(settings.output.completionStatusDurationMs);
 }
 
 bool OutputSettingsPage::validate(bool showError) const
@@ -332,6 +341,7 @@ void OutputSettingsPage::appendToDraft(AppSettings &draft) const
     draft.output.format = outputFormatFromString(m_outputFormat->currentData().toString());
     draft.output.pasteRules = withPasteRules(draft.output.pasteRules, currentApplicationPasteRules(), currentCategoryPasteRules(), pasteMethodFromName(m_globalPaste->currentData().toString()));
     draft.output.restoreClipboardAfterTyping = m_restoreClipboardAfterTyping->isChecked();
+    draft.output.completionStatusDurationMs = m_completionStatusDuration->value();
 }
 
 bool OutputSettingsPage::hasChanges(const AppSettings &settings) const
@@ -341,7 +351,8 @@ bool OutputSettingsPage::hasChanges(const AppSettings &settings) const
     return draft.output.method != settings.output.method
         || draft.output.format != settings.output.format
         || draft.output.pasteRules != settings.output.pasteRules
-        || draft.output.restoreClipboardAfterTyping != settings.output.restoreClipboardAfterTyping;
+        || draft.output.restoreClipboardAfterTyping != settings.output.restoreClipboardAfterTyping
+        || draft.output.completionStatusDurationMs != settings.output.completionStatusDurationMs;
 }
 
 QList<PasteRule> OutputSettingsPage::currentApplicationPasteRules() const

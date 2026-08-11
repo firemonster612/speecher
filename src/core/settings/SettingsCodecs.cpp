@@ -655,6 +655,16 @@ void SettingsCodecs::setRestoreClipboardAfterTyping(bool value)
     m_settings.setValue(SettingsKeys::RestoreClipboardAfterTyping, value);
 }
 
+int SettingsCodecs::completionStatusDurationMs() const
+{
+    return std::clamp(value(SettingsKeys::CompletionStatusDurationMs, 500).toInt(), 0, 5000);
+}
+
+void SettingsCodecs::setCompletionStatusDurationMs(int value)
+{
+    m_settings.setValue(SettingsKeys::CompletionStatusDurationMs, std::clamp(value, 0, 5000));
+}
+
 QList<PasteRule> SettingsCodecs::pasteRules() const
 {
     const QByteArray encoded = value(SettingsKeys::PasteRules, QByteArray()).toByteArray();
@@ -770,6 +780,7 @@ AppSettings SettingsCodecs::snapshot() const
     settings.output.format = outputFormat();
     settings.output.ydotoolEnabled = ydotoolEnabled();
     settings.output.restoreClipboardAfterTyping = restoreClipboardAfterTyping();
+    settings.output.completionStatusDurationMs = completionStatusDurationMs();
     settings.output.pasteRules = pasteRules();
     return settings;
 }

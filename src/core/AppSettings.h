@@ -80,6 +80,7 @@ struct OutputSettings {
     OutputFormat format = OutputFormat::PlainText;
     bool ydotoolEnabled = false;
     bool restoreClipboardAfterTyping = false;
+    int completionStatusDurationMs = 500;
     QList<PasteRule> pasteRules = defaultPasteRules();
 };
 

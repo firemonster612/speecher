@@ -498,6 +498,7 @@ private slots:
 
         QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::Ydotool)}));
         QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
+        QCOMPARE(result.message, QStringLiteral("Copied • Input sent"));
     }
 
     void outputExplicitMethodDoesNotFallback()
@@ -526,8 +527,23 @@ private slots:
         QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::WlCopy)}));
     }
 
-    void outputOnlyReportsVerifiedAfterTargetReadback()
+    void outputVerifiedYdotoolReportsVirtualKeyboardOutcome_data()
     {
+        QTest::addColumn<bool>("restoreClipboard");
+        QTest::addColumn<QString>("expectedMessage");
+
+        QTest::newRow("clipboard kept")
+            << false << QStringLiteral("Copied • Input sent");
+        QTest::newRow("clipboard restored")
+            << true << QStringLiteral("Input sent");
+    }
+
+    void outputVerifiedYdotoolReportsVirtualKeyboardOutcome()
+    {
+        QFETCH(bool, restoreClipboard);
+        QFETCH(QString, expectedMessage);
+
+        QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
         QList<QString> attempts;
         QHash<QString, bool> results{{QString::fromLatin1(OutputMethod::Ydotool), true}};
         FakeTargetProvider targetProvider;
@@ -541,6 +557,7 @@ private slots:
 
         OutputSettings settings;
         settings.ydotoolEnabled = true;
+        settings.restoreClipboardAfterTyping = restoreClipboard;
         Target target;
         target.applicationId = QStringLiteral("org.kde.kate");
         target.category = AppCategory::CodeEditor;
@@ -551,7 +568,7 @@ private slots:
 
         QVERIFY(result.ok);
         QCOMPARE(result.receipt, DeliveryReceipt::VerifiedInTarget);
-        QCOMPARE(result.message, QStringLiteral("Verified in Target"));
+        QCOMPARE(result.message, expectedMessage);
         QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::Ydotool)}));
     }
 
@@ -618,6 +635,7 @@ private slots:
             target);
 
         QCOMPARE(result.receipt, DeliveryReceipt::VerifiedInTarget);
+        QCOMPARE(result.message, QStringLiteral("Verified in Target"));
         QCOMPARE(targetProvider.insertCalls, 1);
         QCOMPARE(targetProvider.insertedText, QStringLiteral("insert me"));
         QVERIFY(attempts.isEmpty());
@@ -734,6 +752,7 @@ private slots:
             target);
         QCoreApplication::processEvents();
         QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
+        QCOMPARE(result.message, QStringLiteral("Input sent"));
         QCOMPARE(consumedText, QStringLiteral("new text"));
         const QMimeData *restored = QApplication::clipboard()->mimeData();
         QCOMPARE(restored->text(), QStringLiteral("previous clipboard"));
