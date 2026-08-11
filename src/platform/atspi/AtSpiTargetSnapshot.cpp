@@ -29,6 +29,42 @@ enum class AccessibleIdentity {
     Unknown,
 };
 
+DBusHandlerResult ignoreAtSpiEvents(DBusConnection *, DBusMessage *message, void *)
+{
+    if (dbus_message_get_type(message) != DBUS_MESSAGE_TYPE_SIGNAL) {
+        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+    }
+    const char *interface = dbus_message_get_interface(message);
+    if (interface
+        && (qstrcmp(interface, ATSPI_DBUS_INTERFACE_CACHE) == 0
+            || qstrncmp(interface, "org.a11y.atspi.Event.", 21) == 0)) {
+        return DBUS_HANDLER_RESULT_HANDLED;
+    }
+    return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+}
+
+bool initializeAtSpiClient()
+{
+    static bool initializedWithEventFilter = false;
+    if (atspi_is_initialized()) {
+        return initializedWithEventFilter;
+    }
+    // Speecher uses synchronous snapshots, not libatspi's process-global event cache.
+    // Install first so cache events cannot materialize Speecher's own Qt bridge.
+    DBusConnection *bus = atspi_get_a11y_bus();
+    initializedWithEventFilter = bus
+        && dbus_connection_add_filter(bus, ignoreAtSpiEvents, nullptr, nullptr)
+        && atspi_init() == 0;
+    return initializedWithEventFilter;
+}
+
+bool isApplicationRoot(AtspiAccessible *accessible)
+{
+    AtspiObject *object = accessible ? ATSPI_OBJECT(accessible) : nullptr;
+    return object && object->path
+        && qstrcmp(object->path, ATSPI_DBUS_PATH_ROOT) == 0;
+}
+
 AccessibleIdentity identityForBusName(
     const QString &busName,
     QHash<QString, AccessibleIdentity> *cache)
@@ -331,6 +367,7 @@ AtspiAccessible *activeWindowAncestor(AtspiAccessible *object,
     AtspiAccessible *current = object ? ATSPI_ACCESSIBLE(g_object_ref(object)) : nullptr;
     for (int depth = 0; current && depth < maximumTreeDepth; ++depth) {
         if (shouldSkipAccessible(current, identities)) break;
+        if (isApplicationRoot(current)) break;
         if (hasState(current, ATSPI_STATE_ACTIVE)) return current;
         GError *error = nullptr;
         AtspiAccessible *parent = atspi_accessible_get_parent(current, &error);
@@ -404,6 +441,10 @@ void populateAncestorContext(Target *target,
     AtspiAccessible *current = focused ? ATSPI_ACCESSIBLE(g_object_ref(focused)) : nullptr;
     for (int depth = 0; current && depth < maximumTreeDepth; ++depth) {
         if (shouldSkipAccessible(current, identities)) break;
+        if (isApplicationRoot(current)) {
+            g_object_unref(current);
+            break;
+        }
         GError *error = nullptr;
         const QString role = takeString(atspi_accessible_get_role_name(current, &error)).toLower();
         clearError(&error);
@@ -633,7 +674,7 @@ TargetSnapshot TargetSnapshot::capture()
 {
     TargetSnapshot snapshot;
 #ifdef SPEECHER_WITH_ATSPI
-    if (!atspi_is_initialized() && atspi_init() != 0) return snapshot;
+    if (!initializeAtSpiClient()) return snapshot;
     QHash<QString, AccessibleIdentity> identities;
     const std::vector<AccessibleHandle> applications = foreignApplications(&identities);
     AtspiAccessible *applicationObject = nullptr;
