@@ -434,6 +434,8 @@ private slots:
 
     void outputAutomaticFallbackOrder()
     {
+        QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
+
         QList<QString> attempts;
         QList<bool> restoreFlags;
         QHash<QString, bool> results;
@@ -466,6 +468,7 @@ private slots:
         QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::Ydotool)}));
         QCOMPARE(restoreFlags, QList<bool>({true}));
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
+        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("hello"));
     }
 
     void outputUsesExplicitGlobalPasteRuleWithoutCapturedTarget()
@@ -695,9 +698,13 @@ private slots:
         QCOMPARE(restored->data(QStringLiteral("image/png")), QByteArrayLiteral("fake-image"));
     }
 
-    void outputKeepsDictationOnClipboardWhenInsertionIsNotVerified()
+    void outputRestoresClipboardAfterSuccessfulVirtualKeyboardInputWithoutReadback()
     {
-        QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
+        auto *previous = new QMimeData;
+        previous->setText(QStringLiteral("previous clipboard"));
+        previous->setHtml(QStringLiteral("<b>previous clipboard</b>"));
+        previous->setData(QStringLiteral("application/x-speecher-test"), QByteArrayLiteral("custom-data"));
+        QApplication::clipboard()->setMimeData(previous);
 
         QList<QString> attempts;
         QHash<QString, bool> results{{QString::fromLatin1(OutputMethod::Ydotool), true}};
@@ -717,13 +724,22 @@ private slots:
         target.applicationId = QStringLiteral("org.kde.kate");
         target.category = AppCategory::CodeEditor;
 
+        QString consumedText;
+        QTimer::singleShot(0, [&consumedText] {
+            consumedText = QApplication::clipboard()->text();
+        });
         const DeliveryResult result = delivery.deliver(
             settings,
             makeDeliveryContent(QStringLiteral("new text"), OutputFormat::Html),
             target);
+        QCoreApplication::processEvents();
         QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
-        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("new text"));
-        QVERIFY(QApplication::clipboard()->mimeData()->hasHtml());
+        QCOMPARE(consumedText, QStringLiteral("new text"));
+        const QMimeData *restored = QApplication::clipboard()->mimeData();
+        QCOMPARE(restored->text(), QStringLiteral("previous clipboard"));
+        QCOMPARE(restored->html(), QStringLiteral("<b>previous clipboard</b>"));
+        QCOMPARE(restored->data(QStringLiteral("application/x-speecher-test")),
+                 QByteArrayLiteral("custom-data"));
     }
 
     void wlClipboardSnapshotCapturesAndRestoresEveryMimeType()

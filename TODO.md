@@ -136,12 +136,11 @@ complete.
   accessibility cannot identify the application.
 - [x] **D5 — Always copy.** Every successful transcription is put on the
   clipboard before insertion is attempted. If insertion is unavailable,
-  refused, unverified, or fails, the result remains available for manual paste
-  and the popup reports that outcome.
+  refused, or fails, the result remains available for manual paste and the
+  popup reports that outcome.
 - [x] **D6 — Optional clipboard restoration.** When enabled, the previous
-  multi-MIME clipboard contents are restored only after verified insertion.
-  They are not restored when that would remove the user’s only copy of an
-  unverified result.
+  multi-MIME clipboard contents are restored after successful virtual-keyboard
+  input or verified direct insertion. They are not restored after failed input.
 - [x] **D7 — Original-target safety.** When the desktop identifies the captured
   Target, normal paste is attempted only while it remains focused. If no Target
   identity is available, only an explicit global paste rule may send input to
