@@ -118,6 +118,7 @@ QFrame *makeRow(const QString &label,
         const int naturalTextWidth = subtitle->fontMetrics().horizontalAdvance(description);
         subtitle->setFixedWidth(qMin(
             naturalTextWidth, subtitle->fontMetrics().averageCharWidth() * 45));
+        subtitle->setMinimumHeight(subtitle->heightForWidth(subtitle->width()));
         subtitle->setForegroundRole(QPalette::PlaceholderText);
         fieldLayout->addWidget(subtitle);
     }

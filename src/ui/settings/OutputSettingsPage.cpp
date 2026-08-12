@@ -18,6 +18,7 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QSet>
 #include <QSignalBlocker>
 #include <QSizePolicy>
@@ -29,6 +30,30 @@
 #include <utility>
 
 namespace speecher {
+
+static void updateWrappedHeight(QLabel *label, int width)
+{
+    label->setMinimumHeight(0);
+    label->setMinimumHeight(label->heightForWidth(width));
+}
+
+class WrappedStatusLabel final : public QLabel {
+public:
+    using QLabel::QLabel;
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QLabel::resizeEvent(event);
+        updateWrappedHeight(this, event->size().width());
+    }
+};
+
+static void setWrappedText(QLabel *label, const QString &text)
+{
+    label->setText(text);
+    updateWrappedHeight(label, label->width());
+}
 
 static PasteMethod pasteMethodFor(const QList<PasteRule> &rules,
                                   PasteRuleScope scope,
@@ -128,7 +153,7 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     , m_outputFormat(new QComboBox(this))
     , m_globalPaste(new QComboBox(this))
     , m_restoreClipboardAfterTyping(new QCheckBox(this))
-    , m_ydotoolStatus(new QLabel(this))
+    , m_ydotoolStatus(new WrappedStatusLabel(this))
     , m_appPasteRules(new QTableWidget(this))
     , m_addAppPasteRuleButton(new QPushButton(QStringLiteral("Add rule"), this))
     , m_removeAppPasteRuleButton(new QPushButton(QStringLiteral("Delete selected"), this))
@@ -381,7 +406,7 @@ void OutputSettingsPage::refreshControls()
         settings::selectData(m_outputMethod, QString::fromLatin1(OutputMethod::Automatic));
     }
     m_outputMethod->setToolTip(ydotoolEnabled ? QStringLiteral("Automatic tries ydotool paste, wl-copy, then Qt clipboard.") : QStringLiteral("Type with ydotool paste is disabled until virtual keyboard setup passes."));
-    m_ydotoolStatus->setText(status.label + QStringLiteral(". ") + status.detail);
+    setWrappedText(m_ydotoolStatus, status.label + QStringLiteral(". ") + status.detail);
     updateYdotoolButtons();
 }
 

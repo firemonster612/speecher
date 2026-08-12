@@ -201,7 +201,7 @@ private slots:
         QWidget parent;
         auto *control = new QPushButton(QStringLiteral("Control"), &parent);
         const QString description = QStringLiteral(
-            "A long description whose deterministic wrap width lets the form row grow to fit.");
+            "A long description whose deterministic wrap width lets the form row grow to fit descenders properly.");
         QFrame *describedRow = settings::makeRow(
             QStringLiteral("Category"), description, control, &parent);
         auto *descriptionLabel = describedRow->findChild<QLabel *>(
@@ -214,6 +214,12 @@ private slots:
         QCOMPARE(descriptionLabel->width(),
                  qMin(descriptionLabel->fontMetrics().horizontalAdvance(description),
                       descriptionLabel->fontMetrics().averageCharWidth() * 45));
+        QVERIFY(descriptionLabel->heightForWidth(descriptionLabel->width())
+                > descriptionLabel->fontMetrics().height());
+        const int requiredRowHeight = control->sizeHint().height()
+            + settings::tightSpacing()
+            + descriptionLabel->heightForWidth(descriptionLabel->width());
+        QVERIFY(describedRow->minimumSizeHint().height() >= requiredRowHeight);
         QCOMPARE(titleLabel->alignment(), Qt::AlignRight | Qt::AlignVCenter);
 
         auto *checkBox = new QCheckBox(QStringLiteral("Short label"), &parent);
@@ -222,6 +228,34 @@ private slots:
             QStringLiteral("Setting"), sentence, checkBox, &parent);
         QCOMPARE(checkBox->text(), sentence);
         QVERIFY(!checkBoxRow->findChild<QLabel *>(QStringLiteral("rowDescription")));
+    }
+
+    void outputVirtualKeyboardStatusFitsWrappedText()
+    {
+        SettingsStore settings;
+        OutputSettingsPage output(settings);
+        output.resize(900, 668);
+
+        auto *status = output.findChild<QLabel *>(QStringLiteral("statusText"));
+        QVERIFY(status);
+        status->setFixedWidth(180);
+        status->setText(QStringLiteral(
+            "A deliberately long virtual keyboard status that wraps across many lines. "
+            "It repeats enough words to exceed every real setup status shown here. "
+            "The current setup state must replace it and let the row shrink again. "
+            "Extra words keep this synthetic status unambiguously taller."));
+        output.show();
+        QCoreApplication::processEvents();
+
+        QVERIFY(status->heightForWidth(status->width()) > status->fontMetrics().height());
+        QVERIFY(status->height() >= status->heightForWidth(status->width()));
+        const int longStatusHeight = status->heightForWidth(status->width());
+
+        output.refreshControls();
+        QCoreApplication::processEvents();
+
+        QCOMPARE(status->minimumHeight(), status->heightForWidth(status->width()));
+        QVERIFY(status->minimumHeight() < longStatusHeight);
     }
 };
 
