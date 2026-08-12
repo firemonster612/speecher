@@ -250,7 +250,9 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
 
     const AppSettings settings = *m_sessionSettings;
     clearScreenshotContext();
-    m_target = m_targetProvider ? m_targetProvider->capture() : Target{};
+    m_target = m_targetProvider
+        ? m_targetProvider->capture(settings.appRecognitionRules)
+        : Target{};
     m_target.category = classifyTarget(m_target, settings.appRecognitionRules);
     const RefinementSettings effectiveRefinement =
         TranscriptPipeline::effectiveRefinementSettings(settings, m_target);
