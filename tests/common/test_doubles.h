@@ -76,9 +76,10 @@ class FakeTargetProvider final : public TargetProvider {
 public:
     using TargetProvider::TargetProvider;
 
-    Target capture() override
+    Target capture(const QList<AppRecognitionRule> &recognitionRules = {}) override
     {
         ++captureCalls;
+        lastRecognitionRules = recognitionRules;
         return target;
     }
 
@@ -105,6 +106,7 @@ public:
     }
 
     Target target;
+    QList<AppRecognitionRule> lastRecognitionRules;
     int captureCalls = 0;
     int insertCalls = 0;
     bool focused = true;

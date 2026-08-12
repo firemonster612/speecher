@@ -15,7 +15,7 @@ namespace speecher {
 
 namespace {
 
-QString copiedSelection(const Target &target)
+QString copiedSelection()
 {
     if (!WlClipboardDelivery::canSnapshot() || !YdotoolDelivery::isAvailable()) {
         return {};
@@ -28,11 +28,8 @@ QString copiedSelection(const Target &target)
 
     const QString marker = QUuid::createUuid().toString(QUuid::WithoutBraces);
     WlClipboardDelivery clipboard;
-    const PasteMethod copyMethod = isTerminalTarget(target)
-        ? PasteMethod::TerminalPaste
-        : PasteMethod::StandardPaste;
     if (!clipboard.copy({marker, std::nullopt})
-        || !YdotoolDelivery().copySelection(copyMethod)) {
+        || !YdotoolDelivery().copySelection(PasteMethod::StandardPaste)) {
         WlClipboardDelivery::restore(previous);
         return {};
     }
@@ -70,13 +67,15 @@ void AtSpiTargetProvider::clearAccessible()
     m_snapshot.reset();
 }
 
-Target AtSpiTargetProvider::capture()
+Target AtSpiTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRules)
 {
+    m_recognitionRules = recognitionRules;
     clearAccessible();
     m_snapshot = std::make_unique<atspi::TargetSnapshot>(atspi::TargetSnapshot::capture());
     Target target = m_snapshot->target();
-    if (!target.hasSelection() && !target.secure) {
-        target.selectedText = copiedSelection(target);
+    target.category = classifyTarget(target, recognitionRules);
+    if (!target.hasSelection() && !target.secure && !isTerminalTarget(target)) {
+        target.selectedText = copiedSelection();
         if (!target.selectedText.isEmpty()) {
             target.selectionStart = 0;
             target.selectionEnd = target.selectedText.size();
@@ -122,7 +121,7 @@ bool AtSpiTargetProvider::verifyInsertion(const Target &target, const QString &p
         QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         if (attempt > 0) QThread::msleep(50);
         if (attempt == 3) {
-            const Target current = capture();
+            const Target current = capture(m_recognitionRules);
             const bool sameProcess = target.processId > 0 && current.processId == target.processId;
             const bool sameApplication = !target.applicationId.isEmpty()
                 && current.applicationId.compare(target.applicationId, Qt::CaseInsensitive) == 0;

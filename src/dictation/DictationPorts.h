@@ -105,7 +105,7 @@ class TargetProvider : public QObject {
 
 public:
     using QObject::QObject;
-    virtual Target capture() = 0;
+    virtual Target capture(const QList<AppRecognitionRule> &recognitionRules = {}) = 0;
     virtual bool stillFocused(const Target &target)
     {
         Q_UNUSED(target);
