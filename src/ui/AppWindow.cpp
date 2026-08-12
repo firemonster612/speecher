@@ -18,6 +18,7 @@
 #include <QCloseEvent>
 #include <QEvent>
 #include <QCheckBox>
+#include <QFileSystemWatcher>
 #include <QFrame>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -33,6 +34,7 @@
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
+#include <QStandardPaths>
 #include <QStyle>
 #include <QTabWidget>
 #include <QTextDocument>
@@ -156,6 +158,23 @@ void AppWindow::navigateToSettings(AppPageId page)
     }
 }
 
+void AppWindow::refreshHeaderStripColor()
+{
+    if (m_headerStrip) {
+        m_headerStrip->setPalette(settings::kdeHeaderPalette(palette()));
+    }
+}
+
+void AppWindow::changeEvent(QEvent *event)
+{
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange
+        || event->type() == QEvent::ApplicationPaletteChange
+        || event->type() == QEvent::ThemeChange) {
+        refreshHeaderStripColor();
+    }
+}
+
 void AppWindow::flushPendingAutoSave()
 {
     if (!m_autoSaveTimer || !m_autoSaveTimer->isActive()) return;
@@ -271,7 +290,8 @@ void AppWindow::buildSidebarShell()
     root->setSpacing(0);
     auto *header = new QWidget(central);
     header->setObjectName(QStringLiteral("sidebarHeaderStrip"));
-    header->setPalette(settings::kdeHeaderPalette(palette()));
+    m_headerStrip = header;
+    refreshHeaderStripColor();
     header->setBackgroundRole(QPalette::Window);
     header->setAutoFillBackground(true);
     auto *headerLayout = new QHBoxLayout(header);
@@ -322,6 +342,19 @@ void AppWindow::buildSidebarShell()
     headerRightLayout->addWidget(m_dictation->toggleButton());
     headerLayout->addWidget(headerRight, 1);
     root->addWidget(header);
+
+    auto *colorConfigWatcher = new QFileSystemWatcher(this);
+    const QString kdeGlobals =
+        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+        + QStringLiteral("/kdeglobals");
+    colorConfigWatcher->addPath(kdeGlobals);
+    connect(colorConfigWatcher,
+            &QFileSystemWatcher::fileChanged,
+            this,
+            [this, colorConfigWatcher](const QString &path) {
+                colorConfigWatcher->addPath(path);
+                QTimer::singleShot(0, this, &AppWindow::refreshHeaderStripColor);
+            });
 
     // Same fill mechanism and color as the splitter handle, so the strip's
     // bottom edge and the sidebar/content hairline match exactly.
