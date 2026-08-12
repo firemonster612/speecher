@@ -42,6 +42,7 @@ public:
     OutputFormat outputFormat() const; void setOutputFormat(OutputFormat value);
     bool ydotoolEnabled() const; void setYdotoolEnabled(bool value);
     bool restoreClipboardAfterTyping() const; void setRestoreClipboardAfterTyping(bool value);
+    int completionStatusDurationMs() const; void setCompletionStatusDurationMs(int value);
     QList<PasteRule> pasteRules() const; void setPasteRules(const QList<PasteRule> &rules);
     QString claudeCredentialsPath() const; QString claudeEndpointBase() const; QString claudeVoicePath() const;
     QString storedApiKeyFallback() const; void setStoredApiKeyFallback(const QString &value); void clearStoredApiKeyFallback();

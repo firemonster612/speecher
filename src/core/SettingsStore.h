@@ -27,6 +27,7 @@ public:
     using SettingsCodecs::claudeEndpointBase;
     using SettingsCodecs::claudeVoicePath;
     using SettingsCodecs::clearStoredApiKeyFallback;
+    using SettingsCodecs::completionStatusDurationMs;
     using SettingsCodecs::correctionLearningEnabled;
     using SettingsCodecs::customVocabulary;
     using SettingsCodecs::defaultWritingProfile;
@@ -50,6 +51,7 @@ public:
     using SettingsCodecs::setAnthropicModel;
     using SettingsCodecs::setAppRecognitionRules;
     using SettingsCodecs::setBindingRules;
+    using SettingsCodecs::setCompletionStatusDurationMs;
     using SettingsCodecs::setCustomVocabulary;
     using SettingsCodecs::setDefaultWritingProfile;
     using SettingsCodecs::setIncludeScreenshotContext;

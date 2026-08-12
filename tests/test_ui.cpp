@@ -15,6 +15,7 @@
 #include <QComboBox>
 #include <QFontMetrics>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QStyleHints>
 #include <QTableWidget>
 
@@ -167,6 +168,24 @@ private slots:
         QCOMPARE(snapshot.speech.providerId, QStringLiteral("claude"));
         settings.applySnapshot(snapshot);
         QCOMPARE(settings.speechProvider(), QStringLiteral("claude"));
+    }
+
+    void outputCompletionStatusDurationLoadsAndSaves()
+    {
+        SettingsStore store;
+        OutputSettingsPage page(store);
+        AppSettings settings;
+        settings.output.completionStatusDurationMs = 1200;
+        page.load(settings);
+
+        auto *duration = page.findChild<QSpinBox *>(
+            QStringLiteral("completionStatusDuration"));
+        QVERIFY(duration);
+        QCOMPARE(duration->value(), 1200);
+
+        duration->setValue(650);
+        page.appendToDraft(settings);
+        QCOMPARE(settings.output.completionStatusDurationMs, 650);
     }
 
     void applicationSettingsShowsBuiltInsAndAddsCustomRules()

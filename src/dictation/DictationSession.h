@@ -10,6 +10,8 @@
 
 #include <optional>
 
+class QTimer;
+
 namespace speecher {
 
 class ProviderRegistry;
@@ -91,6 +93,7 @@ private:
     ProviderRegistry *m_providers = nullptr;
     TranscriptState *m_transcript = nullptr;
     StartupPreparationRunner *m_startupRunner = nullptr;
+    QTimer *m_completionTimer = nullptr;
     SpeechTranscriber *m_transcriber = nullptr;
     TranscriptRefiner *m_refiner = nullptr;
     QVector<QMetaObject::Connection> m_transcriberConnections;

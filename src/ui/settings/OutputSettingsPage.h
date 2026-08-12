@@ -8,6 +8,7 @@ class QCheckBox;
 class QComboBox;
 class QLabel;
 class QPushButton;
+class QSpinBox;
 class QTableWidget;
 
 namespace speecher {
@@ -46,6 +47,7 @@ private:
     QComboBox *m_globalPaste;
     QList<QPair<AppCategory, QComboBox *>> m_categoryPasteControls;
     QCheckBox *m_restoreClipboardAfterTyping;
+    QSpinBox *m_completionStatusDuration;
     QLabel *m_ydotoolStatus;
     QTableWidget *m_appPasteRules;
     QPushButton *m_addAppPasteRuleButton;

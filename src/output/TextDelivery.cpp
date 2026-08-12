@@ -230,30 +230,31 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
             const bool copied = method == QString::fromLatin1(OutputMethod::WlCopy)
                 || method == QString::fromLatin1(OutputMethod::QtClipboard);
             const bool downgraded = content.html.has_value() && !htmlAvailable;
-            QString restoreError;
-            bool restored = true;
             if (virtualKeyboardInput && canRestoreClipboard) {
                 QEventLoop waitForClipboardConsumer;
                 QTimer::singleShot(clipboardRestoreDelayMs,
                                    &waitForClipboardConsumer,
                                    &QEventLoop::quit);
                 waitForClipboardConsumer.exec(QEventLoop::ExcludeUserInputEvents);
-                restored = m_clipboardDelivery.restore(previousClipboard, &restoreError);
+                m_clipboardDelivery.restore(previousClipboard);
             }
             const bool verified = !copied
                 && m_targetProvider
                 && m_targetProvider->verifyInsertion(target, content.plainText);
             const QString message = copied
                 ? QStringLiteral("Copied")
-                : verified ? QStringLiteral("Verified in Target") : QStringLiteral("Input sent");
-            const QString finalMessage = virtualKeyboardInput && canRestoreClipboard && !restored
-                ? message + QStringLiteral("; clipboard kept because it could not be restored")
-                : message;
+                : virtualKeyboardInput
+                    ? settings.restoreClipboardAfterTyping
+                        ? QStringLiteral("Input sent")
+                        : QStringLiteral("Copied • Input sent")
+                    : verified ? QStringLiteral("Verified in Target") : QStringLiteral("Input sent");
             return {true,
                     copied ? DeliveryReceipt::Copied
                            : verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::InputSent,
                     downgraded,
-                    downgraded ? finalMessage + QStringLiteral(" as plain text") : finalMessage};
+                    downgraded && !virtualKeyboardInput
+                        ? message + QStringLiteral(" as plain text")
+                        : message};
         }
         if (firstError.isEmpty()) {
             firstError = error;

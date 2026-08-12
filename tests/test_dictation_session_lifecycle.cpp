@@ -4,6 +4,7 @@
 #include "dictation/StartupPreparationRunner.h"
 
 #include <QSemaphore>
+#include <QTimer>
 
 using namespace speecher::test;
 
@@ -219,6 +220,55 @@ private slots:
         QCOMPARE(delivery->lastSettings.restoreClipboardAfterTyping, false);
         QCOMPARE(media->resumeCalls, 1);
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
+    }
+
+    void dictationCompletionStatus()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.setCompletionStatusDurationMs(900);
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        delivery->result = {
+            true,
+            DeliveryReceipt::VerifiedInTarget,
+            false,
+            QStringLiteral("Input sent"),
+        };
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("finished dictation"));
+
+        QSignalSpy message(&session, &DictationSession::popupMessageRequested);
+        QSignalSpy status(&session, &DictationSession::statusChanged);
+        QSignalSpy hidden(&session, &DictationSession::popupHideRequested);
+        session.stopListening();
+
+        QCOMPARE(message.count(), 1);
+        QCOMPARE(message.first().first().toString(), QStringLiteral("Input sent"));
+        QCOMPARE(status.last().first().toString(), QStringLiteral("Input sent"));
+        QCOMPARE(int(session.state()), int(DictationState::Delivering));
+
+        const QList<QTimer *> completionTimers =
+            session.findChildren<QTimer *>(QString(), Qt::FindDirectChildrenOnly);
+        QCOMPARE(completionTimers.size(), 1);
+        QTimer *completionTimer = completionTimers.first();
+        QVERIFY(completionTimer->isSingleShot());
+        QCOMPARE(completionTimer->interval(), 900);
+        QCOMPARE(completionTimer->timerType(), Qt::PreciseTimer);
+        QVERIFY(completionTimer->isActive());
+        completionTimer->stop();
+        QVERIFY(QMetaObject::invokeMethod(completionTimer, "timeout", Qt::DirectConnection));
+        QCOMPARE(hidden.count(), 1);
+        QCOMPARE(int(session.state()), int(DictationState::Idle));
     }
 
     void dictationSessionToggleAndPushToTalkCommandsAreIdempotent()

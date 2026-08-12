@@ -33,6 +33,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setOutputFormat(draft.output.format);
     setPasteRules(draft.output.pasteRules);
     setRestoreClipboardAfterTyping(draft.output.restoreClipboardAfterTyping);
+    setCompletionStatusDurationMs(draft.output.completionStatusDurationMs);
     setLearnedCorrections(draft.learnedCorrections);
 }
 

@@ -45,6 +45,7 @@ inline const QString OutputMethod = QStringLiteral("output/method");
 inline const QString OutputFormat = QStringLiteral("output/format");
 inline const QString YdotoolEnabled = QStringLiteral("output/ydotoolEnabled");
 inline const QString RestoreClipboardAfterTyping = QStringLiteral("output/restoreClipboardAfterTyping");
+inline const QString CompletionStatusDurationMs = QStringLiteral("output/completionStatusDurationMs");
 inline const QString PasteRules = QStringLiteral("output/pasteRules");
 inline const QString ClaudeCredentialsPath = QStringLiteral("claude/credentialsPath");
 inline const QString ClaudeEndpointBase = QStringLiteral("claude/endpointBase");
