@@ -37,23 +37,16 @@ void AccessibilityNotice::setState(bool enabled, bool persistent)
 
 void AccessibilityNotice::setState(bool supported, bool enabled, bool persistent)
 {
+    m_stateKnown = true;
     m_supported = supported;
     m_enabled = enabled;
     m_persistent = persistent;
-    if (supported && enabled && persistent) {
+    if (!supported || (enabled && persistent)) {
         hide();
         return;
     }
 
-    if (!supported) {
-        m_message->setText(m_compact
-                               ? QStringLiteral("This Speecher build has no AT-SPI support.")
-                               : QStringLiteral(
-                                     "This Speecher build does not include AT-SPI support. Target-aware paste, "
-                                     "selected-text editing, target context, and correction learning are unavailable."));
-        m_enableButton->setEnabled(false);
-        m_enableButton->setText(QStringLiteral("Unavailable"));
-    } else if (!enabled) {
+    if (!enabled) {
         m_message->setText(m_compact
                                ? QStringLiteral("AT-SPI is off. App-aware paste and selection editing need it.")
                                : QStringLiteral(
@@ -80,7 +73,9 @@ void AccessibilityNotice::setCompact(bool compact)
     }
     m_compact = compact;
     m_message->setWordWrap(!compact);
-    setState(m_supported, m_enabled, m_persistent);
+    if (m_stateKnown) {
+        setState(m_supported, m_enabled, m_persistent);
+    }
 }
 
 void AccessibilityNotice::showError(const QString &message)

@@ -59,7 +59,14 @@ private slots:
         layout->addWidget(notice);
         window.show();
 
-        notice->setState(false, false);
+        QVERIFY(notice->isHidden());
+        notice->setCompact(true);
+        QVERIFY(notice->isHidden());
+
+        notice->setState(false, false, false);
+        QVERIFY(notice->isHidden());
+
+        notice->setState(true, false, false);
         QVERIFY(notice->isVisible());
         auto *message = notice->findChild<QLabel *>(QStringLiteral("accessibilityNoticeMessage"));
         auto *button = notice->findChild<QPushButton *>(QStringLiteral("enableAccessibilityButton"));
@@ -71,11 +78,11 @@ private slots:
         button->click();
         QCOMPARE(requested.count(), 1);
 
-        notice->setState(true, false);
+        notice->setState(true, true, false);
         QVERIFY(notice->isVisible());
         QVERIFY(message->text().contains(QStringLiteral("only for this session")));
 
-        notice->setState(true, true);
+        notice->setState(true, true, true);
         QVERIFY(!notice->isVisible());
     }
 

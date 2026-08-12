@@ -25,6 +25,7 @@ private:
     QLabel *m_message;
     QPushButton *m_enableButton;
     bool m_compact = false;
+    bool m_stateKnown = false;
     bool m_supported = true;
     bool m_enabled = false;
     bool m_persistent = false;
