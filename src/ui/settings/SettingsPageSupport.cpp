@@ -237,22 +237,36 @@ QPalette kdeHeaderPalette(const QPalette &base)
                                         QStringLiteral("BackgroundNormal"));
     QColor foreground = kdeGlobalsColor(QStringLiteral("Colors:Header"),
                                         QStringLiteral("ForegroundNormal"));
+    QColor inactiveBackground = kdeGlobalsColor(
+        QStringLiteral("Colors:Header][Inactive"), QStringLiteral("BackgroundNormal"));
+    QColor inactiveForeground = kdeGlobalsColor(
+        QStringLiteral("Colors:Header][Inactive"), QStringLiteral("ForegroundNormal"));
     if (!background.isValid()) {
         // Schemes that don't inline a Header group still carry the titlebar
         // color under [WM] — the strip must match the titlebar.
         background = kdeGlobalsColor(QStringLiteral("WM"),
                                      QStringLiteral("activeBackground"));
-        if (!foreground.isValid()) {
-            foreground = kdeGlobalsColor(QStringLiteral("WM"),
-                                         QStringLiteral("activeForeground"));
-        }
+        foreground = kdeGlobalsColor(QStringLiteral("WM"),
+                                     QStringLiteral("activeForeground"));
+        inactiveBackground = kdeGlobalsColor(QStringLiteral("WM"),
+                                             QStringLiteral("inactiveBackground"));
+        inactiveForeground = kdeGlobalsColor(QStringLiteral("WM"),
+                                             QStringLiteral("inactiveForeground"));
     }
-    result.setColor(QPalette::Window,
-                    background.isValid()
-                        ? background
-                        : base.color(QPalette::Window).darker(110));
-    result.setColor(QPalette::WindowText,
-                    foreground.isValid() ? foreground : base.color(QPalette::WindowText));
+    result.setColor(QPalette::Active, QPalette::Window,
+                    background.isValid() ? background
+                                         : base.color(QPalette::Active, QPalette::Window).darker(110));
+    result.setColor(QPalette::Active, QPalette::WindowText,
+                    foreground.isValid() ? foreground
+                                         : base.color(QPalette::Active, QPalette::WindowText));
+    const QColor resolvedInactiveBackground =
+        inactiveBackground.isValid() ? inactiveBackground : result.color(QPalette::Active, QPalette::Window);
+    const QColor resolvedInactiveForeground =
+        inactiveForeground.isValid() ? inactiveForeground : result.color(QPalette::Active, QPalette::WindowText);
+    result.setColor(QPalette::Inactive, QPalette::Window, resolvedInactiveBackground);
+    result.setColor(QPalette::Inactive, QPalette::WindowText, resolvedInactiveForeground);
+    result.setColor(QPalette::Disabled, QPalette::Window, resolvedInactiveBackground);
+    result.setColor(QPalette::Disabled, QPalette::WindowText, resolvedInactiveForeground);
     return result;
 }
 

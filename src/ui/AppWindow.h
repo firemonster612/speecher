@@ -34,6 +34,7 @@ public:
     void rememberGeometry();
 
 protected:
+    void changeEvent(QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
     void showEvent(QShowEvent *event) override;
@@ -42,6 +43,7 @@ protected:
 private:
     void buildSharedPages();
     void buildSidebarShell();
+    void refreshHeaderStripColor();
     void runAutoSave();
     void filterSidebarPages(const QString &query);
 
@@ -54,6 +56,7 @@ private:
     QSplitter *m_sidebarSplitter = nullptr;
     QWidget *m_sidebarPane = nullptr;
     QWidget *m_searchSection = nullptr;
+    QWidget *m_headerStrip = nullptr;
     QStringList m_pageKeywords;
     QLabel *m_pageTitle = nullptr;
     QFrame *m_autoSaveWarning = nullptr;

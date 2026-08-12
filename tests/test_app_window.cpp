@@ -9,11 +9,16 @@
 #include "ui/settings/SettingsPageSet.h"
 
 #include <QComboBox>
+#include <QDir>
+#include <QFile>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QSaveFile>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QSplitter>
+#include <QStandardPaths>
 #include <QVBoxLayout>
 
 using namespace speecher;
@@ -127,6 +132,53 @@ private slots:
         theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
         window.close();
         QCOMPARE(controller.settings()->theme(), QStringLiteral("dark"));
+    }
+
+    void headerStripTracksActiveAndInactiveKdeColors()
+    {
+        const QString configPath =
+            QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+            + QStringLiteral("/kdeglobals");
+        QDir().mkpath(QFileInfo(configPath).absolutePath());
+        QFile existing(configPath);
+        const bool hadExistingConfig = existing.open(QIODevice::ReadOnly);
+        const QByteArray previousConfig = hadExistingConfig ? existing.readAll() : QByteArray();
+        const auto restoreConfig = qScopeGuard([=] {
+            if (!hadExistingConfig) {
+                QFile::remove(configPath);
+                return;
+            }
+            QFile restored(configPath);
+            if (restored.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                restored.write(previousConfig);
+            }
+        });
+        const auto writeConfig = [&configPath](const QByteArray &contents) {
+            QSaveFile config(configPath);
+            if (!config.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                return false;
+            }
+            return config.write(contents) == contents.size() && config.commit();
+        };
+
+        QVERIFY(writeConfig(
+            "[Colors:Header]\nBackgroundNormal=10,20,30\nForegroundNormal=220,221,222\n"
+            "[Colors:Header][Inactive]\nBackgroundNormal=40,50,60\nForegroundNormal=180,181,182\n"));
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        auto *strip = window.findChild<QWidget *>(QStringLiteral("sidebarHeaderStrip"));
+        QVERIFY(strip);
+        QCOMPARE(strip->palette().color(QPalette::Active, QPalette::Window), QColor(10, 20, 30));
+        QCOMPARE(strip->palette().color(QPalette::Inactive, QPalette::Window), QColor(40, 50, 60));
+
+        QVERIFY(writeConfig(
+            "[WM]\nactiveBackground=15,25,35\nactiveForeground=215,216,217\n"
+            "inactiveBackground=45,55,65\ninactiveForeground=175,176,177\n"));
+        QTRY_COMPARE_WITH_TIMEOUT(strip->palette().color(QPalette::Active, QPalette::Window),
+                                  QColor(15, 25, 35),
+                                  500);
+        QCOMPARE(strip->palette().color(QPalette::Inactive, QPalette::Window),
+                 QColor(45, 55, 65));
     }
 
     void sidebarShellSupportsPageSearch()
