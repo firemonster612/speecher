@@ -25,10 +25,12 @@ namespace {
 
 void addSummaryRow(QFormLayout *form,
                    const QString &labelText,
+                   const QString &description,
                    QLabel *value,
                    AppPageId page,
                    DictationPage *owner,
-                   QWidget *parent)
+                   QWidget *parent,
+                   bool addSeparator = true)
 {
     auto *change = new QPushButton(QStringLiteral("Change…"), parent);
     auto *field = new QWidget(parent);
@@ -37,10 +39,10 @@ void addSummaryRow(QFormLayout *form,
     layout->setSpacing(settings::relatedSpacing());
     layout->addWidget(value, 0, Qt::AlignVCenter);
     layout->addWidget(change, 0, Qt::AlignVCenter);
-    auto *label = new QLabel(labelText + QLatin1Char(':'), parent);
-    label->setMinimumHeight(change->sizeHint().height());
-    label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    form->addRow(label, field);
+    settings::addRow(form,
+                     settings::makeRow(labelText, description, field, parent),
+                     parent,
+                     addSeparator);
     QObject::connect(change, &QPushButton::clicked, owner, [owner, page] {
         emit owner->navigateRequested(page);
     });
@@ -62,26 +64,48 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
 {
     auto *pageLayout = new QVBoxLayout(this);
     settings::applyPageMargins(pageLayout);
-    pageLayout->setSpacing(settings::relatedSpacing());
-    m_toggle->setMinimumWidth(0);
-    m_toggle->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    pageLayout->addWidget(m_toggle, 0, Qt::AlignHCenter);
+    pageLayout->setSpacing(0);
 
-    auto *formWidget = new QWidget(this);
-    auto *form = new QFormLayout(formWidget);
-    settings::configureFormLayout(form);
+    auto *river = new QWidget(this);
+    river->setObjectName(QStringLiteral("settingsRiver"));
+    river->setMaximumWidth(560);
+    river->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto *riverLayout = new QVBoxLayout(river);
+    riverLayout->setContentsMargins(0, 0, 0, 0);
+    riverLayout->setSpacing(0);
+
+    riverLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Status"), river));
+    riverLayout->addSpacing(settings::tightSpacing());
+    auto *statusCard = settings::makeSettingsCard(river);
+    auto *statusCardLayout = qobject_cast<QFormLayout *>(statusCard->layout());
+    auto *statusField = new QWidget(statusCard);
+    auto *statusLayout = new QVBoxLayout(statusField);
+    statusLayout->setContentsMargins(18, 18, 18, 20);
+    statusLayout->setSpacing(settings::relatedSpacing());
+
+    m_status->setAlignment(Qt::AlignCenter);
+    QFont statusFont = m_status->font();
+    statusFont.setBold(true);
+    m_status->setFont(statusFont);
+    m_status->setForegroundRole(QPalette::WindowText);
+    statusLayout->addWidget(m_status);
+    statusLayout->addWidget(m_waveform, 0, Qt::AlignHCenter);
+    m_toggle->setMinimumSize(160, 38);
+    m_toggle->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_toggle->setObjectName(QStringLiteral("dictationToggle"));
+    statusLayout->addWidget(m_toggle, 0, Qt::AlignHCenter);
+    statusCardLayout->addRow(statusField);
+    riverLayout->addWidget(statusCard);
 
     m_accessibilityNotice->setCompact(true);
-    form->addRow(QString(), m_accessibilityNotice);
+    riverLayout->addSpacing(settings::groupGap());
+    riverLayout->addWidget(m_accessibilityNotice);
+    riverLayout->addSpacing(settings::groupGap());
 
-    auto *statusField = new QWidget(formWidget);
-    auto *statusLayout = new QVBoxLayout(statusField);
-    statusLayout->setContentsMargins(0, 0, 0, 0);
-    statusLayout->setSpacing(settings::tightSpacing());
-    m_status->setForegroundRole(QPalette::WindowText);
-    statusLayout->addWidget(m_status, 0, Qt::AlignLeft);
-    statusLayout->addWidget(m_waveform, 0, Qt::AlignLeft);
-    form->addRow(QStringLiteral("Status:"), statusField);
+    riverLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Setup at a glance"), river));
+    riverLayout->addSpacing(settings::tightSpacing());
+    auto *summaryCard = settings::makeSettingsCard(river);
+    auto *form = qobject_cast<QFormLayout *>(summaryCard->layout());
 
     const int valueWidth = fontMetrics().horizontalAdvance(QString(40, QLatin1Char('x')));
     for (QLabel *label : {m_provider, m_microphone, m_output, m_theme}) {
@@ -91,15 +115,22 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     }
     m_provider->setObjectName(QStringLiteral("refinementSummary"));
     m_microphone->setObjectName(QStringLiteral("microphoneSummary"));
-    addSummaryRow(form, QStringLiteral("Refinement"), m_provider,
-                  AppPageId::Refinement, this, formWidget);
-    addSummaryRow(form, QStringLiteral("Microphone"), m_microphone,
-                  AppPageId::Audio, this, formWidget);
-    addSummaryRow(form, QStringLiteral("Output"), m_output,
-                  AppPageId::Output, this, formWidget);
-    addSummaryRow(form, QStringLiteral("Theme"), m_theme,
-                  AppPageId::General, this, formWidget);
-    pageLayout->addWidget(formWidget);
+    addSummaryRow(form, QStringLiteral("Refinement"),
+                  QStringLiteral("Clean up dictated text after capture."), m_provider,
+                  AppPageId::Refinement, this, summaryCard);
+    addSummaryRow(form, QStringLiteral("Microphone"),
+                  QStringLiteral("Input device used for capture."), m_microphone,
+                  AppPageId::Audio, this, summaryCard);
+    addSummaryRow(form, QStringLiteral("Output"),
+                  QStringLiteral("How Speecher delivers final text."), m_output,
+                  AppPageId::Output, this, summaryCard);
+    addSummaryRow(form, QStringLiteral("Theme"),
+                  QStringLiteral("Application color scheme."), m_theme,
+                  AppPageId::General, this, summaryCard, false);
+    riverLayout->addWidget(summaryCard);
+    riverLayout->addStretch();
+
+    pageLayout->addWidget(river, 0, Qt::AlignHCenter | Qt::AlignTop);
     pageLayout->addStretch();
 
     connect(m_toggle, &QPushButton::clicked, controller, &ApplicationController::toggle);

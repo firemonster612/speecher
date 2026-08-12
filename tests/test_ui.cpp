@@ -222,7 +222,7 @@ private slots:
         QCOMPARE(settings.appRecognitionRules.last().writingProfile, WritingProfile::Work);
     }
 
-    void sharedSettingsRowsFollowSystemSettingsLayout()
+    void sharedSettingsRowsFollowKirigamiRiverLayout()
     {
         QWidget parent;
         auto *control = new QPushButton(QStringLiteral("Control"), &parent);
@@ -233,27 +233,26 @@ private slots:
         auto *descriptionLabel = describedRow->findChild<QLabel *>(
             QStringLiteral("rowDescription"));
         auto *titleLabel = describedRow->findChild<QLabel *>(
+            QStringLiteral("rowTitle"));
+        auto *textCell = describedRow->findChild<QWidget *>(
             QStringLiteral("rowLabelCell"));
         QVERIFY(descriptionLabel);
         QVERIFY(titleLabel);
+        QVERIFY(textCell);
         QVERIFY(descriptionLabel->wordWrap());
-        QCOMPARE(descriptionLabel->width(),
-                 qMin(descriptionLabel->fontMetrics().horizontalAdvance(description),
-                      descriptionLabel->fontMetrics().averageCharWidth() * 45));
-        QVERIFY(descriptionLabel->heightForWidth(descriptionLabel->width())
-                > descriptionLabel->fontMetrics().height());
-        const int requiredRowHeight = control->sizeHint().height()
-            + settings::tightSpacing()
-            + descriptionLabel->heightForWidth(descriptionLabel->width());
-        QVERIFY(describedRow->minimumSizeHint().height() >= requiredRowHeight);
-        QCOMPARE(titleLabel->alignment(), Qt::AlignRight | Qt::AlignVCenter);
+        QCOMPARE(titleLabel->text(), QStringLiteral("Category"));
+        QCOMPARE(titleLabel->alignment(), Qt::AlignLeft | Qt::AlignVCenter);
+        QCOMPARE(describedRow->layout()->indexOf(textCell), 0);
+        QCOMPARE(describedRow->layout()->indexOf(control), 1);
 
         auto *checkBox = new QCheckBox(QStringLiteral("Short label"), &parent);
         const QString sentence = QStringLiteral("Enable the complete setting sentence");
         QFrame *checkBoxRow = settings::makeRow(
             QStringLiteral("Setting"), sentence, checkBox, &parent);
-        QCOMPARE(checkBox->text(), sentence);
-        QVERIFY(!checkBoxRow->findChild<QLabel *>(QStringLiteral("rowDescription")));
+        QVERIFY(checkBox->text().isEmpty());
+        QCOMPARE(checkBox->accessibleName(), QStringLiteral("Setting"));
+        QCOMPARE(checkBoxRow->findChild<QLabel *>(QStringLiteral("rowDescription"))->text(),
+                 sentence);
     }
 
     void outputVirtualKeyboardStatusFitsWrappedText()

@@ -156,6 +156,8 @@ ApplicationSettingsPage::ApplicationSettingsPage(QWidget *parent)
     pageLayout->setSpacing(0);
     pageLayout->addWidget(title);
     pageLayout->addSpacing(settings::sectionGap());
+    pageLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Application recognition"), this));
+    pageLayout->addSpacing(settings::tightSpacing());
     pageLayout->addWidget(card);
     pageLayout->addStretch();
 

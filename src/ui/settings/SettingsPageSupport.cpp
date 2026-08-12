@@ -80,58 +80,60 @@ QFrame *makeRow(const QString &label,
 {
     auto *row = new QFrame(parent);
     row->setObjectName(QStringLiteral("settingsRow"));
-    row->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    row->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
 
-    auto *title = new QLabel(label.endsWith(QLatin1Char(':'))
-                                 ? label
-                                 : label + QLatin1Char(':'),
-                             row);
+    auto *rowLayout = new QHBoxLayout(row);
+    rowLayout->setContentsMargins(14, 10, 14, 10);
+    rowLayout->setSpacing(16);
+
+    auto *text = new QWidget(row);
+    text->setObjectName(QStringLiteral("rowLabelCell"));
+    text->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto *textLayout = new QVBoxLayout(text);
+    textLayout->setContentsMargins(0, 0, 0, 0);
+    textLayout->setSpacing(2);
+
+    auto *title = new QLabel(label, text);
     title->setObjectName(QStringLiteral("rowTitle"));
-    title->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    QWidget *labelField = title;
+    title->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     if (titleAccessory) {
-        auto *titleRow = new QWidget(row);
+        auto *titleRow = new QWidget(text);
         titleRow->setObjectName(QStringLiteral("rowText"));
         auto *titleLayout = new QHBoxLayout(titleRow);
         titleLayout->setContentsMargins(0, 0, 0, 0);
         titleLayout->addWidget(title, 0, Qt::AlignVCenter);
         titleLayout->addWidget(titleAccessory, 0, Qt::AlignVCenter);
-        labelField = titleRow;
-    }
-    labelField->setObjectName(QStringLiteral("rowLabelCell"));
-
-    auto *fieldLayout = new QVBoxLayout(row);
-    fieldLayout->setContentsMargins(0, 0, 0, 0);
-    fieldLayout->setSpacing(tightSpacing());
-    if (control->sizePolicy().horizontalPolicy() == QSizePolicy::Expanding) {
-        fieldLayout->addWidget(control);
+        titleLayout->addStretch();
+        textLayout->addWidget(titleRow);
     } else {
-        fieldLayout->addWidget(control, 0, Qt::AlignLeft);
+        textLayout->addWidget(title);
     }
 
-    if (auto *checkBox = qobject_cast<QCheckBox *>(control); checkBox && !description.isEmpty()) {
-        checkBox->setText(description);
-    } else if (!description.isEmpty()) {
-        auto *subtitle = new QLabel(description, row);
+    if (!description.isEmpty()) {
+        auto *subtitle = new QLabel(description, text);
         subtitle->setObjectName(QStringLiteral("rowDescription"));
         subtitle->setWordWrap(true);
-        const int naturalTextWidth = subtitle->fontMetrics().horizontalAdvance(description);
-        subtitle->setFixedWidth(qMin(
-            naturalTextWidth, subtitle->fontMetrics().averageCharWidth() * 45));
-        subtitle->setMinimumHeight(subtitle->heightForWidth(subtitle->width()));
         subtitle->setForegroundRole(QPalette::PlaceholderText);
-        fieldLayout->addWidget(subtitle);
+        textLayout->addWidget(subtitle);
     }
+
+    if (auto *checkBox = qobject_cast<QCheckBox *>(control)) {
+        checkBox->setText({});
+        if (checkBox->accessibleName().isEmpty()) {
+            checkBox->setAccessibleName(label);
+        }
+    }
+
+    rowLayout->addWidget(text, 1);
+    rowLayout->addWidget(control, 0, Qt::AlignRight | Qt::AlignVCenter);
     return row;
 }
 
 void addRow(QFormLayout *layout, QFrame *row, QWidget *parent, bool addSeparator)
 {
-    QWidget *label = row->findChild<QWidget *>(QStringLiteral("rowLabelCell"),
-                                               Qt::FindDirectChildrenOnly);
-    layout->addRow(label, row);
+    layout->addRow(row);
     if (addSeparator) {
-        layout->addRow(makeCenteredSeparator(parent));
+        layout->addRow(makeSeparator(parent));
     }
 }
 
@@ -237,22 +239,36 @@ QPalette kdeHeaderPalette(const QPalette &base)
                                         QStringLiteral("BackgroundNormal"));
     QColor foreground = kdeGlobalsColor(QStringLiteral("Colors:Header"),
                                         QStringLiteral("ForegroundNormal"));
+    QColor inactiveBackground = kdeGlobalsColor(
+        QStringLiteral("Colors:Header][Inactive"), QStringLiteral("BackgroundNormal"));
+    QColor inactiveForeground = kdeGlobalsColor(
+        QStringLiteral("Colors:Header][Inactive"), QStringLiteral("ForegroundNormal"));
     if (!background.isValid()) {
         // Schemes that don't inline a Header group still carry the titlebar
         // color under [WM] — the strip must match the titlebar.
         background = kdeGlobalsColor(QStringLiteral("WM"),
                                      QStringLiteral("activeBackground"));
-        if (!foreground.isValid()) {
-            foreground = kdeGlobalsColor(QStringLiteral("WM"),
-                                         QStringLiteral("activeForeground"));
-        }
+        foreground = kdeGlobalsColor(QStringLiteral("WM"),
+                                     QStringLiteral("activeForeground"));
+        inactiveBackground = kdeGlobalsColor(QStringLiteral("WM"),
+                                             QStringLiteral("inactiveBackground"));
+        inactiveForeground = kdeGlobalsColor(QStringLiteral("WM"),
+                                             QStringLiteral("inactiveForeground"));
     }
-    result.setColor(QPalette::Window,
-                    background.isValid()
-                        ? background
-                        : base.color(QPalette::Window).darker(110));
-    result.setColor(QPalette::WindowText,
-                    foreground.isValid() ? foreground : base.color(QPalette::WindowText));
+    result.setColor(QPalette::Active, QPalette::Window,
+                    background.isValid() ? background
+                                         : base.color(QPalette::Active, QPalette::Window).darker(110));
+    result.setColor(QPalette::Active, QPalette::WindowText,
+                    foreground.isValid() ? foreground
+                                         : base.color(QPalette::Active, QPalette::WindowText));
+    const QColor resolvedInactiveBackground =
+        inactiveBackground.isValid() ? inactiveBackground : result.color(QPalette::Active, QPalette::Window);
+    const QColor resolvedInactiveForeground =
+        inactiveForeground.isValid() ? inactiveForeground : result.color(QPalette::Active, QPalette::WindowText);
+    result.setColor(QPalette::Inactive, QPalette::Window, resolvedInactiveBackground);
+    result.setColor(QPalette::Inactive, QPalette::WindowText, resolvedInactiveForeground);
+    result.setColor(QPalette::Disabled, QPalette::Window, resolvedInactiveBackground);
+    result.setColor(QPalette::Disabled, QPalette::WindowText, resolvedInactiveForeground);
     return result;
 }
 
@@ -366,6 +382,10 @@ QFrame *makeSettingsCard(QWidget *parent)
 {
     auto *card = new QFrame(parent);
     card->setObjectName(QStringLiteral("settingsCard"));
+    card->setFrameShape(QFrame::StyledPanel);
+    card->setFrameShadow(QFrame::Plain);
+    card->setBackgroundRole(QPalette::Base);
+    card->setAutoFillBackground(true);
     auto *layout = new QFormLayout(card);
     layout->setContentsMargins(0, 0, 0, 0);
     configureFormLayout(layout);
@@ -381,9 +401,13 @@ QVBoxLayout *makeSettingsPage(QScrollArea *scroll)
     scroll->viewport()->setBackgroundRole(QPalette::Window);
 
     auto *page = new QWidget(scroll);
+    page->setObjectName(QStringLiteral("settingsRiver"));
+    page->setMaximumWidth(560);
+    page->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     page->setAutoFillBackground(false);
     auto *layout = new QVBoxLayout(page);
     applyPageMargins(layout);
+    scroll->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
     scroll->setWidget(page);
     return layout;
 }

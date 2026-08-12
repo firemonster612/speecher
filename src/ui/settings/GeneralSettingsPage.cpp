@@ -30,27 +30,41 @@ GeneralSettingsPage::GeneralSettingsPage(const QString &primaryOutputStatus,
     m_previewWords->setRange(1, 40);
 
     auto *title = settings::makePageTitle(QStringLiteral("General"), this);
-    auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
+    auto *appearanceCard = settings::makeSettingsCard(this);
+    auto *appearanceLayout = qobject_cast<QFormLayout *>(appearanceCard->layout());
+    auto *systemCard = settings::makeSettingsCard(this);
+    auto *systemLayout = qobject_cast<QFormLayout *>(systemCard->layout());
+    auto *maintenanceCard = settings::makeSettingsCard(this);
+    auto *maintenanceLayout = qobject_cast<QFormLayout *>(maintenanceCard->layout());
     auto *primaryOutput = new QLabel(primaryOutputStatus, this);
     primaryOutput->setObjectName(QStringLiteral("statusText"));
     primaryOutput->setForegroundRole(QPalette::WindowText);
     auto *openReleases = new QPushButton(QStringLiteral("Open releases"), this);
     auto *runSetup = new QPushButton(QStringLiteral("Run setup assistant…"), this);
 
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Theme"), QString(), m_theme, card), card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Media"), QStringLiteral("Pause playing media while dictating"), m_pauseMedia, card), card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Sounds"), QStringLiteral("Play sounds when dictation starts and stops"), m_sounds, card), card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Preview words"), QStringLiteral("Trailing words shown in the popup."), m_previewWords, card), card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Clipboard output"), QStringLiteral("Current platform clipboard path."), primaryOutput, card), card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Setup assistant"), QStringLiteral("Check sign-in, microphone, accessibility, delivery, and refinement again."), runSetup, card), card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Updates"), QStringLiteral("Updates are manual; open the GitHub releases page when you want to check."), openReleases, card), card, false);
+    settings::addRow(appearanceLayout, settings::makeRow(QStringLiteral("Theme"), QString(), m_theme, appearanceCard), appearanceCard, true);
+    settings::addRow(appearanceLayout, settings::makeRow(QStringLiteral("Media"), QStringLiteral("Pause playing media while dictating"), m_pauseMedia, appearanceCard), appearanceCard, true);
+    settings::addRow(appearanceLayout, settings::makeRow(QStringLiteral("Sounds"), QStringLiteral("Play sounds when dictation starts and stops"), m_sounds, appearanceCard), appearanceCard, true);
+    settings::addRow(appearanceLayout, settings::makeRow(QStringLiteral("Preview words"), QStringLiteral("Trailing words shown in the popup."), m_previewWords, appearanceCard), appearanceCard);
+    settings::addRow(systemLayout, settings::makeRow(QStringLiteral("Clipboard output"), QStringLiteral("Current platform clipboard path."), primaryOutput, systemCard), systemCard);
+    settings::addRow(maintenanceLayout, settings::makeRow(QStringLiteral("Setup assistant"), QStringLiteral("Check sign-in, microphone, accessibility, delivery, and refinement again."), runSetup, maintenanceCard), maintenanceCard, true);
+    settings::addRow(maintenanceLayout, settings::makeRow(QStringLiteral("Updates"), QStringLiteral("Updates are manual; open the GitHub releases page when you want to check."), openReleases, maintenanceCard), maintenanceCard);
 
     auto *pageLayout = settings::makeSettingsPage(this);
     pageLayout->setSpacing(0);
     pageLayout->addWidget(title);
     pageLayout->addSpacing(settings::sectionGap());
-    pageLayout->addWidget(card);
+    pageLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Appearance & behavior"), this));
+    pageLayout->addSpacing(settings::tightSpacing());
+    pageLayout->addWidget(appearanceCard);
+    pageLayout->addSpacing(settings::groupGap());
+    pageLayout->addWidget(settings::makeSectionLabel(QStringLiteral("System"), this));
+    pageLayout->addSpacing(settings::tightSpacing());
+    pageLayout->addWidget(systemCard);
+    pageLayout->addSpacing(settings::groupGap());
+    pageLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Maintenance"), this));
+    pageLayout->addSpacing(settings::tightSpacing());
+    pageLayout->addWidget(maintenanceCard);
     pageLayout->addStretch();
 
     connect(m_theme, &QComboBox::currentIndexChanged, this, &GeneralSettingsPage::changed);

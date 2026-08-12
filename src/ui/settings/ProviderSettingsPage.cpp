@@ -174,8 +174,8 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     m_authStatus->setForegroundRole(QPalette::WindowText);
 
     auto *title = settings::makePageTitle(QStringLiteral("Providers"), this);
-    auto *openAiSection = settings::makeSectionLabel(QStringLiteral("OpenAI"), this);
-    auto *anthropicSection = settings::makeSectionLabel(QStringLiteral("Anthropic"), this);
+    auto *openAiSection = settings::makeSectionLabel(QStringLiteral("OpenAI account"), this);
+    auto *anthropicSection = settings::makeSectionLabel(QStringLiteral("Anthropic account"), this);
     auto *openAiCard = settings::makeSettingsCard(this);
     auto *openAiLayout = qobject_cast<QFormLayout *>(openAiCard->layout());
     auto *anthropicCard = settings::makeSettingsCard(this);
@@ -220,8 +220,6 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     pageLayout->addWidget(openAiSection);
     pageLayout->addSpacing(settings::tightSpacing());
     pageLayout->addWidget(openAiCard);
-    pageLayout->addSpacing(settings::groupGap());
-    pageLayout->addWidget(settings::makeCenteredSeparator(this));
     pageLayout->addSpacing(settings::groupGap());
     pageLayout->addWidget(anthropicSection);
     pageLayout->addSpacing(settings::tightSpacing());

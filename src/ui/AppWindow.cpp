@@ -18,6 +18,7 @@
 #include <QCloseEvent>
 #include <QEvent>
 #include <QCheckBox>
+#include <QFileSystemWatcher>
 #include <QFrame>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -33,6 +34,7 @@
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
+#include <QStandardPaths>
 #include <QStyle>
 #include <QTabWidget>
 #include <QTextDocument>
@@ -68,6 +70,7 @@ QScrollArea *scrollingPage(QWidget *content, QWidget *parent)
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setBackgroundRole(QPalette::Window);
     scroll->viewport()->setBackgroundRole(QPalette::Window);
+    scroll->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
     content->setAutoFillBackground(false);
     scroll->setWidget(content);
     return scroll;
@@ -156,6 +159,42 @@ void AppWindow::navigateToSettings(AppPageId page)
     }
 }
 
+void AppWindow::applyChromeColors()
+{
+    if (!m_headerStrip) {
+        return;
+    }
+    m_headerStrip->setPalette(settings::kdeHeaderPalette(palette()));
+
+    QPalette dividerPalette(m_headerDividerLine->palette());
+    dividerPalette.setColor(QPalette::Window,
+                            settings::separatorColor(m_headerStrip->palette()));
+    m_headerDividerLine->setPalette(dividerPalette);
+
+    const QColor separator = settings::separatorColor(palette());
+    QPalette underlinePalette(m_headerUnderline->palette());
+    underlinePalette.setColor(QPalette::Window, separator);
+    m_headerUnderline->setPalette(underlinePalette);
+
+    if (QWidget *handle = m_sidebarSplitter ? m_sidebarSplitter->handle(1) : nullptr) {
+        QPalette handlePalette(handle->palette());
+        handlePalette.setColor(QPalette::Window, separator);
+        handle->setPalette(handlePalette);
+    }
+}
+
+void AppWindow::changeEvent(QEvent *event)
+{
+    QMainWindow::changeEvent(event);
+    // Track live color-scheme switches: the strip's custom palette roles
+    // don't follow the application palette on their own.
+    if (event->type() == QEvent::PaletteChange
+        || event->type() == QEvent::ApplicationPaletteChange
+        || event->type() == QEvent::ThemeChange) {
+        applyChromeColors();
+    }
+}
+
 void AppWindow::flushPendingAutoSave()
 {
     if (!m_autoSaveTimer || !m_autoSaveTimer->isActive()) return;
@@ -210,24 +249,19 @@ bool AppWindow::eventFilter(QObject *watched, QEvent *event)
 void AppWindow::buildSharedPages()
 {
     auto *refinementContent = new QWidget(this);
+    refinementContent->setObjectName(QStringLiteral("settingsRiver"));
+    refinementContent->setMaximumWidth(560);
     auto *refinementLayout = new QVBoxLayout(refinementContent);
     settings::applyPageMargins(refinementLayout);
     refinementLayout->setSpacing(0);
-    refinementLayout->addWidget(settings::makePageTitle(QStringLiteral("Refinement"), refinementContent));
-    refinementLayout->addSpacing(settings::sectionGap());
-    refinementLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Refinement"), refinementContent));
-    refinementLayout->addSpacing(settings::tightSpacing());
     refinementLayout->addWidget(detachedContent(m_pages->refinement(), true));
     refinementLayout->addSpacing(settings::groupGap());
-    refinementLayout->addWidget(settings::makeCenteredSeparator(refinementContent));
-    refinementLayout->addSpacing(settings::groupGap());
-    refinementLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Provider accounts"), refinementContent));
-    refinementLayout->addSpacing(settings::tightSpacing());
     refinementLayout->addWidget(detachedContent(m_pages->providers(), true));
     refinementLayout->addStretch();
     QWidget *refinement = scrollingPage(refinementContent, this);
 
     auto *tabs = new QTabWidget(this);
+    tabs->setObjectName(QStringLiteral("settingsCard"));
     auto addTab = [tabs](QWidget *page, const QString &title) {
         settings::applyPageMargins(page->layout());
         tabs->addTab(scrollingPage(page, tabs), title);
@@ -240,11 +274,15 @@ void AppWindow::buildSharedPages()
     m_pages->preserveBindingScroll(bindingsScroll);
 
     auto *vocabularyContent = new QWidget(this);
+    vocabularyContent->setObjectName(QStringLiteral("settingsRiver"));
+    vocabularyContent->setMaximumWidth(560);
     auto *vocabularyLayout = new QVBoxLayout(vocabularyContent);
     settings::applyPageMargins(vocabularyLayout);
     vocabularyLayout->setSpacing(0);
     vocabularyLayout->addWidget(settings::makePageTitle(QStringLiteral("Vocabulary"), vocabularyContent));
     vocabularyLayout->addSpacing(settings::sectionGap());
+    vocabularyLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Words & rules"), vocabularyContent));
+    vocabularyLayout->addSpacing(settings::tightSpacing());
     vocabularyLayout->addWidget(tabs, 1);
 
     m_pageWidgets = {
@@ -271,9 +309,9 @@ void AppWindow::buildSidebarShell()
     root->setSpacing(0);
     auto *header = new QWidget(central);
     header->setObjectName(QStringLiteral("sidebarHeaderStrip"));
-    header->setPalette(settings::kdeHeaderPalette(palette()));
     header->setBackgroundRole(QPalette::Window);
     header->setAutoFillBackground(true);
+    m_headerStrip = header;
     auto *headerLayout = new QHBoxLayout(header);
     headerLayout->setContentsMargins(0, 0, 0, 0);
     headerLayout->setSpacing(0);
@@ -303,10 +341,8 @@ void AppWindow::buildSidebarShell()
     dividerLayout->setContentsMargins(0, settings::relatedSpacing(), 0, settings::relatedSpacing());
     auto *dividerLine = new QWidget(headerDivider);
     dividerLine->setFixedWidth(1);
-    QPalette dividerPalette(dividerLine->palette());
-    dividerPalette.setColor(QPalette::Window, settings::separatorColor(header->palette()));
-    dividerLine->setPalette(dividerPalette);
     dividerLine->setAutoFillBackground(true);
+    m_headerDividerLine = dividerLine;
     dividerLayout->addWidget(dividerLine);
     headerLayout->addWidget(headerDivider);
 
@@ -319,7 +355,6 @@ void AppWindow::buildSidebarShell()
     m_pageTitle = settings::makePageTitle(kPages.first().title, headerRight);
     headerRightLayout->addWidget(m_pageTitle);
     headerRightLayout->addStretch();
-    headerRightLayout->addWidget(m_dictation->toggleButton());
     headerLayout->addWidget(headerRight, 1);
     root->addWidget(header);
 
@@ -327,10 +362,8 @@ void AppWindow::buildSidebarShell()
     // bottom edge and the sidebar/content hairline match exactly.
     auto *headerUnderline = new QWidget(central);
     headerUnderline->setFixedHeight(1);
-    QPalette underlinePalette(headerUnderline->palette());
-    underlinePalette.setColor(QPalette::Window, settings::separatorColor(central->palette()));
-    headerUnderline->setPalette(underlinePalette);
     headerUnderline->setAutoFillBackground(true);
+    m_headerUnderline = headerUnderline;
     root->addWidget(headerUnderline);
 
     m_sidebarSplitter = new QSplitter(Qt::Horizontal, central);
@@ -394,12 +427,21 @@ void AppWindow::buildSidebarShell()
         // Breeze paints splitter handles in plain window color — invisible.
         // Fill the 1px handle with the separator blend so the sidebar/content
         // boundary reads as a hairline, like System Settings.
-        QPalette handlePalette(handle->palette());
-        handlePalette.setColor(QPalette::Window,
-                               settings::separatorColor(handle->palette()));
-        handle->setPalette(handlePalette);
         handle->setAutoFillBackground(true);
     }
+    applyChromeColors();
+    auto *colorConfigWatcher = new QFileSystemWatcher(this);
+    const QString kdeGlobals =
+        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+        + QStringLiteral("/kdeglobals");
+    colorConfigWatcher->addPath(kdeGlobals);
+    connect(colorConfigWatcher,
+            &QFileSystemWatcher::fileChanged,
+            this,
+            [this, colorConfigWatcher](const QString &path) {
+                colorConfigWatcher->addPath(path);
+                QTimer::singleShot(0, this, &AppWindow::applyChromeColors);
+            });
     m_sidebarPane = sidebar;
     m_searchSection = searchContainer;
     sidebar->installEventFilter(this);
@@ -424,7 +466,6 @@ void AppWindow::buildSidebarShell()
             });
     connect(m_stack, &QStackedWidget::currentChanged, this, [this](int index) {
         m_pageTitle->setText(kPages.at(index).title);
-        m_dictation->toggleButton()->setVisible(index == 0);
     });
     connect(search, &QLineEdit::textChanged, this, &AppWindow::filterSidebarPages);
     connect(search, &QLineEdit::returnPressed, this, [this] {

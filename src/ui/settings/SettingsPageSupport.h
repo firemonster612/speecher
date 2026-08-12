@@ -33,7 +33,7 @@ QFrame *makeRow(const QString &label,
 void addRow(QFormLayout *layout,
             QFrame *row,
             QWidget *parent,
-            bool addSeparator = false);
+            bool addSeparator = true);
 void selectData(QComboBox *combo, const QString &data);
 void selectEditableText(QComboBox *combo, const QString &text);
 QString editableComboValue(const QComboBox *combo);

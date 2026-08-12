@@ -199,13 +199,18 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     }
 
     auto *title = settings::makePageTitle(QStringLiteral("Output"), this);
-    auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Method"), QStringLiteral("How Speecher delivers final text."), m_outputMethod, card), card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Format"), QStringLiteral("Default clipboard representation. A CLI shortcut can override this per dictation."), m_outputFormat, card), card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Status duration"), QStringLiteral("How long the completed delivery result stays visible."), m_completionStatusDuration, card), card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Global fallback"), QStringLiteral("Paste behavior used unless a category or exact-app rule overrides it."), m_globalPaste, card), card);
-    m_targetPasteControls = new QWidget(card);
+    auto *deliveryCard = settings::makeSettingsCard(this);
+    auto *deliveryLayout = qobject_cast<QFormLayout *>(deliveryCard->layout());
+    auto *pasteCard = settings::makeSettingsCard(this);
+    auto *pasteLayout = qobject_cast<QFormLayout *>(pasteCard->layout());
+    auto *advancedCard = settings::makeSettingsCard(this);
+    auto *advancedLayout = qobject_cast<QFormLayout *>(advancedCard->layout());
+    settings::addRow(deliveryLayout, settings::makeRow(QStringLiteral("Method"), QStringLiteral("How Speecher delivers final text."), m_outputMethod, deliveryCard), deliveryCard);
+    settings::addRow(deliveryLayout, settings::makeRow(QStringLiteral("Format"), QStringLiteral("Default clipboard representation. A CLI shortcut can override this per dictation."), m_outputFormat, deliveryCard), deliveryCard);
+    settings::addRow(deliveryLayout, settings::makeRow(QStringLiteral("Status duration"), QStringLiteral("How long the completed delivery result stays visible."), m_completionStatusDuration, deliveryCard), deliveryCard);
+    settings::addRow(deliveryLayout, settings::makeRow(QStringLiteral("Clipboard"), QStringLiteral("Restore previous clipboard contents after typing"), m_restoreClipboardAfterTyping, deliveryCard), deliveryCard, false);
+    settings::addRow(pasteLayout, settings::makeRow(QStringLiteral("Global fallback"), QStringLiteral("Paste behavior used unless a category or exact-app rule overrides it."), m_globalPaste, pasteCard), pasteCard);
+    m_targetPasteControls = new QWidget(pasteCard);
     m_targetPasteControls->setObjectName(QStringLiteral("targetPasteControls"));
     auto *targetPasteLayout = new QFormLayout(m_targetPasteControls);
     targetPasteLayout->setContentsMargins(0, 0, 0, 0);
@@ -244,15 +249,23 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     appRulesLayout->addWidget(m_appPasteRules);
     appRulesLayout->addLayout(appRuleButtons);
     targetPasteLayout->addRow(appRulesControl);
-    targetPasteLayout->addRow(settings::makeCenteredSeparator(m_targetPasteControls));
-    cardLayout->addRow(m_targetPasteControls);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Clipboard"), QStringLiteral("Restore previous clipboard contents after typing"), m_restoreClipboardAfterTyping, card), card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Virtual keyboard"), QString(), makeYdotoolControl(m_ydotoolStatus, m_ydotoolSetupButton, m_ydotoolStartButton, m_ydotoolDisableButton, m_ydotoolRemoveButton, card), card), card, false);
+    pasteLayout->addRow(m_targetPasteControls);
+    settings::addRow(advancedLayout, settings::makeRow(QStringLiteral("Virtual keyboard"), QString(), makeYdotoolControl(m_ydotoolStatus, m_ydotoolSetupButton, m_ydotoolStartButton, m_ydotoolDisableButton, m_ydotoolRemoveButton, advancedCard), advancedCard), advancedCard, false);
     auto *pageLayout = settings::makeSettingsPage(this);
     pageLayout->setSpacing(0);
     pageLayout->addWidget(title);
     pageLayout->addSpacing(settings::sectionGap());
-    pageLayout->addWidget(card);
+    pageLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Delivery"), this));
+    pageLayout->addSpacing(settings::tightSpacing());
+    pageLayout->addWidget(deliveryCard);
+    pageLayout->addSpacing(settings::groupGap());
+    pageLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Paste behavior"), this));
+    pageLayout->addSpacing(settings::tightSpacing());
+    pageLayout->addWidget(pasteCard);
+    pageLayout->addSpacing(settings::groupGap());
+    pageLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Advanced"), this));
+    pageLayout->addSpacing(settings::tightSpacing());
+    pageLayout->addWidget(advancedCard);
     pageLayout->addStretch();
 
     connect(m_restoreClipboardAfterTyping, &QCheckBox::toggled, this, &OutputSettingsPage::changed);

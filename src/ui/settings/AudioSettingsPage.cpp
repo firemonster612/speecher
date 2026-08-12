@@ -51,64 +51,80 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
     m_vadThreshold->setSuffix(QStringLiteral("%"));
 
     auto *title = settings::makePageTitle(QStringLiteral("Audio"), this);
-    auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
+    auto *transcriptionCard = settings::makeSettingsCard(this);
+    auto *transcriptionLayout = qobject_cast<QFormLayout *>(transcriptionCard->layout());
+    auto *captureCard = settings::makeSettingsCard(this);
+    auto *captureLayout = qobject_cast<QFormLayout *>(captureCard->layout());
+    auto *silenceCard = settings::makeSettingsCard(this);
+    auto *silenceLayout = qobject_cast<QFormLayout *>(silenceCard->layout());
 
-    settings::addRow(cardLayout,
+    settings::addRow(transcriptionLayout,
                      settings::makeRow(QStringLiteral("Transcription"),
                                        QStringLiteral("Service used to turn speech into a Raw Transcript."),
                                        m_speechProvider,
-                                       card),
-                     card);
-    settings::addRow(cardLayout,
+                                       transcriptionCard),
+                     transcriptionCard,
+                     false);
+    settings::addRow(captureLayout,
                      settings::makeRow(QStringLiteral("Microphone"),
                                        QStringLiteral("Input device used for dictation."),
                                        m_audioDevice,
-                                       card),
-                     card);
-    settings::addRow(cardLayout,
+                                       captureCard),
+                     captureCard);
+    settings::addRow(captureLayout,
                      settings::makeRow(QStringLiteral("Capture mode"),
                                        QStringLiteral("Open the microphone only while listening, or keep it warm between captures."),
                                        m_captureMode,
-                                       card),
-                     card);
-    settings::addRow(cardLayout,
+                                       captureCard),
+                     captureCard);
+    settings::addRow(captureLayout,
                      settings::makeRow(QStringLiteral("Pre-roll"),
                                        QStringLiteral("Audio kept before speech or before a warm capture starts."),
                                        m_preRollMs,
-                                       card),
-                     card);
-    settings::addRow(cardLayout,
+                                       captureCard),
+                     captureCard);
+    settings::addRow(captureLayout,
                      settings::makeRow(QStringLiteral("Post-roll"),
                                        QStringLiteral("Audio kept after stop or after speech falls quiet."),
                                        m_postRollMs,
-                                       card),
-                     card);
-    settings::addRow(cardLayout,
+                                       captureCard),
+                     captureCard);
+    settings::addRow(captureLayout,
                      settings::makeRow(QStringLiteral("Readiness timeout"),
                                        QStringLiteral("How long Speecher waits for the first microphone sample."),
                                        m_readinessTimeoutMs,
-                                       card),
-                     card);
-    settings::addRow(cardLayout,
+                                       captureCard),
+                     captureCard,
+                     false);
+    settings::addRow(silenceLayout,
                      settings::makeRow(QStringLiteral("Silence"),
                                        QStringLiteral("Trim leading and trailing silence"),
                                        m_vadEnabled,
-                                       card),
-                     card);
-    settings::addRow(cardLayout,
+                                       silenceCard),
+                     silenceCard);
+    settings::addRow(silenceLayout,
                      settings::makeRow(QStringLiteral("Voice threshold"),
                                        QStringLiteral("RMS level required before VAD treats audio as speech."),
                                        m_vadThreshold,
-                                       card),
-                     card,
+                                       silenceCard),
+                     silenceCard,
                      false);
 
     auto *pageLayout = settings::makeSettingsPage(this);
     pageLayout->setSpacing(0);
     pageLayout->addWidget(title);
     pageLayout->addSpacing(settings::sectionGap());
-    pageLayout->addWidget(card);
+    pageLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Transcription"), this));
+    pageLayout->addSpacing(settings::tightSpacing());
+    pageLayout->addWidget(transcriptionCard);
+    pageLayout->addSpacing(settings::groupGap());
+    pageLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Capture"), this));
+    pageLayout->addSpacing(settings::tightSpacing());
+    pageLayout->addWidget(captureCard);
+    pageLayout->addSpacing(settings::groupGap());
+    pageLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Silence trimming"), this));
+    pageLayout->addSpacing(settings::tightSpacing());
+    pageLayout->addWidget(silenceCard);
     pageLayout->addStretch();
 
     connect(m_speechProvider, &QComboBox::currentIndexChanged, this, &AudioSettingsPage::changed);

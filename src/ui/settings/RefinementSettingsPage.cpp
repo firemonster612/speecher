@@ -88,11 +88,13 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     m_profileSettings->setMinimumHeight(207);
     m_profileSettings->setMaximumHeight(207);
     auto *title = settings::makePageTitle(QStringLiteral("Refinement"), this);
-    auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Refinement"), QStringLiteral("Clean up dictated text after capture."), m_provider, card), card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Fallback profile"), QStringLiteral("Writing profile used when the target app does not imply one."), m_writingProfile, card), card);
-    auto *profileSettingsControl = new QWidget(card);
+    auto *refinementCard = settings::makeSettingsCard(this);
+    auto *refinementLayout = qobject_cast<QFormLayout *>(refinementCard->layout());
+    auto *promptCard = settings::makeSettingsCard(this);
+    auto *promptLayout = qobject_cast<QFormLayout *>(promptCard->layout());
+    settings::addRow(refinementLayout, settings::makeRow(QStringLiteral("Refinement"), QStringLiteral("Clean up dictated text after capture."), m_provider, refinementCard), refinementCard);
+    settings::addRow(refinementLayout, settings::makeRow(QStringLiteral("Fallback profile"), QStringLiteral("Writing profile used when the target app does not imply one."), m_writingProfile, refinementCard), refinementCard);
+    auto *profileSettingsControl = new QWidget(promptCard);
     auto *profileSettingsLayout = new QVBoxLayout(profileSettingsControl);
     auto *profileSettingsTitle = new QLabel(QStringLiteral("Profile behavior"), profileSettingsControl);
     profileSettingsTitle->setObjectName(QStringLiteral("subsectionLabel"));
@@ -104,23 +106,28 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     profileSettingsLayout->addWidget(profileSettingsTitle);
     profileSettingsLayout->addWidget(profileSettingsDescription);
     profileSettingsLayout->addWidget(m_profileSettings);
-    cardLayout->addWidget(profileSettingsControl);
-    cardLayout->addRow(settings::makeCenteredSeparator(card));
+    promptLayout->addWidget(profileSettingsControl);
 
     m_targetContextControl = settings::makeRow(
         QStringLiteral("Context"),
         QStringLiteral("Send the target app's context to the refiner"),
         m_useTargetContext,
-        card);
+        refinementCard);
     m_targetContextControl->setObjectName(QStringLiteral("targetContextControl"));
-    settings::addRow(cardLayout, m_targetContextControl, card);
-    settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Screenshots"), QStringLiteral("Allow screenshots as refinement context"), m_screenshotContext, card), card, false);
+    settings::addRow(refinementLayout, m_targetContextControl, refinementCard);
+    settings::addRow(refinementLayout, settings::makeRow(QStringLiteral("Screenshots"), QStringLiteral("Allow screenshots as refinement context"), m_screenshotContext, refinementCard), refinementCard, false);
 
     auto *pageLayout = settings::makeSettingsPage(this);
     pageLayout->setSpacing(0);
     pageLayout->addWidget(title);
     pageLayout->addSpacing(settings::sectionGap());
-    pageLayout->addWidget(card);
+    pageLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Refinement"), this));
+    pageLayout->addSpacing(settings::tightSpacing());
+    pageLayout->addWidget(refinementCard);
+    pageLayout->addSpacing(settings::groupGap());
+    pageLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Prompt shaping"), this));
+    pageLayout->addSpacing(settings::tightSpacing());
+    pageLayout->addWidget(promptCard);
     pageLayout->addStretch();
 
     connect(m_provider, &QComboBox::currentIndexChanged, this, [this] {
