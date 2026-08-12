@@ -4,12 +4,17 @@
 #include "core/OutputMethod.h"
 #include "output/YdotoolDelivery.h"
 
+#include <QEventLoop>
+#include <QTimer>
+
 #include <memory>
 #include <utility>
 
 namespace speecher {
 
 namespace {
+
+constexpr int clipboardRestoreDelayMs = 250;
 
 class YdotoolBackend final : public DeliveryBackend {
 public:
@@ -221,20 +226,27 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         QString error;
         bool htmlAvailable = false;
         if (backend->deliver(content, &htmlAvailable, &error)) {
+            const bool virtualKeyboardInput = method == QString::fromLatin1(OutputMethod::Ydotool);
             const bool copied = method == QString::fromLatin1(OutputMethod::WlCopy)
                 || method == QString::fromLatin1(OutputMethod::QtClipboard);
             const bool downgraded = content.html.has_value() && !htmlAvailable;
+            QString restoreError;
+            bool restored = true;
+            if (virtualKeyboardInput && canRestoreClipboard) {
+                QEventLoop waitForClipboardConsumer;
+                QTimer::singleShot(clipboardRestoreDelayMs,
+                                   &waitForClipboardConsumer,
+                                   &QEventLoop::quit);
+                waitForClipboardConsumer.exec(QEventLoop::ExcludeUserInputEvents);
+                restored = m_clipboardDelivery.restore(previousClipboard, &restoreError);
+            }
             const bool verified = !copied
                 && m_targetProvider
                 && m_targetProvider->verifyInsertion(target, content.plainText);
-            QString restoreError;
-            const bool restored = !verified
-                || !canRestoreClipboard
-                || m_clipboardDelivery.restore(previousClipboard, &restoreError);
             const QString message = copied
                 ? QStringLiteral("Copied")
                 : verified ? QStringLiteral("Verified in Target") : QStringLiteral("Input sent");
-            const QString finalMessage = verified && canRestoreClipboard && !restored
+            const QString finalMessage = virtualKeyboardInput && canRestoreClipboard && !restored
                 ? message + QStringLiteral("; clipboard kept because it could not be restored")
                 : message;
             return {true,
