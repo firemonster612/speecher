@@ -30,7 +30,8 @@ QString OpenAiTranscriptRefiner::label() const
 
 bool OpenAiTranscriptRefiner::requiresRefresh(const RefinementSettings &settings) const
 {
-    return OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode).requiresCodexOauthRefresh();
+    return OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode, settings.openAiCliproxyAccount, settings.cliproxyOauthDir)
+        .requiresCodexOauthRefresh();
 }
 
 bool OpenAiTranscriptRefiner::supportsScreenshotContext(const RefinementSettings &settings) const
@@ -62,7 +63,9 @@ std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(co
 
 void OpenAiTranscriptRefiner::refresh(const RefinementSettings &settings)
 {
-    const OpenAiAuth refreshed = OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode).refreshCodexOauth();
+    const OpenAiAuth refreshed =
+        OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode, settings.openAiCliproxyAccount, settings.cliproxyOauthDir)
+            .refreshCodexOauth();
     if (!refreshed.ok) {
         qWarning().noquote() << "codex oauth refresh unavailable status=" + refreshed.status;
     }
@@ -70,7 +73,8 @@ void OpenAiTranscriptRefiner::refresh(const RefinementSettings &settings)
 
 RefinementPrepareResult OpenAiTranscriptRefiner::prepare(const RefinementSettings &settings)
 {
-    m_auth = OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode).resolve(false);
+    m_auth = OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode, settings.openAiCliproxyAccount, settings.cliproxyOauthDir)
+                 .resolve(false);
     return {m_auth.ok, m_auth.status};
 }
 
@@ -79,7 +83,9 @@ void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
                                      const RefinementContext &context,
                                      const RefinementSettings &settings)
 {
-    if (!m_auth.ok) {
+    // CLI Proxy API rewrites its token files as it refreshes them, so a cached
+    // token can go stale while the file stays valid; reload on every request.
+    if (!m_auth.ok || settings.openAiAuthMode == QStringLiteral("cliproxy")) {
         const RefinementPrepareResult prepared = prepare(settings);
         if (!prepared.ok) {
             emit failed(prepared.message);

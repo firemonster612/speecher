@@ -372,6 +372,99 @@ exit 12
         QVERIFY(file.open(QIODevice::ReadOnly));
         QCOMPARE(QString::fromUtf8(file.readAll()).trimmed(), QStringLiteral("1"));
     }
+    void cliproxyAccountListing()
+    {
+        QTemporaryDir dir;
+        const QDateTime valid = QDateTime::currentDateTimeUtc().addSecs(3600);
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"), QStringLiteral("claude"),
+                                     QStringLiteral("claude-token-a"), valid));
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-b@example.com.json"), QStringLiteral("claude"),
+                                     QStringLiteral("claude-token-b"), valid, true));
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-c@example.com.json"), QStringLiteral("codex"),
+                                     QStringLiteral("codex-token-c"), valid));
+
+        const QList<CliProxyAccount> accounts = CliProxyCredentials::listAccounts(dir.path(), QStringLiteral("claude"));
+        QCOMPARE(accounts.size(), 2);
+        QCOMPARE(accounts.first().fileName, QStringLiteral("claude-a@example.com.json"));
+        QCOMPARE(accounts.first().label, QStringLiteral("a@example.com"));
+        QVERIFY(!accounts.first().disabled);
+        QVERIFY(accounts.last().disabled);
+    }
+
+    void cliproxyLoadResolvesAccounts()
+    {
+        QTemporaryDir dir;
+        const QDateTime valid = QDateTime::currentDateTimeUtc().addSecs(3600);
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"), QStringLiteral("claude"),
+                                     QStringLiteral("claude-token-a"), valid));
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-b@example.com.json"), QStringLiteral("claude"),
+                                     QStringLiteral("claude-token-b"), valid));
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-c@example.com.json"), QStringLiteral("codex"),
+                                     QStringLiteral("codex-token-c"), valid));
+
+        const CliProxyCredentialResult ambiguous = CliProxyCredentials::load(dir.path(), QStringLiteral("claude"), QString());
+        QVERIFY(!ambiguous.ok);
+        QVERIFY(ambiguous.error.contains(QStringLiteral("Multiple")));
+
+        const CliProxyCredentialResult selected =
+            CliProxyCredentials::load(dir.path(), QStringLiteral("claude"), QStringLiteral("claude-b@example.com.json"));
+        QVERIFY2(selected.ok, qPrintable(selected.error));
+        QCOMPARE(selected.accessToken, QStringLiteral("claude-token-b"));
+
+        const CliProxyCredentialResult single = CliProxyCredentials::load(dir.path(), QStringLiteral("codex"), QString());
+        QVERIFY2(single.ok, qPrintable(single.error));
+        QCOMPARE(single.accessToken, QStringLiteral("codex-token-c"));
+        QCOMPARE(single.accountId, QStringLiteral("acct"));
+    }
+
+    void cliproxyLoadRejectsExpiredAndDisabled()
+    {
+        QTemporaryDir dir;
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"), QStringLiteral("claude"),
+                                     QStringLiteral("old-token"), QDateTime::currentDateTimeUtc().addSecs(-60)));
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-c@example.com.json"), QStringLiteral("codex"),
+                                     QStringLiteral("codex-token-c"), QDateTime::currentDateTimeUtc().addSecs(3600), true));
+
+        const CliProxyCredentialResult expired = CliProxyCredentials::load(dir.path(), QStringLiteral("claude"), QString());
+        QVERIFY(!expired.ok);
+        QVERIFY(expired.error.contains(QStringLiteral("expired")));
+        QVERIFY(!expired.error.contains(QStringLiteral("old-token")));
+
+        const CliProxyCredentialResult disabled = CliProxyCredentials::load(dir.path(), QStringLiteral("codex"), QString());
+        QVERIFY(!disabled.ok);
+        QVERIFY(disabled.error.contains(QStringLiteral("disabled")));
+    }
+
+    void openAiAuthProviderCliproxyMode()
+    {
+        QTemporaryDir dir;
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-c@example.com.json"), QStringLiteral("codex"),
+                                     QStringLiteral("codex-token-c"), QDateTime::currentDateTimeUtc().addSecs(3600)));
+
+        OpenAiAuthProvider provider(nullptr, QStringLiteral("cliproxy"), QString(), dir.path());
+        QVERIFY(!provider.requiresCodexOauthRefresh());
+        const OpenAiAuth auth = provider.resolve();
+        QVERIFY2(auth.ok, qPrintable(auth.status));
+        QCOMPARE(auth.bearerToken, QStringLiteral("codex-token-c"));
+        QVERIFY(auth.chatgptBackend);
+        QCOMPARE(auth.endpointBase, QStringLiteral("https://chatgpt.com/backend-api/codex"));
+        QCOMPARE(auth.accountId, QStringLiteral("acct"));
+    }
+
+    void anthropicRefinerCliproxyPrepare()
+    {
+        QTemporaryDir dir;
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"), QStringLiteral("claude"),
+                                     QStringLiteral("claude-token-a"), QDateTime::currentDateTimeUtc().addSecs(3600)));
+
+        AnthropicTranscriptRefiner refiner;
+        RefinementSettings settings;
+        settings.anthropicAuthMode = QStringLiteral("cliproxy");
+        settings.cliproxyOauthDir = dir.path();
+        QVERIFY(!refiner.requiresRefresh(settings));
+        const RefinementPrepareResult prepared = refiner.prepare(settings);
+        QVERIFY2(prepared.ok, qPrintable(prepared.message));
+    }
 };
 
 int runProviderAuthTests(int argc, char **argv)

@@ -2,6 +2,7 @@
 
 #include "providers/AnthropicApiRefiner.h"
 #include "providers/ClaudeCredentials.h"
+#include "providers/CliProxyCredentials.h"
 
 #include <QDebug>
 
@@ -12,6 +13,14 @@ namespace {
 
 RefinementPrepareResult loadClaudeOauthToken(const RefinementSettings &settings, QString *accessToken)
 {
+    if (settings.anthropicAuthMode == QStringLiteral("cliproxy")) {
+        const CliProxyCredentialResult credentials =
+            CliProxyCredentials::load(settings.cliproxyOauthDir, QStringLiteral("claude"), settings.anthropicCliproxyAccount);
+        if (accessToken) {
+            *accessToken = credentials.ok ? credentials.accessToken : QString();
+        }
+        return {credentials.ok, credentials.error};
+    }
     const ClaudeCredentialResult credentials = ClaudeCredentials::load(settings.claudeCredentialsPath, true);
     if (!credentials.ok) {
         if (accessToken) {
@@ -48,6 +57,10 @@ QString AnthropicTranscriptRefiner::label() const
 
 bool AnthropicTranscriptRefiner::requiresRefresh(const RefinementSettings &settings) const
 {
+    if (settings.anthropicAuthMode == QStringLiteral("cliproxy")) {
+        // CLI Proxy API refreshes its own tokens; refine() reloads them per request.
+        return false;
+    }
     return ClaudeCredentials::requiresRefresh(settings.claudeCredentialsPath);
 }
 
@@ -94,8 +107,8 @@ void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,
                                         const RefinementContext &context,
                                         const RefinementSettings &settings)
 {
-    qInfo().noquote() << "anthropic refinement mode=oauth model=" + settings.anthropicModel;
-    if (m_accessToken.isEmpty()) {
+    qInfo().noquote() << "anthropic refinement mode=" + settings.anthropicAuthMode + " model=" + settings.anthropicModel;
+    if (m_accessToken.isEmpty() || settings.anthropicAuthMode == QStringLiteral("cliproxy")) {
         const RefinementPrepareResult prepared = prepare(settings);
         if (!prepared.ok) {
             emit failed(prepared.message);

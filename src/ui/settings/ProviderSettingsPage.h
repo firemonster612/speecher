@@ -34,6 +34,8 @@ signals:
 private:
     void updateAuthControl();
     void updateAnthropicControls();
+    void updateAnthropicAuthControl();
+    void populateCliproxyAccounts(QComboBox *combo, const QString &type, const QString &selected);
     void showAnthropicAuthInfo();
 
     SettingsStore &m_settings;
@@ -44,6 +46,8 @@ private:
     QComboBox *m_anthropicEffort;
     QComboBox *m_authMode;
     QComboBox *m_anthropicAuthMode;
+    QComboBox *m_openAiCliproxyAccount;
+    QComboBox *m_anthropicCliproxyAccount;
     QStackedWidget *m_authControl;
     QLabel *m_authStatus;
     QLabel *m_anthropicWarning;
