@@ -132,9 +132,10 @@ bool AtSpiTargetProvider::verifyInsertion(const Target &target, const QString &p
         const QString nearby = m_snapshot->insertionWindow(insertionOffset, plainText.size());
         const int insertedAt = nearby.indexOf(plainText);
         if (insertedAt < 0) continue;
-        const QString prefix = nearby.left(insertedAt).right(24);
-        const QString suffix = nearby.mid(insertedAt + plainText.size()).left(24);
-        if (m_correctionObservationEnabled && prefix.size() >= 8 && suffix.size() >= 8) {
+        const QString prefix = nearby.left(insertedAt).right(correctionContextChars);
+        const QString suffix = nearby.mid(insertedAt + plainText.size()).left(correctionContextChars);
+        if (m_correctionObservationEnabled && prefix.size() >= correctionMinContextChars
+            && suffix.size() >= correctionMinContextChars) {
             if (!m_correctionObserver) {
                 m_correctionObserver = std::make_unique<atspi::CorrectionObserver>();
             }

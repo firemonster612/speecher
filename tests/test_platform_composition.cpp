@@ -2,9 +2,12 @@
 
 #include "app/ApplicationController.h"
 #include "app/PlatformComposition.h"
+#include "core/LearnedCorrection.h"
+#include "platform/CorrectionDiff.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "ui/AppWindow.h"
 
+#include <QList>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -159,6 +162,139 @@ class PlatformCompositionTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void correctionTrackerSettlesSamplesWithoutRealTimeWaits()
+    {
+        CorrectionTracker tracker;
+        CorrectionWindow window;
+        window.target.applicationId = QStringLiteral("org.kde.kate");
+        window.original = QStringLiteral("I use cute every day");
+        window.prefix = QStringLiteral("before text ");
+        window.suffix = QStringLiteral(" after text");
+
+        QList<CorrectionEvidence> observed;
+        tracker.begin(window, [&observed](const QString &original,
+                                          const QString &corrected,
+                                          const QString &,
+                                          double confidence) {
+            observed.append({original, corrected, confidence});
+        });
+        tracker.sample(QStringLiteral("before text I use cute every day after text"));
+        tracker.sample(QStringLiteral("before text I use Qt every day after text"));
+        QCOMPARE(observed.size(), 0);
+        tracker.sample(QStringLiteral("before text I use Qt every day after text"));
+
+        QCOMPARE(observed.size(), 1);
+        QCOMPARE(observed.first().original, QStringLiteral("cute"));
+        QCOMPARE(observed.first().corrected, QStringLiteral("Qt"));
+        QVERIFY(!tracker.active());
+    }
+
+    void correctionTrackerCancelsUnsettledOrUnreadableSamples()
+    {
+        CorrectionTracker tracker;
+        CorrectionWindow window;
+        window.target.applicationId = QStringLiteral("org.kde.kate");
+        window.original = QStringLiteral("cute");
+        window.prefix = QStringLiteral("before text ");
+        window.suffix = QStringLiteral(" after text");
+        int observations = 0;
+        tracker.begin(window, [&observations](const QString &, const QString &,
+                                              const QString &, double) {
+            ++observations;
+        });
+        tracker.sample(QStringLiteral("before text Qt after text"));
+        tracker.cancel();
+        tracker.sample(QStringLiteral("before text Qt after text"));
+        QCOMPARE(observations, 0);
+
+        tracker.begin(window, [&observations](const QString &, const QString &,
+                                              const QString &, double) {
+            ++observations;
+        });
+        tracker.sample(QStringLiteral(
+            "before text Qt after text before text duplicate after text"));
+        tracker.sample(QStringLiteral("before text Qt after text"));
+        QCOMPARE(observations, 0);
+
+        window.target.selectionStart = 0;
+        window.target.selectionEnd = 4;
+        window.target.selectedText = QStringLiteral("cute");
+        tracker.begin(window, [&observations](const QString &, const QString &,
+                                              const QString &, double) {
+            ++observations;
+        });
+        tracker.sample(QStringLiteral("before text Qt after text"));
+        tracker.sample(QStringLiteral("before text Qt after text"));
+        QCOMPARE(observations, 0);
+    }
+
+    void correctionTrackerIgnoresEditsThatAreNotCorrections()
+    {
+        CorrectionWindow window;
+        window.target.applicationId = QStringLiteral("org.kde.kate");
+        window.original = QStringLiteral("cute");
+        window.prefix = QStringLiteral("before text ");
+        window.suffix = QStringLiteral(" after text");
+        int observations = 0;
+        const auto observed = [&observations](const QString &, const QString &,
+                                              const QString &, double) {
+            ++observations;
+        };
+
+        CorrectionTracker untouched;
+        untouched.begin(window, observed);
+        untouched.sample(QStringLiteral("before text cute after text"));
+        untouched.sample(QStringLiteral("before text cute after text"));
+        QCOMPARE(observations, 0);
+        QVERIFY(untouched.active());
+
+        CorrectionTracker punctuated;
+        punctuated.begin(window, observed);
+        punctuated.sample(QStringLiteral("before text cute! after text"));
+        punctuated.sample(QStringLiteral("before text cute! after text"));
+        QCOMPARE(observations, 0);
+
+        CorrectionTracker rewritten;
+        rewritten.begin(window, observed);
+        rewritten.sample(QStringLiteral("before text an entirely different phrase after text"));
+        rewritten.sample(QStringLiteral("before text an entirely different phrase after text"));
+        QCOMPARE(observations, 0);
+    }
+
+    void correctionTrackerDisablePreventsAndCancelsObservation()
+    {
+        CorrectionTracker tracker;
+        CorrectionWindow window;
+        window.target.applicationId = QStringLiteral("org.kde.kate");
+        window.original = QStringLiteral("cute");
+        window.prefix = QStringLiteral("before text ");
+        window.suffix = QStringLiteral(" after text");
+        int observations = 0;
+        const auto observed = [&observations](const QString &, const QString &,
+                                              const QString &, double) {
+            ++observations;
+        };
+
+        tracker.setEnabled(false);
+        tracker.begin(window, observed);
+        tracker.sample(QStringLiteral("before text Qt after text"));
+        tracker.sample(QStringLiteral("before text Qt after text"));
+        QCOMPARE(observations, 0);
+
+        tracker.setEnabled(true);
+        tracker.begin(window, observed);
+        tracker.sample(QStringLiteral("before text Qt after text"));
+        tracker.setEnabled(false);
+        tracker.sample(QStringLiteral("before text Qt after text"));
+        QCOMPARE(observations, 0);
+
+        tracker.setEnabled(true);
+        tracker.begin(window, observed);
+        tracker.sample(QStringLiteral("before text Qt after text"));
+        tracker.sample(QStringLiteral("before text Qt after text"));
+        QCOMPARE(observations, 1);
+    }
+
     void controllerAnswersFromTheInjectedComposition()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());

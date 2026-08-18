@@ -1,35 +1,30 @@
 #pragma once
 
-#include "platform/atspi/AtSpiTargetSnapshot.h"
-
-#include <functional>
+#include "platform/CorrectionDiff.h"
 
 class QObject;
 
 namespace speecher::atspi {
 
+class TargetSnapshot;
+
+// AT-SPI publishes no text-change signal Speecher can rely on across toolkits,
+// so observation is a short poll of the inserted span. CorrectionTracker owns
+// what the readings mean; this only decides when to take them.
 class CorrectionObserver {
 public:
-    using Observed = std::function<void(const QString &, const QString &,
-                                        const QString &, double)>;
-
     void setEnabled(bool enabled);
     void cancel();
-    void begin(CorrectionWindow window, Observed observed);
-    void sample(const QString &windowText);
     void schedule(QObject *context,
                   const TargetSnapshot *snapshot,
                   CorrectionWindow window,
-                  Observed observed);
+                  CorrectionTracker::Observed observed);
 
 private:
+    CorrectionTracker m_tracker;
+    // Identifies the current observation so a timer left over from the previous
+    // one cannot sample this one's window.
     quint64 m_generation = 0;
-    CorrectionWindow m_window;
-    Observed m_observed;
-    QString m_lastEdited;
-    int m_matchingSamples = 0;
-    bool m_enabled = true;
-    bool m_active = false;
 };
 
 } // namespace speecher::atspi

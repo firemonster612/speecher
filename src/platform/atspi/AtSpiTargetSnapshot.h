@@ -1,16 +1,10 @@
 #pragma once
 
 #include "dictation/DictationPorts.h"
+#include "platform/CorrectionDiff.h"
 #include "platform/atspi/AtSpiAccess.h"
 
 namespace speecher::atspi {
-
-struct CorrectionWindow {
-    Target target;
-    QString original;
-    QString prefix;
-    QString suffix;
-};
 
 class TargetSnapshot {
 public:
