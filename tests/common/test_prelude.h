@@ -25,6 +25,7 @@
 #include "providers/ProviderRegistry.h"
 #include "providers/TranscriptRefinementPrompt.h"
 #include "output/TextDelivery.h"
+#ifdef SPEECHER_WITH_WAYLAND
 #include "output/WlClipboardDelivery.h"
 #include "output/YdotoolDelivery.h"
 #include "output/YdotoolSetup.h"
@@ -32,6 +33,7 @@
 #include "platform/atspi/AtSpiCorrectionObserver.h"
 #include "platform/atspi/AtSpiTargetSnapshot.h"
 #include "platform/PortalScreenshotContextProvider.h"
+#endif
 #include "platform/audio/AudioPcmConverter.h"
 #include "platform/audio/QtAudioInput.h"
 #include "ui/Theme.h"

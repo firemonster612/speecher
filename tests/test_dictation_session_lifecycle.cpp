@@ -572,6 +572,7 @@ private slots:
         session.stopListening();
     }
 
+#ifdef SPEECHER_WITH_WAYLAND
     void livePortalScreenshotCapture()
     {
         if (qEnvironmentVariableIsEmpty("SPEECHER_LIVE_SCREENSHOT_TEST")) {
@@ -591,6 +592,7 @@ private slots:
         QVERIFY(captured.first().at(0).toByteArray().size() > 100);
         QCOMPARE(captured.first().at(1).toString(), QStringLiteral("image/png"));
     }
+#endif // SPEECHER_WITH_WAYLAND
 
     void dictationSessionDoesNotReplayAudioAfterProviderFailure()
     {
