@@ -1,5 +1,6 @@
 #include "app/MacComposition.h"
 
+#include "app/CompositionSockets.h"
 #include "core/SettingsStore.h"
 #include "output/TextDelivery.h"
 #include "output/mac/MacPasteDelivery.h"
@@ -11,42 +12,17 @@
 #include "platform/mac/MacTargetProvider.h"
 
 #include <QCoreApplication>
-#include <QCryptographicHash>
 #include <QDesktopServices>
-#include <QFileInfo>
 #include <QUrl>
 
 #import <ApplicationServices/ApplicationServices.h>
 #import <Foundation/Foundation.h>
-
-#include <unistd.h>
 
 namespace speecher {
 namespace {
 
 constexpr auto accessibilityPaneUrl =
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
-
-QString userToken()
-{
-    return QString::number(getuid());
-}
-
-QString stableAppSocketName()
-{
-    return QStringLiteral("speecher-%1").arg(userToken());
-}
-
-QString executablePathSocketName()
-{
-    const QFileInfo executable(QCoreApplication::applicationFilePath());
-    QString path = executable.canonicalFilePath();
-    if (path.isEmpty()) {
-        path = executable.absoluteFilePath();
-    }
-    const QByteArray digest = QCryptographicHash::hash(path.toUtf8(), QCryptographicHash::Sha1).toHex().left(12);
-    return QStringLiteral("speecher-%1-%2").arg(userToken(), QString::fromLatin1(digest));
-}
 
 } // namespace
 
@@ -64,12 +40,12 @@ QString MacComposition::primaryOutputStatus() const
 
 QString MacComposition::ipcListenName() const
 {
-    return stableAppSocketName();
+    return appSocketName();
 }
 
 QStringList MacComposition::ipcConnectCandidates() const
 {
-    return {stableAppSocketName(), executablePathSocketName()};
+    return {appSocketName(), executablePathSocketName()};
 }
 
 QString MacComposition::detachedExecutablePath() const

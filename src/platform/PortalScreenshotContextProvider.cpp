@@ -1,12 +1,12 @@
 #include "platform/PortalScreenshotContextProvider.h"
 
-#include <QBuffer>
+#include "platform/ScreenshotImage.h"
+
 #include <QDBusConnection>
 #include <QDBusInterface>
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
 #include <QFile>
-#include <QImage>
 #include <QUrl>
 #include <QUuid>
 
@@ -15,29 +15,6 @@ namespace speecher {
 namespace {
 
 constexpr qsizetype maximumPortalFileSize = 32 * 1024 * 1024;
-
-QByteArray normalizedScreenshot(const QByteArray &source)
-{
-    QImage image;
-    if (!image.loadFromData(source)) {
-        return {};
-    }
-
-    constexpr int maximumEdge = 2560;
-    if (image.width() > maximumEdge || image.height() > maximumEdge) {
-        image = image.scaled(maximumEdge,
-                             maximumEdge,
-                             Qt::KeepAspectRatio,
-                             Qt::SmoothTransformation);
-    }
-
-    QByteArray result;
-    QBuffer output(&result);
-    if (!output.open(QIODevice::WriteOnly) || !image.save(&output, "PNG")) {
-        return {};
-    }
-    return result;
-}
 
 } // namespace
 
