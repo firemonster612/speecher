@@ -9,13 +9,13 @@
 #include "app/SingleInstanceIpc.h"
 
 class QLocalSocket;
-class QAction;
 
 namespace speecher {
 
 class DictationSession;
 class AudioInput;
 class AppWindow;
+class GlobalShortcutBinder;
 class ProviderRegistry;
 class SecretStore;
 class SettingsStore;
@@ -89,7 +89,7 @@ private:
     TranscriberPopup *m_popup = nullptr;
     AppWindow *m_appWindow = nullptr;
     QPointer<SetupAssistant> m_setupAssistant;
-    QAction *m_globalShortcutAction = nullptr;
+    GlobalShortcutBinder *m_shortcutBinder = nullptr;
     SingleInstanceIpc *m_ipc = nullptr;
     bool m_accessibilitySupported = false;
     bool m_accessibilityEnabled = false;

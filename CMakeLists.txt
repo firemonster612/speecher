@@ -139,6 +139,7 @@ set(SPEECHER_PLATFORM_SOURCES
   src/output/YdotoolDelivery.cpp
   src/output/YdotoolSetup.cpp
   src/platform/AtSpiTargetProvider.cpp
+  src/platform/KGlobalAccelShortcutBinder.cpp
   src/platform/atspi/AtSpiAccess.cpp
   src/platform/atspi/AtSpiCorrectionObserver.cpp
   src/platform/atspi/AtSpiTargetSnapshot.cpp
@@ -151,6 +152,8 @@ set(SPEECHER_PLATFORM_SOURCES
 set(SPEECHER_PLATFORM_HEADERS
   src/core/MediaPauseController.h
   src/platform/AccessibilityState.h
+  src/platform/GlobalShortcutBinder.h
+  src/platform/KGlobalAccelShortcutBinder.h
   src/output/ClipboardDelivery.h
   src/output/QtClipboardDelivery.h
   src/output/TextDelivery.h
@@ -274,8 +277,8 @@ if(KF6WidgetsAddons_FOUND)
   target_link_libraries(speecher_app_ui PUBLIC KF6::WidgetsAddons)
 endif()
 if(KF6GlobalAccel_FOUND)
-  target_compile_definitions(speecher_app_ui PRIVATE SPEECHER_WITH_KGLOBALACCEL=1)
-  target_link_libraries(speecher_app_ui PRIVATE KF6::GlobalAccel)
+  target_compile_definitions(speecher_platform PRIVATE SPEECHER_WITH_KGLOBALACCEL=1)
+  target_link_libraries(speecher_platform PRIVATE KF6::GlobalAccel)
 endif()
 if(KF6WidgetsAddons_FOUND AND KF6ColorScheme_FOUND)
   target_compile_definitions(speecher_app_ui PRIVATE SPEECHER_WITH_KCOLORSCHEME=1)

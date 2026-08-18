@@ -11,20 +11,15 @@
 #include "ui/AppWindow.h"
 #include "ui/SetupAssistant.h"
 #include "ui/TranscriberPopup.h"
+#include "platform/GlobalShortcutBinder.h"
 
 #include <QApplication>
-#include <QAction>
-#include <QDebug>
 #include <QEvent>
 #include <QTimer>
 #include <QWidget>
 #include <QWindow>
 
 #include <utility>
-
-#ifdef SPEECHER_WITH_KGLOBALACCEL
-#include <KGlobalAccel>
-#endif
 
 namespace speecher {
 
@@ -38,8 +33,10 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_secrets(new SecretStore(m_settings, this))
     , m_providers(new ProviderRegistry(this))
     , m_popup(new TranscriberPopup(m_platform->createPopupPositioner(nullptr)))
+    , m_shortcutBinder(m_platform->createGlobalShortcutBinder(this))
     , m_ipc(new SingleInstanceIpc(m_platform, this))
 {
+    connect(m_shortcutBinder, &GlobalShortcutBinder::activated, this, &ApplicationController::toggle);
     registerProviders();
     TargetProvider *targetProvider = m_platform->createTargetProvider(this);
     targetProvider->setCorrectionObservationEnabled(m_settings->correctionLearningEnabled());
@@ -112,24 +109,7 @@ void ApplicationController::runDeferredStartup()
     }
     m_deferredStartupDone = true;
     m_audio->warmUp();
-#ifdef SPEECHER_WITH_KGLOBALACCEL
-    m_globalShortcutAction = new QAction(QStringLiteral("Toggle dictation"), this);
-    m_globalShortcutAction->setObjectName(QStringLiteral("toggle-dictation"));
-    m_globalShortcutAction->setProperty("componentName", QStringLiteral("local.speecher"));
-    m_globalShortcutAction->setProperty("componentDisplayName", QStringLiteral("Speecher"));
-    connect(m_globalShortcutAction, &QAction::triggered, this, &ApplicationController::toggle);
-    const QKeySequence savedShortcut = globalShortcut();
-    KGlobalAccel::self()->setDefaultShortcut(
-        m_globalShortcutAction,
-        {QKeySequence(Qt::META | Qt::ALT | Qt::Key_D)});
-    if (!savedShortcut.isEmpty()
-        && !KGlobalAccel::self()->setShortcut(
-            m_globalShortcutAction,
-            {savedShortcut},
-            KGlobalAccel::Autoloading)) {
-        qWarning() << "Could not restore the saved global shortcut";
-    }
-#endif
+    m_shortcutBinder->bind();
     const AccessibilityState state = m_platform->accessibilityState();
     const bool requestSucceeded = state.persistent && m_platform->requestAccessibility();
     m_accessibilitySupported = state.supported;
@@ -210,53 +190,17 @@ bool ApplicationController::grabMainWindow(const QString &path) const
 
 bool ApplicationController::globalShortcutsSupported() const
 {
-#ifdef SPEECHER_WITH_KGLOBALACCEL
-    return qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains(
-        QStringLiteral("KDE"),
-        Qt::CaseInsensitive);
-#else
-    return false;
-#endif
+    return m_shortcutBinder->supported();
 }
 
 QKeySequence ApplicationController::globalShortcut() const
 {
-#ifdef SPEECHER_WITH_KGLOBALACCEL
-    const QList<QKeySequence> shortcuts = KGlobalAccel::self()->globalShortcut(
-        QStringLiteral("local.speecher"),
-        QStringLiteral("toggle-dictation"));
-    return shortcuts.isEmpty() ? QKeySequence() : shortcuts.first();
-#else
-    return {};
-#endif
+    return m_shortcutBinder->shortcut();
 }
 
 bool ApplicationController::setGlobalShortcut(const QKeySequence &shortcut, QString *error)
 {
-#ifdef SPEECHER_WITH_KGLOBALACCEL
-    if (shortcut.isEmpty()) {
-        if (error) {
-            *error = QStringLiteral("Choose a key sequence");
-        }
-        return false;
-    }
-    if (!KGlobalAccel::self()->setShortcut(
-            m_globalShortcutAction,
-            {shortcut},
-            KGlobalAccel::NoAutoloading)) {
-        if (error) {
-            *error = QStringLiteral("The desktop global-shortcut service rejected the key sequence");
-        }
-        return false;
-    }
-    return true;
-#else
-    Q_UNUSED(shortcut)
-    if (error) {
-        *error = QStringLiteral("KGlobalAccel is unavailable");
-    }
-    return false;
-#endif
+    return m_shortcutBinder->setShortcut(shortcut, error);
 }
 
 bool ApplicationController::startIpc(QString *error)

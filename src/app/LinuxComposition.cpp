@@ -5,6 +5,7 @@
 #include "output/TextDelivery.h"
 #include "output/WlClipboardDelivery.h"
 #include "platform/AtSpiTargetProvider.h"
+#include "platform/KGlobalAccelShortcutBinder.h"
 #include "platform/PortalScreenshotContextProvider.h"
 #include "platform/atspi/AtSpiAccess.h"
 #include "platform/WaylandLayerShell.h"
@@ -154,6 +155,11 @@ TextDeliveryAdapter *LinuxComposition::createTextDelivery(TargetProvider *target
 PopupPositioner *LinuxComposition::createPopupPositioner(QObject *parent) const
 {
     return new WaylandLayerShell(parent);
+}
+
+GlobalShortcutBinder *LinuxComposition::createGlobalShortcutBinder(QObject *parent) const
+{
+    return new KGlobalAccelShortcutBinder(parent);
 }
 
 AccessibilityState LinuxComposition::accessibilityState() const

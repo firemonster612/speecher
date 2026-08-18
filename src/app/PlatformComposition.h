@@ -7,6 +7,7 @@
 
 namespace speecher {
 
+class GlobalShortcutBinder;
 class PopupPositioner;
 class SettingsStore;
 
@@ -33,6 +34,7 @@ public:
     virtual ScreenshotContextProvider *createScreenshotContextProvider(QObject *parent) const = 0;
     virtual TextDeliveryAdapter *createTextDelivery(TargetProvider *targetProvider, QObject *parent) const = 0;
     virtual PopupPositioner *createPopupPositioner(QObject *parent) const = 0;
+    virtual GlobalShortcutBinder *createGlobalShortcutBinder(QObject *parent) const = 0;
 
     virtual AccessibilityState accessibilityState() const = 0;
     virtual bool requestAccessibility(QString *error = nullptr) const = 0;
