@@ -2,11 +2,11 @@
 
 #include <QtGlobal>
 
-#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
+#if defined(Q_OS_MACOS)
+#include "app/MacComposition.h"
+#elif defined(Q_OS_UNIX)
 #include "app/LinuxComposition.h"
 #else
-// A macOS composition lands here: include app/MacComposition.h and return it
-// below. Nothing else in the tree names a concrete composition.
 #error "No PlatformComposition is implemented for this platform"
 #endif
 
@@ -14,7 +14,11 @@ namespace speecher {
 
 std::shared_ptr<const PlatformComposition> platformComposition()
 {
+#if defined(Q_OS_MACOS)
+    return macComposition();
+#else
     return linuxComposition();
+#endif
 }
 
 } // namespace speecher

@@ -2,6 +2,11 @@ cmake_minimum_required(VERSION 3.24)
 
 project(speecher VERSION 0.1.0 LANGUAGES C CXX)
 
+if(APPLE)
+  # The macOS platform backend is Objective-C++.
+  enable_language(OBJCXX)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -184,6 +189,24 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
   src/platform/atspi/AtSpiTargetSnapshot.h
 )
 
+set(SPEECHER_PLATFORM_MAC_SOURCES
+  src/output/mac/MacPasteDelivery.mm
+  src/platform/mac/MacGlobalShortcutBinder.mm
+  src/platform/mac/MacMediaController.mm
+  src/platform/mac/MacPopupPositioner.mm
+  src/platform/mac/MacScreenshotContextProvider.mm
+  src/platform/mac/MacTargetProvider.mm
+)
+
+set(SPEECHER_PLATFORM_MAC_HEADERS
+  src/output/mac/MacPasteDelivery.h
+  src/platform/mac/MacGlobalShortcutBinder.h
+  src/platform/mac/MacMediaController.h
+  src/platform/mac/MacPopupPositioner.h
+  src/platform/mac/MacScreenshotContextProvider.h
+  src/platform/mac/MacTargetProvider.h
+)
+
 set(SPEECHER_APP_UI_SOURCES
   src/app/ApplicationController.cpp
   src/app/PlatformSelection.cpp
@@ -245,6 +268,14 @@ set(SPEECHER_APP_UI_LINUX_HEADERS
   src/output/YdotoolSetupFlow.h
 )
 
+set(SPEECHER_APP_UI_MAC_SOURCES
+  src/app/MacComposition.mm
+)
+
+set(SPEECHER_APP_UI_MAC_HEADERS
+  src/app/MacComposition.h
+)
+
 add_library(speecher_domain STATIC
   ${SPEECHER_DOMAIN_SOURCES}
   ${SPEECHER_DOMAIN_HEADERS}
@@ -282,6 +313,20 @@ if(UNIX AND NOT APPLE)
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_WAYLAND=1)
   target_link_libraries(speecher_platform PUBLIC Qt6::DBus)
 endif()
+if(APPLE)
+  target_sources(speecher_platform PRIVATE
+    ${SPEECHER_PLATFORM_MAC_SOURCES}
+    ${SPEECHER_PLATFORM_MAC_HEADERS}
+  )
+  # Public: TextDelivery's method order and backend set differ with the macOS
+  # keyboard-paste backend compiled in.
+  target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_MAC=1)
+  target_link_libraries(speecher_platform PUBLIC
+    "-framework AppKit"
+    "-framework Carbon"
+    "-framework ApplicationServices"
+  )
+endif()
 if(ATSPI_FOUND)
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_ATSPI=1)
   target_link_libraries(speecher_platform PUBLIC PkgConfig::ATSPI)
@@ -304,6 +349,12 @@ if(UNIX AND NOT APPLE)
   # The setup assistant and the output page drive ydotool, which only exists on
   # the Linux side of the platform layer.
   target_compile_definitions(speecher_app_ui PUBLIC SPEECHER_WITH_YDOTOOL=1)
+endif()
+if(APPLE)
+  target_sources(speecher_app_ui PRIVATE
+    ${SPEECHER_APP_UI_MAC_SOURCES}
+    ${SPEECHER_APP_UI_MAC_HEADERS}
+  )
 endif()
 if(KF6WidgetsAddons_FOUND)
   target_compile_definitions(speecher_app_ui PUBLIC
@@ -330,6 +381,13 @@ target_compile_definitions(speecher PRIVATE
   SPEECHER_VERSION="${PROJECT_VERSION}"
 )
 target_link_libraries(speecher PRIVATE speecher_app_ui)
+
+if(APPLE)
+  set_target_properties(speecher PROPERTIES
+    MACOSX_BUNDLE TRUE
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/Info.plist.in"
+  )
+endif()
 
 if(UNIX AND NOT APPLE)
   qt_add_executable(speecher-ydotool-setup
@@ -467,7 +525,10 @@ configure_file(
   "${CMAKE_CURRENT_BINARY_DIR}/post-install.cmake"
   @ONLY
 )
-install(TARGETS speecher RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS speecher
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  BUNDLE DESTINATION .
+)
 if(TARGET speecher-ydotool-setup)
   install(TARGETS speecher-ydotool-setup RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/speecher)
 endif()
@@ -475,10 +536,14 @@ if(TARGET speecher-wayland-clipboard)
   install(TARGETS speecher-wayland-clipboard
     RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/speecher)
 endif()
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/local.speecher.desktop" DESTINATION ${SPEECHER_INSTALL_APPLICATIONS_DIR})
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/local.speecher.setup-ydotool.policy" DESTINATION ${CMAKE_INSTALL_DATADIR}/polkit-1/actions)
-install(FILES packaging/local.speecher.svg DESTINATION ${SPEECHER_INSTALL_HICOLOR_DIR}/scalable/apps)
-install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/post-install.cmake")
+# The .desktop entry, polkit action, hicolor icon and the post-install hooks that
+# refresh the desktop caches are all freedesktop-only.
+if(UNIX AND NOT APPLE)
+  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/local.speecher.desktop" DESTINATION ${SPEECHER_INSTALL_APPLICATIONS_DIR})
+  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/local.speecher.setup-ydotool.policy" DESTINATION ${CMAKE_INSTALL_DATADIR}/polkit-1/actions)
+  install(FILES packaging/local.speecher.svg DESTINATION ${SPEECHER_INSTALL_HICOLOR_DIR}/scalable/apps)
+  install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/post-install.cmake")
+endif()
 
 if(SPEECHER_BUILD_TESTS)
   enable_testing()
