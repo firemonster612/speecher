@@ -52,11 +52,13 @@ protected:
     }
 };
 
+#ifdef SPEECHER_WITH_YDOTOOL
 static void setWrappedText(QLabel *label, const QString &text)
 {
     label->setText(text);
     updateWrappedHeight(label, label->width());
 }
+#endif
 
 static PasteMethod pasteMethodFor(const QList<PasteRule> &rules,
                                   PasteRuleScope scope,
@@ -78,12 +80,40 @@ static void addPasteMethods(QComboBox *combo,
     if (includeGlobalFallback) {
         combo->addItem(QStringLiteral("Use global fallback"), QStringLiteral("inherit"));
     }
+#ifdef Q_OS_MACOS
+    // Terminals on macOS take the same Cmd+V as every other app, so the two
+    // paste chords name the same keystroke here.
+    combo->addItem(QStringLiteral("Standard paste (Cmd+V)"), pasteMethodName(PasteMethod::StandardPaste));
+    combo->addItem(QStringLiteral("Terminal paste (Cmd+V)"), pasteMethodName(PasteMethod::TerminalPaste));
+    if (includeDirectInsert) {
+        combo->addItem(QStringLiteral("Direct insertion (Accessibility)"), pasteMethodName(PasteMethod::DirectInsert));
+    }
+#else
     combo->addItem(QStringLiteral("Standard paste (Ctrl+V)"), pasteMethodName(PasteMethod::StandardPaste));
     combo->addItem(QStringLiteral("Terminal paste (Ctrl+Shift+V)"), pasteMethodName(PasteMethod::TerminalPaste));
     if (includeDirectInsert) {
         combo->addItem(QStringLiteral("Direct insertion (AT-SPI)"), pasteMethodName(PasteMethod::DirectInsert));
     }
+#endif
     combo->addItem(QStringLiteral("Clipboard only"), pasteMethodName(PasteMethod::ClipboardOnly));
+}
+
+static QString targetAccessibilityHint()
+{
+#ifdef Q_OS_MACOS
+    return QStringLiteral("Grant Accessibility permission so Speecher can identify the target application.");
+#else
+    return QStringLiteral("Enable desktop accessibility (AT-SPI) to identify the target application.");
+#endif
+}
+
+static QString applicationIdHint()
+{
+#ifdef Q_OS_MACOS
+    return QStringLiteral("Use the app's bundle identifier, such as com.apple.Terminal.");
+#else
+    return QStringLiteral("Use the desktop application ID reported by AT-SPI.");
+#endif
 }
 
 static QList<AppCategory> managedPasteCategories()
@@ -166,10 +196,17 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     , m_ydotoolDisableButton(new QPushButton(QStringLiteral("Disable in Speecher"), this))
     , m_ydotoolRemoveButton(new QPushButton(QStringLiteral("Remove setup"), this))
 {
-    m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::Automatic)), QString::fromLatin1(OutputMethod::Automatic));
-    m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::Ydotool)), QString::fromLatin1(OutputMethod::Ydotool));
-    m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::WlCopy)), QString::fromLatin1(OutputMethod::WlCopy));
-    m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(OutputMethod::QtClipboard)), QString::fromLatin1(OutputMethod::QtClipboard));
+    const auto addOutputMethod = [this](const char *method) {
+        m_outputMethod->addItem(OutputMethod::label(QString::fromLatin1(method)), QString::fromLatin1(method));
+    };
+    addOutputMethod(OutputMethod::Automatic);
+#ifdef Q_OS_MACOS
+    addOutputMethod(OutputMethod::MacPaste);
+#else
+    addOutputMethod(OutputMethod::Ydotool);
+    addOutputMethod(OutputMethod::WlCopy);
+#endif
+    addOutputMethod(OutputMethod::QtClipboard);
     m_outputMethod->setToolTip(QStringLiteral("How Speecher delivers final text."));
     m_outputMethod->view()->setMouseTracking(true);
     m_outputFormat->addItem(QStringLiteral("Plain text"), QStringLiteral("plain"));
@@ -180,7 +217,11 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
         addPasteMethods(combo, false, true);
         m_categoryPasteControls.append({category, combo});
     }
+#ifdef Q_OS_MACOS
+    m_restoreClipboardAfterTyping->setToolTip(QStringLiteral("Restore the previous clipboard after Speecher pastes."));
+#else
     m_restoreClipboardAfterTyping->setToolTip(QStringLiteral("Restore the previous clipboard after virtual-keyboard paste."));
+#endif
     m_completionStatusDuration->setObjectName(QStringLiteral("completionStatusDuration"));
     m_completionStatusDuration->setRange(0, 5000);
     m_completionStatusDuration->setSingleStep(50);
@@ -199,14 +240,15 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
         button->setMinimumWidth(button->fontMetrics().horizontalAdvance(button->text()) + 36);
         button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
     }
+#ifndef SPEECHER_WITH_YDOTOOL
+    updateYdotoolButtons();
+#endif
 
     auto *title = settings::makePageTitle(QStringLiteral("Output"), this);
     auto *deliveryCard = settings::makeSettingsCard(this);
     auto *deliveryLayout = qobject_cast<QFormLayout *>(deliveryCard->layout());
     auto *pasteCard = settings::makeSettingsCard(this);
     auto *pasteLayout = qobject_cast<QFormLayout *>(pasteCard->layout());
-    auto *advancedCard = settings::makeSettingsCard(this);
-    auto *advancedLayout = qobject_cast<QFormLayout *>(advancedCard->layout());
     settings::addRow(deliveryLayout, settings::makeRow(QStringLiteral("Method"), QStringLiteral("How Speecher delivers final text."), m_outputMethod, deliveryCard), deliveryCard);
     settings::addRow(deliveryLayout, settings::makeRow(QStringLiteral("Format"), QStringLiteral("Default clipboard representation. A CLI shortcut can override this per dictation."), m_outputFormat, deliveryCard), deliveryCard);
     settings::addRow(deliveryLayout, settings::makeRow(QStringLiteral("Status duration"), QStringLiteral("How long the completed delivery result stays visible."), m_completionStatusDuration, deliveryCard), deliveryCard);
@@ -238,7 +280,13 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     auto *appRulesLayout = new QVBoxLayout(appRulesControl);
     auto *appRulesTitle = new QLabel(QStringLiteral("App-specific paste rules"), appRulesControl);
     appRulesTitle->setObjectName(QStringLiteral("subsectionLabel"));
-    auto *appRulesDescription = new QLabel(QStringLiteral("Override paste behavior for an exact application ID, such as org.kde.konsole."), appRulesControl);
+    auto *appRulesDescription = new QLabel(
+#ifdef Q_OS_MACOS
+        QStringLiteral("Override paste behavior for an exact bundle identifier, such as com.apple.Terminal."),
+#else
+        QStringLiteral("Override paste behavior for an exact application ID, such as org.kde.konsole."),
+#endif
+        appRulesControl);
     appRulesDescription->setObjectName(QStringLiteral("rowDescription"));
     appRulesDescription->setWordWrap(true);
     m_removeAppPasteRuleButton->setEnabled(false);
@@ -252,7 +300,11 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     appRulesLayout->addLayout(appRuleButtons);
     targetPasteLayout->addRow(appRulesControl);
     pasteLayout->addRow(m_targetPasteControls);
+#ifdef SPEECHER_WITH_YDOTOOL
+    auto *advancedCard = settings::makeSettingsCard(this);
+    auto *advancedLayout = qobject_cast<QFormLayout *>(advancedCard->layout());
     settings::addRow(advancedLayout, settings::makeRow(QStringLiteral("Virtual keyboard"), QString(), makeYdotoolControl(m_ydotoolStatus, m_ydotoolSetupButton, m_ydotoolStartButton, m_ydotoolDisableButton, m_ydotoolRemoveButton, advancedCard), advancedCard), advancedCard, false);
+#endif
     auto *pageLayout = settings::makeSettingsPage(this);
     pageLayout->setSpacing(0);
     pageLayout->addWidget(title);
@@ -264,10 +316,12 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     pageLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Paste behavior"), this));
     pageLayout->addSpacing(settings::tightSpacing());
     pageLayout->addWidget(pasteCard);
+#ifdef SPEECHER_WITH_YDOTOOL
     pageLayout->addSpacing(settings::groupGap());
     pageLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Advanced"), this));
     pageLayout->addSpacing(settings::tightSpacing());
     pageLayout->addWidget(advancedCard);
+#endif
     pageLayout->addStretch();
 
     connect(m_restoreClipboardAfterTyping, &QCheckBox::toggled, this, &OutputSettingsPage::changed);
@@ -314,10 +368,7 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
 void OutputSettingsPage::setTargetAccessibilityAvailable(bool available)
 {
     m_targetPasteControls->setEnabled(available);
-    m_targetPasteControls->setToolTip(
-        available
-            ? QString()
-            : QStringLiteral("Enable desktop accessibility (AT-SPI) to identify the target application."));
+    m_targetPasteControls->setToolTip(available ? QString() : targetAccessibilityHint());
 }
 
 void OutputSettingsPage::load(const AppSettings &settings)
@@ -414,7 +465,7 @@ void OutputSettingsPage::addApplicationPasteRule(const PasteRule &rule)
     enabled->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
     enabled->setCheckState(rule.enabled ? Qt::Checked : Qt::Unchecked);
     auto *application = new QTableWidgetItem(rule.match);
-    application->setToolTip(QStringLiteral("Use the desktop application ID reported by AT-SPI."));
+    application->setToolTip(applicationIdHint());
     auto *method = new QComboBox(m_appPasteRules);
     addPasteMethods(method, true);
     settings::selectData(method, pasteMethodName(rule.method));
@@ -517,20 +568,20 @@ void OutputSettingsPage::removeYdotoolSetup()
     emit changed();
 }
 #else
-// ydotool is Linux-only. Its row stays in place but inert until a follow-up
-// gives this page a per-platform delivery section.
+// ydotool is Linux-only, and so is the Advanced card that hosted its controls.
+// The widgets are still members, so keep them out of the page.
 void OutputSettingsPage::refreshControls()
 {
-    settings::setComboItemEnabled(m_outputMethod,
-                                  m_outputMethod->findData(QString::fromLatin1(OutputMethod::Ydotool)),
-                                  false,
-                                  QStringLiteral("ydotool is only available on Linux"));
-    setWrappedText(m_ydotoolStatus, QStringLiteral("Not available on this platform."));
+#ifdef Q_OS_MACOS
+    m_outputMethod->setToolTip(
+        QStringLiteral("Automatic pastes with Cmd+V, then falls back to the clipboard."));
+#endif
     updateYdotoolButtons();
 }
 
 void OutputSettingsPage::updateYdotoolButtons()
 {
+    m_ydotoolStatus->setVisible(false);
     for (QPushButton *button : {m_ydotoolSetupButton, m_ydotoolStartButton, m_ydotoolDisableButton, m_ydotoolRemoveButton}) {
         button->setVisible(false);
     }
