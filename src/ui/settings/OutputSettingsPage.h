@@ -3,6 +3,7 @@
 #include "core/AppSettings.h"
 
 #include <QScrollArea>
+#include <QString>
 
 class QCheckBox;
 class QComboBox;
@@ -43,6 +44,10 @@ private:
 
     SettingsStore &m_settings;
     QComboBox *m_outputMethod;
+    // A stored method this platform offers no item for, such as ydotool on
+    // macOS. The combo shows Automatic instead, but the saved value survives
+    // until the user picks something themselves.
+    QString m_unlistedOutputMethod;
     QComboBox *m_outputFormat;
     QComboBox *m_globalPaste;
     QList<QPair<AppCategory, QComboBox *>> m_categoryPasteControls;
