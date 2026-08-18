@@ -20,6 +20,10 @@
 
 #include <algorithm>
 
+#ifdef Q_OS_MACOS
+#include "platform/mac/MacWindowChrome.h"
+#endif
+
 namespace speecher {
 namespace {
 
@@ -51,6 +55,9 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     setAttribute(Qt::WA_NoSystemBackground);
     setAutoFillBackground(false);
     m_positioner->configurePopup(this);
+#ifdef Q_OS_MACOS
+    mac::applyPopupChrome(this);
+#endif
     setObjectName(QStringLiteral("transcriberPopup"));
     m_preview->setObjectName(QStringLiteral("rawTranscript"));
     applyTheme();
@@ -293,20 +300,29 @@ void TranscriberPopup::applyTheme()
     }
     m_applyingTheme = true;
     const QPalette p = qApp ? qApp->palette() : palette();
-    const QColor pill = p.color(QPalette::Base);
     const QString stroke = rgbaString(p.color(QPalette::Mid), 150);
     const QColor text = p.color(QPalette::Text);
     const QColor accent = p.color(QPalette::Highlight);
+#ifdef Q_OS_MACOS
+    // The HUD panel behind the popup is the pill's background, and a native
+    // panel uses the system font rather than a bundled one.
+    const QString pillFill = QStringLiteral("transparent");
+    const QString labelFont = QStringLiteral("font-size:14px;");
+#else
+    const QString pillFill = p.color(QPalette::Base).name(QColor::HexRgb);
+    const QString labelFont = QStringLiteral("font:14px 'Inter','Noto Sans',sans-serif;");
+#endif
     setStyleSheet(QStringLiteral(
                       "#transcriberPopup{background:transparent;}"
                       "QFrame#previewPill{background:%1;border:1px solid %2;border-radius:24px;}"
-                      "QLabel{color:%3;font:14px 'Inter','Noto Sans',sans-serif;}"
+                      "QLabel{color:%3;%5}"
                       "QProgressBar#errorDismissProgress{border:0;background:transparent;}"
                       "QProgressBar#errorDismissProgress::chunk{background:%4;border-radius:1px;}")
-                      .arg(pill.name(QColor::HexRgb),
+                      .arg(pillFill,
                            stroke,
                            text.name(QColor::HexRgb),
-                           accent.name(QColor::HexRgb)));
+                           accent.name(QColor::HexRgb),
+                           labelFont));
     m_applyingTheme = false;
 }
 
