@@ -6,6 +6,7 @@
 #include "output/WlClipboardDelivery.h"
 #include "platform/AtSpiTargetProvider.h"
 #include "platform/PortalScreenshotContextProvider.h"
+#include "platform/atspi/AtSpiAccess.h"
 #include "platform/WaylandLayerShell.h"
 #include "platform/audio/QtAudioInput.h"
 
@@ -153,6 +154,21 @@ TextDeliveryAdapter *LinuxComposition::createTextDelivery(TargetProvider *target
 PopupPositioner *LinuxComposition::createPopupPositioner(QObject *parent) const
 {
     return new WaylandLayerShell(parent);
+}
+
+AccessibilityState LinuxComposition::accessibilityState() const
+{
+    return atspi::accessibilityState();
+}
+
+bool LinuxComposition::requestAccessibility(QString *error) const
+{
+    return atspi::requestAccessibility(error);
+}
+
+bool LinuxComposition::enableAccessibilityPermanently(QString *error) const
+{
+    return atspi::enableAccessibilityPermanently(error);
 }
 
 std::shared_ptr<const LinuxComposition> linuxComposition()

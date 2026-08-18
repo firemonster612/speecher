@@ -11,14 +11,14 @@ class QSpinBox;
 
 namespace speecher {
 
-class LinuxComposition;
+class PlatformComposition;
 class ProviderRegistry;
 
 class AudioSettingsPage : public QScrollArea {
     Q_OBJECT
 
 public:
-    explicit AudioSettingsPage(const LinuxComposition &platform,
+    explicit AudioSettingsPage(const PlatformComposition &platform,
                                const ProviderRegistry &providers,
                                QWidget *parent = nullptr);
 
@@ -33,7 +33,7 @@ private:
     void refreshAudioDeviceList(const QString &selectedDeviceId);
     void updateAudioControls();
 
-    const LinuxComposition &m_platform;
+    const PlatformComposition &m_platform;
     QMediaDevices *m_mediaDevices = nullptr;
     QComboBox *m_speechProvider;
     QComboBox *m_audioDevice;

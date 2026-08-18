@@ -16,7 +16,6 @@ namespace speecher {
 class DictationSession;
 class AudioInput;
 class AppWindow;
-class LinuxComposition;
 class ProviderRegistry;
 class SecretStore;
 class SettingsStore;
@@ -27,13 +26,15 @@ class ApplicationController : public QObject {
     Q_OBJECT
 
 public:
-    explicit ApplicationController(bool popupOnly, QObject *parent = nullptr);
+    explicit ApplicationController(bool popupOnly,
+                                   std::shared_ptr<const PlatformComposition> platform = platformComposition(),
+                                   QObject *parent = nullptr);
     ~ApplicationController() override;
 
     SettingsStore *settings() const;
     SecretStore *secretStore() const;
     ProviderRegistry *providerRegistry() const;
-    const LinuxComposition *platform() const;
+    const PlatformComposition *platform() const;
     QString stateName() const;
     IpcResponse response(bool ok = true, const QString &message = {}) const;
     QString outputSummary() const;
@@ -82,7 +83,7 @@ private:
     bool ensureSetupCompleted();
 
     bool m_popupOnly = false;
-    std::shared_ptr<const LinuxComposition> m_platform;
+    std::shared_ptr<const PlatformComposition> m_platform;
     SettingsStore *m_settings = nullptr;
     SecretStore *m_secrets = nullptr;
     ProviderRegistry *m_providers = nullptr;

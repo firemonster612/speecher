@@ -3,7 +3,7 @@
 #include "test_suites.h"
 
 #include "app/ApplicationController.h"
-#include "app/LinuxComposition.h"
+#include "app/PlatformComposition.h"
 #include "app/SingleInstanceIpc.h"
 #include "core/AppSettings.h"
 #include "core/BindingProcessor.h"
