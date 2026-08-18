@@ -194,6 +194,7 @@ set(SPEECHER_PLATFORM_MAC_SOURCES
   src/platform/mac/MacPopupPositioner.mm
   src/platform/mac/MacScreenshotContextProvider.mm
   src/platform/mac/MacTargetProvider.mm
+  src/platform/mac/MacWindowChrome.mm
 )
 
 set(SPEECHER_PLATFORM_MAC_HEADERS
@@ -203,6 +204,7 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
   src/platform/mac/MacPopupPositioner.h
   src/platform/mac/MacScreenshotContextProvider.h
   src/platform/mac/MacTargetProvider.h
+  src/platform/mac/MacWindowChrome.h
 )
 
 set(SPEECHER_APP_UI_SOURCES
