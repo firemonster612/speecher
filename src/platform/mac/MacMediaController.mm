@@ -1,10 +1,12 @@
 #include "platform/mac/MacMediaController.h"
 
 #include <QDebug>
+#include <QThread>
 
 #import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
 
+#include <memory>
 #include <optional>
 
 namespace speecher {
@@ -52,16 +54,9 @@ std::optional<QString> tellPlayer(const QString &bundleIdentifier, const QString
         QStringLiteral("tell application id \"%1\" to %2").arg(bundleIdentifier, command));
 }
 
-} // namespace
-
-MacMediaController::MacMediaController(QObject *parent)
-    : MediaController(parent)
+QStringList pauseRunningPlayers()
 {
-}
-
-void MacMediaController::pausePlaying()
-{
-    m_pausedPlayers.clear();
+    QStringList paused;
     for (const QString &player : mediaPlayerBundleIdentifiers()) {
         // Scripting a player that is not running would launch it.
         if (!isRunning(player)) {
@@ -72,21 +67,56 @@ void MacMediaController::pausePlaying()
             continue;
         }
         if (tellPlayer(player, QStringLiteral("pause"))) {
-            m_pausedPlayers << player;
+            paused << player;
         }
     }
+    return paused;
+}
 
-    qInfo() << "media paused players=" << m_pausedPlayers.size();
+} // namespace
+
+MacMediaController::MacMediaController(QObject *parent)
+    : MediaController(parent)
+{
+}
+
+void MacMediaController::pausePlaying()
+{
+    m_pauseWanted = true;
+    auto paused = std::make_shared<QStringList>();
+    QThread *thread = QThread::create([paused] { *paused = pauseRunningPlayers(); });
+    connect(thread, &QThread::finished, this, [this, paused] {
+        m_pausedPlayers = *paused;
+        // A short dictation can end before the pause script does; whatever it
+        // paused still has to come back.
+        if (!m_pauseWanted) {
+            resumePaused();
+            return;
+        }
+        qInfo() << "media paused players=" << m_pausedPlayers.size();
+    });
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start();
 }
 
 void MacMediaController::resumePaused()
 {
+    m_pauseWanted = false;
     const QStringList players = m_pausedPlayers;
-    m_pausedPlayers.clear();
-    for (const QString &player : players) {
-        tellPlayer(player, QStringLiteral("play"));
+    if (players.isEmpty()) {
+        return;
     }
-    qInfo() << "media resumed players=" << players.size();
+    QThread *thread = QThread::create([players] {
+        for (const QString &player : players) {
+            tellPlayer(player, QStringLiteral("play"));
+        }
+    });
+    connect(thread, &QThread::finished, this, [this, players] {
+        m_pausedPlayers.clear();
+        qInfo() << "media resumed players=" << players.size();
+    });
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start();
 }
 
 } // namespace speecher

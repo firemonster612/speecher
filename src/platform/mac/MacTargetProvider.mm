@@ -1,7 +1,8 @@
 #include "platform/mac/MacTargetProvider.h"
 
+#include <QEventLoop>
 #include <QSet>
-#include <QThread>
+#include <QTimer>
 
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
@@ -91,6 +92,21 @@ QString focusedWindowTitle(pid_t processId)
     return title;
 }
 
+// Most Cocoa controls apply an AX write synchronously, but some only publish
+// the new value on their next run-loop turn.
+constexpr int insertionVerificationAttempts = 5;
+constexpr int insertionVerificationPauseMs = 30;
+
+// Sleeping here would freeze Speecher's own event loop, including the dictation
+// popup. Spinning it instead keeps the UI alive; user input stays excluded so a
+// stray keystroke cannot reach Speecher while the target still has focus.
+void spinEventLoop(int milliseconds)
+{
+    QEventLoop wait;
+    QTimer::singleShot(milliseconds, &wait, &QEventLoop::quit);
+    wait.exec(QEventLoop::ExcludeUserInputEvents);
+}
+
 bool selectedTextIsSettable(AXUIElementRef element)
 {
     if (!element) {
@@ -115,6 +131,7 @@ MacTargetProvider::~MacTargetProvider()
 
 void MacTargetProvider::releaseFocusedElement()
 {
+    m_valueBeforeInsertion.reset();
     if (m_focusedElement) {
         CFRelease(static_cast<AXUIElementRef>(m_focusedElement));
         m_focusedElement = nullptr;
@@ -194,6 +211,11 @@ bool MacTargetProvider::insertText(const Target &target, const QString &plainTex
         return false;
     }
 
+    // Captured before the write so verifyInsertion can tell a real insertion
+    // from a control that already happened to contain the text.
+    m_valueBeforeInsertion = stringAttribute(static_cast<AXUIElementRef>(m_focusedElement),
+                                             kAXValueAttribute);
+
     // Setting the selected text replaces the selection, or inserts at the caret
     // when there is none.
     CFStringRef value = plainText.toCFString();
@@ -214,15 +236,14 @@ bool MacTargetProvider::verifyInsertion(const Target &target, const QString &pla
     if (!m_focusedElement || plainText.isEmpty() || target.secure || !stillFocused(target)) {
         return false;
     }
-    // Most Cocoa controls apply an AX write synchronously, but some only publish
-    // the new value on their next run-loop turn.
-    for (int attempt = 0; attempt < 5; ++attempt) {
+    for (int attempt = 0; attempt < insertionVerificationAttempts; ++attempt) {
         if (attempt > 0) {
-            QThread::msleep(30);
+            spinEventLoop(insertionVerificationPauseMs);
         }
         const QString value = stringAttribute(static_cast<AXUIElementRef>(m_focusedElement),
                                               kAXValueAttribute);
-        if (value.contains(plainText)) {
+        const bool changed = !m_valueBeforeInsertion || value != *m_valueBeforeInsertion;
+        if (changed && value.contains(plainText)) {
             return true;
         }
     }
