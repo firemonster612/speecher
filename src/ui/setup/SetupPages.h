@@ -12,6 +12,7 @@ class QLabel;
 class QShowEvent;
 class QProgressBar;
 class QPushButton;
+class QVBoxLayout;
 
 namespace speecher {
 
@@ -59,6 +60,10 @@ protected:
 private:
     void refreshDevices();
     void startMeter();
+#ifdef Q_OS_MACOS
+    void addMicrophonePermissionControls(QVBoxLayout *layout);
+    void refreshMicrophonePermission();
+#endif
 
     SettingsStore &m_settings;
     const PlatformComposition &m_platform;
@@ -66,6 +71,11 @@ private:
     QComboBox *m_device;
     QProgressBar *m_level;
     QLabel *m_status;
+#ifdef Q_OS_MACOS
+    QLabel *m_permissionStatus = nullptr;
+    QPushButton *m_allowMicrophone = nullptr;
+    QPushButton *m_openMicrophoneSettings = nullptr;
+#endif
     bool m_active = false;
     bool m_devicesLoaded = false;
 };

@@ -24,6 +24,13 @@
 #include <QThread>
 #include <QVBoxLayout>
 
+#ifdef Q_OS_MACOS
+#include <QApplication>
+#include <QDesktopServices>
+#include <QPermissions>
+#include <QUrl>
+#endif
+
 #include <algorithm>
 #include <memory>
 
@@ -77,6 +84,11 @@ void addTones(QComboBox *combo)
     combo->addItem(QStringLiteral("Excited"), QStringLiteral("excited"));
     combo->addItem(QStringLiteral("Gen Z"), QStringLiteral("gen_z"));
 }
+
+#ifdef Q_OS_MACOS
+constexpr auto microphonePaneUrl =
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
+#endif
 
 QString profileLabel(WritingProfile profile)
 {
@@ -231,6 +243,10 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
     m_level->setFormat(QStringLiteral("Input level %p%"));
     m_status->setWordWrap(true);
 
+#ifdef Q_OS_MACOS
+    addMicrophonePermissionControls(layout);
+#endif
+
     auto *form = new QGridLayout;
     form->addWidget(new QLabel(QStringLiteral("Microphone"), this), 0, 0);
     form->addWidget(m_device, 0, 1);
@@ -286,9 +302,66 @@ void MicrophoneSetupPage::setActive(bool active)
     }
 }
 
+#ifdef Q_OS_MACOS
+void MicrophoneSetupPage::addMicrophonePermissionControls(QVBoxLayout *layout)
+{
+    m_permissionStatus = new QLabel(this);
+    m_permissionStatus->setWordWrap(true);
+    m_allowMicrophone = new QPushButton(QStringLiteral("Allow microphone access"), this);
+    m_openMicrophoneSettings = new QPushButton(QStringLiteral("Open Microphone settings"), this);
+    auto *buttons = new QHBoxLayout;
+    for (QPushButton *button : {m_allowMicrophone, m_openMicrophoneSettings}) {
+        button->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+        buttons->addWidget(button);
+    }
+    buttons->addStretch();
+    layout->addWidget(m_permissionStatus);
+    layout->addLayout(buttons);
+
+    connect(m_allowMicrophone, &QPushButton::clicked, this, [this] {
+        qApp->requestPermission(QMicrophonePermission{}, this, [this](const QPermission &permission) {
+            refreshMicrophonePermission();
+            if (permission.status() == Qt::PermissionStatus::Granted && m_active) {
+                startMeter();
+            }
+        });
+    });
+    connect(m_openMicrophoneSettings, &QPushButton::clicked, this, [] {
+        QDesktopServices::openUrl(QUrl(QString::fromLatin1(microphonePaneUrl)));
+    });
+    refreshMicrophonePermission();
+}
+
+void MicrophoneSetupPage::refreshMicrophonePermission()
+{
+    const Qt::PermissionStatus status = qApp->checkPermission(QMicrophonePermission{});
+    m_allowMicrophone->setVisible(status == Qt::PermissionStatus::Undetermined);
+    m_openMicrophoneSettings->setVisible(status == Qt::PermissionStatus::Denied);
+    switch (status) {
+    case Qt::PermissionStatus::Granted:
+        m_permissionStatus->setText(QStringLiteral("macOS lets Speecher use the microphone."));
+        break;
+    case Qt::PermissionStatus::Undetermined:
+        m_permissionStatus->setText(
+            QStringLiteral("macOS has not been asked yet. Speecher only records while you dictate."));
+        break;
+    case Qt::PermissionStatus::Denied:
+        m_permissionStatus->setText(
+            QStringLiteral("Microphone access is off, so Speecher records silence. Turn Speecher on under Privacy & Security → Microphone, then come back to this page."));
+        break;
+    }
+    setStatusColor(m_permissionStatus, status == Qt::PermissionStatus::Granted);
+}
+#endif
+
 void MicrophoneSetupPage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
+#ifdef Q_OS_MACOS
+    // The grant can change in System Settings while this page sits in the
+    // wizard, and macOS does not push that back to a running process.
+    refreshMicrophonePermission();
+#endif
     if (!m_devicesLoaded) {
         refreshDevices();
         m_devicesLoaded = true;
