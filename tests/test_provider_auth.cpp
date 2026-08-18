@@ -433,6 +433,25 @@ exit 12
         const CliProxyCredentialResult disabled = CliProxyCredentials::load(dir.path(), QStringLiteral("codex"), QString());
         QVERIFY(!disabled.ok);
         QVERIFY(disabled.error.contains(QStringLiteral("disabled")));
+
+        const CliProxyCredentialResult wrongType =
+            CliProxyCredentials::load(dir.path(), QStringLiteral("codex"), QStringLiteral("claude-a@example.com.json"));
+        QVERIFY(!wrongType.ok);
+        QVERIFY(wrongType.error.contains(QStringLiteral("not a codex account")));
+
+        QFile badExpiry(QDir(dir.path()).filePath(QStringLiteral("claude-bad@example.com.json")));
+        QVERIFY(badExpiry.open(QIODevice::WriteOnly));
+        badExpiry.write(QJsonDocument(QJsonObject{
+                                          {QStringLiteral("type"), QStringLiteral("claude")},
+                                          {QStringLiteral("access_token"), QStringLiteral("token")},
+                                          {QStringLiteral("expired"), QStringLiteral("not-a-date")},
+                                      })
+                            .toJson());
+        badExpiry.close();
+        const CliProxyCredentialResult unparsable =
+            CliProxyCredentials::load(dir.path(), QStringLiteral("claude"), QStringLiteral("claude-bad@example.com.json"));
+        QVERIFY(!unparsable.ok);
+        QVERIFY(unparsable.error.contains(QStringLiteral("expiry")));
     }
 
     void openAiAuthProviderCliproxyMode()

@@ -39,3 +39,7 @@ _Avoid_: Macro, template
 **Learned Correction**:
 A local Vocabulary Entry inferred from a user's edit shortly after insertion.
 _Avoid_: Training sample, correction history
+
+**CLI Proxy API Account**:
+One OAuth login (claude or codex) stored as a JSON file in CLI Proxy API's auth directory, selectable as a refinement credential source. CLI Proxy API owns and refreshes these files; Speecher only reads them.
+_Avoid_: Proxy token, cliproxy key

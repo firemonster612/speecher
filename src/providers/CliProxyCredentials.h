@@ -9,6 +9,7 @@ struct CliProxyAccount {
     QString fileName;
     QString label;
     bool disabled = false;
+    bool expired = false;
 };
 
 struct CliProxyCredentialResult {

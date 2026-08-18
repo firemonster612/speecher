@@ -436,6 +436,40 @@ private slots:
         QVERIFY(socket->waitForBytesWritten(1000));
         socket->disconnectFromHost();
     }
+
+    void anthropicRefinerReloadsCliproxyTokenPerRequest()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        QTemporaryDir dir;
+        const QDateTime valid = QDateTime::currentDateTimeUtc().addSecs(3600);
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"), QStringLiteral("claude"),
+                                     QStringLiteral("token-one"), valid));
+
+        AnthropicTranscriptRefiner refiner;
+        RefinementSettings settings;
+        settings.anthropicAuthMode = QStringLiteral("cliproxy");
+        settings.cliproxyOauthDir = dir.path();
+        settings.anthropicEndpointBase = QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort());
+        RefinementContext context;
+
+        refiner.refine(QStringLiteral("hello there"), {}, context, settings);
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *first = server.nextPendingConnection();
+        QVERIFY(first);
+        QVERIFY(readHttpRequest(first, 1000).toLower().contains(QByteArrayLiteral("authorization: bearer token-one")));
+        refiner.cancel();
+        first->close();
+
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"), QStringLiteral("claude"),
+                                     QStringLiteral("token-two"), valid));
+        refiner.refine(QStringLiteral("hello again"), {}, context, settings);
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *second = server.nextPendingConnection();
+        QVERIFY(second);
+        QVERIFY(readHttpRequest(second, 1000).toLower().contains(QByteArrayLiteral("authorization: bearer token-two")));
+        refiner.cancel();
+    }
 };
 
 int runRefinersTests(int argc, char **argv)

@@ -35,6 +35,7 @@ private:
     void updateAuthControl();
     void updateAnthropicControls();
     void updateAnthropicAuthControl();
+    static QString comboSelection(const QComboBox *combo, const QString &stored);
     void populateCliproxyAccounts(QComboBox *combo, const QString &type, const QString &selected);
     void showAnthropicAuthInfo();
 

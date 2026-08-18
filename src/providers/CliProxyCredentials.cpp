@@ -26,6 +26,12 @@ QString accountLabel(const QString &fileName, const QString &type)
     return label;
 }
 
+bool accountExpired(const QJsonObject &account)
+{
+    const QDateTime expiry = QDateTime::fromString(account.value(QStringLiteral("expired")).toString(), Qt::ISODate);
+    return expiry.isValid() && expiry <= QDateTime::currentDateTimeUtc();
+}
+
 } // namespace
 
 QList<CliProxyAccount> CliProxyCredentials::listAccounts(const QString &directory, const QString &type)
@@ -37,7 +43,8 @@ QList<CliProxyAccount> CliProxyCredentials::listAccounts(const QString &director
         if (account.value(QStringLiteral("type")).toString() != type) {
             continue;
         }
-        accounts.append({fileName, accountLabel(fileName, type), account.value(QStringLiteral("disabled")).toBool()});
+        accounts.append({fileName, accountLabel(fileName, type), account.value(QStringLiteral("disabled")).toBool(),
+                         accountExpired(account)});
     }
     return accounts;
 }
@@ -61,6 +68,9 @@ CliProxyCredentialResult CliProxyCredentials::load(const QString &directory, con
     if (account.isEmpty()) {
         return {false, {}, {}, QStringLiteral("Could not read CLI Proxy API account %1 in %2").arg(resolvedFileName, directory)};
     }
+    if (account.value(QStringLiteral("type")).toString() != type) {
+        return {false, {}, {}, QStringLiteral("CLI Proxy API account %1 is not a %2 account").arg(resolvedFileName, type)};
+    }
     if (account.value(QStringLiteral("disabled")).toBool()) {
         return {false, {}, {}, QStringLiteral("CLI Proxy API account %1 is disabled").arg(resolvedFileName)};
     }
@@ -70,7 +80,12 @@ CliProxyCredentialResult CliProxyCredentials::load(const QString &directory, con
     }
     // CLI Proxy API owns these tokens and refreshes them in place; Speecher only
     // reads, so an expired token means the proxy has not refreshed it yet.
-    const QDateTime expiry = QDateTime::fromString(account.value(QStringLiteral("expired")).toString(), Qt::ISODate);
+    const QString expiredValue = account.value(QStringLiteral("expired")).toString();
+    const QDateTime expiry = QDateTime::fromString(expiredValue, Qt::ISODate);
+    if (!expiredValue.isEmpty() && !expiry.isValid()) {
+        return {false, {}, {},
+                QStringLiteral("Could not parse expiry \"%1\" in CLI Proxy API account %2").arg(expiredValue, resolvedFileName)};
+    }
     if (expiry.isValid() && expiry <= QDateTime::currentDateTimeUtc()) {
         return {false, {}, {},
                 QStringLiteral("CLI Proxy API token for %1 is expired; run CLI Proxy API to refresh it").arg(resolvedFileName)};

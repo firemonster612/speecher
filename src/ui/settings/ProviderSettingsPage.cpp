@@ -156,6 +156,8 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     m_anthropicAuthMode->addItem(QStringLiteral("Claude OAuth"), QStringLiteral("oauth"));
     m_anthropicAuthMode->addItem(QStringLiteral("CLI Proxy API"), QStringLiteral("cliproxy"));
     m_anthropicAuthMode->setToolTip(QStringLiteral("Claude OAuth uses the existing Claude Code session. CLI Proxy API uses an OAuth account saved by CLI Proxy API."));
+    m_openAiCliproxyAccount->setObjectName(QStringLiteral("openAiCliproxyAccount"));
+    m_anthropicCliproxyAccount->setObjectName(QStringLiteral("anthropicCliproxyAccount"));
     m_openAiCliproxyAccount->setToolTip(QStringLiteral("CLI Proxy API Codex account used for refinement."));
     m_anthropicCliproxyAccount->setToolTip(QStringLiteral("CLI Proxy API Claude account used for refinement."));
     m_apiKey->setEchoMode(QLineEdit::Password);
@@ -177,7 +179,7 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     anthropicInfoButton->setFlat(true);
     anthropicInfoButton->setCursor(Qt::PointingHandCursor);
     anthropicInfoButton->setFixedSize(22, 22);
-    anthropicInfoButton->setToolTip(QStringLiteral("How Anthropic OAuth is used."));
+    anthropicInfoButton->setToolTip(QStringLiteral("How Anthropic auth is used."));
     anthropicInfoButton->setAccessibleName(QStringLiteral("Anthropic auth info"));
     m_authStatus->setForegroundRole(QPalette::WindowText);
 
@@ -192,7 +194,7 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     settings::addRow(openAiLayout, settings::makeRow(QStringLiteral("OpenAI model"), QStringLiteral("Model used for refinement."), m_openAiModel, openAiCard), openAiCard);
     settings::addRow(openAiLayout, settings::makeRow(QStringLiteral("OpenAI effort"), QStringLiteral("Reasoning effort used for refinement."), m_openAiEffort, openAiCard), openAiCard);
     settings::addRow(openAiLayout, settings::makeRow(QStringLiteral("OpenAI auth mode"), QStringLiteral("Credential source used for refinement."), m_authMode, openAiCard), openAiCard);
-    settings::addRow(openAiLayout, settings::makeRow(QStringLiteral("OpenAI auth"), QStringLiteral("Current credential source or app settings key."), m_authControl, openAiCard), openAiCard, false);
+    settings::addRow(openAiLayout, settings::makeRow(QStringLiteral("OpenAI auth"), QStringLiteral("Current credential source, app settings key, or CLI Proxy API account."), m_authControl, openAiCard), openAiCard, false);
 
     settings::addRow(anthropicLayout,
                      settings::makeRow(QStringLiteral("Claude model"),
@@ -317,10 +319,10 @@ void ProviderSettingsPage::saveAuthModes()
 {
     m_settings.setOpenAiAuthMode(m_authMode->currentData().toString());
     m_settings.setAnthropicAuthMode(m_anthropicAuthMode->currentData().toString());
-    if (m_openAiCliproxyAccount->count() > 0) {
+    if (m_authMode->currentData().toString() == QStringLiteral("cliproxy")) {
         m_settings.setOpenAiCliproxyAccount(m_openAiCliproxyAccount->currentData().toString());
     }
-    if (m_anthropicCliproxyAccount->count() > 0) {
+    if (m_anthropicAuthMode->currentData().toString() == QStringLiteral("cliproxy")) {
         m_settings.setAnthropicCliproxyAccount(m_anthropicCliproxyAccount->currentData().toString());
     }
 }
@@ -357,9 +359,9 @@ bool ProviderSettingsPage::hasAuthChanges() const
 {
     return m_authMode->currentData().toString() != m_settings.openAiAuthMode()
         || m_anthropicAuthMode->currentData().toString() != m_settings.anthropicAuthMode()
-        || (m_openAiCliproxyAccount->count() > 0
+        || (m_authMode->currentData().toString() == QStringLiteral("cliproxy")
             && m_openAiCliproxyAccount->currentData().toString() != m_settings.openAiCliproxyAccount())
-        || (m_anthropicCliproxyAccount->count() > 0
+        || (m_anthropicAuthMode->currentData().toString() == QStringLiteral("cliproxy")
             && m_anthropicCliproxyAccount->currentData().toString() != m_settings.anthropicCliproxyAccount())
         || (m_authMode->currentData().toString() == QStringLiteral("settings")
             && ((!m_secretLoaded && m_apiKeyEditRevision > 0)
@@ -379,9 +381,7 @@ void ProviderSettingsPage::updateAuthControl()
     if (mode == QStringLiteral("cliproxy")) {
         populateCliproxyAccounts(m_openAiCliproxyAccount,
                                  QStringLiteral("codex"),
-                                 m_openAiCliproxyAccount->currentData().toString().isEmpty()
-                                     ? m_settings.openAiCliproxyAccount()
-                                     : m_openAiCliproxyAccount->currentData().toString());
+                                 comboSelection(m_openAiCliproxyAccount, m_settings.openAiCliproxyAccount()));
         m_authControl->setCurrentWidget(m_openAiCliproxyAccount);
         return;
     }
@@ -395,11 +395,15 @@ void ProviderSettingsPage::updateAnthropicAuthControl()
     if (cliproxy) {
         populateCliproxyAccounts(m_anthropicCliproxyAccount,
                                  QStringLiteral("claude"),
-                                 m_anthropicCliproxyAccount->currentData().toString().isEmpty()
-                                     ? m_settings.anthropicCliproxyAccount()
-                                     : m_anthropicCliproxyAccount->currentData().toString());
+                                 comboSelection(m_anthropicCliproxyAccount, m_settings.anthropicCliproxyAccount()));
     }
     m_anthropicCliproxyAccount->setVisible(cliproxy);
+}
+
+QString ProviderSettingsPage::comboSelection(const QComboBox *combo, const QString &stored)
+{
+    const QString current = combo->currentData().toString();
+    return current.isEmpty() ? stored : current;
 }
 
 void ProviderSettingsPage::populateCliproxyAccounts(QComboBox *combo, const QString &type, const QString &selected)
@@ -408,15 +412,20 @@ void ProviderSettingsPage::populateCliproxyAccounts(QComboBox *combo, const QStr
     combo->clear();
     const QString directory = m_settings.cliproxyOauthDir();
     const QList<CliProxyAccount> accounts = CliProxyCredentials::listAccounts(directory, type);
+    // With several accounts and none chosen yet, force an explicit choice
+    // instead of silently pinning whichever file sorts first.
+    if (selected.isEmpty() && accounts.size() > 1) {
+        combo->addItem(QStringLiteral("Choose an account…"), QString());
+    }
     for (const CliProxyAccount &account : accounts) {
-        combo->addItem(account.label, account.fileName);
+        combo->addItem(account.expired ? account.label + QStringLiteral(" (expired)") : account.label, account.fileName);
         if (account.disabled) {
             settings::setComboItemEnabled(combo, combo->count() - 1, false, QStringLiteral("Disabled in CLI Proxy API"));
         }
     }
     // Keep a stored selection visible even if its file is currently missing.
     if (!selected.isEmpty() && combo->findData(selected) < 0) {
-        combo->addItem(selected, selected);
+        combo->addItem(selected + QStringLiteral(" (missing)"), selected);
     }
     if (combo->count() == 0) {
         combo->addItem(QStringLiteral("No accounts found"), QString());
