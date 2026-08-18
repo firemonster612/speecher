@@ -140,6 +140,7 @@ set(SPEECHER_PLATFORM_SOURCES
   src/output/ClipboardDelivery.cpp
   src/output/QtClipboardDelivery.cpp
   src/output/TextDelivery.cpp
+  src/platform/CorrectionDiff.cpp
   src/platform/ScreenshotImage.cpp
   src/platform/audio/AudioPcmConverter.cpp
   src/platform/audio/QtAudioInput.cpp
@@ -152,6 +153,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/output/QtClipboardDelivery.h
   src/output/TextDelivery.h
   src/platform/AccessibilityState.h
+  src/platform/CorrectionDiff.h
   src/platform/GlobalShortcutBinder.h
   src/platform/ScreenshotImage.h
   src/platform/audio/AudioPcmConverter.h
