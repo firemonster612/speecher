@@ -18,6 +18,9 @@
 #include <QTimer>
 #include <QWidget>
 #include <QWindow>
+#ifdef Q_OS_MACOS
+#include <QPermissions>
+#endif
 
 #include <utility>
 
@@ -240,12 +243,39 @@ void ApplicationController::showSetupAssistant()
     m_setupAssistant->activateWindow();
 }
 
+// macOS answers the microphone grant asynchronously the first time, so a
+// session start has to wait for the answer instead of capturing silence.
+void ApplicationController::startWithMicrophone(std::function<void()> start)
+{
+#ifdef Q_OS_MACOS
+    const auto refuse = [this] {
+        m_popup->showPopup(0);
+        m_popup->showErrorMessage(QStringLiteral(
+            "Microphone access is off. Allow Speecher under Privacy & Security > Microphone, then try again."));
+    };
+    switch (qApp->checkPermission(QMicrophonePermission{})) {
+    case Qt::PermissionStatus::Denied:
+        refuse();
+        return;
+    case Qt::PermissionStatus::Undetermined:
+        qApp->requestPermission(QMicrophonePermission{}, this,
+                                [start = std::move(start), refuse](const QPermission &permission) {
+                                    permission.status() == Qt::PermissionStatus::Granted ? start() : refuse();
+                                });
+        return;
+    case Qt::PermissionStatus::Granted:
+        break;
+    }
+#endif
+    start();
+}
+
 void ApplicationController::toggle()
 {
     if (!ensureSetupCompleted()) {
         return;
     }
-    m_session->toggle();
+    startWithMicrophone([this] { m_session->toggle(); });
 }
 
 void ApplicationController::startListening()
@@ -253,7 +283,7 @@ void ApplicationController::startListening()
     if (!ensureSetupCompleted()) {
         return;
     }
-    m_session->startListening();
+    startWithMicrophone([this] { m_session->startListening(); });
 }
 
 void ApplicationController::stopListening()
@@ -297,14 +327,18 @@ void ApplicationController::handleIpcCommand(const QString &command,
             SingleInstanceIpc::writeResponse(socket, response());
             return;
         }
-        hasFormat ? m_session->toggleWithFormat(format) : m_session->toggle();
+        startWithMicrophone([this, hasFormat, format] {
+            hasFormat ? m_session->toggleWithFormat(format) : m_session->toggle();
+        });
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("start")) {
         if (!ensureSetupCompleted()) {
             SingleInstanceIpc::writeResponse(socket, response());
             return;
         }
-        hasFormat ? m_session->startListeningWithFormat(format) : m_session->startListening();
+        startWithMicrophone([this, hasFormat, format] {
+            hasFormat ? m_session->startListeningWithFormat(format) : m_session->startListening();
+        });
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("stop")) {
         stopListening();

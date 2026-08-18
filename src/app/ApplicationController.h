@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 
 #include <QObject>
@@ -77,6 +78,7 @@ protected:
 private:
     void registerProviders();
     void wireSessionToPopup();
+    void startWithMicrophone(std::function<void()> start);
     void runDeferredStartup();
     bool ensureSetupCompleted();
 
