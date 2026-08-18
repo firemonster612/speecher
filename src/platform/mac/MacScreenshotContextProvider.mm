@@ -1,0 +1,126 @@
+#include "platform/mac/MacScreenshotContextProvider.h"
+
+#include <QBuffer>
+#include <QDir>
+#include <QFile>
+#include <QImage>
+#include <QProcess>
+#include <QUuid>
+
+namespace speecher {
+
+namespace {
+
+constexpr auto screenCaptureTool = "/usr/sbin/screencapture";
+constexpr qsizetype maximumCaptureFileSize = 32 * 1024 * 1024;
+
+QString screenRecordingHint()
+{
+    return QStringLiteral(
+        "Screen capture failed. Allow Speecher under Privacy & Security > Screen Recording.");
+}
+
+QByteArray normalizedScreenshot(const QByteArray &source)
+{
+    QImage image;
+    if (!image.loadFromData(source)) {
+        return {};
+    }
+
+    constexpr int maximumEdge = 2560;
+    if (image.width() > maximumEdge || image.height() > maximumEdge) {
+        image = image.scaled(maximumEdge,
+                             maximumEdge,
+                             Qt::KeepAspectRatio,
+                             Qt::SmoothTransformation);
+    }
+
+    QByteArray result;
+    QBuffer output(&result);
+    if (!output.open(QIODevice::WriteOnly) || !image.save(&output, "PNG")) {
+        return {};
+    }
+    return result;
+}
+
+} // namespace
+
+MacScreenshotContextProvider::MacScreenshotContextProvider(QObject *parent)
+    : ScreenshotContextProvider(parent)
+{
+}
+
+void MacScreenshotContextProvider::capture()
+{
+    cancel();
+
+    m_capturePath = QDir::temp().filePath(
+        QStringLiteral("speecher_%1.png").arg(QUuid::createUuid().toString(QUuid::Id128)));
+    m_capture = new QProcess(this);
+    connect(m_capture,
+            &QProcess::finished,
+            this,
+            [this](int exitCode, QProcess::ExitStatus) { finish(exitCode); });
+    connect(m_capture, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
+        if (!m_capture) {
+            return;
+        }
+        m_capture->deleteLater();
+        m_capture = nullptr;
+        discardCaptureFile();
+        emit failed(QStringLiteral("Could not run the macOS screen capture tool"));
+    });
+    // -x keeps the capture silent; the shutter sound during dictation would land
+    // in the recording.
+    m_capture->start(QString::fromLatin1(screenCaptureTool),
+                     {QStringLiteral("-x"), QStringLiteral("-t"), QStringLiteral("png"), m_capturePath});
+}
+
+void MacScreenshotContextProvider::cancel()
+{
+    if (m_capture) {
+        m_capture->disconnect(this);
+        m_capture->kill();
+        m_capture->deleteLater();
+        m_capture = nullptr;
+    }
+    discardCaptureFile();
+}
+
+void MacScreenshotContextProvider::discardCaptureFile()
+{
+    if (m_capturePath.isEmpty()) {
+        return;
+    }
+    QFile::remove(m_capturePath);
+    m_capturePath.clear();
+}
+
+void MacScreenshotContextProvider::finish(int exitCode)
+{
+    m_capture->deleteLater();
+    m_capture = nullptr;
+
+    // A denied Screen Recording grant shows up either as a non-zero exit or as
+    // an empty file, depending on the macOS version.
+    QFile file(m_capturePath);
+    if (exitCode != 0 || !file.open(QIODevice::ReadOnly) || file.size() == 0
+        || file.size() > maximumCaptureFileSize) {
+        file.close();
+        discardCaptureFile();
+        emit failed(screenRecordingHint());
+        return;
+    }
+    const QByteArray source = file.readAll();
+    file.close();
+    discardCaptureFile();
+
+    const QByteArray png = normalizedScreenshot(source);
+    if (png.isEmpty()) {
+        emit failed(QStringLiteral("The captured screenshot format was not supported"));
+        return;
+    }
+    emit captured(png, QStringLiteral("image/png"));
+}
+
+} // namespace speecher

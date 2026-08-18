@@ -1,0 +1,24 @@
+#pragma once
+
+#include "dictation/DictationPorts.h"
+
+#include <QStringList>
+
+namespace speecher {
+
+// Pauses the media players macOS scripts through Apple events, and resumes only
+// the ones it actually paused. Best effort throughout: a denied Automation
+// prompt or a player that is not running is not worth interrupting dictation.
+class MacMediaController : public MediaController {
+    Q_OBJECT
+
+public:
+    explicit MacMediaController(QObject *parent = nullptr);
+    void pausePlaying() override;
+    void resumePaused() override;
+
+private:
+    QStringList m_pausedPlayers;
+};
+
+} // namespace speecher
