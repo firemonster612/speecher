@@ -34,7 +34,9 @@ void CorrectionObserver::schedule(
                             correctionFirstSampleMs + correctionSettleMs,
                             correctionWindowMs}) {
         QTimer::singleShot(delay, context, [this, snapshot, sampledWindow, generation] {
-            if (generation != m_generation || !snapshot) {
+            // Reading the window costs an AT-SPI round trip, so skip it once
+            // this observation is over or a later one has replaced it.
+            if (generation != m_generation || !snapshot || !m_tracker.active()) {
                 return;
             }
             m_tracker.sample(snapshot->correctionWindow(sampledWindow));
