@@ -74,15 +74,23 @@ private slots:
         auto *button = notice->findChild<QPushButton *>(QStringLiteral("enableAccessibilityButton"));
         QVERIFY(message);
         QVERIFY(button);
+#ifdef Q_OS_MACOS
+        QVERIFY(message->text().contains(QStringLiteral("Accessibility is off")));
+        QCOMPARE(button->text(), QStringLiteral("Open settings"));
+#else
         QVERIFY(message->text().contains(QStringLiteral("AT-SPI")));
         QCOMPARE(button->text(), QStringLiteral("Enable permanently"));
+#endif
         QSignalSpy requested(notice, &AccessibilityNotice::enableRequested);
         button->click();
         QCOMPARE(requested.count(), 1);
 
         notice->setState(true, true, false);
         QVERIFY(notice->isVisible());
+#ifndef Q_OS_MACOS
+        // macOS has no session-only grant; enabled always means permanent.
         QVERIFY(message->text().contains(QStringLiteral("only for this session")));
+#endif
 
         notice->setState(true, true, true);
         QVERIFY(!notice->isVisible());
@@ -371,6 +379,7 @@ private slots:
         QVERIFY(!checkBoxRow->findChild<QLabel *>(QStringLiteral("rowDescription")));
     }
 
+#ifdef SPEECHER_WITH_YDOTOOL
     void outputVirtualKeyboardStatusFitsWrappedText()
     {
         SettingsStore settings;
@@ -398,6 +407,7 @@ private slots:
         QCOMPARE(status->minimumHeight(), status->heightForWidth(status->width()));
         QVERIFY(status->minimumHeight() < longStatusHeight);
     }
+#endif
 };
 
 int runUiTests(int argc, char **argv)

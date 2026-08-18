@@ -7,8 +7,8 @@
 
 class QCheckBox;
 class QComboBox;
-class QKeySequenceEdit;
 class QHideEvent;
+class QKeySequenceEdit;
 class QLabel;
 class QShowEvent;
 class QProgressBar;
