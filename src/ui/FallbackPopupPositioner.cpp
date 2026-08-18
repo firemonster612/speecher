@@ -22,10 +22,14 @@ void FallbackPopupPositioner::configurePopup(QWidget *widget)
 
 void FallbackPopupPositioner::positionBottomCenter(QWidget *widget)
 {
+    positionBottomCenterOn(widget, QGuiApplication::primaryScreen());
+}
+
+void FallbackPopupPositioner::positionBottomCenterOn(QWidget *widget, const QScreen *screen)
+{
     if (!widget) {
         return;
     }
-    const QScreen *screen = QGuiApplication::primaryScreen();
     if (!screen) {
         return;
     }

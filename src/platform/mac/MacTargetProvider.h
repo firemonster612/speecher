@@ -2,6 +2,10 @@
 
 #include "dictation/DictationPorts.h"
 
+#include <QString>
+
+#include <optional>
+
 namespace speecher {
 
 // Identifies the frontmost application through NSWorkspace, then reaches for its
@@ -27,6 +31,9 @@ private:
 
     // AXUIElementRef, kept opaque so this header stays plain C++ for moc.
     void *m_focusedElement = nullptr;
+    // The control's value just before insertText wrote to it. Empty optional on
+    // the paste path, where there is no baseline to compare against.
+    std::optional<QString> m_valueBeforeInsertion;
 };
 
 } // namespace speecher

@@ -12,6 +12,7 @@ class MacPopupPositioner : public FallbackPopupPositioner {
 public:
     explicit MacPopupPositioner(QObject *parent = nullptr);
     void configurePopup(QWidget *widget) override;
+    void positionBottomCenter(QWidget *widget) override;
 };
 
 } // namespace speecher

@@ -1,5 +1,9 @@
 #include "platform/mac/MacPopupPositioner.h"
 
+#include <QCursor>
+#include <QDebug>
+#include <QGuiApplication>
+#include <QScreen>
 #include <QWidget>
 
 #import <AppKit/AppKit.h>
@@ -30,12 +34,25 @@ void MacPopupPositioner::configurePopup(QWidget *widget)
     // non-activating style mask that keeps the dictation target focused.
     if ([window isKindOfClass:[NSPanel class]]) {
         window.styleMask |= NSWindowStyleMaskNonactivatingPanel;
+    } else {
+        qWarning().noquote()
+            << "The dictation popup is not an NSPanel, so it cannot take the "
+               "non-activating style mask: showing it will pull focus away from "
+               "the app being dictated into.";
     }
     window.level = NSStatusWindowLevel;
     window.collectionBehavior |= NSWindowCollectionBehaviorCanJoinAllSpaces
         | NSWindowCollectionBehaviorFullScreenAuxiliary
         | NSWindowCollectionBehaviorStationary;
     window.animationBehavior = NSWindowAnimationBehaviorNone;
+}
+
+void MacPopupPositioner::positionBottomCenter(QWidget *widget)
+{
+    // The popup belongs on the display the user is working on, which on a
+    // multi-display Mac is often not the primary one.
+    const QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
+    positionBottomCenterOn(widget, screen ? screen : QGuiApplication::primaryScreen());
 }
 
 } // namespace speecher
