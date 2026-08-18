@@ -89,6 +89,29 @@ protected:
     }
 };
 
+// QFormLayout sizes a row from its size hint, which for a word-wrapped
+// description is measured at the hint width rather than the real one. The row
+// therefore has to claim the height its own layout needs once it knows how
+// wide it is, or a description that wraps gets clipped.
+class SettingsRow final : public QFrame {
+public:
+    explicit SettingsRow(QWidget *parent)
+        : QFrame(parent)
+    {
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QFrame::resizeEvent(event);
+        if (QLayout *rowLayout = layout()) {
+            setMinimumHeight(rowLayout->hasHeightForWidth()
+                                 ? rowLayout->heightForWidth(width())
+                                 : rowLayout->minimumSize().height());
+        }
+    }
+};
+
 class SettingsSeparator final : public QFrame {
 public:
     explicit SettingsSeparator(QWidget *parent)
@@ -150,9 +173,14 @@ QFrame *makeRow(const QString &label,
                 QWidget *parent,
                 QWidget *titleAccessory)
 {
-    auto *row = new QFrame(parent);
+    auto *row = new SettingsRow(parent);
     row->setObjectName(QStringLiteral("settingsRow"));
-    row->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    // A wrapped description is only as tall as the row is narrow, and layouts
+    // ignore that unless the policy says the height depends on the width.
+    // Wider system fonts wrap descriptions that fit on one line elsewhere.
+    QSizePolicy rowPolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    rowPolicy.setHeightForWidth(true);
+    row->setSizePolicy(rowPolicy);
 
     auto *rowLayout = new QHBoxLayout(row);
     rowLayout->setContentsMargins(14, 10, 14, 10);
@@ -160,7 +188,9 @@ QFrame *makeRow(const QString &label,
 
     auto *text = new QWidget(row);
     text->setObjectName(QStringLiteral("rowLabelCell"));
-    text->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    QSizePolicy textPolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    textPolicy.setHeightForWidth(true);
+    text->setSizePolicy(textPolicy);
     auto *textLayout = new QVBoxLayout(text);
     textLayout->setContentsMargins(0, 0, 0, 0);
     textLayout->setSpacing(2);
@@ -185,6 +215,9 @@ QFrame *makeRow(const QString &label,
         auto *subtitle = new QLabel(description, text);
         subtitle->setObjectName(QStringLiteral("rowDescription"));
         subtitle->setWordWrap(true);
+        QSizePolicy subtitlePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+        subtitlePolicy.setHeightForWidth(true);
+        subtitle->setSizePolicy(subtitlePolicy);
         subtitle->setForegroundRole(QPalette::PlaceholderText);
         textLayout->addWidget(subtitle);
     }
