@@ -14,6 +14,8 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFontMetrics>
+#include <QFormLayout>
+#include <QImage>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStyleHints>
@@ -253,6 +255,100 @@ private slots:
         QCOMPARE(checkBox->accessibleName(), QStringLiteral("Setting"));
         QCOMPARE(checkBoxRow->findChild<QLabel *>(QStringLiteral("rowDescription"))->text(),
                  sentence);
+    }
+
+    void settingsCardsRenderRoundedWithVisibleSubordinateSeparators()
+    {
+        QWidget surface;
+        surface.resize(200, 140);
+        QPalette palette = surface.palette();
+        palette.setColor(QPalette::Window, QColor(16, 20, 24));
+        palette.setColor(QPalette::Base, QColor(31, 36, 41));
+        palette.setColor(QPalette::WindowText, QColor(239, 240, 241));
+        palette.setColor(QPalette::Text, QColor(239, 240, 241));
+        surface.setPalette(palette);
+        surface.setAutoFillBackground(true);
+
+        QFrame *card = settings::makeSettingsCard(&surface);
+        card->setGeometry(20, 20, 160, 100);
+        auto *form = qobject_cast<QFormLayout *>(card->layout());
+        QVERIFY(form);
+        QFrame *separator = settings::makeSeparator(card);
+        form->addRow(new QLabel(QStringLiteral("First"), card));
+        form->addRow(separator);
+        form->addRow(new QLabel(QStringLiteral("Second"), card));
+        auto *opaqueChild = new QWidget(card);
+        QPalette childPalette = opaqueChild->palette();
+        childPalette.setColor(QPalette::Window, QColor(200, 20, 20));
+        opaqueChild->setPalette(childPalette);
+        opaqueChild->setAutoFillBackground(true);
+        opaqueChild->setGeometry(0, 80, card->width(), 20);
+        opaqueChild->show();
+
+        surface.show();
+        QCoreApplication::processEvents();
+        const QImage image = surface.grab().toImage();
+        const qreal scale = image.devicePixelRatio();
+        const auto colorAt = [&image, scale](const QPoint &point) {
+            return image.pixelColor(qRound(point.x() * scale), qRound(point.y() * scale));
+        };
+
+        QCOMPARE(separator->height(), 1);
+        QCOMPARE(colorAt(card->geometry().topLeft()), palette.color(QPalette::Window));
+        QCOMPARE(colorAt(card->geometry().topLeft() + QPoint(3, 3)),
+                 palette.color(QPalette::Window));
+        QCOMPARE(colorAt(card->geometry().bottomLeft()), palette.color(QPalette::Window));
+        QVERIFY(colorAt(card->geometry().topLeft() + QPoint(card->width() / 2, 0))
+                    != palette.color(QPalette::Window));
+        const QColor cardSurface = colorAt(card->geometry().topLeft() + QPoint(20, 20));
+        const QColor divider = colorAt(separator->mapTo(&surface, QPoint(20, 0)));
+        QVERIFY(cardSurface.lightness() > palette.color(QPalette::Window).lightness());
+        QVERIFY(divider.lightness() < cardSurface.lightness());
+    }
+
+    void settingsRowsGrowForWrappedDescriptions()
+    {
+        QWidget surface;
+        surface.resize(520, 240);
+        auto *layout = new QVBoxLayout(&surface);
+        auto *control = new QPushButton(QStringLiteral("A deliberately wide control"), &surface);
+        control->setFixedWidth(250);
+        QFrame *row = settings::makeRow(
+            QStringLiteral("Output"),
+            QStringLiteral("How Speecher delivers final text after dictation has completed."),
+            control,
+            &surface);
+        layout->addWidget(row);
+        layout->addStretch();
+
+        surface.show();
+        QCoreApplication::processEvents();
+        auto *description = row->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        QVERIFY(description);
+        QVERIFY(description->heightForWidth(description->width())
+                > description->fontMetrics().height());
+        QVERIFY(description->height() >= description->heightForWidth(description->width()));
+        const QRect descriptionInRow(
+            description->mapTo(row, QPoint(0, 0)), description->size());
+        QVERIFY(row->rect().contains(descriptionInRow.bottomLeft()));
+    }
+
+    void refinementTableFillsItsSettingsCard()
+    {
+        ProviderRegistry providers;
+        RefinementSettingsPage page(providers);
+        page.resize(900, 640);
+        page.show();
+        QCoreApplication::processEvents();
+
+        auto *table = page.findChild<QTableWidget *>(QStringLiteral("vocabInput"));
+        QVERIFY(table);
+        QWidget *card = table->parentWidget();
+        while (card && card->objectName() != QStringLiteral("settingsCard")) {
+            card = card->parentWidget();
+        }
+        QVERIFY(card);
+        QCOMPARE(table->width(), card->width() - 2);
     }
 
     void outputVirtualKeyboardStatusFitsWrappedText()

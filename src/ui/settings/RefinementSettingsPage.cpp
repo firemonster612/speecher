@@ -10,6 +10,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QSignalBlocker>
+#include <QSizePolicy>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
@@ -95,18 +96,26 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     settings::addRow(refinementLayout, settings::makeRow(QStringLiteral("Refinement"), QStringLiteral("Clean up dictated text after capture."), m_provider, refinementCard), refinementCard);
     settings::addRow(refinementLayout, settings::makeRow(QStringLiteral("Fallback profile"), QStringLiteral("Writing profile used when the target app does not imply one."), m_writingProfile, refinementCard), refinementCard);
     auto *profileSettingsControl = new QWidget(promptCard);
+    profileSettingsControl->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     auto *profileSettingsLayout = new QVBoxLayout(profileSettingsControl);
-    auto *profileSettingsTitle = new QLabel(QStringLiteral("Profile behavior"), profileSettingsControl);
+    profileSettingsLayout->setContentsMargins(0, 0, 0, 0);
+    profileSettingsLayout->setSpacing(0);
+    auto *profileHeader = new QWidget(profileSettingsControl);
+    auto *profileHeaderLayout = new QVBoxLayout(profileHeader);
+    profileHeaderLayout->setContentsMargins(14, 12, 14, 10);
+    profileHeaderLayout->setSpacing(2);
+    auto *profileSettingsTitle = new QLabel(QStringLiteral("Profile behavior"), profileHeader);
     profileSettingsTitle->setObjectName(QStringLiteral("subsectionLabel"));
     auto *profileSettingsDescription = new QLabel(
         QStringLiteral("Choose cleanup strength and an optional explicit tone for each automatically detected profile."),
-        profileSettingsControl);
+        profileHeader);
     profileSettingsDescription->setObjectName(QStringLiteral("rowDescription"));
     profileSettingsDescription->setWordWrap(true);
-    profileSettingsLayout->addWidget(profileSettingsTitle);
-    profileSettingsLayout->addWidget(profileSettingsDescription);
+    profileHeaderLayout->addWidget(profileSettingsTitle);
+    profileHeaderLayout->addWidget(profileSettingsDescription);
+    profileSettingsLayout->addWidget(profileHeader);
     profileSettingsLayout->addWidget(m_profileSettings);
-    promptLayout->addWidget(profileSettingsControl);
+    promptLayout->addRow(profileSettingsControl);
 
     m_targetContextControl = settings::makeRow(
         QStringLiteral("Context"),

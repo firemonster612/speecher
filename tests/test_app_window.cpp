@@ -13,6 +13,7 @@
 #include <QDir>
 #include <QFile>
 #include <QLabel>
+#include <QImage>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
@@ -182,6 +183,35 @@ private slots:
         QVERIFY(stack->currentWidget()->isAncestorOf(toggle));
     }
 
+    void dictationStatusUsesTheAccentCardTreatment()
+    {
+        ApplicationController controller(true);
+        DictationPage page(&controller);
+        QPalette palette = page.palette();
+        palette.setColor(QPalette::Window, QColor(12, 16, 20));
+        palette.setColor(QPalette::Base, QColor(28, 32, 36));
+        palette.setColor(QPalette::Highlight, QColor(61, 174, 233));
+        page.setPalette(palette);
+        page.resize(700, 640);
+        page.show();
+        QCoreApplication::processEvents();
+        auto *status = page.findChild<QLabel *>(QStringLiteral("dictationStatus"));
+        QVERIFY(status);
+        QWidget *card = status->parentWidget();
+        while (card && card->objectName() != QStringLiteral("settingsCard")) {
+            card = card->parentWidget();
+        }
+        QVERIFY(card);
+        const QImage image = card->grab().toImage();
+        const qreal scale = image.devicePixelRatio();
+        const QColor interior = image.pixelColor(qRound(6 * scale), qRound(6 * scale));
+        QVERIFY(interior != palette.color(QPalette::Base));
+        QVERIFY(qAbs(interior.blue() - palette.color(QPalette::Highlight).blue())
+                < qAbs(palette.color(QPalette::Base).blue()
+                       - palette.color(QPalette::Highlight).blue()));
+        QCOMPARE(status->foregroundRole(), QPalette::Highlight);
+    }
+
     void settingsPagesUseKirigamiRiverStructure()
     {
         ApplicationController controller(true);
@@ -204,6 +234,31 @@ private slots:
             QVERIFY2(river->findChild<QWidget *>(QStringLiteral("settingsCard")),
                      qPrintable(QStringLiteral("Page %1 has no settings island").arg(index)));
         }
+    }
+
+    void vocabularyRiverIsCenteredInItsPage()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        window.resize(1000, 700);
+        window.show();
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        auto *stack = window.findChild<QStackedWidget *>(QStringLiteral("appPageStack"));
+        QVERIFY(navigation && stack);
+        navigation->setCurrentRow(6);
+        QCoreApplication::processEvents();
+
+        QWidget *page = stack->currentWidget();
+        QWidget *river = page->objectName() == QStringLiteral("settingsRiver")
+            ? page
+            : page->findChild<QWidget *>(QStringLiteral("settingsRiver"));
+        QVERIFY(river);
+        const int left = river->mapTo(page, QPoint(0, 0)).x();
+        const int right = page->width() - left - river->width();
+        QVERIFY2(qAbs(left - right) <= 1,
+                 qPrintable(QStringLiteral("Vocabulary margins differ: %1 and %2")
+                                .arg(left)
+                                .arg(right)));
     }
 
     void headerStripTracksActiveAndInactiveKdeColors()

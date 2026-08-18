@@ -11,8 +11,12 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPainter>
+#include <QPainterPath>
 #include <QPalette>
 #include <QScrollArea>
+#include <QRegion>
+#include <QResizeEvent>
 #include <QFile>
 #include <QTextStream>
 #include <QSignalBlocker>
@@ -28,27 +32,95 @@
 
 namespace speecher::settings {
 
-QColor separatorColor(const QPalette &palette)
+namespace {
+
+constexpr qreal cardRadius = 16.0;
+
+QColor blendedColor(const QColor &base, const QColor &foreground, int foregroundPercent)
+{
+    const int basePercent = 100 - foregroundPercent;
+    return QColor((base.red() * basePercent + foreground.red() * foregroundPercent) / 100,
+                  (base.green() * basePercent + foreground.green() * foregroundPercent) / 100,
+                  (base.blue() * basePercent + foreground.blue() * foregroundPercent) / 100);
+}
+
+QColor cardColor(const QPalette &palette)
 {
     const QColor window = palette.color(QPalette::Window);
     const QColor text = palette.color(QPalette::WindowText);
-    return QColor((window.red() * 3 + text.red()) / 4,
-                  (window.green() * 3 + text.green()) / 4,
-                  (window.blue() * 3 + text.blue()) / 4);
+    return window.lightness() < text.lightness()
+        ? blendedColor(window, text, 7)
+        : palette.color(QPalette::Base);
+}
+
+class SettingsCard final : public QFrame {
+public:
+    explicit SettingsCard(QWidget *parent)
+        : QFrame(parent)
+    {
+        setAttribute(Qt::WA_OpaquePaintEvent, false);
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QFrame::resizeEvent(event);
+        QPainterPath path;
+        path.addRoundedRect(QRectF(rect()), cardRadius, cardRadius);
+        setMask(QRegion(path.toFillPolygon().toPolygon()));
+    }
+
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        QColor background = cardColor(palette());
+        QColor border = blendedColor(background, palette().color(QPalette::Text), 12);
+        if (property("accentCard").toBool()) {
+            const QColor accent = palette().color(QPalette::Highlight);
+            background = blendedColor(background, accent, 12);
+            border = blendedColor(background, accent, 38);
+        }
+        painter.setBrush(background);
+        painter.setPen(QPen(border, 1.0));
+        painter.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5),
+                                cardRadius,
+                                cardRadius);
+    }
+};
+
+class SettingsSeparator final : public QFrame {
+public:
+    explicit SettingsSeparator(QWidget *parent)
+        : QFrame(parent)
+    {
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.fillRect(rect(), separatorColor(palette()));
+    }
+};
+
+} // namespace
+
+QColor separatorColor(const QPalette &palette)
+{
+    const QColor background = cardColor(palette);
+    const QColor window = palette.color(QPalette::Window);
+    return window.lightness() < palette.color(QPalette::WindowText).lightness()
+        ? blendedColor(background, window, 82)
+        : blendedColor(background, palette.color(QPalette::Text), 8);
 }
 
 QFrame *makeSeparator(QWidget *parent)
 {
-    auto *line = new QFrame(parent);
+    auto *line = new SettingsSeparator(parent);
     line->setObjectName(QStringLiteral("settingsSeparator"));
-    line->setFrameShape(QFrame::HLine);
-    line->setFrameShadow(QFrame::Plain);
+    line->setFrameShape(QFrame::NoFrame);
     line->setFixedHeight(1);
-    // Sunken frames vanish on dark schemes; blend a quarter of the text
-    // color into the window color, the way Kirigami derives separators.
-    QPalette blended(parent->palette());
-    blended.setColor(QPalette::WindowText, separatorColor(parent->palette()));
-    line->setPalette(blended);
     line->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     return line;
 }
@@ -67,7 +139,7 @@ QWidget *makeCenteredSeparator(QWidget *parent)
 void configureFormLayout(QFormLayout *form)
 {
     form->setRowWrapPolicy(QFormLayout::DontWrapRows);
-    form->setFieldGrowthPolicy(QFormLayout::FieldsStayAtSizeHint);
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     form->setFormAlignment(Qt::AlignHCenter | Qt::AlignTop);
     form->setLabelAlignment(Qt::AlignRight);
 }
@@ -380,14 +452,15 @@ QLabel *makePageTitle(const QString &text, QWidget *parent)
 
 QFrame *makeSettingsCard(QWidget *parent)
 {
-    auto *card = new QFrame(parent);
+    auto *card = new SettingsCard(parent);
     card->setObjectName(QStringLiteral("settingsCard"));
-    card->setFrameShape(QFrame::StyledPanel);
-    card->setFrameShadow(QFrame::Plain);
+    card->setFrameShape(QFrame::NoFrame);
     card->setBackgroundRole(QPalette::Base);
-    card->setAutoFillBackground(true);
+    card->setAutoFillBackground(false);
     auto *layout = new QFormLayout(card);
-    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setContentsMargins(1, 1, 1, 1);
+    layout->setHorizontalSpacing(0);
+    layout->setVerticalSpacing(0);
     configureFormLayout(layout);
     return card;
 }

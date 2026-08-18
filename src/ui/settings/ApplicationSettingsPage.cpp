@@ -130,7 +130,7 @@ ApplicationSettingsPage::ApplicationSettingsPage(QWidget *parent)
     m_rules->verticalHeader()->hide();
     m_rules->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_rules->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_rules->setMinimumHeight(440);
+    m_rules->setMinimumHeight(320);
     m_deleteButton->setEnabled(false);
 
     auto *title = settings::makePageTitle(QStringLiteral("Applications"), this);

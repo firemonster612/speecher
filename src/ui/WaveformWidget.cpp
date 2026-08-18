@@ -1,6 +1,5 @@
 #include "ui/WaveformWidget.h"
 
-#include <QApplication>
 #include <QFont>
 #include <QPainter>
 #include <QPalette>
@@ -79,10 +78,11 @@ void WaveformWidget::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    const QPalette p = QApplication::palette();
-    const QColor pill = p.color(QPalette::Base);
-    const QColor bar = p.color(QPalette::Text);
-    const QColor stroke = withAlpha(p.color(QPalette::Mid), 150);
+    const QPalette p = palette();
+    const QColor accent = p.color(QPalette::Highlight);
+    const QColor pill = withAlpha(accent, 36);
+    const QColor bar = accent;
+    const QColor stroke = withAlpha(accent, 112);
     painter.setPen(QPen(stroke, 1.2));
     painter.setBrush(pill);
     painter.drawRoundedRect(QRectF(rect()).adjusted(1.2, 1.2, -1.2, -1.2), (height() - 2.4) / 2.0, (height() - 2.4) / 2.0);

@@ -284,6 +284,13 @@ void AppWindow::buildSharedPages()
     vocabularyLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Words & rules"), vocabularyContent));
     vocabularyLayout->addSpacing(settings::tightSpacing());
     vocabularyLayout->addWidget(tabs, 1);
+    auto *vocabularyPage = new QWidget(this);
+    auto *vocabularyPageLayout = new QHBoxLayout(vocabularyPage);
+    vocabularyPageLayout->setContentsMargins(0, 0, 0, 0);
+    vocabularyPageLayout->setSpacing(0);
+    vocabularyPageLayout->addStretch();
+    vocabularyPageLayout->addWidget(vocabularyContent);
+    vocabularyPageLayout->addStretch();
 
     m_pageWidgets = {
         m_dictation,
@@ -292,7 +299,7 @@ void AppWindow::buildSharedPages()
         m_pages->applications(),
         m_pages->output(),
         refinement,
-        vocabularyContent,
+        vocabularyPage,
     };
     for (QWidget *page : std::as_const(m_pageWidgets)) {
         removeEmbeddedPageTitle(page);

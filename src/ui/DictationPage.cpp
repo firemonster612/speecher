@@ -77,6 +77,7 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     riverLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Status"), river));
     riverLayout->addSpacing(settings::tightSpacing());
     auto *statusCard = settings::makeSettingsCard(river);
+    statusCard->setProperty("accentCard", true);
     auto *statusCardLayout = qobject_cast<QFormLayout *>(statusCard->layout());
     auto *statusField = new QWidget(statusCard);
     auto *statusLayout = new QVBoxLayout(statusField);
@@ -84,15 +85,17 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     statusLayout->setSpacing(settings::relatedSpacing());
 
     m_status->setAlignment(Qt::AlignCenter);
+    m_status->setObjectName(QStringLiteral("dictationStatus"));
     QFont statusFont = m_status->font();
     statusFont.setBold(true);
     m_status->setFont(statusFont);
-    m_status->setForegroundRole(QPalette::WindowText);
+    m_status->setForegroundRole(QPalette::Highlight);
     statusLayout->addWidget(m_status);
     statusLayout->addWidget(m_waveform, 0, Qt::AlignHCenter);
     m_toggle->setMinimumSize(160, 38);
     m_toggle->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_toggle->setObjectName(QStringLiteral("dictationToggle"));
+    m_toggle->setDefault(true);
     statusLayout->addWidget(m_toggle, 0, Qt::AlignHCenter);
     statusCardLayout->addRow(statusField);
     riverLayout->addWidget(statusCard);
@@ -107,7 +110,7 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     auto *summaryCard = settings::makeSettingsCard(river);
     auto *form = qobject_cast<QFormLayout *>(summaryCard->layout());
 
-    const int valueWidth = fontMetrics().horizontalAdvance(QString(40, QLatin1Char('x')));
+    const int valueWidth = fontMetrics().horizontalAdvance(QString(24, QLatin1Char('x')));
     for (QLabel *label : {m_provider, m_microphone, m_output, m_theme}) {
         label->setMaximumWidth(valueWidth);
         label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
@@ -186,7 +189,7 @@ void DictationPage::setStatus(const QString &status)
     m_status->setText(states.contains(state)
                           ? state.left(1).toUpper() + state.mid(1)
                           : status);
-    m_status->setForegroundRole(QPalette::WindowText);
+    m_status->setForegroundRole(QPalette::Highlight);
     m_waveform->setVisible(active);
     if (!active) {
         m_waveform->setLevel(0.0f);
