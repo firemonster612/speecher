@@ -8,6 +8,7 @@ QStringList all()
         QString::fromLatin1(Automatic),
         QString::fromLatin1(Ydotool),
         QString::fromLatin1(WlCopy),
+        QString::fromLatin1(MacPaste),
         QString::fromLatin1(QtClipboard),
     };
 }
@@ -39,6 +40,9 @@ QString label(const QString &method)
     }
     if (value == QString::fromLatin1(WlCopy)) {
         return QStringLiteral("Copy with wl-copy");
+    }
+    if (value == QString::fromLatin1(MacPaste)) {
+        return QStringLiteral("Keyboard paste");
     }
     if (value == QString::fromLatin1(QtClipboard)) {
         return QStringLiteral("Copy with Qt clipboard");
