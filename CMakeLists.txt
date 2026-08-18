@@ -485,6 +485,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_bindings.cpp
     tests/test_settings.cpp
     tests/test_provider_registry.cpp
+    tests/test_platform_composition.cpp
     tests/test_platform_live.cpp
     tests/test_single_instance_ipc.cpp
     tests/test_delivery.cpp

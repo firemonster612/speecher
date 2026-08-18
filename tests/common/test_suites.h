@@ -54,6 +54,7 @@ int runTranscriptStateTests(int argc, char **argv);
 int runBindingsTests(int argc, char **argv);
 int runSettingsTests(int argc, char **argv);
 int runProviderRegistryTests(int argc, char **argv);
+int runPlatformCompositionTests(int argc, char **argv);
 int runPlatformLiveTests(int argc, char **argv);
 int runSingleInstanceIpcTests(int argc, char **argv);
 int runDeliveryTests(int argc, char **argv);
