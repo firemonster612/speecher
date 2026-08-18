@@ -16,7 +16,7 @@ option(SPEECHER_WITH_LAYER_SHELL "Use layer-shell-qt when available" ON)
 option(SPEECHER_WITH_QKEYCHAIN "Use QKeychain when available" ON)
 option(SPEECHER_BUILD_TESTS "Build tests" ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Multimedia DBus)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Multimedia)
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
   pkg_check_modules(ATSPI QUIET IMPORTED_TARGET atspi-2 gobject-2.0)
@@ -28,6 +28,7 @@ if(SPEECHER_WITH_LAYER_SHELL)
   find_package(LayerShellQt QUIET)
 endif()
 if(UNIX AND NOT APPLE)
+  find_package(Qt6 6.5 REQUIRED COMPONENTS DBus)
   find_package(KF6WidgetsAddons QUIET)
   find_package(KF6ColorScheme QUIET)
   find_package(KF6GlobalAccel QUIET)
@@ -129,10 +130,27 @@ set(SPEECHER_PROVIDER_HEADERS
 )
 
 set(SPEECHER_PLATFORM_SOURCES
-  src/core/MediaPauseController.cpp
   src/output/ClipboardDelivery.cpp
   src/output/QtClipboardDelivery.cpp
   src/output/TextDelivery.cpp
+  src/platform/audio/AudioPcmConverter.cpp
+  src/platform/audio/QtAudioInput.cpp
+  src/ui/FallbackPopupPositioner.cpp
+)
+
+set(SPEECHER_PLATFORM_HEADERS
+  src/output/ClipboardDelivery.h
+  src/output/QtClipboardDelivery.h
+  src/output/TextDelivery.h
+  src/platform/AccessibilityState.h
+  src/platform/GlobalShortcutBinder.h
+  src/platform/audio/AudioPcmConverter.h
+  src/platform/audio/QtAudioInput.h
+  src/ui/FallbackPopupPositioner.h
+  src/ui/PopupPositioner.h
+)
+
+set(SPEECHER_PLATFORM_LINUX_SOURCES
   src/output/WaylandClipboardOwner.cpp
   src/output/WaylandClipboardProcess.cpp
   src/output/WlClipboardDelivery.cpp
@@ -140,44 +158,32 @@ set(SPEECHER_PLATFORM_SOURCES
   src/output/YdotoolSetup.cpp
   src/platform/AtSpiTargetProvider.cpp
   src/platform/KGlobalAccelShortcutBinder.cpp
+  src/platform/MediaPauseController.cpp
+  src/platform/PortalScreenshotContextProvider.cpp
+  src/platform/WaylandLayerShell.cpp
   src/platform/atspi/AtSpiAccess.cpp
   src/platform/atspi/AtSpiCorrectionObserver.cpp
   src/platform/atspi/AtSpiTargetSnapshot.cpp
-  src/platform/PortalScreenshotContextProvider.cpp
-  src/platform/audio/AudioPcmConverter.cpp
-  src/platform/audio/QtAudioInput.cpp
-  src/platform/WaylandLayerShell.cpp
-  src/ui/FallbackPopupPositioner.cpp
 )
 
-set(SPEECHER_PLATFORM_HEADERS
-  src/core/MediaPauseController.h
-  src/platform/AccessibilityState.h
-  src/platform/GlobalShortcutBinder.h
-  src/platform/KGlobalAccelShortcutBinder.h
-  src/output/ClipboardDelivery.h
-  src/output/QtClipboardDelivery.h
-  src/output/TextDelivery.h
+set(SPEECHER_PLATFORM_LINUX_HEADERS
   src/output/WaylandClipboardOwner.h
   src/output/WaylandClipboardProcess.h
   src/output/WlClipboardDelivery.h
   src/output/YdotoolDelivery.h
   src/output/YdotoolSetup.h
   src/platform/AtSpiTargetProvider.h
+  src/platform/KGlobalAccelShortcutBinder.h
+  src/platform/MediaPauseController.h
+  src/platform/PortalScreenshotContextProvider.h
+  src/platform/WaylandLayerShell.h
   src/platform/atspi/AtSpiAccess.h
   src/platform/atspi/AtSpiCorrectionObserver.h
   src/platform/atspi/AtSpiTargetSnapshot.h
-  src/platform/PortalScreenshotContextProvider.h
-  src/platform/audio/AudioPcmConverter.h
-  src/platform/audio/QtAudioInput.h
-  src/platform/WaylandLayerShell.h
-  src/ui/FallbackPopupPositioner.h
-  src/ui/PopupPositioner.h
 )
 
 set(SPEECHER_APP_UI_SOURCES
   src/app/ApplicationController.cpp
-  src/app/LinuxComposition.cpp
   src/app/PlatformSelection.cpp
   src/app/SingleInstanceIpc.cpp
   src/output/YdotoolSetupFlow.cpp
@@ -204,7 +210,6 @@ set(SPEECHER_APP_UI_SOURCES
 
 set(SPEECHER_APP_UI_HEADERS
   src/app/ApplicationController.h
-  src/app/LinuxComposition.h
   src/app/PlatformComposition.h
   src/app/SingleInstanceIpc.h
   src/output/YdotoolSetupFlow.h
@@ -228,6 +233,14 @@ set(SPEECHER_APP_UI_HEADERS
   src/ui/Theme.h
   src/ui/TranscriberPopup.h
   src/ui/WaveformWidget.h
+)
+
+set(SPEECHER_APP_UI_LINUX_SOURCES
+  src/app/LinuxComposition.cpp
+)
+
+set(SPEECHER_APP_UI_LINUX_HEADERS
+  src/app/LinuxComposition.h
 )
 
 add_library(speecher_domain STATIC
@@ -256,7 +269,17 @@ add_library(speecher_platform STATIC
   ${SPEECHER_PLATFORM_HEADERS}
 )
 target_include_directories(speecher_platform PUBLIC src)
-target_link_libraries(speecher_platform PUBLIC speecher_workflow Qt6::Widgets Qt6::Multimedia Qt6::DBus)
+target_link_libraries(speecher_platform PUBLIC speecher_workflow Qt6::Widgets Qt6::Multimedia)
+if(UNIX AND NOT APPLE)
+  target_sources(speecher_platform PRIVATE
+    ${SPEECHER_PLATFORM_LINUX_SOURCES}
+    ${SPEECHER_PLATFORM_LINUX_HEADERS}
+  )
+  # Public: ClipboardDelivery's members and TextDelivery's method order differ
+  # with the Wayland and ydotool backends compiled in.
+  target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_WAYLAND=1)
+  target_link_libraries(speecher_platform PUBLIC Qt6::DBus)
+endif()
 if(ATSPI_FOUND)
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_ATSPI=1)
   target_link_libraries(speecher_platform PUBLIC PkgConfig::ATSPI)
@@ -271,6 +294,12 @@ target_compile_definitions(speecher_app_ui PUBLIC SPEECHER_VERSION="${PROJECT_VE
 target_link_libraries(speecher_app_ui PUBLIC
   speecher_domain speecher_workflow speecher_providers speecher_platform Qt6::Widgets
 )
+if(UNIX AND NOT APPLE)
+  target_sources(speecher_app_ui PRIVATE
+    ${SPEECHER_APP_UI_LINUX_SOURCES}
+    ${SPEECHER_APP_UI_LINUX_HEADERS}
+  )
+endif()
 if(KF6WidgetsAddons_FOUND)
   target_compile_definitions(speecher_app_ui PUBLIC
     SPEECHER_WITH_KASSISTANT=1
@@ -297,16 +326,18 @@ target_compile_definitions(speecher PRIVATE
 )
 target_link_libraries(speecher PRIVATE speecher_app_ui)
 
-qt_add_executable(speecher-ydotool-setup
-  src/setup/YdotoolSetupHelper.cpp
-)
-target_link_libraries(speecher-ydotool-setup PRIVATE Qt6::Core)
+if(UNIX AND NOT APPLE)
+  qt_add_executable(speecher-ydotool-setup
+    src/setup/YdotoolSetupHelper.cpp
+  )
+  target_link_libraries(speecher-ydotool-setup PRIVATE Qt6::Core)
+endif()
 
 find_program(WAYLAND_SCANNER_EXECUTABLE wayland-scanner)
 set(SPEECHER_EXT_DATA_CONTROL_XML
   "${WAYLAND_PROTOCOLS_DATA_DIR}/staging/ext-data-control/ext-data-control-v1.xml"
 )
-if(WAYLAND_CLIENT_FOUND AND WAYLAND_SCANNER_EXECUTABLE
+if(UNIX AND NOT APPLE AND WAYLAND_CLIENT_FOUND AND WAYLAND_SCANNER_EXECUTABLE
    AND EXISTS "${SPEECHER_EXT_DATA_CONTROL_XML}")
   set(SPEECHER_EXT_DATA_CONTROL_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/ext-data-control-v1-client-protocol.h"
@@ -432,7 +463,9 @@ configure_file(
   @ONLY
 )
 install(TARGETS speecher RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(TARGETS speecher-ydotool-setup RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/speecher)
+if(TARGET speecher-ydotool-setup)
+  install(TARGETS speecher-ydotool-setup RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/speecher)
+endif()
 if(TARGET speecher-wayland-clipboard)
   install(TARGETS speecher-wayland-clipboard
     RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/speecher)

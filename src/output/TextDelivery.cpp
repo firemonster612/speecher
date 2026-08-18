@@ -2,7 +2,9 @@
 
 #include "core/AppSettings.h"
 #include "core/OutputMethod.h"
+#ifdef SPEECHER_WITH_WAYLAND
 #include "output/YdotoolDelivery.h"
+#endif
 
 #include <QEventLoop>
 #include <QTimer>
@@ -16,6 +18,7 @@ namespace {
 
 constexpr int clipboardRestoreDelayMs = 250;
 
+#ifdef SPEECHER_WITH_WAYLAND
 class YdotoolBackend final : public DeliveryBackend {
 public:
     YdotoolBackend(ClipboardDelivery *clipboardDelivery, PasteMethod pasteMethod)
@@ -66,6 +69,7 @@ public:
 private:
     ClipboardDelivery *m_clipboardDelivery = nullptr;
 };
+#endif // SPEECHER_WITH_WAYLAND
 
 class QtClipboardBackend final : public DeliveryBackend {
 public:
@@ -118,12 +122,15 @@ void TextDelivery::useDefaultBackendFactory()
                               const OutputSettings &settings,
                               PasteMethod pasteMethod) -> std::unique_ptr<DeliveryBackend> {
         Q_UNUSED(settings)
+        Q_UNUSED(pasteMethod)
+#ifdef SPEECHER_WITH_WAYLAND
         if (method == QString::fromLatin1(OutputMethod::Ydotool)) {
             return std::make_unique<YdotoolBackend>(&m_clipboardDelivery, pasteMethod);
         }
         if (method == QString::fromLatin1(OutputMethod::WlCopy)) {
             return std::make_unique<WlCopyBackend>(&m_clipboardDelivery);
         }
+#endif
         if (method == QString::fromLatin1(OutputMethod::QtClipboard)) {
             return std::make_unique<QtClipboardBackend>(&m_clipboardDelivery);
         }
@@ -281,6 +288,13 @@ QStringList TextDelivery::orderedMethods(const OutputSettings &settings)
 
 QStringList TextDelivery::orderedMethods(const OutputSettings &settings, PasteMethod pasteMethod)
 {
+#ifndef SPEECHER_WITH_WAYLAND
+    // Without the Wayland and ydotool helpers only the Qt clipboard backend is
+    // compiled, so every configured method resolves to it.
+    Q_UNUSED(settings)
+    Q_UNUSED(pasteMethod)
+    return {QString::fromLatin1(OutputMethod::QtClipboard)};
+#else
     const QString method = OutputMethod::normalized(settings.method);
     if (method == QString::fromLatin1(OutputMethod::Automatic)) {
         QStringList methods;
@@ -300,6 +314,7 @@ QStringList TextDelivery::orderedMethods(const OutputSettings &settings, PasteMe
         };
     }
     return {method};
+#endif
 }
 
 } // namespace speecher

@@ -1,4 +1,4 @@
-#include "core/MediaPauseController.h"
+#include "platform/MediaPauseController.h"
 
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>

@@ -13,9 +13,11 @@ bool ClipboardDelivery::copy(const DeliveryContent &content, bool *htmlAvailable
     if (htmlAvailable) {
         *htmlAvailable = false;
     }
+#ifdef SPEECHER_WITH_WAYLAND
     if (WlClipboardDelivery::isWaylandSession()) {
         return copyWayland(content, htmlAvailable, error);
     }
+#endif
 
     if (content.html) {
         if (copyQt(content, htmlAvailable, error)) {
@@ -34,12 +36,14 @@ bool ClipboardDelivery::copy(const DeliveryContent &content, bool *htmlAvailable
     return false;
 }
 
+#ifdef SPEECHER_WITH_WAYLAND
 bool ClipboardDelivery::copyWayland(const DeliveryContent &content,
                                     bool *htmlAvailable,
                                     QString *error)
 {
     return m_waylandClipboard.copy(content, htmlAvailable, error);
 }
+#endif
 
 bool ClipboardDelivery::copyQt(const DeliveryContent &content,
                                bool *htmlAvailable,
@@ -56,17 +60,33 @@ bool ClipboardDelivery::copyQt(const DeliveryContent &content,
 
 bool ClipboardDelivery::canSnapshot() const
 {
+#ifdef SPEECHER_WITH_WAYLAND
     return WlClipboardDelivery::canSnapshot();
+#else
+    return false;
+#endif
 }
 
 bool ClipboardDelivery::capture(WlClipboardSnapshot *snapshot, QString *error) const
 {
+#ifdef SPEECHER_WITH_WAYLAND
     return WlClipboardDelivery::capture(snapshot, error);
+#else
+    Q_UNUSED(snapshot)
+    Q_UNUSED(error)
+    return false;
+#endif
 }
 
 bool ClipboardDelivery::restore(const WlClipboardSnapshot &snapshot, QString *error) const
 {
+#ifdef SPEECHER_WITH_WAYLAND
     return WlClipboardDelivery::restore(snapshot, error);
+#else
+    Q_UNUSED(snapshot)
+    Q_UNUSED(error)
+    return false;
+#endif
 }
 
 } // namespace speecher
