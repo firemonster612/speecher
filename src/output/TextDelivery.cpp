@@ -347,12 +347,6 @@ QStringList TextDelivery::orderedMethods(const OutputSettings &settings, PasteMe
     // The Linux-only methods have no backend here; the factory returns nothing
     // for them and the clipboard copy deliver() already made is the net.
     return {method};
-#elif !defined(SPEECHER_WITH_WAYLAND)
-    // Without the Wayland and ydotool helpers only the Qt clipboard backend is
-    // compiled, so every configured method resolves to it.
-    Q_UNUSED(settings)
-    Q_UNUSED(pasteMethod)
-    return {QString::fromLatin1(OutputMethod::QtClipboard)};
 #else
     const QString method = OutputMethod::normalized(settings.method);
     if (method == QString::fromLatin1(OutputMethod::Automatic)) {

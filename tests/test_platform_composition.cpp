@@ -66,11 +66,6 @@ public:
     {
     }
 
-    QString id() const override
-    {
-        return QStringLiteral("fake");
-    }
-
     QString outputSummary() const override
     {
         return QStringLiteral("Fake: nothing is delivered");

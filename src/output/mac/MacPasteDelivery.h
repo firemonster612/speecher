@@ -12,7 +12,6 @@ class MacPasteDelivery {
 public:
     static bool isAvailable();
     bool paste(QString *error = nullptr);
-    bool typeText(const QString &text, QString *error = nullptr);
 };
 
 } // namespace speecher
