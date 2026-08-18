@@ -2,8 +2,10 @@
 
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
+#ifdef SPEECHER_WITH_YDOTOOL
 #include "output/YdotoolSetup.h"
 #include "output/YdotoolSetupFlow.h"
+#endif
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QAbstractItemView>
@@ -284,6 +286,7 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
         if (row >= 0) { m_appPasteRules->removeRow(row); emit changed(); }
     });
     connect(m_outputMethod, &QComboBox::currentIndexChanged, this, [this] {
+#ifdef SPEECHER_WITH_YDOTOOL
         if (m_outputMethod->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool)) {
             const YdotoolSetupStatus status = YdotoolSetup::probe(m_settings.ydotoolEnabled());
             if (!status.ready() || !m_settings.ydotoolEnabled()) {
@@ -293,8 +296,10 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
                 return;
             }
         }
+#endif
         emit changed();
     });
+#ifdef SPEECHER_WITH_YDOTOOL
     connect(m_ydotoolSetupButton, &QPushButton::clicked, this, &OutputSettingsPage::setupOrEnableYdotool);
     connect(m_ydotoolStartButton, &QPushButton::clicked, this, [this] {
         QString error;
@@ -303,6 +308,7 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     });
     connect(m_ydotoolDisableButton, &QPushButton::clicked, this, &OutputSettingsPage::disableYdotool);
     connect(m_ydotoolRemoveButton, &QPushButton::clicked, this, &OutputSettingsPage::removeYdotoolSetup);
+#endif
 }
 
 void OutputSettingsPage::setTargetAccessibilityAvailable(bool available)
@@ -419,6 +425,7 @@ void OutputSettingsPage::addApplicationPasteRule(const PasteRule &rule)
     if (rule.match.isEmpty()) { m_appPasteRules->setCurrentCell(row, 1); m_appPasteRules->editItem(application); }
 }
 
+#ifdef SPEECHER_WITH_YDOTOOL
 void OutputSettingsPage::refreshControls()
 {
     const YdotoolSetupStatus status = YdotoolSetup::probe(m_settings.ydotoolEnabled());
@@ -509,5 +516,31 @@ void OutputSettingsPage::removeYdotoolSetup()
     refreshControls();
     emit changed();
 }
+#else
+// ydotool is Linux-only. Its row stays in place but inert until a follow-up
+// gives this page a per-platform delivery section.
+void OutputSettingsPage::refreshControls()
+{
+    settings::setComboItemEnabled(m_outputMethod,
+                                  m_outputMethod->findData(QString::fromLatin1(OutputMethod::Ydotool)),
+                                  false,
+                                  QStringLiteral("ydotool is only available on Linux"));
+    setWrappedText(m_ydotoolStatus, QStringLiteral("Not available on this platform."));
+    updateYdotoolButtons();
+}
+
+void OutputSettingsPage::updateYdotoolButtons()
+{
+    for (QPushButton *button : {m_ydotoolSetupButton, m_ydotoolStartButton, m_ydotoolDisableButton, m_ydotoolRemoveButton}) {
+        button->setVisible(false);
+    }
+}
+
+void OutputSettingsPage::setupOrEnableYdotool() {}
+
+void OutputSettingsPage::disableYdotool() {}
+
+void OutputSettingsPage::removeYdotoolSetup() {}
+#endif
 
 } // namespace speecher

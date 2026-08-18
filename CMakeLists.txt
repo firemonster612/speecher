@@ -186,7 +186,6 @@ set(SPEECHER_APP_UI_SOURCES
   src/app/ApplicationController.cpp
   src/app/PlatformSelection.cpp
   src/app/SingleInstanceIpc.cpp
-  src/output/YdotoolSetupFlow.cpp
   src/ui/AccessibilityNotice.cpp
   src/ui/AppWindow.cpp
   src/ui/DictationPage.cpp
@@ -212,7 +211,6 @@ set(SPEECHER_APP_UI_HEADERS
   src/app/ApplicationController.h
   src/app/PlatformComposition.h
   src/app/SingleInstanceIpc.h
-  src/output/YdotoolSetupFlow.h
   src/ui/AccessibilityNotice.h
   src/ui/AppPage.h
   src/ui/AppWindow.h
@@ -237,10 +235,12 @@ set(SPEECHER_APP_UI_HEADERS
 
 set(SPEECHER_APP_UI_LINUX_SOURCES
   src/app/LinuxComposition.cpp
+  src/output/YdotoolSetupFlow.cpp
 )
 
 set(SPEECHER_APP_UI_LINUX_HEADERS
   src/app/LinuxComposition.h
+  src/output/YdotoolSetupFlow.h
 )
 
 add_library(speecher_domain STATIC
@@ -299,6 +299,9 @@ if(UNIX AND NOT APPLE)
     ${SPEECHER_APP_UI_LINUX_SOURCES}
     ${SPEECHER_APP_UI_LINUX_HEADERS}
   )
+  # The setup assistant and the output page drive ydotool, which only exists on
+  # the Linux side of the platform layer.
+  target_compile_definitions(speecher_app_ui PUBLIC SPEECHER_WITH_YDOTOOL=1)
 endif()
 if(KF6WidgetsAddons_FOUND)
   target_compile_definitions(speecher_app_ui PUBLIC
