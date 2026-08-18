@@ -91,6 +91,26 @@ constexpr auto microphonePaneUrl =
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
 #endif
 
+QString shortcutHint()
+{
+#ifdef Q_OS_MACOS
+    // Qt maps Meta to Control and Alt to Option on macOS, so the shared default
+    // sequence reaches the user as Ctrl+Option+D.
+    return QStringLiteral("The shortcut starts and stops dictation from any app. The default reads as Ctrl+Option+D on this keyboard.");
+#else
+    return QStringLiteral("The shortcut triggers `speecher toggle`.");
+#endif
+}
+
+QString shortcutFailureHint()
+{
+#ifdef Q_OS_MACOS
+    return QStringLiteral("Could not register the shortcut: %1. Another app probably owns that combination. Change the sequence and try again, or click Finish again to continue without it.");
+#else
+    return QStringLiteral("Could not register the shortcut: %1. You can bind `speecher toggle` in your desktop environment's shortcut settings. Change the sequence and try again, or click Finish again to continue without it.");
+#endif
+}
+
 QString profileLabel(WritingProfile profile)
 {
     switch (profile) {
@@ -510,7 +530,11 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
 {
     QVBoxLayout *layout = makePage(
         this,
+#ifdef Q_OS_MACOS
+        QStringLiteral("Speecher puts the finished text on your clipboard and pastes it into the frontmost app with Cmd+V. The paste needs the Accessibility permission from the previous step; without it the text still reaches your clipboard."));
+#else
         QStringLiteral("Speecher can set up ydotool for virtual-keyboard paste. Administrator approval is required once; Speecher remains unprivileged while dictating."));
+#endif
     m_status->setWordWrap(true);
     m_progress->setRange(0, 0);
     m_progress->setVisible(false);
@@ -607,12 +631,18 @@ void TextDeliverySetupPage::runSetup()
     }
 }
 #else
-// Virtual-keyboard paste needs no user-installed helper off Linux, so this page
-// only carries its clipboard-format controls until it gets a per-platform shape.
+// Keyboard paste needs no user-installed helper off Linux, so the page keeps
+// only the clipboard controls, which are portable.
 void TextDeliverySetupPage::refreshStatus()
 {
-    m_status->setText(QStringLiteral("Speecher pastes with the system clipboard."));
+    m_status->setText(
+#ifdef Q_OS_MACOS
+        QStringLiteral("Nothing to install — Speecher uses the keyboard paste built into macOS."));
+#else
+        QStringLiteral("Nothing to install — Speecher pastes with the system clipboard."));
+#endif
     m_setup->setVisible(false);
+    m_progress->setVisible(false);
 }
 
 void TextDeliverySetupPage::runSetup() {}
@@ -726,11 +756,11 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
         connect(m_createShortcut, &QCheckBox::toggled, m_shortcut, &QWidget::setEnabled);
         const auto resetShortcutFailure = [this] {
             m_shortcutFailureAcknowledged = false;
-            m_shortcutStatus->setText(QStringLiteral("The shortcut triggers `speecher toggle`."));
+            m_shortcutStatus->setText(shortcutHint());
         };
         connect(m_createShortcut, &QCheckBox::toggled, this, resetShortcutFailure);
         connect(m_shortcut, &QKeySequenceEdit::keySequenceChanged, this, resetShortcutFailure);
-        m_shortcutStatus->setText(QStringLiteral("The shortcut triggers `speecher toggle`."));
+        m_shortcutStatus->setText(shortcutHint());
     } else {
         m_shortcutStatus->setText(
             QStringLiteral("Bind `speecher toggle` in your desktop environment's global shortcut settings."));
@@ -772,9 +802,7 @@ bool FinishSetupPage::applyShortcut()
     QString error;
     if (!m_controller.setGlobalShortcut(m_shortcut->keySequence(), &error)) {
         m_shortcutFailureAcknowledged = true;
-        m_shortcutStatus->setText(
-            QStringLiteral("Could not register the shortcut: %1. You can bind `speecher toggle` in your desktop environment's shortcut settings. Change the sequence and try again, or click Finish again to continue without it.")
-                .arg(error));
+        m_shortcutStatus->setText(shortcutFailureHint().arg(error));
         return false;
     }
     m_shortcutStatus->setText(QStringLiteral("Dictation shortcut registered."));
