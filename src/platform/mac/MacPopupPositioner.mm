@@ -18,7 +18,9 @@ MacPopupPositioner::MacPopupPositioner(QObject *parent)
 void MacPopupPositioner::configurePopup(QWidget *widget)
 {
     FallbackPopupPositioner::configurePopup(widget);
-    if (!widget) {
+    // winId() only yields an NSView on the cocoa platform; under the offscreen
+    // platform (tests) the handle is a foreign type and casting it crashes.
+    if (!widget || QGuiApplication::platformName() != QLatin1String("cocoa")) {
         return;
     }
 
