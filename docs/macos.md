@@ -51,10 +51,13 @@ user-consented APIs for all of it:
    applications share.
 7. **Target screenshots without a per-shot dialog** once Screen Recording is
    granted; the portal on Wayland can prompt per capture.
+8. **Learned corrections without polling.** An AXObserver reports the user's
+   edit to the inserted text as it happens; AT-SPI has no text-change signal
+   Speecher can rely on across toolkits, so on Linux the same span has to be
+   re-read on a timer.
 
-Known gaps on macOS: learned-correction observation (AT-SPI text-change
-events have no wired macOS equivalent yet) and the ydotool/wl-copy output
-methods, which are Linux-only by nature.
+Known gaps on macOS: the ydotool/wl-copy output methods, which are Linux-only
+by nature.
 
 ## VM testing note
 
