@@ -25,6 +25,13 @@
 #include <utility>
 
 namespace speecher {
+namespace {
+
+// A shortcut held longer than this is push-to-talk and ends with the key;
+// anything shorter is a tap and stays a plain toggle.
+constexpr qint64 pushToTalkHoldMs = 400;
+
+} // namespace
 
 ApplicationController::ApplicationController(bool popupOnly,
                                              std::shared_ptr<const PlatformComposition> platform,
@@ -39,7 +46,14 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_shortcutBinder(m_platform->createGlobalShortcutBinder(this))
     , m_ipc(new SingleInstanceIpc(m_platform, this))
 {
-    connect(m_shortcutBinder, &GlobalShortcutBinder::activated, this, &ApplicationController::toggle);
+    connect(m_shortcutBinder,
+            &GlobalShortcutBinder::activated,
+            this,
+            &ApplicationController::handleShortcutPressed);
+    connect(m_shortcutBinder,
+            &GlobalShortcutBinder::deactivated,
+            this,
+            &ApplicationController::handleShortcutReleased);
     registerProviders();
     TargetProvider *targetProvider = m_platform->createTargetProvider(this);
     targetProvider->setCorrectionObservationEnabled(m_settings->correctionLearningEnabled());
@@ -122,7 +136,16 @@ void ApplicationController::runDeferredStartup()
     }
     m_deferredStartupDone = true;
     qApp->removeEventFilter(this);
+    // Opening the input device is what makes macOS raise the microphone prompt,
+    // and a prompt nobody asked for at launch reads as an ambush. Warm up only
+    // once the grant already exists; the first dictation asks for it properly.
+#ifdef Q_OS_MACOS
+    if (qApp->checkPermission(QMicrophonePermission{}) == Qt::PermissionStatus::Granted) {
+        m_audio->warmUp();
+    }
+#else
     m_audio->warmUp();
+#endif
     m_shortcutBinder->bind();
     const AccessibilityState state = m_platform->accessibilityState();
     const bool requestSucceeded = state.persistent && m_platform->requestAccessibility();
@@ -279,6 +302,33 @@ void ApplicationController::startWithMicrophone(std::function<void()> start)
     }
 #endif
     start();
+}
+
+bool ApplicationController::sessionActive() const
+{
+    const DictationState state = m_session->state();
+    return state == DictationState::Starting || state == DictationState::Listening;
+}
+
+// Binders that report key release (macOS) drive both gestures from one binding:
+// the press toggles, and a long enough hold ends the session it started.
+void ApplicationController::handleShortcutPressed()
+{
+    m_shortcutPress.start();
+    const bool wasActive = sessionActive();
+    toggle();
+    m_shortcutStartedSession = !wasActive && sessionActive();
+}
+
+void ApplicationController::handleShortcutReleased()
+{
+    if (!m_shortcutStartedSession) {
+        return;
+    }
+    m_shortcutStartedSession = false;
+    if (sessionActive() && m_shortcutPress.elapsed() > pushToTalkHoldMs) {
+        stopListening();
+    }
 }
 
 void ApplicationController::toggle()
