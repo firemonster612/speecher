@@ -23,7 +23,6 @@ public:
 // implementation is compiled per platform; see platformComposition().
 class PlatformComposition : public SingleInstancePlatform {
 public:
-    virtual QString id() const = 0;
     virtual QString outputSummary() const = 0;
     virtual QString primaryOutputStatus() const = 0;
 

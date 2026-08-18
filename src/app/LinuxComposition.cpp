@@ -70,11 +70,6 @@ QString executablePathSocketName()
 
 } // namespace
 
-QString LinuxComposition::id() const
-{
-    return QStringLiteral("linux");
-}
-
 QString LinuxComposition::outputSummary() const
 {
     return QStringLiteral("Automatic: Wayland multi-format clipboard, optional ydotool paste, Qt fallback");

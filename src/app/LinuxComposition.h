@@ -8,7 +8,6 @@ namespace speecher {
 
 class LinuxComposition final : public PlatformComposition {
 public:
-    QString id() const override;
     QString outputSummary() const override;
     QString primaryOutputStatus() const override;
     QString ipcListenName() const override;

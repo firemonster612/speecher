@@ -50,11 +50,6 @@ QString executablePathSocketName()
 
 } // namespace
 
-QString MacComposition::id() const
-{
-    return QStringLiteral("mac");
-}
-
 QString MacComposition::outputSummary() const
 {
     return QStringLiteral("Automatic: keyboard paste (Cmd+V), Qt clipboard fallback");
