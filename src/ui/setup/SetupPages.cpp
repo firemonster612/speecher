@@ -4,8 +4,10 @@
 #include "app/PlatformComposition.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationPorts.h"
+#ifdef SPEECHER_WITH_YDOTOOL
 #include "output/YdotoolSetup.h"
 #include "output/YdotoolSetupFlow.h"
+#endif
 #include "providers/ProviderRegistry.h"
 #include "ui/settings/SettingsPageSupport.h"
 
@@ -410,10 +412,15 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
 
 bool TextDeliverySetupPage::needsSignIn() const
 {
+#ifdef SPEECHER_WITH_YDOTOOL
     return YdotoolSetup::probe(m_settings.ydotoolEnabled()).state
         == YdotoolSetupState::NeedsSignOut;
+#else
+    return false;
+#endif
 }
 
+#ifdef SPEECHER_WITH_YDOTOOL
 void TextDeliverySetupPage::refreshStatus()
 {
     const YdotoolSetupStatus status = YdotoolSetup::probe(m_settings.ydotoolEnabled());
@@ -469,6 +476,17 @@ void TextDeliverySetupPage::runSetup()
         refreshStatus();
     }
 }
+#else
+// Virtual-keyboard paste needs no user-installed helper off Linux, so this page
+// only carries its clipboard-format controls until it gets a per-platform shape.
+void TextDeliverySetupPage::refreshStatus()
+{
+    m_status->setText(QStringLiteral("Speecher pastes with the system clipboard."));
+    m_setup->setVisible(false);
+}
+
+void TextDeliverySetupPage::runSetup() {}
+#endif
 
 RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
                                          ProviderRegistry &providers,
