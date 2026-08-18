@@ -446,11 +446,13 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
     m_poll->setInterval(1000);
     connect(m_poll, &QTimer::timeout, &m_controller, &ApplicationController::refreshAccessibilityState);
     connect(m_request, &QPushButton::clicked, this, [this] {
+        m_lastError.clear();
         QString error;
         if (!m_controller.platform()->requestAccessibility(&error)) {
-            m_status->setText(error);
+            m_lastError = error;
         }
         m_controller.refreshAccessibilityState();
+        refreshFromController();
     });
 #else
     layout->addWidget(m_enable, 0, Qt::AlignLeft);
@@ -458,15 +460,24 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
     layout->addStretch();
 
     connect(m_enable, &QPushButton::clicked, this, [this] {
+        m_lastError.clear();
         QString error;
         if (!m_controller.enableAccessibility(&error)) {
-            m_status->setText(error);
+            m_lastError = error;
         }
+        // enableAccessibility() refreshes the state itself, but it did so before
+        // the error existed.
+        refreshFromController();
     });
     connect(&m_controller,
             &ApplicationController::accessibilityStateChanged,
             this,
             &AccessibilitySetupPage::updateState);
+    refreshFromController();
+}
+
+void AccessibilitySetupPage::refreshFromController()
+{
     updateState(m_controller.accessibilitySupported(),
                 m_controller.accessibilityEnabled(),
                 m_controller.accessibilityPersistent());
@@ -489,34 +500,35 @@ void AccessibilitySetupPage::hideEvent(QHideEvent *event)
 
 void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool persistent)
 {
+    QString status;
 #ifdef Q_OS_MACOS
     Q_UNUSED(supported);
     Q_UNUSED(persistent);
-    m_status->setText(enabled
-                          ? QStringLiteral("Accessibility is granted. If pasting still does nothing, quit Speecher and open it again; macOS only hands the permission to a fresh launch.")
-                          : QStringLiteral("Accessibility is off, so Speecher can copy your dictation but not paste it. Grant it below, then restart Speecher."));
+    status = enabled
+        ? QStringLiteral("Accessibility is granted. If pasting still does nothing, quit Speecher and open it again; macOS only hands the permission to a fresh launch.")
+        : QStringLiteral("Accessibility is off, so Speecher can copy your dictation but not paste it. Grant it below, then restart Speecher.");
     m_request->setEnabled(!enabled);
     m_enable->setEnabled(!enabled);
-    return;
 #else
     if (!supported) {
-        m_status->setText(QStringLiteral("This Speecher build does not include AT-SPI support."));
+        status = QStringLiteral("This Speecher build does not include AT-SPI support.");
         m_enable->setEnabled(false);
         m_enable->setText(QStringLiteral("Unavailable"));
     } else if (enabled && persistent) {
-        m_status->setText(QStringLiteral("Desktop accessibility is enabled permanently."));
+        status = QStringLiteral("Desktop accessibility is enabled permanently.");
         m_enable->setEnabled(false);
         m_enable->setText(QStringLiteral("Enabled"));
     } else if (enabled) {
-        m_status->setText(QStringLiteral("Desktop accessibility is enabled for this session only."));
+        status = QStringLiteral("Desktop accessibility is enabled for this session only.");
         m_enable->setEnabled(true);
         m_enable->setText(QStringLiteral("Enable permanently"));
     } else {
-        m_status->setText(QStringLiteral("Desktop accessibility is currently off."));
+        status = QStringLiteral("Desktop accessibility is currently off.");
         m_enable->setEnabled(true);
         m_enable->setText(QStringLiteral("Enable permanently"));
     }
 #endif
+    m_status->setText(m_lastError.isEmpty() ? status : m_lastError);
 }
 
 TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *parent)

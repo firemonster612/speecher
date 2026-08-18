@@ -26,10 +26,11 @@ private:
     void unregisterHotKey();
 
     QKeySequence m_shortcut;
-    // EventHotKeyRef and EventHandlerRef, kept opaque so this header stays plain
-    // C++ for moc.
+    // EventHotKeyRef, EventHandlerRef and EventHandlerUPP, kept opaque so this
+    // header stays plain C++ for moc.
     void *m_hotKey = nullptr;
     void *m_eventHandler = nullptr;
+    void *m_eventHandlerUpp = nullptr;
 };
 
 } // namespace speecher
