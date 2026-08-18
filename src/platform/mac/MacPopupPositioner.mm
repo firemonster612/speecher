@@ -43,7 +43,11 @@ void MacPopupPositioner::configurePopup(QWidget *widget)
                "the app being dictated into.";
     }
     window.level = NSStatusWindowLevel;
-    window.collectionBehavior |= NSWindowCollectionBehaviorCanJoinAllSpaces
+    // Qt tool windows arrive with MoveToActiveSpace, which AppKit rejects in
+    // combination with CanJoinAllSpaces — clear it before joining all spaces.
+    window.collectionBehavior = (window.collectionBehavior
+                                 & ~NSWindowCollectionBehaviorMoveToActiveSpace)
+        | NSWindowCollectionBehaviorCanJoinAllSpaces
         | NSWindowCollectionBehaviorFullScreenAuxiliary
         | NSWindowCollectionBehaviorStationary;
     window.animationBehavior = NSWindowAnimationBehaviorNone;
