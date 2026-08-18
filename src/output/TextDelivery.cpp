@@ -5,6 +5,9 @@
 #ifdef SPEECHER_WITH_WAYLAND
 #include "output/YdotoolDelivery.h"
 #endif
+#ifdef SPEECHER_WITH_MAC
+#include "output/mac/MacPasteDelivery.h"
+#endif
 
 #include <QEventLoop>
 #include <QTimer>
@@ -71,6 +74,33 @@ private:
 };
 #endif // SPEECHER_WITH_WAYLAND
 
+#ifdef SPEECHER_WITH_MAC
+class MacPasteBackend final : public DeliveryBackend {
+public:
+    explicit MacPasteBackend(ClipboardDelivery *clipboardDelivery)
+        : m_clipboardDelivery(clipboardDelivery)
+    {
+    }
+
+    bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
+    {
+        QString copyError;
+        if (!m_clipboardDelivery->copy(content, htmlAvailable, &copyError)) {
+            if (error) {
+                *error = copyError.isEmpty()
+                    ? QStringLiteral("Could not copy text before keyboard paste")
+                    : QStringLiteral("Could not copy text before keyboard paste: %1").arg(copyError);
+            }
+            return false;
+        }
+        return MacPasteDelivery().paste(error);
+    }
+
+private:
+    ClipboardDelivery *m_clipboardDelivery = nullptr;
+};
+#endif // SPEECHER_WITH_MAC
+
 class QtClipboardBackend final : public DeliveryBackend {
 public:
     explicit QtClipboardBackend(ClipboardDelivery *clipboardDelivery)
@@ -129,6 +159,11 @@ void TextDelivery::useDefaultBackendFactory()
         }
         if (method == QString::fromLatin1(OutputMethod::WlCopy)) {
             return std::make_unique<WlCopyBackend>(&m_clipboardDelivery);
+        }
+#endif
+#ifdef SPEECHER_WITH_MAC
+        if (method == QString::fromLatin1(OutputMethod::MacPaste)) {
+            return std::make_unique<MacPasteBackend>(&m_clipboardDelivery);
         }
 #endif
         if (method == QString::fromLatin1(OutputMethod::QtClipboard)) {
@@ -255,7 +290,8 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         QString error;
         bool htmlAvailable = false;
         if (backend->deliver(content, &htmlAvailable, &error)) {
-            const bool virtualKeyboardInput = method == QString::fromLatin1(OutputMethod::Ydotool);
+            const bool virtualKeyboardInput = method == QString::fromLatin1(OutputMethod::Ydotool)
+                || method == QString::fromLatin1(OutputMethod::MacPaste);
             const bool copied = method == QString::fromLatin1(OutputMethod::WlCopy)
                 || method == QString::fromLatin1(OutputMethod::QtClipboard);
             const bool downgraded = content.html.has_value() && !htmlAvailable;
@@ -296,7 +332,10 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         if (firstError.isEmpty()) {
             firstError = error;
         }
-        if (method == QString::fromLatin1(OutputMethod::Ydotool)) {
+        // A failed paste already left the text on the clipboard, so the later
+        // clipboard methods would only re-report what the caller already has.
+        if (method == QString::fromLatin1(OutputMethod::Ydotool)
+            || method == QString::fromLatin1(OutputMethod::MacPaste)) {
             break;
         }
     }
@@ -319,7 +358,24 @@ QStringList TextDelivery::orderedMethods(const OutputSettings &settings)
 
 QStringList TextDelivery::orderedMethods(const OutputSettings &settings, PasteMethod pasteMethod)
 {
-#ifndef SPEECHER_WITH_WAYLAND
+#if defined(SPEECHER_WITH_MAC)
+    const QString method = OutputMethod::normalized(settings.method);
+    if (method == QString::fromLatin1(OutputMethod::Automatic)) {
+        QStringList methods;
+        if (pasteMethod != PasteMethod::ClipboardOnly) {
+            methods << QString::fromLatin1(OutputMethod::MacPaste);
+        }
+        methods << QString::fromLatin1(OutputMethod::QtClipboard);
+        return methods;
+    }
+    if (method == QString::fromLatin1(OutputMethod::MacPaste)
+        && pasteMethod == PasteMethod::ClipboardOnly) {
+        return {QString::fromLatin1(OutputMethod::QtClipboard)};
+    }
+    // The Linux-only methods have no backend here; the factory returns nothing
+    // for them and the clipboard copy deliver() already made is the net.
+    return {method};
+#elif !defined(SPEECHER_WITH_WAYLAND)
     // Without the Wayland and ydotool helpers only the Qt clipboard backend is
     // compiled, so every configured method resolves to it.
     Q_UNUSED(settings)
