@@ -22,6 +22,7 @@ public:
     ScreenshotContextProvider *createScreenshotContextProvider(QObject *parent) const override;
     TextDeliveryAdapter *createTextDelivery(TargetProvider *targetProvider, QObject *parent) const override;
     PopupPositioner *createPopupPositioner(QObject *parent) const override;
+    GlobalShortcutBinder *createGlobalShortcutBinder(QObject *parent) const override;
 
     AccessibilityState accessibilityState() const override;
     bool requestAccessibility(QString *error = nullptr) const override;
