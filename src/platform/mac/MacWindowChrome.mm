@@ -1,11 +1,19 @@
 #include "platform/mac/MacWindowChrome.h"
 
+#include <QGuiApplication>
 #include <QWidget>
 
 #import <AppKit/AppKit.h>
 
 namespace speecher::mac {
 namespace {
+
+// winId() only yields an NSView on the cocoa platform; under the offscreen
+// platform (tests) the handle is a foreign type and casting it crashes.
+bool cocoaPlatform()
+{
+    return QGuiApplication::platformName() == QLatin1String("cocoa");
+}
 
 // Identifiers tag the injected panels so a second call finds the existing view
 // instead of stacking another blur behind the window.
@@ -16,7 +24,7 @@ constexpr CGFloat kPopupCornerRadius = 16.0;
 
 NSWindow *nativeWindow(QWidget *widget)
 {
-    if (!widget) {
+    if (!widget || !cocoaPlatform()) {
         return nil;
     }
     // winId() forces the native window into existence; before that there is

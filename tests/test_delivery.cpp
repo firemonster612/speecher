@@ -33,6 +33,18 @@ private:
 };
 
 
+// The synthetic-input method TextDelivery::orderedMethods emits first on this
+// platform. The fake backend factory serves whichever name it is handed, so
+// the delivery-flow tests only need the right name in expectations.
+static QString virtualKeyboardMethod()
+{
+#ifdef Q_OS_MACOS
+    return QString::fromLatin1(OutputMethod::MacPaste);
+#else
+    return QString::fromLatin1(OutputMethod::Ydotool);
+#endif
+}
+
 class DeliveryTests : public QObject {
     Q_OBJECT
 
@@ -42,6 +54,21 @@ private slots:
         OutputSettings settings;
         settings.method = QString::fromLatin1(OutputMethod::Automatic);
         settings.ydotoolEnabled = true;
+#ifdef Q_OS_MACOS
+        QCOMPARE(TextDelivery::orderedMethods(settings),
+                 QStringList({QString::fromLatin1(OutputMethod::MacPaste),
+                              QString::fromLatin1(OutputMethod::QtClipboard)}));
+
+        // The ydotool toggle is a Linux setting; it has no mac effect.
+        settings.ydotoolEnabled = false;
+        QCOMPARE(TextDelivery::orderedMethods(settings),
+                 QStringList({QString::fromLatin1(OutputMethod::MacPaste),
+                              QString::fromLatin1(OutputMethod::QtClipboard)}));
+
+        settings.method = QString::fromLatin1(OutputMethod::MacPaste);
+        QCOMPARE(TextDelivery::orderedMethods(settings),
+                 QStringList({QString::fromLatin1(OutputMethod::MacPaste)}));
+#else
         QCOMPARE(TextDelivery::orderedMethods(settings),
                  QStringList({QString::fromLatin1(OutputMethod::Ydotool),
                               QString::fromLatin1(OutputMethod::WlCopy),
@@ -60,6 +87,7 @@ private slots:
                  }));
         settings.ydotoolEnabled = true;
         QCOMPARE(TextDelivery::orderedMethods(settings), QStringList({QString::fromLatin1(OutputMethod::Ydotool)}));
+#endif
 
         settings.method = QString::fromLatin1(OutputMethod::QtClipboard);
         QCOMPARE(TextDelivery::orderedMethods(settings), QStringList({QString::fromLatin1(OutputMethod::QtClipboard)}));
@@ -409,11 +437,13 @@ private slots:
         OutputSettings settings;
         settings.method = QString::fromLatin1(OutputMethod::Automatic);
         settings.ydotoolEnabled = true;
-        QCOMPARE(TextDelivery::orderedMethods(settings, PasteMethod::ClipboardOnly),
-                 QStringList({
-                     QString::fromLatin1(OutputMethod::WlCopy),
-                     QString::fromLatin1(OutputMethod::QtClipboard),
-                 }));
+#ifdef Q_OS_MACOS
+        const QStringList expected{QString::fromLatin1(OutputMethod::QtClipboard)};
+#else
+        const QStringList expected{QString::fromLatin1(OutputMethod::WlCopy),
+                                   QString::fromLatin1(OutputMethod::QtClipboard)};
+#endif
+        QCOMPARE(TextDelivery::orderedMethods(settings, PasteMethod::ClipboardOnly), expected);
     }
 
     void outputContentBuildsSafeDualMimeRepresentations()
@@ -439,7 +469,7 @@ private slots:
         QList<QString> attempts;
         QList<bool> restoreFlags;
         QHash<QString, bool> results;
-        results.insert(QString::fromLatin1(OutputMethod::Ydotool), false);
+        results.insert(virtualKeyboardMethod(), false);
         results.insert(QString::fromLatin1(OutputMethod::WlCopy), true);
         results.insert(QString::fromLatin1(OutputMethod::QtClipboard), true);
 
@@ -465,7 +495,7 @@ private slots:
             target);
         QVERIFY(result.ok);
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
-        QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::Ydotool)}));
+        QCOMPARE(attempts, QList<QString>({virtualKeyboardMethod()}));
         QCOMPARE(restoreFlags, QList<bool>({true}));
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
         QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("hello"));
@@ -474,7 +504,7 @@ private slots:
     void outputUsesExplicitGlobalPasteRuleWithoutCapturedTarget()
     {
         QList<QString> attempts;
-        QHash<QString, bool> results{{QString::fromLatin1(OutputMethod::Ydotool), true}};
+        QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
         FakeTargetProvider targetProvider;
         targetProvider.focused = false;
         TextDelivery delivery([&attempts, &results](
@@ -496,7 +526,7 @@ private slots:
             makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
             {});
 
-        QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::Ydotool)}));
+        QCOMPARE(attempts, QList<QString>({virtualKeyboardMethod()}));
         QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
         QCOMPARE(result.message, QStringLiteral("Copied • Input sent"));
     }
@@ -545,7 +575,7 @@ private slots:
 
         QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
         QList<QString> attempts;
-        QHash<QString, bool> results{{QString::fromLatin1(OutputMethod::Ydotool), true}};
+        QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
         FakeTargetProvider targetProvider;
         targetProvider.verified = true;
         TextDelivery delivery([&attempts, &results](
@@ -569,7 +599,7 @@ private slots:
         QVERIFY(result.ok);
         QCOMPARE(result.receipt, DeliveryReceipt::VerifiedInTarget);
         QCOMPARE(result.message, expectedMessage);
-        QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::Ydotool)}));
+        QCOMPARE(attempts, QList<QString>({virtualKeyboardMethod()}));
     }
 
     void outputDoesNotPasteWhenTargetChanged()
@@ -685,7 +715,7 @@ private slots:
         QApplication::clipboard()->setMimeData(previous);
 
         QList<QString> attempts;
-        QHash<QString, bool> results{{QString::fromLatin1(OutputMethod::Ydotool), true}};
+        QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
         FakeTargetProvider targetProvider;
         targetProvider.verified = true;
         TextDelivery delivery([&attempts, &results](
@@ -725,7 +755,7 @@ private slots:
         QApplication::clipboard()->setMimeData(previous);
 
         QList<QString> attempts;
-        QHash<QString, bool> results{{QString::fromLatin1(OutputMethod::Ydotool), true}};
+        QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
         FakeTargetProvider targetProvider;
         targetProvider.verified = false;
         TextDelivery delivery([&attempts, &results](

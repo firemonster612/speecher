@@ -165,7 +165,7 @@ Target MacTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
 
     AXUIElementRef focused = copyFocusedElement();
     if (focused) {
-        m_focusedElement = focused;
+        m_focusedElement = const_cast<void *>(static_cast<const void *>(focused));
         target.accessible = true;
         target.role = stringAttribute(focused, kAXRoleAttribute);
         target.controlName = stringAttribute(focused, kAXTitleAttribute);
