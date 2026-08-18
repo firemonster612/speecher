@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 
+#include <QElapsedTimer>
 #include <QObject>
 #include <QPointer>
 #include <QKeySequence>
@@ -81,6 +82,9 @@ private:
     void startWithMicrophone(std::function<void()> start);
     void runDeferredStartup();
     bool ensureSetupCompleted();
+    bool sessionActive() const;
+    void handleShortcutPressed();
+    void handleShortcutReleased();
 
     bool m_popupOnly = false;
     std::shared_ptr<const PlatformComposition> m_platform;
@@ -99,6 +103,10 @@ private:
     bool m_accessibilityPersistent = false;
     bool m_deferredStartupScheduled = false;
     bool m_deferredStartupDone = false;
+    // Only a press that started a session can end it on release; a press that
+    // stopped one must not restart it.
+    QElapsedTimer m_shortcutPress;
+    bool m_shortcutStartedSession = false;
 };
 
 } // namespace speecher

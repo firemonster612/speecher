@@ -94,7 +94,7 @@ QString shortcutHint()
 #ifdef Q_OS_MACOS
     // Qt maps Meta to Control and Alt to Option on macOS, so the shared default
     // sequence reaches the user as Ctrl+Option+D.
-    return QStringLiteral("The shortcut starts and stops dictation from any app. The default reads as Ctrl+Option+D on this keyboard.");
+    return QStringLiteral("Tap the shortcut to start dictation and tap it again to stop, or hold it and talk — dictation ends when you let go. The default reads as Ctrl+Option+D on this keyboard.");
 #else
     return QStringLiteral("The shortcut triggers `speecher toggle`.");
 #endif
