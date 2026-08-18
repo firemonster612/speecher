@@ -1,5 +1,7 @@
 #include "platform/mac/MacTargetProvider.h"
 
+#include "platform/mac/MacCorrectionObserver.h"
+
 #include <QEventLoop>
 #include <QSet>
 #include <QTimer>
@@ -131,6 +133,11 @@ MacTargetProvider::~MacTargetProvider()
 
 void MacTargetProvider::releaseFocusedElement()
 {
+    // A new capture means the previous insertion is history, so any observation
+    // of it stops here, exactly as clearing the AT-SPI snapshot does on Linux.
+    if (m_correctionObserver) {
+        m_correctionObserver->cancel();
+    }
     m_valueBeforeInsertion.reset();
     if (m_focusedElement) {
         CFRelease(static_cast<AXUIElementRef>(m_focusedElement));
@@ -243,18 +250,48 @@ bool MacTargetProvider::verifyInsertion(const Target &target, const QString &pla
         const QString value = stringAttribute(static_cast<AXUIElementRef>(m_focusedElement),
                                               kAXValueAttribute);
         const bool changed = !m_valueBeforeInsertion || value != *m_valueBeforeInsertion;
-        if (changed && value.contains(plainText)) {
-            return true;
+        const int insertedAt = changed ? value.indexOf(plainText) : -1;
+        if (insertedAt < 0) {
+            continue;
         }
+        observeCorrections(target, value, insertedAt, plainText);
+        return true;
     }
     return false;
 }
 
+void MacTargetProvider::observeCorrections(const Target &target,
+                                           const QString &value,
+                                           int insertedAt,
+                                           const QString &plainText)
+{
+    const QString prefix = value.left(insertedAt).right(correctionContextChars);
+    const QString suffix = value.mid(insertedAt + plainText.size()).left(correctionContextChars);
+    // With too little context on either side the span cannot be found again once
+    // the user has edited it, and learning from the wrong span is worse than not
+    // learning at all.
+    if (!m_correctionObservationEnabled
+        || prefix.size() < correctionMinContextChars
+        || suffix.size() < correctionMinContextChars) {
+        return;
+    }
+    if (!m_correctionObserver) {
+        m_correctionObserver = std::make_unique<mac::CorrectionObserver>();
+    }
+    m_correctionObserver->observe(
+        m_focusedElement, target.processId, {target, plainText, prefix, suffix},
+        [this](const QString &original, const QString &corrected,
+               const QString &applicationId, double confidence) {
+            emit correctionObserved(original, corrected, applicationId, confidence);
+        });
+}
+
 void MacTargetProvider::setCorrectionObservationEnabled(bool enabled)
 {
-    // No-op: correction learning needs the AX text-change notifications the
-    // Linux provider gets from AT-SPI. Nothing observes them on macOS yet.
-    Q_UNUSED(enabled)
+    m_correctionObservationEnabled = enabled;
+    if (m_correctionObserver) {
+        m_correctionObserver->setEnabled(enabled);
+    }
 }
 
 } // namespace speecher
