@@ -3,6 +3,7 @@
 #include "core/AppSettings.h"
 
 #include <QList>
+#include <QString>
 #include <QWidget>
 
 class QCheckBox;
@@ -94,9 +95,13 @@ protected:
 
 private:
     void updateState(bool supported, bool enabled, bool persistent);
+    void refreshFromController();
 
     ApplicationController &m_controller;
     QLabel *m_status;
+    // What the last grant request answered. Outranks the polled state until the
+    // user acts again, so the poll cannot wipe the reply to their click.
+    QString m_lastError;
     QPushButton *m_enable;
 #ifdef Q_OS_MACOS
     QPushButton *m_request;

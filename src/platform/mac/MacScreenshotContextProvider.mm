@@ -7,6 +7,8 @@
 #include <QProcess>
 #include <QUuid>
 
+#import <CoreGraphics/CoreGraphics.h>
+
 namespace speecher {
 
 namespace {
@@ -54,6 +56,14 @@ void MacScreenshotContextProvider::capture()
 {
     cancel();
 
+    // Without the grant screencapture still runs and still writes a file, it
+    // just hands back the desktop picture. Asking first turns a plausible but
+    // useless screenshot into an honest failure.
+    if (!CGPreflightScreenCaptureAccess()) {
+        emit failed(screenRecordingHint());
+        return;
+    }
+
     m_capturePath = QDir::temp().filePath(
         QStringLiteral("speecher_%1.png").arg(QUuid::createUuid().toString(QUuid::Id128)));
     m_capture = new QProcess(this);
@@ -65,6 +75,10 @@ void MacScreenshotContextProvider::capture()
         if (!m_capture) {
             return;
         }
+        // errorOccurred can be followed by finished for the same process; the
+        // disconnect keeps that second callback from running against a
+        // half-torn-down capture.
+        m_capture->disconnect(this);
         m_capture->deleteLater();
         m_capture = nullptr;
         discardCaptureFile();
@@ -98,6 +112,9 @@ void MacScreenshotContextProvider::discardCaptureFile()
 
 void MacScreenshotContextProvider::finish(int exitCode)
 {
+    if (!m_capture) {
+        return;
+    }
     m_capture->deleteLater();
     m_capture = nullptr;
 

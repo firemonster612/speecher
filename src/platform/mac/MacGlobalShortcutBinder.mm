@@ -149,6 +149,10 @@ MacGlobalShortcutBinder::~MacGlobalShortcutBinder()
         RemoveEventHandler(static_cast<EventHandlerRef>(m_eventHandler));
         m_eventHandler = nullptr;
     }
+    if (m_eventHandlerUpp) {
+        DisposeEventHandlerUPP(reinterpret_cast<EventHandlerUPP>(m_eventHandlerUpp));
+        m_eventHandlerUpp = nullptr;
+    }
 }
 
 bool MacGlobalShortcutBinder::supported() const
@@ -212,23 +216,29 @@ bool MacGlobalShortcutBinder::registerHotKey(const QKeySequence &shortcut, QStri
             {kEventClassKeyboard, kEventHotKeyPressed},
             {kEventClassKeyboard, kEventHotKeyReleased},
         };
+        EventHandlerUPP upp = NewEventHandlerUPP(handleHotKeyEvent);
         EventHandlerRef handler = nullptr;
-        if (InstallApplicationEventHandler(NewEventHandlerUPP(handleHotKeyEvent),
+        if (InstallApplicationEventHandler(upp,
                                            GetEventTypeCount(hotKeyEvents),
                                            hotKeyEvents,
                                            this,
                                            &handler) != noErr) {
+            DisposeEventHandlerUPP(upp);
             if (error) {
                 *error = QStringLiteral("Could not install the global hot-key handler");
             }
             return false;
         }
         m_eventHandler = handler;
+        m_eventHandlerUpp = reinterpret_cast<void *>(upp);
     }
 
-    // Carbon refuses a second registration of the same combination, so the old
-    // one has to go first even when this one turns out to be unavailable.
-    unregisterHotKey();
+    // Carbon refuses a second registration of the same combination, and the
+    // registration already in place is that one.
+    if (m_hotKey && shortcut == m_shortcut) {
+        return true;
+    }
+
     const EventHotKeyID identifier{hotKeySignature, hotKeyIdentifier};
     EventHotKeyRef hotKey = nullptr;
     if (RegisterEventHotKey(keyCode, modifiers, identifier, GetApplicationEventTarget(), 0, &hotKey)
@@ -239,6 +249,9 @@ bool MacGlobalShortcutBinder::registerHotKey(const QKeySequence &shortcut, QStri
         }
         return false;
     }
+    // Dropped only now that a replacement exists: unregistering first left the
+    // user with no working shortcut whenever the new combination was taken.
+    unregisterHotKey();
     m_hotKey = hotKey;
     return true;
 }
