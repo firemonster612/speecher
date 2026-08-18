@@ -9,8 +9,6 @@
 namespace speecher {
 namespace {
 
-constexpr auto plainTextMimeType = "text/plain";
-constexpr auto htmlMimeType = "text/html";
 
 QClipboard *systemClipboard()
 {
@@ -42,12 +40,13 @@ bool captureQtClipboard(ClipboardSnapshot *snapshot, QString *error)
     if (!mime) {
         return true;
     }
-    const QString text = mime->text();
-    if (!text.isEmpty()) {
-        snapshot->parts.append({QString::fromLatin1(plainTextMimeType), text.toUtf8()});
-    }
-    if (mime->hasHtml()) {
-        snapshot->parts.append({QString::fromLatin1(htmlMimeType), mime->html().toUtf8()});
+    // Every advertised format, not just text: restoring less than the owner
+    // offered would silently drop images or app-private data.
+    for (const QString &format : mime->formats()) {
+        const QByteArray data = mime->data(format);
+        if (!data.isEmpty()) {
+            snapshot->parts.append({format, data});
+        }
     }
     if (!snapshot->parts.isEmpty()) {
         snapshot->hasData = true;
