@@ -140,6 +140,7 @@ set(SPEECHER_PLATFORM_SOURCES
   src/output/ClipboardDelivery.cpp
   src/output/QtClipboardDelivery.cpp
   src/output/TextDelivery.cpp
+  src/platform/ScreenshotImage.cpp
   src/platform/audio/AudioPcmConverter.cpp
   src/platform/audio/QtAudioInput.cpp
   src/ui/FallbackPopupPositioner.cpp
@@ -152,6 +153,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/output/TextDelivery.h
   src/platform/AccessibilityState.h
   src/platform/GlobalShortcutBinder.h
+  src/platform/ScreenshotImage.h
   src/platform/audio/AudioPcmConverter.h
   src/platform/audio/QtAudioInput.h
   src/ui/FallbackPopupPositioner.h
@@ -212,6 +214,7 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
 
 set(SPEECHER_APP_UI_SOURCES
   src/app/ApplicationController.cpp
+  src/app/CompositionSockets.cpp
   src/app/PlatformSelection.cpp
   src/app/SingleInstanceIpc.cpp
   src/ui/AccessibilityNotice.cpp
@@ -237,6 +240,7 @@ set(SPEECHER_APP_UI_SOURCES
 
 set(SPEECHER_APP_UI_HEADERS
   src/app/ApplicationController.h
+  src/app/CompositionSockets.h
   src/app/PlatformComposition.h
   src/app/SingleInstanceIpc.h
   src/ui/AccessibilityNotice.h

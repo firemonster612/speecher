@@ -1,9 +1,9 @@
 #include "platform/mac/MacScreenshotContextProvider.h"
 
-#include <QBuffer>
+#include "platform/ScreenshotImage.h"
+
 #include <QDir>
 #include <QFile>
-#include <QImage>
 #include <QProcess>
 #include <QUuid>
 
@@ -20,29 +20,6 @@ QString screenRecordingHint()
 {
     return QStringLiteral(
         "Screen capture failed. Allow Speecher under Privacy & Security > Screen Recording.");
-}
-
-QByteArray normalizedScreenshot(const QByteArray &source)
-{
-    QImage image;
-    if (!image.loadFromData(source)) {
-        return {};
-    }
-
-    constexpr int maximumEdge = 2560;
-    if (image.width() > maximumEdge || image.height() > maximumEdge) {
-        image = image.scaled(maximumEdge,
-                             maximumEdge,
-                             Qt::KeepAspectRatio,
-                             Qt::SmoothTransformation);
-    }
-
-    QByteArray result;
-    QBuffer output(&result);
-    if (!output.open(QIODevice::WriteOnly) || !image.save(&output, "PNG")) {
-        return {};
-    }
-    return result;
 }
 
 } // namespace
