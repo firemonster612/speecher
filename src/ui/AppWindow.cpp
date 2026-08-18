@@ -43,9 +43,19 @@
 
 #include <utility>
 
+#ifdef Q_OS_MACOS
+#include "platform/mac/MacWindowChrome.h"
+#endif
+
 namespace speecher {
 
 namespace {
+
+#ifdef Q_OS_MACOS
+// With the titlebar hidden the traffic lights float over the header strip, so
+// the sidebar's search field starts below them instead of at the window edge.
+constexpr int kTrafficLightInset = 28;
+#endif
 
 struct PageDefinition {
     QString title;
@@ -164,7 +174,13 @@ void AppWindow::applyChromeColors()
     if (!m_headerStrip) {
         return;
     }
+#ifdef Q_OS_MACOS
+    // No kdeglobals on macOS, and no need for one: the system palette already
+    // describes the titlebar the strip is standing in for.
+    m_headerStrip->setPalette(palette());
+#else
     m_headerStrip->setPalette(settings::kdeHeaderPalette(palette()));
+#endif
 
     QPalette dividerPalette(m_headerDividerLine->palette());
     dividerPalette.setColor(QPalette::Window,
@@ -242,6 +258,9 @@ bool AppWindow::eventFilter(QObject *watched, QEvent *event)
     if (watched == m_sidebarPane && event->type() == QEvent::Resize
         && m_searchSection) {
         m_searchSection->setFixedWidth(m_sidebarPane->width());
+#ifdef Q_OS_MACOS
+        mac::updateSidebarWidth(this, m_sidebarPane->width());
+#endif
     }
     return QMainWindow::eventFilter(watched, event);
 }
@@ -437,6 +456,7 @@ void AppWindow::buildSidebarShell()
         handle->setAutoFillBackground(true);
     }
     applyChromeColors();
+#ifndef Q_OS_MACOS
     auto *colorConfigWatcher = new QFileSystemWatcher(this);
     const QString kdeGlobals =
         QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
@@ -449,6 +469,7 @@ void AppWindow::buildSidebarShell()
                 colorConfigWatcher->addPath(path);
                 QTimer::singleShot(0, this, &AppWindow::applyChromeColors);
             });
+#endif
     m_sidebarPane = sidebar;
     m_searchSection = searchContainer;
     sidebar->installEventFilter(this);
@@ -464,6 +485,25 @@ void AppWindow::buildSidebarShell()
         m_sidebarSplitter->restoreState(splitterState);
     }
     searchContainer->setFixedWidth(sidebar->width());
+#ifdef Q_OS_MACOS
+    // The sidebar column is an NSVisualEffectView sitting behind Qt's content
+    // view, so everything stacked over it has to stop painting for the blur to
+    // reach the screen. The content column keeps its opaque window fill.
+    setAttribute(Qt::WA_TranslucentBackground);
+    header->setAutoFillBackground(false);
+    sidebar->setAutoFillBackground(false);
+    m_navigation->setAutoFillBackground(false);
+    m_navigation->viewport()->setAutoFillBackground(false);
+    for (QWidget *contentSide : {headerDivider, headerRight}) {
+        contentSide->setBackgroundRole(QPalette::Window);
+        contentSide->setAutoFillBackground(true);
+    }
+    searchLayout->setContentsMargins(settings::relatedSpacing(),
+                                     kTrafficLightInset,
+                                     settings::relatedSpacing(),
+                                     settings::relatedSpacing());
+    mac::applyMainWindowChrome(this, sidebar->width());
+#endif
     m_navigation->setCurrentRow(0);
     connect(m_navigation, &QListWidget::currentItemChanged, this,
             [this](QListWidgetItem *item) {
