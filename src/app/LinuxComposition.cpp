@@ -1,14 +1,14 @@
 #include "app/LinuxComposition.h"
 
-#include "core/MediaPauseController.h"
 #include "core/SettingsStore.h"
 #include "output/TextDelivery.h"
 #include "output/WlClipboardDelivery.h"
 #include "platform/AtSpiTargetProvider.h"
 #include "platform/KGlobalAccelShortcutBinder.h"
+#include "platform/MediaPauseController.h"
 #include "platform/PortalScreenshotContextProvider.h"
-#include "platform/atspi/AtSpiAccess.h"
 #include "platform/WaylandLayerShell.h"
+#include "platform/atspi/AtSpiAccess.h"
 #include "platform/audio/QtAudioInput.h"
 
 #include <QCoreApplication>
