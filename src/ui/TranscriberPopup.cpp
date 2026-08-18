@@ -1,7 +1,7 @@
 #include "ui/TranscriberPopup.h"
 
-#include "platform/WaylandLayerShell.h"
 #include "ui/AccessibilityNotice.h"
+#include "ui/FallbackPopupPositioner.h"
 #include "ui/WaveformWidget.h"
 
 #include <QApplication>
@@ -60,7 +60,7 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     , m_errorDismissProgress(new QProgressBar(m_previewPill))
     , m_waveform(new WaveformWidget(this))
     , m_accessibilityNotice(new AccessibilityNotice(this))
-    , m_positioner(positioner ? positioner : new WaylandLayerShell(this))
+    , m_positioner(positioner ? positioner : new FallbackPopupPositioner(this))
 {
     if (m_positioner->parent() != this) {
         m_positioner->setParent(this);

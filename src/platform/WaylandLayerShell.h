@@ -1,12 +1,12 @@
 #pragma once
 
-#include "ui/PopupPositioner.h"
+#include "ui/FallbackPopupPositioner.h"
 
 class QWidget;
 
 namespace speecher {
 
-class WaylandLayerShell : public PopupPositioner {
+class WaylandLayerShell : public FallbackPopupPositioner {
     Q_OBJECT
 
 public:
