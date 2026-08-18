@@ -9,6 +9,7 @@ class PlatformLiveTests : public QObject {
     Q_OBJECT
 
 private slots:
+#ifdef SPEECHER_WITH_WAYLAND
     void correctionObserverSettlesSamplesWithoutRealTimeWaits()
     {
         atspi::CorrectionObserver observer;
@@ -158,6 +159,8 @@ private slots:
         }
     }
 
+#endif // SPEECHER_WITH_WAYLAND
+
     void liveAudioCaptureUsesDefaultWhenSavedDeviceIsMissing()
     {
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_AUDIO") != QStringLiteral("1")) {
@@ -186,6 +189,7 @@ private slots:
         QVERIFY(!capture.isActive());
     }
 
+#ifdef SPEECHER_WITH_WAYLAND
     void liveAtSpiDirectInsertionIntoSavedUnfocusedControl()
     {
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI_EDIT") != QStringLiteral("1")) {
@@ -399,6 +403,7 @@ private slots:
         QCOMPARE(corrections.count(), 0);
         QVERIFY(!provider.canInsertText(target));
     }
+#endif // SPEECHER_WITH_WAYLAND
 };
 
 int runPlatformLiveTests(int argc, char **argv)

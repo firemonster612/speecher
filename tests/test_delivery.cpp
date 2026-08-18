@@ -779,6 +779,7 @@ private slots:
                  QByteArrayLiteral("custom-data"));
     }
 
+#ifdef SPEECHER_WITH_WAYLAND
     void wlClipboardSnapshotCapturesAndRestoresEveryMimeType()
     {
         auto *original = new QMimeData;
@@ -896,6 +897,7 @@ private slots:
         QCOMPARE(ready.state, YdotoolSetupState::Ready);
         QVERIFY(ready.ready());
     }
+#endif // SPEECHER_WITH_WAYLAND
 };
 
 int runDeliveryTests(int argc, char **argv)
