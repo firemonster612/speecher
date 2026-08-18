@@ -18,8 +18,10 @@ public:
                                   const QString &applicationId);
 
     using SettingsCodecs::anthropicAuthMode;
+    using SettingsCodecs::anthropicCliproxyAccount;
     using SettingsCodecs::anthropicEffort;
     using SettingsCodecs::anthropicModel;
+    using SettingsCodecs::cliproxyOauthDir;
     using SettingsCodecs::appRecognitionRules;
     using SettingsCodecs::audioCaptureSettings;
     using SettingsCodecs::bindingRules;
@@ -34,6 +36,7 @@ public:
     using SettingsCodecs::includeScreenshotContext;
     using SettingsCodecs::learnedCorrections;
     using SettingsCodecs::openAiAuthMode;
+    using SettingsCodecs::openAiCliproxyAccount;
     using SettingsCodecs::openAiEffort;
     using SettingsCodecs::openAiModel;
     using SettingsCodecs::outputFormat;
@@ -47,6 +50,7 @@ public:
     using SettingsCodecs::removeLearnedCorrection;
     using SettingsCodecs::restoreClipboardAfterTyping;
     using SettingsCodecs::setAnthropicAuthMode;
+    using SettingsCodecs::setAnthropicCliproxyAccount;
     using SettingsCodecs::setAnthropicEffort;
     using SettingsCodecs::setAnthropicModel;
     using SettingsCodecs::setAppRecognitionRules;
@@ -58,6 +62,7 @@ public:
     using SettingsCodecs::setLearnedCorrectionEnabled;
     using SettingsCodecs::setLearnedCorrections;
     using SettingsCodecs::setOpenAiAuthMode;
+    using SettingsCodecs::setOpenAiCliproxyAccount;
     using SettingsCodecs::setOpenAiEffort;
     using SettingsCodecs::setOpenAiModel;
     using SettingsCodecs::setOutputFormat;

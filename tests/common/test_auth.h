@@ -43,6 +43,28 @@ inline QString jwtWithExpiry(const QDateTime &expiresAt)
         return QString::fromLatin1(header + "." + payload + ".");
     }
 
+inline bool writeCliProxyAccount(const QString &directory,
+                                 const QString &fileName,
+                                 const QString &type,
+                                 const QString &accessToken,
+                                 const QDateTime &expired,
+                                 bool disabled = false)
+    {
+        QFile file(QDir(directory).filePath(fileName));
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            return false;
+        }
+        file.write(QJsonDocument(QJsonObject{
+                                     {QStringLiteral("type"), type},
+                                     {QStringLiteral("access_token"), accessToken},
+                                     {QStringLiteral("account_id"), QStringLiteral("acct")},
+                                     {QStringLiteral("disabled"), disabled},
+                                     {QStringLiteral("expired"), expired.toString(Qt::ISODate)},
+                                 })
+                       .toJson());
+        return true;
+    }
+
 inline bool writeCodexAuth(const QString &homePath, const QString &accessToken)
     {
         QDir dir(homePath);

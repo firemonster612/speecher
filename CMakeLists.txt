@@ -105,6 +105,7 @@ set(SPEECHER_PROVIDER_SOURCES
   src/providers/ClaudeSpeechTranscriber.cpp
   src/providers/ClaudeVoiceClient.cpp
   src/providers/ClaudeVoiceProtocol.cpp
+  src/providers/CliProxyCredentials.cpp
   src/providers/CodexDictationClient.cpp
   src/providers/CodexSpeechTranscriber.cpp
   src/providers/OpenAiAuthProvider.cpp
@@ -120,6 +121,7 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/ClaudeSpeechTranscriber.h
   src/providers/ClaudeVoiceClient.h
   src/providers/ClaudeVoiceProtocol.h
+  src/providers/CliProxyCredentials.h
   src/providers/CodexDictationClient.h
   src/providers/CodexSpeechTranscriber.h
   src/providers/OpenAiAuthProvider.h

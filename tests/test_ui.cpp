@@ -6,6 +6,7 @@
 #include "ui/settings/CorrectionsSettingsPage.h"
 #include "ui/settings/OutputSettingsPage.h"
 #include "ui/settings/AudioSettingsPage.h"
+#include "ui/settings/ProviderSettingsPage.h"
 #include "ui/settings/RefinementSettingsPage.h"
 #include "ui/settings/SettingsPageSupport.h"
 #include "ui/setup/SetupPages.h"
@@ -186,6 +187,42 @@ private slots:
         duration->setValue(650);
         page.appendToDraft(settings);
         QCOMPARE(settings.output.completionStatusDurationMs, 650);
+    }
+
+    void providerSettingsCliproxyAccountPicker()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore secrets(&settings);
+        QTemporaryDir dir;
+        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), dir.path());
+        const QDateTime valid = QDateTime::currentDateTimeUtc().addSecs(3600);
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-a@example.com.json"), QStringLiteral("codex"),
+                                     QStringLiteral("token-a"), valid));
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-b@example.com.json"), QStringLiteral("codex"),
+                                     QStringLiteral("token-b"), valid));
+
+        ProviderSettingsPage page(settings, secrets);
+        page.loadModels();
+        page.loadAuthModes();
+        auto *combo = page.findChild<QComboBox *>(QStringLiteral("openAiCliproxyAccount"));
+        QVERIFY(combo);
+        QCOMPARE(combo->count(), 3);
+        QCOMPARE(combo->currentData().toString(), QString());
+        QVERIFY(!page.hasAuthChanges());
+
+        combo->setCurrentIndex(combo->findData(QStringLiteral("codex-b@example.com.json")));
+        QVERIFY(!page.hasAuthChanges());
+        page.saveAuthModes();
+        QCOMPARE(settings.openAiCliproxyAccount(), QString());
+
+        settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
+        page.loadAuthModes();
+        combo->setCurrentIndex(combo->findData(QStringLiteral("codex-b@example.com.json")));
+        QVERIFY(page.hasAuthChanges());
+        page.saveAuthModes();
+        QCOMPARE(settings.openAiCliproxyAccount(), QStringLiteral("codex-b@example.com.json"));
+        QVERIFY(!page.hasAuthChanges());
     }
 
     void applicationSettingsShowsBuiltInsAndAddsCustomRules()

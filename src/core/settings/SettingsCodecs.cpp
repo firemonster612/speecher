@@ -530,7 +530,7 @@ QString SettingsCodecs::openAiAuthMode() const
         return QStringLiteral("settings");
     }
     if (mode == QStringLiteral("auto") || mode == QStringLiteral("codex_api_key") || mode == QStringLiteral("codex_oauth")
-        || mode == QStringLiteral("env") || mode == QStringLiteral("settings")) {
+        || mode == QStringLiteral("env") || mode == QStringLiteral("settings") || mode == QStringLiteral("cliproxy")) {
         return mode;
     }
     return QStringLiteral("auto");
@@ -539,7 +539,7 @@ QString SettingsCodecs::openAiAuthMode() const
 void SettingsCodecs::setOpenAiAuthMode(const QString &value)
 {
     if (value == QStringLiteral("codex_api_key") || value == QStringLiteral("codex_oauth")
-        || value == QStringLiteral("env") || value == QStringLiteral("settings")) {
+        || value == QStringLiteral("env") || value == QStringLiteral("settings") || value == QStringLiteral("cliproxy")) {
         m_settings.setValue(SettingsKeys::OpenAiAuthMode, value);
         return;
     }
@@ -581,13 +581,14 @@ void SettingsCodecs::setAnthropicModel(const QString &value)
 
 QString SettingsCodecs::anthropicAuthMode() const
 {
-    return QStringLiteral("oauth");
+    const QString mode = value(SettingsKeys::AnthropicAuthMode, QStringLiteral("oauth")).toString();
+    return mode == QStringLiteral("cliproxy") ? mode : QStringLiteral("oauth");
 }
 
 void SettingsCodecs::setAnthropicAuthMode(const QString &value)
 {
-    Q_UNUSED(value)
-    m_settings.setValue(SettingsKeys::AnthropicAuthMode, QStringLiteral("oauth"));
+    m_settings.setValue(SettingsKeys::AnthropicAuthMode,
+                        value == QStringLiteral("cliproxy") ? value : QStringLiteral("oauth"));
 }
 
 QString SettingsCodecs::anthropicEffort() const
@@ -703,6 +704,32 @@ void SettingsCodecs::setPasteRules(const QList<PasteRule> &rules)
     m_settings.setValue(SettingsKeys::PasteRules, QJsonDocument(array).toJson(QJsonDocument::Compact));
 }
 
+QString SettingsCodecs::openAiCliproxyAccount() const
+{
+    return value(SettingsKeys::OpenAiCliproxyAccount, QString()).toString().trimmed();
+}
+
+void SettingsCodecs::setOpenAiCliproxyAccount(const QString &value)
+{
+    m_settings.setValue(SettingsKeys::OpenAiCliproxyAccount, value.trimmed());
+}
+
+QString SettingsCodecs::anthropicCliproxyAccount() const
+{
+    return value(SettingsKeys::AnthropicCliproxyAccount, QString()).toString().trimmed();
+}
+
+void SettingsCodecs::setAnthropicCliproxyAccount(const QString &value)
+{
+    m_settings.setValue(SettingsKeys::AnthropicCliproxyAccount, value.trimmed());
+}
+
+QString SettingsCodecs::cliproxyOauthDir() const
+{
+    return value(SettingsKeys::CliproxyOauthDir,
+                 QDir::homePath() + QStringLiteral("/.local/share/cliproxy-api/oauth")).toString();
+}
+
 QString SettingsCodecs::claudeCredentialsPath() const
 {
     return value(SettingsKeys::ClaudeCredentialsPath, QDir::homePath() + QStringLiteral("/.claude/.credentials.json")).toString();
@@ -765,9 +792,12 @@ AppSettings SettingsCodecs::snapshot() const
     settings.refinement.openAiModel = openAiModel();
     settings.refinement.openAiAuthMode = openAiAuthMode();
     settings.refinement.openAiEffort = openAiEffort();
+    settings.refinement.openAiCliproxyAccount = openAiCliproxyAccount();
     settings.refinement.anthropicModel = anthropicModel();
     settings.refinement.anthropicAuthMode = anthropicAuthMode();
     settings.refinement.anthropicEffort = anthropicEffort();
+    settings.refinement.anthropicCliproxyAccount = anthropicCliproxyAccount();
+    settings.refinement.cliproxyOauthDir = cliproxyOauthDir();
     settings.refinement.anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     settings.refinement.claudeCredentialsPath = claudeCredentialsPath();
     settings.refinement.defaultWritingProfile = defaultWritingProfile();

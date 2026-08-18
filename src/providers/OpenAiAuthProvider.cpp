@@ -2,6 +2,7 @@
 
 #include "core/CliToolDiscovery.h"
 #include "core/SecretStore.h"
+#include "providers/CliProxyCredentials.h"
 
 #include <QDir>
 #include <QDateTime>
@@ -14,9 +15,14 @@
 
 namespace speecher {
 
-OpenAiAuthProvider::OpenAiAuthProvider(SecretStore *secretStore, const QString &mode)
+OpenAiAuthProvider::OpenAiAuthProvider(SecretStore *secretStore,
+                                       const QString &mode,
+                                       const QString &cliproxyAccount,
+                                       const QString &cliproxyDir)
     : m_secretStore(secretStore)
     , m_mode(mode)
+    , m_cliproxyAccount(cliproxyAccount)
+    , m_cliproxyDir(cliproxyDir)
 {
 }
 
@@ -267,6 +273,22 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
         }
         return {false, {}, QStringLiteral("env"), QStringLiteral("OPENAI_API_KEY not found"), {}, {}, {}, {}, false};
     }
+    if (mode == QStringLiteral("cliproxy")) {
+        const CliProxyCredentialResult credentials =
+            CliProxyCredentials::load(m_cliproxyDir, QStringLiteral("codex"), m_cliproxyAccount);
+        if (!credentials.ok) {
+            return {false, {}, QStringLiteral("cliproxy"), credentials.error, {}, {}, {}, {}, true};
+        }
+        return {true,
+                credentials.accessToken,
+                QStringLiteral("cliproxy"),
+                QStringLiteral("CLI Proxy API Codex token found"),
+                {},
+                {},
+                QStringLiteral("https://chatgpt.com/backend-api/codex"),
+                credentials.accountId,
+                true};
+    }
     if (mode == QStringLiteral("settings")) {
         if (m_secretStore && m_secretStore->apiKey().startsWith(QStringLiteral("sk-"))) {
             return {true,
@@ -329,7 +351,8 @@ bool OpenAiAuthProvider::requiresCodexOauthRefresh() const
     if (mode == QStringLiteral("codex_oauth")) {
         return readCodexOauth(false).status == QStringLiteral("Codex OAuth token expired");
     }
-    if (mode == QStringLiteral("codex_api_key") || mode == QStringLiteral("env") || mode == QStringLiteral("settings")) {
+    if (mode == QStringLiteral("codex_api_key") || mode == QStringLiteral("env") || mode == QStringLiteral("settings")
+        || mode == QStringLiteral("cliproxy")) {
         return false;
     }
 

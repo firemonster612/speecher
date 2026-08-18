@@ -61,9 +61,12 @@ struct RefinementSettings {
     QString openAiModel = QStringLiteral("gpt-5.6-luna");
     QString openAiAuthMode = QStringLiteral("auto");
     QString openAiEffort = QStringLiteral("none");
+    QString openAiCliproxyAccount;
     QString anthropicModel = QStringLiteral("claude-sonnet-4-6");
     QString anthropicAuthMode = QStringLiteral("oauth");
     QString anthropicEffort = QStringLiteral("low");
+    QString anthropicCliproxyAccount;
+    QString cliproxyOauthDir;
     QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     QString claudeCredentialsPath;
     QStringList bindingVocabulary;

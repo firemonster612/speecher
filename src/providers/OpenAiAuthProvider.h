@@ -20,7 +20,10 @@ struct OpenAiAuth {
 
 class OpenAiAuthProvider {
 public:
-    explicit OpenAiAuthProvider(SecretStore *secretStore = nullptr, const QString &mode = QStringLiteral("auto"));
+    explicit OpenAiAuthProvider(SecretStore *secretStore = nullptr,
+                                const QString &mode = QStringLiteral("auto"),
+                                const QString &cliproxyAccount = {},
+                                const QString &cliproxyDir = {});
 
     OpenAiAuth resolve(bool refreshExpired = true) const;
     QString status() const;
@@ -32,6 +35,8 @@ private:
     static OpenAiAuth readCodexOauth(bool refreshExpired = true);
     SecretStore *m_secretStore = nullptr;
     QString m_mode;
+    QString m_cliproxyAccount;
+    QString m_cliproxyDir;
 };
 
 } // namespace speecher

@@ -132,6 +132,8 @@ private slots:
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("codex_oauth"));
         settings.setOpenAiAuthMode(QStringLiteral("codex_oauth"));
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("codex_oauth"));
+        settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
+        QCOMPARE(settings.openAiAuthMode(), QStringLiteral("cliproxy"));
         settings.setOpenAiAuthMode(QStringLiteral("env"));
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("env"));
         settings.setOpenAiEffort(QStringLiteral("xhigh"));
@@ -154,8 +156,17 @@ private slots:
         QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-sonnet-4-6"));
         settings.setAnthropicAuthMode(QStringLiteral("oauth"));
         QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
+        settings.setAnthropicAuthMode(QStringLiteral("cliproxy"));
+        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("cliproxy"));
         settings.setAnthropicAuthMode(QStringLiteral("unknown"));
         QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
+        settings.setOpenAiCliproxyAccount(QStringLiteral(" codex-user@example.com.json "));
+        QCOMPARE(settings.openAiCliproxyAccount(), QStringLiteral("codex-user@example.com.json"));
+        settings.setAnthropicCliproxyAccount(QStringLiteral("claude-user@example.com.json"));
+        QCOMPARE(settings.anthropicCliproxyAccount(), QStringLiteral("claude-user@example.com.json"));
+        QCOMPARE(settings.snapshot().refinement.openAiCliproxyAccount, QStringLiteral("codex-user@example.com.json"));
+        QCOMPARE(settings.snapshot().refinement.anthropicCliproxyAccount, QStringLiteral("claude-user@example.com.json"));
+        QVERIFY(settings.snapshot().refinement.cliproxyOauthDir.endsWith(QStringLiteral("cliproxy-api/oauth")));
         settings.setAnthropicEffort(QStringLiteral("high"));
         QCOMPARE(settings.anthropicEffort(), QStringLiteral("high"));
         settings.setAnthropicEffort(QStringLiteral("max"));
