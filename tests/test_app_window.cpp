@@ -199,6 +199,9 @@ private slots:
         QCOMPARE(controller.settings()->theme(), QStringLiteral("dark"));
     }
 
+#ifndef Q_OS_MACOS
+    // macOS takes its header colors from the system palette, so there is no
+    // kdeglobals reader to exercise there.
     void headerStripTracksActiveAndInactiveKdeColors()
     {
         const QString configPath =
@@ -245,6 +248,7 @@ private slots:
         QCOMPARE(strip->palette().color(QPalette::Inactive, QPalette::Window),
                  QColor(45, 55, 65));
     }
+#endif
 
     void sidebarShellSupportsPageSearch()
     {

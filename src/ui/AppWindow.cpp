@@ -46,9 +46,19 @@
 
 #include <utility>
 
+#ifdef Q_OS_MACOS
+#include "platform/mac/MacWindowChrome.h"
+#endif
+
 namespace speecher {
 
 namespace {
+
+#ifdef Q_OS_MACOS
+// With the titlebar hidden the traffic lights float over the header strip, so
+// the sidebar's search field starts below them instead of at the window edge.
+constexpr int kTrafficLightInset = 28;
+#endif
 
 struct PageDefinition {
     QString title;
@@ -167,7 +177,11 @@ void AppWindow::refreshHeaderStripColor()
     // Every hairline (header divider, header underline, sidebar splitter
     // handle) uses the same color, derived from the same palette, so no line
     // reads lighter than its neighbors.
+#ifdef Q_OS_MACOS
+    const QPalette headerPalette = palette();
+#else
     const QPalette headerPalette = settings::kdeHeaderPalette(palette());
+#endif
     const QColor line = settings::separatorColor(headerPalette);
     if (m_headerStrip) {
         m_headerStrip->setPalette(headerPalette);
@@ -245,6 +259,9 @@ bool AppWindow::eventFilter(QObject *watched, QEvent *event)
     if (watched == m_sidebarPane && event->type() == QEvent::Resize
         && m_searchSection) {
         m_searchSection->setFixedWidth(m_sidebarPane->width());
+#ifdef Q_OS_MACOS
+        mac::updateSidebarWidth(this, m_sidebarPane->width());
+#endif
     }
     // The header strip reads as part of the title bar, so empty space in it
     // must drag and double-click the window like the title bar does. Only
@@ -408,6 +425,7 @@ void AppWindow::buildSidebarShell()
     header->installEventFilter(this);
     root->addWidget(header);
 
+#ifndef Q_OS_MACOS
     auto *colorConfigWatcher = new QFileSystemWatcher(this);
     const QString kdeGlobals =
         QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
@@ -420,6 +438,7 @@ void AppWindow::buildSidebarShell()
                 colorConfigWatcher->addPath(path);
                 QTimer::singleShot(0, this, &AppWindow::refreshHeaderStripColor);
             });
+#endif
 
     // Same fill mechanism and color as the splitter handle, so the strip's
     // bottom edge and the sidebar/content hairline match exactly.
@@ -514,6 +533,25 @@ void AppWindow::buildSidebarShell()
         m_sidebarSplitter->restoreState(splitterState);
     }
     searchContainer->setFixedWidth(sidebar->width());
+#ifdef Q_OS_MACOS
+    // The sidebar column is an NSVisualEffectView sitting behind Qt's content
+    // view, so everything stacked over it has to stop painting for the blur to
+    // reach the screen. The content column keeps its opaque window fill.
+    setAttribute(Qt::WA_TranslucentBackground);
+    header->setAutoFillBackground(false);
+    sidebar->setAutoFillBackground(false);
+    m_navigation->setAutoFillBackground(false);
+    m_navigation->viewport()->setAutoFillBackground(false);
+    for (QWidget *contentSide : {headerDivider, headerRight}) {
+        contentSide->setBackgroundRole(QPalette::Window);
+        contentSide->setAutoFillBackground(true);
+    }
+    searchLayout->setContentsMargins(settings::relatedSpacing(),
+                                     kTrafficLightInset,
+                                     settings::relatedSpacing(),
+                                     settings::relatedSpacing());
+    mac::applyMainWindowChrome(this, sidebar->width());
+#endif
     m_navigation->setCurrentRow(0);
     connect(m_navigation, &QListWidget::currentItemChanged, this,
             [this](QListWidgetItem *item) {
