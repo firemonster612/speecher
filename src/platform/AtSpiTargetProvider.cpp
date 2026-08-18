@@ -19,7 +19,7 @@ QString copiedSelection()
         return {};
     }
 
-    WlClipboardSnapshot previous;
+    ClipboardSnapshot previous;
     if (!WlClipboardDelivery::capture(&previous)) {
         return {};
     }

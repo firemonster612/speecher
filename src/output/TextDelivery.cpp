@@ -193,7 +193,7 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
             || (m_targetProvider && m_targetProvider->stillFocused(target)));
 
     QString clipboardWarning;
-    WlClipboardSnapshot previousClipboard;
+    ClipboardSnapshot previousClipboard;
     bool canRestoreClipboard = false;
     if (pasteMethod != PasteMethod::ClipboardOnly && settings.restoreClipboardAfterTyping) {
         if (!m_clipboardDelivery.canSnapshot()) {

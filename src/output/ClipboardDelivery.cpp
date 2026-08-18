@@ -1,7 +1,90 @@
 #include "output/ClipboardDelivery.h"
 
 #include "dictation/DictationPorts.h"
+
+#include <QApplication>
+#include <QClipboard>
+#include <QMimeData>
+
 namespace speecher {
+namespace {
+
+constexpr auto plainTextMimeType = "text/plain";
+constexpr auto htmlMimeType = "text/html";
+
+QClipboard *systemClipboard()
+{
+    return qApp ? QApplication::clipboard() : nullptr;
+}
+
+// QClipboard is backed by NSPasteboard on macOS and by the compositor's data
+// device elsewhere, so it is the snapshot of last resort wherever the
+// wl-clipboard helpers are missing.
+bool captureQtClipboard(ClipboardSnapshot *snapshot, QString *error)
+{
+    if (!snapshot) {
+        if (error) {
+            *error = QStringLiteral("No clipboard snapshot destination");
+        }
+        return false;
+    }
+    *snapshot = {};
+
+    QClipboard *clipboard = systemClipboard();
+    if (!clipboard) {
+        if (error) {
+            *error = QStringLiteral("Clipboard is unavailable");
+        }
+        return false;
+    }
+
+    const QMimeData *mime = clipboard->mimeData(QClipboard::Clipboard);
+    if (!mime) {
+        return true;
+    }
+    const QString text = mime->text();
+    if (!text.isEmpty()) {
+        snapshot->parts.append({QString::fromLatin1(plainTextMimeType), text.toUtf8()});
+    }
+    if (mime->hasHtml()) {
+        snapshot->parts.append({QString::fromLatin1(htmlMimeType), mime->html().toUtf8()});
+    }
+    if (!snapshot->parts.isEmpty()) {
+        snapshot->hasData = true;
+        snapshot->mimeType = snapshot->parts.first().mimeType;
+        snapshot->data = snapshot->parts.first().data;
+    }
+    return true;
+}
+
+bool restoreQtClipboard(const ClipboardSnapshot &snapshot, QString *error)
+{
+    QClipboard *clipboard = systemClipboard();
+    if (!clipboard) {
+        if (error) {
+            *error = QStringLiteral("Clipboard is unavailable");
+        }
+        return false;
+    }
+    if (!snapshot.hasData) {
+        clipboard->clear(QClipboard::Clipboard);
+        return true;
+    }
+
+    const QList<ClipboardMimePart> parts = snapshot.parts.isEmpty()
+        ? QList<ClipboardMimePart>{{snapshot.mimeType, snapshot.data}}
+        : snapshot.parts;
+    auto *mime = new QMimeData;
+    for (const ClipboardMimePart &part : parts) {
+        mime->setData(part.mimeType.isEmpty() ? QStringLiteral("application/octet-stream")
+                                              : part.mimeType,
+                      part.data);
+    }
+    clipboard->setMimeData(mime, QClipboard::Clipboard);
+    return true;
+}
+
+} // namespace
 
 ClipboardDelivery::ClipboardDelivery(QObject *parent)
     : QObject(parent)
@@ -55,32 +138,31 @@ bool ClipboardDelivery::copyQt(const DeliveryContent &content,
 bool ClipboardDelivery::canSnapshot() const
 {
 #ifdef SPEECHER_WITH_WAYLAND
-    return WlClipboardDelivery::canSnapshot();
-#else
-    return false;
+    if (WlClipboardDelivery::canSnapshot()) {
+        return true;
+    }
 #endif
+    return systemClipboard() != nullptr;
 }
 
-bool ClipboardDelivery::capture(WlClipboardSnapshot *snapshot, QString *error) const
+bool ClipboardDelivery::capture(ClipboardSnapshot *snapshot, QString *error) const
 {
 #ifdef SPEECHER_WITH_WAYLAND
-    return WlClipboardDelivery::capture(snapshot, error);
-#else
-    Q_UNUSED(snapshot)
-    Q_UNUSED(error)
-    return false;
+    if (WlClipboardDelivery::canSnapshot()) {
+        return WlClipboardDelivery::capture(snapshot, error);
+    }
 #endif
+    return captureQtClipboard(snapshot, error);
 }
 
-bool ClipboardDelivery::restore(const WlClipboardSnapshot &snapshot, QString *error) const
+bool ClipboardDelivery::restore(const ClipboardSnapshot &snapshot, QString *error) const
 {
 #ifdef SPEECHER_WITH_WAYLAND
-    return WlClipboardDelivery::restore(snapshot, error);
-#else
-    Q_UNUSED(snapshot)
-    Q_UNUSED(error)
-    return false;
+    if (WlClipboardDelivery::canSnapshot()) {
+        return WlClipboardDelivery::restore(snapshot, error);
+    }
 #endif
+    return restoreQtClipboard(snapshot, error);
 }
 
 } // namespace speecher
