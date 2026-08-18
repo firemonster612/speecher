@@ -42,6 +42,8 @@ public:
     bool accessibilityEnabled() const;
     bool accessibilityPersistent() const;
     bool enableAccessibility(QString *error = nullptr);
+    // Platforms that do not push grants to a running process poll this.
+    void refreshAccessibilityState();
     bool grabMainWindow(const QString &path) const;
     bool globalShortcutsSupported() const;
     QKeySequence globalShortcut() const;
@@ -75,7 +77,6 @@ protected:
 private:
     void registerProviders();
     void wireSessionToPopup();
-    void refreshAccessibilityState();
     void runDeferredStartup();
     bool ensureSetupCompleted();
 

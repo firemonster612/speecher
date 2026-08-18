@@ -8,10 +8,12 @@
 class QCheckBox;
 class QComboBox;
 class QKeySequenceEdit;
+class QHideEvent;
 class QLabel;
 class QShowEvent;
 class QProgressBar;
 class QPushButton;
+class QTimer;
 class QVBoxLayout;
 
 namespace speecher {
@@ -84,12 +86,22 @@ public:
     explicit AccessibilitySetupPage(ApplicationController &controller,
                                     QWidget *parent = nullptr);
 
+#ifdef Q_OS_MACOS
+protected:
+    void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
+#endif
+
 private:
     void updateState(bool supported, bool enabled, bool persistent);
 
     ApplicationController &m_controller;
     QLabel *m_status;
     QPushButton *m_enable;
+#ifdef Q_OS_MACOS
+    QPushButton *m_request;
+    QTimer *m_poll;
+#endif
 };
 
 class TextDeliverySetupPage final : public QWidget {
