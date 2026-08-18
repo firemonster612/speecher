@@ -16,6 +16,7 @@ int main(int argc, char **argv)
     result |= runBindingsTests(argc, argv);
     result |= runSettingsTests(argc, argv);
     result |= runProviderRegistryTests(argc, argv);
+    result |= runPlatformCompositionTests(argc, argv);
     result |= runPlatformLiveTests(argc, argv);
     result |= runSingleInstanceIpcTests(argc, argv);
     result |= runDeliveryTests(argc, argv);
