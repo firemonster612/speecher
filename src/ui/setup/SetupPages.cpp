@@ -28,6 +28,7 @@
 #include <QApplication>
 #include <QDesktopServices>
 #include <QPermissions>
+#include <QTimer>
 #include <QUrl>
 #endif
 
@@ -395,15 +396,45 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
     : QWidget(parent)
     , m_controller(controller)
     , m_status(new QLabel(this))
+#ifdef Q_OS_MACOS
+    , m_enable(new QPushButton(QStringLiteral("Open Accessibility settings"), this))
+    , m_request(new QPushButton(QStringLiteral("Ask macOS for permission"), this))
+    , m_poll(new QTimer(this))
+#else
     , m_enable(new QPushButton(QStringLiteral("Enable permanently"), this))
+#endif
 {
     QVBoxLayout *layout = makePage(
         this,
+#ifdef Q_OS_MACOS
+        QStringLiteral("Speecher pastes your dictation into the frontmost app with a synthetic Cmd+V. macOS calls that controlling your computer, so it needs Accessibility permission."));
+#else
         QStringLiteral("AT-SPI lets Speecher identify the target app, paste into compatible fields, edit selected text, and learn corrections."));
+#endif
     m_status->setWordWrap(true);
     m_enable->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     layout->addWidget(m_status);
+#ifdef Q_OS_MACOS
+    m_request->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    auto *buttons = new QHBoxLayout;
+    buttons->addWidget(m_request);
+    buttons->addWidget(m_enable);
+    buttons->addStretch();
+    layout->addLayout(buttons);
+    // macOS records the grant against the app signature and never delivers it to
+    // the process that asked, so the only way to notice it is to keep looking.
+    m_poll->setInterval(1000);
+    connect(m_poll, &QTimer::timeout, &m_controller, &ApplicationController::refreshAccessibilityState);
+    connect(m_request, &QPushButton::clicked, this, [this] {
+        QString error;
+        if (!m_controller.platform()->requestAccessibility(&error)) {
+            m_status->setText(error);
+        }
+        m_controller.refreshAccessibilityState();
+    });
+#else
     layout->addWidget(m_enable, 0, Qt::AlignLeft);
+#endif
     layout->addStretch();
 
     connect(m_enable, &QPushButton::clicked, this, [this] {
@@ -421,8 +452,33 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
                 m_controller.accessibilityPersistent());
 }
 
+#ifdef Q_OS_MACOS
+void AccessibilitySetupPage::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    m_controller.refreshAccessibilityState();
+    m_poll->start();
+}
+
+void AccessibilitySetupPage::hideEvent(QHideEvent *event)
+{
+    QWidget::hideEvent(event);
+    m_poll->stop();
+}
+#endif
+
 void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool persistent)
 {
+#ifdef Q_OS_MACOS
+    Q_UNUSED(supported);
+    Q_UNUSED(persistent);
+    m_status->setText(enabled
+                          ? QStringLiteral("Accessibility is granted. If pasting still does nothing, quit Speecher and open it again — macOS only hands the permission to a fresh launch.")
+                          : QStringLiteral("Accessibility is off, so Speecher can copy your dictation but not paste it. Grant it below, then restart Speecher."));
+    m_request->setEnabled(!enabled);
+    m_enable->setEnabled(!enabled);
+    return;
+#else
     if (!supported) {
         m_status->setText(QStringLiteral("This Speecher build does not include AT-SPI support."));
         m_enable->setEnabled(false);
@@ -440,6 +496,7 @@ void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool pers
         m_enable->setEnabled(true);
         m_enable->setText(QStringLiteral("Enable permanently"));
     }
+#endif
 }
 
 TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *parent)
