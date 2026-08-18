@@ -335,7 +335,7 @@ void MicrophoneSetupPage::refreshMicrophonePermission()
         break;
     case Qt::PermissionStatus::Denied:
         m_permissionStatus->setText(
-            QStringLiteral("Microphone access is off, so Speecher records silence. Turn Speecher on under Privacy & Security → Microphone, then come back to this page."));
+            QStringLiteral("Microphone access is off, so Speecher records silence. Turn Speecher on under Privacy & Security > Microphone, then come back to this page."));
         break;
     }
     setStatusColor(m_permissionStatus, status == Qt::PermissionStatus::Granted);
@@ -460,7 +460,7 @@ void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool pers
     Q_UNUSED(supported);
     Q_UNUSED(persistent);
     m_status->setText(enabled
-                          ? QStringLiteral("Accessibility is granted. If pasting still does nothing, quit Speecher and open it again — macOS only hands the permission to a fresh launch.")
+                          ? QStringLiteral("Accessibility is granted. If pasting still does nothing, quit Speecher and open it again; macOS only hands the permission to a fresh launch.")
                           : QStringLiteral("Accessibility is off, so Speecher can copy your dictation but not paste it. Grant it below, then restart Speecher."));
     m_request->setEnabled(!enabled);
     m_enable->setEnabled(!enabled);
