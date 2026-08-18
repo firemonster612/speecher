@@ -340,6 +340,9 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
         if (row >= 0) { m_appPasteRules->removeRow(row); emit changed(); }
     });
     connect(m_outputMethod, &QComboBox::currentIndexChanged, this, [this] {
+        // The user has now chosen for themselves, so there is nothing left to
+        // preserve.
+        m_unlistedOutputMethod.clear();
 #ifdef SPEECHER_WITH_YDOTOOL
         if (m_outputMethod->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool)) {
             const YdotoolSetupStatus status = YdotoolSetup::probe(m_settings.ydotoolEnabled());
@@ -373,7 +376,12 @@ void OutputSettingsPage::setTargetAccessibilityAvailable(bool available)
 
 void OutputSettingsPage::load(const AppSettings &settings)
 {
+    // selectData falls back to index 0, which is Automatic on every platform.
+    // Remember what it could not show so appendToDraft does not quietly rewrite
+    // a method this build simply has no item for.
+    const bool listed = m_outputMethod->findData(settings.output.method) >= 0;
     settings::selectData(m_outputMethod, settings.output.method);
+    m_unlistedOutputMethod = listed ? QString() : settings.output.method;
     settings::selectData(m_outputFormat, outputFormatName(settings.output.format));
     const QList<PasteRule> &pasteRules = settings.output.pasteRules;
     settings::selectData(m_globalPaste, pasteMethodName(pasteMethodFor(pasteRules, PasteRuleScope::Global, QString(), PasteMethod::StandardPaste)));
@@ -407,7 +415,9 @@ bool OutputSettingsPage::validate(bool showError) const
 
 void OutputSettingsPage::appendToDraft(AppSettings &draft) const
 {
-    draft.output.method = m_outputMethod->currentData().toString();
+    draft.output.method = m_unlistedOutputMethod.isEmpty()
+        ? m_outputMethod->currentData().toString()
+        : m_unlistedOutputMethod;
     draft.output.format = outputFormatFromString(m_outputFormat->currentData().toString());
     draft.output.pasteRules = withPasteRules(draft.output.pasteRules, currentApplicationPasteRules(), currentCategoryPasteRules(), pasteMethodFromName(m_globalPaste->currentData().toString()));
     draft.output.restoreClipboardAfterTyping = m_restoreClipboardAfterTyping->isChecked();

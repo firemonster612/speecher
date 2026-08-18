@@ -101,7 +101,11 @@ GlobalShortcutBinder *MacComposition::createGlobalShortcutBinder(QObject *parent
 AccessibilityState MacComposition::accessibilityState() const
 {
     // The macOS grant is recorded per app signature and survives restarts, so
-    // there is no weaker session-only state to distinguish.
+    // there is no weaker session-only state to distinguish. Reporting
+    // persistent == enabled is therefore deliberate rather than a stand-in: a
+    // trusted process stays trusted. ApplicationController::runDeferredStartup
+    // relies on it, skipping requestAccessibility() unless the grant already
+    // exists, which is what keeps launch from raising a permission prompt.
     const bool trusted = AXIsProcessTrusted();
     return {true, trusted, trusted};
 }
