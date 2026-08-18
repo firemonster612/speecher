@@ -139,7 +139,7 @@ void ApplicationController::runDeferredStartup()
         qWarning() << "Could not restore the saved global shortcut";
     }
 #endif
-    const atspi::AccessibilityState state = atspi::accessibilityState();
+    const AccessibilityState state = atspi::accessibilityState();
     const bool requestSucceeded = state.persistent && atspi::requestAccessibility();
     m_accessibilitySupported = state.supported;
     m_accessibilityEnabled = state.enabled || requestSucceeded;
@@ -456,7 +456,7 @@ void ApplicationController::wireSessionToPopup()
 
 void ApplicationController::refreshAccessibilityState()
 {
-    const atspi::AccessibilityState state = atspi::accessibilityState();
+    const AccessibilityState state = atspi::accessibilityState();
     m_accessibilitySupported = state.supported;
     m_accessibilityEnabled = state.enabled;
     m_accessibilityPersistent = state.persistent;

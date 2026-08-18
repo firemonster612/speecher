@@ -152,6 +152,7 @@ set(SPEECHER_PLATFORM_SOURCES
 
 set(SPEECHER_PLATFORM_HEADERS
   src/core/MediaPauseController.h
+  src/platform/AccessibilityState.h
   src/output/ClipboardDelivery.h
   src/output/QtClipboardDelivery.h
   src/output/TextDelivery.h

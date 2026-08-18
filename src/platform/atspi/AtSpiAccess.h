@@ -1,5 +1,7 @@
 #pragma once
 
+#include "platform/AccessibilityState.h"
+
 #include <QString>
 
 #ifdef SPEECHER_WITH_ATSPI
@@ -7,12 +9,6 @@
 #endif
 
 namespace speecher::atspi {
-
-struct AccessibilityState {
-    bool supported = false;
-    bool enabled = false;
-    bool persistent = false;
-};
 
 AccessibilityState accessibilityState();
 bool requestAccessibility(QString *error = nullptr);
