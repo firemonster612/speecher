@@ -12,17 +12,16 @@
 namespace speecher {
 
 WaylandLayerShell::WaylandLayerShell(QObject *parent)
-    : PopupPositioner(parent)
+    : FallbackPopupPositioner(parent)
 {
 }
 
 void WaylandLayerShell::configurePopup(QWidget *widget)
 {
+    FallbackPopupPositioner::configurePopup(widget);
     if (!widget) {
         return;
     }
-    widget->setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
-    widget->setAttribute(Qt::WA_ShowWithoutActivating);
 #ifdef SPEECHER_WITH_LAYER_SHELL
     widget->winId();
     if (auto *window = LayerShellQt::Window::get(widget->windowHandle())) {
@@ -50,11 +49,12 @@ void WaylandLayerShell::positionBottomCenter(QWidget *widget)
     if (!screen) {
         return;
     }
-    const QRect area = screen->availableGeometry();
-    const QSize size = widget->sizeHint();
-    widget->resize(size);
 #ifdef SPEECHER_WITH_LAYER_SHELL
+    // The compositor owns the popup's placement once layer-shell accepted it;
+    // it only needs the size and the screen.
     if (auto *window = LayerShellQt::Window::get(widget->windowHandle())) {
+        const QSize size = widget->sizeHint();
+        widget->resize(size);
 #ifdef SPEECHER_LAYER_SHELL_HAS_DESIRED_SIZE
         window->setDesiredSize(size);
 #endif
@@ -68,7 +68,7 @@ void WaylandLayerShell::positionBottomCenter(QWidget *widget)
         return;
     }
 #endif
-    widget->move(area.center().x() - size.width() / 2, area.bottom() - size.height() - 28);
+    FallbackPopupPositioner::positionBottomCenter(widget);
 }
 
 } // namespace speecher

@@ -147,6 +147,7 @@ set(SPEECHER_PLATFORM_SOURCES
   src/platform/audio/AudioPcmConverter.cpp
   src/platform/audio/QtAudioInput.cpp
   src/platform/WaylandLayerShell.cpp
+  src/ui/FallbackPopupPositioner.cpp
 )
 
 set(SPEECHER_PLATFORM_HEADERS
@@ -170,6 +171,8 @@ set(SPEECHER_PLATFORM_HEADERS
   src/platform/audio/AudioPcmConverter.h
   src/platform/audio/QtAudioInput.h
   src/platform/WaylandLayerShell.h
+  src/ui/FallbackPopupPositioner.h
+  src/ui/PopupPositioner.h
 )
 
 set(SPEECHER_APP_UI_SOURCES
@@ -209,7 +212,6 @@ set(SPEECHER_APP_UI_HEADERS
   src/ui/AppPage.h
   src/ui/AppWindow.h
   src/ui/DictationPage.h
-  src/ui/PopupPositioner.h
   src/ui/SetupAssistant.h
   src/ui/setup/SetupPages.h
   src/ui/settings/ApplicationSettingsPage.h
