@@ -196,6 +196,7 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
 
 set(SPEECHER_PLATFORM_MAC_SOURCES
   src/output/mac/MacPasteDelivery.mm
+  src/platform/mac/MacCorrectionObserver.mm
   src/platform/mac/MacGlobalShortcutBinder.mm
   src/platform/mac/MacMediaController.mm
   src/platform/mac/MacPopupPositioner.mm
@@ -206,6 +207,7 @@ set(SPEECHER_PLATFORM_MAC_SOURCES
 
 set(SPEECHER_PLATFORM_MAC_HEADERS
   src/output/mac/MacPasteDelivery.h
+  src/platform/mac/MacCorrectionObserver.h
   src/platform/mac/MacGlobalShortcutBinder.h
   src/platform/mac/MacMediaController.h
   src/platform/mac/MacPopupPositioner.h

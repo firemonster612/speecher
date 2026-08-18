@@ -4,9 +4,14 @@
 
 #include <QString>
 
+#include <memory>
 #include <optional>
 
 namespace speecher {
+
+namespace mac {
+class CorrectionObserver;
+}
 
 // Identifies the frontmost application through NSWorkspace, then reaches for its
 // focused control through the system-wide accessibility element. The app
@@ -28,12 +33,18 @@ public:
 
 private:
     void releaseFocusedElement();
+    void observeCorrections(const Target &target,
+                            const QString &value,
+                            int insertedAt,
+                            const QString &plainText);
 
     // AXUIElementRef, kept opaque so this header stays plain C++ for moc.
     void *m_focusedElement = nullptr;
     // The control's value just before insertText wrote to it. Empty optional on
     // the paste path, where there is no baseline to compare against.
     std::optional<QString> m_valueBeforeInsertion;
+    std::unique_ptr<mac::CorrectionObserver> m_correctionObserver;
+    bool m_correctionObservationEnabled = true;
 };
 
 } // namespace speecher
