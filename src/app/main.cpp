@@ -1,5 +1,5 @@
 #include "app/ApplicationController.h"
-#include "app/LinuxComposition.h"
+#include "app/PlatformComposition.h"
 #include "app/SingleInstanceIpc.h"
 #include "core/SettingsStore.h"
 #include "ui/Theme.h"
@@ -173,7 +173,7 @@ int main(int argc, char **argv)
     SettingsStore startupSettings;
     Theme::apply(startupSettings.theme());
     const QString logPath = installLogHandler();
-    const std::shared_ptr<const LinuxComposition> platform = linuxComposition();
+    const std::shared_ptr<const PlatformComposition> platform = platformComposition();
 
     const QStringList args = app.arguments();
     if (args.contains(QStringLiteral("--version"))) {
@@ -223,7 +223,7 @@ int main(int argc, char **argv)
                              platform);
     }
 
-    ApplicationController controller(daemon);
+    ApplicationController controller(daemon, platform);
     QString ipcError;
     if (!controller.startIpc(&ipcError)) {
         if (!grabPath.isEmpty()) {

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/OutputFormat.h"
-#include "app/LinuxComposition.h"
+#include "app/PlatformComposition.h"
 
 #include <QLocalServer>
 #include <QObject>

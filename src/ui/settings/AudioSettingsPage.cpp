@@ -1,6 +1,6 @@
 #include "ui/settings/AudioSettingsPage.h"
 
-#include "app/LinuxComposition.h"
+#include "app/PlatformComposition.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/settings/SettingsPageSupport.h"
 
@@ -13,7 +13,7 @@
 
 namespace speecher {
 
-AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
+AudioSettingsPage::AudioSettingsPage(const PlatformComposition &platform,
                                      const ProviderRegistry &providers,
                                      QWidget *parent)
     : QScrollArea(parent)

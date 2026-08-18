@@ -34,7 +34,7 @@ QString activeInstanceMessage(const QString &name)
 
 SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatform> platform, QObject *parent)
     : QObject(parent)
-    , m_platform(platform ? std::move(platform) : linuxComposition())
+    , m_platform(platform ? std::move(platform) : platformComposition())
 {
     connect(&m_server, &QLocalServer::newConnection, this, [this] {
         while (QLocalSocket *socket = m_server.nextPendingConnection()) {
@@ -56,7 +56,7 @@ QString SingleInstanceIpc::socketName() const
 
 QString SingleInstanceIpc::socketName(std::shared_ptr<const SingleInstancePlatform> platform)
 {
-    const std::shared_ptr<const SingleInstancePlatform> resolved = platform ? std::move(platform) : linuxComposition();
+    const std::shared_ptr<const SingleInstancePlatform> resolved = platform ? std::move(platform) : platformComposition();
     return resolved->ipcListenName();
 }
 
@@ -124,7 +124,7 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
                                                         std::shared_ptr<const SingleInstancePlatform> platform,
                                                         QString *error)
 {
-    const std::shared_ptr<const SingleInstancePlatform> resolved = platform ? std::move(platform) : linuxComposition();
+    const std::shared_ptr<const SingleInstancePlatform> resolved = platform ? std::move(platform) : platformComposition();
     for (const QString &candidate : resolved->ipcConnectCandidates()) {
         QLocalSocket socket;
         socket.connectToServer(candidate);

@@ -172,6 +172,7 @@ set(SPEECHER_PLATFORM_HEADERS
 set(SPEECHER_APP_UI_SOURCES
   src/app/ApplicationController.cpp
   src/app/LinuxComposition.cpp
+  src/app/PlatformSelection.cpp
   src/app/SingleInstanceIpc.cpp
   src/output/YdotoolSetupFlow.cpp
   src/ui/AccessibilityNotice.cpp
@@ -198,6 +199,7 @@ set(SPEECHER_APP_UI_SOURCES
 set(SPEECHER_APP_UI_HEADERS
   src/app/ApplicationController.h
   src/app/LinuxComposition.h
+  src/app/PlatformComposition.h
   src/app/SingleInstanceIpc.h
   src/output/YdotoolSetupFlow.h
   src/ui/AccessibilityNotice.h

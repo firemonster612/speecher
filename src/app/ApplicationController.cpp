@@ -1,5 +1,4 @@
 #include "app/ApplicationController.h"
-#include "app/LinuxComposition.h"
 
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
@@ -12,7 +11,6 @@
 #include "ui/AppWindow.h"
 #include "ui/SetupAssistant.h"
 #include "ui/TranscriberPopup.h"
-#include "platform/atspi/AtSpiAccess.h"
 
 #include <QApplication>
 #include <QAction>
@@ -22,16 +20,20 @@
 #include <QWidget>
 #include <QWindow>
 
+#include <utility>
+
 #ifdef SPEECHER_WITH_KGLOBALACCEL
 #include <KGlobalAccel>
 #endif
 
 namespace speecher {
 
-ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
+ApplicationController::ApplicationController(bool popupOnly,
+                                             std::shared_ptr<const PlatformComposition> platform,
+                                             QObject *parent)
     : QObject(parent)
     , m_popupOnly(popupOnly)
-    , m_platform(linuxComposition())
+    , m_platform(std::move(platform))
     , m_settings(new SettingsStore(this))
     , m_secrets(new SecretStore(m_settings, this))
     , m_providers(new ProviderRegistry(this))
@@ -128,8 +130,8 @@ void ApplicationController::runDeferredStartup()
         qWarning() << "Could not restore the saved global shortcut";
     }
 #endif
-    const AccessibilityState state = atspi::accessibilityState();
-    const bool requestSucceeded = state.persistent && atspi::requestAccessibility();
+    const AccessibilityState state = m_platform->accessibilityState();
+    const bool requestSucceeded = state.persistent && m_platform->requestAccessibility();
     m_accessibilitySupported = state.supported;
     m_accessibilityEnabled = state.enabled || requestSucceeded;
     m_accessibilityPersistent = state.persistent;
@@ -153,7 +155,7 @@ ProviderRegistry *ApplicationController::providerRegistry() const
     return m_providers;
 }
 
-const LinuxComposition *ApplicationController::platform() const
+const PlatformComposition *ApplicationController::platform() const
 {
     return m_platform.get();
 }
@@ -196,7 +198,7 @@ bool ApplicationController::accessibilityPersistent() const
 
 bool ApplicationController::enableAccessibility(QString *error)
 {
-    const bool enabled = atspi::enableAccessibilityPermanently(error);
+    const bool enabled = m_platform->enableAccessibilityPermanently(error);
     refreshAccessibilityState();
     return enabled;
 }
@@ -441,7 +443,7 @@ void ApplicationController::wireSessionToPopup()
 
 void ApplicationController::refreshAccessibilityState()
 {
-    const AccessibilityState state = atspi::accessibilityState();
+    const AccessibilityState state = m_platform->accessibilityState();
     m_accessibilitySupported = state.supported;
     m_accessibilityEnabled = state.enabled;
     m_accessibilityPersistent = state.persistent;

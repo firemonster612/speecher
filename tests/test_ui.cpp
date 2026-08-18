@@ -157,7 +157,8 @@ private slots:
         QCOMPARE(settings.speechProvider(), QStringLiteral("codex"));
         QVERIFY(setupHint->text().contains(QStringLiteral("ChatGPT app")));
 
-        AudioSettingsPage audio(*linuxComposition(), providers);
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        AudioSettingsPage audio(*platform, providers);
         AppSettings snapshot = settings.snapshot();
         audio.load(snapshot);
         auto *settingsChoice = audio.findChild<QComboBox *>(QStringLiteral("speechProvider"));

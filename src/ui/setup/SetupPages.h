@@ -17,7 +17,7 @@ namespace speecher {
 
 class ApplicationController;
 class AudioInput;
-class LinuxComposition;
+class PlatformComposition;
 class ProviderRegistry;
 class SettingsStore;
 
@@ -46,7 +46,7 @@ private:
 class MicrophoneSetupPage final : public QWidget {
 public:
     MicrophoneSetupPage(SettingsStore &settings,
-                        const LinuxComposition &platform,
+                        const PlatformComposition &platform,
                         QWidget *parent = nullptr);
     ~MicrophoneSetupPage() override;
 
@@ -60,7 +60,7 @@ private:
     void startMeter();
 
     SettingsStore &m_settings;
-    const LinuxComposition &m_platform;
+    const PlatformComposition &m_platform;
     AudioInput *m_input = nullptr;
     QComboBox *m_device;
     QProgressBar *m_level;

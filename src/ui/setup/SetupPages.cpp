@@ -1,7 +1,7 @@
 #include "ui/setup/SetupPages.h"
 
 #include "app/ApplicationController.h"
-#include "app/LinuxComposition.h"
+#include "app/PlatformComposition.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationPorts.h"
 #include "output/YdotoolSetup.h"
@@ -178,7 +178,7 @@ void SpeechProviderSetupPage::checkProvider()
 }
 
 MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
-                                         const LinuxComposition &platform,
+                                         const PlatformComposition &platform,
                                          QWidget *parent)
     : QWidget(parent)
     , m_settings(settings)
