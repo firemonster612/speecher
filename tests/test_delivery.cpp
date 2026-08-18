@@ -769,7 +769,7 @@ private slots:
         original->setData(QStringLiteral("image/png"), QByteArrayLiteral("png-bytes"));
         QApplication::clipboard()->setMimeData(original);
 
-        WlClipboardSnapshot snapshot;
+        ClipboardSnapshot snapshot;
         QString error;
         QVERIFY2(WlClipboardDelivery::capture(&snapshot, &error), qPrintable(error));
         QVERIFY(snapshot.hasData);
@@ -788,7 +788,7 @@ private slots:
         QApplication::clipboard()->setMimeData(new QMimeData);
         QCoreApplication::processEvents();
 
-        WlClipboardSnapshot snapshot;
+        ClipboardSnapshot snapshot;
         QString error;
         QVERIFY2(WlClipboardDelivery::capture(&snapshot, &error), qPrintable(error));
         QVERIFY(!snapshot.hasData);

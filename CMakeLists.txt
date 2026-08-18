@@ -145,6 +145,7 @@ set(SPEECHER_PLATFORM_SOURCES
 
 set(SPEECHER_PLATFORM_HEADERS
   src/output/ClipboardDelivery.h
+  src/output/ClipboardSnapshot.h
   src/output/QtClipboardDelivery.h
   src/output/TextDelivery.h
   src/platform/AccessibilityState.h

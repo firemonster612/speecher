@@ -1,9 +1,10 @@
 #pragma once
 
+#include "output/ClipboardSnapshot.h"
 #include "output/QtClipboardDelivery.h"
-// Declares WlClipboardSnapshot, which portable delivery code names even where
-// no Wayland backend is compiled in.
+#ifdef SPEECHER_WITH_WAYLAND
 #include "output/WlClipboardDelivery.h"
+#endif
 
 #include <QObject>
 #include <QString>
@@ -24,9 +25,12 @@ public:
                      QString *error = nullptr);
 #endif
     bool copyQt(const DeliveryContent &content, bool *htmlAvailable = nullptr, QString *error = nullptr);
+    // A snapshot preserves as much of the previous clipboard as the available
+    // backend can read: every offered format through wl-clipboard, plain text
+    // and HTML through QClipboard.
     bool canSnapshot() const;
-    bool capture(WlClipboardSnapshot *snapshot, QString *error = nullptr) const;
-    bool restore(const WlClipboardSnapshot &snapshot, QString *error = nullptr) const;
+    bool capture(ClipboardSnapshot *snapshot, QString *error = nullptr) const;
+    bool restore(const ClipboardSnapshot &snapshot, QString *error = nullptr) const;
 
 private:
     QtClipboardDelivery m_qtClipboard;

@@ -227,7 +227,7 @@ private slots:
         output.pasteRules = defaultPasteRules();
         const PasteRule rule = resolvePasteRule(output.pasteRules, target);
 
-        WlClipboardSnapshot before;
+        ClipboardSnapshot before;
         const bool capturedBefore = WlClipboardDelivery::capture(&before);
         TextDelivery delivery(&provider);
         const DeliveryResult result = delivery.deliver(
@@ -237,7 +237,7 @@ private slots:
         QVERIFY2(result.ok, qPrintable(result.message));
         QVERIFY(result.receipt != DeliveryReceipt::None);
 
-        WlClipboardSnapshot after;
+        ClipboardSnapshot after;
         const bool capturedAfter = WlClipboardDelivery::capture(&after);
         const bool restored = capturedBefore
             && capturedAfter
@@ -286,11 +286,11 @@ private slots:
             QSKIP("Live Wayland clipboard check is opt-in");
         }
 
-        WlClipboardSnapshot original;
+        ClipboardSnapshot original;
         QString error;
         QVERIFY2(WlClipboardDelivery::capture(&original, &error), qPrintable(error));
         struct OriginalClipboardRestorer {
-            WlClipboardSnapshot snapshot;
+            ClipboardSnapshot snapshot;
             ~OriginalClipboardRestorer()
             {
                 QString ignored;
@@ -307,7 +307,7 @@ private slots:
         QVERIFY2(clipboard.copy(content, &htmlAvailable, &error), qPrintable(error));
         QVERIFY(htmlAvailable);
 
-        WlClipboardSnapshot published;
+        ClipboardSnapshot published;
         QVERIFY2(WlClipboardDelivery::capture(&published, &error), qPrintable(error));
         const auto part = [&published](const QString &mimeType) {
             return std::find_if(
@@ -326,7 +326,7 @@ private slots:
         QVERIFY(plain->data != html->data);
 
         QVERIFY2(WlClipboardDelivery::restore(original, &error), qPrintable(error));
-        WlClipboardSnapshot restored;
+        ClipboardSnapshot restored;
         QVERIFY2(WlClipboardDelivery::capture(&restored, &error), qPrintable(error));
         QCOMPARE(restored.hasData, original.hasData);
         for (const ClipboardMimePart &expected : std::as_const(original.parts)) {

@@ -157,7 +157,7 @@ bool WlClipboardDelivery::copy(const DeliveryContent &content, bool *htmlAvailab
     return false;
 }
 
-bool WlClipboardDelivery::capture(WlClipboardSnapshot *snapshot, QString *error)
+bool WlClipboardDelivery::capture(ClipboardSnapshot *snapshot, QString *error)
 {
     if (!snapshot) {
         if (error) {
@@ -247,7 +247,7 @@ bool WlClipboardDelivery::capture(WlClipboardSnapshot *snapshot, QString *error)
     return true;
 }
 
-bool WlClipboardDelivery::restore(const WlClipboardSnapshot &snapshot, QString *error)
+bool WlClipboardDelivery::restore(const ClipboardSnapshot &snapshot, QString *error)
 {
     if (!isWaylandSession() && qApp && QApplication::clipboard()) {
         if (!snapshot.hasData) {

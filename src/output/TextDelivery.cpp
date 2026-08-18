@@ -192,7 +192,7 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         && (currentFocusFallback
             || (m_targetProvider && m_targetProvider->stillFocused(target)));
 
-    WlClipboardSnapshot previousClipboard;
+    ClipboardSnapshot previousClipboard;
     const bool canRestoreClipboard = pasteMethod != PasteMethod::ClipboardOnly
         && settings.restoreClipboardAfterTyping
         && m_clipboardDelivery.canSnapshot()
@@ -287,7 +287,10 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
             const QString message = copied
                 ? QStringLiteral("Copied")
                 : virtualKeyboardInput
-                    ? settings.restoreClipboardAfterTyping
+                    // The transcript stays on the clipboard unless it was
+                    // actually restorable, so the receipt keys off that and not
+                    // off the preference alone.
+                    ? canRestoreClipboard
                         ? QStringLiteral("Input sent")
                         : QStringLiteral("Copied • Input sent")
                     : verified ? QStringLiteral("Verified in Target") : QStringLiteral("Input sent");
