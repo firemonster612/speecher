@@ -193,8 +193,18 @@ struct RowView: View {
         window.makeKeyAndOrderFront(nil)
     }
 
+    // Called from the front end on the main thread, which is where the window
+    // has to be touched.
+    //
+    // This is the window's backing store, so vibrancy materials come out blank
+    // — an offscreen render cannot ask the compositor for what is behind the
+    // window. SwiftUI's ImageRenderer is not an alternative: it refuses
+    // NavigationSplitView outright. For a composited shot, screencapture with
+    // Screen Recording granted is the way.
+    @MainActor
     @objc public func capture(toPath path: String) -> Bool {
-        guard let view = window.contentView,
+        guard let content = window.contentView,
+              let view = content.superview ?? window.contentView,
               let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
             return false
         }
