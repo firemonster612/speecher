@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QStringList>
 
 class QScrollArea;
 
@@ -28,6 +29,13 @@ public:
         ProviderSecret,
     };
 
+    // The messages come from whichever validator refused, so a caller can show
+    // what actually went wrong instead of re-narrating the enum.
+    struct SaveOutcome {
+        SaveFailure failure = SaveFailure::None;
+        QStringList messages;
+    };
+
     SettingsPageSet(ApplicationController *controller, QWidget *parent);
 
     GeneralSettingsPage *general() const;
@@ -45,7 +53,7 @@ public:
     void loadAfterShow();
     bool save(bool showValidationErrors = true,
               bool refreshPages = true,
-              SaveFailure *failure = nullptr);
+              SaveOutcome *outcome = nullptr);
     bool hasChanges() const;
     void preserveBindingScroll(QScrollArea *scroll);
 

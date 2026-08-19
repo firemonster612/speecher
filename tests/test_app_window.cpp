@@ -283,9 +283,10 @@ private slots:
             {QStringLiteral("my,email"), QStringLiteral("one")},
             {QStringLiteral("MY email"), QStringLiteral("two")},
         });
-        SettingsPageSet::SaveFailure failure = SettingsPageSet::SaveFailure::None;
-        QVERIFY(!pages.save(false, true, &failure));
-        QCOMPARE(failure, SettingsPageSet::SaveFailure::InvalidReplacementRules);
+        SettingsPageSet::SaveOutcome outcome;
+        QVERIFY(!pages.save(false, true, &outcome));
+        QCOMPARE(outcome.failure, SettingsPageSet::SaveFailure::InvalidReplacementRules);
+        QVERIFY(!outcome.messages.isEmpty());
 
         controller.settings()->setBindingRules({});
         controller.settings()->setPasteRules({
@@ -293,8 +294,10 @@ private slots:
             {PasteRuleScope::Application, QStringLiteral("ORG.EXAMPLE.APP"), PasteMethod::ClipboardOnly, true},
         });
         pages.load();
-        QVERIFY(!pages.save(false, true, &failure));
-        QCOMPARE(failure, SettingsPageSet::SaveFailure::DuplicatePasteRuleIds);
+        QVERIFY(!pages.save(false, true, &outcome));
+        QCOMPARE(outcome.failure, SettingsPageSet::SaveFailure::DuplicatePasteRuleIds);
+        QCOMPARE(outcome.messages,
+                 QStringList{QStringLiteral("Each application ID can have only one paste rule.")});
     }
 };
 

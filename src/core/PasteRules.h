@@ -4,6 +4,7 @@
 
 #include <QList>
 #include <QString>
+#include <QStringList>
 
 namespace speecher {
 
@@ -35,5 +36,8 @@ QString pasteMethodName(PasteMethod method);
 PasteMethod pasteMethodFromName(const QString &name);
 QList<PasteRule> defaultPasteRules();
 PasteRule resolvePasteRule(const QList<PasteRule> &rules, const Target &target);
+// Empty when the rules are consistent; otherwise one message per problem, ready
+// to show to a person.
+QStringList validatePasteRules(const QList<PasteRule> &rules);
 
 } // namespace speecher

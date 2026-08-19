@@ -97,18 +97,21 @@ void SettingsPageSet::loadAfterShow()
 
 bool SettingsPageSet::save(bool showValidationErrors,
                            bool refreshPages,
-                           SaveFailure *failure)
+                           SaveOutcome *outcome)
 {
-    if (failure) *failure = SaveFailure::None;
+    const auto refuse = [outcome](SaveFailure failure, const QStringList &messages) {
+        if (outcome) *outcome = {failure, messages};
+        return false;
+    };
+    if (outcome) *outcome = {};
     SettingsStore *settings = m_controller->settings();
-    QList<BindingRule> bindingRules;
-    if (!m_bindings->validate(&bindingRules, showValidationErrors)) {
-        if (failure) *failure = SaveFailure::InvalidReplacementRules;
-        return false;
+    const BindingValidationResult bindings = m_bindings->validate(showValidationErrors);
+    if (!bindings.ok()) {
+        return refuse(SaveFailure::InvalidReplacementRules, bindings.messages());
     }
-    if (!m_output->validate(showValidationErrors)) {
-        if (failure) *failure = SaveFailure::DuplicatePasteRuleIds;
-        return false;
+    const QStringList pasteRuleProblems = m_output->validate(showValidationErrors);
+    if (!pasteRuleProblems.isEmpty()) {
+        return refuse(SaveFailure::DuplicatePasteRuleIds, pasteRuleProblems);
     }
     AppSettings draft = settings->snapshot();
     m_general->appendToDraft(draft);
@@ -123,10 +126,10 @@ bool SettingsPageSet::save(bool showValidationErrors,
     m_providers->saveAuthModes();
     settings->setVocabularyEntries(m_vocabulary->entries());
     settings->setCorrectionLearningEnabled(m_corrections->learningEnabled());
-    settings->setBindingRules(bindingRules);
+    settings->setBindingRules(bindings.rules);
     if (!m_providers->saveSecret()) {
-        if (failure) *failure = SaveFailure::ProviderSecret;
-        return false;
+        return refuse(SaveFailure::ProviderSecret,
+                      {QStringLiteral("Could not save provider credentials")});
     }
     if (refreshPages) {
         load();

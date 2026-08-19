@@ -409,20 +409,15 @@ void OutputSettingsPage::load(const AppSettings &settings)
     m_completionStatusDuration->setValue(settings.output.completionStatusDurationMs);
 }
 
-bool OutputSettingsPage::validate(bool showError) const
+QStringList OutputSettingsPage::validate(bool showError) const
 {
-    QSet<QString> applicationIds;
-    for (const PasteRule &rule : currentApplicationPasteRules()) {
-        const QString id = rule.match.toCaseFolded();
-        if (applicationIds.contains(id)) {
-            if (showError) {
-                QMessageBox::warning(const_cast<OutputSettingsPage *>(this), QStringLiteral("Paste rules not saved"), QStringLiteral("Each application ID can have only one paste rule."));
-            }
-            return false;
-        }
-        applicationIds.insert(id);
+    const QStringList messages = validatePasteRules(currentApplicationPasteRules());
+    if (!messages.isEmpty() && showError) {
+        QMessageBox::warning(const_cast<OutputSettingsPage *>(this),
+                             QStringLiteral("Paste rules not saved"),
+                             messages.join(QLatin1Char('\n')));
     }
-    return true;
+    return messages;
 }
 
 void OutputSettingsPage::appendToDraft(AppSettings &draft) const

@@ -23,7 +23,8 @@ public:
     explicit OutputSettingsPage(SettingsStore &settings, QWidget *parent = nullptr);
 
     void load(const AppSettings &settings);
-    bool validate(bool showError = true) const;
+    // Empty when the page's paste rules are consistent.
+    QStringList validate(bool showError = true) const;
     void appendToDraft(AppSettings &draft) const;
     bool hasChanges(const AppSettings &settings) const;
     void refreshControls();

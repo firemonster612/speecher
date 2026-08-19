@@ -640,18 +640,10 @@ void AppWindow::filterSidebarPages(const QString &query)
 
 void AppWindow::runAutoSave()
 {
-    SettingsPageSet::SaveFailure failure;
-    const bool saved = m_pages->save(false, false, &failure);
+    SettingsPageSet::SaveOutcome outcome;
+    const bool saved = m_pages->save(false, false, &outcome);
     if (!saved) {
-        if (failure == SettingsPageSet::SaveFailure::DuplicatePasteRuleIds) {
-            m_autoSaveWarningText->setText(
-                QStringLiteral("Remove duplicate application paste-rule IDs to save"));
-        } else if (failure == SettingsPageSet::SaveFailure::ProviderSecret) {
-            m_autoSaveWarningText->setText(
-                QStringLiteral("Settings saved, but provider credentials could not be saved"));
-        } else {
-            m_autoSaveWarningText->setText(QStringLiteral("Fix invalid replacement rules to save"));
-        }
+        m_autoSaveWarningText->setText(outcome.messages.join(QLatin1Char('\n')));
     }
     m_autoSaveWarning->setVisible(!saved);
     m_dictation->refreshSummary();

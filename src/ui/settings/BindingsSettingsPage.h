@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/AppSettings.h"
+#include "core/BindingProcessor.h"
 
 #include <QFrame>
 
@@ -15,7 +16,7 @@ public:
     explicit BindingsSettingsPage(QWidget *parent = nullptr);
 
     void load(const QList<BindingRule> &rules);
-    bool validate(QList<BindingRule> *validatedRules, bool showError = true);
+    BindingValidationResult validate(bool showError = true);
     bool hasChanges(const QList<BindingRule> &rules) const;
 
 signals:
