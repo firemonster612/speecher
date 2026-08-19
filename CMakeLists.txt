@@ -217,6 +217,7 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
 
 set(SPEECHER_APP_SOURCES
   src/app/ApplicationController.cpp
+  src/app/CommandLine.cpp
   src/app/CompositionSockets.cpp
   src/app/PlatformSelection.cpp
   src/app/SingleInstanceIpc.cpp
@@ -225,6 +226,7 @@ set(SPEECHER_APP_SOURCES
 set(SPEECHER_APP_HEADERS
   src/app/AppFrontEnd.h
   src/app/ApplicationController.h
+  src/app/CommandLine.h
   src/app/CompositionSockets.h
   src/app/PlatformComposition.h
   src/app/SingleInstanceIpc.h
