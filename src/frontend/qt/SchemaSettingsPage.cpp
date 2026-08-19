@@ -93,6 +93,15 @@ SchemaCustomRow builtInRow(const SettingsRow &descriptor,
     qFatal("the Qt front end has no widget for settings row %s", qPrintable(descriptor.id));
 }
 
+// The line below a row, handed back so it can come and go with the row it
+// belongs to.
+QWidget *appendSeparator(QFormLayout *form, QWidget *host)
+{
+    QWidget *line = settings::makeSeparator(host);
+    form->addRow(line);
+    return line;
+}
+
 // A run of rows that render together inside the card, so one capability can
 // gate the whole cluster.
 QWidget *addRowGroup(const QString &id, QWidget *card)
@@ -215,8 +224,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         const SchemaCustomRow editor = supplyRow(descriptor, host, announce);
         form->addRow(editor.widget);
         if (separator) {
-            row.separator = settings::makeSeparator(host);
-            form->addRow(row.separator);
+            row.separator = appendSeparator(form, host);
         }
         row.frame = editor.widget;
         row.control = editor.widget;
@@ -238,8 +246,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
                                               custom.titleAccessory);
             settings::addRow(form, frame, host, false);
             if (separator) {
-                row.separator = settings::makeSeparator(host);
-                form->addRow(row.separator);
+                row.separator = appendSeparator(form, host);
             }
             row.frame = frame;
             row.control = custom.widget;
@@ -286,8 +293,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
     QFrame *frame = settings::makeRow(descriptor.label, descriptor.help, row.control, host);
     settings::addRow(form, frame, host, false);
     if (separator) {
-        row.separator = settings::makeSeparator(host);
-        form->addRow(row.separator);
+        row.separator = appendSeparator(form, host);
     }
     row.frame = frame;
     m_rows.append(row);
