@@ -215,11 +215,39 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
   src/platform/mac/MacTargetProvider.h
 )
 
-set(SPEECHER_APP_UI_SOURCES
+set(SPEECHER_APP_SOURCES
   src/app/ApplicationController.cpp
   src/app/CompositionSockets.cpp
   src/app/PlatformSelection.cpp
   src/app/SingleInstanceIpc.cpp
+)
+
+set(SPEECHER_APP_HEADERS
+  src/app/AppFrontEnd.h
+  src/app/ApplicationController.h
+  src/app/CompositionSockets.h
+  src/app/PlatformComposition.h
+  src/app/SingleInstanceIpc.h
+)
+
+set(SPEECHER_APP_LINUX_SOURCES
+  src/app/LinuxComposition.cpp
+)
+
+set(SPEECHER_APP_LINUX_HEADERS
+  src/app/LinuxComposition.h
+)
+
+set(SPEECHER_APP_MAC_SOURCES
+  src/app/MacComposition.mm
+)
+
+set(SPEECHER_APP_MAC_HEADERS
+  src/app/MacComposition.h
+)
+
+set(SPEECHER_FRONTEND_QT_SOURCES
+  src/frontend/qt/QtFrontEnd.cpp
   src/frontend/qt/QtPopupSurface.cpp
   src/ui/AccessibilityNotice.cpp
   src/ui/AppWindow.cpp
@@ -242,11 +270,8 @@ set(SPEECHER_APP_UI_SOURCES
   src/ui/WaveformWidget.cpp
 )
 
-set(SPEECHER_APP_UI_HEADERS
-  src/app/ApplicationController.h
-  src/app/CompositionSockets.h
-  src/app/PlatformComposition.h
-  src/app/SingleInstanceIpc.h
+set(SPEECHER_FRONTEND_QT_HEADERS
+  src/frontend/qt/QtFrontEnd.h
   src/frontend/qt/QtPopupSurface.h
   src/ui/AccessibilityNotice.h
   src/ui/AppPage.h
@@ -270,23 +295,19 @@ set(SPEECHER_APP_UI_HEADERS
   src/ui/WaveformWidget.h
 )
 
-set(SPEECHER_APP_UI_LINUX_SOURCES
-  src/app/LinuxComposition.cpp
+set(SPEECHER_FRONTEND_QT_LINUX_SOURCES
   src/output/YdotoolSetupFlow.cpp
 )
 
-set(SPEECHER_APP_UI_LINUX_HEADERS
-  src/app/LinuxComposition.h
+set(SPEECHER_FRONTEND_QT_LINUX_HEADERS
   src/output/YdotoolSetupFlow.h
 )
 
-set(SPEECHER_APP_UI_MAC_SOURCES
-  src/app/MacComposition.mm
+set(SPEECHER_FRONTEND_QT_MAC_SOURCES
   src/platform/mac/MacWindowChrome.mm
 )
 
-set(SPEECHER_APP_UI_MAC_HEADERS
-  src/app/MacComposition.h
+set(SPEECHER_FRONTEND_QT_MAC_HEADERS
   src/platform/mac/MacWindowChrome.h
 )
 
@@ -348,44 +369,67 @@ if(ATSPI_FOUND)
   target_link_libraries(speecher_platform PUBLIC PkgConfig::ATSPI)
 endif()
 
-add_library(speecher_app_ui STATIC
-  ${SPEECHER_APP_UI_SOURCES}
-  ${SPEECHER_APP_UI_HEADERS}
+# The application: sessions, permissions and single-instance IPC, with no user
+# interface of its own. Deliberately free of Qt Widgets so that a front end
+# built on something else can drive it; see
+# docs/adr/0001-per-platform-front-ends.md.
+add_library(speecher_app STATIC
+  ${SPEECHER_APP_SOURCES}
+  ${SPEECHER_APP_HEADERS}
 )
-target_include_directories(speecher_app_ui PUBLIC src)
-target_compile_definitions(speecher_app_ui PUBLIC SPEECHER_VERSION="${PROJECT_VERSION}")
-target_link_libraries(speecher_app_ui PUBLIC
-  speecher_domain speecher_workflow speecher_providers speecher_platform Qt6::Widgets
+target_include_directories(speecher_app PUBLIC src)
+target_compile_definitions(speecher_app PUBLIC SPEECHER_VERSION="${PROJECT_VERSION}")
+target_link_libraries(speecher_app PUBLIC
+  speecher_domain speecher_workflow speecher_providers speecher_platform
 )
 if(UNIX AND NOT APPLE)
-  target_sources(speecher_app_ui PRIVATE
-    ${SPEECHER_APP_UI_LINUX_SOURCES}
-    ${SPEECHER_APP_UI_LINUX_HEADERS}
+  target_sources(speecher_app PRIVATE
+    ${SPEECHER_APP_LINUX_SOURCES}
+    ${SPEECHER_APP_LINUX_HEADERS}
+  )
+endif()
+if(APPLE)
+  target_sources(speecher_app PRIVATE
+    ${SPEECHER_APP_MAC_SOURCES}
+    ${SPEECHER_APP_MAC_HEADERS}
+  )
+endif()
+
+add_library(speecher_frontend_qt STATIC
+  ${SPEECHER_FRONTEND_QT_SOURCES}
+  ${SPEECHER_FRONTEND_QT_HEADERS}
+)
+target_include_directories(speecher_frontend_qt PUBLIC src)
+target_link_libraries(speecher_frontend_qt PUBLIC speecher_app Qt6::Widgets)
+if(UNIX AND NOT APPLE)
+  target_sources(speecher_frontend_qt PRIVATE
+    ${SPEECHER_FRONTEND_QT_LINUX_SOURCES}
+    ${SPEECHER_FRONTEND_QT_LINUX_HEADERS}
   )
   # The setup assistant and the output page drive ydotool, which only exists on
   # the Linux side of the platform layer.
-  target_compile_definitions(speecher_app_ui PUBLIC SPEECHER_WITH_YDOTOOL=1)
+  target_compile_definitions(speecher_frontend_qt PUBLIC SPEECHER_WITH_YDOTOOL=1)
 endif()
 if(APPLE)
-  target_sources(speecher_app_ui PRIVATE
-    ${SPEECHER_APP_UI_MAC_SOURCES}
-    ${SPEECHER_APP_UI_MAC_HEADERS}
+  target_sources(speecher_frontend_qt PRIVATE
+    ${SPEECHER_FRONTEND_QT_MAC_SOURCES}
+    ${SPEECHER_FRONTEND_QT_MAC_HEADERS}
   )
 endif()
 if(KF6WidgetsAddons_FOUND)
-  target_compile_definitions(speecher_app_ui PUBLIC
+  target_compile_definitions(speecher_frontend_qt PUBLIC
     SPEECHER_WITH_KASSISTANT=1
     SPEECHER_WITH_KPAGEWIDGET=1
   )
-  target_link_libraries(speecher_app_ui PUBLIC KF6::WidgetsAddons)
+  target_link_libraries(speecher_frontend_qt PUBLIC KF6::WidgetsAddons)
 endif()
 if(KF6GlobalAccel_FOUND)
   target_compile_definitions(speecher_platform PRIVATE SPEECHER_WITH_KGLOBALACCEL=1)
   target_link_libraries(speecher_platform PRIVATE KF6::GlobalAccel)
 endif()
 if(KF6WidgetsAddons_FOUND AND KF6ColorScheme_FOUND)
-  target_compile_definitions(speecher_app_ui PRIVATE SPEECHER_WITH_KCOLORSCHEME=1)
-  target_link_libraries(speecher_app_ui PRIVATE KF6::ColorScheme)
+  target_compile_definitions(speecher_frontend_qt PRIVATE SPEECHER_WITH_KCOLORSCHEME=1)
+  target_link_libraries(speecher_frontend_qt PRIVATE KF6::ColorScheme)
 endif()
 
 qt_add_executable(speecher
@@ -396,7 +440,7 @@ target_include_directories(speecher PRIVATE src)
 target_compile_definitions(speecher PRIVATE
   SPEECHER_VERSION="${PROJECT_VERSION}"
 )
-target_link_libraries(speecher PRIVATE speecher_app_ui)
+target_link_libraries(speecher PRIVATE speecher_frontend_qt)
 
 if(APPLE)
   set_target_properties(speecher PROPERTIES
@@ -587,7 +631,7 @@ if(SPEECHER_BUILD_TESTS)
   target_include_directories(speecher_tests PRIVATE src)
   target_compile_definitions(speecher_tests PRIVATE SPEECHER_VERSION="${PROJECT_VERSION}")
   target_link_libraries(speecher_tests PRIVATE
-    speecher_app_ui Qt6::Test
+    speecher_frontend_qt Qt6::Test
   )
   add_test(NAME speecher_tests COMMAND speecher_tests)
   set_tests_properties(speecher_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
