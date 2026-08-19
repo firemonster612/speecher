@@ -525,7 +525,7 @@ SettingsPage refinementPage(const SchemaContext &context)
         QStringLiteral("refinement"),
         QStringLiteral("Refinement"),
         QStringLiteral("tools-wizard"),
-        QStringLiteral("wand.and.stars"),
+        QStringLiteral("wand.and.sparkles"),
         {
             {QStringLiteral("Refinement"),
              QString(),
@@ -1112,7 +1112,7 @@ SettingsPage bindingsPage()
         QStringLiteral("bindings"),
         QStringLiteral("Replacements & snippets"),
         QStringLiteral("edit-find-replace"),
-        QStringLiteral("text.append"),
+        QStringLiteral("arrow.left.arrow.right"),
         {{QString(),
           QString(),
           {collectionRow(QStringLiteral("bindingRules"),
