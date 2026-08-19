@@ -27,13 +27,17 @@ struct SchemaCustomRow {
     // Too wide to sit in a row's control column, so it gets the whole card
     // width under a heading of its own.
     bool fullWidth = false;
+    // Sits beside the row's title rather than in its control column.
+    QWidget *titleAccessory = nullptr;
 };
 
-// How a front end hands the renderer a widget for a Custom row it recognises.
-// A page whose custom rows need something the renderer cannot reach, such as
-// the settings store, supplies its own.
+// How a front end hands the renderer a widget for a row it wants to draw
+// itself, whether that is a Custom row or a collection it renders as something
+// other than a table. A page whose rows need something the renderer cannot
+// reach, such as the settings store, supplies its own. Returning no widget
+// leaves the row to the renderer.
 using SchemaCustomRowFactory = std::function<
-    SchemaCustomRow(const QString &rowId, QWidget *parent, std::function<void()> notifyChanged)>;
+    SchemaCustomRow(const SettingsRow &descriptor, QWidget *parent, std::function<void()> notifyChanged)>;
 
 // Renders one SettingsPage as the Qt front end's settings page, and drives
 // load, appendToDraft and hasChanges from the descriptors rather than from a
@@ -67,15 +71,20 @@ private:
         // The container the row shares with the rest of its group, which is
         // what gets enabled and carries the group's tooltip.
         QWidget *group = nullptr;
+        // The line below the row, which comes and goes with it.
+        QWidget *separator = nullptr;
         std::function<QVariant()> value;
         std::function<void(const QVariant &)> setValue;
     };
 
     void addSection(const SettingsSection &section, QVBoxLayout *pageLayout);
     void addRow(const SettingsRow &descriptor, QWidget *host, QWidget *group, bool separator);
+    SchemaCustomRow supplyRow(const SettingsRow &descriptor,
+                              QWidget *host,
+                              const std::function<void()> &notifyChanged);
     QWidget *makeControl(const SettingsRow &descriptor, QWidget *card, Row &row);
     void applyRow(const Row &row, const AppSettings &settings);
-    void refreshEnabledRows();
+    void refreshRows();
 
     SchemaCustomRowFactory m_customRows;
     QList<Row> m_rows;

@@ -69,12 +69,17 @@ QList<RowOption> providerOptions(const QList<ProviderDescriptor> &providers)
     return options;
 }
 
-SchemaCustomRow customRowFor(const QString &id, QWidget *parent, std::function<void()> notifyChanged)
+SchemaCustomRow builtInRow(const SettingsRow &descriptor,
+                           QWidget *parent,
+                           std::function<void()> notifyChanged)
 {
-    if (id == QStringLiteral("writingProfileBehavior")) {
+    if (descriptor.kind == RowKind::Collection) {
+        return makeCollectionRow(descriptor, parent, std::move(notifyChanged));
+    }
+    if (descriptor.id == QStringLiteral("writingProfileBehavior")) {
         return makeWritingProfileGrid(parent, std::move(notifyChanged));
     }
-    qFatal("the Qt front end has no widget for custom settings row %s", qPrintable(id));
+    qFatal("the Qt front end has no widget for settings row %s", qPrintable(descriptor.id));
 }
 
 // A run of rows that render together inside the card, so one capability can
@@ -133,8 +138,10 @@ SchemaSettingsPage::SchemaSettingsPage(const SettingsPage &page,
 
 void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout *pageLayout)
 {
-    pageLayout->addWidget(settings::makeSectionLabel(section.title, this));
-    pageLayout->addSpacing(settings::tightSpacing());
+    if (!section.title.isEmpty()) {
+        pageLayout->addWidget(settings::makeSectionLabel(section.title, this));
+        pageLayout->addSpacing(settings::tightSpacing());
+    }
     QWidget *card = settings::makeSettingsCard(this);
     QWidget *group = nullptr;
     for (int index = 0; index < section.rows.size(); ++index) {
@@ -153,6 +160,29 @@ void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout 
         addRow(descriptor, group ? group : card, group, separator);
     }
     pageLayout->addWidget(card);
+    if (section.help.isEmpty()) {
+        return;
+    }
+    auto *note = new QLabel(section.help, this);
+    note->setObjectName(QStringLiteral("noteText"));
+    note->setWordWrap(true);
+    note->setForegroundRole(QPalette::WindowText);
+    note->setAttribute(Qt::WA_StyledBackground, false);
+    pageLayout->addSpacing(settings::relatedSpacing());
+    pageLayout->addWidget(note);
+}
+
+SchemaCustomRow SchemaSettingsPage::supplyRow(const SettingsRow &descriptor,
+                                              QWidget *host,
+                                              const std::function<void()> &notifyChanged)
+{
+    if (m_customRows) {
+        SchemaCustomRow supplied = m_customRows(descriptor, host, notifyChanged);
+        if (supplied.widget) {
+            return supplied;
+        }
+    }
+    return builtInRow(descriptor, host, notifyChanged);
 }
 
 void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
@@ -166,15 +196,16 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
     row.group = group;
 
     const auto announce = [this] {
-        refreshEnabledRows();
+        refreshRows();
         emit changed();
     };
 
     if (descriptor.kind == RowKind::Collection) {
-        const SchemaCustomRow editor = makeCollectionRow(descriptor, host, announce);
+        const SchemaCustomRow editor = supplyRow(descriptor, host, announce);
         form->addRow(editor.widget);
         if (separator) {
-            form->addRow(settings::makeSeparator(host));
+            row.separator = settings::makeSeparator(host);
+            form->addRow(row.separator);
         }
         row.frame = editor.widget;
         row.control = editor.widget;
@@ -186,13 +217,19 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
     }
 
     if (descriptor.kind == RowKind::Custom) {
-        const SchemaCustomRow custom = m_customRows
-            ? m_customRows(descriptor.id, host, announce)
-            : customRowFor(descriptor.id, host, announce);
+        const SchemaCustomRow custom = supplyRow(descriptor, host, announce);
         if (!custom.fullWidth) {
             custom.widget->setObjectName(descriptor.id);
-            QFrame *frame = settings::makeRow(descriptor.label, descriptor.help, custom.widget, host);
-            settings::addRow(form, frame, host, separator);
+            QFrame *frame = settings::makeRow(descriptor.label,
+                                              descriptor.help,
+                                              custom.widget,
+                                              host,
+                                              custom.titleAccessory);
+            settings::addRow(form, frame, host, false);
+            if (separator) {
+                row.separator = settings::makeSeparator(host);
+                form->addRow(row.separator);
+            }
             row.frame = frame;
             row.control = custom.widget;
             row.value = custom.value;
@@ -236,7 +273,11 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         row.control->setToolTip(descriptor.tooltip);
     }
     QFrame *frame = settings::makeRow(descriptor.label, descriptor.help, row.control, host);
-    settings::addRow(form, frame, host, separator);
+    settings::addRow(form, frame, host, false);
+    if (separator) {
+        row.separator = settings::makeSeparator(host);
+        form->addRow(row.separator);
+    }
     row.frame = frame;
     m_rows.append(row);
     if (descriptor.id == QStringLiteral("audioDevice")) {
@@ -265,7 +306,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
 QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget *card, Row &row)
 {
     const auto announce = [this] {
-        refreshEnabledRows();
+        refreshRows();
         emit changed();
     };
     switch (descriptor.kind) {
@@ -347,7 +388,7 @@ void SchemaSettingsPage::load(const AppSettings &settings)
             applyRow(row, settings);
         }
     }
-    refreshEnabledRows();
+    refreshRows();
 }
 
 void SchemaSettingsPage::loadExpensiveRows(const AppSettings &settings)
@@ -359,7 +400,7 @@ void SchemaSettingsPage::loadExpensiveRows(const AppSettings &settings)
             applyRow(row, settings);
         }
     }
-    refreshEnabledRows();
+    refreshRows();
 }
 
 QStringList SchemaSettingsPage::validate() const
@@ -404,14 +445,26 @@ bool SchemaSettingsPage::hasChanges(const AppSettings &settings) const
 void SchemaSettingsPage::setCapabilities(const Capabilities &capabilities)
 {
     m_capabilities = capabilities;
-    refreshEnabledRows();
+    refreshRows();
 }
 
-void SchemaSettingsPage::refreshEnabledRows()
+// Everything a row can derive from the rest of the page: whether it is worth
+// showing, whether it is usable, and what an Info row currently reads.
+void SchemaSettingsPage::refreshRows()
 {
     AppSettings draft = m_loaded;
     appendToDraft(draft);
     for (const Row &row : std::as_const(m_rows)) {
+        if (row.descriptor.visible) {
+            const bool shown = row.descriptor.visible(draft, m_capabilities);
+            row.frame->setVisible(shown);
+            if (row.separator) {
+                row.separator->setVisible(shown);
+            }
+        }
+        if (row.descriptor.kind == RowKind::Info && row.descriptor.value && row.setValue) {
+            row.setValue(row.descriptor.value(draft));
+        }
         if (!row.descriptor.enabled) {
             continue;
         }

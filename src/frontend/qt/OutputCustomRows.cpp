@@ -73,14 +73,16 @@ OutputCustomRows::OutputCustomRows(SettingsStore &settings)
 
 SchemaCustomRowFactory OutputCustomRows::factory()
 {
-    return [this](const QString &rowId, QWidget *parent, std::function<void()> notifyChanged) {
-        if (rowId == QStringLiteral("outputMethod")) {
+    return [this](const SettingsRow &descriptor,
+                  QWidget *parent,
+                  std::function<void()> notifyChanged) {
+        if (descriptor.id == QStringLiteral("outputMethod")) {
             return makeMethodRow(parent, std::move(notifyChanged));
         }
-        if (rowId == QStringLiteral("virtualKeyboard")) {
+        if (descriptor.id == QStringLiteral("virtualKeyboard")) {
             return makeVirtualKeyboardRow(parent, std::move(notifyChanged));
         }
-        qFatal("the Output page has no widget for custom settings row %s", qPrintable(rowId));
+        return SchemaCustomRow{};
     };
 }
 

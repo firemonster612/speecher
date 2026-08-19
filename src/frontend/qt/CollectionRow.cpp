@@ -4,9 +4,12 @@
 
 #include <QAbstractItemView>
 #include <QComboBox>
+#include <QFile>
+#include <QFileDialog>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QTableWidget>
@@ -55,15 +58,31 @@ public:
 
 private:
     void appendRecord(const QVariantMap &record, bool locked);
-    void updateDeleteButton();
+    QList<QVariantMap> lockedRecords() const;
+    void importRecords();
+    void runAction(const QString &actionId);
+    void refuse(const QString &message);
+    void updateButtons();
 
     CollectionDescriptor m_collection;
     QTableWidget *m_table;
-    QPushButton *m_add;
+    QPushButton *m_add = nullptr;
     QPushButton *m_delete;
+    QHash<QString, QPushButton *> m_actions;
     int m_lockedCount;
+    // What Delete took, newest last, so undo can put it back.
+    QList<QVariantMap> m_deleted;
     std::function<void()> m_notifyChanged;
 };
+
+// The whole record a row stands for, including the keys no column shows. The
+// hidden vertical header is the one per-row place every column kind leaves
+// alone, cell widgets included.
+QVariantMap rowRecord(const QTableWidget *table, int row)
+{
+    const QTableWidgetItem *carrier = table->verticalHeaderItem(row);
+    return carrier ? carrier->data(Qt::UserRole).toMap() : QVariantMap();
+}
 
 CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
                                    QWidget *parent,
@@ -71,7 +90,6 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     : QWidget(parent)
     , m_collection(descriptor.collection)
     , m_table(new QTableWidget(this))
-    , m_add(new QPushButton(m_collection.addLabel, this))
     , m_delete(new QPushButton(QStringLiteral("Delete selected"), this))
     , m_lockedCount(m_collection.lockedRecordCount ? m_collection.lockedRecordCount() : 0)
     , m_notifyChanged(std::move(notifyChanged))
@@ -107,56 +125,140 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setMinimumHeight(m_collection.minimumHeight);
-    m_add->setObjectName(buttonObjectName(QStringLiteral("add"), descriptor.id));
     m_delete->setObjectName(buttonObjectName(QStringLiteral("delete"), descriptor.id));
     m_delete->setEnabled(false);
 
     auto *buttons = new QHBoxLayout;
+    if (m_collection.supportsImport.parse) {
+        auto *import = new QPushButton(m_collection.supportsImport.actionLabel, this);
+        import->setObjectName(buttonObjectName(QStringLiteral("import"), descriptor.id));
+        connect(import, &QPushButton::clicked, this, [this] { importRecords(); });
+        buttons->addWidget(import);
+    }
     buttons->addStretch();
+    for (const RowOption &action : m_collection.actions) {
+        auto *button = new QPushButton(action.label, this);
+        button->setObjectName(buttonObjectName(action.id, descriptor.id));
+        connect(button, &QPushButton::clicked, this, [this, id = action.id] { runAction(id); });
+        m_actions.insert(action.id, button);
+        buttons->addWidget(button);
+    }
     buttons->addWidget(m_delete);
-    buttons->addWidget(m_add);
+    if (!m_collection.addLabel.isEmpty()) {
+        m_add = new QPushButton(m_collection.addLabel, this);
+        m_add->setObjectName(buttonObjectName(QStringLiteral("add"), descriptor.id));
+        buttons->addWidget(m_add);
+    }
     layout->addWidget(m_table);
     layout->addLayout(buttons);
 
     connect(m_table, &QTableWidget::itemChanged, this, [this] { m_notifyChanged(); });
-    connect(m_table, &QTableWidget::itemSelectionChanged, this, [this] { updateDeleteButton(); });
-    connect(m_add, &QPushButton::clicked, this, [this] {
-        appendRecord(m_collection.blankRecord, false);
-        const int row = m_table->rowCount() - 1;
-        m_table->selectRow(row);
-        for (int column = 0; column < m_collection.columns.size(); ++column) {
-            if (m_collection.columns.at(column).kind == ColumnKind::Text) {
-                m_table->setCurrentCell(row, column);
-                m_table->editItem(m_table->item(row, column));
-                break;
+    connect(m_table, &QTableWidget::itemSelectionChanged, this, [this] { updateButtons(); });
+    if (m_add) {
+        connect(m_add, &QPushButton::clicked, this, [this] {
+            appendRecord(m_collection.blankRecord, false);
+            const int row = m_table->rowCount() - 1;
+            m_table->selectRow(row);
+            for (int column = 0; column < m_collection.columns.size(); ++column) {
+                if (m_collection.columns.at(column).kind == ColumnKind::Text) {
+                    m_table->setCurrentCell(row, column);
+                    m_table->editItem(m_table->item(row, column));
+                    break;
+                }
             }
-        }
-        m_notifyChanged();
-    });
+            updateButtons();
+            m_notifyChanged();
+        });
+    }
     connect(m_delete, &QPushButton::clicked, this, [this] {
         const int row = m_table->currentRow();
         if (row < m_lockedCount) {
             return;
         }
+        m_deleted.append(records().at(row - m_lockedCount));
         m_table->removeRow(row);
-        updateDeleteButton();
+        updateButtons();
         m_notifyChanged();
     });
+    updateButtons();
+}
+
+void CollectionEditor::runAction(const QString &actionId)
+{
+    QList<QVariantMap> current = records();
+    if (actionId == QStringLiteral("undoDelete")) {
+        if (m_deleted.isEmpty()) {
+            return;
+        }
+        current.prepend(m_deleted.takeLast());
+    } else if (actionId == QStringLiteral("undoLatestLearn")) {
+        if (current.isEmpty()) {
+            return;
+        }
+        m_deleted.append(current.takeFirst());
+    } else {
+        qFatal("the Qt collection editor has no command %s", qPrintable(actionId));
+    }
+    setRecords(lockedRecords() + current);
+    m_notifyChanged();
+}
+
+void CollectionEditor::refuse(const QString &message)
+{
+    QMessageBox::warning(this, m_collection.supportsImport.failureTitle, message);
+}
+
+void CollectionEditor::importRecords()
+{
+    const CollectionImport &source = m_collection.supportsImport;
+    const QString path = QFileDialog::getOpenFileName(this,
+                                                      source.actionLabel,
+                                                      QString(),
+                                                      source.fileFilter);
+    if (path.isEmpty()) {
+        return;
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        refuse(QStringLiteral("Could not read %1.").arg(path));
+        return;
+    }
+    QString error;
+    const QList<QVariantMap> imported = source.parse(file.readAll(), &error);
+    if (!error.isEmpty()) {
+        refuse(error);
+        return;
+    }
+    const QList<QVariantMap> merged = records() + imported;
+    if (m_collection.validate) {
+        const QStringList problems = m_collection.validate(merged);
+        if (!problems.isEmpty()) {
+            refuse(problems.join(QLatin1Char('\n')));
+            return;
+        }
+    }
+    setRecords(lockedRecords() + merged);
+    m_notifyChanged();
 }
 
 void CollectionEditor::appendRecord(const QVariantMap &record, bool locked)
 {
     const int row = m_table->rowCount();
     m_table->insertRow(row);
+    auto *carrier = new QTableWidgetItem;
+    carrier->setData(Qt::UserRole, record);
+    m_table->setVerticalHeaderItem(row, carrier);
     for (int index = 0; index < m_collection.columns.size(); ++index) {
         const CollectionColumn &column = m_collection.columns.at(index);
         const QVariant value = record.value(column.id);
+        const QString tooltip =
+            column.recordTooltip ? column.recordTooltip(record) : column.tooltip;
         if (locked || column.kind == ColumnKind::ReadOnly) {
-            m_table->setItem(row,
-                             index,
-                             readOnlyItem(column.kind == ColumnKind::Choice
-                                              ? optionLabel(column, value.toString())
-                                              : value.toString()));
+            QTableWidgetItem *item = readOnlyItem(column.kind == ColumnKind::Choice
+                                                      ? optionLabel(column, value.toString())
+                                                      : value.toString());
+            item->setToolTip(tooltip);
+            m_table->setItem(row, index, item);
             continue;
         }
         if (column.kind == ColumnKind::Toggle) {
@@ -177,7 +279,7 @@ void CollectionEditor::appendRecord(const QVariantMap &record, bool locked)
             continue;
         }
         auto *item = new QTableWidgetItem(value.toString());
-        item->setToolTip(column.tooltip);
+        item->setToolTip(tooltip);
         m_table->setItem(row, index, item);
     }
 }
@@ -186,7 +288,9 @@ QList<QVariantMap> CollectionEditor::records() const
 {
     QList<QVariantMap> records;
     for (int row = m_lockedCount; row < m_table->rowCount(); ++row) {
-        QVariantMap record;
+        // Start from what the row arrived with, so the keys no column shows
+        // survive an edit to the ones that do.
+        QVariantMap record = rowRecord(m_table, row);
         for (int index = 0; index < m_collection.columns.size(); ++index) {
             const CollectionColumn &column = m_collection.columns.at(index);
             if (column.kind == ColumnKind::Choice) {
@@ -217,12 +321,27 @@ void CollectionEditor::setRecords(const QList<QVariantMap> &records)
         appendRecord(records.at(index), index < m_lockedCount);
     }
     m_table->clearSelection();
-    updateDeleteButton();
+    updateButtons();
 }
 
-void CollectionEditor::updateDeleteButton()
+QList<QVariantMap> CollectionEditor::lockedRecords() const
+{
+    QList<QVariantMap> locked;
+    for (int row = 0; row < m_lockedCount; ++row) {
+        locked.append(rowRecord(m_table, row));
+    }
+    return locked;
+}
+
+void CollectionEditor::updateButtons()
 {
     m_delete->setEnabled(m_table->currentRow() >= m_lockedCount);
+    if (QPushButton *undoDelete = m_actions.value(QStringLiteral("undoDelete"))) {
+        undoDelete->setEnabled(!m_deleted.isEmpty());
+    }
+    if (QPushButton *undoLatestLearn = m_actions.value(QStringLiteral("undoLatestLearn"))) {
+        undoLatestLearn->setEnabled(m_table->rowCount() > m_lockedCount);
+    }
 }
 
 } // namespace
