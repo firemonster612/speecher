@@ -5,14 +5,13 @@
 #include "core/SettingsStore.h"
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/Theme.h"
-#include "ui/settings/ApplicationSettingsPage.h"
 #include "ui/settings/BindingsSettingsPage.h"
 #include "ui/settings/CorrectionsSettingsPage.h"
-#include "ui/settings/OutputSettingsPage.h"
 #include "ui/settings/ProviderSettingsPage.h"
 #include "ui/settings/VocabularySettingsPage.h"
 
 #include <QDesktopServices>
+#include <QMessageBox>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalBlocker>
@@ -27,10 +26,13 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *par
     , m_schema(buildSettingsSchema(qtSchemaContext(*controller->platform(),
                                                    *controller->providerRegistry(),
                                                    controller->primaryOutputStatus())))
+    , m_outputRows(*controller->settings())
     , m_general(new SchemaSettingsPage(m_schema.page(QStringLiteral("general")), parent))
     , m_audio(new SchemaSettingsPage(m_schema.page(QStringLiteral("audio")), parent))
-    , m_applications(new ApplicationSettingsPage(parent))
-    , m_output(new OutputSettingsPage(*controller->settings(), parent))
+    , m_applications(new SchemaSettingsPage(m_schema.page(QStringLiteral("applications")), parent))
+    , m_output(new SchemaSettingsPage(m_schema.page(QStringLiteral("output")),
+                                      parent,
+                                      m_outputRows.factory()))
     , m_refinement(new SchemaSettingsPage(m_schema.page(QStringLiteral("refinement")), parent))
     , m_providers(new ProviderSettingsPage(*controller->settings(), *controller->secretStore(), parent))
     , m_vocabulary(new VocabularySettingsPage(parent))
@@ -40,8 +42,8 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *par
     connect(m_general, &SchemaSettingsPage::changed, this, &SettingsPageSet::changed);
     connect(m_general, &SchemaSettingsPage::actionTriggered, this, &SettingsPageSet::runPageAction);
     connect(m_audio, &SchemaSettingsPage::changed, this, &SettingsPageSet::changed);
-    connect(m_applications, &ApplicationSettingsPage::changed, this, &SettingsPageSet::changed);
-    connect(m_output, &OutputSettingsPage::changed, this, &SettingsPageSet::changed);
+    connect(m_applications, &SchemaSettingsPage::changed, this, &SettingsPageSet::changed);
+    connect(m_output, &SchemaSettingsPage::changed, this, &SettingsPageSet::changed);
     connect(m_refinement, &SchemaSettingsPage::changed, this, &SettingsPageSet::changed);
     connect(m_providers, &ProviderSettingsPage::changed, this, &SettingsPageSet::changed);
     connect(m_vocabulary, &VocabularySettingsPage::changed, this, &SettingsPageSet::changed);
@@ -58,8 +60,8 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *par
 
 SchemaSettingsPage *SettingsPageSet::general() const { return m_general; }
 SchemaSettingsPage *SettingsPageSet::audio() const { return m_audio; }
-ApplicationSettingsPage *SettingsPageSet::applications() const { return m_applications; }
-OutputSettingsPage *SettingsPageSet::output() const { return m_output; }
+SchemaSettingsPage *SettingsPageSet::applications() const { return m_applications; }
+SchemaSettingsPage *SettingsPageSet::output() const { return m_output; }
 SchemaSettingsPage *SettingsPageSet::refinement() const { return m_refinement; }
 ProviderSettingsPage *SettingsPageSet::providers() const { return m_providers; }
 VocabularySettingsPage *SettingsPageSet::vocabulary() const { return m_vocabulary; }
@@ -86,7 +88,7 @@ void SettingsPageSet::loadBeforeShow()
     m_vocabulary->load(settings->vocabularyEntries());
     m_bindings->load(settings->bindingRules());
     m_corrections->load(settings->correctionLearningEnabled(), settings->learnedCorrections());
-    m_output->refreshControls();
+    m_outputRows.refresh();
 }
 
 void SettingsPageSet::loadAfterShow()
@@ -112,8 +114,13 @@ bool SettingsPageSet::save(bool showValidationErrors,
     if (!bindings.ok()) {
         return refuse(SaveFailure::InvalidReplacementRules, bindings.messages());
     }
-    const QStringList pasteRuleProblems = m_output->validate(showValidationErrors);
+    const QStringList pasteRuleProblems = m_output->validate();
     if (!pasteRuleProblems.isEmpty()) {
+        if (showValidationErrors) {
+            QMessageBox::warning(m_output,
+                                 QStringLiteral("Paste rules not saved"),
+                                 pasteRuleProblems.join(QLatin1Char('\n')));
+        }
         return refuse(SaveFailure::DuplicatePasteRuleIds, pasteRuleProblems);
     }
     AppSettings draft = settings->snapshot();
@@ -138,7 +145,7 @@ bool SettingsPageSet::save(bool showValidationErrors,
         load();
     } else {
         m_providers->loadModels();
-        m_output->refreshControls();
+        m_outputRows.refresh();
     }
     return true;
 }
@@ -194,8 +201,8 @@ void SettingsPageSet::updateAccessibilityState(bool supported, bool enabled, boo
 {
     Q_UNUSED(persistent);
     const bool available = supported && enabled;
-    m_output->setTargetAccessibilityAvailable(available);
-    m_applications->setTargetAccessibilityAvailable(available);
+    m_output->setCapabilities({available});
+    m_applications->setCapabilities({available});
     m_refinement->setCapabilities({available});
     m_corrections->setTargetAccessibilityAvailable(available);
 }

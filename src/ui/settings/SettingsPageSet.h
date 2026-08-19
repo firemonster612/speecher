@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/settings/SettingsSchema.h"
+#include "frontend/qt/OutputCustomRows.h"
 
 #include <QObject>
 #include <QStringList>
@@ -10,10 +11,8 @@ class QScrollArea;
 namespace speecher {
 
 class ApplicationController;
-class ApplicationSettingsPage;
 class BindingsSettingsPage;
 class CorrectionsSettingsPage;
-class OutputSettingsPage;
 class ProviderSettingsPage;
 class SchemaSettingsPage;
 class VocabularySettingsPage;
@@ -40,8 +39,8 @@ public:
 
     SchemaSettingsPage *general() const;
     SchemaSettingsPage *audio() const;
-    ApplicationSettingsPage *applications() const;
-    OutputSettingsPage *output() const;
+    SchemaSettingsPage *applications() const;
+    SchemaSettingsPage *output() const;
     SchemaSettingsPage *refinement() const;
     ProviderSettingsPage *providers() const;
     VocabularySettingsPage *vocabulary() const;
@@ -66,10 +65,11 @@ private:
 
     ApplicationController *m_controller;
     SettingsSchema m_schema;
+    OutputCustomRows m_outputRows;
     SchemaSettingsPage *m_general;
     SchemaSettingsPage *m_audio;
-    ApplicationSettingsPage *m_applications;
-    OutputSettingsPage *m_output;
+    SchemaSettingsPage *m_applications;
+    SchemaSettingsPage *m_output;
     SchemaSettingsPage *m_refinement;
     ProviderSettingsPage *m_providers;
     VocabularySettingsPage *m_vocabulary;

@@ -104,6 +104,7 @@ SchemaCustomRow makeWritingProfileGrid(QWidget *parent, std::function<void()> no
         [grid, notifyChanged = std::move(notifyChanged)](const QVariant &value) {
             setGridSettings(grid, value.value<QList<WritingProfileSettings>>(), notifyChanged);
         },
+        true,
     };
 }
 

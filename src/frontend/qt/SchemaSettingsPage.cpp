@@ -1,6 +1,7 @@
 #include "frontend/qt/SchemaSettingsPage.h"
 
 #include "app/PlatformComposition.h"
+#include "frontend/qt/CollectionRow.h"
 #include "frontend/qt/WritingProfileGrid.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/settings/SettingsPageSupport.h"
@@ -76,6 +77,19 @@ SchemaCustomRow customRowFor(const QString &id, QWidget *parent, std::function<v
     qFatal("the Qt front end has no widget for custom settings row %s", qPrintable(id));
 }
 
+// A run of rows that render together inside the card, so one capability can
+// gate the whole cluster.
+QWidget *addRowGroup(const QString &id, QWidget *card)
+{
+    auto *group = new QWidget(card);
+    group->setObjectName(id);
+    auto *layout = new QFormLayout(group);
+    layout->setContentsMargins(0, 0, 0, 0);
+    settings::configureFormLayout(layout);
+    qobject_cast<QFormLayout *>(card->layout())->addRow(group);
+    return group;
+}
+
 } // namespace
 
 SchemaContext qtSchemaContext(const PlatformComposition &platform,
@@ -89,11 +103,19 @@ SchemaContext qtSchemaContext(const PlatformComposition &platform,
             return settings::audioInputDeviceOptions(platform.availableAudioInputDevices());
         },
         primaryOutputStatus,
+#ifdef SPEECHER_WITH_YDOTOOL
+        true,
+#else
+        false,
+#endif
     };
 }
 
-SchemaSettingsPage::SchemaSettingsPage(const SettingsPage &page, QWidget *parent)
+SchemaSettingsPage::SchemaSettingsPage(const SettingsPage &page,
+                                       QWidget *parent,
+                                       SchemaCustomRowFactory customRows)
     : QScrollArea(parent)
+    , m_customRows(std::move(customRows))
 {
     auto *title = settings::makePageTitle(page.title, this);
     auto *pageLayout = settings::makeSettingsPage(this);
@@ -114,20 +136,72 @@ void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout 
     pageLayout->addWidget(settings::makeSectionLabel(section.title, this));
     pageLayout->addSpacing(settings::tightSpacing());
     QWidget *card = settings::makeSettingsCard(this);
+    QWidget *group = nullptr;
     for (int index = 0; index < section.rows.size(); ++index) {
-        addRow(section.rows.at(index), card, index + 1 < section.rows.size());
+        const SettingsRow &descriptor = section.rows.at(index);
+        if (descriptor.groupId.isEmpty()) {
+            group = nullptr;
+        } else if (!group || group->objectName() != descriptor.groupId) {
+            group = addRowGroup(descriptor.groupId, card);
+        }
+        // A row keeps a separator below it while its own container has more to
+        // come, which for a grouped row means another row of the same group.
+        const bool more = index + 1 < section.rows.size();
+        const bool separator = more
+            && (descriptor.groupId.isEmpty()
+                || section.rows.at(index + 1).groupId == descriptor.groupId);
+        addRow(descriptor, group ? group : card, group, separator);
     }
     pageLayout->addWidget(card);
 }
 
-void SchemaSettingsPage::addRow(const SettingsRow &descriptor, QWidget *card, bool separator)
+void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
+                                QWidget *host,
+                                QWidget *group,
+                                bool separator)
 {
-    auto *form = qobject_cast<QFormLayout *>(card->layout());
+    auto *form = qobject_cast<QFormLayout *>(host->layout());
     Row row;
     row.descriptor = descriptor;
+    row.group = group;
+
+    const auto announce = [this] {
+        refreshEnabledRows();
+        emit changed();
+    };
+
+    if (descriptor.kind == RowKind::Collection) {
+        const SchemaCustomRow editor = makeCollectionRow(descriptor, host, announce);
+        form->addRow(editor.widget);
+        if (separator) {
+            form->addRow(settings::makeSeparator(host));
+        }
+        row.frame = editor.widget;
+        row.control = editor.widget;
+        row.value = editor.value;
+        row.setValue = editor.setValue;
+        m_rows.append(row);
+        applyRow(m_rows.last(), AppSettings{});
+        return;
+    }
 
     if (descriptor.kind == RowKind::Custom) {
-        auto *container = new QWidget(card);
+        const SchemaCustomRow custom = m_customRows
+            ? m_customRows(descriptor.id, host, announce)
+            : customRowFor(descriptor.id, host, announce);
+        if (!custom.fullWidth) {
+            custom.widget->setObjectName(descriptor.id);
+            QFrame *frame = settings::makeRow(descriptor.label, descriptor.help, custom.widget, host);
+            settings::addRow(form, frame, host, separator);
+            row.frame = frame;
+            row.control = custom.widget;
+            row.value = custom.value;
+            row.setValue = custom.setValue;
+            m_rows.append(row);
+            applyRow(m_rows.last(), AppSettings{});
+            return;
+        }
+        auto *container = new QWidget(host);
         container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         auto *containerLayout = new QVBoxLayout(container);
         containerLayout->setContentsMargins(0, 0, 0, 0);
@@ -145,10 +219,6 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor, QWidget *card, bo
         headerLayout->addWidget(headerHelp);
         containerLayout->addWidget(header);
 
-        const SchemaCustomRow custom = customRowFor(descriptor.id, container, [this] {
-            refreshEnabledRows();
-            emit changed();
-        });
         containerLayout->addWidget(custom.widget);
         form->addRow(container);
         row.frame = container;
@@ -160,13 +230,13 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor, QWidget *card, bo
         return;
     }
 
-    row.control = makeControl(descriptor, card, row);
+    row.control = makeControl(descriptor, host, row);
     row.control->setObjectName(descriptor.id);
     if (!descriptor.tooltip.isEmpty()) {
         row.control->setToolTip(descriptor.tooltip);
     }
-    QFrame *frame = settings::makeRow(descriptor.label, descriptor.help, row.control, card);
-    settings::addRow(form, frame, card, separator);
+    QFrame *frame = settings::makeRow(descriptor.label, descriptor.help, row.control, host);
+    settings::addRow(form, frame, host, separator);
     row.frame = frame;
     m_rows.append(row);
     if (descriptor.id == QStringLiteral("audioDevice")) {
@@ -292,6 +362,18 @@ void SchemaSettingsPage::loadExpensiveRows(const AppSettings &settings)
     refreshEnabledRows();
 }
 
+QStringList SchemaSettingsPage::validate() const
+{
+    QStringList messages;
+    for (const Row &row : m_rows) {
+        if (row.descriptor.collection.validate && row.value) {
+            messages.append(
+                row.descriptor.collection.validate(row.value().value<QList<QVariantMap>>()));
+        }
+    }
+    return messages;
+}
+
 void SchemaSettingsPage::appendToDraft(AppSettings &draft) const
 {
     for (const Row &row : m_rows) {
@@ -334,8 +416,10 @@ void SchemaSettingsPage::refreshEnabledRows()
             continue;
         }
         const bool live = row.descriptor.enabled(draft, m_capabilities);
-        row.frame->setEnabled(live);
-        row.control->setToolTip(live ? row.descriptor.tooltip : row.descriptor.disabledHelp);
+        QWidget *gated = row.group ? row.group : row.frame;
+        QWidget *hinted = row.group ? row.group : row.control;
+        gated->setEnabled(live);
+        hinted->setToolTip(live ? row.descriptor.tooltip : row.descriptor.disabledHelp);
     }
 }
 

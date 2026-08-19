@@ -2,10 +2,9 @@
 #include "common/test_http.h"
 #include "common/test_auth.h"
 #include "ui/AccessibilityNotice.h"
-#include "ui/settings/ApplicationSettingsPage.h"
 #include "ui/settings/CorrectionsSettingsPage.h"
-#include "ui/settings/OutputSettingsPage.h"
 #include "ui/settings/ProviderSettingsPage.h"
+#include "frontend/qt/OutputCustomRows.h"
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/settings/SettingsPageSupport.h"
 #include "ui/setup/SetupPages.h"
@@ -23,15 +22,16 @@ using namespace speecher::test;
 
 namespace {
 
-// The three migrated pages are the generic renderer over the core schema, so a
-// test builds them the same way the front end does.
+// The migrated pages are the generic renderer over the core schema, so a test
+// builds them the same way the front end does.
 std::unique_ptr<SchemaSettingsPage> schemaPage(const QString &id,
                                                const PlatformComposition &platform,
-                                               const ProviderRegistry &providers)
+                                               const ProviderRegistry &providers,
+                                               SchemaCustomRowFactory customRows = {})
 {
     const SettingsSchema schema =
         buildSettingsSchema(qtSchemaContext(platform, providers, QStringLiteral("Clipboard")));
-    return std::make_unique<SchemaSettingsPage>(schema.page(id));
+    return std::make_unique<SchemaSettingsPage>(schema.page(id), nullptr, std::move(customRows));
 }
 
 } // namespace
@@ -115,8 +115,13 @@ private slots:
         SettingsStore settings;
         ProviderRegistry providers;
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
-        OutputSettingsPage output(settings);
-        ApplicationSettingsPage applications;
+        OutputCustomRows outputRows(settings);
+        const std::unique_ptr<SchemaSettingsPage> outputPage =
+            schemaPage(QStringLiteral("output"), *platform, providers, outputRows.factory());
+        SchemaSettingsPage &output = *outputPage;
+        const std::unique_ptr<SchemaSettingsPage> applicationsPage =
+            schemaPage(QStringLiteral("applications"), *platform, providers);
+        SchemaSettingsPage &applications = *applicationsPage;
         const std::unique_ptr<SchemaSettingsPage> page =
             schemaPage(QStringLiteral("refinement"), *platform, providers);
         SchemaSettingsPage &refinement = *page;
@@ -131,8 +136,8 @@ private slots:
         QVERIFY(correctionLearning->toolTip().contains(QStringLiteral("repeated")));
         QVERIFY(!correctionLearning->toolTip().contains(QStringLiteral("only high-confidence")));
 
-        output.setTargetAccessibilityAvailable(false);
-        applications.setTargetAccessibilityAvailable(false);
+        output.setCapabilities({false});
+        applications.setCapabilities({false});
         refinement.setCapabilities({false});
         corrections.setTargetAccessibilityAvailable(false);
 
@@ -141,8 +146,8 @@ private slots:
         QVERIFY(!refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(!corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
 
-        output.setTargetAccessibilityAvailable(true);
-        applications.setTargetAccessibilityAvailable(true);
+        output.setCapabilities({true});
+        applications.setCapabilities({true});
         refinement.setCapabilities({true});
         corrections.setTargetAccessibilityAvailable(true);
         QVERIFY(correctionLearning->toolTip().contains(QStringLiteral("repeated")));
@@ -201,7 +206,12 @@ private slots:
     void outputCompletionStatusDurationLoadsAndSaves()
     {
         SettingsStore store;
-        OutputSettingsPage page(store);
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        OutputCustomRows outputRows(store);
+        const std::unique_ptr<SchemaSettingsPage> output =
+            schemaPage(QStringLiteral("output"), *platform, providers, outputRows.factory());
+        SchemaSettingsPage &page = *output;
         AppSettings settings;
         settings.output.completionStatusDurationMs = 1200;
         page.load(settings);
@@ -331,15 +341,20 @@ private slots:
 
     void applicationSettingsShowsBuiltInsAndAddsCustomRules()
     {
-        ApplicationSettingsPage page;
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> applications =
+            schemaPage(QStringLiteral("applications"), *platform, providers);
+        SchemaSettingsPage &page = *applications;
         AppSettings settings;
         settings.refinement.writingProfileOverrides = {
             {QStringLiteral("org.legacy.chat"), WritingProfile::Personal, true},
         };
         page.load(settings);
+        page.setCapabilities({true});
 
         auto *table = page.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"));
-        auto *add = page.findChild<QPushButton *>(QStringLiteral("addAppRecognitionRule"));
+        auto *add = page.findChild<QPushButton *>(QStringLiteral("addAppRecognitionRules"));
         QVERIFY(table);
         QVERIFY(add);
         QCOMPARE(table->rowCount(), builtInAppRecognitionRules().size() + 1);
@@ -423,13 +438,17 @@ private slots:
             description->mapTo(row, QPoint(0, 0)), description->size());
         QVERIFY(row->rect().contains(descriptionInRow.bottomLeft()));
     }
-    }
 
 #ifdef SPEECHER_WITH_YDOTOOL
     void outputVirtualKeyboardStatusFitsWrappedText()
     {
         SettingsStore settings;
-        OutputSettingsPage output(settings);
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        OutputCustomRows outputRows(settings);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("output"), *platform, providers, outputRows.factory());
+        SchemaSettingsPage &output = *page;
         output.resize(900, 668);
 
         auto *status = output.findChild<QLabel *>(QStringLiteral("statusText"));
@@ -447,7 +466,7 @@ private slots:
         QVERIFY(status->height() >= status->heightForWidth(status->width()));
         const int longStatusHeight = status->heightForWidth(status->width());
 
-        output.refreshControls();
+        outputRows.refresh();
         QCoreApplication::processEvents();
 
         QCOMPARE(status->minimumHeight(), status->heightForWidth(status->width()));
