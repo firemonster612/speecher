@@ -6,6 +6,7 @@
 #include "providers/ProviderRegistry.h"
 #include "ui/settings/SettingsPageSupport.h"
 
+#include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
@@ -69,6 +70,16 @@ QList<RowOption> providerOptions(const QList<ProviderDescriptor> &providers)
     return options;
 }
 
+QList<RefinementProvider> refinementProviders(const QList<ProviderDescriptor> &providers)
+{
+    QList<RefinementProvider> refiners;
+    refiners.reserve(providers.size());
+    for (const ProviderDescriptor &provider : providers) {
+        refiners.append({provider.id, provider.label, provider.supportsScreenshotContext});
+    }
+    return refiners;
+}
+
 SchemaCustomRow builtInRow(const SettingsRow &descriptor,
                            QWidget *parent,
                            std::function<void()> notifyChanged)
@@ -103,7 +114,7 @@ SchemaContext qtSchemaContext(const PlatformComposition &platform,
 {
     return {
         providerOptions(providers.speechProviders()),
-        providerOptions(providers.refinementProviders()),
+        refinementProviders(providers.refinementProviders()),
         [&platform] {
             return settings::audioInputDeviceOptions(platform.availableAudioInputDevices());
         },
@@ -345,11 +356,29 @@ QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget 
         return spin;
     }
     case RowKind::Text: {
-        auto *edit = new QLineEdit(card);
-        connect(edit, &QLineEdit::textEdited, this, announce);
-        row.value = [edit] { return edit->text(); };
-        row.setValue = [edit](const QVariant &value) { edit->setText(value.toString()); };
-        return edit;
+        if (!descriptor.suggestions) {
+            auto *edit = new QLineEdit(card);
+            connect(edit, &QLineEdit::textEdited, this, announce);
+            row.value = [edit] { return edit->text(); };
+            row.setValue = [edit](const QVariant &value) { edit->setText(value.toString()); };
+            return edit;
+        }
+        // Free text that has values worth offering is an editable combo: the
+        // list is a shortcut, not the range of what the row accepts.
+        auto *combo = new QComboBox(card);
+        combo->setEditable(true);
+        combo->setInsertPolicy(QComboBox::NoInsert);
+        if (descriptor.contentWidthHint > 0) {
+            combo->setMinimumContentsLength(descriptor.contentWidthHint);
+        }
+        combo->view()->setMouseTracking(true);
+        combo->lineEdit()->setClearButtonEnabled(true);
+        connect(combo, &QComboBox::currentTextChanged, this, announce);
+        row.value = [combo] { return settings::editableComboValue(combo); };
+        row.setValue = [combo](const QVariant &value) {
+            settings::selectEditableText(combo, value.toString());
+        };
+        return combo;
     }
     case RowKind::Action: {
         auto *button = new QPushButton(descriptor.actionLabel, card);
@@ -372,8 +401,9 @@ QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget 
 
 void SchemaSettingsPage::applyRow(const Row &row, const AppSettings &settings)
 {
-    if (row.descriptor.options) {
-        setOptions(qobject_cast<QComboBox *>(row.control), row.descriptor.options(settings));
+    const auto &choices = row.descriptor.options ? row.descriptor.options : row.descriptor.suggestions;
+    if (choices) {
+        setOptions(qobject_cast<QComboBox *>(row.control), choices(settings));
     }
     if (row.descriptor.value && row.setValue) {
         row.setValue(row.descriptor.value(settings));

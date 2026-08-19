@@ -254,6 +254,7 @@ set(SPEECHER_FRONTEND_QT_SOURCES
   src/frontend/qt/BindingRows.cpp
   src/frontend/qt/CollectionRow.cpp
   src/frontend/qt/OutputCustomRows.cpp
+  src/frontend/qt/ProviderCustomRows.cpp
   src/frontend/qt/QtFrontEnd.cpp
   src/frontend/qt/QtPopupSurface.cpp
   src/frontend/qt/SchemaSettingsPage.cpp
@@ -263,7 +264,6 @@ set(SPEECHER_FRONTEND_QT_SOURCES
   src/ui/DictationPage.cpp
   src/ui/SetupAssistant.cpp
   src/ui/setup/SetupPages.cpp
-  src/ui/settings/ProviderSettingsPage.cpp
   src/ui/settings/SettingsPageSupport.cpp
   src/ui/settings/SettingsPageSet.cpp
   src/ui/Theme.cpp
@@ -275,6 +275,7 @@ set(SPEECHER_FRONTEND_QT_HEADERS
   src/frontend/qt/BindingRows.h
   src/frontend/qt/CollectionRow.h
   src/frontend/qt/OutputCustomRows.h
+  src/frontend/qt/ProviderCustomRows.h
   src/frontend/qt/QtFrontEnd.h
   src/frontend/qt/QtPopupSurface.h
   src/frontend/qt/SchemaSettingsPage.h
@@ -285,7 +286,6 @@ set(SPEECHER_FRONTEND_QT_HEADERS
   src/ui/DictationPage.h
   src/ui/SetupAssistant.h
   src/ui/setup/SetupPages.h
-  src/ui/settings/ProviderSettingsPage.h
   src/ui/settings/SettingsPageSupport.h
   src/ui/settings/SettingsPageSet.h
   src/ui/Theme.h

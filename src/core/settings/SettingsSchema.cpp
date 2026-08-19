@@ -470,7 +470,10 @@ SettingsPage audioPage(const SchemaContext &context)
 
 SettingsPage refinementPage(const SchemaContext &context)
 {
-    QList<RowOption> refiners = context.refinementProviders;
+    QList<RowOption> refiners;
+    for (const RefinementProvider &provider : context.refinementProviders) {
+        refiners.append({provider.id, provider.label});
+    }
     refiners.append({QStringLiteral("none"), QStringLiteral("None")});
 
     SettingsRow targetContext = toggleRow(
@@ -495,9 +498,14 @@ SettingsPage refinementPage(const SchemaContext &context)
         "Captured through the desktop portal and kept only for the current dictation.");
     screenshots.disabledHelp = QStringLiteral(
         "Choose an image-capable OpenAI or Anthropic refiner to send screenshot context.");
-    screenshots.enabled = [](const AppSettings &settings, const Capabilities &) {
-        return settings.refinement.providerId == QStringLiteral("openai")
-            || settings.refinement.providerId == QStringLiteral("anthropic");
+    screenshots.enabled = [providers = context.refinementProviders](const AppSettings &settings,
+                                                                   const Capabilities &) {
+        for (const RefinementProvider &provider : providers) {
+            if (provider.id == settings.refinement.providerId) {
+                return provider.supportsScreenshotContext;
+            }
+        }
+        return false;
     };
 
     SettingsRow profileBehavior;
@@ -1116,6 +1124,203 @@ SettingsPage bindingsPage()
     };
 }
 
+// What one refinement account contributes to the Providers page. A third
+// provider is another entry in providerAccounts() plus the two AppSettings
+// fields it names, rather than a third hand-written card.
+struct ProviderAccount {
+    QString sectionTitle;
+    // A closing note under the card.
+    QString note;
+    QString modelRowId;
+    QString modelLabel;
+    QString modelHelp;
+    QString modelTooltip;
+    int modelWidthHint = 0;
+    QList<RowOption> models;
+    QString RefinementSettings::*model;
+    // Said only while the chosen model's id contains this, which is how a model
+    // that reads a transcript as instructions warns about it.
+    QString cautionWhenModelContains;
+    QString caution;
+    QString effortRowId;
+    QString effortLabel;
+    QString effortHelp;
+    QString effortTooltip;
+    QList<RowOption> efforts;
+    QString RefinementSettings::*effort;
+    // Where the credentials come from is a question for a keyring rather than a
+    // value in AppSettings, so every front end answers it its own way.
+    QList<SettingsRow> authRows;
+};
+
+QList<RowOption> namedModels(const QStringList &ids)
+{
+    QList<RowOption> models;
+    models.reserve(ids.size());
+    for (const QString &id : ids) {
+        models.append({id, id});
+    }
+    return models;
+}
+
+QList<ProviderAccount> providerAccounts()
+{
+    ProviderAccount openAi;
+    openAi.sectionTitle = QStringLiteral("OpenAI account");
+    openAi.modelRowId = QStringLiteral("openAiModel");
+    openAi.modelLabel = QStringLiteral("OpenAI model");
+    openAi.modelHelp = QStringLiteral("Model used for refinement.");
+    openAi.modelTooltip = QStringLiteral("Defaults to gpt-5.6-luna with no reasoning effort. "
+                                         "Select another model or type another model ID.");
+    openAi.modelWidthHint = 16;
+    openAi.models = namedModels({
+        QStringLiteral("gpt-5.6-luna"),
+        QStringLiteral("gpt-5.6-terra"),
+        QStringLiteral("gpt-5.6-sol"),
+        QStringLiteral("gpt-5.5"),
+        QStringLiteral("gpt-5.4-nano"),
+        QStringLiteral("gpt-5.4-mini"),
+        QStringLiteral("gpt-5.4"),
+    });
+    openAi.model = &RefinementSettings::openAiModel;
+    openAi.effortRowId = QStringLiteral("openAiEffort");
+    openAi.effortLabel = QStringLiteral("OpenAI effort");
+    openAi.effortHelp = QStringLiteral("Reasoning effort used for refinement.");
+    openAi.effortTooltip =
+        QStringLiteral("OpenAI Responses reasoning.effort. Supported values vary by model.");
+    openAi.efforts = {
+        {QStringLiteral("none"), QStringLiteral("None")},
+        {QStringLiteral("low"), QStringLiteral("Low")},
+        {QStringLiteral("medium"), QStringLiteral("Medium")},
+        {QStringLiteral("high"), QStringLiteral("High")},
+        {QStringLiteral("xhigh"), QStringLiteral("Extra high")},
+    };
+    openAi.effort = &RefinementSettings::openAiEffort;
+    openAi.authRows = {
+        customRow(QStringLiteral("openAiAuthMode"),
+                  QStringLiteral("OpenAI auth mode"),
+                  QStringLiteral("Credential source used for refinement.")),
+        customRow(QStringLiteral("openAiAuth"),
+                  QStringLiteral("OpenAI auth"),
+                  QStringLiteral("Current credential source or app settings key.")),
+    };
+    openAi.authRows[0].value = [](const AppSettings &settings) {
+        return QVariant(settings.refinement.openAiAuthMode);
+    };
+    openAi.authRows[0].apply = [](AppSettings &settings, const QVariant &value) {
+        settings.refinement.openAiAuthMode = value.toString();
+    };
+    // Reading the app settings key means asking the keyring.
+    openAi.authRows[1].expensive = true;
+
+    ProviderAccount anthropic;
+    anthropic.sectionTitle = QStringLiteral("Anthropic account");
+    // The page's closing note, which belongs under the last card there is.
+    anthropic.note = QStringLiteral(
+        "Automatic OpenAI auth follows the Codex auth mode when available, then falls back to "
+        "Codex API key, Codex OAuth, OPENAI_API_KEY, and the app settings key. Codex OAuth uses "
+        "the ChatGPT Codex backend. The app settings key is stored in the desktop keyring through "
+        "QtKeychain when available.");
+    anthropic.modelRowId = QStringLiteral("anthropicModel");
+    anthropic.modelLabel = QStringLiteral("Claude model");
+    anthropic.modelHelp = QStringLiteral("Model used for Anthropic refinement.");
+    anthropic.modelTooltip =
+        QStringLiteral("Defaults to Claude Sonnet 4.6. Select a model or type another model ID.");
+    anthropic.modelWidthHint = 24;
+    anthropic.models = {
+        {QStringLiteral("claude-opus-4-8"), QStringLiteral("Claude Opus 4.8")},
+        {QStringLiteral("claude-sonnet-4-6"), QStringLiteral("Claude Sonnet 4.6")},
+        {QStringLiteral("claude-haiku-4-5-20251001"), QStringLiteral("Claude Haiku 4.5")},
+    };
+    anthropic.model = &RefinementSettings::anthropicModel;
+    anthropic.cautionWhenModelContains = QStringLiteral("haiku");
+    anthropic.caution = QStringLiteral("Haiku may treat transcript as instructions.");
+    anthropic.effortRowId = QStringLiteral("anthropicEffort");
+    anthropic.effortLabel = QStringLiteral("Claude effort");
+    anthropic.effortHelp =
+        QStringLiteral("Token spend and reasoning depth for Anthropic refinement.");
+    anthropic.effortTooltip =
+        QStringLiteral("Claude effort. Anthropic API support depends on the selected model.");
+    anthropic.efforts = {
+        {QStringLiteral("low"), QStringLiteral("Low")},
+        {QStringLiteral("medium"), QStringLiteral("Medium")},
+        {QStringLiteral("high"), QStringLiteral("High")},
+        {QStringLiteral("xhigh"), QStringLiteral("Extra high")},
+        {QStringLiteral("max"), QStringLiteral("Max")},
+    };
+    anthropic.effort = &RefinementSettings::anthropicEffort;
+    anthropic.authRows = {customRow(QStringLiteral("anthropicAuthMode"),
+                                    QStringLiteral("Anthropic auth"),
+                                    QStringLiteral("How Speecher sends refinement requests to Claude."))};
+    anthropic.authRows[0].value = [](const AppSettings &settings) {
+        return QVariant(settings.refinement.anthropicAuthMode);
+    };
+    anthropic.authRows[0].apply = [](AppSettings &settings, const QVariant &value) {
+        settings.refinement.anthropicAuthMode = value.toString();
+    };
+
+    return {openAi, anthropic};
+}
+
+SettingsSection providerSection(const ProviderAccount &account)
+{
+    SettingsRow model;
+    model.id = account.modelRowId;
+    model.label = account.modelLabel;
+    model.help = account.modelHelp;
+    model.kind = RowKind::Text;
+    model.tooltip = account.modelTooltip;
+    model.contentWidthHint = account.modelWidthHint;
+    model.suggestions = fixedOptions(account.models);
+    model.value = [field = account.model](const AppSettings &settings) {
+        return QVariant(settings.refinement.*field);
+    };
+    model.apply = [field = account.model](AppSettings &settings, const QVariant &value) {
+        settings.refinement.*field = value.toString();
+    };
+
+    QList<SettingsRow> rows{std::move(model)};
+    if (!account.caution.isEmpty()) {
+        SettingsRow caution = infoRow(account.modelRowId + QStringLiteral("Caution"),
+                                      QStringLiteral("Caution"),
+                                      QString(),
+                                      account.caution);
+        caution.visible = [field = account.model,
+                           needle = account.cautionWhenModelContains](const AppSettings &settings,
+                                                                     const Capabilities &) {
+            return (settings.refinement.*field).toCaseFolded().contains(needle);
+        };
+        rows.append(std::move(caution));
+    }
+    rows.append(choiceRow(
+        account.effortRowId,
+        account.effortLabel,
+        account.effortHelp,
+        fixedOptions(account.efforts),
+        [field = account.effort](const AppSettings &settings) { return settings.refinement.*field; },
+        [field = account.effort](AppSettings &settings, const QString &value) {
+            settings.refinement.*field = value;
+        }));
+    rows.last().tooltip = account.effortTooltip;
+    rows.append(account.authRows);
+    return {account.sectionTitle, account.note, rows};
+}
+
+SettingsPage providersPage()
+{
+    QList<SettingsSection> sections;
+    for (const ProviderAccount &account : providerAccounts()) {
+        sections.append(providerSection(account));
+    }
+    return {
+        QStringLiteral("providers"),
+        QStringLiteral("Providers"),
+        QStringLiteral("preferences-system-network"),
+        QStringLiteral("key.horizontal"),
+        sections,
+    };
+}
+
 } // namespace
 
 const SettingsPage &SettingsSchema::page(const QString &id) const
@@ -1166,7 +1371,8 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context)
              refinementPage(context),
              vocabularyPage(),
              correctionsPage(),
-             bindingsPage()}};
+             bindingsPage(),
+             providersPage()}};
 }
 
 } // namespace speecher

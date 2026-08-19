@@ -429,12 +429,12 @@ void ApplicationController::registerProviders()
         [](QObject *parent) {
             return new CodexSpeechTranscriber(parent);
         });
-    m_providers->registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("OpenAI")}, [this](QObject *parent) {
-        return new OpenAiTranscriptRefiner(m_secrets, parent);
-    });
-    m_providers->registerRefinementProvider({QStringLiteral("anthropic"), QStringLiteral("Anthropic")}, [](QObject *parent) {
-        return new AnthropicTranscriptRefiner(parent);
-    });
+    m_providers->registerRefinementProvider(
+        {QStringLiteral("openai"), QStringLiteral("OpenAI"), QString(), true},
+        [this](QObject *parent) { return new OpenAiTranscriptRefiner(m_secrets, parent); });
+    m_providers->registerRefinementProvider(
+        {QStringLiteral("anthropic"), QStringLiteral("Anthropic"), QString(), true},
+        [](QObject *parent) { return new AnthropicTranscriptRefiner(parent); });
 }
 
 void ApplicationController::refreshAccessibilityState()

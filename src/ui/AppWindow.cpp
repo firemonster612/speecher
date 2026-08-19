@@ -4,7 +4,6 @@
 #include "core/SettingsStore.h"
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/DictationPage.h"
-#include "ui/settings/ProviderSettingsPage.h"
 #include "ui/settings/SettingsPageSet.h"
 #include "ui/settings/SettingsPageSupport.h"
 

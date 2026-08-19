@@ -4,6 +4,8 @@
 #include "core/VocabularyLimit.h"
 #include "core/settings/SettingsSchema.h"
 
+#include <algorithm>
+
 using namespace speecher;
 
 namespace {
@@ -12,7 +14,7 @@ SchemaContext fakeContext()
 {
     return {
         {{QStringLiteral("claude"), QStringLiteral("Claude Voice")}},
-        {{QStringLiteral("openai"), QStringLiteral("OpenAI")}},
+        {{QStringLiteral("openai"), QStringLiteral("OpenAI"), true}},
         [] {
             return QList<RowOption>{{QStringLiteral("mic-1"), QStringLiteral("Desk microphone")}};
         },
@@ -74,7 +76,7 @@ private slots:
         QVERIFY(!row.disabledHelp.isEmpty());
     }
 
-    void onlyTheMicrophoneListIsExpensive()
+    void theOnlySlowRowsAreTheDeviceListAndTheKeyring()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
         QStringList expensive;
@@ -87,7 +89,61 @@ private slots:
                 }
             }
         }
-        QCOMPARE(expensive, QStringList{QStringLiteral("audioDevice")});
+        QCOMPARE(expensive,
+                 QStringList({QStringLiteral("audioDevice"), QStringLiteral("openAiAuth")}));
+    }
+
+    void screenshotContextFollowsWhatTheProviderCanDo()
+    {
+        SchemaContext context = fakeContext();
+        context.refinementProviders.append(
+            {QStringLiteral("local"), QStringLiteral("Local"), false});
+        const SettingsSchema schema = buildSettingsSchema(context);
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("refinement")),
+                                         QStringLiteral("includeScreenshotContext"));
+
+        AppSettings settings;
+        settings.refinement.providerId = QStringLiteral("openai");
+        QVERIFY(row.enabled(settings, Capabilities{}));
+        settings.refinement.providerId = QStringLiteral("local");
+        QVERIFY(!row.enabled(settings, Capabilities{}));
+    }
+
+    void everyProviderAccountIsTheSameFragment()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsPage &page = schema.page(QStringLiteral("providers"));
+        QCOMPARE(page.sections.size(), 2);
+        for (const SettingsSection &section : page.sections) {
+            QVERIFY(section.title.endsWith(QStringLiteral("account")));
+            const SettingsRow &model = section.rows.first();
+            QCOMPARE(model.kind, RowKind::Text);
+            QVERIFY(!model.suggestions(AppSettings{}).isEmpty());
+            QVERIFY(std::any_of(section.rows.begin(), section.rows.end(), [](const SettingsRow &row) {
+                return row.kind == RowKind::Choice;
+            }));
+            QVERIFY(std::any_of(section.rows.begin(), section.rows.end(), [](const SettingsRow &row) {
+                return row.kind == RowKind::Custom;
+            }));
+        }
+
+        AppSettings settings;
+        rowById(page, QStringLiteral("openAiModel")).apply(settings, QStringLiteral("gpt-5.4"));
+        rowById(page, QStringLiteral("anthropicEffort")).apply(settings, QStringLiteral("max"));
+        QCOMPARE(settings.refinement.openAiModel, QStringLiteral("gpt-5.4"));
+        QCOMPARE(settings.refinement.anthropicEffort, QStringLiteral("max"));
+    }
+
+    void aModelThatReadsTranscriptsAsInstructionsSaysSo()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsRow &caution = rowById(schema.page(QStringLiteral("providers")),
+                                             QStringLiteral("anthropicModelCaution"));
+        AppSettings settings;
+        QVERIFY(!caution.visible(settings, Capabilities{}));
+        settings.refinement.anthropicModel = QStringLiteral("claude-haiku-4-5-20251001");
+        QVERIFY(caution.visible(settings, Capabilities{}));
+        QVERIFY(caution.value(settings).toString().contains(QStringLiteral("instructions")));
     }
 
     void recognitionRecordsRoundTripAndRetireLegacyOverrides()

@@ -165,11 +165,19 @@ struct SettingsSchema {
     const SettingsPage &page(const QString &id) const;
 };
 
+// A refinement provider as the settings surface sees it: what to call it, and
+// what it can be asked to do.
+struct RefinementProvider {
+    QString id;
+    QString label;
+    bool supportsScreenshotContext = false;
+};
+
 // What the descriptors need to be built. A value type, so a test can make one
 // without a registry, a sound server or a window.
 struct SchemaContext {
     QList<RowOption> speechProviders;
-    QList<RowOption> refinementProviders;
+    QList<RefinementProvider> refinementProviders;
     std::function<QList<RowOption>()> audioInputDevices;
     QString primaryOutputStatus;
     // This build can set up a virtual keyboard, so the Output page carries the

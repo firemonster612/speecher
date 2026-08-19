@@ -5,7 +5,6 @@
 #include "core/SettingsStore.h"
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/Theme.h"
-#include "ui/settings/ProviderSettingsPage.h"
 
 #include <QDesktopServices>
 #include <QMessageBox>
@@ -24,6 +23,7 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *par
                                                    *controller->providerRegistry(),
                                                    controller->primaryOutputStatus())))
     , m_outputRows(*controller->settings())
+    , m_providerRows(*controller->settings(), *controller->secretStore())
     , m_general(addPage(QStringLiteral("general"), parent))
     , m_audio(addPage(QStringLiteral("audio"), parent))
     , m_applications(addPage(QStringLiteral("applications"), parent))
@@ -32,9 +32,8 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *par
     , m_vocabulary(addPage(QStringLiteral("vocabulary"), parent))
     , m_corrections(addPage(QStringLiteral("corrections"), parent))
     , m_bindings(addPage(QStringLiteral("bindings"), parent, m_bindingRows.factory()))
-    , m_providers(new ProviderSettingsPage(*controller->settings(), *controller->secretStore(), parent))
+    , m_providers(addPage(QStringLiteral("providers"), parent, m_providerRows.factory()))
 {
-    connect(m_providers, &ProviderSettingsPage::changed, this, &SettingsPageSet::changed);
     connect(controller,
             &ApplicationController::accessibilityStateChanged,
             this,
@@ -60,7 +59,7 @@ SchemaSettingsPage *SettingsPageSet::audio() const { return m_audio; }
 SchemaSettingsPage *SettingsPageSet::applications() const { return m_applications; }
 SchemaSettingsPage *SettingsPageSet::output() const { return m_output; }
 SchemaSettingsPage *SettingsPageSet::refinement() const { return m_refinement; }
-ProviderSettingsPage *SettingsPageSet::providers() const { return m_providers; }
+SchemaSettingsPage *SettingsPageSet::providers() const { return m_providers; }
 SchemaSettingsPage *SettingsPageSet::vocabulary() const { return m_vocabulary; }
 SchemaSettingsPage *SettingsPageSet::corrections() const { return m_corrections; }
 SchemaSettingsPage *SettingsPageSet::bindings() const { return m_bindings; }
@@ -77,8 +76,6 @@ void SettingsPageSet::loadBeforeShow()
     for (SchemaSettingsPage *page : std::as_const(m_pages)) {
         page->load(snapshot);
     }
-    m_providers->loadModels();
-    m_providers->loadAuthModes();
     m_outputRows.refresh();
 }
 
@@ -89,7 +86,7 @@ void SettingsPageSet::loadAfterShow()
         const QSignalBlocker blocker(page);
         page->loadExpensiveRows(snapshot);
     }
-    m_providers->loadSecret();
+    m_providerRows.loadSecret();
 }
 
 bool SettingsPageSet::save(bool showValidationErrors,
@@ -131,19 +128,16 @@ bool SettingsPageSet::save(bool showValidationErrors,
     for (const SchemaSettingsPage *page : std::as_const(m_pages)) {
         page->appendToDraft(draft);
     }
-    m_providers->appendToDraft(draft);
     settings->applySnapshot(draft);
     Theme::apply(settings->theme());
-    m_providers->saveAuthModes();
     // saveSecret says why itself, because only it knows what the keyring said.
-    if (!m_providers->saveSecret()) {
+    if (!m_providerRows.saveSecret()) {
         return refuse(SaveFailure::ProviderSecret,
                       {QStringLiteral("Could not save provider credentials")});
     }
     if (refreshPages) {
         load();
     } else {
-        m_providers->loadModels();
         m_outputRows.refresh();
     }
     return true;
@@ -176,7 +170,7 @@ bool SettingsPageSet::hasChanges() const
             return true;
         }
     }
-    return m_providers->hasModelChanges() || m_providers->hasAuthChanges();
+    return m_providerRows.hasSecretChanges();
 }
 
 void SettingsPageSet::runPageAction(const QString &rowId)

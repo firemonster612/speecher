@@ -3,8 +3,9 @@
 #include "common/test_auth.h"
 #include "core/VocabularyLimit.h"
 #include "ui/AccessibilityNotice.h"
-#include "ui/settings/ProviderSettingsPage.h"
+#include "core/SecretStore.h"
 #include "frontend/qt/OutputCustomRows.h"
+#include "frontend/qt/ProviderCustomRows.h"
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/settings/SettingsPageSupport.h"
 #include "ui/setup/SetupPages.h"
@@ -179,6 +180,30 @@ private slots:
         QCOMPARE(limit->text(),
                  VocabularyLimit::summary({QStringLiteral("Deepgram Nova 3"),
                                            QStringLiteral("Speecher")}));
+    }
+
+    void theHaikuCautionComesAndGoesWithTheModel()
+    {
+        SettingsStore settings;
+        SecretStore secrets(&settings);
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        ProviderCustomRows providerRows(settings, secrets);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+        auto *caution = page->findChild<QLabel *>(QStringLiteral("anthropicModelCaution"));
+        auto *model = page->findChild<QComboBox *>(QStringLiteral("anthropicModel"));
+        QVERIFY(caution && model);
+
+        AppSettings snapshot;
+        page->load(snapshot);
+        QVERIFY(!caution->isVisibleTo(page.get()));
+
+        snapshot.refinement.anthropicModel = QStringLiteral("claude-haiku-4-5-20251001");
+        page->load(snapshot);
+        QCOMPARE(model->currentText(), QStringLiteral("Claude Haiku 4.5"));
+        QVERIFY(caution->isVisibleTo(page.get()));
+        QVERIFY(caution->text().contains(QStringLiteral("instructions")));
     }
 
     void speechProviderChoicesComeFromTheRegistry()

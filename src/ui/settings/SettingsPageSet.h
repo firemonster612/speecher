@@ -3,6 +3,7 @@
 #include "core/settings/SettingsSchema.h"
 #include "frontend/qt/BindingRows.h"
 #include "frontend/qt/OutputCustomRows.h"
+#include "frontend/qt/ProviderCustomRows.h"
 
 #include <QObject>
 #include <QStringList>
@@ -12,7 +13,6 @@ class QScrollArea;
 namespace speecher {
 
 class ApplicationController;
-class ProviderSettingsPage;
 class SchemaSettingsPage;
 
 class SettingsPageSet : public QObject {
@@ -40,7 +40,7 @@ public:
     SchemaSettingsPage *applications() const;
     SchemaSettingsPage *output() const;
     SchemaSettingsPage *refinement() const;
-    ProviderSettingsPage *providers() const;
+    SchemaSettingsPage *providers() const;
     SchemaSettingsPage *vocabulary() const;
     SchemaSettingsPage *corrections() const;
     SchemaSettingsPage *bindings() const;
@@ -68,6 +68,7 @@ private:
     SettingsSchema m_schema;
     OutputCustomRows m_outputRows;
     BindingRows m_bindingRows;
+    ProviderCustomRows m_providerRows;
     QList<SchemaSettingsPage *> m_pages;
     SchemaSettingsPage *m_general;
     SchemaSettingsPage *m_audio;
@@ -77,7 +78,7 @@ private:
     SchemaSettingsPage *m_vocabulary;
     SchemaSettingsPage *m_corrections;
     SchemaSettingsPage *m_bindings;
-    ProviderSettingsPage *m_providers;
+    SchemaSettingsPage *m_providers;
 };
 
 } // namespace speecher

@@ -12,6 +12,9 @@ struct ProviderDescriptor {
     QString id;
     QString label;
     QString setupHint;
+    // Refinement providers only: this one can read a screenshot of the target
+    // as context, which is what the setting offering that is gated on.
+    bool supportsScreenshotContext = false;
 };
 
 class ProviderRegistry : public QObject {
