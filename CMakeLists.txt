@@ -322,11 +322,13 @@ set(SPEECHER_FRONTEND_QT_MAC_HEADERS
 )
 
 set(SPEECHER_FRONTEND_MAC_SOURCES
+  src/frontend/mac/MacCustomRows.cpp
   src/frontend/mac/MacFrontEnd.mm
   src/frontend/mac/SpeecherBridge.mm
 )
 
 set(SPEECHER_FRONTEND_MAC_HEADERS
+  src/frontend/mac/MacCustomRows.h
   src/frontend/mac/MacFrontEnd.h
   src/frontend/mac/SpeecherBridge.h
 )
