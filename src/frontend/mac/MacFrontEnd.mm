@@ -40,21 +40,28 @@ MacFrontEnd::MacFrontEnd(ApplicationController *controller)
 
 MacFrontEnd::~MacFrontEnd() = default;
 
-void MacFrontEnd::showMainWindow()
+// An empty page id leaves the window on whichever page it was showing, which
+// for a window that has just been made is the dictation page.
+void MacFrontEnd::showWindow(const QString &pageId)
 {
     if (!m_native->window) {
         m_native->window = [[SpeecherMainWindow alloc] initWithBridge:m_native->bridge];
     }
-    [m_native->window show];
+    [m_native->window showWithPage:pageId.toNSString()];
     // frontEndReady defers its work by a turn of the event loop, which is what
     // lets the window this call just ordered front draw first.
     m_controller->frontEndReady();
 }
 
-// One window so far: its sidebar is the settings surface.
+void MacFrontEnd::showMainWindow()
+{
+    showWindow(QString());
+}
+
+// One window: the settings are the rest of its sidebar.
 void MacFrontEnd::showSettingsWindow()
 {
-    showMainWindow();
+    showWindow(QStringLiteral("general"));
 }
 
 void MacFrontEnd::showSetupAssistant()

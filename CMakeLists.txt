@@ -334,6 +334,8 @@ set(SPEECHER_FRONTEND_MAC_HEADERS
 )
 
 set(SPEECHER_FRONTEND_MAC_SWIFT_SOURCES
+  src/frontend/mac/swift/CollectionTable.swift
+  src/frontend/mac/swift/DictationView.swift
   src/frontend/mac/swift/SpeecherUI.swift
 )
 

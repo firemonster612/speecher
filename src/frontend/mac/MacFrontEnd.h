@@ -28,6 +28,8 @@ public:
     void alert() override;
 
 private:
+    void showWindow(const QString &pageId);
+
     // The Objective-C objects, so this header stays includable from C++.
     struct Native;
 
