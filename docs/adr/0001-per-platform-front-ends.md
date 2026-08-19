@@ -74,7 +74,8 @@ alert sound become ports the front end implements. `PopupPositioner` stops takin
 - The price is a new core layer and rewiring nine Qt pages onto it. Those pages
   keep working throughout: the renderer replaces them page by page, and any row
   that has not been described yet stays bespoke behind a custom identifier.
-- Two pieces of domain logic must move down before a second front end can be
-  correct: duplicate paste-rule detection, which today lives in
-  `OutputSettingsPage`, and the legacy writing-profile-override migration hidden
-  in `ApplicationSettingsPage`.
+- Two pieces of domain logic had to move down before a second front end could be
+  correct, and both have: duplicate paste-rule detection is `validatePasteRules`
+  and the legacy writing-profile-override migration is
+  `recognitionRulesWithMigratedProfileOverrides`, each reached through the
+  descriptor that needs it rather than through the page that used to hold it.
