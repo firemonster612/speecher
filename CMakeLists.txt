@@ -21,6 +21,18 @@ option(SPEECHER_WITH_LAYER_SHELL "Use layer-shell-qt when available" ON)
 option(SPEECHER_WITH_QKEYCHAIN "Use QKeychain when available" ON)
 option(SPEECHER_BUILD_TESTS "Build tests" ON)
 
+# The native macOS front end. Turning it off leaves the Qt front end driving the
+# mac build, which is why the Swift language stays behind the option too.
+set(SPEECHER_SWIFT_UI_DEFAULT OFF)
+if(APPLE)
+  set(SPEECHER_SWIFT_UI_DEFAULT ON)
+endif()
+option(SPEECHER_WITH_SWIFT_UI "Build the AppKit/SwiftUI macOS front end"
+  ${SPEECHER_SWIFT_UI_DEFAULT})
+if(APPLE AND SPEECHER_WITH_SWIFT_UI)
+  enable_language(Swift)
+endif()
+
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Multimedia)
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
@@ -309,6 +321,18 @@ set(SPEECHER_FRONTEND_QT_MAC_HEADERS
   src/platform/mac/MacWindowChrome.h
 )
 
+set(SPEECHER_FRONTEND_MAC_SOURCES
+  src/frontend/mac/SpeecherBridge.mm
+)
+
+set(SPEECHER_FRONTEND_MAC_HEADERS
+  src/frontend/mac/SpeecherBridge.h
+)
+
+set(SPEECHER_FRONTEND_MAC_SWIFT_SOURCES
+  src/frontend/mac/swift/SpeecherUI.swift
+)
+
 add_library(speecher_domain STATIC
   ${SPEECHER_DOMAIN_SOURCES}
   ${SPEECHER_DOMAIN_HEADERS}
@@ -428,6 +452,54 @@ endif()
 if(KF6WidgetsAddons_FOUND AND KF6ColorScheme_FOUND)
   target_compile_definitions(speecher_frontend_qt PRIVATE SPEECHER_WITH_KCOLORSCHEME=1)
   target_link_libraries(speecher_frontend_qt PRIVATE KF6::ColorScheme)
+endif()
+
+if(APPLE AND SPEECHER_WITH_SWIFT_UI)
+  # swiftc writes the generated header itself, so the directory has to be there
+  # before the first compile.
+  set(SPEECHER_SWIFT_HEADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/swift")
+  file(MAKE_DIRECTORY "${SPEECHER_SWIFT_HEADER_DIR}")
+
+  # Swift only: CMake cannot mix Swift with another language in one target.
+  add_library(speecher_frontend_mac_swift STATIC
+    ${SPEECHER_FRONTEND_MAC_SWIFT_SOURCES}
+  )
+  set_target_properties(speecher_frontend_mac_swift PROPERTIES
+    Swift_MODULE_NAME SpeecherUI
+    Swift_LANGUAGE_VERSION 5
+    AUTOMOC OFF
+    AUTORCC OFF
+    AUTOUIC OFF
+  )
+  # SpeecherBridge.h is both the Objective-C facade and the bridging header, so
+  # Swift sees the app through it and through nothing else. The header swiftc
+  # emits in return is what lets Objective-C++ open the window.
+  target_compile_options(speecher_frontend_mac_swift PRIVATE
+    "SHELL:-import-objc-header ${CMAKE_CURRENT_SOURCE_DIR}/src/frontend/mac/SpeecherBridge.h"
+    "SHELL:-emit-objc-header -emit-objc-header-path ${SPEECHER_SWIFT_HEADER_DIR}/SpeecherUI-Swift.h"
+  )
+
+  add_library(speecher_frontend_mac STATIC
+    ${SPEECHER_FRONTEND_MAC_SOURCES}
+    ${SPEECHER_FRONTEND_MAC_HEADERS}
+  )
+  target_include_directories(speecher_frontend_mac PUBLIC src)
+  set_target_properties(speecher_frontend_mac PROPERTIES
+    AUTOMOC OFF
+    # Otherwise the Swift dependency below makes CMake archive this one with
+    # swiftc, which rejects the Objective-C++ flags.
+    LINKER_LANGUAGE OBJCXX
+  )
+  # ARC in these two files only: they hold Objective-C objects in C++ members and
+  # pass blocks across the wall, which manual retain/release would only obscure.
+  target_compile_options(speecher_frontend_mac PRIVATE
+    $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>
+  )
+  # Qt, still: the dictation popup and the setup assistant are the Qt front
+  # end's until later slices bring them across.
+  target_link_libraries(speecher_frontend_mac PUBLIC
+    speecher_frontend_qt speecher_frontend_mac_swift "-framework AppKit"
+  )
 endif()
 
 qt_add_executable(speecher
