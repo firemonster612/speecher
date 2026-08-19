@@ -1,5 +1,12 @@
 #include "core/settings/SettingsSchema.h"
 
+#include "core/BindingProcessor.h"
+#include "core/Vocabulary.h"
+#include "core/VocabularyLimit.h"
+
+#include <QDateTime>
+#include <QLocale>
+
 namespace speecher {
 
 namespace {
@@ -15,6 +22,24 @@ const QString kSourceColumn = QStringLiteral("source");
 const QString kEnabledColumn = QStringLiteral("enabled");
 const QString kApplicationColumn = QStringLiteral("application");
 const QString kMethodColumn = QStringLiteral("method");
+const QString kStarColumn = QStringLiteral("starred");
+const QString kTermColumn = QStringLiteral("term");
+const QString kUsesColumn = QStringLiteral("uses");
+const QString kLastUsedColumn = QStringLiteral("lastUsed");
+const QString kHeardColumn = QStringLiteral("original");
+const QString kCorrectedColumn = QStringLiteral("corrected");
+const QString kCorrectedAppColumn = QStringLiteral("applicationId");
+const QString kPhraseColumn = QStringLiteral("phrase");
+const QString kReplacementColumn = QStringLiteral("replacement");
+
+// Keys no column names: the editor carries them from record to record so a
+// value nobody can see survives an edit to one that everybody can.
+const QString kLastUsedMsKey = QStringLiteral("lastUsedMs");
+const QString kCorrectionIdKey = QStringLiteral("id");
+const QString kCreatedAtKey = QStringLiteral("createdAtMs");
+const QString kConfidenceKey = QStringLiteral("confidence");
+const QString kEvidenceCountKey = QStringLiteral("evidenceCount");
+const QString kLastObservedKey = QStringLiteral("lastObservedAtMs");
 
 // The paste-method value a category row carries when it defers to the global
 // fallback, which is stored as the absence of a rule.
@@ -805,6 +830,290 @@ SettingsPage outputPage(const SchemaContext &context)
     };
 }
 
+QString lastUsedLabel(qint64 lastUsedMs)
+{
+    return lastUsedMs > 0
+        ? QLocale().toString(QDateTime::fromMSecsSinceEpoch(lastUsedMs), QLocale::ShortFormat)
+        : QStringLiteral("Never");
+}
+
+QList<QVariantMap> vocabularyRecords(const QList<VocabularyEntry> &entries)
+{
+    QList<QVariantMap> records;
+    records.reserve(entries.size());
+    for (const VocabularyEntry &entry : entries) {
+        records.append({
+            {kStarColumn, entry.starred},
+            {kTermColumn, entry.term},
+            {kSourceColumn, entry.source.isEmpty() ? QStringLiteral("manual") : entry.source},
+            {kUsesColumn, qMax(0, entry.frequency)},
+            {kLastUsedColumn, lastUsedLabel(entry.lastUsedMs)},
+            {kLastUsedMsKey, entry.lastUsedMs},
+        });
+    }
+    return records;
+}
+
+QList<VocabularyEntry> vocabularyEntries(const QList<QVariantMap> &records)
+{
+    QList<VocabularyEntry> entries;
+    entries.reserve(records.size());
+    for (const QVariantMap &record : records) {
+        const QString term = record.value(kTermColumn).toString();
+        if (term.trimmed().isEmpty()) {
+            continue;
+        }
+        entries.append({term,
+                        record.value(kSourceColumn).toString(),
+                        record.value(kStarColumn).toBool(),
+                        record.value(kUsesColumn).toInt(),
+                        record.value(kLastUsedMsKey).toLongLong()});
+    }
+    return normalizeVocabularyEntries(entries);
+}
+
+QStringList vocabularyTerms(const QList<VocabularyEntry> &entries)
+{
+    QStringList terms;
+    terms.reserve(entries.size());
+    for (const VocabularyEntry &entry : entries) {
+        terms.append(entry.term);
+    }
+    return terms;
+}
+
+SettingsPage vocabularyPage()
+{
+    CollectionDescriptor terms;
+    terms.columns = {
+        {kStarColumn, QStringLiteral("Star"), ColumnKind::Toggle},
+        {kTermColumn, QStringLiteral("Term"), ColumnKind::Text, {}, true},
+        {kSourceColumn, QStringLiteral("Source"), ColumnKind::Text},
+        {kUsesColumn, QStringLiteral("Uses"), ColumnKind::ReadOnly},
+        {kLastUsedColumn, QStringLiteral("Last used"), ColumnKind::ReadOnly},
+    };
+    terms.records = [](const AppSettings &settings) {
+        return vocabularyRecords(normalizeVocabularyEntries(settings.vocabulary));
+    };
+    // Normalising here rather than on every cell edit is what lets a person
+    // finish typing a term that momentarily duplicates another one.
+    terms.apply = [](AppSettings &settings, const QList<QVariantMap> &records) {
+        settings.vocabulary = vocabularyEntries(records);
+    };
+    terms.blankRecord = {{kStarColumn, false},
+                         {kTermColumn, QString()},
+                         {kSourceColumn, QStringLiteral("manual")},
+                         {kUsesColumn, 0},
+                         {kLastUsedColumn, lastUsedLabel(0)},
+                         {kLastUsedMsKey, qint64(0)}};
+    terms.addLabel = QStringLiteral("Add");
+    terms.supportsImport = {
+        QStringLiteral("Import CSV"),
+        QStringLiteral("CSV files (*.csv);;All files (*)"),
+        QStringLiteral("Vocabulary not imported"),
+        [](const QByteArray &csv, QString *error) {
+            return vocabularyRecords(parseVocabularyCsv(csv, error));
+        },
+    };
+    terms.minimumHeight = 120;
+
+    SettingsRow limit;
+    limit.id = QStringLiteral("vocabularyLimit");
+    limit.label = QStringLiteral("Limit");
+    limit.kind = RowKind::Info;
+    limit.value = [](const AppSettings &settings) {
+        return QVariant(VocabularyLimit::summary(
+            vocabularyTerms(normalizeVocabularyEntries(settings.vocabulary))));
+    };
+
+    return {
+        QStringLiteral("vocabulary"),
+        QStringLiteral("Vocabulary"),
+        QStringLiteral("accessories-dictionary"),
+        QStringLiteral("character.book.closed"),
+        {{QString(),
+          QString(),
+          {
+              collectionRow(QStringLiteral("vocabularyEntries"),
+                            QStringLiteral("Extra vocabulary"),
+                            QStringLiteral("One term per line. Claude voice uses Deepgram Nova-3 "
+                                           "keyterms: 500 tokens and 100 keyterms maximum."),
+                            std::move(terms)),
+              std::move(limit),
+          }}},
+    };
+}
+
+QList<LearnedCorrection> learnedCorrections(const QList<QVariantMap> &records)
+{
+    QList<LearnedCorrection> corrections;
+    corrections.reserve(records.size());
+    for (const QVariantMap &record : records) {
+        LearnedCorrection correction;
+        correction.id = record.value(kCorrectionIdKey).toString();
+        correction.original = record.value(kHeardColumn).toString().trimmed();
+        correction.corrected = record.value(kCorrectedColumn).toString().trimmed();
+        correction.applicationId = record.value(kCorrectedAppColumn).toString().trimmed();
+        correction.createdAtMs = record.value(kCreatedAtKey).toLongLong();
+        correction.confidence = record.value(kConfidenceKey).toDouble();
+        correction.enabled = record.value(kEnabledColumn).toBool();
+        correction.evidenceCount = record.value(kEvidenceCountKey).toInt();
+        correction.lastObservedAtMs = record.value(kLastObservedKey).toLongLong();
+        if (!correction.id.isEmpty() && !correction.original.isEmpty()
+            && !correction.corrected.isEmpty()) {
+            corrections.append(correction);
+        }
+    }
+    return corrections;
+}
+
+SettingsPage correctionsPage()
+{
+    SettingsRow learn = toggleRow(
+        QStringLiteral("correctionLearningControl"),
+        QStringLiteral("Learn corrections"),
+        QString(),
+        [](const AppSettings &settings) { return settings.correctionLearningEnabled; },
+        [](AppSettings &settings, bool value) { settings.correctionLearningEnabled = value; });
+    learn.tooltip = QStringLiteral("Observe a verified inserted span briefly and automatically "
+                                   "learn high-confidence or repeated corrections.");
+    learn.disabledHelp =
+        QStringLiteral("Enable desktop accessibility (AT-SPI) to learn corrections after insertion.");
+    learn.enabled = [](const AppSettings &, const Capabilities &capabilities) {
+        return capabilities.targetAccessibility;
+    };
+
+    CollectionDescriptor corrections;
+    corrections.columns = {
+        {kEnabledColumn, QStringLiteral("Enabled"), ColumnKind::Toggle},
+        {kHeardColumn, QStringLiteral("Heard"), ColumnKind::Text, {}, true},
+        {kCorrectedColumn, QStringLiteral("Corrected"), ColumnKind::Text, {}, true},
+        {kCorrectedAppColumn,
+         QStringLiteral("App"),
+         ColumnKind::ReadOnly,
+         {},
+         false,
+         QString(),
+         [](const QVariantMap &record) {
+             return QStringLiteral("Learned automatically · confidence %1%")
+                 .arg(qRound(record.value(kConfidenceKey).toDouble() * 100.0));
+         }},
+    };
+    corrections.records = [](const AppSettings &settings) {
+        QList<QVariantMap> records;
+        records.reserve(settings.learnedCorrections.size());
+        for (const LearnedCorrection &correction : settings.learnedCorrections) {
+            records.append({
+                {kEnabledColumn, correction.enabled},
+                {kHeardColumn, correction.original},
+                {kCorrectedColumn, correction.corrected},
+                {kCorrectedAppColumn, correction.applicationId},
+                {kCorrectionIdKey, correction.id},
+                {kCreatedAtKey, correction.createdAtMs},
+                {kConfidenceKey, correction.confidence},
+                {kEvidenceCountKey, correction.evidenceCount},
+                {kLastObservedKey, correction.lastObservedAtMs},
+            });
+        }
+        return records;
+    };
+    corrections.apply = [](AppSettings &settings, const QList<QVariantMap> &records) {
+        settings.learnedCorrections = learnedCorrections(records);
+    };
+    // Corrections arrive from watching an edit, so there is nothing to add here.
+    corrections.actions = {
+        {QStringLiteral("undoLatestLearn"), QStringLiteral("Undo latest learn")},
+        {QStringLiteral("undoDelete"), QStringLiteral("Undo delete")},
+    };
+    corrections.minimumHeight = 180;
+
+    return {
+        QStringLiteral("corrections"),
+        QStringLiteral("Learned corrections"),
+        QStringLiteral("tools-check-spelling"),
+        QStringLiteral("checkmark.bubble"),
+        {{QString(),
+          QString(),
+          {
+              std::move(learn),
+              collectionRow(QStringLiteral("learnedCorrections"),
+                            QString(),
+                            QStringLiteral("Source-marked corrections learned after verified "
+                                           "insertion. Edit, disable, delete, or undo deletions here."),
+                            std::move(corrections)),
+          }}},
+    };
+}
+
+QList<BindingRule> bindingRules(const QList<QVariantMap> &records)
+{
+    QList<BindingRule> rules;
+    rules.reserve(records.size());
+    for (const QVariantMap &record : records) {
+        rules.append({record.value(kPhraseColumn).toString(),
+                      record.value(kReplacementColumn).toString()});
+    }
+    return rules;
+}
+
+QList<QVariantMap> bindingRecords(const QList<BindingRule> &rules)
+{
+    QList<QVariantMap> records;
+    records.reserve(rules.size());
+    for (const BindingRule &rule : rules) {
+        records.append({{kPhraseColumn, rule.phrase}, {kReplacementColumn, rule.replacement}});
+    }
+    return records;
+}
+
+SettingsPage bindingsPage()
+{
+    CollectionDescriptor replacements;
+    replacements.columns = {
+        {kPhraseColumn, QStringLiteral("Spoken phrase"), ColumnKind::Text},
+        {kReplacementColumn,
+         QStringLiteral("Exact replacement or snippet"),
+         ColumnKind::Text,
+         {},
+         true},
+    };
+    replacements.records = [](const AppSettings &settings) {
+        return bindingRecords(settings.bindings);
+    };
+    replacements.apply = [](AppSettings &settings, const QList<QVariantMap> &records) {
+        settings.bindings = BindingProcessor::validateRules(bindingRules(records)).rules;
+    };
+    replacements.validate = [](const QList<QVariantMap> &records) {
+        return BindingProcessor::validateRules(bindingRules(records)).messages();
+    };
+    replacements.blankRecord = {{kPhraseColumn, QString()}, {kReplacementColumn, QString()}};
+    replacements.addLabel = QStringLiteral("Add replacement");
+    replacements.supportsImport = {
+        QStringLiteral("Import snippets JSON"),
+        QStringLiteral("JSON files (*.json);;All files (*)"),
+        QStringLiteral("Snippets not imported"),
+        [](const QByteArray &json, QString *error) {
+            return bindingRecords(BindingProcessor::parseJsonImport(json, error));
+        },
+    };
+    replacements.minimumHeight = 180;
+
+    return {
+        QStringLiteral("bindings"),
+        QStringLiteral("Replacements & snippets"),
+        QStringLiteral("edit-find-replace"),
+        QStringLiteral("text.append"),
+        {{QString(),
+          QString(),
+          {collectionRow(QStringLiteral("bindingRules"),
+                         QStringLiteral("Replacements & snippets"),
+                         QStringLiteral("Replace a spoken phrase with exact text, including "
+                                        "multi-line snippets. Matching ignores case and treats "
+                                        "punctuation as spaces."),
+                         std::move(replacements))}}},
+    };
+}
+
 } // namespace
 
 const SettingsPage &SettingsSchema::page(const QString &id) const
@@ -852,7 +1161,10 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context)
              audioPage(context),
              applicationsPage(),
              outputPage(context),
-             refinementPage(context)}};
+             refinementPage(context),
+             vocabularyPage(),
+             correctionsPage(),
+             bindingsPage()}};
 }
 
 } // namespace speecher

@@ -1,5 +1,7 @@
 #include "common/test_suites.h"
 
+#include "core/BindingProcessor.h"
+#include "core/VocabularyLimit.h"
 #include "core/settings/SettingsSchema.h"
 
 using namespace speecher;
@@ -159,6 +161,124 @@ private slots:
         terminals.apply(settings, QStringLiteral("inherit"));
         QCOMPARE(settings.output.pasteRules.size(), 2);
         QCOMPARE(settings.output.pasteRules.first().match, QStringLiteral("unknown"));
+    }
+
+    void vocabularyIsNormalisedWhenItIsApplied()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("vocabulary")),
+                                         QStringLiteral("vocabularyEntries"));
+        const QList<QVariantMap> records{
+            {{QStringLiteral("starred"), false},
+             {QStringLiteral("term"), QStringLiteral("Speecher")},
+             {QStringLiteral("source"), QStringLiteral("manual")},
+             {QStringLiteral("uses"), 3},
+             {QStringLiteral("lastUsedMs"), qint64(1750000000000)}},
+            {{QStringLiteral("starred"), true},
+             {QStringLiteral("term"), QStringLiteral("  speecher  ")},
+             {QStringLiteral("source"), QStringLiteral("imported")},
+             {QStringLiteral("uses"), 0},
+             {QStringLiteral("lastUsedMs"), qint64(0)}},
+            {{QStringLiteral("term"), QStringLiteral("   ")}},
+        };
+
+        AppSettings settings;
+        row.collection.apply(settings, records);
+        QCOMPARE(settings.vocabulary.size(), 1);
+        QCOMPARE(settings.vocabulary.first().term, QStringLiteral("Speecher"));
+        QVERIFY(settings.vocabulary.first().starred);
+        QCOMPARE(settings.vocabulary.first().frequency, 3);
+
+        // The count a reader sees comes from the same summary the row shows.
+        const SettingsRow &limit = rowById(schema.page(QStringLiteral("vocabulary")),
+                                           QStringLiteral("vocabularyLimit"));
+        QCOMPARE(limit.value(settings).toString(),
+                 VocabularyLimit::summary({QStringLiteral("Speecher")}));
+    }
+
+    void aCorrectionKeepsTheFieldsNoColumnShows()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("corrections")),
+                                         QStringLiteral("learnedCorrections"));
+        AppSettings settings;
+        settings.learnedCorrections = {{QStringLiteral("c-1"),
+                                        QStringLiteral("speecher"),
+                                        QStringLiteral("Speecher"),
+                                        QStringLiteral("org.kde.konsole"),
+                                        1750000000000,
+                                        0.92,
+                                        true,
+                                        3,
+                                        1750000900000}};
+
+        QList<QVariantMap> records = row.collection.records(settings);
+        QCOMPARE(records.size(), 1);
+        records[0][QStringLiteral("corrected")] = QStringLiteral("Speecher!");
+        AppSettings edited;
+        row.collection.apply(edited, records);
+
+        LearnedCorrection expected = settings.learnedCorrections.first();
+        expected.corrected = QStringLiteral("Speecher!");
+        QCOMPARE(edited.learnedCorrections, QList<LearnedCorrection>{expected});
+    }
+
+    void aCorrectionColumnCanSayWhatItsRecordKnows()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("corrections")),
+                                         QStringLiteral("learnedCorrections"));
+        const CollectionColumn &application = row.collection.columns.last();
+        QVERIFY(application.recordTooltip);
+        QCOMPARE(application.recordTooltip({{QStringLiteral("confidence"), 0.92}}),
+                 QStringLiteral("Learned automatically · confidence 92%"));
+    }
+
+    void replacementValidationSpeaksForItself()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("bindings")),
+                                         QStringLiteral("bindingRules"));
+        const QList<QVariantMap> records{
+            {{QStringLiteral("phrase"), QStringLiteral("my,email")},
+             {QStringLiteral("replacement"), QStringLiteral("one")}},
+            {{QStringLiteral("phrase"), QStringLiteral("MY email")},
+             {QStringLiteral("replacement"), QStringLiteral("two")}},
+        };
+        QCOMPARE(row.collection.validate(records),
+                 BindingProcessor::validateRules({{QStringLiteral("my,email"), QStringLiteral("one")},
+                                                  {QStringLiteral("MY email"), QStringLiteral("two")}})
+                     .messages());
+        QVERIFY(!row.collection.validate(records).isEmpty());
+
+        AppSettings settings;
+        row.collection.apply(settings, records.mid(0, 1));
+        QCOMPARE(settings.bindings.size(), 1);
+        QCOMPARE(row.collection.records(settings), records.mid(0, 1));
+    }
+
+    void snippetsAndVocabularyCanComeFromAFile()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const CollectionImport &csv =
+            rowById(schema.page(QStringLiteral("vocabulary")), QStringLiteral("vocabularyEntries"))
+                .collection.supportsImport;
+        QString error;
+        const QList<QVariantMap> terms = csv.parse("term\nDeepgram\n", &error);
+        QVERIFY(error.isEmpty());
+        QCOMPARE(terms.size(), 1);
+        QCOMPARE(terms.first().value(QStringLiteral("term")).toString(),
+                 QStringLiteral("Deepgram"));
+
+        const CollectionImport &json =
+            rowById(schema.page(QStringLiteral("bindings")), QStringLiteral("bindingRules"))
+                .collection.supportsImport;
+        const QList<QVariantMap> snippets =
+            json.parse(R"([{"phrase": "sign off", "replacement": "Thanks"}])", &error);
+        QVERIFY(error.isEmpty());
+        QCOMPARE(snippets.size(), 1);
+        QCOMPARE(snippets.first().value(QStringLiteral("replacement")).toString(),
+                 QStringLiteral("Thanks"));
     }
 
     void aSavedMicrophoneSurvivesGoingMissing()

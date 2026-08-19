@@ -48,6 +48,21 @@ struct CollectionColumn {
     bool stretch = false;
     // Shown on the cells of this column.
     QString tooltip;
+    // Shown instead when what to say depends on the record, such as the
+    // confidence behind a learned correction.
+    std::function<QString(const QVariantMap &)> recordTooltip;
+};
+
+// Records a collection can be filled from a file with. Core owns the parse; the
+// file chooser and the refusal belong to the front end.
+struct CollectionImport {
+    QString actionLabel;
+    // A name filter, such as "CSV files (*.csv);;All files (*)".
+    QString fileFilter;
+    // What a front end titles a refusal, whether the parse or the merge failed.
+    QString failureTitle;
+    // Leaves error empty when every record in the file is usable.
+    std::function<QList<QVariantMap>(const QByteArray &, QString *error)> parse;
 };
 
 // A table of records with typed columns, plus add and delete. Five surfaces in
@@ -65,7 +80,14 @@ struct CollectionDescriptor {
     // Empty when the records are consistent; otherwise one message per problem,
     // ready to show to a person.
     std::function<QStringList(const QList<QVariantMap> &)> validate;
+    // Empty on a collection nothing may be added to by hand.
     QString addLabel;
+    // Set when the collection can also be filled from a file.
+    CollectionImport supportsImport;
+    // Commands beyond add and delete. The schema names them so a second front
+    // end can offer the same ones; what they do stays with the front end,
+    // because both of today's two undo its own edit history.
+    QList<RowOption> actions;
     int minimumHeight = 0;
 };
 
@@ -108,14 +130,23 @@ struct SettingsRow {
     std::function<QVariant(const AppSettings &)> value;
     std::function<void(AppSettings &, const QVariant &)> apply;
     std::function<QList<RowOption>(const AppSettings &)> options;
+    // Text rows only: values worth offering, though the row still takes any
+    // text a person types.
+    std::function<QList<RowOption>(const AppSettings &)> suggestions;
     std::function<bool(const AppSettings &, const Capabilities &)> enabled;
+    // A row that is only worth showing sometimes, such as a caution about the
+    // model currently chosen. Absent means always.
+    std::function<bool(const AppSettings &, const Capabilities &)> visible;
     // Populating this row reaches for something slow — a device enumeration, a
     // keyring — so a front end leaves it until it has painted once.
     bool expensive = false;
 };
 
 struct SettingsSection {
+    // A section without a title is one a page has only for the shape, such as a
+    // page that is nothing but its collection.
     QString title;
+    // A footnote below the section's rows.
     QString help;
     QList<SettingsRow> rows;
 };
