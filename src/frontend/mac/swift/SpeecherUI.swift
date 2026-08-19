@@ -32,6 +32,9 @@ final class SettingsModel: ObservableObject {
     /// A keyring read that lands after typing started must not overwrite it.
     private var apiKeyEdits = 0
     private var apiKeyLoaded = false
+    /// Whether the slow rows have been asked for once, after which asking again
+    /// costs nothing new.
+    private var deferredLoaded = false
 
     var accessibilitySupported: Bool { bridge.accessibilitySupported }
 
@@ -56,11 +59,12 @@ final class SettingsModel: ObservableObject {
     /// The work the first frame must not wait for: enumerating audio devices,
     /// listing CLI Proxy API accounts, and reading the keyring.
     func loadDeferredRows() {
+        deferredLoaded = true
         bridge.settingsSchema.loadExpensiveRows()
         summary = bridge.dictationSummary(resolvingMicrophone: true)
         pages = bridge.settingsSchema.pages
-        // The keyring is the one of the three that can stop to ask for an
-        // unlock, so it waits another turn rather than holding up the rest.
+        // Only the keyring can stop to ask for an unlock, so it waits another
+        // turn rather than holding up the other two.
         DispatchQueue.main.async { [weak self] in self?.loadApiKey() }
     }
 
@@ -85,7 +89,7 @@ final class SettingsModel: ObservableObject {
         bridge.settingsSchema.setValue(value, forRowId: rowId)
         bridge.settingsSchema.commit()
         pages = bridge.settingsSchema.pages
-        summary = bridge.dictationSummary(resolvingMicrophone: true)
+        summary = bridge.dictationSummary(resolvingMicrophone: deferredLoaded)
     }
 
     func binding<Value>(_ row: SettingsRowModel,
@@ -111,7 +115,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func saveApiKey() {
-        guard apiKeyLoaded || apiKeyEdits > 0 else { return }
+        guard bridge.credentialIsEditable, apiKeyLoaded || apiKeyEdits > 0 else { return }
         credentialProblem = bridge.saveApiKey(apiKey) ?? ""
     }
 
