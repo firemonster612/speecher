@@ -295,8 +295,14 @@ void SchemaSettingsPage::loadExpensiveRows(const AppSettings &settings)
 void SchemaSettingsPage::appendToDraft(AppSettings &draft) const
 {
     for (const Row &row : m_rows) {
-        if (row.descriptor.apply && row.value) {
-            row.descriptor.apply(draft, row.value());
+        if (!row.descriptor.apply || !row.value) {
+            continue;
+        }
+        // An expensive row still waiting for its choices has nothing to say,
+        // and must not overwrite the saved value with its empty one.
+        const QVariant value = row.value();
+        if (value.isValid()) {
+            row.descriptor.apply(draft, value);
         }
     }
 }
