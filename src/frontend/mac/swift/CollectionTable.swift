@@ -125,8 +125,11 @@ final class CollectionEditor: ObservableObject {
     }
 }
 
-/// The whole editor as a settings row: the table, the buttons under it, and
-/// whatever the validator refused.
+/// The whole editor, filling a card of the page's form the way the list on
+/// System Settings' Login Items does: the table, the bar of buttons under it,
+/// and whatever the validator refused. The row's own label and help are the
+/// card's header and footnote, so there is nothing to draw inside it — no
+/// border, no rounding, no inset of ours. The form's card supplies all three.
 struct CollectionRow: View {
     let row: SettingsRowModel
     @ObservedObject var model: SettingsModel
@@ -139,39 +142,36 @@ struct CollectionRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !row.label.isEmpty {
-                Text(row.label)
-            }
-            if !row.help.isEmpty {
-                Text(row.help).font(.caption).foregroundStyle(.secondary)
-            }
-            RecordTable(editor: editor)
-                .frame(minHeight: CGFloat(max(row.collection?.minimumHeight ?? 0, 160)))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
-            buttons
-            ForEach(editor.problems, id: \.self) { problem in
-                Text(problem).font(.caption).foregroundStyle(.red)
-            }
+        RecordTable(editor: editor)
+            .frame(minHeight: CGFloat(editor.collection.minimumHeight))
+            .onAppear { editor.seed(from: row) }
+        buttons
+        ForEach(editor.problems, id: \.self) { problem in
+            Text(problem).foregroundStyle(.red)
         }
-        .onAppear { editor.seed(from: row) }
     }
 
+    /// Add and remove are the accessory-bar glyphs a list has under it on macOS;
+    /// what the schema calls them becomes the tooltip. The commands that are not
+    /// add or remove have no glyph, so they stay named buttons.
     private var buttons: some View {
         HStack {
+            if !editor.collection.addLabel.isEmpty {
+                Button { editor.add() } label: { Image(systemName: "plus") }
+                    .buttonStyle(.accessoryBar)
+                    .help(editor.collection.addLabel)
+            }
+            Button { editor.deleteSelected() } label: { Image(systemName: "minus") }
+                .buttonStyle(.accessoryBar)
+                .disabled(!editor.canDelete)
+                .help("Delete the selected rows")
+            Spacer()
             if !editor.collection.importLabel.isEmpty {
                 Button(editor.collection.importLabel) { editor.importRecords() }
             }
-            Spacer()
             ForEach(editor.collection.actions, id: \.rowOptionId) { action in
                 Button(action.label) { editor.run(action.rowOptionId) }
                     .disabled(!editor.canRun(action.rowOptionId))
-            }
-            Button("Delete selected") { editor.deleteSelected() }
-                .disabled(!editor.canDelete)
-            if !editor.collection.addLabel.isEmpty {
-                Button(editor.collection.addLabel) { editor.add() }
             }
         }
     }
@@ -186,10 +186,10 @@ struct RecordTable: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let table = NSTableView()
+        // Inset, plain rows: the list on a settings pane has no stripes, and the
+        // style already picks the row height and the inset for us.
         table.style = .inset
-        table.usesAlternatingRowBackgroundColors = true
         table.allowsMultipleSelection = true
-        table.rowHeight = 22
         table.dataSource = context.coordinator
         table.delegate = context.coordinator
         // Only the columns the descriptor calls stretchy take the leftover
@@ -211,6 +211,9 @@ struct RecordTable: NSViewRepresentable {
         // and a column a reader cannot reach is a column that may as well not
         // hold anything.
         scroll.hasHorizontalScroller = true
+        // Off-screen until there is something to scroll, so a table whose
+        // columns already fit is not sitting under a pair of scroller tracks.
+        scroll.autohidesScrollers = true
         scroll.borderType = .noBorder
         scroll.drawsBackground = false
         context.coordinator.table = table

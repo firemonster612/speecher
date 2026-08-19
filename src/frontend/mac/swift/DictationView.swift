@@ -2,6 +2,7 @@ import SwiftUI
 
 /// The page the window opens on: what dictation is doing right now, and the
 /// four settings worth checking before starting, each with its way there.
+/// Ordinary grouped-form rows, so it reads like the rest of the window.
 struct DictationView: View {
     @ObservedObject var model: SettingsModel
     /// Where a "Change…" button sends the sidebar.
@@ -25,24 +26,21 @@ struct DictationView: View {
                 Section { accessibilityNotice }
             }
             Section {
-                LabeledContent("Status") {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(statusLabel)
-                        if active {
-                            ProgressView(value: Double(min(max(model.level, 0), 1)))
-                                .progressViewStyle(.linear)
-                                .frame(width: 180)
-                        }
+                LabeledContent {
+                    Button(active ? "Stop Dictation" : "Start Dictation") {
+                        model.bridge.toggle()
+                    }
+                    .buttonStyle(.borderedProminent)
+                } label: {
+                    Text("Dictation")
+                    Text(statusLabel)
+                }
+                if active {
+                    LabeledContent("Input level") {
+                        ProgressView(value: Double(min(max(model.level, 0), 1)))
+                            .progressViewStyle(.linear)
                     }
                 }
-            } header: {
-                Button(active ? "Stop Dictation" : "Start Dictation") {
-                    model.bridge.toggle()
-                }
-                .controlSize(.large)
-                .buttonStyle(.borderedProminent)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.bottom, 8)
             }
             Section("Setup at a glance") {
                 summaryRow("Refinement", model.summary.refinement, "refinement")
@@ -56,26 +54,29 @@ struct DictationView: View {
 
     private func summaryRow(_ label: String, _ value: String, _ pageId: String) -> some View {
         LabeledContent(label) {
-            HStack(spacing: 8) {
-                Text(value).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+            HStack {
+                Text(value).foregroundStyle(.secondary).lineLimit(1)
                 Button("Change…") { select(pageId) }
             }
         }
     }
 
     // macOS grants are permanent once given, so "off" is the only state to show.
+    // The warning triangle draws itself in the system's colours.
     private var accessibilityNotice: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 4) {
+        LabeledContent {
+            Button("Open Settings…") { model.requestAccessibility() }
+        } label: {
+            Label {
                 Text("Accessibility is off, so Speecher can only leave your dictation on "
                      + "the clipboard. Allow Speecher under Privacy & Security, then restart it.")
                 if !model.accessibilityProblem.isEmpty {
-                    Text(model.accessibilityProblem).font(.caption).foregroundStyle(.red)
+                    Text(model.accessibilityProblem)
                 }
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .symbolRenderingMode(.multicolor)
             }
-            Spacer(minLength: 0)
-            Button("Open settings") { model.requestAccessibility() }
         }
     }
 }
