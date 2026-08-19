@@ -2,15 +2,13 @@
 
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
+#include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/DictationPage.h"
 #include "ui/settings/BindingsSettingsPage.h"
 #include "ui/settings/ApplicationSettingsPage.h"
-#include "ui/settings/AudioSettingsPage.h"
 #include "ui/settings/CorrectionsSettingsPage.h"
-#include "ui/settings/GeneralSettingsPage.h"
 #include "ui/settings/OutputSettingsPage.h"
 #include "ui/settings/ProviderSettingsPage.h"
-#include "ui/settings/RefinementSettingsPage.h"
 #include "ui/settings/SettingsPageSet.h"
 #include "ui/settings/SettingsPageSupport.h"
 #include "ui/settings/VocabularySettingsPage.h"
@@ -135,8 +133,6 @@ AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
     buildSharedPages();
     connect(m_pages, &SettingsPageSet::changed, m_dictation, &DictationPage::refreshSummary);
     connect(m_dictation, &DictationPage::navigateRequested, this, &AppWindow::navigateToSettings);
-    connect(m_pages->general(), &GeneralSettingsPage::setupRequested,
-            m_controller, &ApplicationController::showSetupAssistant);
 
     buildSidebarShell();
     settings::applyLabelHierarchy(this);

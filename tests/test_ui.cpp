@@ -5,9 +5,8 @@
 #include "ui/settings/ApplicationSettingsPage.h"
 #include "ui/settings/CorrectionsSettingsPage.h"
 #include "ui/settings/OutputSettingsPage.h"
-#include "ui/settings/AudioSettingsPage.h"
 #include "ui/settings/ProviderSettingsPage.h"
-#include "ui/settings/RefinementSettingsPage.h"
+#include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/settings/SettingsPageSupport.h"
 #include "ui/setup/SetupPages.h"
 
@@ -21,6 +20,21 @@
 #include <QTableWidget>
 
 using namespace speecher::test;
+
+namespace {
+
+// The three migrated pages are the generic renderer over the core schema, so a
+// test builds them the same way the front end does.
+std::unique_ptr<SchemaSettingsPage> schemaPage(const QString &id,
+                                               const PlatformComposition &platform,
+                                               const ProviderRegistry &providers)
+{
+    const SettingsSchema schema =
+        buildSettingsSchema(qtSchemaContext(platform, providers, QStringLiteral("Clipboard")));
+    return std::make_unique<SchemaSettingsPage>(schema.page(id));
+}
+
+} // namespace
 
 
 class UiTests : public QObject {
@@ -100,9 +114,12 @@ private slots:
     {
         SettingsStore settings;
         ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
         OutputSettingsPage output(settings);
         ApplicationSettingsPage applications;
-        RefinementSettingsPage refinement(providers);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("refinement"), *platform, providers);
+        SchemaSettingsPage &refinement = *page;
         CorrectionsSettingsPage corrections;
         auto *correctionLearning = corrections.findChild<QCheckBox *>(
             QStringLiteral("correctionLearningControl"));
@@ -116,7 +133,7 @@ private slots:
 
         output.setTargetAccessibilityAvailable(false);
         applications.setTargetAccessibilityAvailable(false);
-        refinement.setTargetAccessibilityAvailable(false);
+        refinement.setCapabilities({false});
         corrections.setTargetAccessibilityAvailable(false);
 
         QVERIFY(!output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
@@ -126,7 +143,7 @@ private slots:
 
         output.setTargetAccessibilityAvailable(true);
         applications.setTargetAccessibilityAvailable(true);
-        refinement.setTargetAccessibilityAvailable(true);
+        refinement.setCapabilities({true});
         corrections.setTargetAccessibilityAvailable(true);
         QVERIFY(correctionLearning->toolTip().contains(QStringLiteral("repeated")));
         QVERIFY(!correctionLearning->toolTip().contains(QStringLiteral("only high-confidence")));
@@ -165,16 +182,17 @@ private slots:
         QVERIFY(setupHint->text().contains(QStringLiteral("ChatGPT app")));
 
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
-        AudioSettingsPage audio(*platform, providers);
+        const std::unique_ptr<SchemaSettingsPage> audio =
+            schemaPage(QStringLiteral("audio"), *platform, providers);
         AppSettings snapshot = settings.snapshot();
-        audio.load(snapshot);
-        auto *settingsChoice = audio.findChild<QComboBox *>(QStringLiteral("speechProvider"));
+        audio->load(snapshot);
+        auto *settingsChoice = audio->findChild<QComboBox *>(QStringLiteral("speechProvider"));
         QVERIFY(settingsChoice);
         QCOMPARE(settingsChoice->count(), 2);
         QCOMPARE(settingsChoice->currentData().toString(), QStringLiteral("codex"));
 
         settingsChoice->setCurrentIndex(settingsChoice->findData(QStringLiteral("claude")));
-        audio.appendToDraft(snapshot);
+        audio->appendToDraft(snapshot);
         QCOMPARE(snapshot.speech.providerId, QStringLiteral("claude"));
         settings.applySnapshot(snapshot);
         QCOMPARE(settings.speechProvider(), QStringLiteral("claude"));
@@ -377,6 +395,34 @@ private slots:
             QStringLiteral("Setting"), sentence, checkBox, &parent);
         QCOMPARE(checkBox->text(), sentence);
         QVERIFY(!checkBoxRow->findChild<QLabel *>(QStringLiteral("rowDescription")));
+    }
+
+    void settingsRowsGrowForWrappedDescriptions()
+    {
+        QWidget surface;
+        surface.resize(520, 240);
+        auto *layout = new QVBoxLayout(&surface);
+        auto *control = new QPushButton(QStringLiteral("A deliberately wide control"), &surface);
+        control->setFixedWidth(250);
+        QFrame *row = settings::makeRow(
+            QStringLiteral("Output"),
+            QStringLiteral("How Speecher delivers final text after dictation has completed."),
+            control,
+            &surface);
+        layout->addWidget(row);
+        layout->addStretch();
+
+        surface.show();
+        QCoreApplication::processEvents();
+        auto *description = row->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        QVERIFY(description);
+        QVERIFY(description->heightForWidth(description->width())
+                > description->fontMetrics().height());
+        QVERIFY(description->height() >= description->heightForWidth(description->width()));
+        const QRect descriptionInRow(
+            description->mapTo(row, QPoint(0, 0)), description->size());
+        QVERIFY(row->rect().contains(descriptionInRow.bottomLeft()));
+    }
     }
 
 #ifdef SPEECHER_WITH_YDOTOOL

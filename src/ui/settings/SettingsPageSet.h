@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/settings/SettingsSchema.h"
+
 #include <QObject>
 #include <QStringList>
 
@@ -9,13 +11,11 @@ namespace speecher {
 
 class ApplicationController;
 class ApplicationSettingsPage;
-class AudioSettingsPage;
 class BindingsSettingsPage;
 class CorrectionsSettingsPage;
-class GeneralSettingsPage;
 class OutputSettingsPage;
 class ProviderSettingsPage;
-class RefinementSettingsPage;
+class SchemaSettingsPage;
 class VocabularySettingsPage;
 
 class SettingsPageSet : public QObject {
@@ -38,11 +38,11 @@ public:
 
     SettingsPageSet(ApplicationController *controller, QWidget *parent);
 
-    GeneralSettingsPage *general() const;
-    AudioSettingsPage *audio() const;
+    SchemaSettingsPage *general() const;
+    SchemaSettingsPage *audio() const;
     ApplicationSettingsPage *applications() const;
     OutputSettingsPage *output() const;
-    RefinementSettingsPage *refinement() const;
+    SchemaSettingsPage *refinement() const;
     ProviderSettingsPage *providers() const;
     VocabularySettingsPage *vocabulary() const;
     CorrectionsSettingsPage *corrections() const;
@@ -62,13 +62,15 @@ signals:
 
 private:
     void updateAccessibilityState(bool supported, bool enabled, bool persistent);
+    void runPageAction(const QString &rowId);
 
     ApplicationController *m_controller;
-    GeneralSettingsPage *m_general;
-    AudioSettingsPage *m_audio;
+    SettingsSchema m_schema;
+    SchemaSettingsPage *m_general;
+    SchemaSettingsPage *m_audio;
     ApplicationSettingsPage *m_applications;
     OutputSettingsPage *m_output;
-    RefinementSettingsPage *m_refinement;
+    SchemaSettingsPage *m_refinement;
     ProviderSettingsPage *m_providers;
     VocabularySettingsPage *m_vocabulary;
     CorrectionsSettingsPage *m_corrections;

@@ -328,46 +328,30 @@ void applyLabelHierarchy(QWidget *root)
     }
 }
 
+QList<RowOption> audioInputDeviceOptions(const QList<AudioInputDeviceInfo> &devices)
+{
+    QList<RowOption> options;
+    options.reserve(devices.size());
+    for (const AudioInputDeviceInfo &device : devices) {
+        options.append({device.id,
+                        device.isDefault ? QStringLiteral("%1 (default)").arg(device.label)
+                                         : device.label});
+    }
+    return options;
+}
+
 void populateAudioInputDevices(QComboBox *combo,
                                const QList<AudioInputDeviceInfo> &devices,
                                const QString &selectedDeviceId)
 {
     const QSignalBlocker blocker(combo);
     combo->clear();
-
-    if (devices.isEmpty()) {
-        combo->addItem(QStringLiteral("No microphones found"), QString());
-        setComboItemEnabled(combo,
-                            0,
-                            false,
-                            QStringLiteral("Connect or enable an input device, then try again."));
-        if (!selectedDeviceId.isEmpty()) {
-            combo->addItem(QStringLiteral("Missing microphone"), selectedDeviceId);
-            setComboItemEnabled(combo,
-                                1,
-                                false,
-                                QStringLiteral("This saved microphone is not currently available."));
-            selectData(combo, selectedDeviceId);
+    for (const RowOption &option : audioDeviceOptions(audioInputDeviceOptions(devices),
+                                                      selectedDeviceId)) {
+        combo->addItem(option.label, option.id);
+        if (!option.enabled) {
+            setComboItemEnabled(combo, combo->count() - 1, false, option.help);
         }
-        return;
-    }
-
-    combo->addItem(QStringLiteral("System default"), QString());
-    bool selectedFound = selectedDeviceId.isEmpty();
-    for (const AudioInputDeviceInfo &device : devices) {
-        combo->addItem(device.isDefault
-                           ? QStringLiteral("%1 (default)").arg(device.label)
-                           : device.label,
-                       device.id);
-        selectedFound = selectedFound || device.id == selectedDeviceId;
-    }
-
-    if (!selectedFound) {
-        combo->addItem(QStringLiteral("Missing microphone"), selectedDeviceId);
-        setComboItemEnabled(combo,
-                            combo->count() - 1,
-                            false,
-                            QStringLiteral("This saved microphone is not currently available."));
     }
     selectData(combo, selectedDeviceId);
 }
