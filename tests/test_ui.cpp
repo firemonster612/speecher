@@ -182,6 +182,43 @@ private slots:
                                            QStringLiteral("Speecher")}));
     }
 
+    void undoingADeletedCorrectionPutsBackEverythingItKnew()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("corrections"), *platform, providers);
+        AppSettings settings;
+        settings.learnedCorrections = {
+            {QStringLiteral("c-1"), QStringLiteral("speecher"), QStringLiteral("Speecher"),
+             QStringLiteral("org.kde.konsole"), 1750000000000, 0.92, true, 3, 1750000900000},
+            {QStringLiteral("c-2"), QStringLiteral("kay dee ee"), QStringLiteral("KDE"),
+             QStringLiteral("org.mozilla.firefox"), 1749000000000, 0.71, false, 1, 1749000500000},
+        };
+        page->load(settings);
+
+        auto *table = page->findChild<QTableWidget *>(QStringLiteral("learnedCorrections"));
+        auto *remove = page->findChild<QPushButton *>(QStringLiteral("deleteLearnedCorrections"));
+        auto *undo = page->findChild<QPushButton *>(QStringLiteral("undoDeleteLearnedCorrections"));
+        QVERIFY(table && remove && undo);
+        QVERIFY(!undo->isEnabled());
+
+        table->setCurrentCell(0, 0);
+        remove->click();
+        QCOMPARE(table->rowCount(), 1);
+        QVERIFY(undo->isEnabled());
+
+        undo->click();
+        QCOMPARE(table->rowCount(), 2);
+        AppSettings draft;
+        page->appendToDraft(draft);
+        QCOMPARE(draft.learnedCorrections, settings.learnedCorrections);
+
+        // Reloading commits whatever Delete took.
+        page->load(settings);
+        QVERIFY(!undo->isEnabled());
+    }
+
     void theHaikuCautionComesAndGoesWithTheModel()
     {
         SettingsStore settings;

@@ -54,9 +54,11 @@ public:
                      std::function<void()> notifyChanged);
 
     QList<QVariantMap> records() const;
+    // What the settings hold, which starts the editor's history over.
     void setRecords(const QList<QVariantMap> &records);
 
 private:
+    void showRecords(const QList<QVariantMap> &records);
     void appendRecord(const QVariantMap &record, bool locked);
     QList<QVariantMap> lockedRecords() const;
     void importRecords();
@@ -198,7 +200,7 @@ void CollectionEditor::runAction(const QString &actionId)
     } else {
         qFatal("the Qt collection editor has no command %s", qPrintable(actionId));
     }
-    setRecords(lockedRecords() + current);
+    showRecords(lockedRecords() + current);
     m_notifyChanged();
 }
 
@@ -209,7 +211,7 @@ void CollectionEditor::importRecords()
     if (!merged) {
         return;
     }
-    setRecords(lockedRecords() + *merged);
+    showRecords(lockedRecords() + *merged);
     m_notifyChanged();
 }
 
@@ -286,6 +288,13 @@ QList<QVariantMap> CollectionEditor::records() const
 }
 
 void CollectionEditor::setRecords(const QList<QVariantMap> &records)
+{
+    // A reload has committed whatever Delete took, so there is nothing to undo.
+    m_deleted.clear();
+    showRecords(records);
+}
+
+void CollectionEditor::showRecords(const QList<QVariantMap> &records)
 {
     const QSignalBlocker blocker(m_table);
     m_table->setRowCount(0);
