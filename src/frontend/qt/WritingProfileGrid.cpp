@@ -31,23 +31,6 @@ void addWritingTones(QComboBox *combo)
     combo->addItem(QStringLiteral("Gen Z"), QStringLiteral("gen_z"));
 }
 
-QString writingProfileLabel(WritingProfile profile)
-{
-    switch (profile) {
-    case WritingProfile::Work:
-        return QStringLiteral("Work");
-    case WritingProfile::Email:
-        return QStringLiteral("Email");
-    case WritingProfile::Personal:
-        return QStringLiteral("Personal");
-    case WritingProfile::AiCoding:
-        return QStringLiteral("AI coding");
-    case WritingProfile::Other:
-        return QStringLiteral("Other");
-    }
-    return QStringLiteral("Other");
-}
-
 QList<WritingProfileSettings> gridSettings(const QTableWidget *grid)
 {
     QList<WritingProfileSettings> settings;

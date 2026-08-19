@@ -17,6 +17,7 @@ enum class RowKind {
     Number,
     Action,
     Info,
+    Collection,
     Custom,
 };
 
@@ -25,6 +26,47 @@ struct RowOption {
     QString label;
     QString help;
     bool enabled = true;
+};
+
+enum class ColumnKind {
+    Text,
+    Choice,
+    Toggle,
+    ReadOnly,
+};
+
+// One typed column of a collection. A record's value for the column lives under
+// `id` in the record, so a key no column names is metadata the editor carries
+// but never shows.
+struct CollectionColumn {
+    QString id;
+    QString title;
+    ColumnKind kind = ColumnKind::Text;
+    // Choice columns only.
+    std::function<QList<RowOption>()> options;
+    // The column that takes the leftover width; the others size to content.
+    bool stretch = false;
+    // Shown on the cells of this column.
+    QString tooltip;
+};
+
+// A table of records with typed columns, plus add and delete. Five surfaces in
+// this app are this shape, so describing it once is what lets a front end reach
+// for its own table view instead of reimplementing the editor.
+struct CollectionDescriptor {
+    QList<CollectionColumn> columns;
+    std::function<QList<QVariantMap>(const AppSettings &)> records;
+    // Receives the editable records only, never the locked ones.
+    std::function<void(AppSettings &, const QList<QVariantMap> &)> apply;
+    QVariantMap blankRecord;
+    // Leading records a reader can see but nobody can edit or delete, such as
+    // the built-in application recognition rules.
+    std::function<int()> lockedRecordCount;
+    // Empty when the records are consistent; otherwise one message per problem,
+    // ready to show to a person.
+    std::function<QStringList(const QList<QVariantMap> &)> validate;
+    QString addLabel;
+    int minimumHeight = 0;
 };
 
 struct NumberRange {
@@ -58,6 +100,11 @@ struct SettingsRow {
     QString tooltip;
     // Replaces tooltip while enabled says no.
     QString disabledHelp;
+    // Rows that name the same group render inside one container and are enabled
+    // or disabled together, so they must all declare the same gate.
+    QString groupId;
+    // Set on a Collection row, whose value and apply wrap its records.
+    CollectionDescriptor collection;
     std::function<QVariant(const AppSettings &)> value;
     std::function<void(AppSettings &, const QVariant &)> apply;
     std::function<QList<RowOption>(const AppSettings &)> options;
@@ -94,6 +141,9 @@ struct SchemaContext {
     QList<RowOption> refinementProviders;
     std::function<QList<RowOption>()> audioInputDevices;
     QString primaryOutputStatus;
+    // This build can set up a virtual keyboard, so the Output page carries the
+    // Advanced section that drives it.
+    bool virtualKeyboardSetup = false;
 };
 
 SettingsSchema buildSettingsSchema(const SchemaContext &context);

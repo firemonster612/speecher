@@ -88,6 +88,79 @@ private slots:
         QCOMPARE(expensive, QStringList{QStringLiteral("audioDevice")});
     }
 
+    void recognitionRecordsRoundTripAndRetireLegacyOverrides()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("applications")),
+                                         QStringLiteral("appRecognitionRules"));
+        const int locked = row.collection.lockedRecordCount();
+        QCOMPARE(locked, int(builtInAppRecognitionRules().size()));
+
+        AppSettings settings;
+        settings.refinement.writingProfileOverrides = {
+            {QStringLiteral("org.legacy.chat"), WritingProfile::Personal, true},
+        };
+        const QList<QVariantMap> records = row.collection.records(settings);
+        QCOMPARE(records.size(), locked + 1);
+        QCOMPARE(records.first().value(QStringLiteral("source")).toString(),
+                 QStringLiteral("Built-in"));
+        QCOMPARE(records.last().value(QStringLiteral("match")).toString(),
+                 QStringLiteral("org.legacy.chat"));
+        QCOMPARE(records.last().value(QStringLiteral("profile")).toString(),
+                 QStringLiteral("personal"));
+
+        // The locked records are shown, never applied.
+        row.collection.apply(settings, records.mid(locked));
+        QCOMPARE(settings.appRecognitionRules.size(), 1);
+        QCOMPARE(settings.appRecognitionRules.first().match, QStringLiteral("org.legacy.chat"));
+        QCOMPARE(settings.appRecognitionRules.first().writingProfile, WritingProfile::Personal);
+        QVERIFY(settings.refinement.writingProfileOverrides.isEmpty());
+        QCOMPARE(row.collection.records(settings).size(), locked + 1);
+    }
+
+    void applicationPasteRulesRoundTripAndRefuseDuplicates()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("output")),
+                                         QStringLiteral("applicationPasteRules"));
+        const QList<QVariantMap> records{
+            {{QStringLiteral("enabled"), true},
+             {QStringLiteral("application"), QStringLiteral("org.example.App")},
+             {QStringLiteral("method"), QStringLiteral("clipboard_only")}},
+            {{QStringLiteral("enabled"), true},
+             {QStringLiteral("application"), QStringLiteral("ORG.EXAMPLE.APP")},
+             {QStringLiteral("method"), QStringLiteral("standard_paste")}},
+        };
+        QCOMPARE(row.collection.validate(records),
+                 QStringList{QStringLiteral("Each application ID can have only one paste rule.")});
+        QVERIFY(row.collection.validate(records.mid(0, 1)).isEmpty());
+
+        AppSettings settings;
+        row.collection.apply(settings, records.mid(0, 1));
+        QCOMPARE(row.collection.records(settings), records.mid(0, 1));
+        // The category and global rules it does not own are still there.
+        QCOMPARE(settings.output.pasteRules.size(), defaultPasteRules().size() + 1);
+    }
+
+    void aPasteRuleForAnUnmanagedCategorySurvivesTheOnesThisBuildOffers()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsRow &terminals = rowById(schema.page(QStringLiteral("output")),
+                                               QStringLiteral("categoryPasteRule_terminal"));
+        AppSettings settings;
+        settings.output.pasteRules = {
+            {PasteRuleScope::Category, QStringLiteral("unknown"), PasteMethod::ClipboardOnly, true},
+            {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
+        };
+
+        QCOMPARE(terminals.value(settings).toString(), QStringLiteral("inherit"));
+        terminals.apply(settings, QStringLiteral("terminal_paste"));
+        QCOMPARE(terminals.value(settings).toString(), QStringLiteral("terminal_paste"));
+        terminals.apply(settings, QStringLiteral("inherit"));
+        QCOMPARE(settings.output.pasteRules.size(), 2);
+        QCOMPARE(settings.output.pasteRules.first().match, QStringLiteral("unknown"));
+    }
+
     void aSavedMicrophoneSurvivesGoingMissing()
     {
         const QList<RowOption> present{{QStringLiteral("mic-1"), QStringLiteral("Desk microphone")}};
