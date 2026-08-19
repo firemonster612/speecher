@@ -1153,6 +1153,10 @@ struct ProviderAccount {
     QList<SettingsRow> authRows;
 };
 
+// The account picker for a provider is only worth showing while its credentials
+// come from CLI Proxy API.
+const QString kCliProxyAuthMode = QStringLiteral("cliproxy");
+
 QList<RowOption> namedModels(const QStringList &ids)
 {
     QList<RowOption> models;
@@ -1199,10 +1203,14 @@ QList<ProviderAccount> providerAccounts()
     openAi.authRows = {
         customRow(QStringLiteral("openAiAuthMode"),
                   QStringLiteral("OpenAI auth mode"),
-                  QStringLiteral("Credential source used for refinement.")),
+                  QStringLiteral("Credential source for OpenAI refinement and ChatGPT Codex dictation.")),
+        customRow(QStringLiteral("openAiCliproxyAccount"),
+                  QStringLiteral("OpenAI CLI Proxy account"),
+                  QStringLiteral("CLI Proxy API Codex account used for dictation and local refinement.")),
         customRow(QStringLiteral("openAiAuth"),
                   QStringLiteral("OpenAI auth"),
-                  QStringLiteral("Current credential source or app settings key.")),
+                  QStringLiteral("Current credential source, app settings key, or CLI Proxy "
+                                 "API account.")),
     };
     openAi.authRows[0].value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.openAiAuthMode);
@@ -1210,8 +1218,17 @@ QList<ProviderAccount> providerAccounts()
     openAi.authRows[0].apply = [](AppSettings &settings, const QVariant &value) {
         settings.refinement.openAiAuthMode = value.toString();
     };
+    openAi.authRows[1].value = [](const AppSettings &settings) {
+        return QVariant(settings.refinement.openAiCliproxyAccount);
+    };
+    openAi.authRows[1].apply = [](AppSettings &settings, const QVariant &value) {
+        settings.refinement.openAiCliproxyAccount = value.toString();
+    };
+    openAi.authRows[1].visible = [](const AppSettings &settings, const Capabilities &) {
+        return settings.refinement.openAiAuthMode == kCliProxyAuthMode;
+    };
     // Reading the app settings key means asking the keyring.
-    openAi.authRows[1].expensive = true;
+    openAi.authRows[2].expensive = true;
 
     ProviderAccount anthropic;
     anthropic.sectionTitle = QStringLiteral("Anthropic account");
@@ -1219,8 +1236,11 @@ QList<ProviderAccount> providerAccounts()
     anthropic.note = QStringLiteral(
         "Automatic OpenAI auth follows the Codex auth mode when available, then falls back to "
         "Codex API key, Codex OAuth, OPENAI_API_KEY, and the app settings key. Codex OAuth uses "
-        "the ChatGPT Codex backend. The app settings key is stored in the desktop keyring through "
-        "QtKeychain when available.");
+        "the ChatGPT Codex backend. API-key modes apply to refinement; dictation uses Codex "
+        "OAuth or the selected CLI Proxy API Codex account. The app settings key is stored in "
+        "the desktop keyring through QtKeychain when available. CLI Proxy API auth reads OAuth "
+        "accounts from its auto-detected auth directory. With a server URL configured, only "
+        "refinement goes through that server; dictation still uses the selected local account.");
     anthropic.modelRowId = QStringLiteral("anthropicModel");
     anthropic.modelLabel = QStringLiteral("Claude model");
     anthropic.modelHelp = QStringLiteral("Model used for Anthropic refinement.");
@@ -1249,17 +1269,64 @@ QList<ProviderAccount> providerAccounts()
         {QStringLiteral("max"), QStringLiteral("Max")},
     };
     anthropic.effort = &RefinementSettings::anthropicEffort;
-    anthropic.authRows = {customRow(QStringLiteral("anthropicAuthMode"),
-                                    QStringLiteral("Anthropic auth"),
-                                    QStringLiteral("How Speecher sends refinement requests to Claude."))};
+    anthropic.authRows = {
+        customRow(QStringLiteral("anthropicAuthMode"),
+                  QStringLiteral("Anthropic auth"),
+                  QStringLiteral("Credential source for Anthropic refinement and Claude Voice dictation.")),
+        customRow(QStringLiteral("anthropicCliproxyAccount"),
+                  QStringLiteral("Claude CLI Proxy account"),
+                  QStringLiteral("CLI Proxy API Claude account used for dictation and local refinement.")),
+    };
     anthropic.authRows[0].value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.anthropicAuthMode);
     };
     anthropic.authRows[0].apply = [](AppSettings &settings, const QVariant &value) {
         settings.refinement.anthropicAuthMode = value.toString();
     };
+    anthropic.authRows[1].value = [](const AppSettings &settings) {
+        return QVariant(settings.refinement.anthropicCliproxyAccount);
+    };
+    anthropic.authRows[1].apply = [](AppSettings &settings, const QVariant &value) {
+        settings.refinement.anthropicCliproxyAccount = value.toString();
+    };
+    anthropic.authRows[1].visible = [](const AppSettings &settings, const Capabilities &) {
+        return settings.refinement.anthropicAuthMode == kCliProxyAuthMode;
+    };
 
     return {openAi, anthropic};
+}
+
+SettingsSection cliproxyServerSection()
+{
+    SettingsRow baseUrl = customRow(
+        QStringLiteral("cliproxyBaseUrl"),
+        QStringLiteral("Server URL"),
+        QStringLiteral("CLI Proxy API server to send refinement through. When set, the server "
+                       "picks and refreshes accounts; leave empty to read its local token files."));
+    baseUrl.value = [](const AppSettings &settings) {
+        return QVariant(settings.refinement.cliproxyBaseUrl);
+    };
+    baseUrl.apply = [](AppSettings &settings, const QVariant &value) {
+        QString base = value.toString().trimmed();
+        while (base.endsWith(QLatin1Char('/'))) {
+            base.chop(1);
+        }
+        settings.refinement.cliproxyBaseUrl = base;
+    };
+
+    SettingsRow apiKey = customRow(
+        QStringLiteral("cliproxyApiKey"),
+        QStringLiteral("Server API key"),
+        QStringLiteral("An entry from the server's api-keys list. Required when the server URL is set."));
+    apiKey.tooltip = QStringLiteral("Stored unencrypted in Speecher's settings file.");
+    apiKey.value = [](const AppSettings &settings) {
+        return QVariant(settings.refinement.cliproxyApiKey);
+    };
+    apiKey.apply = [](AppSettings &settings, const QVariant &value) {
+        settings.refinement.cliproxyApiKey = value.toString().trimmed();
+    };
+
+    return {QStringLiteral("CLI Proxy API"), QString(), {std::move(baseUrl), std::move(apiKey)}};
 }
 
 SettingsSection providerSection(const ProviderAccount &account)
@@ -1312,6 +1379,7 @@ SettingsPage providersPage()
     for (const ProviderAccount &account : providerAccounts()) {
         sections.append(providerSection(account));
     }
+    sections.append(cliproxyServerSection());
     return {
         QStringLiteral("providers"),
         QStringLiteral("Providers"),

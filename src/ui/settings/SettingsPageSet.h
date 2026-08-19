@@ -40,7 +40,8 @@ public:
     SchemaSettingsPage *applications() const;
     SchemaSettingsPage *output() const;
     SchemaSettingsPage *refinement() const;
-    SchemaSettingsPage *providers() const;
+    SchemaSettingsPage *providerModels() const;
+    SchemaSettingsPage *providerAuth() const;
     SchemaSettingsPage *vocabulary() const;
     SchemaSettingsPage *corrections() const;
     SchemaSettingsPage *bindings() const;
@@ -61,6 +62,9 @@ private:
     SchemaSettingsPage *addPage(const QString &id,
                                 QWidget *parent,
                                 SchemaCustomRowFactory customRows = {});
+    SchemaSettingsPage *addPage(const SettingsPage &page,
+                                QWidget *parent,
+                                SchemaCustomRowFactory customRows = {});
     void updateAccessibilityState(bool supported, bool enabled, bool persistent);
     void runPageAction(const QString &rowId);
 
@@ -78,7 +82,8 @@ private:
     SchemaSettingsPage *m_vocabulary;
     SchemaSettingsPage *m_corrections;
     SchemaSettingsPage *m_bindings;
-    SchemaSettingsPage *m_providers;
+    SchemaSettingsPage *m_providerModels;
+    SchemaSettingsPage *m_providerAuth;
 };
 
 } // namespace speecher

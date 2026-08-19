@@ -298,7 +298,7 @@ void AppWindow::buildSharedPages()
     refinementLayout->addSpacing(settings::sectionGap());
     refinementLayout->addWidget(detachedContent(m_pages->refinement(), true));
     refinementLayout->addSpacing(settings::groupGap());
-    refinementLayout->addWidget(m_pages->providers()->modelsContent());
+    refinementLayout->addWidget(detachedContent(m_pages->providerModels(), true));
     refinementLayout->addStretch();
     QWidget *refinement = scrollingPage(refinementContent, this);
 
@@ -308,10 +308,9 @@ void AppWindow::buildSharedPages()
     authLayout->setSpacing(0);
     authLayout->addWidget(settings::makePageTitle(QStringLiteral("Auth"), authContent));
     authLayout->addSpacing(settings::sectionGap());
-    authLayout->addWidget(m_pages->providers()->authContent());
+    authLayout->addWidget(detachedContent(m_pages->providerAuth(), true));
     authLayout->addStretch();
     QWidget *auth = scrollingPage(authContent, this);
-    m_pages->providers()->hide();
 
     auto *tabs = new QTabWidget(this);
     const auto addTab = [tabs](QScrollArea *page, const QString &title) {

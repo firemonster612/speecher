@@ -28,9 +28,13 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setOpenAiModel(draft.refinement.openAiModel);
     setOpenAiEffort(draft.refinement.openAiEffort);
     setOpenAiAuthMode(draft.refinement.openAiAuthMode);
+    setOpenAiCliproxyAccount(draft.refinement.openAiCliproxyAccount);
     setAnthropicModel(draft.refinement.anthropicModel);
     setAnthropicEffort(draft.refinement.anthropicEffort);
     setAnthropicAuthMode(draft.refinement.anthropicAuthMode);
+    setAnthropicCliproxyAccount(draft.refinement.anthropicCliproxyAccount);
+    setCliproxyBaseUrl(draft.refinement.cliproxyBaseUrl);
+    setCliproxyApiKey(draft.refinement.cliproxyApiKey);
     setOutputMethod(draft.output.method);
     setOutputFormat(draft.output.format);
     setPasteRules(draft.output.pasteRules);

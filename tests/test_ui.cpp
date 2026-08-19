@@ -14,6 +14,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFontMetrics>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStyleHints>
@@ -318,11 +319,14 @@ private slots:
         }
         SettingsStore settings;
         SecretStore secrets(&settings);
-        ProviderSettingsPage page(settings, secrets);
-        page.loadModels();
-        page.loadAuthModes();
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        ProviderCustomRows providerRows(settings, secrets);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+        page->load(settings.snapshot());
         for (const char *name : {"openAiCliproxyAccount", "anthropicCliproxyAccount"}) {
-            auto *combo = page.findChild<QComboBox *>(QString::fromLatin1(name));
+            auto *combo = page->findChild<QComboBox *>(QString::fromLatin1(name));
             QVERIFY2(combo, name);
             qInfo().noquote() << name << "dir=" << settings.cliproxyOauthDir();
             for (int i = 0; i < combo->count(); ++i) {
@@ -340,12 +344,15 @@ private slots:
         settings.raw().clear();
         settings.setOpenAiAuthMode(QStringLiteral("auto"));
         SecretStore secrets(&settings);
-        ProviderSettingsPage page(settings, secrets);
-        page.loadModels();
-        page.loadAuthModes();
-        page.loadSecret();
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        ProviderCustomRows providerRows(settings, secrets);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+        page->load(settings.snapshot());
+        providerRows.loadSecret();
 
-        auto *status = page.findChild<QLabel *>(QStringLiteral("openAiAuthStatus"));
+        auto *status = page->findChild<QLabel *>(QStringLiteral("openAiAuthStatus"));
         QVERIFY(status);
         QTRY_VERIFY_WITH_TIMEOUT(!status->text().isEmpty()
                                      && status->text() != QStringLiteral("Checking…"),
@@ -365,27 +372,38 @@ private slots:
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-b@example.com.json"), QStringLiteral("codex"),
                                      QStringLiteral("token-b"), valid));
 
-        ProviderSettingsPage page(settings, secrets);
-        page.loadModels();
-        page.loadAuthModes();
-        auto *combo = page.findChild<QComboBox *>(QStringLiteral("openAiCliproxyAccount"));
-        QVERIFY(combo);
-        QCOMPARE(combo->count(), 3);
-        QCOMPARE(combo->currentData().toString(), QString());
-        QVERIFY(!page.hasAuthChanges());
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        ProviderCustomRows providerRows(settings, secrets);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+        page->load(settings.snapshot());
 
-        combo->setCurrentIndex(combo->findData(QStringLiteral("codex-b@example.com.json")));
-        QVERIFY(!page.hasAuthChanges());
-        page.saveAuthModes();
-        QCOMPARE(settings.openAiCliproxyAccount(), QString());
+        auto *mode = page->findChild<QComboBox *>(QStringLiteral("openAiAuthMode"));
+        QVERIFY(mode);
+        QVERIFY(mode->findData(QStringLiteral("cliproxy")) >= 0);
+        auto *account = page->findChild<QComboBox *>(QStringLiteral("openAiCliproxyAccount"));
+        QVERIFY(account);
+        QCOMPARE(account->count(), 3);
+        QCOMPARE(account->currentData().toString(), QString());
+        QVERIFY(!page->hasChanges(settings.snapshot()));
+
+        // Another auth mode is chosen, so the picker is neither shown nor saved.
+        QVERIFY(!account->isVisibleTo(page.get()));
+        account->setCurrentIndex(account->findData(QStringLiteral("codex-b@example.com.json")));
+        QVERIFY(!page->hasChanges(settings.snapshot()));
+        AppSettings draft = settings.snapshot();
+        page->appendToDraft(draft);
+        QCOMPARE(draft.refinement.openAiCliproxyAccount, QString());
 
         settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
-        page.loadAuthModes();
-        combo->setCurrentIndex(combo->findData(QStringLiteral("codex-b@example.com.json")));
-        QVERIFY(page.hasAuthChanges());
-        page.saveAuthModes();
-        QCOMPARE(settings.openAiCliproxyAccount(), QStringLiteral("codex-b@example.com.json"));
-        QVERIFY(!page.hasAuthChanges());
+        page->load(settings.snapshot());
+        QVERIFY(account->isVisibleTo(page.get()));
+        account->setCurrentIndex(account->findData(QStringLiteral("codex-b@example.com.json")));
+        QVERIFY(page->hasChanges(settings.snapshot()));
+        draft = settings.snapshot();
+        page->appendToDraft(draft);
+        QCOMPARE(draft.refinement.openAiCliproxyAccount, QStringLiteral("codex-b@example.com.json"));
     }
 
     void providerSettingsPreservesSpeechAccountsInServerMode()
@@ -400,28 +418,44 @@ private slots:
         settings.setOpenAiCliproxyAccount(QStringLiteral("codex-a@example.com.json"));
         settings.setAnthropicCliproxyAccount(QStringLiteral("claude-a@example.com.json"));
         settings.setCliproxyBaseUrl(QStringLiteral("http://proxy.example:8317"));
+        settings.setCliproxyApiKey(QStringLiteral("server-key"));
         const QDateTime valid = QDateTime::currentDateTimeUtc().addSecs(3600);
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-a@example.com.json"), QStringLiteral("codex"),
                                      QStringLiteral("codex-token"), valid));
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"), QStringLiteral("claude"),
                                      QStringLiteral("claude-token"), valid));
 
-        ProviderSettingsPage page(settings, secrets);
-        page.loadModels();
-        page.loadAuthModes();
-        auto *openAi = page.findChild<QComboBox *>(QStringLiteral("openAiCliproxyAccount"));
-        auto *anthropic = page.findChild<QComboBox *>(QStringLiteral("anthropicCliproxyAccount"));
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        ProviderCustomRows providerRows(settings, secrets);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+        page->load(settings.snapshot());
+        auto *openAi = page->findChild<QComboBox *>(QStringLiteral("openAiCliproxyAccount"));
+        auto *anthropic = page->findChild<QComboBox *>(QStringLiteral("anthropicCliproxyAccount"));
+        auto *baseUrl = page->findChild<QLineEdit *>(QStringLiteral("cliproxyBaseUrl"));
+        auto *apiKey = page->findChild<QLineEdit *>(QStringLiteral("cliproxyApiKey"));
         QVERIFY(openAi);
         QVERIFY(anthropic);
+        QVERIFY(baseUrl);
+        QVERIFY(apiKey);
         QCOMPARE(openAi->currentData().toString(), QStringLiteral("codex-a@example.com.json"));
         QCOMPARE(anthropic->currentData().toString(), QStringLiteral("claude-a@example.com.json"));
         QVERIFY(openAi->isEnabled());
         QVERIFY(anthropic->isEnabled());
-        QVERIFY(!page.hasAuthChanges());
+        QCOMPARE(baseUrl->text(), QStringLiteral("http://proxy.example:8317"));
+        QCOMPARE(apiKey->echoMode(), QLineEdit::Password);
+        QVERIFY(!page->hasChanges(settings.snapshot()));
 
-        page.saveAuthModes();
+        baseUrl->setText(QStringLiteral(" http://proxy.example:8318/// "));
+        apiKey->setText(QStringLiteral("new-server-key"));
+        AppSettings draft = settings.snapshot();
+        page->appendToDraft(draft);
+        settings.applySnapshot(draft);
         QCOMPARE(settings.openAiCliproxyAccount(), QStringLiteral("codex-a@example.com.json"));
         QCOMPARE(settings.anthropicCliproxyAccount(), QStringLiteral("claude-a@example.com.json"));
+        QCOMPARE(settings.cliproxyBaseUrl(), QStringLiteral("http://proxy.example:8318"));
+        QCOMPARE(settings.cliproxyApiKey(), QStringLiteral("new-server-key"));
     }
 
     void applicationSettingsShowsBuiltInsAndAddsCustomRules()

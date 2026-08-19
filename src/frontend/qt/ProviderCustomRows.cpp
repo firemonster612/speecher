@@ -2,37 +2,29 @@
 
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
+#include "providers/ClaudeCredentials.h"
+#include "providers/CliProxyCredentials.h"
 #include "providers/OpenAiAuthProvider.h"
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QComboBox>
-#include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPalette>
-#include <QPushButton>
 #include <QSignalBlocker>
 #include <QStackedWidget>
-#include <QStyle>
+#include <QThread>
+#include <QVBoxLayout>
+
+#include <memory>
 
 namespace speecher {
 
 namespace {
 
 const QString kSettingsKeyAuthMode = QStringLiteral("settings");
-
-QIcon informationIcon(QWidget *widget)
-{
-    QIcon icon = QIcon::fromTheme(QStringLiteral("dialog-information-symbolic"));
-    if (icon.isNull()) {
-        icon = QIcon::fromTheme(QStringLiteral("dialog-information"));
-    }
-    if (icon.isNull()) {
-        icon = widget->style()->standardIcon(QStyle::SP_MessageBoxInformation, nullptr, widget);
-    }
-    return icon;
-}
+const QString kCliProxyAuthMode = QStringLiteral("cliproxy");
 
 } // namespace
 
@@ -56,6 +48,28 @@ SchemaCustomRowFactory ProviderCustomRows::factory()
         if (descriptor.id == QStringLiteral("anthropicAuthMode")) {
             return makeAnthropicAuthModeRow(parent, std::move(notifyChanged));
         }
+        if (descriptor.id == QStringLiteral("cliproxyBaseUrl")) {
+            return makeCliproxyBaseUrlRow(parent, std::move(notifyChanged));
+        }
+        if (descriptor.id == QStringLiteral("cliproxyApiKey")) {
+            return makeCliproxyApiKeyRow(parent, std::move(notifyChanged));
+        }
+        if (descriptor.id == QStringLiteral("openAiCliproxyAccount")) {
+            m_openAiCliproxyAccount = new QComboBox(parent);
+            return makeCliproxyAccountRow(m_openAiCliproxyAccount,
+                                          m_authMode,
+                                          QStringLiteral("codex"),
+                                          &m_openAiStoredAccount,
+                                          std::move(notifyChanged));
+        }
+        if (descriptor.id == QStringLiteral("anthropicCliproxyAccount")) {
+            m_anthropicCliproxyAccount = new QComboBox(parent);
+            return makeCliproxyAccountRow(m_anthropicCliproxyAccount,
+                                          m_anthropicAuthMode,
+                                          QStringLiteral("claude"),
+                                          &m_anthropicStoredAccount,
+                                          std::move(notifyChanged));
+        }
         return SchemaCustomRow{};
     };
 }
@@ -69,11 +83,16 @@ SchemaCustomRow ProviderCustomRows::makeAuthModeRow(QWidget *parent,
     m_authMode->addItem(QStringLiteral("Codex OAuth"), QStringLiteral("codex_oauth"));
     m_authMode->addItem(QStringLiteral("OPENAI_API_KEY"), QStringLiteral("env"));
     m_authMode->addItem(QStringLiteral("App settings key"), kSettingsKeyAuthMode);
+    m_authMode->addItem(QStringLiteral("CLI Proxy API"), kCliProxyAuthMode);
+    m_authMode->setToolTip(QStringLiteral(
+        "API-key modes apply to OpenAI refinement. Dictation uses Codex OAuth or the selected "
+        "CLI Proxy API Codex account."));
     QObject::connect(m_authMode,
                      &QComboBox::currentIndexChanged,
                      m_authMode,
                      [this, notifyChanged = std::move(notifyChanged)] {
                          updateCredentialControl();
+                         updateAccountTooltips();
                          notifyChanged();
                      });
     return {
@@ -91,7 +110,7 @@ SchemaCustomRow ProviderCustomRows::makeCredentialRow(QWidget *parent,
     m_apiKey = new QLineEdit(m_credential);
     m_apiKey->setEchoMode(QLineEdit::Password);
     m_apiKey->setPlaceholderText(QStringLiteral("Enter OpenAI API key"));
-    m_authStatus->setObjectName(QStringLiteral("statusText"));
+    m_authStatus->setObjectName(QStringLiteral("openAiAuthStatus"));
     m_authStatus->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     m_authStatus->setWordWrap(false);
     m_authStatus->setAttribute(Qt::WA_StyledBackground, false);
@@ -111,39 +130,202 @@ SchemaCustomRow ProviderCustomRows::makeCredentialRow(QWidget *parent,
 SchemaCustomRow ProviderCustomRows::makeAnthropicAuthModeRow(QWidget *parent,
                                                              std::function<void()> notifyChanged)
 {
-    auto *mode = new QComboBox(parent);
-    mode->addItem(QStringLiteral("Claude OAuth"), QStringLiteral("oauth"));
-    mode->setToolTip(QStringLiteral(
-        "Use the existing Claude Code OAuth session for direct Anthropic API routing."));
-    QObject::connect(mode,
-                     &QComboBox::currentIndexChanged,
-                     mode,
-                     [notifyChanged = std::move(notifyChanged)] { notifyChanged(); });
+    auto *container = new QWidget(parent);
+    auto *layout = new QVBoxLayout(container);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(6);
 
-    auto *info = new QPushButton(parent);
-    info->setIcon(informationIcon(parent));
-    info->setIconSize(QSize(14, 14));
-    info->setFlat(true);
-    info->setCursor(Qt::PointingHandCursor);
-    info->setFixedSize(22, 22);
-    info->setToolTip(QStringLiteral("How Anthropic OAuth is used."));
-    info->setAccessibleName(QStringLiteral("Anthropic auth info"));
-    QObject::connect(info, &QPushButton::clicked, info, [info] {
-        QMessageBox::information(
-            info,
-            QStringLiteral("Anthropic auth"),
-            QStringLiteral("Speecher reads the existing Claude Code OAuth session from "
-                           "~/.claude/.credentials.json and calls the Anthropic Messages API "
-                           "directly. It does not start or control a Claude Code agent session."));
-    });
+    m_anthropicAuthMode = new QComboBox(container);
+    m_anthropicAuthMode->addItem(QStringLiteral("Claude OAuth"), QStringLiteral("oauth"));
+    m_anthropicAuthMode->addItem(QStringLiteral("CLI Proxy API"), kCliProxyAuthMode);
+    m_anthropicAuthMode->setToolTip(QStringLiteral(
+        "Claude OAuth uses the existing Claude Code session. CLI Proxy API uses an OAuth "
+        "account saved by CLI Proxy API."));
+    m_anthropicAuthStatus = new QLabel(container);
+    m_anthropicAuthStatus->setObjectName(QStringLiteral("anthropicAuthStatus"));
+    m_anthropicAuthStatus->setForegroundRole(QPalette::WindowText);
+    m_anthropicAuthStatus->setAttribute(Qt::WA_StyledBackground, false);
+    m_anthropicAuthStatus->setAutoFillBackground(false);
+    layout->addWidget(m_anthropicAuthMode);
+    layout->addWidget(m_anthropicAuthStatus);
+
+    QObject::connect(m_anthropicAuthMode,
+                     &QComboBox::currentIndexChanged,
+                     m_anthropicAuthMode,
+                     [this, notifyChanged = std::move(notifyChanged)] {
+                         updateAnthropicAuthControl();
+                         updateAccountTooltips();
+                         notifyChanged();
+                     });
 
     return {
-        mode,
-        [mode] { return QVariant(mode->currentData().toString()); },
-        [mode](const QVariant &value) { settings::selectData(mode, value.toString()); },
-        false,
-        info,
+        container,
+        [this] { return QVariant(m_anthropicAuthMode->currentData().toString()); },
+        [this](const QVariant &value) {
+            settings::selectData(m_anthropicAuthMode, value.toString());
+            updateAnthropicAuthControl();
+        },
     };
+}
+
+SchemaCustomRow ProviderCustomRows::makeCliproxyBaseUrlRow(
+    QWidget *parent,
+    std::function<void()> notifyChanged)
+{
+    m_cliproxyBaseUrl = new QLineEdit(parent);
+    m_cliproxyBaseUrl->setPlaceholderText(
+        QStringLiteral("http://host:8317 — empty reads local account files"));
+    m_cliproxyBaseUrl->setClearButtonEnabled(true);
+    QObject::connect(m_cliproxyBaseUrl,
+                     &QLineEdit::textEdited,
+                     m_cliproxyBaseUrl,
+                     [this, notifyChanged = std::move(notifyChanged)] {
+                         updateAccountTooltips();
+                         updateCredentialControl();
+                         notifyChanged();
+                     });
+    return {
+        m_cliproxyBaseUrl,
+        [this] { return QVariant(editedCliproxyBaseUrl()); },
+        [this](const QVariant &value) {
+            m_cliproxyBaseUrl->setText(value.toString());
+            updateAccountTooltips();
+        },
+    };
+}
+
+SchemaCustomRow ProviderCustomRows::makeCliproxyApiKeyRow(
+    QWidget *parent,
+    std::function<void()> notifyChanged)
+{
+    m_cliproxyApiKey = new QLineEdit(parent);
+    m_cliproxyApiKey->setEchoMode(QLineEdit::Password);
+    m_cliproxyApiKey->setPlaceholderText(QStringLiteral("CLI Proxy API server api-key"));
+    m_cliproxyApiKey->setToolTip(
+        QStringLiteral("Stored unencrypted in Speecher's settings file."));
+    QObject::connect(m_cliproxyApiKey,
+                     &QLineEdit::textEdited,
+                     m_cliproxyApiKey,
+                     [this, notifyChanged = std::move(notifyChanged)] {
+                         updateCredentialControl();
+                         notifyChanged();
+                     });
+    return {
+        m_cliproxyApiKey,
+        [this] { return QVariant(editedCliproxyApiKey()); },
+        [this](const QVariant &value) { m_cliproxyApiKey->setText(value.toString()); },
+    };
+}
+
+SchemaCustomRow ProviderCustomRows::makeCliproxyAccountRow(QComboBox *account,
+                                                           const QComboBox *mode,
+                                                           const QString &type,
+                                                           QString *stored,
+                                                           std::function<void()> notifyChanged)
+{
+    QObject::connect(account,
+                     &QComboBox::currentIndexChanged,
+                     account,
+                     [this, notifyChanged = std::move(notifyChanged)] {
+                         updateCredentialControl();
+                         notifyChanged();
+                     });
+    return {
+        account,
+        // Silent unless CLI Proxy API is the chosen mode, so picking an account
+        // and then changing your mind about the mode persists neither.
+        [account, mode, stored] {
+            return mode->currentData().toString() == kCliProxyAuthMode
+                ? QVariant(comboSelection(account, *stored))
+                : QVariant();
+        },
+        [this, account, type, stored](const QVariant &value) {
+            *stored = value.toString();
+            populateCliproxyAccounts(account, type, *stored);
+        },
+    };
+}
+
+void ProviderCustomRows::populateCliproxyAccounts(QComboBox *account,
+                                                  const QString &type,
+                                                  const QString &selected)
+{
+    const QSignalBlocker blocker(account);
+    account->clear();
+    const bool serverRouted = !editedCliproxyBaseUrl().isEmpty();
+    account->setToolTip(type == QStringLiteral("codex")
+                            ? serverRouted
+                                ? QStringLiteral("Codex account used for dictation. OpenAI refinement is routed through the configured CLI Proxy API server.")
+                                : QStringLiteral("CLI Proxy API Codex account used for dictation and refinement.")
+                            : serverRouted
+                                ? QStringLiteral("Claude account used for dictation. Anthropic refinement is routed through the configured CLI Proxy API server.")
+                                : QStringLiteral("CLI Proxy API Claude account used for dictation and refinement."));
+    const QString directory = m_settings.cliproxyOauthDir();
+    const QList<CliProxyAccount> accounts = CliProxyCredentials::listAccounts(directory, type);
+    // With several accounts and none chosen yet, force an explicit choice
+    // instead of silently pinning whichever file sorts first.
+    if (selected.isEmpty() && accounts.size() > 1) {
+        account->addItem(QStringLiteral("Choose an account…"), QString());
+    }
+    for (const CliProxyAccount &candidate : accounts) {
+        account->addItem(candidate.expired ? candidate.label + QStringLiteral(" (expired)")
+                                           : candidate.label,
+                         candidate.fileName);
+        if (candidate.disabled) {
+            settings::setComboItemEnabled(account,
+                                          account->count() - 1,
+                                          false,
+                                          QStringLiteral("Disabled in CLI Proxy API"));
+        }
+    }
+    // Keep a stored selection visible even if its file is currently missing.
+    if (!selected.isEmpty() && account->findData(selected) < 0) {
+        account->addItem(selected + QStringLiteral(" (missing)"), selected);
+    }
+    if (account->count() == 0) {
+        account->addItem(QStringLiteral("No accounts found"), QString());
+        settings::setComboItemEnabled(account, 0, false, directory);
+    }
+    settings::selectData(account, selected);
+}
+
+QString ProviderCustomRows::comboSelection(const QComboBox *account, const QString &stored)
+{
+    const QString current = account->currentData().toString();
+    return current.isEmpty() ? stored : current;
+}
+
+QString ProviderCustomRows::editedCliproxyBaseUrl() const
+{
+    QString base = m_cliproxyBaseUrl ? m_cliproxyBaseUrl->text().trimmed()
+                                     : m_settings.cliproxyBaseUrl();
+    while (base.endsWith(QLatin1Char('/'))) {
+        base.chop(1);
+    }
+    return base;
+}
+
+QString ProviderCustomRows::editedCliproxyApiKey() const
+{
+    return m_cliproxyApiKey ? m_cliproxyApiKey->text().trimmed()
+                            : m_settings.cliproxyApiKey();
+}
+
+void ProviderCustomRows::updateAccountTooltips()
+{
+    const bool serverRouted = !editedCliproxyBaseUrl().isEmpty();
+    if (m_openAiCliproxyAccount) {
+        m_openAiCliproxyAccount->setToolTip(
+            serverRouted
+                ? QStringLiteral("Codex account used for dictation. OpenAI refinement is routed through the configured CLI Proxy API server.")
+                : QStringLiteral("CLI Proxy API Codex account used for dictation and refinement."));
+    }
+    if (m_anthropicCliproxyAccount) {
+        m_anthropicCliproxyAccount->setToolTip(
+            serverRouted
+                ? QStringLiteral("Claude account used for dictation. Anthropic refinement is routed through the configured CLI Proxy API server.")
+                : QStringLiteral("CLI Proxy API Claude account used for dictation and refinement."));
+    }
 }
 
 void ProviderCustomRows::loadSecret()
@@ -162,7 +344,8 @@ void ProviderCustomRows::loadSecret()
 bool ProviderCustomRows::saveSecret()
 {
     if (m_settings.openAiAuthMode() == kSettingsKeyAuthMode
-        && (m_secretLoaded || m_apiKeyEditRevision > 0)) {
+        && ((!m_secretLoaded && m_apiKeyEditRevision > 0)
+            || (m_secretLoaded && m_apiKey->text().trimmed() != m_loadedApiKey))) {
         if (!m_secrets.saveApiKey(m_apiKey->text().trimmed())) {
             QMessageBox::warning(m_credential,
                                  QStringLiteral("OpenAI key not saved"),
@@ -187,6 +370,7 @@ bool ProviderCustomRows::hasSecretChanges() const
 
 void ProviderCustomRows::updateCredentialControl()
 {
+    const quint64 generation = ++m_authStatusGeneration;
     // The auth-mode row is built before the credential it switches.
     if (!m_credential) {
         return;
@@ -199,8 +383,64 @@ void ProviderCustomRows::updateCredentialControl()
                                          : QStringLiteral("Loading app settings key…"));
         return;
     }
-    m_authStatus->setText(OpenAiAuthProvider(&m_secrets, mode).status());
     m_credential->setCurrentWidget(m_authStatus);
+    m_authStatus->setText(QStringLiteral("Checking…"));
+
+    const QString account = m_openAiCliproxyAccount
+        ? comboSelection(m_openAiCliproxyAccount, m_openAiStoredAccount)
+        : m_settings.openAiCliproxyAccount();
+    const QString cliproxyDir = m_settings.cliproxyOauthDir();
+    const QString settingsApiKey = m_loadedApiKey;
+    const QString settingsStatus = m_secrets.status();
+    const QString cliproxyBaseUrl = editedCliproxyBaseUrl();
+    const QString cliproxyApiKey = editedCliproxyApiKey();
+    const auto status = std::make_shared<QString>();
+    QThread *thread = QThread::create([mode,
+                                       account,
+                                       cliproxyDir,
+                                       settingsApiKey,
+                                       settingsStatus,
+                                       cliproxyBaseUrl,
+                                       cliproxyApiKey,
+                                       status] {
+        *status = OpenAiAuthProvider(nullptr,
+                                     mode,
+                                     account,
+                                     cliproxyDir,
+                                     settingsApiKey,
+                                     settingsStatus,
+                                     cliproxyBaseUrl,
+                                     cliproxyApiKey)
+                      .status();
+    });
+    QObject::connect(thread,
+                     &QThread::finished,
+                     m_authStatus,
+                     [this, generation, mode, status] {
+                         if (generation == m_authStatusGeneration
+                             && mode == m_authMode->currentData().toString()) {
+                             m_authStatus->setText(*status);
+                         }
+                     });
+    QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start();
+}
+
+void ProviderCustomRows::updateAnthropicAuthControl()
+{
+    if (!m_anthropicAuthMode || !m_anthropicAuthStatus) {
+        return;
+    }
+    const bool cliproxy =
+        m_anthropicAuthMode->currentData().toString() == kCliProxyAuthMode;
+    if (!cliproxy) {
+        const ClaudeCredentialResult credentials =
+            ClaudeCredentials::load(m_settings.claudeCredentialsPath(), false);
+        m_anthropicAuthStatus->setText(
+            credentials.ok ? QStringLiteral("Claude Code OAuth credentials found")
+                           : credentials.error);
+    }
+    m_anthropicAuthStatus->setVisible(!cliproxy);
 }
 
 } // namespace speecher

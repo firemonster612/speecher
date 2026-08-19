@@ -113,8 +113,8 @@ private slots:
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
         const SettingsPage &page = schema.page(QStringLiteral("providers"));
-        QCOMPARE(page.sections.size(), 2);
-        for (const SettingsSection &section : page.sections) {
+        QCOMPARE(page.sections.size(), 3);
+        for (const SettingsSection &section : page.sections.sliced(0, 2)) {
             QVERIFY(section.title.endsWith(QStringLiteral("account")));
             const SettingsRow &model = section.rows.first();
             QCOMPARE(model.kind, RowKind::Text);
@@ -132,6 +132,12 @@ private slots:
         rowById(page, QStringLiteral("anthropicEffort")).apply(settings, QStringLiteral("max"));
         QCOMPARE(settings.refinement.openAiModel, QStringLiteral("gpt-5.4"));
         QCOMPARE(settings.refinement.anthropicEffort, QStringLiteral("max"));
+
+        const SettingsSection &server = page.sections.last();
+        QCOMPARE(server.title, QStringLiteral("CLI Proxy API"));
+        QCOMPARE(server.rows.size(), 2);
+        QCOMPARE(server.rows.at(0).id, QStringLiteral("cliproxyBaseUrl"));
+        QCOMPARE(server.rows.at(1).id, QStringLiteral("cliproxyApiKey"));
     }
 
     void aModelThatReadsTranscriptsAsInstructionsSaysSo()

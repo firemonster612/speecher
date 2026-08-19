@@ -16,6 +16,32 @@
 
 namespace speecher {
 
+namespace {
+
+SettingsPage providerRowsPage(const SettingsPage &source,
+                              const QStringList &rowIds,
+                              bool includeSectionHelp)
+{
+    SettingsPage page = source;
+    page.sections.clear();
+    for (const SettingsSection &sourceSection : source.sections) {
+        SettingsSection section{sourceSection.title,
+                                includeSectionHelp ? sourceSection.help : QString(),
+                                {}};
+        for (const SettingsRow &row : sourceSection.rows) {
+            if (rowIds.contains(row.id)) {
+                section.rows.append(row);
+            }
+        }
+        if (!section.rows.isEmpty()) {
+            page.sections.append(std::move(section));
+        }
+    }
+    return page;
+}
+
+} // namespace
+
 SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *parent)
     : QObject(parent)
     , m_controller(controller)
@@ -32,7 +58,28 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *par
     , m_vocabulary(addPage(QStringLiteral("vocabulary"), parent))
     , m_corrections(addPage(QStringLiteral("corrections"), parent))
     , m_bindings(addPage(QStringLiteral("bindings"), parent, m_bindingRows.factory()))
-    , m_providers(addPage(QStringLiteral("providers"), parent, m_providerRows.factory()))
+    , m_providerModels(addPage(
+          providerRowsPage(m_schema.page(QStringLiteral("providers")),
+                           {QStringLiteral("openAiModel"),
+                            QStringLiteral("openAiModelCaution"),
+                            QStringLiteral("openAiEffort"),
+                            QStringLiteral("anthropicModel"),
+                            QStringLiteral("anthropicModelCaution"),
+                            QStringLiteral("anthropicEffort")},
+                           false),
+          parent))
+    , m_providerAuth(addPage(
+          providerRowsPage(m_schema.page(QStringLiteral("providers")),
+                           {QStringLiteral("openAiAuthMode"),
+                            QStringLiteral("openAiCliproxyAccount"),
+                            QStringLiteral("openAiAuth"),
+                            QStringLiteral("anthropicAuthMode"),
+                            QStringLiteral("anthropicCliproxyAccount"),
+                            QStringLiteral("cliproxyBaseUrl"),
+                            QStringLiteral("cliproxyApiKey")},
+                           true),
+          parent,
+          m_providerRows.factory()))
 {
     connect(controller,
             &ApplicationController::accessibilityStateChanged,
@@ -47,7 +94,14 @@ SchemaSettingsPage *SettingsPageSet::addPage(const QString &id,
                                              QWidget *parent,
                                              SchemaCustomRowFactory customRows)
 {
-    auto *page = new SchemaSettingsPage(m_schema.page(id), parent, std::move(customRows));
+    return addPage(m_schema.page(id), parent, std::move(customRows));
+}
+
+SchemaSettingsPage *SettingsPageSet::addPage(const SettingsPage &descriptor,
+                                             QWidget *parent,
+                                             SchemaCustomRowFactory customRows)
+{
+    auto *page = new SchemaSettingsPage(descriptor, parent, std::move(customRows));
     connect(page, &SchemaSettingsPage::changed, this, &SettingsPageSet::changed);
     connect(page, &SchemaSettingsPage::actionTriggered, this, &SettingsPageSet::runPageAction);
     m_pages.append(page);
@@ -59,7 +113,8 @@ SchemaSettingsPage *SettingsPageSet::audio() const { return m_audio; }
 SchemaSettingsPage *SettingsPageSet::applications() const { return m_applications; }
 SchemaSettingsPage *SettingsPageSet::output() const { return m_output; }
 SchemaSettingsPage *SettingsPageSet::refinement() const { return m_refinement; }
-SchemaSettingsPage *SettingsPageSet::providers() const { return m_providers; }
+SchemaSettingsPage *SettingsPageSet::providerModels() const { return m_providerModels; }
+SchemaSettingsPage *SettingsPageSet::providerAuth() const { return m_providerAuth; }
 SchemaSettingsPage *SettingsPageSet::vocabulary() const { return m_vocabulary; }
 SchemaSettingsPage *SettingsPageSet::corrections() const { return m_corrections; }
 SchemaSettingsPage *SettingsPageSet::bindings() const { return m_bindings; }
