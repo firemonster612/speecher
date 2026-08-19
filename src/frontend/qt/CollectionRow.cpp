@@ -16,6 +16,9 @@
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <functional>
+
 namespace speecher {
 
 namespace {
@@ -63,6 +66,7 @@ private:
     QList<QVariantMap> lockedRecords() const;
     void importRecords();
     void runAction(const QString &actionId);
+    QList<int> selectedEditableRows() const;
     void updateButtons();
 
     CollectionDescriptor m_collection;
@@ -124,7 +128,9 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     }
     m_table->verticalHeader()->hide();
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_table->setSelectionMode(QAbstractItemView::SingleSelection);
+    // Extended, not single: deleting a batch of learned corrections or imported
+    // vocabulary one row at a time is the slowest way to use this editor.
+    m_table->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_table->setMinimumHeight(m_collection.minimumHeight);
     m_delete->setObjectName(buttonObjectName(QStringLiteral("delete"), descriptor.id));
     m_delete->setEnabled(false);
@@ -172,12 +178,17 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
         });
     }
     connect(m_delete, &QPushButton::clicked, this, [this] {
-        const int row = m_table->currentRow();
-        if (row < m_lockedCount) {
+        QList<int> rows = selectedEditableRows();
+        if (rows.isEmpty()) {
             return;
         }
-        m_deleted.append(records().at(row - m_lockedCount));
-        m_table->removeRow(row);
+        // Descending, so removing a row cannot renumber the ones still to go.
+        std::sort(rows.begin(), rows.end(), std::greater<int>());
+        const QList<QVariantMap> current = records();
+        for (const int row : rows) {
+            m_deleted.append(current.at(row - m_lockedCount));
+            m_table->removeRow(row);
+        }
         updateButtons();
         m_notifyChanged();
     });
@@ -314,9 +325,23 @@ QList<QVariantMap> CollectionEditor::lockedRecords() const
     return locked;
 }
 
+QList<int> CollectionEditor::selectedEditableRows() const
+{
+    QList<int> rows;
+    const QList<QTableWidgetSelectionRange> ranges = m_table->selectedRanges();
+    for (const QTableWidgetSelectionRange &range : ranges) {
+        for (int row = range.topRow(); row <= range.bottomRow(); ++row) {
+            if (row >= m_lockedCount && !rows.contains(row)) {
+                rows.append(row);
+            }
+        }
+    }
+    return rows;
+}
+
 void CollectionEditor::updateButtons()
 {
-    m_delete->setEnabled(m_table->currentRow() >= m_lockedCount);
+    m_delete->setEnabled(!selectedEditableRows().isEmpty());
     if (QPushButton *undoDelete = m_actions.value(QStringLiteral("undoDelete"))) {
         undoDelete->setEnabled(!m_deleted.isEmpty());
     }
