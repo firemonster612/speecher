@@ -16,11 +16,7 @@ public:
     {
     }
 
-    void configurePopup(QWidget *) override
-    {
-    }
-
-    void positionBottomCenter(QWidget *) override
+    void positionBottomCenter(PopupSurface &) override
     {
     }
 };

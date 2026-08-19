@@ -144,7 +144,7 @@ set(SPEECHER_PLATFORM_SOURCES
   src/platform/ScreenshotImage.cpp
   src/platform/audio/AudioPcmConverter.cpp
   src/platform/audio/QtAudioInput.cpp
-  src/ui/FallbackPopupPositioner.cpp
+  src/platform/FallbackPopupPositioner.cpp
 )
 
 set(SPEECHER_PLATFORM_HEADERS
@@ -154,12 +154,13 @@ set(SPEECHER_PLATFORM_HEADERS
   src/output/TextDelivery.h
   src/platform/AccessibilityState.h
   src/platform/CorrectionDiff.h
+  src/platform/FallbackPopupPositioner.h
   src/platform/GlobalShortcutBinder.h
+  src/platform/PopupPositioner.h
+  src/platform/PopupSurface.h
   src/platform/ScreenshotImage.h
   src/platform/audio/AudioPcmConverter.h
   src/platform/audio/QtAudioInput.h
-  src/ui/FallbackPopupPositioner.h
-  src/ui/PopupPositioner.h
 )
 
 set(SPEECHER_PLATFORM_LINUX_SOURCES
@@ -202,7 +203,6 @@ set(SPEECHER_PLATFORM_MAC_SOURCES
   src/platform/mac/MacPopupPositioner.mm
   src/platform/mac/MacScreenshotContextProvider.mm
   src/platform/mac/MacTargetProvider.mm
-  src/platform/mac/MacWindowChrome.mm
 )
 
 set(SPEECHER_PLATFORM_MAC_HEADERS
@@ -213,7 +213,6 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
   src/platform/mac/MacPopupPositioner.h
   src/platform/mac/MacScreenshotContextProvider.h
   src/platform/mac/MacTargetProvider.h
-  src/platform/mac/MacWindowChrome.h
 )
 
 set(SPEECHER_APP_UI_SOURCES
@@ -221,6 +220,7 @@ set(SPEECHER_APP_UI_SOURCES
   src/app/CompositionSockets.cpp
   src/app/PlatformSelection.cpp
   src/app/SingleInstanceIpc.cpp
+  src/frontend/qt/QtPopupSurface.cpp
   src/ui/AccessibilityNotice.cpp
   src/ui/AppWindow.cpp
   src/ui/DictationPage.cpp
@@ -247,6 +247,7 @@ set(SPEECHER_APP_UI_HEADERS
   src/app/CompositionSockets.h
   src/app/PlatformComposition.h
   src/app/SingleInstanceIpc.h
+  src/frontend/qt/QtPopupSurface.h
   src/ui/AccessibilityNotice.h
   src/ui/AppPage.h
   src/ui/AppWindow.h
@@ -281,10 +282,12 @@ set(SPEECHER_APP_UI_LINUX_HEADERS
 
 set(SPEECHER_APP_UI_MAC_SOURCES
   src/app/MacComposition.mm
+  src/platform/mac/MacWindowChrome.mm
 )
 
 set(SPEECHER_APP_UI_MAC_HEADERS
   src/app/MacComposition.h
+  src/platform/mac/MacWindowChrome.h
 )
 
 add_library(speecher_domain STATIC
@@ -313,7 +316,9 @@ add_library(speecher_platform STATIC
   ${SPEECHER_PLATFORM_HEADERS}
 )
 target_include_directories(speecher_platform PUBLIC src)
-target_link_libraries(speecher_platform PUBLIC speecher_workflow Qt6::Widgets Qt6::Multimedia)
+# Gui, not Widgets: the popup port speaks PopupSurface so that a front end
+# built on something other than Qt Widgets can still be positioned.
+target_link_libraries(speecher_platform PUBLIC speecher_workflow Qt6::Gui Qt6::Multimedia)
 if(UNIX AND NOT APPLE)
   target_sources(speecher_platform PRIVATE
     ${SPEECHER_PLATFORM_LINUX_SOURCES}

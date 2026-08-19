@@ -1,8 +1,9 @@
 #include "platform/WaylandLayerShell.h"
 
+#include "platform/PopupSurface.h"
+
 #include <QGuiApplication>
 #include <QScreen>
-#include <QWidget>
 #include <QWindow>
 
 #ifdef SPEECHER_WITH_LAYER_SHELL
@@ -16,15 +17,10 @@ WaylandLayerShell::WaylandLayerShell(QObject *parent)
 {
 }
 
-void WaylandLayerShell::configurePopup(QWidget *widget)
+void WaylandLayerShell::configurePopup(PopupSurface &surface)
 {
-    FallbackPopupPositioner::configurePopup(widget);
-    if (!widget) {
-        return;
-    }
 #ifdef SPEECHER_WITH_LAYER_SHELL
-    widget->winId();
-    if (auto *window = LayerShellQt::Window::get(widget->windowHandle())) {
+    if (auto *window = LayerShellQt::Window::get(surface.nativeWindow())) {
         window->setScope(QStringLiteral("speecher-popup"));
         window->setLayer(LayerShellQt::Window::LayerOverlay);
         window->setKeyboardInteractivity(LayerShellQt::Window::KeyboardInteractivityNone);
@@ -34,17 +30,16 @@ void WaylandLayerShell::configurePopup(QWidget *widget)
         window->setAnchors(LayerShellQt::Window::AnchorBottom);
         window->setMargins(QMargins(0, 0, 0, 28));
 #ifdef SPEECHER_LAYER_SHELL_HAS_DESIRED_SIZE
-        window->setDesiredSize(widget->sizeHint());
+        window->setDesiredSize(surface.preferredSize());
 #endif
     }
+#else
+    Q_UNUSED(surface);
 #endif
 }
 
-void WaylandLayerShell::positionBottomCenter(QWidget *widget)
+void WaylandLayerShell::positionBottomCenter(PopupSurface &surface)
 {
-    if (!widget) {
-        return;
-    }
     const QScreen *screen = QGuiApplication::primaryScreen();
     if (!screen) {
         return;
@@ -52,23 +47,24 @@ void WaylandLayerShell::positionBottomCenter(QWidget *widget)
 #ifdef SPEECHER_WITH_LAYER_SHELL
     // The compositor owns the popup's placement once layer-shell accepted it;
     // it only needs the size and the screen.
-    if (auto *window = LayerShellQt::Window::get(widget->windowHandle())) {
-        const QSize size = widget->sizeHint();
-        widget->resize(size);
+    QWindow *handle = surface.nativeWindow();
+    if (auto *window = LayerShellQt::Window::get(handle)) {
+        const QSize size = surface.preferredSize();
+        surface.resizeTo(size);
 #ifdef SPEECHER_LAYER_SHELL_HAS_DESIRED_SIZE
         window->setDesiredSize(size);
 #endif
 #ifdef SPEECHER_LAYER_SHELL_HAS_WINDOW_SCREEN
         window->setScreen(const_cast<QScreen *>(screen));
 #else
-        if (QWindow *handle = widget->windowHandle()) {
+        if (handle) {
             handle->setScreen(const_cast<QScreen *>(screen));
         }
 #endif
         return;
     }
 #endif
-    FallbackPopupPositioner::positionBottomCenter(widget);
+    FallbackPopupPositioner::positionBottomCenter(surface);
 }
 
 } // namespace speecher

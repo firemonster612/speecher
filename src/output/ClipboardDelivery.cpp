@@ -2,7 +2,7 @@
 
 #include "dictation/DictationPorts.h"
 
-#include <QApplication>
+#include <QGuiApplication>
 #include <QClipboard>
 #include <QMimeData>
 
@@ -12,7 +12,7 @@ namespace {
 
 QClipboard *systemClipboard()
 {
-    return qApp ? QApplication::clipboard() : nullptr;
+    return qApp ? QGuiApplication::clipboard() : nullptr;
 }
 
 // QClipboard is backed by NSPasteboard on macOS and by the compositor's data

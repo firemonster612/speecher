@@ -1,7 +1,7 @@
 #include "ui/TranscriberPopup.h"
 
 #include "ui/AccessibilityNotice.h"
-#include "ui/FallbackPopupPositioner.h"
+#include "platform/FallbackPopupPositioner.h"
 #include "ui/WaveformWidget.h"
 
 #include <QApplication>
@@ -76,7 +76,9 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_NoSystemBackground);
     setAutoFillBackground(false);
-    m_positioner->configurePopup(this);
+    setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
+    setAttribute(Qt::WA_ShowWithoutActivating);
+    m_positioner->configurePopup(m_surface);
 #ifdef Q_OS_MACOS
     mac::applyPopupChrome(this);
 #endif
@@ -261,7 +263,7 @@ void TranscriberPopup::showErrorMessage(const QString &message)
 void TranscriberPopup::showPopup(quint64 generation)
 {
     m_pendingPresentationGeneration = generation;
-    m_positioner->positionBottomCenter(this);
+    m_positioner->positionBottomCenter(m_surface);
     updateWindowMask();
     show();
     raise();
@@ -275,7 +277,7 @@ void TranscriberPopup::setAccessibilityState(bool supported,
     m_accessibilityNotice->setState(supported, enabled, persistent);
     adjustSize();
     if (isVisible()) {
-        m_positioner->positionBottomCenter(this);
+        m_positioner->positionBottomCenter(m_surface);
     }
 }
 
@@ -284,7 +286,7 @@ void TranscriberPopup::showAccessibilityError(const QString &message)
     m_accessibilityNotice->showError(message);
     adjustSize();
     if (isVisible()) {
-        m_positioner->positionBottomCenter(this);
+        m_positioner->positionBottomCenter(m_surface);
     }
 }
 

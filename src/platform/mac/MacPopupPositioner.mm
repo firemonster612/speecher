@@ -1,10 +1,12 @@
 #include "platform/mac/MacPopupPositioner.h"
 
+#include "platform/PopupSurface.h"
+
 #include <QCursor>
 #include <QDebug>
 #include <QGuiApplication>
 #include <QScreen>
-#include <QWidget>
+#include <QWindow>
 
 #import <AppKit/AppKit.h>
 
@@ -15,18 +17,21 @@ MacPopupPositioner::MacPopupPositioner(QObject *parent)
 {
 }
 
-void MacPopupPositioner::configurePopup(QWidget *widget)
+void MacPopupPositioner::configurePopup(PopupSurface &surface)
 {
-    FallbackPopupPositioner::configurePopup(widget);
     // winId() only yields an NSView on the cocoa platform; under the offscreen
     // platform (tests) the handle is a foreign type and casting it crashes.
-    if (!widget || QGuiApplication::platformName() != QLatin1String("cocoa")) {
+    if (QGuiApplication::platformName() != QLatin1String("cocoa")) {
         return;
     }
 
-    // winId() forces the native window into existence; before that there is no
-    // NSWindow to harden.
-    NSView *view = reinterpret_cast<NSView *>(widget->winId());
+    // nativeWindow() forces the native window into existence; before that there
+    // is no NSWindow to harden.
+    QWindow *handle = surface.nativeWindow();
+    if (!handle) {
+        return;
+    }
+    NSView *view = reinterpret_cast<NSView *>(handle->winId());
     NSWindow *window = view.window;
     if (!window) {
         return;
@@ -53,12 +58,12 @@ void MacPopupPositioner::configurePopup(QWidget *widget)
     window.animationBehavior = NSWindowAnimationBehaviorNone;
 }
 
-void MacPopupPositioner::positionBottomCenter(QWidget *widget)
+void MacPopupPositioner::positionBottomCenter(PopupSurface &surface)
 {
     // The popup belongs on the display the user is working on, which on a
     // multi-display Mac is often not the primary one.
     const QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
-    positionBottomCenterOn(widget, screen ? screen : QGuiApplication::primaryScreen());
+    positionBottomCenterOn(surface, screen ? screen : QGuiApplication::primaryScreen());
 }
 
 } // namespace speecher

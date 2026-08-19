@@ -38,8 +38,9 @@
 #endif
 #include "platform/audio/AudioPcmConverter.h"
 #include "platform/audio/QtAudioInput.h"
+#include "platform/PopupPositioner.h"
+#include "platform/PopupSurface.h"
 #include "ui/Theme.h"
-#include "ui/PopupPositioner.h"
 #include "ui/TranscriberPopup.h"
 #include "ui/WaveformWidget.h"
 

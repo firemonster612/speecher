@@ -1,8 +1,6 @@
 #pragma once
 
-#include "ui/FallbackPopupPositioner.h"
-
-class QWidget;
+#include "platform/FallbackPopupPositioner.h"
 
 namespace speecher {
 
@@ -11,8 +9,8 @@ class MacPopupPositioner : public FallbackPopupPositioner {
 
 public:
     explicit MacPopupPositioner(QObject *parent = nullptr);
-    void configurePopup(QWidget *widget) override;
-    void positionBottomCenter(QWidget *widget) override;
+    void configurePopup(PopupSurface &surface) override;
+    void positionBottomCenter(PopupSurface &surface) override;
 };
 
 } // namespace speecher
