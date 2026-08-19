@@ -322,10 +322,12 @@ set(SPEECHER_FRONTEND_QT_MAC_HEADERS
 )
 
 set(SPEECHER_FRONTEND_MAC_SOURCES
+  src/frontend/mac/MacFrontEnd.mm
   src/frontend/mac/SpeecherBridge.mm
 )
 
 set(SPEECHER_FRONTEND_MAC_HEADERS
+  src/frontend/mac/MacFrontEnd.h
   src/frontend/mac/SpeecherBridge.h
 )
 
@@ -483,7 +485,10 @@ if(APPLE AND SPEECHER_WITH_SWIFT_UI)
     ${SPEECHER_FRONTEND_MAC_SOURCES}
     ${SPEECHER_FRONTEND_MAC_HEADERS}
   )
-  target_include_directories(speecher_frontend_mac PUBLIC src)
+  target_include_directories(speecher_frontend_mac
+    PUBLIC src
+    PRIVATE "${SPEECHER_SWIFT_HEADER_DIR}"
+  )
   set_target_properties(speecher_frontend_mac PROPERTIES
     AUTOMOC OFF
     # Otherwise the Swift dependency below makes CMake archive this one with
@@ -500,6 +505,9 @@ if(APPLE AND SPEECHER_WITH_SWIFT_UI)
   target_link_libraries(speecher_frontend_mac PUBLIC
     speecher_frontend_qt speecher_frontend_mac_swift "-framework AppKit"
   )
+  # Ninja cannot see that the .mm files need the generated header, so order the
+  # whole Swift target ahead of them.
+  add_dependencies(speecher_frontend_mac speecher_frontend_mac_swift)
 endif()
 
 qt_add_executable(speecher
@@ -511,6 +519,14 @@ target_compile_definitions(speecher PRIVATE
   SPEECHER_VERSION="${PROJECT_VERSION}"
 )
 target_link_libraries(speecher PRIVATE speecher_frontend_qt)
+if(TARGET speecher_frontend_mac)
+  target_compile_definitions(speecher PRIVATE SPEECHER_WITH_SWIFT_UI=1)
+  target_link_libraries(speecher PRIVATE speecher_frontend_mac)
+  # Same reason as the front end itself: swiftc would otherwise be handed the
+  # linker flags Qt's plugin importer contributes, and reject them. The Swift
+  # runtime still arrives, autolinked from the Swift objects.
+  set_target_properties(speecher PROPERTIES LINKER_LANGUAGE CXX)
+endif()
 
 if(APPLE)
   set_target_properties(speecher PROPERTIES

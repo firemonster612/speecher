@@ -5,6 +5,10 @@
 #include "frontend/qt/QtFrontEnd.h"
 #include "ui/Theme.h"
 
+#ifdef SPEECHER_WITH_SWIFT_UI
+#include "frontend/mac/MacFrontEnd.h"
+#endif
+
 #include <QApplication>
 #include <QDateTime>
 #include <QDir>
@@ -97,7 +101,13 @@ int main(int argc, char **argv)
     app.setQuitOnLastWindowClosed(!daemon);
 
     ApplicationController controller(daemon, platform);
+    // The one place a platform's front end is chosen; see
+    // docs/adr/0001-per-platform-front-ends.md.
+#ifdef SPEECHER_WITH_SWIFT_UI
+    MacFrontEnd frontEnd(&controller);
+#else
     QtFrontEnd frontEnd(&controller);
+#endif
     controller.setFrontEnd(&frontEnd);
     QString ipcError;
     if (!controller.startIpc(&ipcError)) {
