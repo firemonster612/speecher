@@ -54,6 +54,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/SettingsStore.cpp
   src/core/settings/CorrectionSettingsCodec.cpp
   src/core/settings/SettingsCodecs.cpp
+  src/core/settings/SettingsSchema.cpp
   src/core/settings/VocabularySettingsCodec.cpp
   src/core/SecretStore.cpp
   src/core/TranscriptState.cpp
@@ -78,6 +79,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/settings/CorrectionSettingsCodec.h
   src/core/settings/SettingsCodecs.h
   src/core/settings/SettingsKeys.h
+  src/core/settings/SettingsSchema.h
   src/core/settings/VocabularySettingsCodec.h
   src/core/SecretStore.h
   src/core/TranscriptState.h
@@ -616,6 +618,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_transcript_state.cpp
     tests/test_bindings.cpp
     tests/test_settings.cpp
+    tests/test_settings_schema.cpp
     tests/test_provider_registry.cpp
     tests/test_platform_composition.cpp
     tests/test_platform_live.cpp
