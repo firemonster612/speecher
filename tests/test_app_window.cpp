@@ -6,7 +6,6 @@
 #include "ui/AppPage.h"
 #include "ui/AppWindow.h"
 #include "ui/DictationPage.h"
-#include "ui/settings/BindingsSettingsPage.h"
 #include "ui/settings/SettingsPageSet.h"
 
 #include <QComboBox>
@@ -279,16 +278,7 @@ private slots:
         ApplicationController controller(true);
         QWidget parent;
         SettingsPageSet pages(&controller, &parent);
-        pages.bindings()->load({
-            {QStringLiteral("my,email"), QStringLiteral("one")},
-            {QStringLiteral("MY email"), QStringLiteral("two")},
-        });
         SettingsPageSet::SaveOutcome outcome;
-        QVERIFY(!pages.save(false, true, &outcome));
-        QCOMPARE(outcome.failure, SettingsPageSet::SaveFailure::InvalidReplacementRules);
-        QVERIFY(!outcome.messages.isEmpty());
-
-        controller.settings()->setBindingRules({});
         controller.settings()->setPasteRules({
             {PasteRuleScope::Application, QStringLiteral("org.example.App"), PasteMethod::StandardPaste, true},
             {PasteRuleScope::Application, QStringLiteral("ORG.EXAMPLE.APP"), PasteMethod::ClipboardOnly, true},

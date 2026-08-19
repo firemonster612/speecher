@@ -4,12 +4,9 @@
 #include "core/SettingsStore.h"
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/DictationPage.h"
-#include "ui/settings/BindingsSettingsPage.h"
-#include "ui/settings/CorrectionsSettingsPage.h"
 #include "ui/settings/ProviderSettingsPage.h"
 #include "ui/settings/SettingsPageSet.h"
 #include "ui/settings/SettingsPageSupport.h"
-#include "ui/settings/VocabularySettingsPage.h"
 
 #include <QCloseEvent>
 #include <QEvent>
@@ -318,16 +315,17 @@ void AppWindow::buildSharedPages()
     m_pages->providers()->hide();
 
     auto *tabs = new QTabWidget(this);
-    auto addTab = [tabs](QWidget *page, const QString &title) {
-        settings::applyPageMargins(page->layout());
-        tabs->addTab(scrollingPage(page, tabs), title);
+    const auto addTab = [tabs](QScrollArea *page, const QString &title) {
+        QWidget *content = detachedContent(page, true);
+        settings::applyPageMargins(content->layout());
+        auto *scroll = scrollingPage(content, tabs);
+        tabs->addTab(scroll, title);
+        return scroll;
     };
     addTab(m_pages->vocabulary(), QStringLiteral("Vocabulary"));
     addTab(m_pages->corrections(), QStringLiteral("Learned corrections"));
-    settings::applyPageMargins(m_pages->bindings()->layout());
-    auto *bindingsScroll = scrollingPage(m_pages->bindings(), tabs);
-    tabs->addTab(bindingsScroll, QStringLiteral("Replacements && snippets"));
-    m_pages->preserveBindingScroll(bindingsScroll);
+    m_pages->preserveBindingScroll(
+        addTab(m_pages->bindings(), QStringLiteral("Replacements && snippets")));
 
     auto *vocabularyContent = new QWidget(this);
     auto *vocabularyLayout = new QVBoxLayout(vocabularyContent);

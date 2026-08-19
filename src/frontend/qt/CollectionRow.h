@@ -2,6 +2,8 @@
 
 #include "frontend/qt/SchemaSettingsPage.h"
 
+#include <optional>
+
 namespace speecher {
 
 // The editor every Collection row renders as: a table built from the described
@@ -10,5 +12,12 @@ namespace speecher {
 SchemaCustomRow makeCollectionRow(const SettingsRow &descriptor,
                                   QWidget *parent,
                                   std::function<void()> notifyChanged);
+
+// Asks for a file, parses it the way the descriptor says, and merges what it
+// holds into the records already there. Returns nothing when the reader
+// cancelled or the file was refused, having already said why.
+std::optional<QList<QVariantMap>> importedRecords(QWidget *parent,
+                                                  const CollectionDescriptor &collection,
+                                                  const QList<QVariantMap> &current);
 
 } // namespace speecher

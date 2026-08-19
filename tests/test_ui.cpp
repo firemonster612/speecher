@@ -1,8 +1,8 @@
 #include "common/test_doubles.h"
 #include "common/test_http.h"
 #include "common/test_auth.h"
+#include "core/VocabularyLimit.h"
 #include "ui/AccessibilityNotice.h"
-#include "ui/settings/CorrectionsSettingsPage.h"
 #include "ui/settings/ProviderSettingsPage.h"
 #include "frontend/qt/OutputCustomRows.h"
 #include "frontend/qt/SchemaSettingsPage.h"
@@ -125,7 +125,9 @@ private slots:
         const std::unique_ptr<SchemaSettingsPage> page =
             schemaPage(QStringLiteral("refinement"), *platform, providers);
         SchemaSettingsPage &refinement = *page;
-        CorrectionsSettingsPage corrections;
+        const std::unique_ptr<SchemaSettingsPage> correctionsPage =
+            schemaPage(QStringLiteral("corrections"), *platform, providers);
+        SchemaSettingsPage &corrections = *correctionsPage;
         auto *correctionLearning = corrections.findChild<QCheckBox *>(
             QStringLiteral("correctionLearningControl"));
         QVERIFY(correctionLearning);
@@ -133,13 +135,11 @@ private slots:
         auto *profileSettings = refinement.findChild<QTableWidget *>(QStringLiteral("vocabInput"));
         QVERIFY(profileSettings);
         QCOMPARE(profileSettings->rowCount(), 5);
-        QVERIFY(correctionLearning->toolTip().contains(QStringLiteral("repeated")));
-        QVERIFY(!correctionLearning->toolTip().contains(QStringLiteral("only high-confidence")));
 
         output.setCapabilities({false});
         applications.setCapabilities({false});
         refinement.setCapabilities({false});
-        corrections.setTargetAccessibilityAvailable(false);
+        corrections.setCapabilities({false});
 
         QVERIFY(!output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
         QVERIFY(!applications.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
@@ -149,13 +149,36 @@ private slots:
         output.setCapabilities({true});
         applications.setCapabilities({true});
         refinement.setCapabilities({true});
-        corrections.setTargetAccessibilityAvailable(true);
+        corrections.setCapabilities({true});
+        // A row that is usable says what it does; one that is not says why.
         QVERIFY(correctionLearning->toolTip().contains(QStringLiteral("repeated")));
         QVERIFY(!correctionLearning->toolTip().contains(QStringLiteral("only high-confidence")));
         QVERIFY(output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
         QVERIFY(applications.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
         QVERIFY(refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
+    }
+
+    void theVocabularyLimitFollowsTheTable()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("vocabulary"), *platform, providers);
+        AppSettings settings;
+        settings.vocabulary = {{QStringLiteral("Speecher")}, {QStringLiteral("Deepgram")}};
+        page->load(settings);
+
+        auto *table = page->findChild<QTableWidget *>(QStringLiteral("vocabularyEntries"));
+        auto *limit = page->findChild<QLabel *>(QStringLiteral("vocabularyLimit"));
+        QVERIFY(table && limit);
+        QCOMPARE(limit->text(),
+                 VocabularyLimit::summary({QStringLiteral("Deepgram"), QStringLiteral("Speecher")}));
+
+        table->item(0, 1)->setText(QStringLiteral("Deepgram Nova 3"));
+        QCOMPARE(limit->text(),
+                 VocabularyLimit::summary({QStringLiteral("Deepgram Nova 3"),
+                                           QStringLiteral("Speecher")}));
     }
 
     void speechProviderChoicesComeFromTheRegistry()

@@ -61,7 +61,6 @@ private:
     QList<QVariantMap> lockedRecords() const;
     void importRecords();
     void runAction(const QString &actionId);
-    void refuse(const QString &message);
     void updateButtons();
 
     CollectionDescriptor m_collection;
@@ -203,41 +202,14 @@ void CollectionEditor::runAction(const QString &actionId)
     m_notifyChanged();
 }
 
-void CollectionEditor::refuse(const QString &message)
-{
-    QMessageBox::warning(this, m_collection.supportsImport.failureTitle, message);
-}
-
 void CollectionEditor::importRecords()
 {
-    const CollectionImport &source = m_collection.supportsImport;
-    const QString path = QFileDialog::getOpenFileName(this,
-                                                      source.actionLabel,
-                                                      QString(),
-                                                      source.fileFilter);
-    if (path.isEmpty()) {
+    const std::optional<QList<QVariantMap>> merged =
+        importedRecords(this, m_collection, records());
+    if (!merged) {
         return;
     }
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        refuse(QStringLiteral("Could not read %1.").arg(path));
-        return;
-    }
-    QString error;
-    const QList<QVariantMap> imported = source.parse(file.readAll(), &error);
-    if (!error.isEmpty()) {
-        refuse(error);
-        return;
-    }
-    const QList<QVariantMap> merged = records() + imported;
-    if (m_collection.validate) {
-        const QStringList problems = m_collection.validate(merged);
-        if (!problems.isEmpty()) {
-            refuse(problems.join(QLatin1Char('\n')));
-            return;
-        }
-    }
-    setRecords(lockedRecords() + merged);
+    setRecords(lockedRecords() + *merged);
     m_notifyChanged();
 }
 
@@ -345,6 +317,39 @@ void CollectionEditor::updateButtons()
 }
 
 } // namespace
+
+std::optional<QList<QVariantMap>> importedRecords(QWidget *parent,
+                                                  const CollectionDescriptor &collection,
+                                                  const QList<QVariantMap> &current)
+{
+    const CollectionImport &source = collection.supportsImport;
+    const auto refuse = [parent, &source](const QString &message) {
+        QMessageBox::warning(parent, source.failureTitle, message);
+        return std::optional<QList<QVariantMap>>();
+    };
+    const QString path =
+        QFileDialog::getOpenFileName(parent, source.actionLabel, QString(), source.fileFilter);
+    if (path.isEmpty()) {
+        return {};
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return refuse(QStringLiteral("Could not read %1.").arg(path));
+    }
+    QString error;
+    const QList<QVariantMap> imported = source.parse(file.readAll(), &error);
+    if (!error.isEmpty()) {
+        return refuse(error);
+    }
+    const QList<QVariantMap> merged = current + imported;
+    if (collection.validate) {
+        const QStringList problems = collection.validate(merged);
+        if (!problems.isEmpty()) {
+            return refuse(problems.join(QLatin1Char('\n')));
+        }
+    }
+    return merged;
+}
 
 SchemaCustomRow makeCollectionRow(const SettingsRow &descriptor,
                                   QWidget *parent,

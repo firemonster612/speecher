@@ -915,7 +915,9 @@ SettingsPage vocabularyPage()
             return vocabularyRecords(parseVocabularyCsv(csv, error));
         },
     };
-    terms.minimumHeight = 120;
+    // These three are the whole page they sit on, so they get the editor a
+    // page can hold rather than the one an embedded table needs.
+    terms.minimumHeight = 320;
 
     SettingsRow limit;
     limit.id = QStringLiteral("vocabularyLimit");
@@ -1025,7 +1027,7 @@ SettingsPage correctionsPage()
         {QStringLiteral("undoLatestLearn"), QStringLiteral("Undo latest learn")},
         {QStringLiteral("undoDelete"), QStringLiteral("Undo delete")},
     };
-    corrections.minimumHeight = 180;
+    corrections.minimumHeight = 320;
 
     return {
         QStringLiteral("corrections"),
@@ -1096,7 +1098,7 @@ SettingsPage bindingsPage()
             return bindingRecords(BindingProcessor::parseJsonImport(json, error));
         },
     };
-    replacements.minimumHeight = 180;
+    replacements.minimumHeight = 320;
 
     return {
         QStringLiteral("bindings"),

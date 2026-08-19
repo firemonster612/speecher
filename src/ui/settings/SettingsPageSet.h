@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/settings/SettingsSchema.h"
+#include "frontend/qt/BindingRows.h"
 #include "frontend/qt/OutputCustomRows.h"
 
 #include <QObject>
@@ -11,11 +12,8 @@ class QScrollArea;
 namespace speecher {
 
 class ApplicationController;
-class BindingsSettingsPage;
-class CorrectionsSettingsPage;
 class ProviderSettingsPage;
 class SchemaSettingsPage;
-class VocabularySettingsPage;
 
 class SettingsPageSet : public QObject {
     Q_OBJECT
@@ -43,9 +41,9 @@ public:
     SchemaSettingsPage *output() const;
     SchemaSettingsPage *refinement() const;
     ProviderSettingsPage *providers() const;
-    VocabularySettingsPage *vocabulary() const;
-    CorrectionsSettingsPage *corrections() const;
-    BindingsSettingsPage *bindings() const;
+    SchemaSettingsPage *vocabulary() const;
+    SchemaSettingsPage *corrections() const;
+    SchemaSettingsPage *bindings() const;
 
     void load();
     void loadBeforeShow();
@@ -60,21 +58,26 @@ signals:
     void changed();
 
 private:
+    SchemaSettingsPage *addPage(const QString &id,
+                                QWidget *parent,
+                                SchemaCustomRowFactory customRows = {});
     void updateAccessibilityState(bool supported, bool enabled, bool persistent);
     void runPageAction(const QString &rowId);
 
     ApplicationController *m_controller;
     SettingsSchema m_schema;
     OutputCustomRows m_outputRows;
+    BindingRows m_bindingRows;
+    QList<SchemaSettingsPage *> m_pages;
     SchemaSettingsPage *m_general;
     SchemaSettingsPage *m_audio;
     SchemaSettingsPage *m_applications;
     SchemaSettingsPage *m_output;
     SchemaSettingsPage *m_refinement;
+    SchemaSettingsPage *m_vocabulary;
+    SchemaSettingsPage *m_corrections;
+    SchemaSettingsPage *m_bindings;
     ProviderSettingsPage *m_providers;
-    VocabularySettingsPage *m_vocabulary;
-    CorrectionsSettingsPage *m_corrections;
-    BindingsSettingsPage *m_bindings;
 };
 
 } // namespace speecher
