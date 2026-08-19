@@ -1,14 +1,16 @@
 #include "common/test_suites.h"
 
+#include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
 #include "app/PlatformComposition.h"
 #include "core/LearnedCorrection.h"
+#include "core/SettingsStore.h"
 #include "platform/CorrectionDiff.h"
 #include "platform/GlobalShortcutBinder.h"
-#include "ui/AppWindow.h"
 
 #include <QList>
 #include <QSignalSpy>
+#include <QStringList>
 #include <QTest>
 
 #include <memory>
@@ -154,6 +156,44 @@ public:
 
 private:
     std::shared_ptr<const PlatformComposition> m_delegate;
+};
+
+// Records what the controller asks of a user interface, so the seam can be
+// checked without a window on screen.
+class FakeAppFrontEnd final : public AppFrontEnd {
+public:
+    void showMainWindow() override
+    {
+        calls << QStringLiteral("showMainWindow");
+    }
+
+    void showSettingsWindow() override
+    {
+        calls << QStringLiteral("showSettingsWindow");
+    }
+
+    void showSetupAssistant() override
+    {
+        calls << QStringLiteral("showSetupAssistant");
+    }
+
+    bool captureMainWindow(const QString &path) override
+    {
+        calls << QStringLiteral("captureMainWindow ") + path;
+        return true;
+    }
+
+    void showDictationError(const QString &message) override
+    {
+        calls << QStringLiteral("showDictationError ") + message;
+    }
+
+    void alert() override
+    {
+        calls << QStringLiteral("alert");
+    }
+
+    QStringList calls;
 };
 
 } // namespace
@@ -331,14 +371,54 @@ private slots:
         QVERIFY(platform->binder);
         QCOMPARE(platform->binder->bindCount, 0);
 
-        AppWindow window(&controller);
-        window.show();
+        controller.frontEndReady();
         QTRY_COMPARE_WITH_TIMEOUT(accessibilityChanged.count(), 1, 250);
 
         QCOMPARE(platform->binder->bindCount, 1);
         QVERIFY(controller.accessibilitySupported());
         QVERIFY(controller.accessibilityEnabled());
         QVERIFY(!controller.accessibilityPersistent());
+
+        // The fallback timer must not run the startup a second time.
+        controller.frontEndReady();
+        QTest::qWait(20);
+        QCOMPARE(platform->binder->bindCount, 1);
+    }
+
+    void windowRequestsGoToTheFrontEnd()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        FakeAppFrontEnd frontEnd;
+        controller.setFrontEnd(&frontEnd);
+        controller.settings()->setSetupCompleted(true);
+
+        controller.showMain();
+        controller.showSettings();
+        controller.showSetup();
+        QVERIFY(controller.grabMainWindow(QStringLiteral("/tmp/speecher-grab.png")));
+
+        QCOMPARE(frontEnd.calls,
+                 QStringList({QStringLiteral("showMainWindow"),
+                              QStringLiteral("showSettingsWindow"),
+                              QStringLiteral("showSetupAssistant"),
+                              QStringLiteral("captureMainWindow /tmp/speecher-grab.png")}));
+    }
+
+    void unfinishedSetupSendsTheUserToTheAssistantInstead()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        FakeAppFrontEnd frontEnd;
+        controller.setFrontEnd(&frontEnd);
+        controller.settings()->setSetupCompleted(false);
+
+        controller.showMain();
+        controller.showSettings();
+
+        QCOMPARE(frontEnd.calls,
+                 QStringList({QStringLiteral("showSetupAssistant"),
+                              QStringLiteral("showSetupAssistant")}));
     }
 };
 

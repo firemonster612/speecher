@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
+#include "frontend/qt/QtFrontEnd.h"
 #include "ui/AppPage.h"
 #include "ui/AppWindow.h"
 #include "ui/DictationPage.h"
@@ -82,6 +83,8 @@ private slots:
     void startupDesktopIntegrationWaitsForFirstWindowExposure()
     {
         ApplicationController controller(true);
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
         QSignalSpy accessibilityChanged(
             &controller,
             &ApplicationController::accessibilityStateChanged);
@@ -89,8 +92,7 @@ private slots:
         QTest::qWait(20);
         QCOMPARE(accessibilityChanged.count(), 0);
 
-        AppWindow window(&controller);
-        window.show();
+        controller.showMainWindow();
         QTRY_COMPARE_WITH_TIMEOUT(accessibilityChanged.count(), 1, 250);
     }
 

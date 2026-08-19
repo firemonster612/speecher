@@ -2,6 +2,7 @@
 #include "app/PlatformComposition.h"
 #include "app/SingleInstanceIpc.h"
 #include "core/SettingsStore.h"
+#include "frontend/qt/QtFrontEnd.h"
 #include "ui/Theme.h"
 
 #include <QApplication>
@@ -224,6 +225,8 @@ int main(int argc, char **argv)
     }
 
     ApplicationController controller(daemon, platform);
+    QtFrontEnd frontEnd(&controller);
+    controller.setFrontEnd(&frontEnd);
     QString ipcError;
     if (!controller.startIpc(&ipcError)) {
         if (!grabPath.isEmpty()) {

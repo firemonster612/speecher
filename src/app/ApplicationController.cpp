@@ -1,5 +1,6 @@
 #include "app/ApplicationController.h"
 
+#include "app/AppFrontEnd.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
@@ -8,16 +9,10 @@
 #include "providers/CodexSpeechTranscriber.h"
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
-#include "ui/AppWindow.h"
-#include "ui/SetupAssistant.h"
-#include "ui/TranscriberPopup.h"
 #include "platform/GlobalShortcutBinder.h"
 
-#include <QApplication>
-#include <QEvent>
+#include <QCoreApplication>
 #include <QTimer>
-#include <QWidget>
-#include <QWindow>
 #ifdef Q_OS_MACOS
 #include <QPermissions>
 #endif
@@ -42,7 +37,6 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_settings(new SettingsStore(this))
     , m_secrets(new SecretStore(m_settings, this))
     , m_providers(new ProviderRegistry(this))
-    , m_popup(new TranscriberPopup(m_platform->createPopupPositioner(nullptr)))
     , m_shortcutBinder(m_platform->createGlobalShortcutBinder(this))
     , m_ipc(new SingleInstanceIpc(m_platform, this))
 {
@@ -96,37 +90,38 @@ ApplicationController::ApplicationController(bool popupOnly,
         if (m_settings->soundsEnabled()
             && (status == QStringLiteral("Listening")
                 || status == QStringLiteral("Stopping"))) {
-            QApplication::beep();
+            if (m_frontEnd) {
+                m_frontEnd->alert();
+            }
         }
     });
-    wireSessionToPopup();
-    qApp->installEventFilter(this);
+    // A process that never shows a window still has to warm up, so the wait for
+    // the front end is capped rather than open-ended.
     QTimer::singleShot(2000, this, &ApplicationController::runDeferredStartup);
 }
 
-ApplicationController::~ApplicationController()
+void ApplicationController::setFrontEnd(AppFrontEnd *frontEnd)
 {
-    if (qApp) {
-        qApp->removeEventFilter(this);
-    }
-    delete m_popup;
+    m_frontEnd = frontEnd;
 }
 
-bool ApplicationController::eventFilter(QObject *watched, QEvent *event)
+DictationSession *ApplicationController::session() const
 {
-    if (!m_deferredStartupScheduled) {
-        const auto *window = qobject_cast<QWindow *>(watched);
-        const auto *widget = qobject_cast<QWidget *>(watched);
-        const bool exposed = event->type() == QEvent::Expose
-            && window && window->isExposed();
-        const bool painted = event->type() == QEvent::Paint
-            && widget && widget->isWindow() && widget->isVisible();
-        if (exposed || painted) {
-            m_deferredStartupScheduled = true;
-            QTimer::singleShot(0, this, &ApplicationController::runDeferredStartup);
-        }
+    return m_session;
+}
+
+bool ApplicationController::popupOnly() const
+{
+    return m_popupOnly;
+}
+
+void ApplicationController::frontEndReady()
+{
+    if (m_deferredStartupScheduled) {
+        return;
     }
-    return QObject::eventFilter(watched, event);
+    m_deferredStartupScheduled = true;
+    QTimer::singleShot(0, this, &ApplicationController::runDeferredStartup);
 }
 
 void ApplicationController::runDeferredStartup()
@@ -135,7 +130,6 @@ void ApplicationController::runDeferredStartup()
         return;
     }
     m_deferredStartupDone = true;
-    qApp->removeEventFilter(this);
     // Opening the input device is what makes macOS raise the microphone prompt,
     // and a prompt nobody asked for at launch reads as an ambush. Warm up only
     // once the grant already exists; the first dictation asks for it properly.
@@ -222,7 +216,7 @@ bool ApplicationController::enableAccessibility(QString *error)
 
 bool ApplicationController::grabMainWindow(const QString &path) const
 {
-    return m_appWindow && m_appWindow->grab().save(path);
+    return m_frontEnd && m_frontEnd->captureMainWindow(path);
 }
 
 bool ApplicationController::globalShortcutsSupported() const
@@ -247,34 +241,23 @@ bool ApplicationController::startIpc(QString *error)
 
 void ApplicationController::showMainWindow()
 {
-    if (!m_appWindow) {
-        m_appWindow = new AppWindow(this);
+    if (m_frontEnd) {
+        m_frontEnd->showMainWindow();
     }
-    m_appWindow->show();
-    m_appWindow->raise();
-    m_appWindow->activateWindow();
 }
 
 void ApplicationController::showSettingsWindow()
 {
-    showMainWindow();
-    m_appWindow->navigateToSettings();
+    if (m_frontEnd) {
+        m_frontEnd->showSettingsWindow();
+    }
 }
 
 void ApplicationController::showSetupAssistant()
 {
-    if (!m_setupAssistant) {
-        m_setupAssistant = new SetupAssistant(this);
-        m_setupAssistant->setAttribute(Qt::WA_DeleteOnClose);
-        connect(m_setupAssistant, &QDialog::accepted, this, [this] {
-            if (!m_popupOnly) {
-                showMainWindow();
-            }
-        });
+    if (m_frontEnd) {
+        m_frontEnd->showSetupAssistant();
     }
-    m_setupAssistant->show();
-    m_setupAssistant->raise();
-    m_setupAssistant->activateWindow();
 }
 
 // macOS answers the microphone grant asynchronously the first time, so a
@@ -283,9 +266,10 @@ void ApplicationController::startWithMicrophone(std::function<void()> start)
 {
 #ifdef Q_OS_MACOS
     const auto refuse = [this] {
-        m_popup->showPopup(0);
-        m_popup->showErrorMessage(QStringLiteral(
-            "Microphone access is off. Allow Speecher under Privacy & Security > Microphone, then try again."));
+        if (m_frontEnd) {
+            m_frontEnd->showDictationError(QStringLiteral(
+                "Microphone access is off. Allow Speecher under Privacy & Security > Microphone, then try again."));
+        }
     };
     switch (qApp->checkPermission(QMicrophonePermission{})) {
     case Qt::PermissionStatus::Denied:
@@ -451,37 +435,6 @@ void ApplicationController::registerProviders()
     m_providers->registerRefinementProvider({QStringLiteral("anthropic"), QStringLiteral("Anthropic")}, [](QObject *parent) {
         return new AnthropicTranscriptRefiner(parent);
     });
-}
-
-void ApplicationController::wireSessionToPopup()
-{
-    connect(m_session, &DictationSession::previewDisplayChanged, m_popup, &TranscriberPopup::setPreview);
-    connect(m_session, &DictationSession::audioLevelChanged, m_popup, &TranscriberPopup::setLevel);
-    connect(m_session, &DictationSession::popupStatusChanged, m_popup, &TranscriberPopup::setStatus);
-    connect(m_session, &DictationSession::popupShowRequested, m_popup, &TranscriberPopup::showPopup);
-    connect(m_popup, &TranscriberPopup::popupPresented, m_session, &DictationSession::popupPresented);
-    connect(m_session, &DictationSession::popupHideRequested, m_popup, &TranscriberPopup::hide);
-    connect(m_session, &DictationSession::popupFrozenChanged, m_popup, &TranscriberPopup::setFrozen);
-    connect(m_session, &DictationSession::popupRefiningChanged, m_popup, &TranscriberPopup::setRefining);
-    connect(m_session, &DictationSession::popupOAuthRefreshRequested, m_popup, &TranscriberPopup::showOAuthRefreshIndicator);
-    connect(m_session, &DictationSession::popupListeningIndicatorRequested, m_popup, &TranscriberPopup::showListeningIndicator);
-    connect(m_session, &DictationSession::popupMessageRequested, m_popup, &TranscriberPopup::showMessage);
-    connect(m_session, &DictationSession::popupErrorRequested, m_popup, &TranscriberPopup::showErrorMessage);
-    connect(m_popup, &TranscriberPopup::errorDismissed, m_session, [this] {
-        if (m_session->state() == DictationState::Error) {
-            m_session->stopListening();
-        }
-    });
-    connect(m_popup, &TranscriberPopup::enableAccessibilityRequested, this, [this] {
-        QString error;
-        if (!enableAccessibility(&error)) {
-            m_popup->showAccessibilityError(error);
-        }
-    });
-    connect(this,
-            &ApplicationController::accessibilityStateChanged,
-            m_popup,
-            &TranscriberPopup::setAccessibilityState);
 }
 
 void ApplicationController::refreshAccessibilityState()
