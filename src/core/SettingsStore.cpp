@@ -27,14 +27,24 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setIncludeScreenshotContext(draft.refinement.includeScreenshotContext);
     setOpenAiModel(draft.refinement.openAiModel);
     setOpenAiEffort(draft.refinement.openAiEffort);
+    setOpenAiAuthMode(draft.refinement.openAiAuthMode);
     setAnthropicModel(draft.refinement.anthropicModel);
     setAnthropicEffort(draft.refinement.anthropicEffort);
+    setAnthropicAuthMode(draft.refinement.anthropicAuthMode);
     setOutputMethod(draft.output.method);
     setOutputFormat(draft.output.format);
     setPasteRules(draft.output.pasteRules);
     setRestoreClipboardAfterTyping(draft.output.restoreClipboardAfterTyping);
     setCompletionStatusDurationMs(draft.output.completionStatusDurationMs);
+    setVocabularyEntries(draft.vocabulary);
     setLearnedCorrections(draft.learnedCorrections);
+    setCorrectionLearningEnabled(draft.correctionLearningEnabled);
+    // The settings surface refuses invalid replacements before it saves, so a
+    // rejection here is a bug rather than something a person typed.
+    QString replacementError;
+    if (!setBindingRules(draft.bindings, &replacementError)) {
+        qWarning("dropped invalid replacement rules: %s", qPrintable(replacementError));
+    }
 }
 
 void SettingsStore::setCorrectionLearningEnabled(bool enabled)

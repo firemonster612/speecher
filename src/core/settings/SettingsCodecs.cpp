@@ -830,6 +830,8 @@ AppSettings SettingsCodecs::snapshot() const
     settings.audio = audioCaptureSettings();
     settings.appRecognitionRules = appRecognitionRules();
     settings.bindings = bindingRules();
+    settings.vocabulary = vocabularyEntries();
+    settings.correctionLearningEnabled = correctionLearningEnabled();
     settings.learnedCorrections = learnedCorrections();
     for (const LearnedCorrection &correction : settings.learnedCorrections) {
         if (!correction.enabled) {

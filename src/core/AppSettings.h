@@ -103,7 +103,9 @@ struct AppSettings {
     RefinementSettings refinement;
     OutputSettings output;
     QList<BindingRule> bindings;
+    QList<VocabularyEntry> vocabulary;
     QList<LearnedCorrection> learnedCorrections;
+    bool correctionLearningEnabled = true;
 };
 
 } // namespace speecher
