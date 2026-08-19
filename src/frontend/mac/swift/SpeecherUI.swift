@@ -3,10 +3,26 @@ import SwiftUI
 
 // Speecher's macOS window. Everything it knows about the app arrives through
 // SpeecherBridge, which is this target's bridging header; there is no C++ here.
+//
+// The rule this file follows: if a stock container draws it, let it. There is no
+// padding, corner radius, colour, background or fixed width set anywhere below,
+// because System Settings is what SwiftUI's own sidebar list and grouped form
+// look like when nobody dresses them up.
 
 /// The dictation page is not one of the schema's, so it needs an id of its own
 /// to sit beside them in the sidebar.
 let dictationPageId = "dictation"
+
+/// The sidebar's groups, in order, the way System Settings groups its own: the
+/// page you land on, then the dictation pipeline, then what Speecher has
+/// learned, then the app itself. A page id no group names joins the last group,
+/// so a page added to the schema shows up rather than disappearing.
+private let sidebarGroups = [
+    [dictationPageId],
+    ["audio", "refinement", "output", "applications"],
+    ["vocabulary", "corrections", "bindings"],
+    ["general", "providers"],
+]
 
 /// The settings surface as SwiftUI reads it. The bridge hands over immutable
 /// snapshots, so a write goes back through the bridge and the snapshot is taken
@@ -141,12 +157,25 @@ struct RootView: View {
     @ObservedObject var model: SettingsModel
     @State private var query = ""
     // Pinned open: left to decide for itself the split view starts with the
-    // sidebar collapsed, which is not what a settings window is.
+    // sidebar collapsed, and a settings window has no way to bring it back —
+    // System Settings' sidebar cannot be closed either.
     @State private var columns = NavigationSplitViewVisibility.all
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
+            // Both of these have to sit out here on the column, and in this
+            // order: the split view reads them off the outermost view of the
+            // column, so a modifier applied inside SidebarList's own body — or
+            // wrapped by another one out here — is a modifier it never sees.
             SidebarList(model: model, query: $query)
+                // System Settings' sidebar does not collapse, and neither does
+                // this one: the toggle would hide a column nothing here brings
+                // back, and System Settings has no such button in its toolbar.
+                .toolbar(removing: .sidebarToggle)
+                // The width a settings sidebar is on macOS. Left to itself the
+                // split view picks one narrow enough to clip a page name, which
+                // is the one measurement in this file that has to be stated.
+                .navigationSplitViewColumnWidth(min: 200, ideal: 215)
         } detail: {
             detail
         }
@@ -164,12 +193,18 @@ struct RootView: View {
                                    description: Text("Pick a page in the sidebar."))
         }
     }
-
 }
 
-/// The source list: the dictation page and the schema's, filtered by whatever
-/// the search field holds. The schema is the index, so a page answers to its
-/// own name and to any section, row or help text it carries.
+/// One sidebar row, whichever kind of page it stands for.
+private struct SidebarItem: Identifiable {
+    let id: String
+    let title: String
+    let symbol: String
+}
+
+/// The source list: the dictation page and the schema's, in groups, filtered by
+/// whatever the search field holds. The schema is the index, so a page answers
+/// to its own name and to any section, row or help text it carries.
 struct SidebarList: View {
     @ObservedObject var model: SettingsModel
     @Binding var query: String
@@ -177,32 +212,72 @@ struct SidebarList: View {
     var body: some View {
         List(selection: $model.selection) {
             if query.isEmpty {
-                Label("Dictation", systemImage: "mic").tag(dictationPageId)
-            }
-            ForEach(model.pages.filter { model.page($0, matches: query) }, id: \.pageId) { page in
-                Label(page.title, systemImage: page.symbolName).tag(page.pageId)
+                // Groups are a run of rows with a gap above, which is all
+                // System Settings' sidebar sections are.
+                ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                    Section {
+                        ForEach(group) { row($0) }
+                    }
+                }
+            } else {
+                // A search shows its hits as one flat list, not as the groups
+                // they came from.
+                ForEach(items.filter(matches)) { row($0) }
             }
         }
         .listStyle(.sidebar)
-        .navigationSplitViewColumnWidth(min: 215, ideal: 230)
         .searchable(text: $query, placement: .sidebar, prompt: "Search")
-        .safeAreaInset(edge: .bottom) { stateBadge }
     }
 
-    private var badge: some View {
-        Text(model.status.capitalized)
-            .font(.caption)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
+    private func row(_ item: SidebarItem) -> some View {
+        Label(item.title, systemImage: item.symbol).tag(item.id)
     }
 
-    @ViewBuilder private var stateBadge: some View {
-        if #available(macOS 26, *) {
-            badge.glassEffect()
-        } else {
-            badge.background(.quaternary, in: .capsule)
+    private var items: [SidebarItem] {
+        [SidebarItem(id: dictationPageId, title: "Dictation", symbol: "mic")]
+            + model.pages.map {
+                SidebarItem(id: $0.pageId, title: $0.title, symbol: $0.symbolName)
+            }
+    }
+
+    private var groups: [[SidebarItem]] {
+        var remaining = items
+        var built: [[SidebarItem]] = []
+        for group in sidebarGroups {
+            let picked = group.compactMap { id -> SidebarItem? in
+                guard let index = remaining.firstIndex(where: { $0.id == id }) else { return nil }
+                return remaining.remove(at: index)
+            }
+            if !picked.isEmpty { built.append(picked) }
         }
+        // A page the groups above do not name still has to appear somewhere.
+        if !remaining.isEmpty {
+            if built.isEmpty {
+                built.append(remaining)
+            } else {
+                built[built.count - 1] += remaining
+            }
+        }
+        return built
     }
+
+    private func matches(_ item: SidebarItem) -> Bool {
+        guard let page = model.page(item.id) else {
+            return item.title.lowercased().contains(query.lowercased())
+        }
+        return model.page(page, matches: query)
+    }
+}
+
+/// One card of a page's form. A schema section becomes one of these, except that
+/// a row which fills a card of its own — a collection's table, the writing
+/// profiles — takes its own, with its label and help as that card's header and
+/// footnote instead of as text drawn inside it.
+private struct FormCard: Identifiable {
+    let id: Int
+    let header: String
+    let footer: String
+    let rows: [SettingsRowModel]
 }
 
 struct PageForm: View {
@@ -211,27 +286,80 @@ struct PageForm: View {
 
     var body: some View {
         Form {
-            // A section title is not unique enough to key on: a page may have a
-            // section only for the shape, with no title at all.
-            ForEach(Array(page.sections.enumerated()), id: \.offset) { _, section in
+            ForEach(cards) { card in
                 Section {
-                    ForEach(section.rows, id: \.rowId) { row in
+                    ForEach(card.rows, id: \.rowId) { row in
                         RowView(row: row, model: model)
                     }
                 } header: {
-                    if !section.title.isEmpty { Text(section.title) }
+                    if !card.header.isEmpty { Text(card.header) }
                 } footer: {
-                    if !section.help.isEmpty { Text(section.help) }
+                    if !card.footer.isEmpty { Text(card.footer) }
                 }
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// A table needs the whole width of a card, so a section holding one splits
+    /// into the rows before it, the table's own card, and the rows after. The
+    /// section's title heads the first card it produces and its footnote sits
+    /// under the last, whichever of them that turns out to be.
+    private var cards: [FormCard] {
+        var built: [FormCard] = []
+        for section in page.sections {
+            var made: [FormCard] = []
+            var pending: [SettingsRowModel] = []
+            var titleTaken = section.title.isEmpty
+            // The section's title, once, and the row's own label after that.
+            func header(orElse fallback: String) -> String {
+                guard !titleTaken else { return fallback }
+                titleTaken = true
+                return section.title
+            }
+            func add(_ rows: [SettingsRowModel], _ head: String, _ foot: String) {
+                made.append(FormCard(id: built.count + made.count,
+                                     header: head,
+                                     footer: foot,
+                                     rows: rows))
+            }
+            for row in section.rows {
+                if RowView.fillsCard(row) {
+                    if !pending.isEmpty {
+                        add(pending, header(orElse: ""), "")
+                        pending = []
+                    }
+                    add([row], header(orElse: row.label), row.help)
+                } else {
+                    pending.append(row)
+                }
+            }
+            if !pending.isEmpty {
+                add(pending, header(orElse: ""), "")
+            }
+            if !section.help.isEmpty, let last = made.popLast() {
+                let footer = last.footer.isEmpty ? section.help
+                                                 : last.footer + "\n\n" + section.help
+                made.append(FormCard(id: last.id,
+                                     header: last.header,
+                                     footer: footer,
+                                     rows: last.rows))
+            }
+            built += made
+        }
+        return built
     }
 }
 
 struct RowView: View {
     let row: SettingsRowModel
     @ObservedObject var model: SettingsModel
+
+    /// A row whose control is as wide as the card, so its label and help belong
+    /// above the card rather than inside it.
+    static func fillsCard(_ row: SettingsRowModel) -> Bool {
+        row.collection != nil
+    }
 
     var body: some View {
         control
@@ -258,7 +386,7 @@ struct RowView: View {
                 label
             }
         case .info:
-            LabeledContent { Text(Self.text(row.value)).foregroundStyle(.secondary) } label: { label }
+            LabeledContent { Text(Self.text(row.value)) } label: { label }
         case .action:
             LabeledContent { Button(row.actionLabel) { model.trigger(row.rowId) } } label: { label }
         case .collection:
@@ -275,7 +403,7 @@ struct RowView: View {
     // supplies, the way OutputCustomRows and ProviderCustomRows do on Qt.
     @ViewBuilder private var custom: some View {
         if row.collection != nil {
-            WritingProfileGrid(row: row, model: model)
+            WritingProfileRows(row: row, model: model)
         } else if row.rowId == "openAiAuth" {
             LabeledContent { CredentialField(model: model) } label: { label }
         } else {
@@ -294,12 +422,13 @@ struct RowView: View {
         .disabled(row.options.allSatisfy { !$0.enabled })
     }
 
-    private var label: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(row.label)
-            if !row.help.isEmpty {
-                Text(row.help).font(.caption).foregroundStyle(.secondary)
-            }
+    /// The name of the setting and, under it, what it does. Two Texts in a
+    /// stock label is how a settings row says that; SwiftUI sizes and colours
+    /// the second one, which is why there is no font or colour here.
+    @ViewBuilder private var label: some View {
+        Text(row.label)
+        if !row.help.isEmpty {
+            Text(row.help)
         }
     }
 
@@ -308,8 +437,9 @@ struct RowView: View {
     static func text(_ value: Any?) -> String { value as? String ?? "" }
 }
 
-/// A number with its range and its unit. Typing into the field is the way to
-/// cross a wide range that a stepper alone would take all day to walk.
+/// A number with its range and its unit: the system's numeric field and stepper,
+/// at the size they come out at. Typing into the field is the way to cross a
+/// wide range that a stepper alone would take all day to walk.
 struct NumberField: View {
     let row: SettingsRowModel
     @ObservedObject var model: SettingsModel
@@ -317,16 +447,15 @@ struct NumberField: View {
     @FocusState private var editing: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack {
             TextField("", value: $value, format: .number)
                 .labelsHidden()
                 .multilineTextAlignment(.trailing)
-                .monospacedDigit()
-                .frame(width: 62)
+                .fixedSize()
                 .focused($editing)
                 .onSubmit { commit() }
             if !row.suffix.isEmpty {
-                Text(row.suffix.trimmingCharacters(in: .whitespaces)).foregroundStyle(.secondary)
+                Text(row.suffix.trimmingCharacters(in: .whitespaces))
             }
             Stepper("", value: $value, in: row.minimum...row.maximum, step: row.step)
                 .labelsHidden()
@@ -347,8 +476,9 @@ struct NumberField: View {
     }
 }
 
-/// Free text, saved when the field is done rather than on every keystroke, and
-/// with a menu of the values worth offering when the row names any.
+/// Free text, saved when the field is done rather than on every keystroke. A row
+/// that names values worth offering gets the system's editable combo box, which
+/// is the control for that, rather than a field with a menu bolted beside it.
 struct TextRowField: View {
     let row: SettingsRowModel
     @ObservedObject var model: SettingsModel
@@ -356,37 +486,83 @@ struct TextRowField: View {
     @FocusState private var editing: Bool
 
     var body: some View {
-        HStack(spacing: 4) {
+        if row.suggestions.isEmpty {
             TextField("", text: $text)
                 .labelsHidden()
-                .frame(minWidth: 160)
                 .focused($editing)
                 .onSubmit { commit() }
-            if !row.suggestions.isEmpty {
-                Menu {
-                    ForEach(row.suggestions, id: \.rowOptionId) { suggestion in
-                        Button(suggestion.label) {
-                            text = suggestion.rowOptionId
-                            commit()
-                        }
-                    }
-                } label: {
-                    EmptyView()
+                .onAppear { text = RowView.text(row.value) }
+                .onChange(of: editing) { if !editing { commit() } }
+                .onChange(of: RowView.text(row.value)) { _, stored in
+                    if !editing { text = stored }
                 }
-                .menuStyle(.borderlessButton)
-                .frame(width: 16)
+        } else {
+            SuggestingField(text: RowView.text(row.value),
+                            suggestions: row.suggestions.map(\.rowOptionId)) { edited in
+                model.setValue(edited, for: row.rowId)
             }
-        }
-        .onAppear { text = RowView.text(row.value) }
-        .onChange(of: editing) { if !editing { commit() } }
-        .onChange(of: RowView.text(row.value)) { _, stored in
-            if !editing { text = stored }
         }
     }
 
     private func commit() {
         if text != RowView.text(row.value) {
             model.setValue(text, for: row.rowId)
+        }
+    }
+}
+
+/// An NSComboBox: text a person can type, with the values worth offering behind
+/// the same control, which SwiftUI has no equivalent of.
+struct SuggestingField: NSViewRepresentable {
+    let text: String
+    let suggestions: [String]
+    let commit: (String) -> Void
+
+    func makeNSView(context: Context) -> NSComboBox {
+        let box = NSComboBox()
+        box.isEditable = true
+        box.completes = true
+        box.addItems(withObjectValues: suggestions)
+        box.delegate = context.coordinator
+        return box
+    }
+
+    func updateNSView(_ box: NSComboBox, context: Context) {
+        context.coordinator.commit = commit
+        // Replacing the text under someone who is typing in it is the one thing
+        // a redraw must not do.
+        if !context.coordinator.editing, box.stringValue != text {
+            box.stringValue = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(commit: commit) }
+
+    @MainActor
+    final class Coordinator: NSObject, NSComboBoxDelegate {
+        var commit: (String) -> Void
+        var editing = false
+
+        init(commit: @escaping (String) -> Void) {
+            self.commit = commit
+        }
+
+        func controlTextDidBeginEditing(_ notification: Notification) {
+            editing = true
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            editing = false
+            guard let box = notification.object as? NSComboBox else { return }
+            commit(box.stringValue)
+        }
+
+        func comboBoxSelectionDidChange(_ notification: Notification) {
+            guard let box = notification.object as? NSComboBox else { return }
+            // The selected item becomes the field's text after this call, so
+            // the value to save is the item, not what the field still holds.
+            let picked = box.objectValueOfSelectedItem as? String
+            commit(picked ?? box.stringValue)
         }
     }
 }
@@ -399,49 +575,47 @@ struct CredentialField: View {
 
     var body: some View {
         if model.bridge.credentialIsEditable {
-            VStack(alignment: .trailing, spacing: 4) {
+            VStack(alignment: .trailing) {
                 SecureField("Enter OpenAI API key", text: $model.apiKey)
                     .labelsHidden()
-                    .frame(minWidth: 220)
                     .focused($editing)
                     .onSubmit { model.saveApiKey() }
                     .onChange(of: model.apiKey) { model.noteApiKeyEdited() }
                     .onChange(of: editing) { if !editing { model.saveApiKey() } }
                 if !model.credentialProblem.isEmpty {
-                    Text(model.credentialProblem).font(.caption).foregroundStyle(.red)
+                    Text(model.credentialProblem).foregroundStyle(.red)
                 }
             }
         } else {
-            Text(model.bridge.credentialStatus).foregroundStyle(.secondary)
+            Text(model.bridge.credentialStatus)
         }
     }
 }
 
 /// The cleanup strength and optional tone of each writing profile. The profiles
-/// are fixed, so this is a short run of rows rather than an editable table.
-struct WritingProfileGrid: View {
+/// are fixed, so this is a run of ordinary settings rows rather than an editable
+/// table — one row per profile, each with its pickers.
+struct WritingProfileRows: View {
     let row: SettingsRowModel
     @ObservedObject var model: SettingsModel
 
     private var records: [[String: Any]] { row.value as? [[String: Any]] ?? [] }
 
+    private var choices: [CollectionColumnModel] {
+        row.collection?.columns.filter { $0.kind == .choice } ?? []
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(row.label)
-            Text(row.help).font(.caption).foregroundStyle(.secondary)
-            ForEach(Array(records.enumerated()), id: \.offset) { index, record in
-                LabeledContent(record["profile"] as? String ?? "") {
-                    HStack(spacing: 8) {
-                        ForEach(row.collection?.columns.filter { $0.kind == .choice } ?? [],
-                                id: \.columnId) { column in
-                            Picker("", selection: choice(index, column.columnId)) {
-                                ForEach(column.options, id: \.rowOptionId) { option in
-                                    Text(option.label).tag(option.rowOptionId)
-                                }
+        ForEach(Array(records.enumerated()), id: \.offset) { index, record in
+            LabeledContent(record["profile"] as? String ?? "") {
+                HStack {
+                    ForEach(choices, id: \.columnId) { column in
+                        Picker("", selection: choice(index, column.columnId)) {
+                            ForEach(column.options, id: \.rowOptionId) { option in
+                                Text(option.label).tag(option.rowOptionId)
                             }
-                            .labelsHidden()
-                            .frame(width: 150)
                         }
+                        .labelsHidden()
                     }
                 }
             }
@@ -467,18 +641,23 @@ struct WritingProfileGrid: View {
     @MainActor
     @objc public init(bridge: SpeecherBridge) {
         model = SettingsModel(bridge: bridge)
+        // An ordinary titled window with a unified toolbar, which is what a
+        // settings window is. Nothing full-size-content: the traffic lights
+        // belong in a titlebar, not floating over the first row of a form.
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 940, height: 660),
-                          styleMask: [.titled, .closable, .miniaturizable, .resizable,
-                                      .fullSizeContentView],
+                          styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered,
                           defer: false)
         super.init()
         window.title = "Speecher"
-        // The page's own title heads the detail column, so repeating it in the
-        // titlebar is the one thing System Settings does not do.
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
         window.minSize = NSSize(width: 820, height: 560)
+        // Empty on purpose: the toolbar is what gives the titlebar its settings
+        // height and puts the title and the sidebar's search where macOS puts
+        // them. System Settings has no toolbar buttons of its own either, and an
+        // interactive view in this strip would have its clicks eaten by the
+        // glass container macOS 26 puts there.
+        window.toolbar = NSToolbar()
+        window.toolbarStyle = .unified
         // A controller rather than a bare hosting view: NavigationSplitView
         // becomes an NSSplitViewController, which needs a parent view
         // controller to install its sidebar item into.
@@ -509,9 +688,9 @@ struct WritingProfileGrid: View {
     // This is the window's backing store, so nothing the compositor draws for
     // the window comes out: vibrancy materials are blank, and the whole sidebar
     // column, which SwiftUI puts inside a glass container, is missing. The
-    // detail column is real. SwiftUI's ImageRenderer is not an alternative: it
-    // refuses NavigationSplitView outright. For a composited shot, screencapture
-    // with Screen Recording granted is the way.
+    // detail column and the titlebar are real. SwiftUI's ImageRenderer is not an
+    // alternative: it refuses NavigationSplitView outright. For a composited
+    // shot, screencapture with Screen Recording granted is the way.
     @MainActor
     @objc public func capture(toPath path: String) -> Bool {
         guard let content = window.contentView,
