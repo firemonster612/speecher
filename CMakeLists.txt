@@ -334,9 +334,15 @@ set(SPEECHER_FRONTEND_MAC_HEADERS
 )
 
 set(SPEECHER_FRONTEND_MAC_SWIFT_SOURCES
-  src/frontend/mac/swift/CollectionTable.swift
-  src/frontend/mac/swift/DictationView.swift
-  src/frontend/mac/swift/SpeecherUI.swift
+  src/frontend/mac/swift/AppModel.swift
+  src/frontend/mac/swift/Collections.swift
+  src/frontend/mac/swift/DictationPanel.swift
+  src/frontend/mac/swift/MenuBarExtra.swift
+  src/frontend/mac/swift/Panes.swift
+  src/frontend/mac/swift/Rows.swift
+  src/frontend/mac/swift/SettingsWindow.swift
+  src/frontend/mac/swift/ShortcutPane.swift
+  src/frontend/mac/swift/SpeecherMacUI.swift
 )
 
 add_library(speecher_domain STATIC

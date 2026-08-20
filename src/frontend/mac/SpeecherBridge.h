@@ -161,6 +161,33 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 - (void)startListening;
 - (void)stopListening;
 
+// The dictation panel's own state. It is a floating window rather than a
+// settings pane, so it reads these rather than the schema.
+@property (nonatomic, copy, nullable) void (^popupShowRequested)(uint64_t generation);
+@property (nonatomic, copy, nullable) void (^popupHideRequested)(void);
+@property (nonatomic, copy, nullable) void (^popupStatusChanged)(NSString *status);
+@property (nonatomic, copy, nullable) void (^popupPreviewChanged)(NSString *preview);
+@property (nonatomic, copy, nullable) void (^popupRefiningChanged)(BOOL refining);
+@property (nonatomic, copy, nullable) void (^popupErrorRequested)(NSString *message);
+// The panel is on screen, so the session need not wait out its fallback timer
+// before opening the microphone.
+- (void)notePopupPresented:(uint64_t)generation NS_SWIFT_NAME(notePopupPresented(generation:));
+
+// The last transcript Speecher heard, which the menu bar panel offers to copy
+// again. Empty until one exists.
+@property (nonatomic, readonly, copy) NSString *lastTranscript;
+@property (nonatomic, copy, nullable) void (^transcriptChanged)(NSString *transcript);
+
+// The desktop-wide shortcut, which nothing surfaced after the setup assistant.
+@property (nonatomic, readonly) BOOL shortcutSupported;
+// The bound sequence as macOS writes it, such as ⌃⌥D. Empty while none is.
+@property (nonatomic, readonly, copy) NSString *shortcutDisplay;
+// The characters the key types with no modifiers held, plus NSEvent's modifier
+// flags. nil once bound, otherwise why the binding was refused.
+- (nullable NSString *)bindShortcutWithCharacters:(NSString *)characters
+                                    modifierFlags:(NSUInteger)modifierFlags
+    NS_SWIFT_NAME(bindShortcut(characters:modifierFlags:));
+
 // Resolving the microphone's name means enumerating devices, so the first read
 // leaves it until the window has painted.
 - (SpeecherDictationSummary *)dictationSummaryResolvingMicrophone:(BOOL)resolve

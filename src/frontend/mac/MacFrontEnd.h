@@ -9,12 +9,13 @@ namespace speecher {
 
 class ApplicationController;
 
-// Speecher's user interface on AppKit and SwiftUI: an NSWindow whose settings
-// pages come from the same schema the Qt front end renders; see
-// docs/adr/0001-per-platform-front-ends.md.
+// Speecher's user interface on AppKit and SwiftUI: a menu bar extra, a settings
+// window whose panes come from the same schema the Qt front end renders, and a
+// floating dictation panel. See docs/adr/0001-per-platform-front-ends.md and
+// .scratch/macos-port/mac-ia.md.
 //
-// The dictation popup and the setup assistant are still the Qt front end's,
-// which this one owns for as long as that is true.
+// The setup assistant is still the Qt front end's, which this one owns for as
+// long as that is true.
 class MacFrontEnd final : public AppFrontEnd {
 public:
     explicit MacFrontEnd(ApplicationController *controller);
@@ -28,8 +29,6 @@ public:
     void alert() override;
 
 private:
-    void showWindow(const QString &pageId);
-
     // The Objective-C objects, so this header stays includable from C++.
     struct Native;
 

@@ -5,6 +5,7 @@
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
+#include "dictation/DictationSession.h"
 #include "frontend/mac/MacCustomRows.h"
 // The schema context: what this machine can offer the descriptors. Shared with
 // the Qt front end rather than reassembled, because the device and provider
@@ -15,8 +16,11 @@
 #include "ui/Theme.h"
 
 #include <QDebug>
+#include <QKeySequence>
 #include <QObject>
 #include <QRegularExpression>
+
+#import <AppKit/AppKit.h>
 
 using speecher::AppSettings;
 using speecher::ApplicationController;
@@ -205,7 +209,57 @@ struct BridgeState {
     ApplicationController *controller = nullptr;
     // Owns the signal connections, so they end when the bridge does.
     QObject lifetime;
+    // The transcript survives the dictation that produced it, so the menu bar
+    // panel can still offer it once the panel that showed it has gone.
+    QString lastTranscript;
 };
+
+// The Qt key an NSEvent's unmodified characters stand for. Qt's key enum uses
+// the unshifted ASCII code for every printable key the shortcut binder accepts,
+// so the binder's own table stays the only list of what macOS can register.
+int qtKeyForCharacters(NSString *characters)
+{
+    if (characters.length != 1) {
+        return 0;
+    }
+    const unichar character = [characters characterAtIndex:0];
+    if (character >= NSF1FunctionKey && character <= NSF12FunctionKey) {
+        return Qt::Key_F1 + (character - NSF1FunctionKey);
+    }
+    switch (character) {
+    case ' ':
+        return Qt::Key_Space;
+    case '\r':
+        return Qt::Key_Return;
+    case '\t':
+        return Qt::Key_Tab;
+    case 0x1b:
+        return Qt::Key_Escape;
+    default:
+        break;
+    }
+    return QChar(character).toUpper().unicode();
+}
+
+// Qt maps the Mac keyboard onto its portable enum: the Command key arrives as
+// Qt::ControlModifier and the Control key as Qt::MetaModifier.
+Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
+{
+    Qt::KeyboardModifiers modifiers;
+    if (flags & NSEventModifierFlagCommand) {
+        modifiers |= Qt::ControlModifier;
+    }
+    if (flags & NSEventModifierFlagControl) {
+        modifiers |= Qt::MetaModifier;
+    }
+    if (flags & NSEventModifierFlagOption) {
+        modifiers |= Qt::AltModifier;
+    }
+    if (flags & NSEventModifierFlagShift) {
+        modifiers |= Qt::ShiftModifier;
+    }
+    return modifiers;
+}
 
 } // namespace
 
@@ -632,7 +686,134 @@ struct BridgeState {
                              bridge.accessibilityChanged();
                          }
                      });
+    [self connectPanelTo:controller->session()];
     return self;
+}
+
+// The dictation panel's signals, which the session emits and no page renders.
+- (void)connectPanelTo:(speecher::DictationSession *)session
+{
+    using speecher::DictationSession;
+    __weak SpeecherBridge *weakSelf = self;
+    BridgeState *state = _state;
+    QObject::connect(session,
+                     &DictationSession::popupShowRequested,
+                     &_state->lifetime,
+                     [weakSelf](quint64 generation) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.popupShowRequested) {
+                             bridge.popupShowRequested(generation);
+                         }
+                     });
+    QObject::connect(session, &DictationSession::popupHideRequested, &_state->lifetime, [weakSelf] {
+        SpeecherBridge *bridge = weakSelf;
+        if (bridge.popupHideRequested) {
+            bridge.popupHideRequested();
+        }
+    });
+    QObject::connect(session,
+                     &DictationSession::popupStatusChanged,
+                     &_state->lifetime,
+                     [weakSelf](const QString &status) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.popupStatusChanged) {
+                             bridge.popupStatusChanged(status.toNSString());
+                         }
+                     });
+    // A completed delivery says so on the same line the status uses, which is
+    // what the popup showed before this front end existed.
+    QObject::connect(session,
+                     &DictationSession::popupMessageRequested,
+                     &_state->lifetime,
+                     [weakSelf](const QString &message) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.popupStatusChanged) {
+                             bridge.popupStatusChanged(message.toNSString());
+                         }
+                     });
+    QObject::connect(session,
+                     &DictationSession::previewDisplayChanged,
+                     &_state->lifetime,
+                     [weakSelf](const QString &preview) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.popupPreviewChanged) {
+                             bridge.popupPreviewChanged(preview.toNSString());
+                         }
+                     });
+    QObject::connect(session,
+                     &DictationSession::popupRefiningChanged,
+                     &_state->lifetime,
+                     [weakSelf](bool refining) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.popupRefiningChanged) {
+                             bridge.popupRefiningChanged(refining);
+                         }
+                     });
+    QObject::connect(session,
+                     &DictationSession::popupErrorRequested,
+                     &_state->lifetime,
+                     [weakSelf](const QString &message) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.popupErrorRequested) {
+                             bridge.popupErrorRequested(message.toNSString());
+                         }
+                     });
+    // The running transcript, kept only while it says something: clearing it at
+    // the start of the next dictation would take away the one the menu bar
+    // panel is still offering.
+    QObject::connect(session,
+                     &DictationSession::previewChanged,
+                     &_state->lifetime,
+                     [weakSelf, state](const QString &transcript) {
+                         if (transcript.isEmpty()) {
+                             return;
+                         }
+                         state->lastTranscript = transcript;
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.transcriptChanged) {
+                             bridge.transcriptChanged(transcript.toNSString());
+                         }
+                     });
+}
+
+- (void)notePopupPresented:(uint64_t)generation
+{
+    _state->controller->session()->popupPresented(generation);
+}
+
+- (NSString *)lastTranscript
+{
+    return _state->lastTranscript.toNSString();
+}
+
+- (BOOL)shortcutSupported
+{
+    return _state->controller->globalShortcutsSupported();
+}
+
+- (NSString *)shortcutDisplay
+{
+    return _state->controller->globalShortcut().toString(QKeySequence::NativeText).toNSString();
+}
+
+- (NSString *)bindShortcutWithCharacters:(NSString *)characters modifierFlags:(NSUInteger)flags
+{
+    const int key = qtKeyForCharacters(characters);
+    if (key == 0) {
+        return @"That key cannot be part of a shortcut.";
+    }
+    const Qt::KeyboardModifiers modifiers = qtModifiersForFlags(flags);
+    // A shortcut with no modifier would swallow the key everywhere on the
+    // desktop, including in whatever the dictation is going into.
+    if (modifiers == Qt::NoModifier) {
+        return @"Hold ⌘, ⌥, ⌃ or ⇧ as part of the shortcut.";
+    }
+    QString error;
+    const QKeySequence sequence(QKeyCombination(modifiers, Qt::Key(key)));
+    if (_state->controller->setGlobalShortcut(sequence, &error)) {
+        return nil;
+    }
+    return error.isEmpty() ? @"That shortcut could not be bound." : error.toNSString();
 }
 
 - (void)dealloc
