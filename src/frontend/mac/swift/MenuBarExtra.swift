@@ -29,6 +29,10 @@ struct MenuBarPanel: View {
                 model.bridge.toggle()
             }
             .buttonStyle(.borderedProminent)
+            if model.accessibilitySupported && !model.accessibilityEnabled {
+                Divider()
+                accessibilityNotice
+            }
             Divider()
             if model.transcript.isEmpty {
                 Text("Nothing dictated yet.")
@@ -49,6 +53,22 @@ struct MenuBarPanel: View {
         // The panel's width, which a popover has to be told: the transcript
         // would otherwise make the panel as wide as whatever was dictated.
         .frame(maxWidth: 300, alignment: .leading)
+    }
+
+    /// Where a permission the app is missing belongs: beside the button that
+    /// would be affected by it, rather than in a settings pane nobody has open
+    /// or an alert nobody asked for. macOS grants are permanent once given, so
+    /// "off" is the only state worth saying anything about.
+    @ViewBuilder private var accessibilityNotice: some View {
+        Label("Without Accessibility, dictation only reaches the clipboard.",
+              systemImage: "exclamationmark.triangle")
+            // A sentence in a Label truncates to one line unless it is told it
+            // may grow downwards.
+            .fixedSize(horizontal: false, vertical: true)
+        Button("Open Privacy & Security…") { model.requestAccessibility() }
+        if !model.accessibilityProblem.isEmpty {
+            Text(model.accessibilityProblem)
+        }
     }
 
     private var statusLabel: String {

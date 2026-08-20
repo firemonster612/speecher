@@ -347,16 +347,6 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @implementation CollectionImportResult
 @end
 
-@interface SpeecherDictationSummary ()
-@property (nonatomic, copy) NSString *refinement;
-@property (nonatomic, copy) NSString *microphone;
-@property (nonatomic, copy) NSString *output;
-@property (nonatomic, copy) NSString *theme;
-@end
-
-@implementation SpeecherDictationSummary
-@end
-
 // Declared so the bridge below can call it; the C++ types keep it out of the
 // public header.
 @interface SettingsSchemaModel (Cxx)
@@ -839,42 +829,6 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 - (void)stopListening
 {
     _state->controller->stopListening();
-}
-
-- (SpeecherDictationSummary *)dictationSummaryResolvingMicrophone:(BOOL)resolve
-{
-    ApplicationController *controller = _state->controller;
-    const QString providerId = controller->settings()->refinementProvider();
-    QString refinement = QStringLiteral("None");
-    for (const speecher::ProviderDescriptor &provider :
-         controller->providerRegistry()->refinementProviders()) {
-        if (provider.id == providerId) {
-            refinement = provider.label;
-            break;
-        }
-    }
-
-    const QString deviceId = controller->settings()->audioInputDeviceId();
-    QString microphone = QStringLiteral("System default");
-    if (!deviceId.isEmpty() && !resolve) {
-        microphone = QStringLiteral("Selected microphone");
-    } else if (!deviceId.isEmpty()) {
-        for (const speecher::AudioInputDeviceInfo &device :
-             controller->platform()->availableAudioInputDevices()) {
-            if (device.id == deviceId) {
-                microphone = device.label;
-                break;
-            }
-        }
-    }
-
-    const QString theme = controller->settings()->theme();
-    SpeecherDictationSummary *summary = [[SpeecherDictationSummary alloc] init];
-    summary.refinement = refinement.toNSString();
-    summary.microphone = microphone.toNSString();
-    summary.output = controller->primaryOutputStatus().toNSString();
-    summary.theme = (theme.left(1).toUpper() + theme.mid(1)).toNSString();
-    return summary;
 }
 
 - (BOOL)accessibilitySupported

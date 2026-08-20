@@ -143,14 +143,6 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
                        record:(SpeecherRecord *)record;
 @end
 
-// The four "Setup at a glance" values on the dictation page.
-@interface SpeecherDictationSummary : NSObject
-@property (nonatomic, readonly, copy) NSString *refinement;
-@property (nonatomic, readonly, copy) NSString *microphone;
-@property (nonatomic, readonly, copy) NSString *output;
-@property (nonatomic, readonly, copy) NSString *theme;
-@end
-
 @interface SpeecherBridge : NSObject
 @property (nonatomic, readonly, strong) SettingsSchemaModel *settingsSchema;
 @property (nonatomic, readonly, copy) NSString *stateName;
@@ -187,11 +179,6 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 - (nullable NSString *)bindShortcutWithCharacters:(NSString *)characters
                                     modifierFlags:(NSUInteger)modifierFlags
     NS_SWIFT_NAME(bindShortcut(characters:modifierFlags:));
-
-// Resolving the microphone's name means enumerating devices, so the first read
-// leaves it until the window has painted.
-- (SpeecherDictationSummary *)dictationSummaryResolvingMicrophone:(BOOL)resolve
-    NS_SWIFT_NAME(dictationSummary(resolvingMicrophone:));
 
 @property (nonatomic, readonly) BOOL accessibilitySupported;
 @property (nonatomic, readonly) BOOL accessibilityEnabled;
