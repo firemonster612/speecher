@@ -40,7 +40,7 @@ OpenAiRefiner::OpenAiRefiner(QObject *parent, int requestTimeoutMs)
         m_reply = nullptr;
         m_failed = true;
         reply->abort();
-        emit failed(QStringLiteral("OpenAI refinement exceeded its response deadline"));
+        emit failed(QStringLiteral("OpenAI refinement timed out waiting for a response"));
     });
 }
 

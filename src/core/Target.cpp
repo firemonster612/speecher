@@ -176,6 +176,7 @@ QList<AppRecognitionRule> builtInAppRecognitionRules()
         {QStringLiteral("helium"), AppCategory::Browser, std::nullopt},
         {QStringLiteral("browser"), AppCategory::Browser, std::nullopt},
         {QStringLiteral("libreoffice"), AppCategory::Office, WritingProfile::Work},
+        {QStringLiteral("soffice"), AppCategory::Office, WritingProfile::Work},
         {QStringLiteral("writer"), AppCategory::Office, WritingProfile::Work},
         {QStringLiteral("office"), AppCategory::Office, WritingProfile::Work},
         {QStringLiteral("kate"), AppCategory::CodeEditor, WritingProfile::Work},
@@ -260,7 +261,7 @@ AppCategory classifyTarget(const Target &target,
                            const QList<AppRecognitionRule> &customRules)
 {
     for (const AppRecognitionRule &rule : customRules) {
-        if (rule.category && ruleMatches(rule, target, false, true)) {
+        if (rule.category && ruleMatches(rule, target, false)) {
             return *rule.category;
         }
     }
@@ -268,7 +269,7 @@ AppCategory classifyTarget(const Target &target,
         return AppCategory::AiCoding;
     }
     for (const AppRecognitionRule &rule : builtInAppRecognitionRules()) {
-        if (rule.category && ruleMatches(rule, target, false)) {
+        if (rule.category && ruleMatches(rule, target, false, true)) {
             return *rule.category;
         }
     }

@@ -71,8 +71,8 @@ private slots:
 
         AudioPcmConverter split;
         split.reset(format(32000, 1, QAudioFormat::Float));
-        const QByteArray actual = split.convert(input.left(2 * int(sizeof(float)))).pcm16Mono16k
-            + split.convert(input.mid(2 * int(sizeof(float)))).pcm16Mono16k;
+        QByteArray actual = split.convert(input.left(2 * int(sizeof(float)))).pcm16Mono16k;
+        actual += split.convert(input.mid(2 * int(sizeof(float)))).pcm16Mono16k;
 
         QCOMPARE(actual, expected);
         QCOMPARE(actual, bytes<qint16>({0, 32767}));
@@ -84,8 +84,8 @@ private slots:
         AudioPcmConverter converter;
         converter.reset(format(16000, 1, QAudioFormat::Int16));
 
-        const QByteArray actual = converter.convert(input.left(3)).pcm16Mono16k
-            + converter.convert(input.mid(3)).pcm16Mono16k;
+        QByteArray actual = converter.convert(input.left(3)).pcm16Mono16k;
+        actual += converter.convert(input.mid(3)).pcm16Mono16k;
 
         QCOMPARE(actual, input);
     }

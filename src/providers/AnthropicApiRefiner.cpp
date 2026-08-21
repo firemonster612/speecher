@@ -88,7 +88,7 @@ AnthropicApiRefiner::AnthropicApiRefiner(QObject *parent, int requestTimeoutMs)
         m_reply = nullptr;
         m_failed = true;
         reply->abort();
-        emit failed(QStringLiteral("Anthropic refinement exceeded its response deadline"));
+        emit failed(QStringLiteral("Anthropic refinement timed out waiting for a response"));
     });
 }
 
