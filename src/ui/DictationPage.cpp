@@ -29,6 +29,59 @@ namespace speecher {
 
 namespace {
 
+
+// Minimal flow layout (Qt's FlowLayout example): wraps items to new rows
+// when the width runs out instead of squeezing them into overlap.
+class FlowLayout final : public QLayout {
+public:
+    explicit FlowLayout(int spacing, QWidget *parent = nullptr)
+        : QLayout(parent), m_spacing(spacing) {}
+    ~FlowLayout() override { while (QLayoutItem *item = takeAt(0)) delete item; }
+    void addItem(QLayoutItem *item) override { m_items.append(item); }
+    int count() const override { return m_items.size(); }
+    QLayoutItem *itemAt(int index) const override { return m_items.value(index); }
+    QLayoutItem *takeAt(int index) override
+    { return index >= 0 && index < m_items.size() ? m_items.takeAt(index) : nullptr; }
+    Qt::Orientations expandingDirections() const override { return {}; }
+    bool hasHeightForWidth() const override { return true; }
+    int heightForWidth(int width) const override { return doLayout(QRect(0, 0, width, 0), true); }
+    QSize minimumSize() const override
+    {
+        QSize size;
+        for (QLayoutItem *item : m_items) size = size.expandedTo(item->minimumSize());
+        return size;
+    }
+    QSize sizeHint() const override { return minimumSize(); }
+    void setGeometry(const QRect &rect) override
+    {
+        QLayout::setGeometry(rect);
+        doLayout(rect, false);
+    }
+
+private:
+    int doLayout(const QRect &rect, bool testOnly) const
+    {
+        int x = rect.x();
+        int y = rect.y();
+        int rowHeight = 0;
+        for (QLayoutItem *item : m_items) {
+            const QSize hint = item->sizeHint();
+            if (x + hint.width() > rect.right() + 1 && rowHeight > 0) {
+                x = rect.x();
+                y += rowHeight + m_spacing;
+                rowHeight = 0;
+            }
+            if (!testOnly) item->setGeometry(QRect(QPoint(x, y), hint));
+            x += hint.width() + m_spacing;
+            rowHeight = qMax(rowHeight, hint.height());
+        }
+        return y + rowHeight - rect.y();
+    }
+
+    QList<QLayoutItem *> m_items;
+    int m_spacing = 8;
+};
+
 QWidget *makeSummaryCard(const QString &iconName,
                          const QString &title,
                          QLabel *value,
@@ -61,8 +114,9 @@ QWidget *makeSummaryCard(const QString &iconName,
     value->setForegroundRole(QPalette::PlaceholderText);
     layout->addWidget(titleRow);
     layout->addWidget(value);
-    card->setMinimumSize(layout->sizeHint().grownBy(QMargins(4, 2, 4, 2)));
-    card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    const QSize content = layout->sizeHint().grownBy(QMargins(4, 2, 4, 2));
+    card->setMinimumSize(content);
+    card->setFixedSize(content.expandedTo(QSize(220, 0)));
 
     for (QWidget *child : {static_cast<QWidget *>(titleRow), static_cast<QWidget *>(value)}) {
         child->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -155,30 +209,29 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     heroLayout->addWidget(m_heroToggle, 0, Qt::AlignHCenter);
     columnLayout->addWidget(hero);
 
-    auto *cardsRow = new QHBoxLayout;
+    auto *cardsHost = new QWidget(column);
+    auto *cardsRow = new FlowLayout(settings::relatedSpacing(), cardsHost);
     cardsRow->setContentsMargins(0, 0, 0, 0);
-    cardsRow->setSpacing(settings::relatedSpacing());
-    const int valueWidth = fontMetrics().horizontalAdvance(QString(24, QLatin1Char('x')));
+    const int valueWidth = fontMetrics().horizontalAdvance(QString(22, QLatin1Char('x')));
     for (QLabel *label : {m_provider, m_microphone, m_output, m_theme}) {
-        label->setMinimumWidth(valueWidth);
-        label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        label->setFixedWidth(valueWidth);
         label->installEventFilter(this);
     }
     m_provider->setObjectName(QStringLiteral("refinementSummary"));
     m_microphone->setObjectName(QStringLiteral("microphoneSummary"));
     cardsRow->addWidget(makeSummaryCard(QStringLiteral("tools-wizard"),
                                         QStringLiteral("Refinement"), m_provider,
-                                        AppPageId::Refinement, this), 1);
+                                        AppPageId::Refinement, this));
     cardsRow->addWidget(makeSummaryCard(QStringLiteral("audio-input-microphone"),
                                         QStringLiteral("Microphone"), m_microphone,
-                                        AppPageId::Audio, this), 1);
+                                        AppPageId::Audio, this));
     cardsRow->addWidget(makeSummaryCard(QStringLiteral("klipper"),
                                         QStringLiteral("Output"), m_output,
-                                        AppPageId::Output, this), 1);
+                                        AppPageId::Output, this));
     cardsRow->addWidget(makeSummaryCard(QStringLiteral("preferences-system"),
                                         QStringLiteral("Theme"), m_theme,
-                                        AppPageId::General, this), 1);
-    columnLayout->addLayout(cardsRow);
+                                        AppPageId::General, this));
+    columnLayout->addWidget(cardsHost);
 
     pageLayout->addWidget(column);
     pageLayout->addStretch();

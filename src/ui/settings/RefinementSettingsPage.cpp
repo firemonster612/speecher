@@ -93,6 +93,7 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     auto *title = settings::makePageTitle(QStringLiteral("Refinement"), this);
     auto *card = settings::makeSettingsCard(this);
     auto *cardLayout = settings::cardFormLayout(card);
+    settings::addSectionRow(cardLayout, QStringLiteral("Refinement"), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Refinement"), QStringLiteral("Clean up dictated text after capture."), m_provider, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Fallback profile"), QStringLiteral("Writing profile used when the target app does not imply one."), m_writingProfile, card), card);
     auto *profileSettingsControl = new QWidget(card);
