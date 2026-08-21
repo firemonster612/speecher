@@ -10,11 +10,14 @@
 
 #include <QEvent>
 #include <QFontMetrics>
-#include <QFormLayout>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
+#include <QMouseEvent>
+#include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QSizePolicy>
 #include <QStyle>
 #include <QVBoxLayout>
@@ -23,27 +26,47 @@ namespace speecher {
 
 namespace {
 
-void addSummaryRow(QFormLayout *form,
-                   const QString &labelText,
-                   QLabel *value,
-                   AppPageId page,
-                   DictationPage *owner,
-                   QWidget *parent)
+constexpr int contentMaxWidth = 640;
+
+QFrame *makeSummaryCard(const QString &iconName,
+                        const QString &title,
+                        QLabel *value,
+                        AppPageId page,
+                        DictationPage *owner)
 {
-    auto *change = new QPushButton(QStringLiteral("Change…"), parent);
-    auto *field = new QWidget(parent);
-    auto *layout = new QHBoxLayout(field);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(settings::relatedSpacing());
-    layout->addWidget(value, 0, Qt::AlignVCenter);
-    layout->addWidget(change, 0, Qt::AlignVCenter);
-    auto *label = new QLabel(labelText + QLatin1Char(':'), parent);
-    label->setMinimumHeight(change->sizeHint().height());
-    label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    form->addRow(label, field);
-    QObject::connect(change, &QPushButton::clicked, owner, [owner, page] {
-        emit owner->navigateRequested(page);
-    });
+    auto *card = new QFrame(owner);
+    card->setObjectName(QStringLiteral("settingsCard"));
+    card->setFrameShape(QFrame::StyledPanel);
+    card->setCursor(Qt::PointingHandCursor);
+    card->setProperty("navTarget", static_cast<int>(page));
+    card->setToolTip(QStringLiteral("Open %1 settings").arg(title));
+    auto *layout = new QVBoxLayout(card);
+    layout->setContentsMargins(12, 10, 12, 10);
+    layout->setSpacing(2);
+
+    auto *titleRow = new QWidget(card);
+    auto *titleLayout = new QHBoxLayout(titleRow);
+    titleLayout->setContentsMargins(0, 0, 0, 0);
+    titleLayout->setSpacing(6);
+    auto *icon = new QLabel(titleRow);
+    icon->setPixmap(QIcon::fromTheme(iconName).pixmap(16, 16));
+    icon->setFixedSize(16, 16);
+    auto *titleLabel = new QLabel(title, titleRow);
+    titleLayout->addWidget(icon, 0, Qt::AlignVCenter);
+    titleLayout->addWidget(titleLabel, 0, Qt::AlignVCenter);
+    titleLayout->addStretch();
+
+    value->setForegroundRole(QPalette::PlaceholderText);
+    layout->addWidget(titleRow);
+    layout->addWidget(value);
+
+    // Clicks anywhere on the card (including its children) navigate.
+    card->installEventFilter(owner);
+    for (QWidget *child : {static_cast<QWidget *>(titleRow), static_cast<QWidget *>(value)}) {
+        child->setAttribute(Qt::WA_TransparentForMouseEvents);
+    }
+    icon->setAttribute(Qt::WA_TransparentForMouseEvents);
+    return card;
 }
 
 } // namespace
@@ -53,8 +76,10 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     , m_controller(controller)
     , m_accessibilityNotice(new AccessibilityNotice(this))
     , m_toggle(new QPushButton(this))
+    , m_heroToggle(new QPushButton(this))
     , m_status(new QLabel(this))
     , m_waveform(new WaveformWidget(this))
+    , m_transcript(new QPlainTextEdit(this))
     , m_provider(new QLabel(this))
     , m_microphone(new QLabel(this))
     , m_output(new QLabel(this))
@@ -65,25 +90,50 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     pageLayout->setSpacing(settings::relatedSpacing());
     m_toggle->setMinimumWidth(0);
     m_toggle->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    pageLayout->addWidget(m_toggle, 0, Qt::AlignHCenter);
 
-    auto *formWidget = new QWidget(this);
-    auto *form = new QFormLayout(formWidget);
-    settings::configureFormLayout(form);
+    auto *column = new QWidget(this);
+    column->setMaximumWidth(contentMaxWidth);
+    auto *columnLayout = new QVBoxLayout(column);
+    columnLayout->setContentsMargins(0, 0, 0, 0);
+    columnLayout->setSpacing(settings::relatedSpacing());
 
     m_accessibilityNotice->setCompact(true);
-    form->addRow(QString(), m_accessibilityNotice);
+    columnLayout->addWidget(m_accessibilityNotice);
 
-    auto *statusField = new QWidget(formWidget);
-    auto *statusLayout = new QVBoxLayout(statusField);
-    statusLayout->setContentsMargins(0, 0, 0, 0);
-    statusLayout->setSpacing(settings::tightSpacing());
+    auto *hero = new QFrame(column);
+    hero->setObjectName(QStringLiteral("settingsCard"));
+    hero->setFrameShape(QFrame::StyledPanel);
+    auto *heroLayout = new QVBoxLayout(hero);
+    heroLayout->setContentsMargins(16, 14, 16, 14);
+    heroLayout->setSpacing(settings::tightSpacing());
+
+    QFont statusFont = m_status->font();
+    statusFont.setPointSize(statusFont.pointSize() + 1);
+    statusFont.setBold(true);
+    m_status->setFont(statusFont);
     m_status->setForegroundRole(QPalette::WindowText);
-    statusLayout->addWidget(m_status, 0, Qt::AlignLeft);
-    statusLayout->addWidget(m_waveform, 0, Qt::AlignLeft);
-    form->addRow(QStringLiteral("Status:"), statusField);
+    heroLayout->addWidget(m_status, 0, Qt::AlignHCenter);
+    heroLayout->addWidget(m_waveform, 0, Qt::AlignHCenter);
 
-    const int valueWidth = fontMetrics().horizontalAdvance(QString(40, QLatin1Char('x')));
+    m_transcript->setObjectName(QStringLiteral("dictationTranscript"));
+    m_transcript->setReadOnly(true);
+    m_transcript->setPlaceholderText(
+        QStringLiteral("What you say appears here while you dictate."));
+    m_transcript->setMinimumHeight(96);
+    m_transcript->setMaximumHeight(180);
+    heroLayout->addWidget(m_transcript);
+
+    m_heroToggle->setObjectName(QStringLiteral("dictationHeroToggle"));
+    m_heroToggle->setMinimumHeight(36);
+    m_heroToggle->setMinimumWidth(200);
+    heroLayout->addSpacing(settings::tightSpacing());
+    heroLayout->addWidget(m_heroToggle, 0, Qt::AlignHCenter);
+    columnLayout->addWidget(hero);
+
+    auto *cardsRow = new QHBoxLayout;
+    cardsRow->setContentsMargins(0, 0, 0, 0);
+    cardsRow->setSpacing(settings::relatedSpacing());
+    const int valueWidth = fontMetrics().horizontalAdvance(QString(18, QLatin1Char('x')));
     for (QLabel *label : {m_provider, m_microphone, m_output, m_theme}) {
         label->setMaximumWidth(valueWidth);
         label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
@@ -91,20 +141,36 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     }
     m_provider->setObjectName(QStringLiteral("refinementSummary"));
     m_microphone->setObjectName(QStringLiteral("microphoneSummary"));
-    addSummaryRow(form, QStringLiteral("Refinement"), m_provider,
-                  AppPageId::Refinement, this, formWidget);
-    addSummaryRow(form, QStringLiteral("Microphone"), m_microphone,
-                  AppPageId::Audio, this, formWidget);
-    addSummaryRow(form, QStringLiteral("Output"), m_output,
-                  AppPageId::Output, this, formWidget);
-    addSummaryRow(form, QStringLiteral("Theme"), m_theme,
-                  AppPageId::General, this, formWidget);
-    pageLayout->addWidget(formWidget);
+    cardsRow->addWidget(makeSummaryCard(QStringLiteral("tools-wizard"),
+                                        QStringLiteral("Refinement"), m_provider,
+                                        AppPageId::Refinement, this), 1);
+    cardsRow->addWidget(makeSummaryCard(QStringLiteral("audio-input-microphone"),
+                                        QStringLiteral("Microphone"), m_microphone,
+                                        AppPageId::Audio, this), 1);
+    cardsRow->addWidget(makeSummaryCard(QStringLiteral("klipper"),
+                                        QStringLiteral("Output"), m_output,
+                                        AppPageId::Output, this), 1);
+    cardsRow->addWidget(makeSummaryCard(QStringLiteral("preferences-system"),
+                                        QStringLiteral("Theme"), m_theme,
+                                        AppPageId::General, this), 1);
+    columnLayout->addLayout(cardsRow);
+
+    auto *centerRow = new QHBoxLayout;
+    centerRow->setContentsMargins(0, 0, 0, 0);
+    centerRow->addStretch(1);
+    centerRow->addWidget(column);
+    centerRow->addStretch(1);
+    pageLayout->addLayout(centerRow);
     pageLayout->addStretch();
 
     connect(m_toggle, &QPushButton::clicked, controller, &ApplicationController::toggle);
+    connect(m_heroToggle, &QPushButton::clicked, controller, &ApplicationController::toggle);
     connect(controller, &ApplicationController::statusChanged, this, &DictationPage::setStatus);
     connect(controller, &ApplicationController::audioLevelChanged, m_waveform, &WaveformWidget::setLevel);
+    connect(controller, &ApplicationController::previewChanged, this, [this](const QString &preview) {
+        m_transcript->setPlainText(preview);
+        m_transcript->verticalScrollBar()->setValue(m_transcript->verticalScrollBar()->maximum());
+    });
     connect(m_accessibilityNotice, &AccessibilityNotice::enableRequested, this, [this] {
         QString error;
         if (!m_controller->enableAccessibility(&error)) {
@@ -135,25 +201,34 @@ QPushButton *DictationPage::toggleButton() const
     return m_toggle;
 }
 
+void DictationPage::applyToggleState(QPushButton *button,
+                                     bool active,
+                                     bool refining,
+                                     const QString &state) const
+{
+    const bool busy = state == QStringLiteral("stopping") || state == QStringLiteral("delivering");
+    button->setEnabled(!busy);
+    button->setText(active
+                        ? QStringLiteral("Stop Dictation")
+                        : refining
+                            ? QStringLiteral("Cancel Refinement")
+                            : state == QStringLiteral("stopping")
+                                ? QStringLiteral("Stopping…")
+                                : state == QStringLiteral("delivering")
+                                    ? QStringLiteral("Delivering…")
+                                    : QStringLiteral("Start Dictation"));
+    button->setIcon(QIcon::fromTheme(active || refining
+                                         ? QStringLiteral("media-playback-stop")
+                                         : QStringLiteral("media-record")));
+}
+
 void DictationPage::setStatus(const QString &status)
 {
     const QString state = status.toCaseFolded();
     const bool active = state == QStringLiteral("starting") || state == QStringLiteral("listening");
     const bool refining = state == QStringLiteral("refining");
-    const bool busy = state == QStringLiteral("stopping") || state == QStringLiteral("delivering");
-    m_toggle->setEnabled(!busy);
-    m_toggle->setText(active
-                          ? QStringLiteral("Stop Dictation")
-                          : refining
-                              ? QStringLiteral("Cancel Refinement")
-                              : state == QStringLiteral("stopping")
-                                  ? QStringLiteral("Stopping…")
-                                  : state == QStringLiteral("delivering")
-                                      ? QStringLiteral("Delivering…")
-                                      : QStringLiteral("Start Dictation"));
-    m_toggle->setIcon(QIcon::fromTheme(active || refining
-                                          ? QStringLiteral("media-playback-stop")
-                                          : QStringLiteral("media-record")));
+    applyToggleState(m_toggle, active, refining, state);
+    applyToggleState(m_heroToggle, active, refining, state);
     static const QStringList states{
         QStringLiteral("idle"),
         QStringLiteral("starting"),
@@ -168,6 +243,10 @@ void DictationPage::setStatus(const QString &status)
                           : status);
     m_status->setForegroundRole(QPalette::WindowText);
     m_waveform->setVisible(active);
+    if (active && !m_sessionActive) {
+        m_transcript->clear();
+    }
+    m_sessionActive = active;
     if (!active) {
         m_waveform->setLevel(0.0f);
     }
@@ -216,6 +295,17 @@ bool DictationPage::eventFilter(QObject *watched, QEvent *event)
                 label->setText(label->fontMetrics().elidedText(fullText,
                                                                 Qt::ElideRight,
                                                                 label->maximumWidth()));
+            }
+        }
+    }
+    if (event->type() == QEvent::MouseButtonRelease) {
+        if (auto *card = qobject_cast<QFrame *>(watched);
+            card && card->property("navTarget").isValid()) {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            if (mouse->button() == Qt::LeftButton
+                && card->rect().contains(mouse->position().toPoint())) {
+                emit navigateRequested(static_cast<AppPageId>(card->property("navTarget").toInt()));
+                return true;
             }
         }
     }
