@@ -40,22 +40,29 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
     connect(&m_server, &QLocalServer::newConnection, this, [this] {
         while (QLocalSocket *socket = m_server.nextPendingConnection()) {
             connect(socket, &QLocalSocket::readyRead, this, [this, socket] {
-                QByteArray &buffer = m_requestBuffers[socket];
-                buffer.append(socket->readAll());
-                while (true) {
-                    const qsizetype newline = buffer.indexOf('\n');
-                    QByteArray frame;
-                    if (newline >= 0) {
-                        frame = buffer.left(newline);
-                        buffer.remove(0, newline + 1);
-                    } else {
+                // Collect complete frames before emitting: a commandReceived slot can
+                // disconnect the socket, whose disconnected handler removes the buffer
+                // this loop would otherwise still reference.
+                QList<QByteArray> frames;
+                {
+                    QByteArray &buffer = m_requestBuffers[socket];
+                    buffer.append(socket->readAll());
+                    while (true) {
+                        const qsizetype newline = buffer.indexOf('\n');
+                        if (newline >= 0) {
+                            frames.append(buffer.left(newline));
+                            buffer.remove(0, newline + 1);
+                            continue;
+                        }
                         QJsonParseError legacyError;
                         const QJsonDocument legacy = QJsonDocument::fromJson(buffer, &legacyError);
-                        if (legacyError.error != QJsonParseError::NoError || !legacy.isObject()) {
-                            break;
+                        if (legacyError.error == QJsonParseError::NoError && legacy.isObject()) {
+                            frames.append(std::exchange(buffer, {}));
                         }
-                        frame = std::exchange(buffer, {});
+                        break;
                     }
+                }
+                for (const QByteArray &frame : frames) {
                     QJsonParseError parseError;
                     const QJsonDocument document = QJsonDocument::fromJson(frame, &parseError);
                     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
@@ -73,6 +80,16 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
             });
         }
     });
+}
+
+SingleInstanceIpc::~SingleInstanceIpc()
+{
+    // Sever per-socket lambdas before member destruction: m_requestBuffers dies
+    // before m_server, whose dying sockets would otherwise emit disconnected
+    // into the already-destroyed hash.
+    for (QLocalSocket *socket : m_server.findChildren<QLocalSocket *>()) {
+        socket->disconnect(this);
+    }
 }
 
 QString SingleInstanceIpc::socketName() const

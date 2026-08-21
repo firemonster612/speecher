@@ -30,6 +30,7 @@ class SingleInstanceIpc : public QObject {
 
 public:
     explicit SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatform> platform = {}, QObject *parent = nullptr);
+    ~SingleInstanceIpc() override;
 
     bool listen(QString *error = nullptr);
     QString socketName() const;
