@@ -34,6 +34,27 @@ private slots:
         settings.raw().clear();
     }
 
+    void liveScreenshotPages()
+    {
+        const QString dir = qEnvironmentVariable("SPEECHER_TEST_SCREENSHOT_DIR");
+        if (dir.isEmpty()) {
+            QSKIP("Screenshot dump is opt-in");
+        }
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        window.resize(980, 680);
+        window.show();
+        QTest::qWait(200);
+        for (int page = 0; page < window.pageCount(); ++page) {
+            window.findChild<QListWidget *>(QStringLiteral("appNavigation"))->setCurrentRow(page);
+            QTest::qWait(120);
+            window.grab().save(QStringLiteral("%1/page-%2-%3.png")
+                                   .arg(dir)
+                                   .arg(page)
+                                   .arg(window.pageTitles().at(page).toLower()));
+        }
+    }
+
     void sidebarShellConstructsWithSharedPageTitles()
     {
         ApplicationController controller(true);
@@ -43,11 +64,12 @@ private slots:
             QStringLiteral("Audio"),
             QStringLiteral("Applications"),
             QStringLiteral("Output"),
+            QStringLiteral("Auth"),
             QStringLiteral("Refinement"),
             QStringLiteral("Vocabulary"),
         };
         AppWindow window(&controller);
-        QCOMPARE(window.pageCount(), 7);
+        QCOMPARE(window.pageCount(), 8);
         QCOMPARE(window.pageTitles(), titles);
     }
 
