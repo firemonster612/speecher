@@ -29,8 +29,6 @@ namespace speecher {
 
 namespace {
 
-constexpr int contentMaxWidth = 640;
-
 QWidget *makeSummaryCard(const QString &iconName,
                          const QString &title,
                          QLabel *value,
@@ -63,7 +61,8 @@ QWidget *makeSummaryCard(const QString &iconName,
     value->setForegroundRole(QPalette::PlaceholderText);
     layout->addWidget(titleRow);
     layout->addWidget(value);
-    card->setMinimumHeight(layout->sizeHint().height());
+    card->setMinimumSize(layout->sizeHint().grownBy(QMargins(4, 2, 4, 2)));
+    card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     for (QWidget *child : {static_cast<QWidget *>(titleRow), static_cast<QWidget *>(value)}) {
         child->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -97,7 +96,6 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     m_toggle->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
     auto *column = new QWidget(this);
-    column->setMaximumWidth(contentMaxWidth);
     auto *columnLayout = new QVBoxLayout(column);
     columnLayout->setContentsMargins(0, 0, 0, 0);
     columnLayout->setSpacing(settings::relatedSpacing());
@@ -124,8 +122,8 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     m_transcript->setReadOnly(true);
     m_transcript->setPlaceholderText(
         QStringLiteral("What you say appears here while you dictate."));
-    m_transcript->setMinimumHeight(96);
-    m_transcript->setMaximumHeight(180);
+    m_transcript->setMinimumHeight(140);
+    m_transcript->setMaximumHeight(260);
     heroLayout->addWidget(m_transcript);
 
     m_copyTranscript = new QToolButton(m_transcript);
@@ -160,10 +158,10 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     auto *cardsRow = new QHBoxLayout;
     cardsRow->setContentsMargins(0, 0, 0, 0);
     cardsRow->setSpacing(settings::relatedSpacing());
-    const int valueWidth = fontMetrics().horizontalAdvance(QString(18, QLatin1Char('x')));
+    const int valueWidth = fontMetrics().horizontalAdvance(QString(24, QLatin1Char('x')));
     for (QLabel *label : {m_provider, m_microphone, m_output, m_theme}) {
-        label->setMaximumWidth(valueWidth);
-        label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+        label->setMinimumWidth(valueWidth);
+        label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
         label->installEventFilter(this);
     }
     m_provider->setObjectName(QStringLiteral("refinementSummary"));
@@ -182,12 +180,7 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
                                         AppPageId::General, this), 1);
     columnLayout->addLayout(cardsRow);
 
-    auto *centerRow = new QHBoxLayout;
-    centerRow->setContentsMargins(0, 0, 0, 0);
-    centerRow->addStretch(1);
-    centerRow->addWidget(column);
-    centerRow->addStretch(1);
-    pageLayout->addLayout(centerRow);
+    pageLayout->addWidget(column);
     pageLayout->addStretch();
 
     connect(m_toggle, &QPushButton::clicked, controller, &ApplicationController::toggle);
@@ -330,7 +323,7 @@ bool DictationPage::eventFilter(QObject *watched, QEvent *event)
             if (!fullText.isEmpty()) {
                 label->setText(label->fontMetrics().elidedText(fullText,
                                                                 Qt::ElideRight,
-                                                                label->maximumWidth()));
+                                                                label->width()));
             }
         }
     }
@@ -360,7 +353,8 @@ void DictationPage::setSummaryText(QLabel *label, const QString &text)
 {
     label->setProperty("fullText", text);
     label->setToolTip(text);
-    label->setText(label->fontMetrics().elidedText(text, Qt::ElideRight, label->maximumWidth()));
+    label->setText(label->fontMetrics().elidedText(
+        text, Qt::ElideRight, label->width() > 0 ? label->width() : label->minimumWidth()));
 }
 
 } // namespace speecher
