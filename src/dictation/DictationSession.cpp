@@ -595,6 +595,7 @@ void DictationSession::deliverFinal(const QString &text)
     m_sessionSettings.reset();
     m_target = {};
     if (result.ok) {
+        emit transcriptDelivered(text);
         const QString outcome = usedFallback
             ? QStringLiteral("Used raw transcript • %1").arg(result.message)
             : result.message;

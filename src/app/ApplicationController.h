@@ -66,6 +66,7 @@ public slots:
 signals:
     void statusChanged(const QString &status);
     void previewChanged(const QString &preview);
+    void transcriptDelivered(const QString &text);
     void audioLevelChanged(float level);
     void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
 

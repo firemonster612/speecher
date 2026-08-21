@@ -7,6 +7,7 @@
 class QLabel;
 class QPlainTextEdit;
 class QPushButton;
+class QToolButton;
 
 namespace speecher {
 
@@ -43,6 +44,7 @@ private:
     QLabel *m_status;
     WaveformWidget *m_waveform;
     QPlainTextEdit *m_transcript;
+    QToolButton *m_copyTranscript = nullptr;
     QLabel *m_provider;
     QLabel *m_microphone;
     QLabel *m_output;

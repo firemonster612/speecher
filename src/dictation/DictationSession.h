@@ -54,6 +54,7 @@ public slots:
 signals:
     void statusChanged(const QString &status);
     void previewChanged(const QString &transcript);
+    void transcriptDelivered(const QString &text);
     void previewDisplayChanged(const QString &preview);
     void audioLevelChanged(float level);
     void popupStatusChanged(const QString &status);
