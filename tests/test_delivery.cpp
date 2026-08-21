@@ -327,6 +327,8 @@ private slots:
         QCOMPARE(classified(QStringLiteral("konsole")).category, AppCategory::Terminal);
         QCOMPARE(classified(QStringLiteral("com.mitchellh.ghostty")).category, AppCategory::Terminal);
         QCOMPARE(classified(QStringLiteral("firefox")).category, AppCategory::Browser);
+        QCOMPARE(classified(QStringLiteral("google-chrome")).category, AppCategory::Browser);
+        QCOMPARE(classified(QStringLiteral("org.chromium.Chromium")).category, AppCategory::Browser);
         QCOMPARE(classified(QStringLiteral("helium")).category, AppCategory::Browser);
         QCOMPARE(classified(QStringLiteral("thunderbird")).category, AppCategory::Email);
         QCOMPARE(classified(QStringLiteral("soffice.bin")).category, AppCategory::Office);

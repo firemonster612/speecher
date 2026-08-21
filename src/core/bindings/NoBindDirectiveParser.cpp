@@ -182,9 +182,11 @@ QStringList NoBindDirectiveParser::excludedPhrases(const QString &transcript, co
             matchedInsideDirective = true;
         }
         if (!matchedInsideDirective) {
-            if (const BindingMatch *nearest = nearestMatchAfterDirective(matches, directive)) {
-                appendNoBindPhrase(&phrases, &seen, nearest->rule);
-            } else if (!directive.targetFollowsAction) {
+            if (directive.targetFollowsAction) {
+                if (const BindingMatch *nearest = nearestMatchAfterDirective(matches, directive)) {
+                    appendNoBindPhrase(&phrases, &seen, nearest->rule);
+                }
+            } else {
                 if (const BindingMatch *nearest = nearestMatchBeforeDirective(matches, directive)) {
                     appendNoBindPhrase(&phrases, &seen, nearest->rule);
                 }

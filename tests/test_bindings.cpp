@@ -48,6 +48,13 @@ private slots:
                          {QStringLiteral("my phone"), QStringLiteral("+1 555 0100")},
                      }),
                  QStringList({QStringLiteral("my phone")}));
+        QCOMPARE(BindingProcessor::explicitNoBindPhrases(
+                     QStringLiteral("write my email, don't bind that, then write my phone"),
+                     {
+                         {QStringLiteral("my email"), QStringLiteral("efox@example.com")},
+                         {QStringLiteral("my phone"), QStringLiteral("+1 555 0100")},
+                     }),
+                 QStringList({QStringLiteral("my email")}));
         QVERIFY(BindingProcessor::hasExplicitNoBindDirective(
             QStringLiteral("please write my evil but don't turn that into a binding")));
         QCOMPARE(BindingProcessor::explicitNoBindPhrases(
