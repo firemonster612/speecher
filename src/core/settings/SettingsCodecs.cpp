@@ -730,6 +730,20 @@ QString SettingsCodecs::cliproxyOauthDir() const
                  QDir::homePath() + QStringLiteral("/.local/share/cliproxy-api/oauth")).toString();
 }
 
+QString SettingsCodecs::cliproxyBaseUrl() const
+{
+    QString base = value(SettingsKeys::CliproxyBaseUrl, QString()).toString().trimmed();
+    while (base.endsWith(QLatin1Char('/'))) {
+        base.chop(1);
+    }
+    return base;
+}
+
+QString SettingsCodecs::cliproxyApiKey() const
+{
+    return value(SettingsKeys::CliproxyApiKey, QString()).toString().trimmed();
+}
+
 QString SettingsCodecs::claudeCredentialsPath() const
 {
     return value(SettingsKeys::ClaudeCredentialsPath, QDir::homePath() + QStringLiteral("/.claude/.credentials.json")).toString();
@@ -798,6 +812,8 @@ AppSettings SettingsCodecs::snapshot() const
     settings.refinement.anthropicEffort = anthropicEffort();
     settings.refinement.anthropicCliproxyAccount = anthropicCliproxyAccount();
     settings.refinement.cliproxyOauthDir = cliproxyOauthDir();
+    settings.refinement.cliproxyBaseUrl = cliproxyBaseUrl();
+    settings.refinement.cliproxyApiKey = cliproxyApiKey();
     settings.refinement.anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     settings.refinement.claudeCredentialsPath = claudeCredentialsPath();
     settings.refinement.defaultWritingProfile = defaultWritingProfile();

@@ -189,6 +189,29 @@ private slots:
         QCOMPARE(settings.output.completionStatusDurationMs, 650);
     }
 
+    void liveCliproxyAccountPicker()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_CLIPROXY").isEmpty()) {
+            QSKIP("Live CLI Proxy picker check is opt-in");
+        }
+        SettingsStore settings;
+        SecretStore secrets(&settings);
+        ProviderSettingsPage page(settings, secrets);
+        page.loadModels();
+        page.loadAuthModes();
+        for (const char *name : {"openAiCliproxyAccount", "anthropicCliproxyAccount"}) {
+            auto *combo = page.findChild<QComboBox *>(QString::fromLatin1(name));
+            QVERIFY2(combo, name);
+            qInfo().noquote() << name << "dir=" << settings.cliproxyOauthDir();
+            for (int i = 0; i < combo->count(); ++i) {
+                qInfo().noquote() << "  item:" << combo->itemText(i)
+                                  << "data=" << combo->itemData(i).toString();
+            }
+            QVERIFY2(combo->count() > 0 && combo->itemText(0) != QStringLiteral("No accounts found"),
+                     qPrintable(QStringLiteral("%1 shows no accounts").arg(QLatin1String(name))));
+        }
+    }
+
     void providerSettingsCliproxyAccountPicker()
     {
         SettingsStore settings;

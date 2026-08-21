@@ -41,6 +41,8 @@ public:
     QString anthropicEffort() const; void setAnthropicEffort(const QString &value);
     QString anthropicCliproxyAccount() const; void setAnthropicCliproxyAccount(const QString &value);
     QString cliproxyOauthDir() const;
+    QString cliproxyBaseUrl() const;
+    QString cliproxyApiKey() const;
     QString outputMethod() const; void setOutputMethod(const QString &value);
     OutputFormat outputFormat() const; void setOutputFormat(OutputFormat value);
     bool ydotoolEnabled() const; void setYdotoolEnabled(bool value);
