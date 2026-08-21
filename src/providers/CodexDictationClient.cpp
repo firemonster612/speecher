@@ -82,6 +82,7 @@ void CodexDictationClient::start(const QUrl &url,
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     m_pendingAudio.clear();
+    m_finalUtteranceIds.clear();
     m_sessionStarted = false;
     m_finishRequested = false;
     m_finalizing = false;
@@ -281,8 +282,15 @@ void CodexDictationClient::handleTextMessage(const QString &message)
         return;
     }
     if (type == QStringLiteral("transcript.final")) {
+        const QString utteranceId = event.value(QStringLiteral("utterance_id")).toString();
+        if (!utteranceId.isEmpty() && m_finalUtteranceIds.contains(utteranceId)) {
+            return;
+        }
         const QString text = event.value(QStringLiteral("text")).toString().trimmed();
         if (!text.isEmpty()) {
+            if (!utteranceId.isEmpty()) {
+                m_finalUtteranceIds.insert(utteranceId);
+            }
             emit finalTranscript(text);
         }
         return;

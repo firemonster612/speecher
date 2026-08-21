@@ -3,6 +3,7 @@
 #include <QByteArray>
 #include <QList>
 #include <QObject>
+#include <QSet>
 #include <QUrl>
 
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
@@ -42,6 +43,7 @@ private:
     QWebSocket m_socket;
 #endif
     QList<QByteArray> m_pendingAudio;
+    QSet<QString> m_finalUtteranceIds;
     bool m_sessionStarted = false;
     bool m_finishRequested = false;
     bool m_finalizing = false;
