@@ -6,6 +6,7 @@
 
 class QCheckBox;
 class QComboBox;
+class QMediaDevices;
 class QSpinBox;
 
 namespace speecher {
@@ -33,6 +34,7 @@ private:
     void updateAudioControls();
 
     const LinuxComposition &m_platform;
+    QMediaDevices *m_mediaDevices = nullptr;
     QComboBox *m_speechProvider;
     QComboBox *m_audioDevice;
     QComboBox *m_captureMode;

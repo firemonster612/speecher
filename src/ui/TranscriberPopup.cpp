@@ -18,26 +18,44 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include <QPainter>
+
 #include <algorithm>
 
 namespace speecher {
 namespace {
 
-QString rgbaString(QColor color, int alpha)
-{
-    color.setAlpha(alpha);
-    return QStringLiteral("rgba(%1,%2,%3,%4)")
-        .arg(color.red())
-        .arg(color.green())
-        .arg(color.blue())
-        .arg(color.alpha());
-}
+// Paints the pill instead of a stylesheet border: Qt's QSS rounded borders
+// render with uneven thickness at fractional display scales, which reads as
+// blur around the edge. This draws a one-device-pixel hairline aligned to the
+// device-pixel grid.
+class PillFrame final : public QFrame {
+public:
+    using QFrame::QFrame;
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QPalette p = QApplication::palette();
+        QColor stroke = p.color(QPalette::Mid);
+        stroke.setAlpha(150);
+        const qreal dpr = devicePixelRatioF() > 0 ? devicePixelRatioF() : 1.0;
+        const qreal penWidth = 1.0 / dpr;
+        const qreal inset = penWidth / 2.0;
+        painter.setPen(QPen(stroke, penWidth));
+        painter.setBrush(p.color(QPalette::Base));
+        const QRectF pillRect = QRectF(rect()).adjusted(inset, inset, -inset, -inset);
+        painter.drawRoundedRect(pillRect, pillRect.height() / 2.0, pillRect.height() / 2.0);
+    }
+};
 
 } // namespace
 
 TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     : QWidget(parent)
-    , m_previewPill(new QFrame(this))
+    , m_previewPill(new PillFrame(this))
     , m_preview(new QLabel(this))
     , m_errorDismissProgress(new QProgressBar(m_previewPill))
     , m_waveform(new WaveformWidget(this))
@@ -293,20 +311,19 @@ void TranscriberPopup::applyTheme()
     }
     m_applyingTheme = true;
     const QPalette p = qApp ? qApp->palette() : palette();
-    const QColor pill = p.color(QPalette::Base);
-    const QString stroke = rgbaString(p.color(QPalette::Mid), 150);
     const QColor text = p.color(QPalette::Text);
     const QColor accent = p.color(QPalette::Highlight);
     setStyleSheet(QStringLiteral(
                       "#transcriberPopup{background:transparent;}"
-                      "QFrame#previewPill{background:%1;border:1px solid %2;border-radius:24px;}"
-                      "QLabel{color:%3;font:14px 'Inter','Noto Sans',sans-serif;}"
+                      "QFrame#previewPill{background:transparent;border:0;}"
+                      "QLabel{color:%1;font:14px 'Inter','Noto Sans',sans-serif;}"
                       "QProgressBar#errorDismissProgress{border:0;background:transparent;}"
-                      "QProgressBar#errorDismissProgress::chunk{background:%4;border-radius:1px;}")
-                      .arg(pill.name(QColor::HexRgb),
-                           stroke,
-                           text.name(QColor::HexRgb),
+                      "QProgressBar#errorDismissProgress::chunk{background:%2;border-radius:1px;}")
+                      .arg(text.name(QColor::HexRgb),
                            accent.name(QColor::HexRgb)));
+    if (m_previewPill) {
+        m_previewPill->update();
+    }
     m_applyingTheme = false;
 }
 

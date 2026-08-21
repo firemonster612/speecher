@@ -8,6 +8,7 @@
 #include <QComboBox>
 #include <QFormLayout>
 #include <QLabel>
+#include <QMediaDevices>
 #include <QSpinBox>
 #include <QVBoxLayout>
 
@@ -111,6 +112,15 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
     pageLayout->addWidget(card);
     pageLayout->addStretch();
 
+    // Audio backends (PipeWire) report devices asynchronously; a one-shot
+    // enumeration at load time can run before any device is known and leave
+    // the list empty for the whole session. Re-populate whenever the set of
+    // inputs changes, keeping the current selection.
+    m_mediaDevices = new QMediaDevices(this);
+    connect(m_mediaDevices, &QMediaDevices::audioInputsChanged, this, [this] {
+        const QString current = m_audioDevice->currentData().toString();
+        refreshAudioDeviceList(current);
+    });
     connect(m_speechProvider, &QComboBox::currentIndexChanged, this, &AudioSettingsPage::changed);
     connect(m_audioDevice, &QComboBox::currentIndexChanged, this, &AudioSettingsPage::changed);
     connect(m_captureMode, &QComboBox::currentIndexChanged, this, &AudioSettingsPage::changed);

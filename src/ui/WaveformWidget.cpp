@@ -96,9 +96,16 @@ void WaveformWidget::paintEvent(QPaintEvent *)
     const QColor pill = p.color(QPalette::Base);
     const QColor bar = p.color(QPalette::Text);
     const QColor stroke = withAlpha(p.color(QPalette::Mid), 150);
-    painter.setPen(QPen(stroke, 1.2));
+    // One device pixel, centered on the device-pixel grid: on fractionally
+    // scaled displays a logical 1px+ stroke lands between device pixels and
+    // renders as a soft 2px blur ring.
+    const qreal dpr = devicePixelRatioF() > 0 ? devicePixelRatioF() : 1.0;
+    const qreal penWidth = 1.0 / dpr;
+    const qreal inset = penWidth / 2.0;
+    painter.setPen(QPen(stroke, penWidth));
     painter.setBrush(pill);
-    painter.drawRoundedRect(QRectF(rect()).adjusted(1.2, 1.2, -1.2, -1.2), (height() - 2.4) / 2.0, (height() - 2.4) / 2.0);
+    const QRectF pillRect = QRectF(rect()).adjusted(inset, inset, -inset, -inset);
+    painter.drawRoundedRect(pillRect, pillRect.height() / 2.0, pillRect.height() / 2.0);
 
     if (m_mode == Mode::Message) {
         paintMessage(painter, bar);
