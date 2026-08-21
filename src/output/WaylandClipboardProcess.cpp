@@ -83,7 +83,14 @@ bool run(const QString &executable,
     QElapsedTimer elapsed;
     elapsed.start();
     while (process.state() != QProcess::NotRunning && elapsed.elapsed() < timeoutMs) {
-        process.waitForReadyRead(qMin(50, timeoutMs - int(elapsed.elapsed())));
+        const int waitMs = qMin(50, timeoutMs - int(elapsed.elapsed()));
+        if (!process.waitForReadyRead(waitMs)
+            && process.state() != QProcess::NotRunning) {
+            const int remainingMs = timeoutMs - int(elapsed.elapsed());
+            if (remainingMs > 0) {
+                process.waitForFinished(qMin(50, remainingMs));
+            }
+        }
         if (output) {
             capturedOutput += process.readAllStandardOutput();
             if (capturedOutput.size() > maximumOutputBytes) {

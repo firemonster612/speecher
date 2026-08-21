@@ -10,6 +10,8 @@
 #include <QStandardPaths>
 #include <QTextStream>
 
+#include <limits>
+
 #ifdef Q_OS_UNIX
 #include <unistd.h>
 #endif
@@ -24,7 +26,8 @@ constexpr int keyHoldMs = 2;
 constexpr int shortcutKeyDelayMs = 2;
 constexpr int modifierTimeoutMs = 500;
 constexpr int shortcutTimeoutMs = 1000;
-constexpr int maximumTypeTimeoutMs = 5000;
+constexpr int typeBaseTimeoutMs = 2000;
+constexpr int typeSlackPerCharacterMs = 5;
 
 QString runtimeDirectory()
 {
@@ -247,8 +250,9 @@ bool YdotoolDelivery::type(const QString &text, QString *error)
 
     releaseModifierKeys(executable, env);
     const int typeTimeoutMs = int(qMin<qsizetype>(
-        maximumTypeTimeoutMs,
-        1000 + typedText.size() * 5));
+        std::numeric_limits<int>::max(),
+        typeBaseTimeoutMs
+            + typedText.size() * (keyDelayMs + keyHoldMs + typeSlackPerCharacterMs)));
     if (!runYdotool(executable, env, commandArguments(typedText), typeTimeoutMs, error)) {
         releaseModifierKeys(executable, env);
         return false;

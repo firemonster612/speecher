@@ -214,9 +214,10 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
                 true,
                 DeliveryReceipt::Copied,
                 content.html.has_value() && !initiallyHtmlAvailable,
-                insertionError.isEmpty()
-                    ? QStringLiteral("Copied")
-                    : QStringLiteral("Copied; direct insertion was rejected"),
+                withClipboardWarning(
+                    insertionError.isEmpty()
+                        ? QStringLiteral("Copied")
+                        : QStringLiteral("Copied; direct insertion was rejected")),
             };
         }
         pasteMethod = PasteMethod::ClipboardOnly;
@@ -230,7 +231,8 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
             true,
             DeliveryReceipt::Copied,
             downgraded,
-            downgraded ? QStringLiteral("Copied as plain text") : QStringLiteral("Copied"),
+            withClipboardWarning(
+                downgraded ? QStringLiteral("Copied as plain text") : QStringLiteral("Copied")),
         };
     }
 
