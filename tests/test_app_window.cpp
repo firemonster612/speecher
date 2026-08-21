@@ -14,6 +14,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QFormLayout>
+#include <QFrame>
 #include <QPushButton>
 #include <QSaveFile>
 #include <QScopeGuard>

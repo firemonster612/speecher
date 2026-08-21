@@ -87,9 +87,12 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     m_profileSettings->setSelectionMode(QAbstractItemView::NoSelection);
     m_profileSettings->setMinimumHeight(207);
     m_profileSettings->setMaximumHeight(207);
+    // Keep spanning rows from stretching the form to the card edge, which
+    // defeats the centered-form alignment every other page shares.
+    m_profileSettings->setMaximumWidth(600);
     auto *title = settings::makePageTitle(QStringLiteral("Refinement"), this);
     auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
+    auto *cardLayout = settings::cardFormLayout(card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Refinement"), QStringLiteral("Clean up dictated text after capture."), m_provider, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Fallback profile"), QStringLiteral("Writing profile used when the target app does not imply one."), m_writingProfile, card), card);
     auto *profileSettingsControl = new QWidget(card);
@@ -104,6 +107,7 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     profileSettingsLayout->addWidget(profileSettingsTitle);
     profileSettingsLayout->addWidget(profileSettingsDescription);
     profileSettingsLayout->addWidget(m_profileSettings);
+    profileSettingsControl->setMaximumWidth(600);
     cardLayout->addWidget(profileSettingsControl);
     cardLayout->addRow(settings::makeCenteredSeparator(card));
 

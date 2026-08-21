@@ -52,7 +52,7 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
 
     auto *title = settings::makePageTitle(QStringLiteral("Audio"), this);
     auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
+    auto *cardLayout = settings::cardFormLayout(card);
 
     settings::addRow(cardLayout,
                      settings::makeRow(QStringLiteral("Transcription"),
