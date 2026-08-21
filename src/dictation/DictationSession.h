@@ -103,6 +103,7 @@ private:
     QString m_refinedText;
     TranscriptPipelineResult m_transcriptPipeline;
     quint64 m_generation = 0;
+    quint64 m_audioGeneration = 0;
     quint64 m_attemptId = 0;
     quint64 m_continuedStartupGeneration = 0;
     std::optional<AppSettings> m_sessionSettings;

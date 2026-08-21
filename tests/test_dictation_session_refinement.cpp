@@ -566,11 +566,18 @@ private slots:
 
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->autoCompleteOnFinish = false;
         speech->emitFinalText(QStringLiteral("keep this transcript"));
+        QSignalSpy message(&session, &DictationSession::popupMessageRequested);
         speech->emitFailure(QStringLiteral("provider disconnected"));
 
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
         QCOMPARE(delivery->lastText, QStringLiteral("keep this transcript"));
+        QCOMPARE(audio->isActive(), false);
+        QCOMPARE(media->resumeCalls, 1);
+        QCOMPARE(message.count(), 1);
+        QCOMPARE(message.first().first().toString(),
+                 QStringLiteral("Used raw transcript • Input sent"));
     }
 
     void dictationSessionIgnoresRefinerSignalsAfterFailureFallback()

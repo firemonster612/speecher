@@ -86,6 +86,7 @@ DictationSession::DictationSession(SettingsStore *settings,
         }
 
         m_audio->stop();
+        m_audioGeneration = 0;
         if (m_transcriber) {
             m_transcriber->cancelAttempt(m_attemptId);
         }
@@ -364,6 +365,7 @@ void DictationSession::stopListening()
     setState(DictationState::Stopping);
     qInfo() << "stopListening transcriptLength=" << m_transcript->text().size();
     m_audio->stop();
+    m_audioGeneration = 0;
     if (m_transcriber) {
         m_transcriber->finishInput(m_attemptId);
     }
@@ -416,7 +418,11 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation, const
     m_transcriber->startAttempt(m_attemptId, settings.speech);
 
     QString audioError;
+    m_audioGeneration = generation;
     if (!m_audio->start(&audioError)) {
+        if (m_audioGeneration == generation) {
+            m_audioGeneration = 0;
+        }
         qWarning().noquote() << "audio start failed message=" + audioError;
         m_transcriber->cancelAttempt(m_attemptId);
         clearScreenshotContext();
@@ -428,7 +434,10 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation, const
     if (generation != m_generation
         || m_state != DictationState::Starting
         || !m_sessionSettings) {
-        m_audio->stop();
+        if (m_audioGeneration == generation) {
+            m_audio->stop();
+            m_audioGeneration = 0;
+        }
         qInfo() << "audio start completed for a cancelled generation";
         return;
     }
@@ -521,7 +530,7 @@ void DictationSession::beginRefinement(quint64 generation)
         return;
     }
 
-    setState(DictationState::Refining);
+    setState(DictationState::Refining, m_lastMessage);
     m_refinementGeneration = generation;
     emit popupRefiningChanged(true);
     m_refinedText.clear();
@@ -629,16 +638,21 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
                          << "message=" + failure.message;
     if (!m_transcript->isEmpty()
         && (m_state == DictationState::Listening || m_state == DictationState::Stopping)) {
-        m_lastMessage = failure.message;
         if (m_state == DictationState::Listening) {
-            stopListening();
+            m_audio->stop();
+            m_audioGeneration = 0;
+            resumePausedMedia();
+            setState(DictationState::Stopping, failure.message);
+            beginRefinement(m_generation);
             return;
         }
+        m_lastMessage = failure.message;
         beginRefinement(m_generation);
         return;
     }
 
     m_audio->stop();
+    m_audioGeneration = 0;
     m_transcriber->cancelAttempt(m_attemptId);
     clearScreenshotContext();
     m_sessionSettings.reset();
