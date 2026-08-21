@@ -1,6 +1,7 @@
 #include "common/test_doubles.h"
 #include "common/test_http.h"
 #include "common/test_auth.h"
+#include "providers/OpenAiTranscriptRefiner.h"
 
 using namespace speecher::test;
 
@@ -500,6 +501,93 @@ private slots:
                       + sse);
         QVERIFY(socket->waitForBytesWritten(1000));
         socket->disconnectFromHost();
+    }
+
+    void liveCliproxyRemoteRefinement()
+    {
+        const QString baseUrl = qEnvironmentVariable("SPEECHER_TEST_LIVE_CLIPROXY_URL");
+        const QString apiKey = qEnvironmentVariable("SPEECHER_TEST_LIVE_CLIPROXY_KEY");
+        if (baseUrl.isEmpty() || apiKey.isEmpty()) {
+            QSKIP("Live CLI Proxy refinement check is opt-in");
+        }
+
+        RefinementSettings settings;
+        settings.cliproxyBaseUrl = baseUrl;
+        settings.cliproxyApiKey = apiKey;
+        RefinementContext context;
+
+        settings.anthropicAuthMode = QStringLiteral("cliproxy");
+        AnthropicTranscriptRefiner anthropic;
+        QSignalSpy anthropicCompleted(&anthropic, &TranscriptRefiner::completed);
+        QSignalSpy anthropicFailed(&anthropic, &TranscriptRefiner::failed);
+        anthropic.refine(QStringLiteral("hello world this is a test"), {}, context, settings);
+        QTRY_VERIFY_WITH_TIMEOUT(!anthropicCompleted.isEmpty() || !anthropicFailed.isEmpty(), 60000);
+        QVERIFY2(anthropicFailed.isEmpty(),
+                 qPrintable(anthropicFailed.isEmpty() ? QString() : anthropicFailed.first().first().toString()));
+        QVERIFY(!anthropicCompleted.first().first().toString().trimmed().isEmpty());
+
+        settings.openAiAuthMode = QStringLiteral("cliproxy");
+        settings.openAiModel = qEnvironmentVariable("SPEECHER_TEST_LIVE_CLIPROXY_OPENAI_MODEL",
+                                                    QStringLiteral("gpt-5.6-luna"));
+        OpenAiTranscriptRefiner openAi(nullptr);
+        QSignalSpy openAiCompleted(&openAi, &TranscriptRefiner::completed);
+        QSignalSpy openAiFailed(&openAi, &TranscriptRefiner::failed);
+        openAi.refine(QStringLiteral("hello world this is a test"), {}, context, settings);
+        QTRY_VERIFY_WITH_TIMEOUT(!openAiCompleted.isEmpty() || !openAiFailed.isEmpty(), 60000);
+        QVERIFY2(openAiFailed.isEmpty(),
+                 qPrintable(openAiFailed.isEmpty() ? QString() : openAiFailed.first().first().toString()));
+        QVERIFY(!openAiCompleted.first().first().toString().trimmed().isEmpty());
+    }
+
+    void refinersUseRemoteCliproxyServerWhenBaseUrlSet()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        RefinementSettings settings;
+        settings.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+        settings.cliproxyApiKey = QStringLiteral("proxy-key");
+        RefinementContext context;
+
+        // No local account files anywhere near these paths: remote mode must not need them.
+        settings.cliproxyOauthDir = QStringLiteral("/nonexistent/cliproxy/oauth");
+
+        settings.anthropicAuthMode = QStringLiteral("cliproxy");
+        AnthropicTranscriptRefiner anthropic;
+        anthropic.refine(QStringLiteral("hello there"), {}, context, settings);
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *claudeSocket = server.nextPendingConnection();
+        QVERIFY(claudeSocket);
+        const QByteArray claudeRequest = readHttpRequest(claudeSocket, 1000);
+        QVERIFY(claudeRequest.startsWith(QByteArrayLiteral("POST /v1/messages")));
+        QVERIFY(claudeRequest.toLower().contains(QByteArrayLiteral("authorization: bearer proxy-key")));
+        anthropic.cancel();
+        claudeSocket->close();
+
+        settings.openAiAuthMode = QStringLiteral("cliproxy");
+        OpenAiTranscriptRefiner openAi(nullptr);
+        openAi.refine(QStringLiteral("hello there"), {}, context, settings);
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *codexSocket = server.nextPendingConnection();
+        QVERIFY(codexSocket);
+        const QByteArray codexRequest = readHttpRequest(codexSocket, 1000);
+        QVERIFY(codexRequest.startsWith(QByteArrayLiteral("POST /v1/responses")));
+        QVERIFY(codexRequest.toLower().contains(QByteArrayLiteral("authorization: bearer proxy-key")));
+        openAi.cancel();
+    }
+
+    void remoteCliproxyWithoutKeyFailsWithClearMessage()
+    {
+        RefinementSettings settings;
+        settings.anthropicAuthMode = QStringLiteral("cliproxy");
+        settings.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:1");
+        RefinementContext context;
+
+        AnthropicTranscriptRefiner refiner;
+        QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
+        refiner.refine(QStringLiteral("hello"), {}, context, settings);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
+        QVERIFY(failed.first().first().toString().contains(QStringLiteral("cliproxy/apiKey")));
     }
 
     void anthropicRefinerReloadsCliproxyTokenPerRequest()

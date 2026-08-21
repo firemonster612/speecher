@@ -16,6 +16,20 @@ RefinementPrepareResult loadClaudeOauthToken(const RefinementSettings &settings,
                                              bool refreshExpired)
 {
     if (settings.anthropicAuthMode == QStringLiteral("cliproxy")) {
+        // Remote proxy: authenticate with the CLI Proxy API server key; the
+        // server picks the account and refreshes its own oauth tokens.
+        if (!settings.cliproxyBaseUrl.isEmpty()) {
+            if (settings.cliproxyApiKey.isEmpty()) {
+                if (accessToken) {
+                    accessToken->clear();
+                }
+                return {false, QStringLiteral("CLI Proxy API key is not set (cliproxy/apiKey)")};
+            }
+            if (accessToken) {
+                *accessToken = settings.cliproxyApiKey;
+            }
+            return {true, QString()};
+        }
         const CliProxyCredentialResult credentials =
             CliProxyCredentials::load(settings.cliproxyOauthDir, QStringLiteral("claude"), settings.anthropicCliproxyAccount);
         if (accessToken) {
@@ -116,11 +130,14 @@ void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,
             return;
         }
     }
+    const bool remoteCliproxy = settings.anthropicAuthMode == QStringLiteral("cliproxy")
+        && !settings.cliproxyBaseUrl.isEmpty();
     m_apiRefiner->refine(rawTranscript,
                          vocabulary,
                          settings.bindingVocabulary,
                          m_accessToken,
-                         settings.anthropicEndpointBase,
+                         remoteCliproxy ? settings.cliproxyBaseUrl + QStringLiteral("/v1")
+                                        : settings.anthropicEndpointBase,
                          settings.anthropicModel,
                          settings.anthropicEffort,
                          settings.style,

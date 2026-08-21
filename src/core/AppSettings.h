@@ -67,6 +67,8 @@ struct RefinementSettings {
     QString anthropicEffort = QStringLiteral("low");
     QString anthropicCliproxyAccount;
     QString cliproxyOauthDir;
+    QString cliproxyBaseUrl;
+    QString cliproxyApiKey;
     QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     QString claudeCredentialsPath;
     QStringList bindingVocabulary;

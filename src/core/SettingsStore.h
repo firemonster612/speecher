@@ -22,6 +22,8 @@ public:
     using SettingsCodecs::anthropicEffort;
     using SettingsCodecs::anthropicModel;
     using SettingsCodecs::cliproxyOauthDir;
+    using SettingsCodecs::cliproxyBaseUrl;
+    using SettingsCodecs::cliproxyApiKey;
     using SettingsCodecs::appRecognitionRules;
     using SettingsCodecs::audioCaptureSettings;
     using SettingsCodecs::bindingRules;

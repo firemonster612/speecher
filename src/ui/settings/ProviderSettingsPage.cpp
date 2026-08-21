@@ -401,19 +401,25 @@ void ProviderSettingsPage::updateAuthControl()
     const QString cliproxyDir = m_settings.cliproxyOauthDir();
     const QString settingsApiKey = m_loadedApiKey;
     const QString settingsStatus = m_secrets.status();
+    const QString cliproxyBaseUrl = m_settings.cliproxyBaseUrl();
+    const QString cliproxyApiKey = m_settings.cliproxyApiKey();
     auto status = std::make_shared<QString>();
     QThread *thread = QThread::create([mode,
                                        cliproxyAccount,
                                        cliproxyDir,
                                        settingsApiKey,
                                        settingsStatus,
+                                       cliproxyBaseUrl,
+                                       cliproxyApiKey,
                                        status] {
         *status = OpenAiAuthProvider(nullptr,
                                      mode,
                                      cliproxyAccount,
                                      cliproxyDir,
                                      settingsApiKey,
-                                     settingsStatus)
+                                     settingsStatus,
+                                     cliproxyBaseUrl,
+                                     cliproxyApiKey)
                       .status();
     });
     connect(thread, &QThread::finished, this, [this, generation, mode, status] {
@@ -447,6 +453,13 @@ void ProviderSettingsPage::populateCliproxyAccounts(QComboBox *combo, const QStr
 {
     const QSignalBlocker blocker(combo);
     combo->clear();
+    const QString baseUrl = m_settings.cliproxyBaseUrl();
+    if (!baseUrl.isEmpty()) {
+        combo->addItem(QStringLiteral("Server-routed via %1").arg(baseUrl), QString());
+        settings::setComboItemEnabled(combo, 0, false,
+                                      QStringLiteral("CLI Proxy API picks the account (cliproxy/baseUrl is set)"));
+        return;
+    }
     const QString directory = m_settings.cliproxyOauthDir();
     const QList<CliProxyAccount> accounts = CliProxyCredentials::listAccounts(directory, type);
     // With several accounts and none chosen yet, force an explicit choice
