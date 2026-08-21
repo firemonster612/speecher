@@ -435,11 +435,14 @@ void OutputSettingsPage::refreshControls()
     const bool ydotoolEnabled = m_settings.ydotoolEnabled() && status.ready();
     const int ydotoolIndex = m_outputMethod->findData(QString::fromLatin1(OutputMethod::Ydotool));
     settings::setComboItemEnabled(m_outputMethod, ydotoolIndex, ydotoolEnabled, ydotoolEnabled ? QString() : QStringLiteral("Set up ydotool first"));
-    if (!ydotoolEnabled && m_outputMethod->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool)) {
-        QSignalBlocker blocker(m_outputMethod);
-        settings::selectData(m_outputMethod, QString::fromLatin1(OutputMethod::Automatic));
-    }
-    m_outputMethod->setToolTip(ydotoolEnabled ? QStringLiteral("Automatic tries ydotool paste, wl-copy, then Qt clipboard.") : QStringLiteral("Type with ydotool paste is disabled until virtual keyboard setup passes."));
+    const bool unavailableSelection = !ydotoolEnabled
+        && m_outputMethod->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool);
+    m_outputMethod->setToolTip(
+        unavailableSelection
+            ? QStringLiteral("Type with ydotool paste is selected but unavailable until virtual keyboard setup passes.")
+            : ydotoolEnabled
+                ? QStringLiteral("Automatic tries ydotool paste, wl-copy, then Qt clipboard.")
+                : QStringLiteral("Type with ydotool paste is disabled until virtual keyboard setup passes."));
     setWrappedText(m_ydotoolStatus, status.label + QStringLiteral(". ") + status.detail);
     updateYdotoolButtons();
 }
