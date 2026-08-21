@@ -13,6 +13,7 @@ inline const QString UiTheme = QStringLiteral("ui/theme");
 inline const QString UiPauseMedia = QStringLiteral("ui/pauseMediaDuringTranscription");
 inline const QString UiSoundsEnabled = QStringLiteral("ui/soundsEnabled");
 inline const QString SpeechProvider = QStringLiteral("stt/provider");
+inline const QString SpeechAuthMode = QStringLiteral("stt/authMode");
 inline const QString VocabularyEntries = QStringLiteral("stt/vocabularyEntries");
 inline const QString LegacyVocabulary = QStringLiteral("stt/customVocabulary");
 inline const QString AudioDeviceId = QStringLiteral("audio/deviceId");

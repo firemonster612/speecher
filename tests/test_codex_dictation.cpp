@@ -1,4 +1,5 @@
 #include "common/test_auth.h"
+#include "providers/ClaudeSpeechTranscriber.h"
 #include "providers/CodexDictationClient.h"
 #include "providers/CodexSpeechTranscriber.h"
 
@@ -101,6 +102,33 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 1000);
         QCOMPARE(failed.count(), 0);
         peer->deleteLater();
+    }
+
+    void speechTranscribersLoadCliproxyAccounts()
+    {
+        QTemporaryDir dir;
+        const QDateTime valid = QDateTime::currentDateTimeUtc().addSecs(3600);
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-a@example.com.json"),
+                                     QStringLiteral("codex"), QStringLiteral("codex-token"), valid));
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"),
+                                     QStringLiteral("claude"), QStringLiteral("claude-token"), valid));
+
+        SpeechSettings settings;
+        settings.authMode = QStringLiteral("cliproxy");
+        settings.cliproxyOauthDir = dir.path();
+
+        CodexSpeechTranscriber codex;
+        QVERIFY(codex.prepare(settings).ok);
+        QVERIFY(!codex.requiresRefresh(settings));
+
+        ClaudeSpeechTranscriber claude;
+        QVERIFY(claude.prepare(settings).ok);
+        QVERIFY(!claude.requiresRefresh(settings));
+
+        settings.cliproxyOauthDir = QStringLiteral("/nonexistent/oauth");
+        const SpeechPrepareResult missing = codex.prepare(settings);
+        QVERIFY(!missing.ok);
+        QVERIFY(missing.message.contains(QStringLiteral("No CLI Proxy API codex accounts")));
     }
 
     void liveCodexDictationProvider()

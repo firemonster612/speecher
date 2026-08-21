@@ -36,11 +36,15 @@ struct UiSettings {
 
 struct SpeechSettings {
     QString providerId = QStringLiteral("claude");
+    QString authMode = QStringLiteral("default");
     QString language = QStringLiteral("en");
     QStringList vocabulary;
     QString claudeCredentialsPath;
     QString claudeEndpointBase;
     QString claudeVoicePath;
+    QString cliproxyOauthDir;
+    QString claudeCliproxyAccount;
+    QString codexCliproxyAccount;
 };
 
 struct AudioCaptureSettings {

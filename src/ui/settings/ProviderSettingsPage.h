@@ -37,6 +37,8 @@ private:
     void updateAnthropicAuthControl();
     static QString comboSelection(const QComboBox *combo, const QString &stored);
     void populateCliproxyAccounts(QComboBox *combo, const QString &type, const QString &selected);
+    QString editedCliproxyBaseUrl() const;
+    void updateCliproxyServerVisibility();
     void showAnthropicAuthInfo();
 
     SettingsStore &m_settings;
@@ -49,6 +51,10 @@ private:
     QComboBox *m_anthropicAuthMode;
     QComboBox *m_openAiCliproxyAccount;
     QComboBox *m_anthropicCliproxyAccount;
+    QLineEdit *m_cliproxyBaseUrl = nullptr;
+    QLineEdit *m_cliproxyApiKey = nullptr;
+    QWidget *m_cliproxySection = nullptr;
+    QWidget *m_cliproxyCard = nullptr;
     QStackedWidget *m_authControl;
     QLabel *m_authStatus;
     QLabel *m_anthropicWarning;
