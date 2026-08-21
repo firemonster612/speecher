@@ -9,6 +9,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -249,8 +251,9 @@ QString ClaudeCredentials::installedVersion()
         QDateTime modified;
         QString version;
     };
-    // installedVersion() and its process-local cache are GUI-thread-only.
     static QHash<QString, VersionCacheEntry> cache;
+    static QMutex cacheMutex;
+    const QMutexLocker cacheLock(&cacheMutex);
     const QString cacheKey = executableInfo.absoluteFilePath();
     const QDateTime modified = executableInfo.lastModified();
     const auto cached = cache.constFind(cacheKey);

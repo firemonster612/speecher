@@ -18,11 +18,15 @@ namespace speecher {
 OpenAiAuthProvider::OpenAiAuthProvider(SecretStore *secretStore,
                                        const QString &mode,
                                        const QString &cliproxyAccount,
-                                       const QString &cliproxyDir)
+                                       const QString &cliproxyDir,
+                                       const QString &settingsApiKey,
+                                       const QString &settingsStatus)
     : m_secretStore(secretStore)
     , m_mode(mode)
     , m_cliproxyAccount(cliproxyAccount)
     , m_cliproxyDir(cliproxyDir)
+    , m_settingsApiKey(settingsApiKey)
+    , m_settingsStatus(settingsStatus)
 {
 }
 
@@ -290,11 +294,12 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
                 true};
     }
     if (mode == QStringLiteral("settings")) {
-        if (m_secretStore && m_secretStore->apiKey().startsWith(QStringLiteral("sk-"))) {
+        const QString apiKey = m_secretStore ? m_secretStore->apiKey() : m_settingsApiKey;
+        if (apiKey.startsWith(QStringLiteral("sk-"))) {
             return {true,
-                    m_secretStore->apiKey(),
+                    apiKey,
                     QStringLiteral("settings"),
-                    m_secretStore->status(),
+                    m_secretStore ? m_secretStore->status() : m_settingsStatus,
                     {},
                     {},
                     QStringLiteral("https://api.openai.com/v1"),
@@ -330,11 +335,12 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
         auth.endpointBase = QStringLiteral("https://api.openai.com/v1");
         return auth;
     }
-    if (m_secretStore && m_secretStore->apiKey().startsWith(QStringLiteral("sk-"))) {
+    const QString settingsApiKey = m_secretStore ? m_secretStore->apiKey() : m_settingsApiKey;
+    if (settingsApiKey.startsWith(QStringLiteral("sk-"))) {
         return {true,
-                m_secretStore->apiKey(),
+                settingsApiKey,
                 QStringLiteral("settings"),
-                m_secretStore->status(),
+                m_secretStore ? m_secretStore->status() : m_settingsStatus,
                 {},
                 {},
                 QStringLiteral("https://api.openai.com/v1"),

@@ -19,6 +19,7 @@ namespace {
 
 constexpr auto keyringService = "speecher";
 constexpr auto openAiApiKeyEntry = "openai-api-key";
+constexpr int keyringTimeoutMs = 1500;
 
 #ifdef SPEECHER_WITH_QKEYCHAIN
 template <typename Job>
@@ -36,7 +37,7 @@ bool runKeychainJob(Job &job, QString *error)
     QObject::connect(&watchdog, &QTimer::timeout, &loop, &QEventLoop::quit);
     job.start();
     if (!finished) {
-        watchdog.start(10000);
+        watchdog.start(keyringTimeoutMs);
         loop.exec();
     }
     if (!finished) {
@@ -66,6 +67,9 @@ SecretStore::SecretStore(SettingsStore *settings, QObject *parent)
 
 QString SecretStore::apiKey() const
 {
+    if (m_hasApiKeyResult) {
+        return m_lastApiKey;
+    }
     m_lastApiKey = keyringApiKey();
     if (m_lastApiKey.isEmpty() && m_settings) {
         m_lastApiKey = m_settings->storedApiKeyFallback();
@@ -78,6 +82,10 @@ bool SecretStore::saveApiKey(const QString &apiKey)
 {
     m_lastError.clear();
     const QString cleaned = apiKey.trimmed();
+    if (m_hasApiKeyResult && cleaned == m_lastApiKey
+        && !usesInsecureSettingsFallback()) {
+        return true;
+    }
     const bool ok = cleaned.isEmpty() ? deleteKeyringApiKey() : writeKeyringApiKey(cleaned);
     if (ok && m_settings) {
         m_settings->clearStoredApiKeyFallback();

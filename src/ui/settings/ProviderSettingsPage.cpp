@@ -20,8 +20,11 @@
 #include <QSizePolicy>
 #include <QStackedWidget>
 #include <QStyle>
+#include <QThread>
 #include <QVBoxLayout>
 #include <QtMath>
+
+#include <memory>
 
 namespace speecher {
 
@@ -330,7 +333,8 @@ void ProviderSettingsPage::saveAuthModes()
 bool ProviderSettingsPage::saveSecret()
 {
     if (m_settings.openAiAuthMode() == QStringLiteral("settings")
-        && (m_secretLoaded || m_apiKeyEditRevision > 0)) {
+        && ((!m_secretLoaded && m_apiKeyEditRevision > 0)
+            || (m_secretLoaded && m_apiKey->text().trimmed() != m_loadedApiKey))) {
         if (!m_secrets.saveApiKey(m_apiKey->text().trimmed())) {
             QMessageBox::warning(this,
                                  QStringLiteral("OpenAI key not saved"),
@@ -370,6 +374,7 @@ bool ProviderSettingsPage::hasAuthChanges() const
 
 void ProviderSettingsPage::updateAuthControl()
 {
+    const quint64 generation = ++m_authStatusGeneration;
     const QString mode = m_authMode->currentData().toString();
     if (mode == QStringLiteral("settings")) {
         m_authControl->setCurrentWidget(m_apiKey);
@@ -385,8 +390,29 @@ void ProviderSettingsPage::updateAuthControl()
         m_authControl->setCurrentWidget(m_openAiCliproxyAccount);
         return;
     }
-    m_authStatus->setText(OpenAiAuthProvider(&m_secrets, mode).status());
     m_authControl->setCurrentWidget(m_authStatus);
+    m_authStatus->setText(QStringLiteral("Checking…"));
+
+    const QString settingsApiKey = m_secretLoaded ? m_loadedApiKey : QString();
+    const QString settingsStatus = m_secretLoaded ? m_secrets.status() : QString();
+    auto status = std::make_shared<QString>();
+    QThread *thread = QThread::create([mode, settingsApiKey, settingsStatus, status] {
+        *status = OpenAiAuthProvider(nullptr,
+                                     mode,
+                                     {},
+                                     {},
+                                     settingsApiKey,
+                                     settingsStatus)
+                      .status();
+    });
+    connect(thread, &QThread::finished, this, [this, generation, mode, status] {
+        if (generation == m_authStatusGeneration
+            && mode == m_authMode->currentData().toString()) {
+            m_authStatus->setText(*status);
+        }
+    });
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start();
 }
 
 void ProviderSettingsPage::updateAnthropicAuthControl()
