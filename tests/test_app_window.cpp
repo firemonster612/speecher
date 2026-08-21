@@ -118,31 +118,25 @@ private slots:
                  QStringLiteral("Selected microphone"));
     }
 
-    void dictationSummaryTitleSharesFieldVerticalCenter()
+    void dictationSummaryCardsNavigate()
     {
         ApplicationController controller(true);
-        QWidget surface;
-        surface.setStyleSheet(QStringLiteral("QPushButton { min-height: 40px; }"));
-        auto *layout = new QVBoxLayout(&surface);
-        auto *page = new DictationPage(&controller, &surface);
-        layout->addWidget(page);
-        surface.show();
+        DictationPage page(&controller);
+        page.show();
         QCoreApplication::processEvents();
 
-        QLabel *title = nullptr;
-        for (QLabel *candidate : page->findChildren<QLabel *>()) {
-            if (candidate->text() == QStringLiteral("Refinement:")) {
-                title = candidate;
-                break;
-            }
-        }
-        QVERIFY(title);
-        QLabel *value = page->findChild<QLabel *>(QStringLiteral("refinementSummary"));
+        QLabel *value = page.findChild<QLabel *>(QStringLiteral("refinementSummary"));
         QVERIFY(value);
+        QWidget *card = value->parentWidget();
+        while (card && !card->property("navTarget").isValid()) {
+            card = card->parentWidget();
+        }
+        QVERIFY(card);
 
-        const int titleCenter = title->mapTo(page, title->rect().center()).y();
-        const int valueCenter = value->mapTo(page, value->rect().center()).y();
-        QVERIFY(qAbs(titleCenter - valueCenter) <= 1);
+        QSignalSpy navigate(&page, &DictationPage::navigateRequested);
+        QTest::mouseClick(card, Qt::LeftButton);
+        QCOMPARE(navigate.count(), 1);
+        QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::Refinement);
     }
 
     void dictationPageShowsHonestBusyActions()
