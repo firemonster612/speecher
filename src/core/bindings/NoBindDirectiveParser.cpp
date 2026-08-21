@@ -100,10 +100,21 @@ QList<DirectiveSpan> findNoBindDirectiveSpans(const QString &text)
         if (!isNoBindNegationAt(tokens, index, &negationTokenCount)) continue;
         int actionEndToken = -1;
         if (!findBindingAction(tokens, index + negationTokenCount, &actionEndToken)) continue;
+        bool actionHasAnaphora = false;
+        const int anaphoraEnd = qMin(tokens.size() - 1, actionEndToken + 1);
+        for (int actionToken = index + negationTokenCount;
+             actionToken <= anaphoraEnd;
+             ++actionToken) {
+            const QString token = tokens.at(actionToken).text;
+            if (token == QStringLiteral("that")
+                || token == QStringLiteral("this")
+                || token == QStringLiteral("it")) {
+                actionHasAnaphora = true;
+                break;
+            }
+        }
         const bool targetFollowsAction = actionEndToken + 1 < tokens.size()
-            && tokens.at(actionEndToken + 1).text != QStringLiteral("that")
-            && tokens.at(actionEndToken + 1).text != QStringLiteral("this")
-            && tokens.at(actionEndToken + 1).text != QStringLiteral("it");
+            && !actionHasAnaphora;
         spans.append({index,
                       actionEndToken + 1,
                       tokens.at(index).start,
