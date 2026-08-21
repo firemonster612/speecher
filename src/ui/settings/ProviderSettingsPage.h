@@ -43,7 +43,6 @@ private:
     void populateCliproxyAccounts(QComboBox *combo, const QString &type, const QString &selected);
     QString editedCliproxyBaseUrl() const;
     void updateCliproxyServerVisibility();
-    void showAnthropicAuthInfo();
 
     SettingsStore &m_settings;
     SecretStore &m_secrets;
@@ -53,7 +52,6 @@ private:
     QComboBox *m_anthropicEffort;
     QComboBox *m_authMode;
     QComboBox *m_anthropicAuthMode;
-    QComboBox *m_speechAuthMode;
     QWidget *m_modelsContent = nullptr;
     QWidget *m_authContent = nullptr;
     QComboBox *m_openAiCliproxyAccount;
@@ -64,6 +62,7 @@ private:
     QStackedWidget *m_authControl;
     QLabel *m_authStatus;
     QLabel *m_anthropicWarning;
+    QLabel *m_anthropicAuthStatus = nullptr;
     QWidget *m_anthropicWarningRow = nullptr;
     QLineEdit *m_apiKey;
     QString m_loadedApiKey;

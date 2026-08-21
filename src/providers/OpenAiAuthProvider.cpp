@@ -402,7 +402,11 @@ OpenAiAuth OpenAiAuthProvider::refreshCodexOauth() const
 
 QString OpenAiAuthProvider::status() const
 {
-    return resolve(false).status;
+    const OpenAiAuth auth = resolve(false);
+    if (!auth.status.isEmpty()) {
+        return auth.status;
+    }
+    return auth.ok ? QStringLiteral("Credentials found") : QStringLiteral("No credentials found");
 }
 
 } // namespace speecher

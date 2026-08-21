@@ -114,7 +114,8 @@ private slots:
                                      QStringLiteral("claude"), QStringLiteral("claude-token"), valid));
 
         SpeechSettings settings;
-        settings.authMode = QStringLiteral("cliproxy");
+        settings.claudeAuthMode = QStringLiteral("cliproxy");
+        settings.codexAuthMode = QStringLiteral("cliproxy");
         settings.cliproxyOauthDir = dir.path();
 
         CodexSpeechTranscriber codex;
