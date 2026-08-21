@@ -74,7 +74,7 @@ QString SecretStore::apiKey() const
     if (m_lastApiKey.isEmpty() && m_settings) {
         m_lastApiKey = m_settings->storedApiKeyFallback();
     }
-    m_hasApiKeyResult = true;
+    m_hasApiKeyResult = m_lastError.isEmpty();
     return m_lastApiKey;
 }
 
