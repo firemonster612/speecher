@@ -76,7 +76,7 @@ void MediaPauseController::pausePlaying()
                         playerCommand(player, QStringLiteral("Pause")), 300),
                     this);
                 connect(pauseWatcher, &QDBusPendingCallWatcher::finished, this,
-                        [this, pauseWatcher, player, generation] {
+                        [this, pauseWatcher, player] {
                     const QDBusPendingReply<> paused = *pauseWatcher;
                     pauseWatcher->deleteLater();
                     if (paused.isError()) return;
