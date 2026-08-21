@@ -12,6 +12,8 @@ namespace speecher {
 
 namespace {
 
+constexpr qsizetype maximumRequestBytes = 64 * 1024;
+
 bool canConnectToServer(const QString &name, int timeoutMs)
 {
     QLocalSocket socket;
@@ -44,10 +46,12 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                 // disconnect the socket, whose disconnected handler removes the buffer
                 // this loop would otherwise still reference.
                 QList<QByteArray> frames;
+                bool requestTooLarge = false;
                 {
                     QByteArray &buffer = m_requestBuffers[socket];
                     buffer.append(socket->readAll());
-                    while (true) {
+                    requestTooLarge = buffer.size() > maximumRequestBytes;
+                    while (!requestTooLarge) {
                         const qsizetype newline = buffer.indexOf('\n');
                         if (newline >= 0) {
                             frames.append(buffer.left(newline));
@@ -61,6 +65,10 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                         }
                         break;
                     }
+                }
+                if (requestTooLarge) {
+                    socket->disconnectFromServer();
+                    return;
                 }
                 for (const QByteArray &frame : frames) {
                     QJsonParseError parseError;
