@@ -20,6 +20,7 @@ namespace {
 constexpr auto keyringService = "speecher";
 constexpr auto openAiApiKeyEntry = "openai-api-key";
 constexpr int keyringTimeoutMs = 1500;
+constexpr int keyringRetryDelayMs = 5000;
 
 #ifdef SPEECHER_WITH_QKEYCHAIN
 template <typename Job>
@@ -70,11 +71,20 @@ QString SecretStore::apiKey() const
     if (m_hasApiKeyResult) {
         return m_lastApiKey;
     }
+    if (m_apiKeyRetryTimer.isValid()
+        && !m_apiKeyRetryTimer.hasExpired(keyringRetryDelayMs)) {
+        return m_lastApiKey;
+    }
     m_lastApiKey = keyringApiKey();
     if (m_lastApiKey.isEmpty() && m_settings) {
         m_lastApiKey = m_settings->storedApiKeyFallback();
     }
     m_hasApiKeyResult = m_lastError.isEmpty();
+    if (m_hasApiKeyResult) {
+        m_apiKeyRetryTimer.invalidate();
+    } else {
+        m_apiKeyRetryTimer.start();
+    }
     return m_lastApiKey;
 }
 
@@ -93,6 +103,7 @@ bool SecretStore::saveApiKey(const QString &apiKey)
     if (ok) {
         m_lastApiKey = cleaned;
         m_hasApiKeyResult = true;
+        m_apiKeyRetryTimer.invalidate();
     }
     return ok;
 }
@@ -133,6 +144,10 @@ QString SecretStore::keyringApiKey() const
     if (runKeychainJob(job, &error)) {
         m_lastError.clear();
         return job.textData().trimmed();
+    }
+    if (job.error() == QKeychain::EntryNotFound) {
+        m_lastError.clear();
+        return {};
     }
     m_lastError = error;
 #endif
