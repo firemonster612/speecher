@@ -362,7 +362,7 @@ void DictationSession::stopListening()
         setState(DictationState::Idle);
         return;
     }
-    setState(DictationState::Stopping);
+    setState(DictationState::Stopping, m_lastMessage);
     qInfo() << "stopListening transcriptLength=" << m_transcript->text().size();
     m_audio->stop();
     m_audioGeneration = 0;
@@ -641,8 +641,10 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
         if (m_state == DictationState::Listening) {
             m_audio->stop();
             m_audioGeneration = 0;
+            m_transcriber->cancelAttempt(m_attemptId);
             resumePausedMedia();
             setState(DictationState::Stopping, failure.message);
+            emit popupFrozenChanged(true);
             beginRefinement(m_generation);
             return;
         }
@@ -703,7 +705,10 @@ void DictationSession::connectSpeechTranscriber(SpeechTranscriber *transcriber)
         }
     });
     m_transcriberConnections << connect(m_transcriber, &SpeechTranscriber::finalTranscript, this, [this](quint64 attemptId, const QString &text) {
-        if (attemptId == m_attemptId) {
+        if (attemptId == m_attemptId
+            && (m_state == DictationState::Starting
+                || m_state == DictationState::Listening
+                || m_state == DictationState::Stopping)) {
             m_transcript->commitFinal(text);
         }
     });
@@ -737,6 +742,7 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
             m_transcriptPipeline,
             text);
         if (refined) {
+            m_lastMessage.clear();
             deliverFinal(*refined);
         } else if (m_transcriptPipeline.editsSelection) {
             failSelectionEdit(QStringLiteral("The refinement model returned an unusable selection edit"));
