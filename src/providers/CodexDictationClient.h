@@ -25,6 +25,7 @@ public:
     bool isConnected() const;
 
 signals:
+    void partialTranscript(const QString &text);
     void finalTranscript(const QString &text);
     void completed();
     void connected();
