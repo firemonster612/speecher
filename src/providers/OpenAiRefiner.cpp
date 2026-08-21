@@ -13,6 +13,8 @@ namespace speecher {
 
 namespace {
 
+constexpr int absoluteDeadlineMs = 120000;
+
 QString openAiErrorMessage(const QByteArray &payload, const QString &fallback)
 {
     const QJsonObject object = QJsonDocument::fromJson(payload).object();
@@ -31,8 +33,9 @@ OpenAiRefiner::OpenAiRefiner(QObject *parent, int requestTimeoutMs)
     : QObject(parent)
     , m_requestTimeoutMs(requestTimeoutMs)
 {
+    m_inactivityTimer.setSingleShot(true);
     m_deadlineTimer.setSingleShot(true);
-    connect(&m_deadlineTimer, &QTimer::timeout, this, [this] {
+    const auto failOnTimeout = [this] {
         if (!m_reply || m_failed || m_completed) {
             return;
         }
@@ -41,7 +44,9 @@ OpenAiRefiner::OpenAiRefiner(QObject *parent, int requestTimeoutMs)
         m_failed = true;
         reply->abort();
         emit failed(QStringLiteral("OpenAI refinement timed out waiting for a response"));
-    });
+    };
+    connect(&m_inactivityTimer, &QTimer::timeout, this, failOnTimeout);
+    connect(&m_deadlineTimer, &QTimer::timeout, this, failOnTimeout);
 }
 
 void OpenAiRefiner::refine(const QString &rawTranscript,
@@ -103,7 +108,8 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
 
     QNetworkReply *reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
     m_reply = reply;
-    m_deadlineTimer.start(m_requestTimeoutMs);
+    m_inactivityTimer.start(m_requestTimeoutMs);
+    m_deadlineTimer.start(absoluteDeadlineMs);
     connect(reply, &QNetworkReply::readyRead, this, [this, reply] {
         if (reply != m_reply) {
             return;
@@ -115,6 +121,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
             reply->deleteLater();
             return;
         }
+        m_inactivityTimer.stop();
         m_deadlineTimer.stop();
         m_reply = nullptr;
         if (m_failed || m_completed) {
@@ -135,6 +142,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
 
 void OpenAiRefiner::cancel()
 {
+    m_inactivityTimer.stop();
     m_deadlineTimer.stop();
     if (m_reply) {
         QNetworkReply *reply = m_reply;
@@ -169,6 +177,7 @@ void OpenAiRefiner::parseSseChunk(const QByteArray &chunk)
             }
         }
         if (eventName == "error") {
+            m_inactivityTimer.stop();
             m_deadlineTimer.stop();
             m_failed = true;
             if (m_reply) {
@@ -180,6 +189,9 @@ void OpenAiRefiner::parseSseChunk(const QByteArray &chunk)
             return;
         }
         const QJsonObject object = QJsonDocument::fromJson(data).object();
+        if (eventName.startsWith("response.") && eventName != "response.completed") {
+            m_inactivityTimer.start(m_requestTimeoutMs);
+        }
         if (eventName == "response.output_text.delta") {
             const QString text = object.value(QStringLiteral("delta")).toString();
             m_accumulated += text;
@@ -195,6 +207,7 @@ void OpenAiRefiner::completeIfReady()
     if (m_failed || m_completed || m_accumulated.isEmpty()) {
         return;
     }
+    m_inactivityTimer.stop();
     m_deadlineTimer.stop();
     m_completed = true;
     emit completed(m_accumulated);

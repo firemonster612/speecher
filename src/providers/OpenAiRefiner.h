@@ -40,6 +40,7 @@ private:
     void completeIfReady();
 
     QNetworkAccessManager m_network;
+    QTimer m_inactivityTimer;
     QTimer m_deadlineTimer;
     QNetworkReply *m_reply = nullptr;
     int m_requestTimeoutMs = 20000;
