@@ -199,10 +199,10 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
             const QByteArray payload = m_buffer + reply->readAll();
             emit failed(QStringLiteral("Anthropic refinement failed: %1")
                             .arg(anthropicErrorMessage(payload, reply->errorString())));
-        } else if (!m_accumulated.isEmpty()) {
-            completeIfReady();
-        } else if (!m_failed) {
+        } else if (m_accumulated.isEmpty()) {
             emit failed(QStringLiteral("Anthropic refinement failed: empty response"));
+        } else {
+            emit failed(QStringLiteral("Anthropic refinement failed: stream ended before completion"));
         }
         reply->deleteLater();
     });

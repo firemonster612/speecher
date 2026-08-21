@@ -131,10 +131,10 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
         if (reply->error() != QNetworkReply::NoError) {
             const QByteArray payload = m_buffer + reply->readAll();
             emit failed(QStringLiteral("OpenAI refinement failed: %1").arg(openAiErrorMessage(payload, reply->errorString())));
-        } else if (!m_accumulated.isEmpty()) {
-            completeIfReady();
-        } else if (!m_failed) {
+        } else if (m_accumulated.isEmpty()) {
             emit failed(QStringLiteral("OpenAI refinement failed: empty response"));
+        } else {
+            emit failed(QStringLiteral("OpenAI refinement failed: stream ended before completion"));
         }
         reply->deleteLater();
     });
