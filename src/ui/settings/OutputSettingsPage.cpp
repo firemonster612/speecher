@@ -215,7 +215,7 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
 
     auto *title = settings::makePageTitle(QStringLiteral("Output"), this);
     auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
+    auto *cardLayout = settings::cardFormLayout(card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Method"), QStringLiteral("How Speecher delivers final text."), m_outputMethod, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Format"), QStringLiteral("Default clipboard representation. A CLI shortcut can override this per dictation."), m_outputFormat, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Status duration"), QStringLiteral("How long the completed delivery result stays visible."), m_completionStatusDuration, card), card);
@@ -258,6 +258,10 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     appRulesLayout->addWidget(appRulesDescription);
     appRulesLayout->addWidget(m_appPasteRules);
     appRulesLayout->addLayout(appRuleButtons);
+    // Keep spanning rows from stretching the form to the card edge, which
+    // defeats the centered-form alignment every other page shares.
+    m_appPasteRules->setMaximumWidth(600);
+    appRulesControl->setMaximumWidth(600);
     targetPasteLayout->addRow(appRulesControl);
     targetPasteLayout->addRow(settings::makeCenteredSeparator(m_targetPasteControls));
     cardLayout->addRow(m_targetPasteControls);

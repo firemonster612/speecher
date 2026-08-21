@@ -189,15 +189,15 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
 
     auto *title = settings::makePageTitle(QStringLiteral("Providers"), this);
     auto *openAiCard = settings::makeSettingsCard(this);
-    auto *openAiLayout = qobject_cast<QFormLayout *>(openAiCard->layout());
+    auto *openAiLayout = settings::cardFormLayout(openAiCard);
     auto *anthropicCard = settings::makeSettingsCard(this);
-    auto *anthropicLayout = qobject_cast<QFormLayout *>(anthropicCard->layout());
+    auto *anthropicLayout = settings::cardFormLayout(anthropicCard);
     auto *openAiAuthCard = settings::makeSettingsCard(this);
-    auto *openAiAuthLayout = qobject_cast<QFormLayout *>(openAiAuthCard->layout());
+    auto *openAiAuthLayout = settings::cardFormLayout(openAiAuthCard);
     auto *anthropicAuthCard = settings::makeSettingsCard(this);
-    auto *anthropicAuthCardLayout = qobject_cast<QFormLayout *>(anthropicAuthCard->layout());
+    auto *anthropicAuthCardLayout = settings::cardFormLayout(anthropicAuthCard);
     auto *speechAuthCard = settings::makeSettingsCard(this);
-    auto *speechAuthLayout = qobject_cast<QFormLayout *>(speechAuthCard->layout());
+    auto *speechAuthLayout = settings::cardFormLayout(speechAuthCard);
 
     settings::addRow(openAiLayout, settings::makeRow(QStringLiteral("OpenAI model"), QStringLiteral("Model used for refinement."), m_openAiModel, openAiCard), openAiCard);
     settings::addRow(openAiLayout, settings::makeRow(QStringLiteral("OpenAI effort"), QStringLiteral("Reasoning effort used for refinement."), m_openAiEffort, openAiCard), openAiCard);
@@ -247,7 +247,7 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
 
     m_cliproxySection = settings::makeSectionLabel(QStringLiteral("CLI Proxy API"), this);
     m_cliproxyCard = settings::makeSettingsCard(this);
-    auto *cliproxyLayout = qobject_cast<QFormLayout *>(m_cliproxyCard->layout());
+    auto *cliproxyLayout = settings::cardFormLayout(qobject_cast<QFrame *>(m_cliproxyCard));
     m_cliproxyBaseUrl = new QLineEdit(this);
     m_cliproxyBaseUrl->setObjectName(QStringLiteral("cliproxyBaseUrl"));
     m_cliproxyBaseUrl->setPlaceholderText(QStringLiteral("http://host:8317 — empty reads local account files"));
