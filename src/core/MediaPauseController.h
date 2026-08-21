@@ -18,6 +18,7 @@ public:
 private:
     QStringList m_pausedPlayers;
     quint64 m_generation = 0;
+    bool m_pauseRequested = false;
 };
 
 } // namespace speecher

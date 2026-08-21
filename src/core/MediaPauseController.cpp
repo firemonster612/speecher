@@ -42,6 +42,7 @@ MediaPauseController::MediaPauseController(QObject *parent)
 void MediaPauseController::pausePlaying()
 {
     const quint64 generation = ++m_generation;
+    m_pauseRequested = true;
     m_pausedPlayers.clear();
     QDBusMessage listNames = QDBusMessage::createMethodCall(
         QStringLiteral("org.freedesktop.DBus"),
@@ -79,8 +80,10 @@ void MediaPauseController::pausePlaying()
                     const QDBusPendingReply<> paused = *pauseWatcher;
                     pauseWatcher->deleteLater();
                     if (paused.isError()) return;
-                    if (generation == m_generation) {
-                        m_pausedPlayers << player;
+                    if (m_pauseRequested) {
+                        if (!m_pausedPlayers.contains(player)) {
+                            m_pausedPlayers << player;
+                        }
                     } else {
                         QDBusConnection::sessionBus().asyncCall(
                             playerCommand(player, QStringLiteral("Play")), 300);
@@ -94,6 +97,7 @@ void MediaPauseController::pausePlaying()
 void MediaPauseController::resumePaused()
 {
     ++m_generation;
+    m_pauseRequested = false;
     const QStringList players = m_pausedPlayers;
     m_pausedPlayers.clear();
     for (const QString &player : players) {
