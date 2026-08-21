@@ -60,7 +60,6 @@ private:
     QComboBox *m_anthropicCliproxyAccount;
     QLineEdit *m_cliproxyBaseUrl = nullptr;
     QLineEdit *m_cliproxyApiKey = nullptr;
-    QWidget *m_cliproxySection = nullptr;
     QWidget *m_cliproxyCard = nullptr;
     QStackedWidget *m_authControl;
     QLabel *m_authStatus;

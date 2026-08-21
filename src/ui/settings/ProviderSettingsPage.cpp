@@ -199,8 +199,10 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     auto *speechAuthCard = settings::makeSettingsCard(this);
     auto *speechAuthLayout = settings::cardFormLayout(speechAuthCard);
 
+    settings::addSectionRow(openAiLayout, QStringLiteral("OpenAI"), openAiCard);
     settings::addRow(openAiLayout, settings::makeRow(QStringLiteral("OpenAI model"), QStringLiteral("Model used for refinement."), m_openAiModel, openAiCard), openAiCard);
     settings::addRow(openAiLayout, settings::makeRow(QStringLiteral("OpenAI effort"), QStringLiteral("Reasoning effort used for refinement."), m_openAiEffort, openAiCard), openAiCard);
+    settings::addSectionRow(openAiAuthLayout, QStringLiteral("OpenAI"), openAiAuthCard);
     settings::addRow(openAiAuthLayout, settings::makeRow(QStringLiteral("OpenAI auth mode"), QStringLiteral("Credential source used for refinement."), m_authMode, openAiAuthCard), openAiAuthCard);
     settings::addRow(openAiAuthLayout, settings::makeRow(QStringLiteral("OpenAI auth"), QStringLiteral("Current credential source, app settings key, or CLI Proxy API account."), m_authControl, openAiAuthCard), openAiAuthCard, false);
 
@@ -210,6 +212,7 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     m_speechAuthMode->setToolTip(QStringLiteral(
         "Provider default uses the Claude Code or Codex CLI login. CLI Proxy API uses the OAuth "
         "account files CLI Proxy API keeps locally, with the accounts selected on this page."));
+    settings::addSectionRow(speechAuthLayout, QStringLiteral("Speech"), speechAuthCard);
     settings::addRow(speechAuthLayout,
                      settings::makeRow(QStringLiteral("Speech credentials"),
                                        QStringLiteral("Credential source used by the transcription service."),
@@ -217,6 +220,7 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
                                        speechAuthCard),
                      speechAuthCard);
 
+    settings::addSectionRow(anthropicLayout, QStringLiteral("Anthropic"), anthropicCard);
     settings::addRow(anthropicLayout,
                      settings::makeRow(QStringLiteral("Claude model"),
                                        QStringLiteral("Model used for Anthropic refinement."),
@@ -236,6 +240,7 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     anthropicAuthLayout->addWidget(m_anthropicAuthMode);
     anthropicAuthLayout->addWidget(m_anthropicCliproxyAccount);
     m_anthropicCliproxyAccount->setVisible(false);
+    settings::addSectionRow(anthropicAuthCardLayout, QStringLiteral("Anthropic"), anthropicAuthCard);
     settings::addRow(anthropicAuthCardLayout,
                      settings::makeRow(QStringLiteral("Anthropic auth"),
                                        QStringLiteral("How Speecher sends refinement requests to Claude."),
@@ -245,7 +250,6 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
                      anthropicAuthCard,
                      false);
 
-    m_cliproxySection = settings::makeSectionLabel(QStringLiteral("CLI Proxy API"), this);
     m_cliproxyCard = settings::makeSettingsCard(this);
     auto *cliproxyLayout = settings::cardFormLayout(qobject_cast<QFrame *>(m_cliproxyCard));
     m_cliproxyBaseUrl = new QLineEdit(this);
@@ -256,6 +260,7 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     m_cliproxyApiKey->setObjectName(QStringLiteral("cliproxyApiKey"));
     m_cliproxyApiKey->setEchoMode(QLineEdit::Password);
     m_cliproxyApiKey->setPlaceholderText(QStringLiteral("CLI Proxy API server api-key"));
+    settings::addSectionRow(cliproxyLayout, QStringLiteral("CLI Proxy API"), m_cliproxyCard);
     settings::addRow(cliproxyLayout,
                      settings::makeRow(QStringLiteral("Server URL"),
                                        QStringLiteral("CLI Proxy API server to send refinement through. When set, the server "
@@ -280,32 +285,20 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     auto *modelsLayout = new QVBoxLayout(m_modelsContent);
     modelsLayout->setContentsMargins(0, 0, 0, 0);
     modelsLayout->setSpacing(0);
-    modelsLayout->addWidget(settings::makeSectionLabel(QStringLiteral("OpenAI"), m_modelsContent));
-    modelsLayout->addSpacing(settings::tightSpacing());
     modelsLayout->addWidget(openAiCard);
     modelsLayout->addSpacing(settings::groupGap());
-    modelsLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Anthropic"), m_modelsContent));
-    modelsLayout->addSpacing(settings::tightSpacing());
     modelsLayout->addWidget(anthropicCard);
 
     m_authContent = new QWidget(this);
     auto *authLayout = new QVBoxLayout(m_authContent);
     authLayout->setContentsMargins(0, 0, 0, 0);
     authLayout->setSpacing(0);
-    authLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Speech"), m_authContent));
-    authLayout->addSpacing(settings::tightSpacing());
     authLayout->addWidget(speechAuthCard);
     authLayout->addSpacing(settings::groupGap());
-    authLayout->addWidget(settings::makeSectionLabel(QStringLiteral("OpenAI"), m_authContent));
-    authLayout->addSpacing(settings::tightSpacing());
     authLayout->addWidget(openAiAuthCard);
     authLayout->addSpacing(settings::groupGap());
-    authLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Anthropic"), m_authContent));
-    authLayout->addSpacing(settings::tightSpacing());
     authLayout->addWidget(anthropicAuthCard);
     authLayout->addSpacing(settings::groupGap());
-    authLayout->addWidget(m_cliproxySection);
-    authLayout->addSpacing(settings::tightSpacing());
     authLayout->addWidget(m_cliproxyCard);
     authLayout->addSpacing(settings::relatedSpacing());
     authLayout->addWidget(note);
@@ -471,7 +464,6 @@ void ProviderSettingsPage::updateCliproxyServerVisibility()
 {
     const bool cliproxyInUse = m_authMode->currentData().toString() == QStringLiteral("cliproxy")
         || m_anthropicAuthMode->currentData().toString() == QStringLiteral("cliproxy");
-    m_cliproxySection->setVisible(cliproxyInUse);
     m_cliproxyCard->setVisible(cliproxyInUse);
 }
 

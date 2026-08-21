@@ -166,6 +166,13 @@ void AppWindow::refreshHeaderStripColor()
     if (m_headerStrip) {
         m_headerStrip->setPalette(settings::kdeHeaderPalette(palette()));
     }
+    // Fill the 1px splitter handle: unstyled it stays unpainted, which shows
+    // as a see-through seam between the sidebar and the content.
+    if (m_sidebarSplitter) {
+        m_sidebarSplitter->setStyleSheet(
+            QStringLiteral("QSplitter#sidebarSplitter::handle{background:%1;}")
+                .arg(settings::separatorColor(palette()).name(QColor::HexRgb)));
+    }
 }
 
 void AppWindow::changeEvent(QEvent *event)
@@ -253,11 +260,7 @@ void AppWindow::buildSharedPages()
     refinementLayout->setSpacing(0);
     refinementLayout->addWidget(settings::makePageTitle(QStringLiteral("Refinement"), refinementContent));
     refinementLayout->addSpacing(settings::sectionGap());
-    refinementLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Refinement"), refinementContent));
-    refinementLayout->addSpacing(settings::tightSpacing());
     refinementLayout->addWidget(detachedContent(m_pages->refinement(), true));
-    refinementLayout->addSpacing(settings::groupGap());
-    refinementLayout->addWidget(settings::makeCenteredSeparator(refinementContent));
     refinementLayout->addSpacing(settings::groupGap());
     refinementLayout->addWidget(m_pages->providers()->modelsContent());
     refinementLayout->addStretch();

@@ -216,9 +216,11 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     auto *title = settings::makePageTitle(QStringLiteral("Output"), this);
     auto *card = settings::makeSettingsCard(this);
     auto *cardLayout = settings::cardFormLayout(card);
+    settings::addSectionRow(cardLayout, QStringLiteral("Delivery"), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Method"), QStringLiteral("How Speecher delivers final text."), m_outputMethod, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Format"), QStringLiteral("Default clipboard representation. A CLI shortcut can override this per dictation."), m_outputFormat, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Status duration"), QStringLiteral("How long the completed delivery result stays visible."), m_completionStatusDuration, card), card);
+    settings::addSectionRow(cardLayout, QStringLiteral("Paste behavior"), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Global fallback"), QStringLiteral("Paste behavior used unless a category or exact-app rule overrides it."), m_globalPaste, card), card);
     m_targetPasteControls = new QWidget(card);
     m_targetPasteControls->setObjectName(QStringLiteral("targetPasteControls"));
@@ -263,8 +265,8 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     m_appPasteRules->setMaximumWidth(600);
     appRulesControl->setMaximumWidth(600);
     targetPasteLayout->addRow(appRulesControl);
-    targetPasteLayout->addRow(settings::makeCenteredSeparator(m_targetPasteControls));
     cardLayout->addRow(m_targetPasteControls);
+    settings::addSectionRow(cardLayout, QStringLiteral("Clipboard && virtual keyboard"), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Clipboard"), QStringLiteral("Restore previous clipboard contents after typing"), m_restoreClipboardAfterTyping, card), card);
     settings::addRow(cardLayout, settings::makeRow(QStringLiteral("Virtual keyboard"), QString(), makeYdotoolControl(m_ydotoolStatus, m_ydotoolSetupButton, m_ydotoolStartButton, m_ydotoolDisableButton, m_ydotoolRemoveButton, card), card), card, false);
     auto *pageLayout = settings::makeSettingsPage(this);

@@ -376,6 +376,19 @@ QLabel *makePageTitle(const QString &text, QWidget *parent)
     return title;
 }
 
+void addSectionRow(QFormLayout *form, const QString &title, QWidget *parent)
+{
+    // Section titles live inside the card's centered form block so the title
+    // and its content share a left edge instead of the title hugging the page
+    // margin while the form floats in the middle.
+    if (form->rowCount() > 0) {
+        auto *gap = new QWidget(parent);
+        gap->setFixedHeight(groupGap() / 2);
+        form->addRow(gap);
+    }
+    form->addRow(makeSectionLabel(title, parent));
+}
+
 QFrame *makeSettingsCard(QWidget *parent)
 {
     auto *card = new QFrame(parent);
