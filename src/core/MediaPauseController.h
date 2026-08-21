@@ -16,10 +16,8 @@ public:
     void resumePaused() override;
 
 private:
-    QStringList playingPlayers() const;
-    bool runPlayerCommand(const QString &player, const QString &command) const;
-
     QStringList m_pausedPlayers;
+    quint64 m_generation = 0;
 };
 
 } // namespace speecher

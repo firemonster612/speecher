@@ -4,6 +4,7 @@
 #include "dictation/StartupPreparationRunner.h"
 
 #include <QSemaphore>
+#include <QElapsedTimer>
 #include <QTimer>
 
 using namespace speecher::test;
@@ -147,6 +148,28 @@ private slots:
         QTest::qWait(50);
         QCOMPARE(completed.count(), 0);
         QVERIFY(!applied);
+    }
+
+    void startupPreparationRunnerDestructionDoesNotWaitForBlockedJob()
+    {
+        const auto started = std::make_shared<QSemaphore>();
+        const auto release = std::make_shared<QSemaphore>();
+        auto runner = std::make_unique<StartupPreparationRunner>();
+        SpeechPrepareJob speechJob;
+        speechJob.run = [started, release] {
+            started->release();
+            release->acquire();
+            return SpeechPrepareResult{true, {}};
+        };
+        runner->start(23, std::move(speechJob), std::nullopt, {true, {}});
+        QVERIFY(started->tryAcquire(1, 1000));
+
+        QElapsedTimer elapsed;
+        elapsed.start();
+        runner.reset();
+
+        QVERIFY(elapsed.elapsed() < 500);
+        release->release();
     }
 
     void startupPreparationRunnerIgnoresReplacedGeneration()

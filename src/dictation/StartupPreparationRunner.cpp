@@ -3,6 +3,7 @@
 #include <QDebug>
 #include <QThread>
 
+#include <atomic>
 #include <utility>
 
 namespace speecher {
@@ -11,6 +12,7 @@ struct StartupPreparationRunner::Preparation {
     StartupPreparationResult result;
     std::optional<SpeechPrepareJob> speechJob;
     std::optional<RefinementRefreshJob> refinerJob;
+    std::atomic_bool cancelled = false;
 };
 
 StartupPreparationRunner::StartupPreparationRunner(QObject *parent)
@@ -25,8 +27,9 @@ StartupPreparationRunner::~StartupPreparationRunner()
     for (QThread *thread : threads) {
         thread->requestInterruption();
         thread->quit();
-        thread->wait();
-        delete thread;
+        if (thread->wait(100)) {
+            delete thread;
+        }
     }
 }
 
@@ -44,12 +47,14 @@ void StartupPreparationRunner::start(quint64 generation,
     preparation->refinerJob = std::move(refinerJob);
 
     QThread *thread = QThread::create([preparation] {
-        if (preparation->speechJob) {
+        if (!preparation->cancelled && preparation->speechJob) {
             preparation->result.speech = preparation->speechJob->run
                 ? preparation->speechJob->run()
                 : SpeechPrepareResult{false, QStringLiteral("Speech provider startup job unavailable")};
         }
-        if (preparation->result.speech.ok && preparation->refinerJob) {
+        if (!preparation->cancelled
+            && preparation->result.speech.ok
+            && preparation->refinerJob) {
             preparation->result.refinerRefreshAttempted = true;
             preparation->result.refinerRefresh = preparation->refinerJob->run
                 ? preparation->refinerJob->run()
@@ -86,6 +91,7 @@ void StartupPreparationRunner::cancel()
     if (!m_current) {
         return;
     }
+    m_current->cancelled = true;
     m_current.reset();
     qInfo() << "startup preparation cancelled";
 }

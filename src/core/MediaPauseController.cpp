@@ -1,9 +1,9 @@
 #include "core/MediaPauseController.h"
 
 #include <QDBusConnection>
-#include <QDBusConnectionInterface>
-#include <QDBusInterface>
-#include <QDBusReply>
+#include <QDBusMessage>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
 #include <QDBusVariant>
 #include <QDebug>
 
@@ -15,68 +15,21 @@ constexpr auto mprisPrefix = "org.mpris.MediaPlayer2.";
 constexpr auto mprisPath = "/org/mpris/MediaPlayer2";
 constexpr auto mprisPlayerInterface = "org.mpris.MediaPlayer2.Player";
 
-QStringList mprisPlayingPlayers()
+QDBusMessage playerCommand(const QString &player, const QString &command)
 {
-    const QDBusConnection bus = QDBusConnection::sessionBus();
-    QDBusConnectionInterface *busInterface = bus.interface();
-    if (!busInterface) {
-        qInfo() << "media pause skipped session dbus unavailable";
-        return {};
-    }
-    busInterface->setTimeout(1000);
-
-    const QDBusReply<QStringList> namesReply = busInterface->registeredServiceNames();
-    if (!namesReply.isValid()) {
-        qInfo() << "media pause skipped no mpris players";
-        return {};
-    }
-
-    QStringList players;
-    for (const QString &service : namesReply.value()) {
-        if (!service.startsWith(QLatin1String(mprisPrefix))) {
-            continue;
-        }
-
-        QDBusInterface properties(service,
-                                  QLatin1String(mprisPath),
-                                  QStringLiteral("org.freedesktop.DBus.Properties"),
-                                  bus);
-        properties.setTimeout(1000);
-        const QDBusReply<QDBusVariant> statusReply = properties.call(QStringLiteral("Get"),
-                                                                     QLatin1String(mprisPlayerInterface),
-                                                                     QStringLiteral("PlaybackStatus"));
-        if (!statusReply.isValid()) {
-            qInfo().noquote() << "media pause skipped player=" + service
-                              << "error=" + statusReply.error().message();
-            continue;
-        }
-
-        if (statusReply.value().variant().toString() == QStringLiteral("Playing")) {
-            players << service;
-        }
-    }
-    return players;
+    return QDBusMessage::createMethodCall(
+        player, QLatin1String(mprisPath), QLatin1String(mprisPlayerInterface), command);
 }
 
-bool runMprisPlayerCommand(const QString &player, const QString &command)
+QDBusMessage playbackStatusRequest(const QString &player)
 {
-    QDBusInterface playerInterface(player,
-                                   QLatin1String(mprisPath),
-                                   QLatin1String(mprisPlayerInterface),
-                                   QDBusConnection::sessionBus());
-    playerInterface.setTimeout(1000);
-    if (!playerInterface.isValid()) {
-        return false;
-    }
-
-    const QDBusMessage reply = playerInterface.call(command);
-    if (reply.type() == QDBusMessage::ErrorMessage) {
-        qInfo().noquote() << "media command failed player=" + player
-                          << "command=" + command
-                          << "error=" + reply.errorMessage();
-        return false;
-    }
-    return true;
+    QDBusMessage message = QDBusMessage::createMethodCall(
+        player,
+        QLatin1String(mprisPath),
+        QStringLiteral("org.freedesktop.DBus.Properties"),
+        QStringLiteral("Get"));
+    message.setArguments({QLatin1String(mprisPlayerInterface), QStringLiteral("PlaybackStatus")});
+    return message;
 }
 
 } // namespace
@@ -86,35 +39,66 @@ MediaPauseController::MediaPauseController(QObject *parent)
 {
 }
 
-QStringList MediaPauseController::playingPlayers() const
-{
-    return mprisPlayingPlayers();
-}
-
-bool MediaPauseController::runPlayerCommand(const QString &player, const QString &command) const
-{
-    return runMprisPlayerCommand(player, command);
-}
-
 void MediaPauseController::pausePlaying()
 {
+    const quint64 generation = ++m_generation;
     m_pausedPlayers.clear();
-    const QStringList players = playingPlayers();
-    for (const QString &player : players) {
-        if (runPlayerCommand(player, QStringLiteral("Pause"))) {
-            m_pausedPlayers << player;
+    QDBusMessage listNames = QDBusMessage::createMethodCall(
+        QStringLiteral("org.freedesktop.DBus"),
+        QStringLiteral("/org/freedesktop/DBus"),
+        QStringLiteral("org.freedesktop.DBus"),
+        QStringLiteral("ListNames"));
+    auto *namesWatcher = new QDBusPendingCallWatcher(
+        QDBusConnection::sessionBus().asyncCall(listNames, 300), this);
+    connect(namesWatcher, &QDBusPendingCallWatcher::finished, this,
+            [this, namesWatcher, generation] {
+        const QDBusPendingReply<QStringList> names = *namesWatcher;
+        namesWatcher->deleteLater();
+        if (generation != m_generation || names.isError()) {
+            return;
         }
-    }
-
-    qInfo() << "media paused players=" << m_pausedPlayers.size();
+        for (const QString &player : names.value()) {
+            if (!player.startsWith(QLatin1String(mprisPrefix))) continue;
+            auto *statusWatcher = new QDBusPendingCallWatcher(
+                QDBusConnection::sessionBus().asyncCall(playbackStatusRequest(player), 300),
+                this);
+            connect(statusWatcher, &QDBusPendingCallWatcher::finished, this,
+                    [this, statusWatcher, player, generation] {
+                const QDBusPendingReply<QDBusVariant> status = *statusWatcher;
+                statusWatcher->deleteLater();
+                if (generation != m_generation || status.isError()
+                    || status.value().variant().toString() != QStringLiteral("Playing")) {
+                    return;
+                }
+                auto *pauseWatcher = new QDBusPendingCallWatcher(
+                    QDBusConnection::sessionBus().asyncCall(
+                        playerCommand(player, QStringLiteral("Pause")), 300),
+                    this);
+                connect(pauseWatcher, &QDBusPendingCallWatcher::finished, this,
+                        [this, pauseWatcher, player, generation] {
+                    const QDBusPendingReply<> paused = *pauseWatcher;
+                    pauseWatcher->deleteLater();
+                    if (paused.isError()) return;
+                    if (generation == m_generation) {
+                        m_pausedPlayers << player;
+                    } else {
+                        QDBusConnection::sessionBus().asyncCall(
+                            playerCommand(player, QStringLiteral("Play")), 300);
+                    }
+                });
+            });
+        }
+    });
 }
 
 void MediaPauseController::resumePaused()
 {
+    ++m_generation;
     const QStringList players = m_pausedPlayers;
     m_pausedPlayers.clear();
     for (const QString &player : players) {
-        runPlayerCommand(player, QStringLiteral("Play"));
+        QDBusConnection::sessionBus().asyncCall(
+            playerCommand(player, QStringLiteral("Play")), 300);
     }
     qInfo() << "media resumed players=" << players.size();
 }
