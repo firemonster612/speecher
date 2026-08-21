@@ -125,17 +125,6 @@ QString SettingsCodecs::speechProvider() const
     return provider.isEmpty() ? QStringLiteral("claude") : provider;
 }
 
-QString SettingsCodecs::speechAuthMode() const
-{
-    const QString mode = value(SettingsKeys::SpeechAuthMode, QStringLiteral("default")).toString();
-    return mode.isEmpty() ? QStringLiteral("default") : mode;
-}
-
-void SettingsCodecs::setSpeechAuthMode(const QString &value)
-{
-    m_settings.setValue(SettingsKeys::SpeechAuthMode, value.isEmpty() ? QStringLiteral("default") : value);
-}
-
 void SettingsCodecs::setSpeechProvider(const QString &value)
 {
     m_settings.setValue(SettingsKeys::SpeechProvider, value.isEmpty() ? QStringLiteral("claude") : value);
@@ -829,7 +818,8 @@ AppSettings SettingsCodecs::snapshot() const
     settings.ui.soundsEnabled = soundsEnabled();
 
     settings.speech.providerId = speechProvider();
-    settings.speech.authMode = speechAuthMode();
+    settings.speech.claudeAuthMode = anthropicAuthMode();
+    settings.speech.codexAuthMode = openAiAuthMode();
     settings.speech.vocabulary = customVocabulary();
     settings.speech.claudeCredentialsPath = claudeCredentialsPath();
     settings.speech.claudeEndpointBase = claudeEndpointBase();

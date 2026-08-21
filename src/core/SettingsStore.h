@@ -90,8 +90,6 @@ public:
     using SettingsCodecs::snapshot;
     using SettingsCodecs::soundsEnabled;
     using SettingsCodecs::speechProvider;
-    using SettingsCodecs::speechAuthMode;
-    using SettingsCodecs::setSpeechAuthMode;
     using SettingsCodecs::setupCompleted;
     using SettingsCodecs::storedApiKeyFallback;
     using SettingsCodecs::theme;

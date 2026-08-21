@@ -12,7 +12,7 @@ namespace {
 
 SpeechPrepareResult loadClaudeAccessToken(const SpeechSettings &settings, QString *accessToken)
 {
-    if (settings.authMode == QStringLiteral("cliproxy")) {
+    if (settings.claudeAuthMode == QStringLiteral("cliproxy")) {
         const CliProxyCredentialResult credentials = CliProxyCredentials::load(
             settings.cliproxyOauthDir, QStringLiteral("claude"), settings.claudeCliproxyAccount);
         if (accessToken) {
@@ -53,7 +53,7 @@ QString ClaudeSpeechTranscriber::label() const
 
 bool ClaudeSpeechTranscriber::requiresRefresh(const SpeechSettings &settings) const
 {
-    if (settings.authMode == QStringLiteral("cliproxy")) {
+    if (settings.claudeAuthMode == QStringLiteral("cliproxy")) {
         // CLI Proxy API refreshes its own tokens; prepare reloads them per attempt.
         return false;
     }

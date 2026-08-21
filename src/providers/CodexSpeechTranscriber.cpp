@@ -13,7 +13,7 @@ constexpr auto dictationEndpoint = "wss://chatgpt.com/backend-api/dictation/stre
 
 SpeechPrepareResult prepareCodex(const SpeechSettings &settings, QString *accessToken)
 {
-    if (settings.authMode == QStringLiteral("cliproxy")) {
+    if (settings.codexAuthMode == QStringLiteral("cliproxy")) {
         const CliProxyCredentialResult credentials = CliProxyCredentials::load(
             settings.cliproxyOauthDir, QStringLiteral("codex"), settings.codexCliproxyAccount);
         accessToken->clear();
@@ -52,7 +52,7 @@ QString CodexSpeechTranscriber::label() const
 
 bool CodexSpeechTranscriber::requiresRefresh(const SpeechSettings &settings) const
 {
-    if (settings.authMode == QStringLiteral("cliproxy")) {
+    if (settings.codexAuthMode == QStringLiteral("cliproxy")) {
         // CLI Proxy API refreshes its own tokens; prepare reloads them per attempt.
         return false;
     }
