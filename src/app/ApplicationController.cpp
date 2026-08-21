@@ -426,7 +426,11 @@ void ApplicationController::wireSessionToPopup()
     connect(m_session, &DictationSession::popupListeningIndicatorRequested, m_popup, &TranscriberPopup::showListeningIndicator);
     connect(m_session, &DictationSession::popupMessageRequested, m_popup, &TranscriberPopup::showMessage);
     connect(m_session, &DictationSession::popupErrorRequested, m_popup, &TranscriberPopup::showErrorMessage);
-    connect(m_popup, &TranscriberPopup::errorDismissed, m_session, &DictationSession::stopListening);
+    connect(m_popup, &TranscriberPopup::errorDismissed, m_session, [this] {
+        if (m_session->state() == DictationState::Error) {
+            m_session->stopListening();
+        }
+    });
     connect(m_popup, &TranscriberPopup::enableAccessibilityRequested, this, [this] {
         QString error;
         if (!enableAccessibility(&error)) {
