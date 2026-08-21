@@ -222,6 +222,53 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
     }
 
+    void dictationSessionForwardsAudioDuringStartAndStop()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        audio->onStart = [&] { audio->pushAudio(QByteArrayLiteral("pre-roll")); };
+        audio->onStop = [&] { audio->pushAudio(QByteArrayLiteral("post-roll")); };
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("captured"));
+        session.stopListening();
+
+        QCOMPARE(speech->audioChunks,
+                 QList<QByteArray>({QByteArrayLiteral("pre-roll"), QByteArrayLiteral("post-roll")}));
+    }
+
+    void dictationSessionDoesNotResumeAfterCancellationInsideAudioStart()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        audio->onStart = [&] { session.stopListening(); };
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 250);
+
+        QVERIFY(!audio->isActive());
+        QCOMPARE(speech->cancelledAttempts, QList<quint64>({speech->currentAttemptId}));
+    }
+
     void dictationCompletionStatus()
     {
         SettingsStore settings;

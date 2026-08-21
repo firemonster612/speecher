@@ -65,7 +65,10 @@ DictationSession::DictationSession(SettingsStore *settings,
         }
     });
     connect(m_audio, &AudioInput::audioChunk, this, [this](const QByteArray &pcm) {
-        if (m_transcriber && m_state == DictationState::Listening) {
+        const bool acceptsAudio = m_state == DictationState::Starting
+            || m_state == DictationState::Listening
+            || m_state == DictationState::Stopping;
+        if (m_transcriber && m_sessionSettings && acceptsAudio) {
             m_transcriber->sendAudio(m_attemptId, pcm);
         }
     });
@@ -403,6 +406,13 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation, const
         setState(DictationState::Error, audioError);
         return;
     }
+    if (generation != m_generation
+        || m_state != DictationState::Starting
+        || !m_sessionSettings) {
+        m_audio->stop();
+        qInfo() << "audio start completed for a cancelled generation";
+        return;
+    }
     qInfo() << "audio capture started";
     setState(DictationState::Listening);
 }
@@ -492,6 +502,7 @@ void DictationSession::beginRefinement(quint64 generation)
     }
 
     setState(DictationState::Refining);
+    m_refinementGeneration = generation;
     emit popupRefiningChanged(true);
     m_refinedText.clear();
     TranscriptPipeline::includeScreenshotContext(pipeline,
@@ -516,6 +527,7 @@ void DictationSession::beginRefinement(quint64 generation)
 
 void DictationSession::failSelectionEdit(const QString &message)
 {
+    m_refinementGeneration = 0;
     emit popupRefiningChanged(false);
     clearScreenshotContext();
     m_sessionSettings.reset();
@@ -533,6 +545,7 @@ void DictationSession::deliverFinal(const QString &text)
         return;
     }
     const AppSettings settings = *m_sessionSettings;
+    m_refinementGeneration = 0;
     const bool usedFallback = !m_lastMessage.isEmpty();
     emit popupRefiningChanged(false);
     setState(DictationState::Delivering);
@@ -587,8 +600,13 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
     }
     qWarning().noquote() << "speech transcriber failed transcriptEmpty=" << m_transcript->isEmpty()
                          << "message=" + failure.message;
-    if (m_state == DictationState::Stopping && !m_transcript->isEmpty()) {
+    if (!m_transcript->isEmpty()
+        && (m_state == DictationState::Listening || m_state == DictationState::Stopping)) {
         m_lastMessage = failure.message;
+        if (m_state == DictationState::Listening) {
+            stopListening();
+            return;
+        }
         beginRefinement(m_generation);
         return;
     }
@@ -665,9 +683,15 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
     m_refinerConnections.clear();
     m_refiner = refiner;
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::delta, this, [this](const QString &delta) {
+        if (m_state != DictationState::Refining || m_refinementGeneration != m_generation) {
+            return;
+        }
         m_refinedText += delta;
     });
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::completed, this, [this](const QString &text) {
+        if (m_state != DictationState::Refining || m_refinementGeneration != m_generation) {
+            return;
+        }
         const std::optional<QString> refined = TranscriptPipeline::restoreRefinedResult(
             m_transcriptPipeline,
             text);
@@ -680,6 +704,9 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
         }
     });
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::failed, this, [this](const QString &message) {
+        if (m_state != DictationState::Refining || m_refinementGeneration != m_generation) {
+            return;
+        }
         if (m_transcriptPipeline.editsSelection) {
             failSelectionEdit(message);
             return;

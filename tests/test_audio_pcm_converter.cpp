@@ -77,6 +77,18 @@ private slots:
         QCOMPARE(actual, expected);
         QCOMPARE(actual, bytes<qint16>({0, 32767}));
     }
+
+    void preservesPartialFramesAcrossChunks()
+    {
+        const QByteArray input = bytes<qint16>({1000, -2000, 3000});
+        AudioPcmConverter converter;
+        converter.reset(format(16000, 1, QAudioFormat::Int16));
+
+        const QByteArray actual = converter.convert(input.left(3)).pcm16Mono16k
+            + converter.convert(input.mid(3)).pcm16Mono16k;
+
+        QCOMPARE(actual, input);
+    }
 };
 
 } // namespace

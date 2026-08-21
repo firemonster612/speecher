@@ -110,6 +110,7 @@ private:
     QByteArray m_screenshotData;
     QString m_screenshotMediaType;
     quint64 m_screenshotCaptureGeneration = 0;
+    quint64 m_refinementGeneration = 0;
     bool m_heardSpeech = false;
 };
 

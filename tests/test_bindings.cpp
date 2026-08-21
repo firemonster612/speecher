@@ -50,6 +50,13 @@ private slots:
                  QStringList({QStringLiteral("my phone")}));
         QVERIFY(BindingProcessor::hasExplicitNoBindDirective(
             QStringLiteral("please write my evil but don't turn that into a binding")));
+        QCOMPARE(BindingProcessor::explicitNoBindPhrases(
+                     QStringLiteral("write my phone, but don't bind my evil"),
+                     {
+                         {QStringLiteral("my phone"), QStringLiteral("+1 555 0100")},
+                         {QStringLiteral("my email"), QStringLiteral("efox@example.com")},
+                     }),
+                 QStringList());
     }
 
     void snippetJsonImportSupportsArraysAndMappings()

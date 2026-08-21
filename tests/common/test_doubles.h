@@ -2,6 +2,8 @@
 
 #include "test_prelude.h"
 
+#include <functional>
+
 namespace speecher::test {
 
 class FakeAudioInput final : public AudioInput {
@@ -21,11 +23,17 @@ public:
         }
         started = true;
         active = true;
+        if (onStart) {
+            onStart();
+        }
         return true;
     }
 
     void stop() override
     {
+        if (onStop) {
+            onStop();
+        }
         active = false;
         emit levelChanged(0.0f);
     }
@@ -49,6 +57,8 @@ public:
     QString startError = QStringLiteral("audio failed");
     bool started = false;
     bool active = false;
+    std::function<void()> onStart;
+    std::function<void()> onStop;
 };
 
 class FakeMediaController final : public MediaController {
