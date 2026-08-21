@@ -13,11 +13,27 @@
 
 namespace speecher {
 
-ClaudeVoiceClient::ClaudeVoiceClient(QObject *parent)
+namespace {
+
+constexpr qsizetype kMaximumPendingAudioBytes = 4 * 1024 * 1024;
+
+} // namespace
+
+ClaudeVoiceClient::ClaudeVoiceClient(QObject *parent, int connectionTimeoutMs)
     : QObject(parent)
     , m_debugSchema(qEnvironmentVariable("SPEECHER_DEBUG_CLAUDE_SCHEMA") == QStringLiteral("1"))
+    , m_connectionTimeoutMs(connectionTimeoutMs)
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
+    m_connectionTimer.setSingleShot(true);
+    connect(&m_connectionTimer, &QTimer::timeout, this, [this] {
+        if (!m_connected && !m_cancelled && !m_failureEmitted) {
+            fail(QStringLiteral("Claude voice stream timed out while connecting"),
+                 true,
+                 QStringLiteral("connect"));
+            m_socket.abort();
+        }
+    });
     m_keepAliveTimer.setInterval(8000);
     connect(&m_keepAliveTimer, &QTimer::timeout, this, [this] {
         if (m_socket.state() == QAbstractSocket::ConnectedState) {
@@ -26,6 +42,7 @@ ClaudeVoiceClient::ClaudeVoiceClient(QObject *parent)
         }
     });
     connect(&m_socket, &QWebSocket::connected, this, [this] {
+        m_connectionTimer.stop();
         m_connected = true;
         qInfo() << "claude websocket connected";
         qInfo() << "claude initial keepalive sent";
@@ -38,18 +55,23 @@ ClaudeVoiceClient::ClaudeVoiceClient(QObject *parent)
         emit connected();
     });
     connect(&m_socket, &QWebSocket::disconnected, this, [this] {
-        const bool incompleteFinalization = (m_finalizing || m_finishRequested)
-            && !m_completed
-            && !m_cancelled
-            && !m_failureEmitted;
+        m_connectionTimer.stop();
+        const bool wasConnected = m_connected;
+        const bool unexpected = !m_completed && !m_cancelled && !m_failureEmitted;
+        const QString phase = (m_finalizing || m_finishRequested)
+            ? QStringLiteral("finalize")
+            : wasConnected ? QStringLiteral("streaming") : QStringLiteral("connect");
         m_connected = false;
         m_finalizing = false;
         m_keepAliveTimer.stop();
+        clearPendingAudio();
         qInfo() << "claude websocket disconnected";
-        if (incompleteFinalization) {
-            fail(QStringLiteral("Claude voice stream closed before final transcript completion"),
+        if (unexpected) {
+            fail(phase == QStringLiteral("finalize")
+                     ? QStringLiteral("Claude voice stream closed before final transcript completion")
+                     : QStringLiteral("Claude voice stream disconnected unexpectedly"),
                  true,
-                 QStringLiteral("finalize"));
+                 phase);
         }
         emit closed();
     });
@@ -109,6 +131,7 @@ void ClaudeVoiceClient::start(const QUrl &url, const QString &accessToken, const
     qInfo().noquote() << "claude websocket opening url=" + streamUrl.toString(QUrl::RemoveUserInfo)
                       << "vocabularyCount=" + QString::number(vocabulary.size());
     m_socket.open(request);
+    m_connectionTimer.start(m_connectionTimeoutMs);
 #else
     Q_UNUSED(url)
     Q_UNUSED(accessToken)
@@ -131,6 +154,9 @@ void ClaudeVoiceClient::sendInit(const QStringList &vocabulary)
 void ClaudeVoiceClient::sendAudio(const QByteArray &pcm)
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
+    if (m_cancelled || m_failureEmitted || m_completed || m_finishRequested) {
+        return;
+    }
     if (m_connected && !m_finalizing && !m_finishRequested) {
         m_socket.sendBinaryMessage(pcm);
     } else if (!m_finalizing) {
@@ -178,6 +204,7 @@ void ClaudeVoiceClient::cancel()
     m_finishRequested = false;
     m_finalizing = false;
     clearPendingAudio();
+    m_connectionTimer.stop();
     m_keepAliveTimer.stop();
     m_socket.abort();
 #endif
@@ -192,6 +219,14 @@ void ClaudeVoiceClient::queueAudio(const QByteArray &pcm)
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     if (pcm.isEmpty()) {
+        return;
+    }
+
+    if (m_pendingAudioBytes + pcm.size() > kMaximumPendingAudioBytes) {
+        fail(QStringLiteral("Claude voice audio buffer filled before the stream connected"),
+             true,
+             QStringLiteral("connect"));
+        m_socket.abort();
         return;
     }
 
@@ -256,6 +291,9 @@ void ClaudeVoiceClient::fail(const QString &message, bool retryable, const QStri
         return;
     }
     m_failureEmitted = true;
+    m_connectionTimer.stop();
+    m_keepAliveTimer.stop();
+    clearPendingAudio();
     emit failed(message, retryable, phase);
 }
 

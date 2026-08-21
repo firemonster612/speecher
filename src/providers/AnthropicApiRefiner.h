@@ -15,7 +15,7 @@ class AnthropicApiRefiner final : public QObject {
     Q_OBJECT
 
 public:
-    explicit AnthropicApiRefiner(QObject *parent = nullptr, int inactivityTimeoutMs = 20000);
+    explicit AnthropicApiRefiner(QObject *parent = nullptr, int requestTimeoutMs = 20000);
 
     void refine(const QString &rawTranscript,
                 const QStringList &vocabulary,
@@ -38,9 +38,9 @@ private:
     void completeIfReady();
 
     QNetworkAccessManager m_network;
-    QTimer m_inactivityTimer;
+    QTimer m_deadlineTimer;
     QNetworkReply *m_reply = nullptr;
-    int m_inactivityTimeoutMs;
+    int m_requestTimeoutMs;
     QByteArray m_buffer;
     QString m_accumulated;
     bool m_failed = false;

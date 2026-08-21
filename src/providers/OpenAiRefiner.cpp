@@ -27,12 +27,12 @@ QString openAiErrorMessage(const QByteArray &payload, const QString &fallback)
 
 } // namespace
 
-OpenAiRefiner::OpenAiRefiner(QObject *parent, int inactivityTimeoutMs)
+OpenAiRefiner::OpenAiRefiner(QObject *parent, int requestTimeoutMs)
     : QObject(parent)
-    , m_inactivityTimeoutMs(inactivityTimeoutMs)
+    , m_requestTimeoutMs(requestTimeoutMs)
 {
-    m_inactivityTimer.setSingleShot(true);
-    connect(&m_inactivityTimer, &QTimer::timeout, this, [this] {
+    m_deadlineTimer.setSingleShot(true);
+    connect(&m_deadlineTimer, &QTimer::timeout, this, [this] {
         if (!m_reply || m_failed || m_completed) {
             return;
         }
@@ -40,7 +40,7 @@ OpenAiRefiner::OpenAiRefiner(QObject *parent, int inactivityTimeoutMs)
         m_reply = nullptr;
         m_failed = true;
         reply->abort();
-        emit failed(QStringLiteral("OpenAI refinement timed out waiting for response activity"));
+        emit failed(QStringLiteral("OpenAI refinement exceeded its response deadline"));
     });
 }
 
@@ -103,12 +103,11 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
 
     QNetworkReply *reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
     m_reply = reply;
-    m_inactivityTimer.start(m_inactivityTimeoutMs);
+    m_deadlineTimer.start(m_requestTimeoutMs);
     connect(reply, &QNetworkReply::readyRead, this, [this, reply] {
         if (reply != m_reply) {
             return;
         }
-        m_inactivityTimer.start();
         parseSseChunk(reply->readAll());
     });
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
@@ -116,7 +115,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
             reply->deleteLater();
             return;
         }
-        m_inactivityTimer.stop();
+        m_deadlineTimer.stop();
         m_reply = nullptr;
         if (m_failed || m_completed) {
             reply->deleteLater();
@@ -136,7 +135,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
 
 void OpenAiRefiner::cancel()
 {
-    m_inactivityTimer.stop();
+    m_deadlineTimer.stop();
     if (m_reply) {
         QNetworkReply *reply = m_reply;
         m_reply = nullptr;
@@ -148,12 +147,18 @@ void OpenAiRefiner::parseSseChunk(const QByteArray &chunk)
 {
     m_buffer += chunk;
     while (true) {
-        const int boundary = m_buffer.indexOf("\n\n");
+        int boundary = m_buffer.indexOf("\n\n");
+        int separatorBytes = 2;
+        const int crlfBoundary = m_buffer.indexOf("\r\n\r\n");
+        if (crlfBoundary >= 0 && (boundary < 0 || crlfBoundary < boundary)) {
+            boundary = crlfBoundary;
+            separatorBytes = 4;
+        }
         if (boundary < 0) {
             break;
         }
         const QByteArray frame = m_buffer.left(boundary);
-        m_buffer.remove(0, boundary + 2);
+        m_buffer.remove(0, boundary + separatorBytes);
         QByteArray eventName;
         QByteArray data;
         for (const QByteArray &line : frame.split('\n')) {
@@ -164,10 +169,15 @@ void OpenAiRefiner::parseSseChunk(const QByteArray &chunk)
             }
         }
         if (eventName == "error") {
-            m_inactivityTimer.stop();
+            m_deadlineTimer.stop();
             m_failed = true;
+            if (m_reply) {
+                QNetworkReply *reply = m_reply;
+                m_reply = nullptr;
+                reply->abort();
+            }
             emit failed(openAiErrorMessage(data, QStringLiteral("OpenAI refinement error")));
-            continue;
+            return;
         }
         const QJsonObject object = QJsonDocument::fromJson(data).object();
         if (eventName == "response.output_text.delta") {
@@ -182,10 +192,10 @@ void OpenAiRefiner::parseSseChunk(const QByteArray &chunk)
 
 void OpenAiRefiner::completeIfReady()
 {
-    if (m_completed || m_accumulated.isEmpty()) {
+    if (m_failed || m_completed || m_accumulated.isEmpty()) {
         return;
     }
-    m_inactivityTimer.stop();
+    m_deadlineTimer.stop();
     m_completed = true;
     emit completed(m_accumulated);
 }

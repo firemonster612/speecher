@@ -29,11 +29,16 @@ private slots:
         QCOMPARE(claudeVoiceKeytermsHeader({
                      QStringLiteral(" Deepgram   Nova 3 "),
                      QStringLiteral("Speecher"),
-                     QStringLiteral("speecher"),
-                     QString::fromUtf8("café"),
-                 }),
-                 QByteArrayLiteral("Deepgram Nova 3,Speecher,caf"));
-        QCOMPARE(claudeVoiceKeytermsHeader({QString(1100, QLatin1Char('a'))}).size(), 1024);
+                 QStringLiteral("speecher"),
+                 QString::fromUtf8("café"),
+             }),
+                 QByteArray("Deepgram Nova 3,Speecher,caf\xe9", 29));
+        QCOMPARE(claudeVoiceKeytermsHeader({QString(1100, QLatin1Char('a')),
+                                            QStringLiteral("Qt")}),
+                 QByteArrayLiteral("Qt"));
+        QCOMPARE(claudeVoiceKeytermsHeader({QString::fromUtf8("日本語"),
+                                            QStringLiteral("Speecher")}),
+                 QByteArrayLiteral("Speecher"));
     }
 
     void claudeVoiceEventsUseOnlyTheObservedSchema()
@@ -65,6 +70,54 @@ private slots:
     }
 
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
+    void claudeVoiceClientBoundsConnectionAndPendingAudio()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        ClaudeVoiceClient deadlineClient(nullptr, 25);
+        QSignalSpy deadlineFailure(&deadlineClient, &ClaudeVoiceClient::failed);
+        deadlineClient.start(
+            QUrl(QStringLiteral("ws://127.0.0.1:%1/voice").arg(server.serverPort())),
+            QStringLiteral("test-token"),
+            {});
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTRY_COMPARE_WITH_TIMEOUT(deadlineFailure.count(), 1, 1000);
+        QCOMPARE(deadlineFailure.first().at(2).toString(), QStringLiteral("connect"));
+
+        ClaudeVoiceClient bufferedClient(nullptr, 1000);
+        QSignalSpy bufferFailure(&bufferedClient, &ClaudeVoiceClient::failed);
+        bufferedClient.start(
+            QUrl(QStringLiteral("ws://127.0.0.1:%1/voice").arg(server.serverPort())),
+            QStringLiteral("test-token"),
+            {});
+        bufferedClient.sendAudio(QByteArray(4 * 1024 * 1024 + 1, '\0'));
+        QCOMPARE(bufferFailure.count(), 1);
+        QCOMPARE(bufferFailure.first().at(2).toString(), QStringLiteral("connect"));
+    }
+
+    void claudeVoiceClientReportsUnexpectedRemoteClose()
+    {
+        QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        ClaudeVoiceClient client;
+        QSignalSpy connected(&client, &ClaudeVoiceClient::connected);
+        QSignalSpy failed(&client, &ClaudeVoiceClient::failed);
+        client.start(
+            QUrl(QStringLiteral("ws://127.0.0.1:%1/voice").arg(server.serverPort())),
+            QStringLiteral("test-token"),
+            {});
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        std::unique_ptr<QWebSocket> socket(server.nextPendingConnection());
+        QTRY_COMPARE_WITH_TIMEOUT(connected.count(), 1, 1000);
+
+        socket->close();
+
+        QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
+        QCOMPARE(failed.first().at(2).toString(), QStringLiteral("streaming"));
+    }
+
     void liveClaudeVoiceProvider()
     {
         const QString pcmPath = qEnvironmentVariable("SPEECHER_TEST_LIVE_CLAUDE_PCM");
