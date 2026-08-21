@@ -125,6 +125,17 @@ QString SettingsCodecs::speechProvider() const
     return provider.isEmpty() ? QStringLiteral("claude") : provider;
 }
 
+QString SettingsCodecs::speechAuthMode() const
+{
+    const QString mode = value(SettingsKeys::SpeechAuthMode, QStringLiteral("default")).toString();
+    return mode.isEmpty() ? QStringLiteral("default") : mode;
+}
+
+void SettingsCodecs::setSpeechAuthMode(const QString &value)
+{
+    m_settings.setValue(SettingsKeys::SpeechAuthMode, value.isEmpty() ? QStringLiteral("default") : value);
+}
+
 void SettingsCodecs::setSpeechProvider(const QString &value)
 {
     m_settings.setValue(SettingsKeys::SpeechProvider, value.isEmpty() ? QStringLiteral("claude") : value);
@@ -726,8 +737,28 @@ void SettingsCodecs::setAnthropicCliproxyAccount(const QString &value)
 
 QString SettingsCodecs::cliproxyOauthDir() const
 {
-    return value(SettingsKeys::CliproxyOauthDir,
-                 QDir::homePath() + QStringLiteral("/.local/share/cliproxy-api/oauth")).toString();
+    const QString configured = value(SettingsKeys::CliproxyOauthDir, QString()).toString().trimmed();
+    if (!configured.isEmpty()) {
+        return configured;
+    }
+    // CLI Proxy API's stock auth-dir is ~/.cli-proxy-api; installs may configure
+    // another location. Prefer whichever candidate actually holds account files.
+    const QStringList candidates{
+        QDir::homePath() + QStringLiteral("/.cli-proxy-api"),
+        QDir::homePath() + QStringLiteral("/.local/share/cliproxy-api/oauth"),
+    };
+    for (const QString &candidate : candidates) {
+        if (!QDir(candidate).entryList({QStringLiteral("claude-*.json"), QStringLiteral("codex-*.json")},
+                                       QDir::Files).isEmpty()) {
+            return candidate;
+        }
+    }
+    for (const QString &candidate : candidates) {
+        if (QDir(candidate).exists()) {
+            return candidate;
+        }
+    }
+    return candidates.first();
 }
 
 QString SettingsCodecs::cliproxyBaseUrl() const
@@ -739,9 +770,23 @@ QString SettingsCodecs::cliproxyBaseUrl() const
     return base;
 }
 
+void SettingsCodecs::setCliproxyBaseUrl(const QString &value)
+{
+    QString base = value.trimmed();
+    while (base.endsWith(QLatin1Char('/'))) {
+        base.chop(1);
+    }
+    m_settings.setValue(SettingsKeys::CliproxyBaseUrl, base);
+}
+
 QString SettingsCodecs::cliproxyApiKey() const
 {
     return value(SettingsKeys::CliproxyApiKey, QString()).toString().trimmed();
+}
+
+void SettingsCodecs::setCliproxyApiKey(const QString &value)
+{
+    m_settings.setValue(SettingsKeys::CliproxyApiKey, value.trimmed());
 }
 
 QString SettingsCodecs::claudeCredentialsPath() const
@@ -784,10 +829,14 @@ AppSettings SettingsCodecs::snapshot() const
     settings.ui.soundsEnabled = soundsEnabled();
 
     settings.speech.providerId = speechProvider();
+    settings.speech.authMode = speechAuthMode();
     settings.speech.vocabulary = customVocabulary();
     settings.speech.claudeCredentialsPath = claudeCredentialsPath();
     settings.speech.claudeEndpointBase = claudeEndpointBase();
     settings.speech.claudeVoicePath = claudeVoicePath();
+    settings.speech.cliproxyOauthDir = cliproxyOauthDir();
+    settings.speech.claudeCliproxyAccount = anthropicCliproxyAccount();
+    settings.speech.codexCliproxyAccount = openAiCliproxyAccount();
     settings.audio = audioCaptureSettings();
     settings.appRecognitionRules = appRecognitionRules();
     settings.bindings = bindingRules();

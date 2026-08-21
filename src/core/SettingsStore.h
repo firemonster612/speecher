@@ -23,7 +23,9 @@ public:
     using SettingsCodecs::anthropicModel;
     using SettingsCodecs::cliproxyOauthDir;
     using SettingsCodecs::cliproxyBaseUrl;
+    using SettingsCodecs::setCliproxyBaseUrl;
     using SettingsCodecs::cliproxyApiKey;
+    using SettingsCodecs::setCliproxyApiKey;
     using SettingsCodecs::appRecognitionRules;
     using SettingsCodecs::audioCaptureSettings;
     using SettingsCodecs::bindingRules;
@@ -88,6 +90,8 @@ public:
     using SettingsCodecs::snapshot;
     using SettingsCodecs::soundsEnabled;
     using SettingsCodecs::speechProvider;
+    using SettingsCodecs::speechAuthMode;
+    using SettingsCodecs::setSpeechAuthMode;
     using SettingsCodecs::setupCompleted;
     using SettingsCodecs::storedApiKeyFallback;
     using SettingsCodecs::theme;
