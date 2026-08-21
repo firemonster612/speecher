@@ -381,7 +381,7 @@ OpenAiAuth OpenAiAuthProvider::refreshCodexOauth() const
 
 QString OpenAiAuthProvider::status() const
 {
-    return resolve().status;
+    return resolve(false).status;
 }
 
 } // namespace speecher

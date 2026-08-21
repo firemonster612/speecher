@@ -391,16 +391,27 @@ void ProviderSettingsPage::updateAuthControl()
         return;
     }
     m_authControl->setCurrentWidget(m_authStatus);
+    if (!m_secretLoaded) {
+        m_authStatus->setText(QStringLiteral("Loading credentials…"));
+        return;
+    }
     m_authStatus->setText(QStringLiteral("Checking…"));
 
-    const QString settingsApiKey = m_secretLoaded ? m_loadedApiKey : QString();
-    const QString settingsStatus = m_secretLoaded ? m_secrets.status() : QString();
+    const QString cliproxyAccount = m_settings.openAiCliproxyAccount();
+    const QString cliproxyDir = m_settings.cliproxyOauthDir();
+    const QString settingsApiKey = m_loadedApiKey;
+    const QString settingsStatus = m_secrets.status();
     auto status = std::make_shared<QString>();
-    QThread *thread = QThread::create([mode, settingsApiKey, settingsStatus, status] {
+    QThread *thread = QThread::create([mode,
+                                       cliproxyAccount,
+                                       cliproxyDir,
+                                       settingsApiKey,
+                                       settingsStatus,
+                                       status] {
         *status = OpenAiAuthProvider(nullptr,
                                      mode,
-                                     {},
-                                     {},
+                                     cliproxyAccount,
+                                     cliproxyDir,
                                      settingsApiKey,
                                      settingsStatus)
                       .status();
