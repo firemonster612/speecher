@@ -2,8 +2,10 @@
 
 #include <QApplication>
 #include <QFont>
+#include <QHideEvent>
 #include <QPainter>
 #include <QPalette>
+#include <QShowEvent>
 
 #include <algorithm>
 #include <cmath>
@@ -40,7 +42,18 @@ WaveformWidget::WaveformWidget(QWidget *parent)
         m_targetLevel *= 0.68f;
         update();
     });
+}
+
+void WaveformWidget::hideEvent(QHideEvent *event)
+{
+    m_timer.stop();
+    QWidget::hideEvent(event);
+}
+
+void WaveformWidget::showEvent(QShowEvent *event)
+{
     m_timer.start();
+    QWidget::showEvent(event);
 }
 
 void WaveformWidget::setLevel(float level)

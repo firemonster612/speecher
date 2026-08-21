@@ -28,6 +28,7 @@ class ApplicationController : public QObject {
 
 public:
     explicit ApplicationController(bool popupOnly, QObject *parent = nullptr);
+    ~ApplicationController() override;
 
     SettingsStore *settings() const;
     SecretStore *secretStore() const;

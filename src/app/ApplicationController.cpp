@@ -86,6 +86,14 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
     QTimer::singleShot(2000, this, &ApplicationController::runDeferredStartup);
 }
 
+ApplicationController::~ApplicationController()
+{
+    if (qApp) {
+        qApp->removeEventFilter(this);
+    }
+    delete m_popup;
+}
+
 bool ApplicationController::eventFilter(QObject *watched, QEvent *event)
 {
     if (!m_deferredStartupScheduled) {
@@ -109,6 +117,7 @@ void ApplicationController::runDeferredStartup()
         return;
     }
     m_deferredStartupDone = true;
+    qApp->removeEventFilter(this);
     m_audio->warmUp();
 #ifdef SPEECHER_WITH_KGLOBALACCEL
     m_globalShortcutAction = new QAction(QStringLiteral("Toggle dictation"), this);
