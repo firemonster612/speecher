@@ -1,5 +1,6 @@
 #include "core/Target.h"
 
+#include <QRegularExpression>
 #include <QStringList>
 
 namespace speecher {
@@ -196,7 +197,8 @@ QList<AppRecognitionRule> builtInAppRecognitionRules()
 
 static bool ruleMatches(const AppRecognitionRule &rule,
                         const Target &target,
-                        bool includeWindowTitle)
+                        bool includeWindowTitle,
+                        bool builtIn = false)
 {
     QStringList identityParts{
         target.applicationId,
@@ -208,9 +210,6 @@ static bool ruleMatches(const AppRecognitionRule &rule,
         identityParts.append(target.windowTitle);
     }
     const QString identity = identityParts.join(QLatin1Char(' '));
-    if (identity.contains(rule.match, Qt::CaseInsensitive)) {
-        return true;
-    }
     const auto compact = [](const QString &value) {
         QString result;
         result.reserve(value.size());
@@ -219,7 +218,26 @@ static bool ruleMatches(const AppRecognitionRule &rule,
         }
         return result;
     };
-    return compact(identity).contains(compact(rule.match));
+    const QString compactMatch = compact(rule.match);
+    if (compactMatch.isEmpty()) {
+        return false;
+    }
+    if (!builtIn) {
+        return identity.contains(rule.match, Qt::CaseInsensitive)
+            || compact(identity).contains(compactMatch);
+    }
+
+    const QRegularExpression boundaryMatch(
+        QStringLiteral("(^|[^\\p{L}\\p{N}])%1([^\\p{L}\\p{N}]|$)")
+            .arg(QRegularExpression::escape(rule.match)),
+        QRegularExpression::CaseInsensitiveOption
+            | QRegularExpression::UseUnicodePropertiesOption);
+    for (const QString &part : identityParts) {
+        if (boundaryMatch.match(part).hasMatch() || compact(part) == compactMatch) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool isTerminalTarget(const Target &target)
@@ -231,7 +249,7 @@ bool isTerminalTarget(const Target &target)
         return true;
     }
     for (const AppRecognitionRule &rule : builtInAppRecognitionRules()) {
-        if (rule.category == AppCategory::Terminal && ruleMatches(rule, target, false)) {
+        if (rule.category == AppCategory::Terminal && ruleMatches(rule, target, false, true)) {
             return true;
         }
     }
@@ -242,7 +260,7 @@ AppCategory classifyTarget(const Target &target,
                            const QList<AppRecognitionRule> &customRules)
 {
     for (const AppRecognitionRule &rule : customRules) {
-        if (rule.category && ruleMatches(rule, target, false)) {
+        if (rule.category && ruleMatches(rule, target, false, true)) {
             return *rule.category;
         }
     }
@@ -261,7 +279,7 @@ WritingProfile inferWritingProfile(const Target &target, WritingProfile fallback
 {
     for (const AppRecognitionRule &rule : builtInAppRecognitionRules()) {
         const bool includeWindowTitle = rule.category != AppCategory::AiCoding;
-        if (rule.writingProfile && ruleMatches(rule, target, includeWindowTitle)) {
+        if (rule.writingProfile && ruleMatches(rule, target, includeWindowTitle, true)) {
             return *rule.writingProfile;
         }
     }

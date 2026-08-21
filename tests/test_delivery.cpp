@@ -136,6 +136,22 @@ private slots:
         QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
     }
 
+    void recognitionRulesRejectEmptyMatchesAndRespectBuiltInBoundaries()
+    {
+        Target target;
+        target.applicationId = QStringLiteral("org.example.barcode");
+        QCOMPARE(classifyTarget(target), AppCategory::General);
+
+        target.applicationId = QStringLiteral("org.example.!!!");
+        const QList<AppRecognitionRule> punctuationRule{
+            {QStringLiteral("!!!"), AppCategory::Terminal, WritingProfile::Work},
+        };
+        QCOMPARE(classifyTarget(target, punctuationRule), AppCategory::General);
+
+        target.applicationId = QStringLiteral("code");
+        QCOMPARE(classifyTarget(target), AppCategory::CodeEditor);
+    }
+
     void writingProfilesAndPromptUseBoundedUntrustedContext()
     {
         Target target;
