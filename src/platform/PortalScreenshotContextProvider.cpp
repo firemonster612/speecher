@@ -7,6 +7,7 @@
 #include <QDBusPendingReply>
 #include <QFile>
 #include <QImage>
+#include <QImageReader>
 #include <QUrl>
 #include <QUuid>
 
@@ -15,11 +16,26 @@ namespace speecher {
 namespace {
 
 constexpr qsizetype maximumPortalFileSize = 32 * 1024 * 1024;
+constexpr int maximumSourceEdge = 8192;
+constexpr qint64 maximumSourcePixels = 32 * 1024 * 1024;
 
 QByteArray normalizedScreenshot(const QByteArray &source)
 {
-    QImage image;
-    if (!image.loadFromData(source)) {
+    QBuffer input;
+    input.setData(source);
+    if (!input.open(QIODevice::ReadOnly)) {
+        return {};
+    }
+    QImageReader reader(&input);
+    const QSize size = reader.size();
+    if (!size.isValid()
+        || size.width() > maximumSourceEdge
+        || size.height() > maximumSourceEdge
+        || qint64(size.width()) * size.height() > maximumSourcePixels) {
+        return {};
+    }
+    QImage image = reader.read();
+    if (image.isNull()) {
         return {};
     }
 
@@ -39,6 +55,15 @@ QByteArray normalizedScreenshot(const QByteArray &source)
     return result;
 }
 
+QDBusObjectPath predictedRequestPath(const QString &token)
+{
+    QString sender = QDBusConnection::sessionBus().baseService();
+    sender.remove(0, sender.startsWith(QLatin1Char(':')) ? 1 : 0);
+    sender.replace(QLatin1Char('.'), QLatin1Char('_'));
+    return QDBusObjectPath(
+        QStringLiteral("/org/freedesktop/portal/desktop/request/%1/%2").arg(sender, token));
+}
+
 } // namespace
 
 PortalScreenshotContextProvider::PortalScreenshotContextProvider(QObject *parent)
@@ -49,7 +74,7 @@ PortalScreenshotContextProvider::PortalScreenshotContextProvider(QObject *parent
 void PortalScreenshotContextProvider::capture()
 {
     cancel();
-    m_cancelled = false;
+    const quint64 generation = m_generation;
 
     QDBusInterface portal(QStringLiteral("org.freedesktop.portal.Desktop"),
                           QStringLiteral("/org/freedesktop/portal/desktop"),
@@ -62,16 +87,29 @@ void PortalScreenshotContextProvider::capture()
 
     QVariantMap options;
     options.insert(QStringLiteral("interactive"), false);
-    options.insert(QStringLiteral("handle_token"),
-                   QStringLiteral("speecher_%1").arg(
-                       QUuid::createUuid().toString(QUuid::Id128)));
+    const QString token = QStringLiteral("speecher_%1").arg(
+        QUuid::createUuid().toString(QUuid::Id128));
+    options.insert(QStringLiteral("handle_token"), token);
+    m_requestPath = predictedRequestPath(token);
+    const bool connected = QDBusConnection::sessionBus().connect(
+        QStringLiteral("org.freedesktop.portal.Desktop"),
+        m_requestPath.path(),
+        QStringLiteral("org.freedesktop.portal.Request"),
+        QStringLiteral("Response"),
+        this,
+        SLOT(handleResponse(uint,QVariantMap)));
+    if (!connected) {
+        m_requestPath = {};
+        emit failed(QStringLiteral("Could not watch the screenshot portal request"));
+        return;
+    }
     auto *watcher = new QDBusPendingCallWatcher(
         portal.asyncCall(QStringLiteral("Screenshot"), QString(), options),
         this);
-    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, watcher] {
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, watcher, generation] {
         const QDBusPendingReply<QDBusObjectPath> reply = *watcher;
         watcher->deleteLater();
-        if (m_cancelled) {
+        if (generation != m_generation) {
             if (!reply.isError()) {
                 QDBusInterface request(QStringLiteral("org.freedesktop.portal.Desktop"),
                                        reply.value().path(),
@@ -82,29 +120,33 @@ void PortalScreenshotContextProvider::capture()
             return;
         }
         if (reply.isError()) {
+            disconnectRequest();
             emit failed(QStringLiteral("Screenshot capture was not available: %1")
                             .arg(reply.error().message()));
             return;
         }
 
-        m_requestPath = reply.value();
-        const bool connected = QDBusConnection::sessionBus().connect(
-            QStringLiteral("org.freedesktop.portal.Desktop"),
-            m_requestPath.path(),
-            QStringLiteral("org.freedesktop.portal.Request"),
-            QStringLiteral("Response"),
-            this,
-            SLOT(handleResponse(uint,QVariantMap)));
-        if (!connected) {
-            m_requestPath = {};
-            emit failed(QStringLiteral("Could not watch the screenshot portal request"));
+        if (reply.value().path() != m_requestPath.path()) {
+            disconnectRequest();
+            m_requestPath = reply.value();
+            const bool connected = QDBusConnection::sessionBus().connect(
+                QStringLiteral("org.freedesktop.portal.Desktop"),
+                m_requestPath.path(),
+                QStringLiteral("org.freedesktop.portal.Request"),
+                QStringLiteral("Response"),
+                this,
+                SLOT(handleResponse(uint,QVariantMap)));
+            if (!connected) {
+                m_requestPath = {};
+                emit failed(QStringLiteral("Could not watch the screenshot portal request"));
+            }
         }
     });
 }
 
 void PortalScreenshotContextProvider::cancel()
 {
-    m_cancelled = true;
+    ++m_generation;
     if (!m_requestPath.path().isEmpty()) {
         QDBusInterface request(QStringLiteral("org.freedesktop.portal.Desktop"),
                                m_requestPath.path(),
@@ -117,10 +159,10 @@ void PortalScreenshotContextProvider::cancel()
 
 void PortalScreenshotContextProvider::handleResponse(uint response, const QVariantMap &results)
 {
-    disconnectRequest();
-    if (m_cancelled) {
+    if (message().path() != m_requestPath.path()) {
         return;
     }
+    disconnectRequest();
     if (response != 0) {
         emit failed(response == 1
                         ? QStringLiteral("Screenshot capture was cancelled")

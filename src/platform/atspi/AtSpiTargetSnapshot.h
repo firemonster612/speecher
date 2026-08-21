@@ -18,6 +18,7 @@ public:
 
     const Target &target() const;
     bool valid() const;
+    bool safeForSelectionProbe() const;
     bool matches(const Target &target, bool requireFocus) const;
     bool canInsert(const Target &target) const;
     bool insert(const Target &target, const QString &plainText, QString *error) const;

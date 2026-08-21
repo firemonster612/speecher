@@ -2,11 +2,13 @@
 
 #include "dictation/DictationPorts.h"
 
+#include <QDBusContext>
 #include <QDBusObjectPath>
 
 namespace speecher {
 
-class PortalScreenshotContextProvider final : public ScreenshotContextProvider {
+class PortalScreenshotContextProvider final : public ScreenshotContextProvider,
+                                              protected QDBusContext {
     Q_OBJECT
 
 public:
@@ -22,7 +24,7 @@ private:
     void disconnectRequest();
 
     QDBusObjectPath m_requestPath;
-    bool m_cancelled = false;
+    quint64 m_generation = 0;
 };
 
 } // namespace speecher

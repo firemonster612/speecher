@@ -1,6 +1,7 @@
 #include "platform/atspi/AtSpiTargetSnapshot.h"
 
 #include <QCryptographicHash>
+#include <QDeadlineTimer>
 #include <QFile>
 #include <QHash>
 #include <QRegularExpression>
@@ -22,6 +23,8 @@ constexpr int maximumVisitedObjects = 4000;
 constexpr int maximumTreeDepth = 40;
 constexpr int maximumDescendantProcesses = 64;
 constexpr int maximumAncestorProcesses = 16;
+constexpr int captureDeadlineMs = 400;
+constexpr int registryCallTimeoutMs = 100;
 
 enum class AccessibleIdentity {
     Self,
@@ -90,7 +93,7 @@ AccessibleIdentity identityForBusName(
                                     DBUS_TYPE_INVALID)) {
         DBusError error = DBUS_ERROR_INIT;
         DBusMessage *reply = dbus_connection_send_with_reply_and_block(
-            bus, message, 2000, &error);
+            bus, message, registryCallTimeoutMs, &error);
         if (reply) {
             dbus_uint32_t value = 0;
             if (dbus_message_get_args(reply,
@@ -139,7 +142,8 @@ bool shouldSkipAccessible(
 }
 
 std::vector<AccessibleHandle> foreignApplications(
-    QHash<QString, AccessibleIdentity> *identities)
+    QHash<QString, AccessibleIdentity> *identities,
+    const QDeadlineTimer &deadline)
 {
     std::vector<AccessibleHandle> applications;
     DBusConnection *bus = atspi_get_a11y_bus();
@@ -155,7 +159,7 @@ std::vector<AccessibleHandle> foreignApplications(
 
     DBusError error = DBUS_ERROR_INIT;
     DBusMessage *reply = dbus_connection_send_with_reply_and_block(
-        bus, message, 2000, &error);
+        bus, message, registryCallTimeoutMs, &error);
     dbus_message_unref(message);
     if (!reply || qstrcmp(dbus_message_get_signature(reply), "a(so)") != 0) {
         if (reply) dbus_message_unref(reply);
@@ -168,6 +172,9 @@ std::vector<AccessibleHandle> foreignApplications(
     dbus_message_iter_init(reply, &replyIter);
     dbus_message_iter_recurse(&replyIter, &children);
     while (dbus_message_iter_get_arg_type(&children) == DBUS_TYPE_STRUCT) {
+        if (deadline.hasExpired()) {
+            break;
+        }
         DBusMessageIter child;
         dbus_message_iter_recurse(&children, &child);
         const char *busName = nullptr;
@@ -183,10 +190,12 @@ std::vector<AccessibleHandle> foreignApplications(
             && identityForBusName(QString::fromUtf8(busName), identities)
                 == AccessibleIdentity::Foreign) {
             AtspiApplication *application = _atspi_application_new(busName);
-            application->bus = dbus_connection_ref(bus);
-            application->cache = ATSPI_CACHE_UNDEFINED;
-            applications.emplace_back(_atspi_accessible_new(application, objectPath));
-            g_object_unref(application);
+            if (application) {
+                application->bus = dbus_connection_ref(bus);
+                application->cache = ATSPI_CACHE_UNDEFINED;
+                applications.emplace_back(_atspi_accessible_new(application, objectPath));
+                g_object_unref(application);
+            }
         }
         dbus_message_iter_next(&children);
     }
@@ -212,11 +221,16 @@ bool isForeignPrivilegedProcess(qint64 processId)
 AtspiAccessible *focusedObject(AtspiAccessible *object,
                                int depth,
                                int *visited,
-                               QHash<QString, AccessibleIdentity> *identities)
+                               QHash<QString, AccessibleIdentity> *identities,
+                               const QDeadlineTimer &deadline)
 {
-    if (!object || depth > maximumTreeDepth || ++(*visited) > maximumVisitedObjects
+    if (!object || deadline.hasExpired()
+        || depth > maximumTreeDepth || ++(*visited) > maximumVisitedObjects
         || shouldSkipAccessible(object, identities)) {
         return nullptr;
+    }
+    if (hasState(object, ATSPI_STATE_FOCUSED)) {
+        return ATSPI_ACCESSIBLE(g_object_ref(object));
     }
     GError *error = nullptr;
     const int childCount = atspi_accessible_get_child_count(object, &error);
@@ -227,34 +241,36 @@ AtspiAccessible *focusedObject(AtspiAccessible *object,
         if (!child) {
             continue;
         }
-        AtspiAccessible *focused = focusedObject(child, depth + 1, visited, identities);
+        AtspiAccessible *focused = focusedObject(
+            child, depth + 1, visited, identities, deadline);
         g_object_unref(child);
         if (focused) {
             return focused;
         }
     }
-    return hasState(object, ATSPI_STATE_FOCUSED)
-        ? ATSPI_ACCESSIBLE(g_object_ref(object))
-        : nullptr;
+    return nullptr;
 }
 
 AtspiAccessible *focusedObjectInActiveWindow(
     const std::vector<AccessibleHandle> &applications,
     AtspiAccessible **focusedApplication,
-    QHash<QString, AccessibleIdentity> *identities)
+    QHash<QString, AccessibleIdentity> *identities,
+    const QDeadlineTimer &deadline)
 {
     AtspiAccessible *fallbackWindow = nullptr;
     AtspiAccessible *fallbackApplication = nullptr;
     int fallbackScore = -1;
     GError *error = nullptr;
     for (const AccessibleHandle &applicationHandle : applications) {
+        if (deadline.hasExpired()) break;
         AtspiAccessible *application = applicationHandle.get();
         if (shouldSkipAccessible(application, identities)) {
             continue;
         }
         if (hasState(application, ATSPI_STATE_ACTIVE)) {
             int visited = 0;
-            AtspiAccessible *focused = focusedObject(application, 0, &visited, identities);
+            AtspiAccessible *focused = focusedObject(
+                application, 0, &visited, identities, deadline);
             if (focused) {
                 if (fallbackWindow) g_object_unref(fallbackWindow);
                 if (fallbackApplication) g_object_unref(fallbackApplication);
@@ -265,6 +281,7 @@ AtspiAccessible *focusedObjectInActiveWindow(
         const int windowCount = atspi_accessible_get_child_count(application, &error);
         clearError(&error);
         for (int windowIndex = 0; windowIndex < windowCount; ++windowIndex) {
+            if (deadline.hasExpired()) break;
             AtspiAccessible *window = atspi_accessible_get_child_at_index(application, windowIndex, &error);
             clearError(&error);
             if (!window || shouldSkipAccessible(window, identities)) {
@@ -273,7 +290,8 @@ AtspiAccessible *focusedObjectInActiveWindow(
             }
             if (hasState(window, ATSPI_STATE_ACTIVE)) {
                 int visited = 0;
-                AtspiAccessible *focused = focusedObject(window, 0, &visited, identities);
+                AtspiAccessible *focused = focusedObject(
+                    window, 0, &visited, identities, deadline);
                 if (focused) {
                     if (fallbackWindow) g_object_unref(fallbackWindow);
                     if (fallbackApplication) g_object_unref(fallbackApplication);
@@ -301,31 +319,13 @@ AtspiAccessible *focusedObjectInActiveWindow(
     return fallbackWindow;
 }
 
-AtspiAccessible *focusedObjectInDesktop(
-    const std::vector<AccessibleHandle> &applications,
-    AtspiAccessible **focusedApplication,
-    QHash<QString, AccessibleIdentity> *identities)
-{
-    for (const AccessibleHandle &applicationHandle : applications) {
-        AtspiAccessible *application = applicationHandle.get();
-        if (shouldSkipAccessible(application, identities)) {
-            continue;
-        }
-        int visited = 0;
-        AtspiAccessible *focused = focusedObject(application, 0, &visited, identities);
-        if (focused) {
-            *focusedApplication = ATSPI_ACCESSIBLE(g_object_ref(application));
-            return focused;
-        }
-    }
-    return nullptr;
-}
-
 void findBestEditableText(AtspiAccessible *object, int depth, int *visited,
                           AtspiAccessible **best, int *bestScore,
-                          QHash<QString, AccessibleIdentity> *identities)
+                          QHash<QString, AccessibleIdentity> *identities,
+                          const QDeadlineTimer &deadline)
 {
-    if (!object || depth > maximumTreeDepth || ++(*visited) > maximumVisitedObjects
+    if (!object || deadline.hasExpired()
+        || depth > maximumTreeDepth || ++(*visited) > maximumVisitedObjects
         || shouldSkipAccessible(object, identities)) {
         return;
     }
@@ -347,6 +347,7 @@ void findBestEditableText(AtspiAccessible *object, int depth, int *visited,
                 *bestScore = score;
             }
         }
+        if (text) g_object_unref(text);
     }
     GError *error = nullptr;
     const int childCount = atspi_accessible_get_child_count(object, &error);
@@ -355,7 +356,8 @@ void findBestEditableText(AtspiAccessible *object, int depth, int *visited,
         AtspiAccessible *child = atspi_accessible_get_child_at_index(object, index, &error);
         clearError(&error);
         if (child) {
-            findBestEditableText(child, depth + 1, visited, best, bestScore, identities);
+            findBestEditableText(
+                child, depth + 1, visited, best, bestScore, identities, deadline);
             g_object_unref(child);
         }
     }
@@ -382,7 +384,8 @@ AtspiAccessible *activeWindowAncestor(AtspiAccessible *object,
 AtspiAccessible *kTextEditorFallback(AtspiAccessible *focused,
                                     const QString &applicationName,
                                     const QString &process,
-                                    QHash<QString, AccessibleIdentity> *identities)
+                                    QHash<QString, AccessibleIdentity> *identities,
+                                    const QDeadlineTimer &deadline)
 {
     const QString identity = applicationName + QLatin1Char(' ') + process;
     if (!focused || atspi_accessible_is_editable_text(focused)
@@ -395,7 +398,7 @@ AtspiAccessible *kTextEditorFallback(AtspiAccessible *focused,
     int visited = 0;
     int bestScore = -1;
     AtspiAccessible *best = nullptr;
-    findBestEditableText(window, 0, &visited, &best, &bestScore, identities);
+    findBestEditableText(window, 0, &visited, &best, &bestScore, identities, deadline);
     g_object_unref(window);
     return best;
 }
@@ -623,7 +626,10 @@ void populateText(Target *target, AtspiAccessible *object)
     clearError(&error);
     const int caret = atspi_text_get_caret_offset(text, &error);
     clearError(&error);
-    if (count < 0 || caret < 0) return;
+    if (count < 0 || caret < 0) {
+        g_object_unref(text);
+        return;
+    }
     target->caretOffset = caret;
     const int start = qMax(0, caret - contextCharacters);
     const int end = qMin(count, caret + contextCharacters);
@@ -650,6 +656,7 @@ void populateText(Target *target, AtspiAccessible *object)
     } else {
         clearError(&error);
     }
+    g_object_unref(text);
 }
 
 QString fingerprint(const Target &target)
@@ -675,17 +682,14 @@ TargetSnapshot TargetSnapshot::capture()
     TargetSnapshot snapshot;
 #ifdef SPEECHER_WITH_ATSPI
     if (!initializeAtSpiClient()) return snapshot;
+    const QDeadlineTimer deadline(captureDeadlineMs);
     QHash<QString, AccessibleIdentity> identities;
-    const std::vector<AccessibleHandle> applications = foreignApplications(&identities);
+    const std::vector<AccessibleHandle> applications = foreignApplications(&identities, deadline);
     AtspiAccessible *applicationObject = nullptr;
     AtspiAccessible *focused = focusedObjectInActiveWindow(
-        applications, &applicationObject, &identities);
-    if (!focused) {
-        focused = focusedObjectInDesktop(
-            applications, &applicationObject, &identities);
-    }
+        applications, &applicationObject, &identities, deadline);
     AccessibleHandle application(applicationObject);
-    if (focused && application) {
+    if (focused && application && !deadline.hasExpired()) {
         GError *error = nullptr;
         Target &target = snapshot.m_target;
         target.applicationName = takeString(atspi_accessible_get_name(application.get(), &error));
@@ -695,7 +699,7 @@ TargetSnapshot TargetSnapshot::capture()
         clearError(&error);
         target.processName = processName(target.processId);
         if (AtspiAccessible *editor = kTextEditorFallback(
-                focused, target.applicationName, target.processName, &identities)) {
+                focused, target.applicationName, target.processName, &identities, deadline)) {
             g_object_unref(focused);
             focused = editor;
         }
@@ -734,6 +738,18 @@ const Target &TargetSnapshot::target() const { return m_target; }
 bool TargetSnapshot::valid() const
 {
     return bool(m_accessible);
+}
+
+bool TargetSnapshot::safeForSelectionProbe() const
+{
+#ifdef SPEECHER_WITH_ATSPI
+    return m_accessible
+        && atspi_accessible_is_text(m_accessible.get())
+        && atspi_accessible_is_editable_text(m_accessible.get())
+        && isFocusedText();
+#else
+    return false;
+#endif
 }
 
 bool TargetSnapshot::matches(const Target &target, bool requireFocus) const
@@ -793,6 +809,7 @@ bool TargetSnapshot::insert(const Target &target, const QString &plainText, QStr
                                                    : QStringLiteral("The target rejected direct text insertion");
     }
     clearError(&atspiError);
+    g_object_unref(editable);
     return inserted;
 #else
     Q_UNUSED(target)
@@ -811,10 +828,14 @@ QString TargetSnapshot::insertionWindow(int insertionOffset, int textLength) con
     GError *error = nullptr;
     const int count = atspi_text_get_character_count(text, &error);
     clearError(&error);
-    if (count < 0) return {};
+    if (count < 0) {
+        g_object_unref(text);
+        return {};
+    }
     const QString value = takeString(atspi_text_get_text(text, qMax(0, insertionOffset - 32),
                                                          qMin(count, insertionOffset + textLength + 32), &error));
     clearError(&error);
+    g_object_unref(text);
     return value;
 #else
     Q_UNUSED(insertionOffset)
@@ -830,14 +851,19 @@ QString TargetSnapshot::correctionWindow(const CorrectionWindow &window) const
     const int insertionOffset = target.selectionStart >= 0 ? target.selectionStart : target.caretOffset;
     if (!m_accessible || insertionOffset < 0 || !isFocusedText()) return {};
     AtspiText *text = atspi_accessible_get_text(m_accessible.get());
+    if (!text) return {};
     GError *error = nullptr;
     const int count = atspi_text_get_character_count(text, &error);
     clearError(&error);
-    if (count < 0) return {};
+    if (count < 0) {
+        g_object_unref(text);
+        return {};
+    }
     const QString value = takeString(atspi_text_get_text(
         text, qMax(0, insertionOffset - prefix.size() - 16),
         qMin(count, insertionOffset + original.size() + 560 + suffix.size()), &error));
     clearError(&error);
+    g_object_unref(text);
     return value;
 #else
     Q_UNUSED(target)
