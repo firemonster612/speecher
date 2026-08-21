@@ -139,10 +139,21 @@ void DictationPage::setStatus(const QString &status)
 {
     const QString state = status.toCaseFolded();
     const bool active = state == QStringLiteral("starting") || state == QStringLiteral("listening");
-    m_toggle->setText(active ? QStringLiteral("Stop Dictation")
-                             : QStringLiteral("Start Dictation"));
-    m_toggle->setIcon(QIcon::fromTheme(active ? QStringLiteral("media-playback-stop")
-                                               : QStringLiteral("media-record")));
+    const bool refining = state == QStringLiteral("refining");
+    const bool busy = state == QStringLiteral("stopping") || state == QStringLiteral("delivering");
+    m_toggle->setEnabled(!busy);
+    m_toggle->setText(active
+                          ? QStringLiteral("Stop Dictation")
+                          : refining
+                              ? QStringLiteral("Cancel Refinement")
+                              : state == QStringLiteral("stopping")
+                                  ? QStringLiteral("Stopping…")
+                                  : state == QStringLiteral("delivering")
+                                      ? QStringLiteral("Delivering…")
+                                      : QStringLiteral("Start Dictation"));
+    m_toggle->setIcon(QIcon::fromTheme(active || refining
+                                          ? QStringLiteral("media-playback-stop")
+                                          : QStringLiteral("media-record")));
     static const QStringList states{
         QStringLiteral("idle"),
         QStringLiteral("starting"),

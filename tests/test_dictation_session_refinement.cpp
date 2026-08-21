@@ -440,6 +440,35 @@ private slots:
         QCOMPARE(delivery->lastText, QStringLiteral("please send efox@example.com"));
     }
 
+    void dictationSessionCanCancelRefinementWithRawFallback()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("raw fallback"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Refining), 250);
+
+        session.stopListening();
+
+        QCOMPARE(refiner->cancelCalls, 1);
+        QCOMPARE(delivery->calls, 1);
+        QCOMPARE(delivery->lastText, QStringLiteral("raw fallback"));
+    }
+
     void dictationSessionCorruptedPlaceholderFallsBackToBoundText()
     {
         SettingsStore settings;

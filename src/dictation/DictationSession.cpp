@@ -179,7 +179,9 @@ void DictationSession::toggleSession(std::optional<OutputFormat> format)
     qInfo().noquote() << "toggle requested state=" + stateName();
     if (m_state == DictationState::Idle || m_state == DictationState::Error) {
         startSession(format);
-    } else if (m_state == DictationState::Starting || m_state == DictationState::Listening) {
+    } else if (m_state == DictationState::Starting
+               || m_state == DictationState::Listening
+               || m_state == DictationState::Refining) {
         stopListening();
     }
 }
@@ -229,7 +231,7 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
     emit previewDisplayChanged({});
     emit popupFrozenChanged(false);
     emit popupRefiningChanged(false);
-    emit popupStatusChanged(QStringLiteral("Listening"));
+    emit popupStatusChanged(QStringLiteral("Preparing"));
     emit popupShowRequested(generation);
     QTimer::singleShot(50, this, [this, generation] {
         continueStartupAfterPopup(generation);
@@ -324,6 +326,25 @@ void DictationSession::stopListening()
         setState(DictationState::Idle);
         return;
     }
+    if (m_state == DictationState::Refining) {
+        if (m_refiner) {
+            m_refiner->cancel();
+        }
+        m_refinementGeneration = 0;
+        emit popupRefiningChanged(false);
+        if (m_transcriptPipeline.editsSelection) {
+            clearScreenshotContext();
+            m_sessionSettings.reset();
+            m_target = {};
+            m_transcriptPipeline = {};
+            emit popupHideRequested();
+            setState(DictationState::Idle);
+        } else {
+            m_lastMessage = QStringLiteral("Refinement cancelled");
+            deliverFinal(m_transcriptPipeline.deliveryFallback);
+        }
+        return;
+    }
     if (m_state != DictationState::Starting && m_state != DictationState::Listening) {
         return;
     }
@@ -392,8 +413,6 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation, const
         return;
     }
 
-    emit popupListeningIndicatorRequested();
-
     m_transcriber->startAttempt(m_attemptId, settings.speech);
 
     QString audioError;
@@ -415,6 +434,7 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation, const
     }
     qInfo() << "audio capture started";
     setState(DictationState::Listening);
+    emit popupListeningIndicatorRequested();
 }
 
 void DictationSession::failStartup(quint64 generation, const QString &message)
@@ -545,6 +565,7 @@ void DictationSession::deliverFinal(const QString &text)
         return;
     }
     const AppSettings settings = *m_sessionSettings;
+    const quint64 generation = m_generation;
     m_refinementGeneration = 0;
     const bool usedFallback = !m_lastMessage.isEmpty();
     emit popupRefiningChanged(false);
@@ -555,6 +576,12 @@ void DictationSession::deliverFinal(const QString &text)
         settings.output,
         makeDeliveryContent(text, settings.output.format),
         m_target);
+    if (generation != m_generation
+        || m_state != DictationState::Delivering
+        || !m_sessionSettings) {
+        qInfo() << "delivery result ignored for a cancelled generation";
+        return;
+    }
     clearScreenshotContext();
     m_sessionSettings.reset();
     m_target = {};

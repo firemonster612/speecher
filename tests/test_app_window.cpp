@@ -14,6 +14,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QPushButton>
 #include <QSaveFile>
 #include <QScopeGuard>
 #include <QSignalSpy>
@@ -118,6 +119,24 @@ private slots:
         const int titleCenter = title->mapTo(page, title->rect().center()).y();
         const int valueCenter = value->mapTo(page, value->rect().center()).y();
         QVERIFY(qAbs(titleCenter - valueCenter) <= 1);
+    }
+
+    void dictationPageShowsHonestBusyActions()
+    {
+        ApplicationController controller(true);
+        DictationPage page(&controller);
+
+        page.setStatus(QStringLiteral("Refining"));
+        QCOMPARE(page.toggleButton()->text(), QStringLiteral("Cancel Refinement"));
+        QVERIFY(page.toggleButton()->isEnabled());
+
+        page.setStatus(QStringLiteral("Stopping"));
+        QCOMPARE(page.toggleButton()->text(), QStringLiteral("Stopping…"));
+        QVERIFY(!page.toggleButton()->isEnabled());
+
+        page.setStatus(QStringLiteral("Delivering"));
+        QCOMPARE(page.toggleButton()->text(), QStringLiteral("Delivering…"));
+        QVERIFY(!page.toggleButton()->isEnabled());
     }
 
     void sidebarFlushesPendingAutoSaveOnClose()
