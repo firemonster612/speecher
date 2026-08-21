@@ -14,7 +14,7 @@ namespace speecher {
 
 namespace {
 
-constexpr int clipboardRestoreDelayMs = 250;
+constexpr int clipboardRestoreDelayMs = 750;
 
 class YdotoolBackend final : public DeliveryBackend {
 public:
@@ -150,11 +150,28 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         && (currentFocusFallback
             || (m_targetProvider && m_targetProvider->stillFocused(target)));
 
+    QString clipboardWarning;
     WlClipboardSnapshot previousClipboard;
-    const bool canRestoreClipboard = pasteMethod != PasteMethod::ClipboardOnly
-        && settings.restoreClipboardAfterTyping
-        && m_clipboardDelivery.canSnapshot()
-        && m_clipboardDelivery.capture(&previousClipboard);
+    bool canRestoreClipboard = false;
+    if (pasteMethod != PasteMethod::ClipboardOnly && settings.restoreClipboardAfterTyping) {
+        if (!m_clipboardDelivery.canSnapshot()) {
+            clipboardWarning = QStringLiteral("Previous clipboard could not be saved because snapshots are unavailable");
+        } else {
+            QString captureError;
+            canRestoreClipboard = m_clipboardDelivery.capture(&previousClipboard, &captureError);
+            if (!canRestoreClipboard) {
+                clipboardWarning = captureError.isEmpty()
+                    ? QStringLiteral("Previous clipboard could not be saved")
+                    : QStringLiteral("Previous clipboard could not be saved: %1").arg(captureError);
+            }
+        }
+    }
+    const auto withClipboardWarning = [&clipboardWarning](QString message) {
+        if (!clipboardWarning.isEmpty()) {
+            message += QStringLiteral("; ") + clipboardWarning;
+        }
+        return message;
+    };
     bool initiallyHtmlAvailable = false;
     QString initialCopyError;
     if (!m_clipboardDelivery.copy(content, &initiallyHtmlAvailable, &initialCopyError)) {
@@ -180,14 +197,17 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
                     ? QStringLiteral("Verified in Target")
                     : QStringLiteral("Accepted by Target");
                 if (verified && canRestoreClipboard && !restored) {
-                    message += QStringLiteral("; clipboard kept because it could not be restored");
+                    clipboardWarning = restoreError.isEmpty()
+                        ? QStringLiteral("Previous clipboard could not be restored")
+                        : QStringLiteral("Previous clipboard could not be restored: %1").arg(restoreError);
                 }
                 const bool downgraded = content.html.has_value() && !initiallyHtmlAvailable;
                 return {
                     true,
                     verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::AcceptedByTarget,
                     downgraded,
-                    downgraded ? message + QStringLiteral(" as plain text") : message,
+                    withClipboardWarning(
+                        downgraded ? message + QStringLiteral(" as plain text") : message),
                 };
             }
             return {
@@ -230,13 +250,20 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
             const bool copied = method == QString::fromLatin1(OutputMethod::WlCopy)
                 || method == QString::fromLatin1(OutputMethod::QtClipboard);
             const bool downgraded = content.html.has_value() && !htmlAvailable;
+            bool restoredClipboard = false;
             if (virtualKeyboardInput && canRestoreClipboard) {
                 QEventLoop waitForClipboardConsumer;
                 QTimer::singleShot(clipboardRestoreDelayMs,
                                    &waitForClipboardConsumer,
                                    &QEventLoop::quit);
                 waitForClipboardConsumer.exec(QEventLoop::ExcludeUserInputEvents);
-                m_clipboardDelivery.restore(previousClipboard);
+                QString restoreError;
+                restoredClipboard = m_clipboardDelivery.restore(previousClipboard, &restoreError);
+                if (!restoredClipboard) {
+                    clipboardWarning = restoreError.isEmpty()
+                        ? QStringLiteral("Previous clipboard could not be restored")
+                        : QStringLiteral("Previous clipboard could not be restored: %1").arg(restoreError);
+                }
             }
             const bool verified = !copied
                 && m_targetProvider
@@ -244,7 +271,7 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
             const QString message = copied
                 ? QStringLiteral("Copied")
                 : virtualKeyboardInput
-                    ? settings.restoreClipboardAfterTyping
+                    ? restoredClipboard
                         ? QStringLiteral("Input sent")
                         : QStringLiteral("Copied • Input sent")
                     : verified ? QStringLiteral("Verified in Target") : QStringLiteral("Input sent");
@@ -252,9 +279,10 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
                     copied ? DeliveryReceipt::Copied
                            : verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::InputSent,
                     downgraded,
-                    downgraded && !virtualKeyboardInput
-                        ? message + QStringLiteral(" as plain text")
-                        : message};
+                    withClipboardWarning(
+                        downgraded && !virtualKeyboardInput
+                            ? message + QStringLiteral(" as plain text")
+                            : message)};
         }
         if (firstError.isEmpty()) {
             firstError = error;
@@ -268,9 +296,10 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         true,
         DeliveryReceipt::Copied,
         downgraded,
-        firstError.isEmpty()
-            ? (downgraded ? QStringLiteral("Copied as plain text") : QStringLiteral("Copied"))
-            : QStringLiteral("Copied; insertion failed: %1").arg(firstError),
+        withClipboardWarning(
+            firstError.isEmpty()
+                ? (downgraded ? QStringLiteral("Copied as plain text") : QStringLiteral("Copied"))
+                : QStringLiteral("Copied; insertion failed: %1").arg(firstError)),
     };
 }
 

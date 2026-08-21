@@ -6,6 +6,7 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QMimeData>
 
@@ -13,9 +14,13 @@ namespace speecher {
 
 namespace {
 
-QString preferredMimeType(const QStringList &mimeTypes)
+constexpr int snapshotDeadlineMs = 1500;
+constexpr qsizetype maximumFormatBytes = 4 * 1024 * 1024;
+constexpr qsizetype maximumSnapshotBytes = 8 * 1024 * 1024;
+
+const QStringList &restorableMimeTypes()
 {
-    const QStringList preferred{
+    static const QStringList mimeTypes{
         QStringLiteral("text/plain;charset=utf-8"),
         QStringLiteral("text/plain"),
         QStringLiteral("UTF8_STRING"),
@@ -25,7 +30,12 @@ QString preferredMimeType(const QStringList &mimeTypes)
         QStringLiteral("image/jpeg"),
         QStringLiteral("image/jpg"),
     };
-    for (const QString &mimeType : preferred) {
+    return mimeTypes;
+}
+
+QString preferredMimeType(const QStringList &mimeTypes)
+{
+    for (const QString &mimeType : restorableMimeTypes()) {
         for (const QString &offered : mimeTypes) {
             if (offered.compare(mimeType, Qt::CaseInsensitive) == 0) {
                 return offered;
@@ -38,6 +48,20 @@ QString preferredMimeType(const QStringList &mimeTypes)
         }
     }
     return mimeTypes.isEmpty() ? QString() : mimeTypes.first();
+}
+
+QStringList offeredRestorableMimeTypes(const QStringList &offeredMimeTypes)
+{
+    QStringList result;
+    for (const QString &supported : restorableMimeTypes()) {
+        for (const QString &offered : offeredMimeTypes) {
+            if (offered.compare(supported, Qt::CaseInsensitive) == 0) {
+                result.append(offered);
+                break;
+            }
+        }
+    }
+    return result;
 }
 
 bool copyBytes(const QByteArray &data, const QString &mimeType, QString *error)
@@ -193,6 +217,8 @@ bool WlClipboardDelivery::capture(WlClipboardSnapshot *snapshot, QString *error)
         return false;
     }
 
+    QElapsedTimer deadline;
+    deadline.start();
     QByteArray typeOutput;
     QString typeError;
     if (!WaylandClipboardProcess::run(executable,
@@ -200,7 +226,9 @@ bool WlClipboardDelivery::capture(WlClipboardSnapshot *snapshot, QString *error)
                              {QStringLiteral("--list-types")},
                              nullptr,
                              &typeOutput,
-                             &typeError)) {
+                             &typeError,
+                             snapshotDeadlineMs,
+                             64 * 1024)) {
         if (WaylandClipboardProcess::looksLikeEmptyClipboardError(typeError)) {
             return true;
         }
@@ -210,19 +238,35 @@ bool WlClipboardDelivery::capture(WlClipboardSnapshot *snapshot, QString *error)
         return false;
     }
 
-    QStringList mimeTypes;
+    QStringList offeredMimeTypes;
     for (const QString &line : QString::fromUtf8(typeOutput).split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
         const QString mimeType = line.trimmed();
         if (!mimeType.isEmpty()) {
-            mimeTypes << mimeType;
+            offeredMimeTypes << mimeType;
         }
     }
+    const QStringList mimeTypes = offeredRestorableMimeTypes(offeredMimeTypes);
 
-    if (mimeTypes.isEmpty()) {
+    if (offeredMimeTypes.isEmpty()) {
         return true;
     }
+    if (mimeTypes.isEmpty()) {
+        if (error) {
+            *error = QStringLiteral("The current clipboard has no restorable formats");
+        }
+        return false;
+    }
 
+    qsizetype capturedBytes = 0;
     for (const QString &mimeType : mimeTypes) {
+        const int remainingMs = snapshotDeadlineMs - int(deadline.elapsed());
+        if (remainingMs <= 0) {
+            if (error) {
+                *error = QStringLiteral("Clipboard snapshot timed out");
+            }
+            *snapshot = {};
+            return false;
+        }
         QByteArray data;
         if (!WaylandClipboardProcess::run(
                 executable,
@@ -230,7 +274,18 @@ bool WlClipboardDelivery::capture(WlClipboardSnapshot *snapshot, QString *error)
                 {QStringLiteral("--no-newline"), QStringLiteral("--type"), mimeType},
                 nullptr,
                 &data,
-                error)) {
+                error,
+                remainingMs,
+                maximumFormatBytes)) {
+            *snapshot = {};
+            return false;
+        }
+        capturedBytes += data.size();
+        if (capturedBytes > maximumSnapshotBytes) {
+            if (error) {
+                *error = QStringLiteral("Clipboard snapshot is too large to restore safely");
+            }
+            *snapshot = {};
             return false;
         }
         snapshot->parts.append({mimeType, data});
