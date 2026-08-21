@@ -16,7 +16,11 @@
 #include <QListWidget>
 #include <QFormLayout>
 #include <QFrame>
+#include <QClipboard>
+#include <QGuiApplication>
+#include <QPlainTextEdit>
 #include <QPushButton>
+#include <QToolButton>
 #include <QSaveFile>
 #include <QScopeGuard>
 #include <QSignalSpy>
@@ -137,6 +141,30 @@ private slots:
         QTest::mouseClick(card, Qt::LeftButton);
         QCOMPARE(navigate.count(), 1);
         QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::Refinement);
+    }
+
+    void dictationTranscriptCopiesAndUnlocksAfterSession()
+    {
+        ApplicationController controller(true);
+        DictationPage page(&controller);
+        page.show();
+        QCoreApplication::processEvents();
+
+        auto *transcript = page.findChild<QPlainTextEdit *>(QStringLiteral("dictationTranscript"));
+        QVERIFY(transcript);
+        QVERIFY(!transcript->isReadOnly());
+        page.setStatus(QStringLiteral("listening"));
+        QVERIFY(transcript->isReadOnly());
+        page.setStatus(QStringLiteral("refining"));
+        QVERIFY(transcript->isReadOnly());
+        page.setStatus(QStringLiteral("idle"));
+        QVERIFY(!transcript->isReadOnly());
+
+        transcript->setPlainText(QStringLiteral("hello transcript"));
+        auto *copy = transcript->findChild<QToolButton *>(QStringLiteral("copyTranscript"));
+        QVERIFY(copy);
+        copy->click();
+        QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("hello transcript"));
     }
 
     void dictationPageShowsHonestBusyActions()

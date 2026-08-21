@@ -8,18 +8,21 @@
 #include "ui/WaveformWidget.h"
 #include "ui/settings/SettingsPageSupport.h"
 
+#include <QClipboard>
 #include <QEvent>
 #include <QFontMetrics>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
-#include <QMouseEvent>
+#include <QGuiApplication>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollBar>
 #include <QSizePolicy>
 #include <QStyle>
+#include <QTimer>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 namespace speecher {
@@ -28,15 +31,16 @@ namespace {
 
 constexpr int contentMaxWidth = 640;
 
-QFrame *makeSummaryCard(const QString &iconName,
-                        const QString &title,
-                        QLabel *value,
-                        AppPageId page,
-                        DictationPage *owner)
+QWidget *makeSummaryCard(const QString &iconName,
+                         const QString &title,
+                         QLabel *value,
+                         AppPageId page,
+                         DictationPage *owner)
 {
-    auto *card = new QFrame(owner);
-    card->setObjectName(QStringLiteral("settingsCard"));
-    card->setFrameShape(QFrame::StyledPanel);
+    // A real push button so the card carries native hover/press/focus states;
+    // the content is laid out on top of the button face.
+    auto *card = new QPushButton(owner);
+    card->setObjectName(QStringLiteral("summaryCard"));
     card->setCursor(Qt::PointingHandCursor);
     card->setProperty("navTarget", static_cast<int>(page));
     card->setToolTip(QStringLiteral("Open %1 settings").arg(title));
@@ -59,13 +63,14 @@ QFrame *makeSummaryCard(const QString &iconName,
     value->setForegroundRole(QPalette::PlaceholderText);
     layout->addWidget(titleRow);
     layout->addWidget(value);
+    card->setMinimumHeight(layout->sizeHint().height());
 
-    // Clicks anywhere on the card (including its children) navigate.
-    card->installEventFilter(owner);
     for (QWidget *child : {static_cast<QWidget *>(titleRow), static_cast<QWidget *>(value)}) {
         child->setAttribute(Qt::WA_TransparentForMouseEvents);
     }
     icon->setAttribute(Qt::WA_TransparentForMouseEvents);
+    QObject::connect(card, &QPushButton::clicked, owner,
+                     [owner, page] { emit owner->navigateRequested(page); });
     return card;
 }
 
@@ -123,6 +128,28 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     m_transcript->setMaximumHeight(180);
     heroLayout->addWidget(m_transcript);
 
+    m_copyTranscript = new QToolButton(m_transcript);
+    m_copyTranscript->setObjectName(QStringLiteral("copyTranscript"));
+    m_copyTranscript->setIcon(QIcon::fromTheme(QStringLiteral("edit-copy")));
+    m_copyTranscript->setAutoRaise(true);
+    m_copyTranscript->setCursor(Qt::ArrowCursor);
+    m_copyTranscript->setToolTip(QStringLiteral("Copy transcript"));
+    m_copyTranscript->setFocusPolicy(Qt::NoFocus);
+    m_copyTranscript->hide();
+    m_transcript->installEventFilter(this);
+    connect(m_copyTranscript, &QToolButton::clicked, this, [this] {
+        const QString text = m_transcript->toPlainText();
+        if (text.isEmpty()) {
+            return;
+        }
+        QGuiApplication::clipboard()->setText(text);
+        m_copyTranscript->setIcon(QIcon::fromTheme(QStringLiteral("checkmark"),
+                                                   QIcon::fromTheme(QStringLiteral("dialog-ok-apply"))));
+        QTimer::singleShot(1500, m_copyTranscript, [this] {
+            m_copyTranscript->setIcon(QIcon::fromTheme(QStringLiteral("edit-copy")));
+        });
+    });
+
     m_heroToggle->setObjectName(QStringLiteral("dictationHeroToggle"));
     m_heroToggle->setMinimumHeight(36);
     m_heroToggle->setMinimumWidth(200);
@@ -169,6 +196,10 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     connect(controller, &ApplicationController::audioLevelChanged, m_waveform, &WaveformWidget::setLevel);
     connect(controller, &ApplicationController::previewChanged, this, [this](const QString &preview) {
         m_transcript->setPlainText(preview);
+        m_transcript->verticalScrollBar()->setValue(m_transcript->verticalScrollBar()->maximum());
+    });
+    connect(controller, &ApplicationController::transcriptDelivered, this, [this](const QString &text) {
+        m_transcript->setPlainText(text);
         m_transcript->verticalScrollBar()->setValue(m_transcript->verticalScrollBar()->maximum());
     });
     connect(m_accessibilityNotice, &AccessibilityNotice::enableRequested, this, [this] {
@@ -250,6 +281,11 @@ void DictationPage::setStatus(const QString &status)
     if (!active) {
         m_waveform->setLevel(0.0f);
     }
+    // The transcript is live output while a session runs; once the session is
+    // over the delivered text stays and can be edited, selected, and copied.
+    const bool sessionRunning = active || refining
+        || state == QStringLiteral("stopping") || state == QStringLiteral("delivering");
+    m_transcript->setReadOnly(sessionRunning);
 }
 
 void DictationPage::refreshSummary()
@@ -298,15 +334,23 @@ bool DictationPage::eventFilter(QObject *watched, QEvent *event)
             }
         }
     }
-    if (event->type() == QEvent::MouseButtonRelease) {
-        if (auto *card = qobject_cast<QFrame *>(watched);
-            card && card->property("navTarget").isValid()) {
-            auto *mouse = static_cast<QMouseEvent *>(event);
-            if (mouse->button() == Qt::LeftButton
-                && card->rect().contains(mouse->position().toPoint())) {
-                emit navigateRequested(static_cast<AppPageId>(card->property("navTarget").toInt()));
-                return true;
+    if (watched == m_transcript) {
+        switch (event->type()) {
+        case QEvent::Resize:
+            m_copyTranscript->move(m_transcript->width()
+                                       - m_copyTranscript->sizeHint().width() - 6,
+                                   6);
+            break;
+        case QEvent::Enter:
+            m_copyTranscript->setVisible(!m_transcript->toPlainText().isEmpty());
+            break;
+        case QEvent::Leave:
+            if (!m_copyTranscript->underMouse()) {
+                m_copyTranscript->hide();
             }
+            break;
+        default:
+            break;
         }
     }
     return QWidget::eventFilter(watched, event);
