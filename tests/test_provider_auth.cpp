@@ -1,4 +1,5 @@
 #include "common/test_doubles.h"
+#include <QScopeGuard>
 #include "common/test_http.h"
 #include "common/test_auth.h"
 
@@ -372,6 +373,50 @@ exit 12
         QVERIFY(file.open(QIODevice::ReadOnly));
         QCOMPARE(QString::fromUtf8(file.readAll()).trimmed(), QStringLiteral("1"));
     }
+    void cliproxyExpiredAccountRefreshesAndRewritesFile()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        QByteArray requestBody;
+        connect(&server, &QTcpServer::newConnection, this, [&] {
+            QTcpSocket *socket = server.nextPendingConnection();
+            const QByteArray request = readHttpRequest(socket, 1000);
+            requestBody = request.mid(request.indexOf("\r\n\r\n") + 4);
+            const QByteArray payload = QJsonDocument(QJsonObject{
+                {QStringLiteral("access_token"), QStringLiteral("fresh-token")},
+                {QStringLiteral("refresh_token"), QStringLiteral("rotated-refresh")},
+                {QStringLiteral("expires_in"), 3600},
+            }).toJson(QJsonDocument::Compact);
+            socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                          + QByteArray::number(payload.size()) + "\r\nConnection: close\r\n\r\n" + payload);
+            socket->flush();
+        });
+        qputenv("SPEECHER_CLIPROXY_CLAUDE_TOKEN_URL",
+                QStringLiteral("http://127.0.0.1:%1/v1/oauth/token").arg(server.serverPort()).toUtf8());
+        const auto restoreEnv = qScopeGuard([] { qunsetenv("SPEECHER_CLIPROXY_CLAUDE_TOKEN_URL"); });
+
+        QTemporaryDir dir;
+        const QDateTime expired = QDateTime::currentDateTimeUtc().addSecs(-60);
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"),
+                                     QStringLiteral("claude"), QStringLiteral("stale-token"), expired));
+        QVERIFY(CliProxyCredentials::accountNeedsRefresh(dir.path(), QStringLiteral("claude"), {}));
+
+        const CliProxyCredentialResult result =
+            CliProxyCredentials::loadWithRefresh(dir.path(), QStringLiteral("claude"), {});
+        QVERIFY2(result.ok, qPrintable(result.error));
+        QCOMPARE(result.accessToken, QStringLiteral("fresh-token"));
+        QVERIFY(requestBody.contains(QByteArrayLiteral("\"grant_type\":\"refresh_token\"")));
+
+        // Rotated tokens must be written back: refresh tokens rotate, and a
+        // stale file would strand CLI Proxy API's copy of the account.
+        QFile file(dir.path() + QStringLiteral("/claude-a@example.com.json"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const QJsonObject updated = QJsonDocument::fromJson(file.readAll()).object();
+        QCOMPARE(updated.value(QStringLiteral("access_token")).toString(), QStringLiteral("fresh-token"));
+        QCOMPARE(updated.value(QStringLiteral("refresh_token")).toString(), QStringLiteral("rotated-refresh"));
+        QVERIFY(!CliProxyCredentials::accountNeedsRefresh(dir.path(), QStringLiteral("claude"), {}));
+    }
+
     void cliproxyAccountListing()
     {
         QTemporaryDir dir;

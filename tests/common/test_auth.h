@@ -57,6 +57,7 @@ inline bool writeCliProxyAccount(const QString &directory,
         file.write(QJsonDocument(QJsonObject{
                                      {QStringLiteral("type"), type},
                                      {QStringLiteral("access_token"), accessToken},
+                                     {QStringLiteral("refresh_token"), QStringLiteral("refresh-") + accessToken},
                                      {QStringLiteral("account_id"), QStringLiteral("acct")},
                                      {QStringLiteral("disabled"), disabled},
                                      {QStringLiteral("expired"), expired.toString(Qt::ISODate)},
