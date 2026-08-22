@@ -163,15 +163,27 @@ void AppWindow::navigateToSettings(AppPageId page)
 
 void AppWindow::refreshHeaderStripColor()
 {
+    // Every hairline (header divider, header underline, sidebar splitter
+    // handle) uses the same color, derived from the same palette, so no line
+    // reads lighter than its neighbors.
+    const QPalette headerPalette = settings::kdeHeaderPalette(palette());
+    const QColor line = settings::separatorColor(headerPalette);
     if (m_headerStrip) {
-        m_headerStrip->setPalette(settings::kdeHeaderPalette(palette()));
+        m_headerStrip->setPalette(headerPalette);
+    }
+    for (QWidget *hairline : {m_headerDividerLine, m_headerUnderline}) {
+        if (hairline) {
+            QPalette linePalette(hairline->palette());
+            linePalette.setColor(QPalette::Window, line);
+            hairline->setPalette(linePalette);
+        }
     }
     // Fill the 1px splitter handle: unstyled it stays unpainted, which shows
     // as a see-through seam between the sidebar and the content.
     if (m_sidebarSplitter) {
         m_sidebarSplitter->setStyleSheet(
             QStringLiteral("QSplitter#sidebarSplitter::handle{background:%1;}")
-                .arg(settings::separatorColor(palette()).name(QColor::HexRgb)));
+                .arg(line.name(QColor::HexRgb)));
     }
 }
 
@@ -355,9 +367,7 @@ void AppWindow::buildSidebarShell()
     dividerLayout->setContentsMargins(0, settings::relatedSpacing(), 0, settings::relatedSpacing());
     auto *dividerLine = new QWidget(headerDivider);
     dividerLine->setFixedWidth(1);
-    QPalette dividerPalette(dividerLine->palette());
-    dividerPalette.setColor(QPalette::Window, settings::separatorColor(header->palette()));
-    dividerLine->setPalette(dividerPalette);
+    m_headerDividerLine = dividerLine;
     dividerLine->setAutoFillBackground(true);
     dividerLayout->addWidget(dividerLine);
     headerLayout->addWidget(headerDivider);
@@ -398,9 +408,7 @@ void AppWindow::buildSidebarShell()
     // bottom edge and the sidebar/content hairline match exactly.
     auto *headerUnderline = new QWidget(central);
     headerUnderline->setFixedHeight(1);
-    QPalette underlinePalette(headerUnderline->palette());
-    underlinePalette.setColor(QPalette::Window, settings::separatorColor(central->palette()));
-    headerUnderline->setPalette(underlinePalette);
+    m_headerUnderline = headerUnderline;
     headerUnderline->setAutoFillBackground(true);
     root->addWidget(headerUnderline);
 
@@ -478,6 +486,9 @@ void AppWindow::buildSidebarShell()
             [searchContainer, sidebar] { searchContainer->setFixedWidth(sidebar->width()); });
     root->addWidget(m_sidebarSplitter, 1);
     setCentralWidget(central);
+    // Re-run now that the hairline widgets exist; the first call above only
+    // colored the strip itself.
+    refreshHeaderStripColor();
     m_sidebarSplitter->setSizes({220, 680});
     const QByteArray splitterState = m_controller->settings()->raw()
                                          .value(QStringLiteral("ui/appWindow/a/splitter"))
