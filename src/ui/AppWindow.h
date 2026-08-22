@@ -57,6 +57,8 @@ private:
     QWidget *m_sidebarPane = nullptr;
     QWidget *m_searchSection = nullptr;
     QWidget *m_headerStrip = nullptr;
+    QWidget *m_headerDividerLine = nullptr;
+    QWidget *m_headerUnderline = nullptr;
     QStringList m_pageKeywords;
     QLabel *m_pageTitle = nullptr;
     QFrame *m_autoSaveWarning = nullptr;
