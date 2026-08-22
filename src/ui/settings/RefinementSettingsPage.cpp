@@ -89,7 +89,7 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     m_profileSettings->setMaximumHeight(207);
     // Keep spanning rows from stretching the form to the card edge, which
     // defeats the centered-form alignment every other page shares.
-    m_profileSettings->setMaximumWidth(600);
+    m_profileSettings->setMinimumWidth(620);
     auto *title = settings::makePageTitle(QStringLiteral("Refinement"), this);
     auto *card = settings::makeSettingsCard(this);
     auto *cardLayout = settings::cardFormLayout(card);
@@ -108,8 +108,8 @@ RefinementSettingsPage::RefinementSettingsPage(ProviderRegistry &providers, QWid
     profileSettingsLayout->addWidget(profileSettingsTitle);
     profileSettingsLayout->addWidget(profileSettingsDescription);
     profileSettingsLayout->addWidget(m_profileSettings);
-    profileSettingsControl->setMaximumWidth(600);
-    cardLayout->addWidget(profileSettingsControl);
+    profileSettingsControl->setMaximumWidth(640);
+    cardLayout->addRow(profileSettingsControl);
     cardLayout->addRow(settings::makeCenteredSeparator(card));
 
     m_targetContextControl = settings::makeRow(

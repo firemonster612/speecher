@@ -68,7 +68,7 @@ void configureFormLayout(QFormLayout *form)
 {
     form->setRowWrapPolicy(QFormLayout::DontWrapRows);
     form->setFieldGrowthPolicy(QFormLayout::FieldsStayAtSizeHint);
-    form->setFormAlignment(Qt::AlignHCenter | Qt::AlignTop);
+    form->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
     form->setLabelAlignment(Qt::AlignRight);
 }
 
@@ -88,6 +88,7 @@ QFrame *makeRow(const QString &label,
                              row);
     title->setObjectName(QStringLiteral("rowTitle"));
     title->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    title->setMinimumWidth(title->fontMetrics().averageCharWidth() * 24);
     QWidget *labelField = title;
     if (titleAccessory) {
         auto *titleRow = new QWidget(row);
@@ -117,7 +118,7 @@ QFrame *makeRow(const QString &label,
         subtitle->setWordWrap(true);
         const int naturalTextWidth = subtitle->fontMetrics().horizontalAdvance(description);
         subtitle->setFixedWidth(qMin(
-            naturalTextWidth, subtitle->fontMetrics().averageCharWidth() * 45));
+            naturalTextWidth + 8, subtitle->fontMetrics().averageCharWidth() * 62));
         subtitle->setMinimumHeight(subtitle->heightForWidth(subtitle->width()));
         subtitle->setForegroundRole(QPalette::PlaceholderText);
         fieldLayout->addWidget(subtitle);
@@ -402,6 +403,9 @@ QFrame *makeSettingsCard(QWidget *parent)
     auto *host = new QWidget(card);
     host->setObjectName(QStringLiteral("settingsCardForm"));
     host->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
+    // Shared content column: every card is at least this wide, so sections on
+    // a page share left edges instead of each centering at its own width.
+    host->setMinimumWidth(640);
     auto *layout = new QFormLayout(host);
     layout->setContentsMargins(0, 0, 0, 0);
     configureFormLayout(layout);
