@@ -141,6 +141,54 @@ bool shouldSkipAccessible(
     return accessibleIdentity(accessible, identities) != AccessibleIdentity::Foreign;
 }
 
+// Compositor and shell processes keep stale ACTIVE window states around (KWin
+// and plasma-keyboard both do), and when the truly focused application is not
+// on AT-SPI at all (Electron without accessibility, sandboxed apps), their
+// leftover frames are the only ACTIVE windows in the registry. Never pick one
+// as the capture fallback: a junk-but-identified target suppresses the
+// blind-paste fallback and dictation silently degrades to clipboard-only.
+// The focused-element path stays open for every application, so dictating
+// into krunner or plasmashell search fields still works.
+bool desktopShellApplication(AtspiAccessible *application)
+{
+    GError *error = nullptr;
+    const QString name =
+        takeString(atspi_accessible_get_name(application, &error)).trimmed().toLower();
+    clearError(&error);
+    if (name.isEmpty()) {
+        return false;
+    }
+    static const QStringList exact{
+        QStringLiteral("kwin"),
+        QStringLiteral("plasmashell"),
+        QStringLiteral("plasma-keyboard"),
+        QStringLiteral("kaccess"),
+        QStringLiteral("ksmserver"),
+        QStringLiteral("xembedsniproxy"),
+        QStringLiteral("gmenudbusmenuproxy"),
+        QStringLiteral("org_kde_powerdevil"),
+        QStringLiteral("activitymanager"),
+        QStringLiteral("ksecretd"),
+        QStringLiteral("mutter"),
+        QStringLiteral("gnome-shell"),
+    };
+    static const QStringList prefixes{
+        QStringLiteral("kded"),
+        QStringLiteral("kwalletd"),
+        QStringLiteral("polkit-kde-authentication-agent"),
+        QStringLiteral("xdg-desktop-portal"),
+    };
+    if (exact.contains(name)) {
+        return true;
+    }
+    for (const QString &prefix : prefixes) {
+        if (name.startsWith(prefix)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::vector<AccessibleHandle> foreignApplications(
     QHash<QString, AccessibleIdentity> *identities,
     const QDeadlineTimer &deadline)
@@ -298,6 +346,10 @@ AtspiAccessible *focusedObjectInActiveWindow(
                     g_object_unref(window);
                     *focusedApplication = ATSPI_ACCESSIBLE(g_object_ref(application));
                     return focused;
+                }
+                if (desktopShellApplication(application)) {
+                    g_object_unref(window);
+                    continue;
                 }
                 const QString name = takeString(atspi_accessible_get_name(window, &error)).trimmed();
                 clearError(&error);
