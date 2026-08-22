@@ -45,7 +45,7 @@ void TranscriptState::setPartial(const QString &partial)
 void TranscriptState::commitFinal(const QString &finalText)
 {
     const QString cleaned = finalText.simplified();
-    if (!cleaned.isEmpty() && (m_finals.isEmpty() || m_finals.constLast() != cleaned)) {
+    if (!cleaned.isEmpty()) {
         m_finals << cleaned;
     }
     m_partial.clear();

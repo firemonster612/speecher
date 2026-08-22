@@ -189,6 +189,47 @@ private slots:
         QCOMPARE(settings.output.completionStatusDurationMs, 650);
     }
 
+    void liveCliproxyAccountPicker()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_CLIPROXY").isEmpty()) {
+            QSKIP("Live CLI Proxy picker check is opt-in");
+        }
+        SettingsStore settings;
+        SecretStore secrets(&settings);
+        ProviderSettingsPage page(settings, secrets);
+        page.loadModels();
+        page.loadAuthModes();
+        for (const char *name : {"openAiCliproxyAccount", "anthropicCliproxyAccount"}) {
+            auto *combo = page.findChild<QComboBox *>(QString::fromLatin1(name));
+            QVERIFY2(combo, name);
+            qInfo().noquote() << name << "dir=" << settings.cliproxyOauthDir();
+            for (int i = 0; i < combo->count(); ++i) {
+                qInfo().noquote() << "  item:" << combo->itemText(i)
+                                  << "data=" << combo->itemData(i).toString();
+            }
+            QVERIFY2(combo->count() > 0 && combo->itemText(0) != QStringLiteral("No accounts found"),
+                     qPrintable(QStringLiteral("%1 shows no accounts").arg(QLatin1String(name))));
+        }
+    }
+
+    void openAiAuthStatusAlwaysResolves()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setOpenAiAuthMode(QStringLiteral("auto"));
+        SecretStore secrets(&settings);
+        ProviderSettingsPage page(settings, secrets);
+        page.loadModels();
+        page.loadAuthModes();
+        page.loadSecret();
+
+        auto *status = page.findChild<QLabel *>(QStringLiteral("openAiAuthStatus"));
+        QVERIFY(status);
+        QTRY_VERIFY_WITH_TIMEOUT(!status->text().isEmpty()
+                                     && status->text() != QStringLiteral("Checking…"),
+                                 20000);
+    }
+
     void providerSettingsCliproxyAccountPicker()
     {
         SettingsStore settings;
@@ -275,8 +316,8 @@ private slots:
         QVERIFY(titleLabel);
         QVERIFY(descriptionLabel->wordWrap());
         QCOMPARE(descriptionLabel->width(),
-                 qMin(descriptionLabel->fontMetrics().horizontalAdvance(description),
-                      descriptionLabel->fontMetrics().averageCharWidth() * 45));
+                 qMin(descriptionLabel->fontMetrics().horizontalAdvance(description) + 8,
+                      descriptionLabel->fontMetrics().averageCharWidth() * 62));
         QVERIFY(descriptionLabel->heightForWidth(descriptionLabel->width())
                 > descriptionLabel->fontMetrics().height());
         const int requiredRowHeight = control->sizeHint().height()

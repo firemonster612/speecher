@@ -54,6 +54,7 @@ public slots:
 signals:
     void statusChanged(const QString &status);
     void previewChanged(const QString &transcript);
+    void transcriptDelivered(const QString &text);
     void previewDisplayChanged(const QString &preview);
     void audioLevelChanged(float level);
     void popupStatusChanged(const QString &status);
@@ -103,6 +104,7 @@ private:
     QString m_refinedText;
     TranscriptPipelineResult m_transcriptPipeline;
     quint64 m_generation = 0;
+    quint64 m_audioGeneration = 0;
     quint64 m_attemptId = 0;
     quint64 m_continuedStartupGeneration = 0;
     std::optional<AppSettings> m_sessionSettings;
@@ -110,6 +112,7 @@ private:
     QByteArray m_screenshotData;
     QString m_screenshotMediaType;
     quint64 m_screenshotCaptureGeneration = 0;
+    quint64 m_refinementGeneration = 0;
     bool m_heardSpeech = false;
 };
 

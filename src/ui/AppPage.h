@@ -7,6 +7,7 @@ enum class AppPageId {
     Audio,
     Applications,
     Output,
+    Auth,
     Refinement,
     Vocabulary,
 };

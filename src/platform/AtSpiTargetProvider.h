@@ -28,7 +28,7 @@ private:
     void clearAccessible();
     std::unique_ptr<atspi::TargetSnapshot> m_snapshot;
     std::unique_ptr<atspi::CorrectionObserver> m_correctionObserver;
-    QList<AppRecognitionRule> m_recognitionRules;
+    QString m_fallbackSelection;
     bool m_correctionObservationEnabled = true;
 };
 

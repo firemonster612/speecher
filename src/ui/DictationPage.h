@@ -5,7 +5,9 @@
 #include <QWidget>
 
 class QLabel;
+class QPlainTextEdit;
 class QPushButton;
+class QToolButton;
 
 namespace speecher {
 
@@ -33,16 +35,21 @@ protected:
 private:
     void updateSummary(bool resolveMicrophone);
     void setSummaryText(QLabel *label, const QString &text);
+    void applyToggleState(QPushButton *button, bool active, bool refining, const QString &state) const;
 
     ApplicationController *m_controller;
     AccessibilityNotice *m_accessibilityNotice;
     QPushButton *m_toggle;
+    QPushButton *m_heroToggle;
     QLabel *m_status;
     WaveformWidget *m_waveform;
+    QPlainTextEdit *m_transcript;
+    QToolButton *m_copyTranscript = nullptr;
     QLabel *m_provider;
     QLabel *m_microphone;
     QLabel *m_output;
     QLabel *m_theme;
+    bool m_sessionActive = false;
 };
 
 } // namespace speecher

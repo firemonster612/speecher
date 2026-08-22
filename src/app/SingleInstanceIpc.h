@@ -4,6 +4,7 @@
 #include "app/LinuxComposition.h"
 
 #include <QLocalServer>
+#include <QHash>
 #include <QObject>
 
 #include <memory>
@@ -29,23 +30,24 @@ class SingleInstanceIpc : public QObject {
 
 public:
     explicit SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatform> platform = {}, QObject *parent = nullptr);
+    ~SingleInstanceIpc() override;
 
     bool listen(QString *error = nullptr);
     QString socketName() const;
     static QString socketName(std::shared_ptr<const SingleInstancePlatform> platform);
     static bool sendCommand(const QString &command,
                             IpcResponse *response,
-                            int timeoutMs = 1200,
+                            int timeoutMs = 2500,
                             std::shared_ptr<const SingleInstancePlatform> platform = {});
     static IpcCommandResult sendCommandDetailed(const QString &command,
                                                 IpcResponse *response,
-                                                int timeoutMs = 1200,
+                                                int timeoutMs = 2500,
                                                 std::shared_ptr<const SingleInstancePlatform> platform = {},
                                                 QString *error = nullptr);
     static IpcCommandResult sendCommandDetailed(const QString &command,
                                                 std::optional<OutputFormat> outputFormat,
                                                 IpcResponse *response,
-                                                int timeoutMs = 1200,
+                                                int timeoutMs = 2500,
                                                 std::shared_ptr<const SingleInstancePlatform> platform = {},
                                                 QString *error = nullptr);
 
@@ -60,6 +62,7 @@ public slots:
 private:
     std::shared_ptr<const SingleInstancePlatform> m_platform;
     QLocalServer m_server;
+    QHash<QLocalSocket *, QByteArray> m_requestBuffers;
 };
 
 } // namespace speecher

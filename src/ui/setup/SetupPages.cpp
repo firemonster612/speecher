@@ -19,9 +19,11 @@
 #include <QPalette>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QThread>
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <memory>
 
 namespace speecher {
 namespace {
@@ -162,19 +164,50 @@ void SpeechProviderSetupPage::updateProvider()
 
 void SpeechProviderSetupPage::checkProvider()
 {
+    const quint64 generation = ++m_checkGeneration;
+    const QString providerId = m_provider->currentData().toString();
     SpeechTranscriber *provider = m_providers.speechProvider(
-        m_provider->currentData().toString());
+        providerId);
     if (!provider) {
         setStatusColor(m_status, false);
         m_status->setText(QStringLiteral("No transcription service is available."));
         return;
     }
 
-    const SpeechPrepareResult result = provider->prepare(m_settings.snapshot().speech);
-    setStatusColor(m_status, result.ok);
-    m_status->setText(result.ok
-                          ? QStringLiteral("%1 is ready.").arg(provider->label())
-                          : result.message);
+    const SpeechSettings settings = m_settings.snapshot().speech;
+    std::optional<SpeechPrepareJob> job = provider->createPrepareJob(settings);
+    if (!job || !job->run) {
+        const SpeechPrepareResult result = provider->prepare(settings);
+        setStatusColor(m_status, result.ok);
+        m_status->setText(result.ok
+                              ? QStringLiteral("%1 is ready.").arg(provider->label())
+                              : result.message);
+        return;
+    }
+
+    setStatusColor(m_status, false);
+    m_status->setText(QStringLiteral("Checking…"));
+    const QString providerLabel = provider->label();
+    auto result = std::make_shared<SpeechPrepareResult>();
+    auto prepareJob = std::make_shared<SpeechPrepareJob>(std::move(*job));
+    QThread *thread = QThread::create([prepareJob, result] {
+        *result = prepareJob->run();
+    });
+    connect(thread, &QThread::finished, this, [this, generation, providerId, providerLabel, prepareJob, result] {
+        if (generation != m_checkGeneration
+            || providerId != m_provider->currentData().toString()) {
+            return;
+        }
+        if (prepareJob->apply) {
+            prepareJob->apply(*result);
+        }
+        setStatusColor(m_status, result->ok);
+        m_status->setText(result->ok
+                              ? QStringLiteral("%1 is ready.").arg(providerLabel)
+                              : result->message);
+    });
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start();
 }
 
 MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,

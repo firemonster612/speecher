@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QElapsedTimer>
 #include <QObject>
 #include <QString>
 
@@ -28,6 +29,7 @@ private:
     SettingsStore *m_settings;
     mutable QString m_lastError;
     mutable QString m_lastApiKey;
+    mutable QElapsedTimer m_apiKeyRetryTimer;
     mutable bool m_hasApiKeyResult = false;
 };
 

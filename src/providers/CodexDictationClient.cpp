@@ -82,6 +82,7 @@ void CodexDictationClient::start(const QUrl &url,
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     m_pendingAudio.clear();
+    m_finalUtteranceIds.clear();
     m_sessionStarted = false;
     m_finishRequested = false;
     m_finalizing = false;
@@ -143,7 +144,7 @@ void CodexDictationClient::sendSessionStart(int sampleRateHz)
         {QStringLiteral("max_utterance_duration_ms"), 30000},
         {QStringLiteral("session_ttl_ms"), 300000},
         {QStringLiteral("provider_mode"), QStringLiteral("streaming_sse")},
-        {QStringLiteral("transcript_delivery_mode"), QStringLiteral("final_only")},
+        {QStringLiteral("transcript_delivery_mode"), QStringLiteral("segment")},
         {QStringLiteral("vad"), vad},
     };
     m_socket.sendTextMessage(QString::fromUtf8(QJsonDocument(QJsonObject{
@@ -280,9 +281,27 @@ void CodexDictationClient::handleTextMessage(const QString &message)
         }
         return;
     }
-    if (type == QStringLiteral("transcript.final")) {
+    if (type == QStringLiteral("transcript.segment")) {
+        const QString utteranceId = event.value(QStringLiteral("utterance_id")).toString();
+        if (!utteranceId.isEmpty() && m_finalUtteranceIds.contains(utteranceId)) {
+            return;
+        }
         const QString text = event.value(QStringLiteral("text")).toString().trimmed();
         if (!text.isEmpty()) {
+            emit partialTranscript(text);
+        }
+        return;
+    }
+    if (type == QStringLiteral("transcript.final")) {
+        const QString utteranceId = event.value(QStringLiteral("utterance_id")).toString();
+        if (!utteranceId.isEmpty() && m_finalUtteranceIds.contains(utteranceId)) {
+            return;
+        }
+        const QString text = event.value(QStringLiteral("text")).toString().trimmed();
+        if (!text.isEmpty()) {
+            if (!utteranceId.isEmpty()) {
+                m_finalUtteranceIds.insert(utteranceId);
+            }
             emit finalTranscript(text);
         }
         return;

@@ -24,6 +24,8 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
+#include <QMouseEvent>
+#include <QWindow>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPalette>
@@ -59,6 +61,7 @@ const QList<PageDefinition> kPages{
     {QStringLiteral("Audio"), QStringLiteral("preferences-desktop-sound"), QString()},
     {QStringLiteral("Applications"), QStringLiteral("preferences-desktop-default-applications"), QString()},
     {QStringLiteral("Output"), QStringLiteral("klipper"), QStringLiteral("edit-paste")},
+    {QStringLiteral("Auth"), QStringLiteral("preferences-desktop-user-password"), QStringLiteral("dialog-password")},
     {QStringLiteral("Refinement"), QStringLiteral("tools-wizard"), QStringLiteral("document-edit")},
     {QStringLiteral("Vocabulary"), QStringLiteral("accessories-dictionary"), QStringLiteral("tools-check-spelling")},
 };
@@ -160,8 +163,27 @@ void AppWindow::navigateToSettings(AppPageId page)
 
 void AppWindow::refreshHeaderStripColor()
 {
+    // Every hairline (header divider, header underline, sidebar splitter
+    // handle) uses the same color, derived from the same palette, so no line
+    // reads lighter than its neighbors.
+    const QPalette headerPalette = settings::kdeHeaderPalette(palette());
+    const QColor line = settings::separatorColor(headerPalette);
     if (m_headerStrip) {
-        m_headerStrip->setPalette(settings::kdeHeaderPalette(palette()));
+        m_headerStrip->setPalette(headerPalette);
+    }
+    for (QWidget *hairline : {m_headerDividerLine, m_headerUnderline}) {
+        if (hairline) {
+            QPalette linePalette(hairline->palette());
+            linePalette.setColor(QPalette::Window, line);
+            hairline->setPalette(linePalette);
+        }
+    }
+    // Fill the 1px splitter handle: unstyled it stays unpainted, which shows
+    // as a see-through seam between the sidebar and the content.
+    if (m_sidebarSplitter) {
+        m_sidebarSplitter->setStyleSheet(
+            QStringLiteral("QSplitter#sidebarSplitter::handle{background:%1;}")
+                .arg(line.name(QColor::HexRgb)));
     }
 }
 
@@ -223,6 +245,22 @@ bool AppWindow::eventFilter(QObject *watched, QEvent *event)
         && m_searchSection) {
         m_searchSection->setFixedWidth(m_sidebarPane->width());
     }
+    // The header strip reads as part of the title bar, so empty space in it
+    // must drag and double-click the window like the title bar does. Only
+    // events the interactive children ignore bubble up to the strip itself.
+    if (watched == m_headerStrip) {
+        if (event->type() == QEvent::MouseButtonPress
+            && static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton
+            && windowHandle()) {
+            windowHandle()->startSystemMove();
+            return true;
+        }
+        if (event->type() == QEvent::MouseButtonDblClick
+            && static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
+            isMaximized() ? showNormal() : showMaximized();
+            return true;
+        }
+    }
     return QMainWindow::eventFilter(watched, event);
 }
 
@@ -234,17 +272,22 @@ void AppWindow::buildSharedPages()
     refinementLayout->setSpacing(0);
     refinementLayout->addWidget(settings::makePageTitle(QStringLiteral("Refinement"), refinementContent));
     refinementLayout->addSpacing(settings::sectionGap());
-    refinementLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Refinement"), refinementContent));
-    refinementLayout->addSpacing(settings::tightSpacing());
     refinementLayout->addWidget(detachedContent(m_pages->refinement(), true));
     refinementLayout->addSpacing(settings::groupGap());
-    refinementLayout->addWidget(settings::makeCenteredSeparator(refinementContent));
-    refinementLayout->addSpacing(settings::groupGap());
-    refinementLayout->addWidget(settings::makeSectionLabel(QStringLiteral("Provider accounts"), refinementContent));
-    refinementLayout->addSpacing(settings::tightSpacing());
-    refinementLayout->addWidget(detachedContent(m_pages->providers(), true));
+    refinementLayout->addWidget(m_pages->providers()->modelsContent());
     refinementLayout->addStretch();
     QWidget *refinement = scrollingPage(refinementContent, this);
+
+    auto *authContent = new QWidget(this);
+    auto *authLayout = new QVBoxLayout(authContent);
+    settings::applyPageMargins(authLayout);
+    authLayout->setSpacing(0);
+    authLayout->addWidget(settings::makePageTitle(QStringLiteral("Auth"), authContent));
+    authLayout->addSpacing(settings::sectionGap());
+    authLayout->addWidget(m_pages->providers()->authContent());
+    authLayout->addStretch();
+    QWidget *auth = scrollingPage(authContent, this);
+    m_pages->providers()->hide();
 
     auto *tabs = new QTabWidget(this);
     auto addTab = [tabs](QWidget *page, const QString &title) {
@@ -272,6 +315,7 @@ void AppWindow::buildSharedPages()
         m_pages->audio(),
         m_pages->applications(),
         m_pages->output(),
+        auth,
         refinement,
         vocabularyContent,
     };
@@ -323,9 +367,7 @@ void AppWindow::buildSidebarShell()
     dividerLayout->setContentsMargins(0, settings::relatedSpacing(), 0, settings::relatedSpacing());
     auto *dividerLine = new QWidget(headerDivider);
     dividerLine->setFixedWidth(1);
-    QPalette dividerPalette(dividerLine->palette());
-    dividerPalette.setColor(QPalette::Window, settings::separatorColor(header->palette()));
-    dividerLine->setPalette(dividerPalette);
+    m_headerDividerLine = dividerLine;
     dividerLine->setAutoFillBackground(true);
     dividerLayout->addWidget(dividerLine);
     headerLayout->addWidget(headerDivider);
@@ -340,7 +382,13 @@ void AppWindow::buildSidebarShell()
     headerRightLayout->addWidget(m_pageTitle);
     headerRightLayout->addStretch();
     headerRightLayout->addWidget(m_dictation->toggleButton());
+    // Reserve the toggle button's footprint on every page so the strip keeps
+    // one height whether or not the Dictation page is showing.
+    QSizePolicy togglePolicy = m_dictation->toggleButton()->sizePolicy();
+    togglePolicy.setRetainSizeWhenHidden(true);
+    m_dictation->toggleButton()->setSizePolicy(togglePolicy);
     headerLayout->addWidget(headerRight, 1);
+    header->installEventFilter(this);
     root->addWidget(header);
 
     auto *colorConfigWatcher = new QFileSystemWatcher(this);
@@ -360,9 +408,7 @@ void AppWindow::buildSidebarShell()
     // bottom edge and the sidebar/content hairline match exactly.
     auto *headerUnderline = new QWidget(central);
     headerUnderline->setFixedHeight(1);
-    QPalette underlinePalette(headerUnderline->palette());
-    underlinePalette.setColor(QPalette::Window, settings::separatorColor(central->palette()));
-    headerUnderline->setPalette(underlinePalette);
+    m_headerUnderline = headerUnderline;
     headerUnderline->setAutoFillBackground(true);
     root->addWidget(headerUnderline);
 
@@ -371,7 +417,7 @@ void AppWindow::buildSidebarShell()
     m_sidebarSplitter->setHandleWidth(1);
     m_sidebarSplitter->setChildrenCollapsible(false);
     auto *sidebar = new QWidget(m_sidebarSplitter);
-    sidebar->setBackgroundRole(QPalette::Window);
+    sidebar->setBackgroundRole(QPalette::Base);
     sidebar->setAutoFillBackground(true);
     sidebar->setMinimumWidth(180);
     sidebar->setMaximumWidth(320);
@@ -383,9 +429,9 @@ void AppWindow::buildSidebarShell()
     sidebarLayout->setSpacing(0);
     m_navigation = new QListWidget(sidebar);
     m_navigation->setObjectName(QStringLiteral("appNavigation"));
-    m_navigation->setBackgroundRole(QPalette::Window);
+    m_navigation->setBackgroundRole(QPalette::Base);
     m_navigation->setAutoFillBackground(true);
-    m_navigation->viewport()->setBackgroundRole(QPalette::Window);
+    m_navigation->viewport()->setBackgroundRole(QPalette::Base);
     m_navigation->viewport()->setAutoFillBackground(true);
     m_navigation->setFrameShape(QFrame::NoFrame);
     m_navigation->setSpacing(2);
@@ -440,6 +486,9 @@ void AppWindow::buildSidebarShell()
             [searchContainer, sidebar] { searchContainer->setFixedWidth(sidebar->width()); });
     root->addWidget(m_sidebarSplitter, 1);
     setCentralWidget(central);
+    // Re-run now that the hairline widgets exist; the first call above only
+    // colored the strip itself.
+    refreshHeaderStripColor();
     m_sidebarSplitter->setSizes({220, 680});
     const QByteArray splitterState = m_controller->settings()->raw()
                                          .value(QStringLiteral("ui/appWindow/a/splitter"))
@@ -543,7 +592,8 @@ void AppWindow::runAutoSave()
             m_autoSaveWarningText->setText(
                 QStringLiteral("Remove duplicate application paste-rule IDs to save"));
         } else if (failure == SettingsPageSet::SaveFailure::ProviderSecret) {
-            m_autoSaveWarningText->setText(QStringLiteral("Could not save provider credentials"));
+            m_autoSaveWarningText->setText(
+                QStringLiteral("Settings saved, but provider credentials could not be saved"));
         } else {
             m_autoSaveWarningText->setText(QStringLiteral("Fix invalid replacement rules to save"));
         }

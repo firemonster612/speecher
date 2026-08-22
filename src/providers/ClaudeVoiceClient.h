@@ -20,7 +20,7 @@ class ClaudeVoiceClient : public QObject {
     Q_OBJECT
 
 public:
-    explicit ClaudeVoiceClient(QObject *parent = nullptr);
+    explicit ClaudeVoiceClient(QObject *parent = nullptr, int connectionTimeoutMs = 10000);
 
     void start(const QUrl &url, const QString &accessToken, const QStringList &vocabulary);
     void sendAudio(const QByteArray &pcm);
@@ -50,6 +50,7 @@ private:
     QWebSocket m_socket;
 #endif
     QTimer m_keepAliveTimer;
+    QTimer m_connectionTimer;
     QList<QByteArray> m_pendingAudio;
     QString m_lastInterim;
     qsizetype m_pendingAudioBytes = 0;
@@ -61,6 +62,7 @@ private:
     bool m_connected = false;
     bool m_debugSchema = false;
     quint64 m_sessionId = 0;
+    int m_connectionTimeoutMs = 10000;
 };
 
 } // namespace speecher

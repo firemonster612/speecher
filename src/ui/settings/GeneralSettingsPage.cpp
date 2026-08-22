@@ -31,7 +31,7 @@ GeneralSettingsPage::GeneralSettingsPage(const QString &primaryOutputStatus,
 
     auto *title = settings::makePageTitle(QStringLiteral("General"), this);
     auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
+    auto *cardLayout = settings::cardFormLayout(card);
     auto *primaryOutput = new QLabel(primaryOutputStatus, this);
     primaryOutput->setObjectName(QStringLiteral("statusText"));
     primaryOutput->setForegroundRole(QPalette::WindowText);

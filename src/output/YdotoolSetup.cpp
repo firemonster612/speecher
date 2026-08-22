@@ -93,7 +93,10 @@ QString currentUserName()
     return qEnvironmentVariable("USER");
 }
 
-bool runProgram(const QString &program, const QStringList &arguments, QString *error)
+bool runProgram(const QString &program,
+                const QStringList &arguments,
+                QString *error,
+                int timeoutMs = 60000)
 {
     QProcess process;
     process.start(program, arguments);
@@ -103,7 +106,9 @@ bool runProgram(const QString &program, const QStringList &arguments, QString *e
         }
         return false;
     }
-    if (!process.waitForFinished(60000) || process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+    if (!process.waitForFinished(timeoutMs)
+        || process.exitStatus() != QProcess::NormalExit
+        || process.exitCode() != 0) {
         process.kill();
         const QString stderrText = QString::fromUtf8(process.readAllStandardError()).trimmed();
         if (error) {
@@ -250,7 +255,8 @@ bool YdotoolSetup::runHelper(HelperAction action, QString *error)
                        action == HelperAction::Install ? QStringLiteral("--install") : QStringLiteral("--remove"),
                        QStringLiteral("--user"),
                        user},
-                      error);
+                      error,
+                      5 * 60 * 1000);
 }
 
 bool YdotoolSetup::startUserService(QString *error)

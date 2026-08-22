@@ -136,7 +136,7 @@ static int runCliCommand(const QString &command,
     const IpcCommandResult ipcResult = SingleInstanceIpc::sendCommandDetailed(command,
                                                                               outputFormat,
                                                                               &response,
-                                                                              1200,
+                                                                              2500,
                                                                               platform,
                                                                               &ipcError);
     if (ipcResult == IpcCommandResult::Sent) {

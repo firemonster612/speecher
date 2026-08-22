@@ -5,6 +5,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
+#include <QSaveFile>
 #include <QStandardPaths>
 #include <QTextStream>
 
@@ -47,15 +48,22 @@ QString serviceText()
 
 bool writeFile(const QString &path, const QString &text, QString *error)
 {
-    QFile file(path);
+    QSaveFile file(path);
+    file.setDirectWriteFallback(false);
     if (!QFileInfo(path).dir().mkpath(QStringLiteral(".")) || !file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         if (error) {
             *error = QStringLiteral("Could not write %1").arg(path);
         }
         return false;
     }
-    file.write(text.toUtf8());
-    return true;
+    const QByteArray bytes = text.toUtf8();
+    if (file.write(bytes) == bytes.size() && file.commit()) {
+        return true;
+    }
+    if (error) {
+        *error = QStringLiteral("Could not safely write %1").arg(path);
+    }
+    return false;
 }
 
 bool removeFileIfPresent(const QString &path, QString *error)
@@ -152,21 +160,15 @@ bool addUserToGroup(const QString &user, QString *error)
 
 bool writeState(bool packageWasInstalled, const QString &user, QString *error)
 {
-    QDir().mkpath(QString::fromLatin1(stateDirPath));
-    QFile file(QString::fromLatin1(stateFilePath));
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        if (error) {
-            *error = QStringLiteral("Could not write setup state");
-        }
-        return false;
-    }
-    file.write(QJsonDocument(QJsonObject{
-                                 {QStringLiteral("packageInstalledBySpeecher"), packageWasInstalled},
-                                 {QStringLiteral("targetUser"), user},
-                                 {QStringLiteral("serviceFile"), serviceFilePath()},
-                             })
-                   .toJson(QJsonDocument::Compact));
-    return true;
+    return writeFile(
+        QString::fromLatin1(stateFilePath),
+        QString::fromUtf8(QJsonDocument(QJsonObject{
+                                            {QStringLiteral("packageInstalledBySpeecher"), packageWasInstalled},
+                                            {QStringLiteral("targetUser"), user},
+                                            {QStringLiteral("serviceFile"), serviceFilePath()},
+                                        })
+                              .toJson(QJsonDocument::Compact)),
+        error);
 }
 
 bool validateUser(const QString &user, QString *error)

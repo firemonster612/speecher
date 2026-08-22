@@ -1,5 +1,6 @@
 #include "app/SingleInstanceIpc.h"
 
+#include <QDeadlineTimer>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -10,6 +11,8 @@
 namespace speecher {
 
 namespace {
+
+constexpr qsizetype maximumRequestBytes = 64 * 1024;
 
 bool canConnectToServer(const QString &name, int timeoutMs)
 {
@@ -39,14 +42,62 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
     connect(&m_server, &QLocalServer::newConnection, this, [this] {
         while (QLocalSocket *socket = m_server.nextPendingConnection()) {
             connect(socket, &QLocalSocket::readyRead, this, [this, socket] {
-                const QJsonObject object = QJsonDocument::fromJson(socket->readAll()).object();
-                emit commandReceived(object.value(QStringLiteral("command")).toString(),
-                                     object.value(QStringLiteral("outputFormat")).toString(),
-                                     socket);
+                // Collect complete frames before emitting: a commandReceived slot can
+                // disconnect the socket, whose disconnected handler removes the buffer
+                // this loop would otherwise still reference.
+                QList<QByteArray> frames;
+                bool requestTooLarge = false;
+                {
+                    QByteArray &buffer = m_requestBuffers[socket];
+                    buffer.append(socket->readAll());
+                    requestTooLarge = buffer.size() > maximumRequestBytes;
+                    while (!requestTooLarge) {
+                        const qsizetype newline = buffer.indexOf('\n');
+                        if (newline >= 0) {
+                            frames.append(buffer.left(newline));
+                            buffer.remove(0, newline + 1);
+                            continue;
+                        }
+                        QJsonParseError legacyError;
+                        const QJsonDocument legacy = QJsonDocument::fromJson(buffer, &legacyError);
+                        if (legacyError.error == QJsonParseError::NoError && legacy.isObject()) {
+                            frames.append(std::exchange(buffer, {}));
+                        }
+                        break;
+                    }
+                }
+                if (requestTooLarge) {
+                    socket->disconnectFromServer();
+                    return;
+                }
+                for (const QByteArray &frame : frames) {
+                    QJsonParseError parseError;
+                    const QJsonDocument document = QJsonDocument::fromJson(frame, &parseError);
+                    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+                        continue;
+                    }
+                    const QJsonObject object = document.object();
+                    emit commandReceived(object.value(QStringLiteral("command")).toString(),
+                                         object.value(QStringLiteral("outputFormat")).toString(),
+                                         socket);
+                }
             });
-            connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
+            connect(socket, &QLocalSocket::disconnected, this, [this, socket] {
+                m_requestBuffers.remove(socket);
+                socket->deleteLater();
+            });
         }
     });
+}
+
+SingleInstanceIpc::~SingleInstanceIpc()
+{
+    // Sever per-socket lambdas before member destruction: m_requestBuffers dies
+    // before m_server, whose dying sockets would otherwise emit disconnected
+    // into the already-destroyed hash.
+    for (QLocalSocket *socket : m_server.findChildren<QLocalSocket *>()) {
+        socket->disconnect(this);
+    }
 }
 
 QString SingleInstanceIpc::socketName() const
@@ -135,24 +186,34 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
         if (outputFormat) {
             request.insert(QStringLiteral("outputFormat"), outputFormatName(*outputFormat));
         }
-        if (socket.write(QJsonDocument(request).toJson(QJsonDocument::Compact)) < 0) {
+        QByteArray requestBytes = QJsonDocument(request).toJson(QJsonDocument::Compact);
+        requestBytes.append('\n');
+        if (socket.write(requestBytes) != requestBytes.size()) {
             if (error) {
                 *error = QStringLiteral("Could not write command to running Speecher instance");
             }
             return IpcCommandResult::NoResponse;
         }
         socket.flush();
-        if (!socket.waitForReadyRead(timeoutMs) && socket.bytesAvailable() == 0) {
-            socket.waitForDisconnected(timeoutMs);
+        QDeadlineTimer deadline(timeoutMs);
+        QByteArray responseBytes;
+        while (!responseBytes.contains('\n') && deadline.remainingTime() > 0) {
+            if (socket.bytesAvailable() == 0
+                && !socket.waitForReadyRead(deadline.remainingTime())) {
+                break;
+            }
+            responseBytes.append(socket.readAll());
         }
-        if (socket.bytesAvailable() == 0) {
+        if (responseBytes.isEmpty()) {
             if (error) {
                 *error = QStringLiteral("Running Speecher instance did not respond");
             }
             return IpcCommandResult::NoResponse;
         }
         QJsonParseError parseError;
-        const QJsonDocument document = QJsonDocument::fromJson(socket.readAll(), &parseError);
+        const qsizetype newline = responseBytes.indexOf('\n');
+        const QByteArray frame = newline >= 0 ? responseBytes.left(newline) : responseBytes;
+        const QJsonDocument document = QJsonDocument::fromJson(frame, &parseError);
         if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
             if (error) {
                 *error = QStringLiteral("Running Speecher instance returned an invalid IPC response");
@@ -180,7 +241,9 @@ void SingleInstanceIpc::writeResponse(QLocalSocket *socket, const IpcResponse &r
         {QStringLiteral("state"), response.state},
         {QStringLiteral("message"), response.message.isEmpty() ? QJsonValue() : QJsonValue(response.message)},
     };
-    socket->write(QJsonDocument(object).toJson(QJsonDocument::Compact));
+    QByteArray responseBytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
+    responseBytes.append('\n');
+    socket->write(responseBytes);
     socket->flush();
     socket->disconnectFromServer();
 }

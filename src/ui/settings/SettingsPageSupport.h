@@ -55,6 +55,8 @@ void populateAudioInputDevices(QComboBox *combo,
 QColor positiveTextColor(const QPalette &palette);
 QLabel *makeSectionLabel(const QString &text, QWidget *parent);
 QFrame *makeSettingsCard(QWidget *parent);
+QFormLayout *cardFormLayout(QFrame *card);
+void addSectionRow(QFormLayout *form, const QString &title, QWidget *parent);
 QVBoxLayout *makeSettingsPage(QScrollArea *scroll);
 
 } // namespace speecher::settings

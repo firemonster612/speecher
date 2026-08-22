@@ -1,4 +1,5 @@
 #include "common/test_auth.h"
+#include "providers/ClaudeSpeechTranscriber.h"
 #include "providers/CodexDictationClient.h"
 #include "providers/CodexSpeechTranscriber.h"
 
@@ -48,7 +49,7 @@ private slots:
         QCOMPARE(config.value(QStringLiteral("max_utterance_duration_ms")).toInt(), 30000);
         QCOMPARE(config.value(QStringLiteral("session_ttl_ms")).toInt(), 300000);
         QCOMPARE(config.value(QStringLiteral("provider_mode")).toString(), QStringLiteral("streaming_sse"));
-        QCOMPARE(config.value(QStringLiteral("transcript_delivery_mode")).toString(), QStringLiteral("final_only"));
+        QCOMPARE(config.value(QStringLiteral("transcript_delivery_mode")).toString(), QStringLiteral("segment"));
         const QJsonObject vad = config.value(QStringLiteral("vad")).toObject();
         QCOMPARE(vad.value(QStringLiteral("type")).toString(), QStringLiteral("server_vad"));
         QCOMPARE(vad.value(QStringLiteral("threshold")).toDouble(), 0.5);
@@ -66,10 +67,28 @@ private slots:
         QCOMPARE(append.value(QStringLiteral("type")).toString(), QStringLiteral("audio.append"));
         QCOMPARE(QByteArray::fromBase64(append.value(QStringLiteral("audio")).toString().toUtf8()), pcm);
 
+        QSignalSpy partial(&client, &CodexDictationClient::partialTranscript);
+        peer->sendTextMessage(QStringLiteral(
+            R"({"type":"transcript.segment","sequence_no":2,"utterance_id":"u1","revision":1,"text":" hello"})"));
+        QTRY_COMPARE_WITH_TIMEOUT(partial.count(), 1, 1000);
+        QCOMPARE(partial.first().first().toString(), QStringLiteral("hello"));
+        peer->sendTextMessage(QStringLiteral(
+            R"({"type":"transcript.segment","sequence_no":2,"utterance_id":"u1","revision":2,"text":" hello from"})"));
+        QTRY_COMPARE_WITH_TIMEOUT(partial.count(), 2, 1000);
+        QCOMPARE(partial.last().first().toString(), QStringLiteral("hello from"));
+
         peer->sendTextMessage(QStringLiteral(
             R"({"type":"transcript.final","sequence_no":2,"utterance_id":"u1","revision":1,"text":"hello from Codex"})"));
         QTRY_COMPARE_WITH_TIMEOUT(final.count(), 1, 1000);
         QCOMPARE(final.first().first().toString(), QStringLiteral("hello from Codex"));
+        peer->sendTextMessage(QStringLiteral(
+            R"({"type":"transcript.final","sequence_no":2,"utterance_id":"u1","revision":1,"text":"hello from Codex"})"));
+        QTest::qWait(20);
+        QCOMPARE(final.count(), 1);
+        peer->sendTextMessage(QStringLiteral(
+            R"({"type":"transcript.segment","sequence_no":3,"utterance_id":"u1","revision":3,"text":" stale segment"})"));
+        QTest::qWait(20);
+        QCOMPARE(partial.count(), 2);
 
         client.stop();
         QTRY_COMPARE_WITH_TIMEOUT(messages.size(), 2, 1000);
@@ -83,6 +102,34 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 1000);
         QCOMPARE(failed.count(), 0);
         peer->deleteLater();
+    }
+
+    void speechTranscribersLoadCliproxyAccounts()
+    {
+        QTemporaryDir dir;
+        const QDateTime valid = QDateTime::currentDateTimeUtc().addSecs(3600);
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-a@example.com.json"),
+                                     QStringLiteral("codex"), QStringLiteral("codex-token"), valid));
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"),
+                                     QStringLiteral("claude"), QStringLiteral("claude-token"), valid));
+
+        SpeechSettings settings;
+        settings.claudeAuthMode = QStringLiteral("cliproxy");
+        settings.codexAuthMode = QStringLiteral("cliproxy");
+        settings.cliproxyOauthDir = dir.path();
+
+        CodexSpeechTranscriber codex;
+        QVERIFY(codex.prepare(settings).ok);
+        QVERIFY(!codex.requiresRefresh(settings));
+
+        ClaudeSpeechTranscriber claude;
+        QVERIFY(claude.prepare(settings).ok);
+        QVERIFY(!claude.requiresRefresh(settings));
+
+        settings.cliproxyOauthDir = QStringLiteral("/nonexistent/oauth");
+        const SpeechPrepareResult missing = codex.prepare(settings);
+        QVERIFY(!missing.ok);
+        QVERIFY(missing.message.contains(QStringLiteral("No CLI Proxy API codex accounts")));
     }
 
     void liveCodexDictationProvider()
@@ -103,6 +150,7 @@ private slots:
         const SpeechPrepareResult prepared = transcriber.prepare(settings);
         QVERIFY2(prepared.ok, qPrintable(prepared.message));
 
+        QSignalSpy partial(&transcriber, &SpeechTranscriber::partialTranscript);
         QSignalSpy final(&transcriber, &SpeechTranscriber::finalTranscript);
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
@@ -136,6 +184,8 @@ private slots:
         QCOMPARE(completed.count(), 1);
         QVERIFY(!final.isEmpty());
         QVERIFY(!final.last().at(1).toString().trimmed().isEmpty());
+        QVERIFY2(partial.count() > 0,
+                 "No live partial transcripts arrived while streaming (preview broken)");
     }
 #endif
 };

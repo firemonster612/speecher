@@ -2,6 +2,7 @@
 
 #include "providers/ClaudeCredentials.h"
 #include "providers/ClaudeVoiceClient.h"
+#include "providers/CliProxyCredentials.h"
 
 #include <memory>
 
@@ -11,7 +12,16 @@ namespace {
 
 SpeechPrepareResult loadClaudeAccessToken(const SpeechSettings &settings, QString *accessToken)
 {
+    if (settings.claudeAuthMode == QStringLiteral("cliproxy")) {
+        const CliProxyCredentialResult credentials = CliProxyCredentials::loadWithRefresh(
+            settings.cliproxyOauthDir, QStringLiteral("claude"), settings.claudeCliproxyAccount);
+        if (accessToken) {
+            *accessToken = credentials.ok ? credentials.accessToken : QString();
+        }
+        return {credentials.ok, credentials.error};
+    }
     const ClaudeCredentialResult credentials = ClaudeCredentials::load(settings.claudeCredentialsPath, true);
+    ClaudeCredentials::installedVersion();
     if (!credentials.ok) {
         if (accessToken) {
             accessToken->clear();
@@ -43,6 +53,10 @@ QString ClaudeSpeechTranscriber::label() const
 
 bool ClaudeSpeechTranscriber::requiresRefresh(const SpeechSettings &settings) const
 {
+    if (settings.claudeAuthMode == QStringLiteral("cliproxy")) {
+        return CliProxyCredentials::accountNeedsRefresh(
+            settings.cliproxyOauthDir, QStringLiteral("claude"), settings.claudeCliproxyAccount);
+    }
     return ClaudeCredentials::requiresRefresh(settings.claudeCredentialsPath);
 }
 

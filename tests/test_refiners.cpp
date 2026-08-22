@@ -1,6 +1,7 @@
 #include "common/test_doubles.h"
 #include "common/test_http.h"
 #include "common/test_auth.h"
+#include "providers/OpenAiTranscriptRefiner.h"
 
 using namespace speecher::test;
 
@@ -191,10 +192,10 @@ private slots:
         QCOMPARE(image.value(QStringLiteral("image_url")).toString(),
                  QStringLiteral("data:image/png;base64,cG5nLWJ5dGVz"));
 
-        const QByteArray sse = QByteArrayLiteral("event: response.output_text.delta\n"
-                                                 "data: {\"delta\":\"1. Gather\"}\n\n"
-                                                 "event: response.completed\n"
-                                                 "data: {\"type\":\"response.completed\"}\n\n");
+        const QByteArray sse = QByteArrayLiteral("event: response.output_text.delta\r\n"
+                                                 "data: {\"delta\":\"1. Gather\"}\r\n\r\n"
+                                                 "event: response.completed\r\n"
+                                                 "data: {\"type\":\"response.completed\"}\r\n\r\n");
         socket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\n"
                                         "Content-Type: text/event-stream\r\n"
                                         "Content-Length: ")
@@ -240,6 +241,12 @@ private slots:
         QTcpSocket *socket = server.nextPendingConnection();
         QVERIFY(socket);
         QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
+
+        QTimer keepalive;
+        connect(&keepalive, &QTimer::timeout, socket, [socket] {
+            socket->write(QByteArrayLiteral(": keepalive\n\n"));
+        });
+        keepalive.start(10);
 
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
         QVERIFY(failed.at(0).at(0).toString().contains(QStringLiteral("timed out")));
@@ -336,10 +343,10 @@ private slots:
         QVERIFY(content.contains(QStringLiteral("Preferred vocabulary:\nQt")));
         QVERIFY(content.contains(QStringLiteral("Binding aliases:\nmy email")));
 
-        const QByteArray sse = QByteArrayLiteral("event: content_block_delta\n"
-                                                 "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"oauth-ok\"}}\n\n"
-                                                 "event: message_stop\n"
-                                                 "data: {\"type\":\"message_stop\"}\n\n");
+        const QByteArray sse = QByteArrayLiteral("event: content_block_delta\r\n"
+                                                 "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"oauth-ok\"}}\r\n\r\n"
+                                                 "event: message_stop\r\n"
+                                                 "data: {\"type\":\"message_stop\"}\r\n\r\n");
         socket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\n"
                                         "Content-Type: text/event-stream\r\n"
                                         "Content-Length: ")
@@ -380,9 +387,68 @@ private slots:
         QVERIFY(socket);
         QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
 
+        QTimer keepalive;
+        connect(&keepalive, &QTimer::timeout, socket, [socket] {
+            socket->write(QByteArrayLiteral(": keepalive\n\n"));
+        });
+        keepalive.start(10);
+
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
         QVERIFY(failed.at(0).at(0).toString().contains(QStringLiteral("timed out")));
         QCOMPARE(completed.size(), 0);
+    }
+
+    void refinersTreatStreamErrorsAsTerminal()
+    {
+        QTcpServer openAiServer;
+        QVERIFY(openAiServer.listen(QHostAddress::LocalHost));
+        OpenAiRefiner openAi;
+        QSignalSpy openAiCompleted(&openAi, &OpenAiRefiner::completed);
+        QSignalSpy openAiFailed(&openAi, &OpenAiRefiner::failed);
+        openAi.refine(QStringLiteral("test"), {}, {}, QStringLiteral("token"), {}, {},
+                      QStringLiteral("http://127.0.0.1:%1/v1").arg(openAiServer.serverPort()),
+                      {}, false, QStringLiteral("gpt-test"), QStringLiteral("low"),
+                      QStringLiteral("balanced"), {});
+        QTRY_VERIFY_WITH_TIMEOUT(openAiServer.hasPendingConnections(), 1000);
+        QTcpSocket *openAiSocket = openAiServer.nextPendingConnection();
+        QVERIFY(!readHttpRequest(openAiSocket, 1000).isEmpty());
+        const QByteArray openAiSse = QByteArrayLiteral(
+            "event: response.output_text.delta\n"
+            "data: {\"delta\":\"partial\"}\n\n"
+            "event: error\n"
+            "data: {\"error\":{\"message\":\"failed\"}}\n\n"
+            "event: response.completed\n"
+            "data: {\"type\":\"response.completed\"}\n\n");
+        openAiSocket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ")
+                            + QByteArray::number(openAiSse.size())
+                            + QByteArrayLiteral("\r\n\r\n") + openAiSse);
+        QTRY_COMPARE_WITH_TIMEOUT(openAiFailed.size(), 1, 1000);
+        QCOMPARE(openAiCompleted.size(), 0);
+
+        QTcpServer anthropicServer;
+        QVERIFY(anthropicServer.listen(QHostAddress::LocalHost));
+        AnthropicApiRefiner anthropic;
+        QSignalSpy anthropicCompleted(&anthropic, &AnthropicApiRefiner::completed);
+        QSignalSpy anthropicFailed(&anthropic, &AnthropicApiRefiner::failed);
+        anthropic.refine(QStringLiteral("test"), {}, {}, QStringLiteral("token"),
+                         QStringLiteral("http://127.0.0.1:%1/v1").arg(anthropicServer.serverPort()),
+                         QStringLiteral("claude-sonnet-4-6"), QStringLiteral("low"),
+                         QStringLiteral("balanced"), {});
+        QTRY_VERIFY_WITH_TIMEOUT(anthropicServer.hasPendingConnections(), 1000);
+        QTcpSocket *anthropicSocket = anthropicServer.nextPendingConnection();
+        QVERIFY(!readHttpRequest(anthropicSocket, 1000).isEmpty());
+        const QByteArray anthropicSse = QByteArrayLiteral(
+            "event: content_block_delta\n"
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n"
+            "event: error\n"
+            "data: {\"type\":\"error\",\"error\":{\"message\":\"failed\"}}\n\n"
+            "event: message_stop\n"
+            "data: {\"type\":\"message_stop\"}\n\n");
+        anthropicSocket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ")
+                               + QByteArray::number(anthropicSse.size())
+                               + QByteArrayLiteral("\r\n\r\n") + anthropicSse);
+        QTRY_COMPARE_WITH_TIMEOUT(anthropicFailed.size(), 1, 1000);
+        QCOMPARE(anthropicCompleted.size(), 0);
     }
 
     void anthropicApiRefinerDoesNotTreatUnavailableModelsAsEffortSupported()
@@ -435,6 +501,93 @@ private slots:
                       + sse);
         QVERIFY(socket->waitForBytesWritten(1000));
         socket->disconnectFromHost();
+    }
+
+    void liveCliproxyRemoteRefinement()
+    {
+        const QString baseUrl = qEnvironmentVariable("SPEECHER_TEST_LIVE_CLIPROXY_URL");
+        const QString apiKey = qEnvironmentVariable("SPEECHER_TEST_LIVE_CLIPROXY_KEY");
+        if (baseUrl.isEmpty() || apiKey.isEmpty()) {
+            QSKIP("Live CLI Proxy refinement check is opt-in");
+        }
+
+        RefinementSettings settings;
+        settings.cliproxyBaseUrl = baseUrl;
+        settings.cliproxyApiKey = apiKey;
+        RefinementContext context;
+
+        settings.anthropicAuthMode = QStringLiteral("cliproxy");
+        AnthropicTranscriptRefiner anthropic;
+        QSignalSpy anthropicCompleted(&anthropic, &TranscriptRefiner::completed);
+        QSignalSpy anthropicFailed(&anthropic, &TranscriptRefiner::failed);
+        anthropic.refine(QStringLiteral("hello world this is a test"), {}, context, settings);
+        QTRY_VERIFY_WITH_TIMEOUT(!anthropicCompleted.isEmpty() || !anthropicFailed.isEmpty(), 60000);
+        QVERIFY2(anthropicFailed.isEmpty(),
+                 qPrintable(anthropicFailed.isEmpty() ? QString() : anthropicFailed.first().first().toString()));
+        QVERIFY(!anthropicCompleted.first().first().toString().trimmed().isEmpty());
+
+        settings.openAiAuthMode = QStringLiteral("cliproxy");
+        settings.openAiModel = qEnvironmentVariable("SPEECHER_TEST_LIVE_CLIPROXY_OPENAI_MODEL",
+                                                    QStringLiteral("gpt-5.6-luna"));
+        OpenAiTranscriptRefiner openAi(nullptr);
+        QSignalSpy openAiCompleted(&openAi, &TranscriptRefiner::completed);
+        QSignalSpy openAiFailed(&openAi, &TranscriptRefiner::failed);
+        openAi.refine(QStringLiteral("hello world this is a test"), {}, context, settings);
+        QTRY_VERIFY_WITH_TIMEOUT(!openAiCompleted.isEmpty() || !openAiFailed.isEmpty(), 60000);
+        QVERIFY2(openAiFailed.isEmpty(),
+                 qPrintable(openAiFailed.isEmpty() ? QString() : openAiFailed.first().first().toString()));
+        QVERIFY(!openAiCompleted.first().first().toString().trimmed().isEmpty());
+    }
+
+    void refinersUseRemoteCliproxyServerWhenBaseUrlSet()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        RefinementSettings settings;
+        settings.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+        settings.cliproxyApiKey = QStringLiteral("proxy-key");
+        RefinementContext context;
+
+        // No local account files anywhere near these paths: remote mode must not need them.
+        settings.cliproxyOauthDir = QStringLiteral("/nonexistent/cliproxy/oauth");
+
+        settings.anthropicAuthMode = QStringLiteral("cliproxy");
+        AnthropicTranscriptRefiner anthropic;
+        anthropic.refine(QStringLiteral("hello there"), {}, context, settings);
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *claudeSocket = server.nextPendingConnection();
+        QVERIFY(claudeSocket);
+        const QByteArray claudeRequest = readHttpRequest(claudeSocket, 1000);
+        QVERIFY(claudeRequest.startsWith(QByteArrayLiteral("POST /v1/messages")));
+        QVERIFY(claudeRequest.toLower().contains(QByteArrayLiteral("authorization: bearer proxy-key")));
+        anthropic.cancel();
+        claudeSocket->close();
+
+        settings.openAiAuthMode = QStringLiteral("cliproxy");
+        OpenAiTranscriptRefiner openAi(nullptr);
+        openAi.refine(QStringLiteral("hello there"), {}, context, settings);
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *codexSocket = server.nextPendingConnection();
+        QVERIFY(codexSocket);
+        const QByteArray codexRequest = readHttpRequest(codexSocket, 1000);
+        QVERIFY(codexRequest.startsWith(QByteArrayLiteral("POST /v1/responses")));
+        QVERIFY(codexRequest.toLower().contains(QByteArrayLiteral("authorization: bearer proxy-key")));
+        openAi.cancel();
+    }
+
+    void remoteCliproxyWithoutKeyFailsWithClearMessage()
+    {
+        RefinementSettings settings;
+        settings.anthropicAuthMode = QStringLiteral("cliproxy");
+        settings.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:1");
+        RefinementContext context;
+
+        AnthropicTranscriptRefiner refiner;
+        QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
+        refiner.refine(QStringLiteral("hello"), {}, context, settings);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
+        QVERIFY(failed.first().first().toString().contains(QStringLiteral("cliproxy/apiKey")));
     }
 
     void anthropicRefinerReloadsCliproxyTokenPerRequest()

@@ -36,11 +36,16 @@ struct UiSettings {
 
 struct SpeechSettings {
     QString providerId = QStringLiteral("claude");
+    QString claudeAuthMode = QStringLiteral("oauth");
+    QString codexAuthMode = QStringLiteral("auto");
     QString language = QStringLiteral("en");
     QStringList vocabulary;
     QString claudeCredentialsPath;
     QString claudeEndpointBase;
     QString claudeVoicePath;
+    QString cliproxyOauthDir;
+    QString claudeCliproxyAccount;
+    QString codexCliproxyAccount;
 };
 
 struct AudioCaptureSettings {
@@ -67,6 +72,8 @@ struct RefinementSettings {
     QString anthropicEffort = QStringLiteral("low");
     QString anthropicCliproxyAccount;
     QString cliproxyOauthDir;
+    QString cliproxyBaseUrl;
+    QString cliproxyApiKey;
     QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     QString claudeCredentialsPath;
     QStringList bindingVocabulary;

@@ -154,6 +154,48 @@ private slots:
         existing.close();
         QLocalServer::removeServer(name);
     }
+
+    void singleInstanceIpcBuffersFragmentedRequests()
+    {
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QVERIFY(ipc.listen());
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
+
+        QLocalSocket socket;
+        socket.connectToServer(name);
+        QVERIFY(socket.waitForConnected(500));
+        socket.write(QByteArrayLiteral("{\"command\":\"tog"));
+        QVERIFY(socket.waitForBytesWritten(500));
+        QCoreApplication::processEvents();
+        QCOMPARE(commands.count(), 0);
+
+        socket.write(QByteArrayLiteral("gle\"}\n"));
+        QVERIFY(socket.waitForBytesWritten(500));
+        QTRY_COMPARE(commands.count(), 1);
+        QCOMPARE(commands.first().at(0).toString(), QStringLiteral("toggle"));
+    }
+
+    void singleInstanceIpcReadsTwoFramedCommands()
+    {
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QVERIFY(ipc.listen());
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
+
+        QLocalSocket socket;
+        socket.connectToServer(name);
+        QVERIFY(socket.waitForConnected(500));
+        socket.write(QByteArrayLiteral("{\"command\":\"start\"}\n{\"command\":\"stop\"}\n"));
+        QVERIFY(socket.waitForBytesWritten(500));
+        QTRY_COMPARE(commands.count(), 2);
+        QCOMPARE(commands.at(0).at(0).toString(), QStringLiteral("start"));
+        QCOMPARE(commands.at(1).at(0).toString(), QStringLiteral("stop"));
+    }
 };
 
 int runSingleInstanceIpcTests(int argc, char **argv)

@@ -1,5 +1,6 @@
 #include "providers/CodexSpeechTranscriber.h"
 
+#include "providers/CliProxyCredentials.h"
 #include "providers/CodexDictationClient.h"
 #include "providers/OpenAiAuthProvider.h"
 
@@ -10,8 +11,17 @@ namespace {
 
 constexpr auto dictationEndpoint = "wss://chatgpt.com/backend-api/dictation/stream";
 
-SpeechPrepareResult prepareCodex(QString *accessToken)
+SpeechPrepareResult prepareCodex(const SpeechSettings &settings, QString *accessToken)
 {
+    if (settings.codexAuthMode == QStringLiteral("cliproxy")) {
+        const CliProxyCredentialResult credentials = CliProxyCredentials::loadWithRefresh(
+            settings.cliproxyOauthDir, QStringLiteral("codex"), settings.codexCliproxyAccount);
+        accessToken->clear();
+        if (credentials.ok) {
+            *accessToken = credentials.accessToken;
+        }
+        return {credentials.ok, credentials.error};
+    }
     const OpenAiAuth auth = OpenAiAuthProvider(nullptr, QStringLiteral("codex_oauth")).resolve();
     if (!auth.ok) {
         accessToken->clear();
@@ -40,8 +50,12 @@ QString CodexSpeechTranscriber::label() const
     return QStringLiteral("ChatGPT Codex");
 }
 
-bool CodexSpeechTranscriber::requiresRefresh(const SpeechSettings &) const
+bool CodexSpeechTranscriber::requiresRefresh(const SpeechSettings &settings) const
 {
+    if (settings.codexAuthMode == QStringLiteral("cliproxy")) {
+        return CliProxyCredentials::accountNeedsRefresh(
+            settings.cliproxyOauthDir, QStringLiteral("codex"), settings.codexCliproxyAccount);
+    }
     return OpenAiAuthProvider(nullptr, QStringLiteral("codex_oauth"))
         .requiresCodexOauthRefresh();
 }
@@ -52,16 +66,16 @@ std::optional<SpeechPrepareJob> CodexSpeechTranscriber::createPrepareJob(
     auto accessToken = std::make_shared<QString>();
     SpeechPrepareJob job;
     job.showRefreshIndicator = requiresRefresh(settings);
-    job.run = [accessToken] { return prepareCodex(accessToken.get()); };
+    job.run = [settings, accessToken] { return prepareCodex(settings, accessToken.get()); };
     job.apply = [this, accessToken](const SpeechPrepareResult &result) {
         m_accessToken = result.ok ? *accessToken : QString();
     };
     return job;
 }
 
-SpeechPrepareResult CodexSpeechTranscriber::prepare(const SpeechSettings &)
+SpeechPrepareResult CodexSpeechTranscriber::prepare(const SpeechSettings &settings)
 {
-    return prepareCodex(&m_accessToken);
+    return prepareCodex(settings, &m_accessToken);
 }
 
 void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
@@ -74,6 +88,12 @@ void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
     m_attemptId = attemptId;
     m_client = new CodexDictationClient(this);
     CodexDictationClient *client = m_client;
+    connect(client, &CodexDictationClient::partialTranscript,
+            this, [this, client, attemptId](const QString &text) {
+                if (m_client == client && m_attemptId == attemptId) {
+                    emit partialTranscript(attemptId, text);
+                }
+            });
     connect(client, &CodexDictationClient::finalTranscript,
             this, [this, client, attemptId](const QString &text) {
                 if (m_client == client && m_attemptId == attemptId) {
