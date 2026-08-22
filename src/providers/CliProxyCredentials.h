@@ -19,8 +19,25 @@ struct CliProxyCredentialResult {
     QString error;
 };
 
+struct OauthRefreshResult {
+    bool ok = false;
+    QString accessToken;
+    QString refreshToken;
+    QString idToken;
+    int expiresIn = 0;
+    QString error;
+};
+
 class CliProxyCredentials {
 public:
+    // Standard OAuth refresh_token grant against the provider's token
+    // endpoint. Bounded nested event loop - worker threads only.
+    static OauthRefreshResult oauthRefresh(const QString &tokenUrl,
+                                           const QString &clientId,
+                                           const QString &refreshToken,
+                                           int timeoutMs = 10000);
+    static QString claudeClientId();
+    static QString codexClientId();
     // Fast, file-only check: does the selected account's token need a refresh?
     static bool accountNeedsRefresh(const QString &directory, const QString &type, const QString &fileName);
     // Like load(), but an expired token is refreshed against the provider's

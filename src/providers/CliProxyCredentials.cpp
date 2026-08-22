@@ -88,59 +88,28 @@ bool refreshAccountFile(const QString &directory,
         return false;
     }
 
-    QJsonObject body{
-        {QStringLiteral("grant_type"), QStringLiteral("refresh_token")},
-        {QStringLiteral("refresh_token"), refreshToken},
-        {QStringLiteral("client_id"),
-         QString::fromLatin1(type == QStringLiteral("claude") ? claudeOauthClientId : codexOauthClientId)},
-    };
-
-    QNetworkAccessManager manager;
-    QNetworkRequest request{QUrl(refreshTokenUrl(type))};
-    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
-    QNetworkReply *reply = manager.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
-    QEventLoop loop;
-    QTimer watchdog;
-    watchdog.setSingleShot(true);
-    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    QObject::connect(&watchdog, &QTimer::timeout, &loop, &QEventLoop::quit);
-    watchdog.start(10000);
-    loop.exec();
-    const bool timedOut = !watchdog.isActive();
-    if (timedOut) {
-        reply->abort();
-    }
-    reply->deleteLater();
-    if (timedOut) {
+    const OauthRefreshResult refreshed = CliProxyCredentials::oauthRefresh(
+        refreshTokenUrl(type),
+        type == QStringLiteral("claude") ? CliProxyCredentials::claudeClientId()
+                                         : CliProxyCredentials::codexClientId(),
+        refreshToken);
+    if (!refreshed.ok) {
         if (error) {
-            *error = QStringLiteral("Timed out refreshing the CLI Proxy API %1 token").arg(type);
-        }
-        return false;
-    }
-    const QJsonObject response = QJsonDocument::fromJson(reply->readAll()).object();
-    const QString accessToken = response.value(QStringLiteral("access_token")).toString().trimmed();
-    if (reply->error() != QNetworkReply::NoError || accessToken.isEmpty()) {
-        if (error) {
-            const QString detail = response.value(QStringLiteral("error")).toString();
-            *error = QStringLiteral("Could not refresh the CLI Proxy API %1 token%2")
-                         .arg(type, detail.isEmpty() ? QString() : QStringLiteral(": %1").arg(detail));
+            *error = QStringLiteral("Could not refresh the CLI Proxy API %1 token: %2").arg(type, refreshed.error);
         }
         return false;
     }
 
     QJsonObject updated = account;
-    updated.insert(QStringLiteral("access_token"), accessToken);
-    const QString rotatedRefresh = response.value(QStringLiteral("refresh_token")).toString().trimmed();
-    if (!rotatedRefresh.isEmpty()) {
-        updated.insert(QStringLiteral("refresh_token"), rotatedRefresh);
+    updated.insert(QStringLiteral("access_token"), refreshed.accessToken);
+    if (!refreshed.refreshToken.isEmpty()) {
+        updated.insert(QStringLiteral("refresh_token"), refreshed.refreshToken);
     }
-    const QString idToken = response.value(QStringLiteral("id_token")).toString().trimmed();
-    if (!idToken.isEmpty()) {
-        updated.insert(QStringLiteral("id_token"), idToken);
+    if (!refreshed.idToken.isEmpty()) {
+        updated.insert(QStringLiteral("id_token"), refreshed.idToken);
     }
-    const int expiresIn = response.value(QStringLiteral("expires_in")).toInt(3600);
     const QDateTime now = QDateTime::currentDateTime();
-    updated.insert(QStringLiteral("expired"), now.addSecs(expiresIn).toString(Qt::ISODate));
+    updated.insert(QStringLiteral("expired"), now.addSecs(refreshed.expiresIn).toString(Qt::ISODate));
     updated.insert(QStringLiteral("last_refresh"), now.toString(Qt::ISODate));
 
     QSaveFile file(QDir(directory).filePath(fileName));
@@ -161,6 +130,62 @@ bool refreshAccountFile(const QString &directory,
 }
 
 } // namespace
+
+QString CliProxyCredentials::claudeClientId()
+{
+    return QString::fromLatin1(claudeOauthClientId);
+}
+
+QString CliProxyCredentials::codexClientId()
+{
+    return QString::fromLatin1(codexOauthClientId);
+}
+
+OauthRefreshResult CliProxyCredentials::oauthRefresh(const QString &tokenUrl,
+                                                     const QString &clientId,
+                                                     const QString &refreshToken,
+                                                     int timeoutMs)
+{
+    OauthRefreshResult result;
+    const QJsonObject body{
+        {QStringLiteral("grant_type"), QStringLiteral("refresh_token")},
+        {QStringLiteral("refresh_token"), refreshToken},
+        {QStringLiteral("client_id"), clientId},
+    };
+
+    QNetworkAccessManager manager;
+    QNetworkRequest request{QUrl(tokenUrl)};
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    QNetworkReply *reply = manager.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    QEventLoop loop;
+    QTimer watchdog;
+    watchdog.setSingleShot(true);
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QObject::connect(&watchdog, &QTimer::timeout, &loop, &QEventLoop::quit);
+    watchdog.start(timeoutMs);
+    loop.exec();
+    const bool timedOut = !watchdog.isActive();
+    if (timedOut) {
+        reply->abort();
+    }
+    reply->deleteLater();
+    if (timedOut) {
+        result.error = QStringLiteral("the token endpoint timed out");
+        return result;
+    }
+    const QJsonObject response = QJsonDocument::fromJson(reply->readAll()).object();
+    result.accessToken = response.value(QStringLiteral("access_token")).toString().trimmed();
+    if (reply->error() != QNetworkReply::NoError || result.accessToken.isEmpty()) {
+        const QString detail = response.value(QStringLiteral("error")).toString();
+        result.error = detail.isEmpty() ? QStringLiteral("the token endpoint rejected the refresh") : detail;
+        return result;
+    }
+    result.refreshToken = response.value(QStringLiteral("refresh_token")).toString().trimmed();
+    result.idToken = response.value(QStringLiteral("id_token")).toString().trimmed();
+    result.expiresIn = response.value(QStringLiteral("expires_in")).toInt(3600);
+    result.ok = true;
+    return result;
+}
 
 bool CliProxyCredentials::accountNeedsRefresh(const QString &directory, const QString &type, const QString &fileName)
 {

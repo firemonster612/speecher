@@ -78,6 +78,7 @@ inline bool writeCodexAuth(const QString &homePath, const QString &accessToken)
         }
         QJsonObject tokens{
             {QStringLiteral("access_token"), accessToken},
+            {QStringLiteral("refresh_token"), QStringLiteral("codex-refresh-token")},
             {QStringLiteral("account_id"), QStringLiteral("acct")},
         };
         file.write(QJsonDocument(QJsonObject{

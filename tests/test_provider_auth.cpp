@@ -223,27 +223,36 @@ private slots:
     {
         QTemporaryDir dir;
         QVERIFY(writeCodexAuth(dir.path(), jwtWithExpiry(QDateTime::currentDateTimeUtc().addSecs(-60))));
-        const QString fakeCodex = writeFakeClaudeScript(dir.filePath(QStringLiteral("codex-fake")), QStringLiteral(R"(
-test "$1" = "exec" || exit 10
-test "$2" = "i" || exit 11
-test "$3" = "--skip-git-repo-check" || exit 12
-cat > "$HOME/.codex/auth.json" <<'JSON'
-{"auth_mode":"chatgpt","tokens":{"access_token":"REFRESHED_TOKEN","account_id":"acct"}}
-JSON
-exit 0
-)"));
-        QVERIFY(!fakeCodex.isEmpty());
+
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        QByteArray requestBody;
+        connect(&server, &QTcpServer::newConnection, this, [&] {
+            QTcpSocket *socket = server.nextPendingConnection();
+            const QByteArray request = readHttpRequest(socket, 1000);
+            requestBody = request.mid(request.indexOf("\r\n\r\n") + 4);
+            const QByteArray payload = QJsonDocument(QJsonObject{
+                {QStringLiteral("access_token"), QStringLiteral("REFRESHED_TOKEN")},
+                {QStringLiteral("refresh_token"), QStringLiteral("rotated-codex-refresh")},
+                {QStringLiteral("id_token"), QStringLiteral("new-id-token")},
+                {QStringLiteral("expires_in"), 3600},
+            }).toJson(QJsonDocument::Compact);
+            socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                          + QByteArray::number(payload.size()) + "\r\nConnection: close\r\n\r\n" + payload);
+            socket->flush();
+        });
 
         const QByteArray oldHome = qgetenv("HOME");
         qputenv("HOME", QFile::encodeName(dir.path()));
-        qputenv("SPEECHER_TEST_CODEX_EXECUTABLE", QFile::encodeName(fakeCodex));
+        qputenv("SPEECHER_CODEX_TOKEN_URL",
+                QStringLiteral("http://127.0.0.1:%1/oauth/token").arg(server.serverPort()).toUtf8());
         const auto cleanup = qScopeGuard([oldHome] {
             if (oldHome.isEmpty()) {
                 qunsetenv("HOME");
             } else {
                 qputenv("HOME", oldHome);
             }
-            qunsetenv("SPEECHER_TEST_CODEX_EXECUTABLE");
+            qunsetenv("SPEECHER_CODEX_TOKEN_URL");
         });
 
         OpenAiAuthProvider provider(nullptr, QStringLiteral("codex_oauth"));
@@ -252,103 +261,80 @@ exit 0
         QVERIFY2(auth.ok, qPrintable(auth.status));
         QCOMPARE(auth.bearerToken, QStringLiteral("REFRESHED_TOKEN"));
         QVERIFY(!provider.requiresCodexOauthRefresh());
-    }
 
-    void codexOauthRefreshClosesChildStdin()
-    {
-        QTemporaryDir dir;
-        QVERIFY(writeCodexAuth(dir.path(), jwtWithExpiry(QDateTime::currentDateTimeUtc().addSecs(-60))));
-        const QString stdinCapture = dir.filePath(QStringLiteral("codex-stdin.txt"));
-        const QString fakeCodex = writeFakeClaudeScript(dir.filePath(QStringLiteral("codex-fake")), QStringLiteral(R"(
-test "$1" = "exec" || exit 10
-cat > "$SPEECHER_TEST_CODEX_STDIN_CAPTURE"
-cat > "$HOME/.codex/auth.json" <<'JSON'
-{"auth_mode":"chatgpt","tokens":{"access_token":"REFRESHED_AFTER_STDIN_EOF","account_id":"acct"}}
-JSON
-exit 0
-)"));
-        QVERIFY(!fakeCodex.isEmpty());
+        const QJsonObject body = QJsonDocument::fromJson(requestBody).object();
+        QCOMPARE(body.value(QStringLiteral("grant_type")).toString(), QStringLiteral("refresh_token"));
+        QCOMPARE(body.value(QStringLiteral("refresh_token")).toString(), QStringLiteral("codex-refresh-token"));
+        QCOMPARE(body.value(QStringLiteral("client_id")).toString(), CliProxyCredentials::codexClientId());
 
-        const QByteArray oldHome = qgetenv("HOME");
-        qputenv("HOME", QFile::encodeName(dir.path()));
-        qputenv("SPEECHER_TEST_CODEX_EXECUTABLE", QFile::encodeName(fakeCodex));
-        qputenv("SPEECHER_TEST_CODEX_STDIN_CAPTURE", QFile::encodeName(stdinCapture));
-        qputenv("SPEECHER_CODEX_REFRESH_TIMEOUT_MS", "500");
-        const auto cleanup = qScopeGuard([oldHome] {
-            if (oldHome.isEmpty()) {
-                qunsetenv("HOME");
-            } else {
-                qputenv("HOME", oldHome);
-            }
-            qunsetenv("SPEECHER_TEST_CODEX_EXECUTABLE");
-            qunsetenv("SPEECHER_TEST_CODEX_STDIN_CAPTURE");
-            qunsetenv("SPEECHER_CODEX_REFRESH_TIMEOUT_MS");
-        });
-
-        QElapsedTimer timer;
-        timer.start();
-        OpenAiAuthProvider provider(nullptr, QStringLiteral("codex_oauth"));
-        const OpenAiAuth auth = provider.resolve();
-        QVERIFY2(auth.ok, qPrintable(auth.status));
-        QVERIFY(timer.elapsed() < 1500);
-        QCOMPARE(auth.bearerToken, QStringLiteral("REFRESHED_AFTER_STDIN_EOF"));
-
-        QFile file(stdinCapture);
+        // Rotated tokens land back in ~/.codex/auth.json.
+        QFile file(dir.filePath(QStringLiteral(".codex/auth.json")));
         QVERIFY(file.open(QIODevice::ReadOnly));
-        QCOMPARE(file.readAll(), QByteArray());
+        const QJsonObject tokens =
+            QJsonDocument::fromJson(file.readAll()).object().value(QStringLiteral("tokens")).toObject();
+        QCOMPARE(tokens.value(QStringLiteral("refresh_token")).toString(), QStringLiteral("rotated-codex-refresh"));
+        QCOMPARE(tokens.value(QStringLiteral("id_token")).toString(), QStringLiteral("new-id-token"));
     }
 
     void codexOauthRefreshFailure()
     {
         QTemporaryDir dir;
         QVERIFY(writeCodexAuth(dir.path(), jwtWithExpiry(QDateTime::currentDateTimeUtc().addSecs(-60))));
-        const QString fakeCodex = writeFakeClaudeScript(dir.filePath(QStringLiteral("codex-fake")), QStringLiteral(R"(
-echo failed >&2
-exit 12
-)"));
-        QVERIFY(!fakeCodex.isEmpty());
+
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        connect(&server, &QTcpServer::newConnection, this, [&] {
+            QTcpSocket *socket = server.nextPendingConnection();
+            readHttpRequest(socket, 1000);
+            const QByteArray payload = QByteArrayLiteral("{\"error\":\"invalid_grant\"}");
+            socket->write("HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: "
+                          + QByteArray::number(payload.size()) + "\r\nConnection: close\r\n\r\n" + payload);
+            socket->flush();
+        });
 
         const QByteArray oldHome = qgetenv("HOME");
         qputenv("HOME", QFile::encodeName(dir.path()));
-        qputenv("SPEECHER_TEST_CODEX_EXECUTABLE", QFile::encodeName(fakeCodex));
+        qputenv("SPEECHER_CODEX_TOKEN_URL",
+                QStringLiteral("http://127.0.0.1:%1/oauth/token").arg(server.serverPort()).toUtf8());
         const auto cleanup = qScopeGuard([oldHome] {
             if (oldHome.isEmpty()) {
                 qunsetenv("HOME");
             } else {
                 qputenv("HOME", oldHome);
             }
-            qunsetenv("SPEECHER_TEST_CODEX_EXECUTABLE");
+            qunsetenv("SPEECHER_CODEX_TOKEN_URL");
         });
 
         OpenAiAuthProvider provider(nullptr, QStringLiteral("codex_oauth"));
         const OpenAiAuth auth = provider.resolve();
         QVERIFY(!auth.ok);
-        QVERIFY(auth.status.contains(QStringLiteral("Codex OAuth refresh")));
+        QVERIFY2(auth.status.contains(QStringLiteral("invalid_grant")), qPrintable(auth.status));
     }
 
     void codexOauthAutoModeDoesNotRetryFailedChatGptRefresh()
     {
         QTemporaryDir dir;
         QVERIFY(writeCodexAuth(dir.path(), jwtWithExpiry(QDateTime::currentDateTimeUtc().addSecs(-60))));
-        const QString countPath = dir.filePath(QStringLiteral("codex-count"));
-        const QString fakeCodex = writeFakeClaudeScript(dir.filePath(QStringLiteral("codex-fake")), QStringLiteral(R"SH(
-count=0
-if test -f "$SPEECHER_TEST_CODEX_COUNT"; then
-  count="$(cat "$SPEECHER_TEST_CODEX_COUNT")"
-fi
-count=$((count + 1))
-printf '%s\n' "$count" > "$SPEECHER_TEST_CODEX_COUNT"
-echo failed >&2
-exit 12
-)SH"));
-        QVERIFY(!fakeCodex.isEmpty());
+
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        int refreshRequests = 0;
+        connect(&server, &QTcpServer::newConnection, this, [&] {
+            QTcpSocket *socket = server.nextPendingConnection();
+            readHttpRequest(socket, 1000);
+            ++refreshRequests;
+            const QByteArray payload = QByteArrayLiteral("{\"error\":\"invalid_grant\"}");
+            socket->write("HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: "
+                          + QByteArray::number(payload.size()) + "\r\nConnection: close\r\n\r\n" + payload);
+            socket->flush();
+        });
 
         const QByteArray oldHome = qgetenv("HOME");
         const bool hadOpenAiKey = qEnvironmentVariableIsSet("OPENAI_API_KEY");
         const QByteArray oldOpenAiKey = qgetenv("OPENAI_API_KEY");
         qputenv("HOME", QFile::encodeName(dir.path()));
-        qputenv("SPEECHER_TEST_CODEX_EXECUTABLE", QFile::encodeName(fakeCodex));
-        qputenv("SPEECHER_TEST_CODEX_COUNT", QFile::encodeName(countPath));
+        qputenv("SPEECHER_CODEX_TOKEN_URL",
+                QStringLiteral("http://127.0.0.1:%1/oauth/token").arg(server.serverPort()).toUtf8());
         qunsetenv("OPENAI_API_KEY");
         const auto cleanup = qScopeGuard([oldHome, hadOpenAiKey, oldOpenAiKey] {
             if (oldHome.isEmpty()) {
@@ -356,8 +342,7 @@ exit 12
             } else {
                 qputenv("HOME", oldHome);
             }
-            qunsetenv("SPEECHER_TEST_CODEX_EXECUTABLE");
-            qunsetenv("SPEECHER_TEST_CODEX_COUNT");
+            qunsetenv("SPEECHER_CODEX_TOKEN_URL");
             if (hadOpenAiKey) {
                 qputenv("OPENAI_API_KEY", oldOpenAiKey);
             } else {
@@ -368,11 +353,9 @@ exit 12
         OpenAiAuthProvider provider(nullptr, QStringLiteral("auto"));
         const OpenAiAuth auth = provider.resolve();
         QVERIFY(!auth.ok);
-
-        QFile file(countPath);
-        QVERIFY(file.open(QIODevice::ReadOnly));
-        QCOMPARE(QString::fromUtf8(file.readAll()).trimmed(), QStringLiteral("1"));
+        QCOMPARE(refreshRequests, 1);
     }
+
     void cliproxyExpiredAccountRefreshesAndRewritesFile()
     {
         QTcpServer server;
