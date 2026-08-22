@@ -2,12 +2,34 @@
 
 #include <QDateTime>
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QSaveFile>
+#include <QTimer>
+#include <QUrl>
 
 namespace speecher {
 namespace {
+
+// The same public OAuth clients the CLIs themselves use; only the
+// refresh_token grant is exercised, never a login.
+constexpr auto claudeOauthClientId = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+constexpr auto codexOauthClientId = "app_EMoamEEZ73f0CkXaXp7hrann";
+
+QString refreshTokenUrl(const QString &type)
+{
+    if (type == QStringLiteral("claude")) {
+        const QString override = qEnvironmentVariable("SPEECHER_CLIPROXY_CLAUDE_TOKEN_URL");
+        return override.isEmpty() ? QStringLiteral("https://platform.claude.com/v1/oauth/token") : override;
+    }
+    const QString override = qEnvironmentVariable("SPEECHER_CLIPROXY_CODEX_TOKEN_URL");
+    return override.isEmpty() ? QStringLiteral("https://auth.openai.com/oauth/token") : override;
+}
 
 QJsonObject readAccountObject(const QString &directory, const QString &fileName)
 {
@@ -32,7 +54,140 @@ bool accountExpired(const QJsonObject &account)
     return expiry.isValid() && expiry <= QDateTime::currentDateTimeUtc();
 }
 
+QString resolveAccountFileName(const QString &directory,
+                               const QString &type,
+                               const QString &fileName,
+                               QString *error)
+{
+    if (!fileName.isEmpty()) {
+        return fileName;
+    }
+    const QList<CliProxyAccount> accounts = CliProxyCredentials::listAccounts(directory, type);
+    if (accounts.size() == 1) {
+        return accounts.first().fileName;
+    }
+    if (error) {
+        *error = accounts.isEmpty()
+            ? QStringLiteral("No CLI Proxy API %1 accounts found in %2").arg(type, directory)
+            : QStringLiteral("Multiple CLI Proxy API %1 accounts found; choose one in provider settings").arg(type);
+    }
+    return {};
+}
+
+bool refreshAccountFile(const QString &directory,
+                        const QString &type,
+                        const QString &fileName,
+                        QString *error)
+{
+    const QJsonObject account = readAccountObject(directory, fileName);
+    const QString refreshToken = account.value(QStringLiteral("refresh_token")).toString().trimmed();
+    if (refreshToken.isEmpty()) {
+        if (error) {
+            *error = QStringLiteral("CLI Proxy API account %1 has no refresh token; sign in again through CLI Proxy API").arg(fileName);
+        }
+        return false;
+    }
+
+    QJsonObject body{
+        {QStringLiteral("grant_type"), QStringLiteral("refresh_token")},
+        {QStringLiteral("refresh_token"), refreshToken},
+        {QStringLiteral("client_id"),
+         QString::fromLatin1(type == QStringLiteral("claude") ? claudeOauthClientId : codexOauthClientId)},
+    };
+
+    QNetworkAccessManager manager;
+    QNetworkRequest request{QUrl(refreshTokenUrl(type))};
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    QNetworkReply *reply = manager.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    QEventLoop loop;
+    QTimer watchdog;
+    watchdog.setSingleShot(true);
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QObject::connect(&watchdog, &QTimer::timeout, &loop, &QEventLoop::quit);
+    watchdog.start(10000);
+    loop.exec();
+    const bool timedOut = !watchdog.isActive();
+    if (timedOut) {
+        reply->abort();
+    }
+    reply->deleteLater();
+    if (timedOut) {
+        if (error) {
+            *error = QStringLiteral("Timed out refreshing the CLI Proxy API %1 token").arg(type);
+        }
+        return false;
+    }
+    const QJsonObject response = QJsonDocument::fromJson(reply->readAll()).object();
+    const QString accessToken = response.value(QStringLiteral("access_token")).toString().trimmed();
+    if (reply->error() != QNetworkReply::NoError || accessToken.isEmpty()) {
+        if (error) {
+            const QString detail = response.value(QStringLiteral("error")).toString();
+            *error = QStringLiteral("Could not refresh the CLI Proxy API %1 token%2")
+                         .arg(type, detail.isEmpty() ? QString() : QStringLiteral(": %1").arg(detail));
+        }
+        return false;
+    }
+
+    QJsonObject updated = account;
+    updated.insert(QStringLiteral("access_token"), accessToken);
+    const QString rotatedRefresh = response.value(QStringLiteral("refresh_token")).toString().trimmed();
+    if (!rotatedRefresh.isEmpty()) {
+        updated.insert(QStringLiteral("refresh_token"), rotatedRefresh);
+    }
+    const QString idToken = response.value(QStringLiteral("id_token")).toString().trimmed();
+    if (!idToken.isEmpty()) {
+        updated.insert(QStringLiteral("id_token"), idToken);
+    }
+    const int expiresIn = response.value(QStringLiteral("expires_in")).toInt(3600);
+    const QDateTime now = QDateTime::currentDateTime();
+    updated.insert(QStringLiteral("expired"), now.addSecs(expiresIn).toString(Qt::ISODate));
+    updated.insert(QStringLiteral("last_refresh"), now.toString(Qt::ISODate));
+
+    QSaveFile file(QDir(directory).filePath(fileName));
+    if (!file.open(QIODevice::WriteOnly)) {
+        if (error) {
+            *error = QStringLiteral("Could not write refreshed CLI Proxy API account %1").arg(fileName);
+        }
+        return false;
+    }
+    file.write(QJsonDocument(updated).toJson());
+    if (!file.commit()) {
+        if (error) {
+            *error = QStringLiteral("Could not write refreshed CLI Proxy API account %1").arg(fileName);
+        }
+        return false;
+    }
+    return true;
+}
+
 } // namespace
+
+bool CliProxyCredentials::accountNeedsRefresh(const QString &directory, const QString &type, const QString &fileName)
+{
+    const QString resolved = resolveAccountFileName(directory, type, fileName, nullptr);
+    if (resolved.isEmpty()) {
+        return false;
+    }
+    return accountExpired(readAccountObject(directory, resolved));
+}
+
+CliProxyCredentialResult CliProxyCredentials::loadWithRefresh(const QString &directory,
+                                                              const QString &type,
+                                                              const QString &fileName)
+{
+    QString resolveError;
+    const QString resolved = resolveAccountFileName(directory, type, fileName, &resolveError);
+    if (resolved.isEmpty()) {
+        return {false, {}, {}, resolveError};
+    }
+    if (accountExpired(readAccountObject(directory, resolved))) {
+        QString refreshError;
+        if (!refreshAccountFile(directory, type, resolved, &refreshError)) {
+            return {false, {}, {}, refreshError};
+        }
+    }
+    return load(directory, type, resolved);
+}
 
 QList<CliProxyAccount> CliProxyCredentials::listAccounts(const QString &directory, const QString &type)
 {

@@ -378,8 +378,13 @@ bool OpenAiAuthProvider::requiresCodexOauthRefresh() const
     if (mode == QStringLiteral("codex_oauth")) {
         return readCodexOauth(false).status == QStringLiteral("Codex OAuth token expired");
     }
-    if (mode == QStringLiteral("codex_api_key") || mode == QStringLiteral("env") || mode == QStringLiteral("settings")
-        || mode == QStringLiteral("cliproxy")) {
+    if (mode == QStringLiteral("cliproxy")) {
+        if (!m_cliproxyBaseUrl.isEmpty()) {
+            return false; // the server owns and refreshes its accounts
+        }
+        return CliProxyCredentials::accountNeedsRefresh(m_cliproxyDir, QStringLiteral("codex"), m_cliproxyAccount);
+    }
+    if (mode == QStringLiteral("codex_api_key") || mode == QStringLiteral("env") || mode == QStringLiteral("settings")) {
         return false;
     }
 
@@ -396,7 +401,23 @@ bool OpenAiAuthProvider::requiresCodexOauthRefresh() const
 OpenAiAuth OpenAiAuthProvider::refreshCodexOauth() const
 {
     Q_UNUSED(m_secretStore)
-    Q_UNUSED(m_mode)
+    if ((m_mode.isEmpty() ? QStringLiteral("auto") : m_mode) == QStringLiteral("cliproxy")
+        && m_cliproxyBaseUrl.isEmpty()) {
+        const CliProxyCredentialResult credentials =
+            CliProxyCredentials::loadWithRefresh(m_cliproxyDir, QStringLiteral("codex"), m_cliproxyAccount);
+        if (!credentials.ok) {
+            return {false, {}, QStringLiteral("cliproxy"), credentials.error, {}, {}, {}, {}, true};
+        }
+        return {true,
+                credentials.accessToken,
+                QStringLiteral("cliproxy"),
+                QStringLiteral("CLI Proxy API Codex token refreshed"),
+                {},
+                {},
+                QStringLiteral("https://chatgpt.com/backend-api/codex"),
+                credentials.accountId,
+                true};
+    }
     return readCodexOauth(true);
 }
 
