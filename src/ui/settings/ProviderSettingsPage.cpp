@@ -171,7 +171,8 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     m_authControl->addWidget(m_apiKey);
     m_authControl->addWidget(m_openAiCliproxyAccount);
 
-    m_authStatus->setObjectName(QStringLiteral("statusText"));
+    m_authStatus->setObjectName(QStringLiteral("openAiAuthStatus"));
+    m_authStatus->setText(QStringLiteral("Checking…"));
     m_authStatus->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     m_authStatus->setWordWrap(false);
     m_authStatus->setAttribute(Qt::WA_StyledBackground, false);
@@ -344,6 +345,8 @@ void ProviderSettingsPage::loadAuthModes()
             : openAiMode == QStringLiteral("cliproxy") ? static_cast<QWidget *>(m_openAiCliproxyAccount)
                                                        : static_cast<QWidget *>(m_authStatus));
     m_anthropicCliproxyAccount->setVisible(m_anthropicAuthMode->currentData().toString() == QStringLiteral("cliproxy"));
+    updateAuthControl();
+    updateAnthropicAuthControl();
     updateAnthropicControls();
 }
 
