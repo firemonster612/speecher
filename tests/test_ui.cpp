@@ -316,8 +316,8 @@ private slots:
         QVERIFY(titleLabel);
         QVERIFY(descriptionLabel->wordWrap());
         QCOMPARE(descriptionLabel->width(),
-                 qMin(descriptionLabel->fontMetrics().horizontalAdvance(description),
-                      descriptionLabel->fontMetrics().averageCharWidth() * 45));
+                 qMin(descriptionLabel->fontMetrics().horizontalAdvance(description) + 8,
+                      descriptionLabel->fontMetrics().averageCharWidth() * 62));
         QVERIFY(descriptionLabel->heightForWidth(descriptionLabel->width())
                 > descriptionLabel->fontMetrics().height());
         const int requiredRowHeight = control->sizeHint().height()

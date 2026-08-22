@@ -262,8 +262,8 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     appRulesLayout->addLayout(appRuleButtons);
     // Keep spanning rows from stretching the form to the card edge, which
     // defeats the centered-form alignment every other page shares.
-    m_appPasteRules->setMaximumWidth(600);
-    appRulesControl->setMaximumWidth(600);
+    m_appPasteRules->setMaximumWidth(640);
+    appRulesControl->setMaximumWidth(640);
     targetPasteLayout->addRow(appRulesControl);
     cardLayout->addRow(m_targetPasteControls);
     settings::addSectionRow(cardLayout, QStringLiteral("Clipboard && virtual keyboard"), card);
