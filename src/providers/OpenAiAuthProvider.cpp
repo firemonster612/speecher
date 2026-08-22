@@ -1,6 +1,5 @@
 #include "providers/OpenAiAuthProvider.h"
 
-#include "core/CliToolDiscovery.h"
 #include "core/SecretStore.h"
 #include "providers/CliProxyCredentials.h"
 
@@ -9,8 +8,8 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QProcess>
 #include <QProcessEnvironment>
+#include <QSaveFile>
 #include <QTimeZone>
 
 namespace speecher {
@@ -113,39 +112,62 @@ static int codexRefreshTimeoutMs()
 
 static bool refreshCodexAuth(QString *error)
 {
-    const QString executable = CliToolDiscovery::codexExecutable();
-    if (executable.isEmpty()) {
+    // Refresh straight against the OAuth token endpoint instead of spawning
+    // the Codex CLI: `codex exec` pays CLI startup plus a full model request
+    // just to trigger the same refresh_token grant.
+    QFile file(codexAuthPath());
+    if (!file.open(QIODevice::ReadOnly)) {
         if (error) {
-            *error = QStringLiteral("Could not find Codex CLI; install it and ensure `codex` is on PATH");
+            *error = QStringLiteral("No Codex auth file; sign in with `codex login`");
+        }
+        return false;
+    }
+    QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+    file.close();
+    QJsonObject tokens = root.value(QStringLiteral("tokens")).toObject();
+    const QString refreshToken = tokens.value(QStringLiteral("refresh_token")).toString().trimmed();
+    if (refreshToken.isEmpty()) {
+        if (error) {
+            *error = QStringLiteral("Codex login cannot be refreshed; sign in with `codex login`");
         }
         return false;
     }
 
-    QProcess process;
-    process.setProgram(executable);
-    process.setArguments({QStringLiteral("exec"), QStringLiteral("i"), QStringLiteral("--skip-git-repo-check")});
-    process.start();
-    if (!process.waitForStarted(2000)) {
+    const QString overrideUrl = qEnvironmentVariable("SPEECHER_CODEX_TOKEN_URL");
+    const OauthRefreshResult refreshed = CliProxyCredentials::oauthRefresh(
+        overrideUrl.isEmpty() ? QStringLiteral("https://auth.openai.com/oauth/token") : overrideUrl,
+        CliProxyCredentials::codexClientId(),
+        refreshToken,
+        codexRefreshTimeoutMs());
+    if (!refreshed.ok) {
         if (error) {
-            *error = QStringLiteral("Could not start Codex OAuth refresh");
+            *error = QStringLiteral("Could not refresh the Codex OAuth token: %1").arg(refreshed.error);
         }
         return false;
     }
-    process.closeWriteChannel();
-    if (!process.waitForFinished(codexRefreshTimeoutMs())) {
-        process.kill();
-        process.waitForFinished(1000);
+
+    tokens.insert(QStringLiteral("access_token"), refreshed.accessToken);
+    if (!refreshed.refreshToken.isEmpty()) {
+        tokens.insert(QStringLiteral("refresh_token"), refreshed.refreshToken);
+    }
+    if (!refreshed.idToken.isEmpty()) {
+        tokens.insert(QStringLiteral("id_token"), refreshed.idToken);
+    }
+    root.insert(QStringLiteral("tokens"), tokens);
+    root.insert(QStringLiteral("last_refresh"),
+                QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+
+    QSaveFile saved(codexAuthPath());
+    if (!saved.open(QIODevice::WriteOnly)) {
         if (error) {
-            *error = QStringLiteral("Timed out refreshing Codex OAuth token with `codex exec \"i\" --skip-git-repo-check`");
+            *error = QStringLiteral("Could not write the refreshed Codex auth file");
         }
         return false;
     }
-    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+    saved.write(QJsonDocument(root).toJson());
+    if (!saved.commit()) {
         if (error) {
-            const QString output = QString::fromUtf8(process.readAllStandardError() + process.readAllStandardOutput()).left(240).simplified();
-            *error = output.isEmpty()
-                ? QStringLiteral("Codex OAuth refresh exited unsuccessfully")
-                : QStringLiteral("Codex OAuth refresh exited unsuccessfully: %1").arg(output);
+            *error = QStringLiteral("Could not write the refreshed Codex auth file");
         }
         return false;
     }
