@@ -19,6 +19,10 @@ class ProviderSettingsPage : public QScrollArea {
 public:
     explicit ProviderSettingsPage(SettingsStore &settings, SecretStore &secrets, QWidget *parent = nullptr);
 
+    // The models and auth halves embed into different sidebar sections.
+    QWidget *modelsContent() const { return m_modelsContent; }
+    QWidget *authContent() const { return m_authContent; }
+
     void loadModels();
     void loadAuthModes();
     void loadSecret();
@@ -49,11 +53,13 @@ private:
     QComboBox *m_anthropicEffort;
     QComboBox *m_authMode;
     QComboBox *m_anthropicAuthMode;
+    QComboBox *m_speechAuthMode;
+    QWidget *m_modelsContent = nullptr;
+    QWidget *m_authContent = nullptr;
     QComboBox *m_openAiCliproxyAccount;
     QComboBox *m_anthropicCliproxyAccount;
     QLineEdit *m_cliproxyBaseUrl = nullptr;
     QLineEdit *m_cliproxyApiKey = nullptr;
-    QWidget *m_cliproxySection = nullptr;
     QWidget *m_cliproxyCard = nullptr;
     QStackedWidget *m_authControl;
     QLabel *m_authStatus;

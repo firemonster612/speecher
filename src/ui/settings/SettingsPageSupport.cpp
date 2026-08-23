@@ -376,14 +376,46 @@ QLabel *makePageTitle(const QString &text, QWidget *parent)
     return title;
 }
 
+void addSectionRow(QFormLayout *form, const QString &title, QWidget *parent)
+{
+    // Section titles live inside the card's centered form block so the title
+    // and its content share a left edge instead of the title hugging the page
+    // margin while the form floats in the middle.
+    if (form->rowCount() > 0) {
+        auto *gap = new QWidget(parent);
+        gap->setFixedHeight(groupGap() / 2);
+        form->addRow(gap);
+    }
+    form->addRow(makeSectionLabel(title, parent));
+}
+
 QFrame *makeSettingsCard(QWidget *parent)
 {
     auto *card = new QFrame(parent);
     card->setObjectName(QStringLiteral("settingsCard"));
-    auto *layout = new QFormLayout(card);
+    // Center the form as a block between stretches. QFormLayout's own
+    // formAlignment only centers when every row is a label+field pair; one
+    // spanning row (separator, embedded table) makes it lay out full-width
+    // and pins every label to the left edge.
+    auto *outer = new QHBoxLayout(card);
+    outer->setContentsMargins(0, 0, 0, 0);
+    auto *host = new QWidget(card);
+    host->setObjectName(QStringLiteral("settingsCardForm"));
+    host->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
+    auto *layout = new QFormLayout(host);
     layout->setContentsMargins(0, 0, 0, 0);
     configureFormLayout(layout);
+    outer->addStretch(1);
+    outer->addWidget(host);
+    outer->addStretch(1);
     return card;
+}
+
+QFormLayout *cardFormLayout(QFrame *card)
+{
+    QWidget *host = card->findChild<QWidget *>(QStringLiteral("settingsCardForm"),
+                                               Qt::FindDirectChildrenOnly);
+    return host ? qobject_cast<QFormLayout *>(host->layout()) : nullptr;
 }
 
 QVBoxLayout *makeSettingsPage(QScrollArea *scroll)

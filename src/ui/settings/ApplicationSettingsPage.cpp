@@ -131,11 +131,12 @@ ApplicationSettingsPage::ApplicationSettingsPage(QWidget *parent)
     m_rules->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_rules->setSelectionMode(QAbstractItemView::SingleSelection);
     m_rules->setMinimumHeight(440);
+    m_rules->setMinimumWidth(680);
     m_deleteButton->setEnabled(false);
 
     auto *title = settings::makePageTitle(QStringLiteral("Applications"), this);
     auto *card = settings::makeSettingsCard(this);
-    auto *cardLayout = qobject_cast<QFormLayout *>(card->layout());
+    auto *cardLayout = settings::cardFormLayout(card);
     m_controls = new QWidget(card);
     auto *controlsLayout = new QVBoxLayout(m_controls);
     auto *description = new QLabel(

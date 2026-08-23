@@ -14,7 +14,13 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QFormLayout>
+#include <QFrame>
+#include <QClipboard>
+#include <QGuiApplication>
+#include <QPlainTextEdit>
 #include <QPushButton>
+#include <QToolButton>
 #include <QSaveFile>
 #include <QScopeGuard>
 #include <QSignalSpy>
@@ -34,6 +40,27 @@ private slots:
         settings.raw().clear();
     }
 
+    void liveScreenshotPages()
+    {
+        const QString dir = qEnvironmentVariable("SPEECHER_TEST_SCREENSHOT_DIR");
+        if (dir.isEmpty()) {
+            QSKIP("Screenshot dump is opt-in");
+        }
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        window.resize(980, 680);
+        window.show();
+        QTest::qWait(200);
+        for (int page = 0; page < window.pageCount(); ++page) {
+            window.findChild<QListWidget *>(QStringLiteral("appNavigation"))->setCurrentRow(page);
+            QTest::qWait(120);
+            window.grab().save(QStringLiteral("%1/page-%2-%3.png")
+                                   .arg(dir)
+                                   .arg(page)
+                                   .arg(window.pageTitles().at(page).toLower()));
+        }
+    }
+
     void sidebarShellConstructsWithSharedPageTitles()
     {
         ApplicationController controller(true);
@@ -43,11 +70,12 @@ private slots:
             QStringLiteral("Audio"),
             QStringLiteral("Applications"),
             QStringLiteral("Output"),
+            QStringLiteral("Auth"),
             QStringLiteral("Refinement"),
             QStringLiteral("Vocabulary"),
         };
         AppWindow window(&controller);
-        QCOMPARE(window.pageCount(), 7);
+        QCOMPARE(window.pageCount(), 8);
         QCOMPARE(window.pageTitles(), titles);
     }
 
@@ -94,31 +122,49 @@ private slots:
                  QStringLiteral("Selected microphone"));
     }
 
-    void dictationSummaryTitleSharesFieldVerticalCenter()
+    void dictationSummaryCardsNavigate()
     {
         ApplicationController controller(true);
-        QWidget surface;
-        surface.setStyleSheet(QStringLiteral("QPushButton { min-height: 40px; }"));
-        auto *layout = new QVBoxLayout(&surface);
-        auto *page = new DictationPage(&controller, &surface);
-        layout->addWidget(page);
-        surface.show();
+        DictationPage page(&controller);
+        page.show();
         QCoreApplication::processEvents();
 
-        QLabel *title = nullptr;
-        for (QLabel *candidate : page->findChildren<QLabel *>()) {
-            if (candidate->text() == QStringLiteral("Refinement:")) {
-                title = candidate;
-                break;
-            }
-        }
-        QVERIFY(title);
-        QLabel *value = page->findChild<QLabel *>(QStringLiteral("refinementSummary"));
+        QLabel *value = page.findChild<QLabel *>(QStringLiteral("refinementSummary"));
         QVERIFY(value);
+        QWidget *card = value->parentWidget();
+        while (card && !card->property("navTarget").isValid()) {
+            card = card->parentWidget();
+        }
+        QVERIFY(card);
 
-        const int titleCenter = title->mapTo(page, title->rect().center()).y();
-        const int valueCenter = value->mapTo(page, value->rect().center()).y();
-        QVERIFY(qAbs(titleCenter - valueCenter) <= 1);
+        QSignalSpy navigate(&page, &DictationPage::navigateRequested);
+        QTest::mouseClick(card, Qt::LeftButton);
+        QCOMPARE(navigate.count(), 1);
+        QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::Refinement);
+    }
+
+    void dictationTranscriptCopiesAndUnlocksAfterSession()
+    {
+        ApplicationController controller(true);
+        DictationPage page(&controller);
+        page.show();
+        QCoreApplication::processEvents();
+
+        auto *transcript = page.findChild<QPlainTextEdit *>(QStringLiteral("dictationTranscript"));
+        QVERIFY(transcript);
+        QVERIFY(!transcript->isReadOnly());
+        page.setStatus(QStringLiteral("listening"));
+        QVERIFY(transcript->isReadOnly());
+        page.setStatus(QStringLiteral("refining"));
+        QVERIFY(transcript->isReadOnly());
+        page.setStatus(QStringLiteral("idle"));
+        QVERIFY(!transcript->isReadOnly());
+
+        transcript->setPlainText(QStringLiteral("hello transcript"));
+        auto *copy = transcript->findChild<QToolButton *>(QStringLiteral("copyTranscript"));
+        QVERIFY(copy);
+        copy->click();
+        QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("hello transcript"));
     }
 
     void dictationPageShowsHonestBusyActions()
