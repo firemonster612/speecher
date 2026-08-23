@@ -576,6 +576,51 @@ private slots:
         openAi.cancel();
     }
 
+    void openAiRefreshJobKeepsCliproxyConfiguration()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        connect(&server, &QTcpServer::newConnection, this, [&] {
+            QTcpSocket *socket = server.nextPendingConnection();
+            QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
+            const QByteArray payload = QJsonDocument(QJsonObject{
+                {QStringLiteral("access_token"), QStringLiteral("fresh-selected-token")},
+                {QStringLiteral("refresh_token"), QStringLiteral("rotated-selected-token")},
+                {QStringLiteral("expires_in"), 3600},
+            }).toJson(QJsonDocument::Compact);
+            socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                          + QByteArray::number(payload.size()) + "\r\nConnection: close\r\n\r\n" + payload);
+            socket->flush();
+        });
+        qputenv("SPEECHER_CLIPROXY_CODEX_TOKEN_URL",
+                QStringLiteral("http://127.0.0.1:%1/oauth/token").arg(server.serverPort()).toUtf8());
+        const auto restoreEnv = qScopeGuard([] { qunsetenv("SPEECHER_CLIPROXY_CODEX_TOKEN_URL"); });
+
+        QTemporaryDir dir;
+        const QDateTime expired = QDateTime::currentDateTimeUtc().addSecs(-60);
+        const QDateTime valid = QDateTime::currentDateTimeUtc().addSecs(3600);
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-selected@example.com.json"),
+                                     QStringLiteral("codex"), QStringLiteral("stale-selected-token"), expired));
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-other@example.com.json"),
+                                     QStringLiteral("codex"), QStringLiteral("other-token"), valid));
+
+        RefinementSettings settings;
+        settings.openAiAuthMode = QStringLiteral("cliproxy");
+        settings.openAiCliproxyAccount = QStringLiteral("codex-selected@example.com.json");
+        settings.cliproxyOauthDir = dir.path();
+        OpenAiTranscriptRefiner refiner(nullptr);
+        std::optional<RefinementRefreshJob> job = refiner.createRefreshJob(settings);
+        QVERIFY(job.has_value());
+
+        const RefinementRefreshResult result = job->run();
+        QVERIFY2(result.ok, qPrintable(result.message));
+        QFile selected(dir.filePath(QStringLiteral("codex-selected@example.com.json")));
+        QVERIFY(selected.open(QIODevice::ReadOnly));
+        QCOMPARE(QJsonDocument::fromJson(selected.readAll()).object()
+                     .value(QStringLiteral("access_token")).toString(),
+                 QStringLiteral("fresh-selected-token"));
+    }
+
     void remoteCliproxyWithoutKeyFailsWithClearMessage()
     {
         RefinementSettings settings;
