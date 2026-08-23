@@ -33,6 +33,8 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+    void applyState(const QString &stateName);
+    void setDisplayStatus(const QString &status);
     void updateSummary(bool resolveMicrophone);
     void setSummaryText(QLabel *label, const QString &text);
     void applyToggleState(QPushButton *button, bool active, bool refining, const QString &state) const;

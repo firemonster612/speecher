@@ -383,6 +383,7 @@ void DictationSession::setState(DictationState state, const QString &message)
     }
     qInfo().noquote() << "state changed state=" + stateName()
                       << "messagePresent=" + QString::number(!message.isEmpty());
+    emit stateChanged(stateName());
     emit statusChanged(label);
 }
 

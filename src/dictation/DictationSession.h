@@ -52,6 +52,7 @@ public slots:
     void popupPresented(quint64 generation);
 
 signals:
+    void stateChanged(const QString &stateName);
     void statusChanged(const QString &status);
     void previewChanged(const QString &transcript);
     void transcriptDelivered(const QString &text);

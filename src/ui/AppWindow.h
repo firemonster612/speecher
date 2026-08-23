@@ -3,6 +3,7 @@
 #include "ui/AppPage.h"
 
 #include <QMainWindow>
+#include <QPoint>
 
 class QCloseEvent;
 class QFrame;
@@ -66,6 +67,8 @@ private:
     QTimer *m_autoSaveTimer = nullptr;
     bool m_pageLoadScheduled = false;
     bool m_afterShowLoadScheduled = false;
+    bool m_headerDragPending = false;
+    QPoint m_headerPressPosition;
 };
 
 } // namespace speecher
