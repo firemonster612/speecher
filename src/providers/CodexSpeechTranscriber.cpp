@@ -74,6 +74,12 @@ void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
     m_attemptId = attemptId;
     m_client = new CodexDictationClient(this);
     CodexDictationClient *client = m_client;
+    connect(client, &CodexDictationClient::partialTranscript,
+            this, [this, client, attemptId](const QString &text) {
+                if (m_client == client && m_attemptId == attemptId) {
+                    emit partialTranscript(attemptId, text);
+                }
+            });
     connect(client, &CodexDictationClient::finalTranscript,
             this, [this, client, attemptId](const QString &text) {
                 if (m_client == client && m_attemptId == attemptId) {

@@ -144,7 +144,7 @@ void CodexDictationClient::sendSessionStart(int sampleRateHz)
         {QStringLiteral("max_utterance_duration_ms"), 30000},
         {QStringLiteral("session_ttl_ms"), 300000},
         {QStringLiteral("provider_mode"), QStringLiteral("streaming_sse")},
-        {QStringLiteral("transcript_delivery_mode"), QStringLiteral("final_only")},
+        {QStringLiteral("transcript_delivery_mode"), QStringLiteral("segment")},
         {QStringLiteral("vad"), vad},
     };
     m_socket.sendTextMessage(QString::fromUtf8(QJsonDocument(QJsonObject{
@@ -278,6 +278,17 @@ void CodexDictationClient::handleTextMessage(const QString &message)
             m_sessionClosed = true;
             emit completed();
             m_socket.close();
+        }
+        return;
+    }
+    if (type == QStringLiteral("transcript.segment")) {
+        const QString utteranceId = event.value(QStringLiteral("utterance_id")).toString();
+        if (!utteranceId.isEmpty() && m_finalUtteranceIds.contains(utteranceId)) {
+            return;
+        }
+        const QString text = event.value(QStringLiteral("text")).toString().trimmed();
+        if (!text.isEmpty()) {
+            emit partialTranscript(text);
         }
         return;
     }
