@@ -71,6 +71,7 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
         m_platform->createScreenshotContextProvider(this));
 
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
+    connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::stateChanged);
     connect(m_session, &DictationSession::statusChanged, this, &ApplicationController::statusChanged);
     connect(m_session, &DictationSession::previewChanged, this, &ApplicationController::previewChanged);
     connect(m_session, &DictationSession::transcriptDelivered, this, &ApplicationController::transcriptDelivered);

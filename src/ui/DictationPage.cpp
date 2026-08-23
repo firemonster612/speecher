@@ -254,7 +254,8 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
 
     connect(m_toggle, &QPushButton::clicked, controller, &ApplicationController::toggle);
     connect(m_heroToggle, &QPushButton::clicked, controller, &ApplicationController::toggle);
-    connect(controller, &ApplicationController::statusChanged, this, &DictationPage::setStatus);
+    connect(controller, &ApplicationController::stateChanged, this, &DictationPage::applyState);
+    connect(controller, &ApplicationController::statusChanged, this, &DictationPage::setDisplayStatus);
     connect(controller, &ApplicationController::audioLevelChanged, m_waveform, &WaveformWidget::setLevel);
     connect(controller, &ApplicationController::previewChanged, this, [this](const QString &preview) {
         m_transcript->setPlainText(preview);
@@ -317,24 +318,17 @@ void DictationPage::applyToggleState(QPushButton *button,
 
 void DictationPage::setStatus(const QString &status)
 {
-    const QString state = status.toCaseFolded();
+    applyState(status);
+    setDisplayStatus(status);
+}
+
+void DictationPage::applyState(const QString &stateName)
+{
+    const QString state = stateName.toCaseFolded();
     const bool active = state == QStringLiteral("starting") || state == QStringLiteral("listening");
     const bool refining = state == QStringLiteral("refining");
     applyToggleState(m_toggle, active, refining, state);
     applyToggleState(m_heroToggle, active, refining, state);
-    static const QStringList states{
-        QStringLiteral("idle"),
-        QStringLiteral("starting"),
-        QStringLiteral("listening"),
-        QStringLiteral("stopping"),
-        QStringLiteral("refining"),
-        QStringLiteral("delivering"),
-        QStringLiteral("error"),
-    };
-    m_status->setText(states.contains(state)
-                          ? state.left(1).toUpper() + state.mid(1)
-                          : status);
-    m_status->setForegroundRole(QPalette::WindowText);
     m_waveform->setVisible(active);
     if (active && !m_sessionActive) {
         m_transcript->clear();
@@ -348,6 +342,24 @@ void DictationPage::setStatus(const QString &status)
     const bool sessionRunning = active || refining
         || state == QStringLiteral("stopping") || state == QStringLiteral("delivering");
     m_transcript->setReadOnly(sessionRunning);
+}
+
+void DictationPage::setDisplayStatus(const QString &status)
+{
+    const QString state = status.toCaseFolded();
+    static const QStringList states{
+        QStringLiteral("idle"),
+        QStringLiteral("starting"),
+        QStringLiteral("listening"),
+        QStringLiteral("stopping"),
+        QStringLiteral("refining"),
+        QStringLiteral("delivering"),
+        QStringLiteral("error"),
+    };
+    m_status->setText(states.contains(state)
+                          ? state.left(1).toUpper() + state.mid(1)
+                          : status);
+    m_status->setForegroundRole(QPalette::WindowText);
 }
 
 void DictationPage::refreshSummary()
