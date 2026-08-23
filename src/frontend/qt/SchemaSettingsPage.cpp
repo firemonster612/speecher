@@ -158,8 +158,11 @@ SchemaSettingsPage::SchemaSettingsPage(const SettingsPage &page,
 
 void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout *pageLayout)
 {
+    Section entry;
+    entry.rowStart = m_rows.size();
     if (!section.title.isEmpty()) {
-        pageLayout->addWidget(settings::makeSectionLabel(section.title, this));
+        entry.label = settings::makeSectionLabel(section.title, this);
+        pageLayout->addWidget(entry.label);
         pageLayout->addSpacing(settings::tightSpacing());
     }
     QFrame *card = settings::makeSettingsCard(this);
@@ -183,16 +186,34 @@ void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout 
         addRow(descriptor, group ? group : form, group, separator);
     }
     pageLayout->addWidget(card);
-    if (section.help.isEmpty()) {
-        return;
+    entry.card = card;
+    entry.rowEnd = m_rows.size();
+
+    // A separator's "later row in the same container" is the rest of the
+    // group for a grouped row, or the rest of the section for an ungrouped
+    // one, mirroring the groupId check just above that decided it exists.
+    for (int index = entry.rowStart; index < entry.rowEnd; ++index) {
+        int end = entry.rowEnd;
+        if (m_rows.at(index).group) {
+            end = index + 1;
+            while (end < entry.rowEnd && m_rows.at(end).group == m_rows.at(index).group) {
+                ++end;
+            }
+        }
+        m_rows[index].containerEnd = end;
     }
-    auto *note = new QLabel(section.help, this);
-    note->setObjectName(QStringLiteral("noteText"));
-    note->setWordWrap(true);
-    note->setForegroundRole(QPalette::WindowText);
-    note->setAttribute(Qt::WA_StyledBackground, false);
-    pageLayout->addSpacing(settings::relatedSpacing());
-    pageLayout->addWidget(note);
+
+    if (!section.help.isEmpty()) {
+        auto *note = new QLabel(section.help, this);
+        note->setObjectName(QStringLiteral("noteText"));
+        note->setWordWrap(true);
+        note->setForegroundRole(QPalette::WindowText);
+        note->setAttribute(Qt::WA_StyledBackground, false);
+        pageLayout->addSpacing(settings::relatedSpacing());
+        pageLayout->addWidget(note);
+        entry.note = note;
+    }
+    m_sections.append(entry);
 }
 
 SchemaCustomRow SchemaSettingsPage::supplyRow(const SettingsRow &descriptor,
@@ -494,13 +515,15 @@ void SchemaSettingsPage::refreshRows()
 {
     AppSettings draft = m_loaded;
     appendToDraft(draft);
-    for (const Row &row : std::as_const(m_rows)) {
+    // Recorded rather than read back from the widgets: a row's own frame may
+    // sit under a card this same pass is about to show or hide, and Qt's
+    // isVisible()/isVisibleTo() would see that ancestor's stale state.
+    QList<bool> shown(m_rows.size(), true);
+    for (int index = 0; index < m_rows.size(); ++index) {
+        const Row &row = m_rows.at(index);
         if (row.descriptor.visible) {
-            const bool shown = row.descriptor.visible(draft, m_capabilities);
-            row.frame->setVisible(shown);
-            if (row.separator) {
-                row.separator->setVisible(shown);
-            }
+            shown[index] = row.descriptor.visible(draft, m_capabilities);
+            row.frame->setVisible(shown[index]);
         }
         if (row.descriptor.kind == RowKind::Info && row.descriptor.value && row.setValue) {
             row.setValue(row.descriptor.value(draft));
@@ -513,6 +536,39 @@ void SchemaSettingsPage::refreshRows()
         QWidget *hinted = row.group ? row.group : row.control;
         gated->setEnabled(live);
         hinted->setToolTip(live ? row.descriptor.tooltip : row.descriptor.disabledHelp);
+    }
+
+    // Separators and section chrome depend on every row's visibility above, so
+    // they need their own pass once that has settled.
+    for (int index = 0; index < m_rows.size(); ++index) {
+        const Row &row = m_rows.at(index);
+        if (!row.separator) {
+            continue;
+        }
+        bool laterVisible = false;
+        for (int later = index + 1; later < row.containerEnd; ++later) {
+            if (shown[later]) {
+                laterVisible = true;
+                break;
+            }
+        }
+        row.separator->setVisible(shown[index] && laterVisible);
+    }
+    for (const Section &section : std::as_const(m_sections)) {
+        bool anyRowVisible = false;
+        for (int index = section.rowStart; index < section.rowEnd; ++index) {
+            if (shown[index]) {
+                anyRowVisible = true;
+                break;
+            }
+        }
+        section.card->setVisible(anyRowVisible);
+        if (section.label) {
+            section.label->setVisible(anyRowVisible);
+        }
+        if (section.note) {
+            section.note->setVisible(anyRowVisible);
+        }
     }
 }
 

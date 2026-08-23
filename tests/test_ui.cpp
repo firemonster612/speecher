@@ -458,6 +458,40 @@ private slots:
         QCOMPARE(settings.cliproxyApiKey(), QStringLiteral("new-server-key"));
     }
 
+    void providerSettingsHidesCliproxyServerCardUnlessRouted()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore secrets(&settings);
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        ProviderCustomRows providerRows(settings, secrets);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+        page->load(settings.snapshot());
+
+        auto *baseUrl = page->findChild<QLineEdit *>(QStringLiteral("cliproxyBaseUrl"));
+        auto *apiKey = page->findChild<QLineEdit *>(QStringLiteral("cliproxyApiKey"));
+        QVERIFY(baseUrl);
+        QVERIFY(apiKey);
+
+        // Neither provider routes through the server by default, so the card
+        // stays out of the way.
+        QVERIFY(!baseUrl->isVisibleTo(page.get()));
+        QVERIFY(!apiKey->isVisibleTo(page.get()));
+
+        settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
+        page->load(settings.snapshot());
+        QVERIFY(baseUrl->isVisibleTo(page.get()));
+        QVERIFY(apiKey->isVisibleTo(page.get()));
+
+        settings.setOpenAiAuthMode(QStringLiteral("auto"));
+        settings.setAnthropicAuthMode(QStringLiteral("cliproxy"));
+        page->load(settings.snapshot());
+        QVERIFY(baseUrl->isVisibleTo(page.get()));
+        QVERIFY(apiKey->isVisibleTo(page.get()));
+    }
+
     void applicationSettingsShowsBuiltInsAndAddsCustomRules()
     {
         ProviderRegistry providers;

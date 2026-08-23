@@ -73,8 +73,22 @@ private:
         QWidget *group = nullptr;
         // The line below the row, which comes and goes with it.
         QWidget *separator = nullptr;
+        // One past the index (in m_rows) of the last row whose visibility can
+        // keep this row's separator alive: the rest of the group for a grouped
+        // row, the rest of the section for an ungrouped one.
+        int containerEnd = 0;
         std::function<QVariant()> value;
         std::function<void(const QVariant &)> setValue;
+    };
+
+    // A section's chrome — its card, title and help note — only earns its
+    // place on screen while at least one of its rows does.
+    struct Section {
+        QWidget *card = nullptr;
+        QWidget *label = nullptr;
+        QWidget *note = nullptr;
+        int rowStart = 0;
+        int rowEnd = 0;
     };
 
     void addSection(const SettingsSection &section, QVBoxLayout *pageLayout);
@@ -88,6 +102,7 @@ private:
 
     SchemaCustomRowFactory m_customRows;
     QList<Row> m_rows;
+    QList<Section> m_sections;
     Capabilities m_capabilities;
     AppSettings m_loaded;
     bool m_expensiveRowsLoaded = false;

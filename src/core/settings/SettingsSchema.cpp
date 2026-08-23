@@ -1296,6 +1296,14 @@ QList<ProviderAccount> providerAccounts()
     return {openAi, anthropic};
 }
 
+// Only a provider actually routed through the CLI Proxy API server needs this
+// card; a person using API keys or CLI tokens directly has nothing to set here.
+bool cliproxyServerRowVisible(const AppSettings &settings, const Capabilities &)
+{
+    return settings.refinement.openAiAuthMode == kCliProxyAuthMode
+        || settings.refinement.anthropicAuthMode == kCliProxyAuthMode;
+}
+
 SettingsSection cliproxyServerSection()
 {
     SettingsRow baseUrl = customRow(
@@ -1313,6 +1321,7 @@ SettingsSection cliproxyServerSection()
         }
         settings.refinement.cliproxyBaseUrl = base;
     };
+    baseUrl.visible = cliproxyServerRowVisible;
 
     SettingsRow apiKey = customRow(
         QStringLiteral("cliproxyApiKey"),
@@ -1325,6 +1334,7 @@ SettingsSection cliproxyServerSection()
     apiKey.apply = [](AppSettings &settings, const QVariant &value) {
         settings.refinement.cliproxyApiKey = value.toString().trimmed();
     };
+    apiKey.visible = cliproxyServerRowVisible;
 
     return {QStringLiteral("CLI Proxy API"), QString(), {std::move(baseUrl), std::move(apiKey)}};
 }
