@@ -258,6 +258,20 @@ private slots:
         QCOMPARE(settings.refinementProvider(), QStringLiteral("anthropic"));
     }
 
+    void settingsSnapshotApplyPersistsCliProxyAccounts()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        AppSettings draft = settings.snapshot();
+        draft.refinement.openAiCliproxyAccount = QStringLiteral("codex-user@example.com.json");
+        draft.refinement.anthropicCliproxyAccount = QStringLiteral("claude-user@example.com.json");
+
+        settings.applySnapshot(draft);
+
+        QCOMPARE(settings.openAiCliproxyAccount(), QStringLiteral("codex-user@example.com.json"));
+        QCOMPARE(settings.anthropicCliproxyAccount(), QStringLiteral("claude-user@example.com.json"));
+    }
+
     void settingsBindingRulesRoundTrip()
     {
         SettingsStore settings;

@@ -1,21 +1,22 @@
 #pragma once
 
 #include "app/AppFrontEnd.h"
-#include "frontend/qt/QtFrontEnd.h"
 
 #include <memory>
+
+#include <QPointer>
 
 namespace speecher {
 
 class ApplicationController;
+class SetupAssistant;
 
 // Speecher's user interface on AppKit and SwiftUI: a menu bar extra, a settings
 // window whose panes come from the same schema the Qt front end renders, and a
 // floating dictation panel. See docs/adr/0001-per-platform-front-ends.md and
 // .scratch/macos-port/mac-ia.md.
 //
-// The setup assistant is still the Qt front end's, which this one owns for as
-// long as that is true.
+// The setup assistant is the one remaining Qt window.
 class MacFrontEnd final : public AppFrontEnd {
 public:
     explicit MacFrontEnd(ApplicationController *controller);
@@ -33,7 +34,7 @@ private:
     struct Native;
 
     ApplicationController *m_controller;
-    QtFrontEnd m_qt;
+    QPointer<SetupAssistant> m_setupAssistant;
     std::unique_ptr<Native> m_native;
 };
 

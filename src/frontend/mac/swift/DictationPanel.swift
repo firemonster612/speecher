@@ -27,9 +27,14 @@ struct DictationPanelView: View {
             Image(systemName: state.problem.isEmpty ? "mic.fill" : "exclamationmark.triangle.fill")
                 .accessibilityLabel(state.problem.isEmpty ? "Dictating" : "Dictation problem")
             VStack(alignment: .leading) {
-                Text(state.problem.isEmpty ? state.status : state.problem)
+                Text(headline)
+                    .font(.headline)
+                    .lineLimit(2)
                 if !state.preview.isEmpty {
-                    Text(state.preview).lineLimit(1)
+                    Text(state.preview)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
             Spacer()
@@ -42,11 +47,18 @@ struct DictationPanelView: View {
             } else {
                 Gauge(value: Double(min(max(state.level, 0), 1))) { EmptyView() }
                     .gaugeStyle(.linearCapacity)
+                    .frame(width: 96)
                     .accessibilityLabel("Input level")
             }
         }
         .scenePadding()
         .glassEffect()
+    }
+
+    private var headline: String {
+        if !state.problem.isEmpty { return state.problem }
+        guard !state.status.isEmpty else { return "Listening" }
+        return state.status.prefix(1).uppercased() + state.status.dropFirst()
     }
 }
 
@@ -65,15 +77,15 @@ final class SpeecherDictationPanel {
         // Non-activating is the whole point, and only an NSPanel accepts that
         // style mask. Borderless because the pill is the window: a titlebar
         // over a floating status readout would be chrome nobody asked for.
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 68),
+        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 72),
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered,
                         defer: false)
         panel.level = .statusBar
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.animationBehavior = .none
+        panel.hasShadow = true
+        panel.animationBehavior = .utilityWindow
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
@@ -111,6 +123,9 @@ final class SpeecherDictationPanel {
     }
 
     func show(problem: String) {
+        // The pill is one fixed height, so a two-line problem and the transcript
+        // of the attempt before it cannot both fit; the problem is what matters.
+        state.preview = ""
         state.problem = problem
         present()
     }

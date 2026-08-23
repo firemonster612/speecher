@@ -162,41 +162,44 @@ struct CollectionRow: View {
     }
 
     var body: some View {
-        table
-            // The descriptor says how tall this table is worth being. Left to
-            // itself in a form it takes every point the pane has and pushes
-            // whatever follows it off the bottom.
-            .frame(height: CGFloat(editor.collection.minimumHeight))
-            .onAppear { editor.seed() }
-        accessoryBar
+        VStack(spacing: 0) {
+            table
+                // The descriptor says how tall this table is worth being. Left
+                // to itself in a form it takes every point the pane has and
+                // pushes whatever follows it off the bottom.
+                .frame(height: CGFloat(editor.collection.minimumHeight))
+            accessoryBar
+        }
+        .onAppear { editor.seed() }
         ForEach(editor.problems, id: \.self) { problem in
             Text(problem)
         }
     }
 
-    @ViewBuilder private var table: some View {
-        if editor.records.isEmpty {
-            ContentUnavailableView {
-                Label("No \(row.label.isEmpty ? "Records" : row.label)", systemImage: "tray")
-            } description: {
-                Text(editor.canAdd
-                     ? "Records you add will appear here."
-                     : "Speecher fills this in as it learns.")
-            } actions: {
-                if editor.canAdd {
-                    Button(editor.collection.addLabel) { editor.adding = true }
+    private var table: some View {
+        Table(editor.records, selection: $editor.selection) {
+            TableColumnForEach(editor.collection.columns, id: \.columnId) { column in
+                TableColumn(column.title) { record in
+                    RecordCell(editor: editor, column: column, record: record)
+                        .help(editor.tooltip(column.columnId, record: record.id))
                 }
+                .width(min: Self.width(column).min,
+                       ideal: Self.width(column).ideal,
+                       max: Self.width(column).max)
             }
-        } else {
-            Table(editor.records, selection: $editor.selection) {
-                TableColumnForEach(editor.collection.columns, id: \.columnId) { column in
-                    TableColumn(column.title) { record in
-                        RecordCell(editor: editor, column: column, record: record)
-                            .help(editor.tooltip(column.columnId, record: record.id))
+        }
+        .overlay {
+            if editor.records.isEmpty {
+                ContentUnavailableView {
+                    Label("No \(row.label.isEmpty ? "Records" : row.label)", systemImage: "tray")
+                } description: {
+                    Text(editor.canAdd
+                         ? "Records you add will appear here."
+                         : "Speecher fills this in as it learns.")
+                } actions: {
+                    if editor.canAdd {
+                        Button(editor.collection.addLabel) { editor.adding = true }
                     }
-                    .width(min: Self.width(column).min,
-                           ideal: Self.width(column).ideal,
-                           max: Self.width(column).max)
                 }
             }
         }
@@ -211,11 +214,11 @@ struct CollectionRow: View {
         case (.toggle, _):
             return (44, 48, 56)
         case (_, true):
-            return (120, 160, nil)
+            return (100, 132, nil)
         default:
-            // Small enough that five columns still fit the width a grouped form
-            // gives a card, because the last one over the edge is simply gone.
-            return (64, 92, nil)
+            // Keep every column present at the default settings-window width;
+            // people can widen the ones whose values need more room.
+            return (52, 72, nil)
         }
     }
 

@@ -510,8 +510,7 @@ if(APPLE AND SPEECHER_WITH_SWIFT_UI)
   target_compile_options(speecher_frontend_mac PRIVATE
     $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>
   )
-  # Qt, still: the dictation popup and the setup assistant are the Qt front
-  # end's until later slices bring them across.
+  # Qt, still: macOS reuses the setup assistant from the Qt front end.
   target_link_libraries(speecher_frontend_mac PUBLIC
     speecher_frontend_qt speecher_frontend_mac_swift "-framework AppKit"
   )
@@ -730,6 +729,17 @@ if(SPEECHER_BUILD_TESTS)
   target_link_libraries(speecher_tests PRIVATE
     speecher_frontend_qt Qt6::Test
   )
+  if(TARGET speecher_frontend_mac)
+    target_sources(speecher_tests PRIVATE tests/test_mac_frontend.mm)
+    target_compile_definitions(speecher_tests PRIVATE SPEECHER_WITH_SWIFT_UI=1)
+    # ARC, as the bridge itself is built: an unmanaged bridge in one test would
+    # outlive its controller and every suite after it.
+    target_compile_options(speecher_tests PRIVATE
+      $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>
+    )
+    target_link_libraries(speecher_tests PRIVATE speecher_frontend_mac)
+    set_target_properties(speecher_tests PROPERTIES LINKER_LANGUAGE CXX)
+  endif()
   add_test(NAME speecher_tests COMMAND speecher_tests)
   set_tests_properties(speecher_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
@@ -738,4 +748,3 @@ if(SPEECHER_BUILD_TESTS)
   )
   target_link_libraries(speecher_atspi_fixture PRIVATE Qt6::Widgets)
 endif()
-

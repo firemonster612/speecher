@@ -29,5 +29,8 @@ int main(int argc, char **argv)
     result |= runClaudeVoiceTests(argc, argv);
     result |= runCodexDictationTests(argc, argv);
     result |= runAudioPcmConverterTests(argc, argv);
+#ifdef SPEECHER_WITH_SWIFT_UI
+    result |= runMacFrontEndTests(argc, argv);
+#endif
     return result;
 }

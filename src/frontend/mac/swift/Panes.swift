@@ -4,7 +4,8 @@ import SwiftUI
 // pane a row appears on, and under which heading, is this file's decision — see
 // .scratch/macos-port/mac-ia.md.
 
-/// One card of a pane: a heading, a footnote, and the rows it holds.
+/// One card this file asks a pane for: a heading, a footnote, and the schema
+/// rows it names.
 struct PaneGroup: Identifiable {
     let title: String
     let help: String
@@ -21,6 +22,17 @@ struct PaneGroup: Identifiable {
     }
 }
 
+/// One card a pane actually shows: a group's rows, or a schema section no group
+/// claimed. Both rendering and the sidebar's search read a pane as these, so a
+/// row cannot be visible on a pane and missing from its search.
+struct PaneCard: Identifiable {
+    let title: String
+    let help: String
+    let rows: [SettingsRowModel]
+
+    var id: String { title + rows.map(\.rowId).joined() }
+}
+
 /// What a pane's groups are to each other.
 enum PaneLayout {
     /// Sections of one page, shown together.
@@ -35,17 +47,21 @@ struct Pane: Identifiable {
     let id: String
     let title: String
     let symbol: String
+    /// Schema pages whose otherwise-unmapped rows fall back to this pane.
+    let schemaPages: [String]
     let layout: PaneLayout
     let groups: [PaneGroup]
 
     init(_ id: String,
          _ title: String,
          _ symbol: String,
+         schemaPages: [String] = [],
          layout: PaneLayout = .sections,
          _ groups: [PaneGroup] = []) {
         self.id = id
         self.title = title
         self.symbol = symbol
+        self.schemaPages = schemaPages
         self.layout = layout
         self.groups = groups
     }
@@ -53,26 +69,26 @@ struct Pane: Identifiable {
 
 extension Pane {
     static let all: [Pane] = [
-        Pane("general", "General", "gearshape", [
+        Pane("general", "General", "gearshape", schemaPages: ["general"], [
             PaneGroup("Appearance", ["themeControl", "pauseMedia", "soundsEnabled", "previewWords"]),
             PaneGroup("System", ["clipboardOutputStatus"]),
             PaneGroup("Maintenance", ["runSetup", "openReleases"]),
         ]),
-        Pane("dictation", "Dictation", "mic", [
+        Pane("dictation", "Dictation", "mic", schemaPages: ["audio"], [
             PaneGroup("Transcription", ["speechProvider"]),
             PaneGroup("Microphone", ["audioDevice", "captureMode"]),
             PaneGroup("Timing", ["preRollMs", "postRollMs", "readinessTimeoutMs"]),
             PaneGroup("Silence", ["vadEnabled", "vadThresholdPercent"]),
         ]),
         Pane("shortcut", "Shortcut", "command", layout: .shortcut),
-        Pane("text", "Text", "text.cursor", [
+        Pane("text", "Text", "text.cursor", schemaPages: ["refinement"], [
             PaneGroup("Refinement", ["refinementProvider",
                                      "defaultWritingProfile",
                                      "targetContextControl",
                                      "includeScreenshotContext"]),
             PaneGroup("Profile Behavior", ["writingProfileBehavior"]),
         ]),
-        Pane("delivery", "Delivery", "arrow.right.doc.on.clipboard", [
+        Pane("delivery", "Delivery", "arrow.right.doc.on.clipboard", schemaPages: ["output"], [
             PaneGroup("Delivery", ["outputMethod",
                                    "outputFormat",
                                    "completionStatusDuration",
@@ -82,16 +98,17 @@ extension Pane {
             // macOS is not one; an empty group draws nothing.
             PaneGroup("Advanced", ["virtualKeyboard"]),
         ]),
-        Pane("apps", "Apps", "square.grid.2x2", [
+        Pane("apps", "Apps", "square.grid.2x2", schemaPages: ["applications"], layout: .alternatives, [
             PaneGroup("Application Recognition", ["appRecognitionRules"]),
             PaneGroup("App-Specific Paste Rules", ["applicationPasteRules"]),
         ]),
-        Pane("vocabulary", "Vocabulary", "character.book.closed", layout: .alternatives, [
+        Pane("vocabulary", "Vocabulary", "character.book.closed",
+             schemaPages: ["vocabulary", "corrections", "bindings"], layout: .alternatives, [
             PaneGroup("Terms", ["vocabularyEntries", "vocabularyLimit"]),
             PaneGroup("Corrections", ["correctionLearningControl", "learnedCorrections"]),
             PaneGroup("Replacements", ["bindingRules"]),
         ]),
-        Pane("accounts", "Accounts", "person.badge.key", [
+        Pane("accounts", "Accounts", "person.badge.key", schemaPages: ["providers"], [
             PaneGroup("OpenAI", ["openAiModel",
                                  "openAiEffort",
                                  "openAiAuthMode",
@@ -134,9 +151,8 @@ struct PaneView: View {
             ShortcutPane(model: model)
         case .sections:
             Form {
-                ForEach(pane.groups) { group in
-                    card(group)
-                }
+                ForEach(model.groupCards(for: pane)) { card($0) }
+                unclaimedCards
             }
             .formStyle(.grouped)
         case .alternatives:
@@ -150,43 +166,31 @@ struct PaneView: View {
                     .pickerStyle(.segmented)
                     .labelsHidden()
                 }
-                if pane.groups.indices.contains(alternative) {
-                    card(pane.groups[alternative], titled: false)
+                let groups = model.groupCards(for: pane)
+                if groups.indices.contains(alternative) {
+                    card(groups[alternative], titled: false)
                 }
+                unclaimedCards
             }
             .formStyle(.grouped)
         }
     }
 
-    @ViewBuilder private func card(_ group: PaneGroup, titled: Bool = true) -> some View {
-        let rows = model.rows(matching: group.rows)
-        if !rows.isEmpty {
+    @ViewBuilder private func card(_ card: PaneCard, titled: Bool = true) -> some View {
+        if !card.rows.isEmpty {
             Section {
-                ForEach(rows, id: \.rowId) { row in
+                ForEach(card.rows, id: \.rowId) { row in
                     RowView(row: row, model: model)
                 }
             } header: {
-                if titled { Text(group.title) }
+                if titled { Text(card.title) }
             } footer: {
-                let note = footnote(group, rows)
-                if !note.isEmpty { Text(note) }
+                if !card.help.isEmpty { Text(card.help) }
             }
         }
     }
 
-    /// What a group says about itself, or failing that what the schema says
-    /// under the section these rows came from, or the help of a row that fills
-    /// the whole card and so has nowhere else to put it.
-    private func footnote(_ group: PaneGroup, _ rows: [SettingsRowModel]) -> String {
-        if !group.help.isEmpty { return group.help }
-        let ids = Set(rows.map(\.rowId))
-        for page in model.pages {
-            for section in page.sections where !section.help.isEmpty {
-                if section.rows.contains(where: { ids.contains($0.rowId) }) {
-                    return section.help
-                }
-            }
-        }
-        return rows.first { $0.collection != nil }?.help ?? ""
+    @ViewBuilder private var unclaimedCards: some View {
+        ForEach(model.unclaimedCards(for: pane)) { card($0) }
     }
 }

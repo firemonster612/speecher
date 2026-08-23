@@ -17,6 +17,7 @@ struct MenuBarPanel: View {
     var body: some View {
         VStack(alignment: .leading) {
             Label(statusLabel, systemImage: model.listening ? "mic.fill" : "mic")
+                .font(.headline)
             if model.listening {
                 // A level meter is not progress towards anything, so it is a
                 // gauge rather than a progress view, and its label is hidden
@@ -37,7 +38,9 @@ struct MenuBarPanel: View {
             if model.transcript.isEmpty {
                 Text("Nothing dictated yet.")
             } else {
-                Text(model.transcript).lineLimit(3)
+                Text(model.transcript)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
                 Button("Copy Transcript", systemImage: "doc.on.doc") { model.copyTranscript() }
             }
             Divider()

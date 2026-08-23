@@ -353,6 +353,7 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 - (instancetype)initWithStore:(SettingsStore *)store
                        schema:(const SettingsSchema &)schema
                  capabilities:(const Capabilities &)capabilities;
+- (void)setTargetAccessibility:(BOOL)available;
 // The settings as they stand, including edits not yet committed, which is what
 // the credential row has to read the chosen auth mode from.
 - (const AppSettings &)draft;
@@ -553,6 +554,11 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     _state->expensiveReady = YES;
 }
 
+- (void)setTargetAccessibility:(BOOL)available
+{
+    _state->capabilities.targetAccessibility = available;
+}
+
 - (NSArray<NSString *> *)problemsWith:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
 {
     const SettingsRow *row = [self rowWithId:rowId];
@@ -670,8 +676,9 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     QObject::connect(controller,
                      &ApplicationController::accessibilityStateChanged,
                      &_state->lifetime,
-                     [weakSelf](bool, bool, bool) {
+                     [weakSelf](bool supported, bool enabled, bool) {
                          SpeecherBridge *bridge = weakSelf;
+                         [bridge.settingsSchema setTargetAccessibility:supported && enabled];
                          if (bridge.accessibilityChanged) {
                              bridge.accessibilityChanged();
                          }

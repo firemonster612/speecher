@@ -70,6 +70,7 @@ final class AppModel: ObservableObject {
         bridge.accessibilityChanged = { [weak self] in
             guard let self else { return }
             accessibilityEnabled = bridge.accessibilityEnabled
+            pages = bridge.settingsSchema.pages
         }
     }
 
@@ -125,6 +126,55 @@ final class AppModel: ObservableObject {
         return found
     }
 
+    /// A pane's groups, in order, each with the rows the schema currently offers
+    /// it. A group whose rows are all absent stays in the list and draws
+    /// nothing, so the index a segmented picker holds keeps meaning what it did.
+    func groupCards(for pane: Pane) -> [PaneCard] {
+        pane.groups.map { group in
+            let placed = rows(matching: group.rows)
+            return PaneCard(title: group.title, help: footnote(group, placed), rows: placed)
+        }
+    }
+
+    /// Schema rows no pane placed explicitly, as the cards the schema itself
+    /// describes: they appear on the pane that owns their schema page, keeping
+    /// their section's title and help. A newly added schema page falls back to
+    /// General.
+    func unclaimedCards(for pane: Pane) -> [PaneCard] {
+        let claimed = Set(Pane.all.flatMap { candidate in
+            candidate.groups.flatMap { rows(matching: $0.rows).map(\.rowId) }
+        })
+        let ownedPages = Set(Pane.all.flatMap(\.schemaPages))
+        return pages.flatMap { page -> [PaneCard] in
+            let belongsHere = pane.schemaPages.contains(page.pageId)
+                || (pane.id == "general" && !ownedPages.contains(page.pageId))
+            guard belongsHere else { return [] }
+            return page.sections.compactMap { section -> PaneCard? in
+                let unplaced = section.rows.filter { !claimed.contains($0.rowId) }
+                guard !unplaced.isEmpty else { return nil }
+                return PaneCard(title: section.title.isEmpty ? page.title : section.title,
+                                help: section.help,
+                                rows: unplaced)
+            }
+        }
+    }
+
+    /// What a group says about itself, or failing that what the schema says
+    /// under the section these rows came from, or the help of a row that fills
+    /// the whole card and so has nowhere else to put it.
+    private func footnote(_ group: PaneGroup, _ rows: [SettingsRowModel]) -> String {
+        if !group.help.isEmpty { return group.help }
+        let ids = Set(rows.map(\.rowId))
+        for page in pages {
+            for section in page.sections where !section.help.isEmpty {
+                if section.rows.contains(where: { ids.contains($0.rowId) }) {
+                    return section.help
+                }
+            }
+        }
+        return rows.first { $0.collection != nil }?.help ?? ""
+    }
+
     func trigger(_ rowId: String) {
         bridge.settingsSchema.actionTriggered?(rowId)
     }
@@ -177,16 +227,17 @@ final class AppModel: ObservableObject {
         NSPasteboard.general.setString(transcript, forType: .string)
     }
 
-    /// Whether anything on a pane — its name, a group heading, a row, or the
-    /// help under one — answers to what was typed in the search field.
+    /// Whether anything on a pane — its name, a card heading, a row, or the
+    /// help under one — answers to what was typed in the search field. The cards
+    /// are the ones the pane draws, so nothing visible is unsearchable.
     func pane(_ pane: Pane, matches query: String) -> Bool {
         if query.isEmpty { return true }
         let needle = query.lowercased()
         let hit = { (text: String) in text.lowercased().contains(needle) }
         if hit(pane.title) { return true }
-        return pane.groups.contains { group in
-            hit(group.title) || hit(group.help)
-                || rows(matching: group.rows).contains { hit($0.label) || hit($0.help) }
+        return (groupCards(for: pane) + unclaimedCards(for: pane)).contains { card in
+            hit(card.title) || hit(card.help)
+                || card.rows.contains { hit($0.label) || hit($0.help) }
         }
     }
 }
