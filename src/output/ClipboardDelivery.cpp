@@ -137,8 +137,13 @@ bool ClipboardDelivery::copyQt(const DeliveryContent &content,
 bool ClipboardDelivery::canSnapshot() const
 {
 #ifdef SPEECHER_WITH_WAYLAND
-    if (WlClipboardDelivery::canSnapshot()) {
-        return true;
+    // On Wayland, QClipboard only sees a selection its own client received a
+    // data-device event for, so a background client reads nothing without
+    // wl-paste. Reporting that empty read as a real snapshot is how restore
+    // ends up wiping a clipboard that was never empty, so a Wayland session
+    // must answer through wl-paste's availability, never through Qt.
+    if (WlClipboardDelivery::isWaylandSession()) {
+        return WlClipboardDelivery::canSnapshot();
     }
 #endif
     return systemClipboard() != nullptr;
@@ -147,7 +152,7 @@ bool ClipboardDelivery::canSnapshot() const
 bool ClipboardDelivery::capture(ClipboardSnapshot *snapshot, QString *error) const
 {
 #ifdef SPEECHER_WITH_WAYLAND
-    if (WlClipboardDelivery::canSnapshot()) {
+    if (WlClipboardDelivery::isWaylandSession()) {
         return WlClipboardDelivery::capture(snapshot, error);
     }
 #endif
@@ -157,7 +162,7 @@ bool ClipboardDelivery::capture(ClipboardSnapshot *snapshot, QString *error) con
 bool ClipboardDelivery::restore(const ClipboardSnapshot &snapshot, QString *error) const
 {
 #ifdef SPEECHER_WITH_WAYLAND
-    if (WlClipboardDelivery::canSnapshot()) {
+    if (WlClipboardDelivery::isWaylandSession()) {
         return WlClipboardDelivery::restore(snapshot, error);
     }
 #endif
