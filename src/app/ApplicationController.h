@@ -64,6 +64,7 @@ public slots:
                           QLocalSocket *socket);
 
 signals:
+    void stateChanged(const QString &stateName);
     void statusChanged(const QString &status);
     void previewChanged(const QString &preview);
     void transcriptDelivered(const QString &text);

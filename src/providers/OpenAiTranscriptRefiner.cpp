@@ -48,10 +48,22 @@ std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(co
 
     auto refreshed = std::make_shared<OpenAiAuth>();
     const QString authMode = settings.openAiAuthMode;
+    const QString cliproxyAccount = settings.openAiCliproxyAccount;
+    const QString cliproxyDir = settings.cliproxyOauthDir;
+    const QString cliproxyBaseUrl = settings.cliproxyBaseUrl;
+    const QString cliproxyApiKey = settings.cliproxyApiKey;
     RefinementRefreshJob job;
     job.showRefreshIndicator = true;
-    job.run = [authMode, refreshed] {
-        *refreshed = OpenAiAuthProvider(nullptr, authMode).refreshCodexOauth();
+    job.run = [authMode, cliproxyAccount, cliproxyDir, cliproxyBaseUrl, cliproxyApiKey, refreshed] {
+        *refreshed = OpenAiAuthProvider(nullptr,
+                                        authMode,
+                                        cliproxyAccount,
+                                        cliproxyDir,
+                                        {},
+                                        {},
+                                        cliproxyBaseUrl,
+                                        cliproxyApiKey)
+                         .refreshCodexOauth();
         return RefinementRefreshResult{refreshed->ok, refreshed->status};
     };
     job.apply = [this, refreshed](const RefinementRefreshResult &result) {

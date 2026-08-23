@@ -266,6 +266,42 @@ private slots:
         QVERIFY(!page.hasAuthChanges());
     }
 
+    void providerSettingsPreservesSpeechAccountsInServerMode()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore secrets(&settings);
+        QTemporaryDir dir;
+        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), dir.path());
+        settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
+        settings.setAnthropicAuthMode(QStringLiteral("cliproxy"));
+        settings.setOpenAiCliproxyAccount(QStringLiteral("codex-a@example.com.json"));
+        settings.setAnthropicCliproxyAccount(QStringLiteral("claude-a@example.com.json"));
+        settings.setCliproxyBaseUrl(QStringLiteral("http://proxy.example:8317"));
+        const QDateTime valid = QDateTime::currentDateTimeUtc().addSecs(3600);
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-a@example.com.json"), QStringLiteral("codex"),
+                                     QStringLiteral("codex-token"), valid));
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"), QStringLiteral("claude"),
+                                     QStringLiteral("claude-token"), valid));
+
+        ProviderSettingsPage page(settings, secrets);
+        page.loadModels();
+        page.loadAuthModes();
+        auto *openAi = page.findChild<QComboBox *>(QStringLiteral("openAiCliproxyAccount"));
+        auto *anthropic = page.findChild<QComboBox *>(QStringLiteral("anthropicCliproxyAccount"));
+        QVERIFY(openAi);
+        QVERIFY(anthropic);
+        QCOMPARE(openAi->currentData().toString(), QStringLiteral("codex-a@example.com.json"));
+        QCOMPARE(anthropic->currentData().toString(), QStringLiteral("claude-a@example.com.json"));
+        QVERIFY(openAi->isEnabled());
+        QVERIFY(anthropic->isEnabled());
+        QVERIFY(!page.hasAuthChanges());
+
+        page.saveAuthModes();
+        QCOMPARE(settings.openAiCliproxyAccount(), QStringLiteral("codex-a@example.com.json"));
+        QCOMPARE(settings.anthropicCliproxyAccount(), QStringLiteral("claude-a@example.com.json"));
+    }
+
     void applicationSettingsShowsBuiltInsAndAddsCustomRules()
     {
         ApplicationSettingsPage page;
@@ -316,8 +352,8 @@ private slots:
         QVERIFY(titleLabel);
         QVERIFY(descriptionLabel->wordWrap());
         QCOMPARE(descriptionLabel->width(),
-                 qMin(descriptionLabel->fontMetrics().horizontalAdvance(description),
-                      descriptionLabel->fontMetrics().averageCharWidth() * 45));
+                 qMin(descriptionLabel->fontMetrics().horizontalAdvance(description) + 8,
+                      descriptionLabel->fontMetrics().averageCharWidth() * 62));
         QVERIFY(descriptionLabel->heightForWidth(descriptionLabel->width())
                 > descriptionLabel->fontMetrics().height());
         const int requiredRowHeight = control->sizeHint().height()

@@ -17,6 +17,7 @@
 
 #include <QCloseEvent>
 #include <QEvent>
+#include <QApplication>
 #include <QCheckBox>
 #include <QFileSystemWatcher>
 #include <QFrame>
@@ -250,13 +251,29 @@ bool AppWindow::eventFilter(QObject *watched, QEvent *event)
     // events the interactive children ignore bubble up to the strip itself.
     if (watched == m_headerStrip) {
         if (event->type() == QEvent::MouseButtonPress
-            && static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton
-            && windowHandle()) {
-            windowHandle()->startSystemMove();
-            return true;
+            && static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
+            m_headerDragPending = true;
+            m_headerPressPosition = static_cast<QMouseEvent *>(event)->position().toPoint();
+        }
+        if (event->type() == QEvent::MouseMove && m_headerDragPending) {
+            const auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (!(mouseEvent->buttons() & Qt::LeftButton)) {
+                m_headerDragPending = false;
+            } else if ((mouseEvent->position().toPoint() - m_headerPressPosition).manhattanLength()
+                           >= QApplication::startDragDistance()) {
+                m_headerDragPending = false;
+                if (windowHandle() && windowHandle()->startSystemMove()) {
+                    return true;
+                }
+            }
+        }
+        if (event->type() == QEvent::MouseButtonRelease
+            && static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
+            m_headerDragPending = false;
         }
         if (event->type() == QEvent::MouseButtonDblClick
             && static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
+            m_headerDragPending = false;
             isMaximized() ? showNormal() : showMaximized();
             return true;
         }

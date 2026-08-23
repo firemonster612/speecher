@@ -312,6 +312,7 @@ private slots:
         FakeSpeechTranscriber *speech = nullptr;
         registerFakeSpeechProvider(registry, &speech);
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy state(&session, &DictationSession::stateChanged);
 
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
@@ -325,6 +326,7 @@ private slots:
         QCOMPARE(message.count(), 1);
         QCOMPARE(message.first().first().toString(), QStringLiteral("Input sent"));
         QCOMPARE(status.last().first().toString(), QStringLiteral("Input sent"));
+        QCOMPARE(state.last().first().toString(), QStringLiteral("delivering"));
         QCOMPARE(int(session.state()), int(DictationState::Delivering));
 
         const QList<QTimer *> completionTimers =
@@ -338,6 +340,7 @@ private slots:
         completionTimer->stop();
         QVERIFY(QMetaObject::invokeMethod(completionTimer, "timeout", Qt::DirectConnection));
         QCOMPARE(hidden.count(), 1);
+        QCOMPARE(state.last().first().toString(), QStringLiteral("idle"));
         QCOMPARE(int(session.state()), int(DictationState::Idle));
     }
 
