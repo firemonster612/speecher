@@ -30,8 +30,11 @@ RefinementPrepareResult loadClaudeOauthToken(const RefinementSettings &settings,
             }
             return {true, QString()};
         }
-        const CliProxyCredentialResult credentials =
-            CliProxyCredentials::load(settings.cliproxyOauthDir, QStringLiteral("claude"), settings.anthropicCliproxyAccount);
+        const CliProxyCredentialResult credentials = refreshExpired
+            ? CliProxyCredentials::loadWithRefresh(settings.cliproxyOauthDir, QStringLiteral("claude"),
+                                                   settings.anthropicCliproxyAccount)
+            : CliProxyCredentials::load(settings.cliproxyOauthDir, QStringLiteral("claude"),
+                                        settings.anthropicCliproxyAccount);
         if (accessToken) {
             *accessToken = credentials.ok ? credentials.accessToken : QString();
         }
@@ -76,8 +79,11 @@ QString AnthropicTranscriptRefiner::label() const
 bool AnthropicTranscriptRefiner::requiresRefresh(const RefinementSettings &settings) const
 {
     if (settings.anthropicAuthMode == QStringLiteral("cliproxy")) {
-        // CLI Proxy API refreshes its own tokens; refine() reloads them per request.
-        return false;
+        if (!settings.cliproxyBaseUrl.isEmpty()) {
+            return false; // the server owns and refreshes its accounts
+        }
+        return CliProxyCredentials::accountNeedsRefresh(
+            settings.cliproxyOauthDir, QStringLiteral("claude"), settings.anthropicCliproxyAccount);
     }
     return ClaudeCredentials::requiresRefresh(settings.claudeCredentialsPath);
 }

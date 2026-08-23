@@ -61,19 +61,35 @@ public:
 private:
     int doLayout(const QRect &rect, bool testOnly) const
     {
-        int x = rect.x();
         int y = rect.y();
+        QList<QLayoutItem *> row;
+        int rowWidth = 0;
         int rowHeight = 0;
+        const auto placeRow = [&] {
+            // Center each row so the grid doesn't hug the left edge.
+            int x = rect.x() + qMax(0, (rect.width() - rowWidth) / 2);
+            for (QLayoutItem *item : row) {
+                const QSize hint = item->sizeHint();
+                if (!testOnly) item->setGeometry(QRect(QPoint(x, y), hint));
+                x += hint.width() + m_spacing;
+            }
+        };
         for (QLayoutItem *item : m_items) {
             const QSize hint = item->sizeHint();
-            if (x + hint.width() > rect.right() + 1 && rowHeight > 0) {
-                x = rect.x();
+            const int nextWidth = rowWidth + (row.isEmpty() ? 0 : m_spacing) + hint.width();
+            if (nextWidth > rect.width() && !row.isEmpty()) {
+                placeRow();
                 y += rowHeight + m_spacing;
+                row.clear();
+                rowWidth = 0;
                 rowHeight = 0;
             }
-            if (!testOnly) item->setGeometry(QRect(QPoint(x, y), hint));
-            x += hint.width() + m_spacing;
+            rowWidth += (row.isEmpty() ? 0 : m_spacing) + hint.width();
+            row.append(item);
             rowHeight = qMax(rowHeight, hint.height());
+        }
+        if (!row.isEmpty()) {
+            placeRow();
         }
         return y + rowHeight - rect.y();
     }

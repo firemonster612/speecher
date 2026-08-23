@@ -16,7 +16,6 @@ public:
     bool pauseMediaDuringTranscription() const; void setPauseMediaDuringTranscription(bool value);
     bool soundsEnabled() const; void setSoundsEnabled(bool value);
     QString speechProvider() const; void setSpeechProvider(const QString &value);
-    QString speechAuthMode() const; void setSpeechAuthMode(const QString &value);
     QStringList customVocabulary() const; void setCustomVocabulary(const QStringList &value);
     QList<VocabularyEntry> vocabularyEntries() const; void setVocabularyEntries(const QList<VocabularyEntry> &entries);
     void recordVocabularyUsage(const QString &text);

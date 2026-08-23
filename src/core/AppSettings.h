@@ -36,7 +36,8 @@ struct UiSettings {
 
 struct SpeechSettings {
     QString providerId = QStringLiteral("claude");
-    QString authMode = QStringLiteral("default");
+    QString claudeAuthMode = QStringLiteral("oauth");
+    QString codexAuthMode = QStringLiteral("auto");
     QString language = QStringLiteral("en");
     QStringList vocabulary;
     QString claudeCredentialsPath;

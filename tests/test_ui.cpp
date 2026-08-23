@@ -212,6 +212,24 @@ private slots:
         }
     }
 
+    void openAiAuthStatusAlwaysResolves()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setOpenAiAuthMode(QStringLiteral("auto"));
+        SecretStore secrets(&settings);
+        ProviderSettingsPage page(settings, secrets);
+        page.loadModels();
+        page.loadAuthModes();
+        page.loadSecret();
+
+        auto *status = page.findChild<QLabel *>(QStringLiteral("openAiAuthStatus"));
+        QVERIFY(status);
+        QTRY_VERIFY_WITH_TIMEOUT(!status->text().isEmpty()
+                                     && status->text() != QStringLiteral("Checking…"),
+                                 20000);
+    }
+
     void providerSettingsCliproxyAccountPicker()
     {
         SettingsStore settings;
