@@ -289,6 +289,30 @@ private slots:
         QCOMPARE(outcome.messages,
                  QStringList{QStringLiteral("Each application ID can have only one paste rule.")});
     }
+
+    void saveReportsInvalidReplacementRules()
+    {
+        ApplicationController controller(true);
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        SettingsPageSet::SaveOutcome outcome;
+        pages.load();
+
+        // setBindingRules refuses invalid rules outright, so the only way to get
+        // them in front of save() is to load them straight into the page.
+        AppSettings withDuplicateBinding = controller.settings()->snapshot();
+        withDuplicateBinding.bindings = {
+            {QStringLiteral("my email"), QStringLiteral("one")},
+            {QStringLiteral("MY email"), QStringLiteral("two")},
+        };
+        pages.bindings()->load(withDuplicateBinding);
+
+        QVERIFY(!pages.save(false, true, &outcome));
+        QCOMPARE(outcome.failure, SettingsPageSet::SaveFailure::InvalidReplacementRules);
+        QCOMPARE(outcome.messages,
+                 QStringList{QStringLiteral(
+                     "Row 2 duplicates the normalized spoken phrase from row 1.")});
+    }
 };
 
 int runAppWindowTests(int argc, char **argv)
