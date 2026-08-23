@@ -34,6 +34,7 @@ private:
 
     const LinuxComposition &m_platform;
     QComboBox *m_speechProvider;
+    QComboBox *m_speechAuthMode;
     QComboBox *m_audioDevice;
     QComboBox *m_captureMode;
     QCheckBox *m_vadEnabled;

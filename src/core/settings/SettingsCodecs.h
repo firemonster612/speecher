@@ -16,6 +16,7 @@ public:
     bool pauseMediaDuringTranscription() const; void setPauseMediaDuringTranscription(bool value);
     bool soundsEnabled() const; void setSoundsEnabled(bool value);
     QString speechProvider() const; void setSpeechProvider(const QString &value);
+    QString speechAuthMode() const; void setSpeechAuthMode(const QString &value);
     QStringList customVocabulary() const; void setCustomVocabulary(const QStringList &value);
     QList<VocabularyEntry> vocabularyEntries() const; void setVocabularyEntries(const QList<VocabularyEntry> &entries);
     void recordVocabularyUsage(const QString &text);
@@ -41,6 +42,8 @@ public:
     QString anthropicEffort() const; void setAnthropicEffort(const QString &value);
     QString anthropicCliproxyAccount() const; void setAnthropicCliproxyAccount(const QString &value);
     QString cliproxyOauthDir() const;
+    QString cliproxyBaseUrl() const; void setCliproxyBaseUrl(const QString &value);
+    QString cliproxyApiKey() const; void setCliproxyApiKey(const QString &value);
     QString outputMethod() const; void setOutputMethod(const QString &value);
     OutputFormat outputFormat() const; void setOutputFormat(OutputFormat value);
     bool ydotoolEnabled() const; void setYdotoolEnabled(bool value);

@@ -30,7 +30,8 @@ QString OpenAiTranscriptRefiner::label() const
 
 bool OpenAiTranscriptRefiner::requiresRefresh(const RefinementSettings &settings) const
 {
-    return OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode, settings.openAiCliproxyAccount, settings.cliproxyOauthDir)
+    return OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode, settings.openAiCliproxyAccount, settings.cliproxyOauthDir,
+                             {}, {}, settings.cliproxyBaseUrl, settings.cliproxyApiKey)
         .requiresCodexOauthRefresh();
 }
 
@@ -64,7 +65,8 @@ std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(co
 void OpenAiTranscriptRefiner::refresh(const RefinementSettings &settings)
 {
     const OpenAiAuth refreshed =
-        OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode, settings.openAiCliproxyAccount, settings.cliproxyOauthDir)
+        OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode, settings.openAiCliproxyAccount, settings.cliproxyOauthDir,
+                             {}, {}, settings.cliproxyBaseUrl, settings.cliproxyApiKey)
             .refreshCodexOauth();
     if (!refreshed.ok) {
         qWarning().noquote() << "codex oauth refresh unavailable status=" + refreshed.status;
@@ -73,7 +75,8 @@ void OpenAiTranscriptRefiner::refresh(const RefinementSettings &settings)
 
 RefinementPrepareResult OpenAiTranscriptRefiner::prepare(const RefinementSettings &settings)
 {
-    m_auth = OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode, settings.openAiCliproxyAccount, settings.cliproxyOauthDir)
+    m_auth = OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode, settings.openAiCliproxyAccount, settings.cliproxyOauthDir,
+                             {}, {}, settings.cliproxyBaseUrl, settings.cliproxyApiKey)
                  .resolve(false);
     return {m_auth.ok, m_auth.status};
 }

@@ -19,6 +19,7 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
     : QScrollArea(parent)
     , m_platform(platform)
     , m_speechProvider(new QComboBox(this))
+    , m_speechAuthMode(new QComboBox(this))
     , m_audioDevice(new QComboBox(this))
     , m_captureMode(new QComboBox(this))
     , m_vadEnabled(new QCheckBox(this))
@@ -32,6 +33,12 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
     for (const ProviderDescriptor &provider : providers.speechProviders()) {
         m_speechProvider->addItem(provider.label, provider.id);
     }
+    m_speechAuthMode->setObjectName(QStringLiteral("speechAuthMode"));
+    m_speechAuthMode->addItem(QStringLiteral("Provider default"), QStringLiteral("default"));
+    m_speechAuthMode->addItem(QStringLiteral("CLI Proxy API"), QStringLiteral("cliproxy"));
+    m_speechAuthMode->setToolTip(QStringLiteral(
+        "Provider default uses the Claude Code or Codex CLI login. CLI Proxy API uses the OAuth "
+        "account files CLI Proxy API keeps locally; the account is chosen on the Providers page."));
     m_audioDevice->setMinimumContentsLength(28);
     m_audioDevice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_audioDevice->setToolTip(QStringLiteral("Microphone Speecher records from."));
@@ -58,6 +65,12 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
                      settings::makeRow(QStringLiteral("Transcription"),
                                        QStringLiteral("Service used to turn speech into a Raw Transcript."),
                                        m_speechProvider,
+                                       card),
+                     card);
+    settings::addRow(cardLayout,
+                     settings::makeRow(QStringLiteral("Speech credentials"),
+                                       QStringLiteral("Credential source used by the transcription service."),
+                                       m_speechAuthMode,
                                        card),
                      card);
     settings::addRow(cardLayout,
@@ -112,6 +125,7 @@ AudioSettingsPage::AudioSettingsPage(const LinuxComposition &platform,
     pageLayout->addStretch();
 
     connect(m_speechProvider, &QComboBox::currentIndexChanged, this, &AudioSettingsPage::changed);
+    connect(m_speechAuthMode, &QComboBox::currentIndexChanged, this, &AudioSettingsPage::changed);
     connect(m_audioDevice, &QComboBox::currentIndexChanged, this, &AudioSettingsPage::changed);
     connect(m_captureMode, &QComboBox::currentIndexChanged, this, &AudioSettingsPage::changed);
     connect(m_vadEnabled, &QCheckBox::toggled, this, [this] {
@@ -128,6 +142,7 @@ void AudioSettingsPage::load(const AppSettings &settings)
 {
     const AudioCaptureSettings &audio = settings.audio;
     settings::selectData(m_speechProvider, settings.speech.providerId);
+    settings::selectData(m_speechAuthMode, settings.speech.authMode);
     refreshAudioDeviceList(audio.deviceId);
     settings::selectData(m_captureMode, audio.mode);
     m_vadEnabled->setChecked(audio.vadEnabled);
@@ -141,6 +156,7 @@ void AudioSettingsPage::load(const AppSettings &settings)
 void AudioSettingsPage::appendToDraft(AppSettings &draft) const
 {
     draft.speech.providerId = m_speechProvider->currentData().toString();
+    draft.speech.authMode = m_speechAuthMode->currentData().toString();
     draft.audio = {
         m_audioDevice->currentData().toString(),
         m_captureMode->currentData().toString(),

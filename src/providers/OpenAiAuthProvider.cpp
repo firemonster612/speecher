@@ -20,13 +20,17 @@ OpenAiAuthProvider::OpenAiAuthProvider(SecretStore *secretStore,
                                        const QString &cliproxyAccount,
                                        const QString &cliproxyDir,
                                        const QString &settingsApiKey,
-                                       const QString &settingsStatus)
+                                       const QString &settingsStatus,
+                                       const QString &cliproxyBaseUrl,
+                                       const QString &cliproxyApiKey)
     : m_secretStore(secretStore)
     , m_mode(mode)
     , m_cliproxyAccount(cliproxyAccount)
     , m_cliproxyDir(cliproxyDir)
     , m_settingsApiKey(settingsApiKey)
     , m_settingsStatus(settingsStatus)
+    , m_cliproxyBaseUrl(cliproxyBaseUrl)
+    , m_cliproxyApiKey(cliproxyApiKey)
 {
 }
 
@@ -278,6 +282,23 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
         return {false, {}, QStringLiteral("env"), QStringLiteral("OPENAI_API_KEY not found"), {}, {}, {}, {}, false};
     }
     if (mode == QStringLiteral("cliproxy")) {
+        // Remote proxy: authenticate with the CLI Proxy API server key; the
+        // server picks the account and refreshes its own oauth tokens.
+        if (!m_cliproxyBaseUrl.isEmpty()) {
+            if (m_cliproxyApiKey.isEmpty()) {
+                return {false, {}, QStringLiteral("cliproxy"),
+                        QStringLiteral("CLI Proxy API key is not set (cliproxy/apiKey)"), {}, {}, {}, {}, false};
+            }
+            return {true,
+                    m_cliproxyApiKey,
+                    QStringLiteral("cliproxy"),
+                    QStringLiteral("Using CLI Proxy API at %1").arg(m_cliproxyBaseUrl),
+                    {},
+                    {},
+                    m_cliproxyBaseUrl + QStringLiteral("/v1"),
+                    {},
+                    false};
+        }
         const CliProxyCredentialResult credentials =
             CliProxyCredentials::load(m_cliproxyDir, QStringLiteral("codex"), m_cliproxyAccount);
         if (!credentials.ok) {
