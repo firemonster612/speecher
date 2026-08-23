@@ -158,13 +158,12 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     m_authMode->addItem(QStringLiteral("OPENAI_API_KEY"), QStringLiteral("env"));
     m_authMode->addItem(QStringLiteral("App settings key"), QStringLiteral("settings"));
     m_authMode->addItem(QStringLiteral("CLI Proxy API"), QStringLiteral("cliproxy"));
+    m_authMode->setToolTip(QStringLiteral("API-key modes apply to OpenAI refinement. Dictation uses Codex OAuth or the selected CLI Proxy API Codex account."));
     m_anthropicAuthMode->addItem(QStringLiteral("Claude OAuth"), QStringLiteral("oauth"));
     m_anthropicAuthMode->addItem(QStringLiteral("CLI Proxy API"), QStringLiteral("cliproxy"));
     m_anthropicAuthMode->setToolTip(QStringLiteral("Claude OAuth uses the existing Claude Code session. CLI Proxy API uses an OAuth account saved by CLI Proxy API."));
     m_openAiCliproxyAccount->setObjectName(QStringLiteral("openAiCliproxyAccount"));
     m_anthropicCliproxyAccount->setObjectName(QStringLiteral("anthropicCliproxyAccount"));
-    m_openAiCliproxyAccount->setToolTip(QStringLiteral("CLI Proxy API Codex account used for refinement."));
-    m_anthropicCliproxyAccount->setToolTip(QStringLiteral("CLI Proxy API Claude account used for refinement."));
     m_apiKey->setEchoMode(QLineEdit::Password);
     m_apiKey->setPlaceholderText(QStringLiteral("Enter OpenAI API key"));
     m_authControl->addWidget(m_authStatus);
@@ -243,6 +242,7 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     m_cliproxyApiKey->setObjectName(QStringLiteral("cliproxyApiKey"));
     m_cliproxyApiKey->setEchoMode(QLineEdit::Password);
     m_cliproxyApiKey->setPlaceholderText(QStringLiteral("CLI Proxy API server api-key"));
+    m_cliproxyApiKey->setToolTip(QStringLiteral("Stored unencrypted in Speecher's settings file."));
     settings::addSectionRow(cliproxyLayout, QStringLiteral("CLI Proxy API"), m_cliproxyCard);
     settings::addRow(cliproxyLayout,
                      settings::makeRow(QStringLiteral("Server URL"),
@@ -258,7 +258,7 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
                                        m_cliproxyCard),
                      m_cliproxyCard);
 
-    auto *note = new QLabel(QStringLiteral("Automatic OpenAI auth follows the Codex auth mode when available, then falls back to Codex API key, Codex OAuth, OPENAI_API_KEY, and the app settings key. Codex OAuth uses the ChatGPT Codex backend. The app settings key is stored in the desktop keyring through QtKeychain when available. CLI Proxy API auth reads the OAuth accounts from CLI Proxy API's auth directory (auto-detected) and uses the selected account's token directly — or, with a server URL configured, sends refinement through the CLI Proxy API server itself."), this);
+    auto *note = new QLabel(QStringLiteral("Automatic OpenAI auth follows the Codex auth mode when available, then falls back to Codex API key, Codex OAuth, OPENAI_API_KEY, and the app settings key. API-key modes apply to refinement; dictation uses Codex OAuth or the selected CLI Proxy API Codex account. The app settings key is stored in the desktop keyring through QtKeychain when available. CLI Proxy API auth reads OAuth accounts from its auto-detected auth directory. With a server URL configured, only refinement goes through that server; dictation still uses the selected local account."), this);
     note->setObjectName(QStringLiteral("noteText"));
     note->setWordWrap(true);
     note->setForegroundRole(QPalette::WindowText);
@@ -308,12 +308,14 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     connect(m_anthropicEffort, &QComboBox::currentIndexChanged, this, &ProviderSettingsPage::changed);
     connect(m_anthropicAuthMode, &QComboBox::currentIndexChanged, this, [this] {
         updateAnthropicAuthControl();
+        updateCliproxyServerVisibility();
         emit changed();
     });
     connect(m_openAiCliproxyAccount, &QComboBox::currentIndexChanged, this, &ProviderSettingsPage::changed);
     connect(m_anthropicCliproxyAccount, &QComboBox::currentIndexChanged, this, &ProviderSettingsPage::changed);
     connect(m_authMode, &QComboBox::currentIndexChanged, this, [this] {
         updateAuthControl();
+        updateCliproxyServerVisibility();
         emit changed();
     });
     connect(m_apiKey, &QLineEdit::textEdited, this, [this] {
@@ -378,10 +380,12 @@ void ProviderSettingsPage::saveAuthModes()
     m_settings.setCliproxyBaseUrl(m_cliproxyBaseUrl->text());
     m_settings.setCliproxyApiKey(m_cliproxyApiKey->text());
     if (m_authMode->currentData().toString() == QStringLiteral("cliproxy")) {
-        m_settings.setOpenAiCliproxyAccount(m_openAiCliproxyAccount->currentData().toString());
+        m_settings.setOpenAiCliproxyAccount(
+            comboSelection(m_openAiCliproxyAccount, m_settings.openAiCliproxyAccount()));
     }
     if (m_anthropicAuthMode->currentData().toString() == QStringLiteral("cliproxy")) {
-        m_settings.setAnthropicCliproxyAccount(m_anthropicCliproxyAccount->currentData().toString());
+        m_settings.setAnthropicCliproxyAccount(
+            comboSelection(m_anthropicCliproxyAccount, m_settings.anthropicCliproxyAccount()));
     }
 }
 
@@ -419,9 +423,11 @@ bool ProviderSettingsPage::hasAuthChanges() const
     return m_authMode->currentData().toString() != m_settings.openAiAuthMode()
         || m_anthropicAuthMode->currentData().toString() != m_settings.anthropicAuthMode()
         || (m_authMode->currentData().toString() == QStringLiteral("cliproxy")
-            && m_openAiCliproxyAccount->currentData().toString() != m_settings.openAiCliproxyAccount())
+            && comboSelection(m_openAiCliproxyAccount, m_settings.openAiCliproxyAccount())
+                != m_settings.openAiCliproxyAccount())
         || (m_anthropicAuthMode->currentData().toString() == QStringLiteral("cliproxy")
-            && m_anthropicCliproxyAccount->currentData().toString() != m_settings.anthropicCliproxyAccount())
+            && comboSelection(m_anthropicCliproxyAccount, m_settings.anthropicCliproxyAccount())
+                != m_settings.anthropicCliproxyAccount())
         || editedCliproxyBaseUrl() != m_settings.cliproxyBaseUrl()
         || m_cliproxyApiKey->text().trimmed() != m_settings.cliproxyApiKey()
         || (m_authMode->currentData().toString() == QStringLiteral("settings")
@@ -529,13 +535,14 @@ void ProviderSettingsPage::populateCliproxyAccounts(QComboBox *combo, const QStr
 {
     const QSignalBlocker blocker(combo);
     combo->clear();
-    const QString baseUrl = editedCliproxyBaseUrl();
-    if (!baseUrl.isEmpty()) {
-        combo->addItem(QStringLiteral("Server-routed via %1").arg(baseUrl), QString());
-        settings::setComboItemEnabled(combo, 0, false,
-                                      QStringLiteral("CLI Proxy API picks the account (cliproxy/baseUrl is set)"));
-        return;
-    }
+    const bool serverRouted = !editedCliproxyBaseUrl().isEmpty();
+    combo->setToolTip(type == QStringLiteral("codex")
+                          ? serverRouted
+                              ? QStringLiteral("Codex account used for dictation. OpenAI refinement is routed through the configured CLI Proxy API server.")
+                              : QStringLiteral("CLI Proxy API Codex account used for dictation and refinement.")
+                          : serverRouted
+                              ? QStringLiteral("Claude account used for dictation. Anthropic refinement is routed through the configured CLI Proxy API server.")
+                              : QStringLiteral("CLI Proxy API Claude account used for dictation and refinement."));
     const QString directory = m_settings.cliproxyOauthDir();
     const QList<CliProxyAccount> accounts = CliProxyCredentials::listAccounts(directory, type);
     // With several accounts and none chosen yet, force an explicit choice
