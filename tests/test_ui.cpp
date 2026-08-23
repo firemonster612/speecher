@@ -540,7 +540,8 @@ private slots:
         control->setFixedWidth(250);
         QFrame *row = settings::makeRow(
             QStringLiteral("Output"),
-            QStringLiteral("How Speecher delivers final text after dictation has completed."),
+            QStringLiteral("How Speecher delivers final text after dictation has completed, "
+                           "including the fallback used when the preferred delivery is missing."),
             control,
             &surface);
         layout->addWidget(row);

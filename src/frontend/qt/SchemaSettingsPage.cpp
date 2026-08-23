@@ -104,14 +104,14 @@ QWidget *appendSeparator(QFormLayout *form, QWidget *host)
 
 // A run of rows that render together inside the card, so one capability can
 // gate the whole cluster.
-QWidget *addRowGroup(const QString &id, QWidget *card)
+QWidget *addRowGroup(const QString &id, QWidget *form)
 {
-    auto *group = new QWidget(card);
+    auto *group = new QWidget(form);
     group->setObjectName(id);
     auto *layout = new QFormLayout(group);
     layout->setContentsMargins(0, 0, 0, 0);
     settings::configureFormLayout(layout);
-    qobject_cast<QFormLayout *>(card->layout())->addRow(group);
+    qobject_cast<QFormLayout *>(form->layout())->addRow(group);
     return group;
 }
 
@@ -162,14 +162,17 @@ void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout 
         pageLayout->addWidget(settings::makeSectionLabel(section.title, this));
         pageLayout->addSpacing(settings::tightSpacing());
     }
-    QWidget *card = settings::makeSettingsCard(this);
+    QFrame *card = settings::makeSettingsCard(this);
+    // The card centers an inner widget that carries the form; rows go there,
+    // not on the card itself.
+    QWidget *form = settings::cardFormLayout(card)->parentWidget();
     QWidget *group = nullptr;
     for (int index = 0; index < section.rows.size(); ++index) {
         const SettingsRow &descriptor = section.rows.at(index);
         if (descriptor.groupId.isEmpty()) {
             group = nullptr;
         } else if (!group || group->objectName() != descriptor.groupId) {
-            group = addRowGroup(descriptor.groupId, card);
+            group = addRowGroup(descriptor.groupId, form);
         }
         // A row keeps a separator below it while its own container has more to
         // come, which for a grouped row means another row of the same group.
@@ -177,7 +180,7 @@ void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout 
         const bool separator = more
             && (descriptor.groupId.isEmpty()
                 || section.rows.at(index + 1).groupId == descriptor.groupId);
-        addRow(descriptor, group ? group : card, group, separator);
+        addRow(descriptor, group ? group : form, group, separator);
     }
     pageLayout->addWidget(card);
     if (section.help.isEmpty()) {
