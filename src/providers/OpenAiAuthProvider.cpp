@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLockFile>
 #include <QProcessEnvironment>
 #include <QSaveFile>
 #include <QTimeZone>
@@ -115,7 +116,16 @@ static bool refreshCodexAuth(QString *error)
     // Refresh straight against the OAuth token endpoint instead of spawning
     // the Codex CLI: `codex exec` pays CLI startup plus a full model request
     // just to trigger the same refresh_token grant.
-    QFile file(codexAuthPath());
+    const QString authPath = codexAuthPath();
+    QLockFile lock(authPath + QStringLiteral(".lock"));
+    if (!lock.tryLock(1000)) {
+        if (error) {
+            *error = QStringLiteral("Could not lock the Codex auth file for refresh");
+        }
+        return false;
+    }
+
+    QFile file(authPath);
     if (!file.open(QIODevice::ReadOnly)) {
         if (error) {
             *error = QStringLiteral("No Codex auth file; sign in with `codex login`");
@@ -125,6 +135,9 @@ static bool refreshCodexAuth(QString *error)
     QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
     file.close();
     QJsonObject tokens = root.value(QStringLiteral("tokens")).toObject();
+    if (!jwtExpired(tokens.value(QStringLiteral("access_token")).toString().trimmed())) {
+        return true;
+    }
     const QString refreshToken = tokens.value(QStringLiteral("refresh_token")).toString().trimmed();
     if (refreshToken.isEmpty()) {
         if (error) {
@@ -138,6 +151,7 @@ static bool refreshCodexAuth(QString *error)
         overrideUrl.isEmpty() ? QStringLiteral("https://auth.openai.com/oauth/token") : overrideUrl,
         CliProxyCredentials::codexClientId(),
         refreshToken,
+        QStringLiteral("openid profile email"),
         codexRefreshTimeoutMs());
     if (!refreshed.ok) {
         if (error) {
@@ -157,7 +171,7 @@ static bool refreshCodexAuth(QString *error)
     root.insert(QStringLiteral("last_refresh"),
                 QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
 
-    QSaveFile saved(codexAuthPath());
+    QSaveFile saved(authPath);
     if (!saved.open(QIODevice::WriteOnly)) {
         if (error) {
             *error = QStringLiteral("Could not write the refreshed Codex auth file");

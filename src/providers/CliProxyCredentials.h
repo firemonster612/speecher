@@ -35,6 +35,7 @@ public:
     static OauthRefreshResult oauthRefresh(const QString &tokenUrl,
                                            const QString &clientId,
                                            const QString &refreshToken,
+                                           const QString &scope = {},
                                            int timeoutMs = 10000);
     static QString claudeClientId();
     static QString codexClientId();

@@ -235,7 +235,7 @@ private slots:
                 {QStringLiteral("access_token"), QStringLiteral("REFRESHED_TOKEN")},
                 {QStringLiteral("refresh_token"), QStringLiteral("rotated-codex-refresh")},
                 {QStringLiteral("id_token"), QStringLiteral("new-id-token")},
-                {QStringLiteral("expires_in"), 3600},
+                {QStringLiteral("expires_in"), QStringLiteral("7200")},
             }).toJson(QJsonDocument::Compact);
             socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
                           + QByteArray::number(payload.size()) + "\r\nConnection: close\r\n\r\n" + payload);
@@ -266,6 +266,7 @@ private slots:
         QCOMPARE(body.value(QStringLiteral("grant_type")).toString(), QStringLiteral("refresh_token"));
         QCOMPARE(body.value(QStringLiteral("refresh_token")).toString(), QStringLiteral("codex-refresh-token"));
         QCOMPARE(body.value(QStringLiteral("client_id")).toString(), CliProxyCredentials::codexClientId());
+        QCOMPARE(body.value(QStringLiteral("scope")).toString(), QStringLiteral("openid profile email"));
 
         // Rotated tokens land back in ~/.codex/auth.json.
         QFile file(dir.filePath(QStringLiteral(".codex/auth.json")));
@@ -286,7 +287,7 @@ private slots:
         connect(&server, &QTcpServer::newConnection, this, [&] {
             QTcpSocket *socket = server.nextPendingConnection();
             readHttpRequest(socket, 1000);
-            const QByteArray payload = QByteArrayLiteral("{\"error\":\"invalid_grant\"}");
+            const QByteArray payload = QByteArrayLiteral("{\"error\":{\"message\":\"invalid_grant\"}}");
             socket->write("HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: "
                           + QByteArray::number(payload.size()) + "\r\nConnection: close\r\n\r\n" + payload);
             socket->flush();
@@ -397,6 +398,14 @@ private slots:
         const QJsonObject updated = QJsonDocument::fromJson(file.readAll()).object();
         QCOMPARE(updated.value(QStringLiteral("access_token")).toString(), QStringLiteral("fresh-token"));
         QCOMPARE(updated.value(QStringLiteral("refresh_token")).toString(), QStringLiteral("rotated-refresh"));
+        for (const QString &field : {QStringLiteral("expired"), QStringLiteral("last_refresh")}) {
+            const QString timestamp = updated.value(field).toString();
+            QVERIFY2(QDateTime::fromString(timestamp, Qt::ISODate).isValid(), qPrintable(timestamp));
+            QVERIFY2(QRegularExpression(QStringLiteral("(Z|[+-]\\d{2}:\\d{2})$"))
+                         .match(timestamp)
+                         .hasMatch(),
+                     qPrintable(timestamp));
+        }
         QVERIFY(!CliProxyCredentials::accountNeedsRefresh(dir.path(), QStringLiteral("claude"), {}));
     }
 
