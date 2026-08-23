@@ -26,11 +26,26 @@
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QToolTip>
+#include <QThread>
 #include <QVBoxLayout>
 
 #include <utility>
 
 namespace speecher {
+
+namespace {
+
+void runSetupWork(QObject *context,
+                  std::function<void()> work,
+                  std::function<void()> finished)
+{
+    QThread *thread = QThread::create(std::move(work));
+    QObject::connect(thread, &QThread::finished, context, std::move(finished));
+    QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start();
+}
+
+} // namespace
 
 static void updateWrappedHeight(QLabel *label, int width)
 {
@@ -284,9 +299,17 @@ OutputSettingsPage::OutputSettingsPage(SettingsStore &settings, QWidget *parent)
     });
     connect(m_ydotoolSetupButton, &QPushButton::clicked, this, &OutputSettingsPage::setupOrEnableYdotool);
     connect(m_ydotoolStartButton, &QPushButton::clicked, this, [this] {
-        QString error;
-        if (!YdotoolSetup::startUserService(&error)) QMessageBox::warning(this, QStringLiteral("ydotool service"), error);
-        refreshControls();
+        m_ydotoolStartButton->setEnabled(false);
+        const auto error = std::make_shared<QString>();
+        runSetupWork(
+            this,
+            [error] { YdotoolSetup::startUserService(error.get()); },
+            [this, error] {
+                if (!error->isEmpty()) {
+                    QMessageBox::warning(this, QStringLiteral("ydotool service"), *error);
+                }
+                refreshControls();
+            });
     });
     connect(m_ydotoolDisableButton, &QPushButton::clicked, this, &OutputSettingsPage::disableYdotool);
     connect(m_ydotoolRemoveButton, &QPushButton::clicked, this, &OutputSettingsPage::removeYdotoolSetup);
@@ -412,11 +435,14 @@ void OutputSettingsPage::refreshControls()
     const bool ydotoolEnabled = m_settings.ydotoolEnabled() && status.ready();
     const int ydotoolIndex = m_outputMethod->findData(QString::fromLatin1(OutputMethod::Ydotool));
     settings::setComboItemEnabled(m_outputMethod, ydotoolIndex, ydotoolEnabled, ydotoolEnabled ? QString() : QStringLiteral("Set up ydotool first"));
-    if (!ydotoolEnabled && m_outputMethod->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool)) {
-        QSignalBlocker blocker(m_outputMethod);
-        settings::selectData(m_outputMethod, QString::fromLatin1(OutputMethod::Automatic));
-    }
-    m_outputMethod->setToolTip(ydotoolEnabled ? QStringLiteral("Automatic tries ydotool paste, wl-copy, then Qt clipboard.") : QStringLiteral("Type with ydotool paste is disabled until virtual keyboard setup passes."));
+    const bool unavailableSelection = !ydotoolEnabled
+        && m_outputMethod->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool);
+    m_outputMethod->setToolTip(
+        unavailableSelection
+            ? QStringLiteral("Type with ydotool paste is selected but unavailable until virtual keyboard setup passes.")
+            : ydotoolEnabled
+                ? QStringLiteral("Automatic tries ydotool paste, wl-copy, then Qt clipboard.")
+                : QStringLiteral("Type with ydotool paste is disabled until virtual keyboard setup passes."));
     setWrappedText(m_ydotoolStatus, status.label + QStringLiteral(". ") + status.detail);
     updateYdotoolButtons();
 }
@@ -484,17 +510,39 @@ void OutputSettingsPage::removeYdotoolSetup()
 {
     const int answer = QMessageBox::question(this, QStringLiteral("Remove virtual keyboard setup"), QStringLiteral("Speecher will ask for administrator permission to remove the service, udev rule, module-load file, and Speecher-specific group membership it manages. It will not uninstall the distro ydotool package."), QMessageBox::Cancel | QMessageBox::Ok, QMessageBox::Cancel);
     if (answer != QMessageBox::Ok) return;
-    QString error;
-    QString stopError;
-    YdotoolSetup::stopUserService(&stopError);
-    if (!YdotoolSetup::runHelper(YdotoolSetup::HelperAction::Remove, &error)) { QMessageBox::warning(this, QStringLiteral("ydotool removal failed"), error); refreshControls(); return; }
-    const YdotoolSetupStatus status = YdotoolSetup::probe(false);
-    if (status.speecherManagedSetupInstalled) { QMessageBox::warning(this, QStringLiteral("ydotool removal incomplete"), QStringLiteral("The privileged helper finished, but Speecher-managed setup files are still detected.")); refreshControls(); return; }
-    m_settings.setYdotoolEnabled(false);
-    QSignalBlocker blocker(m_outputMethod);
-    settings::selectData(m_outputMethod, m_settings.outputMethod());
-    refreshControls();
-    emit changed();
+    m_ydotoolRemoveButton->setEnabled(false);
+    struct RemovalResult {
+        bool helperOk = false;
+        QString helperError;
+        QString stopError;
+        YdotoolSetupStatus status;
+    };
+    const auto result = std::make_shared<RemovalResult>();
+    runSetupWork(
+        this,
+        [result] {
+            YdotoolSetup::stopUserService(&result->stopError);
+            result->helperOk = YdotoolSetup::runHelper(
+                YdotoolSetup::HelperAction::Remove, &result->helperError);
+            result->status = YdotoolSetup::probe(false);
+        },
+        [this, result] {
+            if (!result->helperOk) {
+                QMessageBox::warning(
+                    this, QStringLiteral("ydotool removal failed"), result->helperError);
+            } else if (result->status.speecherManagedSetupInstalled) {
+                QMessageBox::warning(
+                    this,
+                    QStringLiteral("ydotool removal incomplete"),
+                    QStringLiteral("The privileged helper finished, but Speecher-managed setup files are still detected."));
+            } else {
+                m_settings.setYdotoolEnabled(false);
+                QSignalBlocker blocker(m_outputMethod);
+                settings::selectData(m_outputMethod, m_settings.outputMethod());
+                emit changed();
+            }
+            refreshControls();
+        });
 }
 
 } // namespace speecher

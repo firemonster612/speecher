@@ -191,10 +191,10 @@ private slots:
         QCOMPARE(image.value(QStringLiteral("image_url")).toString(),
                  QStringLiteral("data:image/png;base64,cG5nLWJ5dGVz"));
 
-        const QByteArray sse = QByteArrayLiteral("event: response.output_text.delta\n"
-                                                 "data: {\"delta\":\"1. Gather\"}\n\n"
-                                                 "event: response.completed\n"
-                                                 "data: {\"type\":\"response.completed\"}\n\n");
+        const QByteArray sse = QByteArrayLiteral("event: response.output_text.delta\r\n"
+                                                 "data: {\"delta\":\"1. Gather\"}\r\n\r\n"
+                                                 "event: response.completed\r\n"
+                                                 "data: {\"type\":\"response.completed\"}\r\n\r\n");
         socket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\n"
                                         "Content-Type: text/event-stream\r\n"
                                         "Content-Length: ")
@@ -240,6 +240,12 @@ private slots:
         QTcpSocket *socket = server.nextPendingConnection();
         QVERIFY(socket);
         QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
+
+        QTimer keepalive;
+        connect(&keepalive, &QTimer::timeout, socket, [socket] {
+            socket->write(QByteArrayLiteral(": keepalive\n\n"));
+        });
+        keepalive.start(10);
 
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
         QVERIFY(failed.at(0).at(0).toString().contains(QStringLiteral("timed out")));
@@ -336,10 +342,10 @@ private slots:
         QVERIFY(content.contains(QStringLiteral("Preferred vocabulary:\nQt")));
         QVERIFY(content.contains(QStringLiteral("Binding aliases:\nmy email")));
 
-        const QByteArray sse = QByteArrayLiteral("event: content_block_delta\n"
-                                                 "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"oauth-ok\"}}\n\n"
-                                                 "event: message_stop\n"
-                                                 "data: {\"type\":\"message_stop\"}\n\n");
+        const QByteArray sse = QByteArrayLiteral("event: content_block_delta\r\n"
+                                                 "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"oauth-ok\"}}\r\n\r\n"
+                                                 "event: message_stop\r\n"
+                                                 "data: {\"type\":\"message_stop\"}\r\n\r\n");
         socket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\n"
                                         "Content-Type: text/event-stream\r\n"
                                         "Content-Length: ")
@@ -380,9 +386,68 @@ private slots:
         QVERIFY(socket);
         QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
 
+        QTimer keepalive;
+        connect(&keepalive, &QTimer::timeout, socket, [socket] {
+            socket->write(QByteArrayLiteral(": keepalive\n\n"));
+        });
+        keepalive.start(10);
+
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
         QVERIFY(failed.at(0).at(0).toString().contains(QStringLiteral("timed out")));
         QCOMPARE(completed.size(), 0);
+    }
+
+    void refinersTreatStreamErrorsAsTerminal()
+    {
+        QTcpServer openAiServer;
+        QVERIFY(openAiServer.listen(QHostAddress::LocalHost));
+        OpenAiRefiner openAi;
+        QSignalSpy openAiCompleted(&openAi, &OpenAiRefiner::completed);
+        QSignalSpy openAiFailed(&openAi, &OpenAiRefiner::failed);
+        openAi.refine(QStringLiteral("test"), {}, {}, QStringLiteral("token"), {}, {},
+                      QStringLiteral("http://127.0.0.1:%1/v1").arg(openAiServer.serverPort()),
+                      {}, false, QStringLiteral("gpt-test"), QStringLiteral("low"),
+                      QStringLiteral("balanced"), {});
+        QTRY_VERIFY_WITH_TIMEOUT(openAiServer.hasPendingConnections(), 1000);
+        QTcpSocket *openAiSocket = openAiServer.nextPendingConnection();
+        QVERIFY(!readHttpRequest(openAiSocket, 1000).isEmpty());
+        const QByteArray openAiSse = QByteArrayLiteral(
+            "event: response.output_text.delta\n"
+            "data: {\"delta\":\"partial\"}\n\n"
+            "event: error\n"
+            "data: {\"error\":{\"message\":\"failed\"}}\n\n"
+            "event: response.completed\n"
+            "data: {\"type\":\"response.completed\"}\n\n");
+        openAiSocket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ")
+                            + QByteArray::number(openAiSse.size())
+                            + QByteArrayLiteral("\r\n\r\n") + openAiSse);
+        QTRY_COMPARE_WITH_TIMEOUT(openAiFailed.size(), 1, 1000);
+        QCOMPARE(openAiCompleted.size(), 0);
+
+        QTcpServer anthropicServer;
+        QVERIFY(anthropicServer.listen(QHostAddress::LocalHost));
+        AnthropicApiRefiner anthropic;
+        QSignalSpy anthropicCompleted(&anthropic, &AnthropicApiRefiner::completed);
+        QSignalSpy anthropicFailed(&anthropic, &AnthropicApiRefiner::failed);
+        anthropic.refine(QStringLiteral("test"), {}, {}, QStringLiteral("token"),
+                         QStringLiteral("http://127.0.0.1:%1/v1").arg(anthropicServer.serverPort()),
+                         QStringLiteral("claude-sonnet-4-6"), QStringLiteral("low"),
+                         QStringLiteral("balanced"), {});
+        QTRY_VERIFY_WITH_TIMEOUT(anthropicServer.hasPendingConnections(), 1000);
+        QTcpSocket *anthropicSocket = anthropicServer.nextPendingConnection();
+        QVERIFY(!readHttpRequest(anthropicSocket, 1000).isEmpty());
+        const QByteArray anthropicSse = QByteArrayLiteral(
+            "event: content_block_delta\n"
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n"
+            "event: error\n"
+            "data: {\"type\":\"error\",\"error\":{\"message\":\"failed\"}}\n\n"
+            "event: message_stop\n"
+            "data: {\"type\":\"message_stop\"}\n\n");
+        anthropicSocket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ")
+                               + QByteArray::number(anthropicSse.size())
+                               + QByteArrayLiteral("\r\n\r\n") + anthropicSse);
+        QTRY_COMPARE_WITH_TIMEOUT(anthropicFailed.size(), 1, 1000);
+        QCOMPARE(anthropicCompleted.size(), 0);
     }
 
     void anthropicApiRefinerDoesNotTreatUnavailableModelsAsEffortSupported()

@@ -70,6 +70,10 @@ private slots:
             R"({"type":"transcript.final","sequence_no":2,"utterance_id":"u1","revision":1,"text":"hello from Codex"})"));
         QTRY_COMPARE_WITH_TIMEOUT(final.count(), 1, 1000);
         QCOMPARE(final.first().first().toString(), QStringLiteral("hello from Codex"));
+        peer->sendTextMessage(QStringLiteral(
+            R"({"type":"transcript.final","sequence_no":2,"utterance_id":"u1","revision":1,"text":"hello from Codex"})"));
+        QTest::qWait(20);
+        QCOMPARE(final.count(), 1);
 
         client.stop();
         QTRY_COMPARE_WITH_TIMEOUT(messages.size(), 2, 1000);

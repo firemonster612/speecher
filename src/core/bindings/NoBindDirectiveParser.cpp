@@ -19,6 +19,7 @@ struct DirectiveSpan {
     int endToken = 0;
     qsizetype start = 0;
     qsizetype end = 0;
+    bool targetFollowsAction = false;
 };
 
 QList<Token> tokenizeWithSpans(const QString &text)
@@ -99,7 +100,26 @@ QList<DirectiveSpan> findNoBindDirectiveSpans(const QString &text)
         if (!isNoBindNegationAt(tokens, index, &negationTokenCount)) continue;
         int actionEndToken = -1;
         if (!findBindingAction(tokens, index + negationTokenCount, &actionEndToken)) continue;
-        spans.append({index, actionEndToken + 1, tokens.at(index).start, tokens.at(actionEndToken).end});
+        bool actionHasAnaphora = false;
+        const int anaphoraEnd = qMin(tokens.size() - 1, actionEndToken + 1);
+        for (int actionToken = index + negationTokenCount;
+             actionToken <= anaphoraEnd;
+             ++actionToken) {
+            const QString token = tokens.at(actionToken).text;
+            if (token == QStringLiteral("that")
+                || token == QStringLiteral("this")
+                || token == QStringLiteral("it")) {
+                actionHasAnaphora = true;
+                break;
+            }
+        }
+        const bool targetFollowsAction = actionEndToken + 1 < tokens.size()
+            && !actionHasAnaphora;
+        spans.append({index,
+                      actionEndToken + 1,
+                      tokens.at(index).start,
+                      tokens.at(actionEndToken).end,
+                      targetFollowsAction});
     }
     return spans;
 }
@@ -135,6 +155,22 @@ const BindingMatch *nearestMatchBeforeDirective(const QList<BindingMatch> &match
     return nearest;
 }
 
+const BindingMatch *nearestMatchAfterDirective(const QList<BindingMatch> &matches,
+                                               const DirectiveSpan &directive)
+{
+    const BindingMatch *nearest = nullptr;
+    int nearestDistance = std::numeric_limits<int>::max();
+    for (const BindingMatch &match : matches) {
+        if (match.startToken < directive.endToken) continue;
+        const int distance = match.startToken - directive.endToken;
+        if (distance <= 8 && distance < nearestDistance) {
+            nearest = &match;
+            nearestDistance = distance;
+        }
+    }
+    return nearest;
+}
+
 } // namespace
 
 bool NoBindDirectiveParser::hasDirective(const QString &transcript)
@@ -157,7 +193,15 @@ QStringList NoBindDirectiveParser::excludedPhrases(const QString &transcript, co
             matchedInsideDirective = true;
         }
         if (!matchedInsideDirective) {
-            if (const BindingMatch *nearest = nearestMatchBeforeDirective(matches, directive)) appendNoBindPhrase(&phrases, &seen, nearest->rule);
+            if (directive.targetFollowsAction) {
+                if (const BindingMatch *nearest = nearestMatchAfterDirective(matches, directive)) {
+                    appendNoBindPhrase(&phrases, &seen, nearest->rule);
+                }
+            } else {
+                if (const BindingMatch *nearest = nearestMatchBeforeDirective(matches, directive)) {
+                    appendNoBindPhrase(&phrases, &seen, nearest->rule);
+                }
+            }
         }
     }
     return phrases;

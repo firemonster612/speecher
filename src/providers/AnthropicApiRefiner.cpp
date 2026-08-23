@@ -15,6 +15,8 @@
 namespace speecher {
 namespace {
 
+constexpr int absoluteDeadlineMs = 120000;
+
 QString anthropicErrorMessage(const QByteArray &payload, const QString &fallback)
 {
     const QJsonObject object = QJsonDocument::fromJson(payload).object();
@@ -75,12 +77,13 @@ QString claudeCodeSystemPrompt(const QString &refinementStyle,
 
 } // namespace
 
-AnthropicApiRefiner::AnthropicApiRefiner(QObject *parent, int inactivityTimeoutMs)
+AnthropicApiRefiner::AnthropicApiRefiner(QObject *parent, int requestTimeoutMs)
     : QObject(parent)
-    , m_inactivityTimeoutMs(inactivityTimeoutMs)
+    , m_requestTimeoutMs(requestTimeoutMs)
 {
     m_inactivityTimer.setSingleShot(true);
-    connect(&m_inactivityTimer, &QTimer::timeout, this, [this] {
+    m_deadlineTimer.setSingleShot(true);
+    const auto failOnTimeout = [this] {
         if (!m_reply || m_failed || m_completed) {
             return;
         }
@@ -88,8 +91,10 @@ AnthropicApiRefiner::AnthropicApiRefiner(QObject *parent, int inactivityTimeoutM
         m_reply = nullptr;
         m_failed = true;
         reply->abort();
-        emit failed(QStringLiteral("Anthropic refinement timed out waiting for response activity"));
-    });
+        emit failed(QStringLiteral("Anthropic refinement timed out waiting for a response"));
+    };
+    connect(&m_inactivityTimer, &QTimer::timeout, this, failOnTimeout);
+    connect(&m_deadlineTimer, &QTimer::timeout, this, failOnTimeout);
 }
 
 void AnthropicApiRefiner::refine(const QString &rawTranscript,
@@ -170,12 +175,12 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
 
     QNetworkReply *reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
     m_reply = reply;
-    m_inactivityTimer.start(m_inactivityTimeoutMs);
+    m_inactivityTimer.start(m_requestTimeoutMs);
+    m_deadlineTimer.start(absoluteDeadlineMs);
     connect(reply, &QNetworkReply::readyRead, this, [this, reply] {
         if (reply != m_reply) {
             return;
         }
-        m_inactivityTimer.start();
         parseSseChunk(reply->readAll());
     });
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
@@ -184,6 +189,7 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
             return;
         }
         m_inactivityTimer.stop();
+        m_deadlineTimer.stop();
         m_reply = nullptr;
         if (m_failed || m_completed) {
             reply->deleteLater();
@@ -193,10 +199,10 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
             const QByteArray payload = m_buffer + reply->readAll();
             emit failed(QStringLiteral("Anthropic refinement failed: %1")
                             .arg(anthropicErrorMessage(payload, reply->errorString())));
-        } else if (!m_accumulated.isEmpty()) {
-            completeIfReady();
-        } else if (!m_failed) {
+        } else if (m_accumulated.isEmpty()) {
             emit failed(QStringLiteral("Anthropic refinement failed: empty response"));
+        } else {
+            emit failed(QStringLiteral("Anthropic refinement failed: stream ended before completion"));
         }
         reply->deleteLater();
     });
@@ -205,6 +211,7 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
 void AnthropicApiRefiner::cancel()
 {
     m_inactivityTimer.stop();
+    m_deadlineTimer.stop();
     if (m_reply) {
         QNetworkReply *reply = m_reply;
         m_reply = nullptr;
@@ -216,12 +223,18 @@ void AnthropicApiRefiner::parseSseChunk(const QByteArray &chunk)
 {
     m_buffer += chunk;
     while (true) {
-        const int boundary = m_buffer.indexOf("\n\n");
+        int boundary = m_buffer.indexOf("\n\n");
+        int separatorBytes = 2;
+        const int crlfBoundary = m_buffer.indexOf("\r\n\r\n");
+        if (crlfBoundary >= 0 && (boundary < 0 || crlfBoundary < boundary)) {
+            boundary = crlfBoundary;
+            separatorBytes = 4;
+        }
         if (boundary < 0) {
             break;
         }
         const QByteArray frame = m_buffer.left(boundary);
-        m_buffer.remove(0, boundary + 2);
+        m_buffer.remove(0, boundary + separatorBytes);
 
         QByteArray eventName;
         QByteArray data;
@@ -235,9 +248,22 @@ void AnthropicApiRefiner::parseSseChunk(const QByteArray &chunk)
         const QJsonObject object = QJsonDocument::fromJson(data).object();
         if (eventName == "error" || object.value(QStringLiteral("type")).toString() == QStringLiteral("error")) {
             m_inactivityTimer.stop();
+            m_deadlineTimer.stop();
             m_failed = true;
+            if (m_reply) {
+                QNetworkReply *reply = m_reply;
+                m_reply = nullptr;
+                reply->abort();
+            }
             emit failed(anthropicErrorMessage(data, QStringLiteral("Anthropic refinement error")));
-            continue;
+            return;
+        }
+        if (eventName == "message_start"
+            || eventName == "content_block_start"
+            || eventName == "content_block_delta"
+            || eventName == "content_block_stop"
+            || eventName == "message_delta") {
+            m_inactivityTimer.start(m_requestTimeoutMs);
         }
         if (eventName == "content_block_delta") {
             const QJsonObject deltaObject = object.value(QStringLiteral("delta")).toObject();
@@ -254,10 +280,11 @@ void AnthropicApiRefiner::parseSseChunk(const QByteArray &chunk)
 
 void AnthropicApiRefiner::completeIfReady()
 {
-    if (m_completed || m_accumulated.isEmpty()) {
+    if (m_failed || m_completed || m_accumulated.isEmpty()) {
         return;
     }
     m_inactivityTimer.stop();
+    m_deadlineTimer.stop();
     m_completed = true;
     emit completed(m_accumulated);
 }

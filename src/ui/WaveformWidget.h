@@ -5,6 +5,9 @@
 #include <QVector>
 #include <QWidget>
 
+class QHideEvent;
+class QShowEvent;
+
 namespace speecher {
 
 class WaveformWidget : public QWidget {
@@ -21,7 +24,9 @@ public slots:
     void setMessage(const QString &message);
 
 protected:
+    void hideEvent(QHideEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
+    void showEvent(QShowEvent *event) override;
 
 private:
     void paintWaveform(QPainter &painter, const QColor &bar);

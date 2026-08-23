@@ -14,7 +14,9 @@ bool run(const QString &executable,
          const QStringList &arguments,
          const QByteArray *input,
          QByteArray *output,
-         QString *error);
+         QString *error,
+         int timeoutMs = 5000,
+         qsizetype maximumOutputBytes = 16 * 1024 * 1024);
 bool looksLikeEmptyClipboardError(const QString &message);
 
 } // namespace speecher::WaylandClipboardProcess

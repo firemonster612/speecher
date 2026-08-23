@@ -41,6 +41,7 @@ private:
     QComboBox *m_provider;
     QLabel *m_hint;
     QLabel *m_status;
+    quint64 m_checkGeneration = 0;
 };
 
 class MicrophoneSetupPage final : public QWidget {

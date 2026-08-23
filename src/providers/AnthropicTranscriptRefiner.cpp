@@ -11,7 +11,9 @@
 namespace speecher {
 namespace {
 
-RefinementPrepareResult loadClaudeOauthToken(const RefinementSettings &settings, QString *accessToken)
+RefinementPrepareResult loadClaudeOauthToken(const RefinementSettings &settings,
+                                             QString *accessToken,
+                                             bool refreshExpired)
 {
     if (settings.anthropicAuthMode == QStringLiteral("cliproxy")) {
         const CliProxyCredentialResult credentials =
@@ -21,7 +23,9 @@ RefinementPrepareResult loadClaudeOauthToken(const RefinementSettings &settings,
         }
         return {credentials.ok, credentials.error};
     }
-    const ClaudeCredentialResult credentials = ClaudeCredentials::load(settings.claudeCredentialsPath, true);
+    const ClaudeCredentialResult credentials = ClaudeCredentials::load(
+        settings.claudeCredentialsPath,
+        refreshExpired);
     if (!credentials.ok) {
         if (accessToken) {
             accessToken->clear();
@@ -71,15 +75,12 @@ bool AnthropicTranscriptRefiner::supportsScreenshotContext(const RefinementSetti
 
 std::optional<RefinementRefreshJob> AnthropicTranscriptRefiner::createRefreshJob(const RefinementSettings &settings)
 {
-    if (!requiresRefresh(settings)) {
-        return std::nullopt;
-    }
-
     auto accessToken = std::make_shared<QString>();
     RefinementRefreshJob job;
-    job.showRefreshIndicator = true;
+    job.showRefreshIndicator = requiresRefresh(settings);
     job.run = [settings, accessToken] {
-        const RefinementPrepareResult result = loadClaudeOauthToken(settings, accessToken.get());
+        const RefinementPrepareResult result = loadClaudeOauthToken(settings, accessToken.get(), true);
+        ClaudeCredentials::installedVersion();
         return RefinementRefreshResult{result.ok, result.message};
     };
     job.apply = [this, accessToken](const RefinementRefreshResult &result) {
@@ -94,12 +95,12 @@ std::optional<RefinementRefreshJob> AnthropicTranscriptRefiner::createRefreshJob
 
 void AnthropicTranscriptRefiner::refresh(const RefinementSettings &settings)
 {
-    loadClaudeOauthToken(settings, &m_accessToken);
+    loadClaudeOauthToken(settings, &m_accessToken, true);
 }
 
 RefinementPrepareResult AnthropicTranscriptRefiner::prepare(const RefinementSettings &settings)
 {
-    return loadClaudeOauthToken(settings, &m_accessToken);
+    return loadClaudeOauthToken(settings, &m_accessToken, false);
 }
 
 void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,

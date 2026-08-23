@@ -10,6 +10,8 @@
 #include <QStandardPaths>
 #include <QTextStream>
 
+#include <limits>
+
 #ifdef Q_OS_UNIX
 #include <unistd.h>
 #endif
@@ -22,6 +24,10 @@ constexpr qint64 duplicateWindowMs = 2500;
 constexpr int keyDelayMs = 1;
 constexpr int keyHoldMs = 2;
 constexpr int shortcutKeyDelayMs = 2;
+constexpr int modifierTimeoutMs = 500;
+constexpr int shortcutTimeoutMs = 1000;
+constexpr int typeBaseTimeoutMs = 2000;
+constexpr int typeSlackPerCharacterMs = 5;
 
 QString runtimeDirectory()
 {
@@ -57,7 +63,7 @@ QString textHash(const QString &text)
     return QString::fromLatin1(QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha256).toHex());
 }
 
-bool shouldSuppressDuplicateDelivery(const QString &text)
+bool wasRecentlyDelivered(const QString &text)
 {
     QLockFile lock(deliveryLockPath());
     lock.setStaleLockTime(5000);
@@ -79,11 +85,22 @@ bool shouldSuppressDuplicateDelivery(const QString &text)
         }
     }
 
+    return false;
+}
+
+void recordSuccessfulDelivery(const QString &text)
+{
+    QLockFile lock(deliveryLockPath());
+    lock.setStaleLockTime(5000);
+    if (!lock.tryLock(250)) {
+        return;
+    }
+
+    QFile state(deliveryStatePath());
     if (state.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
         QTextStream stream(&state);
-        stream << now << '\n' << currentHash << '\n';
+        stream << QDateTime::currentMSecsSinceEpoch() << '\n' << textHash(text) << '\n';
     }
-    return false;
 }
 
 bool runYdotool(const QString &executable,
@@ -126,7 +143,7 @@ bool releaseModifierKeys(const QString &executable, const QProcessEnvironment &e
                        QStringLiteral("97:0"),
                        QStringLiteral("42:0"),
                        QStringLiteral("54:0")},
-                      3000,
+                      modifierTimeoutMs,
                       &ignored);
 }
 
@@ -213,7 +230,7 @@ bool YdotoolDelivery::type(const QString &text, QString *error)
         return true;
     }
 
-    if (shouldSuppressDuplicateDelivery(typedText)) {
+    if (wasRecentlyDelivered(typedText)) {
         return true;
     }
 
@@ -232,10 +249,15 @@ bool YdotoolDelivery::type(const QString &text, QString *error)
     }
 
     releaseModifierKeys(executable, env);
-    if (!runYdotool(executable, env, commandArguments(typedText), 30000, error)) {
+    const int typeTimeoutMs = int(qMin<qsizetype>(
+        std::numeric_limits<int>::max(),
+        typeBaseTimeoutMs
+            + typedText.size() * (keyDelayMs + keyHoldMs + typeSlackPerCharacterMs)));
+    if (!runYdotool(executable, env, commandArguments(typedText), typeTimeoutMs, error)) {
         releaseModifierKeys(executable, env);
         return false;
     }
+    recordSuccessfulDelivery(typedText);
     releaseModifierKeys(executable, env);
     return true;
 }
@@ -246,7 +268,7 @@ bool YdotoolDelivery::pasteFromClipboard(const QString &text, PasteMethod method
         return true;
     }
 
-    if (shouldSuppressDuplicateDelivery(text)) {
+    if (wasRecentlyDelivered(text)) {
         return true;
     }
 
@@ -265,10 +287,11 @@ bool YdotoolDelivery::pasteFromClipboard(const QString &text, PasteMethod method
     }
 
     releaseModifierKeys(executable, env);
-    if (!runYdotool(executable, env, pasteShortcutArguments(method), 5000, error)) {
+    if (!runYdotool(executable, env, pasteShortcutArguments(method), shortcutTimeoutMs, error)) {
         releaseModifierKeys(executable, env);
         return false;
     }
+    recordSuccessfulDelivery(text);
     releaseModifierKeys(executable, env);
     return true;
 }
@@ -290,7 +313,7 @@ bool YdotoolDelivery::copySelection(PasteMethod method, QString *error)
     }
 
     releaseModifierKeys(executable, env);
-    if (!runYdotool(executable, env, copyShortcutArguments(method), 5000, error)) {
+    if (!runYdotool(executable, env, copyShortcutArguments(method), shortcutTimeoutMs, error)) {
         releaseModifierKeys(executable, env);
         return false;
     }

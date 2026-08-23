@@ -112,6 +112,7 @@ float rmsForPcm16(const QByteArray &pcm)
 void AudioPcmConverter::reset(const QAudioFormat &sourceFormat)
 {
     m_sourceFormat = sourceFormat;
+    m_pendingInput.clear();
     m_resampleBuffer.clear();
     m_nextInputPosition = 0.0;
 }
@@ -119,12 +120,20 @@ void AudioPcmConverter::reset(const QAudioFormat &sourceFormat)
 AudioPcmConversion AudioPcmConverter::convert(const QByteArray &chunk)
 {
     AudioPcmConversion result;
+    QByteArray input = m_pendingInput + chunk;
+    m_pendingInput.clear();
+    const int bytesPerFrame = m_sourceFormat.bytesPerFrame();
+    if (bytesPerFrame > 0) {
+        const int completeBytes = input.size() - input.size() % bytesPerFrame;
+        m_pendingInput = input.mid(completeBytes);
+        input.truncate(completeBytes);
+    }
     if (m_sourceFormat.sampleRate() == kOutputSampleRate
         && m_sourceFormat.channelCount() == 1
         && m_sourceFormat.sampleFormat() == QAudioFormat::Int16) {
-        result.pcm16Mono16k = chunk.left(chunk.size() - chunk.size() % int(sizeof(qint16)));
+        result.pcm16Mono16k = input;
     } else {
-        const QVector<float> samples = decodeMonoSamples(chunk, m_sourceFormat, &result.error);
+        const QVector<float> samples = decodeMonoSamples(input, m_sourceFormat, &result.error);
         if (!samples.isEmpty()) {
             result.pcm16Mono16k = encodeOutputSamples(samples);
         }

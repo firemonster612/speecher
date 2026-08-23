@@ -440,6 +440,35 @@ private slots:
         QCOMPARE(delivery->lastText, QStringLiteral("please send efox@example.com"));
     }
 
+    void dictationSessionCanCancelRefinementWithRawFallback()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("raw fallback"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Refining), 250);
+
+        session.stopListening();
+
+        QCOMPARE(refiner->cancelCalls, 1);
+        QCOMPARE(delivery->calls, 1);
+        QCOMPARE(delivery->lastText, QStringLiteral("raw fallback"));
+    }
+
     void dictationSessionCorruptedPlaceholderFallsBackToBoundText()
     {
         SettingsStore settings;
@@ -519,6 +548,106 @@ private slots:
         QCOMPARE(media->resumeCalls, 1);
         QCOMPARE(delivery->calls, 0);
         QCOMPARE(session.lastMessage(), QStringLiteral("provider failed"));
+    }
+
+    void dictationSessionDeliversTranscriptAfterSpeechFailureWhileListening()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->autoCompleteOnFinish = false;
+        speech->emitFinalText(QStringLiteral("keep this transcript"));
+        QSignalSpy message(&session, &DictationSession::popupMessageRequested);
+        speech->emitFailure(QStringLiteral("provider disconnected"));
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(delivery->lastText, QStringLiteral("keep this transcript"));
+        QCOMPARE(audio->isActive(), false);
+        QCOMPARE(media->resumeCalls, 1);
+        QCOMPARE(message.count(), 1);
+        QCOMPARE(message.first().first().toString(),
+                 QStringLiteral("Used raw transcript • Input sent"));
+    }
+
+    void dictationSessionFreezesTranscriptAfterSpeechFailureWhileRefining()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("keep this transcript"));
+        QSignalSpy frozen(&session, &DictationSession::popupFrozenChanged);
+        QSignalSpy message(&session, &DictationSession::popupMessageRequested);
+        speech->emitFailure(QStringLiteral("provider disconnected"));
+
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 250);
+        QCOMPARE(refiner->lastRawTranscript, QStringLiteral("keep this transcript"));
+        QCOMPARE(speech->cancelledAttempts,
+                 QList<quint64>({speech->currentAttemptId}));
+        QCOMPARE(frozen.count(), 1);
+        QCOMPARE(frozen.first().first().toBool(), true);
+
+        QSignalSpy preview(&session, &DictationSession::previewChanged);
+        speech->emitFinalText(QStringLiteral("late buffered final"));
+        QCOMPARE(preview.count(), 0);
+
+        refiner->emitCompletedText(QStringLiteral("Keep this transcript."));
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(delivery->lastText, QStringLiteral("Keep this transcript."));
+        QCOMPARE(message.count(), 1);
+        QCOMPARE(message.first().first().toString(), QStringLiteral("Input sent"));
+    }
+
+    void dictationSessionIgnoresRefinerSignalsAfterFailureFallback()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("raw transcript"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 250);
+
+        refiner->emitFailure(QStringLiteral("refinement failed"));
+        refiner->emitCompletedText(QStringLiteral("late completion"));
+
+        QCOMPARE(delivery->calls, 1);
+        QCOMPARE(delivery->lastText, QStringLiteral("raw transcript"));
     }
 
     void dictationSessionStopsOnEmptyAudioFailure()

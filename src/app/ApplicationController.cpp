@@ -86,6 +86,14 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
     QTimer::singleShot(2000, this, &ApplicationController::runDeferredStartup);
 }
 
+ApplicationController::~ApplicationController()
+{
+    if (qApp) {
+        qApp->removeEventFilter(this);
+    }
+    delete m_popup;
+}
+
 bool ApplicationController::eventFilter(QObject *watched, QEvent *event)
 {
     if (!m_deferredStartupScheduled) {
@@ -109,6 +117,7 @@ void ApplicationController::runDeferredStartup()
         return;
     }
     m_deferredStartupDone = true;
+    qApp->removeEventFilter(this);
     m_audio->warmUp();
 #ifdef SPEECHER_WITH_KGLOBALACCEL
     m_globalShortcutAction = new QAction(QStringLiteral("Toggle dictation"), this);
@@ -426,7 +435,11 @@ void ApplicationController::wireSessionToPopup()
     connect(m_session, &DictationSession::popupListeningIndicatorRequested, m_popup, &TranscriberPopup::showListeningIndicator);
     connect(m_session, &DictationSession::popupMessageRequested, m_popup, &TranscriberPopup::showMessage);
     connect(m_session, &DictationSession::popupErrorRequested, m_popup, &TranscriberPopup::showErrorMessage);
-    connect(m_popup, &TranscriberPopup::errorDismissed, m_session, &DictationSession::stopListening);
+    connect(m_popup, &TranscriberPopup::errorDismissed, m_session, [this] {
+        if (m_session->state() == DictationState::Error) {
+            m_session->stopListening();
+        }
+    });
     connect(m_popup, &TranscriberPopup::enableAccessibilityRequested, this, [this] {
         QString error;
         if (!enableAccessibility(&error)) {

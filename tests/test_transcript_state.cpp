@@ -19,6 +19,15 @@ private slots:
         state.setPartial(QStringLiteral("world"));
         QCOMPARE(state.text(), QStringLiteral("hello world"));
     }
+
+    void transcriptStatePreservesRepeatedFinalSegments()
+    {
+        TranscriptState state;
+        state.commitFinal(QStringLiteral("yes"));
+        state.commitFinal(QStringLiteral("yes"));
+
+        QCOMPARE(state.text(), QStringLiteral("yes yes"));
+    }
 };
 
 int runTranscriptStateTests(int argc, char **argv)

@@ -543,7 +543,8 @@ void AppWindow::runAutoSave()
             m_autoSaveWarningText->setText(
                 QStringLiteral("Remove duplicate application paste-rule IDs to save"));
         } else if (failure == SettingsPageSet::SaveFailure::ProviderSecret) {
-            m_autoSaveWarningText->setText(QStringLiteral("Could not save provider credentials"));
+            m_autoSaveWarningText->setText(
+                QStringLiteral("Settings saved, but provider credentials could not be saved"));
         } else {
             m_autoSaveWarningText->setText(QStringLiteral("Fix invalid replacement rules to save"));
         }

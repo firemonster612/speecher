@@ -136,6 +136,22 @@ private slots:
         QCOMPARE(resolvePasteRule(rules, target).method, PasteMethod::TerminalPaste);
     }
 
+    void recognitionRulesRejectEmptyMatchesAndRespectBuiltInBoundaries()
+    {
+        Target target;
+        target.applicationId = QStringLiteral("org.example.barcode");
+        QCOMPARE(classifyTarget(target), AppCategory::General);
+
+        target.applicationId = QStringLiteral("org.example.!!!");
+        const QList<AppRecognitionRule> punctuationRule{
+            {QStringLiteral("!!!"), AppCategory::Terminal, WritingProfile::Work},
+        };
+        QCOMPARE(classifyTarget(target, punctuationRule), AppCategory::General);
+
+        target.applicationId = QStringLiteral("code");
+        QCOMPARE(classifyTarget(target), AppCategory::CodeEditor);
+    }
+
     void writingProfilesAndPromptUseBoundedUntrustedContext()
     {
         Target target;
@@ -311,6 +327,8 @@ private slots:
         QCOMPARE(classified(QStringLiteral("konsole")).category, AppCategory::Terminal);
         QCOMPARE(classified(QStringLiteral("com.mitchellh.ghostty")).category, AppCategory::Terminal);
         QCOMPARE(classified(QStringLiteral("firefox")).category, AppCategory::Browser);
+        QCOMPARE(classified(QStringLiteral("google-chrome")).category, AppCategory::Browser);
+        QCOMPARE(classified(QStringLiteral("org.chromium.Chromium")).category, AppCategory::Browser);
         QCOMPARE(classified(QStringLiteral("helium")).category, AppCategory::Browser);
         QCOMPARE(classified(QStringLiteral("thunderbird")).category, AppCategory::Email);
         QCOMPARE(classified(QStringLiteral("soffice.bin")).category, AppCategory::Office);

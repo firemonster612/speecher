@@ -1,7 +1,6 @@
 #include "platform/atspi/AtSpiAccess.h"
 
 #include <QDBusConnection>
-#include <QDBusInterface>
 #include <QDBusMessage>
 #include <QDBusVariant>
 #include <QDir>
@@ -19,6 +18,7 @@ namespace speecher::atspi {
 namespace {
 
 constexpr auto accessibilityVariable = "QT_LINUX_ACCESSIBILITY_ALWAYS_ON";
+constexpr int accessibilityCallTimeoutMs = 250;
 
 QString accessibilityEnvironmentPath()
 {
@@ -62,16 +62,14 @@ bool persistentAccessibilityConfigured()
 
 bool runtimeAccessibilityEnabled()
 {
-    QDBusInterface properties(
+    QDBusMessage request = QDBusMessage::createMethodCall(
         QStringLiteral("org.a11y.Bus"),
         QStringLiteral("/org/a11y/bus"),
         QStringLiteral("org.freedesktop.DBus.Properties"),
-        QDBusConnection::sessionBus());
-    properties.setTimeout(2000);
-    const QDBusMessage reply = properties.call(
-        QStringLiteral("Get"),
-        QStringLiteral("org.a11y.Status"),
-        QStringLiteral("IsEnabled"));
+        QStringLiteral("Get"));
+    request.setArguments({QStringLiteral("org.a11y.Status"), QStringLiteral("IsEnabled")});
+    const QDBusMessage reply = QDBusConnection::sessionBus().call(
+        request, QDBus::Block, accessibilityCallTimeoutMs);
     if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) {
         return false;
     }
@@ -95,17 +93,16 @@ AccessibilityState accessibilityState()
 
 bool requestAccessibility(QString *error)
 {
-    QDBusInterface properties(
+    QDBusMessage request = QDBusMessage::createMethodCall(
         QStringLiteral("org.a11y.Bus"),
         QStringLiteral("/org/a11y/bus"),
         QStringLiteral("org.freedesktop.DBus.Properties"),
-        QDBusConnection::sessionBus());
-    properties.setTimeout(2000);
-    const QDBusMessage reply = properties.call(
-        QStringLiteral("Set"),
-        QStringLiteral("org.a11y.Status"),
-        QStringLiteral("IsEnabled"),
-        QVariant::fromValue(QDBusVariant(true)));
+        QStringLiteral("Set"));
+    request.setArguments({QStringLiteral("org.a11y.Status"),
+                          QStringLiteral("IsEnabled"),
+                          QVariant::fromValue(QDBusVariant(true))});
+    const QDBusMessage reply = QDBusConnection::sessionBus().call(
+        request, QDBus::Block, accessibilityCallTimeoutMs);
     if (reply.type() == QDBusMessage::ErrorMessage) {
         if (error) {
             *error = reply.errorMessage().isEmpty()

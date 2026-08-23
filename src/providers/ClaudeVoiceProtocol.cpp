@@ -95,32 +95,22 @@ QByteArray claudeVoiceKeytermsHeader(const QStringList &vocabulary)
     QSet<QByteArray> seen;
     for (const QString &value : vocabulary) {
         const QString simplified = value.simplified();
-        QByteArray term;
-        term.reserve(simplified.size());
-        for (QChar character : simplified) {
-            const ushort unicode = character.unicode();
-            if (unicode >= 0x20 && unicode <= 0x7e) {
-                term.append(char(unicode));
-            }
-        }
-        term = term.trimmed();
+        const QByteArray term = simplified.toLatin1();
         const QByteArray key = term.toLower();
-        if (term.isEmpty() || seen.contains(key)) {
+        if (term.isEmpty()
+            || QString::fromLatin1(term) != simplified
+            || seen.contains(key)) {
+            continue;
+        }
+        const qsizetype separatorBytes = header.isEmpty() ? 0 : 1;
+        if (header.size() + separatorBytes + term.size() > kMaximumKeytermBytes) {
             continue;
         }
         seen.insert(key);
-        const qsizetype separatorBytes = header.isEmpty() ? 0 : 1;
-        const qsizetype available = kMaximumKeytermBytes - header.size() - separatorBytes;
-        if (available <= 0) {
-            break;
-        }
         if (!header.isEmpty()) {
             header.append(',');
         }
-        header.append(term.left(available));
-        if (header.size() >= kMaximumKeytermBytes) {
-            break;
-        }
+        header.append(term);
     }
     return header;
 }

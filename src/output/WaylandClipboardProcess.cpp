@@ -1,6 +1,7 @@
 #include "output/WaylandClipboardProcess.h"
 
 #include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QProcess>
 #include <QStandardPaths>
@@ -10,8 +11,6 @@ namespace speecher::WaylandClipboardProcess {
 namespace {
 
 constexpr int processStartTimeoutMs = 1000;
-constexpr int processTimeoutMs = 5000;
-
 QString processErrorMessage(const QString &tool, QProcess &process, const QString &fallback)
 {
     const QString stderrText = QString::fromUtf8(process.readAllStandardError()).trimmed();
@@ -51,9 +50,14 @@ bool run(const QString &executable,
          const QStringList &arguments,
          const QByteArray *input,
          QByteArray *output,
-         QString *error)
+         QString *error,
+         int timeoutMs,
+         qsizetype maximumOutputBytes)
 {
     QProcess process;
+    if (!output) {
+        process.setStandardOutputFile(QProcess::nullDevice());
+    }
     process.start(executable, arguments);
     if (!process.waitForStarted(processStartTimeoutMs)) {
         if (error) {
@@ -75,10 +79,43 @@ bool run(const QString &executable,
     }
     process.closeWriteChannel();
 
-    if (process.waitForFinished(processTimeoutMs)
+    QByteArray capturedOutput;
+    QElapsedTimer elapsed;
+    elapsed.start();
+    while (process.state() != QProcess::NotRunning && elapsed.elapsed() < timeoutMs) {
+        const int waitMs = qMin(50, timeoutMs - int(elapsed.elapsed()));
+        if (!process.waitForReadyRead(waitMs)
+            && process.state() != QProcess::NotRunning) {
+            const int remainingMs = timeoutMs - int(elapsed.elapsed());
+            if (remainingMs > 0) {
+                process.waitForFinished(qMin(50, remainingMs));
+            }
+        }
+        if (output) {
+            capturedOutput += process.readAllStandardOutput();
+            if (capturedOutput.size() > maximumOutputBytes) {
+                process.kill();
+                process.waitForFinished(1000);
+                if (error) {
+                    *error = QStringLiteral("%1 returned too much clipboard data").arg(tool);
+                }
+                return false;
+            }
+        }
+    }
+    if (output) {
+        capturedOutput += process.readAllStandardOutput();
+    }
+    if (capturedOutput.size() > maximumOutputBytes) {
+        if (error) {
+            *error = QStringLiteral("%1 returned too much clipboard data").arg(tool);
+        }
+        return false;
+    }
+    if (process.state() == QProcess::NotRunning
         && process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0) {
         if (output) {
-            *output = process.readAllStandardOutput();
+            *output = capturedOutput;
         }
         return true;
     }
@@ -86,7 +123,9 @@ bool run(const QString &executable,
     process.kill();
     process.waitForFinished(1000);
     if (error) {
-        *error = processErrorMessage(tool, process, QStringLiteral("%1 failed").arg(tool));
+        *error = elapsed.elapsed() >= timeoutMs
+            ? QStringLiteral("%1 timed out").arg(tool)
+            : processErrorMessage(tool, process, QStringLiteral("%1 failed").arg(tool));
     }
     return false;
 }

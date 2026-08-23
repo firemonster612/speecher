@@ -17,12 +17,6 @@ bool ClipboardDelivery::copy(const DeliveryContent &content, bool *htmlAvailable
         return copyWayland(content, htmlAvailable, error);
     }
 
-    if (content.html) {
-        if (copyQt(content, htmlAvailable, error)) {
-            return true;
-        }
-    }
-
     QString qtError;
     if (copyQt(content, htmlAvailable, &qtError)) {
         return true;

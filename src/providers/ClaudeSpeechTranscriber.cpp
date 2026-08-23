@@ -12,6 +12,7 @@ namespace {
 SpeechPrepareResult loadClaudeAccessToken(const SpeechSettings &settings, QString *accessToken)
 {
     const ClaudeCredentialResult credentials = ClaudeCredentials::load(settings.claudeCredentialsPath, true);
+    ClaudeCredentials::installedVersion();
     if (!credentials.ok) {
         if (accessToken) {
             accessToken->clear();

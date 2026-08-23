@@ -6,8 +6,6 @@
 #include "platform/atspi/AtSpiCorrectionObserver.h"
 #include "platform/atspi/AtSpiTargetSnapshot.h"
 
-#include <QCoreApplication>
-#include <QEventLoop>
 #include <QThread>
 #include <QUuid>
 
@@ -64,19 +62,23 @@ AtSpiTargetProvider::~AtSpiTargetProvider()
 void AtSpiTargetProvider::clearAccessible()
 {
     if (m_correctionObserver) m_correctionObserver->cancel();
+    m_fallbackSelection.clear();
     m_snapshot.reset();
 }
 
 Target AtSpiTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRules)
 {
-    m_recognitionRules = recognitionRules;
     clearAccessible();
     m_snapshot = std::make_unique<atspi::TargetSnapshot>(atspi::TargetSnapshot::capture());
     Target target = m_snapshot->target();
     target.category = classifyTarget(target, recognitionRules);
-    if (!target.hasSelection() && !target.secure && !isTerminalTarget(target)) {
+    if (!target.hasSelection()
+        && !target.secure
+        && !isTerminalTarget(target)
+        && m_snapshot->safeForSelectionProbe()) {
         target.selectedText = copiedSelection();
         if (!target.selectedText.isEmpty()) {
+            m_fallbackSelection = target.selectedText;
             target.selectionStart = 0;
             target.selectionEnd = target.selectedText.size();
         }
@@ -86,7 +88,12 @@ Target AtSpiTargetProvider::capture(const QList<AppRecognitionRule> &recognition
 
 bool AtSpiTargetProvider::stillFocused(const Target &target)
 {
-    return m_snapshot && m_snapshot->matches(target, true);
+    if (!m_snapshot || !m_snapshot->matches(target, true)) {
+        return false;
+    }
+    return m_fallbackSelection.isEmpty()
+        || (m_snapshot->safeForSelectionProbe()
+            && copiedSelection() == m_fallbackSelection);
 }
 
 bool AtSpiTargetProvider::canInsertText(const Target &target)
@@ -117,18 +124,8 @@ bool AtSpiTargetProvider::verifyInsertion(const Target &target, const QString &p
     int insertionOffset = target.selectionStart >= 0 ? target.selectionStart : target.caretOffset;
     if (insertionOffset < 0) return false;
 
-    for (int attempt = 0; attempt < 9; ++attempt) {
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-        if (attempt > 0) QThread::msleep(50);
-        if (attempt == 3) {
-            const Target current = capture(m_recognitionRules);
-            const bool sameProcess = target.processId > 0 && current.processId == target.processId;
-            const bool sameApplication = !target.applicationId.isEmpty()
-                && current.applicationId.compare(target.applicationId, Qt::CaseInsensitive) == 0;
-            if (current.secure || (!sameProcess && !sameApplication)) return false;
-            if (current.caretOffset >= plainText.size()) insertionOffset = current.caretOffset - plainText.size();
-        }
-
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        if (attempt > 0) QThread::msleep(40);
         const QString nearby = m_snapshot->insertionWindow(insertionOffset, plainText.size());
         const int insertedAt = nearby.indexOf(plainText);
         if (insertedAt < 0) continue;

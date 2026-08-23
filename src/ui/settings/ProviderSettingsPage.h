@@ -56,6 +56,7 @@ private:
     QLineEdit *m_apiKey;
     QString m_loadedApiKey;
     quint64 m_apiKeyEditRevision = 0;
+    quint64 m_authStatusGeneration = 0;
     bool m_secretLoaded = false;
 };
 

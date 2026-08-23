@@ -22,6 +22,7 @@ private:
     QByteArray encodeOutputSamples(const QVector<float> &samples);
 
     QAudioFormat m_sourceFormat;
+    QByteArray m_pendingInput;
     QVector<float> m_resampleBuffer;
     double m_nextInputPosition = 0.0;
 };

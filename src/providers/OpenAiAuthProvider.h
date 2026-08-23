@@ -23,7 +23,9 @@ public:
     explicit OpenAiAuthProvider(SecretStore *secretStore = nullptr,
                                 const QString &mode = QStringLiteral("auto"),
                                 const QString &cliproxyAccount = {},
-                                const QString &cliproxyDir = {});
+                                const QString &cliproxyDir = {},
+                                const QString &settingsApiKey = {},
+                                const QString &settingsStatus = {});
 
     OpenAiAuth resolve(bool refreshExpired = true) const;
     QString status() const;
@@ -37,6 +39,8 @@ private:
     QString m_mode;
     QString m_cliproxyAccount;
     QString m_cliproxyDir;
+    QString m_settingsApiKey;
+    QString m_settingsStatus;
 };
 
 } // namespace speecher
