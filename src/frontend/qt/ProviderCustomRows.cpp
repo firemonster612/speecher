@@ -92,6 +92,16 @@ SchemaCustomRow ProviderCustomRows::makeAuthModeRow(QWidget *parent,
                      m_authMode,
                      [this, notifyChanged = std::move(notifyChanged)] {
                          updateCredentialControl();
+                         // Logging into CLI Proxy API while the window is open adds
+                         // accounts this list hasn't seen yet, so a mode switch
+                         // re-reads them from disk rather than trusting whatever
+                         // was there when the row was built.
+                         if (m_openAiCliproxyAccount) {
+                             populateCliproxyAccounts(
+                                 m_openAiCliproxyAccount,
+                                 QStringLiteral("codex"),
+                                 comboSelection(m_openAiCliproxyAccount, m_openAiStoredAccount));
+                         }
                          updateAccountTooltips();
                          notifyChanged();
                      });
@@ -154,6 +164,12 @@ SchemaCustomRow ProviderCustomRows::makeAnthropicAuthModeRow(QWidget *parent,
                      m_anthropicAuthMode,
                      [this, notifyChanged = std::move(notifyChanged)] {
                          updateAnthropicAuthControl();
+                         if (m_anthropicCliproxyAccount) {
+                             populateCliproxyAccounts(
+                                 m_anthropicCliproxyAccount,
+                                 QStringLiteral("claude"),
+                                 comboSelection(m_anthropicCliproxyAccount, m_anthropicStoredAccount));
+                         }
                          updateAccountTooltips();
                          notifyChanged();
                      });
@@ -206,8 +222,9 @@ SchemaCustomRow ProviderCustomRows::makeCliproxyApiKeyRow(
     QObject::connect(m_cliproxyApiKey,
                      &QLineEdit::textEdited,
                      m_cliproxyApiKey,
-                     [this, notifyChanged = std::move(notifyChanged)] {
-                         updateCredentialControl();
+                     [notifyChanged = std::move(notifyChanged)] {
+                         // The credential status doesn't depend on the key text, so
+                         // a keystroke doesn't re-resolve it on a thread of its own.
                          notifyChanged();
                      });
     return {
