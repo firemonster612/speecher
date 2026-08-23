@@ -56,7 +56,10 @@ static QString installLogHandler()
     QDir().mkpath(dir);
     const QString path = dir + QStringLiteral("/speecher.log");
     g_logFile = new QFile(path);
-    g_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
+    if (!g_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+        delete g_logFile;
+        g_logFile = nullptr;
+    }
     qInstallMessageHandler(messageHandler);
     qInfo().noquote() << "speecher log started path=" + path;
     return path;

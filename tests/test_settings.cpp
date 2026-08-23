@@ -166,7 +166,12 @@ private slots:
         QCOMPARE(settings.anthropicCliproxyAccount(), QStringLiteral("claude-user@example.com.json"));
         QCOMPARE(settings.snapshot().refinement.openAiCliproxyAccount, QStringLiteral("codex-user@example.com.json"));
         QCOMPARE(settings.snapshot().refinement.anthropicCliproxyAccount, QStringLiteral("claude-user@example.com.json"));
-        QVERIFY(settings.snapshot().refinement.cliproxyOauthDir.endsWith(QStringLiteral("cliproxy-api/oauth")));
+        // The default is autodetected from the machine: whichever CLI Proxy API
+        // auth dir holds accounts, or the stock ~/.cli-proxy-api on a machine
+        // with neither.
+        const QString oauthDir = settings.snapshot().refinement.cliproxyOauthDir;
+        QVERIFY(oauthDir.endsWith(QStringLiteral("cliproxy-api/oauth"))
+                || oauthDir.endsWith(QStringLiteral(".cli-proxy-api")));
         settings.setAnthropicEffort(QStringLiteral("high"));
         QCOMPARE(settings.anthropicEffort(), QStringLiteral("high"));
         settings.setAnthropicEffort(QStringLiteral("max"));

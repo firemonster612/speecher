@@ -402,6 +402,7 @@ QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget 
         row.setValue = [label](const QVariant &value) { label->setText(value.toString()); };
         return label;
     }
+    case RowKind::Collection:
     case RowKind::Custom:
         break;
     }
