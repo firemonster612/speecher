@@ -188,7 +188,7 @@ bool SettingsPageSet::save(bool showValidationErrors,
     // saveSecret says why itself, because only it knows what the keyring said.
     if (!m_providerRows.saveSecret()) {
         return refuse(SaveFailure::ProviderSecret,
-                      {QStringLiteral("Could not save provider credentials")});
+                      {QStringLiteral("Settings saved, but provider credentials could not be saved")});
     }
     if (refreshPages) {
         load();
