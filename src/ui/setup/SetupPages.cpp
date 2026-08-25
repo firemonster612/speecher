@@ -424,8 +424,7 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
     , m_controller(controller)
     , m_status(new QLabel(this))
 #ifdef Q_OS_MACOS
-    , m_enable(new QPushButton(QStringLiteral("Open Accessibility settings"), this))
-    , m_request(new QPushButton(QStringLiteral("Ask macOS for permission"), this))
+    , m_enable(new QPushButton(QStringLiteral("Grant Accessibility access"), this))
     , m_poll(new QTimer(this))
 #else
     , m_enable(new QPushButton(QStringLiteral("Enable permanently"), this))
@@ -442,30 +441,22 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
     m_enable->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     layout->addWidget(m_status);
 #ifdef Q_OS_MACOS
-    m_request->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
-    auto *buttons = new QHBoxLayout;
-    buttons->addWidget(m_request);
-    buttons->addWidget(m_enable);
-    buttons->addStretch();
-    layout->addLayout(buttons);
+    layout->addWidget(m_enable, 0, Qt::AlignLeft);
     // macOS records the grant against the app signature and never delivers it to
     // the process that asked, so the only way to notice it is to keep looking.
     m_poll->setInterval(1000);
     connect(m_poll, &QTimer::timeout, &m_controller, &ApplicationController::refreshAccessibilityState);
-    connect(m_request, &QPushButton::clicked, this, [this] {
+    connect(m_enable, &QPushButton::clicked, this, [this] {
         m_lastError.clear();
+        m_controller.platform()->requestAccessibility();
         QString error;
-        if (!m_controller.platform()->requestAccessibility(&error)) {
+        if (!m_controller.enableAccessibility(&error)) {
             m_lastError = error;
         }
-        m_controller.refreshAccessibilityState();
         refreshFromController();
     });
 #else
     layout->addWidget(m_enable, 0, Qt::AlignLeft);
-#endif
-    layout->addStretch();
-
     connect(m_enable, &QPushButton::clicked, this, [this] {
         m_lastError.clear();
         QString error;
@@ -476,11 +467,24 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
         // the error existed.
         refreshFromController();
     });
+#endif
+    layout->addStretch();
     connect(&m_controller,
             &ApplicationController::accessibilityStateChanged,
             this,
             &AccessibilitySetupPage::updateState);
     refreshFromController();
+}
+
+bool AccessibilitySetupPage::accessibilityGrantAppearedDuringSetup() const
+{
+#ifdef Q_OS_MACOS
+    return m_initialGrantRecorded
+        && !m_initialGrant
+        && m_controller.accessibilityEnabled();
+#else
+    return false;
+#endif
 }
 
 void AccessibilitySetupPage::refreshFromController()
@@ -495,6 +499,10 @@ void AccessibilitySetupPage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
     m_controller.refreshAccessibilityState();
+    if (!m_initialGrantRecorded) {
+        m_initialGrant = m_controller.accessibilityEnabled();
+        m_initialGrantRecorded = true;
+    }
     m_poll->start();
 }
 
@@ -512,9 +520,8 @@ void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool pers
     Q_UNUSED(supported);
     Q_UNUSED(persistent);
     status = enabled
-        ? QStringLiteral("Accessibility is granted. If pasting still does nothing, quit Speecher and open it again; macOS only hands the permission to a fresh launch.")
-        : QStringLiteral("Accessibility is off, so Speecher can copy your dictation but not paste it. Grant it below, then restart Speecher.");
-    m_request->setEnabled(!enabled);
+        ? QStringLiteral("Accessibility is granted. Speecher will restart when setup finishes so macOS hands it the permission.")
+        : QStringLiteral("Accessibility is off, so Speecher can copy your dictation but not paste it. Grant it below — Speecher restarts itself when setup finishes.");
     m_enable->setEnabled(!enabled);
 #else
     if (!supported) {

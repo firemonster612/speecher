@@ -13,6 +13,8 @@
 
 #include <QCoreApplication>
 #include <QDesktopServices>
+#include <QDir>
+#include <QProcess>
 #include <QUrl>
 
 #import <ApplicationServices/ApplicationServices.h>
@@ -23,6 +25,13 @@ namespace {
 
 constexpr auto accessibilityPaneUrl =
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
+
+QString shellQuote(QString value)
+{
+    return QStringLiteral("'")
+        + value.replace(QLatin1Char('\''), QStringLiteral("'\"'\"'"))
+        + QStringLiteral("'");
+}
 
 } // namespace
 
@@ -134,6 +143,23 @@ bool MacComposition::enableAccessibilityPermanently(QString *error) const
         *error = QStringLiteral("Could not open the Privacy & Security > Accessibility settings pane");
     }
     return false;
+}
+
+void MacComposition::relaunch() const
+{
+    QDir bundle(QCoreApplication::applicationDirPath());
+    const bool inBundle = bundle.dirName() == QStringLiteral("MacOS")
+        && bundle.cdUp()
+        && bundle.dirName() == QStringLiteral("Contents")
+        && bundle.cdUp()
+        && bundle.dirName().endsWith(QStringLiteral(".app"), Qt::CaseInsensitive);
+    const QString command = inBundle
+        ? QStringLiteral("sleep 1; open -n %1").arg(shellQuote(bundle.absolutePath()))
+        : QStringLiteral("sleep 1; exec %1").arg(
+              shellQuote(QCoreApplication::applicationFilePath()));
+    QProcess::startDetached(QStringLiteral("/bin/sh"),
+                            {QStringLiteral("-c"), command});
+    QCoreApplication::quit();
 }
 
 std::shared_ptr<const MacComposition> macComposition()

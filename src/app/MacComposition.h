@@ -26,6 +26,7 @@ public:
     AccessibilityState accessibilityState() const override;
     bool requestAccessibility(QString *error = nullptr) const override;
     bool enableAccessibilityPermanently(QString *error = nullptr) const override;
+    void relaunch() const override;
 };
 
 std::shared_ptr<const MacComposition> macComposition();

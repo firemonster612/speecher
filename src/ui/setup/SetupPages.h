@@ -89,6 +89,8 @@ public:
     explicit AccessibilitySetupPage(ApplicationController &controller,
                                     QWidget *parent = nullptr);
 
+    bool accessibilityGrantAppearedDuringSetup() const;
+
 #ifdef Q_OS_MACOS
 protected:
     void showEvent(QShowEvent *event) override;
@@ -106,8 +108,9 @@ private:
     QString m_lastError;
     QPushButton *m_enable;
 #ifdef Q_OS_MACOS
-    QPushButton *m_request;
     QTimer *m_poll;
+    bool m_initialGrant = false;
+    bool m_initialGrantRecorded = false;
 #endif
 };
 

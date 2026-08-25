@@ -10,6 +10,7 @@
 namespace speecher {
 
 class ApplicationController;
+class AccessibilitySetupPage;
 class FinishSetupPage;
 class MicrophoneSetupPage;
 class TextDeliverySetupPage;
@@ -31,6 +32,7 @@ private:
     void updateActivePage(QWidget *page);
 
     ApplicationController *m_controller;
+    AccessibilitySetupPage *m_accessibilityPage;
     MicrophoneSetupPage *m_microphonePage;
     TextDeliverySetupPage *m_deliveryPage;
     FinishSetupPage *m_finishPage;

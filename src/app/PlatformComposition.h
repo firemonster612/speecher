@@ -38,6 +38,7 @@ public:
     virtual AccessibilityState accessibilityState() const = 0;
     virtual bool requestAccessibility(QString *error = nullptr) const = 0;
     virtual bool enableAccessibilityPermanently(QString *error = nullptr) const = 0;
+    virtual void relaunch() const {}
 };
 
 std::shared_ptr<const PlatformComposition> platformComposition();
