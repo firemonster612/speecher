@@ -4,17 +4,30 @@
 
 ```sh
 brew install cmake ninja pkgconf qt qtkeychain
-cmake -S . -B build-mac -G Ninja \
+make build
+make test
+make install
+make dmg
+open build/speecher.app
+```
+
+`make install` installs `speecher.app` in `/Applications` by default. `make dmg`
+creates `build/speecher.dmg` with a drag-to-Applications layout.
+
+The make targets run these CMake commands underneath:
+
+```sh
+cmake -S . -B build -G Ninja \
   -DCMAKE_PREFIX_PATH="$(brew --prefix qt);$(brew --prefix qtkeychain)"
-cmake --build build-mac
-ctest --test-dir build-mac --output-on-failure
-open build-mac/speecher.app
+cmake --build build
+ctest --test-dir build --output-on-failure
+cmake --install build --prefix /Applications
 ```
 
 The bundle's Info.plist carries the microphone and Apple Events usage
 descriptions, so permission prompts work from a plain developer build. For a
-distributable app, run `macdeployqt build-mac/speecher.app` from the Homebrew
-Qt tools and sign/notarize as usual.
+distributable app, `make dmg` runs `macdeployqt` on a staged copy of the bundle.
+Sign and notarize release builds as usual.
 
 ## Permissions Speecher asks for
 
