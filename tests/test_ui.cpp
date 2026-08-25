@@ -260,17 +260,27 @@ private slots:
             {QStringLiteral("codex"),
              QStringLiteral("ChatGPT Codex"),
              QStringLiteral("Sign in with the ChatGPT app or Codex CLI, then check again.")},
-            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+            [](QObject *parent) {
+                auto *provider = new FakeSpeechTranscriber(parent);
+                provider->prepareResult = {false, QStringLiteral("Sign-in required")};
+                return provider;
+            });
 
         SpeechProviderSetupPage setup(settings, providers);
         auto *setupChoice = setup.findChild<QComboBox *>(QStringLiteral("speechProvider"));
         auto *setupHint = setup.findChild<QLabel *>(QStringLiteral("speechProviderHint"));
+        auto *checkAgain = setup.findChild<QPushButton *>(QStringLiteral("speechProviderCheckAgain"));
         QVERIFY(setupChoice);
         QVERIFY(setupHint);
+        QVERIFY(checkAgain);
         QCOMPARE(setupChoice->count(), 2);
+        QVERIFY(setupHint->isHidden());
+        QVERIFY(checkAgain->isHidden());
         setupChoice->setCurrentIndex(setupChoice->findData(QStringLiteral("codex")));
         QCOMPARE(settings.speechProvider(), QStringLiteral("codex"));
         QVERIFY(setupHint->text().contains(QStringLiteral("ChatGPT app")));
+        QVERIFY(!setupHint->isHidden());
+        QVERIFY(!checkAgain->isHidden());
 
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
         const std::unique_ptr<SchemaSettingsPage> audio =

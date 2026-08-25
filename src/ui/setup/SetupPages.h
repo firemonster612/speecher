@@ -45,6 +45,7 @@ private:
     QComboBox *m_provider;
     QLabel *m_hint;
     QLabel *m_status;
+    QPushButton *m_checkAgain;
     quint64 m_checkGeneration = 0;
 };
 

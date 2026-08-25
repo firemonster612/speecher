@@ -153,6 +153,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     , m_provider(new QComboBox(this))
     , m_hint(new QLabel(this))
     , m_status(new QLabel(this))
+    , m_checkAgain(new QPushButton(QStringLiteral("Check again"), this))
 {
     QVBoxLayout *layout = makePage(
         this,
@@ -167,19 +168,19 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     m_hint->setObjectName(QStringLiteral("speechProviderHint"));
     m_hint->setWordWrap(true);
     m_status->setWordWrap(true);
-    auto *checkAgain = new QPushButton(QStringLiteral("Check again"), this);
-    checkAgain->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    m_checkAgain->setObjectName(QStringLiteral("speechProviderCheckAgain"));
+    m_checkAgain->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     auto *providerRow = new QHBoxLayout;
     providerRow->addWidget(new QLabel(QStringLiteral("Transcription service"), this));
     providerRow->addWidget(m_provider, 1);
     layout->addLayout(providerRow);
     layout->addWidget(m_status);
     layout->addWidget(m_hint);
-    layout->addWidget(checkAgain, 0, Qt::AlignLeft);
+    layout->addWidget(m_checkAgain, 0, Qt::AlignLeft);
     layout->addStretch();
     connect(m_provider, &QComboBox::currentIndexChanged,
             this, &SpeechProviderSetupPage::updateProvider);
-    connect(checkAgain, &QPushButton::clicked,
+    connect(m_checkAgain, &QPushButton::clicked,
             this, &SpeechProviderSetupPage::checkProvider);
     updateProvider();
 }
@@ -199,6 +200,8 @@ void SpeechProviderSetupPage::updateProvider()
 
 void SpeechProviderSetupPage::checkProvider()
 {
+    m_hint->show();
+    m_checkAgain->show();
     const quint64 generation = ++m_checkGeneration;
     const QString providerId = m_provider->currentData().toString();
     SpeechTranscriber *provider = m_providers.speechProvider(
@@ -217,6 +220,8 @@ void SpeechProviderSetupPage::checkProvider()
         m_status->setText(result.ok
                               ? QStringLiteral("%1 is ready.").arg(provider->label())
                               : result.message);
+        m_hint->setVisible(!result.ok);
+        m_checkAgain->setVisible(!result.ok);
         return;
     }
 
@@ -240,6 +245,8 @@ void SpeechProviderSetupPage::checkProvider()
         m_status->setText(result->ok
                               ? QStringLiteral("%1 is ready.").arg(providerLabel)
                               : result->message);
+        m_hint->setVisible(!result->ok);
+        m_checkAgain->setVisible(!result->ok);
     });
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);
     thread->start();
