@@ -24,19 +24,14 @@ struct DictationPanelView: View {
 
     var body: some View {
         HStack {
-            Image(systemName: state.problem.isEmpty ? "mic.fill" : "exclamationmark.triangle.fill")
-                .accessibilityLabel(state.problem.isEmpty ? "Dictating" : "Dictation problem")
-            VStack(alignment: .leading) {
-                Text(headline)
-                    .font(.headline)
-                    .lineLimit(2)
-                if !state.preview.isEmpty {
-                    Text(state.preview)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
+            Image(systemName: symbol)
+                .imageScale(.large)
+                .accessibilityLabel(phaseLabel)
+            // The words are the point of the panel, so they get the only line of
+            // type in it, and a problem takes that line rather than a second one.
+            Text(state.problem.isEmpty ? state.preview : state.problem)
+                .font(.body)
+                .lineLimit(1)
             Spacer()
             if !state.problem.isEmpty {
                 Button("Dismiss", action: dismiss)
@@ -55,10 +50,25 @@ struct DictationPanelView: View {
         .glassEffect()
     }
 
-    private var headline: String {
-        if !state.problem.isEmpty { return state.problem }
-        guard !state.status.isEmpty else { return "Listening" }
-        return state.status.prefix(1).uppercased() + state.status.dropFirst()
+    /// One symbol per phase, because the icon is now the only thing that says
+    /// which phase this is: the line the phase used to be written on is gone.
+    /// The session ends a delivery on a free-form outcome from the delivery back
+    /// end ("Copied to clipboard"), so an unrecognised status is a finished one.
+    private var symbol: String {
+        if !state.problem.isEmpty { return "exclamationmark.triangle.fill" }
+        switch state.status.lowercased() {
+        case "preparing", "starting": return "arrow.triangle.2.circlepath"
+        case "listening": return "mic.fill"
+        case "stopping": return "waveform"
+        case "refining": return "sparkles"
+        default: return "paperplane.fill"
+        }
+    }
+
+    /// The phase in words, for the screen reader that can't see the symbol.
+    private var phaseLabel: String {
+        if !state.problem.isEmpty { return "Dictation problem" }
+        return state.status.isEmpty ? "Dictating" : state.status
     }
 }
 
@@ -123,8 +133,9 @@ final class SpeecherDictationPanel {
     }
 
     func show(problem: String) {
-        // The pill is one fixed height, so a two-line problem and the transcript
-        // of the attempt before it cannot both fit; the problem is what matters.
+        // The problem takes the one line of type the pill has, so the transcript
+        // of the attempt that failed goes with it rather than lingering in the
+        // state for the next show to flash.
         state.preview = ""
         state.problem = problem
         present()
