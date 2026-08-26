@@ -83,6 +83,8 @@ struct MenuBarPanel: View {
 /// The status item and its popover.
 @MainActor
 final class SpeecherMenuBarExtra: NSObject {
+    private static let fallbackContentSize = NSSize(width: 300, height: 320)
+
     private let model: AppModel
     private let item: NSStatusItem
     private let popover = NSPopover()
@@ -95,11 +97,13 @@ final class SpeecherMenuBarExtra: NSObject {
         popover.behavior = .transient
         // No background of ours: a popover carries the system's material, and
         // adding one over it is what the Liquid Glass audit asks you to remove.
-        popover.contentViewController = NSHostingController(
+        let hostingController = NSHostingController(
             rootView: MenuBarPanel(model: model, openSettings: { [weak self] in
                 self?.popover.performClose(nil)
                 openSettings()
             }))
+        hostingController.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = hostingController
         item.button?.action = #selector(togglePanel)
         item.button?.target = self
         symbol(listening: model.listening)
@@ -127,6 +131,9 @@ final class SpeecherMenuBarExtra: NSObject {
         if popover.isShown {
             popover.performClose(nil)
         } else {
+            if popover.contentSize.width <= 0 || popover.contentSize.height <= 0 {
+                popover.contentSize = Self.fallbackContentSize
+            }
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
     }

@@ -21,7 +21,7 @@
 	<key>CFBundleVersion</key>
 	<string>${PROJECT_VERSION}</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>13.0</string>
+	<string>26.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
