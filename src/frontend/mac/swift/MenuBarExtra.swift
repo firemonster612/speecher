@@ -84,6 +84,7 @@ struct MenuBarPanel: View {
 @MainActor
 final class SpeecherMenuBarExtra: NSObject {
     private static let fallbackContentSize = NSSize(width: 300, height: 320)
+    private static let idleIconSize = NSSize(width: 18, height: 18)
 
     private let model: AppModel
     private let item: NSStatusItem
@@ -122,8 +123,10 @@ final class SpeecherMenuBarExtra: NSObject {
         } else {
             // A status item with no image is invisible, so a bundle resource
             // that fails to load must fall back to a symbol, never to nothing.
-            button.image = Bundle.main.image(forResource: "speecher-menubar")
+            let image = Bundle.main.image(forResource: "speecher-menubar")
                 ?? NSImage(systemSymbolName: "mic", accessibilityDescription: "Speecher")
+            image?.size = Self.idleIconSize
+            button.image = image
             button.image?.accessibilityDescription = "Speecher"
         }
         button.image?.isTemplate = true
