@@ -57,26 +57,30 @@ struct DictationPanelView: View {
         .glassEffect(in: .capsule)
     }
 
-    /// One symbol per phase, because the icon is now the only thing that says
-    /// which phase this is: the line the phase used to be written on is gone.
-    /// The session ends a delivery on a free-form outcome from the delivery back
-    /// end ("Copied to clipboard"), so an unrecognised status is a finished one.
-    private var symbol: String {
-        if !state.problem.isEmpty { return "exclamationmark.triangle.fill" }
+    /// One symbol and one label per phase, from the same mapping, so what a
+    /// sighted user sees and what VoiceOver reads for it never disagree — the
+    /// panel can present before the first status lands, when state.status is
+    /// still empty. The session ends a delivery on a free-form outcome from the
+    /// delivery back end ("Copied to clipboard"), so an unrecognised non-empty
+    /// status is a finished one.
+    private var phase: (symbol: String, label: String) {
+        if !state.problem.isEmpty {
+            return ("exclamationmark.triangle.fill", "Dictation problem")
+        }
         switch state.status.lowercased() {
-        case "preparing", "starting": return "arrow.triangle.2.circlepath"
-        case "listening": return "mic.fill"
-        case "stopping": return "waveform"
-        case "refining": return "sparkles"
-        default: return "paperplane.fill"
+        case "", "preparing", "starting":
+            return ("arrow.triangle.2.circlepath", state.status.isEmpty ? "Dictating" : state.status)
+        case "listening": return ("mic.fill", state.status)
+        case "stopping": return ("waveform", state.status)
+        case "refining": return ("sparkles", state.status)
+        default: return ("paperplane.fill", state.status)
         }
     }
 
+    private var symbol: String { phase.symbol }
+
     /// The phase in words, for the screen reader that can't see the symbol.
-    private var phaseLabel: String {
-        if !state.problem.isEmpty { return "Dictation problem" }
-        return state.status.isEmpty ? "Dictating" : state.status
-    }
+    private var phaseLabel: String { phase.label }
 }
 
 @MainActor
