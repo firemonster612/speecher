@@ -538,6 +538,15 @@ if(TARGET speecher_frontend_mac)
 endif()
 
 if(APPLE)
+  set(SPEECHER_MACOS_RESOURCES
+    packaging/macos/speecher.icns
+    packaging/macos/speecher-menubar.png
+    packaging/macos/speecher-menubar@2x.png
+  )
+  target_sources(speecher PRIVATE ${SPEECHER_MACOS_RESOURCES})
+  set_source_files_properties(${SPEECHER_MACOS_RESOURCES} PROPERTIES
+    MACOSX_PACKAGE_LOCATION "Resources"
+  )
   set_target_properties(speecher PROPERTIES
     MACOSX_BUNDLE TRUE
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/Info.plist.in"

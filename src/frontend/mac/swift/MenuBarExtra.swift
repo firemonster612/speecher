@@ -112,9 +112,13 @@ final class SpeecherMenuBarExtra: NSObject {
 
     private func symbol(listening: Bool) {
         guard let button = item.button else { return }
-        button.image = NSImage(systemSymbolName: listening ? "mic.fill" : "mic",
-                              accessibilityDescription: listening ? "Speecher is listening"
-                                                                 : "Speecher")
+        if listening {
+            button.image = NSImage(systemSymbolName: "mic.fill",
+                                   accessibilityDescription: "Speecher is listening")
+        } else {
+            button.image = Bundle.main.image(forResource: "speecher-menubar")
+            button.image?.accessibilityDescription = "Speecher"
+        }
         button.image?.isTemplate = true
     }
 

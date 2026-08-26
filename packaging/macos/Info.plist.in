@@ -8,6 +8,8 @@
 	<string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
 	<key>CFBundleIdentifier</key>
 	<string>local.speecher</string>
+	<key>CFBundleIconFile</key>
+	<string>speecher.icns</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
