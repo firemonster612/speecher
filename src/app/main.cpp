@@ -101,7 +101,11 @@ int main(int argc, char **argv)
     Theme::apply(startupSettings.theme());
 
     const bool daemon = decision.mode == LaunchMode::RunDaemon;
+#ifdef Q_OS_MACOS
+    app.setQuitOnLastWindowClosed(false);
+#else
     app.setQuitOnLastWindowClosed(!daemon);
+#endif
 
     ApplicationController controller(daemon, platform);
     // The one place a platform's front end is chosen; see

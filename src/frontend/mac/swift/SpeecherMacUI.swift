@@ -1,6 +1,37 @@
 import AppKit
 import SwiftUI
 
+@MainActor
+private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
+    private let forwardingDelegate: NSApplicationDelegate?
+    private let reopen: () -> Void
+
+    init(forwardingTo delegate: NSApplicationDelegate?, reopen: @escaping () -> Void) {
+        forwardingDelegate = delegate
+        self.reopen = reopen
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication,
+                                       hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            reopen()
+        }
+        return true
+    }
+
+    override func responds(to selector: Selector!) -> Bool {
+        super.responds(to: selector)
+            || forwardingDelegate?.responds(to: selector) == true
+    }
+
+    override func forwardingTarget(for selector: Selector!) -> Any? {
+        guard forwardingDelegate?.responds(to: selector) == true else {
+            return super.forwardingTarget(for: selector)
+        }
+        return forwardingDelegate
+    }
+}
+
 /// The whole macOS front end as Objective-C++ sees it: a menu bar item, a
 /// settings window and a dictation panel over one model.
 ///
@@ -11,6 +42,7 @@ import SwiftUI
     private let panel: SpeecherDictationPanel
     private var menuBar: SpeecherMenuBarExtra!
     private var settings: SpeecherSettingsWindow?
+    private var applicationDelegate: ReopenApplicationDelegate?
 
     @MainActor
     @objc public init(bridge: SpeecherBridge) {
@@ -20,6 +52,10 @@ import SwiftUI
         super.init()
         menuBar = SpeecherMenuBarExtra(model: model,
                                       openSettings: { [weak self] in self?.showSettings() })
+        applicationDelegate = ReopenApplicationDelegate(forwardingTo: NSApp.delegate) {
+            [weak self] in self?.showSettings()
+        }
+        NSApp.delegate = applicationDelegate
         installSettingsMenuItem()
     }
 
