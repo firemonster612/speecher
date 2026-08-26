@@ -479,6 +479,9 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
 bool AccessibilitySetupPage::accessibilityGrantAppearedDuringSetup() const
 {
 #ifdef Q_OS_MACOS
+    // The poll that keeps m_controller's cached state fresh stops once this page
+    // is hidden, so refresh synchronously before trusting the cache here.
+    m_controller.refreshAccessibilityState();
     return m_initialGrantRecorded
         && !m_initialGrant
         && m_controller.accessibilityEnabled();
@@ -519,8 +522,14 @@ void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool pers
 #ifdef Q_OS_MACOS
     Q_UNUSED(supported);
     Q_UNUSED(persistent);
+    // A grant that pre-dated this wizard run does not trigger a relaunch on
+    // accept() (see accessibilityGrantAppearedDuringSetup()), so the copy must
+    // not promise one either.
+    const bool grantedDuringSetup = m_initialGrantRecorded && !m_initialGrant;
     status = enabled
-        ? QStringLiteral("Accessibility is granted. Speecher will restart when setup finishes so macOS hands it the permission.")
+        ? (grantedDuringSetup
+               ? QStringLiteral("Accessibility is granted. Speecher will restart when setup finishes so macOS hands it the permission.")
+               : QStringLiteral("Accessibility is granted."))
         : QStringLiteral("Accessibility is off, so Speecher can copy your dictation but not paste it. Grant it below — Speecher restarts itself when setup finishes.");
     m_enable->setEnabled(!enabled);
 #else
