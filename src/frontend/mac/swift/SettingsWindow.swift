@@ -90,6 +90,10 @@ final class SpeecherSettingsWindow {
                           styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                           backing: .buffered,
                           defer: false)
+        // AppKit releases a closed window by default while this object keeps a
+        // strong reference to it; the over-released window survives as an
+        // invisible click-eating ghost. This window closes and reopens.
+        window.isReleasedWhenClosed = false
         // The title remains useful to the window server, but the detail column
         // renders it. The sidebar material therefore continues behind the
         // traffic lights instead of stopping beneath a separate title band.

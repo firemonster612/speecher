@@ -120,7 +120,10 @@ final class SpeecherMenuBarExtra: NSObject {
             button.image = NSImage(systemSymbolName: "mic.fill",
                                    accessibilityDescription: "Speecher is listening")
         } else {
+            // A status item with no image is invisible, so a bundle resource
+            // that fails to load must fall back to a symbol, never to nothing.
             button.image = Bundle.main.image(forResource: "speecher-menubar")
+                ?? NSImage(systemSymbolName: "mic", accessibilityDescription: "Speecher")
             button.image?.accessibilityDescription = "Speecher"
         }
         button.image?.isTemplate = true

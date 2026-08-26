@@ -102,6 +102,9 @@ then
   sync
 else
   echo "Note: Finder layout pass was skipped; the DMG contents are still complete." >&2
+  # A layout pass that died mid-script can leave a partial .DS_Store that
+  # positions icons outside the window; no layout beats half a layout.
+  rm -f "$MOUNT_POINT/.DS_Store"
 fi
 
 if ! hdiutil detach "$MOUNT_POINT" -quiet; then
