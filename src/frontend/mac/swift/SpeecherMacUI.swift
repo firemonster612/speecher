@@ -16,7 +16,10 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         if !flag {
             reopen()
         }
-        return true
+        // This method's own implementation of the selector is what makes
+        // forwardingTarget(for:) never see it, so a delegate Qt installed here
+        // needs an explicit call to still hear reopen events.
+        return forwardingDelegate?.applicationShouldHandleReopen?(sender, hasVisibleWindows: flag) ?? true
     }
 
     override func responds(to selector: Selector!) -> Bool {
@@ -29,6 +32,15 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
             return super.forwardingTarget(for: selector)
         }
         return forwardingDelegate
+    }
+
+    /// Hands NSApp.delegate back to whatever this proxy was installed over.
+    /// Only if it's still the installed delegate: a later relaunch's proxy may
+    /// already have replaced it by the time this one deallocates.
+    func restoreIfInstalled() {
+        if NSApp.delegate === self {
+            NSApp.delegate = forwardingDelegate
+        }
     }
 }
 
@@ -57,6 +69,16 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.delegate = applicationDelegate
         installSettingsMenuItem()
+    }
+
+    // NSApplication.delegate is unsafe-unretained, and this object holds the
+    // only strong reference to the proxy installed over it. Without this,
+    // every setup relaunch and app shutdown leaves NSApp.delegate dangling
+    // during Qt's Cocoa teardown.
+    deinit {
+        MainActor.assumeIsolated {
+            applicationDelegate?.restoreIfInstalled()
+        }
     }
 
     /// Made on first use: a run that only ever dictates never pays for the
