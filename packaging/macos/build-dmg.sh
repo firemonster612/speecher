@@ -37,33 +37,37 @@ fi
 
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/speecher-dmg.XXXXXX")"
 STAGING_DIR="$WORK_DIR/staging"
-MOUNT_DIR="$WORK_DIR/mount"
 RW_DMG="$WORK_DIR/speecher-rw.dmg"
-MOUNTED=0
+MOUNT_POINT=""
 
 cleanup() {
-  if [[ "$MOUNTED" -eq 1 ]]; then
-    hdiutil detach "$MOUNT_DIR" -quiet || true
+  if [[ -n "$MOUNT_POINT" ]]; then
+    hdiutil detach "$MOUNT_POINT" -quiet || true
   fi
   rm -rf "$WORK_DIR"
 }
 trap cleanup EXIT
 
-mkdir -p "$STAGING_DIR/.background" "$MOUNT_DIR"
+mkdir -p "$STAGING_DIR/.background"
 ditto "$SOURCE_APP" "$STAGING_DIR/speecher.app"
-"$MACDEPLOYQT" "$STAGING_DIR/speecher.app" -always-overwrite
+# Ad-hoc signing: without it the deployed binary and Qt dylibs are unsigned
+# and macOS refuses to launch the copy a user drags out of the image.
+"$MACDEPLOYQT" "$STAGING_DIR/speecher.app" -always-overwrite -codesign=-
 ln -s /Applications "$STAGING_DIR/Applications"
 cp "$BACKGROUND" "$STAGING_DIR/.background/dmg-background.png"
 
 hdiutil create -volname Speecher -srcfolder "$STAGING_DIR" -fs HFS+ \
   -format UDRW -ov "$RW_DMG" >/dev/null
-hdiutil attach "$RW_DMG" -readwrite -noverify -noautoopen \
-  -mountpoint "$MOUNT_DIR" >/dev/null
-MOUNTED=1
+# Mount under /Volumes: Finder only addresses a disk by name when the system
+# picked the mount point, so a custom -mountpoint would break the layout pass.
+ATTACH_OUT="$(hdiutil attach "$RW_DMG" -readwrite -noverify -noautoopen)"
+MOUNT_POINT="$(sed -n 's|.*\(/Volumes/.*\)$|\1|p' <<<"$ATTACH_OUT" | head -1)"
+VOLUME_NAME="$(basename "$MOUNT_POINT")"
 
-if osascript <<'APPLESCRIPT'
+if osascript - "$VOLUME_NAME" <<'APPLESCRIPT'
+on run argv
 tell application "Finder"
-  tell disk "Speecher"
+  tell disk (item 1 of argv)
     open
     set current view of container window to icon view
     set toolbar visible of container window to false
@@ -84,6 +88,7 @@ tell application "Finder"
     close
   end tell
 end tell
+end run
 APPLESCRIPT
 then
   sync
@@ -91,10 +96,10 @@ else
   echo "Note: Finder layout pass was skipped; the DMG contents are still complete." >&2
 fi
 
-if ! hdiutil detach "$MOUNT_DIR" -quiet; then
-  hdiutil detach "$MOUNT_DIR" -force -quiet
+if ! hdiutil detach "$MOUNT_POINT" -quiet; then
+  hdiutil detach "$MOUNT_POINT" -force -quiet
 fi
-MOUNTED=0
+MOUNT_POINT=""
 hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 \
   -ov -o "$OUTPUT_DMG" >/dev/null
 
