@@ -6,6 +6,12 @@ import SwiftUI
 // is being dictated into. A non-activating NSPanel, so showing it never takes
 // focus away from the app the text is going to.
 
+/// The pill's height, for the window that is created at it and the content that
+/// fills it, so that the capsule is the whole window. Left to size itself the
+/// content came out between 59 and 61pt depending on which trailing control was
+/// showing, which moved the pill's edges as the dictation changed phase.
+private let pillHeight: CGFloat = 72
+
 @MainActor
 final class DictationPanelState: ObservableObject {
     @Published var status = ""
@@ -47,7 +53,8 @@ struct DictationPanelView: View {
             }
         }
         .scenePadding()
-        .glassEffect()
+        .frame(height: pillHeight)
+        .glassEffect(in: .capsule)
     }
 
     /// One symbol per phase, because the icon is now the only thing that says
@@ -87,7 +94,7 @@ final class SpeecherDictationPanel {
         // Non-activating is the whole point, and only an NSPanel accepts that
         // style mask. Borderless because the pill is the window: a titlebar
         // over a floating status readout would be chrome nobody asked for.
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 72),
+        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: pillHeight),
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered,
                         defer: false)
