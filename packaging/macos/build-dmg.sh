@@ -53,6 +53,14 @@ ditto "$SOURCE_APP" "$STAGING_DIR/speecher.app"
 # Ad-hoc signing: without it the deployed binary and Qt dylibs are unsigned
 # and macOS refuses to launch the copy a user drags out of the image.
 "$MACDEPLOYQT" "$STAGING_DIR/speecher.app" -always-overwrite -codesign=-
+# Homebrew's macdeployqt does not reliably ad-hoc sign the whole tree despite
+# -codesign=-, so sign again explicitly: --deep covers the nested frameworks
+# and dylibs macdeployqt left unsigned, then the bundle itself.
+codesign --force --deep --sign - "$STAGING_DIR/speecher.app"
+if ! codesign --verify --deep --strict "$STAGING_DIR/speecher.app"; then
+  echo "Ad-hoc signing left $STAGING_DIR/speecher.app failing codesign --verify --deep --strict" >&2
+  exit 1
+fi
 ln -s /Applications "$STAGING_DIR/Applications"
 cp "$BACKGROUND" "$STAGING_DIR/.background/dmg-background.png"
 
