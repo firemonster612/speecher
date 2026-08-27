@@ -199,6 +199,7 @@ void OpenAiRefiner::parseSseChunk(const QByteArray &chunk)
             emit delta(text);
         } else if (eventName == "response.completed") {
             completeIfReady();
+            return;
         }
     }
 }
@@ -211,7 +212,15 @@ void OpenAiRefiner::completeIfReady()
     m_inactivityTimer.stop();
     m_deadlineTimer.stop();
     m_completed = true;
-    emit completed(m_accumulated);
+    QPointer<QNetworkReply> reply = m_reply;
+    m_reply = nullptr;
+    const QString result = m_accumulated;
+    QMetaObject::invokeMethod(this, [this, reply, result] {
+        if (reply) {
+            reply->abort();
+        }
+        emit completed(result);
+    }, Qt::QueuedConnection);
 }
 
 } // namespace speecher
