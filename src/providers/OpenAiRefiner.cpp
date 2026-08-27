@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QPointer>
 #include <QRegularExpression>
 
 namespace speecher {
@@ -180,12 +181,12 @@ void OpenAiRefiner::parseSseChunk(const QByteArray &chunk)
             m_inactivityTimer.stop();
             m_deadlineTimer.stop();
             m_failed = true;
-            if (m_reply) {
-                QNetworkReply *reply = m_reply;
-                m_reply = nullptr;
-                reply->abort();
-            }
+            QPointer<QNetworkReply> reply = m_reply;
+            m_reply = nullptr;
             emit failed(openAiErrorMessage(data, QStringLiteral("OpenAI refinement error")));
+            if (reply) {
+                QMetaObject::invokeMethod(reply, &QNetworkReply::abort, Qt::QueuedConnection);
+            }
             return;
         }
         const QJsonObject object = QJsonDocument::fromJson(data).object();
