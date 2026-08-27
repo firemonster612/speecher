@@ -38,6 +38,9 @@ struct DictationPanelView: View {
             Text(state.problem.isEmpty ? state.preview : state.problem)
                 .font(.body)
                 .lineLimit(1)
+                // A live transcript overflows from the front: the words the
+                // user just said must always be the visible end.
+                .truncationMode(state.problem.isEmpty ? .head : .tail)
             Spacer()
             if !state.problem.isEmpty {
                 Button("Dismiss", action: dismiss)
