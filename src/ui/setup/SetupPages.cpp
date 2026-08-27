@@ -776,12 +776,6 @@ WritingProfilesSetupPage::WritingProfilesSetupPage(SettingsStore &settings, QWid
         ++row;
     }
     layout->addLayout(grid);
-#ifdef Q_OS_MACOS
-    m_launchAtLogin = new QCheckBox(QStringLiteral("Start Speecher at login"), this);
-    m_launchAtLogin->setObjectName(QStringLiteral("launchAtLogin"));
-    m_launchAtLogin->setChecked(m_settings.launchAtLogin());
-    layout->addWidget(m_launchAtLogin);
-#endif
     layout->addStretch();
     connect(m_defaultProfile, &QComboBox::currentIndexChanged, this, [this] {
         m_settings.setDefaultWritingProfile(m_defaultProfile->currentData().toString());
@@ -789,7 +783,21 @@ WritingProfilesSetupPage::WritingProfilesSetupPage(SettingsStore &settings, QWid
 }
 
 #ifdef Q_OS_MACOS
-void WritingProfilesSetupPage::applyLaunchAtLogin()
+StartAtLoginSetupPage::StartAtLoginSetupPage(SettingsStore &settings, QWidget *parent)
+    : QWidget(parent)
+    , m_settings(settings)
+    , m_launchAtLogin(new QCheckBox(QStringLiteral("Start Speecher at login"), this))
+{
+    QVBoxLayout *layout = makePage(
+        this,
+        QStringLiteral("Dictation only works while Speecher is running."));
+    m_launchAtLogin->setObjectName(QStringLiteral("launchAtLogin"));
+    m_launchAtLogin->setChecked(m_settings.launchAtLogin());
+    layout->addWidget(m_launchAtLogin);
+    layout->addStretch();
+}
+
+void StartAtLoginSetupPage::apply()
 {
     m_settings.setLaunchAtLogin(m_launchAtLogin->isChecked());
 }

@@ -47,6 +47,9 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
     , m_deliveryPage(new TextDeliverySetupPage(*controller->settings(), this))
     , m_profilesPage(new WritingProfilesSetupPage(*controller->settings(), this))
     , m_finishPage(new FinishSetupPage(*controller, this))
+#ifdef Q_OS_MACOS
+    , m_startAtLoginPage(new StartAtLoginSetupPage(*controller->settings(), this))
+#endif
 {
     setWindowTitle(QStringLiteral("Speecher Setup Assistant"));
     resize(720, 520);
@@ -68,6 +71,9 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
     addPage(refinement, QStringLiteral("Refinement"));
     addPage(m_profilesPage, QStringLiteral("Writing profiles"));
     addPage(m_finishPage, QStringLiteral("Ready to dictate"));
+#ifdef Q_OS_MACOS
+    addPage(m_startAtLoginPage, QStringLiteral("Start at login"));
+#endif
     auto *skip = new QPushButton(QStringLiteral("Skip setup"), this);
     addActionButton(skip);
     connect(skip, &QPushButton::clicked, this, &SetupAssistant::skipSetup);
@@ -102,6 +108,9 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
     addSetupPage(refinement, QStringLiteral("Refinement"));
     addSetupPage(m_profilesPage, QStringLiteral("Writing profiles"));
     addSetupPage(m_finishPage, QStringLiteral("Ready to dictate"));
+#ifdef Q_OS_MACOS
+    addSetupPage(m_startAtLoginPage, QStringLiteral("Start at login"));
+#endif
     connect(this, &QWizard::customButtonClicked, this, [this](int button) {
         if (button == QWizard::CustomButton1) {
             skipSetup();
@@ -134,7 +143,7 @@ void SetupAssistant::accept()
             return;
         }
 #ifdef Q_OS_MACOS
-        m_profilesPage->applyLaunchAtLogin();
+        m_startAtLoginPage->apply();
 #endif
     }
     m_controller->settings()->setSetupCompleted(true);

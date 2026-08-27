@@ -154,9 +154,6 @@ class WritingProfilesSetupPage final : public QWidget {
 public:
     explicit WritingProfilesSetupPage(SettingsStore &settings,
                                       QWidget *parent = nullptr);
-#ifdef Q_OS_MACOS
-    void applyLaunchAtLogin();
-#endif
 
 private:
     struct ProfileControls {
@@ -170,10 +167,21 @@ private:
     SettingsStore &m_settings;
     QComboBox *m_defaultProfile;
     QList<ProfileControls> m_profiles;
-#ifdef Q_OS_MACOS
-    QCheckBox *m_launchAtLogin = nullptr;
-#endif
 };
+
+#ifdef Q_OS_MACOS
+class StartAtLoginSetupPage final : public QWidget {
+public:
+    explicit StartAtLoginSetupPage(SettingsStore &settings,
+                                   QWidget *parent = nullptr);
+
+    void apply();
+
+private:
+    SettingsStore &m_settings;
+    QCheckBox *m_launchAtLogin;
+};
+#endif
 
 class FinishSetupPage final : public QWidget {
 public:

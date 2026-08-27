@@ -12,6 +12,7 @@
 
 #include <QAbstractButton>
 #include <QApplication>
+#include <QCheckBox>
 
 using namespace speecher;
 
@@ -131,6 +132,20 @@ private slots:
         SettingsRowModel *refreshed = settingsRow(bridge.settingsSchema, @"targetContextControl");
         QVERIFY(refreshed);
         QVERIFY(refreshed.enabled);
+    }
+
+    void setupFinishesWithStartAtLoginPage()
+    {
+        ApplicationController controller(false);
+        SetupAssistant assistant(&controller);
+        const QList<int> ids = assistant.pageIds();
+
+        QCOMPARE(ids.size(), 9);
+        QWizardPage *last = assistant.page(ids.last());
+        QCOMPARE(last->title(), QStringLiteral("Start at login"));
+        auto *startAtLogin = last->findChild<QCheckBox *>(QStringLiteral("launchAtLogin"));
+        QVERIFY(startAtLogin);
+        QVERIFY(startAtLogin->isChecked());
     }
 };
 

@@ -13,6 +13,9 @@ class ApplicationController;
 class AccessibilitySetupPage;
 class FinishSetupPage;
 class MicrophoneSetupPage;
+#ifdef Q_OS_MACOS
+class StartAtLoginSetupPage;
+#endif
 class TextDeliverySetupPage;
 class WritingProfilesSetupPage;
 
@@ -38,6 +41,9 @@ private:
     TextDeliverySetupPage *m_deliveryPage;
     WritingProfilesSetupPage *m_profilesPage;
     FinishSetupPage *m_finishPage;
+#ifdef Q_OS_MACOS
+    StartAtLoginSetupPage *m_startAtLoginPage;
+#endif
 #ifndef SPEECHER_WITH_KASSISTANT
     QHash<int, QWidget *> m_pageContents;
 #endif
