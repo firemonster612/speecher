@@ -41,7 +41,8 @@ struct DictationPanelView: View {
             Text(state.problem.isEmpty ? state.preview : state.problem)
                 .font(.body)
                 .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
                 // A live transcript overflows from the front: the words the
                 // user just said must always be the visible end.
