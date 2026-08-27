@@ -734,6 +734,7 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                      [weakSelf](const QString &preview) {
                          SpeecherBridge *bridge = weakSelf;
                          if (bridge.popupPreviewChanged) {
+                             qDebug() << "macOS popup preview delivered length=" << preview.size();
                              bridge.popupPreviewChanged(preview.toNSString());
                          }
                      });
