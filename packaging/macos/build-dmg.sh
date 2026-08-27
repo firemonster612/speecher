@@ -17,6 +17,7 @@ fi
 BUILD_DIR="$(cd "$1" && pwd)"
 SOURCE_APP="$BUILD_DIR/speecher.app"
 OUTPUT_DMG="$BUILD_DIR/speecher.dmg"
+LOG="$BUILD_DIR/speecher-dmg.log"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKGROUND="$SCRIPT_DIR/dmg-background.png"
 
@@ -35,6 +36,28 @@ if [[ ! -x "$MACDEPLOYQT" ]]; then
   exit 1
 fi
 
+# The tools this script drives are loud about things that need no attention —
+# macdeployqt in particular prints ERROR lines about optional Qt plugins it
+# rightly skips, and about a signing pass this script redoes anyway. All of it
+# goes to the log; the terminal gets one line per stage, and the log's tail
+# only when a stage genuinely fails.
+: > "$LOG"
+STEP=0
+STEPS=7
+step() {
+  STEP=$((STEP + 1))
+  printf '[%d/%d] %s\n' "$STEP" "$STEPS" "$1"
+}
+run_logged() {
+  local description="$1"
+  shift
+  if ! "$@" >> "$LOG" 2>&1; then
+    echo "$description failed. Last lines of $LOG:" >&2
+    tail -15 "$LOG" >&2
+    exit 1
+  fi
+}
+
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/speecher-dmg.XXXXXX")"
 STAGING_DIR="$WORK_DIR/staging"
 RW_DMG="$WORK_DIR/speecher-rw.dmg"
@@ -42,14 +65,16 @@ MOUNT_POINT=""
 
 cleanup() {
   if [[ -n "$MOUNT_POINT" ]]; then
-    hdiutil detach "$MOUNT_POINT" -quiet || true
+    hdiutil detach "$MOUNT_POINT" -quiet >> "$LOG" 2>&1 || true
   fi
   rm -rf "$WORK_DIR"
 }
 trap cleanup EXIT
 
+step "Copying the app bundle"
 mkdir -p "$STAGING_DIR/.background"
-ditto "$SOURCE_APP" "$STAGING_DIR/speecher.app"
+run_logged "Copying the app bundle" ditto "$SOURCE_APP" "$STAGING_DIR/speecher.app"
+
 # Signing identity. The ad-hoc default ("-") makes a launchable bundle, but
 # macOS keys the Accessibility grant to the signature, and an ad-hoc
 # signature changes on every build — each update then silently invalidates
@@ -57,29 +82,38 @@ ditto "$SOURCE_APP" "$STAGING_DIR/speecher.app"
 # (a self-signed code-signing certificate is enough) makes grants survive
 # updates: SPEECHER_SIGN_IDENTITY="My Cert Name" make dmg
 SIGN_IDENTITY="${SPEECHER_SIGN_IDENTITY:--}"
+
+step "Bundling Qt into the app (the slow part)"
 # Without signing the deployed binary and Qt dylibs are unsigned and macOS
 # refuses to launch the copy a user drags out of the image.
-"$MACDEPLOYQT" "$STAGING_DIR/speecher.app" -always-overwrite -codesign="$SIGN_IDENTITY"
+run_logged "Bundling Qt" "$MACDEPLOYQT" "$STAGING_DIR/speecher.app" -always-overwrite -codesign="$SIGN_IDENTITY"
+
+step "Signing the bundle"
 # Homebrew's macdeployqt does not reliably sign the whole tree despite
 # -codesign, so sign again explicitly: --deep covers the nested frameworks
 # and dylibs macdeployqt left unsigned, then the bundle itself.
-codesign --force --deep --sign "$SIGN_IDENTITY" "$STAGING_DIR/speecher.app"
-if ! codesign --verify --deep --strict "$STAGING_DIR/speecher.app"; then
-  echo "Ad-hoc signing left $STAGING_DIR/speecher.app failing codesign --verify --deep --strict" >&2
+run_logged "Signing" codesign --force --deep --sign "$SIGN_IDENTITY" "$STAGING_DIR/speecher.app"
+
+step "Verifying the signature"
+if ! codesign --verify --deep --strict "$STAGING_DIR/speecher.app" >> "$LOG" 2>&1; then
+  echo "Signing left the bundle failing codesign --verify --deep --strict; see $LOG" >&2
+  tail -15 "$LOG" >&2
   exit 1
 fi
+
+step "Creating the disk image"
 ln -s /Applications "$STAGING_DIR/Applications"
 cp "$BACKGROUND" "$STAGING_DIR/.background/dmg-background.png"
-
-hdiutil create -volname Speecher -srcfolder "$STAGING_DIR" -fs HFS+ \
-  -format UDRW -ov "$RW_DMG" >/dev/null
+run_logged "Creating the disk image" hdiutil create -volname Speecher \
+  -srcfolder "$STAGING_DIR" -fs HFS+ -format UDRW -ov "$RW_DMG"
 # Mount under /Volumes: Finder only addresses a disk by name when the system
 # picked the mount point, so a custom -mountpoint would break the layout pass.
-ATTACH_OUT="$(hdiutil attach "$RW_DMG" -readwrite -noverify -noautoopen)"
+ATTACH_OUT="$(hdiutil attach "$RW_DMG" -readwrite -noverify -noautoopen 2>> "$LOG")"
 MOUNT_POINT="$(sed -n 's|.*\(/Volumes/.*\)$|\1|p' <<<"$ATTACH_OUT" | head -1)"
 VOLUME_NAME="$(basename "$MOUNT_POINT")"
 
-if osascript - "$VOLUME_NAME" <<'APPLESCRIPT'
+step "Arranging the Finder window"
+if osascript - "$VOLUME_NAME" >> "$LOG" 2>&1 <<'APPLESCRIPT'
 on run argv
 tell application "Finder"
   tell disk (item 1 of argv)
@@ -108,17 +142,18 @@ APPLESCRIPT
 then
   sync
 else
-  echo "Note: Finder layout pass was skipped; the DMG contents are still complete." >&2
+  echo "      Finder was not scriptable here, so the window keeps its default layout; the DMG is still complete."
   # A layout pass that died mid-script can leave a partial .DS_Store that
   # positions icons outside the window; no layout beats half a layout.
   rm -f "$MOUNT_POINT/.DS_Store"
 fi
 
-if ! hdiutil detach "$MOUNT_POINT" -quiet; then
-  hdiutil detach "$MOUNT_POINT" -force -quiet
+step "Compressing the image"
+if ! hdiutil detach "$MOUNT_POINT" -quiet >> "$LOG" 2>&1; then
+  hdiutil detach "$MOUNT_POINT" -force -quiet >> "$LOG" 2>&1
 fi
 MOUNT_POINT=""
-hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 \
-  -ov -o "$OUTPUT_DMG" >/dev/null
+run_logged "Compressing the image" hdiutil convert "$RW_DMG" -format UDZO \
+  -imagekey zlib-level=9 -ov -o "$OUTPUT_DMG"
 
-echo "Created $OUTPUT_DMG"
+echo "Created $OUTPUT_DMG (full tool output: $LOG)"
