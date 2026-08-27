@@ -40,6 +40,11 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_shortcutBinder(m_platform->createGlobalShortcutBinder(this))
     , m_ipc(new SingleInstanceIpc(m_platform, this))
 {
+    m_settings->setLaunchAtLoginReconciler(
+        [platform = m_platform](bool enabled, QString *error) {
+            return platform->setLaunchAtLogin(enabled, error);
+        });
+    m_settings->reconcileLaunchAtLogin();
     connect(m_shortcutBinder,
             &GlobalShortcutBinder::activated,
             this,
@@ -82,6 +87,18 @@ ApplicationController::ApplicationController(bool popupOnly,
 
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::stateChanged);
+#ifdef Q_OS_MACOS
+    connect(m_session, &DictationSession::stateChanged, this, [this](const QString &state) {
+        if (state != QStringLiteral("Listening")) {
+            return;
+        }
+        const std::optional<float> volume = m_platform->inputVolume();
+        if (volume) {
+            qInfo().noquote() << "macOS default input volume="
+                              + QString::number(qRound(*volume * 100.0f)) + "%";
+        }
+    });
+#endif
     connect(m_session, &DictationSession::statusChanged, this, &ApplicationController::statusChanged);
     connect(m_session, &DictationSession::previewChanged, this, &ApplicationController::previewChanged);
     connect(m_session, &DictationSession::transcriptDelivered, this, &ApplicationController::transcriptDelivered);

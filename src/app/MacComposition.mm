@@ -18,7 +18,12 @@
 #include <QUrl>
 
 #import <ApplicationServices/ApplicationServices.h>
+#import <AudioToolbox/AudioHardwareService.h>
+#import <CoreAudio/CoreAudio.h>
 #import <Foundation/Foundation.h>
+#import <ServiceManagement/ServiceManagement.h>
+
+#include <algorithm>
 
 namespace speecher {
 namespace {
@@ -31,6 +36,27 @@ QString shellQuote(QString value)
     return QStringLiteral("'")
         + value.replace(QLatin1Char('\''), QStringLiteral("'\"'\"'"))
         + QStringLiteral("'");
+}
+
+bool runsFromAppBundle()
+{
+    NSString *extension = NSBundle.mainBundle.bundleURL.pathExtension;
+    return [extension caseInsensitiveCompare:@"app"] == NSOrderedSame;
+}
+
+QString serviceStatusName(SMAppServiceStatus status)
+{
+    switch (status) {
+    case SMAppServiceStatusNotRegistered:
+        return QStringLiteral("not registered");
+    case SMAppServiceStatusEnabled:
+        return QStringLiteral("enabled");
+    case SMAppServiceStatusRequiresApproval:
+        return QStringLiteral("requires approval");
+    case SMAppServiceStatusNotFound:
+        return QStringLiteral("not found");
+    }
+    return QStringLiteral("unknown");
 }
 
 } // namespace
@@ -143,6 +169,85 @@ bool MacComposition::enableAccessibilityPermanently(QString *error) const
         *error = QStringLiteral("Could not open the Privacy & Security > Accessibility settings pane");
     }
     return false;
+}
+
+bool MacComposition::setLaunchAtLogin(bool enabled, QString *error) const
+{
+    if (!runsFromAppBundle()) {
+        if (error) {
+            *error = QStringLiteral("Launch at login requires Speecher to run from an app bundle");
+        }
+        return false;
+    }
+
+    SMAppService *service = SMAppService.mainAppService;
+    const SMAppServiceStatus status = service.status;
+    if ((enabled && (status == SMAppServiceStatusEnabled
+                     || status == SMAppServiceStatusRequiresApproval))
+        || (!enabled && status == SMAppServiceStatusNotRegistered)) {
+        qInfo().noquote() << "launch at login status=" + serviceStatusName(status);
+        return true;
+    }
+
+    NSError *serviceError = nil;
+    const bool changed = enabled
+        ? [service registerAndReturnError:&serviceError]
+        : [service unregisterAndReturnError:&serviceError];
+    qInfo().noquote() << "launch at login status=" + serviceStatusName(service.status);
+    if (!changed && error) {
+        *error = serviceError
+            ? QString::fromUtf8(serviceError.localizedDescription.UTF8String)
+            : QStringLiteral("macOS did not change the launch at login service");
+    }
+    return changed;
+}
+
+bool MacComposition::launchAtLoginEnabled() const
+{
+    return runsFromAppBundle()
+        && SMAppService.mainAppService.status == SMAppServiceStatusEnabled;
+}
+
+std::optional<float> MacComposition::inputVolume() const
+{
+    AudioDeviceID device = kAudioObjectUnknown;
+    UInt32 size = sizeof(device);
+    const AudioObjectPropertyAddress defaultInput{
+        kAudioHardwarePropertyDefaultInputDevice,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain,
+    };
+    if (AudioObjectGetPropertyData(kAudioObjectSystemObject,
+                                   &defaultInput,
+                                   0,
+                                   nullptr,
+                                   &size,
+                                   &device) != noErr
+        || device == kAudioObjectUnknown) {
+        return std::nullopt;
+    }
+
+    // Qt device ids do not map directly to AudioDeviceID values. Until that
+    // mapping exists, this intentionally reports only the default input.
+    const AudioObjectPropertyAddress volumeProperty{
+        kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
+        kAudioDevicePropertyScopeInput,
+        kAudioObjectPropertyElementMain,
+    };
+    if (!AudioObjectHasProperty(device, &volumeProperty)) {
+        return std::nullopt;
+    }
+    Float32 volume = 0.0f;
+    size = sizeof(volume);
+    if (AudioObjectGetPropertyData(device,
+                                   &volumeProperty,
+                                   0,
+                                   nullptr,
+                                   &size,
+                                   &volume) != noErr) {
+        return std::nullopt;
+    }
+    return std::clamp(volume, 0.0f, 1.0f);
 }
 
 void MacComposition::relaunch() const

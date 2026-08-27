@@ -67,6 +67,7 @@ private:
 #ifdef Q_OS_MACOS
     void addMicrophonePermissionControls(QVBoxLayout *layout);
     void refreshMicrophonePermission();
+    void refreshInputVolume();
 #endif
 
     SettingsStore &m_settings;
@@ -76,6 +77,7 @@ private:
     QProgressBar *m_level;
     QLabel *m_status;
 #ifdef Q_OS_MACOS
+    QLabel *m_inputVolumeStatus = nullptr;
     QLabel *m_permissionStatus = nullptr;
     QPushButton *m_allowMicrophone = nullptr;
     QPushButton *m_openMicrophoneSettings = nullptr;
@@ -152,6 +154,9 @@ class WritingProfilesSetupPage final : public QWidget {
 public:
     explicit WritingProfilesSetupPage(SettingsStore &settings,
                                       QWidget *parent = nullptr);
+#ifdef Q_OS_MACOS
+    void applyLaunchAtLogin();
+#endif
 
 private:
     struct ProfileControls {
@@ -165,6 +170,9 @@ private:
     SettingsStore &m_settings;
     QComboBox *m_defaultProfile;
     QList<ProfileControls> m_profiles;
+#ifdef Q_OS_MACOS
+    QCheckBox *m_launchAtLogin = nullptr;
+#endif
 };
 
 class FinishSetupPage final : public QWidget {

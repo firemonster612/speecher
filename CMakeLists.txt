@@ -427,6 +427,10 @@ if(APPLE)
     ${SPEECHER_APP_MAC_SOURCES}
     ${SPEECHER_APP_MAC_HEADERS}
   )
+  target_link_libraries(speecher_app PRIVATE
+    "-framework CoreAudio"
+    "-framework ServiceManagement"
+  )
 endif()
 
 add_library(speecher_frontend_qt STATIC

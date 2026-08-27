@@ -14,6 +14,7 @@ class AccessibilitySetupPage;
 class FinishSetupPage;
 class MicrophoneSetupPage;
 class TextDeliverySetupPage;
+class WritingProfilesSetupPage;
 
 #ifdef SPEECHER_WITH_KASSISTANT
 class SetupAssistant final : public KAssistantDialog {
@@ -35,6 +36,7 @@ private:
     AccessibilitySetupPage *m_accessibilityPage;
     MicrophoneSetupPage *m_microphonePage;
     TextDeliverySetupPage *m_deliveryPage;
+    WritingProfilesSetupPage *m_profilesPage;
     FinishSetupPage *m_finishPage;
 #ifndef SPEECHER_WITH_KASSISTANT
     QHash<int, QWidget *> m_pageContents;

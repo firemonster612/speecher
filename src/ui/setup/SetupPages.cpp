@@ -261,6 +261,9 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
     , m_device(new QComboBox(this))
     , m_level(new QProgressBar(this))
     , m_status(new QLabel(this))
+#ifdef Q_OS_MACOS
+    , m_inputVolumeStatus(new QLabel(this))
+#endif
 {
     QVBoxLayout *layout = makePage(
         this,
@@ -280,6 +283,12 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
     form->addWidget(m_device, 0, 1);
     form->addWidget(new QLabel(QStringLiteral("Live level"), this), 1, 0);
     form->addWidget(m_level, 1, 1);
+#ifdef Q_OS_MACOS
+    m_inputVolumeStatus->setObjectName(QStringLiteral("inputVolumeStatus"));
+    m_inputVolumeStatus->setWordWrap(true);
+    m_inputVolumeStatus->hide();
+    form->addWidget(m_inputVolumeStatus, 2, 1);
+#endif
     layout->addLayout(form);
     layout->addWidget(m_status);
     layout->addStretch();
@@ -287,6 +296,9 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
     m_input = m_platform.createAudioInput(&m_settings, this);
     connect(m_input, &AudioInput::levelChanged, this, [this](float level) {
         m_level->setValue(qBound(0, qRound(level * 100.0f), 100));
+#ifdef Q_OS_MACOS
+        refreshInputVolume();
+#endif
         if (level > 0.01f) {
             m_status->setText(QStringLiteral("Microphone input detected."));
         }
@@ -380,6 +392,19 @@ void MicrophoneSetupPage::refreshMicrophonePermission()
     }
     setStatusColor(m_permissionStatus, status == Qt::PermissionStatus::Granted);
 }
+
+void MicrophoneSetupPage::refreshInputVolume()
+{
+    const std::optional<float> volume = m_platform.inputVolume();
+    if (!volume || *volume >= 0.5f) {
+        m_inputVolumeStatus->hide();
+        return;
+    }
+    m_inputVolumeStatus->setText(
+        QStringLiteral("macOS input volume for the default microphone is at %1% — raise it in System Settings > Sound > Input if Speecher hears you too quietly.")
+            .arg(qRound(*volume * 100.0f)));
+    m_inputVolumeStatus->show();
+}
 #endif
 
 void MicrophoneSetupPage::showEvent(QShowEvent *event)
@@ -410,6 +435,9 @@ void MicrophoneSetupPage::startMeter()
 {
     m_input->stop();
     m_level->setValue(0);
+#ifdef Q_OS_MACOS
+    refreshInputVolume();
+#endif
     QString error;
     if (!m_input->start(&error)) {
         m_status->setText(error);
@@ -748,11 +776,24 @@ WritingProfilesSetupPage::WritingProfilesSetupPage(SettingsStore &settings, QWid
         ++row;
     }
     layout->addLayout(grid);
+#ifdef Q_OS_MACOS
+    m_launchAtLogin = new QCheckBox(QStringLiteral("Start Speecher at login"), this);
+    m_launchAtLogin->setObjectName(QStringLiteral("launchAtLogin"));
+    m_launchAtLogin->setChecked(m_settings.launchAtLogin());
+    layout->addWidget(m_launchAtLogin);
+#endif
     layout->addStretch();
     connect(m_defaultProfile, &QComboBox::currentIndexChanged, this, [this] {
         m_settings.setDefaultWritingProfile(m_defaultProfile->currentData().toString());
     });
 }
+
+#ifdef Q_OS_MACOS
+void WritingProfilesSetupPage::applyLaunchAtLogin()
+{
+    m_settings.setLaunchAtLogin(m_launchAtLogin->isChecked());
+}
+#endif
 
 void WritingProfilesSetupPage::saveProfiles()
 {
