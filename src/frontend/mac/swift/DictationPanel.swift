@@ -11,6 +11,9 @@ import SwiftUI
 /// content came out between 59 and 61pt depending on which trailing control was
 /// showing, which moved the pill's edges as the dictation changed phase.
 private let pillHeight: CGFloat = 72
+private let minimumPillWidth: CGFloat = 420
+private let previewChromeWidth: CGFloat = 190
+private let screenEdgeMargin: CGFloat = 80
 
 @MainActor
 final class DictationPanelState: ObservableObject {
@@ -38,10 +41,11 @@ struct DictationPanelView: View {
             Text(state.problem.isEmpty ? state.preview : state.problem)
                 .font(.body)
                 .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .layoutPriority(1)
                 // A live transcript overflows from the front: the words the
                 // user just said must always be the visible end.
                 .truncationMode(state.problem.isEmpty ? .head : .tail)
-            Spacer()
             if !state.problem.isEmpty {
                 Button("Dismiss", action: dismiss)
             } else if state.refining {
@@ -101,7 +105,9 @@ final class SpeecherDictationPanel {
         // Non-activating is the whole point, and only an NSPanel accepts that
         // style mask. Borderless because the pill is the window: a titlebar
         // over a floating status readout would be chrome nobody asked for.
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: pillHeight),
+        panel = NSPanel(contentRect: NSRect(x: 0, y: 0,
+                                            width: minimumPillWidth,
+                                            height: pillHeight),
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered,
                         defer: false)
@@ -125,7 +131,7 @@ final class SpeecherDictationPanel {
 
     private func wire() {
         bridge.popupStatusChanged = { [weak self] status in self?.state.status = status }
-        bridge.popupPreviewChanged = { [weak self] preview in self?.state.preview = preview }
+        bridge.popupPreviewChanged = { [weak self] preview in self?.setPreview(preview) }
         bridge.popupRefiningChanged = { [weak self] refining in self?.state.refining = refining }
         bridge.popupErrorRequested = { [weak self] message in
             self?.show(problem: message)
@@ -153,6 +159,22 @@ final class SpeecherDictationPanel {
         state.preview = ""
         state.problem = problem
         present()
+    }
+
+    private func setPreview(_ preview: String) {
+        state.preview = preview
+        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let textWidth = (preview as NSString).size(withAttributes: [.font: font]).width
+        let availableWidth = (panel.screen ?? NSScreen.main)?.visibleFrame.width
+            ?? minimumPillWidth + screenEdgeMargin
+        let maximumWidth = max(minimumPillWidth, availableWidth - screenEdgeMargin)
+        let width = min(max(minimumPillWidth, textWidth + previewChromeWidth), maximumWidth)
+        guard abs(panel.frame.width - width) >= 1 else { return }
+
+        var frame = panel.frame
+        frame.origin.x -= (width - frame.width) / 2
+        frame.size.width = width
+        panel.setFrame(frame, display: true)
     }
 
     /// The panel belongs on the display the user is working on, which on a
