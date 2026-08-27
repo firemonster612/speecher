@@ -56,7 +56,9 @@ void AccessibilityNotice::setState(bool supported, bool enabled, bool persistent
                            ? QStringLiteral("Accessibility is off. Speecher can copy but not paste.")
                            : QStringLiteral(
                                  "Accessibility is off, so Speecher can only leave your dictation on the clipboard. "
-                                 "Allow Speecher under Privacy & Security, then restart it."));
+                                 "Allow Speecher under Privacy & Security, then restart it. If the toggle already "
+                                 "shows Speecher on, turn it off and on again — an updated copy of Speecher does "
+                                 "not inherit the old grant."));
     m_enableButton->setEnabled(true);
 #else
     if (!enabled) {
