@@ -50,13 +50,20 @@ trap cleanup EXIT
 
 mkdir -p "$STAGING_DIR/.background"
 ditto "$SOURCE_APP" "$STAGING_DIR/speecher.app"
-# Ad-hoc signing: without it the deployed binary and Qt dylibs are unsigned
-# and macOS refuses to launch the copy a user drags out of the image.
-"$MACDEPLOYQT" "$STAGING_DIR/speecher.app" -always-overwrite -codesign=-
-# Homebrew's macdeployqt does not reliably ad-hoc sign the whole tree despite
-# -codesign=-, so sign again explicitly: --deep covers the nested frameworks
+# Signing identity. The ad-hoc default ("-") makes a launchable bundle, but
+# macOS keys the Accessibility grant to the signature, and an ad-hoc
+# signature changes on every build — each update then silently invalidates
+# the grant while System Settings keeps showing it as on. A stable identity
+# (a self-signed code-signing certificate is enough) makes grants survive
+# updates: SPEECHER_SIGN_IDENTITY="My Cert Name" make dmg
+SIGN_IDENTITY="${SPEECHER_SIGN_IDENTITY:--}"
+# Without signing the deployed binary and Qt dylibs are unsigned and macOS
+# refuses to launch the copy a user drags out of the image.
+"$MACDEPLOYQT" "$STAGING_DIR/speecher.app" -always-overwrite -codesign="$SIGN_IDENTITY"
+# Homebrew's macdeployqt does not reliably sign the whole tree despite
+# -codesign, so sign again explicitly: --deep covers the nested frameworks
 # and dylibs macdeployqt left unsigned, then the bundle itself.
-codesign --force --deep --sign - "$STAGING_DIR/speecher.app"
+codesign --force --deep --sign "$SIGN_IDENTITY" "$STAGING_DIR/speecher.app"
 if ! codesign --verify --deep --strict "$STAGING_DIR/speecher.app"; then
   echo "Ad-hoc signing left $STAGING_DIR/speecher.app failing codesign --verify --deep --strict" >&2
   exit 1

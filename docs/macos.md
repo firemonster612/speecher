@@ -38,6 +38,26 @@ Sign and notarize release builds as usual.
 | Automation (Music, Spotify, TV) | Optional pause/resume of playing media during dictation | First time media pause runs |
 | Screen Recording | Optional target screenshots for refinement context | First capture; Speecher refuses to capture without it rather than sending a wallpaper-only image |
 
+## After an update or rebuild
+
+macOS ties every permission grant to the app's code signature. `make dmg`
+signs ad hoc by default, and an ad-hoc signature is different on every build,
+so installing an updated Speecher silently invalidates the old Accessibility
+grant: System Settings keeps showing the toggle as on, while
+`AXIsProcessTrusted` tells the new copy no. Two ways out:
+
+- One-off: in System Settings > Privacy & Security > Accessibility, turn the
+  Speecher toggle off and back on (or remove the entry and re-add it).
+- Durable: sign with a stable identity so updates keep the grant. Create a
+  self-signed code-signing certificate once in Keychain Access, then
+  `SPEECHER_SIGN_IDENTITY="Your Cert Name" make dmg`.
+
+Settings, including the "setup completed" flag, live in
+`~/Library/Preferences` and survive reinstalling the app — deleting
+speecher.app never resets them. Rerun the assistant from Settings > General >
+"Run setup assistant…", and wipe everything with
+`defaults delete local.speecher`.
+
 ## What works on macOS that Wayland cannot offer
 
 Linux/Wayland deliberately restricts global input and cross-window APIs
