@@ -18,9 +18,11 @@
 #include <QUrl>
 
 #import <ApplicationServices/ApplicationServices.h>
+#import <AppKit/AppKit.h>
 #import <AudioToolbox/AudioHardwareService.h>
 #import <CoreAudio/CoreAudio.h>
 #import <Foundation/Foundation.h>
+#import <Security/SecCode.h>
 #import <ServiceManagement/ServiceManagement.h>
 
 #include <algorithm>
@@ -59,7 +61,48 @@ QString serviceStatusName(SMAppServiceStatus status)
     return QStringLiteral("unknown");
 }
 
+void logAccessibilityIdentity()
+{
+    QString signingIdentifier = QStringLiteral("unavailable");
+    QString cdhash = QStringLiteral("unavailable");
+    SecCodeRef code = nullptr;
+    CFDictionaryRef signing = nullptr;
+    if (SecCodeCopySelf(kSecCSDefaultFlags, &code) == errSecSuccess
+        && SecCodeCopySigningInformation(code,
+                                         kSecCSSigningInformation,
+                                         &signing) == errSecSuccess) {
+        NSString *identifier = (__bridge NSString *)CFDictionaryGetValue(
+            signing, kSecCodeInfoIdentifier);
+        NSData *unique = (__bridge NSData *)CFDictionaryGetValue(signing,
+                                                                 kSecCodeInfoUnique);
+        if (identifier) {
+            signingIdentifier = QString::fromUtf8(identifier.UTF8String);
+        }
+        if (unique) {
+            cdhash = QString::fromLatin1(
+                QByteArray(static_cast<const char *>(unique.bytes), int(unique.length)).toHex());
+        }
+    }
+    if (signing) {
+        CFRelease(signing);
+    }
+    if (code) {
+        CFRelease(code);
+    }
+
+    qInfo().noquote() << "macOS accessibility identity bundle=\""
+                      + QString::fromUtf8(NSBundle.mainBundle.bundlePath.UTF8String)
+                      + "\" trusted=" + QString::number(AXIsProcessTrusted())
+                      + " signingIdentifier=\"" + signingIdentifier
+                      + "\" cdhash=" + cdhash;
+}
+
 } // namespace
+
+MacComposition::MacComposition()
+{
+    logAccessibilityIdentity();
+}
 
 QString MacComposition::outputSummary() const
 {
@@ -143,6 +186,21 @@ AccessibilityState MacComposition::accessibilityState() const
     // exists, which is what keeps launch from raising a permission prompt.
     const bool trusted = AXIsProcessTrusted();
     return {true, trusted, trusted};
+}
+
+void MacComposition::watchAccessibilityChanges(QObject *context,
+                                               std::function<void()> refresh) const
+{
+    id token = [NSNotificationCenter.defaultCenter
+        addObserverForName:NSApplicationDidBecomeActiveNotification
+                    object:nil
+                     queue:NSOperationQueue.mainQueue
+                usingBlock:^(NSNotification *) {
+                    refresh();
+                }];
+    QObject::connect(context, &QObject::destroyed, [token] {
+        [NSNotificationCenter.defaultCenter removeObserver:token];
+    });
 }
 
 bool MacComposition::requestAccessibility(QString *error) const

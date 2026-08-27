@@ -8,6 +8,8 @@ namespace speecher {
 
 class MacComposition final : public PlatformComposition {
 public:
+    MacComposition();
+
     QString outputSummary() const override;
     QString primaryOutputStatus() const override;
     QString ipcListenName() const override;
@@ -24,6 +26,8 @@ public:
     GlobalShortcutBinder *createGlobalShortcutBinder(QObject *parent) const override;
 
     AccessibilityState accessibilityState() const override;
+    void watchAccessibilityChanges(QObject *context,
+                                   std::function<void()> refresh) const override;
     bool requestAccessibility(QString *error = nullptr) const override;
     bool enableAccessibilityPermanently(QString *error = nullptr) const override;
     bool setLaunchAtLogin(bool enabled, QString *error = nullptr) const override;

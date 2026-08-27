@@ -25,6 +25,9 @@ namespace {
 // A shortcut held longer than this is push-to-talk and ends with the key;
 // anything shorter is a tap and stays a plain toggle.
 constexpr qint64 pushToTalkHoldMs = 400;
+#ifdef Q_OS_MACOS
+constexpr int accessibilityPollMs = 5000;
+#endif
 
 } // namespace
 
@@ -112,6 +115,15 @@ ApplicationController::ApplicationController(bool popupOnly,
             }
         }
     });
+#ifdef Q_OS_MACOS
+    m_accessibilityPoll = new QTimer(this);
+    m_accessibilityPoll->setInterval(accessibilityPollMs);
+    connect(m_accessibilityPoll,
+            &QTimer::timeout,
+            this,
+            &ApplicationController::refreshAccessibilityState);
+#endif
+    m_platform->watchAccessibilityChanges(this, [this] { refreshAccessibilityState(); });
     // A process that never shows a window still has to warm up, so the wait for
     // the front end is capped rather than open-ended.
     QTimer::singleShot(2000, this, &ApplicationController::runDeferredStartup);
@@ -163,6 +175,13 @@ void ApplicationController::runDeferredStartup()
     m_accessibilitySupported = state.supported;
     m_accessibilityEnabled = state.enabled || requestSucceeded;
     m_accessibilityPersistent = state.persistent;
+#ifdef Q_OS_MACOS
+    if (m_accessibilityEnabled) {
+        m_accessibilityPoll->stop();
+    } else {
+        m_accessibilityPoll->start();
+    }
+#endif
     emit accessibilityStateChanged(m_accessibilitySupported,
                                    m_accessibilityEnabled,
                                    m_accessibilityPersistent);
@@ -457,9 +476,22 @@ void ApplicationController::registerProviders()
 void ApplicationController::refreshAccessibilityState()
 {
     const AccessibilityState state = m_platform->accessibilityState();
+    const bool changed = m_accessibilitySupported != state.supported
+        || m_accessibilityEnabled != state.enabled
+        || m_accessibilityPersistent != state.persistent;
     m_accessibilitySupported = state.supported;
     m_accessibilityEnabled = state.enabled;
     m_accessibilityPersistent = state.persistent;
+#ifdef Q_OS_MACOS
+    if (m_accessibilityEnabled) {
+        m_accessibilityPoll->stop();
+    } else if (!m_accessibilityPoll->isActive()) {
+        m_accessibilityPoll->start();
+    }
+#endif
+    if (!changed) {
+        return;
+    }
     emit accessibilityStateChanged(m_accessibilitySupported,
                                    m_accessibilityEnabled,
                                    m_accessibilityPersistent);

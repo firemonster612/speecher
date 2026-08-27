@@ -3,6 +3,7 @@
 #include "dictation/DictationPorts.h"
 #include "platform/AccessibilityState.h"
 
+#include <functional>
 #include <memory>
 
 namespace speecher {
@@ -36,6 +37,12 @@ public:
     virtual GlobalShortcutBinder *createGlobalShortcutBinder(QObject *parent) const = 0;
 
     virtual AccessibilityState accessibilityState() const = 0;
+    virtual void watchAccessibilityChanges(QObject *context,
+                                           std::function<void()> refresh) const
+    {
+        Q_UNUSED(context);
+        Q_UNUSED(refresh);
+    }
     virtual bool requestAccessibility(QString *error = nullptr) const = 0;
     virtual bool enableAccessibilityPermanently(QString *error = nullptr) const = 0;
     virtual bool setLaunchAtLogin(bool enabled, QString *error = nullptr) const

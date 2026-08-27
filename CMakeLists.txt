@@ -429,6 +429,7 @@ if(APPLE)
   )
   target_link_libraries(speecher_app PRIVATE
     "-framework CoreAudio"
+    "-framework Security"
     "-framework ServiceManagement"
   )
 endif()

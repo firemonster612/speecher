@@ -10,6 +10,7 @@
 #include "app/SingleInstanceIpc.h"
 
 class QLocalSocket;
+class QTimer;
 
 namespace speecher {
 
@@ -107,6 +108,9 @@ private:
     bool m_accessibilitySupported = false;
     bool m_accessibilityEnabled = false;
     bool m_accessibilityPersistent = false;
+#ifdef Q_OS_MACOS
+    QTimer *m_accessibilityPoll = nullptr;
+#endif
     bool m_deferredStartupScheduled = false;
     bool m_deferredStartupDone = false;
     // Only a press that started a session can end it on release; a press that

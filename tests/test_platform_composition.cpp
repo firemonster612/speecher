@@ -139,7 +139,12 @@ public:
 
     AccessibilityState accessibilityState() const override
     {
-        return {true, true, false};
+        return accessibility;
+    }
+
+    void watchAccessibilityChanges(QObject *, std::function<void()> refresh) const override
+    {
+        accessibilityRefresh = std::move(refresh);
     }
 
     bool requestAccessibility(QString *) const override
@@ -153,6 +158,8 @@ public:
     }
 
     mutable FakeGlobalShortcutBinder *binder = nullptr;
+    mutable AccessibilityState accessibility{true, true, false};
+    mutable std::function<void()> accessibilityRefresh;
 
 private:
     std::shared_ptr<const PlatformComposition> m_delegate;
@@ -383,6 +390,28 @@ private slots:
         controller.frontEndReady();
         QTest::qWait(20);
         QCOMPARE(platform->binder->bindCount, 1);
+    }
+
+    void accessibilityChangesRefreshTheControllersCachedState()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->accessibility = {true, false, false};
+        ApplicationController controller(true, platform);
+        QSignalSpy accessibilityChanged(&controller,
+                                        &ApplicationController::accessibilityStateChanged);
+
+        controller.frontEndReady();
+        QTRY_COMPARE_WITH_TIMEOUT(accessibilityChanged.count(), 1, 250);
+        QVERIFY(!controller.accessibilityEnabled());
+        QVERIFY(platform->accessibilityRefresh);
+
+        platform->accessibility = {true, true, true};
+        platform->accessibilityRefresh();
+
+        QVERIFY(controller.accessibilityEnabled());
+        QVERIFY(controller.accessibilityPersistent());
+        QCOMPARE(accessibilityChanged.count(), 2);
+        QCOMPARE(accessibilityChanged.last().at(1).toBool(), true);
     }
 
     void windowRequestsGoToTheFrontEnd()
