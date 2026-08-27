@@ -25,6 +25,11 @@ private slots:
         QCOMPARE(settings.theme(), QStringLiteral("system"));
         QCOMPARE(settings.pauseMediaDuringTranscription(), true);
         QCOMPARE(settings.soundsEnabled(), false);
+#ifdef Q_OS_MACOS
+        QCOMPARE(settings.launchAtLogin(), true);
+#else
+        QCOMPARE(settings.launchAtLogin(), false);
+#endif
         QCOMPARE(settings.customVocabulary(), QStringList());
         QCOMPARE(settings.bindingRules().size(), 0);
         QCOMPARE(settings.refinementProvider(), QStringLiteral("openai"));
@@ -275,6 +280,26 @@ private slots:
 
         QCOMPARE(settings.openAiCliproxyAccount(), QStringLiteral("codex-user@example.com.json"));
         QCOMPARE(settings.anthropicCliproxyAccount(), QStringLiteral("claude-user@example.com.json"));
+    }
+
+    void launchAtLoginRoundTripsThroughSnapshotApply()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        std::optional<bool> reconciled;
+        settings.setLaunchAtLoginReconciler(
+            [&reconciled](bool enabled, QString *) {
+                reconciled = enabled;
+                return true;
+            });
+        AppSettings draft = settings.snapshot();
+        draft.launchAtLogin = !draft.launchAtLogin;
+
+        settings.applySnapshot(draft);
+
+        QCOMPARE(settings.launchAtLogin(), draft.launchAtLogin);
+        QCOMPARE(settings.snapshot().launchAtLogin, draft.launchAtLogin);
+        QCOMPARE(reconciled, std::optional<bool>(draft.launchAtLogin));
     }
 
     void settingsBindingRulesRoundTrip()

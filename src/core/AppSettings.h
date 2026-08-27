@@ -96,6 +96,11 @@ struct OutputSettings {
 
 struct AppSettings {
     bool setupCompleted = false;
+#ifdef Q_OS_MACOS
+    bool launchAtLogin = true;
+#else
+    bool launchAtLogin = false;
+#endif
     UiSettings ui;
     SpeechSettings speech;
     AudioCaptureSettings audio;

@@ -34,6 +34,18 @@ const SettingsRow &rowById(const SettingsPage &page, const QString &id)
     qFatal("no row %s on page %s", qPrintable(id), qPrintable(page.id));
 }
 
+bool hasRow(const SettingsPage &page, const QString &id)
+{
+    for (const SettingsSection &section : page.sections) {
+        if (std::any_of(section.rows.begin(), section.rows.end(), [&id](const SettingsRow &row) {
+                return row.id == id;
+            })) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 class SettingsSchemaTests : public QObject {
@@ -63,6 +75,22 @@ private slots:
         QCOMPARE(captureMode.value(settings).toString(), QStringLiteral("warm"));
         QCOMPARE(profiles.value(settings).value<QList<WritingProfileSettings>>().size(), 1);
         QVERIFY(profiles.value(settings) != profiles.value(AppSettings{}));
+    }
+
+    void launchAtLoginOnlyAppearsOnMacOS()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsPage &general = schema.page(QStringLiteral("general"));
+#ifdef Q_OS_MACOS
+        QVERIFY(hasRow(general, QStringLiteral("launchAtLogin")));
+        const SettingsRow &row = rowById(general, QStringLiteral("launchAtLogin"));
+        QCOMPARE(row.kind, RowKind::Toggle);
+        QCOMPARE(row.label, QStringLiteral("Start Speecher at login"));
+        QCOMPARE(row.help,
+                 QStringLiteral("Dictation only works while Speecher is running."));
+#else
+        QVERIFY(!hasRow(general, QStringLiteral("launchAtLogin")));
+#endif
     }
 
     void targetContextNeedsAccessibility()

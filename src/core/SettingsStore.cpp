@@ -1,6 +1,8 @@
 #include "core/SettingsStore.h"
 #include "core/settings/CorrectionSettingsCodec.h"
 
+#include <utility>
+
 namespace speecher {
 
 SettingsStore::SettingsStore(QObject *parent)
@@ -12,6 +14,7 @@ SettingsStore::SettingsStore(QObject *parent)
 void SettingsStore::applySnapshot(const AppSettings &draft)
 {
     setSetupCompleted(draft.setupCompleted);
+    setLaunchAtLogin(draft.launchAtLogin);
     setTheme(draft.ui.theme);
     setPauseMediaDuringTranscription(draft.ui.pauseMediaDuringTranscription);
     setSoundsEnabled(draft.ui.soundsEnabled);
@@ -48,6 +51,33 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     QString replacementError;
     if (!setBindingRules(draft.bindings, &replacementError)) {
         qWarning("dropped invalid replacement rules: %s", qPrintable(replacementError));
+    }
+}
+
+bool SettingsStore::launchAtLogin() const
+{
+    return SettingsCodecs::launchAtLogin();
+}
+
+void SettingsStore::setLaunchAtLogin(bool enabled)
+{
+    SettingsCodecs::setLaunchAtLogin(enabled);
+    reconcileLaunchAtLogin();
+}
+
+void SettingsStore::setLaunchAtLoginReconciler(LaunchAtLoginReconciler reconcile)
+{
+    m_reconcileLaunchAtLogin = std::move(reconcile);
+}
+
+void SettingsStore::reconcileLaunchAtLogin()
+{
+    if (!m_reconcileLaunchAtLogin) {
+        return;
+    }
+    QString error;
+    if (!m_reconcileLaunchAtLogin(launchAtLogin(), &error)) {
+        qWarning().noquote() << "launch at login reconciliation failed message=" + error;
     }
 }
 

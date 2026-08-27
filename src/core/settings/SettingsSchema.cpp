@@ -322,6 +322,20 @@ SettingsPage generalPage(const SchemaContext &context)
         [](const AppSettings &settings) { return settings.ui.theme; },
         [](AppSettings &settings, const QString &value) { settings.ui.theme = value; });
 
+    QList<SettingsRow> systemRows;
+#ifdef Q_OS_MACOS
+    systemRows.append(toggleRow(
+        QStringLiteral("launchAtLogin"),
+        QStringLiteral("Start Speecher at login"),
+        QStringLiteral("Dictation only works while Speecher is running."),
+        [](const AppSettings &settings) { return settings.launchAtLogin; },
+        [](AppSettings &settings, bool value) { settings.launchAtLogin = value; }));
+#endif
+    systemRows.append(infoRow(QStringLiteral("clipboardOutputStatus"),
+                              QStringLiteral("Clipboard output"),
+                              QStringLiteral("Current platform clipboard path."),
+                              context.primaryOutputStatus));
+
     return {
         QStringLiteral("general"),
         QStringLiteral("General"),
@@ -351,12 +365,7 @@ SettingsPage generalPage(const SchemaContext &context)
              }},
             {QStringLiteral("System"),
              QString(),
-             {
-                 infoRow(QStringLiteral("clipboardOutputStatus"),
-                         QStringLiteral("Clipboard output"),
-                         QStringLiteral("Current platform clipboard path."),
-                         context.primaryOutputStatus),
-             }},
+             std::move(systemRows)},
             {QStringLiteral("Maintenance"),
              QString(),
              {

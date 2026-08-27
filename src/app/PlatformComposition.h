@@ -38,6 +38,14 @@ public:
     virtual AccessibilityState accessibilityState() const = 0;
     virtual bool requestAccessibility(QString *error = nullptr) const = 0;
     virtual bool enableAccessibilityPermanently(QString *error = nullptr) const = 0;
+    virtual bool setLaunchAtLogin(bool enabled, QString *error = nullptr) const
+    {
+        Q_UNUSED(enabled);
+        Q_UNUSED(error);
+        return true;
+    }
+    virtual bool launchAtLoginEnabled() const { return false; }
+    virtual std::optional<float> inputVolume() const { return std::nullopt; }
     virtual void relaunch() const {}
 };
 

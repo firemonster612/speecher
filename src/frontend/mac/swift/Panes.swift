@@ -71,7 +71,7 @@ extension Pane {
     static let all: [Pane] = [
         Pane("general", "General", "gearshape", schemaPages: ["general"], [
             PaneGroup("Appearance", ["themeControl", "pauseMedia", "soundsEnabled", "previewWords"]),
-            PaneGroup("System", ["clipboardOutputStatus"]),
+            PaneGroup("System", ["launchAtLogin", "clipboardOutputStatus"]),
             PaneGroup("Maintenance", ["runSetup", "openReleases"]),
         ]),
         Pane("dictation", "Dictation", "mic", schemaPages: ["audio"], [
