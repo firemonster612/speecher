@@ -492,6 +492,8 @@ private slots:
         results.insert(QString::fromLatin1(OutputMethod::QtClipboard), true);
 
         FakeTargetProvider targetProvider;
+        targetProvider.directInsertionAvailable = true;
+        targetProvider.inserted = false;
         TextDelivery delivery([&attempts, &restoreFlags, &results](
                                   const QString &method,
                                   const OutputSettings &settings,
@@ -513,10 +515,47 @@ private slots:
             target);
         QVERIFY(result.ok);
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
+        QCOMPARE(targetProvider.insertCalls, 1);
         QCOMPARE(attempts, QList<QString>({virtualKeyboardMethod()}));
         QCOMPARE(restoreFlags, QList<bool>({true}));
         QCOMPARE(result.receipt, DeliveryReceipt::Copied);
         QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("hello"));
+    }
+
+    void outputAutomaticAndExplicitAccessibilityUseDirectInsertion()
+    {
+        for (const QString &method : {QStringLiteral("automatic"),
+                                      QStringLiteral("direct_insert")}) {
+            QList<QString> attempts;
+            QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
+            FakeTargetProvider targetProvider;
+            targetProvider.directInsertionAvailable = true;
+            targetProvider.inserted = true;
+            targetProvider.verified = true;
+            TextDelivery delivery([&attempts, &results](
+                                      const QString &backend,
+                                      const OutputSettings &,
+                                      PasteMethod) {
+                return std::make_unique<FakeBackend>(backend, &attempts, &results);
+            }, &targetProvider);
+
+            OutputSettings settings;
+            settings.method = method;
+            settings.ydotoolEnabled = true;
+            Target target;
+            target.applicationId = QStringLiteral("org.kde.kate");
+            target.category = AppCategory::CodeEditor;
+
+            const DeliveryResult result = delivery.deliver(
+                settings,
+                makeDeliveryContent(QStringLiteral("insert me"), OutputFormat::PlainText),
+                target);
+
+            QCOMPARE(result.receipt, DeliveryReceipt::VerifiedInTarget);
+            QCOMPARE(targetProvider.insertCalls, 1);
+            QCOMPARE(targetProvider.insertedText, QStringLiteral("insert me"));
+            QVERIFY(attempts.isEmpty());
+        }
     }
 
     void outputUsesExplicitGlobalPasteRuleWithoutCapturedTarget()

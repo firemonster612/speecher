@@ -187,7 +187,16 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
     if (!target.secure && (trackableTarget || currentFocusFallback)) {
         pasteMethod = pasteRule.method;
     }
-    const bool directInsertRequested = pasteMethod == PasteMethod::DirectInsert;
+    const QString outputMethod = OutputMethod::normalized(settings.method);
+    const bool ruleDirectInsert = pasteMethod == PasteMethod::DirectInsert;
+    const bool outputDirectInsert = pasteMethod != PasteMethod::ClipboardOnly
+        && outputMethod == QString::fromLatin1(OutputMethod::DirectInsert);
+    const bool automaticDirectInsert = pasteMethod != PasteMethod::ClipboardOnly
+        && outputMethod == QString::fromLatin1(OutputMethod::Automatic);
+    const bool directInsertRequested = ruleDirectInsert
+        || outputDirectInsert
+        || automaticDirectInsert;
+    const bool directInsertOnly = ruleDirectInsert || outputDirectInsert;
     const bool targetFocused = pasteMethod != PasteMethod::ClipboardOnly
         && (currentFocusFallback
             || (m_targetProvider && m_targetProvider->stillFocused(target)));
@@ -226,44 +235,45 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         };
     }
 
-    if (directInsertRequested) {
-        if (m_targetProvider && m_targetProvider->canInsertText(target)) {
-            QString insertionError;
-            if (m_targetProvider->insertText(target, content.plainText, &insertionError)) {
-                const bool verified = m_targetProvider->verifyInsertion(target, content.plainText);
-                QString restoreError;
-                const bool restored = !verified
-                    || !canRestoreClipboard
-                    || m_clipboardDelivery.restore(previousClipboard, &restoreError);
-                QString message = verified
-                    ? QStringLiteral("Verified in Target")
-                    : QStringLiteral("Accepted by Target");
-                if (verified && canRestoreClipboard && !restored) {
-                    clipboardWarning = restoreError.isEmpty()
-                        ? QStringLiteral("Previous clipboard could not be restored")
-                        : QStringLiteral("Previous clipboard could not be restored: %1").arg(restoreError);
-                }
-                const bool downgraded = content.html.has_value() && !initiallyHtmlAvailable;
-                return {
-                    true,
-                    verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::AcceptedByTarget,
-                    downgraded,
-                    withClipboardWarning(
-                        downgraded ? message + QStringLiteral(" as plain text") : message),
-                };
-            }
+    QString insertionError;
+    if (directInsertRequested
+        && m_targetProvider
+        && m_targetProvider->canInsertText(target)
+        && m_targetProvider->insertText(target, content.plainText, &insertionError)) {
+        const bool verified = m_targetProvider->verifyInsertion(target, content.plainText);
+        QString restoreError;
+        const bool restored = !verified
+            || !canRestoreClipboard
+            || m_clipboardDelivery.restore(previousClipboard, &restoreError);
+        QString message = verified
+            ? QStringLiteral("Verified in Target")
+            : QStringLiteral("Accepted by Target");
+        if (verified && canRestoreClipboard && !restored) {
+            clipboardWarning = restoreError.isEmpty()
+                ? QStringLiteral("Previous clipboard could not be restored")
+                : QStringLiteral("Previous clipboard could not be restored: %1").arg(restoreError);
+        }
+        const bool downgraded = content.html.has_value() && !initiallyHtmlAvailable;
+        return {
+            true,
+            verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::AcceptedByTarget,
+            downgraded,
+            withClipboardWarning(
+                downgraded ? message + QStringLiteral(" as plain text") : message),
+        };
+    }
+    if (directInsertOnly) {
+        if (!insertionError.isEmpty()) {
             return {
                 true,
                 DeliveryReceipt::Copied,
                 content.html.has_value() && !initiallyHtmlAvailable,
-                withClipboardWarning(
-                    insertionError.isEmpty()
-                        ? QStringLiteral("Copied")
-                        : QStringLiteral("Copied; direct insertion was rejected")),
+                withClipboardWarning(QStringLiteral("Copied; direct insertion was rejected")),
             };
         }
         pasteMethod = PasteMethod::ClipboardOnly;
-    } else if (pasteMethod != PasteMethod::ClipboardOnly && !targetFocused) {
+    }
+    if (pasteMethod != PasteMethod::ClipboardOnly && !targetFocused) {
         pasteMethod = PasteMethod::ClipboardOnly;
     }
 

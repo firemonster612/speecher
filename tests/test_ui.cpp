@@ -161,6 +161,20 @@ private slots:
         QVERIFY(corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
     }
 
+    void outputMethodsOfferAccessibilityInsertion()
+    {
+        SettingsStore settings;
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        OutputCustomRows outputRows(settings);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("output"), *platform, providers, outputRows.factory());
+
+        auto *method = page->findChild<QComboBox *>(QStringLiteral("outputMethod"));
+        QVERIFY(method);
+        QVERIFY(method->findData(QStringLiteral("direct_insert")) >= 0);
+    }
+
     void theVocabularyLimitFollowsTheTable()
     {
         ProviderRegistry providers;

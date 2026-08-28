@@ -20,7 +20,10 @@ QList<RowOption> outputMethods()
     // No ydotool entry: the virtual keyboard is Linux's, and a method macOS
     // cannot offer has no business being offered here.
     QList<RowOption> methods;
-    for (const char *method : {OutputMethod::Automatic, OutputMethod::MacPaste, OutputMethod::QtClipboard}) {
+    for (const char *method : {OutputMethod::Automatic,
+                               OutputMethod::DirectInsert,
+                               OutputMethod::MacPaste,
+                               OutputMethod::QtClipboard}) {
         const QString id = QString::fromLatin1(method);
         methods.append({id, OutputMethod::label(id)});
     }

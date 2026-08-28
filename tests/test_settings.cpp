@@ -189,6 +189,8 @@ private slots:
         settings.setPauseMediaDuringTranscription(false);
         QCOMPARE(settings.pauseMediaDuringTranscription(), false);
 
+        settings.setOutputMethod(QString::fromLatin1(OutputMethod::DirectInsert));
+        QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::DirectInsert));
         settings.setOutputMethod(QStringLiteral("ydotool"));
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Ydotool));
         settings.setOutputMethod(QStringLiteral("wtype"));

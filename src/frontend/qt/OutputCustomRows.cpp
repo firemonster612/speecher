@@ -95,6 +95,7 @@ SchemaCustomRow OutputCustomRows::makeMethodRow(QWidget *parent, std::function<v
                           QString::fromLatin1(method));
     };
     addMethod(OutputMethod::Automatic);
+    addMethod(OutputMethod::DirectInsert);
 #ifdef Q_OS_MACOS
     addMethod(OutputMethod::MacPaste);
 #else

@@ -6,6 +6,7 @@
 namespace speecher::OutputMethod {
 
 inline constexpr auto Automatic = "automatic";
+inline constexpr auto DirectInsert = "direct_insert";
 inline constexpr auto Ydotool = "ydotool";
 inline constexpr auto WlCopy = "wl-copy";
 inline constexpr auto MacPaste = "mac-paste";

@@ -134,6 +134,20 @@ private slots:
         QVERIFY(refreshed.enabled);
     }
 
+    void outputMethodsOfferAccessibilityInsertion()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SettingsRowModel *row = settingsRow(bridge.settingsSchema, @"outputMethod");
+        QVERIFY(row);
+
+        bool found = false;
+        for (RowOptionModel *option in row.options) {
+            found = found || [option.rowOptionId isEqualToString:@"direct_insert"];
+        }
+        QVERIFY(found);
+    }
+
     void setupFinishesWithStartAtLoginPage()
     {
         ApplicationController controller(false);

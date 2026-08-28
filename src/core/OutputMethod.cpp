@@ -6,6 +6,7 @@ QStringList all()
 {
     return {
         QString::fromLatin1(Automatic),
+        QString::fromLatin1(DirectInsert),
         QString::fromLatin1(Ydotool),
         QString::fromLatin1(WlCopy),
         QString::fromLatin1(MacPaste),
@@ -37,6 +38,9 @@ QString label(const QString &method)
     const QString value = normalized(method);
     if (value == QString::fromLatin1(Ydotool)) {
         return QStringLiteral("Type with ydotool paste");
+    }
+    if (value == QString::fromLatin1(DirectInsert)) {
+        return QStringLiteral("Direct accessibility insertion");
     }
     if (value == QString::fromLatin1(WlCopy)) {
         return QStringLiteral("Copy with wl-copy");
