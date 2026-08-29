@@ -36,6 +36,15 @@ std::unique_ptr<SchemaSettingsPage> schemaPage(const QString &id,
     return std::make_unique<SchemaSettingsPage>(schema.page(id), nullptr, std::move(customRows));
 }
 
+QStringList sectionLabels(const QWidget &page)
+{
+    QStringList labels;
+    for (QLabel *label : page.findChildren<QLabel *>(QStringLiteral("sectionLabel"))) {
+        labels.append(label->text());
+    }
+    return labels;
+}
+
 } // namespace
 
 
@@ -159,6 +168,89 @@ private slots:
         QVERIFY(applications.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
         QVERIFY(refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
+    }
+
+    void linuxSettingsLayoutsMatchMasterAndKeepSchemaRows()
+    {
+        SettingsStore settings;
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const SettingsSchema schema =
+            buildSettingsSchema(qtSchemaContext(*platform, providers, QStringLiteral("Clipboard")));
+        SettingsPage refinementSchema = schema.page(QStringLiteral("refinement"));
+        SettingsRow sentinel;
+        sentinel.id = QStringLiteral("refinementLayoutSentinel");
+        sentinel.label = QStringLiteral("Sentinel");
+        sentinel.kind = RowKind::Toggle;
+        refinementSchema.sections.append({QStringLiteral("Later"), QString(), {sentinel}});
+        const std::unique_ptr<SchemaSettingsPage> refinement =
+            std::make_unique<SchemaSettingsPage>(refinementSchema);
+
+        for (const SettingsSection &section : refinementSchema.sections) {
+            for (const SettingsRow &row : section.rows) {
+                const QString control = row.id == QStringLiteral("writingProfileBehavior")
+                    ? QStringLiteral("vocabInput")
+                    : row.id;
+                QVERIFY2(refinement->findChild<QWidget *>(control), qPrintable(control));
+            }
+        }
+        refinement->resize(900, 668);
+        refinement->show();
+        QCoreApplication::processEvents();
+        auto *profile = refinement->findChild<QTableWidget *>(QStringLiteral("vocabInput"));
+        auto *context = refinement->findChild<QWidget *>(QStringLiteral("targetContextControl"));
+        QVERIFY(profile && context);
+        const QList<QLabel *> refinementLabels =
+            refinement->findChildren<QLabel *>(QStringLiteral("sectionLabel"));
+        QCOMPARE(refinementLabels.size(), 1);
+        QCOMPARE(refinementLabels.first()->text(), QStringLiteral("Refinement"));
+        const QList<QFrame *> separators =
+            refinement->findChildren<QFrame *>(QStringLiteral("settingsSeparator"));
+        QCOMPARE(separators.size(), 1);
+        const int profileBottom =
+            profile->mapTo(refinement->widget(), QPoint(0, profile->height())).y();
+        const int separatorY = separators.first()->mapTo(refinement->widget(), QPoint()).y();
+        const int contextY = context->mapTo(refinement->widget(), QPoint()).y();
+        QVERIFY(profileBottom <= separatorY && separatorY < contextY);
+
+        OutputCustomRows outputRows(settings);
+        const std::unique_ptr<SchemaSettingsPage> output =
+            std::make_unique<SchemaSettingsPage>(schema.page(QStringLiteral("output")),
+                                                 nullptr,
+                                                 outputRows.factory());
+        const bool virtualKeyboard = [&schema] {
+            for (const SettingsSection &section : schema.page(QStringLiteral("output")).sections) {
+                for (const SettingsRow &row : section.rows) {
+                    if (row.id == QStringLiteral("virtualKeyboard")) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }();
+        const QStringList outputLabels{
+            QStringLiteral("Delivery"),
+            QStringLiteral("Paste behavior"),
+            virtualKeyboard ? QStringLiteral("Clipboard & virtual keyboard")
+                            : QStringLiteral("Clipboard"),
+        };
+        QCOMPARE(sectionLabels(*output), outputLabels);
+        output->resize(900, 668);
+        output->show();
+        QCoreApplication::processEvents();
+        auto *globalPaste = output->findChild<QWidget *>(QStringLiteral("globalPasteRule"));
+        auto *restoreClipboard =
+            output->findChild<QWidget *>(QStringLiteral("restoreClipboardAfterTyping"));
+        QVERIFY(globalPaste && restoreClipboard);
+        QVERIFY(globalPaste->mapTo(output->widget(), QPoint()).y()
+                < restoreClipboard->mapTo(output->widget(), QPoint()).y());
+
+        for (const QString &id : {QStringLiteral("general"), QStringLiteral("audio"),
+                                  QStringLiteral("applications")}) {
+            const std::unique_ptr<SchemaSettingsPage> page =
+                std::make_unique<SchemaSettingsPage>(schema.page(id));
+            QCOMPARE(sectionLabels(*page).size(), 0);
+        }
     }
 
     void outputMethodsOfferAccessibilityInsertion()

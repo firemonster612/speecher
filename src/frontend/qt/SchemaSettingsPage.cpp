@@ -93,13 +93,109 @@ SchemaCustomRow builtInRow(const SettingsRow &descriptor,
     qFatal("the Qt front end has no widget for settings row %s", qPrintable(descriptor.id));
 }
 
-// The line below a row, handed back so it can come and go with the row it
-// belongs to.
-QWidget *appendSeparator(QFormLayout *form, QWidget *host)
+SettingsSection mergedSection(const QList<SettingsSection> &sections)
 {
-    QWidget *line = settings::makeSeparator(host);
-    form->addRow(line);
-    return line;
+    SettingsSection merged;
+    for (const SettingsSection &section : sections) {
+        merged.rows.append(section.rows);
+        if (!section.help.isEmpty()) {
+            if (!merged.help.isEmpty()) {
+                merged.help += QLatin1Char('\n');
+            }
+            merged.help += section.help;
+        }
+    }
+    return merged;
+}
+
+SettingsRow takeRow(QList<SettingsRow> &rows, const QString &id)
+{
+    for (int index = 0; index < rows.size(); ++index) {
+        if (rows.at(index).id == id) {
+            return rows.takeAt(index);
+        }
+    }
+    qFatal("Qt settings layout cannot find row %s", qPrintable(id));
+}
+
+int rowIndex(const QList<SettingsRow> &rows, const QString &id)
+{
+    for (int index = 0; index < rows.size(); ++index) {
+        if (rows.at(index).id == id) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+SettingsRow takeRow(QList<SettingsSection> &sections, const QString &id)
+{
+    for (SettingsSection &section : sections) {
+        const int index = rowIndex(section.rows, id);
+        if (index >= 0) {
+            return section.rows.takeAt(index);
+        }
+    }
+    qFatal("Qt settings layout cannot find row %s", qPrintable(id));
+}
+
+int sectionWithRow(const QList<SettingsSection> &sections, const QString &id)
+{
+    for (int index = 0; index < sections.size(); ++index) {
+        if (rowIndex(sections.at(index).rows, id) >= 0) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+struct QtPageLayout {
+    SettingsPage page;
+    QString centeredSeparatorAfterRow;
+};
+
+// The schema groups rows for native macOS forms. Keep the established compact
+// KDE order when the same descriptors are rendered by Qt.
+QtPageLayout qtPageLayout(SettingsPage page)
+{
+    if (page.id == QStringLiteral("general") || page.id == QStringLiteral("audio")
+        || page.id == QStringLiteral("applications")) {
+        page.sections = {mergedSection(page.sections)};
+        return {std::move(page), {}};
+    }
+
+    if (page.id == QStringLiteral("output")) {
+        SettingsSection clipboardAndKeyboard{
+            QStringLiteral("Clipboard"), QString(),
+            {takeRow(page.sections, QStringLiteral("restoreClipboardAfterTyping"))}};
+        const int virtualKeyboardSection =
+            sectionWithRow(page.sections, QStringLiteral("virtualKeyboard"));
+        if (virtualKeyboardSection >= 0) {
+            clipboardAndKeyboard.title = QStringLiteral("Clipboard & virtual keyboard");
+            clipboardAndKeyboard.rows.append(
+                takeRow(page.sections[virtualKeyboardSection].rows, QStringLiteral("virtualKeyboard")));
+            if (page.sections[virtualKeyboardSection].rows.isEmpty()) {
+                page.sections.removeAt(virtualKeyboardSection);
+            }
+        }
+        page.sections.append(std::move(clipboardAndKeyboard));
+        return {std::move(page), {}};
+    }
+
+    if (page.id == QStringLiteral("refinement")) {
+        SettingsSection refinement = mergedSection(page.sections);
+        const SettingsRow profile =
+            takeRow(refinement.rows, QStringLiteral("writingProfileBehavior"));
+        const int targetContext = rowIndex(refinement.rows, QStringLiteral("targetContextControl"));
+        if (targetContext < 0) {
+            qFatal("Qt settings layout cannot find row targetContextControl");
+        }
+        refinement.rows.insert(targetContext, profile);
+        refinement.title = QStringLiteral("Refinement");
+        page.sections = {std::move(refinement)};
+        return {std::move(page), QStringLiteral("writingProfileBehavior")};
+    }
+    return {std::move(page), {}};
 }
 
 // A run of rows that render together inside the card, so one capability can
@@ -142,21 +238,24 @@ SchemaSettingsPage::SchemaSettingsPage(const SettingsPage &page,
     : QScrollArea(parent)
     , m_customRows(std::move(customRows))
 {
-    auto *title = settings::makePageTitle(page.title, this);
+    const QtPageLayout layout = qtPageLayout(page);
+    auto *title = settings::makePageTitle(layout.page.title, this);
     auto *pageLayout = settings::makeSettingsPage(this);
     pageLayout->setSpacing(0);
     pageLayout->addWidget(title);
     pageLayout->addSpacing(settings::sectionGap());
-    for (int index = 0; index < page.sections.size(); ++index) {
+    for (int index = 0; index < layout.page.sections.size(); ++index) {
         if (index > 0) {
             pageLayout->addSpacing(settings::groupGap());
         }
-        addSection(page.sections.at(index), pageLayout);
+        addSection(layout.page.sections.at(index), layout.centeredSeparatorAfterRow, pageLayout);
     }
     pageLayout->addStretch();
 }
 
-void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout *pageLayout)
+void SchemaSettingsPage::addSection(const SettingsSection &section,
+                                    const QString &centeredSeparatorAfterRow,
+                                    QVBoxLayout *pageLayout)
 {
     Section entry;
     entry.rowStart = m_rows.size();
@@ -177,31 +276,17 @@ void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout 
         } else if (!group || group->objectName() != descriptor.groupId) {
             group = addRowGroup(descriptor.groupId, form);
         }
-        // A row keeps a separator below it while its own container has more to
-        // come, which for a grouped row means another row of the same group.
-        const bool more = index + 1 < section.rows.size();
-        const bool separator = more
-            && (descriptor.groupId.isEmpty()
-                || section.rows.at(index + 1).groupId == descriptor.groupId);
-        addRow(descriptor, group ? group : form, group, separator);
+        QWidget *host = group ? group : form;
+        addRow(descriptor, host, group);
+        if (descriptor.id == centeredSeparatorAfterRow) {
+            Row &row = m_rows.last();
+            row.separator = settings::makeCenteredSeparator(host);
+            qobject_cast<QFormLayout *>(host->layout())->addRow(row.separator);
+        }
     }
     pageLayout->addWidget(card);
     entry.card = card;
     entry.rowEnd = m_rows.size();
-
-    // A separator's "later row in the same container" is the rest of the
-    // group for a grouped row, or the rest of the section for an ungrouped
-    // one, mirroring the groupId check just above that decided it exists.
-    for (int index = entry.rowStart; index < entry.rowEnd; ++index) {
-        int end = entry.rowEnd;
-        if (m_rows.at(index).group) {
-            end = index + 1;
-            while (end < entry.rowEnd && m_rows.at(end).group == m_rows.at(index).group) {
-                ++end;
-            }
-        }
-        m_rows[index].containerEnd = end;
-    }
 
     if (!section.help.isEmpty()) {
         auto *note = new QLabel(section.help, this);
@@ -231,8 +316,7 @@ SchemaCustomRow SchemaSettingsPage::supplyRow(const SettingsRow &descriptor,
 
 void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
                                 QWidget *host,
-                                QWidget *group,
-                                bool separator)
+                                QWidget *group)
 {
     auto *form = qobject_cast<QFormLayout *>(host->layout());
     Row row;
@@ -247,9 +331,6 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
     if (descriptor.kind == RowKind::Collection) {
         const SchemaCustomRow editor = supplyRow(descriptor, host, announce);
         form->addRow(editor.widget);
-        if (separator) {
-            row.separator = appendSeparator(form, host);
-        }
         row.frame = editor.widget;
         row.control = editor.widget;
         row.value = editor.value;
@@ -269,9 +350,6 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
                                               host,
                                               custom.titleAccessory);
             settings::addRow(form, frame, host, false);
-            if (separator) {
-                row.separator = appendSeparator(form, host);
-            }
             row.frame = frame;
             row.control = custom.widget;
             row.value = custom.value;
@@ -316,9 +394,6 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
     }
     QFrame *frame = settings::makeRow(descriptor.label, descriptor.help, row.control, host);
     settings::addRow(form, frame, host, false);
-    if (separator) {
-        row.separator = appendSeparator(form, host);
-    }
     row.frame = frame;
     m_rows.append(row);
     if (descriptor.id == QStringLiteral("audioDevice")) {
@@ -528,32 +603,20 @@ void SchemaSettingsPage::refreshRows()
         if (row.descriptor.kind == RowKind::Info && row.descriptor.value && row.setValue) {
             row.setValue(row.descriptor.value(draft));
         }
-        if (!row.descriptor.enabled) {
-            continue;
+        if (row.descriptor.enabled) {
+            const bool live = row.descriptor.enabled(draft, m_capabilities);
+            QWidget *gated = row.group ? row.group : row.frame;
+            QWidget *hinted = row.group ? row.group : row.control;
+            gated->setEnabled(live);
+            hinted->setToolTip(live ? row.descriptor.tooltip : row.descriptor.disabledHelp);
         }
-        const bool live = row.descriptor.enabled(draft, m_capabilities);
-        QWidget *gated = row.group ? row.group : row.frame;
-        QWidget *hinted = row.group ? row.group : row.control;
-        gated->setEnabled(live);
-        hinted->setToolTip(live ? row.descriptor.tooltip : row.descriptor.disabledHelp);
+        if (row.separator) {
+            row.separator->setVisible(shown[index]);
+        }
     }
 
-    // Separators and section chrome depend on every row's visibility above, so
-    // they need their own pass once that has settled.
-    for (int index = 0; index < m_rows.size(); ++index) {
-        const Row &row = m_rows.at(index);
-        if (!row.separator) {
-            continue;
-        }
-        bool laterVisible = false;
-        for (int later = index + 1; later < row.containerEnd; ++later) {
-            if (shown[later]) {
-                laterVisible = true;
-                break;
-            }
-        }
-        row.separator->setVisible(shown[index] && laterVisible);
-    }
+    // Section chrome depends on every row's visibility above, so update it
+    // after all row predicates have settled.
     for (const Section &section : std::as_const(m_sections)) {
         bool anyRowVisible = false;
         for (int index = section.rowStart; index < section.rowEnd; ++index) {

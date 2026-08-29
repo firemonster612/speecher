@@ -71,12 +71,7 @@ private:
         // The container the row shares with the rest of its group, which is
         // what gets enabled and carries the group's tooltip.
         QWidget *group = nullptr;
-        // The line below the row, which comes and goes with it.
         QWidget *separator = nullptr;
-        // One past the index (in m_rows) of the last row whose visibility can
-        // keep this row's separator alive: the rest of the group for a grouped
-        // row, the rest of the section for an ungrouped one.
-        int containerEnd = 0;
         std::function<QVariant()> value;
         std::function<void(const QVariant &)> setValue;
     };
@@ -91,8 +86,10 @@ private:
         int rowEnd = 0;
     };
 
-    void addSection(const SettingsSection &section, QVBoxLayout *pageLayout);
-    void addRow(const SettingsRow &descriptor, QWidget *host, QWidget *group, bool separator);
+    void addSection(const SettingsSection &section,
+                    const QString &centeredSeparatorAfterRow,
+                    QVBoxLayout *pageLayout);
+    void addRow(const SettingsRow &descriptor, QWidget *host, QWidget *group);
     SchemaCustomRow supplyRow(const SettingsRow &descriptor,
                               QWidget *host,
                               const std::function<void()> &notifyChanged);
