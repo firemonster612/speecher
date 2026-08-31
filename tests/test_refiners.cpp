@@ -717,6 +717,104 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 1000);
         QCOMPARE(completed.at(0).at(0).toString(), QStringLiteral("standard-ok"));
         QCOMPARE(failed.size(), 0);
+
+        // The rejection latches: the next request skips the per-dictation
+        // fast-mode probe instead of paying a failed round trip again.
+        refiner.refine(QStringLiteral("hello again"), {}, {}, QStringLiteral("token"),
+                       QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
+                       QStringLiteral("claude-opus-4-8"), QStringLiteral("low"), true,
+                       QStringLiteral("balanced"), {});
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *latchedSocket = server.nextPendingConnection();
+        QVERIFY(latchedSocket);
+        const QByteArray latchedRequest = readHttpRequest(latchedSocket, 1000);
+        const QJsonObject latchedBody =
+            QJsonDocument::fromJson(latchedRequest.mid(latchedRequest.indexOf("\r\n\r\n") + 4)).object();
+        QVERIFY(!latchedBody.contains(QStringLiteral("speed")));
+        refiner.cancel();
+    }
+
+    void openAiRefinerFailsOnceWhenBothSpeedsFail()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        OpenAiRefiner refiner;
+        QSignalSpy completed(&refiner, &OpenAiRefiner::completed);
+        QSignalSpy failed(&refiner, &OpenAiRefiner::failed);
+
+        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
+                       QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
+                       {}, false, QStringLiteral("gpt-test"), QStringLiteral("low"), true,
+                       QStringLiteral("balanced"), {});
+
+        const QByteArray error = QByteArrayLiteral(R"({"error":{"message":"nope"}})");
+        const QByteArray response = QByteArrayLiteral("HTTP/1.1 400 Bad Request\r\n"
+                                                      "Content-Type: application/json\r\n"
+                                                      "Content-Length: ")
+            + QByteArray::number(error.size())
+            + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") + error;
+
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+            QTcpSocket *socket = server.nextPendingConnection();
+            QVERIFY(socket);
+            const QByteArray request = readHttpRequest(socket, 1000);
+            const QJsonObject body =
+                QJsonDocument::fromJson(request.mid(request.indexOf("\r\n\r\n") + 4)).object();
+            QCOMPARE(body.contains(QStringLiteral("service_tier")), attempt == 0);
+            socket->write(response);
+            QVERIFY(socket->waitForBytesWritten(1000));
+            socket->disconnectFromHost();
+        }
+
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
+        QCOMPARE(completed.size(), 0);
+        QTest::qWait(100);
+        QVERIFY(!server.hasPendingConnections());
+        QCOMPARE(failed.size(), 1);
+    }
+
+    void anthropicApiRefinerDoesNotRetryAfterStreamedOutput()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        AnthropicApiRefiner refiner;
+        QSignalSpy delta(&refiner, &AnthropicApiRefiner::delta);
+        QSignalSpy completed(&refiner, &AnthropicApiRefiner::completed);
+        QSignalSpy failed(&refiner, &AnthropicApiRefiner::failed);
+
+        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"),
+                       QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
+                       QStringLiteral("claude-opus-4-8"), QStringLiteral("low"), true,
+                       QStringLiteral("balanced"), {});
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(socket);
+        QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
+
+        // A delta reaches the live preview before the stream errors: retrying
+        // would replay it, so the failure must be terminal.
+        const QByteArray sse = QByteArrayLiteral(
+            "event: content_block_delta\n"
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n"
+            "event: error\n"
+            "data: {\"type\":\"error\",\"error\":{\"message\":\"fast lane dropped\"}}\n\n");
+        socket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\n"
+                                        "Content-Type: text/event-stream\r\n"
+                                        "Content-Length: ")
+                      + QByteArray::number(sse.size())
+                      + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") + sse);
+        QVERIFY(socket->waitForBytesWritten(1000));
+        socket->disconnectFromHost();
+
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
+        QCOMPARE(delta.size(), 1);
+        QCOMPARE(completed.size(), 0);
+        QTest::qWait(100);
+        QVERIFY(!server.hasPendingConnections());
     }
 
     void anthropicApiRefinerOmitsFastModeForUnsupportedModels()

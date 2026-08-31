@@ -3,6 +3,7 @@
 #include "core/BindingProcessor.h"
 #include "core/VocabularyLimit.h"
 #include "core/settings/SettingsSchema.h"
+#include "ui/settings/SettingsPageSet.h"
 
 #include <algorithm>
 
@@ -176,6 +177,19 @@ private slots:
         QCOMPARE(server.rows.size(), 2);
         QCOMPARE(server.rows.at(0).id, QStringLiteral("cliproxyBaseUrl"));
         QCOMPARE(server.rows.at(1).id, QStringLiteral("cliproxyApiKey"));
+    }
+
+    void qtProviderPagesCoverEveryProviderRow()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const QStringList covered = SettingsPageSet::providerModelRowIds()
+            + SettingsPageSet::providerAuthRowIds();
+        for (const SettingsSection &section : schema.page(QStringLiteral("providers")).sections) {
+            for (const SettingsRow &row : section.rows) {
+                QVERIFY2(covered.contains(row.id),
+                         qPrintable(QStringLiteral("row %1 is on no Qt provider page").arg(row.id)));
+            }
+        }
     }
 
     void aModelThatReadsTranscriptsAsInstructionsSaysSo()

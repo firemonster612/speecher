@@ -39,10 +39,12 @@ signals:
 private:
     void parseSseChunk(const QByteArray &chunk);
     void completeIfReady();
-    bool retryWithoutFastMode(const QString &reason);
+    bool retryWithoutFastMode(const QString &reason, bool latchWhenStandardSucceeds);
 
     QNetworkAccessManager m_network;
     std::function<void()> m_fastModeFallback;
+    bool m_fastModePendingLatch = false;
+    bool m_fastModeUnavailable = false;
     QTimer m_inactivityTimer;
     QTimer m_deadlineTimer;
     QNetworkReply *m_reply = nullptr;

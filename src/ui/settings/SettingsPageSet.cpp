@@ -60,23 +60,12 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *par
     , m_bindings(addPage(QStringLiteral("bindings"), parent, m_bindingRows.factory()))
     , m_providerModels(addPage(
           providerRowsPage(m_schema.page(QStringLiteral("providers")),
-                           {QStringLiteral("openAiModel"),
-                            QStringLiteral("openAiModelCaution"),
-                            QStringLiteral("openAiEffort"),
-                            QStringLiteral("anthropicModel"),
-                            QStringLiteral("anthropicModelCaution"),
-                            QStringLiteral("anthropicEffort")},
+                           providerModelRowIds(),
                            false),
           parent))
     , m_providerAuth(addPage(
           providerRowsPage(m_schema.page(QStringLiteral("providers")),
-                           {QStringLiteral("openAiAuthMode"),
-                            QStringLiteral("openAiCliproxyAccount"),
-                            QStringLiteral("openAiAuth"),
-                            QStringLiteral("anthropicAuthMode"),
-                            QStringLiteral("anthropicCliproxyAccount"),
-                            QStringLiteral("cliproxyBaseUrl"),
-                            QStringLiteral("cliproxyApiKey")},
+                           providerAuthRowIds(),
                            true),
           parent,
           m_providerRows.factory()))
@@ -88,6 +77,32 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *par
     updateAccessibilityState(controller->accessibilitySupported(),
                              controller->accessibilityEnabled(),
                              controller->accessibilityPersistent());
+}
+
+// Every row of the schema's providers page must appear in exactly one of these
+// lists, or it silently never renders on the Qt frontend; the schema tests
+// check that coverage.
+QStringList SettingsPageSet::providerModelRowIds()
+{
+    return {QStringLiteral("openAiModel"),
+            QStringLiteral("openAiModelCaution"),
+            QStringLiteral("openAiEffort"),
+            QStringLiteral("openAiFastMode"),
+            QStringLiteral("anthropicModel"),
+            QStringLiteral("anthropicModelCaution"),
+            QStringLiteral("anthropicEffort"),
+            QStringLiteral("anthropicFastMode")};
+}
+
+QStringList SettingsPageSet::providerAuthRowIds()
+{
+    return {QStringLiteral("openAiAuthMode"),
+            QStringLiteral("openAiCliproxyAccount"),
+            QStringLiteral("openAiAuth"),
+            QStringLiteral("anthropicAuthMode"),
+            QStringLiteral("anthropicCliproxyAccount"),
+            QStringLiteral("cliproxyBaseUrl"),
+            QStringLiteral("cliproxyApiKey")};
 }
 
 SchemaSettingsPage *SettingsPageSet::addPage(const QString &id,

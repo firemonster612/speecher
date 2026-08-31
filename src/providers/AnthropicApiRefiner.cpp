@@ -93,21 +93,23 @@ AnthropicApiRefiner::AnthropicApiRefiner(QObject *parent, int requestTimeoutMs)
 {
     m_inactivityTimer.setSingleShot(true);
     m_deadlineTimer.setSingleShot(true);
-    const auto failOnTimeout = [this] {
+    const auto failOnTimeout = [this](bool retryAllowed) {
         if (!m_reply || m_failed || m_completed) {
             return;
         }
         QNetworkReply *reply = m_reply;
         m_reply = nullptr;
         reply->abort();
-        if (retryWithoutFastMode(QStringLiteral("timed out"))) {
+        if (retryAllowed && retryWithoutFastMode(QStringLiteral("timed out"), false)) {
             return;
         }
         m_failed = true;
         emit failed(QStringLiteral("Anthropic refinement timed out waiting for a response"));
     };
-    connect(&m_inactivityTimer, &QTimer::timeout, this, failOnTimeout);
-    connect(&m_deadlineTimer, &QTimer::timeout, this, failOnTimeout);
+    connect(&m_inactivityTimer, &QTimer::timeout, this, [failOnTimeout] { failOnTimeout(true); });
+    // The absolute deadline bounds the whole refinement; a retry that re-arms
+    // it would let one dictation wait twice that long.
+    connect(&m_deadlineTimer, &QTimer::timeout, this, [failOnTimeout] { failOnTimeout(false); });
 }
 
 void AnthropicApiRefiner::refine(const QString &rawTranscript,
@@ -126,7 +128,8 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
     m_buffer.clear();
     m_failed = false;
     m_completed = false;
-    const bool fast = fastMode && modelSupportsFastMode(model);
+    m_fastModePendingLatch = false;
+    const bool fast = fastMode && modelSupportsFastMode(model) && !m_fastModeUnavailable;
     m_fastModeFallback = fast
         ? [=, this] {
               refine(rawTranscript, vocabulary, bindingVocabulary, bearerToken, endpointBase,
@@ -232,7 +235,7 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
             message = QStringLiteral("Anthropic refinement failed: stream ended before completion");
         }
         reply->deleteLater();
-        if (retryWithoutFastMode(message)) {
+        if (retryWithoutFastMode(message, true)) {
             return;
         }
         emit failed(message);
@@ -284,7 +287,7 @@ void AnthropicApiRefiner::parseSseChunk(const QByteArray &chunk)
             QPointer<QNetworkReply> reply = m_reply;
             m_reply = nullptr;
             const QString message = anthropicErrorMessage(data, QStringLiteral("Anthropic refinement error"));
-            if (!retryWithoutFastMode(message)) {
+            if (!retryWithoutFastMode(message, true)) {
                 m_failed = true;
                 emit failed(message);
             }
@@ -314,17 +317,21 @@ void AnthropicApiRefiner::parseSseChunk(const QByteArray &chunk)
     }
 }
 
-bool AnthropicApiRefiner::retryWithoutFastMode(const QString &reason)
+bool AnthropicApiRefiner::retryWithoutFastMode(const QString &reason, bool latchWhenStandardSucceeds)
 {
-    // Only retry when no deltas were emitted; a retry after streamed output
-    // would replay the transcript into the live preview.
-    if (!m_fastModeFallback || !m_accumulated.isEmpty()) {
-        return false;
-    }
     const std::function<void()> fallback = std::move(m_fastModeFallback);
     m_fastModeFallback = nullptr;
+    // Only retry when no deltas were emitted; a retry after streamed output
+    // would replay the transcript into the live preview.
+    if (!fallback || !m_accumulated.isEmpty()) {
+        return false;
+    }
     qWarning().noquote() << "anthropic fast mode refinement failed, retrying at standard speed:" << reason;
     fallback();
+    // Set after the fallback's refine() reset it: an error (rather than a
+    // stall) on the fast attempt followed by a standard success reads as the
+    // endpoint rejecting fast mode, so stop paying a probe per request.
+    m_fastModePendingLatch = latchWhenStandardSucceeds;
     return true;
 }
 
@@ -335,6 +342,12 @@ void AnthropicApiRefiner::completeIfReady()
     }
     m_inactivityTimer.stop();
     m_deadlineTimer.stop();
+    m_fastModeFallback = nullptr;
+    if (m_fastModePendingLatch) {
+        m_fastModePendingLatch = false;
+        m_fastModeUnavailable = true;
+        qInfo().noquote() << "anthropic fast mode rejected but standard succeeded; staying at standard speed until restart";
+    }
     m_completed = true;
     QPointer<QNetworkReply> reply = m_reply;
     m_reply = nullptr;

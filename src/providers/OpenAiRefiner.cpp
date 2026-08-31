@@ -37,21 +37,23 @@ OpenAiRefiner::OpenAiRefiner(QObject *parent, int requestTimeoutMs)
 {
     m_inactivityTimer.setSingleShot(true);
     m_deadlineTimer.setSingleShot(true);
-    const auto failOnTimeout = [this] {
+    const auto failOnTimeout = [this](bool retryAllowed) {
         if (!m_reply || m_failed || m_completed) {
             return;
         }
         QNetworkReply *reply = m_reply;
         m_reply = nullptr;
         reply->abort();
-        if (retryWithoutFastMode(QStringLiteral("timed out"))) {
+        if (retryAllowed && retryWithoutFastMode(QStringLiteral("timed out"), false)) {
             return;
         }
         m_failed = true;
         emit failed(QStringLiteral("OpenAI refinement timed out waiting for a response"));
     };
-    connect(&m_inactivityTimer, &QTimer::timeout, this, failOnTimeout);
-    connect(&m_deadlineTimer, &QTimer::timeout, this, failOnTimeout);
+    connect(&m_inactivityTimer, &QTimer::timeout, this, [failOnTimeout] { failOnTimeout(true); });
+    // The absolute deadline bounds the whole refinement; a retry that re-arms
+    // it would let one dictation wait twice that long.
+    connect(&m_deadlineTimer, &QTimer::timeout, this, [failOnTimeout] { failOnTimeout(false); });
 }
 
 void OpenAiRefiner::refine(const QString &rawTranscript,
@@ -69,13 +71,14 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
                            const QString &refinementStyle,
                            const RefinementContext &context)
 {
-    Q_UNUSED(chatgptBackend)
     cancel();
     m_accumulated.clear();
     m_buffer.clear();
     m_failed = false;
     m_completed = false;
-    m_fastModeFallback = fastMode
+    m_fastModePendingLatch = false;
+    const bool fast = fastMode && !m_fastModeUnavailable;
+    m_fastModeFallback = fast
         ? [=, this] {
               refine(rawTranscript, vocabulary, bindingVocabulary, bearerToken, organization, project,
                      endpointBase, accountId, chatgptBackend, model, effort, false, refinementStyle, context);
@@ -107,7 +110,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
                     : dictationRefinementSystemPrompt(refinementStyle, context));
     body.insert(QStringLiteral("stream"), true);
     body.insert(QStringLiteral("store"), false);
-    if (fastMode) {
+    if (fast) {
         body.insert(QStringLiteral("service_tier"), QStringLiteral("fast"));
     }
     QJsonObject user;
@@ -153,7 +156,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
             message = QStringLiteral("OpenAI refinement failed: stream ended before completion");
         }
         reply->deleteLater();
-        if (retryWithoutFastMode(message)) {
+        if (retryWithoutFastMode(message, true)) {
             return;
         }
         emit failed(message);
@@ -203,7 +206,7 @@ void OpenAiRefiner::parseSseChunk(const QByteArray &chunk)
             QPointer<QNetworkReply> reply = m_reply;
             m_reply = nullptr;
             const QString message = openAiErrorMessage(data, QStringLiteral("OpenAI refinement error"));
-            if (!retryWithoutFastMode(message)) {
+            if (!retryWithoutFastMode(message, true)) {
                 m_failed = true;
                 emit failed(message);
             }
@@ -227,17 +230,21 @@ void OpenAiRefiner::parseSseChunk(const QByteArray &chunk)
     }
 }
 
-bool OpenAiRefiner::retryWithoutFastMode(const QString &reason)
+bool OpenAiRefiner::retryWithoutFastMode(const QString &reason, bool latchWhenStandardSucceeds)
 {
-    // Only retry when no deltas were emitted; a retry after streamed output
-    // would replay the transcript into the live preview.
-    if (!m_fastModeFallback || !m_accumulated.isEmpty()) {
-        return false;
-    }
     const std::function<void()> fallback = std::move(m_fastModeFallback);
     m_fastModeFallback = nullptr;
+    // Only retry when no deltas were emitted; a retry after streamed output
+    // would replay the transcript into the live preview.
+    if (!fallback || !m_accumulated.isEmpty()) {
+        return false;
+    }
     qWarning().noquote() << "openai fast mode refinement failed, retrying at standard speed:" << reason;
     fallback();
+    // Set after the fallback's refine() reset it: an error (rather than a
+    // stall) on the fast attempt followed by a standard success reads as the
+    // endpoint rejecting fast mode, so stop paying a probe per request.
+    m_fastModePendingLatch = latchWhenStandardSucceeds;
     return true;
 }
 
@@ -248,6 +255,12 @@ void OpenAiRefiner::completeIfReady()
     }
     m_inactivityTimer.stop();
     m_deadlineTimer.stop();
+    m_fastModeFallback = nullptr;
+    if (m_fastModePendingLatch) {
+        m_fastModePendingLatch = false;
+        m_fastModeUnavailable = true;
+        qInfo().noquote() << "openai fast mode rejected but standard succeeded; staying at standard speed until restart";
+    }
     m_completed = true;
     QPointer<QNetworkReply> reply = m_reply;
     m_reply = nullptr;

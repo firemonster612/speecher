@@ -766,6 +766,9 @@ void RefinementSetupPage::updateFastModeControl()
     m_fastModeHint->setText(openAi
                                 ? QStringLiteral("1.5x speed and increased usage (negligible).")
                                 : QStringLiteral("Faster refinement will use usage credits."));
+    m_fastMode->setToolTip(openAi
+                               ? QStringLiteral("Falls back to standard processing when a fast request fails.")
+                               : QStringLiteral("Only Opus models support fast mode; other models refine at standard speed."));
     const QSignalBlocker blocker(m_fastMode);
     m_fastMode->setChecked(openAi ? m_settings.openAiFastMode() : m_settings.anthropicFastMode());
 }
