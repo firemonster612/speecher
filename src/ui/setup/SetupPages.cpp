@@ -1,11 +1,13 @@
 #include "ui/setup/SetupPages.h"
 
 #include "app/ApplicationController.h"
-#include "app/LinuxComposition.h"
+#include "app/PlatformComposition.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationPorts.h"
+#ifdef SPEECHER_WITH_YDOTOOL
 #include "output/YdotoolSetup.h"
 #include "output/YdotoolSetupFlow.h"
+#endif
 #include "providers/ProviderRegistry.h"
 #include "ui/settings/SettingsPageSupport.h"
 
@@ -21,6 +23,14 @@
 #include <QPushButton>
 #include <QThread>
 #include <QVBoxLayout>
+
+#ifdef Q_OS_MACOS
+#include <QApplication>
+#include <QDesktopServices>
+#include <QPermissions>
+#include <QTimer>
+#include <QUrl>
+#endif
 
 #include <algorithm>
 #include <memory>
@@ -76,6 +86,31 @@ void addTones(QComboBox *combo)
     combo->addItem(QStringLiteral("Gen Z"), QStringLiteral("gen_z"));
 }
 
+#ifdef Q_OS_MACOS
+constexpr auto microphonePaneUrl =
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
+#endif
+
+QString shortcutHint()
+{
+#ifdef Q_OS_MACOS
+    // Qt maps Meta to Control and Alt to Option on macOS, so the shared default
+    // sequence reaches the user as Ctrl+Option+D.
+    return QStringLiteral("Tap the shortcut to start dictation and tap it again to stop, or hold it and talk — dictation ends when you let go. The default reads as Ctrl+Option+D on this keyboard.");
+#else
+    return QStringLiteral("The shortcut triggers `speecher toggle`.");
+#endif
+}
+
+QString shortcutFailureHint()
+{
+#ifdef Q_OS_MACOS
+    return QStringLiteral("Could not register the shortcut: %1. Another app probably owns that combination. Change the sequence and try again, or click Finish again to continue without it.");
+#else
+    return QStringLiteral("Could not register the shortcut: %1. You can bind `speecher toggle` in your desktop environment's shortcut settings. Change the sequence and try again, or click Finish again to continue without it.");
+#endif
+}
+
 QString profileLabel(WritingProfile profile)
 {
     switch (profile) {
@@ -118,6 +153,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     , m_provider(new QComboBox(this))
     , m_hint(new QLabel(this))
     , m_status(new QLabel(this))
+    , m_checkAgain(new QPushButton(QStringLiteral("Check again"), this))
 {
     QVBoxLayout *layout = makePage(
         this,
@@ -132,19 +168,19 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     m_hint->setObjectName(QStringLiteral("speechProviderHint"));
     m_hint->setWordWrap(true);
     m_status->setWordWrap(true);
-    auto *checkAgain = new QPushButton(QStringLiteral("Check again"), this);
-    checkAgain->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    m_checkAgain->setObjectName(QStringLiteral("speechProviderCheckAgain"));
+    m_checkAgain->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     auto *providerRow = new QHBoxLayout;
     providerRow->addWidget(new QLabel(QStringLiteral("Transcription service"), this));
     providerRow->addWidget(m_provider, 1);
     layout->addLayout(providerRow);
     layout->addWidget(m_status);
     layout->addWidget(m_hint);
-    layout->addWidget(checkAgain, 0, Qt::AlignLeft);
+    layout->addWidget(m_checkAgain, 0, Qt::AlignLeft);
     layout->addStretch();
     connect(m_provider, &QComboBox::currentIndexChanged,
             this, &SpeechProviderSetupPage::updateProvider);
-    connect(checkAgain, &QPushButton::clicked,
+    connect(m_checkAgain, &QPushButton::clicked,
             this, &SpeechProviderSetupPage::checkProvider);
     updateProvider();
 }
@@ -164,6 +200,8 @@ void SpeechProviderSetupPage::updateProvider()
 
 void SpeechProviderSetupPage::checkProvider()
 {
+    m_hint->show();
+    m_checkAgain->show();
     const quint64 generation = ++m_checkGeneration;
     const QString providerId = m_provider->currentData().toString();
     SpeechTranscriber *provider = m_providers.speechProvider(
@@ -182,6 +220,8 @@ void SpeechProviderSetupPage::checkProvider()
         m_status->setText(result.ok
                               ? QStringLiteral("%1 is ready.").arg(provider->label())
                               : result.message);
+        m_hint->setVisible(!result.ok);
+        m_checkAgain->setVisible(!result.ok);
         return;
     }
 
@@ -205,13 +245,15 @@ void SpeechProviderSetupPage::checkProvider()
         m_status->setText(result->ok
                               ? QStringLiteral("%1 is ready.").arg(providerLabel)
                               : result->message);
+        m_hint->setVisible(!result->ok);
+        m_checkAgain->setVisible(!result->ok);
     });
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);
     thread->start();
 }
 
 MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
-                                         const LinuxComposition &platform,
+                                         const PlatformComposition &platform,
                                          QWidget *parent)
     : QWidget(parent)
     , m_settings(settings)
@@ -219,6 +261,9 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
     , m_device(new QComboBox(this))
     , m_level(new QProgressBar(this))
     , m_status(new QLabel(this))
+#ifdef Q_OS_MACOS
+    , m_inputVolumeStatus(new QLabel(this))
+#endif
 {
     QVBoxLayout *layout = makePage(
         this,
@@ -229,11 +274,21 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
     m_level->setFormat(QStringLiteral("Input level %p%"));
     m_status->setWordWrap(true);
 
+#ifdef Q_OS_MACOS
+    addMicrophonePermissionControls(layout);
+#endif
+
     auto *form = new QGridLayout;
     form->addWidget(new QLabel(QStringLiteral("Microphone"), this), 0, 0);
     form->addWidget(m_device, 0, 1);
     form->addWidget(new QLabel(QStringLiteral("Live level"), this), 1, 0);
     form->addWidget(m_level, 1, 1);
+#ifdef Q_OS_MACOS
+    m_inputVolumeStatus->setObjectName(QStringLiteral("inputVolumeStatus"));
+    m_inputVolumeStatus->setWordWrap(true);
+    m_inputVolumeStatus->hide();
+    form->addWidget(m_inputVolumeStatus, 2, 1);
+#endif
     layout->addLayout(form);
     layout->addWidget(m_status);
     layout->addStretch();
@@ -241,6 +296,9 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
     m_input = m_platform.createAudioInput(&m_settings, this);
     connect(m_input, &AudioInput::levelChanged, this, [this](float level) {
         m_level->setValue(qBound(0, qRound(level * 100.0f), 100));
+#ifdef Q_OS_MACOS
+        refreshInputVolume();
+#endif
         if (level > 0.01f) {
             m_status->setText(QStringLiteral("Microphone input detected."));
         }
@@ -284,9 +342,79 @@ void MicrophoneSetupPage::setActive(bool active)
     }
 }
 
+#ifdef Q_OS_MACOS
+void MicrophoneSetupPage::addMicrophonePermissionControls(QVBoxLayout *layout)
+{
+    m_permissionStatus = new QLabel(this);
+    m_permissionStatus->setWordWrap(true);
+    m_allowMicrophone = new QPushButton(QStringLiteral("Allow microphone access"), this);
+    m_openMicrophoneSettings = new QPushButton(QStringLiteral("Open Microphone settings"), this);
+    auto *buttons = new QHBoxLayout;
+    for (QPushButton *button : {m_allowMicrophone, m_openMicrophoneSettings}) {
+        button->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+        buttons->addWidget(button);
+    }
+    buttons->addStretch();
+    layout->addWidget(m_permissionStatus);
+    layout->addLayout(buttons);
+
+    connect(m_allowMicrophone, &QPushButton::clicked, this, [this] {
+        qApp->requestPermission(QMicrophonePermission{}, this, [this](const QPermission &permission) {
+            refreshMicrophonePermission();
+            if (permission.status() == Qt::PermissionStatus::Granted && m_active) {
+                startMeter();
+            }
+        });
+    });
+    connect(m_openMicrophoneSettings, &QPushButton::clicked, this, [] {
+        QDesktopServices::openUrl(QUrl(QString::fromLatin1(microphonePaneUrl)));
+    });
+    refreshMicrophonePermission();
+}
+
+void MicrophoneSetupPage::refreshMicrophonePermission()
+{
+    const Qt::PermissionStatus status = qApp->checkPermission(QMicrophonePermission{});
+    m_allowMicrophone->setVisible(status == Qt::PermissionStatus::Undetermined);
+    m_openMicrophoneSettings->setVisible(status == Qt::PermissionStatus::Denied);
+    switch (status) {
+    case Qt::PermissionStatus::Granted:
+        m_permissionStatus->setText(QStringLiteral("macOS lets Speecher use the microphone."));
+        break;
+    case Qt::PermissionStatus::Undetermined:
+        m_permissionStatus->setText(
+            QStringLiteral("macOS has not been asked yet. Speecher only records while you dictate."));
+        break;
+    case Qt::PermissionStatus::Denied:
+        m_permissionStatus->setText(
+            QStringLiteral("Microphone access is off, so Speecher records silence. Turn Speecher on under Privacy & Security > Microphone, then come back to this page."));
+        break;
+    }
+    setStatusColor(m_permissionStatus, status == Qt::PermissionStatus::Granted);
+}
+
+void MicrophoneSetupPage::refreshInputVolume()
+{
+    const std::optional<float> volume = m_platform.inputVolume();
+    if (!volume || *volume >= 0.5f) {
+        m_inputVolumeStatus->hide();
+        return;
+    }
+    m_inputVolumeStatus->setText(
+        QStringLiteral("macOS input volume for the default microphone is at %1% — raise it in System Settings > Sound > Input if Speecher hears you too quietly.")
+            .arg(qRound(*volume * 100.0f)));
+    m_inputVolumeStatus->show();
+}
+#endif
+
 void MicrophoneSetupPage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
+#ifdef Q_OS_MACOS
+    // The grant can change in System Settings while this page sits in the
+    // wizard, and macOS does not push that back to a running process.
+    refreshMicrophonePermission();
+#endif
     if (!m_devicesLoaded) {
         refreshDevices();
         m_devicesLoaded = true;
@@ -307,6 +435,9 @@ void MicrophoneSetupPage::startMeter()
 {
     m_input->stop();
     m_level->setValue(0);
+#ifdef Q_OS_MACOS
+    refreshInputVolume();
+#endif
     QString error;
     if (!m_input->start(&error)) {
         m_status->setText(error);
@@ -320,51 +451,135 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
     : QWidget(parent)
     , m_controller(controller)
     , m_status(new QLabel(this))
+#ifdef Q_OS_MACOS
+    , m_enable(new QPushButton(QStringLiteral("Grant Accessibility access"), this))
+    , m_poll(new QTimer(this))
+#else
     , m_enable(new QPushButton(QStringLiteral("Enable permanently"), this))
+#endif
 {
     QVBoxLayout *layout = makePage(
         this,
+#ifdef Q_OS_MACOS
+        QStringLiteral("Speecher pastes your dictation into the frontmost app with a synthetic Cmd+V. macOS calls that controlling your computer, so it needs Accessibility permission."));
+#else
         QStringLiteral("AT-SPI lets Speecher identify the target app, paste into compatible fields, edit selected text, and learn corrections."));
+#endif
     m_status->setWordWrap(true);
     m_enable->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     layout->addWidget(m_status);
+#ifdef Q_OS_MACOS
     layout->addWidget(m_enable, 0, Qt::AlignLeft);
-    layout->addStretch();
-
+    // macOS records the grant against the app signature and never delivers it to
+    // the process that asked, so the only way to notice it is to keep looking.
+    m_poll->setInterval(1000);
+    connect(m_poll, &QTimer::timeout, &m_controller, &ApplicationController::refreshAccessibilityState);
     connect(m_enable, &QPushButton::clicked, this, [this] {
+        m_lastError.clear();
+        m_controller.platform()->requestAccessibility();
         QString error;
         if (!m_controller.enableAccessibility(&error)) {
-            m_status->setText(error);
+            m_lastError = error;
         }
+        refreshFromController();
     });
+#else
+    layout->addWidget(m_enable, 0, Qt::AlignLeft);
+    connect(m_enable, &QPushButton::clicked, this, [this] {
+        m_lastError.clear();
+        QString error;
+        if (!m_controller.enableAccessibility(&error)) {
+            m_lastError = error;
+        }
+        // enableAccessibility() refreshes the state itself, but it did so before
+        // the error existed.
+        refreshFromController();
+    });
+#endif
+    layout->addStretch();
     connect(&m_controller,
             &ApplicationController::accessibilityStateChanged,
             this,
             &AccessibilitySetupPage::updateState);
+    refreshFromController();
+}
+
+bool AccessibilitySetupPage::accessibilityGrantAppearedDuringSetup() const
+{
+#ifdef Q_OS_MACOS
+    // The poll that keeps m_controller's cached state fresh stops once this page
+    // is hidden, so refresh synchronously before trusting the cache here.
+    m_controller.refreshAccessibilityState();
+    return m_initialGrantRecorded
+        && !m_initialGrant
+        && m_controller.accessibilityEnabled();
+#else
+    return false;
+#endif
+}
+
+void AccessibilitySetupPage::refreshFromController()
+{
     updateState(m_controller.accessibilitySupported(),
                 m_controller.accessibilityEnabled(),
                 m_controller.accessibilityPersistent());
 }
 
+#ifdef Q_OS_MACOS
+void AccessibilitySetupPage::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    m_controller.refreshAccessibilityState();
+    if (!m_initialGrantRecorded) {
+        m_initialGrant = m_controller.accessibilityEnabled();
+        m_initialGrantRecorded = true;
+    }
+    m_poll->start();
+}
+
+void AccessibilitySetupPage::hideEvent(QHideEvent *event)
+{
+    QWidget::hideEvent(event);
+    m_poll->stop();
+}
+#endif
+
 void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool persistent)
 {
+    QString status;
+#ifdef Q_OS_MACOS
+    Q_UNUSED(supported);
+    Q_UNUSED(persistent);
+    // A grant that pre-dated this wizard run does not trigger a relaunch on
+    // accept() (see accessibilityGrantAppearedDuringSetup()), so the copy must
+    // not promise one either.
+    const bool grantedDuringSetup = m_initialGrantRecorded && !m_initialGrant;
+    status = enabled
+        ? (grantedDuringSetup
+               ? QStringLiteral("Accessibility is granted. Speecher will restart when setup finishes so macOS hands it the permission.")
+               : QStringLiteral("Accessibility is granted."))
+        : QStringLiteral("Accessibility is off, so Speecher can copy your dictation but not paste it. Grant it below — Speecher restarts itself when setup finishes.");
+    m_enable->setEnabled(!enabled);
+#else
     if (!supported) {
-        m_status->setText(QStringLiteral("This Speecher build does not include AT-SPI support."));
+        status = QStringLiteral("This Speecher build does not include AT-SPI support.");
         m_enable->setEnabled(false);
         m_enable->setText(QStringLiteral("Unavailable"));
     } else if (enabled && persistent) {
-        m_status->setText(QStringLiteral("Desktop accessibility is enabled permanently."));
+        status = QStringLiteral("Desktop accessibility is enabled permanently.");
         m_enable->setEnabled(false);
         m_enable->setText(QStringLiteral("Enabled"));
     } else if (enabled) {
-        m_status->setText(QStringLiteral("Desktop accessibility is enabled for this session only."));
+        status = QStringLiteral("Desktop accessibility is enabled for this session only.");
         m_enable->setEnabled(true);
         m_enable->setText(QStringLiteral("Enable permanently"));
     } else {
-        m_status->setText(QStringLiteral("Desktop accessibility is currently off."));
+        status = QStringLiteral("Desktop accessibility is currently off.");
         m_enable->setEnabled(true);
         m_enable->setText(QStringLiteral("Enable permanently"));
     }
+#endif
+    m_status->setText(m_lastError.isEmpty() ? status : m_lastError);
 }
 
 TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *parent)
@@ -378,7 +593,11 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
 {
     QVBoxLayout *layout = makePage(
         this,
+#ifdef Q_OS_MACOS
+        QStringLiteral("Speecher puts the finished text on your clipboard and pastes it into the frontmost app with Cmd+V. The paste needs the Accessibility permission from the previous step; without it the text still reaches your clipboard."));
+#else
         QStringLiteral("Speecher can set up ydotool for virtual-keyboard paste. Administrator approval is required once; Speecher remains unprivileged while dictating."));
+#endif
     m_status->setWordWrap(true);
     m_progress->setRange(0, 0);
     m_progress->setVisible(false);
@@ -410,10 +629,15 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
 
 bool TextDeliverySetupPage::needsSignIn() const
 {
+#ifdef SPEECHER_WITH_YDOTOOL
     return YdotoolSetup::probe(m_settings.ydotoolEnabled()).state
         == YdotoolSetupState::NeedsSignOut;
+#else
+    return false;
+#endif
 }
 
+#ifdef SPEECHER_WITH_YDOTOOL
 void TextDeliverySetupPage::refreshStatus()
 {
     const YdotoolSetupStatus status = YdotoolSetup::probe(m_settings.ydotoolEnabled());
@@ -469,6 +693,23 @@ void TextDeliverySetupPage::runSetup()
         refreshStatus();
     }
 }
+#else
+// Keyboard paste needs no user-installed helper off Linux, so the page keeps
+// only the clipboard controls, which are portable.
+void TextDeliverySetupPage::refreshStatus()
+{
+    m_status->setText(
+#ifdef Q_OS_MACOS
+        QStringLiteral("Nothing to install — Speecher uses the keyboard paste built into macOS."));
+#else
+        QStringLiteral("Nothing to install — Speecher pastes with the system clipboard."));
+#endif
+    m_setup->setVisible(false);
+    m_progress->setVisible(false);
+}
+
+void TextDeliverySetupPage::runSetup() {}
+#endif
 
 RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
                                          ProviderRegistry &providers,
@@ -541,6 +782,27 @@ WritingProfilesSetupPage::WritingProfilesSetupPage(SettingsStore &settings, QWid
     });
 }
 
+#ifdef Q_OS_MACOS
+StartAtLoginSetupPage::StartAtLoginSetupPage(SettingsStore &settings, QWidget *parent)
+    : QWidget(parent)
+    , m_settings(settings)
+    , m_launchAtLogin(new QCheckBox(QStringLiteral("Start Speecher at login"), this))
+{
+    QVBoxLayout *layout = makePage(
+        this,
+        QStringLiteral("Dictation only works while Speecher is running."));
+    m_launchAtLogin->setObjectName(QStringLiteral("launchAtLogin"));
+    m_launchAtLogin->setChecked(m_settings.launchAtLogin());
+    layout->addWidget(m_launchAtLogin);
+    layout->addStretch();
+}
+
+void StartAtLoginSetupPage::apply()
+{
+    m_settings.setLaunchAtLogin(m_launchAtLogin->isChecked());
+}
+#endif
+
 void WritingProfilesSetupPage::saveProfiles()
 {
     QList<WritingProfileSettings> profiles;
@@ -578,11 +840,11 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
         connect(m_createShortcut, &QCheckBox::toggled, m_shortcut, &QWidget::setEnabled);
         const auto resetShortcutFailure = [this] {
             m_shortcutFailureAcknowledged = false;
-            m_shortcutStatus->setText(QStringLiteral("The shortcut triggers `speecher toggle`."));
+            m_shortcutStatus->setText(shortcutHint());
         };
         connect(m_createShortcut, &QCheckBox::toggled, this, resetShortcutFailure);
         connect(m_shortcut, &QKeySequenceEdit::keySequenceChanged, this, resetShortcutFailure);
-        m_shortcutStatus->setText(QStringLiteral("The shortcut triggers `speecher toggle`."));
+        m_shortcutStatus->setText(shortcutHint());
     } else {
         m_shortcutStatus->setText(
             QStringLiteral("Bind `speecher toggle` in your desktop environment's global shortcut settings."));
@@ -624,9 +886,7 @@ bool FinishSetupPage::applyShortcut()
     QString error;
     if (!m_controller.setGlobalShortcut(m_shortcut->keySequence(), &error)) {
         m_shortcutFailureAcknowledged = true;
-        m_shortcutStatus->setText(
-            QStringLiteral("Could not register the shortcut: %1. You can bind `speecher toggle` in your desktop environment's shortcut settings. Change the sequence and try again, or click Finish again to continue without it.")
-                .arg(error));
+        m_shortcutStatus->setText(shortcutFailureHint().arg(error));
         return false;
     }
     m_shortcutStatus->setText(QStringLiteral("Dictation shortcut registered."));

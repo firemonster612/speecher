@@ -1,13 +1,12 @@
 #include "common/test_doubles.h"
 #include "common/test_http.h"
 #include "common/test_auth.h"
+#include "core/VocabularyLimit.h"
 #include "ui/AccessibilityNotice.h"
-#include "ui/settings/ApplicationSettingsPage.h"
-#include "ui/settings/CorrectionsSettingsPage.h"
-#include "ui/settings/OutputSettingsPage.h"
-#include "ui/settings/AudioSettingsPage.h"
-#include "ui/settings/ProviderSettingsPage.h"
-#include "ui/settings/RefinementSettingsPage.h"
+#include "core/SecretStore.h"
+#include "frontend/qt/OutputCustomRows.h"
+#include "frontend/qt/ProviderCustomRows.h"
+#include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/settings/SettingsPageSupport.h"
 #include "ui/setup/SetupPages.h"
 
@@ -15,12 +14,38 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFontMetrics>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStyleHints>
 #include <QTableWidget>
 
 using namespace speecher::test;
+
+namespace {
+
+// The migrated pages are the generic renderer over the core schema, so a test
+// builds them the same way the front end does.
+std::unique_ptr<SchemaSettingsPage> schemaPage(const QString &id,
+                                               const PlatformComposition &platform,
+                                               const ProviderRegistry &providers,
+                                               SchemaCustomRowFactory customRows = {})
+{
+    const SettingsSchema schema =
+        buildSettingsSchema(qtSchemaContext(platform, providers, QStringLiteral("Clipboard")));
+    return std::make_unique<SchemaSettingsPage>(schema.page(id), nullptr, std::move(customRows));
+}
+
+QStringList sectionLabels(const QWidget &page)
+{
+    QStringList labels;
+    for (QLabel *label : page.findChildren<QLabel *>(QStringLiteral("sectionLabel"))) {
+        labels.append(label->text());
+    }
+    return labels;
+}
+
+} // namespace
 
 
 class UiTests : public QObject {
@@ -74,15 +99,23 @@ private slots:
         auto *button = notice->findChild<QPushButton *>(QStringLiteral("enableAccessibilityButton"));
         QVERIFY(message);
         QVERIFY(button);
+#ifdef Q_OS_MACOS
+        QVERIFY(message->text().contains(QStringLiteral("Accessibility is off")));
+        QCOMPARE(button->text(), QStringLiteral("Open settings"));
+#else
         QVERIFY(message->text().contains(QStringLiteral("AT-SPI")));
         QCOMPARE(button->text(), QStringLiteral("Enable permanently"));
+#endif
         QSignalSpy requested(notice, &AccessibilityNotice::enableRequested);
         button->click();
         QCOMPARE(requested.count(), 1);
 
         notice->setState(true, true, false);
         QVERIFY(notice->isVisible());
+#ifndef Q_OS_MACOS
+        // macOS has no session-only grant; enabled always means permanent.
         QVERIFY(message->text().contains(QStringLiteral("only for this session")));
+#endif
 
         notice->setState(true, true, true);
         QVERIFY(!notice->isVisible());
@@ -92,10 +125,20 @@ private slots:
     {
         SettingsStore settings;
         ProviderRegistry providers;
-        OutputSettingsPage output(settings);
-        ApplicationSettingsPage applications;
-        RefinementSettingsPage refinement(providers);
-        CorrectionsSettingsPage corrections;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        OutputCustomRows outputRows(settings);
+        const std::unique_ptr<SchemaSettingsPage> outputPage =
+            schemaPage(QStringLiteral("output"), *platform, providers, outputRows.factory());
+        SchemaSettingsPage &output = *outputPage;
+        const std::unique_ptr<SchemaSettingsPage> applicationsPage =
+            schemaPage(QStringLiteral("applications"), *platform, providers);
+        SchemaSettingsPage &applications = *applicationsPage;
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("refinement"), *platform, providers);
+        SchemaSettingsPage &refinement = *page;
+        const std::unique_ptr<SchemaSettingsPage> correctionsPage =
+            schemaPage(QStringLiteral("corrections"), *platform, providers);
+        SchemaSettingsPage &corrections = *correctionsPage;
         auto *correctionLearning = corrections.findChild<QCheckBox *>(
             QStringLiteral("correctionLearningControl"));
         QVERIFY(correctionLearning);
@@ -103,29 +146,208 @@ private slots:
         auto *profileSettings = refinement.findChild<QTableWidget *>(QStringLiteral("vocabInput"));
         QVERIFY(profileSettings);
         QCOMPARE(profileSettings->rowCount(), 5);
-        QVERIFY(correctionLearning->toolTip().contains(QStringLiteral("repeated")));
-        QVERIFY(!correctionLearning->toolTip().contains(QStringLiteral("only high-confidence")));
 
-        output.setTargetAccessibilityAvailable(false);
-        applications.setTargetAccessibilityAvailable(false);
-        refinement.setTargetAccessibilityAvailable(false);
-        corrections.setTargetAccessibilityAvailable(false);
+        output.setCapabilities({false});
+        applications.setCapabilities({false});
+        refinement.setCapabilities({false});
+        corrections.setCapabilities({false});
 
         QVERIFY(!output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
         QVERIFY(!applications.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
         QVERIFY(!refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(!corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
 
-        output.setTargetAccessibilityAvailable(true);
-        applications.setTargetAccessibilityAvailable(true);
-        refinement.setTargetAccessibilityAvailable(true);
-        corrections.setTargetAccessibilityAvailable(true);
+        output.setCapabilities({true});
+        applications.setCapabilities({true});
+        refinement.setCapabilities({true});
+        corrections.setCapabilities({true});
+        // A row that is usable says what it does; one that is not says why.
         QVERIFY(correctionLearning->toolTip().contains(QStringLiteral("repeated")));
         QVERIFY(!correctionLearning->toolTip().contains(QStringLiteral("only high-confidence")));
         QVERIFY(output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
         QVERIFY(applications.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
         QVERIFY(refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
+    }
+
+    void linuxSettingsLayoutsMatchMasterAndKeepSchemaRows()
+    {
+        SettingsStore settings;
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const SettingsSchema schema =
+            buildSettingsSchema(qtSchemaContext(*platform, providers, QStringLiteral("Clipboard")));
+        SettingsPage refinementSchema = schema.page(QStringLiteral("refinement"));
+        SettingsRow sentinel;
+        sentinel.id = QStringLiteral("refinementLayoutSentinel");
+        sentinel.label = QStringLiteral("Sentinel");
+        sentinel.kind = RowKind::Toggle;
+        refinementSchema.sections.append({QStringLiteral("Later"), QString(), {sentinel}});
+        const std::unique_ptr<SchemaSettingsPage> refinement =
+            std::make_unique<SchemaSettingsPage>(refinementSchema);
+
+        for (const SettingsSection &section : refinementSchema.sections) {
+            for (const SettingsRow &row : section.rows) {
+                const QString control = row.id == QStringLiteral("writingProfileBehavior")
+                    ? QStringLiteral("vocabInput")
+                    : row.id;
+                QVERIFY2(refinement->findChild<QWidget *>(control), qPrintable(control));
+            }
+        }
+        refinement->resize(900, 668);
+        refinement->show();
+        QCoreApplication::processEvents();
+        auto *profile = refinement->findChild<QTableWidget *>(QStringLiteral("vocabInput"));
+        auto *context = refinement->findChild<QWidget *>(QStringLiteral("targetContextControl"));
+        QVERIFY(profile && context);
+        const QList<QLabel *> refinementLabels =
+            refinement->findChildren<QLabel *>(QStringLiteral("sectionLabel"));
+        QCOMPARE(refinementLabels.size(), 1);
+        QCOMPARE(refinementLabels.first()->text(), QStringLiteral("Refinement"));
+        const QList<QFrame *> separators =
+            refinement->findChildren<QFrame *>(QStringLiteral("settingsSeparator"));
+        QCOMPARE(separators.size(), 1);
+        const int profileBottom =
+            profile->mapTo(refinement->widget(), QPoint(0, profile->height())).y();
+        const int separatorY = separators.first()->mapTo(refinement->widget(), QPoint()).y();
+        const int contextY = context->mapTo(refinement->widget(), QPoint()).y();
+        QVERIFY(profileBottom <= separatorY && separatorY < contextY);
+
+        OutputCustomRows outputRows(settings);
+        const std::unique_ptr<SchemaSettingsPage> output =
+            std::make_unique<SchemaSettingsPage>(schema.page(QStringLiteral("output")),
+                                                 nullptr,
+                                                 outputRows.factory());
+        const bool virtualKeyboard = [&schema] {
+            for (const SettingsSection &section : schema.page(QStringLiteral("output")).sections) {
+                for (const SettingsRow &row : section.rows) {
+                    if (row.id == QStringLiteral("virtualKeyboard")) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }();
+        const QStringList outputLabels{
+            QStringLiteral("Delivery"),
+            QStringLiteral("Paste behavior"),
+            virtualKeyboard ? QStringLiteral("Clipboard & virtual keyboard")
+                            : QStringLiteral("Clipboard"),
+        };
+        QCOMPARE(sectionLabels(*output), outputLabels);
+        output->resize(900, 668);
+        output->show();
+        QCoreApplication::processEvents();
+        auto *globalPaste = output->findChild<QWidget *>(QStringLiteral("globalPasteRule"));
+        auto *restoreClipboard =
+            output->findChild<QWidget *>(QStringLiteral("restoreClipboardAfterTyping"));
+        QVERIFY(globalPaste && restoreClipboard);
+        QVERIFY(globalPaste->mapTo(output->widget(), QPoint()).y()
+                < restoreClipboard->mapTo(output->widget(), QPoint()).y());
+
+        for (const QString &id : {QStringLiteral("general"), QStringLiteral("audio"),
+                                  QStringLiteral("applications")}) {
+            const std::unique_ptr<SchemaSettingsPage> page =
+                std::make_unique<SchemaSettingsPage>(schema.page(id));
+            QCOMPARE(sectionLabels(*page).size(), 0);
+        }
+    }
+
+    void outputMethodsOfferAccessibilityInsertion()
+    {
+        SettingsStore settings;
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        OutputCustomRows outputRows(settings);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("output"), *platform, providers, outputRows.factory());
+
+        auto *method = page->findChild<QComboBox *>(QStringLiteral("outputMethod"));
+        QVERIFY(method);
+        QVERIFY(method->findData(QStringLiteral("direct_insert")) >= 0);
+    }
+
+    void theVocabularyLimitFollowsTheTable()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("vocabulary"), *platform, providers);
+        AppSettings settings;
+        settings.vocabulary = {{QStringLiteral("Speecher")}, {QStringLiteral("Deepgram")}};
+        page->load(settings);
+
+        auto *table = page->findChild<QTableWidget *>(QStringLiteral("vocabularyEntries"));
+        auto *limit = page->findChild<QLabel *>(QStringLiteral("vocabularyLimit"));
+        QVERIFY(table && limit);
+        QCOMPARE(limit->text(),
+                 VocabularyLimit::summary({QStringLiteral("Deepgram"), QStringLiteral("Speecher")}));
+
+        table->item(0, 1)->setText(QStringLiteral("Deepgram Nova 3"));
+        QCOMPARE(limit->text(),
+                 VocabularyLimit::summary({QStringLiteral("Deepgram Nova 3"),
+                                           QStringLiteral("Speecher")}));
+    }
+
+    void undoingADeletedCorrectionPutsBackEverythingItKnew()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("corrections"), *platform, providers);
+        AppSettings settings;
+        settings.learnedCorrections = {
+            {QStringLiteral("c-1"), QStringLiteral("speecher"), QStringLiteral("Speecher"),
+             QStringLiteral("org.kde.konsole"), 1750000000000, 0.92, true, 3, 1750000900000},
+            {QStringLiteral("c-2"), QStringLiteral("kay dee ee"), QStringLiteral("KDE"),
+             QStringLiteral("org.mozilla.firefox"), 1749000000000, 0.71, false, 1, 1749000500000},
+        };
+        page->load(settings);
+
+        auto *table = page->findChild<QTableWidget *>(QStringLiteral("learnedCorrections"));
+        auto *remove = page->findChild<QPushButton *>(QStringLiteral("deleteLearnedCorrections"));
+        auto *undo = page->findChild<QPushButton *>(QStringLiteral("undoDeleteLearnedCorrections"));
+        QVERIFY(table && remove && undo);
+        QVERIFY(!undo->isEnabled());
+
+        table->setCurrentCell(0, 0);
+        remove->click();
+        QCOMPARE(table->rowCount(), 1);
+        QVERIFY(undo->isEnabled());
+
+        undo->click();
+        QCOMPARE(table->rowCount(), 2);
+        AppSettings draft;
+        page->appendToDraft(draft);
+        QCOMPARE(draft.learnedCorrections, settings.learnedCorrections);
+
+        // Reloading commits whatever Delete took.
+        page->load(settings);
+        QVERIFY(!undo->isEnabled());
+    }
+
+    void theHaikuCautionComesAndGoesWithTheModel()
+    {
+        SettingsStore settings;
+        SecretStore secrets(&settings);
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        ProviderCustomRows providerRows(settings, secrets);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+        auto *caution = page->findChild<QLabel *>(QStringLiteral("anthropicModelCaution"));
+        auto *model = page->findChild<QComboBox *>(QStringLiteral("anthropicModel"));
+        QVERIFY(caution && model);
+
+        AppSettings snapshot;
+        page->load(snapshot);
+        QVERIFY(!caution->isVisibleTo(page.get()));
+
+        snapshot.refinement.anthropicModel = QStringLiteral("claude-haiku-4-5-20251001");
+        page->load(snapshot);
+        QCOMPARE(model->currentText(), QStringLiteral("Claude Haiku 4.5"));
+        QVERIFY(caution->isVisibleTo(page.get()));
+        QVERIFY(caution->text().contains(QStringLiteral("instructions")));
     }
 
     void speechProviderChoicesComeFromTheRegistry()
@@ -144,28 +366,40 @@ private slots:
             {QStringLiteral("codex"),
              QStringLiteral("ChatGPT Codex"),
              QStringLiteral("Sign in with the ChatGPT app or Codex CLI, then check again.")},
-            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+            [](QObject *parent) {
+                auto *provider = new FakeSpeechTranscriber(parent);
+                provider->prepareResult = {false, QStringLiteral("Sign-in required")};
+                return provider;
+            });
 
         SpeechProviderSetupPage setup(settings, providers);
         auto *setupChoice = setup.findChild<QComboBox *>(QStringLiteral("speechProvider"));
         auto *setupHint = setup.findChild<QLabel *>(QStringLiteral("speechProviderHint"));
+        auto *checkAgain = setup.findChild<QPushButton *>(QStringLiteral("speechProviderCheckAgain"));
         QVERIFY(setupChoice);
         QVERIFY(setupHint);
+        QVERIFY(checkAgain);
         QCOMPARE(setupChoice->count(), 2);
+        QVERIFY(setupHint->isHidden());
+        QVERIFY(checkAgain->isHidden());
         setupChoice->setCurrentIndex(setupChoice->findData(QStringLiteral("codex")));
         QCOMPARE(settings.speechProvider(), QStringLiteral("codex"));
         QVERIFY(setupHint->text().contains(QStringLiteral("ChatGPT app")));
+        QVERIFY(!setupHint->isHidden());
+        QVERIFY(!checkAgain->isHidden());
 
-        AudioSettingsPage audio(*linuxComposition(), providers);
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> audio =
+            schemaPage(QStringLiteral("audio"), *platform, providers);
         AppSettings snapshot = settings.snapshot();
-        audio.load(snapshot);
-        auto *settingsChoice = audio.findChild<QComboBox *>(QStringLiteral("speechProvider"));
+        audio->load(snapshot);
+        auto *settingsChoice = audio->findChild<QComboBox *>(QStringLiteral("speechProvider"));
         QVERIFY(settingsChoice);
         QCOMPARE(settingsChoice->count(), 2);
         QCOMPARE(settingsChoice->currentData().toString(), QStringLiteral("codex"));
 
         settingsChoice->setCurrentIndex(settingsChoice->findData(QStringLiteral("claude")));
-        audio.appendToDraft(snapshot);
+        audio->appendToDraft(snapshot);
         QCOMPARE(snapshot.speech.providerId, QStringLiteral("claude"));
         settings.applySnapshot(snapshot);
         QCOMPARE(settings.speechProvider(), QStringLiteral("claude"));
@@ -174,7 +408,12 @@ private slots:
     void outputCompletionStatusDurationLoadsAndSaves()
     {
         SettingsStore store;
-        OutputSettingsPage page(store);
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        OutputCustomRows outputRows(store);
+        const std::unique_ptr<SchemaSettingsPage> output =
+            schemaPage(QStringLiteral("output"), *platform, providers, outputRows.factory());
+        SchemaSettingsPage &page = *output;
         AppSettings settings;
         settings.output.completionStatusDurationMs = 1200;
         page.load(settings);
@@ -196,11 +435,14 @@ private slots:
         }
         SettingsStore settings;
         SecretStore secrets(&settings);
-        ProviderSettingsPage page(settings, secrets);
-        page.loadModels();
-        page.loadAuthModes();
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        ProviderCustomRows providerRows(settings, secrets);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+        page->load(settings.snapshot());
         for (const char *name : {"openAiCliproxyAccount", "anthropicCliproxyAccount"}) {
-            auto *combo = page.findChild<QComboBox *>(QString::fromLatin1(name));
+            auto *combo = page->findChild<QComboBox *>(QString::fromLatin1(name));
             QVERIFY2(combo, name);
             qInfo().noquote() << name << "dir=" << settings.cliproxyOauthDir();
             for (int i = 0; i < combo->count(); ++i) {
@@ -218,12 +460,15 @@ private slots:
         settings.raw().clear();
         settings.setOpenAiAuthMode(QStringLiteral("auto"));
         SecretStore secrets(&settings);
-        ProviderSettingsPage page(settings, secrets);
-        page.loadModels();
-        page.loadAuthModes();
-        page.loadSecret();
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        ProviderCustomRows providerRows(settings, secrets);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+        page->load(settings.snapshot());
+        providerRows.loadSecret();
 
-        auto *status = page.findChild<QLabel *>(QStringLiteral("openAiAuthStatus"));
+        auto *status = page->findChild<QLabel *>(QStringLiteral("openAiAuthStatus"));
         QVERIFY(status);
         QTRY_VERIFY_WITH_TIMEOUT(!status->text().isEmpty()
                                      && status->text() != QStringLiteral("Checking…"),
@@ -243,27 +488,38 @@ private slots:
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-b@example.com.json"), QStringLiteral("codex"),
                                      QStringLiteral("token-b"), valid));
 
-        ProviderSettingsPage page(settings, secrets);
-        page.loadModels();
-        page.loadAuthModes();
-        auto *combo = page.findChild<QComboBox *>(QStringLiteral("openAiCliproxyAccount"));
-        QVERIFY(combo);
-        QCOMPARE(combo->count(), 3);
-        QCOMPARE(combo->currentData().toString(), QString());
-        QVERIFY(!page.hasAuthChanges());
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        ProviderCustomRows providerRows(settings, secrets);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+        page->load(settings.snapshot());
 
-        combo->setCurrentIndex(combo->findData(QStringLiteral("codex-b@example.com.json")));
-        QVERIFY(!page.hasAuthChanges());
-        page.saveAuthModes();
-        QCOMPARE(settings.openAiCliproxyAccount(), QString());
+        auto *mode = page->findChild<QComboBox *>(QStringLiteral("openAiAuthMode"));
+        QVERIFY(mode);
+        QVERIFY(mode->findData(QStringLiteral("cliproxy")) >= 0);
+        auto *account = page->findChild<QComboBox *>(QStringLiteral("openAiCliproxyAccount"));
+        QVERIFY(account);
+        QCOMPARE(account->count(), 3);
+        QCOMPARE(account->currentData().toString(), QString());
+        QVERIFY(!page->hasChanges(settings.snapshot()));
+
+        // Another auth mode is chosen, so the picker is neither shown nor saved.
+        QVERIFY(!account->isVisibleTo(page.get()));
+        account->setCurrentIndex(account->findData(QStringLiteral("codex-b@example.com.json")));
+        QVERIFY(!page->hasChanges(settings.snapshot()));
+        AppSettings draft = settings.snapshot();
+        page->appendToDraft(draft);
+        QCOMPARE(draft.refinement.openAiCliproxyAccount, QString());
 
         settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
-        page.loadAuthModes();
-        combo->setCurrentIndex(combo->findData(QStringLiteral("codex-b@example.com.json")));
-        QVERIFY(page.hasAuthChanges());
-        page.saveAuthModes();
-        QCOMPARE(settings.openAiCliproxyAccount(), QStringLiteral("codex-b@example.com.json"));
-        QVERIFY(!page.hasAuthChanges());
+        page->load(settings.snapshot());
+        QVERIFY(account->isVisibleTo(page.get()));
+        account->setCurrentIndex(account->findData(QStringLiteral("codex-b@example.com.json")));
+        QVERIFY(page->hasChanges(settings.snapshot()));
+        draft = settings.snapshot();
+        page->appendToDraft(draft);
+        QCOMPARE(draft.refinement.openAiCliproxyAccount, QStringLiteral("codex-b@example.com.json"));
     }
 
     void providerSettingsPreservesSpeechAccountsInServerMode()
@@ -278,41 +534,96 @@ private slots:
         settings.setOpenAiCliproxyAccount(QStringLiteral("codex-a@example.com.json"));
         settings.setAnthropicCliproxyAccount(QStringLiteral("claude-a@example.com.json"));
         settings.setCliproxyBaseUrl(QStringLiteral("http://proxy.example:8317"));
+        settings.setCliproxyApiKey(QStringLiteral("server-key"));
         const QDateTime valid = QDateTime::currentDateTimeUtc().addSecs(3600);
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-a@example.com.json"), QStringLiteral("codex"),
                                      QStringLiteral("codex-token"), valid));
         QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"), QStringLiteral("claude"),
                                      QStringLiteral("claude-token"), valid));
 
-        ProviderSettingsPage page(settings, secrets);
-        page.loadModels();
-        page.loadAuthModes();
-        auto *openAi = page.findChild<QComboBox *>(QStringLiteral("openAiCliproxyAccount"));
-        auto *anthropic = page.findChild<QComboBox *>(QStringLiteral("anthropicCliproxyAccount"));
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        ProviderCustomRows providerRows(settings, secrets);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+        page->load(settings.snapshot());
+        auto *openAi = page->findChild<QComboBox *>(QStringLiteral("openAiCliproxyAccount"));
+        auto *anthropic = page->findChild<QComboBox *>(QStringLiteral("anthropicCliproxyAccount"));
+        auto *baseUrl = page->findChild<QLineEdit *>(QStringLiteral("cliproxyBaseUrl"));
+        auto *apiKey = page->findChild<QLineEdit *>(QStringLiteral("cliproxyApiKey"));
         QVERIFY(openAi);
         QVERIFY(anthropic);
+        QVERIFY(baseUrl);
+        QVERIFY(apiKey);
         QCOMPARE(openAi->currentData().toString(), QStringLiteral("codex-a@example.com.json"));
         QCOMPARE(anthropic->currentData().toString(), QStringLiteral("claude-a@example.com.json"));
         QVERIFY(openAi->isEnabled());
         QVERIFY(anthropic->isEnabled());
-        QVERIFY(!page.hasAuthChanges());
+        QCOMPARE(baseUrl->text(), QStringLiteral("http://proxy.example:8317"));
+        QCOMPARE(apiKey->echoMode(), QLineEdit::Password);
+        QVERIFY(!page->hasChanges(settings.snapshot()));
 
-        page.saveAuthModes();
+        baseUrl->setText(QStringLiteral(" http://proxy.example:8318/// "));
+        apiKey->setText(QStringLiteral("new-server-key"));
+        AppSettings draft = settings.snapshot();
+        page->appendToDraft(draft);
+        settings.applySnapshot(draft);
         QCOMPARE(settings.openAiCliproxyAccount(), QStringLiteral("codex-a@example.com.json"));
         QCOMPARE(settings.anthropicCliproxyAccount(), QStringLiteral("claude-a@example.com.json"));
+        QCOMPARE(settings.cliproxyBaseUrl(), QStringLiteral("http://proxy.example:8318"));
+        QCOMPARE(settings.cliproxyApiKey(), QStringLiteral("new-server-key"));
+    }
+
+    void providerSettingsHidesCliproxyServerCardUnlessRouted()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore secrets(&settings);
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        ProviderCustomRows providerRows(settings, secrets);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+        page->load(settings.snapshot());
+
+        auto *baseUrl = page->findChild<QLineEdit *>(QStringLiteral("cliproxyBaseUrl"));
+        auto *apiKey = page->findChild<QLineEdit *>(QStringLiteral("cliproxyApiKey"));
+        QVERIFY(baseUrl);
+        QVERIFY(apiKey);
+
+        // Neither provider routes through the server by default, so the card
+        // stays out of the way.
+        QVERIFY(!baseUrl->isVisibleTo(page.get()));
+        QVERIFY(!apiKey->isVisibleTo(page.get()));
+
+        settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
+        page->load(settings.snapshot());
+        QVERIFY(baseUrl->isVisibleTo(page.get()));
+        QVERIFY(apiKey->isVisibleTo(page.get()));
+
+        settings.setOpenAiAuthMode(QStringLiteral("auto"));
+        settings.setAnthropicAuthMode(QStringLiteral("cliproxy"));
+        page->load(settings.snapshot());
+        QVERIFY(baseUrl->isVisibleTo(page.get()));
+        QVERIFY(apiKey->isVisibleTo(page.get()));
     }
 
     void applicationSettingsShowsBuiltInsAndAddsCustomRules()
     {
-        ApplicationSettingsPage page;
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> applications =
+            schemaPage(QStringLiteral("applications"), *platform, providers);
+        SchemaSettingsPage &page = *applications;
         AppSettings settings;
         settings.refinement.writingProfileOverrides = {
             {QStringLiteral("org.legacy.chat"), WritingProfile::Personal, true},
         };
         page.load(settings);
+        page.setCapabilities({true});
 
         auto *table = page.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"));
-        auto *add = page.findChild<QPushButton *>(QStringLiteral("addAppRecognitionRule"));
+        auto *add = page.findChild<QPushButton *>(QStringLiteral("addAppRecognitionRules"));
         QVERIFY(table);
         QVERIFY(add);
         QCOMPARE(table->rowCount(), builtInAppRecognitionRules().size() + 1);
@@ -370,10 +681,44 @@ private slots:
         QVERIFY(!checkBoxRow->findChild<QLabel *>(QStringLiteral("rowDescription")));
     }
 
+    void settingsRowsGrowForWrappedDescriptions()
+    {
+        QWidget surface;
+        surface.resize(520, 240);
+        auto *layout = new QVBoxLayout(&surface);
+        auto *control = new QPushButton(QStringLiteral("A deliberately wide control"), &surface);
+        control->setFixedWidth(250);
+        QFrame *row = settings::makeRow(
+            QStringLiteral("Output"),
+            QStringLiteral("How Speecher delivers final text after dictation has completed, "
+                           "including the fallback used when the preferred delivery is missing."),
+            control,
+            &surface);
+        layout->addWidget(row);
+        layout->addStretch();
+
+        surface.show();
+        QCoreApplication::processEvents();
+        auto *description = row->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        QVERIFY(description);
+        QVERIFY(description->heightForWidth(description->width())
+                > description->fontMetrics().height());
+        QVERIFY(description->height() >= description->heightForWidth(description->width()));
+        const QRect descriptionInRow(
+            description->mapTo(row, QPoint(0, 0)), description->size());
+        QVERIFY(row->rect().contains(descriptionInRow.bottomLeft()));
+    }
+
+#ifdef SPEECHER_WITH_YDOTOOL
     void outputVirtualKeyboardStatusFitsWrappedText()
     {
         SettingsStore settings;
-        OutputSettingsPage output(settings);
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        OutputCustomRows outputRows(settings);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("output"), *platform, providers, outputRows.factory());
+        SchemaSettingsPage &output = *page;
         output.resize(900, 668);
 
         auto *status = output.findChild<QLabel *>(QStringLiteral("statusText"));
@@ -391,12 +736,13 @@ private slots:
         QVERIFY(status->height() >= status->heightForWidth(status->width()));
         const int longStatusHeight = status->heightForWidth(status->width());
 
-        output.refreshControls();
+        outputRows.refresh();
         QCoreApplication::processEvents();
 
         QCOMPARE(status->minimumHeight(), status->heightForWidth(status->width()));
         QVERIFY(status->minimumHeight() < longStatusHeight);
     }
+#endif
 };
 
 int runUiTests(int argc, char **argv)

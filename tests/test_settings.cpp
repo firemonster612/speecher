@@ -25,6 +25,11 @@ private slots:
         QCOMPARE(settings.theme(), QStringLiteral("system"));
         QCOMPARE(settings.pauseMediaDuringTranscription(), true);
         QCOMPARE(settings.soundsEnabled(), false);
+#ifdef Q_OS_MACOS
+        QCOMPARE(settings.launchAtLogin(), true);
+#else
+        QCOMPARE(settings.launchAtLogin(), false);
+#endif
         QCOMPARE(settings.customVocabulary(), QStringList());
         QCOMPARE(settings.bindingRules().size(), 0);
         QCOMPARE(settings.refinementProvider(), QStringLiteral("openai"));
@@ -166,7 +171,12 @@ private slots:
         QCOMPARE(settings.anthropicCliproxyAccount(), QStringLiteral("claude-user@example.com.json"));
         QCOMPARE(settings.snapshot().refinement.openAiCliproxyAccount, QStringLiteral("codex-user@example.com.json"));
         QCOMPARE(settings.snapshot().refinement.anthropicCliproxyAccount, QStringLiteral("claude-user@example.com.json"));
-        QVERIFY(settings.snapshot().refinement.cliproxyOauthDir.endsWith(QStringLiteral("cliproxy-api/oauth")));
+        // The default is autodetected from the machine: whichever CLI Proxy API
+        // auth dir holds accounts, or the stock ~/.cli-proxy-api on a machine
+        // with neither.
+        const QString oauthDir = settings.snapshot().refinement.cliproxyOauthDir;
+        QVERIFY(oauthDir.endsWith(QStringLiteral("cliproxy-api/oauth"))
+                || oauthDir.endsWith(QStringLiteral(".cli-proxy-api")));
         settings.setAnthropicEffort(QStringLiteral("high"));
         QCOMPARE(settings.anthropicEffort(), QStringLiteral("high"));
         settings.setAnthropicEffort(QStringLiteral("max"));
@@ -179,6 +189,8 @@ private slots:
         settings.setPauseMediaDuringTranscription(false);
         QCOMPARE(settings.pauseMediaDuringTranscription(), false);
 
+        settings.setOutputMethod(QString::fromLatin1(OutputMethod::DirectInsert));
+        QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::DirectInsert));
         settings.setOutputMethod(QStringLiteral("ydotool"));
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Ydotool));
         settings.setOutputMethod(QStringLiteral("wtype"));
@@ -256,6 +268,40 @@ private slots:
         qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
         qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "1");
         QCOMPARE(settings.refinementProvider(), QStringLiteral("anthropic"));
+    }
+
+    void settingsSnapshotApplyPersistsCliProxyAccounts()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        AppSettings draft = settings.snapshot();
+        draft.refinement.openAiCliproxyAccount = QStringLiteral("codex-user@example.com.json");
+        draft.refinement.anthropicCliproxyAccount = QStringLiteral("claude-user@example.com.json");
+
+        settings.applySnapshot(draft);
+
+        QCOMPARE(settings.openAiCliproxyAccount(), QStringLiteral("codex-user@example.com.json"));
+        QCOMPARE(settings.anthropicCliproxyAccount(), QStringLiteral("claude-user@example.com.json"));
+    }
+
+    void launchAtLoginRoundTripsThroughSnapshotApply()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        std::optional<bool> reconciled;
+        settings.setLaunchAtLoginReconciler(
+            [&reconciled](bool enabled, QString *) {
+                reconciled = enabled;
+                return true;
+            });
+        AppSettings draft = settings.snapshot();
+        draft.launchAtLogin = !draft.launchAtLogin;
+
+        settings.applySnapshot(draft);
+
+        QCOMPARE(settings.launchAtLogin(), draft.launchAtLogin);
+        QCOMPARE(settings.snapshot().launchAtLogin, draft.launchAtLogin);
+        QCOMPARE(reconciled, std::optional<bool>(draft.launchAtLogin));
     }
 
     void settingsBindingRulesRoundTrip()

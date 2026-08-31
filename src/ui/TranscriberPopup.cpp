@@ -1,7 +1,7 @@
 #include "ui/TranscriberPopup.h"
 
-#include "platform/WaylandLayerShell.h"
 #include "ui/AccessibilityNotice.h"
+#include "platform/FallbackPopupPositioner.h"
 #include "ui/WaveformWidget.h"
 
 #include <QApplication>
@@ -22,6 +22,10 @@
 
 #include <algorithm>
 
+#ifdef Q_OS_MACOS
+#include "platform/mac/MacWindowChrome.h"
+#endif
+
 namespace speecher {
 namespace {
 
@@ -36,6 +40,9 @@ public:
 protected:
     void paintEvent(QPaintEvent *) override
     {
+#ifdef Q_OS_MACOS
+        return;
+#else
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
         const QPalette p = QApplication::palette();
@@ -48,6 +55,7 @@ protected:
         painter.setBrush(p.color(QPalette::Base));
         const QRectF pillRect = QRectF(rect()).adjusted(inset, inset, -inset, -inset);
         painter.drawRoundedRect(pillRect, pillRect.height() / 2.0, pillRect.height() / 2.0);
+#endif
     }
 };
 
@@ -60,7 +68,7 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     , m_errorDismissProgress(new QProgressBar(m_previewPill))
     , m_waveform(new WaveformWidget(this))
     , m_accessibilityNotice(new AccessibilityNotice(this))
-    , m_positioner(positioner ? positioner : new WaylandLayerShell(this))
+    , m_positioner(positioner ? positioner : new FallbackPopupPositioner(this))
 {
     if (m_positioner->parent() != this) {
         m_positioner->setParent(this);
@@ -68,7 +76,12 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_NoSystemBackground);
     setAutoFillBackground(false);
-    m_positioner->configurePopup(this);
+    setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
+    setAttribute(Qt::WA_ShowWithoutActivating);
+    m_positioner->configurePopup(m_surface);
+#ifdef Q_OS_MACOS
+    mac::applyPopupChrome(this);
+#endif
     setObjectName(QStringLiteral("transcriberPopup"));
     m_preview->setObjectName(QStringLiteral("rawTranscript"));
     applyTheme();
@@ -250,7 +263,7 @@ void TranscriberPopup::showErrorMessage(const QString &message)
 void TranscriberPopup::showPopup(quint64 generation)
 {
     m_pendingPresentationGeneration = generation;
-    m_positioner->positionBottomCenter(this);
+    m_positioner->positionBottomCenter(m_surface);
     updateWindowMask();
     show();
     raise();
@@ -264,7 +277,7 @@ void TranscriberPopup::setAccessibilityState(bool supported,
     m_accessibilityNotice->setState(supported, enabled, persistent);
     adjustSize();
     if (isVisible()) {
-        m_positioner->positionBottomCenter(this);
+        m_positioner->positionBottomCenter(m_surface);
     }
 }
 
@@ -273,7 +286,7 @@ void TranscriberPopup::showAccessibilityError(const QString &message)
     m_accessibilityNotice->showError(message);
     adjustSize();
     if (isVisible()) {
-        m_positioner->positionBottomCenter(this);
+        m_positioner->positionBottomCenter(m_surface);
     }
 }
 
@@ -313,14 +326,20 @@ void TranscriberPopup::applyTheme()
     const QPalette p = qApp ? qApp->palette() : palette();
     const QColor text = p.color(QPalette::Text);
     const QColor accent = p.color(QPalette::Highlight);
+#ifdef Q_OS_MACOS
+    const QString labelFont = QStringLiteral("font-size:14px;");
+#else
+    const QString labelFont = QStringLiteral("font:14px 'Inter','Noto Sans',sans-serif;");
+#endif
     setStyleSheet(QStringLiteral(
                       "#transcriberPopup{background:transparent;}"
                       "QFrame#previewPill{background:transparent;border:0;}"
-                      "QLabel{color:%1;font:14px 'Inter','Noto Sans',sans-serif;}"
+                      "QLabel{color:%1;%3}"
                       "QProgressBar#errorDismissProgress{border:0;background:transparent;}"
                       "QProgressBar#errorDismissProgress::chunk{background:%2;border-radius:1px;}")
                       .arg(text.name(QColor::HexRgb),
-                           accent.name(QColor::HexRgb)));
+                           accent.name(QColor::HexRgb),
+                           labelFont));
     if (m_previewPill) {
         m_previewPill->update();
     }

@@ -8,6 +8,7 @@ inline constexpr auto Organization = "local.speecher";
 inline constexpr auto Application = "speecher";
 
 inline const QString SetupCompleted = QStringLiteral("app/setupCompleted");
+inline const QString LaunchAtLogin = QStringLiteral("app/launchAtLogin");
 inline const QString UiPreviewWords = QStringLiteral("ui/previewWords");
 inline const QString UiTheme = QStringLiteral("ui/theme");
 inline const QString UiPauseMedia = QStringLiteral("ui/pauseMediaDuringTranscription");
@@ -24,6 +25,9 @@ inline const QString AudioReadinessTimeoutMs = QStringLiteral("audio/readinessTi
 inline const QString AudioVadThresholdPercent = QStringLiteral("audio/vadThresholdPercent");
 inline const QString AppRecognitionRules = QStringLiteral("target/appRecognitionRules");
 inline const QString BindingRules = QStringLiteral("bindings/rules");
+// Only platforms without a desktop-wide shortcut registry of their own store the
+// dictation binding here; KGlobalAccel owns it on KDE.
+inline const QString GlobalShortcut = QStringLiteral("shortcuts/toggleDictation");
 inline const QString CorrectionLearningEnabled = QStringLiteral("vocabulary/correctionLearningEnabled");
 inline const QString LearnedCorrections = QStringLiteral("vocabulary/learnedCorrections");
 inline const QString CorrectionEvidence = QStringLiteral("vocabulary/correctionEvidence");

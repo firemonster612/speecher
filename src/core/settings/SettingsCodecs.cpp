@@ -71,6 +71,21 @@ void SettingsCodecs::setSetupCompleted(bool value)
     m_settings.setValue(SettingsKeys::SetupCompleted, value);
 }
 
+bool SettingsCodecs::launchAtLogin() const
+{
+#ifdef Q_OS_MACOS
+    constexpr bool defaultValue = true;
+#else
+    constexpr bool defaultValue = false;
+#endif
+    return value(SettingsKeys::LaunchAtLogin, defaultValue).toBool();
+}
+
+void SettingsCodecs::setLaunchAtLogin(bool value)
+{
+    m_settings.setValue(SettingsKeys::LaunchAtLogin, value);
+}
+
 int SettingsCodecs::previewWords() const
 {
     return std::clamp(value(SettingsKeys::UiPreviewWords, 7).toInt(), 1, 40);
@@ -812,6 +827,7 @@ AppSettings SettingsCodecs::snapshot() const
 {
     AppSettings settings;
     settings.setupCompleted = setupCompleted();
+    settings.launchAtLogin = launchAtLogin();
     settings.ui.previewWords = previewWords();
     settings.ui.theme = theme();
     settings.ui.pauseMediaDuringTranscription = pauseMediaDuringTranscription();
@@ -830,6 +846,8 @@ AppSettings SettingsCodecs::snapshot() const
     settings.audio = audioCaptureSettings();
     settings.appRecognitionRules = appRecognitionRules();
     settings.bindings = bindingRules();
+    settings.vocabulary = vocabularyEntries();
+    settings.correctionLearningEnabled = correctionLearningEnabled();
     settings.learnedCorrections = learnedCorrections();
     for (const LearnedCorrection &correction : settings.learnedCorrections) {
         if (!correction.enabled) {

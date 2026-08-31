@@ -3,48 +3,84 @@
 #include "app/ApplicationController.h"
 #include "core/AppSettings.h"
 #include "core/SettingsStore.h"
+#include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/Theme.h"
-#include "ui/settings/ApplicationSettingsPage.h"
-#include "ui/settings/AudioSettingsPage.h"
-#include "ui/settings/BindingsSettingsPage.h"
-#include "ui/settings/CorrectionsSettingsPage.h"
-#include "ui/settings/GeneralSettingsPage.h"
-#include "ui/settings/OutputSettingsPage.h"
-#include "ui/settings/ProviderSettingsPage.h"
-#include "ui/settings/RefinementSettingsPage.h"
-#include "ui/settings/VocabularySettingsPage.h"
 
+#include <QDesktopServices>
+#include <QMessageBox>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalBlocker>
 #include <QTimer>
+#include <QUrl>
 
 namespace speecher {
+
+namespace {
+
+SettingsPage providerRowsPage(const SettingsPage &source,
+                              const QStringList &rowIds,
+                              bool includeSectionHelp)
+{
+    SettingsPage page = source;
+    page.sections.clear();
+    for (const SettingsSection &sourceSection : source.sections) {
+        SettingsSection section{sourceSection.title,
+                                includeSectionHelp ? sourceSection.help : QString(),
+                                {}};
+        for (const SettingsRow &row : sourceSection.rows) {
+            if (rowIds.contains(row.id)) {
+                section.rows.append(row);
+            }
+        }
+        if (!section.rows.isEmpty()) {
+            page.sections.append(std::move(section));
+        }
+    }
+    return page;
+}
+
+} // namespace
 
 SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *parent)
     : QObject(parent)
     , m_controller(controller)
-    , m_general(new GeneralSettingsPage(controller->primaryOutputStatus(), parent))
-    , m_audio(new AudioSettingsPage(*controller->platform(),
-                                    *controller->providerRegistry(),
-                                    parent))
-    , m_applications(new ApplicationSettingsPage(parent))
-    , m_output(new OutputSettingsPage(*controller->settings(), parent))
-    , m_refinement(new RefinementSettingsPage(*controller->providerRegistry(), parent))
-    , m_providers(new ProviderSettingsPage(*controller->settings(), *controller->secretStore(), parent))
-    , m_vocabulary(new VocabularySettingsPage(parent))
-    , m_corrections(new CorrectionsSettingsPage(parent))
-    , m_bindings(new BindingsSettingsPage(parent))
+    , m_schema(buildSettingsSchema(qtSchemaContext(*controller->platform(),
+                                                   *controller->providerRegistry(),
+                                                   controller->primaryOutputStatus())))
+    , m_outputRows(*controller->settings())
+    , m_providerRows(*controller->settings(), *controller->secretStore())
+    , m_general(addPage(QStringLiteral("general"), parent))
+    , m_audio(addPage(QStringLiteral("audio"), parent))
+    , m_applications(addPage(QStringLiteral("applications"), parent))
+    , m_output(addPage(QStringLiteral("output"), parent, m_outputRows.factory()))
+    , m_refinement(addPage(QStringLiteral("refinement"), parent))
+    , m_vocabulary(addPage(QStringLiteral("vocabulary"), parent))
+    , m_corrections(addPage(QStringLiteral("corrections"), parent))
+    , m_bindings(addPage(QStringLiteral("bindings"), parent, m_bindingRows.factory()))
+    , m_providerModels(addPage(
+          providerRowsPage(m_schema.page(QStringLiteral("providers")),
+                           {QStringLiteral("openAiModel"),
+                            QStringLiteral("openAiModelCaution"),
+                            QStringLiteral("openAiEffort"),
+                            QStringLiteral("anthropicModel"),
+                            QStringLiteral("anthropicModelCaution"),
+                            QStringLiteral("anthropicEffort")},
+                           false),
+          parent))
+    , m_providerAuth(addPage(
+          providerRowsPage(m_schema.page(QStringLiteral("providers")),
+                           {QStringLiteral("openAiAuthMode"),
+                            QStringLiteral("openAiCliproxyAccount"),
+                            QStringLiteral("openAiAuth"),
+                            QStringLiteral("anthropicAuthMode"),
+                            QStringLiteral("anthropicCliproxyAccount"),
+                            QStringLiteral("cliproxyBaseUrl"),
+                            QStringLiteral("cliproxyApiKey")},
+                           true),
+          parent,
+          m_providerRows.factory()))
 {
-    connect(m_general, &GeneralSettingsPage::changed, this, &SettingsPageSet::changed);
-    connect(m_audio, &AudioSettingsPage::changed, this, &SettingsPageSet::changed);
-    connect(m_applications, &ApplicationSettingsPage::changed, this, &SettingsPageSet::changed);
-    connect(m_output, &OutputSettingsPage::changed, this, &SettingsPageSet::changed);
-    connect(m_refinement, &RefinementSettingsPage::changed, this, &SettingsPageSet::changed);
-    connect(m_providers, &ProviderSettingsPage::changed, this, &SettingsPageSet::changed);
-    connect(m_vocabulary, &VocabularySettingsPage::changed, this, &SettingsPageSet::changed);
-    connect(m_corrections, &CorrectionsSettingsPage::changed, this, &SettingsPageSet::changed);
-    connect(m_bindings, &BindingsSettingsPage::changed, this, &SettingsPageSet::changed);
     connect(controller,
             &ApplicationController::accessibilityStateChanged,
             this,
@@ -54,15 +90,34 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *par
                              controller->accessibilityPersistent());
 }
 
-GeneralSettingsPage *SettingsPageSet::general() const { return m_general; }
-AudioSettingsPage *SettingsPageSet::audio() const { return m_audio; }
-ApplicationSettingsPage *SettingsPageSet::applications() const { return m_applications; }
-OutputSettingsPage *SettingsPageSet::output() const { return m_output; }
-RefinementSettingsPage *SettingsPageSet::refinement() const { return m_refinement; }
-ProviderSettingsPage *SettingsPageSet::providers() const { return m_providers; }
-VocabularySettingsPage *SettingsPageSet::vocabulary() const { return m_vocabulary; }
-CorrectionsSettingsPage *SettingsPageSet::corrections() const { return m_corrections; }
-BindingsSettingsPage *SettingsPageSet::bindings() const { return m_bindings; }
+SchemaSettingsPage *SettingsPageSet::addPage(const QString &id,
+                                             QWidget *parent,
+                                             SchemaCustomRowFactory customRows)
+{
+    return addPage(m_schema.page(id), parent, std::move(customRows));
+}
+
+SchemaSettingsPage *SettingsPageSet::addPage(const SettingsPage &descriptor,
+                                             QWidget *parent,
+                                             SchemaCustomRowFactory customRows)
+{
+    auto *page = new SchemaSettingsPage(descriptor, parent, std::move(customRows));
+    connect(page, &SchemaSettingsPage::changed, this, &SettingsPageSet::changed);
+    connect(page, &SchemaSettingsPage::actionTriggered, this, &SettingsPageSet::runPageAction);
+    m_pages.append(page);
+    return page;
+}
+
+SchemaSettingsPage *SettingsPageSet::general() const { return m_general; }
+SchemaSettingsPage *SettingsPageSet::audio() const { return m_audio; }
+SchemaSettingsPage *SettingsPageSet::applications() const { return m_applications; }
+SchemaSettingsPage *SettingsPageSet::output() const { return m_output; }
+SchemaSettingsPage *SettingsPageSet::refinement() const { return m_refinement; }
+SchemaSettingsPage *SettingsPageSet::providerModels() const { return m_providerModels; }
+SchemaSettingsPage *SettingsPageSet::providerAuth() const { return m_providerAuth; }
+SchemaSettingsPage *SettingsPageSet::vocabulary() const { return m_vocabulary; }
+SchemaSettingsPage *SettingsPageSet::corrections() const { return m_corrections; }
+SchemaSettingsPage *SettingsPageSet::bindings() const { return m_bindings; }
 
 void SettingsPageSet::load()
 {
@@ -72,74 +127,80 @@ void SettingsPageSet::load()
 
 void SettingsPageSet::loadBeforeShow()
 {
-    SettingsStore *settings = m_controller->settings();
-    const AppSettings snapshot = settings->snapshot();
-    m_general->load(snapshot);
-    m_applications->load(snapshot);
-    m_refinement->load(snapshot);
-    m_providers->loadModels();
-    m_output->load(snapshot);
-    m_providers->loadAuthModes();
-    m_vocabulary->load(settings->vocabularyEntries());
-    m_bindings->load(settings->bindingRules());
-    m_corrections->load(settings->correctionLearningEnabled(), settings->learnedCorrections());
-    m_output->refreshControls();
+    const AppSettings snapshot = m_controller->settings()->snapshot();
+    for (SchemaSettingsPage *page : std::as_const(m_pages)) {
+        page->load(snapshot);
+    }
+    m_outputRows.refresh();
 }
 
 void SettingsPageSet::loadAfterShow()
 {
-    {
-        const QSignalBlocker blocker(m_audio);
-        m_audio->load(m_controller->settings()->snapshot());
+    const AppSettings snapshot = m_controller->settings()->snapshot();
+    for (SchemaSettingsPage *page : std::as_const(m_pages)) {
+        const QSignalBlocker blocker(page);
+        page->loadExpensiveRows(snapshot);
     }
-    m_providers->loadSecret();
+    m_providerRows.loadSecret();
 }
 
 bool SettingsPageSet::save(bool showValidationErrors,
                            bool refreshPages,
-                           SaveFailure *failure)
+                           SaveOutcome *outcome)
 {
-    if (failure) *failure = SaveFailure::None;
+    if (outcome) *outcome = {};
+    const auto refuse = [outcome](SaveFailure failure, const QStringList &messages) {
+        if (outcome) *outcome = {failure, messages};
+        return false;
+    };
+    const auto refuseAloud = [&](SaveFailure failure,
+                                 QWidget *page,
+                                 const QString &title,
+                                 const QStringList &messages) {
+        if (showValidationErrors) {
+            QMessageBox::warning(page, title, messages.join(QLatin1Char('\n')));
+        }
+        return refuse(failure, messages);
+    };
+
     SettingsStore *settings = m_controller->settings();
-    QList<BindingRule> bindingRules;
-    if (!m_bindings->validate(&bindingRules, showValidationErrors)) {
-        if (failure) *failure = SaveFailure::InvalidReplacementRules;
-        return false;
+    const QStringList replacementProblems = m_bindings->validate();
+    if (!replacementProblems.isEmpty()) {
+        return refuseAloud(SaveFailure::InvalidReplacementRules,
+                           m_bindings,
+                           QStringLiteral("Replacements not saved"),
+                           replacementProblems);
     }
-    if (!m_output->validate(showValidationErrors)) {
-        if (failure) *failure = SaveFailure::DuplicatePasteRuleIds;
-        return false;
+    const QStringList pasteRuleProblems = m_output->validate();
+    if (!pasteRuleProblems.isEmpty()) {
+        return refuseAloud(SaveFailure::DuplicatePasteRuleIds,
+                           m_output,
+                           QStringLiteral("Paste rules not saved"),
+                           pasteRuleProblems);
     }
+
     AppSettings draft = settings->snapshot();
-    m_general->appendToDraft(draft);
-    m_audio->appendToDraft(draft);
-    m_applications->appendToDraft(draft);
-    m_output->appendToDraft(draft);
-    m_refinement->appendToDraft(draft);
-    m_providers->appendToDraft(draft);
-    m_corrections->appendToDraft(draft);
+    for (const SchemaSettingsPage *page : std::as_const(m_pages)) {
+        page->appendToDraft(draft);
+    }
     settings->applySnapshot(draft);
     Theme::apply(settings->theme());
-    m_providers->saveAuthModes();
-    settings->setVocabularyEntries(m_vocabulary->entries());
-    settings->setCorrectionLearningEnabled(m_corrections->learningEnabled());
-    settings->setBindingRules(bindingRules);
-    if (!m_providers->saveSecret()) {
-        if (failure) *failure = SaveFailure::ProviderSecret;
-        return false;
+    // saveSecret says why itself, because only it knows what the keyring said.
+    if (!m_providerRows.saveSecret()) {
+        return refuse(SaveFailure::ProviderSecret,
+                      {QStringLiteral("Settings saved, but provider credentials could not be saved")});
     }
     if (refreshPages) {
         load();
     } else {
-        m_providers->loadModels();
-        m_output->refreshControls();
+        m_outputRows.refresh();
     }
     return true;
 }
 
 void SettingsPageSet::preserveBindingScroll(QScrollArea *scroll)
 {
-    connect(m_bindings, &BindingsSettingsPage::preserveScrollRequested,
+    connect(&m_bindingRows, &BindingRows::preserveScrollRequested,
             scroll, [scroll](bool rebuilding) {
                 QScrollBar *bar = scroll->verticalScrollBar();
                 if (rebuilding) {
@@ -158,28 +219,35 @@ void SettingsPageSet::preserveBindingScroll(QScrollArea *scroll)
 
 bool SettingsPageSet::hasChanges() const
 {
-    const SettingsStore *settings = m_controller->settings();
-    const AppSettings snapshot = settings->snapshot();
-    return m_general->hasChanges(snapshot)
-        || m_audio->hasChanges(snapshot)
-        || m_applications->hasChanges(snapshot)
-        || m_refinement->hasChanges(snapshot)
-        || m_providers->hasModelChanges()
-        || m_output->hasChanges(snapshot)
-        || m_providers->hasAuthChanges()
-        || m_vocabulary->hasChanges(settings->vocabularyEntries())
-        || m_corrections->hasChanges(settings->correctionLearningEnabled(), settings->learnedCorrections())
-        || m_bindings->hasChanges(settings->bindingRules());
+    const AppSettings snapshot = m_controller->settings()->snapshot();
+    for (const SchemaSettingsPage *page : m_pages) {
+        if (page->hasChanges(snapshot)) {
+            return true;
+        }
+    }
+    return m_providerRows.hasSecretChanges();
+}
+
+void SettingsPageSet::runPageAction(const QString &rowId)
+{
+    if (rowId == QStringLiteral("runSetup")) {
+        m_controller->showSetupAssistant();
+        return;
+    }
+    if (rowId == QStringLiteral("openReleases")) {
+        QDesktopServices::openUrl(
+            QUrl(QStringLiteral("https://github.com/firemonster612/speecher/releases")));
+    }
 }
 
 void SettingsPageSet::updateAccessibilityState(bool supported, bool enabled, bool persistent)
 {
     Q_UNUSED(persistent);
-    const bool available = supported && enabled;
-    m_output->setTargetAccessibilityAvailable(available);
-    m_applications->setTargetAccessibilityAvailable(available);
-    m_refinement->setTargetAccessibilityAvailable(available);
-    m_corrections->setTargetAccessibilityAvailable(available);
+    const Capabilities capabilities{supported && enabled};
+    m_output->setCapabilities(capabilities);
+    m_applications->setCapabilities(capabilities);
+    m_refinement->setCapabilities(capabilities);
+    m_corrections->setCapabilities(capabilities);
 }
 
 } // namespace speecher

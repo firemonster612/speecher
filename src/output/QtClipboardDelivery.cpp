@@ -2,7 +2,7 @@
 
 #include "dictation/DictationPorts.h"
 
-#include <QApplication>
+#include <QGuiApplication>
 #include <QClipboard>
 #include <QMimeData>
 
@@ -15,7 +15,7 @@ QtClipboardDelivery::QtClipboardDelivery(QObject *parent)
 
 bool QtClipboardDelivery::copy(const DeliveryContent &content, QString *error)
 {
-    QClipboard *clipboard = QApplication::clipboard();
+    QClipboard *clipboard = QGuiApplication::clipboard();
     if (!clipboard) {
         if (error) {
             *error = QStringLiteral("Clipboard is unavailable");

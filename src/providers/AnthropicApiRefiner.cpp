@@ -9,6 +9,7 @@
 #include <QJsonObject>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QPointer>
 #include <QRegularExpression>
 #include <QUuid>
 
@@ -250,12 +251,12 @@ void AnthropicApiRefiner::parseSseChunk(const QByteArray &chunk)
             m_inactivityTimer.stop();
             m_deadlineTimer.stop();
             m_failed = true;
-            if (m_reply) {
-                QNetworkReply *reply = m_reply;
-                m_reply = nullptr;
-                reply->abort();
-            }
+            QPointer<QNetworkReply> reply = m_reply;
+            m_reply = nullptr;
             emit failed(anthropicErrorMessage(data, QStringLiteral("Anthropic refinement error")));
+            if (reply) {
+                QMetaObject::invokeMethod(reply, &QNetworkReply::abort, Qt::QueuedConnection);
+            }
             return;
         }
         if (eventName == "message_start"
@@ -274,6 +275,7 @@ void AnthropicApiRefiner::parseSseChunk(const QByteArray &chunk)
             }
         } else if (eventName == "message_stop") {
             completeIfReady();
+            return;
         }
     }
 }
@@ -286,7 +288,15 @@ void AnthropicApiRefiner::completeIfReady()
     m_inactivityTimer.stop();
     m_deadlineTimer.stop();
     m_completed = true;
-    emit completed(m_accumulated);
+    QPointer<QNetworkReply> reply = m_reply;
+    m_reply = nullptr;
+    const QString result = m_accumulated;
+    QMetaObject::invokeMethod(this, [this, reply, result] {
+        if (reply) {
+            reply->abort();
+        }
+        emit completed(result);
+    }, Qt::QueuedConnection);
 }
 
 } // namespace speecher

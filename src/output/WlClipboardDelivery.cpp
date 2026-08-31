@@ -4,7 +4,7 @@
 #include "output/WaylandClipboardOwner.h"
 #include "output/WaylandClipboardProcess.h"
 
-#include <QApplication>
+#include <QGuiApplication>
 #include <QClipboard>
 #include <QElapsedTimer>
 #include <QGuiApplication>
@@ -112,7 +112,7 @@ bool WlClipboardDelivery::canSnapshot()
     if (isWaylandSession()) {
         return !WaylandClipboardProcess::wlPasteExecutable().isEmpty();
     }
-    return qApp && QApplication::clipboard();
+    return qApp && QGuiApplication::clipboard();
 }
 
 bool WlClipboardDelivery::readText(QString *text, QString *error)
@@ -123,8 +123,8 @@ bool WlClipboardDelivery::readText(QString *text, QString *error)
         }
         return false;
     }
-    if (!isWaylandSession() && qApp && QApplication::clipboard()) {
-        *text = QApplication::clipboard()->text(QClipboard::Clipboard);
+    if (!isWaylandSession() && qApp && QGuiApplication::clipboard()) {
+        *text = QGuiApplication::clipboard()->text(QClipboard::Clipboard);
         return true;
     }
 
@@ -181,7 +181,7 @@ bool WlClipboardDelivery::copy(const DeliveryContent &content, bool *htmlAvailab
     return false;
 }
 
-bool WlClipboardDelivery::capture(WlClipboardSnapshot *snapshot, QString *error)
+bool WlClipboardDelivery::capture(ClipboardSnapshot *snapshot, QString *error)
 {
     if (!snapshot) {
         if (error) {
@@ -191,8 +191,8 @@ bool WlClipboardDelivery::capture(WlClipboardSnapshot *snapshot, QString *error)
     }
     *snapshot = {};
 
-    if (!isWaylandSession() && qApp && QApplication::clipboard()) {
-        const QMimeData *mime = QApplication::clipboard()->mimeData(QClipboard::Clipboard);
+    if (!isWaylandSession() && qApp && QGuiApplication::clipboard()) {
+        const QMimeData *mime = QGuiApplication::clipboard()->mimeData(QClipboard::Clipboard);
         if (mime) {
             for (const QString &format : mime->formats()) {
                 const QByteArray data = mime->data(format);
@@ -302,11 +302,11 @@ bool WlClipboardDelivery::capture(WlClipboardSnapshot *snapshot, QString *error)
     return true;
 }
 
-bool WlClipboardDelivery::restore(const WlClipboardSnapshot &snapshot, QString *error)
+bool WlClipboardDelivery::restore(const ClipboardSnapshot &snapshot, QString *error)
 {
-    if (!isWaylandSession() && qApp && QApplication::clipboard()) {
+    if (!isWaylandSession() && qApp && QGuiApplication::clipboard()) {
         if (!snapshot.hasData) {
-            QApplication::clipboard()->clear(QClipboard::Clipboard);
+            QGuiApplication::clipboard()->clear(QClipboard::Clipboard);
             return true;
         }
         auto *mime = new QMimeData;
@@ -319,7 +319,7 @@ bool WlClipboardDelivery::restore(const WlClipboardSnapshot &snapshot, QString *
                                         : part.mimeType,
                 part.data);
         }
-        QApplication::clipboard()->setMimeData(mime, QClipboard::Clipboard);
+        QGuiApplication::clipboard()->setMimeData(mime, QClipboard::Clipboard);
         return true;
     }
 

@@ -1,13 +1,12 @@
 #include "platform/PortalScreenshotContextProvider.h"
 
-#include <QBuffer>
+#include "platform/ScreenshotImage.h"
+
 #include <QDBusConnection>
 #include <QDBusInterface>
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
 #include <QFile>
-#include <QImage>
-#include <QImageReader>
 #include <QUrl>
 #include <QUuid>
 
@@ -16,44 +15,6 @@ namespace speecher {
 namespace {
 
 constexpr qsizetype maximumPortalFileSize = 32 * 1024 * 1024;
-constexpr int maximumSourceEdge = 8192;
-constexpr qint64 maximumSourcePixels = 32 * 1024 * 1024;
-
-QByteArray normalizedScreenshot(const QByteArray &source)
-{
-    QBuffer input;
-    input.setData(source);
-    if (!input.open(QIODevice::ReadOnly)) {
-        return {};
-    }
-    QImageReader reader(&input);
-    const QSize size = reader.size();
-    if (!size.isValid()
-        || size.width() > maximumSourceEdge
-        || size.height() > maximumSourceEdge
-        || qint64(size.width()) * size.height() > maximumSourcePixels) {
-        return {};
-    }
-    QImage image = reader.read();
-    if (image.isNull()) {
-        return {};
-    }
-
-    constexpr int maximumEdge = 2560;
-    if (image.width() > maximumEdge || image.height() > maximumEdge) {
-        image = image.scaled(maximumEdge,
-                             maximumEdge,
-                             Qt::KeepAspectRatio,
-                             Qt::SmoothTransformation);
-    }
-
-    QByteArray result;
-    QBuffer output(&result);
-    if (!output.open(QIODevice::WriteOnly) || !image.save(&output, "PNG")) {
-        return {};
-    }
-    return result;
-}
 
 QDBusObjectPath predictedRequestPath(const QString &token)
 {
@@ -63,7 +24,6 @@ QDBusObjectPath predictedRequestPath(const QString &token)
     return QDBusObjectPath(
         QStringLiteral("/org/freedesktop/portal/desktop/request/%1/%2").arg(sender, token));
 }
-
 } // namespace
 
 PortalScreenshotContextProvider::PortalScreenshotContextProvider(QObject *parent)

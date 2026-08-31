@@ -2,10 +2,10 @@
 
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
+#include "frontend/qt/QtFrontEnd.h"
 #include "ui/AppPage.h"
 #include "ui/AppWindow.h"
 #include "ui/DictationPage.h"
-#include "ui/settings/BindingsSettingsPage.h"
 #include "ui/settings/SettingsPageSet.h"
 
 #include <QComboBox>
@@ -82,6 +82,8 @@ private slots:
     void startupDesktopIntegrationWaitsForFirstWindowExposure()
     {
         ApplicationController controller(true);
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
         QSignalSpy accessibilityChanged(
             &controller,
             &ApplicationController::accessibilityStateChanged);
@@ -89,8 +91,7 @@ private slots:
         QTest::qWait(20);
         QCOMPARE(accessibilityChanged.count(), 0);
 
-        AppWindow window(&controller);
-        window.show();
+        controller.showMainWindow();
         QTRY_COMPARE_WITH_TIMEOUT(accessibilityChanged.count(), 1, 250);
     }
 
@@ -199,6 +200,9 @@ private slots:
         QCOMPARE(controller.settings()->theme(), QStringLiteral("dark"));
     }
 
+#ifndef Q_OS_MACOS
+    // macOS takes its header colors from the system palette, so there is no
+    // kdeglobals reader to exercise there.
     void headerStripTracksActiveAndInactiveKdeColors()
     {
         const QString configPath =
@@ -245,6 +249,7 @@ private slots:
         QCOMPARE(strip->palette().color(QPalette::Inactive, QPalette::Window),
                  QColor(45, 55, 65));
     }
+#endif
 
     void sidebarShellSupportsPageSearch()
     {
@@ -273,22 +278,40 @@ private slots:
         ApplicationController controller(true);
         QWidget parent;
         SettingsPageSet pages(&controller, &parent);
-        pages.bindings()->load({
-            {QStringLiteral("my,email"), QStringLiteral("one")},
-            {QStringLiteral("MY email"), QStringLiteral("two")},
-        });
-        SettingsPageSet::SaveFailure failure = SettingsPageSet::SaveFailure::None;
-        QVERIFY(!pages.save(false, true, &failure));
-        QCOMPARE(failure, SettingsPageSet::SaveFailure::InvalidReplacementRules);
-
-        controller.settings()->setBindingRules({});
+        SettingsPageSet::SaveOutcome outcome;
         controller.settings()->setPasteRules({
             {PasteRuleScope::Application, QStringLiteral("org.example.App"), PasteMethod::StandardPaste, true},
             {PasteRuleScope::Application, QStringLiteral("ORG.EXAMPLE.APP"), PasteMethod::ClipboardOnly, true},
         });
         pages.load();
-        QVERIFY(!pages.save(false, true, &failure));
-        QCOMPARE(failure, SettingsPageSet::SaveFailure::DuplicatePasteRuleIds);
+        QVERIFY(!pages.save(false, true, &outcome));
+        QCOMPARE(outcome.failure, SettingsPageSet::SaveFailure::DuplicatePasteRuleIds);
+        QCOMPARE(outcome.messages,
+                 QStringList{QStringLiteral("Each application ID can have only one paste rule.")});
+    }
+
+    void saveReportsInvalidReplacementRules()
+    {
+        ApplicationController controller(true);
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        SettingsPageSet::SaveOutcome outcome;
+        pages.load();
+
+        // setBindingRules refuses invalid rules outright, so the only way to get
+        // them in front of save() is to load them straight into the page.
+        AppSettings withDuplicateBinding = controller.settings()->snapshot();
+        withDuplicateBinding.bindings = {
+            {QStringLiteral("my email"), QStringLiteral("one")},
+            {QStringLiteral("MY email"), QStringLiteral("two")},
+        };
+        pages.bindings()->load(withDuplicateBinding);
+
+        QVERIFY(!pages.save(false, true, &outcome));
+        QCOMPARE(outcome.failure, SettingsPageSet::SaveFailure::InvalidReplacementRules);
+        QCOMPARE(outcome.messages,
+                 QStringList{QStringLiteral(
+                     "Row 2 duplicates the normalized spoken phrase from row 1.")});
     }
 };
 

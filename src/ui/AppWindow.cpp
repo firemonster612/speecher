@@ -2,18 +2,10 @@
 
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
+#include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/DictationPage.h"
-#include "ui/settings/BindingsSettingsPage.h"
-#include "ui/settings/ApplicationSettingsPage.h"
-#include "ui/settings/AudioSettingsPage.h"
-#include "ui/settings/CorrectionsSettingsPage.h"
-#include "ui/settings/GeneralSettingsPage.h"
-#include "ui/settings/OutputSettingsPage.h"
-#include "ui/settings/ProviderSettingsPage.h"
-#include "ui/settings/RefinementSettingsPage.h"
 #include "ui/settings/SettingsPageSet.h"
 #include "ui/settings/SettingsPageSupport.h"
-#include "ui/settings/VocabularySettingsPage.h"
 
 #include <QCloseEvent>
 #include <QEvent>
@@ -46,9 +38,19 @@
 
 #include <utility>
 
+#ifdef Q_OS_MACOS
+#include "platform/mac/MacWindowChrome.h"
+#endif
+
 namespace speecher {
 
 namespace {
+
+#ifdef Q_OS_MACOS
+// With the titlebar hidden the traffic lights float over the header strip, so
+// the sidebar's search field starts below them instead of at the window edge.
+constexpr int kTrafficLightInset = 28;
+#endif
 
 struct PageDefinition {
     QString title;
@@ -125,8 +127,6 @@ AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
     buildSharedPages();
     connect(m_pages, &SettingsPageSet::changed, m_dictation, &DictationPage::refreshSummary);
     connect(m_dictation, &DictationPage::navigateRequested, this, &AppWindow::navigateToSettings);
-    connect(m_pages->general(), &GeneralSettingsPage::setupRequested,
-            m_controller, &ApplicationController::showSetupAssistant);
 
     buildSidebarShell();
     settings::applyLabelHierarchy(this);
@@ -167,7 +167,11 @@ void AppWindow::refreshHeaderStripColor()
     // Every hairline (header divider, header underline, sidebar splitter
     // handle) uses the same color, derived from the same palette, so no line
     // reads lighter than its neighbors.
+#ifdef Q_OS_MACOS
+    const QPalette headerPalette = palette();
+#else
     const QPalette headerPalette = settings::kdeHeaderPalette(palette());
+#endif
     const QColor line = settings::separatorColor(headerPalette);
     if (m_headerStrip) {
         m_headerStrip->setPalette(headerPalette);
@@ -245,6 +249,9 @@ bool AppWindow::eventFilter(QObject *watched, QEvent *event)
     if (watched == m_sidebarPane && event->type() == QEvent::Resize
         && m_searchSection) {
         m_searchSection->setFixedWidth(m_sidebarPane->width());
+#ifdef Q_OS_MACOS
+        mac::updateSidebarWidth(this, m_sidebarPane->width());
+#endif
     }
     // The header strip reads as part of the title bar, so empty space in it
     // must drag and double-click the window like the title bar does. Only
@@ -291,7 +298,7 @@ void AppWindow::buildSharedPages()
     refinementLayout->addSpacing(settings::sectionGap());
     refinementLayout->addWidget(detachedContent(m_pages->refinement(), true));
     refinementLayout->addSpacing(settings::groupGap());
-    refinementLayout->addWidget(m_pages->providers()->modelsContent());
+    refinementLayout->addWidget(detachedContent(m_pages->providerModels(), true));
     refinementLayout->addStretch();
     QWidget *refinement = scrollingPage(refinementContent, this);
 
@@ -301,22 +308,22 @@ void AppWindow::buildSharedPages()
     authLayout->setSpacing(0);
     authLayout->addWidget(settings::makePageTitle(QStringLiteral("Auth"), authContent));
     authLayout->addSpacing(settings::sectionGap());
-    authLayout->addWidget(m_pages->providers()->authContent());
+    authLayout->addWidget(detachedContent(m_pages->providerAuth(), true));
     authLayout->addStretch();
     QWidget *auth = scrollingPage(authContent, this);
-    m_pages->providers()->hide();
 
     auto *tabs = new QTabWidget(this);
-    auto addTab = [tabs](QWidget *page, const QString &title) {
-        settings::applyPageMargins(page->layout());
-        tabs->addTab(scrollingPage(page, tabs), title);
+    const auto addTab = [tabs](QScrollArea *page, const QString &title) {
+        QWidget *content = detachedContent(page, true);
+        settings::applyPageMargins(content->layout());
+        auto *scroll = scrollingPage(content, tabs);
+        tabs->addTab(scroll, title);
+        return scroll;
     };
     addTab(m_pages->vocabulary(), QStringLiteral("Vocabulary"));
     addTab(m_pages->corrections(), QStringLiteral("Learned corrections"));
-    settings::applyPageMargins(m_pages->bindings()->layout());
-    auto *bindingsScroll = scrollingPage(m_pages->bindings(), tabs);
-    tabs->addTab(bindingsScroll, QStringLiteral("Replacements && snippets"));
-    m_pages->preserveBindingScroll(bindingsScroll);
+    m_pages->preserveBindingScroll(
+        addTab(m_pages->bindings(), QStringLiteral("Replacements && snippets")));
 
     auto *vocabularyContent = new QWidget(this);
     auto *vocabularyLayout = new QVBoxLayout(vocabularyContent);
@@ -408,6 +415,7 @@ void AppWindow::buildSidebarShell()
     header->installEventFilter(this);
     root->addWidget(header);
 
+#ifndef Q_OS_MACOS
     auto *colorConfigWatcher = new QFileSystemWatcher(this);
     const QString kdeGlobals =
         QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
@@ -420,6 +428,7 @@ void AppWindow::buildSidebarShell()
                 colorConfigWatcher->addPath(path);
                 QTimer::singleShot(0, this, &AppWindow::refreshHeaderStripColor);
             });
+#endif
 
     // Same fill mechanism and color as the splitter handle, so the strip's
     // bottom edge and the sidebar/content hairline match exactly.
@@ -514,6 +523,25 @@ void AppWindow::buildSidebarShell()
         m_sidebarSplitter->restoreState(splitterState);
     }
     searchContainer->setFixedWidth(sidebar->width());
+#ifdef Q_OS_MACOS
+    // The sidebar column is an NSVisualEffectView sitting behind Qt's content
+    // view, so everything stacked over it has to stop painting for the blur to
+    // reach the screen. The content column keeps its opaque window fill.
+    setAttribute(Qt::WA_TranslucentBackground);
+    header->setAutoFillBackground(false);
+    sidebar->setAutoFillBackground(false);
+    m_navigation->setAutoFillBackground(false);
+    m_navigation->viewport()->setAutoFillBackground(false);
+    for (QWidget *contentSide : {headerDivider, headerRight}) {
+        contentSide->setBackgroundRole(QPalette::Window);
+        contentSide->setAutoFillBackground(true);
+    }
+    searchLayout->setContentsMargins(settings::relatedSpacing(),
+                                     kTrafficLightInset,
+                                     settings::relatedSpacing(),
+                                     settings::relatedSpacing());
+    mac::applyMainWindowChrome(this, sidebar->width());
+#endif
     m_navigation->setCurrentRow(0);
     connect(m_navigation, &QListWidget::currentItemChanged, this,
             [this](QListWidgetItem *item) {
@@ -602,18 +630,10 @@ void AppWindow::filterSidebarPages(const QString &query)
 
 void AppWindow::runAutoSave()
 {
-    SettingsPageSet::SaveFailure failure;
-    const bool saved = m_pages->save(false, false, &failure);
+    SettingsPageSet::SaveOutcome outcome;
+    const bool saved = m_pages->save(false, false, &outcome);
     if (!saved) {
-        if (failure == SettingsPageSet::SaveFailure::DuplicatePasteRuleIds) {
-            m_autoSaveWarningText->setText(
-                QStringLiteral("Remove duplicate application paste-rule IDs to save"));
-        } else if (failure == SettingsPageSet::SaveFailure::ProviderSecret) {
-            m_autoSaveWarningText->setText(
-                QStringLiteral("Settings saved, but provider credentials could not be saved"));
-        } else {
-            m_autoSaveWarningText->setText(QStringLiteral("Fix invalid replacement rules to save"));
-        }
+        m_autoSaveWarningText->setText(outcome.messages.join(QLatin1Char('\n')));
     }
     m_autoSaveWarning->setVisible(!saved);
     m_dictation->refreshSummary();

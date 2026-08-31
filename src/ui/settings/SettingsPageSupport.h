@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/settings/SettingsSchema.h"
+
 #include <QColor>
 #include <QString>
 
@@ -49,6 +51,7 @@ QPalette kdeHeaderPalette(const QPalette &base);
 void applyPageMargins(QLayout *layout);
 void applyLabelHierarchy(QWidget *root);
 QLabel *makePageTitle(const QString &text, QWidget *parent);
+QList<RowOption> audioInputDeviceOptions(const QList<AudioInputDeviceInfo> &devices);
 void populateAudioInputDevices(QComboBox *combo,
                                const QList<AudioInputDeviceInfo> &devices,
                                const QString &selectedDeviceId);

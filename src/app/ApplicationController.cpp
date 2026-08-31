@@ -1,6 +1,6 @@
 #include "app/ApplicationController.h"
-#include "app/LinuxComposition.h"
 
+#include "app/AppFrontEnd.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
@@ -9,35 +9,53 @@
 #include "providers/CodexSpeechTranscriber.h"
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
-#include "ui/AppWindow.h"
-#include "ui/SetupAssistant.h"
-#include "ui/TranscriberPopup.h"
-#include "platform/atspi/AtSpiAccess.h"
+#include "platform/GlobalShortcutBinder.h"
 
-#include <QApplication>
-#include <QAction>
-#include <QDebug>
-#include <QEvent>
+#include <QCoreApplication>
 #include <QTimer>
-#include <QWidget>
-#include <QWindow>
-
-#ifdef SPEECHER_WITH_KGLOBALACCEL
-#include <KGlobalAccel>
+#ifdef Q_OS_MACOS
+#include <QPermissions>
 #endif
 
-namespace speecher {
+#include <utility>
 
-ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
+namespace speecher {
+namespace {
+
+// A shortcut held longer than this is push-to-talk and ends with the key;
+// anything shorter is a tap and stays a plain toggle.
+constexpr qint64 pushToTalkHoldMs = 400;
+#ifdef Q_OS_MACOS
+constexpr int accessibilityPollMs = 5000;
+#endif
+
+} // namespace
+
+ApplicationController::ApplicationController(bool popupOnly,
+                                             std::shared_ptr<const PlatformComposition> platform,
+                                             QObject *parent)
     : QObject(parent)
     , m_popupOnly(popupOnly)
-    , m_platform(linuxComposition())
+    , m_platform(std::move(platform))
     , m_settings(new SettingsStore(this))
     , m_secrets(new SecretStore(m_settings, this))
     , m_providers(new ProviderRegistry(this))
-    , m_popup(new TranscriberPopup(m_platform->createPopupPositioner(nullptr)))
+    , m_shortcutBinder(m_platform->createGlobalShortcutBinder(this))
     , m_ipc(new SingleInstanceIpc(m_platform, this))
 {
+    m_settings->setLaunchAtLoginReconciler(
+        [platform = m_platform](bool enabled, QString *error) {
+            return platform->setLaunchAtLogin(enabled, error);
+        });
+    m_settings->reconcileLaunchAtLogin();
+    connect(m_shortcutBinder,
+            &GlobalShortcutBinder::activated,
+            this,
+            &ApplicationController::handleShortcutPressed);
+    connect(m_shortcutBinder,
+            &GlobalShortcutBinder::deactivated,
+            this,
+            &ApplicationController::handleShortcutReleased);
     registerProviders();
     TargetProvider *targetProvider = m_platform->createTargetProvider(this);
     targetProvider->setCorrectionObservationEnabled(m_settings->correctionLearningEnabled());
@@ -72,6 +90,18 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
 
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::stateChanged);
+#ifdef Q_OS_MACOS
+    connect(m_session, &DictationSession::stateChanged, this, [this](const QString &state) {
+        if (state != QStringLiteral("Listening")) {
+            return;
+        }
+        const std::optional<float> volume = m_platform->inputVolume();
+        if (volume) {
+            qInfo().noquote() << "macOS default input volume="
+                              + QString::number(qRound(*volume * 100.0f)) + "%";
+        }
+    });
+#endif
     connect(m_session, &DictationSession::statusChanged, this, &ApplicationController::statusChanged);
     connect(m_session, &DictationSession::previewChanged, this, &ApplicationController::previewChanged);
     connect(m_session, &DictationSession::transcriptDelivered, this, &ApplicationController::transcriptDelivered);
@@ -80,37 +110,47 @@ ApplicationController::ApplicationController(bool popupOnly, QObject *parent)
         if (m_settings->soundsEnabled()
             && (status == QStringLiteral("Listening")
                 || status == QStringLiteral("Stopping"))) {
-            QApplication::beep();
+            if (m_frontEnd) {
+                m_frontEnd->alert();
+            }
         }
     });
-    wireSessionToPopup();
-    qApp->installEventFilter(this);
+#ifdef Q_OS_MACOS
+    m_accessibilityPoll = new QTimer(this);
+    m_accessibilityPoll->setInterval(accessibilityPollMs);
+    connect(m_accessibilityPoll,
+            &QTimer::timeout,
+            this,
+            &ApplicationController::refreshAccessibilityState);
+#endif
+    m_platform->watchAccessibilityChanges(this, [this] { refreshAccessibilityState(); });
+    // A process that never shows a window still has to warm up, so the wait for
+    // the front end is capped rather than open-ended.
     QTimer::singleShot(2000, this, &ApplicationController::runDeferredStartup);
 }
 
-ApplicationController::~ApplicationController()
+void ApplicationController::setFrontEnd(AppFrontEnd *frontEnd)
 {
-    if (qApp) {
-        qApp->removeEventFilter(this);
-    }
-    delete m_popup;
+    m_frontEnd = frontEnd;
 }
 
-bool ApplicationController::eventFilter(QObject *watched, QEvent *event)
+DictationSession *ApplicationController::session() const
 {
-    if (!m_deferredStartupScheduled) {
-        const auto *window = qobject_cast<QWindow *>(watched);
-        const auto *widget = qobject_cast<QWidget *>(watched);
-        const bool exposed = event->type() == QEvent::Expose
-            && window && window->isExposed();
-        const bool painted = event->type() == QEvent::Paint
-            && widget && widget->isWindow() && widget->isVisible();
-        if (exposed || painted) {
-            m_deferredStartupScheduled = true;
-            QTimer::singleShot(0, this, &ApplicationController::runDeferredStartup);
-        }
+    return m_session;
+}
+
+bool ApplicationController::popupOnly() const
+{
+    return m_popupOnly;
+}
+
+void ApplicationController::frontEndReady()
+{
+    if (m_deferredStartupScheduled) {
+        return;
     }
-    return QObject::eventFilter(watched, event);
+    m_deferredStartupScheduled = true;
+    QTimer::singleShot(0, this, &ApplicationController::runDeferredStartup);
 }
 
 void ApplicationController::runDeferredStartup()
@@ -119,31 +159,29 @@ void ApplicationController::runDeferredStartup()
         return;
     }
     m_deferredStartupDone = true;
-    qApp->removeEventFilter(this);
-    m_audio->warmUp();
-#ifdef SPEECHER_WITH_KGLOBALACCEL
-    m_globalShortcutAction = new QAction(QStringLiteral("Toggle dictation"), this);
-    m_globalShortcutAction->setObjectName(QStringLiteral("toggle-dictation"));
-    m_globalShortcutAction->setProperty("componentName", QStringLiteral("local.speecher"));
-    m_globalShortcutAction->setProperty("componentDisplayName", QStringLiteral("Speecher"));
-    connect(m_globalShortcutAction, &QAction::triggered, this, &ApplicationController::toggle);
-    const QKeySequence savedShortcut = globalShortcut();
-    KGlobalAccel::self()->setDefaultShortcut(
-        m_globalShortcutAction,
-        {QKeySequence(Qt::META | Qt::ALT | Qt::Key_D)});
-    if (!savedShortcut.isEmpty()
-        && !KGlobalAccel::self()->setShortcut(
-            m_globalShortcutAction,
-            {savedShortcut},
-            KGlobalAccel::Autoloading)) {
-        qWarning() << "Could not restore the saved global shortcut";
+    // Opening the input device is what makes macOS raise the microphone prompt,
+    // and a prompt nobody asked for at launch reads as an ambush. Warm up only
+    // once the grant already exists; the first dictation asks for it properly.
+#ifdef Q_OS_MACOS
+    if (qApp->checkPermission(QMicrophonePermission{}) == Qt::PermissionStatus::Granted) {
+        m_audio->warmUp();
     }
+#else
+    m_audio->warmUp();
 #endif
-    const atspi::AccessibilityState state = atspi::accessibilityState();
-    const bool requestSucceeded = state.persistent && atspi::requestAccessibility();
+    m_shortcutBinder->bind();
+    const AccessibilityState state = m_platform->accessibilityState();
+    const bool requestSucceeded = state.persistent && m_platform->requestAccessibility();
     m_accessibilitySupported = state.supported;
     m_accessibilityEnabled = state.enabled || requestSucceeded;
     m_accessibilityPersistent = state.persistent;
+#ifdef Q_OS_MACOS
+    if (m_accessibilityEnabled) {
+        m_accessibilityPoll->stop();
+    } else {
+        m_accessibilityPoll->start();
+    }
+#endif
     emit accessibilityStateChanged(m_accessibilitySupported,
                                    m_accessibilityEnabled,
                                    m_accessibilityPersistent);
@@ -164,7 +202,7 @@ ProviderRegistry *ApplicationController::providerRegistry() const
     return m_providers;
 }
 
-const LinuxComposition *ApplicationController::platform() const
+const PlatformComposition *ApplicationController::platform() const
 {
     return m_platform.get();
 }
@@ -207,65 +245,29 @@ bool ApplicationController::accessibilityPersistent() const
 
 bool ApplicationController::enableAccessibility(QString *error)
 {
-    const bool enabled = atspi::enableAccessibilityPermanently(error);
+    const bool enabled = m_platform->enableAccessibilityPermanently(error);
     refreshAccessibilityState();
     return enabled;
 }
 
 bool ApplicationController::grabMainWindow(const QString &path) const
 {
-    return m_appWindow && m_appWindow->grab().save(path);
+    return m_frontEnd && m_frontEnd->captureMainWindow(path);
 }
 
 bool ApplicationController::globalShortcutsSupported() const
 {
-#ifdef SPEECHER_WITH_KGLOBALACCEL
-    return qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains(
-        QStringLiteral("KDE"),
-        Qt::CaseInsensitive);
-#else
-    return false;
-#endif
+    return m_shortcutBinder->supported();
 }
 
 QKeySequence ApplicationController::globalShortcut() const
 {
-#ifdef SPEECHER_WITH_KGLOBALACCEL
-    const QList<QKeySequence> shortcuts = KGlobalAccel::self()->globalShortcut(
-        QStringLiteral("local.speecher"),
-        QStringLiteral("toggle-dictation"));
-    return shortcuts.isEmpty() ? QKeySequence() : shortcuts.first();
-#else
-    return {};
-#endif
+    return m_shortcutBinder->shortcut();
 }
 
 bool ApplicationController::setGlobalShortcut(const QKeySequence &shortcut, QString *error)
 {
-#ifdef SPEECHER_WITH_KGLOBALACCEL
-    if (shortcut.isEmpty()) {
-        if (error) {
-            *error = QStringLiteral("Choose a key sequence");
-        }
-        return false;
-    }
-    if (!KGlobalAccel::self()->setShortcut(
-            m_globalShortcutAction,
-            {shortcut},
-            KGlobalAccel::NoAutoloading)) {
-        if (error) {
-            *error = QStringLiteral("The desktop global-shortcut service rejected the key sequence");
-        }
-        return false;
-    }
-    return true;
-#else
-    Q_UNUSED(shortcut)
-    if (error) {
-        *error = QStringLiteral("KGlobalAccel is unavailable");
-    }
-    return false;
-#endif
+    return m_shortcutBinder->setShortcut(shortcut, error);
 }
 
 bool ApplicationController::startIpc(QString *error)
@@ -275,34 +277,78 @@ bool ApplicationController::startIpc(QString *error)
 
 void ApplicationController::showMainWindow()
 {
-    if (!m_appWindow) {
-        m_appWindow = new AppWindow(this);
+    if (m_frontEnd) {
+        m_frontEnd->showMainWindow();
     }
-    m_appWindow->show();
-    m_appWindow->raise();
-    m_appWindow->activateWindow();
 }
 
 void ApplicationController::showSettingsWindow()
 {
-    showMainWindow();
-    m_appWindow->navigateToSettings();
+    if (m_frontEnd) {
+        m_frontEnd->showSettingsWindow();
+    }
 }
 
 void ApplicationController::showSetupAssistant()
 {
-    if (!m_setupAssistant) {
-        m_setupAssistant = new SetupAssistant(this);
-        m_setupAssistant->setAttribute(Qt::WA_DeleteOnClose);
-        connect(m_setupAssistant, &QDialog::accepted, this, [this] {
-            if (!m_popupOnly) {
-                showMainWindow();
-            }
-        });
+    if (m_frontEnd) {
+        m_frontEnd->showSetupAssistant();
     }
-    m_setupAssistant->show();
-    m_setupAssistant->raise();
-    m_setupAssistant->activateWindow();
+}
+
+// macOS answers the microphone grant asynchronously the first time, so a
+// session start has to wait for the answer instead of capturing silence.
+void ApplicationController::startWithMicrophone(std::function<void()> start)
+{
+#ifdef Q_OS_MACOS
+    const auto refuse = [this] {
+        if (m_frontEnd) {
+            m_frontEnd->showDictationError(QStringLiteral(
+                "Microphone access is off. Allow Speecher under Privacy & Security > Microphone, then try again."));
+        }
+    };
+    switch (qApp->checkPermission(QMicrophonePermission{})) {
+    case Qt::PermissionStatus::Denied:
+        refuse();
+        return;
+    case Qt::PermissionStatus::Undetermined:
+        qApp->requestPermission(QMicrophonePermission{}, this,
+                                [start = std::move(start), refuse](const QPermission &permission) {
+                                    permission.status() == Qt::PermissionStatus::Granted ? start() : refuse();
+                                });
+        return;
+    case Qt::PermissionStatus::Granted:
+        break;
+    }
+#endif
+    start();
+}
+
+bool ApplicationController::sessionActive() const
+{
+    const DictationState state = m_session->state();
+    return state == DictationState::Starting || state == DictationState::Listening;
+}
+
+// Binders that report key release (macOS) drive both gestures from one binding:
+// the press toggles, and a long enough hold ends the session it started.
+void ApplicationController::handleShortcutPressed()
+{
+    m_shortcutPress.start();
+    const bool wasActive = sessionActive();
+    toggle();
+    m_shortcutStartedSession = !wasActive && sessionActive();
+}
+
+void ApplicationController::handleShortcutReleased()
+{
+    if (!m_shortcutStartedSession) {
+        return;
+    }
+    m_shortcutStartedSession = false;
+    if (sessionActive() && m_shortcutPress.elapsed() > pushToTalkHoldMs) {
+        stopListening();
+    }
 }
 
 void ApplicationController::toggle()
@@ -310,7 +356,7 @@ void ApplicationController::toggle()
     if (!ensureSetupCompleted()) {
         return;
     }
-    m_session->toggle();
+    startWithMicrophone([this] { m_session->toggle(); });
 }
 
 void ApplicationController::startListening()
@@ -318,7 +364,7 @@ void ApplicationController::startListening()
     if (!ensureSetupCompleted()) {
         return;
     }
-    m_session->startListening();
+    startWithMicrophone([this] { m_session->startListening(); });
 }
 
 void ApplicationController::stopListening()
@@ -362,14 +408,18 @@ void ApplicationController::handleIpcCommand(const QString &command,
             SingleInstanceIpc::writeResponse(socket, response());
             return;
         }
-        hasFormat ? m_session->toggleWithFormat(format) : m_session->toggle();
+        startWithMicrophone([this, hasFormat, format] {
+            hasFormat ? m_session->toggleWithFormat(format) : m_session->toggle();
+        });
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("start")) {
         if (!ensureSetupCompleted()) {
             SingleInstanceIpc::writeResponse(socket, response());
             return;
         }
-        hasFormat ? m_session->startListeningWithFormat(format) : m_session->startListening();
+        startWithMicrophone([this, hasFormat, format] {
+            hasFormat ? m_session->startListeningWithFormat(format) : m_session->startListening();
+        });
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("stop")) {
         stopListening();
@@ -415,51 +465,33 @@ void ApplicationController::registerProviders()
         [](QObject *parent) {
             return new CodexSpeechTranscriber(parent);
         });
-    m_providers->registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("OpenAI")}, [this](QObject *parent) {
-        return new OpenAiTranscriptRefiner(m_secrets, parent);
-    });
-    m_providers->registerRefinementProvider({QStringLiteral("anthropic"), QStringLiteral("Anthropic")}, [](QObject *parent) {
-        return new AnthropicTranscriptRefiner(parent);
-    });
-}
-
-void ApplicationController::wireSessionToPopup()
-{
-    connect(m_session, &DictationSession::previewDisplayChanged, m_popup, &TranscriberPopup::setPreview);
-    connect(m_session, &DictationSession::audioLevelChanged, m_popup, &TranscriberPopup::setLevel);
-    connect(m_session, &DictationSession::popupStatusChanged, m_popup, &TranscriberPopup::setStatus);
-    connect(m_session, &DictationSession::popupShowRequested, m_popup, &TranscriberPopup::showPopup);
-    connect(m_popup, &TranscriberPopup::popupPresented, m_session, &DictationSession::popupPresented);
-    connect(m_session, &DictationSession::popupHideRequested, m_popup, &TranscriberPopup::hide);
-    connect(m_session, &DictationSession::popupFrozenChanged, m_popup, &TranscriberPopup::setFrozen);
-    connect(m_session, &DictationSession::popupRefiningChanged, m_popup, &TranscriberPopup::setRefining);
-    connect(m_session, &DictationSession::popupOAuthRefreshRequested, m_popup, &TranscriberPopup::showOAuthRefreshIndicator);
-    connect(m_session, &DictationSession::popupListeningIndicatorRequested, m_popup, &TranscriberPopup::showListeningIndicator);
-    connect(m_session, &DictationSession::popupMessageRequested, m_popup, &TranscriberPopup::showMessage);
-    connect(m_session, &DictationSession::popupErrorRequested, m_popup, &TranscriberPopup::showErrorMessage);
-    connect(m_popup, &TranscriberPopup::errorDismissed, m_session, [this] {
-        if (m_session->state() == DictationState::Error) {
-            m_session->stopListening();
-        }
-    });
-    connect(m_popup, &TranscriberPopup::enableAccessibilityRequested, this, [this] {
-        QString error;
-        if (!enableAccessibility(&error)) {
-            m_popup->showAccessibilityError(error);
-        }
-    });
-    connect(this,
-            &ApplicationController::accessibilityStateChanged,
-            m_popup,
-            &TranscriberPopup::setAccessibilityState);
+    m_providers->registerRefinementProvider(
+        {QStringLiteral("openai"), QStringLiteral("OpenAI"), QString(), true},
+        [this](QObject *parent) { return new OpenAiTranscriptRefiner(m_secrets, parent); });
+    m_providers->registerRefinementProvider(
+        {QStringLiteral("anthropic"), QStringLiteral("Anthropic"), QString(), true},
+        [](QObject *parent) { return new AnthropicTranscriptRefiner(parent); });
 }
 
 void ApplicationController::refreshAccessibilityState()
 {
-    const atspi::AccessibilityState state = atspi::accessibilityState();
+    const AccessibilityState state = m_platform->accessibilityState();
+    const bool changed = m_accessibilitySupported != state.supported
+        || m_accessibilityEnabled != state.enabled
+        || m_accessibilityPersistent != state.persistent;
     m_accessibilitySupported = state.supported;
     m_accessibilityEnabled = state.enabled;
     m_accessibilityPersistent = state.persistent;
+#ifdef Q_OS_MACOS
+    if (m_accessibilityEnabled) {
+        m_accessibilityPoll->stop();
+    } else if (!m_accessibilityPoll->isActive()) {
+        m_accessibilityPoll->start();
+    }
+#endif
+    if (!changed) {
+        return;
+    }
     emit accessibilityStateChanged(m_accessibilitySupported,
                                    m_accessibilityEnabled,
                                    m_accessibilityPersistent);

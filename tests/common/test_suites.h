@@ -53,7 +53,9 @@ int runAppWindowTests(int argc, char **argv);
 int runTranscriptStateTests(int argc, char **argv);
 int runBindingsTests(int argc, char **argv);
 int runSettingsTests(int argc, char **argv);
+int runSettingsSchemaTests(int argc, char **argv);
 int runProviderRegistryTests(int argc, char **argv);
+int runPlatformCompositionTests(int argc, char **argv);
 int runPlatformLiveTests(int argc, char **argv);
 int runSingleInstanceIpcTests(int argc, char **argv);
 int runDeliveryTests(int argc, char **argv);
@@ -65,3 +67,6 @@ int runProviderAuthTests(int argc, char **argv);
 int runClaudeVoiceTests(int argc, char **argv);
 int runCodexDictationTests(int argc, char **argv);
 int runAudioPcmConverterTests(int argc, char **argv);
+#ifdef SPEECHER_WITH_SWIFT_UI
+int runMacFrontEndTests(int argc, char **argv);
+#endif

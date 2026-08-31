@@ -12,6 +12,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPalette>
+#include <QResizeEvent>
 #include <QScrollArea>
 #include <QFile>
 #include <QTextStream>
@@ -72,15 +73,46 @@ void configureFormLayout(QFormLayout *form)
     form->setLabelAlignment(Qt::AlignRight);
 }
 
+namespace {
+
+// QFormLayout sizes a row from its size hint, which for a word-wrapped
+// description is measured at the hint width rather than the real one. The row
+// therefore has to claim the height its own layout needs once it knows how
+// wide it is, or a description that wraps gets clipped.
+class SettingsRow final : public QFrame {
+public:
+    explicit SettingsRow(QWidget *parent)
+        : QFrame(parent)
+    {
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QFrame::resizeEvent(event);
+        if (QLayout *rowLayout = layout()) {
+            setMinimumHeight(rowLayout->hasHeightForWidth()
+                                 ? rowLayout->heightForWidth(width())
+                                 : rowLayout->minimumSize().height());
+        }
+    }
+};
+
+} // namespace
+
 QFrame *makeRow(const QString &label,
                 const QString &description,
                 QWidget *control,
                 QWidget *parent,
                 QWidget *titleAccessory)
 {
-    auto *row = new QFrame(parent);
+    auto *row = new SettingsRow(parent);
     row->setObjectName(QStringLiteral("settingsRow"));
-    row->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    // A wrapped description is only as tall as the row is narrow, and layouts
+    // ignore that unless the policy says the height depends on the width.
+    QSizePolicy rowPolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    rowPolicy.setHeightForWidth(true);
+    row->setSizePolicy(rowPolicy);
 
     auto *title = new QLabel(label.endsWith(QLatin1Char(':'))
                                  ? label
@@ -296,46 +328,30 @@ void applyLabelHierarchy(QWidget *root)
     }
 }
 
+QList<RowOption> audioInputDeviceOptions(const QList<AudioInputDeviceInfo> &devices)
+{
+    QList<RowOption> options;
+    options.reserve(devices.size());
+    for (const AudioInputDeviceInfo &device : devices) {
+        options.append({device.id,
+                        device.isDefault ? QStringLiteral("%1 (default)").arg(device.label)
+                                         : device.label});
+    }
+    return options;
+}
+
 void populateAudioInputDevices(QComboBox *combo,
                                const QList<AudioInputDeviceInfo> &devices,
                                const QString &selectedDeviceId)
 {
     const QSignalBlocker blocker(combo);
     combo->clear();
-
-    if (devices.isEmpty()) {
-        combo->addItem(QStringLiteral("No microphones found"), QString());
-        setComboItemEnabled(combo,
-                            0,
-                            false,
-                            QStringLiteral("Connect or enable an input device, then try again."));
-        if (!selectedDeviceId.isEmpty()) {
-            combo->addItem(QStringLiteral("Missing microphone"), selectedDeviceId);
-            setComboItemEnabled(combo,
-                                1,
-                                false,
-                                QStringLiteral("This saved microphone is not currently available."));
-            selectData(combo, selectedDeviceId);
+    for (const RowOption &option : audioDeviceOptions(audioInputDeviceOptions(devices),
+                                                      selectedDeviceId)) {
+        combo->addItem(option.label, option.id);
+        if (!option.enabled) {
+            setComboItemEnabled(combo, combo->count() - 1, false, option.help);
         }
-        return;
-    }
-
-    combo->addItem(QStringLiteral("System default"), QString());
-    bool selectedFound = selectedDeviceId.isEmpty();
-    for (const AudioInputDeviceInfo &device : devices) {
-        combo->addItem(device.isDefault
-                           ? QStringLiteral("%1 (default)").arg(device.label)
-                           : device.label,
-                       device.id);
-        selectedFound = selectedFound || device.id == selectedDeviceId;
-    }
-
-    if (!selectedFound) {
-        combo->addItem(QStringLiteral("Missing microphone"), selectedDeviceId);
-        setComboItemEnabled(combo,
-                            combo->count() - 1,
-                            false,
-                            QStringLiteral("This saved microphone is not currently available."));
     }
     selectData(combo, selectedDeviceId);
 }

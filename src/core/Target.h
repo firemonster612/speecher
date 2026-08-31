@@ -31,6 +31,9 @@ QString appCategoryName(AppCategory category);
 AppCategory appCategoryFromName(const QString &name);
 QString writingProfileName(WritingProfile profile);
 WritingProfile writingProfileFromName(const QString &name);
+// How each is written where a person reads it, as opposed to how it is stored.
+QString appCategoryLabel(AppCategory category);
+QString writingProfileLabel(WritingProfile profile);
 
 struct WritingProfileOverride {
     QString applicationId;
@@ -88,6 +91,12 @@ struct Target {
 };
 
 QList<AppRecognitionRule> builtInAppRecognitionRules();
+// Recognition rules replaced per-application Writing Profile overrides. This
+// folds any surviving override into the rule list that supersedes it; saving
+// the folded list and clearing the overrides is what retires them for good.
+QList<AppRecognitionRule> recognitionRulesWithMigratedProfileOverrides(
+    const QList<AppRecognitionRule> &rules,
+    const QList<WritingProfileOverride> &overrides);
 bool isTerminalTarget(const Target &target);
 AppCategory classifyTarget(const Target &target,
                            const QList<AppRecognitionRule> &customRules = {});

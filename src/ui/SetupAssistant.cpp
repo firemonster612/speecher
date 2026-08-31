@@ -4,6 +4,9 @@
 #include "core/SettingsStore.h"
 #include "ui/setup/SetupPages.h"
 
+#include <QColor>
+#include <QMessageBox>
+#include <QPalette>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -37,11 +40,16 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
     : QWizard(parent)
 #endif
     , m_controller(controller)
+    , m_accessibilityPage(new AccessibilitySetupPage(*controller, this))
     , m_microphonePage(new MicrophoneSetupPage(*controller->settings(),
                                                *controller->platform(),
                                                this))
     , m_deliveryPage(new TextDeliverySetupPage(*controller->settings(), this))
+    , m_profilesPage(new WritingProfilesSetupPage(*controller->settings(), this))
     , m_finishPage(new FinishSetupPage(*controller, this))
+#ifdef Q_OS_MACOS
+    , m_startAtLoginPage(new StartAtLoginSetupPage(*controller->settings(), this))
+#endif
 {
     setWindowTitle(QStringLiteral("Speecher Setup Assistant"));
     resize(720, 520);
@@ -51,21 +59,21 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
     auto *speechProvider = new SpeechProviderSetupPage(*controller->settings(),
                                                        *controller->providerRegistry(),
                                                        this);
-    auto *accessibility = new AccessibilitySetupPage(*controller, this);
     auto *refinement = new RefinementSetupPage(*controller->settings(),
                                                *controller->providerRegistry(),
                                                this);
-    auto *profiles = new WritingProfilesSetupPage(*controller->settings(), this);
-
 #ifdef SPEECHER_WITH_KASSISTANT
     addPage(welcome, QStringLiteral("Welcome to Speecher"));
     addPage(speechProvider, QStringLiteral("Transcription"));
     addPage(m_microphonePage, QStringLiteral("Microphone"));
-    addPage(accessibility, QStringLiteral("Desktop accessibility"));
+    addPage(m_accessibilityPage, QStringLiteral("Desktop accessibility"));
     addPage(m_deliveryPage, QStringLiteral("Text delivery"));
     addPage(refinement, QStringLiteral("Refinement"));
-    addPage(profiles, QStringLiteral("Writing profiles"));
+    addPage(m_profilesPage, QStringLiteral("Writing profiles"));
     addPage(m_finishPage, QStringLiteral("Ready to dictate"));
+#ifdef Q_OS_MACOS
+    addPage(m_startAtLoginPage, QStringLiteral("Start at login"));
+#endif
     auto *skip = new QPushButton(QStringLiteral("Skip setup"), this);
     addActionButton(skip);
     connect(skip, &QPushButton::clicked, this, &SetupAssistant::skipSetup);
@@ -77,6 +85,14 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
             });
 #else
     setWizardStyle(QWizard::ClassicStyle);
+    QPalette wizardPalette = palette();
+    const QColor window = wizardPalette.color(QPalette::Window);
+    const QColor text = wizardPalette.color(QPalette::WindowText);
+    wizardPalette.setColor(QPalette::Mid,
+                           QColor((window.red() * 4 + text.red()) / 5,
+                                  (window.green() * 4 + text.green()) / 5,
+                                  (window.blue() * 4 + text.blue()) / 5));
+    setPalette(wizardPalette);
     setOption(QWizard::NoBackButtonOnStartPage);
     setOption(QWizard::HaveCustomButton1);
     setButtonText(QWizard::CustomButton1, QStringLiteral("Skip setup"));
@@ -87,11 +103,14 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
     addSetupPage(welcome, QStringLiteral("Welcome to Speecher"));
     addSetupPage(speechProvider, QStringLiteral("Transcription"));
     addSetupPage(m_microphonePage, QStringLiteral("Microphone"));
-    addSetupPage(accessibility, QStringLiteral("Desktop accessibility"));
+    addSetupPage(m_accessibilityPage, QStringLiteral("Desktop accessibility"));
     addSetupPage(m_deliveryPage, QStringLiteral("Text delivery"));
     addSetupPage(refinement, QStringLiteral("Refinement"));
-    addSetupPage(profiles, QStringLiteral("Writing profiles"));
+    addSetupPage(m_profilesPage, QStringLiteral("Writing profiles"));
     addSetupPage(m_finishPage, QStringLiteral("Ready to dictate"));
+#ifdef Q_OS_MACOS
+    addSetupPage(m_startAtLoginPage, QStringLiteral("Start at login"));
+#endif
     connect(this, &QWizard::customButtonClicked, this, [this](int button) {
         if (button == QWizard::CustomButton1) {
             skipSetup();
@@ -123,8 +142,20 @@ void SetupAssistant::accept()
         if (!m_finishPage->applyShortcut()) {
             return;
         }
+#ifdef Q_OS_MACOS
+        m_startAtLoginPage->apply();
+#endif
     }
     m_controller->settings()->setSetupCompleted(true);
+    if (m_accessibilityPage->accessibilityGrantAppearedDuringSetup()) {
+        QMessageBox::information(
+            this,
+            QStringLiteral("Accessibility granted"),
+            QStringLiteral("Speecher will now restart to apply the Accessibility grant."),
+            QMessageBox::Ok);
+        m_controller->platform()->relaunch();
+        return;
+    }
 #ifdef SPEECHER_WITH_KASSISTANT
     KAssistantDialog::accept();
 #else

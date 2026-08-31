@@ -3,6 +3,10 @@
 #include <QApplication>
 #include <QStyleHints>
 
+#ifdef Q_OS_MACOS
+#include "platform/mac/MacWindowChrome.h"
+#endif
+
 namespace speecher::Theme {
 
 void apply(const QString &theme)
@@ -17,6 +21,11 @@ void apply(const QString &theme)
         scheme = Qt::ColorScheme::Dark;
     }
     qApp->styleHints()->setColorScheme(scheme);
+#ifdef Q_OS_MACOS
+    // Qt only repaints its own widgets; the traffic lights and the vibrancy
+    // panels follow NSApp.appearance.
+    mac::applyAppearance(scheme);
+#endif
 }
 
 } // namespace speecher::Theme

@@ -1,21 +1,19 @@
 #pragma once
 
+#include "core/settings/SettingsSchema.h"
+#include "frontend/qt/BindingRows.h"
+#include "frontend/qt/OutputCustomRows.h"
+#include "frontend/qt/ProviderCustomRows.h"
+
 #include <QObject>
+#include <QStringList>
 
 class QScrollArea;
 
 namespace speecher {
 
 class ApplicationController;
-class ApplicationSettingsPage;
-class AudioSettingsPage;
-class BindingsSettingsPage;
-class CorrectionsSettingsPage;
-class GeneralSettingsPage;
-class OutputSettingsPage;
-class ProviderSettingsPage;
-class RefinementSettingsPage;
-class VocabularySettingsPage;
+class SchemaSettingsPage;
 
 class SettingsPageSet : public QObject {
     Q_OBJECT
@@ -28,24 +26,32 @@ public:
         ProviderSecret,
     };
 
+    // The messages come from whichever validator refused, so a caller can show
+    // what actually went wrong instead of re-narrating the enum.
+    struct SaveOutcome {
+        SaveFailure failure = SaveFailure::None;
+        QStringList messages;
+    };
+
     SettingsPageSet(ApplicationController *controller, QWidget *parent);
 
-    GeneralSettingsPage *general() const;
-    AudioSettingsPage *audio() const;
-    ApplicationSettingsPage *applications() const;
-    OutputSettingsPage *output() const;
-    RefinementSettingsPage *refinement() const;
-    ProviderSettingsPage *providers() const;
-    VocabularySettingsPage *vocabulary() const;
-    CorrectionsSettingsPage *corrections() const;
-    BindingsSettingsPage *bindings() const;
+    SchemaSettingsPage *general() const;
+    SchemaSettingsPage *audio() const;
+    SchemaSettingsPage *applications() const;
+    SchemaSettingsPage *output() const;
+    SchemaSettingsPage *refinement() const;
+    SchemaSettingsPage *providerModels() const;
+    SchemaSettingsPage *providerAuth() const;
+    SchemaSettingsPage *vocabulary() const;
+    SchemaSettingsPage *corrections() const;
+    SchemaSettingsPage *bindings() const;
 
     void load();
     void loadBeforeShow();
     void loadAfterShow();
     bool save(bool showValidationErrors = true,
               bool refreshPages = true,
-              SaveFailure *failure = nullptr);
+              SaveOutcome *outcome = nullptr);
     bool hasChanges() const;
     void preserveBindingScroll(QScrollArea *scroll);
 
@@ -53,18 +59,31 @@ signals:
     void changed();
 
 private:
+    SchemaSettingsPage *addPage(const QString &id,
+                                QWidget *parent,
+                                SchemaCustomRowFactory customRows = {});
+    SchemaSettingsPage *addPage(const SettingsPage &page,
+                                QWidget *parent,
+                                SchemaCustomRowFactory customRows = {});
     void updateAccessibilityState(bool supported, bool enabled, bool persistent);
+    void runPageAction(const QString &rowId);
 
     ApplicationController *m_controller;
-    GeneralSettingsPage *m_general;
-    AudioSettingsPage *m_audio;
-    ApplicationSettingsPage *m_applications;
-    OutputSettingsPage *m_output;
-    RefinementSettingsPage *m_refinement;
-    ProviderSettingsPage *m_providers;
-    VocabularySettingsPage *m_vocabulary;
-    CorrectionsSettingsPage *m_corrections;
-    BindingsSettingsPage *m_bindings;
+    SettingsSchema m_schema;
+    OutputCustomRows m_outputRows;
+    BindingRows m_bindingRows;
+    ProviderCustomRows m_providerRows;
+    QList<SchemaSettingsPage *> m_pages;
+    SchemaSettingsPage *m_general;
+    SchemaSettingsPage *m_audio;
+    SchemaSettingsPage *m_applications;
+    SchemaSettingsPage *m_output;
+    SchemaSettingsPage *m_refinement;
+    SchemaSettingsPage *m_vocabulary;
+    SchemaSettingsPage *m_corrections;
+    SchemaSettingsPage *m_bindings;
+    SchemaSettingsPage *m_providerModels;
+    SchemaSettingsPage *m_providerAuth;
 };
 
 } // namespace speecher
