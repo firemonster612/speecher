@@ -1157,6 +1157,10 @@ struct ProviderAccount {
     QString effortTooltip;
     QList<RowOption> efforts;
     QString RefinementSettings::*effort;
+    QString fastModeRowId;
+    QString fastModeHelp;
+    QString fastModeTooltip;
+    bool RefinementSettings::*fastMode;
     // Where the credentials come from is a question for a keyring rather than a
     // value in AppSettings, so every front end answers it its own way.
     QList<SettingsRow> authRows;
@@ -1209,6 +1213,11 @@ QList<ProviderAccount> providerAccounts()
         {QStringLiteral("xhigh"), QStringLiteral("Extra high")},
     };
     openAi.effort = &RefinementSettings::openAiEffort;
+    openAi.fastModeRowId = QStringLiteral("openAiFastMode");
+    openAi.fastModeHelp = QStringLiteral("1.5x speed and increased usage (negligible).");
+    openAi.fastModeTooltip =
+        QStringLiteral("Falls back to standard processing when a fast request fails.");
+    openAi.fastMode = &RefinementSettings::openAiFastMode;
     openAi.authRows = {
         customRow(QStringLiteral("openAiAuthMode"),
                   QStringLiteral("OpenAI auth mode"),
@@ -1278,6 +1287,11 @@ QList<ProviderAccount> providerAccounts()
         {QStringLiteral("max"), QStringLiteral("Max")},
     };
     anthropic.effort = &RefinementSettings::anthropicEffort;
+    anthropic.fastModeRowId = QStringLiteral("anthropicFastMode");
+    anthropic.fastModeHelp = QStringLiteral("Faster refinement will use usage credits.");
+    anthropic.fastModeTooltip =
+        QStringLiteral("Only Opus models support fast mode; other models refine at standard speed.");
+    anthropic.fastMode = &RefinementSettings::anthropicFastMode;
     anthropic.authRows = {
         customRow(QStringLiteral("anthropicAuthMode"),
                   QStringLiteral("Anthropic auth"),
@@ -1388,6 +1402,15 @@ SettingsSection providerSection(const ProviderAccount &account)
             settings.refinement.*field = value;
         }));
     rows.last().tooltip = account.effortTooltip;
+    rows.append(toggleRow(
+        account.fastModeRowId,
+        QStringLiteral("Fast mode"),
+        account.fastModeHelp,
+        [field = account.fastMode](const AppSettings &settings) { return settings.refinement.*field; },
+        [field = account.fastMode](AppSettings &settings, bool value) {
+            settings.refinement.*field = value;
+        }));
+    rows.last().tooltip = account.fastModeTooltip;
     rows.append(account.authRows);
     return {account.sectionTitle, account.note, rows};
 }

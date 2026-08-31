@@ -28,6 +28,7 @@ public:
     using SettingsCodecs::anthropicAuthMode;
     using SettingsCodecs::anthropicCliproxyAccount;
     using SettingsCodecs::anthropicEffort;
+    using SettingsCodecs::anthropicFastMode;
     using SettingsCodecs::anthropicModel;
     using SettingsCodecs::cliproxyOauthDir;
     using SettingsCodecs::cliproxyBaseUrl;
@@ -50,6 +51,7 @@ public:
     using SettingsCodecs::openAiAuthMode;
     using SettingsCodecs::openAiCliproxyAccount;
     using SettingsCodecs::openAiEffort;
+    using SettingsCodecs::openAiFastMode;
     using SettingsCodecs::openAiModel;
     using SettingsCodecs::outputFormat;
     using SettingsCodecs::outputMethod;
@@ -64,6 +66,7 @@ public:
     using SettingsCodecs::setAnthropicAuthMode;
     using SettingsCodecs::setAnthropicCliproxyAccount;
     using SettingsCodecs::setAnthropicEffort;
+    using SettingsCodecs::setAnthropicFastMode;
     using SettingsCodecs::setAnthropicModel;
     using SettingsCodecs::setAppRecognitionRules;
     using SettingsCodecs::setBindingRules;
@@ -76,6 +79,7 @@ public:
     using SettingsCodecs::setOpenAiAuthMode;
     using SettingsCodecs::setOpenAiCliproxyAccount;
     using SettingsCodecs::setOpenAiEffort;
+    using SettingsCodecs::setOpenAiFastMode;
     using SettingsCodecs::setOpenAiModel;
     using SettingsCodecs::setOutputFormat;
     using SettingsCodecs::setOutputMethod;

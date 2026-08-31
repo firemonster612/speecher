@@ -3,6 +3,7 @@
 #include "core/BindingProcessor.h"
 #include "core/VocabularyLimit.h"
 #include "core/settings/SettingsSchema.h"
+#include "ui/settings/SettingsPageSet.h"
 
 #include <algorithm>
 
@@ -153,6 +154,9 @@ private slots:
             QVERIFY(std::any_of(section.rows.begin(), section.rows.end(), [](const SettingsRow &row) {
                 return row.kind == RowKind::Custom;
             }));
+            QVERIFY(std::any_of(section.rows.begin(), section.rows.end(), [](const SettingsRow &row) {
+                return row.kind == RowKind::Toggle;
+            }));
         }
 
         AppSettings settings;
@@ -161,11 +165,31 @@ private slots:
         QCOMPARE(settings.refinement.openAiModel, QStringLiteral("gpt-5.4"));
         QCOMPARE(settings.refinement.anthropicEffort, QStringLiteral("max"));
 
+        QCOMPARE(rowById(page, QStringLiteral("openAiFastMode")).value(settings).toBool(), true);
+        QCOMPARE(rowById(page, QStringLiteral("anthropicFastMode")).value(settings).toBool(), true);
+        rowById(page, QStringLiteral("openAiFastMode")).apply(settings, false);
+        rowById(page, QStringLiteral("anthropicFastMode")).apply(settings, false);
+        QCOMPARE(settings.refinement.openAiFastMode, false);
+        QCOMPARE(settings.refinement.anthropicFastMode, false);
+
         const SettingsSection &server = page.sections.last();
         QCOMPARE(server.title, QStringLiteral("CLI Proxy API"));
         QCOMPARE(server.rows.size(), 2);
         QCOMPARE(server.rows.at(0).id, QStringLiteral("cliproxyBaseUrl"));
         QCOMPARE(server.rows.at(1).id, QStringLiteral("cliproxyApiKey"));
+    }
+
+    void qtProviderPagesCoverEveryProviderRow()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const QStringList covered = SettingsPageSet::providerModelRowIds()
+            + SettingsPageSet::providerAuthRowIds();
+        for (const SettingsSection &section : schema.page(QStringLiteral("providers")).sections) {
+            for (const SettingsRow &row : section.rows) {
+                QVERIFY2(covered.contains(row.id),
+                         qPrintable(QStringLiteral("row %1 is on no Qt provider page").arg(row.id)));
+            }
+        }
     }
 
     void aModelThatReadsTranscriptsAsInstructionsSaysSo()

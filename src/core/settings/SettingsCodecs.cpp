@@ -581,6 +581,16 @@ void SettingsCodecs::setOpenAiEffort(const QString &value)
     m_settings.setValue(SettingsKeys::OpenAiEffort, QStringLiteral("none"));
 }
 
+bool SettingsCodecs::openAiFastMode() const
+{
+    return value(SettingsKeys::OpenAiFastMode, true).toBool();
+}
+
+void SettingsCodecs::setOpenAiFastMode(bool value)
+{
+    m_settings.setValue(SettingsKeys::OpenAiFastMode, value);
+}
+
 QString SettingsCodecs::anthropicModel() const
 {
     const QString model = value(SettingsKeys::AnthropicModel, QStringLiteral("claude-sonnet-4-6")).toString().trimmed();
@@ -626,6 +636,16 @@ void SettingsCodecs::setAnthropicEffort(const QString &value)
         return;
     }
     m_settings.setValue(SettingsKeys::AnthropicEffort, QStringLiteral("low"));
+}
+
+bool SettingsCodecs::anthropicFastMode() const
+{
+    return value(SettingsKeys::AnthropicFastMode, true).toBool();
+}
+
+void SettingsCodecs::setAnthropicFastMode(bool value)
+{
+    m_settings.setValue(SettingsKeys::AnthropicFastMode, value);
 }
 
 QString SettingsCodecs::outputMethod() const
@@ -863,10 +883,12 @@ AppSettings SettingsCodecs::snapshot() const
     settings.refinement.openAiModel = openAiModel();
     settings.refinement.openAiAuthMode = openAiAuthMode();
     settings.refinement.openAiEffort = openAiEffort();
+    settings.refinement.openAiFastMode = openAiFastMode();
     settings.refinement.openAiCliproxyAccount = openAiCliproxyAccount();
     settings.refinement.anthropicModel = anthropicModel();
     settings.refinement.anthropicAuthMode = anthropicAuthMode();
     settings.refinement.anthropicEffort = anthropicEffort();
+    settings.refinement.anthropicFastMode = anthropicFastMode();
     settings.refinement.anthropicCliproxyAccount = anthropicCliproxyAccount();
     settings.refinement.cliproxyOauthDir = cliproxyOauthDir();
     settings.refinement.cliproxyBaseUrl = cliproxyBaseUrl();

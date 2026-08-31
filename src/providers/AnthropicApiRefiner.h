@@ -5,6 +5,8 @@
 #include <QStringList>
 #include <QTimer>
 
+#include <functional>
+
 class QNetworkReply;
 
 namespace speecher {
@@ -24,6 +26,7 @@ public:
                 const QString &endpointBase,
                 const QString &model,
                 const QString &effort,
+                bool fastMode,
                 const QString &refinementStyle,
                 const RefinementContext &context);
     void cancel();
@@ -36,8 +39,12 @@ signals:
 private:
     void parseSseChunk(const QByteArray &chunk);
     void completeIfReady();
+    bool retryWithoutFastMode(const QString &reason, bool latchWhenStandardSucceeds);
 
     QNetworkAccessManager m_network;
+    std::function<void()> m_fastModeFallback;
+    bool m_fastModePendingLatch = false;
+    bool m_fastModeUnavailable = false;
     QTimer m_inactivityTimer;
     QTimer m_deadlineTimer;
     QNetworkReply *m_reply = nullptr;

@@ -35,6 +35,11 @@ public:
 
     SettingsPageSet(ApplicationController *controller, QWidget *parent);
 
+    // The schema's providers page split across the Models and Auth sidebar
+    // sections. Exposed so tests can prove the two lists cover every row.
+    static QStringList providerModelRowIds();
+    static QStringList providerAuthRowIds();
+
     SchemaSettingsPage *general() const;
     SchemaSettingsPage *audio() const;
     SchemaSettingsPage *applications() const;

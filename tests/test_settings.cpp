@@ -44,9 +44,11 @@ private slots:
         QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.6-luna"));
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("auto"));
         QCOMPARE(settings.openAiEffort(), QStringLiteral("none"));
+        QCOMPARE(settings.openAiFastMode(), true);
         QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-sonnet-4-6"));
         QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
         QCOMPARE(settings.anthropicEffort(), QStringLiteral("low"));
+        QCOMPARE(settings.anthropicFastMode(), true);
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
         QCOMPARE(settings.pasteRules(), defaultPasteRules());
@@ -149,6 +151,10 @@ private slots:
         QCOMPARE(settings.openAiEffort(), QStringLiteral("none"));
         settings.setOpenAiEffort(QStringLiteral("unsupported"));
         QCOMPARE(settings.openAiEffort(), QStringLiteral("none"));
+        settings.setOpenAiFastMode(false);
+        QCOMPARE(settings.openAiFastMode(), false);
+        settings.setOpenAiFastMode(true);
+        QCOMPARE(settings.openAiFastMode(), true);
 
         settings.setRefinementProvider(QStringLiteral("anthropic"));
         QCOMPARE(settings.refinementProvider(), QStringLiteral("anthropic"));
@@ -183,6 +189,10 @@ private slots:
         QCOMPARE(settings.anthropicEffort(), QStringLiteral("max"));
         settings.setAnthropicEffort(QStringLiteral("none"));
         QCOMPARE(settings.anthropicEffort(), QStringLiteral("low"));
+        settings.setAnthropicFastMode(false);
+        QCOMPARE(settings.anthropicFastMode(), false);
+        settings.setAnthropicFastMode(true);
+        QCOMPARE(settings.anthropicFastMode(), true);
 
         settings.setPauseMediaDuringTranscription(true);
         QCOMPARE(settings.pauseMediaDuringTranscription(), true);
@@ -542,9 +552,11 @@ private slots:
         settings.setIncludeScreenshotContext(true);
         settings.setOpenAiAuthMode(QStringLiteral("env"));
         settings.setOpenAiEffort(QStringLiteral("high"));
+        settings.setOpenAiFastMode(false);
         settings.setAnthropicModel(QStringLiteral("claude-opus-4-8"));
         settings.setAnthropicAuthMode(QStringLiteral("oauth"));
         settings.setAnthropicEffort(QStringLiteral("xhigh"));
+        settings.setAnthropicFastMode(false);
         settings.setOutputFormat(OutputFormat::Html);
         settings.setPasteRules({
             {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
@@ -592,9 +604,11 @@ private slots:
         QCOMPARE(snapshot.refinement.includeScreenshotContext, true);
         QCOMPARE(snapshot.refinement.openAiAuthMode, QStringLiteral("env"));
         QCOMPARE(snapshot.refinement.openAiEffort, QStringLiteral("high"));
+        QCOMPARE(snapshot.refinement.openAiFastMode, false);
         QCOMPARE(snapshot.refinement.anthropicModel, QStringLiteral("claude-opus-4-8"));
         QCOMPARE(snapshot.refinement.anthropicAuthMode, QStringLiteral("oauth"));
         QCOMPARE(snapshot.refinement.anthropicEffort, QStringLiteral("xhigh"));
+        QCOMPARE(snapshot.refinement.anthropicFastMode, false);
         QVERIFY(snapshot.refinement.claudeCredentialsPath.endsWith(QStringLiteral("/.claude/.credentials.json")));
         QCOMPARE(snapshot.output.method, QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(snapshot.output.format, OutputFormat::Html);

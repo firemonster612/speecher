@@ -119,6 +119,7 @@ void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
                       m_auth.chatgptBackend,
                       settings.openAiModel,
                       settings.openAiEffort,
+                      settings.openAiFastMode,
                       settings.style,
                       context);
 }

@@ -30,10 +30,12 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setIncludeScreenshotContext(draft.refinement.includeScreenshotContext);
     setOpenAiModel(draft.refinement.openAiModel);
     setOpenAiEffort(draft.refinement.openAiEffort);
+    setOpenAiFastMode(draft.refinement.openAiFastMode);
     setOpenAiAuthMode(draft.refinement.openAiAuthMode);
     setOpenAiCliproxyAccount(draft.refinement.openAiCliproxyAccount);
     setAnthropicModel(draft.refinement.anthropicModel);
     setAnthropicEffort(draft.refinement.anthropicEffort);
+    setAnthropicFastMode(draft.refinement.anthropicFastMode);
     setAnthropicAuthMode(draft.refinement.anthropicAuthMode);
     setAnthropicCliproxyAccount(draft.refinement.anthropicCliproxyAccount);
     setCliproxyBaseUrl(draft.refinement.cliproxyBaseUrl);

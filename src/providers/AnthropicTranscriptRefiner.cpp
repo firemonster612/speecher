@@ -146,6 +146,7 @@ void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,
                                         : settings.anthropicEndpointBase,
                          settings.anthropicModel,
                          settings.anthropicEffort,
+                         settings.anthropicFastMode,
                          settings.style,
                          context);
 }

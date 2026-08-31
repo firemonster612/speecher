@@ -66,10 +66,12 @@ struct RefinementSettings {
     QString openAiModel = QStringLiteral("gpt-5.6-luna");
     QString openAiAuthMode = QStringLiteral("auto");
     QString openAiEffort = QStringLiteral("none");
+    bool openAiFastMode = true;
     QString openAiCliproxyAccount;
     QString anthropicModel = QStringLiteral("claude-sonnet-4-6");
     QString anthropicAuthMode = QStringLiteral("oauth");
     QString anthropicEffort = QStringLiteral("low");
+    bool anthropicFastMode = true;
     QString anthropicCliproxyAccount;
     QString cliproxyOauthDir;
     QString cliproxyBaseUrl;
