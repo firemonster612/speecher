@@ -1,44 +1,27 @@
 #include "app/LinuxComposition.h"
 
-#include "core/MediaPauseController.h"
+#include "app/CompositionSockets.h"
 #include "core/SettingsStore.h"
 #include "output/TextDelivery.h"
 #include "output/WlClipboardDelivery.h"
 #include "platform/AtSpiTargetProvider.h"
+#include "platform/KGlobalAccelShortcutBinder.h"
+#include "platform/MediaPauseController.h"
 #include "platform/PortalScreenshotContextProvider.h"
 #include "platform/WaylandLayerShell.h"
+#include "platform/atspi/AtSpiAccess.h"
 #include "platform/audio/QtAudioInput.h"
 
 #include <QCoreApplication>
-#include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
-
-#ifdef Q_OS_UNIX
-#include <unistd.h>
-#endif
 
 namespace speecher {
 namespace {
 
-QString userToken()
-{
-#ifdef Q_OS_UNIX
-    return QString::number(getuid());
-#else
-    const QString user = qEnvironmentVariable("USERNAME", qEnvironmentVariable("USER", QStringLiteral("user")));
-    return QString::fromLatin1(QCryptographicHash::hash(user.toUtf8(), QCryptographicHash::Sha1).toHex().left(12));
-#endif
-}
-
-QString stableAppSocketName()
-{
-    return QStringLiteral("speecher-%1").arg(userToken());
-}
-
 QString appImageSocketName()
 {
-    return QStringLiteral("speecher-%1-appimage").arg(userToken());
+    return appSocketName(QStringLiteral("appimage"));
 }
 
 bool isRunningFromOwnAppImage()
@@ -55,23 +38,7 @@ bool isRunningFromOwnAppImage()
         && executablePath.startsWith(appDirPath + QDir::separator());
 }
 
-QString executablePathSocketName()
-{
-    const QFileInfo executable(QCoreApplication::applicationFilePath());
-    QString path = executable.canonicalFilePath();
-    if (path.isEmpty()) {
-        path = executable.absoluteFilePath();
-    }
-    const QByteArray digest = QCryptographicHash::hash(path.toUtf8(), QCryptographicHash::Sha1).toHex().left(12);
-    return QStringLiteral("speecher-%1-%2").arg(userToken(), QString::fromLatin1(digest));
-}
-
 } // namespace
-
-QString LinuxComposition::id() const
-{
-    return QStringLiteral("linux");
-}
 
 QString LinuxComposition::outputSummary() const
 {
@@ -87,7 +54,7 @@ QString LinuxComposition::primaryOutputStatus() const
 
 QString LinuxComposition::ipcListenName() const
 {
-    return isRunningFromOwnAppImage() ? appImageSocketName() : stableAppSocketName();
+    return isRunningFromOwnAppImage() ? appImageSocketName() : appSocketName();
 }
 
 QStringList LinuxComposition::ipcConnectCandidates() const
@@ -95,7 +62,7 @@ QStringList LinuxComposition::ipcConnectCandidates() const
     if (isRunningFromOwnAppImage()) {
         return {appImageSocketName()};
     }
-    return {stableAppSocketName(), executablePathSocketName()};
+    return {appSocketName(), executablePathSocketName()};
 }
 
 QString LinuxComposition::detachedExecutablePath() const
@@ -153,6 +120,26 @@ TextDeliveryAdapter *LinuxComposition::createTextDelivery(TargetProvider *target
 PopupPositioner *LinuxComposition::createPopupPositioner(QObject *parent) const
 {
     return new WaylandLayerShell(parent);
+}
+
+GlobalShortcutBinder *LinuxComposition::createGlobalShortcutBinder(QObject *parent) const
+{
+    return new KGlobalAccelShortcutBinder(parent);
+}
+
+AccessibilityState LinuxComposition::accessibilityState() const
+{
+    return atspi::accessibilityState();
+}
+
+bool LinuxComposition::requestAccessibility(QString *error) const
+{
+    return atspi::requestAccessibility(error);
+}
+
+bool LinuxComposition::enableAccessibilityPermanently(QString *error) const
+{
+    return atspi::enableAccessibilityPermanently(error);
 }
 
 std::shared_ptr<const LinuxComposition> linuxComposition()

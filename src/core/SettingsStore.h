@@ -5,14 +5,22 @@
 #include <QObject>
 #include <QSettings>
 
+#include <functional>
+
 namespace speecher {
 
 class SettingsStore : public QObject, private SettingsCodecs {
     Q_OBJECT
 
 public:
+    using LaunchAtLoginReconciler = std::function<bool(bool, QString *)>;
+
     explicit SettingsStore(QObject *parent = nullptr);
     void applySnapshot(const AppSettings &draft);
+    bool launchAtLogin() const;
+    void setLaunchAtLogin(bool enabled);
+    void setLaunchAtLoginReconciler(LaunchAtLoginReconciler reconcile);
+    void reconcileLaunchAtLogin();
     void setCorrectionLearningEnabled(bool enabled);
     bool recordCorrectionEvidence(const CorrectionEvidence &evidence,
                                   const QString &applicationId);
@@ -127,6 +135,8 @@ signals:
 
 private:
     void emitAudioCaptureSettingsChangedIfNeeded(const AudioCaptureSettings &previous);
+
+    LaunchAtLoginReconciler m_reconcileLaunchAtLogin;
 };
 
 } // namespace speecher

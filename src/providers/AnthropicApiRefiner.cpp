@@ -9,6 +9,7 @@
 #include <QJsonObject>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QPointer>
 #include <QRegularExpression>
 #include <QUuid>
 
@@ -280,17 +281,16 @@ void AnthropicApiRefiner::parseSseChunk(const QByteArray &chunk)
         if (eventName == "error" || object.value(QStringLiteral("type")).toString() == QStringLiteral("error")) {
             m_inactivityTimer.stop();
             m_deadlineTimer.stop();
-            if (m_reply) {
-                QNetworkReply *reply = m_reply;
-                m_reply = nullptr;
-                reply->abort();
-            }
+            QPointer<QNetworkReply> reply = m_reply;
+            m_reply = nullptr;
             const QString message = anthropicErrorMessage(data, QStringLiteral("Anthropic refinement error"));
-            if (retryWithoutFastMode(message)) {
-                return;
+            if (!retryWithoutFastMode(message)) {
+                m_failed = true;
+                emit failed(message);
             }
-            m_failed = true;
-            emit failed(message);
+            if (reply) {
+                QMetaObject::invokeMethod(reply, &QNetworkReply::abort, Qt::QueuedConnection);
+            }
             return;
         }
         if (eventName == "message_start"
@@ -309,6 +309,7 @@ void AnthropicApiRefiner::parseSseChunk(const QByteArray &chunk)
             }
         } else if (eventName == "message_stop") {
             completeIfReady();
+            return;
         }
     }
 }
@@ -335,7 +336,15 @@ void AnthropicApiRefiner::completeIfReady()
     m_inactivityTimer.stop();
     m_deadlineTimer.stop();
     m_completed = true;
-    emit completed(m_accumulated);
+    QPointer<QNetworkReply> reply = m_reply;
+    m_reply = nullptr;
+    const QString result = m_accumulated;
+    QMetaObject::invokeMethod(this, [this, reply, result] {
+        if (reply) {
+            reply->abort();
+        }
+        emit completed(result);
+    }, Qt::QueuedConnection);
 }
 
 } // namespace speecher

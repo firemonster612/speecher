@@ -2,7 +2,12 @@
 
 #include "core/AppSettings.h"
 #include "core/OutputMethod.h"
+#ifdef SPEECHER_WITH_WAYLAND
 #include "output/YdotoolDelivery.h"
+#endif
+#ifdef SPEECHER_WITH_MAC
+#include "output/mac/MacPasteDelivery.h"
+#endif
 
 #include <QEventLoop>
 #include <QTimer>
@@ -16,6 +21,7 @@ namespace {
 
 constexpr int clipboardRestoreDelayMs = 750;
 
+#ifdef SPEECHER_WITH_WAYLAND
 class YdotoolBackend final : public DeliveryBackend {
 public:
     YdotoolBackend(ClipboardDelivery *clipboardDelivery, PasteMethod pasteMethod)
@@ -66,6 +72,34 @@ public:
 private:
     ClipboardDelivery *m_clipboardDelivery = nullptr;
 };
+#endif // SPEECHER_WITH_WAYLAND
+
+#ifdef SPEECHER_WITH_MAC
+class MacPasteBackend final : public DeliveryBackend {
+public:
+    explicit MacPasteBackend(ClipboardDelivery *clipboardDelivery)
+        : m_clipboardDelivery(clipboardDelivery)
+    {
+    }
+
+    bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
+    {
+        QString copyError;
+        if (!m_clipboardDelivery->copy(content, htmlAvailable, &copyError)) {
+            if (error) {
+                *error = copyError.isEmpty()
+                    ? QStringLiteral("Could not copy text before keyboard paste")
+                    : QStringLiteral("Could not copy text before keyboard paste: %1").arg(copyError);
+            }
+            return false;
+        }
+        return MacPasteDelivery().paste(error);
+    }
+
+private:
+    ClipboardDelivery *m_clipboardDelivery = nullptr;
+};
+#endif // SPEECHER_WITH_MAC
 
 class QtClipboardBackend final : public DeliveryBackend {
 public:
@@ -118,12 +152,20 @@ void TextDelivery::useDefaultBackendFactory()
                               const OutputSettings &settings,
                               PasteMethod pasteMethod) -> std::unique_ptr<DeliveryBackend> {
         Q_UNUSED(settings)
+        Q_UNUSED(pasteMethod)
+#ifdef SPEECHER_WITH_WAYLAND
         if (method == QString::fromLatin1(OutputMethod::Ydotool)) {
             return std::make_unique<YdotoolBackend>(&m_clipboardDelivery, pasteMethod);
         }
         if (method == QString::fromLatin1(OutputMethod::WlCopy)) {
             return std::make_unique<WlCopyBackend>(&m_clipboardDelivery);
         }
+#endif
+#ifdef SPEECHER_WITH_MAC
+        if (method == QString::fromLatin1(OutputMethod::MacPaste)) {
+            return std::make_unique<MacPasteBackend>(&m_clipboardDelivery);
+        }
+#endif
         if (method == QString::fromLatin1(OutputMethod::QtClipboard)) {
             return std::make_unique<QtClipboardBackend>(&m_clipboardDelivery);
         }
@@ -145,13 +187,22 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
     if (!target.secure && (trackableTarget || currentFocusFallback)) {
         pasteMethod = pasteRule.method;
     }
-    const bool directInsertRequested = pasteMethod == PasteMethod::DirectInsert;
+    const QString outputMethod = OutputMethod::normalized(settings.method);
+    const bool ruleDirectInsert = pasteMethod == PasteMethod::DirectInsert;
+    const bool outputDirectInsert = pasteMethod != PasteMethod::ClipboardOnly
+        && outputMethod == QString::fromLatin1(OutputMethod::DirectInsert);
+    const bool automaticDirectInsert = pasteMethod != PasteMethod::ClipboardOnly
+        && outputMethod == QString::fromLatin1(OutputMethod::Automatic);
+    const bool directInsertRequested = ruleDirectInsert
+        || outputDirectInsert
+        || automaticDirectInsert;
+    const bool directInsertOnly = ruleDirectInsert || outputDirectInsert;
     const bool targetFocused = pasteMethod != PasteMethod::ClipboardOnly
         && (currentFocusFallback
             || (m_targetProvider && m_targetProvider->stillFocused(target)));
 
     QString clipboardWarning;
-    WlClipboardSnapshot previousClipboard;
+    ClipboardSnapshot previousClipboard;
     bool canRestoreClipboard = false;
     if (pasteMethod != PasteMethod::ClipboardOnly && settings.restoreClipboardAfterTyping) {
         if (!m_clipboardDelivery.canSnapshot()) {
@@ -184,44 +235,45 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         };
     }
 
-    if (directInsertRequested) {
-        if (m_targetProvider && m_targetProvider->canInsertText(target)) {
-            QString insertionError;
-            if (m_targetProvider->insertText(target, content.plainText, &insertionError)) {
-                const bool verified = m_targetProvider->verifyInsertion(target, content.plainText);
-                QString restoreError;
-                const bool restored = !verified
-                    || !canRestoreClipboard
-                    || m_clipboardDelivery.restore(previousClipboard, &restoreError);
-                QString message = verified
-                    ? QStringLiteral("Verified in Target")
-                    : QStringLiteral("Accepted by Target");
-                if (verified && canRestoreClipboard && !restored) {
-                    clipboardWarning = restoreError.isEmpty()
-                        ? QStringLiteral("Previous clipboard could not be restored")
-                        : QStringLiteral("Previous clipboard could not be restored: %1").arg(restoreError);
-                }
-                const bool downgraded = content.html.has_value() && !initiallyHtmlAvailable;
-                return {
-                    true,
-                    verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::AcceptedByTarget,
-                    downgraded,
-                    withClipboardWarning(
-                        downgraded ? message + QStringLiteral(" as plain text") : message),
-                };
-            }
+    QString insertionError;
+    if (directInsertRequested
+        && m_targetProvider
+        && m_targetProvider->canInsertText(target)
+        && m_targetProvider->insertText(target, content.plainText, &insertionError)) {
+        const bool verified = m_targetProvider->verifyInsertion(target, content.plainText);
+        QString restoreError;
+        const bool restored = !verified
+            || !canRestoreClipboard
+            || m_clipboardDelivery.restore(previousClipboard, &restoreError);
+        QString message = verified
+            ? QStringLiteral("Verified in Target")
+            : QStringLiteral("Accepted by Target");
+        if (verified && canRestoreClipboard && !restored) {
+            clipboardWarning = restoreError.isEmpty()
+                ? QStringLiteral("Previous clipboard could not be restored")
+                : QStringLiteral("Previous clipboard could not be restored: %1").arg(restoreError);
+        }
+        const bool downgraded = content.html.has_value() && !initiallyHtmlAvailable;
+        return {
+            true,
+            verified ? DeliveryReceipt::VerifiedInTarget : DeliveryReceipt::AcceptedByTarget,
+            downgraded,
+            withClipboardWarning(
+                downgraded ? message + QStringLiteral(" as plain text") : message),
+        };
+    }
+    if (directInsertOnly) {
+        if (!insertionError.isEmpty()) {
             return {
                 true,
                 DeliveryReceipt::Copied,
                 content.html.has_value() && !initiallyHtmlAvailable,
-                withClipboardWarning(
-                    insertionError.isEmpty()
-                        ? QStringLiteral("Copied")
-                        : QStringLiteral("Copied; direct insertion was rejected")),
+                withClipboardWarning(QStringLiteral("Copied; direct insertion was rejected")),
             };
         }
         pasteMethod = PasteMethod::ClipboardOnly;
-    } else if (pasteMethod != PasteMethod::ClipboardOnly && !targetFocused) {
+    }
+    if (pasteMethod != PasteMethod::ClipboardOnly && !targetFocused) {
         pasteMethod = PasteMethod::ClipboardOnly;
     }
 
@@ -248,7 +300,8 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         QString error;
         bool htmlAvailable = false;
         if (backend->deliver(content, &htmlAvailable, &error)) {
-            const bool virtualKeyboardInput = method == QString::fromLatin1(OutputMethod::Ydotool);
+            const bool virtualKeyboardInput = method == QString::fromLatin1(OutputMethod::Ydotool)
+                || method == QString::fromLatin1(OutputMethod::MacPaste);
             const bool copied = method == QString::fromLatin1(OutputMethod::WlCopy)
                 || method == QString::fromLatin1(OutputMethod::QtClipboard);
             const bool downgraded = content.html.has_value() && !htmlAvailable;
@@ -289,7 +342,10 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         if (firstError.isEmpty()) {
             firstError = error;
         }
-        if (method == QString::fromLatin1(OutputMethod::Ydotool)) {
+        // A failed paste already left the text on the clipboard, so the later
+        // clipboard methods would only re-report what the caller already has.
+        if (method == QString::fromLatin1(OutputMethod::Ydotool)
+            || method == QString::fromLatin1(OutputMethod::MacPaste)) {
             break;
         }
     }
@@ -312,6 +368,24 @@ QStringList TextDelivery::orderedMethods(const OutputSettings &settings)
 
 QStringList TextDelivery::orderedMethods(const OutputSettings &settings, PasteMethod pasteMethod)
 {
+#if defined(SPEECHER_WITH_MAC)
+    const QString method = OutputMethod::normalized(settings.method);
+    if (method == QString::fromLatin1(OutputMethod::Automatic)) {
+        QStringList methods;
+        if (pasteMethod != PasteMethod::ClipboardOnly) {
+            methods << QString::fromLatin1(OutputMethod::MacPaste);
+        }
+        methods << QString::fromLatin1(OutputMethod::QtClipboard);
+        return methods;
+    }
+    if (method == QString::fromLatin1(OutputMethod::MacPaste)
+        && pasteMethod == PasteMethod::ClipboardOnly) {
+        return {QString::fromLatin1(OutputMethod::QtClipboard)};
+    }
+    // The Linux-only methods have no backend here; the factory returns nothing
+    // for them and the clipboard copy deliver() already made is the net.
+    return {method};
+#else
     const QString method = OutputMethod::normalized(settings.method);
     if (method == QString::fromLatin1(OutputMethod::Automatic)) {
         QStringList methods;
@@ -331,6 +405,7 @@ QStringList TextDelivery::orderedMethods(const OutputSettings &settings, PasteMe
         };
     }
     return {method};
+#endif
 }
 
 } // namespace speecher

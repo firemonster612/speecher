@@ -3,21 +3,25 @@
 #include "core/AppSettings.h"
 
 #include <QList>
+#include <QString>
 #include <QWidget>
 
 class QCheckBox;
 class QComboBox;
+class QHideEvent;
 class QKeySequenceEdit;
 class QLabel;
 class QShowEvent;
 class QProgressBar;
 class QPushButton;
+class QTimer;
+class QVBoxLayout;
 
 namespace speecher {
 
 class ApplicationController;
 class AudioInput;
-class LinuxComposition;
+class PlatformComposition;
 class ProviderRegistry;
 class SettingsStore;
 
@@ -41,13 +45,14 @@ private:
     QComboBox *m_provider;
     QLabel *m_hint;
     QLabel *m_status;
+    QPushButton *m_checkAgain;
     quint64 m_checkGeneration = 0;
 };
 
 class MicrophoneSetupPage final : public QWidget {
 public:
     MicrophoneSetupPage(SettingsStore &settings,
-                        const LinuxComposition &platform,
+                        const PlatformComposition &platform,
                         QWidget *parent = nullptr);
     ~MicrophoneSetupPage() override;
 
@@ -59,13 +64,24 @@ protected:
 private:
     void refreshDevices();
     void startMeter();
+#ifdef Q_OS_MACOS
+    void addMicrophonePermissionControls(QVBoxLayout *layout);
+    void refreshMicrophonePermission();
+    void refreshInputVolume();
+#endif
 
     SettingsStore &m_settings;
-    const LinuxComposition &m_platform;
+    const PlatformComposition &m_platform;
     AudioInput *m_input = nullptr;
     QComboBox *m_device;
     QProgressBar *m_level;
     QLabel *m_status;
+#ifdef Q_OS_MACOS
+    QLabel *m_inputVolumeStatus = nullptr;
+    QLabel *m_permissionStatus = nullptr;
+    QPushButton *m_allowMicrophone = nullptr;
+    QPushButton *m_openMicrophoneSettings = nullptr;
+#endif
     bool m_active = false;
     bool m_devicesLoaded = false;
 };
@@ -75,12 +91,29 @@ public:
     explicit AccessibilitySetupPage(ApplicationController &controller,
                                     QWidget *parent = nullptr);
 
+    bool accessibilityGrantAppearedDuringSetup() const;
+
+#ifdef Q_OS_MACOS
+protected:
+    void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
+#endif
+
 private:
     void updateState(bool supported, bool enabled, bool persistent);
+    void refreshFromController();
 
     ApplicationController &m_controller;
     QLabel *m_status;
+    // What the last grant request answered. Outranks the polled state until the
+    // user acts again, so the poll cannot wipe the reply to their click.
+    QString m_lastError;
     QPushButton *m_enable;
+#ifdef Q_OS_MACOS
+    QTimer *m_poll;
+    bool m_initialGrant = false;
+    bool m_initialGrantRecorded = false;
+#endif
 };
 
 class TextDeliverySetupPage final : public QWidget {
@@ -139,6 +172,20 @@ private:
     QComboBox *m_defaultProfile;
     QList<ProfileControls> m_profiles;
 };
+
+#ifdef Q_OS_MACOS
+class StartAtLoginSetupPage final : public QWidget {
+public:
+    explicit StartAtLoginSetupPage(SettingsStore &settings,
+                                   QWidget *parent = nullptr);
+
+    void apply();
+
+private:
+    SettingsStore &m_settings;
+    QCheckBox *m_launchAtLogin;
+};
+#endif
 
 class FinishSetupPage final : public QWidget {
 public:

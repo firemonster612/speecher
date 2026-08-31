@@ -4,12 +4,13 @@
 
 <h1 align="center">speecher</h1>
 
-<p align="center"> Linux Speech-To-Text app that reuses your existing subscriptions.</p>
+<p align="center">Speech-to-text for Linux and macOS that reuses your existing subscriptions.</p>
 
 ## Quick start
 
 ### Prerequisites
-Sign in to at least one transcription service: Claude Code for Claude Voice, or the Linux ChatGPT app or Codex CLI for ChatGPT Codex dictation. Speecher can refresh expired logins through the matching CLI. It looks for `claude` and `codex` on `PATH`, common locations such as `~/.local/bin`, and the CLI bundled with the Linux ChatGPT app.
+
+Sign in to at least one transcription service: Claude Code for Claude Voice, or the ChatGPT app or Codex CLI for ChatGPT Codex dictation. Speecher can refresh expired logins through the matching CLI. It looks for `claude` and `codex` on `PATH`, common locations such as `~/.local/bin`, and the CLI bundled with the Linux ChatGPT app.
 
 ```sh
 # Arch
@@ -20,6 +21,9 @@ sudo apt install cmake ninja-build g++ qt6-base-dev qt6-multimedia-dev qt6-webso
 
 # Fedora
 sudo dnf install cmake ninja-build gcc-c++ qt6-qtbase-devel qt6-qtmultimedia-devel qt6-qtwebsockets-devel qt6-qtwayland layer-shell-qt-devel qtkeychain-qt6-devel wl-clipboard at-spi2-core-devel
+
+# macOS
+brew install cmake ninja pkgconf qt qtkeychain
 ```
 
 ### Install
@@ -28,7 +32,9 @@ sudo dnf install cmake ninja-build gcc-c++ qt6-qtbase-devel qt6-qtmultimedia-dev
 make install
 ```
 
-By default this installs to your per-user prefix, `~/.local`:
+The Makefile detects your platform; pass `PLATFORM=linux` or `PLATFORM=macos` to be explicit.
+
+On Linux this installs to your per-user prefix, `~/.local`:
 
 - binary: `~/.local/bin/speecher`
 - desktop file: `~/.local/share/applications/local.speecher.desktop`
@@ -40,17 +46,18 @@ To install somewhere else:
 make install PREFIX=/usr/local
 ```
 
-or
+On macOS `make install` puts `speecher.app` in `/Applications`. First launch runs a setup assistant that walks the microphone and Accessibility grants; Speecher restarts itself when setup finishes so macOS hands it the permissions.
 
-Run: `./packaging/build-appimage.sh`
+Portable packages:
 
-Resulting appimage: `./dist/Speecher-x86_64.AppImage`
+- Linux: `make appimage` → `dist/Speecher-x86_64.AppImage`
+- macOS: `make dmg` → `build/speecher.dmg`, a drag-to-Applications disk image with Qt bundled
 
-Install the appimage however you like
+### Global shortcut
 
-### KDE Plasma shortcut
+On macOS, Speecher registers its own global hotkey — set it in the setup assistant or Settings, including press-and-hold push-to-talk. Nothing to configure outside the app.
 
-Use a custom keyboard shortcut to run:
+On Linux the compositor owns global shortcuts, so bind a key to the CLI. On KDE Plasma:
 
 ```sh
 /path/to/speecher toggle
@@ -62,7 +69,7 @@ If you installed with the default `make install`, the command is:
 ~/.local/bin/speecher toggle
 ```
 
-If you installed and Appimage:
+If you installed an AppImage:
 
 ```sh
 /path/to/Speecher-x86_64.AppImage toggle
@@ -74,15 +81,17 @@ If you installed and Appimage:
 4. Click `Add`.
 5. Assign your preferred shortcut under `Custom Shortcuts`.
 
-Speecher also has separate `start` and `stop` commands for press-and-hold setups. Bind the key-press action to `speecher start` and the matching key-release action to `speecher stop` in whichever Plasma shortcut tool or input remapper you use. Speecher itself doesn't register a global shortcut.
+Speecher also has separate `start` and `stop` commands for press-and-hold setups. Bind the key-press action to `speecher start` and the matching key-release action to `speecher stop` in whichever Plasma shortcut tool or input remapper you use.
 
 Add `--format html` or `--format plain` to `toggle` or `start` when you want a shortcut that overrides the saved output format for one dictation.
 
 ## Build
 
 ```sh
-make
+make build
+make test
 ```
+
 or
 
 ```sh
@@ -91,7 +100,9 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Required Qt modules: Core, Widgets, Network, Multimedia, and Qt WebSockets. AT-SPI development files are used for Plasma target discovery, context, and paste verification.
+On macOS the Makefile adds the Homebrew Qt paths for you; the raw CMake equivalent is in `docs/macos.md`.
+
+Required Qt modules: Core, Widgets, Network, Multimedia, and Qt WebSockets. On Linux, AT-SPI development files are used for target discovery, context, and paste verification; on macOS the same jobs go through the Accessibility API and need no extra packages.
 
 ## AppImage
 
@@ -103,10 +114,19 @@ packaging/build-appimage.sh
 
 The script creates `dist/Speecher-x86_64.AppImage`. It uses CMake install output and `appimagetool`. If `wl-copy` is installed on the build machine, it is bundled into the AppImage by default; pass `--no-bundle-wl-clipboard` to keep wl-clipboard external.
 
+## DMG
+
+```sh
+make dmg
+```
+
+builds `build/speecher.dmg`: a copy of the app run through `macdeployqt` so Qt travels inside the bundle, plus an `/Applications` symlink in the classic drag-install layout. The script is `packaging/macos/build-dmg.sh`.
+
 ## Run
 
 ```sh
-./build/speecher
+./build/speecher            # Linux
+open build/speecher.app     # macOS
 ./build/speecher toggle
 ./build/speecher start
 ./build/speecher stop
@@ -114,15 +134,15 @@ The script creates `dist/Speecher-x86_64.AppImage`. It uses CMake install output
 ./build/speecher --version
 ```
 
-The four CLI commands contact the running app through a per-user socket. `toggle` switches recording on or off, `start` only starts it, `stop` only stops it, and `status` prints the current state. If `toggle` or `start` can't find a running instance, it starts a popup-only background process and begins listening. Calling `stop` or `status` without a running instance prints `idle`.
+The four CLI commands contact the running app through a per-user socket (on macOS the binary lives at `build/speecher.app/Contents/MacOS/speecher`). `toggle` switches recording on or off, `start` only starts it, `stop` only stops it, and `status` prints the current state. If `toggle` or `start` can't find a running instance, it starts a popup-only background process and begins listening. Calling `stop` or `status` without a running instance prints `idle`.
 
-Speecher uses one window with a KDE-style sidebar, searchable settings pages, and dictation controls. Running `speecher settings` opens that window on General settings.
+On Linux, Speecher uses one window with a KDE-style sidebar, searchable settings pages, and dictation controls; `speecher settings` opens it on General settings. On macOS, Speecher is a menu bar app: dictation lives in the menu bar item and a floating panel, and settings open in a native window from the menu bar, the Dock, or ⌘,.
 
 ## Transcription
 
-Choose Claude Voice or ChatGPT Codex under `Settings > Audio > Transcription`. The setup assistant reads the same provider registry, so newly registered transcription services appear in both places without separate wizard changes.
+Choose Claude Voice or ChatGPT Codex under the transcription settings. The setup assistant reads the same provider registry, so newly registered transcription services appear in both places without separate wizard changes.
 
-ChatGPT Codex dictation uses the same streaming protocol as Codex for Linux and reads its ChatGPT OAuth session from `~/.codex/auth.json`. An OpenAI API key cannot authorize this endpoint. The desktop package launcher is `/usr/bin/chatgpt`; its bundled CLI is `/usr/lib/chatgpt/resources/codex`, which Speecher can use to refresh an expired login. A standalone Codex CLI on `PATH` also works.
+ChatGPT Codex dictation uses the same streaming protocol as the Codex CLI and reads its ChatGPT OAuth session from `~/.codex/auth.json`. An OpenAI API key cannot authorize this endpoint. On Linux, the desktop package launcher is `/usr/bin/chatgpt` and its bundled CLI is `/usr/lib/chatgpt/resources/codex`, which Speecher can use to refresh an expired login. A standalone Codex CLI on `PATH` works everywhere.
 
 Native binaries use one stable user socket, so the desktop app and CLI shortcut talk to the same instance after `make install`. AppImages have their own stable socket because their internal mounted path changes on each launch.
 
@@ -136,7 +156,7 @@ Refinement effort is configurable per provider. OpenAI effort maps to `reasoning
 
 Settings also includes output controls for choosing how Speecher delivers text, including setup for typing directly into focused text fields. When virtual-keyboard paste is enabled, Speecher can optionally restore the previous clipboard contents after delivery.
 
-Target context uses the focused application's AT-SPI data when it is available: app identity, control role, caret, selection, and a small amount of nearby text. Screenshot context is a separate setting and is off by default. On Plasma it uses the desktop screenshot portal, keeps the image in memory only for the active dictation, and sends it only through OpenAI or Anthropic's direct OAuth API path. Claude Code session refinement stays text-only.
+Target context uses the focused application's accessibility data when it is available: app identity, control role, caret, selection, and a small amount of nearby text — AT-SPI on Linux, the Accessibility API on macOS. Screenshot context is a separate setting and is off by default. It keeps the image in memory only for the active dictation and sends it only through OpenAI or Anthropic's direct OAuth API path; on Plasma it uses the desktop screenshot portal, on macOS `screencapture` behind the Screen Recording grant. Claude Code session refinement stays text-only.
 
 Refinement styles:
 
@@ -177,7 +197,7 @@ Authentication is resolved in this order:
 
 For API-key requests, `OPENAI_ORG_ID` or `OPENAI_ORGANIZATION` is sent as the optional `OpenAI-Organization` header, and `OPENAI_PROJECT_ID` or `OPENAI_PROJECT` is sent as the optional `OpenAI-Project` header. The same values can be provided in `~/.codex/auth.json` alongside `OPENAI_API_KEY`.
 
-The app settings key is stored through QtKeychain when QtKeychain is available at build time. On Linux, QtKeychain uses the desktop keyring backend exposed by the session, such as Secret Service/libsecret-compatible keyrings on GNOME-like desktops or KWallet on KDE. If an older plaintext key exists in Qt settings, Speecher attempts to migrate it into the keyring and remove the plaintext setting. If no keyring backend is available or the keyring is locked, saving the app settings key fails instead of silently writing a new plaintext API key.
+The app settings key is stored through QtKeychain when QtKeychain is available at build time. On Linux, QtKeychain uses the desktop keyring backend exposed by the session, such as Secret Service/libsecret-compatible keyrings on GNOME-like desktops or KWallet on KDE; on macOS it uses the system Keychain. If an older plaintext key exists in Qt settings, Speecher attempts to migrate it into the keyring and remove the plaintext setting. If no keyring backend is available or the keyring is locked, saving the app settings key fails instead of silently writing a new plaintext API key.
 
 Claude schema-only diagnostics can be enabled with:
 

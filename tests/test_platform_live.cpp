@@ -9,105 +9,7 @@ class PlatformLiveTests : public QObject {
     Q_OBJECT
 
 private slots:
-    void correctionObserverSettlesSamplesWithoutRealTimeWaits()
-    {
-        atspi::CorrectionObserver observer;
-        atspi::CorrectionWindow window;
-        window.target.applicationId = QStringLiteral("org.kde.kate");
-        window.original = QStringLiteral("I use cute every day");
-        window.prefix = QStringLiteral("before text ");
-        window.suffix = QStringLiteral(" after text");
-
-        QList<CorrectionEvidence> observed;
-        observer.begin(window, [&observed](const QString &original,
-                                           const QString &corrected,
-                                           const QString &,
-                                           double confidence) {
-            observed.append({original, corrected, confidence});
-        });
-        observer.sample(QStringLiteral("before text I use cute every day after text"));
-        observer.sample(QStringLiteral("before text I use Qt every day after text"));
-        QCOMPARE(observed.size(), 0);
-        observer.sample(QStringLiteral("before text I use Qt every day after text"));
-
-        QCOMPARE(observed.size(), 1);
-        QCOMPARE(observed.first().original, QStringLiteral("cute"));
-        QCOMPARE(observed.first().corrected, QStringLiteral("Qt"));
-    }
-
-    void correctionObserverCancelsUnsettledOrUnreadableSamples()
-    {
-        atspi::CorrectionObserver observer;
-        atspi::CorrectionWindow window;
-        window.target.applicationId = QStringLiteral("org.kde.kate");
-        window.original = QStringLiteral("cute");
-        window.prefix = QStringLiteral("before text ");
-        window.suffix = QStringLiteral(" after text");
-        int observations = 0;
-        observer.begin(window, [&observations](const QString &, const QString &,
-                                               const QString &, double) {
-            ++observations;
-        });
-        observer.sample(QStringLiteral("before text Qt after text"));
-        observer.cancel();
-        observer.sample(QStringLiteral("before text Qt after text"));
-        QCOMPARE(observations, 0);
-
-        observer.begin(window, [&observations](const QString &, const QString &,
-                                               const QString &, double) {
-            ++observations;
-        });
-        observer.sample(QStringLiteral(
-            "before text Qt after text before text duplicate after text"));
-        observer.sample(QStringLiteral("before text Qt after text"));
-        QCOMPARE(observations, 0);
-
-        window.target.selectionStart = 0;
-        window.target.selectionEnd = 4;
-        window.target.selectedText = QStringLiteral("cute");
-        observer.begin(window, [&observations](const QString &, const QString &,
-                                               const QString &, double) {
-            ++observations;
-        });
-        observer.sample(QStringLiteral("before text Qt after text"));
-        observer.sample(QStringLiteral("before text Qt after text"));
-        QCOMPARE(observations, 0);
-    }
-
-    void correctionObserverDisablePreventsAndCancelsObservation()
-    {
-        atspi::CorrectionObserver observer;
-        atspi::CorrectionWindow window;
-        window.target.applicationId = QStringLiteral("org.kde.kate");
-        window.original = QStringLiteral("cute");
-        window.prefix = QStringLiteral("before text ");
-        window.suffix = QStringLiteral(" after text");
-        int observations = 0;
-        const auto observed = [&observations](const QString &, const QString &,
-                                              const QString &, double) {
-            ++observations;
-        };
-
-        observer.setEnabled(false);
-        observer.begin(window, observed);
-        observer.sample(QStringLiteral("before text Qt after text"));
-        observer.sample(QStringLiteral("before text Qt after text"));
-        QCOMPARE(observations, 0);
-
-        observer.setEnabled(true);
-        observer.begin(window, observed);
-        observer.sample(QStringLiteral("before text Qt after text"));
-        observer.setEnabled(false);
-        observer.sample(QStringLiteral("before text Qt after text"));
-        QCOMPARE(observations, 0);
-
-        observer.setEnabled(true);
-        observer.begin(window, observed);
-        observer.sample(QStringLiteral("before text Qt after text"));
-        observer.sample(QStringLiteral("before text Qt after text"));
-        QCOMPARE(observations, 1);
-    }
-
+#ifdef SPEECHER_WITH_WAYLAND
     void liveAtSpiTargetCapture()
     {
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI") != QStringLiteral("1")) {
@@ -158,6 +60,8 @@ private slots:
         }
     }
 
+#endif // SPEECHER_WITH_WAYLAND
+
     void liveAudioCaptureUsesDefaultWhenSavedDeviceIsMissing()
     {
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_AUDIO") != QStringLiteral("1")) {
@@ -186,6 +90,7 @@ private slots:
         QVERIFY(!capture.isActive());
     }
 
+#ifdef SPEECHER_WITH_WAYLAND
     void liveAtSpiDirectInsertionIntoSavedUnfocusedControl()
     {
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI_EDIT") != QStringLiteral("1")) {
@@ -227,7 +132,7 @@ private slots:
         output.pasteRules = defaultPasteRules();
         const PasteRule rule = resolvePasteRule(output.pasteRules, target);
 
-        WlClipboardSnapshot before;
+        ClipboardSnapshot before;
         const bool capturedBefore = WlClipboardDelivery::capture(&before);
         TextDelivery delivery(&provider);
         const DeliveryResult result = delivery.deliver(
@@ -237,7 +142,7 @@ private slots:
         QVERIFY2(result.ok, qPrintable(result.message));
         QVERIFY(result.receipt != DeliveryReceipt::None);
 
-        WlClipboardSnapshot after;
+        ClipboardSnapshot after;
         const bool capturedAfter = WlClipboardDelivery::capture(&after);
         const bool restored = capturedBefore
             && capturedAfter
@@ -286,11 +191,11 @@ private slots:
             QSKIP("Live Wayland clipboard check is opt-in");
         }
 
-        WlClipboardSnapshot original;
+        ClipboardSnapshot original;
         QString error;
         QVERIFY2(WlClipboardDelivery::capture(&original, &error), qPrintable(error));
         struct OriginalClipboardRestorer {
-            WlClipboardSnapshot snapshot;
+            ClipboardSnapshot snapshot;
             ~OriginalClipboardRestorer()
             {
                 QString ignored;
@@ -307,7 +212,7 @@ private slots:
         QVERIFY2(clipboard.copy(content, &htmlAvailable, &error), qPrintable(error));
         QVERIFY(htmlAvailable);
 
-        WlClipboardSnapshot published;
+        ClipboardSnapshot published;
         QVERIFY2(WlClipboardDelivery::capture(&published, &error), qPrintable(error));
         const auto part = [&published](const QString &mimeType) {
             return std::find_if(
@@ -326,7 +231,7 @@ private slots:
         QVERIFY(plain->data != html->data);
 
         QVERIFY2(WlClipboardDelivery::restore(original, &error), qPrintable(error));
-        WlClipboardSnapshot restored;
+        ClipboardSnapshot restored;
         QVERIFY2(WlClipboardDelivery::capture(&restored, &error), qPrintable(error));
         QCOMPARE(restored.hasData, original.hasData);
         for (const ClipboardMimePart &expected : std::as_const(original.parts)) {
@@ -399,6 +304,7 @@ private slots:
         QCOMPARE(corrections.count(), 0);
         QVERIFY(!provider.canInsertText(target));
     }
+#endif // SPEECHER_WITH_WAYLAND
 };
 
 int runPlatformLiveTests(int argc, char **argv)

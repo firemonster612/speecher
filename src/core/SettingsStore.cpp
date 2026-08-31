@@ -1,6 +1,8 @@
 #include "core/SettingsStore.h"
 #include "core/settings/CorrectionSettingsCodec.h"
 
+#include <utility>
+
 namespace speecher {
 
 SettingsStore::SettingsStore(QObject *parent)
@@ -12,6 +14,7 @@ SettingsStore::SettingsStore(QObject *parent)
 void SettingsStore::applySnapshot(const AppSettings &draft)
 {
     setSetupCompleted(draft.setupCompleted);
+    setLaunchAtLogin(draft.launchAtLogin);
     setTheme(draft.ui.theme);
     setPauseMediaDuringTranscription(draft.ui.pauseMediaDuringTranscription);
     setSoundsEnabled(draft.ui.soundsEnabled);
@@ -28,15 +31,56 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setOpenAiModel(draft.refinement.openAiModel);
     setOpenAiEffort(draft.refinement.openAiEffort);
     setOpenAiFastMode(draft.refinement.openAiFastMode);
+    setOpenAiAuthMode(draft.refinement.openAiAuthMode);
+    setOpenAiCliproxyAccount(draft.refinement.openAiCliproxyAccount);
     setAnthropicModel(draft.refinement.anthropicModel);
     setAnthropicEffort(draft.refinement.anthropicEffort);
     setAnthropicFastMode(draft.refinement.anthropicFastMode);
+    setAnthropicAuthMode(draft.refinement.anthropicAuthMode);
+    setAnthropicCliproxyAccount(draft.refinement.anthropicCliproxyAccount);
+    setCliproxyBaseUrl(draft.refinement.cliproxyBaseUrl);
+    setCliproxyApiKey(draft.refinement.cliproxyApiKey);
     setOutputMethod(draft.output.method);
     setOutputFormat(draft.output.format);
     setPasteRules(draft.output.pasteRules);
     setRestoreClipboardAfterTyping(draft.output.restoreClipboardAfterTyping);
     setCompletionStatusDurationMs(draft.output.completionStatusDurationMs);
+    setVocabularyEntries(draft.vocabulary);
     setLearnedCorrections(draft.learnedCorrections);
+    setCorrectionLearningEnabled(draft.correctionLearningEnabled);
+    // The settings surface refuses invalid replacements before it saves, so a
+    // rejection here is a bug rather than something a person typed.
+    QString replacementError;
+    if (!setBindingRules(draft.bindings, &replacementError)) {
+        qWarning("dropped invalid replacement rules: %s", qPrintable(replacementError));
+    }
+}
+
+bool SettingsStore::launchAtLogin() const
+{
+    return SettingsCodecs::launchAtLogin();
+}
+
+void SettingsStore::setLaunchAtLogin(bool enabled)
+{
+    SettingsCodecs::setLaunchAtLogin(enabled);
+    reconcileLaunchAtLogin();
+}
+
+void SettingsStore::setLaunchAtLoginReconciler(LaunchAtLoginReconciler reconcile)
+{
+    m_reconcileLaunchAtLogin = std::move(reconcile);
+}
+
+void SettingsStore::reconcileLaunchAtLogin()
+{
+    if (!m_reconcileLaunchAtLogin) {
+        return;
+    }
+    QString error;
+    if (!m_reconcileLaunchAtLogin(launchAtLogin(), &error)) {
+        qWarning().noquote() << "launch at login reconciliation failed message=" + error;
+    }
 }
 
 void SettingsStore::setCorrectionLearningEnabled(bool enabled)

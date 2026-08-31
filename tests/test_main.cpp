@@ -15,7 +15,9 @@ int main(int argc, char **argv)
     result |= runTranscriptStateTests(argc, argv);
     result |= runBindingsTests(argc, argv);
     result |= runSettingsTests(argc, argv);
+    result |= runSettingsSchemaTests(argc, argv);
     result |= runProviderRegistryTests(argc, argv);
+    result |= runPlatformCompositionTests(argc, argv);
     result |= runPlatformLiveTests(argc, argv);
     result |= runSingleInstanceIpcTests(argc, argv);
     result |= runDeliveryTests(argc, argv);
@@ -27,5 +29,8 @@ int main(int argc, char **argv)
     result |= runClaudeVoiceTests(argc, argv);
     result |= runCodexDictationTests(argc, argv);
     result |= runAudioPcmConverterTests(argc, argv);
+#ifdef SPEECHER_WITH_SWIFT_UI
+    result |= runMacFrontEndTests(argc, argv);
+#endif
     return result;
 }

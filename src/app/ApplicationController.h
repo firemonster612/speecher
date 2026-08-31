@@ -1,39 +1,52 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 
+#include <QElapsedTimer>
 #include <QObject>
-#include <QPointer>
 #include <QKeySequence>
 
 #include "app/SingleInstanceIpc.h"
 
 class QLocalSocket;
-class QAction;
+class QTimer;
 
 namespace speecher {
 
+class AppFrontEnd;
 class DictationSession;
 class AudioInput;
-class AppWindow;
-class LinuxComposition;
+class GlobalShortcutBinder;
 class ProviderRegistry;
 class SecretStore;
 class SettingsStore;
-class SetupAssistant;
-class TranscriberPopup;
 
 class ApplicationController : public QObject {
     Q_OBJECT
 
 public:
-    explicit ApplicationController(bool popupOnly, QObject *parent = nullptr);
-    ~ApplicationController() override;
+    explicit ApplicationController(bool popupOnly,
+                                   std::shared_ptr<const PlatformComposition> platform = platformComposition(),
+                                   QObject *parent = nullptr);
 
+    // The front end outlives the controller and is attached after both exist,
+    // because a front end needs the controller it renders.
+    void setFrontEnd(AppFrontEnd *frontEnd);
+    // The session the front end renders. Everything it shows about a dictation
+    // arrives on these signals.
+    DictationSession *session() const;
+    // Called by the front end once its first window is on screen. Startup work
+    // that would compete with the first paint waits for this.
+    void frontEndReady();
+
+    // True when the process runs without a main window of its own, so the
+    // front end shows only the dictation popup.
+    bool popupOnly() const;
     SettingsStore *settings() const;
     SecretStore *secretStore() const;
     ProviderRegistry *providerRegistry() const;
-    const LinuxComposition *platform() const;
+    const PlatformComposition *platform() const;
     QString stateName() const;
     IpcResponse response(bool ok = true, const QString &message = {}) const;
     QString outputSummary() const;
@@ -42,6 +55,8 @@ public:
     bool accessibilityEnabled() const;
     bool accessibilityPersistent() const;
     bool enableAccessibility(QString *error = nullptr);
+    // Platforms that do not push grants to a running process poll this.
+    void refreshAccessibilityState();
     bool grabMainWindow(const QString &path) const;
     bool globalShortcutsSupported() const;
     QKeySequence globalShortcut() const;
@@ -71,33 +86,37 @@ signals:
     void audioLevelChanged(float level);
     void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
 
-protected:
-    bool eventFilter(QObject *watched, QEvent *event) override;
-
 private:
     void registerProviders();
-    void wireSessionToPopup();
-    void refreshAccessibilityState();
+    void startWithMicrophone(std::function<void()> start);
     void runDeferredStartup();
     bool ensureSetupCompleted();
+    bool sessionActive() const;
+    void handleShortcutPressed();
+    void handleShortcutReleased();
 
     bool m_popupOnly = false;
-    std::shared_ptr<const LinuxComposition> m_platform;
+    std::shared_ptr<const PlatformComposition> m_platform;
+    AppFrontEnd *m_frontEnd = nullptr;
     SettingsStore *m_settings = nullptr;
     SecretStore *m_secrets = nullptr;
     ProviderRegistry *m_providers = nullptr;
     AudioInput *m_audio = nullptr;
     DictationSession *m_session = nullptr;
-    TranscriberPopup *m_popup = nullptr;
-    AppWindow *m_appWindow = nullptr;
-    QPointer<SetupAssistant> m_setupAssistant;
-    QAction *m_globalShortcutAction = nullptr;
+    GlobalShortcutBinder *m_shortcutBinder = nullptr;
     SingleInstanceIpc *m_ipc = nullptr;
     bool m_accessibilitySupported = false;
     bool m_accessibilityEnabled = false;
     bool m_accessibilityPersistent = false;
+#ifdef Q_OS_MACOS
+    QTimer *m_accessibilityPoll = nullptr;
+#endif
     bool m_deferredStartupScheduled = false;
     bool m_deferredStartupDone = false;
+    // Only a press that started a session can end it on release; a press that
+    // stopped one must not restart it.
+    QElapsedTimer m_shortcutPress;
+    bool m_shortcutStartedSession = false;
 };
 
 } // namespace speecher

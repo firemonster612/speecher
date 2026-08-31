@@ -10,7 +10,11 @@ namespace speecher {
 AccessibilityNotice::AccessibilityNotice(QWidget *parent)
     : QFrame(parent)
     , m_message(new QLabel(this))
+#ifdef Q_OS_MACOS
+    , m_enableButton(new QPushButton(QStringLiteral("Open settings"), this))
+#else
     , m_enableButton(new QPushButton(QStringLiteral("Enable permanently"), this))
+#endif
 {
     setObjectName(QStringLiteral("accessibilityNotice"));
     setFrameShape(QFrame::StyledPanel);
@@ -46,6 +50,17 @@ void AccessibilityNotice::setState(bool supported, bool enabled, bool persistent
         return;
     }
 
+#ifdef Q_OS_MACOS
+    // macOS grants are permanent once given, so "off" is the only state to show.
+    m_message->setText(m_compact
+                           ? QStringLiteral("Accessibility is off. Speecher can copy but not paste.")
+                           : QStringLiteral(
+                                 "Accessibility is off, so Speecher can only leave your dictation on the clipboard. "
+                                 "Allow Speecher under Privacy & Security, then restart it. If the toggle already "
+                                 "shows Speecher on, turn it off and on again — an updated copy of Speecher does "
+                                 "not inherit the old grant."));
+    m_enableButton->setEnabled(true);
+#else
     if (!enabled) {
         m_message->setText(m_compact
                                ? QStringLiteral("AT-SPI is off. App-aware paste and selection editing need it.")
@@ -63,6 +78,7 @@ void AccessibilityNotice::setState(bool supported, bool enabled, bool persistent
         m_enableButton->setEnabled(true);
         m_enableButton->setText(QStringLiteral("Enable permanently"));
     }
+#endif
     show();
 }
 
@@ -83,7 +99,11 @@ void AccessibilityNotice::showError(const QString &message)
     if (message.isEmpty()) {
         return;
     }
+#ifdef Q_OS_MACOS
+    m_message->setText(QStringLiteral("Could not open Accessibility settings: %1").arg(message));
+#else
     m_message->setText(QStringLiteral("Could not enable AT-SPI: %1").arg(message));
+#endif
     show();
 }
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "frontend/qt/QtPopupSurface.h"
+
 #include <QLabel>
 #include <QWidget>
 
@@ -63,6 +65,7 @@ private:
     WaveformWidget *m_waveform = nullptr;
     AccessibilityNotice *m_accessibilityNotice = nullptr;
     PopupPositioner *m_positioner = nullptr;
+    QtPopupSurface m_surface{this};
     quint64 m_pendingPresentationGeneration = 0;
     bool m_applyingTheme = false;
 };

@@ -3,7 +3,7 @@
 #include "test_suites.h"
 
 #include "app/ApplicationController.h"
-#include "app/LinuxComposition.h"
+#include "app/PlatformComposition.h"
 #include "app/SingleInstanceIpc.h"
 #include "core/AppSettings.h"
 #include "core/BindingProcessor.h"
@@ -27,6 +27,7 @@
 #include "providers/ProviderRegistry.h"
 #include "providers/TranscriptRefinementPrompt.h"
 #include "output/TextDelivery.h"
+#ifdef SPEECHER_WITH_WAYLAND
 #include "output/WlClipboardDelivery.h"
 #include "output/YdotoolDelivery.h"
 #include "output/YdotoolSetup.h"
@@ -34,10 +35,12 @@
 #include "platform/atspi/AtSpiCorrectionObserver.h"
 #include "platform/atspi/AtSpiTargetSnapshot.h"
 #include "platform/PortalScreenshotContextProvider.h"
+#endif
 #include "platform/audio/AudioPcmConverter.h"
 #include "platform/audio/QtAudioInput.h"
+#include "platform/PopupPositioner.h"
+#include "platform/PopupSurface.h"
 #include "ui/Theme.h"
-#include "ui/PopupPositioner.h"
 #include "ui/TranscriberPopup.h"
 #include "ui/WaveformWidget.h"
 

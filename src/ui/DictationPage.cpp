@@ -1,6 +1,6 @@
 #include "ui/DictationPage.h"
 
-#include "app/LinuxComposition.h"
+#include "app/PlatformComposition.h"
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
 #include "providers/ProviderRegistry.h"

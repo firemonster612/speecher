@@ -90,6 +90,46 @@ WritingProfile writingProfileFromName(const QString &name)
     return WritingProfile::Other;
 }
 
+QString appCategoryLabel(AppCategory category)
+{
+    switch (category) {
+    case AppCategory::General:
+        return QStringLiteral("Other app");
+    case AppCategory::Terminal:
+        return QStringLiteral("Terminal");
+    case AppCategory::Browser:
+        return QStringLiteral("Browser");
+    case AppCategory::Email:
+        return QStringLiteral("Email");
+    case AppCategory::Office:
+        return QStringLiteral("Office");
+    case AppCategory::CodeEditor:
+        return QStringLiteral("Code editor");
+    case AppCategory::AiCoding:
+        return QStringLiteral("AI coding");
+    case AppCategory::Unknown:
+        break;
+    }
+    return QStringLiteral("Automatic");
+}
+
+QString writingProfileLabel(WritingProfile profile)
+{
+    switch (profile) {
+    case WritingProfile::Work:
+        return QStringLiteral("Work");
+    case WritingProfile::Email:
+        return QStringLiteral("Email");
+    case WritingProfile::Personal:
+        return QStringLiteral("Personal");
+    case WritingProfile::AiCoding:
+        return QStringLiteral("AI coding");
+    case WritingProfile::Other:
+        break;
+    }
+    return QStringLiteral("Other");
+}
+
 QList<WritingProfileSettings> defaultWritingProfileSettings()
 {
     return {
@@ -195,6 +235,19 @@ QList<AppRecognitionRule> builtInAppRecognitionRules()
         {QStringLiteral("linear"), std::nullopt, WritingProfile::Work},
         {QStringLiteral("notion"), std::nullopt, WritingProfile::Work},
     };
+}
+
+QList<AppRecognitionRule> recognitionRulesWithMigratedProfileOverrides(
+    const QList<AppRecognitionRule> &rules,
+    const QList<WritingProfileOverride> &overrides)
+{
+    QList<AppRecognitionRule> migrated = rules;
+    for (const WritingProfileOverride &override : overrides) {
+        if (override.enabled) {
+            migrated.append({override.applicationId, std::nullopt, override.profile});
+        }
+    }
+    return migrated;
 }
 
 static bool ruleMatches(const AppRecognitionRule &rule,

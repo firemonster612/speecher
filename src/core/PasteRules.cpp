@@ -1,5 +1,7 @@
 #include "core/PasteRules.h"
 
+#include <QSet>
+
 namespace speecher {
 
 QString pasteRuleScopeName(PasteRuleScope scope)
@@ -98,6 +100,22 @@ PasteRule resolvePasteRule(const QList<PasteRule> &rules, const Target &target)
         }
     }
     return {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true};
+}
+
+QStringList validatePasteRules(const QList<PasteRule> &rules)
+{
+    QSet<QString> applicationIds;
+    for (const PasteRule &rule : rules) {
+        if (rule.scope != PasteRuleScope::Application) {
+            continue;
+        }
+        const QString id = rule.match.toCaseFolded();
+        if (applicationIds.contains(id)) {
+            return {QStringLiteral("Each application ID can have only one paste rule.")};
+        }
+        applicationIds.insert(id);
+    }
+    return {};
 }
 
 } // namespace speecher
