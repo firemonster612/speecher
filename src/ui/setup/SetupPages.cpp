@@ -476,6 +476,8 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
     : QWidget(parent)
     , m_settings(settings)
     , m_provider(new QComboBox(this))
+    , m_fastMode(new QCheckBox(QStringLiteral("Fast mode"), this))
+    , m_fastModeHint(new QLabel(this))
 {
     QVBoxLayout *layout = makePage(
         this,
@@ -490,10 +492,41 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
     row->addWidget(new QLabel(QStringLiteral("Provider"), this));
     row->addWidget(m_provider, 1);
     layout->addLayout(row);
+    m_fastMode->setObjectName(QStringLiteral("refinementFastMode"));
+    m_fastModeHint->setWordWrap(true);
+    layout->addWidget(m_fastMode);
+    layout->addWidget(m_fastModeHint);
     layout->addStretch();
+    updateFastModeControl();
     connect(m_provider, &QComboBox::currentIndexChanged, this, [this] {
         m_settings.setRefinementProvider(m_provider->currentData().toString());
+        updateFastModeControl();
     });
+    connect(m_fastMode, &QCheckBox::toggled, this, [this](bool checked) {
+        const QString provider = m_provider->currentData().toString();
+        if (provider == QStringLiteral("openai")) {
+            m_settings.setOpenAiFastMode(checked);
+        } else if (provider == QStringLiteral("anthropic")) {
+            m_settings.setAnthropicFastMode(checked);
+        }
+    });
+}
+
+void RefinementSetupPage::updateFastModeControl()
+{
+    const QString provider = m_provider->currentData().toString();
+    const bool openAi = provider == QStringLiteral("openai");
+    const bool anthropic = provider == QStringLiteral("anthropic");
+    m_fastMode->setVisible(openAi || anthropic);
+    m_fastModeHint->setVisible(openAi || anthropic);
+    if (!openAi && !anthropic) {
+        return;
+    }
+    m_fastModeHint->setText(openAi
+                                ? QStringLiteral("1.5x speed and increased usage (negligible).")
+                                : QStringLiteral("Faster refinement will use usage credits."));
+    const QSignalBlocker blocker(m_fastMode);
+    m_fastMode->setChecked(openAi ? m_settings.openAiFastMode() : m_settings.anthropicFastMode());
 }
 
 WritingProfilesSetupPage::WritingProfilesSetupPage(SettingsStore &settings, QWidget *parent)

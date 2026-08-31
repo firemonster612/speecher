@@ -2,6 +2,7 @@
 
 #include <QScrollArea>
 
+class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
@@ -48,8 +49,10 @@ private:
     SecretStore &m_secrets;
     QComboBox *m_openAiModel;
     QComboBox *m_openAiEffort;
+    QCheckBox *m_openAiFastMode;
     QComboBox *m_anthropicModel;
     QComboBox *m_anthropicEffort;
+    QCheckBox *m_anthropicFastMode;
     QComboBox *m_authMode;
     QComboBox *m_anthropicAuthMode;
     QWidget *m_modelsContent = nullptr;

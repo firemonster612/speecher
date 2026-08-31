@@ -35,10 +35,12 @@ public:
     QString openAiModel() const; void setOpenAiModel(const QString &value);
     QString openAiAuthMode() const; void setOpenAiAuthMode(const QString &value);
     QString openAiEffort() const; void setOpenAiEffort(const QString &value);
+    bool openAiFastMode() const; void setOpenAiFastMode(bool value);
     QString openAiCliproxyAccount() const; void setOpenAiCliproxyAccount(const QString &value);
     QString anthropicModel() const; void setAnthropicModel(const QString &value);
     QString anthropicAuthMode() const; void setAnthropicAuthMode(const QString &value);
     QString anthropicEffort() const; void setAnthropicEffort(const QString &value);
+    bool anthropicFastMode() const; void setAnthropicFastMode(bool value);
     QString anthropicCliproxyAccount() const; void setAnthropicCliproxyAccount(const QString &value);
     QString cliproxyOauthDir() const;
     QString cliproxyBaseUrl() const; void setCliproxyBaseUrl(const QString &value);

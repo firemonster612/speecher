@@ -8,6 +8,7 @@
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QAbstractItemView>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -91,8 +92,10 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     , m_secrets(secrets)
     , m_openAiModel(new QComboBox(this))
     , m_openAiEffort(new QComboBox(this))
+    , m_openAiFastMode(new QCheckBox(this))
     , m_anthropicModel(new QComboBox(this))
     , m_anthropicEffort(new QComboBox(this))
+    , m_anthropicFastMode(new QCheckBox(this))
     , m_authMode(new QComboBox(this))
     , m_anthropicAuthMode(new QComboBox(this))
     , m_openAiCliproxyAccount(new QComboBox(this))
@@ -129,6 +132,8 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     m_openAiEffort->addItem(QStringLiteral("High"), QStringLiteral("high"));
     m_openAiEffort->addItem(QStringLiteral("Extra high"), QStringLiteral("xhigh"));
     m_openAiEffort->setToolTip(QStringLiteral("OpenAI Responses reasoning.effort. Supported values vary by model."));
+    m_openAiFastMode->setObjectName(QStringLiteral("openAiFastMode"));
+    m_openAiFastMode->setToolTip(QStringLiteral("Falls back to standard processing when a fast request fails."));
     const QList<QPair<QString, QString>> anthropicModels{
         {QStringLiteral("Claude Opus 4.8"), QStringLiteral("claude-opus-4-8")},
         {QStringLiteral("Claude Sonnet 4.6"), QStringLiteral("claude-sonnet-4-6")},
@@ -152,6 +157,8 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     m_anthropicEffort->addItem(QStringLiteral("Extra high"), QStringLiteral("xhigh"));
     m_anthropicEffort->addItem(QStringLiteral("Max"), QStringLiteral("max"));
     m_anthropicEffort->setToolTip(QStringLiteral("Claude effort. Anthropic API support depends on the selected model."));
+    m_anthropicFastMode->setObjectName(QStringLiteral("anthropicFastMode"));
+    m_anthropicFastMode->setToolTip(QStringLiteral("Only Opus models support fast mode; other models refine at standard speed."));
     m_authMode->addItem(QStringLiteral("Automatic"), QStringLiteral("auto"));
     m_authMode->addItem(QStringLiteral("Codex API key"), QStringLiteral("codex_api_key"));
     m_authMode->addItem(QStringLiteral("Codex OAuth"), QStringLiteral("codex_oauth"));
@@ -193,6 +200,7 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     settings::addSectionRow(openAiLayout, QStringLiteral("OpenAI"), openAiCard);
     settings::addRow(openAiLayout, settings::makeRow(QStringLiteral("OpenAI model"), QStringLiteral("Model used for refinement."), m_openAiModel, openAiCard), openAiCard);
     settings::addRow(openAiLayout, settings::makeRow(QStringLiteral("OpenAI effort"), QStringLiteral("Reasoning effort used for refinement."), m_openAiEffort, openAiCard), openAiCard);
+    settings::addRow(openAiLayout, settings::makeRow(QStringLiteral("Fast mode"), QStringLiteral("1.5x speed and increased usage (negligible)."), m_openAiFastMode, openAiCard), openAiCard);
     settings::addSectionRow(openAiAuthLayout, QStringLiteral("OpenAI"), openAiAuthCard);
     settings::addRow(openAiAuthLayout, settings::makeRow(QStringLiteral("OpenAI auth mode"), QStringLiteral("Credential source for OpenAI refinement and ChatGPT Codex dictation."), m_authMode, openAiAuthCard), openAiAuthCard);
     settings::addRow(openAiAuthLayout, settings::makeRow(QStringLiteral("OpenAI auth"), QStringLiteral("Current credential source, app settings key, or CLI Proxy API account."), m_authControl, openAiAuthCard), openAiAuthCard, false);
@@ -209,6 +217,12 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
                      settings::makeRow(QStringLiteral("Claude effort"),
                                        QStringLiteral("Token spend and reasoning depth for Anthropic refinement."),
                                        m_anthropicEffort,
+                                       anthropicCard),
+                     anthropicCard);
+    settings::addRow(anthropicLayout,
+                     settings::makeRow(QStringLiteral("Fast mode"),
+                                       QStringLiteral("Faster refinement will use usage credits."),
+                                       m_anthropicFastMode,
                                        anthropicCard),
                      anthropicCard);
     auto *anthropicAuthControl = new QWidget(anthropicAuthCard);
@@ -301,6 +315,8 @@ ProviderSettingsPage::ProviderSettingsPage(SettingsStore &settings, SecretStore 
     connect(m_cliproxyApiKey, &QLineEdit::textEdited, this, &ProviderSettingsPage::changed);
     connect(m_openAiModel, &QComboBox::currentTextChanged, this, &ProviderSettingsPage::changed);
     connect(m_openAiEffort, &QComboBox::currentIndexChanged, this, &ProviderSettingsPage::changed);
+    connect(m_openAiFastMode, &QCheckBox::toggled, this, &ProviderSettingsPage::changed);
+    connect(m_anthropicFastMode, &QCheckBox::toggled, this, &ProviderSettingsPage::changed);
     connect(m_anthropicModel, &QComboBox::currentTextChanged, this, [this] {
         updateAnthropicControls();
         emit changed();
@@ -328,8 +344,10 @@ void ProviderSettingsPage::loadModels()
 {
     settings::selectEditableText(m_openAiModel, m_settings.openAiModel());
     settings::selectData(m_openAiEffort, m_settings.openAiEffort());
+    m_openAiFastMode->setChecked(m_settings.openAiFastMode());
     settings::selectEditableText(m_anthropicModel, m_settings.anthropicModel());
     settings::selectData(m_anthropicEffort, m_settings.anthropicEffort());
+    m_anthropicFastMode->setChecked(m_settings.anthropicFastMode());
 }
 
 void ProviderSettingsPage::loadAuthModes()
@@ -369,8 +387,10 @@ void ProviderSettingsPage::appendToDraft(AppSettings &draft) const
 {
     draft.refinement.openAiModel = settings::editableComboValue(m_openAiModel);
     draft.refinement.openAiEffort = m_openAiEffort->currentData().toString();
+    draft.refinement.openAiFastMode = m_openAiFastMode->isChecked();
     draft.refinement.anthropicModel = settings::editableComboValue(m_anthropicModel);
     draft.refinement.anthropicEffort = m_anthropicEffort->currentData().toString();
+    draft.refinement.anthropicFastMode = m_anthropicFastMode->isChecked();
 }
 
 void ProviderSettingsPage::saveAuthModes()
@@ -414,8 +434,10 @@ bool ProviderSettingsPage::hasModelChanges() const
 {
     return settings::editableComboValue(m_openAiModel) != m_settings.openAiModel()
         || m_openAiEffort->currentData().toString() != m_settings.openAiEffort()
+        || m_openAiFastMode->isChecked() != m_settings.openAiFastMode()
         || settings::editableComboValue(m_anthropicModel) != m_settings.anthropicModel()
-        || m_anthropicEffort->currentData().toString() != m_settings.anthropicEffort();
+        || m_anthropicEffort->currentData().toString() != m_settings.anthropicEffort()
+        || m_anthropicFastMode->isChecked() != m_settings.anthropicFastMode();
 }
 
 bool ProviderSettingsPage::hasAuthChanges() const

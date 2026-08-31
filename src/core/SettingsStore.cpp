@@ -27,8 +27,10 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setIncludeScreenshotContext(draft.refinement.includeScreenshotContext);
     setOpenAiModel(draft.refinement.openAiModel);
     setOpenAiEffort(draft.refinement.openAiEffort);
+    setOpenAiFastMode(draft.refinement.openAiFastMode);
     setAnthropicModel(draft.refinement.anthropicModel);
     setAnthropicEffort(draft.refinement.anthropicEffort);
+    setAnthropicFastMode(draft.refinement.anthropicFastMode);
     setOutputMethod(draft.output.method);
     setOutputFormat(draft.output.format);
     setPasteRules(draft.output.pasteRules);

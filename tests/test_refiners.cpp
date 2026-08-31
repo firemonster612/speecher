@@ -124,6 +124,7 @@ private slots:
                        true,
                        QStringLiteral("gpt-test"),
                        QStringLiteral("high"),
+                       false,
                        QStringLiteral("balanced"),
                        context);
 
@@ -154,6 +155,7 @@ private slots:
         QCOMPARE(body.value(QStringLiteral("reasoning")).toObject().value(QStringLiteral("effort")).toString(), QStringLiteral("high"));
         QCOMPARE(body.value(QStringLiteral("stream")).toBool(), true);
         QCOMPARE(body.value(QStringLiteral("store")).toBool(), false);
+        QVERIFY(!body.contains(QStringLiteral("service_tier")));
 
         const QString instructions = body.value(QStringLiteral("instructions")).toString();
         QVERIFY(instructions.startsWith(QStringLiteral("You are Speecher's transcript refinement engine.")));
@@ -234,6 +236,7 @@ private slots:
                        false,
                        QStringLiteral("gpt-test"),
                        QStringLiteral("low"),
+                       false,
                        QStringLiteral("balanced"),
                        {});
 
@@ -285,6 +288,7 @@ private slots:
                        QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()),
                        QStringLiteral("claude-sonnet-4-6"),
                        QStringLiteral("low"),
+                       false,
                        QStringLiteral("balanced"),
                        context);
 
@@ -320,6 +324,7 @@ private slots:
         QCOMPARE(body.value(QStringLiteral("thinking")).toObject().value(QStringLiteral("display")).toString(), QStringLiteral("omitted"));
         QCOMPARE(body.value(QStringLiteral("output_config")).toObject().value(QStringLiteral("effort")).toString(), QStringLiteral("low"));
         QCOMPARE(body.value(QStringLiteral("stream")).toBool(), true);
+        QVERIFY(!body.contains(QStringLiteral("speed")));
 
         const QString system = body.value(QStringLiteral("system")).toString();
         QVERIFY(system.startsWith(QStringLiteral("You are Claude Code, Anthropic's official CLI for Claude.")));
@@ -379,6 +384,7 @@ private slots:
                        QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()),
                        QStringLiteral("claude-sonnet-4-6"),
                        QStringLiteral("low"),
+                       false,
                        QStringLiteral("balanced"),
                        {});
 
@@ -407,7 +413,7 @@ private slots:
         QSignalSpy openAiFailed(&openAi, &OpenAiRefiner::failed);
         openAi.refine(QStringLiteral("test"), {}, {}, QStringLiteral("token"), {}, {},
                       QStringLiteral("http://127.0.0.1:%1/v1").arg(openAiServer.serverPort()),
-                      {}, false, QStringLiteral("gpt-test"), QStringLiteral("low"),
+                      {}, false, QStringLiteral("gpt-test"), QStringLiteral("low"), false,
                       QStringLiteral("balanced"), {});
         QTRY_VERIFY_WITH_TIMEOUT(openAiServer.hasPendingConnections(), 1000);
         QTcpSocket *openAiSocket = openAiServer.nextPendingConnection();
@@ -432,7 +438,7 @@ private slots:
         QSignalSpy anthropicFailed(&anthropic, &AnthropicApiRefiner::failed);
         anthropic.refine(QStringLiteral("test"), {}, {}, QStringLiteral("token"),
                          QStringLiteral("http://127.0.0.1:%1/v1").arg(anthropicServer.serverPort()),
-                         QStringLiteral("claude-sonnet-4-6"), QStringLiteral("low"),
+                         QStringLiteral("claude-sonnet-4-6"), QStringLiteral("low"), false,
                          QStringLiteral("balanced"), {});
         QTRY_VERIFY_WITH_TIMEOUT(anthropicServer.hasPendingConnections(), 1000);
         QTcpSocket *anthropicSocket = anthropicServer.nextPendingConnection();
@@ -464,6 +470,7 @@ private slots:
                        QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()),
                        QStringLiteral("claude-mythos-5"),
                        QStringLiteral("low"),
+                       false,
                        QStringLiteral("balanced"),
                        {});
 
@@ -501,6 +508,153 @@ private slots:
                       + sse);
         QVERIFY(socket->waitForBytesWritten(1000));
         socket->disconnectFromHost();
+    }
+
+    void openAiRefinerRetriesAtStandardSpeedWhenFastModeFails()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        OpenAiRefiner refiner;
+        QSignalSpy completed(&refiner, &OpenAiRefiner::completed);
+        QSignalSpy failed(&refiner, &OpenAiRefiner::failed);
+
+        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
+                       QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
+                       {}, false, QStringLiteral("gpt-test"), QStringLiteral("low"), true,
+                       QStringLiteral("balanced"), {});
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *fastSocket = server.nextPendingConnection();
+        QVERIFY(fastSocket);
+        const QByteArray fastRequest = readHttpRequest(fastSocket, 1000);
+        const int fastHeaderEnd = fastRequest.indexOf("\r\n\r\n");
+        QVERIFY2(fastHeaderEnd >= 0, fastRequest.constData());
+        const QJsonObject fastBody = QJsonDocument::fromJson(fastRequest.mid(fastHeaderEnd + 4)).object();
+        QCOMPARE(fastBody.value(QStringLiteral("service_tier")).toString(), QStringLiteral("fast"));
+
+        const QByteArray error = QByteArrayLiteral(R"({"error":{"message":"fast mode unavailable"}})");
+        fastSocket->write(QByteArrayLiteral("HTTP/1.1 400 Bad Request\r\n"
+                                            "Content-Type: application/json\r\n"
+                                            "Content-Length: ")
+                          + QByteArray::number(error.size())
+                          + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") + error);
+        QVERIFY(fastSocket->waitForBytesWritten(1000));
+        fastSocket->disconnectFromHost();
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *standardSocket = server.nextPendingConnection();
+        QVERIFY(standardSocket);
+        const QByteArray standardRequest = readHttpRequest(standardSocket, 1000);
+        const int standardHeaderEnd = standardRequest.indexOf("\r\n\r\n");
+        QVERIFY2(standardHeaderEnd >= 0, standardRequest.constData());
+        const QJsonObject standardBody =
+            QJsonDocument::fromJson(standardRequest.mid(standardHeaderEnd + 4)).object();
+        QVERIFY(!standardBody.contains(QStringLiteral("service_tier")));
+
+        const QByteArray sse = QByteArrayLiteral("event: response.output_text.delta\n"
+                                                 "data: {\"delta\":\"standard-ok\"}\n\n"
+                                                 "event: response.completed\n"
+                                                 "data: {\"type\":\"response.completed\"}\n\n");
+        standardSocket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\n"
+                                                "Content-Type: text/event-stream\r\n"
+                                                "Content-Length: ")
+                              + QByteArray::number(sse.size())
+                              + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") + sse);
+        QVERIFY(standardSocket->waitForBytesWritten(1000));
+        standardSocket->disconnectFromHost();
+
+        QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 1000);
+        QCOMPARE(completed.at(0).at(0).toString(), QStringLiteral("standard-ok"));
+        QCOMPARE(failed.size(), 0);
+    }
+
+    void anthropicApiRefinerSendsFastModeForOpusAndRetriesWithout()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        AnthropicApiRefiner refiner;
+        QSignalSpy completed(&refiner, &AnthropicApiRefiner::completed);
+        QSignalSpy failed(&refiner, &AnthropicApiRefiner::failed);
+
+        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"),
+                       QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
+                       QStringLiteral("claude-opus-4-8"), QStringLiteral("low"), true,
+                       QStringLiteral("balanced"), {});
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *fastSocket = server.nextPendingConnection();
+        QVERIFY(fastSocket);
+        const QByteArray fastRequest = readHttpRequest(fastSocket, 1000);
+        const int fastHeaderEnd = fastRequest.indexOf("\r\n\r\n");
+        QVERIFY2(fastHeaderEnd >= 0, fastRequest.constData());
+        QVERIFY(fastRequest.left(fastHeaderEnd).toLower().contains(
+            QByteArrayLiteral("anthropic-beta: claude-code-20250219,oauth-2025-04-20,fast-mode-2026-02-01")));
+        const QJsonObject fastBody = QJsonDocument::fromJson(fastRequest.mid(fastHeaderEnd + 4)).object();
+        QCOMPARE(fastBody.value(QStringLiteral("speed")).toString(), QStringLiteral("fast"));
+
+        const QByteArray errorSse = QByteArrayLiteral(
+            "event: error\n"
+            "data: {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"speed unsupported\"}}\n\n");
+        fastSocket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\n"
+                                            "Content-Type: text/event-stream\r\n"
+                                            "Content-Length: ")
+                          + QByteArray::number(errorSse.size())
+                          + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") + errorSse);
+        QVERIFY(fastSocket->waitForBytesWritten(1000));
+        fastSocket->disconnectFromHost();
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *standardSocket = server.nextPendingConnection();
+        QVERIFY(standardSocket);
+        const QByteArray standardRequest = readHttpRequest(standardSocket, 1000);
+        const int standardHeaderEnd = standardRequest.indexOf("\r\n\r\n");
+        QVERIFY2(standardHeaderEnd >= 0, standardRequest.constData());
+        QVERIFY(!standardRequest.left(standardHeaderEnd).toLower().contains(QByteArrayLiteral("fast-mode-2026-02-01")));
+        const QJsonObject standardBody =
+            QJsonDocument::fromJson(standardRequest.mid(standardHeaderEnd + 4)).object();
+        QVERIFY(!standardBody.contains(QStringLiteral("speed")));
+
+        const QByteArray sse = QByteArrayLiteral(
+            "event: content_block_delta\n"
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"standard-ok\"}}\n\n"
+            "event: message_stop\n"
+            "data: {\"type\":\"message_stop\"}\n\n");
+        standardSocket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\n"
+                                                "Content-Type: text/event-stream\r\n"
+                                                "Content-Length: ")
+                              + QByteArray::number(sse.size())
+                              + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") + sse);
+        QVERIFY(standardSocket->waitForBytesWritten(1000));
+        standardSocket->disconnectFromHost();
+
+        QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 1000);
+        QCOMPARE(completed.at(0).at(0).toString(), QStringLiteral("standard-ok"));
+        QCOMPARE(failed.size(), 0);
+    }
+
+    void anthropicApiRefinerOmitsFastModeForUnsupportedModels()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        AnthropicApiRefiner refiner;
+        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"),
+                       QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
+                       QStringLiteral("claude-sonnet-4-6"), QStringLiteral("low"), true,
+                       QStringLiteral("balanced"), {});
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(socket);
+        const QByteArray request = readHttpRequest(socket, 1000);
+        const int headerEnd = request.indexOf("\r\n\r\n");
+        QVERIFY2(headerEnd >= 0, request.constData());
+        QVERIFY(!request.left(headerEnd).toLower().contains(QByteArrayLiteral("fast-mode-2026-02-01")));
+        const QJsonObject body = QJsonDocument::fromJson(request.mid(headerEnd + 4)).object();
+        QVERIFY(!body.contains(QStringLiteral("speed")));
+        refiner.cancel();
     }
 
     void liveCliproxyRemoteRefinement()

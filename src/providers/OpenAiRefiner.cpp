@@ -2,6 +2,7 @@
 
 #include "providers/TranscriptRefinementPrompt.h"
 
+#include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -41,8 +42,11 @@ OpenAiRefiner::OpenAiRefiner(QObject *parent, int requestTimeoutMs)
         }
         QNetworkReply *reply = m_reply;
         m_reply = nullptr;
-        m_failed = true;
         reply->abort();
+        if (retryWithoutFastMode(QStringLiteral("timed out"))) {
+            return;
+        }
+        m_failed = true;
         emit failed(QStringLiteral("OpenAI refinement timed out waiting for a response"));
     };
     connect(&m_inactivityTimer, &QTimer::timeout, this, failOnTimeout);
@@ -60,6 +64,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
                            bool chatgptBackend,
                            const QString &model,
                            const QString &effort,
+                           bool fastMode,
                            const QString &refinementStyle,
                            const RefinementContext &context)
 {
@@ -69,6 +74,12 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
     m_buffer.clear();
     m_failed = false;
     m_completed = false;
+    m_fastModeFallback = fastMode
+        ? [=, this] {
+              refine(rawTranscript, vocabulary, bindingVocabulary, bearerToken, organization, project,
+                     endpointBase, accountId, chatgptBackend, model, effort, false, refinementStyle, context);
+          }
+        : std::function<void()>();
 
     QUrl endpoint(endpointBase.isEmpty() ? QStringLiteral("https://api.openai.com/v1") : endpointBase);
     endpoint.setPath(endpoint.path().replace(QRegularExpression(QStringLiteral("/$")), QString()) + QStringLiteral("/responses"));
@@ -95,6 +106,9 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
                     : dictationRefinementSystemPrompt(refinementStyle, context));
     body.insert(QStringLiteral("stream"), true);
     body.insert(QStringLiteral("store"), false);
+    if (fastMode) {
+        body.insert(QStringLiteral("service_tier"), QStringLiteral("fast"));
+    }
     QJsonObject user;
     user.insert(QStringLiteral("role"), QStringLiteral("user"));
     const QString userMessage = transcriptRefinementUserMessage(rawTranscript, vocabulary, bindingVocabulary, context);
@@ -128,20 +142,26 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
             reply->deleteLater();
             return;
         }
+        QString message;
         if (reply->error() != QNetworkReply::NoError) {
             const QByteArray payload = m_buffer + reply->readAll();
-            emit failed(QStringLiteral("OpenAI refinement failed: %1").arg(openAiErrorMessage(payload, reply->errorString())));
+            message = QStringLiteral("OpenAI refinement failed: %1").arg(openAiErrorMessage(payload, reply->errorString()));
         } else if (m_accumulated.isEmpty()) {
-            emit failed(QStringLiteral("OpenAI refinement failed: empty response"));
+            message = QStringLiteral("OpenAI refinement failed: empty response");
         } else {
-            emit failed(QStringLiteral("OpenAI refinement failed: stream ended before completion"));
+            message = QStringLiteral("OpenAI refinement failed: stream ended before completion");
         }
         reply->deleteLater();
+        if (retryWithoutFastMode(message)) {
+            return;
+        }
+        emit failed(message);
     });
 }
 
 void OpenAiRefiner::cancel()
 {
+    m_fastModeFallback = nullptr;
     m_inactivityTimer.stop();
     m_deadlineTimer.stop();
     if (m_reply) {
@@ -179,13 +199,17 @@ void OpenAiRefiner::parseSseChunk(const QByteArray &chunk)
         if (eventName == "error") {
             m_inactivityTimer.stop();
             m_deadlineTimer.stop();
-            m_failed = true;
             if (m_reply) {
                 QNetworkReply *reply = m_reply;
                 m_reply = nullptr;
                 reply->abort();
             }
-            emit failed(openAiErrorMessage(data, QStringLiteral("OpenAI refinement error")));
+            const QString message = openAiErrorMessage(data, QStringLiteral("OpenAI refinement error"));
+            if (retryWithoutFastMode(message)) {
+                return;
+            }
+            m_failed = true;
+            emit failed(message);
             return;
         }
         const QJsonObject object = QJsonDocument::fromJson(data).object();
@@ -200,6 +224,20 @@ void OpenAiRefiner::parseSseChunk(const QByteArray &chunk)
             completeIfReady();
         }
     }
+}
+
+bool OpenAiRefiner::retryWithoutFastMode(const QString &reason)
+{
+    // Only retry when no deltas were emitted; a retry after streamed output
+    // would replay the transcript into the live preview.
+    if (!m_fastModeFallback || !m_accumulated.isEmpty()) {
+        return false;
+    }
+    const std::function<void()> fallback = std::move(m_fastModeFallback);
+    m_fastModeFallback = nullptr;
+    qWarning().noquote() << "openai fast mode refinement failed, retrying at standard speed:" << reason;
+    fallback();
+    return true;
 }
 
 void OpenAiRefiner::completeIfReady()

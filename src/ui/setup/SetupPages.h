@@ -113,8 +113,12 @@ public:
                         QWidget *parent = nullptr);
 
 private:
+    void updateFastModeControl();
+
     SettingsStore &m_settings;
     QComboBox *m_provider;
+    QCheckBox *m_fastMode;
+    QLabel *m_fastModeHint;
 };
 
 class WritingProfilesSetupPage final : public QWidget {
