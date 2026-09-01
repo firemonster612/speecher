@@ -1,5 +1,8 @@
 #include "app/UpdateController.h"
 
+#ifdef Q_OS_MACOS
+#include "app/MacSparkleUpdater.h"
+#endif
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
 #include "dictation/DictationSession.h"
@@ -49,6 +52,10 @@ UpdateController::UpdateController(SettingsStore *settings,
     , m_network(new QNetworkAccessManager(this))
     , m_dailyTimer(new QTimer(this))
 {
+#ifdef Q_OS_MACOS
+    m_sparkleUpdater = new MacSparkleUpdater(m_settings, this);
+    return;
+#endif
     const QString appImage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
     if (QFileInfo(appImage).isFile()) {
         m_appImagePath = QFileInfo(appImage).absoluteFilePath();
@@ -215,6 +222,10 @@ bool UpdateController::swapAppImage(const QString &downloadedPath,
 
 void UpdateController::checkForUpdates()
 {
+#ifdef Q_OS_MACOS
+    m_sparkleUpdater->checkForUpdates();
+    return;
+#endif
     if (m_state == State::Checking || m_state == State::Downloading
         || m_state == State::ReadyToRestart) {
         return;
