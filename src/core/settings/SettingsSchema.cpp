@@ -5,7 +5,18 @@
 #include "core/VocabularyLimit.h"
 
 #include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QLocale>
+#include <QRegularExpression>
+
+#include <algorithm>
+
+static void initializeReleaseNotesResource()
+{
+    Q_INIT_RESOURCE(release_notes);
+}
 
 namespace speecher {
 
@@ -40,6 +51,8 @@ const QString kCreatedAtKey = QStringLiteral("createdAtMs");
 const QString kConfidenceKey = QStringLiteral("confidence");
 const QString kEvidenceCountKey = QStringLiteral("evidenceCount");
 const QString kLastObservedKey = QStringLiteral("lastObservedAtMs");
+const QString kWhatsNewAction = QStringLiteral("whatsNew");
+const QString kWhatsNewNotes = QStringLiteral("whatsNewNotes");
 
 // The paste-method value a category row carries when it defers to the global
 // fallback, which is stored as the absence of a rule.
@@ -308,6 +321,75 @@ SettingsRow infoRow(QString id, QString label, QString help, QString text)
     return row;
 }
 
+QString nightlyChangesLink(const QString &lastVersion, const QString &currentVersion)
+{
+    if (!currentVersion.contains(QStringLiteral("-nightly"))) {
+        return {};
+    }
+    const QRegularExpression sha(QStringLiteral("[+]g([0-9a-fA-F]+)$"));
+    const QRegularExpressionMatch last = sha.match(lastVersion);
+    const QRegularExpressionMatch current = sha.match(currentVersion);
+    if (last.hasMatch() && current.hasMatch()) {
+        return QStringLiteral("[Compare commits](https://github.com/firemonster612/speecher/compare/%1...%2)")
+            .arg(last.captured(1), current.captured(1));
+    }
+    return QStringLiteral("[View releases](https://github.com/firemonster612/speecher/releases)");
+}
+
+QString releaseNotesMarkdown(const SchemaContext &context)
+{
+    static const bool resourceInitialized = [] {
+        initializeReleaseNotesResource();
+        return true;
+    }();
+    Q_UNUSED(resourceInitialized);
+    struct Note {
+        QString version;
+        QString body;
+    };
+    QList<Note> notes;
+    const QDir directory(QStringLiteral(":/releases"));
+    for (const QString &fileName : directory.entryList({QStringLiteral("*.md")}, QDir::Files)) {
+        QFile file(directory.filePath(fileName));
+        if (file.open(QIODevice::ReadOnly)) {
+            notes.append({QFileInfo(fileName).completeBaseName(),
+                          QString::fromUtf8(file.readAll()).trimmed()});
+        }
+    }
+    std::sort(notes.begin(), notes.end(), [](const Note &left, const Note &right) {
+        return compareBaseVersions(left.version, right.version) > 0;
+    });
+
+    QList<Note> selected;
+    if (!context.lastSeenVersion.isEmpty()) {
+        for (const Note &note : notes) {
+            if (compareBaseVersions(note.version, context.lastSeenVersion) > 0
+                && compareBaseVersions(note.version, context.currentVersion) <= 0) {
+                selected.append(note);
+            }
+        }
+    }
+    if (selected.isEmpty() && !notes.isEmpty()) {
+        selected.append(notes.first());
+    }
+
+    QString markdown;
+    for (const Note &note : selected) {
+        if (!markdown.isEmpty()) {
+            markdown += QStringLiteral("\n\n---\n\n");
+        }
+        markdown += QStringLiteral("# Speecher %1\n\n%2").arg(note.version, note.body);
+    }
+    if (markdown.isEmpty()) {
+        markdown = QStringLiteral("Release notes are not available in this build.");
+    }
+    const QString changes = nightlyChangesLink(context.lastSeenVersion, context.currentVersion);
+    if (!changes.isEmpty()) {
+        markdown += QStringLiteral("\n\n%1").arg(changes);
+    }
+    return markdown;
+}
+
 SettingsPage generalPage(const SchemaContext &context)
 {
     SettingsRow theme = choiceRow(
@@ -362,7 +444,7 @@ SettingsPage generalPage(const SchemaContext &context)
         return capabilities.isAppImage;
     };
 
-    return {
+    SettingsPage page{
         QStringLiteral("general"),
         QStringLiteral("General"),
         QStringLiteral("preferences-system"),
@@ -420,9 +502,48 @@ SettingsPage generalPage(const SchemaContext &context)
                          context.currentVersion.isEmpty()
                              ? QStringLiteral("Unknown")
                              : context.currentVersion),
+                 actionRow(kWhatsNewAction,
+                           QStringLiteral("What's new"),
+                           QStringLiteral("Read the bundled release notes and try newly added settings."),
+                           QStringLiteral("What's new…")),
              }},
         },
     };
+    // 0.2.0 is the assumed next Stable Release. Adjust this if the tag differs.
+    // The permanent What's New action stays untagged so the page never links to itself.
+    for (int index = 0; index < page.sections.last().rows.size() - 1; ++index) {
+        page.sections.last().rows[index].sinceVersion = QStringLiteral("0.2.0");
+    }
+    return page;
+}
+
+SettingsPage whatsNewPage(const SettingsPage &general, const SchemaContext &context)
+{
+    QList<SettingsRow> newRows;
+    if (!context.lastSeenVersion.isEmpty()) {
+        for (const SettingsSection &section : general.sections) {
+            for (const SettingsRow &row : section.rows) {
+                if (!row.sinceVersion.isEmpty()
+                    && compareBaseVersions(row.sinceVersion, context.lastSeenVersion) > 0
+                    && compareBaseVersions(row.sinceVersion, context.currentVersion) <= 0) {
+                    newRows.append(row);
+                }
+            }
+        }
+    }
+
+    SettingsRow notes = customRow(kWhatsNewNotes, QStringLiteral("Release notes"), QString());
+    const QString markdown = releaseNotesMarkdown(context);
+    notes.value = [markdown](const AppSettings &) { return QVariant(markdown); };
+    QList<SettingsSection> sections{{QString(), QString(), {std::move(notes)}}};
+    if (!newRows.isEmpty()) {
+        sections.append({QStringLiteral("Try the new settings"), QString(), std::move(newRows)});
+    }
+    return {QStringLiteral("whatsNew"),
+            QStringLiteral("What's New"),
+            QStringLiteral("help-about"),
+            QStringLiteral("sparkles"),
+            std::move(sections)};
 }
 
 SettingsPage audioPage(const SchemaContext &context)
@@ -1515,9 +1636,25 @@ QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices, const QStri
     return options;
 }
 
+int compareBaseVersions(const QString &left, const QString &right)
+{
+    const QStringList leftParts = left.section(QLatin1Char('-'), 0, 0).split(QLatin1Char('.'));
+    const QStringList rightParts = right.section(QLatin1Char('-'), 0, 0).split(QLatin1Char('.'));
+    for (int index = 0; index < qMax(leftParts.size(), rightParts.size()); ++index) {
+        const int leftPart = index < leftParts.size() ? leftParts.at(index).toInt() : 0;
+        const int rightPart = index < rightParts.size() ? rightParts.at(index).toInt() : 0;
+        if (leftPart != rightPart) {
+            return leftPart < rightPart ? -1 : 1;
+        }
+    }
+    return 0;
+}
+
 SettingsSchema buildSettingsSchema(const SchemaContext &context)
 {
-    return {{generalPage(context),
+    SettingsPage general = generalPage(context);
+    SettingsPage whatsNew = whatsNewPage(general, context);
+    return {{std::move(general),
              audioPage(context),
              applicationsPage(),
              outputPage(context),
@@ -1525,7 +1662,8 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context)
              vocabularyPage(),
              correctionsPage(),
              bindingsPage(),
-             providersPage()}};
+             providersPage(),
+             std::move(whatsNew)}};
 }
 
 } // namespace speecher

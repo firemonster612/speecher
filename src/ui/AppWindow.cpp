@@ -128,9 +128,14 @@ AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
     setWindowTitle(QStringLiteral("Speecher"));
     buildSharedPages();
     connect(m_pages, &SettingsPageSet::changed, m_dictation, &DictationPage::refreshSummary);
+    connect(m_pages, &SettingsPageSet::whatsNewRequested, this, &AppWindow::showWhatsNew);
     connect(m_dictation, &DictationPage::navigateRequested, this, &AppWindow::navigateToSettings);
     connect(m_controller->updates(),
             &UpdateController::changed,
+            this,
+            &AppWindow::refreshUpdateBanner);
+    connect(m_controller,
+            &ApplicationController::whatsNewChanged,
             this,
             &AppWindow::refreshUpdateBanner);
 
@@ -348,6 +353,7 @@ void AppWindow::buildSharedPages()
         auth,
         refinement,
         vocabularyContent,
+        m_pages->whatsNew(),
     };
     for (QWidget *page : std::as_const(m_pageWidgets)) {
         removeEmbeddedPageTitle(page);
@@ -511,14 +517,24 @@ void AppWindow::buildSidebarShell()
     m_updateDismiss->setAccessibleName(QStringLiteral("Dismiss update"));
     m_updateDismiss->setFlat(true);
     updateLayout->addWidget(m_updateDismiss);
-    connect(m_updateAction, &QPushButton::clicked,
-            m_controller->updates(), &UpdateController::updateNow);
+    connect(m_updateAction, &QPushButton::clicked, this, [this] {
+        if (m_showingWhatsNewBanner) {
+            showWhatsNew();
+        } else {
+            m_controller->updates()->updateNow();
+        }
+    });
     connect(m_updateLater, &QPushButton::clicked, this, [this] {
         m_updateBannerDeferred = true;
         m_updateBanner->hide();
     });
-    connect(m_updateDismiss, &QPushButton::clicked,
-            m_controller->updates(), &UpdateController::dismissAvailableVersion);
+    connect(m_updateDismiss, &QPushButton::clicked, this, [this] {
+        if (m_showingWhatsNewBanner) {
+            m_controller->clearPendingWhatsNew();
+        } else {
+            m_controller->updates()->dismissAvailableVersion();
+        }
+    });
     rightLayout->addWidget(m_updateBanner);
     refreshUpdateBanner();
     m_autoSaveWarning = new QFrame(right);
@@ -589,7 +605,9 @@ void AppWindow::buildSidebarShell()
                 }
             });
     connect(m_stack, &QStackedWidget::currentChanged, this, [this](int index) {
-        m_pageTitle->setText(kPages.at(index).title);
+        m_pageTitle->setText(index < kPages.size()
+                                 ? kPages.at(index).title
+                                 : QStringLiteral("What's New"));
         m_dictation->toggleButton()->setVisible(index == 0);
     });
     connect(search, &QLineEdit::textChanged, this, &AppWindow::filterSidebarPages);
@@ -625,6 +643,23 @@ void AppWindow::refreshUpdateBanner()
         m_updateBannerVersion = availableVersion;
         m_updateBannerInstalledVersion = updates->currentVersion();
     }
+    const bool updateFlowInactive = updates->state() == UpdateController::State::Idle
+        || updates->state() == UpdateController::State::UpToDate
+        || updates->state() == UpdateController::State::CheckFailed;
+    if (updateFlowInactive && !m_controller->pendingWhatsNewVersion().isEmpty()) {
+        m_showingWhatsNewBanner = true;
+        m_updateBanner->show();
+        m_updateBannerText->setText(
+            QStringLiteral("Updated to %1 — See what's new").arg(updates->currentVersion()));
+        m_updateProgress->hide();
+        m_updateAction->setText(QStringLiteral("See what's new"));
+        m_updateAction->setEnabled(true);
+        m_updateAction->show();
+        m_updateLater->hide();
+        m_updateDismiss->show();
+        return;
+    }
+    m_showingWhatsNewBanner = false;
     if (m_updateBannerDeferred
         && (updates->state() == UpdateController::State::ReadyToRestart
             || updates->state() == UpdateController::State::RestartPending)) {
@@ -679,6 +714,13 @@ void AppWindow::refreshUpdateBanner()
     }
 }
 
+void AppWindow::showWhatsNew()
+{
+    m_navigation->clearSelection();
+    m_stack->setCurrentWidget(m_pages->whatsNew());
+    m_controller->clearPendingWhatsNew();
+}
+
 void AppWindow::filterSidebarPages(const QString &query)
 {
     if (query.isEmpty()) {
@@ -697,7 +739,7 @@ void AppWindow::filterSidebarPages(const QString &query)
             }
             return text;
         };
-        for (int pageIndex = 0; pageIndex < m_pageWidgets.size(); ++pageIndex) {
+        for (int pageIndex = 0; pageIndex < kPages.size(); ++pageIndex) {
             QStringList keywords{kPages.at(pageIndex).title};
             QWidget *page = m_pageWidgets.at(pageIndex);
             for (QLabel *label : page->findChildren<QLabel *>()) {

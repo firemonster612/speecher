@@ -50,6 +50,7 @@ private:
     void runAutoSave();
     void filterSidebarPages(const QString &query);
     void refreshUpdateBanner();
+    void showWhatsNew();
 
     ApplicationController *m_controller;
     SettingsPageSet *m_pages;
@@ -77,6 +78,7 @@ private:
     bool m_updateBannerDeferred = false;
     QString m_updateBannerVersion;
     QString m_updateBannerInstalledVersion;
+    bool m_showingWhatsNewBanner = false;
     bool m_pageLoadScheduled = false;
     bool m_afterShowLoadScheduled = false;
     bool m_headerDragPending = false;

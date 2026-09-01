@@ -77,8 +77,10 @@ extension Pane {
                                   "autoCheckUpdates",
                                   "autoInstallUpdates",
                                   "checkForUpdates",
-                                  "currentVersion"]),
+                                  "currentVersion",
+                                  "whatsNew"]),
         ]),
+        Pane("whatsNew", "What's New", "sparkles", schemaPages: ["whatsNew"]),
         Pane("dictation", "Dictation", "mic", schemaPages: ["audio"], [
             PaneGroup("Transcription", ["speechProvider"]),
             PaneGroup("Microphone", ["audioDevice", "captureMode"]),

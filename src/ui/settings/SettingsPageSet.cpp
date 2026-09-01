@@ -8,6 +8,7 @@
 #include "ui/Theme.h"
 
 #include <QMessageBox>
+#include <QLabel>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalBlocker>
@@ -59,7 +60,8 @@ SettingsSchema settingsSchema(ApplicationController *controller)
     SettingsSchema schema = buildSettingsSchema(qtSchemaContext(
         *controller->platform(),
         *controller->providerRegistry(),
-        controller->primaryOutputStatus()));
+        controller->primaryOutputStatus(),
+        controller->pendingWhatsNewVersion()));
     UpdateController *updates = controller->updates();
 
     if (SettingsRow *check = rowById(schema, QStringLiteral("checkForUpdates"))) {
@@ -129,7 +131,46 @@ SettingsSchema settingsSchema(ApplicationController *controller)
             return QVariant(text);
         };
     }
+
+    // The What's New page carries the same descriptor, including these live
+    // updater callbacks, rather than a second description of the control.
+    // rowById returns the first match, which is the configured General-page
+    // copy, so the loop below overwrites the What's New duplicates with it.
+    const SettingsRow *liveCheck = rowById(schema, QStringLiteral("checkForUpdates"));
+    const SettingsRow *liveVersion = rowById(schema, QStringLiteral("currentVersion"));
+    for (SettingsPage &page : schema.pages) {
+        if (page.id != QStringLiteral("whatsNew")) {
+            continue;
+        }
+        for (SettingsSection &section : page.sections) {
+            for (SettingsRow &row : section.rows) {
+                if (liveCheck && row.id == liveCheck->id) {
+                    row = *liveCheck;
+                } else if (liveVersion && row.id == liveVersion->id) {
+                    row = *liveVersion;
+                }
+            }
+        }
+    }
     return schema;
+}
+
+SchemaCustomRow whatsNewCustomRow(const SettingsRow &descriptor,
+                                  QWidget *parent,
+                                  std::function<void()>)
+{
+    if (descriptor.id != QStringLiteral("whatsNewNotes")) {
+        return {};
+    }
+    auto *notes = new QLabel(parent);
+    notes->setTextFormat(Qt::MarkdownText);
+    notes->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    notes->setOpenExternalLinks(true);
+    notes->setWordWrap(true);
+    return {notes,
+            {},
+            [notes](const QVariant &value) { notes->setText(value.toString()); },
+            true};
 }
 
 } // namespace
@@ -159,6 +200,7 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *par
                            true),
           parent,
           m_providerRows.factory()))
+    , m_whatsNew(addPage(QStringLiteral("whatsNew"), parent, whatsNewCustomRow))
 {
     connect(controller,
             &ApplicationController::accessibilityStateChanged,
@@ -214,7 +256,10 @@ SchemaSettingsPage *SettingsPageSet::addPage(const SettingsPage &descriptor,
                                              SchemaCustomRowFactory customRows)
 {
     auto *page = new SchemaSettingsPage(descriptor, parent, std::move(customRows));
-    connect(page, &SchemaSettingsPage::changed, this, &SettingsPageSet::changed);
+    connect(page, &SchemaSettingsPage::changed, this, [this, page] {
+        m_changedPage = page;
+        emit changed();
+    });
     connect(page, &SchemaSettingsPage::actionTriggered, this, &SettingsPageSet::runPageAction);
     m_pages.append(page);
     return page;
@@ -230,6 +275,7 @@ SchemaSettingsPage *SettingsPageSet::providerAuth() const { return m_providerAut
 SchemaSettingsPage *SettingsPageSet::vocabulary() const { return m_vocabulary; }
 SchemaSettingsPage *SettingsPageSet::corrections() const { return m_corrections; }
 SchemaSettingsPage *SettingsPageSet::bindings() const { return m_bindings; }
+SchemaSettingsPage *SettingsPageSet::whatsNew() const { return m_whatsNew; }
 
 void SettingsPageSet::load()
 {
@@ -245,6 +291,7 @@ void SettingsPageSet::loadBeforeShow()
     }
     m_outputRows.refresh();
     refreshUpdateRows();
+    m_changedPage = nullptr;
 }
 
 void SettingsPageSet::loadAfterShow()
@@ -256,6 +303,7 @@ void SettingsPageSet::loadAfterShow()
     }
     m_providerRows.loadSecret();
     refreshUpdateRows();
+    m_changedPage = nullptr;
 }
 
 bool SettingsPageSet::save(bool showValidationErrors,
@@ -295,7 +343,13 @@ bool SettingsPageSet::save(bool showValidationErrors,
 
     AppSettings draft = settings->snapshot();
     for (const SchemaSettingsPage *page : std::as_const(m_pages)) {
+        if (page == m_whatsNew) {
+            continue;
+        }
         page->appendToDraft(draft);
+    }
+    if (m_changedPage == m_whatsNew) {
+        m_whatsNew->appendToDraft(draft);
     }
     settings->applySnapshot(draft);
     Theme::apply(settings->theme());
@@ -335,11 +389,15 @@ bool SettingsPageSet::hasChanges() const
 {
     const AppSettings snapshot = m_controller->settings()->snapshot();
     for (const SchemaSettingsPage *page : m_pages) {
+        if (page == m_whatsNew) {
+            continue;
+        }
         if (page->hasChanges(snapshot)) {
             return true;
         }
     }
-    return m_providerRows.hasSecretChanges();
+    return (m_changedPage == m_whatsNew && m_whatsNew->hasChanges(snapshot))
+        || m_providerRows.hasSecretChanges();
 }
 
 void SettingsPageSet::runPageAction(const QString &rowId)
@@ -350,18 +408,24 @@ void SettingsPageSet::runPageAction(const QString &rowId)
     }
     if (rowId == QStringLiteral("checkForUpdates")) {
         AppSettings draft = m_controller->settings()->snapshot();
-        m_general->appendToDraft(draft);
+        (m_changedPage == m_whatsNew ? m_whatsNew : m_general)->appendToDraft(draft);
         if (m_controller->updates()->state() == UpdateController::State::UpdateAvailable) {
             m_controller->updates()->updateNow();
         } else {
             m_controller->updates()->checkForUpdates(draft.updates.channel);
         }
+        return;
+    }
+    if (rowId == QStringLiteral("whatsNew")) {
+        m_controller->clearPendingWhatsNew();
+        emit whatsNewRequested();
     }
 }
 
 void SettingsPageSet::refreshUpdateRows()
 {
     m_general->refresh();
+    m_whatsNew->refresh();
 }
 
 void SettingsPageSet::updateAccessibilityState(bool supported, bool enabled, bool persistent)
@@ -374,6 +438,7 @@ void SettingsPageSet::updateAccessibilityState(bool supported, bool enabled, boo
     m_applications->setCapabilities(capabilities);
     m_refinement->setCapabilities(capabilities);
     m_corrections->setCapabilities(capabilities);
+    m_whatsNew->setCapabilities(capabilities);
 }
 
 } // namespace speecher
