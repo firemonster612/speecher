@@ -2,6 +2,7 @@
 """Render a one-item Sparkle appcast from release artifacts."""
 
 import argparse
+from email.utils import formatdate
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
@@ -18,6 +19,8 @@ def signature_attributes(path: Path | None) -> dict[str, str]:
         key, separator, value = line.partition("=")
         if separator:
             values[key] = value
+    if "length" not in values:
+        raise ValueError(f"Malformed signature file {path}: missing length")
     attributes = {"length": values["length"]}
     if "sparkle:edSignature" in values:
         attributes[f"{{{SPARKLE_NAMESPACE}}}edSignature"] = values["sparkle:edSignature"]
@@ -29,6 +32,7 @@ def main() -> None:
     parser.add_argument("--channel", required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--build-number", required=True)
+    parser.add_argument("--pub-date", default=formatdate(usegmt=True))
     parser.add_argument("--dmg-url", required=True)
     parser.add_argument("--signature", type=Path)
     parser.add_argument("--output", type=Path, required=True)
@@ -37,8 +41,11 @@ def main() -> None:
     rss = ET.Element("rss", {"version": "2.0"})
     channel = ET.SubElement(rss, "channel")
     ET.SubElement(channel, "title").text = f"Speecher {args.channel} updates"
+    ET.SubElement(channel, "link").text = "https://github.com/firemonster612/speecher/releases"
+    ET.SubElement(channel, "description").text = f"Speecher {args.channel} updates"
     item = ET.SubElement(channel, "item")
     ET.SubElement(item, "title").text = args.version
+    ET.SubElement(item, "pubDate").text = args.pub_date
     ET.SubElement(item, f"{{{SPARKLE_NAMESPACE}}}version").text = args.build_number
     ET.SubElement(item, f"{{{SPARKLE_NAMESPACE}}}shortVersionString").text = args.version
     enclosure = {
