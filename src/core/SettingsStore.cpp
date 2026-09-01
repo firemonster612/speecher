@@ -195,6 +195,35 @@ void SettingsStore::setAudioCaptureSettings(const AudioCaptureSettings &value)
     emitAudioCaptureSettingsChangedIfNeeded(previous);
 }
 
+#ifdef Q_OS_MACOS
+void SettingsStore::setUpdateChannel(UpdateChannel value)
+{
+    if (updateChannel() == value) {
+        return;
+    }
+    SettingsCodecs::setUpdateChannel(value);
+    emit updateSettingsChanged();
+}
+
+void SettingsStore::setAutoCheckUpdates(bool value)
+{
+    if (autoCheckUpdates() == value) {
+        return;
+    }
+    SettingsCodecs::setAutoCheckUpdates(value);
+    emit updateSettingsChanged();
+}
+
+void SettingsStore::setAutoInstallUpdates(bool value)
+{
+    if (autoInstallUpdates() == value) {
+        return;
+    }
+    SettingsCodecs::setAutoInstallUpdates(value);
+    emit updateSettingsChanged();
+}
+#endif
+
 QSettings &SettingsStore::raw()
 {
     return m_settings;

@@ -28,5 +28,7 @@
 	<string>Speecher records short dictation sessions from your microphone.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Speecher can pause and resume your media players while you dictate.</string>
+	<key>SUPublicEDKey</key>
+	<string>${SPEECHER_SPARKLE_ED_PUBLIC_KEY}</string>
 </dict>
 </plist>

@@ -66,8 +66,10 @@ public:
     using SettingsCodecs::removeLearnedCorrection;
     using SettingsCodecs::restoreClipboardAfterTyping;
     using SettingsCodecs::setAnthropicAuthMode;
+#ifndef Q_OS_MACOS
     using SettingsCodecs::setAutoCheckUpdates;
     using SettingsCodecs::setAutoInstallUpdates;
+#endif
     using SettingsCodecs::setAnthropicCliproxyAccount;
     using SettingsCodecs::setAnthropicEffort;
     using SettingsCodecs::setAnthropicFastMode;
@@ -103,7 +105,9 @@ public:
     using SettingsCodecs::setWritingProfileOverrides;
     using SettingsCodecs::setWritingProfileSettings;
     using SettingsCodecs::setYdotoolEnabled;
+#ifndef Q_OS_MACOS
     using SettingsCodecs::setUpdateChannel;
+#endif
     using SettingsCodecs::snapshot;
     using SettingsCodecs::soundsEnabled;
     using SettingsCodecs::speechProvider;
@@ -132,12 +136,20 @@ public:
     int audioVadThresholdPercent() const;
     void setAudioVadThresholdPercent(int value);
     void setAudioCaptureSettings(const AudioCaptureSettings &value);
+#ifdef Q_OS_MACOS
+    void setUpdateChannel(UpdateChannel value);
+    void setAutoCheckUpdates(bool value);
+    void setAutoInstallUpdates(bool value);
+#endif
 
     QSettings &raw();
 
 signals:
     void audioCaptureSettingsChanged(const AudioCaptureSettings &settings);
     void correctionLearningEnabledChanged(bool enabled);
+#ifdef Q_OS_MACOS
+    void updateSettingsChanged();
+#endif
 
 private:
     void emitAudioCaptureSettingsChangedIfNeeded(const AudioCaptureSettings &previous);

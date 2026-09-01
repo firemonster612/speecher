@@ -13,6 +13,7 @@ class QTimer;
 namespace speecher {
 
 class DictationSession;
+class MacSparkleUpdater;
 class SettingsStore;
 
 struct UpdateManifest {
@@ -93,6 +94,9 @@ private:
     int m_downloadPercent = 0;
     QString m_error;
     bool m_restartPending = false;
+#ifdef Q_OS_MACOS
+    MacSparkleUpdater *m_sparkleUpdater = nullptr;
+#endif
 };
 
 } // namespace speecher
