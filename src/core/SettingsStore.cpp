@@ -45,6 +45,9 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setPasteRules(draft.output.pasteRules);
     setRestoreClipboardAfterTyping(draft.output.restoreClipboardAfterTyping);
     setCompletionStatusDurationMs(draft.output.completionStatusDurationMs);
+    setUpdateChannel(draft.updates.channel);
+    setAutoCheckUpdates(draft.updates.autoCheck);
+    setAutoInstallUpdates(draft.updates.autoInstall);
     setVocabularyEntries(draft.vocabulary);
     setLearnedCorrections(draft.learnedCorrections);
     setCorrectionLearningEnabled(draft.correctionLearningEnabled);

@@ -72,6 +72,7 @@ private:
                                 SchemaCustomRowFactory customRows = {});
     void updateAccessibilityState(bool supported, bool enabled, bool persistent);
     void runPageAction(const QString &rowId);
+    void refreshUpdateRows();
 
     ApplicationController *m_controller;
     SettingsSchema m_schema;

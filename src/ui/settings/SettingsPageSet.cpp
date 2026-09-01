@@ -1,18 +1,17 @@
 #include "ui/settings/SettingsPageSet.h"
 
 #include "app/ApplicationController.h"
+#include "app/UpdateController.h"
 #include "core/AppSettings.h"
 #include "core/SettingsStore.h"
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/Theme.h"
 
-#include <QDesktopServices>
 #include <QMessageBox>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalBlocker>
 #include <QTimer>
-#include <QUrl>
 
 namespace speecher {
 
@@ -74,9 +73,16 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *par
             &ApplicationController::accessibilityStateChanged,
             this,
             &SettingsPageSet::updateAccessibilityState);
+    connect(controller->updates(),
+            &UpdateController::changed,
+            this,
+            &SettingsPageSet::refreshUpdateRows);
+    connect(this, &SettingsPageSet::changed,
+            this, &SettingsPageSet::refreshUpdateRows);
     updateAccessibilityState(controller->accessibilitySupported(),
                              controller->accessibilityEnabled(),
                              controller->accessibilityPersistent());
+    refreshUpdateRows();
 }
 
 // Every row of the schema's providers page must appear in exactly one of these
@@ -147,6 +153,7 @@ void SettingsPageSet::loadBeforeShow()
         page->load(snapshot);
     }
     m_outputRows.refresh();
+    refreshUpdateRows();
 }
 
 void SettingsPageSet::loadAfterShow()
@@ -249,10 +256,72 @@ void SettingsPageSet::runPageAction(const QString &rowId)
         m_controller->showSetupAssistant();
         return;
     }
-    if (rowId == QStringLiteral("openReleases")) {
-        QDesktopServices::openUrl(
-            QUrl(QStringLiteral("https://github.com/firemonster612/speecher/releases")));
+    if (rowId == QStringLiteral("checkForUpdates")) {
+        AppSettings draft = m_controller->settings()->snapshot();
+        m_general->appendToDraft(draft);
+        m_controller->settings()->setUpdateChannel(draft.updates.channel);
+        m_controller->settings()->setAutoCheckUpdates(draft.updates.autoCheck);
+        m_controller->settings()->setAutoInstallUpdates(draft.updates.autoInstall);
+        m_controller->updates()->checkForUpdates();
     }
+}
+
+void SettingsPageSet::refreshUpdateRows()
+{
+    UpdateController *updates = m_controller->updates();
+    AppSettings draft = m_controller->settings()->snapshot();
+    m_general->appendToDraft(draft);
+    const QString channel = draft.updates.channel == UpdateChannel::Nightly
+        ? QStringLiteral("Nightly Build")
+        : QStringLiteral("Stable Release");
+    QString help;
+    QString button = QStringLiteral("Check now");
+    bool enabled = true;
+    switch (updates->state()) {
+    case UpdateController::State::Idle:
+        help = QStringLiteral("Check the %1 feed for a newer build.").arg(channel);
+        break;
+    case UpdateController::State::Checking:
+        help = QStringLiteral("Checking the %1 feed.").arg(channel);
+        button = QStringLiteral("Checking…");
+        enabled = false;
+        break;
+    case UpdateController::State::UpToDate:
+        help = QStringLiteral("Speecher is up to date.");
+        button = QStringLiteral("Check again");
+        break;
+    case UpdateController::State::UpdateAvailable:
+        help = QStringLiteral("A new version of Speecher is available. Version %1.")
+                   .arg(updates->availableVersion());
+        button = QStringLiteral("Check again");
+        break;
+    case UpdateController::State::Downloading:
+        help = QStringLiteral("Downloading Speecher %1, %2%.")
+                   .arg(updates->availableVersion())
+                   .arg(updates->downloadPercent());
+        button = QStringLiteral("Downloading…");
+        enabled = false;
+        break;
+    case UpdateController::State::ReadyToRestart:
+        help = QStringLiteral("Restart to finish updating.");
+        button = QStringLiteral("Installed");
+        enabled = false;
+        break;
+    case UpdateController::State::Error:
+        help = updates->errorMessage();
+        button = QStringLiteral("Try again");
+        break;
+    }
+    m_general->setActionPresentation(QStringLiteral("checkForUpdates"),
+                                     help,
+                                     button,
+                                     enabled);
+
+    QString version = QStringLiteral("Speecher %1").arg(updates->currentVersion());
+    if (!updates->availableVersion().isEmpty()) {
+        version += QStringLiteral(". Available: %1").arg(updates->availableVersion());
+    }
+    m_general->setInfoText(QStringLiteral("currentVersion"), version);
 }
 
 void SettingsPageSet::updateAccessibilityState(bool supported, bool enabled, bool persistent)

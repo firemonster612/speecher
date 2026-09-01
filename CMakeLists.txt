@@ -238,6 +238,7 @@ set(SPEECHER_APP_SOURCES
   src/app/CompositionSockets.cpp
   src/app/PlatformSelection.cpp
   src/app/SingleInstanceIpc.cpp
+  src/app/UpdateController.cpp
 )
 
 set(SPEECHER_APP_HEADERS
@@ -247,6 +248,7 @@ set(SPEECHER_APP_HEADERS
   src/app/CompositionSockets.h
   src/app/PlatformComposition.h
   src/app/SingleInstanceIpc.h
+  src/app/UpdateController.h
 )
 
 set(SPEECHER_APP_LINUX_SOURCES
@@ -420,7 +422,7 @@ target_compile_definitions(speecher_app PUBLIC
   SPEECHER_BUILD_NUMBER=${SPEECHER_BUILD_NUMBER}
 )
 target_link_libraries(speecher_app PUBLIC
-  speecher_domain speecher_workflow speecher_providers speecher_platform
+  speecher_domain speecher_workflow speecher_providers speecher_platform Qt6::Network
 )
 if(UNIX AND NOT APPLE)
   target_sources(speecher_app PRIVATE
@@ -744,6 +746,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_claude_voice.cpp
     tests/test_codex_dictation.cpp
     tests/test_audio_pcm_converter.cpp
+    tests/test_update_controller.cpp
   )
   target_include_directories(speecher_tests PRIVATE src)
   target_compile_definitions(speecher_tests PRIVATE

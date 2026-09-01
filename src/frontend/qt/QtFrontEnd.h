@@ -35,6 +35,7 @@ protected:
 
 private:
     void wireSessionToPopup();
+    void refreshUpdateChip();
     void watchForFirstFrame(QWidget *window);
 
     ApplicationController *m_controller;
