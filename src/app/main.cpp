@@ -2,6 +2,7 @@
 #include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsKeys.h"
 #include "frontend/qt/QtFrontEnd.h"
 #include "ui/Theme.h"
 
@@ -12,7 +13,10 @@
 #include <QApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
+#include <QFileInfo>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QTextStream>
 #include <QTimer>
@@ -65,6 +69,51 @@ static QString installLogHandler()
     return path;
 }
 
+static void migrateSettingsAndCache()
+{
+    constexpr auto oldOrganization = "local.speecher";
+    QSettings newSettings(QString::fromLatin1(SettingsKeys::Organization),
+                          QString::fromLatin1(SettingsKeys::Application));
+    QSettings oldSettings(QString::fromLatin1(oldOrganization),
+                          QString::fromLatin1(SettingsKeys::Application));
+    const QStringList oldKeys = oldSettings.allKeys();
+    if (newSettings.allKeys().isEmpty() && !oldKeys.isEmpty()) {
+        for (const QString &key : oldKeys) {
+            newSettings.setValue(key, oldSettings.value(key));
+        }
+        newSettings.sync();
+    }
+
+    const QString newCacheDirectory = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    QCoreApplication::setOrganizationName(QString::fromLatin1(oldOrganization));
+    const QString oldCacheDirectory = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    QCoreApplication::setOrganizationName(QString::fromLatin1(SettingsKeys::Organization));
+    if (newCacheDirectory.isEmpty()
+        || newCacheDirectory == oldCacheDirectory
+        || QDir(newCacheDirectory).exists()
+        || !QDir(oldCacheDirectory).exists()) {
+        return;
+    }
+
+    // Keep the original files so a failed or partial migration cannot destroy user data.
+    QDir().mkpath(newCacheDirectory);
+    QDirIterator files(oldCacheDirectory,
+                       QDir::Files | QDir::Dirs | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot,
+                       QDirIterator::Subdirectories);
+    const QDir oldCache(oldCacheDirectory);
+    const QDir newCache(newCacheDirectory);
+    while (files.hasNext()) {
+        const QFileInfo source(files.next());
+        const QString destination = newCache.filePath(oldCache.relativeFilePath(source.filePath()));
+        if (source.isDir()) {
+            QDir().mkpath(destination);
+        } else {
+            QDir().mkpath(QFileInfo(destination).absolutePath());
+            QFile::copy(source.filePath(), destination);
+        }
+    }
+}
+
 static QStringList commandLineArguments(int argc, char **argv)
 {
     QStringList arguments;
@@ -78,8 +127,9 @@ static QStringList commandLineArguments(int argc, char **argv)
 int main(int argc, char **argv)
 {
     QCoreApplication::setApplicationName(QStringLiteral("speecher"));
-    QGuiApplication::setDesktopFileName(QStringLiteral("local.speecher"));
-    QCoreApplication::setOrganizationName(QStringLiteral("local.speecher"));
+    QGuiApplication::setDesktopFileName(QStringLiteral("io.github.firemonster612.speecher"));
+    QCoreApplication::setOrganizationName(QString::fromLatin1(SettingsKeys::Organization));
+    migrateSettingsAndCache();
     const QString logPath = installLogHandler();
     const std::shared_ptr<const PlatformComposition> platform = platformComposition();
 

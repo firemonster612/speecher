@@ -40,6 +40,22 @@ _Avoid_: Macro, template
 A local Vocabulary Entry inferred from a user's edit shortly after insertion.
 _Avoid_: Training sample, correction history
 
+**Global Shortcut**:
+The system-wide key combination that toggles a Dictation Session from anywhere on the desktop.
+_Avoid_: Hotkey, global hotkey, keybinding
+
+**Update Channel**:
+The stream of releases an installed Speecher follows: Stable or Nightly. A per-user setting, defaulting to Stable.
+_Avoid_: Track, branch, ring
+
+**Stable Release**:
+A hand-tested version published deliberately for general use.
+_Avoid_: Official release, production build
+
+**Nightly Build**:
+The untested prerelease republished automatically from every push to master. Despite the name, it follows pushes, not the calendar.
+_Avoid_: Dev build, edge, snapshot
+
 **CLI Proxy API Account**:
 One OAuth login (claude or codex) stored as a JSON file in CLI Proxy API's auth directory, selectable as a credential source per provider family (Auth page): the Anthropic auth mode covers Claude Voice dictation and Anthropic refinement, the OpenAI auth mode covers Codex dictation and OpenAI refinement. CLI Proxy API owns and refreshes these files; Speecher may also refresh an expired account and writes rotated tokens back while holding the account's adjacent lock file. The directory is auto-detected (`~/.cli-proxy-api`, then `~/.local/share/cliproxy-api/oauth`; override with `cliproxy/oauthDir`). On machines that don't host CLI Proxy API, set the server URL and API key on the Providers page instead: refinement then goes through the proxy's own `/v1/messages` and `/v1/responses` endpoints and the server routes accounts itself (speech still needs the local files, since its websockets connect to the vendors directly).
 _Avoid_: Proxy token, cliproxy key

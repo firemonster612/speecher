@@ -56,7 +56,7 @@ Settings, including the "setup completed" flag, live in
 `~/Library/Preferences` and survive reinstalling the app — deleting
 speecher.app never resets them. Rerun the assistant from Settings > General >
 "Run setup assistant…", and wipe everything with
-`defaults delete local.speecher`.
+`defaults delete io.github.firemonster612.speecher`.
 
 ## What works on macOS that Wayland cannot offer
 

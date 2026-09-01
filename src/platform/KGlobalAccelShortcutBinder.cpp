@@ -10,7 +10,7 @@
 namespace speecher {
 namespace {
 
-constexpr auto shortcutComponent = "local.speecher";
+constexpr auto shortcutComponent = "io.github.firemonster612.speecher";
 constexpr auto shortcutAction = "toggle-dictation";
 
 } // namespace

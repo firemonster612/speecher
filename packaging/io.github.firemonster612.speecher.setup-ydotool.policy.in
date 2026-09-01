@@ -3,8 +3,8 @@
   "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <policyconfig>
   <vendor>Speecher</vendor>
-  <vendor_url>https://github.com/local/speecher</vendor_url>
-  <action id="local.speecher.setup-ydotool">
+  <vendor_url>https://github.com/firemonster612/speecher</vendor_url>
+  <action id="io.github.firemonster612.speecher.setup-ydotool">
     <description>Set up Speecher virtual keyboard support</description>
     <message>Authentication is required to set up virtual keyboard input for Speecher.</message>
     <defaults>

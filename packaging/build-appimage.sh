@@ -186,8 +186,8 @@ exec "$HERE/usr/bin/speecher" "$@"
 EOF
 chmod +x "$APPDIR_PATH/AppRun"
 
-ln -sf usr/share/applications/local.speecher.desktop "$APPDIR_PATH/local.speecher.desktop"
-ln -sf usr/share/icons/hicolor/scalable/apps/local.speecher.svg "$APPDIR_PATH/local.speecher.svg"
+ln -sf usr/share/applications/io.github.firemonster612.speecher.desktop "$APPDIR_PATH/io.github.firemonster612.speecher.desktop"
+ln -sf usr/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg "$APPDIR_PATH/io.github.firemonster612.speecher.svg"
 
 ARCH="${ARCH:-x86_64}"
 APPIMAGE_PATH="$OUTPUT_DIR/Speecher-${ARCH}.AppImage"
