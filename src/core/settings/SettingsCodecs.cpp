@@ -739,6 +739,37 @@ void SettingsCodecs::setPasteRules(const QList<PasteRule> &rules)
     m_settings.setValue(SettingsKeys::PasteRules, QJsonDocument(array).toJson(QJsonDocument::Compact));
 }
 
+UpdateChannel SettingsCodecs::updateChannel() const
+{
+    return updateChannelFromName(
+        value(SettingsKeys::UpdatesChannel, QStringLiteral("stable")).toString());
+}
+
+void SettingsCodecs::setUpdateChannel(UpdateChannel value)
+{
+    m_settings.setValue(SettingsKeys::UpdatesChannel, updateChannelName(value));
+}
+
+bool SettingsCodecs::autoCheckUpdates() const
+{
+    return value(SettingsKeys::UpdatesAutoCheck, true).toBool();
+}
+
+void SettingsCodecs::setAutoCheckUpdates(bool value)
+{
+    m_settings.setValue(SettingsKeys::UpdatesAutoCheck, value);
+}
+
+bool SettingsCodecs::autoInstallUpdates() const
+{
+    return value(SettingsKeys::UpdatesAutoInstall, false).toBool();
+}
+
+void SettingsCodecs::setAutoInstallUpdates(bool value)
+{
+    m_settings.setValue(SettingsKeys::UpdatesAutoInstall, value);
+}
+
 QString SettingsCodecs::openAiCliproxyAccount() const
 {
     return value(SettingsKeys::OpenAiCliproxyAccount, QString()).toString().trimmed();
@@ -907,6 +938,9 @@ AppSettings SettingsCodecs::snapshot() const
     settings.output.restoreClipboardAfterTyping = restoreClipboardAfterTyping();
     settings.output.completionStatusDurationMs = completionStatusDurationMs();
     settings.output.pasteRules = pasteRules();
+    settings.updates.channel = updateChannel();
+    settings.updates.autoCheck = autoCheckUpdates();
+    settings.updates.autoInstall = autoInstallUpdates();
     return settings;
 }
 

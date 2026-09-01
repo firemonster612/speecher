@@ -58,6 +58,11 @@ public:
     void appendToDraft(AppSettings &draft) const;
     bool hasChanges(const AppSettings &settings) const;
     void setCapabilities(const Capabilities &capabilities);
+    void setActionPresentation(const QString &rowId,
+                               const QString &help,
+                               const QString &buttonText,
+                               bool enabled);
+    void setInfoText(const QString &rowId, const QString &text);
 
 signals:
     void changed();

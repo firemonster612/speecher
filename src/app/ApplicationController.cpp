@@ -1,6 +1,7 @@
 #include "app/ApplicationController.h"
 
 #include "app/AppFrontEnd.h"
+#include "app/UpdateController.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
@@ -87,6 +88,7 @@ ApplicationController::ApplicationController(bool popupOnly,
                                      this);
     m_session->setScreenshotContextProvider(
         m_platform->createScreenshotContextProvider(this));
+    m_updates = new UpdateController(m_settings, m_session, this);
 
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::stateChanged);
@@ -190,6 +192,11 @@ void ApplicationController::runDeferredStartup()
 SettingsStore *ApplicationController::settings() const
 {
     return m_settings;
+}
+
+UpdateController *ApplicationController::updates() const
+{
+    return m_updates;
 }
 
 SecretStore *ApplicationController::secretStore() const

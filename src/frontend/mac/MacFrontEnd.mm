@@ -11,7 +11,6 @@
 #include <QApplication>
 #include <QDesktopServices>
 #include <QUrl>
-
 namespace speecher {
 
 struct MacFrontEnd::Native {
@@ -32,7 +31,7 @@ MacFrontEnd::MacFrontEnd(ApplicationController *controller)
             controller->showSetupAssistant();
             return;
         }
-        if (id == QStringLiteral("openReleases")) {
+        if (id == QStringLiteral("checkForUpdates")) {
             QDesktopServices::openUrl(
                 QUrl(QStringLiteral("https://github.com/firemonster612/speecher/releases")));
         }

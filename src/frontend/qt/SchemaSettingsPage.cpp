@@ -229,6 +229,7 @@ SchemaContext qtSchemaContext(const PlatformComposition &platform,
 #else
         false,
 #endif
+        QStringLiteral(SPEECHER_VERSION),
     };
 }
 
@@ -582,6 +583,37 @@ void SchemaSettingsPage::setCapabilities(const Capabilities &capabilities)
 {
     m_capabilities = capabilities;
     refreshRows();
+}
+
+void SchemaSettingsPage::setActionPresentation(const QString &rowId,
+                                                const QString &help,
+                                                const QString &buttonText,
+                                                bool enabled)
+{
+    for (const Row &row : std::as_const(m_rows)) {
+        if (row.descriptor.id != rowId) {
+            continue;
+        }
+        if (auto *button = qobject_cast<QPushButton *>(row.control)) {
+            button->setText(buttonText);
+            button->setEnabled(enabled);
+        }
+        if (auto *description = row.frame->findChild<QLabel *>(
+                QStringLiteral("rowDescription"))) {
+            description->setText(help);
+        }
+        return;
+    }
+}
+
+void SchemaSettingsPage::setInfoText(const QString &rowId, const QString &text)
+{
+    for (const Row &row : std::as_const(m_rows)) {
+        if (row.descriptor.id == rowId && row.setValue) {
+            row.setValue(text);
+            return;
+        }
+    }
 }
 
 // Everything a row can derive from the rest of the page: whether it is worth

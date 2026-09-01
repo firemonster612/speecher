@@ -72,7 +72,12 @@ extension Pane {
         Pane("general", "General", "gearshape", schemaPages: ["general"], [
             PaneGroup("Appearance", ["themeControl", "pauseMedia", "soundsEnabled", "previewWords"]),
             PaneGroup("System", ["launchAtLogin", "clipboardOutputStatus"]),
-            PaneGroup("Maintenance", ["runSetup", "openReleases"]),
+            PaneGroup("Maintenance", ["runSetup"]),
+            PaneGroup("Updates", ["updateChannel",
+                                  "autoCheckUpdates",
+                                  "autoInstallUpdates",
+                                  "checkForUpdates",
+                                  "currentVersion"]),
         ]),
         Pane("dictation", "Dictation", "mic", schemaPages: ["audio"], [
             PaneGroup("Transcription", ["speechProvider"]),

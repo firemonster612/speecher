@@ -26,6 +26,8 @@ public:
                                   const QString &applicationId);
 
     using SettingsCodecs::anthropicAuthMode;
+    using SettingsCodecs::autoCheckUpdates;
+    using SettingsCodecs::autoInstallUpdates;
     using SettingsCodecs::anthropicCliproxyAccount;
     using SettingsCodecs::anthropicEffort;
     using SettingsCodecs::anthropicFastMode;
@@ -64,6 +66,8 @@ public:
     using SettingsCodecs::removeLearnedCorrection;
     using SettingsCodecs::restoreClipboardAfterTyping;
     using SettingsCodecs::setAnthropicAuthMode;
+    using SettingsCodecs::setAutoCheckUpdates;
+    using SettingsCodecs::setAutoInstallUpdates;
     using SettingsCodecs::setAnthropicCliproxyAccount;
     using SettingsCodecs::setAnthropicEffort;
     using SettingsCodecs::setAnthropicFastMode;
@@ -99,6 +103,7 @@ public:
     using SettingsCodecs::setWritingProfileOverrides;
     using SettingsCodecs::setWritingProfileSettings;
     using SettingsCodecs::setYdotoolEnabled;
+    using SettingsCodecs::setUpdateChannel;
     using SettingsCodecs::snapshot;
     using SettingsCodecs::soundsEnabled;
     using SettingsCodecs::speechProvider;
@@ -110,6 +115,7 @@ public:
     using SettingsCodecs::writingProfileOverrides;
     using SettingsCodecs::writingProfileSettings;
     using SettingsCodecs::ydotoolEnabled;
+    using SettingsCodecs::updateChannel;
 
     QString audioInputDeviceId() const;
     void setAudioInputDeviceId(const QString &value);

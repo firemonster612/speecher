@@ -10,6 +10,23 @@
 
 namespace speecher {
 
+enum class UpdateChannel {
+    Stable,
+    Nightly,
+};
+
+inline QString updateChannelName(UpdateChannel channel)
+{
+    return channel == UpdateChannel::Nightly ? QStringLiteral("nightly")
+                                             : QStringLiteral("stable");
+}
+
+inline UpdateChannel updateChannelFromName(const QString &name)
+{
+    return name == QStringLiteral("nightly") ? UpdateChannel::Nightly
+                                             : UpdateChannel::Stable;
+}
+
 struct BindingRule {
     QString phrase;
     QString replacement;
@@ -96,6 +113,12 @@ struct OutputSettings {
     QList<PasteRule> pasteRules = defaultPasteRules();
 };
 
+struct UpdateSettings {
+    UpdateChannel channel = UpdateChannel::Stable;
+    bool autoCheck = true;
+    bool autoInstall = false;
+};
+
 struct AppSettings {
     bool setupCompleted = false;
 #ifdef Q_OS_MACOS
@@ -109,6 +132,7 @@ struct AppSettings {
     QList<AppRecognitionRule> appRecognitionRules;
     RefinementSettings refinement;
     OutputSettings output;
+    UpdateSettings updates;
     QList<BindingRule> bindings;
     QList<VocabularyEntry> vocabulary;
     QList<LearnedCorrection> learnedCorrections;

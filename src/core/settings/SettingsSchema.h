@@ -183,6 +183,7 @@ struct SchemaContext {
     // This build can set up a virtual keyboard, so the Output page carries the
     // Advanced section that drives it.
     bool virtualKeyboardSetup = false;
+    QString currentVersion;
 };
 
 SettingsSchema buildSettingsSchema(const SchemaContext &context);

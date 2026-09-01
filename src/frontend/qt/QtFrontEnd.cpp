@@ -2,15 +2,18 @@
 
 #include "app/ApplicationController.h"
 #include "app/PlatformComposition.h"
+#include "app/UpdateController.h"
 #include "dictation/DictationSession.h"
 #include "ui/AppWindow.h"
 #include "ui/SetupAssistant.h"
 #include "ui/TranscriberPopup.h"
 
 #include <QApplication>
+#include <QDesktopServices>
 #include <QEvent>
 #include <QWidget>
 #include <QWindow>
+#include <QUrl>
 
 namespace speecher {
 
@@ -20,6 +23,17 @@ QtFrontEnd::QtFrontEnd(ApplicationController *controller, QObject *parent)
     , m_popup(new TranscriberPopup(controller->platform()->createPopupPositioner(nullptr)))
 {
     wireSessionToPopup();
+    connect(controller->updates(),
+            &UpdateController::changed,
+            this,
+            &QtFrontEnd::refreshUpdateChip);
+    connect(m_popup, &TranscriberPopup::updateRequested,
+            controller->updates(), &UpdateController::updateNow);
+    connect(controller->updates(), &UpdateController::openReleasePageRequested, this, [] {
+        QDesktopServices::openUrl(
+            QUrl(QStringLiteral("https://github.com/firemonster612/speecher/releases")));
+    });
+    refreshUpdateChip();
 }
 
 QtFrontEnd::~QtFrontEnd()
@@ -153,6 +167,26 @@ void QtFrontEnd::wireSessionToPopup()
             &ApplicationController::accessibilityStateChanged,
             m_popup,
             &TranscriberPopup::setAccessibilityState);
+}
+
+void QtFrontEnd::refreshUpdateChip()
+{
+    UpdateController *updates = m_controller->updates();
+    switch (updates->state()) {
+    case UpdateController::State::UpdateAvailable:
+        m_popup->setUpdateChip(QStringLiteral("Update available"), true, true);
+        break;
+    case UpdateController::State::Downloading:
+        m_popup->setUpdateChip(
+            QStringLiteral("Updating %1%").arg(updates->downloadPercent()), true, false);
+        break;
+    case UpdateController::State::ReadyToRestart:
+        m_popup->setUpdateChip(QStringLiteral("Restart to finish updating"), true, true);
+        break;
+    default:
+        m_popup->setUpdateChip({}, false, false);
+        break;
+    }
 }
 
 } // namespace speecher
