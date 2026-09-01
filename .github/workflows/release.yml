@@ -12,8 +12,10 @@ on:
   pull_request:
 
 concurrency:
+  # GitHub retains only one pending run per group. A newer master push may replace
+  # an intermediate nightly, which is acceptable; tag refs have separate groups.
   group: release-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -22,7 +24,7 @@ jobs:
   linux:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -31,7 +33,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes \
-            appimagetool \
             libatspi2.0-dev \
             libdbus-1-dev \
             libegl1 \
@@ -42,9 +43,15 @@ jobs:
             libxkbcommon-x11-0 \
             libxcb-cursor0 \
             ninja-build \
-            pipewire \
             pulseaudio \
             wayland-protocols
+
+      - name: Install appimagetool
+        run: |
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/appimagetool.AppImage" \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          echo 'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  '"$RUNNER_TEMP/appimagetool.AppImage" | sha256sum --check
+          sudo install -m 755 "$RUNNER_TEMP/appimagetool.AppImage" /usr/local/bin/appimagetool
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
@@ -61,7 +68,9 @@ jobs:
       - name: Start the test audio server
         run: |
           # Keep audio tests enabled on headless runners instead of skipping them.
-          pulseaudio --start --exit-idle-time=-1
+          if ! pulseaudio --start --exit-idle-time=-1; then
+            echo "pulseaudio did not start; continuing so ctest can report audio failures." >&2
+          fi
 
       - name: Test
         env:
@@ -71,6 +80,7 @@ jobs:
       - name: Package AppImage
         if: github.event_name != 'pull_request'
         env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
           SPEECHER_BUILD_TYPE: Release
         run: |
           if [ "${GITHUB_REF_NAME}" = "master" ]; then
@@ -114,7 +124,7 @@ jobs:
 
       - name: Upload Linux release artifacts
         if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-release
           path: |
@@ -126,7 +136,7 @@ jobs:
   macos:
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -142,6 +152,10 @@ jobs:
         env:
           SPARKLE_ED_PUBLIC_KEY: ${{ secrets.SPARKLE_ED_PUBLIC_KEY }}
         run: |
+          if [ "$GITHUB_EVENT_NAME" != pull_request ] && [ -z "${SPARKLE_ED_PUBLIC_KEY:-}" ]; then
+            echo "SPARKLE_ED_PUBLIC_KEY is required for publishing." >&2
+            exit 1
+          fi
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DSPEECHER_BUILD_TESTS=ON \
             -DSPEECHER_SPARKLE_ED_PUBLIC_KEY="${SPARKLE_ED_PUBLIC_KEY:-}"
@@ -162,19 +176,15 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          SPARKLE_ED_PUBLIC_KEY: ${{ secrets.SPARKLE_ED_PUBLIC_KEY }}
         run: |
+          if [ -z "${SPARKLE_ED_PRIVATE_KEY:-}" ] || [ -z "${SPARKLE_ED_PUBLIC_KEY:-}" ]; then
+            echo "SPARKLE_ED_PRIVATE_KEY and SPARKLE_ED_PUBLIC_KEY are required for publishing." >&2
+            exit 1
+          fi
           length="$(stat -f %z build/speecher.dmg)"
           printf 'length=%s\n' "$length" > build/sparkle-signature.txt
-          if [ -z "${SPARKLE_ED_PRIVATE_KEY:-}" ]; then
-            echo "SPARKLE_ED_PRIVATE_KEY is absent; leaving the appcast enclosure unsigned."
-            exit 0
-          fi
-          curl --fail --location --retry 3 --output "$RUNNER_TEMP/Sparkle.tar.xz" \
-            https://github.com/sparkle-project/Sparkle/releases/download/2.9.6/Sparkle-2.9.6.tar.xz
-          echo '52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192  '"$RUNNER_TEMP/Sparkle.tar.xz" | shasum -a 256 --check
-          tar -xf "$RUNNER_TEMP/Sparkle.tar.xz" -C "$RUNNER_TEMP"
-          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle-private-key"
-          signing_output="$("$RUNNER_TEMP/Sparkle-2.9.6/bin/sign_update" -f "$RUNNER_TEMP/sparkle-private-key" build/speecher.dmg)"
+          signing_output="$(printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | build/_deps/sparkle-src/bin/sign_update --ed-key-file - build/speecher.dmg)"
           printf '%s\n' "$signing_output"
           signature="$(printf '%s\n' "$signing_output" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')"
           signed_length="$(printf '%s\n' "$signing_output" | sed -n 's/.*length="\([0-9][0-9]*\)".*/\1/p')"
@@ -184,7 +194,7 @@ jobs:
 
       - name: Upload macOS release artifacts
         if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-release
           path: |
@@ -198,19 +208,16 @@ jobs:
       - linux
       - macos
     runs-on: ubuntu-22.04
-    concurrency:
-      group: speecher-gh-pages
-      cancel-in-progress: false
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
 
       - name: Download release artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
@@ -226,22 +233,25 @@ jobs:
             channel=nightly
             git tag --force "$tag" "$GITHUB_SHA"
             git push origin "refs/tags/$tag" --force
-            gh release delete "$tag" --yes || true
             cat > release-notes.md <<EOF
-            Version: $version
-            Build number: $build_number
-            Commit: $GITHUB_SHA
+          Version: $version
+          Build number: $build_number
+          Commit: $GITHUB_SHA
 
-            This Nightly Build is untested. Use the Stable Release unless you want the latest master build.
+          This Nightly Build is untested. Use the Stable Release unless you want the latest master build.
 
-            Update channels: https://github.com/${GITHUB_REPOSITORY}#installation--updates
-            EOF
-            gh release create "$tag" \
+          Update channels: https://github.com/${GITHUB_REPOSITORY}#installation--updates
+          EOF
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release edit "$tag" --prerelease --title "Nightly Build $version" --notes-file release-notes.md
+            else
+              gh release create "$tag" --prerelease --title "Nightly Build $version" --notes-file release-notes.md
+            fi
+            gh release upload "$tag" \
               artifacts/linux-release/Speecher-x86_64.AppImage \
               artifacts/linux-release/Speecher-x86_64.AppImage.zsync \
               artifacts/macos-release/speecher.dmg \
-              artifacts/linux-release/update-manifest.json \
-              --prerelease --title "Nightly Build $version" --notes-file release-notes.md
+              artifacts/linux-release/update-manifest.json --clobber
           else
             tag="v$version"
             channel=stable
@@ -252,17 +262,23 @@ jobs:
               release_notes=release-notes.md
               printf 'Release notes have not been written. Add docs/releases/%s.md before the next release.\n' "$version" > "$release_notes"
             fi
-            gh release create "$tag" \
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release edit "$tag" --title "Speecher $version" --notes-file "$release_notes"
+            else
+              gh release create "$tag" --title "Speecher $version" --notes-file "$release_notes"
+            fi
+            gh release upload "$tag" \
               artifacts/linux-release/Speecher-x86_64.AppImage \
               artifacts/linux-release/Speecher-x86_64.AppImage.zsync \
               artifacts/macos-release/speecher.dmg \
-              artifacts/linux-release/update-manifest.json \
-              --title "Speecher $version" --notes-file "$release_notes"
+              artifacts/linux-release/update-manifest.json --clobber
           fi
+          published_at="$(git log -1 --format=%aD HEAD)"
           python3 scripts/make-appcast.py \
             --channel "$channel" \
             --version "$version" \
             --build-number "$build_number" \
+            --pub-date "$published_at" \
             --dmg-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/speecher.dmg" \
             --signature artifacts/macos-release/sparkle-signature.txt \
             --output "appcast-${channel}.xml"
@@ -276,21 +292,26 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
         run: |
           repository_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          status="$(gh api --include "repos/${GITHUB_REPOSITORY}/git/ref/heads/gh-pages" | sed -n '1s/.* \([0-9][0-9][0-9]\).*/\1/p')"
-          if [ "$status" = 200 ]; then
+          if git ls-remote --exit-code origin gh-pages >/dev/null 2>&1; then
             git clone --depth=1 --branch gh-pages "$repository_url" pages
-          elif [ "$status" = 404 ]; then
+          else
+            status=$?
+            if [ "$status" -ne 2 ]; then
+              echo "Could not determine whether gh-pages exists (git ls-remote exited $status)." >&2
+              exit "$status"
+            fi
             mkdir pages
             git -C pages init
             git -C pages checkout --orphan gh-pages
             git -C pages remote add origin "$repository_url"
-          else
-            echo "Could not determine whether gh-pages exists (HTTP $status)." >&2
-            exit 1
           fi
           cp "appcast-${CHANNEL}.xml" pages/
           git -C pages config user.name github-actions[bot]
           git -C pages config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git -C pages add "appcast-${CHANNEL}.xml"
-          git -C pages commit -m "Publish ${CHANNEL} appcast for ${VERSION}"
-          git -C pages push origin HEAD:gh-pages
+          if git -C pages diff --cached --quiet; then
+            echo "No appcast changes to publish."
+          else
+            git -C pages commit -m "Publish ${CHANNEL} appcast for ${VERSION}"
+            git -C pages push origin HEAD:gh-pages
+          fi

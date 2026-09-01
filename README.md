@@ -62,17 +62,17 @@ chmod +x Speecher-x86_64.AppImage
 ./Speecher-x86_64.AppImage
 ```
 
-It updates itself in the app and includes zsync metadata for external update tools.
+It updates itself from inside the app. External update tools use the zsync metadata embedded for the channel this AppImage was built for, even if you switch the in-app Update Channel.
 
 On macOS, open the DMG and drag `speecher.app` to Applications. On macOS 15 and later, Gatekeeper blocks the first launch. Choose **System Settings > Privacy & Security > Open Anyway**, or run:
 
 ```sh
-xattr -d com.apple.quarantine /Applications/speecher.app
+xattr -dr com.apple.quarantine /Applications/speecher.app
 ```
 
 The app is unsigned because there is no Apple Developer account. Later updates are verified with Sparkle EdDSA signatures.
 
-Stable is the default Update Channel. Nightly is published on every push to `master`. Switch channels in **Settings > Updates**.
+The default Update Channel is Stable Release. Nightly Builds are republished from every push to `master`, not on a nightly schedule. Switch channels in **Settings > General > Updates**.
 
 ### Global shortcut
 
