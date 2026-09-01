@@ -1,8 +1,8 @@
 #include "output/YdotoolSetup.h"
 
+#include "output/HelperPath.h"
 #include "output/YdotoolDelivery.h"
 
-#include <QCoreApplication>
 #include <QFileInfo>
 #include <QProcess>
 #include <QStandardPaths>
@@ -227,11 +227,7 @@ QString YdotoolSetup::serviceName()
 
 QString YdotoolSetup::helperPath()
 {
-    const QString sibling = QCoreApplication::applicationDirPath() + QStringLiteral("/speecher-ydotool-setup");
-    if (QFileInfo::exists(sibling)) {
-        return sibling;
-    }
-    return QString::fromLatin1(SPEECHER_YDOTOOL_HELPER_PATH);
+    return resolvedHelperPath(SPEECHER_YDOTOOL_HELPER_PATH);
 }
 
 bool YdotoolSetup::runHelper(HelperAction action, QString *error)

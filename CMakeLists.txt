@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.24)
 
 project(speecher VERSION 0.1.0 LANGUAGES C CXX)
 
+include(cmake/GitVersion.cmake)
+
 if(APPLE)
   # The macOS platform backend is Objective-C++.
   enable_language(OBJCXX)
@@ -194,6 +196,7 @@ set(SPEECHER_PLATFORM_LINUX_SOURCES
 )
 
 set(SPEECHER_PLATFORM_LINUX_HEADERS
+  src/output/HelperPath.h
   src/output/WaylandClipboardOwner.h
   src/output/WaylandClipboardProcess.h
   src/output/WlClipboardDelivery.h
@@ -412,7 +415,10 @@ add_library(speecher_app STATIC
   ${SPEECHER_APP_HEADERS}
 )
 target_include_directories(speecher_app PUBLIC src)
-target_compile_definitions(speecher_app PUBLIC SPEECHER_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(speecher_app PUBLIC
+  SPEECHER_VERSION="${SPEECHER_VERSION}"
+  SPEECHER_BUILD_NUMBER=${SPEECHER_BUILD_NUMBER}
+)
 target_link_libraries(speecher_app PUBLIC
   speecher_domain speecher_workflow speecher_providers speecher_platform
 )
@@ -530,7 +536,8 @@ qt_add_executable(speecher
 
 target_include_directories(speecher PRIVATE src)
 target_compile_definitions(speecher PRIVATE
-  SPEECHER_VERSION="${PROJECT_VERSION}"
+  SPEECHER_VERSION="${SPEECHER_VERSION}"
+  SPEECHER_BUILD_NUMBER=${SPEECHER_BUILD_NUMBER}
 )
 target_link_libraries(speecher PRIVATE speecher_frontend_qt)
 if(TARGET speecher_frontend_mac)
@@ -739,7 +746,10 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_audio_pcm_converter.cpp
   )
   target_include_directories(speecher_tests PRIVATE src)
-  target_compile_definitions(speecher_tests PRIVATE SPEECHER_VERSION="${PROJECT_VERSION}")
+  target_compile_definitions(speecher_tests PRIVATE
+    SPEECHER_VERSION="${SPEECHER_VERSION}"
+    SPEECHER_BUILD_NUMBER=${SPEECHER_BUILD_NUMBER}
+  )
   target_link_libraries(speecher_tests PRIVATE
     speecher_frontend_qt Qt6::Test
   )

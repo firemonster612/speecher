@@ -37,7 +37,7 @@ struct CommandLineDecision {
 // Decides what the process is for, before any GUI type is constructed, so that
 // `speecher status` never opens a display. Prints the --version banner and any
 // rejected option itself, because both are the whole of what those runs do.
-CommandLineDecision parseCommandLine(const QStringList &arguments, const QString &logPath);
+CommandLineDecision parseCommandLine(const QStringList &arguments, const QString &);
 
 // Sends the decision's command to a running instance, or starts one detached
 // when there is none. Needs a running QCoreApplication for the socket.

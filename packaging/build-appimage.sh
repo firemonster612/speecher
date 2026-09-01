@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Nightly Build: SPEECHER_UPDINFO='gh-releases-zsync|firemonster612|speecher|nightly|Speecher-*x86_64.AppImage.zsync'
+# Stable Release: SPEECHER_UPDINFO='gh-releases-zsync|firemonster612|speecher|latest|Speecher-*x86_64.AppImage.zsync'
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -190,8 +192,15 @@ ln -sf usr/share/applications/io.github.firemonster612.speecher.desktop "$APPDIR
 ln -sf usr/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg "$APPDIR_PATH/io.github.firemonster612.speecher.svg"
 
 ARCH="${ARCH:-x86_64}"
-APPIMAGE_PATH="$OUTPUT_DIR/Speecher-${ARCH}.AppImage"
+APPIMAGE_PATH="$(cd "$OUTPUT_DIR" && pwd -P)/Speecher-${ARCH}.AppImage"
 echo "Building AppImage with appimagetool: $APPIMAGE_PATH"
-appimagetool -n "$APPDIR_PATH" "$APPIMAGE_PATH"
+APPIMAGETOOL_ARGS=(-n)
+if [[ -n "${SPEECHER_UPDINFO:-}" ]]; then
+  APPIMAGETOOL_ARGS+=(-u "$SPEECHER_UPDINFO")
+fi
+appimagetool "${APPIMAGETOOL_ARGS[@]}" "$APPDIR_PATH" "$APPIMAGE_PATH"
 
 echo "Created $APPIMAGE_PATH"
+if [[ -n "${SPEECHER_UPDINFO:-}" ]]; then
+  echo "Created ${APPIMAGE_PATH}.zsync"
+fi

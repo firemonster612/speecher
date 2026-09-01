@@ -1,6 +1,7 @@
 #include "output/WaylandClipboardProcess.h"
 
-#include <QCoreApplication>
+#include "output/HelperPath.h"
+
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QProcess>
@@ -31,13 +32,8 @@ QString wlPasteExecutable()
 
 QString helperExecutable()
 {
-    const QString adjacent = QCoreApplication::applicationDirPath()
-        + QStringLiteral("/speecher-wayland-clipboard");
-    if (QFileInfo::exists(adjacent) && QFileInfo(adjacent).isExecutable()) {
-        return adjacent;
-    }
 #ifdef SPEECHER_WAYLAND_CLIPBOARD_HELPER_PATH
-    const QString installed = QStringLiteral(SPEECHER_WAYLAND_CLIPBOARD_HELPER_PATH);
+    const QString installed = resolvedHelperPath(SPEECHER_WAYLAND_CLIPBOARD_HELPER_PATH);
     if (QFileInfo::exists(installed) && QFileInfo(installed).isExecutable()) {
         return installed;
     }
