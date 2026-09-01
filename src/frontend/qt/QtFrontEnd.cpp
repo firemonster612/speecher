@@ -176,7 +176,9 @@ void QtFrontEnd::wireSessionToPopup()
 void QtFrontEnd::refreshUpdateChip()
 {
     UpdateController *updates = m_controller->updates();
-    const bool canAct = m_controller->session()->state() == DictationState::Idle;
+    const DictationState sessionState = m_controller->session()->state();
+    const bool canAct = sessionState == DictationState::Idle
+        || sessionState == DictationState::Error;
     switch (updates->state()) {
     case UpdateController::State::UpdateAvailable:
         m_popup->setUpdateChip(QStringLiteral("Update available"), true, canAct);
@@ -197,7 +199,7 @@ void QtFrontEnd::refreshUpdateChip()
             QStringLiteral("Restarting after this dictation…"), true, false);
         break;
     case UpdateController::State::Error:
-        m_popup->setUpdateChip(QStringLiteral("Couldn't install the update."), true, canAct);
+        m_popup->setUpdateChip(updates->errorMessage(), true, canAct);
         break;
     default:
         m_popup->setUpdateChip({}, false, false);

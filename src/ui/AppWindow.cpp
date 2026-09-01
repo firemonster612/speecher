@@ -618,6 +618,13 @@ void AppWindow::refreshUpdateBanner()
         return;
     }
     UpdateController *updates = m_controller->updates();
+    const QString availableVersion = updates->availableVersion();
+    if ((!availableVersion.isEmpty() && m_updateBannerVersion != availableVersion)
+        || m_updateBannerInstalledVersion != updates->currentVersion()) {
+        m_updateBannerDeferred = false;
+        m_updateBannerVersion = availableVersion;
+        m_updateBannerInstalledVersion = updates->currentVersion();
+    }
     if (m_updateBannerDeferred
         && (updates->state() == UpdateController::State::ReadyToRestart
             || updates->state() == UpdateController::State::RestartPending)) {
@@ -662,8 +669,9 @@ void AppWindow::refreshUpdateBanner()
         m_updateAction->setEnabled(false);
         break;
     case UpdateController::State::Error:
-        m_updateBannerText->setText(QStringLiteral("Couldn't install the update."));
+        m_updateBannerText->setText(updates->errorMessage());
         m_updateAction->setText(QStringLiteral("Try again"));
+        m_updateDismiss->show();
         break;
     default:
         m_updateBanner->hide();

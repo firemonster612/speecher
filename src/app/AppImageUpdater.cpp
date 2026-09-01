@@ -40,6 +40,11 @@ void setError(QString *error, const QString &message)
     }
 }
 
+bool restartSafe(DictationState state)
+{
+    return state == DictationState::Idle || state == DictationState::Error;
+}
+
 } // namespace
 
 AppImageUpdater::AppImageUpdater(SettingsStore *settings,
@@ -60,7 +65,7 @@ AppImageUpdater::AppImageUpdater(SettingsStore *settings,
 
     connect(m_session, &DictationSession::stateChanged, this, [this] {
         if (m_state == State::RestartPending
-            && m_session->state() == DictationState::Idle) {
+            && restartSafe(m_session->state())) {
             restartAppImage();
         }
     });
@@ -272,7 +277,7 @@ void AppImageUpdater::restartNow()
     if (m_state != State::ReadyToRestart) {
         return;
     }
-    if (m_session->state() != DictationState::Idle) {
+    if (!restartSafe(m_session->state())) {
         setState(State::RestartPending);
         return;
     }
@@ -281,6 +286,10 @@ void AppImageUpdater::restartNow()
 
 void AppImageUpdater::dismissAvailableVersion()
 {
+    if (m_state == State::Error) {
+        setState(State::Idle);
+        return;
+    }
     if (m_state != State::UpdateAvailable || m_manifest.version.isEmpty()) {
         return;
     }
@@ -308,14 +317,15 @@ void AppImageUpdater::finishCheck(QNetworkReply *reply)
         : reply->errorString();
     reply->deleteLater();
     if (!networkError.isEmpty()) {
-        setState(State::Error, QStringLiteral("Could not check for updates: %1").arg(networkError));
+        setState(State::CheckFailed,
+                 QStringLiteral("Could not check for updates: %1").arg(networkError));
         return;
     }
 
     QString error;
     const std::optional<UpdateManifest> manifest = parseManifest(body, &error);
     if (!manifest) {
-        setState(State::Error, error);
+        setState(State::CheckFailed, error);
         return;
     }
     if (!isNewerBuild(*manifest, currentBuildNumber())) {

@@ -70,7 +70,7 @@ private:
         SettingsRow descriptor;
         QWidget *frame = nullptr;
         QWidget *control = nullptr;
-        QLabel *description = nullptr;
+        QWidget *description = nullptr;
         // The container the row shares with the rest of its group, which is
         // what gets enabled and carries the group's tooltip.
         QWidget *group = nullptr;

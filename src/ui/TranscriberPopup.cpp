@@ -305,10 +305,11 @@ void TranscriberPopup::showAccessibilityError(const QString &message)
 void TranscriberPopup::setUpdateChip(const QString &text, bool visible, bool enabled)
 {
     const bool visibilityChanged = m_updateChip->isHidden() == visible;
+    const bool textChanged = m_updateChip->text() != text;
     m_updateChip->setText(text);
     m_updateChip->setEnabled(enabled);
     m_updateChip->setVisible(visible);
-    if (!visibilityChanged) {
+    if (!visibilityChanged && !textChanged) {
         return;
     }
     adjustSize();

@@ -152,11 +152,12 @@ QFrame *makeRow(const QString &label,
         const int maximumTextWidth = subtitle->fontMetrics().averageCharWidth() * 62;
         if (dynamicDescription) {
             subtitle->setMaximumWidth(maximumTextWidth);
+            subtitle->setMinimumHeight(subtitle->heightForWidth(maximumTextWidth));
         } else {
             const int naturalTextWidth = subtitle->fontMetrics().horizontalAdvance(description);
             subtitle->setFixedWidth(qMin(naturalTextWidth + 8, maximumTextWidth));
+            subtitle->setMinimumHeight(subtitle->heightForWidth(subtitle->width()));
         }
-        subtitle->setMinimumHeight(subtitle->heightForWidth(subtitle->width()));
         subtitle->setForegroundRole(QPalette::PlaceholderText);
         fieldLayout->addWidget(subtitle);
     }
