@@ -75,6 +75,8 @@ private:
     QPushButton *m_updateLater = nullptr;
     QPushButton *m_updateDismiss = nullptr;
     bool m_updateBannerDeferred = false;
+    QString m_updateBannerVersion;
+    QString m_updateBannerInstalledVersion;
     bool m_pageLoadScheduled = false;
     bool m_afterShowLoadScheduled = false;
     bool m_headerDragPending = false;

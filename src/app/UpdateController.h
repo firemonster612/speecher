@@ -14,6 +14,7 @@ public:
     enum class State {
         Idle,
         Checking,
+        CheckFailed,
         UpToDate,
         UpdateAvailable,
         Downloading,

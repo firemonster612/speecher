@@ -334,6 +334,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         form->addRow(editor.widget);
         row.frame = editor.widget;
         row.control = editor.widget;
+        row.description = editor.widget->findChild<QLabel *>(QStringLiteral("rowDescription"));
         row.value = editor.value;
         row.setValue = editor.setValue;
         m_rows.append(row);
@@ -354,6 +355,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
             settings::addRow(form, frame, host, false);
             row.frame = frame;
             row.control = custom.widget;
+            row.description = frame->findChild<QLabel *>(QStringLiteral("rowDescription"));
             row.value = custom.value;
             row.setValue = custom.setValue;
             m_rows.append(row);
@@ -382,6 +384,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         form->addRow(container);
         row.frame = container;
         row.control = custom.widget;
+        row.description = headerHelp;
         row.value = custom.value;
         row.setValue = custom.setValue;
         m_rows.append(row);
@@ -403,6 +406,9 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
     settings::addRow(form, frame, host, false);
     row.frame = frame;
     row.description = frame->findChild<QLabel *>(QStringLiteral("rowDescription"));
+    if (!row.description) {
+        row.description = qobject_cast<QCheckBox *>(row.control);
+    }
     m_rows.append(row);
     if (descriptor.id == QStringLiteral("audioDevice")) {
         auto *mediaDevices = new QMediaDevices(this);
@@ -617,11 +623,17 @@ void SchemaSettingsPage::refreshRows()
             row.setValue(row.descriptor.value(draft));
         }
         if (row.descriptor.kind == RowKind::Action && row.descriptor.value) {
-            qobject_cast<QPushButton *>(row.control)->setText(
-                row.descriptor.value(draft).toString());
+            if (auto *button = qobject_cast<QPushButton *>(row.control)) {
+                button->setText(row.descriptor.value(draft).toString());
+            }
         }
         if (row.descriptor.helpValue && row.description) {
-            row.description->setText(row.descriptor.helpValue(draft));
+            const QString description = row.descriptor.helpValue(draft);
+            if (auto *label = qobject_cast<QLabel *>(row.description)) {
+                label->setText(description);
+            } else if (auto *checkBox = qobject_cast<QCheckBox *>(row.description)) {
+                checkBox->setText(description);
+            }
         }
         if (row.descriptor.enabled) {
             const bool live = row.descriptor.enabled(draft, m_capabilities);

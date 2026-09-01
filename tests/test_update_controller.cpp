@@ -1,13 +1,76 @@
 #include "common/test_suites.h"
+#include "common/test_doubles.h"
 
 #include "app/AppImageUpdater.h"
+#include "app/ApplicationController.h"
+#include "core/SettingsStore.h"
+#include "dictation/DictationSession.h"
+#include "frontend/qt/QtFrontEnd.h"
+#include "ui/TranscriberPopup.h"
 
 #include <QFile>
+#include <QPushButton>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 
 using namespace speecher;
 
+namespace speecher {
+
+class AppImageUpdaterTestAccess {
+public:
+    static void setState(AppImageUpdater &updater,
+                         UpdateController::State state,
+                         const QString &error = {})
+    {
+        updater.setState(state, error);
+    }
+
+    static void setAvailableVersion(AppImageUpdater &updater, const QString &version)
+    {
+        updater.m_manifest.version = version;
+    }
+
+    static void restartNow(AppImageUpdater &updater)
+    {
+        updater.restartNow();
+    }
+};
+
+class QtFrontEndTestAccess {
+public:
+    static QPushButton *updateChip(QtFrontEnd &frontEnd)
+    {
+        return frontEnd.m_popup->findChild<QPushButton *>(QStringLiteral("updateChip"));
+    }
+};
+
+} // namespace speecher
+
 namespace {
+
+using namespace speecher::test;
+
+struct UpdateTestContext {
+    SettingsStore settings;
+    std::unique_ptr<FakeAudioInput> audio = std::make_unique<FakeAudioInput>();
+    std::unique_ptr<FakeMediaController> media = std::make_unique<FakeMediaController>();
+    std::unique_ptr<FakeDelivery> delivery = std::make_unique<FakeDelivery>();
+    ProviderRegistry providers;
+    FakeSpeechTranscriber *speech = nullptr;
+    std::unique_ptr<DictationSession> session;
+
+    explicit UpdateTestContext(bool withSpeechProvider)
+    {
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        if (withSpeechProvider) {
+            registerFakeSpeechProvider(providers, &speech);
+        }
+        session = std::make_unique<DictationSession>(
+            &settings, audio.get(), media.get(), delivery.get(), &providers);
+    }
+};
 
 QByteArray readFile(const QString &path)
 {
@@ -147,6 +210,122 @@ private slots:
         QCOMPARE(readFile(installedPath), QByteArrayLiteral("manually installed AppImage"));
         QCOMPARE(readFile(downloadedPath), QByteArrayLiteral("verified update"));
         QVERIFY(error.contains(QStringLiteral("changed since the download started")));
+    }
+
+    void reportsSwapFailureInReadOnlyDirectory()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString installedPath = directory.filePath(QStringLiteral("Speecher.AppImage"));
+        const QString downloadedPath = directory.filePath(QStringLiteral("downloaded.AppImage"));
+        writeFile(installedPath, QByteArrayLiteral("old AppImage"));
+        writeFile(downloadedPath, QByteArrayLiteral("verified update"));
+
+        QString error;
+        const std::optional<AppImageFileIdentity> identity =
+            AppImageUpdater::fileIdentity(installedPath, &error);
+        QVERIFY2(identity.has_value(), qPrintable(error));
+        const QFileDevice::Permissions permissions = QFile::permissions(directory.path());
+        QVERIFY(QFile::setPermissions(directory.path(),
+                                      QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+        const bool swapped = AppImageUpdater::swapAppImage(
+            downloadedPath, installedPath, *identity, &error);
+        QVERIFY(QFile::setPermissions(directory.path(), permissions));
+
+        QVERIFY(!swapped);
+        QCOMPARE(readFile(installedPath), QByteArrayLiteral("old AppImage"));
+        QCOMPARE(readFile(downloadedPath), QByteArrayLiteral("verified update"));
+        QVERIFY(error.startsWith(QStringLiteral("Could not install the new AppImage:")));
+    }
+
+    void restartPendingAllowsSessionErrorAndRestartsOnIdle()
+    {
+        const QByteArray appImage = qgetenv("APPIMAGE");
+        qunsetenv("APPIMAGE");
+        const auto restoreAppImage = qScopeGuard([appImage] {
+            if (appImage.isEmpty()) {
+                qunsetenv("APPIMAGE");
+            } else {
+                qputenv("APPIMAGE", appImage);
+            }
+        });
+
+        UpdateTestContext errorContext(false);
+        errorContext.session->startListening();
+        QCOMPARE(errorContext.session->state(), DictationState::Error);
+        AppImageUpdater errorUpdater(&errorContext.settings, errorContext.session.get());
+        QSignalSpy errorRestart(&errorUpdater, &UpdateController::openReleasePageRequested);
+        AppImageUpdaterTestAccess::setState(errorUpdater,
+                                            UpdateController::State::ReadyToRestart);
+        AppImageUpdaterTestAccess::restartNow(errorUpdater);
+        QCOMPARE(errorUpdater.state(), UpdateController::State::ReadyToRestart);
+        QCOMPARE(errorRestart.count(), 1);
+
+        UpdateTestContext pendingContext(true);
+        pendingContext.session->startListening();
+        QCOMPARE(pendingContext.session->state(), DictationState::Starting);
+        AppImageUpdater pendingUpdater(&pendingContext.settings, pendingContext.session.get());
+        QSignalSpy pendingRestart(&pendingUpdater, &UpdateController::openReleasePageRequested);
+        AppImageUpdaterTestAccess::setState(pendingUpdater,
+                                            UpdateController::State::ReadyToRestart);
+        AppImageUpdaterTestAccess::restartNow(pendingUpdater);
+        QCOMPARE(pendingUpdater.state(), UpdateController::State::RestartPending);
+        pendingContext.session->stopListening();
+        QCOMPARE(pendingContext.session->state(), DictationState::Idle);
+        QCOMPARE(pendingRestart.count(), 1);
+    }
+
+    void bannerAndChipVisibilityFollowUpdateState()
+    {
+        UpdateTestContext context(true);
+        AppImageUpdater updater(&context.settings, context.session.get());
+        for (const UpdateController::State state : {UpdateController::State::Idle,
+                                                    UpdateController::State::Checking,
+                                                    UpdateController::State::CheckFailed,
+                                                    UpdateController::State::UpToDate}) {
+            AppImageUpdaterTestAccess::setState(updater, state, QStringLiteral("check failed"));
+            QVERIFY(!updater.bannerVisible());
+        }
+        AppImageUpdaterTestAccess::setAvailableVersion(updater, QStringLiteral("2.0"));
+        for (const UpdateController::State state : {UpdateController::State::UpdateAvailable,
+                                                    UpdateController::State::Downloading,
+                                                    UpdateController::State::ReadyToRestart,
+                                                    UpdateController::State::RestartPending,
+                                                    UpdateController::State::Error}) {
+            AppImageUpdaterTestAccess::setState(updater, state, QStringLiteral("install failed"));
+            QVERIFY(updater.bannerVisible());
+        }
+
+        ApplicationController controller(true);
+        QtFrontEnd frontEnd(&controller);
+        auto *controllerUpdater = dynamic_cast<AppImageUpdater *>(controller.updates());
+        QVERIFY(controllerUpdater);
+        QPushButton *chip = QtFrontEndTestAccess::updateChip(frontEnd);
+        QVERIFY(chip);
+        AppImageUpdaterTestAccess::setAvailableVersion(*controllerUpdater,
+                                                        QStringLiteral("2.0"));
+        const QList<std::pair<UpdateController::State, bool>> chipStates{
+            {UpdateController::State::Idle, false},
+            {UpdateController::State::Checking, false},
+            {UpdateController::State::CheckFailed, false},
+            {UpdateController::State::UpToDate, false},
+            {UpdateController::State::UpdateAvailable, true},
+            {UpdateController::State::Downloading, true},
+            {UpdateController::State::ReadyToRestart, true},
+            {UpdateController::State::RestartPending, true},
+            {UpdateController::State::Error, true},
+        };
+        for (const auto &[state, visible] : chipStates) {
+            AppImageUpdaterTestAccess::setState(*controllerUpdater,
+                                                state,
+                                                QStringLiteral("install failed"));
+            QCOMPARE(!chip->isHidden(), visible);
+        }
+        AppImageUpdaterTestAccess::setState(*controllerUpdater,
+                                            UpdateController::State::Error,
+                                            QStringLiteral("install failed"));
+        QVERIFY(!chip->isHidden());
+        QCOMPARE(chip->text(), QStringLiteral("install failed"));
     }
 };
 

@@ -15,6 +15,7 @@ namespace speecher {
 
 class DictationSession;
 class SettingsStore;
+class AppImageUpdaterTestAccess;
 
 struct UpdateManifest {
     QString version;
@@ -70,6 +71,8 @@ public slots:
     void dismissAvailableVersion() override;
 
 private:
+    friend class AppImageUpdaterTestAccess;
+
     QUrl manifestUrl(UpdateChannel channel) const;
     void finishCheck(QNetworkReply *reply);
     void beginDownload();
