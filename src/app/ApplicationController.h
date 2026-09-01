@@ -46,6 +46,8 @@ public:
     bool popupOnly() const;
     SettingsStore *settings() const;
     UpdateController *updates() const;
+    QString pendingWhatsNewVersion() const;
+    void clearPendingWhatsNew();
     SecretStore *secretStore() const;
     ProviderRegistry *providerRegistry() const;
     const PlatformComposition *platform() const;
@@ -87,6 +89,7 @@ signals:
     void transcriptDelivered(const QString &text);
     void audioLevelChanged(float level);
     void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
+    void whatsNewChanged();
 
 private:
     void registerProviders();
@@ -111,6 +114,7 @@ private:
     bool m_accessibilitySupported = false;
     bool m_accessibilityEnabled = false;
     bool m_accessibilityPersistent = false;
+    QString m_pendingWhatsNewVersion;
 #ifdef Q_OS_MACOS
     QTimer *m_accessibilityPoll = nullptr;
 #endif

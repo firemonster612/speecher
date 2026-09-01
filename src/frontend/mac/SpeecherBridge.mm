@@ -654,7 +654,8 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                schema:speecher::buildSettingsSchema(
                           speecher::qtSchemaContext(*controller->platform(),
                                                     *controller->providerRegistry(),
-                                                    controller->primaryOutputStatus()))
+                                                    controller->primaryOutputStatus(),
+                                                    controller->pendingWhatsNewVersion()))
          capabilities:capabilities];
     __weak SpeecherBridge *weakSelf = self;
     QObject::connect(controller,

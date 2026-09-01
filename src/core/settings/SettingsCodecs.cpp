@@ -790,6 +790,26 @@ void SettingsCodecs::setUpdatesDismissedVersion(const QString &value)
     m_settings.setValue(SettingsKeys::UpdatesDismissedVersion, value);
 }
 
+QString SettingsCodecs::updatesLastRunVersion() const
+{
+    return value(SettingsKeys::UpdatesLastRunVersion, QString()).toString();
+}
+
+void SettingsCodecs::setUpdatesLastRunVersion(const QString &value)
+{
+    m_settings.setValue(SettingsKeys::UpdatesLastRunVersion, value);
+}
+
+QString SettingsCodecs::updatesPendingWhatsNewVersion() const
+{
+    return value(SettingsKeys::UpdatesPendingWhatsNewVersion, QString()).toString();
+}
+
+void SettingsCodecs::setUpdatesPendingWhatsNewVersion(const QString &value)
+{
+    m_settings.setValue(SettingsKeys::UpdatesPendingWhatsNewVersion, value);
+}
+
 QString SettingsCodecs::openAiCliproxyAccount() const
 {
     return value(SettingsKeys::OpenAiCliproxyAccount, QString()).toString().trimmed();

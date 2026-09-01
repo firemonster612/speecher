@@ -215,7 +215,8 @@ QWidget *addRowGroup(const QString &id, QWidget *form)
 
 SchemaContext qtSchemaContext(const PlatformComposition &platform,
                               const ProviderRegistry &providers,
-                              const QString &primaryOutputStatus)
+                              const QString &primaryOutputStatus,
+                              const QString &lastSeenVersion)
 {
     return {
         providerOptions(providers.speechProviders()),
@@ -230,6 +231,7 @@ SchemaContext qtSchemaContext(const PlatformComposition &platform,
         false,
 #endif
         QStringLiteral(SPEECHER_VERSION),
+        lastSeenVersion,
     };
 }
 

@@ -48,6 +48,10 @@ struct RowView: View {
     @ViewBuilder private var custom: some View {
         if row.collection != nil {
             WritingProfileRows(row: row, model: model)
+        } else if row.rowId == "whatsNewNotes" {
+            Text((try? AttributedString(markdown: Self.text(row.value)))
+                 ?? AttributedString(Self.text(row.value)))
+                .textSelection(.enabled)
         } else if row.rowId == "openAiAuth" {
             LabeledContent { CredentialField(model: model) } label: { label }
         } else {

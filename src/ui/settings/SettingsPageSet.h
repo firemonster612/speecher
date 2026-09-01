@@ -50,6 +50,7 @@ public:
     SchemaSettingsPage *vocabulary() const;
     SchemaSettingsPage *corrections() const;
     SchemaSettingsPage *bindings() const;
+    SchemaSettingsPage *whatsNew() const;
 
     void load();
     void loadBeforeShow();
@@ -62,6 +63,7 @@ public:
 
 signals:
     void changed();
+    void whatsNewRequested();
 
 private:
     SchemaSettingsPage *addPage(const QString &id,
@@ -90,6 +92,8 @@ private:
     SchemaSettingsPage *m_bindings;
     SchemaSettingsPage *m_providerModels;
     SchemaSettingsPage *m_providerAuth;
+    SchemaSettingsPage *m_whatsNew;
+    SchemaSettingsPage *m_changedPage = nullptr;
 };
 
 } // namespace speecher

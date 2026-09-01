@@ -49,6 +49,16 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_shortcutBinder(m_platform->createGlobalShortcutBinder(this))
     , m_ipc(new SingleInstanceIpc(m_platform, this))
 {
+    const QString currentVersion = QStringLiteral(SPEECHER_VERSION);
+    const QString previousVersion = m_settings->updatesLastRunVersion();
+    if (previousVersion != currentVersion) {
+        if (!previousVersion.isEmpty()
+            && m_settings->updatesPendingWhatsNewVersion().isEmpty()) {
+            m_settings->setUpdatesPendingWhatsNewVersion(previousVersion);
+        }
+        m_settings->setUpdatesLastRunVersion(currentVersion);
+    }
+    m_pendingWhatsNewVersion = m_settings->updatesPendingWhatsNewVersion();
     m_settings->setLaunchAtLoginReconciler(
         [platform = m_platform](bool enabled, QString *error) {
             return platform->setLaunchAtLogin(enabled, error);
@@ -206,6 +216,21 @@ SettingsStore *ApplicationController::settings() const
 UpdateController *ApplicationController::updates() const
 {
     return m_updates;
+}
+
+QString ApplicationController::pendingWhatsNewVersion() const
+{
+    return m_pendingWhatsNewVersion;
+}
+
+void ApplicationController::clearPendingWhatsNew()
+{
+    if (m_pendingWhatsNewVersion.isEmpty()) {
+        return;
+    }
+    m_pendingWhatsNewVersion.clear();
+    m_settings->setUpdatesPendingWhatsNewVersion({});
+    emit whatsNewChanged();
 }
 
 SecretStore *ApplicationController::secretStore() const
