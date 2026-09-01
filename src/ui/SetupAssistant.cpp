@@ -37,7 +37,7 @@ QWizardPage *wizardPage(QWidget *content, const QString &title)
 } // namespace
 
 SetupAssistant::SetupAssistant(ApplicationController *controller,
-                               int pageIndex,
+                               SetupAssistantPage page,
                                QWidget *parent)
 #ifdef SPEECHER_WITH_KASSISTANT
     : KAssistantDialog(parent)
@@ -45,37 +45,45 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     : QWizard(parent)
 #endif
     , m_controller(controller)
-    , m_accessibilityPage(new AccessibilitySetupPage(*controller, this))
-    , m_microphonePage(new MicrophoneSetupPage(*controller->settings(),
-                                               *controller->platform(),
-                                               this))
-    , m_deliveryPage(new TextDeliverySetupPage(*controller->settings(), this))
-    , m_profilesPage(new WritingProfilesSetupPage(*controller->settings(), this))
-    , m_finishPage(new FinishSetupPage(*controller, this))
-    , m_singlePage(pageIndex >= 0)
-#ifdef Q_OS_LINUX
-    , m_globalShortcutPage(new LinuxGlobalShortcutSetupPage(*controller, this))
-#endif
-#ifdef Q_OS_MACOS
-    , m_startAtLoginPage(new StartAtLoginSetupPage(*controller->settings(), this))
-#endif
+    , m_singlePage(pageIndex(page) >= 0)
 {
     setWindowTitle(QStringLiteral("Speecher Setup Assistant"));
     resize(720, 520);
     setMinimumSize(620, 460);
 
-    auto *welcome = new WelcomeSetupPage(this);
-    auto *speechProvider = new SpeechProviderSetupPage(*controller->settings(),
-                                                       *controller->providerRegistry(),
-                                                       this);
-    auto *refinement = new RefinementSetupPage(*controller->settings(),
-                                               *controller->providerRegistry(),
-                                               this);
+    const int requestedPageIndex = pageIndex(page);
+#ifdef Q_OS_LINUX
+    if (!m_singlePage || page == SetupAssistantPage::GlobalShortcut) {
+        m_globalShortcutPage = new LinuxGlobalShortcutSetupPage(*controller, this);
+    }
+#endif
+    WelcomeSetupPage *welcome = nullptr;
+    SpeechProviderSetupPage *speechProvider = nullptr;
+    RefinementSetupPage *refinement = nullptr;
+    if (!m_singlePage) {
+        welcome = new WelcomeSetupPage(this);
+        speechProvider = new SpeechProviderSetupPage(*controller->settings(),
+                                                      *controller->providerRegistry(),
+                                                      this);
+        m_microphonePage = new MicrophoneSetupPage(*controller->settings(),
+                                                   *controller->platform(),
+                                                   this);
+        m_accessibilityPage = new AccessibilitySetupPage(*controller, this);
+        m_deliveryPage = new TextDeliverySetupPage(*controller->settings(), this);
+        refinement = new RefinementSetupPage(*controller->settings(),
+                                             *controller->providerRegistry(),
+                                             this);
+        m_profilesPage = new WritingProfilesSetupPage(*controller->settings(), this);
+        m_finishPage = new FinishSetupPage(*controller, this);
+#ifdef Q_OS_MACOS
+        m_startAtLoginPage = new StartAtLoginSetupPage(*controller->settings(), this);
+#endif
+    }
 #ifdef SPEECHER_WITH_KASSISTANT
     int nextPageIndex = 0;
-    const auto addSetupPage = [this, pageIndex, &nextPageIndex](QWidget *content,
-                                                                const QString &title) {
-        if (pageIndex < 0 || pageIndex == nextPageIndex) {
+    const auto addSetupPage = [this, requestedPageIndex, &nextPageIndex](QWidget *content,
+                                                                          const QString &title) {
+        if (content && (requestedPageIndex < 0 || requestedPageIndex == nextPageIndex)) {
             addPage(content, title);
         }
         ++nextPageIndex;
@@ -121,9 +129,9 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         setButtonText(QWizard::CustomButton1, QStringLiteral("Skip setup"));
     }
     int nextPageIndex = 0;
-    const auto addSetupPage = [this, pageIndex, &nextPageIndex](QWidget *content,
-                                                                const QString &title) {
-        if (pageIndex < 0 || pageIndex == nextPageIndex) {
+    const auto addSetupPage = [this, requestedPageIndex, &nextPageIndex](QWidget *content,
+                                                                          const QString &title) {
+        if (content && (requestedPageIndex < 0 || requestedPageIndex == nextPageIndex)) {
             const int id = addPage(wizardPage(content, title));
             m_pageContents.insert(id, content);
         }
@@ -153,15 +161,34 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     });
 #endif
 
-    connect(m_deliveryPage,
-            &TextDeliverySetupPage::signInRequirementChanged,
-            m_finishPage,
-            &FinishSetupPage::setSignInRequired);
+    if (m_deliveryPage) {
+        connect(m_deliveryPage,
+                &TextDeliverySetupPage::signInRequirementChanged,
+                m_finishPage,
+                &FinishSetupPage::setSignInRequired);
+    }
 #ifdef Q_OS_LINUX
-    updateActivePage(m_globalShortcutPage);
+    if (m_singlePage) {
+        updateActivePage(m_globalShortcutPage);
+    } else {
+        updateActivePage(welcome);
+    }
 #else
     updateActivePage(welcome);
 #endif
+}
+
+int SetupAssistant::pageIndex(SetupAssistantPage page)
+{
+    if (page == SetupAssistantPage::All) {
+        return -1;
+    }
+#ifdef Q_OS_LINUX
+    if (page == SetupAssistantPage::GlobalShortcut) {
+        return 0;
+    }
+#endif
+    return -1;
 }
 
 void SetupAssistant::skipSetup()
@@ -172,7 +199,9 @@ void SetupAssistant::skipSetup()
 
 void SetupAssistant::accept()
 {
-    m_microphonePage->setActive(false);
+    if (m_microphonePage) {
+        m_microphonePage->setActive(false);
+    }
     if (m_singlePage) {
 #ifdef SPEECHER_WITH_KASSISTANT
         KAssistantDialog::accept();
@@ -209,8 +238,10 @@ void SetupAssistant::accept()
 
 void SetupAssistant::updateActivePage(QWidget *page)
 {
-    m_microphonePage->setActive(page == m_microphonePage);
-    if (page == m_finishPage) {
+    if (m_microphonePage) {
+        m_microphonePage->setActive(page == m_microphonePage);
+    }
+    if (page == m_finishPage && m_finishPage) {
         m_finishPage->setSignInRequired(m_deliveryPage->needsSignIn());
     }
 }

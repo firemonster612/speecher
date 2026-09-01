@@ -3,7 +3,6 @@
 #include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusError>
-#include <QDBusInterface>
 #include <QDBusMessage>
 #include <QDBusMetaType>
 #include <QDBusPendingCallWatcher>
@@ -112,14 +111,14 @@ PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(QObject *parent)
 
     // A pending property read counts as supported so composition and startup stay non-blocking.
     m_supported = true;
-    QDBusInterface properties(QString::fromLatin1(portalService),
-                              QString::fromLatin1(portalPath),
-                              QStringLiteral("org.freedesktop.DBus.Properties"),
-                              QDBusConnection::sessionBus());
+    QDBusMessage properties = QDBusMessage::createMethodCall(
+        QString::fromLatin1(portalService),
+        QString::fromLatin1(portalPath),
+        QStringLiteral("org.freedesktop.DBus.Properties"),
+        QStringLiteral("Get"));
+    properties.setArguments({QString::fromLatin1(shortcutInterface), QStringLiteral("version")});
     auto *supportWatcher = new QDBusPendingCallWatcher(
-        properties.asyncCall(QStringLiteral("Get"),
-                             QString::fromLatin1(shortcutInterface),
-                             QStringLiteral("version")),
+        QDBusConnection::sessionBus().asyncCall(properties),
         this);
     connect(supportWatcher, &QDBusPendingCallWatcher::finished, this,
             [this, supportWatcher] {
@@ -322,12 +321,14 @@ void PortalGlobalShortcutBinder::sendRequest(const QString &member,
         return;
     }
 
-    QDBusInterface portal(QString::fromLatin1(portalService),
-                          QString::fromLatin1(portalPath),
-                          QString::fromLatin1(shortcutInterface),
-                          QDBusConnection::sessionBus());
+    QDBusMessage portalCall = QDBusMessage::createMethodCall(
+        QString::fromLatin1(portalService),
+        QString::fromLatin1(portalPath),
+        QString::fromLatin1(shortcutInterface),
+        member);
+    portalCall.setArguments(arguments);
     auto *watcher = new QDBusPendingCallWatcher(
-        portal.asyncCallWithArgumentList(member, arguments), this);
+        QDBusConnection::sessionBus().asyncCall(portalCall), this);
     connect(watcher, &QDBusPendingCallWatcher::finished, this,
             [this, watcher, predictedPath, kind] {
         const QDBusPendingReply<QDBusObjectPath> reply = *watcher;
@@ -470,11 +471,11 @@ void PortalGlobalShortcutBinder::activatePendingSession(const QString &trigger)
     m_pendingSessionPath = {};
     m_triggerDescription = trigger;
     if (!previous.path().isEmpty() && previous.path() != m_sessionPath.path()) {
-        QDBusInterface session(QString::fromLatin1(portalService),
-                               previous.path(),
-                               QString::fromLatin1(sessionInterface),
-                               QDBusConnection::sessionBus());
-        session.asyncCall(QStringLiteral("Close"));
+        QDBusConnection::sessionBus().asyncCall(QDBusMessage::createMethodCall(
+            QString::fromLatin1(portalService),
+            previous.path(),
+            QString::fromLatin1(sessionInterface),
+            QStringLiteral("Close")));
     }
     emit bindingChanged();
 }
@@ -484,11 +485,11 @@ void PortalGlobalShortcutBinder::closePendingSession()
     if (m_pendingSessionPath.path().isEmpty()) {
         return;
     }
-    QDBusInterface session(QString::fromLatin1(portalService),
-                           m_pendingSessionPath.path(),
-                           QString::fromLatin1(sessionInterface),
-                           QDBusConnection::sessionBus());
-    session.asyncCall(QStringLiteral("Close"));
+    QDBusConnection::sessionBus().asyncCall(QDBusMessage::createMethodCall(
+        QString::fromLatin1(portalService),
+        m_pendingSessionPath.path(),
+        QString::fromLatin1(sessionInterface),
+        QStringLiteral("Close")));
     m_pendingSessionPath = {};
 }
 
@@ -497,11 +498,11 @@ void PortalGlobalShortcutBinder::closeRequest()
     if (m_requestPath.path().isEmpty()) {
         return;
     }
-    QDBusInterface request(QString::fromLatin1(portalService),
-                           m_requestPath.path(),
-                           QString::fromLatin1(requestInterface),
-                           QDBusConnection::sessionBus());
-    request.asyncCall(QStringLiteral("Close"));
+    QDBusConnection::sessionBus().asyncCall(QDBusMessage::createMethodCall(
+        QString::fromLatin1(portalService),
+        m_requestPath.path(),
+        QString::fromLatin1(requestInterface),
+        QStringLiteral("Close")));
 }
 
 void PortalGlobalShortcutBinder::disconnectRequest()

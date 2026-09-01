@@ -1,5 +1,6 @@
 #include "ui/DictationPage.h"
 
+#include "app/AppFrontEnd.h"
 #include "app/PlatformComposition.h"
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
@@ -272,7 +273,7 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     shortcutLayout->addWidget(setupShortcut);
     columnLayout->addWidget(shortcutRow);
     connect(setupShortcut, &QPushButton::clicked, controller, [controller] {
-        controller->showSetupAssistant(0);
+        controller->showSetupAssistant(SetupAssistantPage::GlobalShortcut);
     });
 #endif
 

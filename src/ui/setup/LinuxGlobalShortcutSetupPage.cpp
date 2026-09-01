@@ -227,7 +227,9 @@ void LinuxGlobalShortcutSetupPage::updateRemovalGuide()
         lines << QStringLiteral("To remove Speecher's shortcut and menu entry:")
               << QStringLiteral(
                      "Delete `~/.local/bin/speecher` and "
-                     "`~/.local/share/applications/io.github.firemonster612.speecher.desktop`.");
+                     "`~/.local/share/applications/io.github.firemonster612.speecher.desktop`, "
+                     "then `~/.local/share/icons/hicolor/scalable/apps/"
+                     "io.github.firemonster612.speecher.svg`.");
     }
     lines << QStringLiteral("Remove the Global Shortcut in your desktop's keyboard settings.")
           << QStringLiteral(
@@ -239,14 +241,14 @@ void LinuxGlobalShortcutSetupPage::updateRemovalGuide()
 void LinuxGlobalShortcutSetupPage::refreshRegistrationState()
 {
     const QString display = m_controller.globalShortcutDisplay();
-    if (!display.isEmpty()) {
-        showWorkingState(display);
-        return;
-    }
-
-    showWorkingState({});
     const bool supported = m_controller.globalShortcutsSupported();
     m_registerButton->setEnabled(supported);
+    showWorkingState(display);
+    if (!display.isEmpty()) {
+        m_registrationStatus->setText(QStringLiteral("Try it now: %1").arg(display));
+        m_manualGroup->hide();
+        return;
+    }
     if (!supported) {
         m_registrationStatus->setText(m_controller.globalShortcutUnsupportedReason());
         m_manualGroup->show();
@@ -265,10 +267,9 @@ void LinuxGlobalShortcutSetupPage::refreshRegistrationState()
 void LinuxGlobalShortcutSetupPage::showWorkingState(const QString &display)
 {
     const bool working = !display.isEmpty();
-    if (working && !m_working) {
+    if (working) {
         m_moreOptions->setChecked(false);
     }
-    m_working = working;
     m_confirmation->setVisible(working);
     m_confirmation->setText(
         working
@@ -281,14 +282,11 @@ void LinuxGlobalShortcutSetupPage::showWorkingState(const QString &display)
 void LinuxGlobalShortcutSetupPage::showRegistrationResult(bool bound,
                                                           const QString &detail)
 {
-    m_registerButton->setEnabled(m_controller.globalShortcutsSupported());
     if (bound) {
-        m_registrationStatus->setText(
-            QStringLiteral("Try it now: %1").arg(detail));
-        m_manualGroup->hide();
-        showWorkingState(detail);
+        refreshRegistrationState();
         return;
     }
+    refreshRegistrationState();
     m_registrationStatus->setText(
         detail.isEmpty()
             ? QStringLiteral("Couldn't set the shortcut. Set one up by hand below.")

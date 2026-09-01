@@ -24,7 +24,7 @@ public:
 
     void showMainWindow() override;
     void showSettingsWindow() override;
-    void showSetupAssistant(int pageIndex) override;
+    void showSetupAssistant(SetupAssistantPage page) override;
     bool captureMainWindow(const QString &path) override;
     void showDictationError(const QString &message) override;
     void alert() override;
@@ -35,7 +35,6 @@ private:
 
     ApplicationController *m_controller;
     QPointer<SetupAssistant> m_setupAssistant;
-    int m_setupPageIndex = -1;
     std::unique_ptr<Native> m_native;
 };
 

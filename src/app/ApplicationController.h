@@ -15,6 +15,7 @@ class QTimer;
 namespace speecher {
 
 class AppFrontEnd;
+enum class SetupAssistantPage;
 class DictationSession;
 class AudioInput;
 class GlobalShortcutBinder;
@@ -68,7 +69,7 @@ public:
     void showMainWindow();
     void showSettingsWindow();
     void showSetupAssistant();
-    void showSetupAssistant(int pageIndex);
+    void showSetupAssistant(SetupAssistantPage page);
     bool startIpc(QString *error = nullptr);
 
 public slots:

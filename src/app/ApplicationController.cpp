@@ -314,13 +314,13 @@ void ApplicationController::showSettingsWindow()
 
 void ApplicationController::showSetupAssistant()
 {
-    showSetupAssistant(-1);
+    showSetupAssistant(SetupAssistantPage::All);
 }
 
-void ApplicationController::showSetupAssistant(int pageIndex)
+void ApplicationController::showSetupAssistant(SetupAssistantPage page)
 {
     if (m_frontEnd) {
-        m_frontEnd->showSetupAssistant(pageIndex);
+        m_frontEnd->showSetupAssistant(page);
     }
 }
 

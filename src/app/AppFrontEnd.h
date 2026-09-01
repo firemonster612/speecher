@@ -4,6 +4,11 @@
 
 namespace speecher {
 
+enum class SetupAssistantPage {
+    All,
+    GlobalShortcut,
+};
+
 // Everything ApplicationController needs from whichever user interface is
 // compiled in. One implementation per platform, so that the controller keeps
 // the session, permission and IPC responsibilities and holds no widgets; see
@@ -14,7 +19,7 @@ public:
 
     virtual void showMainWindow() = 0;
     virtual void showSettingsWindow() = 0;
-    virtual void showSetupAssistant(int pageIndex) = 0;
+    virtual void showSetupAssistant(SetupAssistantPage page) = 0;
 
     // Saves a picture of the main window, for the --grab screenshot path.
     // False when there is no main window yet or the file could not be written.

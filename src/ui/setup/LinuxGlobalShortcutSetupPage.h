@@ -31,7 +31,6 @@ private:
     QString m_appImagePath;
     QString m_binaryPath;
     bool m_plasma = false;
-    bool m_working = false;
     QWidget *m_options = nullptr;
     QLabel *m_confirmation = nullptr;
     QToolButton *m_moreOptions = nullptr;
