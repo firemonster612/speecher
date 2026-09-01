@@ -1,8 +1,8 @@
 #include "output/YdotoolSetup.h"
 
-#include "output/HelperPath.h"
 #include "output/YdotoolDelivery.h"
 
+#include <QCoreApplication>
 #include <QFileInfo>
 #include <QProcess>
 #include <QStandardPaths>
@@ -227,7 +227,13 @@ QString YdotoolSetup::serviceName()
 
 QString YdotoolSetup::helperPath()
 {
-    return resolvedHelperPath(SPEECHER_YDOTOOL_HELPER_PATH);
+    // pkexec's polkit action pins this helper to its compiled install path;
+    // root also cannot traverse a private squashfuse mount.
+    const QString sibling = QCoreApplication::applicationDirPath() + QStringLiteral("/speecher-ydotool-setup");
+    if (QFileInfo::exists(sibling)) {
+        return sibling;
+    }
+    return QString::fromLatin1(SPEECHER_YDOTOOL_HELPER_PATH);
 }
 
 bool YdotoolSetup::runHelper(HelperAction action, QString *error)

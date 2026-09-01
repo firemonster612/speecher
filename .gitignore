@@ -5,6 +5,7 @@
 # Packaging outputs
 /dist/
 /*.AppImage
+*.zsync
 
 # CMake generated files if configured in-tree
 /CMakeCache.txt

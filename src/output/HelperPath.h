@@ -6,13 +6,16 @@
 
 namespace speecher {
 
-inline QString resolvedHelperPath(const char *installedPath)
+inline QString resolvedHelperPath(const char *installedPath,
+                                  const QString &applicationDir = QCoreApplication::applicationDirPath())
 {
+    const QString fileName = QFileInfo(QString::fromLatin1(installedPath)).fileName();
+    const QString siblingPath = QFileInfo(applicationDir + QStringLiteral("/") + fileName).canonicalFilePath();
+    if (!siblingPath.isEmpty()) {
+        return siblingPath;
+    }
     const QString bundledPath = QFileInfo(
-        QCoreApplication::applicationDirPath()
-        + QStringLiteral("/../libexec/speecher/")
-        + QFileInfo(QString::fromLatin1(installedPath)).fileName())
-                                    .canonicalFilePath();
+        applicationDir + QStringLiteral("/../libexec/speecher/") + fileName).canonicalFilePath();
     return bundledPath.isEmpty() ? QString::fromLatin1(installedPath) : bundledPath;
 }
 

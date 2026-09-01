@@ -1,6 +1,7 @@
 #include "common/test_doubles.h"
 #include "common/test_http.h"
 #include "common/test_auth.h"
+#include "output/HelperPath.h"
 
 using namespace speecher::test;
 
@@ -49,6 +50,39 @@ class DeliveryTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void helperPathPrefersSiblingThenLibexecThenInstalled()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString applicationDir = dir.filePath(QStringLiteral("bin"));
+        const QString sibling = applicationDir + QStringLiteral("/helper");
+        const QString bundled = dir.filePath(QStringLiteral("libexec/speecher/helper"));
+        const QString installed = QStringLiteral("/usr/libexec/speecher/helper");
+        QVERIFY(QDir().mkpath(QFileInfo(sibling).dir().path()));
+        QVERIFY(QDir().mkpath(QFileInfo(bundled).dir().path()));
+
+        QCOMPARE(resolvedHelperPath("/usr/libexec/speecher/helper", applicationDir), installed);
+
+        QFile bundledFile(bundled);
+        QVERIFY(bundledFile.open(QIODevice::WriteOnly));
+        bundledFile.close();
+        QCOMPARE(resolvedHelperPath("/usr/libexec/speecher/helper", applicationDir),
+                 QFileInfo(bundled).canonicalFilePath());
+
+        QFile siblingFile(sibling);
+        QVERIFY(siblingFile.open(QIODevice::WriteOnly));
+        siblingFile.close();
+        QCOMPARE(resolvedHelperPath("/usr/libexec/speecher/helper", applicationDir),
+                 QFileInfo(sibling).canonicalFilePath());
+
+        QVERIFY(QFile::remove(sibling));
+        QCOMPARE(resolvedHelperPath("/usr/libexec/speecher/helper", applicationDir),
+                 QFileInfo(bundled).canonicalFilePath());
+
+        QVERIFY(QFile::remove(bundled));
+        QCOMPARE(resolvedHelperPath("/usr/libexec/speecher/helper", applicationDir), installed);
+    }
+
     void outputDeliverySelection()
     {
         OutputSettings settings;

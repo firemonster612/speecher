@@ -198,9 +198,17 @@ APPIMAGETOOL_ARGS=(-n)
 if [[ -n "${SPEECHER_UPDINFO:-}" ]]; then
   APPIMAGETOOL_ARGS+=(-u "$SPEECHER_UPDINFO")
 fi
-appimagetool "${APPIMAGETOOL_ARGS[@]}" "$APPDIR_PATH" "$APPIMAGE_PATH"
+(
+  cd "$OUTPUT_DIR"
+  appimagetool "${APPIMAGETOOL_ARGS[@]}" "$APPDIR_PATH" "$APPIMAGE_PATH"
+)
 
 echo "Created $APPIMAGE_PATH"
 if [[ -n "${SPEECHER_UPDINFO:-}" ]]; then
-  echo "Created ${APPIMAGE_PATH}.zsync"
+  ZSYNC_PATH="${APPIMAGE_PATH}.zsync"
+  if [[ ! -f "$ZSYNC_PATH" ]]; then
+    echo "appimagetool did not create expected zsync file: $ZSYNC_PATH" >&2
+    exit 1
+  fi
+  echo "Created $ZSYNC_PATH"
 fi
