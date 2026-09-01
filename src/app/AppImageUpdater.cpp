@@ -1,10 +1,5 @@
-#include "app/UpdateController.h"
-
-#ifdef Q_OS_MACOS
-#include "app/MacSparkleUpdater.h"
-#endif
+#include "app/AppImageUpdater.h"
 #include "core/SettingsStore.h"
-#include "core/settings/SettingsKeys.h"
 #include "dictation/DictationSession.h"
 
 #include <QCoreApplication>
@@ -20,9 +15,13 @@
 #include <QNetworkRequest>
 #include <QProcess>
 #include <QRegularExpression>
-#include <QStandardPaths>
 #include <QTemporaryFile>
 #include <QTimer>
+
+#include <cerrno>
+#include <cstring>
+#include <filesystem>
+#include <sys/stat.h>
 
 namespace speecher {
 namespace {
@@ -43,108 +42,103 @@ void setError(QString *error, const QString &message)
 
 } // namespace
 
-UpdateController::UpdateController(SettingsStore *settings,
-                                   DictationSession *session,
-                                   QObject *parent)
-    : QObject(parent)
+AppImageUpdater::AppImageUpdater(SettingsStore *settings,
+                                 DictationSession *session,
+                                 QObject *parent)
+    : UpdateController(parent)
     , m_settings(settings)
     , m_session(session)
     , m_network(new QNetworkAccessManager(this))
     , m_dailyTimer(new QTimer(this))
 {
-#ifdef Q_OS_MACOS
-    m_sparkleUpdater = new MacSparkleUpdater(m_settings, this);
-    return;
-#endif
+    m_network->setTransferTimeout(30000);
+    m_dismissedVersion = m_settings->updatesDismissedVersion();
     const QString appImage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
     if (QFileInfo(appImage).isFile()) {
         m_appImagePath = QFileInfo(appImage).absoluteFilePath();
     }
 
     connect(m_session, &DictationSession::stateChanged, this, [this] {
-        if (m_restartPending && !dictationSessionActive()) {
-            m_restartPending = false;
+        if (m_state == State::RestartPending
+            && m_session->state() == DictationState::Idle) {
             restartAppImage();
         }
     });
-    if (QStandardPaths::isTestModeEnabled()) {
-        return;
-    }
+}
 
+AppImageUpdater::~AppImageUpdater()
+{
+    clearDownload();
+}
+
+void AppImageUpdater::start()
+{
     m_dailyTimer->setInterval(dailyCheckIntervalMs);
     connect(m_dailyTimer, &QTimer::timeout, this, [this] {
         if (m_settings->autoCheckUpdates()) {
-            checkForUpdates();
+            checkForUpdates(m_settings->updateChannel());
         }
     });
     m_dailyTimer->start();
 
     QTimer::singleShot(0, this, [this] {
-        const qint64 lastCheck = m_settings->raw()
-                                     .value(SettingsKeys::UpdatesLastCheckTime, 0)
-                                     .toLongLong();
+        const qint64 lastCheck = m_settings->updatesLastCheckTime();
         if (m_settings->autoCheckUpdates()
             && QDateTime::currentMSecsSinceEpoch() - lastCheck > startupCheckIntervalMs) {
-            checkForUpdates();
+            checkForUpdates(m_settings->updateChannel());
         }
     });
 }
 
-UpdateController::~UpdateController()
-{
-    clearDownload();
-}
-
-UpdateController::State UpdateController::state() const
+UpdateController::State AppImageUpdater::state() const
 {
     return m_state;
 }
 
-QString UpdateController::currentVersion() const
+QString AppImageUpdater::currentVersion() const
 {
     return QStringLiteral(SPEECHER_VERSION);
 }
 
-qint64 UpdateController::currentBuildNumber() const
+qint64 AppImageUpdater::currentBuildNumber() const
 {
     return SPEECHER_BUILD_NUMBER;
 }
 
-QString UpdateController::availableVersion() const
+QString AppImageUpdater::availableVersion() const
 {
     return m_manifest.version;
 }
 
-int UpdateController::downloadPercent() const
+int AppImageUpdater::downloadPercent() const
 {
     return m_downloadPercent;
 }
 
-QString UpdateController::errorMessage() const
+QString AppImageUpdater::errorMessage() const
 {
     return m_error;
 }
 
-bool UpdateController::isAppImage() const
+bool AppImageUpdater::isAppImage() const
 {
     return !m_appImagePath.isEmpty();
 }
 
-bool UpdateController::bannerVisible() const
+bool AppImageUpdater::bannerVisible() const
 {
-    if (m_manifest.version.isEmpty()) {
-        return false;
+    if (m_state == State::Error) {
+        return true;
     }
-    const bool updateState = m_state == State::UpdateAvailable
-        || m_state == State::Downloading
-        || m_state == State::ReadyToRestart;
-    return updateState
-        && m_settings->raw().value(SettingsKeys::UpdatesDismissedVersion).toString()
-               != m_manifest.version;
+    if (m_state == State::UpdateAvailable) {
+        return m_manifest.version != m_dismissedVersion;
+    }
+    return m_state == State::Downloading || m_state == State::ReadyToRestart
+        || m_state == State::RestartPending;
 }
 
-std::optional<UpdateManifest> UpdateController::parseManifest(const QByteArray &json,
-                                                               QString *error)
+std::optional<UpdateManifest> AppImageUpdater::parseManifest(const QByteArray &json,
+                                                              QString *error)
 {
     QJsonParseError parseError;
     const QJsonDocument document = QJsonDocument::fromJson(json, &parseError);
@@ -172,15 +166,32 @@ std::optional<UpdateManifest> UpdateController::parseManifest(const QByteArray &
     return manifest;
 }
 
-bool UpdateController::isNewerBuild(const UpdateManifest &manifest,
-                                    qint64 currentBuildNumber)
+bool AppImageUpdater::isNewerBuild(const UpdateManifest &manifest,
+                                   qint64 currentBuildNumber)
 {
     return manifest.buildNumber > currentBuildNumber;
 }
 
-bool UpdateController::swapAppImage(const QString &downloadedPath,
-                                    const QString &installedPath,
-                                    QString *error)
+std::optional<AppImageFileIdentity> AppImageUpdater::fileIdentity(const QString &path,
+                                                                  QString *error)
+{
+    struct stat status {};
+    const QByteArray encodedPath = QFile::encodeName(path);
+    if (::stat(encodedPath.constData(), &status) != 0) {
+        setError(error,
+                 QStringLiteral("Could not inspect the installed AppImage: %1")
+                     .arg(QString::fromLocal8Bit(std::strerror(errno))));
+        return std::nullopt;
+    }
+    return AppImageFileIdentity{quint64(status.st_ino),
+                                qint64(status.st_mtim.tv_sec),
+                                qint64(status.st_mtim.tv_nsec)};
+}
+
+bool AppImageUpdater::swapAppImage(const QString &downloadedPath,
+                                   const QString &installedPath,
+                                   const AppImageFileIdentity &expectedIdentity,
+                                   QString *error)
 {
     QFile downloaded(downloadedPath);
     QFileDevice::Permissions permissions = downloaded.permissions();
@@ -191,51 +202,43 @@ bool UpdateController::swapAppImage(const QString &downloadedPath,
         return false;
     }
 
-    QTemporaryFile oldTemplate(installedPath + QStringLiteral(".old-XXXXXX"));
-    oldTemplate.setAutoRemove(false);
-    if (!oldTemplate.open()) {
-        setError(error, QStringLiteral("Could not reserve a backup name for the current AppImage."));
-        return false;
-    }
-    const QString oldPath = oldTemplate.fileName();
-    oldTemplate.close();
-    if (!QFile::remove(oldPath) || !QFile::rename(installedPath, oldPath)) {
-        setError(error, QStringLiteral("Could not move the current AppImage aside."));
-        return false;
-    }
-
-    if (!QFile::rename(downloadedPath, installedPath)) {
-        if (!QFile::rename(oldPath, installedPath)) {
+    const std::optional<AppImageFileIdentity> currentIdentity =
+        fileIdentity(installedPath, error);
+    if (!currentIdentity || *currentIdentity != expectedIdentity) {
+        if (currentIdentity) {
             setError(error, QStringLiteral(
-                                "Could not install the new AppImage or restore the current one."));
-        } else {
-            setError(error, QStringLiteral("Could not install the new AppImage."));
+                                "The installed AppImage changed since the download started; "
+                                "the update was not installed."));
         }
         return false;
     }
-    if (!QFile::remove(oldPath)) {
-        setError(error, QStringLiteral("The new AppImage is installed, but the old file could not be removed."));
+
+    std::error_code renameError;
+    // The verified download is beside the target, so rename atomically overwrites it.
+    std::filesystem::rename(QFile::encodeName(downloadedPath).constData(),
+                            QFile::encodeName(installedPath).constData(),
+                            renameError);
+    if (renameError) {
+        setError(error,
+                 QStringLiteral("Could not install the new AppImage: %1")
+                     .arg(QString::fromStdString(renameError.message())));
         return false;
     }
     return true;
 }
 
-void UpdateController::checkForUpdates()
+void AppImageUpdater::checkForUpdates(UpdateChannel channel)
 {
-#ifdef Q_OS_MACOS
-    m_sparkleUpdater->checkForUpdates();
-    return;
-#endif
     if (m_state == State::Checking || m_state == State::Downloading
-        || m_state == State::ReadyToRestart) {
+        || m_state == State::ReadyToRestart || m_state == State::RestartPending) {
         return;
     }
 
     m_manifest = {};
-    m_settings->raw().setValue(SettingsKeys::UpdatesLastCheckTime,
-                               QDateTime::currentMSecsSinceEpoch());
+    // The timestamp intentionally records request start, so failed checks still obey the cadence.
+    m_settings->setUpdatesLastCheckTime(QDateTime::currentMSecsSinceEpoch());
     setState(State::Checking);
-    QNetworkRequest request(manifestUrl());
+    QNetworkRequest request(manifestUrl(channel));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::NoLessSafeRedirectPolicy);
     m_reply = m_network->get(request);
@@ -244,10 +247,14 @@ void UpdateController::checkForUpdates()
     });
 }
 
-void UpdateController::updateNow()
+void AppImageUpdater::updateNow()
 {
     if (m_state == State::ReadyToRestart) {
         restartNow();
+        return;
+    }
+    if (m_state == State::Error) {
+        checkForUpdates(m_settings->updateChannel());
         return;
     }
     if (m_state != State::UpdateAvailable) {
@@ -260,36 +267,36 @@ void UpdateController::updateNow()
     beginDownload();
 }
 
-void UpdateController::restartNow()
+void AppImageUpdater::restartNow()
 {
     if (m_state != State::ReadyToRestart) {
         return;
     }
-    if (dictationSessionActive()) {
-        m_restartPending = true;
+    if (m_session->state() != DictationState::Idle) {
+        setState(State::RestartPending);
         return;
     }
     restartAppImage();
 }
 
-void UpdateController::dismissAvailableVersion()
+void AppImageUpdater::dismissAvailableVersion()
 {
-    if (m_manifest.version.isEmpty()) {
+    if (m_state != State::UpdateAvailable || m_manifest.version.isEmpty()) {
         return;
     }
-    m_settings->raw().setValue(SettingsKeys::UpdatesDismissedVersion,
-                               m_manifest.version);
+    m_dismissedVersion = m_manifest.version;
+    m_settings->setUpdatesDismissedVersion(m_dismissedVersion);
     emit changed();
 }
 
-QUrl UpdateController::manifestUrl() const
+QUrl AppImageUpdater::manifestUrl(UpdateChannel channel) const
 {
-    return m_settings->updateChannel() == UpdateChannel::Nightly
+    return channel == UpdateChannel::Nightly
         ? nightlyManifestUrl
         : stableManifestUrl;
 }
 
-void UpdateController::finishCheck(QNetworkReply *reply)
+void AppImageUpdater::finishCheck(QNetworkReply *reply)
 {
     if (m_reply != reply) {
         return;
@@ -324,8 +331,14 @@ void UpdateController::finishCheck(QNetworkReply *reply)
     }
 }
 
-void UpdateController::beginDownload()
+void AppImageUpdater::beginDownload()
 {
+    QString identityError;
+    m_appImageIdentity = fileIdentity(m_appImagePath, &identityError);
+    if (!m_appImageIdentity) {
+        setState(State::Error, identityError);
+        return;
+    }
     m_download = new QTemporaryFile(
         QFileInfo(m_appImagePath).absolutePath()
         + QStringLiteral("/.speecher-update-XXXXXX.AppImage"));
@@ -343,7 +356,7 @@ void UpdateController::beginDownload()
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::NoLessSafeRedirectPolicy);
     m_reply = m_network->get(request);
-    connect(m_reply, &QNetworkReply::readyRead, this, &UpdateController::writeDownloadedData);
+    connect(m_reply, &QNetworkReply::readyRead, this, &AppImageUpdater::writeDownloadedData);
     connect(m_reply, &QNetworkReply::downloadProgress, this,
             [this](qint64 received, qint64 total) {
                 if (total <= 0) {
@@ -360,7 +373,7 @@ void UpdateController::beginDownload()
     });
 }
 
-void UpdateController::writeDownloadedData()
+void AppImageUpdater::writeDownloadedData()
 {
     if (!m_reply || !m_download || !m_downloadError.isEmpty()) {
         return;
@@ -372,7 +385,7 @@ void UpdateController::writeDownloadedData()
     }
 }
 
-void UpdateController::finishDownload(QNetworkReply *reply)
+void AppImageUpdater::finishDownload(QNetworkReply *reply)
 {
     if (m_reply != reply) {
         return;
@@ -399,8 +412,8 @@ void UpdateController::finishDownload(QNetworkReply *reply)
     m_download = nullptr;
 
     QString error;
-    if (!verifyDownload(downloadedPath, &error)
-        || !swapAppImage(downloadedPath, m_appImagePath, &error)) {
+    if (!verifyDownload(downloadedPath, m_manifest.sha256, &error)
+        || !swapAppImage(downloadedPath, m_appImagePath, *m_appImageIdentity, &error)) {
         QFile::remove(downloadedPath);
         setState(State::Error, error);
         return;
@@ -409,7 +422,9 @@ void UpdateController::finishDownload(QNetworkReply *reply)
     setState(State::ReadyToRestart);
 }
 
-bool UpdateController::verifyDownload(const QString &path, QString *error) const
+bool AppImageUpdater::verifyDownload(const QString &path,
+                                     const QByteArray &expectedSha,
+                                     QString *error)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
@@ -417,14 +432,14 @@ bool UpdateController::verifyDownload(const QString &path, QString *error) const
         return false;
     }
     QCryptographicHash hash(QCryptographicHash::Sha256);
-    if (!hash.addData(&file) || hash.result().toHex() != m_manifest.sha256) {
+    if (!hash.addData(&file) || hash.result().toHex() != expectedSha) {
         setError(error, QStringLiteral("The downloaded AppImage did not match its SHA-256 checksum."));
         return false;
     }
     return true;
 }
 
-void UpdateController::clearDownload()
+void AppImageUpdater::clearDownload()
 {
     if (!m_download) {
         return;
@@ -436,20 +451,14 @@ void UpdateController::clearDownload()
     QFile::remove(path);
 }
 
-void UpdateController::setState(State state, const QString &error)
+void AppImageUpdater::setState(State state, const QString &error)
 {
     m_state = state;
     m_error = error;
     emit changed();
 }
 
-bool UpdateController::dictationSessionActive() const
-{
-    const DictationState state = m_session->state();
-    return state != DictationState::Idle && state != DictationState::Error;
-}
-
-void UpdateController::restartAppImage()
+void AppImageUpdater::restartAppImage()
 {
     if (!isAppImage()) {
         emit openReleasePageRequested();
@@ -458,7 +467,7 @@ void UpdateController::restartAppImage()
     if (!QProcess::startDetached(m_appImagePath,
                                  {},
                                  QFileInfo(m_appImagePath).absolutePath())) {
-        setState(State::Error, QStringLiteral("Could not restart Speecher."));
+        setState(State::ReadyToRestart, QStringLiteral("Could not restart Speecher."));
         return;
     }
     QCoreApplication::quit();

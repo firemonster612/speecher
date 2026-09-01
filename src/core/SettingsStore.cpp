@@ -195,7 +195,6 @@ void SettingsStore::setAudioCaptureSettings(const AudioCaptureSettings &value)
     emitAudioCaptureSettingsChangedIfNeeded(previous);
 }
 
-#ifdef Q_OS_MACOS
 void SettingsStore::setUpdateChannel(UpdateChannel value)
 {
     if (updateChannel() == value) {
@@ -222,7 +221,6 @@ void SettingsStore::setAutoInstallUpdates(bool value)
     SettingsCodecs::setAutoInstallUpdates(value);
     emit updateSettingsChanged();
 }
-#endif
 
 QSettings &SettingsStore::raw()
 {

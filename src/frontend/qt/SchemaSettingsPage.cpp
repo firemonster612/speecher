@@ -349,7 +349,8 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
                                               descriptor.help,
                                               custom.widget,
                                               host,
-                                              custom.titleAccessory);
+                                              custom.titleAccessory,
+                                              bool(descriptor.helpValue));
             settings::addRow(form, frame, host, false);
             row.frame = frame;
             row.control = custom.widget;
@@ -393,9 +394,15 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
     if (!descriptor.tooltip.isEmpty()) {
         row.control->setToolTip(descriptor.tooltip);
     }
-    QFrame *frame = settings::makeRow(descriptor.label, descriptor.help, row.control, host);
+    QFrame *frame = settings::makeRow(descriptor.label,
+                                      descriptor.help,
+                                      row.control,
+                                      host,
+                                      nullptr,
+                                      bool(descriptor.helpValue));
     settings::addRow(form, frame, host, false);
     row.frame = frame;
+    row.description = frame->findChild<QLabel *>(QStringLiteral("rowDescription"));
     m_rows.append(row);
     if (descriptor.id == QStringLiteral("audioDevice")) {
         auto *mediaDevices = new QMediaDevices(this);
@@ -585,35 +592,9 @@ void SchemaSettingsPage::setCapabilities(const Capabilities &capabilities)
     refreshRows();
 }
 
-void SchemaSettingsPage::setActionPresentation(const QString &rowId,
-                                                const QString &help,
-                                                const QString &buttonText,
-                                                bool enabled)
+void SchemaSettingsPage::refresh()
 {
-    for (const Row &row : std::as_const(m_rows)) {
-        if (row.descriptor.id != rowId) {
-            continue;
-        }
-        if (auto *button = qobject_cast<QPushButton *>(row.control)) {
-            button->setText(buttonText);
-            button->setEnabled(enabled);
-        }
-        if (auto *description = row.frame->findChild<QLabel *>(
-                QStringLiteral("rowDescription"))) {
-            description->setText(help);
-        }
-        return;
-    }
-}
-
-void SchemaSettingsPage::setInfoText(const QString &rowId, const QString &text)
-{
-    for (const Row &row : std::as_const(m_rows)) {
-        if (row.descriptor.id == rowId && row.setValue) {
-            row.setValue(text);
-            return;
-        }
-    }
+    refreshRows();
 }
 
 // Everything a row can derive from the rest of the page: whether it is worth
@@ -634,6 +615,13 @@ void SchemaSettingsPage::refreshRows()
         }
         if (row.descriptor.kind == RowKind::Info && row.descriptor.value && row.setValue) {
             row.setValue(row.descriptor.value(draft));
+        }
+        if (row.descriptor.kind == RowKind::Action && row.descriptor.value) {
+            qobject_cast<QPushButton *>(row.control)->setText(
+                row.descriptor.value(draft).toString());
+        }
+        if (row.descriptor.helpValue && row.description) {
+            row.description->setText(row.descriptor.helpValue(draft));
         }
         if (row.descriptor.enabled) {
             const bool live = row.descriptor.enabled(draft, m_capabilities);

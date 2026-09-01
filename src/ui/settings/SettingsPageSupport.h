@@ -31,7 +31,8 @@ QFrame *makeRow(const QString &label,
                 const QString &description,
                 QWidget *control,
                 QWidget *parent,
-                QWidget *titleAccessory = nullptr);
+                QWidget *titleAccessory = nullptr,
+                bool dynamicDescription = false);
 void addRow(QFormLayout *layout,
             QFrame *row,
             QWidget *parent,

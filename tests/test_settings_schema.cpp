@@ -105,6 +105,16 @@ private slots:
         QVERIFY(!row.disabledHelp.isEmpty());
     }
 
+    void automaticInstallOnlyAppearsForAppImages()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("general")),
+                                         QStringLiteral("autoInstallUpdates"));
+
+        QVERIFY(!row.visible(AppSettings{}, Capabilities{false, false}));
+        QVERIFY(row.visible(AppSettings{}, Capabilities{false, true}));
+    }
+
     void theOnlySlowRowsAreTheDeviceListAndTheKeyring()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());

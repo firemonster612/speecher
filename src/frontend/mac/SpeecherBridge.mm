@@ -472,7 +472,7 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     SettingsRowModel *model = [[SettingsRowModel alloc] init];
     model.rowId = row.id.toNSString();
     model.label = row.label.toNSString();
-    model.help = row.help.toNSString();
+    model.help = (row.helpValue ? row.helpValue(_state->draft) : row.help).toNSString();
     model.kind = bridgedKind(row.kind);
     model.actionLabel = row.actionLabel.toNSString();
     model.minimum = row.range.minimum;
@@ -646,7 +646,8 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     _state = new BridgeState;
     _state->controller = controller;
     const Capabilities capabilities{controller->accessibilitySupported()
-                                    && controller->accessibilityEnabled()};
+                                        && controller->accessibilityEnabled(),
+                                    controller->updates()->isAppImage()};
     _settingsSchema = [[SettingsSchemaModel alloc]
         initWithStore:controller->settings()
                schema:speecher::buildSettingsSchema(

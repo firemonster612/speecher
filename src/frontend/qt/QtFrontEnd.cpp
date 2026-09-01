@@ -33,6 +33,10 @@ QtFrontEnd::QtFrontEnd(ApplicationController *controller, QObject *parent)
         QDesktopServices::openUrl(
             QUrl(QStringLiteral("https://github.com/firemonster612/speecher/releases")));
     });
+    connect(controller->session(),
+            &DictationSession::stateChanged,
+            this,
+            &QtFrontEnd::refreshUpdateChip);
     refreshUpdateChip();
 }
 
@@ -172,16 +176,28 @@ void QtFrontEnd::wireSessionToPopup()
 void QtFrontEnd::refreshUpdateChip()
 {
     UpdateController *updates = m_controller->updates();
+    const bool canAct = m_controller->session()->state() == DictationState::Idle;
     switch (updates->state()) {
     case UpdateController::State::UpdateAvailable:
-        m_popup->setUpdateChip(QStringLiteral("Update available"), true, true);
+        m_popup->setUpdateChip(QStringLiteral("Update available"), true, canAct);
         break;
     case UpdateController::State::Downloading:
         m_popup->setUpdateChip(
-            QStringLiteral("Updating %1%").arg(updates->downloadPercent()), true, false);
+            QStringLiteral("Downloading %1%").arg(updates->downloadPercent()), true, false);
         break;
     case UpdateController::State::ReadyToRestart:
-        m_popup->setUpdateChip(QStringLiteral("Restart to finish updating"), true, true);
+        m_popup->setUpdateChip(updates->errorMessage().isEmpty()
+                                   ? QStringLiteral("Restart to finish updating")
+                                   : updates->errorMessage(),
+                               true,
+                               canAct);
+        break;
+    case UpdateController::State::RestartPending:
+        m_popup->setUpdateChip(
+            QStringLiteral("Restarting after this dictation…"), true, false);
+        break;
+    case UpdateController::State::Error:
+        m_popup->setUpdateChip(QStringLiteral("Couldn't install the update."), true, canAct);
         break;
     default:
         m_popup->setUpdateChip({}, false, false);

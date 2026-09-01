@@ -338,20 +338,29 @@ SettingsPage generalPage(const SchemaContext &context)
 
     SettingsRow updateChannel = choiceRow(
         QStringLiteral("updateChannel"),
-        QStringLiteral("Update Channel"),
-        QStringLiteral("Choose the Stable Release or Nightly Build Update Channel."),
+        QStringLiteral("Update channel"),
+        QString(),
         fixedOptions({
             {QStringLiteral("stable"),
              QStringLiteral("Stable Release"),
              QStringLiteral("Hand-tested releases for general use.")},
             {QStringLiteral("nightly"),
              QStringLiteral("Nightly Build"),
-             QStringLiteral("Untested builds published from changes to master.")},
+             QStringLiteral("Republished automatically from every push to master.")},
         }),
         [](const AppSettings &settings) { return updateChannelName(settings.updates.channel); },
         [](AppSettings &settings, const QString &value) {
             settings.updates.channel = updateChannelFromName(value);
         });
+    SettingsRow autoInstall = toggleRow(
+        QStringLiteral("autoInstallUpdates"),
+        QStringLiteral("Download and install updates automatically"),
+        QStringLiteral("AppImage updates install in the background and take effect after restart."),
+        [](const AppSettings &settings) { return settings.updates.autoInstall; },
+        [](AppSettings &settings, bool value) { settings.updates.autoInstall = value; });
+    autoInstall.visible = [](const AppSettings &, const Capabilities &capabilities) {
+        return capabilities.isAppImage;
+    };
 
     return {
         QStringLiteral("general"),
@@ -400,21 +409,17 @@ SettingsPage generalPage(const SchemaContext &context)
                            QStringLiteral("Check the selected Update Channel at startup and once a day."),
                            [](const AppSettings &settings) { return settings.updates.autoCheck; },
                            [](AppSettings &settings, bool value) { settings.updates.autoCheck = value; }),
-                 toggleRow(QStringLiteral("autoInstallUpdates"),
-                           QStringLiteral("Automatically download and install updates"),
-                           QStringLiteral("AppImage updates install in the background and take effect after restart."),
-                           [](const AppSettings &settings) { return settings.updates.autoInstall; },
-                           [](AppSettings &settings, bool value) { settings.updates.autoInstall = value; }),
+                 std::move(autoInstall),
                  actionRow(QStringLiteral("checkForUpdates"),
-                           QStringLiteral("Check for Updates"),
+                           QStringLiteral("Check for updates"),
                            QStringLiteral("Check the selected Update Channel for a newer build."),
                            QStringLiteral("Check now")),
                  infoRow(QStringLiteral("currentVersion"),
                          QStringLiteral("Current version"),
-                         QStringLiteral("The version currently running."),
+                         QString(),
                          context.currentVersion.isEmpty()
-                             ? QStringLiteral("Speecher")
-                             : QStringLiteral("Speecher %1").arg(context.currentVersion)),
+                             ? QStringLiteral("Unknown")
+                             : context.currentVersion),
              }},
         },
     };

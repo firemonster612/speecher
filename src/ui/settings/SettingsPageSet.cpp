@@ -39,14 +39,99 @@ SettingsPage providerRowsPage(const SettingsPage &source,
     return page;
 }
 
+SettingsRow &rowById(SettingsSchema &schema, const QString &id)
+{
+    for (SettingsPage &page : schema.pages) {
+        for (SettingsSection &section : page.sections) {
+            for (SettingsRow &row : section.rows) {
+                if (row.id == id) {
+                    return row;
+                }
+            }
+        }
+    }
+    qFatal("settings schema cannot find row %s", qPrintable(id));
+}
+
+SettingsSchema settingsSchema(ApplicationController *controller)
+{
+    SettingsSchema schema = buildSettingsSchema(qtSchemaContext(
+        *controller->platform(),
+        *controller->providerRegistry(),
+        controller->primaryOutputStatus()));
+    UpdateController *updates = controller->updates();
+
+    SettingsRow &check = rowById(schema, QStringLiteral("checkForUpdates"));
+    check.helpValue = [updates](const AppSettings &settings) {
+        const QString channel = settings.updates.channel == UpdateChannel::Nightly
+            ? QStringLiteral("Nightly Build")
+            : QStringLiteral("Stable Release");
+        switch (updates->state()) {
+        case UpdateController::State::Idle:
+            return QStringLiteral("Check the %1 feed for a newer build.").arg(channel);
+        case UpdateController::State::Checking:
+            return QStringLiteral("Checking the %1 feed.").arg(channel);
+        case UpdateController::State::UpToDate:
+            return QStringLiteral("Speecher is up to date.");
+        case UpdateController::State::UpdateAvailable:
+            return QStringLiteral("Speecher %1 is available.").arg(updates->availableVersion());
+        case UpdateController::State::Downloading:
+            return QStringLiteral("Downloading Speecher %1 (%2%)")
+                .arg(updates->availableVersion())
+                .arg(updates->downloadPercent());
+        case UpdateController::State::ReadyToRestart:
+            return updates->errorMessage().isEmpty()
+                ? QStringLiteral("Restart to finish updating.")
+                : updates->errorMessage();
+        case UpdateController::State::RestartPending:
+            return QStringLiteral("Restarting after this dictation…");
+        case UpdateController::State::Error:
+            return updates->errorMessage();
+        }
+        return QString();
+    };
+    check.value = [updates](const AppSettings &) {
+        switch (updates->state()) {
+        case UpdateController::State::Checking:
+            return QVariant(QStringLiteral("Checking…"));
+        case UpdateController::State::UpToDate:
+            return QVariant(QStringLiteral("Check again"));
+        case UpdateController::State::UpdateAvailable:
+            return QVariant(QStringLiteral("Update now"));
+        case UpdateController::State::Downloading:
+            return QVariant(QStringLiteral("Downloading…"));
+        case UpdateController::State::RestartPending:
+            return QVariant(QStringLiteral("Restarting after this dictation…"));
+        case UpdateController::State::Error:
+            return QVariant(QStringLiteral("Try again"));
+        default:
+            return QVariant(QStringLiteral("Check now"));
+        }
+    };
+    check.enabled = [updates](const AppSettings &, const Capabilities &) {
+        return updates->state() != UpdateController::State::Checking
+            && updates->state() != UpdateController::State::Downloading
+            && updates->state() != UpdateController::State::ReadyToRestart
+            && updates->state() != UpdateController::State::RestartPending;
+    };
+
+    SettingsRow &version = rowById(schema, QStringLiteral("currentVersion"));
+    version.value = [updates](const AppSettings &) {
+        QString text = updates->currentVersion();
+        if (!updates->availableVersion().isEmpty()) {
+            text += QStringLiteral(" — %1 available").arg(updates->availableVersion());
+        }
+        return QVariant(text);
+    };
+    return schema;
+}
+
 } // namespace
 
 SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *parent)
     : QObject(parent)
     , m_controller(controller)
-    , m_schema(buildSettingsSchema(qtSchemaContext(*controller->platform(),
-                                                   *controller->providerRegistry(),
-                                                   controller->primaryOutputStatus())))
+    , m_schema(settingsSchema(controller))
     , m_outputRows(*controller->settings())
     , m_providerRows(*controller->settings(), *controller->secretStore())
     , m_general(addPage(QStringLiteral("general"), parent))
@@ -164,6 +249,7 @@ void SettingsPageSet::loadAfterShow()
         page->loadExpensiveRows(snapshot);
     }
     m_providerRows.loadSecret();
+    refreshUpdateRows();
 }
 
 bool SettingsPageSet::save(bool showValidationErrors,
@@ -259,75 +345,25 @@ void SettingsPageSet::runPageAction(const QString &rowId)
     if (rowId == QStringLiteral("checkForUpdates")) {
         AppSettings draft = m_controller->settings()->snapshot();
         m_general->appendToDraft(draft);
-        m_controller->settings()->setUpdateChannel(draft.updates.channel);
-        m_controller->settings()->setAutoCheckUpdates(draft.updates.autoCheck);
-        m_controller->settings()->setAutoInstallUpdates(draft.updates.autoInstall);
-        m_controller->updates()->checkForUpdates();
+        if (m_controller->updates()->state() == UpdateController::State::UpdateAvailable) {
+            m_controller->updates()->updateNow();
+        } else {
+            m_controller->updates()->checkForUpdates(draft.updates.channel);
+        }
     }
 }
 
 void SettingsPageSet::refreshUpdateRows()
 {
-    UpdateController *updates = m_controller->updates();
-    AppSettings draft = m_controller->settings()->snapshot();
-    m_general->appendToDraft(draft);
-    const QString channel = draft.updates.channel == UpdateChannel::Nightly
-        ? QStringLiteral("Nightly Build")
-        : QStringLiteral("Stable Release");
-    QString help;
-    QString button = QStringLiteral("Check now");
-    bool enabled = true;
-    switch (updates->state()) {
-    case UpdateController::State::Idle:
-        help = QStringLiteral("Check the %1 feed for a newer build.").arg(channel);
-        break;
-    case UpdateController::State::Checking:
-        help = QStringLiteral("Checking the %1 feed.").arg(channel);
-        button = QStringLiteral("Checking…");
-        enabled = false;
-        break;
-    case UpdateController::State::UpToDate:
-        help = QStringLiteral("Speecher is up to date.");
-        button = QStringLiteral("Check again");
-        break;
-    case UpdateController::State::UpdateAvailable:
-        help = QStringLiteral("A new version of Speecher is available. Version %1.")
-                   .arg(updates->availableVersion());
-        button = QStringLiteral("Check again");
-        break;
-    case UpdateController::State::Downloading:
-        help = QStringLiteral("Downloading Speecher %1, %2%.")
-                   .arg(updates->availableVersion())
-                   .arg(updates->downloadPercent());
-        button = QStringLiteral("Downloading…");
-        enabled = false;
-        break;
-    case UpdateController::State::ReadyToRestart:
-        help = QStringLiteral("Restart to finish updating.");
-        button = QStringLiteral("Installed");
-        enabled = false;
-        break;
-    case UpdateController::State::Error:
-        help = updates->errorMessage();
-        button = QStringLiteral("Try again");
-        break;
-    }
-    m_general->setActionPresentation(QStringLiteral("checkForUpdates"),
-                                     help,
-                                     button,
-                                     enabled);
-
-    QString version = QStringLiteral("Speecher %1").arg(updates->currentVersion());
-    if (!updates->availableVersion().isEmpty()) {
-        version += QStringLiteral(". Available: %1").arg(updates->availableVersion());
-    }
-    m_general->setInfoText(QStringLiteral("currentVersion"), version);
+    m_general->refresh();
 }
 
 void SettingsPageSet::updateAccessibilityState(bool supported, bool enabled, bool persistent)
 {
     Q_UNUSED(persistent);
-    const Capabilities capabilities{supported && enabled};
+    const Capabilities capabilities{supported && enabled,
+                                    m_controller->updates()->isAppImage()};
+    m_general->setCapabilities(capabilities);
     m_output->setCapabilities(capabilities);
     m_applications->setCapabilities(capabilities);
     m_refinement->setCapabilities(capabilities);
