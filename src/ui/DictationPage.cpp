@@ -249,6 +249,32 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
                                         AppPageId::General, this));
     columnLayout->addWidget(cardsHost);
 
+#ifdef Q_OS_LINUX
+    auto *shortcutRow = new QFrame(column);
+    shortcutRow->setObjectName(QStringLiteral("settingsCard"));
+    shortcutRow->setFrameShape(QFrame::StyledPanel);
+    auto *shortcutLayout = new QHBoxLayout(shortcutRow);
+    shortcutLayout->setContentsMargins(12, 10, 12, 10);
+    auto *shortcutCopy = new QWidget(shortcutRow);
+    auto *shortcutCopyLayout = new QVBoxLayout(shortcutCopy);
+    shortcutCopyLayout->setContentsMargins(0, 0, 0, 0);
+    shortcutCopyLayout->setSpacing(2);
+    auto *shortcutLabel = new QLabel(QStringLiteral("Global Shortcut"), shortcutCopy);
+    auto *shortcutHelp = new QLabel(
+        QStringLiteral("Start dictation from anywhere on your desktop."), shortcutCopy);
+    shortcutHelp->setForegroundRole(QPalette::PlaceholderText);
+    shortcutCopyLayout->addWidget(shortcutLabel);
+    shortcutCopyLayout->addWidget(shortcutHelp);
+    auto *setupShortcut = new QPushButton(
+        QStringLiteral("Set up global shortcut…"), shortcutRow);
+    setupShortcut->setObjectName(QStringLiteral("setupGlobalShortcut"));
+    shortcutLayout->addWidget(shortcutCopy, 1);
+    shortcutLayout->addWidget(setupShortcut);
+    columnLayout->addWidget(shortcutRow);
+    connect(setupShortcut, &QPushButton::clicked,
+            controller, &ApplicationController::showSetupAssistant);
+#endif
+
     pageLayout->addWidget(column);
     pageLayout->addStretch();
 

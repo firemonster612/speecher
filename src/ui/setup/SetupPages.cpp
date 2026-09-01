@@ -864,6 +864,7 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
     m_shortcutStatus->setWordWrap(true);
     m_signInNote->setWordWrap(true);
 
+#ifdef Q_OS_MACOS
     if (m_controller.globalShortcutsSupported()) {
         m_createShortcut = new QCheckBox(QStringLiteral("Set up a dictation shortcut"), this);
         m_createShortcut->setChecked(true);
@@ -886,6 +887,7 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
             QStringLiteral("Bind `speecher toggle` in your desktop environment's global shortcut settings."));
     }
     layout->addWidget(m_shortcutStatus);
+#endif
     layout->addWidget(m_signInNote);
     layout->addStretch();
 }

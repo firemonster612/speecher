@@ -7,10 +7,16 @@
 #include "core/SettingsStore.h"
 #include "platform/CorrectionDiff.h"
 #include "platform/GlobalShortcutBinder.h"
+#ifdef Q_OS_LINUX
+#include "platform/LinuxDesktopIntegration.h"
+#endif
 
+#include <QDir>
+#include <QFile>
 #include <QList>
 #include <QSignalSpy>
 #include <QStringList>
+#include <QTemporaryDir>
 #include <QTest>
 
 #include <memory>
@@ -209,6 +215,65 @@ class PlatformCompositionTests : public QObject {
     Q_OBJECT
 
 private slots:
+#ifdef Q_OS_LINUX
+    void globalShortcutInstructionCommandMatchesTheInstallation()
+    {
+        QTemporaryDir home;
+        QVERIFY(home.isValid());
+
+        QCOMPARE(globalShortcutInstructionCommand(
+                     home.path(),
+                     QString(),
+                     QStringLiteral("/opt/speecher/bin/speecher")),
+                 QStringLiteral("/opt/speecher/bin/speecher toggle"));
+        QCOMPARE(globalShortcutInstructionCommand(
+                     home.path(),
+                     QStringLiteral("/opt/Speecher Current.AppImage"),
+                     QStringLiteral("/tmp/.mount/usr/bin/speecher")),
+                 QStringLiteral("\"/opt/Speecher Current.AppImage\" toggle"));
+
+        QVERIFY(QDir().mkpath(home.filePath(QStringLiteral(".local/bin"))));
+        const QString appImage = home.filePath(QStringLiteral("Speecher.AppImage"));
+        QFile source(appImage);
+        QVERIFY(source.open(QIODevice::WriteOnly));
+        source.close();
+        QVERIFY(QFile::link(appImage,
+                            home.filePath(QStringLiteral(".local/bin/speecher"))));
+        QCOMPARE(globalShortcutInstructionCommand(
+                     home.path(),
+                     appImage,
+                     QStringLiteral("/tmp/.mount/usr/bin/speecher")),
+                 QStringLiteral("speecher toggle"));
+    }
+
+    void appImageDesktopFileExecLinesUseTheRealImagePath()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString sourcePath = directory.filePath(QStringLiteral("source.desktop"));
+        const QString targetPath = directory.filePath(QStringLiteral("installed.desktop"));
+        QFile source(sourcePath);
+        QVERIFY(source.open(QIODevice::WriteOnly));
+        source.write("[Desktop Entry]\nExec=speecher\n"
+                     "[Desktop Action ToggleDictation]\nExec=speecher toggle\n");
+        source.close();
+
+        QString error;
+        QVERIFY2(writeAppImageDesktopFile(sourcePath,
+                                          targetPath,
+                                          QStringLiteral("/opt/Speecher Current.AppImage"),
+                                          &error),
+                 qPrintable(error));
+        QFile installed(targetPath);
+        QVERIFY(installed.open(QIODevice::ReadOnly));
+        QCOMPARE(installed.readAll(),
+                 QByteArray("[Desktop Entry]\n"
+                            "Exec=\"/opt/Speecher Current.AppImage\"\n"
+                            "[Desktop Action ToggleDictation]\n"
+                            "Exec=\"/opt/Speecher Current.AppImage\" toggle\n"));
+    }
+#endif
+
     void correctionTrackerSettlesSamplesWithoutRealTimeWaits()
     {
         CorrectionTracker tracker;

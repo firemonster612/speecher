@@ -3,6 +3,9 @@
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
 #include "ui/setup/SetupPages.h"
+#ifdef Q_OS_LINUX
+#include "ui/setup/LinuxGlobalShortcutSetupPage.h"
+#endif
 
 #include <QColor>
 #include <QMessageBox>
@@ -47,6 +50,9 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
     , m_deliveryPage(new TextDeliverySetupPage(*controller->settings(), this))
     , m_profilesPage(new WritingProfilesSetupPage(*controller->settings(), this))
     , m_finishPage(new FinishSetupPage(*controller, this))
+#ifdef Q_OS_LINUX
+    , m_globalShortcutPage(new LinuxGlobalShortcutSetupPage(*controller, this))
+#endif
 #ifdef Q_OS_MACOS
     , m_startAtLoginPage(new StartAtLoginSetupPage(*controller->settings(), this))
 #endif
@@ -63,6 +69,9 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
                                                *controller->providerRegistry(),
                                                this);
 #ifdef SPEECHER_WITH_KASSISTANT
+#ifdef Q_OS_LINUX
+    addPage(m_globalShortcutPage, QStringLiteral("Global Shortcut"));
+#endif
     addPage(welcome, QStringLiteral("Welcome to Speecher"));
     addPage(speechProvider, QStringLiteral("Transcription"));
     addPage(m_microphonePage, QStringLiteral("Microphone"));
@@ -100,6 +109,9 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
         const int id = addPage(wizardPage(content, title));
         m_pageContents.insert(id, content);
     };
+#ifdef Q_OS_LINUX
+    addSetupPage(m_globalShortcutPage, QStringLiteral("Global Shortcut"));
+#endif
     addSetupPage(welcome, QStringLiteral("Welcome to Speecher"));
     addSetupPage(speechProvider, QStringLiteral("Transcription"));
     addSetupPage(m_microphonePage, QStringLiteral("Microphone"));
@@ -125,7 +137,11 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
             &TextDeliverySetupPage::signInRequirementChanged,
             m_finishPage,
             &FinishSetupPage::setSignInRequired);
+#ifdef Q_OS_LINUX
+    updateActivePage(m_globalShortcutPage);
+#else
     updateActivePage(welcome);
+#endif
 }
 
 void SetupAssistant::skipSetup()

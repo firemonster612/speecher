@@ -40,13 +40,14 @@ void KGlobalAccelShortcutBinder::bind()
 {
 #ifdef SPEECHER_WITH_KGLOBALACCEL
     KGlobalAccel::self()->cleanComponent(QStringLiteral("local.speecher"));
+    const QKeySequence savedShortcut = shortcut();
+    delete m_action;
     m_action = new QAction(QStringLiteral("Toggle dictation"), this);
     m_action->setObjectName(QString::fromLatin1(shortcutAction));
     m_action->setProperty("componentName", QString::fromLatin1(shortcutComponent));
     m_action->setProperty("componentDisplayName", QStringLiteral("Speecher"));
     connect(m_action, &QAction::triggered, this, &GlobalShortcutBinder::activated);
-    const QKeySequence savedShortcut = shortcut();
-    const QKeySequence defaultShortcut(Qt::META | Qt::ALT | Qt::Key_D);
+    const QKeySequence defaultShortcut = GlobalShortcutBinder::defaultShortcut();
     if (!KGlobalAccel::self()->setDefaultShortcut(m_action, {defaultShortcut})) {
         qWarning() << "Could not set the default global shortcut"
                    << QString::fromLatin1(shortcutComponent) << defaultShortcut;

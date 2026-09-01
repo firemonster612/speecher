@@ -13,6 +13,9 @@ class ApplicationController;
 class AccessibilitySetupPage;
 class FinishSetupPage;
 class MicrophoneSetupPage;
+#ifdef Q_OS_LINUX
+class LinuxGlobalShortcutSetupPage;
+#endif
 #ifdef Q_OS_MACOS
 class StartAtLoginSetupPage;
 #endif
@@ -41,6 +44,9 @@ private:
     TextDeliverySetupPage *m_deliveryPage;
     WritingProfilesSetupPage *m_profilesPage;
     FinishSetupPage *m_finishPage;
+#ifdef Q_OS_LINUX
+    LinuxGlobalShortcutSetupPage *m_globalShortcutPage;
+#endif
 #ifdef Q_OS_MACOS
     StartAtLoginSetupPage *m_startAtLoginPage;
 #endif

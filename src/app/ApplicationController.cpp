@@ -56,6 +56,10 @@ ApplicationController::ApplicationController(bool popupOnly,
             &GlobalShortcutBinder::deactivated,
             this,
             &ApplicationController::handleShortcutReleased);
+    connect(m_shortcutBinder,
+            &GlobalShortcutBinder::registrationFinished,
+            this,
+            &ApplicationController::globalShortcutRegistrationFinished);
     registerProviders();
     TargetProvider *targetProvider = m_platform->createTargetProvider(this);
     targetProvider->setCorrectionObservationEnabled(m_settings->correctionLearningEnabled());
@@ -260,14 +264,29 @@ bool ApplicationController::globalShortcutsSupported() const
     return m_shortcutBinder->supported();
 }
 
+QString ApplicationController::globalShortcutUnsupportedReason() const
+{
+    return m_shortcutBinder->unsupportedReason();
+}
+
 QKeySequence ApplicationController::globalShortcut() const
 {
     return m_shortcutBinder->shortcut();
 }
 
+QString ApplicationController::globalShortcutDisplay() const
+{
+    return m_shortcutBinder->shortcutDisplay();
+}
+
 bool ApplicationController::setGlobalShortcut(const QKeySequence &shortcut, QString *error)
 {
     return m_shortcutBinder->setShortcut(shortcut, error);
+}
+
+void ApplicationController::registerGlobalShortcut()
+{
+    m_shortcutBinder->registerShortcut();
 }
 
 bool ApplicationController::startIpc(QString *error)
