@@ -55,6 +55,8 @@ public:
     UpdateChannel updateChannel() const; void setUpdateChannel(UpdateChannel value);
     bool autoCheckUpdates() const; void setAutoCheckUpdates(bool value);
     bool autoInstallUpdates() const; void setAutoInstallUpdates(bool value);
+    qint64 updatesLastCheckTime() const; void setUpdatesLastCheckTime(qint64 value);
+    QString updatesDismissedVersion() const; void setUpdatesDismissedVersion(const QString &value);
     QString claudeCredentialsPath() const; QString claudeEndpointBase() const; QString claudeVoicePath() const;
     QString storedApiKeyFallback() const; void setStoredApiKeyFallback(const QString &value); void clearStoredApiKeyFallback();
     AppSettings snapshot() const;

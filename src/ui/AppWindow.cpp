@@ -513,8 +513,10 @@ void AppWindow::buildSidebarShell()
     updateLayout->addWidget(m_updateDismiss);
     connect(m_updateAction, &QPushButton::clicked,
             m_controller->updates(), &UpdateController::updateNow);
-    connect(m_updateLater, &QPushButton::clicked,
-            m_controller->updates(), &UpdateController::dismissAvailableVersion);
+    connect(m_updateLater, &QPushButton::clicked, this, [this] {
+        m_updateBannerDeferred = true;
+        m_updateBanner->hide();
+    });
     connect(m_updateDismiss, &QPushButton::clicked,
             m_controller->updates(), &UpdateController::dismissAvailableVersion);
     rightLayout->addWidget(m_updateBanner);
@@ -616,6 +618,12 @@ void AppWindow::refreshUpdateBanner()
         return;
     }
     UpdateController *updates = m_controller->updates();
+    if (m_updateBannerDeferred
+        && (updates->state() == UpdateController::State::ReadyToRestart
+            || updates->state() == UpdateController::State::RestartPending)) {
+        m_updateBanner->hide();
+        return;
+    }
     m_updateBanner->setVisible(updates->bannerVisible());
     if (!updates->bannerVisible()) {
         return;
@@ -623,13 +631,15 @@ void AppWindow::refreshUpdateBanner()
 
     m_updateProgress->hide();
     m_updateAction->show();
+    m_updateAction->setEnabled(true);
     m_updateLater->hide();
-    m_updateDismiss->show();
+    m_updateDismiss->hide();
     switch (updates->state()) {
     case UpdateController::State::UpdateAvailable:
         m_updateBannerText->setText(
             QStringLiteral("Speecher %1 is available").arg(updates->availableVersion()));
         m_updateAction->setText(QStringLiteral("Update now"));
+        m_updateDismiss->show();
         break;
     case UpdateController::State::Downloading:
         m_updateBannerText->setText(
@@ -640,10 +650,20 @@ void AppWindow::refreshUpdateBanner()
         m_updateDismiss->hide();
         break;
     case UpdateController::State::ReadyToRestart:
-        m_updateBannerText->setText(QStringLiteral("Restart to finish updating"));
+        m_updateBannerText->setText(updates->errorMessage().isEmpty()
+                                        ? QStringLiteral("Restart to finish updating")
+                                        : updates->errorMessage());
         m_updateAction->setText(QStringLiteral("Restart now"));
         m_updateLater->show();
-        m_updateDismiss->hide();
+        break;
+    case UpdateController::State::RestartPending:
+        m_updateBannerText->setText(QStringLiteral("Restarting after this dictation…"));
+        m_updateAction->setText(QStringLiteral("Restarting after this dictation…"));
+        m_updateAction->setEnabled(false);
+        break;
+    case UpdateController::State::Error:
+        m_updateBannerText->setText(QStringLiteral("Couldn't install the update."));
+        m_updateAction->setText(QStringLiteral("Try again"));
         break;
     default:
         m_updateBanner->hide();

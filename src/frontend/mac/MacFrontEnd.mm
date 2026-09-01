@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/UpdateController.h"
+#include "core/SettingsStore.h"
 #include "frontend/mac/SpeecherBridge.h"
 #include "ui/SetupAssistant.h"
 
@@ -31,7 +32,7 @@ MacFrontEnd::MacFrontEnd(ApplicationController *controller)
             return;
         }
         if (id == QStringLiteral("checkForUpdates")) {
-            controller->updates()->checkForUpdates();
+            controller->updates()->checkForUpdates(controller->settings()->updateChannel());
         }
     };
     // The menu bar extra is the app's front door, so it exists from launch

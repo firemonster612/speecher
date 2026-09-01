@@ -42,7 +42,7 @@ struct MacSparkleUpdater::Native {
 };
 
 MacSparkleUpdater::MacSparkleUpdater(SettingsStore *settings, QObject *parent)
-    : QObject(parent)
+    : UpdateController(parent)
     , m_settings(settings)
     , m_native(std::make_unique<Native>())
 {
@@ -56,15 +56,39 @@ MacSparkleUpdater::MacSparkleUpdater(SettingsStore *settings, QObject *parent)
             &SettingsStore::updateSettingsChanged,
             this,
             &MacSparkleUpdater::applySettings);
-    [m_native->controller startUpdater];
 }
 
 MacSparkleUpdater::~MacSparkleUpdater() = default;
 
-void MacSparkleUpdater::checkForUpdates()
+void MacSparkleUpdater::start()
 {
+    [m_native->controller startUpdater];
+}
+
+UpdateController::State MacSparkleUpdater::state() const
+{
+    return State::Idle;
+}
+
+QString MacSparkleUpdater::currentVersion() const
+{
+    return QStringLiteral(SPEECHER_VERSION);
+}
+
+QString MacSparkleUpdater::availableVersion() const { return {}; }
+int MacSparkleUpdater::downloadPercent() const { return 0; }
+QString MacSparkleUpdater::errorMessage() const { return {}; }
+bool MacSparkleUpdater::isAppImage() const { return false; }
+bool MacSparkleUpdater::bannerVisible() const { return false; }
+
+void MacSparkleUpdater::checkForUpdates(UpdateChannel channel)
+{
+    [m_native->delegate setNightly:channel == UpdateChannel::Nightly];
     [m_native->controller checkForUpdates:nil];
 }
+
+void MacSparkleUpdater::updateNow() {}
+void MacSparkleUpdater::dismissAvailableVersion() {}
 
 void MacSparkleUpdater::applySettings()
 {

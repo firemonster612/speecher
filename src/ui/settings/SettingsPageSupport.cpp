@@ -104,7 +104,8 @@ QFrame *makeRow(const QString &label,
                 const QString &description,
                 QWidget *control,
                 QWidget *parent,
-                QWidget *titleAccessory)
+                QWidget *titleAccessory,
+                bool dynamicDescription)
 {
     auto *row = new SettingsRow(parent);
     row->setObjectName(QStringLiteral("settingsRow"));
@@ -148,9 +149,13 @@ QFrame *makeRow(const QString &label,
         auto *subtitle = new QLabel(description, row);
         subtitle->setObjectName(QStringLiteral("rowDescription"));
         subtitle->setWordWrap(true);
-        const int naturalTextWidth = subtitle->fontMetrics().horizontalAdvance(description);
-        subtitle->setFixedWidth(qMin(
-            naturalTextWidth + 8, subtitle->fontMetrics().averageCharWidth() * 62));
+        const int maximumTextWidth = subtitle->fontMetrics().averageCharWidth() * 62;
+        if (dynamicDescription) {
+            subtitle->setMaximumWidth(maximumTextWidth);
+        } else {
+            const int naturalTextWidth = subtitle->fontMetrics().horizontalAdvance(description);
+            subtitle->setFixedWidth(qMin(naturalTextWidth + 8, maximumTextWidth));
+        }
         subtitle->setMinimumHeight(subtitle->heightForWidth(subtitle->width()));
         subtitle->setForegroundRole(QPalette::PlaceholderText);
         fieldLayout->addWidget(subtitle);

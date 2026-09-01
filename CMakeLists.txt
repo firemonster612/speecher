@@ -18,6 +18,11 @@ if(APPLE)
 
   set(SPEECHER_SPARKLE_ED_PUBLIC_KEY "" CACHE STRING
     "Sparkle EdDSA public key embedded in the macOS app")
+  set(SPEECHER_SPARKLE_PUBLIC_KEY_PLIST "")
+  if(SPEECHER_SPARKLE_ED_PUBLIC_KEY)
+    set(SPEECHER_SPARKLE_PUBLIC_KEY_PLIST
+      "<key>SUPublicEDKey</key>\n\t<string>${SPEECHER_SPARKLE_ED_PUBLIC_KEY}</string>")
+  endif()
   set(SPEECHER_SPARKLE_FRAMEWORK "${sparkle_SOURCE_DIR}/Sparkle.framework")
   add_library(Sparkle::Sparkle SHARED IMPORTED GLOBAL)
   set_target_properties(Sparkle::Sparkle PROPERTIES
@@ -255,7 +260,6 @@ set(SPEECHER_APP_SOURCES
   src/app/CompositionSockets.cpp
   src/app/PlatformSelection.cpp
   src/app/SingleInstanceIpc.cpp
-  src/app/UpdateController.cpp
 )
 
 set(SPEECHER_APP_HEADERS
@@ -269,10 +273,12 @@ set(SPEECHER_APP_HEADERS
 )
 
 set(SPEECHER_APP_LINUX_SOURCES
+  src/app/AppImageUpdater.cpp
   src/app/LinuxComposition.cpp
 )
 
 set(SPEECHER_APP_LINUX_HEADERS
+  src/app/AppImageUpdater.h
   src/app/LinuxComposition.h
 )
 
