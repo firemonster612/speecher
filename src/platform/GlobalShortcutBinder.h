@@ -43,13 +43,14 @@ public:
         emit registrationFinished(
             !display.isEmpty(),
             display.isEmpty()
-                ? QStringLiteral("The desktop did not report a Global Shortcut")
+                ? QStringLiteral("Your desktop didn't say which keys it assigned.")
                 : display);
     }
 
 signals:
     void activated();
     void deactivated();
+    void bindingChanged();
     void registrationFinished(bool bound, const QString &detail);
 };
 

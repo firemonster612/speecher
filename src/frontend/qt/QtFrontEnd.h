@@ -25,7 +25,7 @@ public:
 
     void showMainWindow() override;
     void showSettingsWindow() override;
-    void showSetupAssistant() override;
+    void showSetupAssistant(int pageIndex) override;
     bool captureMainWindow(const QString &path) override;
     void showDictationError(const QString &message) override;
     void alert() override;
@@ -41,6 +41,7 @@ private:
     TranscriberPopup *m_popup;
     AppWindow *m_appWindow = nullptr;
     QPointer<SetupAssistant> m_setupAssistant;
+    int m_setupPageIndex = -1;
     bool m_reportedReady = false;
 };
 

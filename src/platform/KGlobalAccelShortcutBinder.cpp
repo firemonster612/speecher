@@ -49,7 +49,7 @@ void KGlobalAccelShortcutBinder::bind()
     connect(m_action, &QAction::triggered, this, &GlobalShortcutBinder::activated);
     const QKeySequence defaultShortcut = GlobalShortcutBinder::defaultShortcut();
     if (!KGlobalAccel::self()->setDefaultShortcut(m_action, {defaultShortcut})) {
-        qWarning() << "Could not set the default global shortcut"
+        qWarning() << "Could not set the default Global Shortcut"
                    << QString::fromLatin1(shortcutComponent) << defaultShortcut;
     }
     if (!savedShortcut.isEmpty()
@@ -57,8 +57,9 @@ void KGlobalAccelShortcutBinder::bind()
             m_action,
             {savedShortcut},
             KGlobalAccel::Autoloading)) {
-        qWarning() << "Could not restore the saved global shortcut";
+        qWarning() << "Could not restore the saved Global Shortcut";
     }
+    emit bindingChanged();
 #endif
 }
 

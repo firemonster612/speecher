@@ -6,6 +6,8 @@
 #include <QDBusObjectPath>
 #include <QVariantMap>
 
+class QTimer;
+
 namespace speecher {
 
 struct PortalShortcut {
@@ -36,10 +38,6 @@ private slots:
                          const QString &shortcutId,
                          qulonglong timestamp,
                          const QVariantMap &options);
-    void handleDeactivated(const QDBusObjectPath &sessionHandle,
-                           const QString &shortcutId,
-                           qulonglong timestamp,
-                           const QVariantMap &options);
 
 private:
     enum class RequestKind {
@@ -50,7 +48,7 @@ private:
         Bind,
     };
 
-    bool ensureHostIdentity();
+    bool ensureHostIdentity(bool registration);
     void createSession(bool registration);
     void listShortcuts();
     void bindShortcuts();
@@ -59,19 +57,24 @@ private:
                      int optionsIndex,
                      RequestKind kind,
                      int timeoutMs);
-    void requestFailed(const QString &reason, bool unsupported = false);
-    void applyShortcuts(const QVariantMap &results);
-    void closeSession();
+    void requestFailed(const QString &reason, bool closeRequest = false);
+    bool shortcutTrigger(const QVariantMap &results, QString *trigger) const;
+    void activatePendingSession(const QString &trigger);
+    void closePendingSession();
+    void closeRequest();
     void disconnectRequest();
 
     bool m_supported = false;
     bool m_identityReady = false;
+    bool m_identityPending = false;
+    bool m_registrationAfterIdentity = false;
     QString m_unsupportedReason;
     QString m_triggerDescription;
     QDBusObjectPath m_sessionPath;
+    QDBusObjectPath m_pendingSessionPath;
     QDBusObjectPath m_requestPath;
     RequestKind m_requestKind = RequestKind::None;
-    quint64 m_requestGeneration = 0;
+    QTimer *m_requestTimer = nullptr;
 };
 
 } // namespace speecher

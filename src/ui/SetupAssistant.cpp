@@ -36,7 +36,9 @@ QWizardPage *wizardPage(QWidget *content, const QString &title)
 
 } // namespace
 
-SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *parent)
+SetupAssistant::SetupAssistant(ApplicationController *controller,
+                               int pageIndex,
+                               QWidget *parent)
 #ifdef SPEECHER_WITH_KASSISTANT
     : KAssistantDialog(parent)
 #else
@@ -50,6 +52,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
     , m_deliveryPage(new TextDeliverySetupPage(*controller->settings(), this))
     , m_profilesPage(new WritingProfilesSetupPage(*controller->settings(), this))
     , m_finishPage(new FinishSetupPage(*controller, this))
+    , m_singlePage(pageIndex >= 0)
 #ifdef Q_OS_LINUX
     , m_globalShortcutPage(new LinuxGlobalShortcutSetupPage(*controller, this))
 #endif
@@ -69,23 +72,33 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
                                                *controller->providerRegistry(),
                                                this);
 #ifdef SPEECHER_WITH_KASSISTANT
+    int nextPageIndex = 0;
+    const auto addSetupPage = [this, pageIndex, &nextPageIndex](QWidget *content,
+                                                                const QString &title) {
+        if (pageIndex < 0 || pageIndex == nextPageIndex) {
+            addPage(content, title);
+        }
+        ++nextPageIndex;
+    };
 #ifdef Q_OS_LINUX
-    addPage(m_globalShortcutPage, QStringLiteral("Global Shortcut"));
+    addSetupPage(m_globalShortcutPage, QStringLiteral("Global Shortcut"));
 #endif
-    addPage(welcome, QStringLiteral("Welcome to Speecher"));
-    addPage(speechProvider, QStringLiteral("Transcription"));
-    addPage(m_microphonePage, QStringLiteral("Microphone"));
-    addPage(m_accessibilityPage, QStringLiteral("Desktop accessibility"));
-    addPage(m_deliveryPage, QStringLiteral("Text delivery"));
-    addPage(refinement, QStringLiteral("Refinement"));
-    addPage(m_profilesPage, QStringLiteral("Writing profiles"));
-    addPage(m_finishPage, QStringLiteral("Ready to dictate"));
+    addSetupPage(welcome, QStringLiteral("Welcome to Speecher"));
+    addSetupPage(speechProvider, QStringLiteral("Transcription"));
+    addSetupPage(m_microphonePage, QStringLiteral("Microphone"));
+    addSetupPage(m_accessibilityPage, QStringLiteral("Desktop accessibility"));
+    addSetupPage(m_deliveryPage, QStringLiteral("Text delivery"));
+    addSetupPage(refinement, QStringLiteral("Refinement"));
+    addSetupPage(m_profilesPage, QStringLiteral("Writing profiles"));
+    addSetupPage(m_finishPage, QStringLiteral("Ready to dictate"));
 #ifdef Q_OS_MACOS
-    addPage(m_startAtLoginPage, QStringLiteral("Start at login"));
+    addSetupPage(m_startAtLoginPage, QStringLiteral("Start at login"));
 #endif
-    auto *skip = new QPushButton(QStringLiteral("Skip setup"), this);
-    addActionButton(skip);
-    connect(skip, &QPushButton::clicked, this, &SetupAssistant::skipSetup);
+    if (!m_singlePage) {
+        auto *skip = new QPushButton(QStringLiteral("Skip setup"), this);
+        addActionButton(skip);
+        connect(skip, &QPushButton::clicked, this, &SetupAssistant::skipSetup);
+    }
     connect(this,
             &KAssistantDialog::currentPageChanged,
             this,
@@ -103,11 +116,18 @@ SetupAssistant::SetupAssistant(ApplicationController *controller, QWidget *paren
                                   (window.blue() * 4 + text.blue()) / 5));
     setPalette(wizardPalette);
     setOption(QWizard::NoBackButtonOnStartPage);
-    setOption(QWizard::HaveCustomButton1);
-    setButtonText(QWizard::CustomButton1, QStringLiteral("Skip setup"));
-    const auto addSetupPage = [this](QWidget *content, const QString &title) {
-        const int id = addPage(wizardPage(content, title));
-        m_pageContents.insert(id, content);
+    if (!m_singlePage) {
+        setOption(QWizard::HaveCustomButton1);
+        setButtonText(QWizard::CustomButton1, QStringLiteral("Skip setup"));
+    }
+    int nextPageIndex = 0;
+    const auto addSetupPage = [this, pageIndex, &nextPageIndex](QWidget *content,
+                                                                const QString &title) {
+        if (pageIndex < 0 || pageIndex == nextPageIndex) {
+            const int id = addPage(wizardPage(content, title));
+            m_pageContents.insert(id, content);
+        }
+        ++nextPageIndex;
     };
 #ifdef Q_OS_LINUX
     addSetupPage(m_globalShortcutPage, QStringLiteral("Global Shortcut"));
@@ -153,6 +173,14 @@ void SetupAssistant::skipSetup()
 void SetupAssistant::accept()
 {
     m_microphonePage->setActive(false);
+    if (m_singlePage) {
+#ifdef SPEECHER_WITH_KASSISTANT
+        KAssistantDialog::accept();
+#else
+        QWizard::accept();
+#endif
+        return;
+    }
     if (!m_skipping) {
         m_finishPage->setSignInRequired(m_deliveryPage->needsSignIn());
         if (!m_finishPage->applyShortcut()) {

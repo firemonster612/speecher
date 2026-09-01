@@ -4,6 +4,9 @@
 
 namespace speecher {
 
+QString resolvedPath(const QString &path);
+QString quotedExecutablePath(const QString &path);
+
 QString globalShortcutInstructionCommand(const QString &homePath,
                                          const QString &appImagePath,
                                          const QString &binaryPath);

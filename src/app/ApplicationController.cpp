@@ -57,6 +57,10 @@ ApplicationController::ApplicationController(bool popupOnly,
             this,
             &ApplicationController::handleShortcutReleased);
     connect(m_shortcutBinder,
+            &GlobalShortcutBinder::bindingChanged,
+            this,
+            &ApplicationController::globalShortcutChanged);
+    connect(m_shortcutBinder,
             &GlobalShortcutBinder::registrationFinished,
             this,
             &ApplicationController::globalShortcutRegistrationFinished);
@@ -310,8 +314,13 @@ void ApplicationController::showSettingsWindow()
 
 void ApplicationController::showSetupAssistant()
 {
+    showSetupAssistant(-1);
+}
+
+void ApplicationController::showSetupAssistant(int pageIndex)
+{
     if (m_frontEnd) {
-        m_frontEnd->showSetupAssistant();
+        m_frontEnd->showSetupAssistant(pageIndex);
     }
 }
 

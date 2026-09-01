@@ -5,6 +5,7 @@
 class QLabel;
 class QPushButton;
 class QGroupBox;
+class QToolButton;
 
 namespace speecher {
 
@@ -20,6 +21,9 @@ private:
     void registerShortcut();
     void updateIntegrationState();
     void updateInstructionCommand();
+    void updateRemovalGuide();
+    void refreshRegistrationState();
+    void showWorkingState(const QString &display);
     void showRegistrationResult(bool bound, const QString &detail);
 
     ApplicationController &m_controller;
@@ -27,6 +31,10 @@ private:
     QString m_appImagePath;
     QString m_binaryPath;
     bool m_plasma = false;
+    bool m_working = false;
+    QWidget *m_options = nullptr;
+    QLabel *m_confirmation = nullptr;
+    QToolButton *m_moreOptions = nullptr;
     QGroupBox *m_integrationGroup = nullptr;
     QPushButton *m_integrationButton = nullptr;
     QLabel *m_integrationStatus = nullptr;
@@ -34,6 +42,7 @@ private:
     QLabel *m_registrationStatus = nullptr;
     QGroupBox *m_manualGroup = nullptr;
     QLabel *m_command = nullptr;
+    QLabel *m_removal = nullptr;
 };
 
 } // namespace speecher

@@ -7,25 +7,20 @@
 #include <QClipboard>
 #include <QCoreApplication>
 #include <QDir>
-#include <QFileInfo>
 #include <QFrame>
 #include <QGroupBox>
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QTimer>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 namespace speecher {
 namespace {
-
-QString resolvedPath(const QString &path)
-{
-    const QFileInfo info(path);
-    const QString canonical = info.canonicalFilePath();
-    return canonical.isEmpty() ? info.absoluteFilePath() : canonical;
-}
 
 QLabel *wrappedLabel(const QString &text, QWidget *parent)
 {
@@ -64,37 +59,56 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     layout->setSpacing(10);
     scroll->setWidget(content);
 
-    m_integrationGroup = new QGroupBox(QStringLiteral("System integration"), content);
+    m_confirmation = wrappedLabel(QString(), content);
+    layout->addWidget(m_confirmation);
+    m_moreOptions = new QToolButton(content);
+    m_moreOptions->setText(QStringLiteral("More options"));
+    m_moreOptions->setCheckable(true);
+    m_moreOptions->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_moreOptions->setArrowType(Qt::RightArrow);
+    layout->addWidget(m_moreOptions, 0, Qt::AlignLeft);
+
+    m_options = new QWidget(content);
+    auto *optionsLayout = new QVBoxLayout(m_options);
+    optionsLayout->setContentsMargins(0, 0, 0, 0);
+    optionsLayout->setSpacing(10);
+    layout->addWidget(m_options);
+    connect(m_moreOptions, &QToolButton::toggled, this, [this](bool expanded) {
+        m_moreOptions->setArrowType(expanded ? Qt::DownArrow : Qt::RightArrow);
+        m_options->setVisible(expanded);
+    });
+
+    m_integrationGroup = new QGroupBox(QStringLiteral("Add to your system"), m_options);
     auto *integrationLayout = new QVBoxLayout(m_integrationGroup);
     integrationLayout->addWidget(wrappedLabel(
-        QStringLiteral("Creates ~/.local/bin/speecher and adds Speecher to your app menu. "
-                       "The link survives updates that replace this AppImage in place. "
-                       "Moving the AppImage breaks the link."),
+        QStringLiteral("Puts Speecher in your app menu and lets you run `speecher` in a terminal. "
+                       "Updates keep working. Moving the AppImage file elsewhere breaks it — "
+                       "run this again if you do."),
         m_integrationGroup));
     auto *integrationRow = new QHBoxLayout;
     m_integrationButton = new QPushButton(
-        QStringLiteral("Add Speecher to PATH and app menu"), m_integrationGroup);
+        QStringLiteral("Add Speecher to your app menu"), m_integrationGroup);
     m_integrationStatus = new QLabel(m_integrationGroup);
     integrationRow->addWidget(m_integrationButton);
     integrationRow->addWidget(m_integrationStatus, 1);
     integrationLayout->addLayout(integrationRow);
     m_integrationGroup->setVisible(!m_appImagePath.isEmpty());
-    layout->addWidget(m_integrationGroup);
+    optionsLayout->addWidget(m_integrationGroup);
     connect(m_integrationButton, &QPushButton::clicked,
             this, [this] { installIntegration(); });
 
-    auto *registrationGroup = new QGroupBox(QStringLiteral("Global Shortcut"), content);
+    auto *registrationGroup = new QGroupBox(QStringLiteral("Global Shortcut"), m_options);
     auto *registrationLayout = new QVBoxLayout(registrationGroup);
     registrationLayout->addWidget(wrappedLabel(
         QStringLiteral("Register a Global Shortcut so you can start dictation from anywhere."),
         registrationGroup));
     auto *registrationRow = new QHBoxLayout;
-    m_registerButton = new QPushButton(QStringLiteral("Register"), registrationGroup);
+    m_registerButton = new QPushButton(QStringLiteral("Register shortcut"), registrationGroup);
     m_registrationStatus = wrappedLabel(QString(), registrationGroup);
     registrationRow->addWidget(m_registerButton);
     registrationRow->addWidget(m_registrationStatus, 1);
     registrationLayout->addLayout(registrationRow);
-    layout->addWidget(registrationGroup);
+    optionsLayout->addWidget(registrationGroup);
     connect(m_registerButton, &QPushButton::clicked,
             this, [this] { registerShortcut(); });
     connect(&m_controller,
@@ -104,71 +118,57 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
                 showRegistrationResult(bound, detail);
             });
 
-    m_manualGroup = new QGroupBox(QStringLiteral("Manual setup"), content);
+    m_manualGroup = new QGroupBox(QStringLiteral("Manual setup"), m_options);
     auto *manualLayout = new QVBoxLayout(m_manualGroup);
     const bool gnome = qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains(
         QStringLiteral("GNOME"), Qt::CaseInsensitive);
     manualLayout->addWidget(wrappedLabel(
         gnome
-            ? QStringLiteral("Open Settings > Keyboard > View and Customize Shortcuts > "
-                             "Custom Shortcuts > +. Paste the command, then pick a key combo.\n\n"
-                             "On GNOME 50, the portal route is currently broken upstream, "
-                             "so these manual steps are the reliable path there.")
+            ? QStringLiteral("Automatic setup doesn't work on GNOME yet, so set the shortcut "
+                             "up by hand:\n\n"
+                             "Open Settings > Keyboard > View and Customize Shortcuts > "
+                             "Custom Shortcuts > +. Paste the command, then pick a key combo.")
             : QStringLiteral("In your desktop's keyboard settings, bind a key combo to run:"),
         m_manualGroup));
     auto *commandRow = new QHBoxLayout;
     m_command = new QLabel(m_manualGroup);
     m_command->setTextInteractionFlags(Qt::TextSelectableByMouse
                                        | Qt::TextSelectableByKeyboard);
-    auto *copy = new QPushButton(QStringLiteral("Copy"), m_manualGroup);
+    auto *copy = new QToolButton(m_manualGroup);
+    copy->setText(QStringLiteral("Copy"));
+    copy->setIcon(QIcon::fromTheme(QStringLiteral("edit-copy")));
+    copy->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     commandRow->addWidget(m_command, 1);
     commandRow->addWidget(copy);
     manualLayout->addLayout(commandRow);
-    layout->addWidget(m_manualGroup);
-    connect(copy, &QPushButton::clicked, this, [this] {
+    optionsLayout->addWidget(m_manualGroup);
+    connect(copy, &QToolButton::clicked, this, [this, copy] {
         QGuiApplication::clipboard()->setText(m_command->text());
+        copy->setIcon(QIcon::fromTheme(
+            QStringLiteral("checkmark"),
+            QIcon::fromTheme(QStringLiteral("dialog-ok-apply"))));
+        QTimer::singleShot(1500, copy, [copy] {
+            copy->setIcon(QIcon::fromTheme(QStringLiteral("edit-copy")));
+        });
     });
 
-    auto *removalGroup = new QGroupBox(QStringLiteral("Removal"), content);
+    auto *removalGroup = new QGroupBox(QStringLiteral("Removal"), m_options);
     auto *removalLayout = new QVBoxLayout(removalGroup);
-    auto *removal = wrappedLabel(
-        QStringLiteral("Delete ~/.local/bin/speecher, "
-                       "~/.local/share/applications/io.github.firemonster612.speecher.desktop, "
-                       "and ~/.local/share/icons/hicolor/scalable/apps/"
-                       "io.github.firemonster612.speecher.svg.\n"
-                       "Remove the Global Shortcut in your desktop's keyboard settings.\n"
-                       "Portal users can reset a stored denial with:\n"
-                       "flatpak permission-reset io.github.firemonster612.speecher\n"
-                       "This also works for non-Flatpak apps because they share the permission store."),
-        removalGroup);
-    removal->setTextInteractionFlags(Qt::TextSelectableByMouse
-                                     | Qt::TextSelectableByKeyboard);
-    removalLayout->addWidget(removal);
-    layout->addWidget(removalGroup);
+    m_removal = wrappedLabel(QString(), removalGroup);
+    m_removal->setTextInteractionFlags(Qt::TextSelectableByMouse
+                                       | Qt::TextSelectableByKeyboard);
+    removalLayout->addWidget(m_removal);
+    optionsLayout->addWidget(removalGroup);
+    optionsLayout->addStretch();
     layout->addStretch();
 
     updateIntegrationState();
     updateInstructionCommand();
-    const bool supported = m_controller.globalShortcutsSupported();
-    m_registerButton->setEnabled(supported);
-    if (!supported) {
-        m_registrationStatus->setText(
-            m_controller.globalShortcutUnsupportedReason());
-        m_manualGroup->show();
-    } else if (m_plasma) {
-        const QString sequence = m_controller.globalShortcutDisplay();
-        m_registrationStatus->setText(
-            sequence.isEmpty()
-                ? QStringLiteral("No Global Shortcut is currently bound. Change it anytime in "
-                                 "System Settings > Shortcuts.")
-                : QStringLiteral("Currently bound: %1. Change it anytime in System Settings > "
-                                 "Shortcuts.").arg(sequence));
-        m_manualGroup->hide();
-    } else {
-        m_registrationStatus->setText(
-            QStringLiteral("Your desktop will show its own shortcut dialog."));
-        m_manualGroup->hide();
-    }
+    refreshRegistrationState();
+    connect(&m_controller,
+            &ApplicationController::globalShortcutChanged,
+            this,
+            [this] { refreshRegistrationState(); });
 }
 
 void LinuxGlobalShortcutSetupPage::installIntegration()
@@ -199,22 +199,83 @@ void LinuxGlobalShortcutSetupPage::registerShortcut()
 void LinuxGlobalShortcutSetupPage::updateIntegrationState()
 {
     if (m_appImagePath.isEmpty()) {
+        updateRemovalGuide();
         return;
     }
     const bool installed = appImageIntegrationInstalled(m_homePath, m_appImagePath);
     m_integrationButton->setText(
         installed ? QStringLiteral("Installed")
-                  : QStringLiteral("Add Speecher to PATH and app menu"));
+                  : QStringLiteral("Add Speecher to your app menu"));
     m_integrationButton->setEnabled(!installed);
     if (installed) {
-        m_integrationStatus->setText(QStringLiteral("Installed"));
+        m_integrationStatus->clear();
     }
+    updateRemovalGuide();
 }
 
 void LinuxGlobalShortcutSetupPage::updateInstructionCommand()
 {
     m_command->setText(globalShortcutInstructionCommand(
         m_homePath, m_appImagePath, m_binaryPath));
+}
+
+void LinuxGlobalShortcutSetupPage::updateRemovalGuide()
+{
+    QStringList lines;
+    if (!m_appImagePath.isEmpty()
+        && appImageIntegrationInstalled(m_homePath, m_appImagePath)) {
+        lines << QStringLiteral("To remove Speecher's shortcut and menu entry:")
+              << QStringLiteral(
+                     "Delete `~/.local/bin/speecher` and "
+                     "`~/.local/share/applications/io.github.firemonster612.speecher.desktop`.");
+    }
+    lines << QStringLiteral("Remove the Global Shortcut in your desktop's keyboard settings.")
+          << QStringLiteral(
+                 "If your desktop remembers that you declined the shortcut, reset it with "
+                 "`flatpak permission-reset io.github.firemonster612.speecher`.");
+    m_removal->setText(lines.join(QLatin1Char('\n')));
+}
+
+void LinuxGlobalShortcutSetupPage::refreshRegistrationState()
+{
+    const QString display = m_controller.globalShortcutDisplay();
+    if (!display.isEmpty()) {
+        showWorkingState(display);
+        return;
+    }
+
+    showWorkingState({});
+    const bool supported = m_controller.globalShortcutsSupported();
+    m_registerButton->setEnabled(supported);
+    if (!supported) {
+        m_registrationStatus->setText(m_controller.globalShortcutUnsupportedReason());
+        m_manualGroup->show();
+    } else if (m_plasma) {
+        m_registrationStatus->setText(
+            QStringLiteral("No Global Shortcut is set yet. Change it anytime in System Settings > "
+                           "Shortcuts."));
+        m_manualGroup->hide();
+    } else {
+        m_registrationStatus->setText(QStringLiteral(
+            "Click Register and your desktop will ask you to pick a key combination."));
+        m_manualGroup->hide();
+    }
+}
+
+void LinuxGlobalShortcutSetupPage::showWorkingState(const QString &display)
+{
+    const bool working = !display.isEmpty();
+    if (working && !m_working) {
+        m_moreOptions->setChecked(false);
+    }
+    m_working = working;
+    m_confirmation->setVisible(working);
+    m_confirmation->setText(
+        working
+            ? QStringLiteral("Global Shortcut is set to %1. Try it now.").arg(display)
+            : QString());
+    m_moreOptions->setVisible(working);
+    m_options->setVisible(!working || m_moreOptions->isChecked());
 }
 
 void LinuxGlobalShortcutSetupPage::showRegistrationResult(bool bound,
@@ -225,11 +286,19 @@ void LinuxGlobalShortcutSetupPage::showRegistrationResult(bool bound,
         m_registrationStatus->setText(
             QStringLiteral("Try it now: %1").arg(detail));
         m_manualGroup->hide();
+        showWorkingState(detail);
         return;
     }
     m_registrationStatus->setText(
-        detail.isEmpty() ? QStringLiteral("Global Shortcut registration failed") : detail);
+        detail.isEmpty()
+            ? QStringLiteral("Couldn't set the shortcut. Set one up by hand below.")
+            : detail);
     m_manualGroup->show();
+    const QString existing = m_controller.globalShortcutDisplay();
+    if (!existing.isEmpty()) {
+        showWorkingState(existing);
+        m_moreOptions->setChecked(true);
+    }
 }
 
 } // namespace speecher

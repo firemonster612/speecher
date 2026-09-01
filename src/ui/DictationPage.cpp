@@ -266,13 +266,14 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     shortcutCopyLayout->addWidget(shortcutLabel);
     shortcutCopyLayout->addWidget(shortcutHelp);
     auto *setupShortcut = new QPushButton(
-        QStringLiteral("Set up global shortcut…"), shortcutRow);
+        QStringLiteral("Set up Global Shortcut…"), shortcutRow);
     setupShortcut->setObjectName(QStringLiteral("setupGlobalShortcut"));
     shortcutLayout->addWidget(shortcutCopy, 1);
     shortcutLayout->addWidget(setupShortcut);
     columnLayout->addWidget(shortcutRow);
-    connect(setupShortcut, &QPushButton::clicked,
-            controller, &ApplicationController::showSetupAssistant);
+    connect(setupShortcut, &QPushButton::clicked, controller, [controller] {
+        controller->showSetupAssistant(0);
+    });
 #endif
 
     pageLayout->addWidget(column);

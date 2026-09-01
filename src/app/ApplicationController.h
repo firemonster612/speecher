@@ -68,6 +68,7 @@ public:
     void showMainWindow();
     void showSettingsWindow();
     void showSetupAssistant();
+    void showSetupAssistant(int pageIndex);
     bool startIpc(QString *error = nullptr);
 
 public slots:
@@ -88,6 +89,7 @@ signals:
     void transcriptDelivered(const QString &text);
     void audioLevelChanged(float level);
     void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
+    void globalShortcutChanged();
     void globalShortcutRegistrationFinished(bool bound, const QString &detail);
 
 private:

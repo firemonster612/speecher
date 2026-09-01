@@ -185,9 +185,11 @@ public:
         calls << QStringLiteral("showSettingsWindow");
     }
 
-    void showSetupAssistant() override
+    void showSetupAssistant(int pageIndex) override
     {
-        calls << QStringLiteral("showSetupAssistant");
+        calls << (pageIndex < 0
+                      ? QStringLiteral("showSetupAssistant")
+                      : QStringLiteral("showSetupAssistant %1").arg(pageIndex));
     }
 
     bool captureMainWindow(const QString &path) override
@@ -224,8 +226,8 @@ private slots:
         QCOMPARE(globalShortcutInstructionCommand(
                      home.path(),
                      QString(),
-                     QStringLiteral("/opt/speecher/bin/speecher")),
-                 QStringLiteral("/opt/speecher/bin/speecher toggle"));
+                     QStringLiteral("/opt/Speecher Current/bin/speecher")),
+                 QStringLiteral("\"/opt/Speecher Current/bin/speecher\" toggle"));
         QCOMPARE(globalShortcutInstructionCommand(
                      home.path(),
                      QStringLiteral("/opt/Speecher Current.AppImage"),
@@ -237,8 +239,20 @@ private slots:
         QFile source(appImage);
         QVERIFY(source.open(QIODevice::WriteOnly));
         source.close();
-        QVERIFY(QFile::link(appImage,
-                            home.filePath(QStringLiteral(".local/bin/speecher"))));
+        const QString link = home.filePath(QStringLiteral(".local/bin/speecher"));
+        const QString staleImage = home.filePath(QStringLiteral("Old Speecher.AppImage"));
+        QFile stale(staleImage);
+        QVERIFY(stale.open(QIODevice::WriteOnly));
+        stale.close();
+        QVERIFY(QFile::link(staleImage, link));
+        QCOMPARE(globalShortcutInstructionCommand(
+                     home.path(),
+                     appImage,
+                     QStringLiteral("/tmp/.mount/usr/bin/speecher")),
+                 QStringLiteral("\"%1\" toggle").arg(appImage));
+
+        QVERIFY(QFile::remove(link));
+        QVERIFY(QFile::link(appImage, link));
         QCOMPARE(globalShortcutInstructionCommand(
                      home.path(),
                      appImage,
@@ -255,7 +269,8 @@ private slots:
         QFile source(sourcePath);
         QVERIFY(source.open(QIODevice::WriteOnly));
         source.write("[Desktop Entry]\nExec=speecher\n"
-                     "[Desktop Action ToggleDictation]\nExec=speecher toggle\n");
+                     "[Desktop Action ToggleDictation]\nExec=speecher toggle\n"
+                     "[Desktop Action Quoted]\nExec=\"/old Speecher.AppImage\" toggle\n");
         source.close();
 
         QString error;
@@ -270,6 +285,8 @@ private slots:
                  QByteArray("[Desktop Entry]\n"
                             "Exec=\"/opt/Speecher Current.AppImage\"\n"
                             "[Desktop Action ToggleDictation]\n"
+                            "Exec=\"/opt/Speecher Current.AppImage\" toggle\n"
+                            "[Desktop Action Quoted]\n"
                             "Exec=\"/opt/Speecher Current.AppImage\" toggle\n"));
     }
 #endif

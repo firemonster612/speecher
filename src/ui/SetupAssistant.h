@@ -29,6 +29,7 @@ class SetupAssistant final : public QWizard {
 #endif
 public:
     explicit SetupAssistant(ApplicationController *controller,
+                            int pageIndex = -1,
                             QWidget *parent = nullptr);
 
 protected:
@@ -44,6 +45,7 @@ private:
     TextDeliverySetupPage *m_deliveryPage;
     WritingProfilesSetupPage *m_profilesPage;
     FinishSetupPage *m_finishPage;
+    bool m_singlePage = false;
 #ifdef Q_OS_LINUX
     LinuxGlobalShortcutSetupPage *m_globalShortcutPage;
 #endif

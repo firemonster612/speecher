@@ -44,10 +44,14 @@ void QtFrontEnd::showSettingsWindow()
     m_appWindow->navigateToSettings();
 }
 
-void QtFrontEnd::showSetupAssistant()
+void QtFrontEnd::showSetupAssistant(int pageIndex)
 {
+    if (m_setupAssistant && pageIndex != m_setupPageIndex) {
+        delete m_setupAssistant.data();
+    }
     if (!m_setupAssistant) {
-        m_setupAssistant = new SetupAssistant(m_controller);
+        m_setupPageIndex = pageIndex;
+        m_setupAssistant = new SetupAssistant(m_controller, pageIndex);
         m_setupAssistant->setAttribute(Qt::WA_DeleteOnClose);
         connect(m_setupAssistant, &QDialog::accepted, this, [this] {
             if (!m_controller->popupOnly()) {

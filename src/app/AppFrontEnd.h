@@ -14,7 +14,7 @@ public:
 
     virtual void showMainWindow() = 0;
     virtual void showSettingsWindow() = 0;
-    virtual void showSetupAssistant() = 0;
+    virtual void showSetupAssistant(int pageIndex) = 0;
 
     // Saves a picture of the main window, for the --grab screenshot path.
     // False when there is no main window yet or the file could not be written.
