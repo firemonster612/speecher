@@ -4,229 +4,297 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Speecher — dictation for Linux and macOS on the AI accounts you already have</title>
-<meta name="description" content="Hit a shortcut, talk, and clean text lands in whatever app you were using. Runs on your existing Claude or ChatGPT subscription. Open source, Linux and macOS.">
-<meta property="og:title" content="Speecher">
-<meta property="og:description" content="Dictation for Linux and macOS that runs on the Claude or ChatGPT subscription you already pay for.">
-<meta property="og:image" content="https://firemonster612.github.io/speecher/assets/overlay-dark.png?v=7">
-<meta property="og:url" content="https://firemonster612.github.io/speecher/">
-<link rel="icon" href="assets/icon.svg?v=7" type="image/svg+xml">
+<meta name="description" content="Press a shortcut, talk, and clean text lands in whatever app has focus. Powered by the Claude or ChatGPT subscription you already pay for. Linux and macOS.">
+<link rel="icon" href="assets/icon.svg?v=8" type="image/svg+xml">
 <script>
 (function(){
-  var saved = null;
-  try { saved = localStorage.getItem('platform'); } catch(e){}
-  var apple = /mac|iphone|ipad|ipod/i.test(navigator.userAgent || '');
-  document.documentElement.dataset.platform = saved || (apple ? 'mac' : 'linux');
+  var p = null;
+  try { p = localStorage.getItem('platform'); } catch(e){}
+  if (p !== 'linux' && p !== 'mac') {
+    p = /Macintosh|Mac OS X/i.test(navigator.userAgent) ? 'mac' : 'linux';
+  }
+  document.documentElement.dataset.platform = p;
   if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     document.documentElement.classList.add('motion');
-    setTimeout(function(){ document.documentElement.classList.remove('motion'); }, 6000);
   }
 })();
 </script>
 <style>
 :root{
-  --paper:#f6f4ef; --ink:#15171a; --muted:#6b7076; --card:#ffffff;
-  --line:#dfdbd2; --field:#eceade;
-  --red:#e5484d; --red-text:#c62a2f; --green:#30a46c; --green-text:#1a7f4f;
-  --mono:ui-monospace,"SF Mono","Cascadia Mono","JetBrains Mono",Menlo,Consolas,monospace;
-  --t-word:55ms; --t-fade:180ms; --t-phrase:420ms; --t-hop:90ms;
+  --bg:#0a0c10; --bg2:#0e1117; --card:#12161d; --text:#eef0ee; --muted:#9aa3ad; --line:#232a33;
+  --red:#ff5c63; --red-soft:rgba(255,92,99,.14); --green:#3ddc84; --green-soft:rgba(61,220,132,.12);
+  --blue:#5aa7ff;
+  --sans:ui-sans-serif,system-ui,"Segoe UI",Roboto,"Noto Sans",sans-serif;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Fira Code",Menlo,Consolas,monospace;
 }
-@media (prefers-color-scheme: dark){
-  :root{
-    --paper:#101214; --ink:#eae7e1; --muted:#98a0a8; --card:#181b1e;
-    --line:#2a2e33; --field:#16191c;
-    --red:#ff6369; --red-text:#ff6369; --green:#3dd68c; --green-text:#3dd68c;
-  }
+@media (prefers-color-scheme: light){
+  :root{ --bg:#f7f5f0; --bg2:#efece5; --card:#ffffff; --text:#15181c; --muted:#5c6570; --line:#dcd7cc;
+    --red:#e5484d; --red-soft:rgba(229,72,77,.10); --green:#1a9c5b; --green-soft:rgba(26,156,91,.10); --blue:#2f6fd0; }
 }
-*{box-sizing:border-box}
-::selection{background:var(--red);color:#fff}
-body{margin:0;background:var(--paper);color:var(--ink);
-  font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans",system-ui,sans-serif;
-  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto} }
+body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;overflow-x:hidden}
 a{color:inherit}
-.wrap{max-width:1100px;margin:0 auto;padding:0 24px}
-.mono{font-family:var(--mono);font-size:12.5px;letter-spacing:.04em}
-h1,h2{text-wrap:balance}
-p{text-wrap:pretty}
+img{max-width:100%;height:auto;display:block}
+.wrap{max-width:1120px;margin:0 auto;padding:0 28px}
 
-header{display:flex;align-items:center;gap:10px;padding:20px 0}
-header img{width:26px;height:26px}
-header .name{font-weight:700;font-size:16px;letter-spacing:-.01em}
-header nav{margin-left:auto;display:flex;gap:22px;font-size:14.5px}
-header nav a{text-decoration:none;color:var(--muted);transition:color .15s}
-header nav a:hover{color:var(--ink)}
+/* ---------- ambient aurora ---------- */
+.aurora{position:fixed;inset:-20%;z-index:-1;pointer-events:none;filter:blur(90px);opacity:.5}
+.aurora i{position:absolute;border-radius:50%}
+.aurora i:nth-child(1){width:52vw;height:52vw;left:-8vw;top:-10vh;background:radial-gradient(circle,var(--red-soft),transparent 65%)}
+.aurora i:nth-child(2){width:46vw;height:46vw;right:-10vw;top:22vh;background:radial-gradient(circle,var(--green-soft),transparent 65%)}
+.aurora i:nth-child(3){width:40vw;height:40vw;left:28vw;bottom:-18vh;background:radial-gradient(circle,rgba(90,167,255,.10),transparent 65%)}
+html.motion .aurora i:nth-child(1){animation:drift1 26s ease-in-out infinite alternate}
+html.motion .aurora i:nth-child(2){animation:drift2 31s ease-in-out infinite alternate}
+html.motion .aurora i:nth-child(3){animation:drift3 37s ease-in-out infinite alternate}
+@keyframes drift1{to{transform:translate(14vw,10vh) scale(1.15)}}
+@keyframes drift2{to{transform:translate(-12vw,-8vh) scale(1.2)}}
+@keyframes drift3{to{transform:translate(8vw,-12vh) scale(.9)}}
 
-/* ---------- hero: the diff ---------- */
-.hero{padding:56px 0 8px}
-.eyebrow{display:flex;align-items:center;gap:10px;color:var(--muted);margin:0 0 34px;font-size:13px}
+/* ---------- scroll progress ---------- */
+#progress{position:fixed;top:0;left:0;height:3px;width:0;z-index:60;
+  background:linear-gradient(90deg,var(--red),var(--green))}
+
+/* ---------- header ---------- */
+header{position:fixed;top:0;left:0;right:0;z-index:50;backdrop-filter:blur(14px);
+  background:color-mix(in srgb,var(--bg) 72%,transparent);border-bottom:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
+header .wrap{display:flex;align-items:center;gap:12px;height:60px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.2px;text-decoration:none}
+.logo img{width:26px;height:26px}
+header nav{margin-left:auto;display:flex;gap:26px;font-size:14.5px}
+header nav a{text-decoration:none;color:var(--muted);transition:color .2s}
+header nav a:hover{color:var(--text)}
+
+/* ---------- hero ---------- */
+.hero{min-height:100svh;display:flex;flex-direction:column;justify-content:center;position:relative;padding:110px 0 60px}
+.eyebrow{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:13px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--muted);margin-bottom:26px}
 .eyebrow .dot{width:9px;height:9px;border-radius:50%;background:var(--red);flex:none}
 html.motion .eyebrow .dot{animation:pulse 2.2s ease-in-out infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-.wave{display:inline-flex;align-items:center;gap:3px;height:16px}
-.wave i{width:3px;border-radius:2px;background:var(--muted)}
-.wave i:nth-child(1){height:6px}.wave i:nth-child(2){height:12px}.wave i:nth-child(3){height:16px}
-.wave i:nth-child(4){height:9px}.wave i:nth-child(5){height:14px}.wave i:nth-child(6){height:7px}
-html.motion .wave i{animation:wv 1.15s ease-in-out infinite}
-html.motion .wave i:nth-child(2){animation-delay:.12s}html.motion .wave i:nth-child(3){animation-delay:.24s}
-html.motion .wave i:nth-child(4){animation-delay:.36s}html.motion .wave i:nth-child(5){animation-delay:.48s}
-html.motion .wave i:nth-child(6){animation-delay:.6s}
-@keyframes wv{0%,100%{transform:scaleY(.5)}50%{transform:scaleY(1)}}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 var(--red-soft)}50%{box-shadow:0 0 0 9px transparent}}
 
-.demo{max-width:820px}
-.raw{font-family:var(--mono);font-size:clamp(16px,2.4vw,26px);letter-spacing:0;color:var(--muted);margin:0 0 14px;line-height:1.45}
-.raw del{text-decoration:none;position:relative;display:inline}
-.raw del .w{display:inline}
-html.motion .raw del .w{opacity:0;transform:translateY(.12em);filter:blur(4px);display:inline-block;
-  animation:win var(--t-fade) ease forwards;animation-delay:calc(var(--i) * var(--t-word) + .3s)}
-@keyframes win{to{opacity:1;transform:none;filter:none}}
-.raw del::after{content:"";position:absolute;left:0;right:0;top:52%;height:2px;background:var(--red);
-  transform:scaleX(1);transform-origin:0 50%}
-html.motion .raw del::after{transform:scaleX(0);animation:strike var(--t-phrase) cubic-bezier(.2,.7,.3,1) forwards;animation-delay:2.4s}
-@keyframes strike{to{transform:scaleX(1)}}
-html.motion .raw del{animation:dim var(--t-fade) ease forwards;animation-delay:2.8s}
-.raw del{opacity:.55}
-html.motion .raw del{opacity:1}
-@keyframes dim{to{opacity:.55}}
-
-.clean{font-size:clamp(38px,6.4vw,74px);font-weight:800;letter-spacing:-.035em;line-height:1.02;margin:0 0 10px}
-.clean ins{text-decoration:none}
-.clean ins .accent{color:var(--green-text)}
-html.motion .clean ins{display:inline-block;clip-path:inset(0 100% 0 0);
-  animation:wipe .6s cubic-bezier(.2,.7,.3,1) forwards;animation-delay:2.9s}
-@keyframes wipe{to{clip-path:inset(0 0 0 0)}}
-.caret{display:inline-block;width:.55ch;height:1em;background:var(--red);vertical-align:-.12em;margin-left:6px}
-html.motion .caret{animation:blink 1.06s steps(1,end) infinite;animation-delay:3.5s}
+/* live demo */
+.demo{position:relative;margin-bottom:34px}
+.dstatus{display:flex;align-items:center;gap:14px;font-family:var(--mono);font-size:13px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted);margin-bottom:16px;min-height:20px}
+.sdot{width:9px;height:9px;border-radius:50%;background:var(--red);flex:none;transition:background .3s}
+.demo[data-phase=clean] .sdot,.demo[data-phase=out] .sdot{background:var(--green)}
+.dwave{display:inline-flex;gap:3px;align-items:center;height:16px}
+.dwave i{width:3px;height:14px;border-radius:2px;background:var(--muted);transform:scaleY(.25);transform-origin:center}
+html.motion .demo[data-phase=listen] .dwave i{animation:eq 1s ease-in-out infinite}
+.dwave i:nth-child(2){animation-delay:.1s}.dwave i:nth-child(3){animation-delay:.2s}
+.dwave i:nth-child(4){animation-delay:.3s}.dwave i:nth-child(5){animation-delay:.4s}.dwave i:nth-child(6){animation-delay:.5s}
+@keyframes eq{0%,100%{transform:scaleY(.25)}50%{transform:scaleY(1)}}
+.dbox{position:relative;min-height:calc(2.9em * 1.25 + 10px)}
+.draw,.dclean{position:absolute;inset:0;transition:opacity .45s ease,filter .45s ease,transform .45s ease}
+.draw{font-family:var(--mono);font-size:clamp(19px,3vw,32px);line-height:1.45;color:var(--muted);letter-spacing:-.01em}
+.draw::after{content:"▍";color:var(--red);margin-left:2px}
+html.motion .draw::after{animation:blink 1s steps(1,end) infinite}
 @keyframes blink{50%{opacity:0}}
+.dclean{font-family:var(--sans);font-weight:800;font-size:clamp(24px,3.6vw,42px);line-height:1.2;letter-spacing:-.02em;
+  opacity:0;transform:translateY(10px)}
+.demo[data-phase=refine] .draw{filter:blur(5px);opacity:.35}
+.demo[data-phase=refine] .draw::after,.demo[data-phase=clean] .draw::after,.demo[data-phase=out] .draw::after{content:""}
+.demo[data-phase=clean] .draw,.demo[data-phase=out] .draw{opacity:0}
+.demo[data-phase=clean] .dclean{opacity:1;transform:none}
+.demo[data-phase=out] .dclean{opacity:0;transform:translateY(-8px)}
+.sweep{position:absolute;top:-8%;bottom:-8%;left:-4%;width:34%;pointer-events:none;opacity:0;
+  background:linear-gradient(100deg,transparent,var(--green-soft) 40%,color-mix(in srgb,var(--green) 35%,transparent) 50%,var(--green-soft) 60%,transparent)}
+html.motion .demo[data-phase=refine] .sweep{animation:sweep .75s ease-in forwards}
+@keyframes sweep{from{opacity:1;transform:translateX(0)}to{opacity:1;transform:translateX(340%)}}
+.chip{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:7px 14px;border-radius:999px;
+  border:1px solid color-mix(in srgb,var(--green) 45%,transparent);background:var(--green-soft);
+  font-family:var(--mono);font-size:13.5px;color:var(--text);
+  opacity:0;transform:translateY(8px) scale(.92);transition:opacity .35s ease,transform .45s cubic-bezier(.2,1.4,.4,1)}
+.chip b{color:var(--green)}
+.demo[data-phase=clean] .chip{opacity:1;transform:none}
+html:not(.motion) .demo .chip{opacity:1;transform:none}
+html:not(.motion) .demo .dclean{opacity:1;transform:none}
+html:not(.motion) .demo .draw{opacity:0}
+html:not(.motion) .draw::after{content:""}
 
-.statusline{font-family:var(--mono);font-size:12px;letter-spacing:.08em;color:var(--muted);
-  margin:18px 0 30px;text-transform:uppercase;font-variant-numeric:tabular-nums;min-height:16px}
-.statusline .ok{color:var(--green-text)}
+.hero h1{font-size:clamp(30px,4.4vw,54px);font-weight:850;letter-spacing:-.025em;line-height:1.08;max-width:820px}
+.hero .lede{margin-top:18px;font-size:clamp(16px,1.6vw,19px);color:var(--muted);max-width:620px}
+.hero .lede strong{color:var(--text)}
+html.motion .rise{opacity:0;transform:translateY(26px);animation:rise .8s cubic-bezier(.2,.8,.2,1) forwards}
+html.motion .rise.r2{animation-delay:.12s}
+html.motion .rise.r3{animation-delay:.24s}
+@keyframes rise{to{opacity:1;transform:none}}
+.cta{display:flex;gap:14px;margin-top:30px;flex-wrap:wrap}
+.btn{position:relative;overflow:hidden;display:inline-block;padding:14px 26px;border-radius:10px;font-weight:650;
+  font-size:15.5px;text-decoration:none;border:1px solid var(--line);background:var(--card);
+  transition:transform .25s cubic-bezier(.2,1.2,.4,1),box-shadow .25s,border-color .25s}
+.btn:hover{transform:translateY(-3px)}
+.btn.primary{background:var(--red);border-color:var(--red);color:#fff}
+.btn.primary:hover{box-shadow:0 12px 32px -8px color-mix(in srgb,var(--red) 60%,transparent)}
+.btn.primary::after{content:"";position:absolute;top:0;bottom:0;left:-70%;width:45%;transform:skewX(-20deg);
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent)}
+html.motion .btn.primary:hover::after{animation:shine .7s ease}
+@keyframes shine{to{left:130%}}
+.scrollcue{position:absolute;bottom:26px;left:50%;transform:translateX(-50%);color:var(--muted);font-size:22px;line-height:1}
+html.motion .scrollcue{animation:bob 1.8s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,9px)}}
 
-.lede{max-width:560px;font-size:18px;color:var(--muted);margin:0 0 30px}
-.lede strong{color:var(--ink);font-weight:600}
-.buttons{display:flex;gap:10px;flex-wrap:wrap}
-.btn{display:inline-block;padding:13px 22px;border-radius:9px;font-weight:600;font-size:15px;
-  text-decoration:none;border:1px solid var(--line);background:var(--card);color:var(--ink);
-  transition:transform .15s,border-color .15s}
-.btn:hover{border-color:var(--ink);transform:translateY(-1px)}
-.btn.primary{background:var(--red);border-color:transparent;color:#fff}
-.btn.primary:hover{filter:brightness(1.07)}
+/* big equalizer behind hero bottom */
+.eq{position:absolute;left:0;right:0;bottom:0;height:120px;display:flex;align-items:flex-end;gap:4px;
+  padding:0 4vw;opacity:.16;pointer-events:none;mask-image:linear-gradient(to right,transparent,#000 12%,#000 88%,transparent)}
+.eq i{flex:1;background:linear-gradient(to top,var(--red),var(--green));border-radius:3px 3px 0 0;height:14%;transform-origin:bottom}
+html.motion .eq i{animation:eqbar var(--s,1.4s) ease-in-out var(--d,0s) infinite alternate}
+@keyframes eqbar{from{transform:scaleY(.25)}to{transform:scaleY(var(--h,3))}}
 
-/* ---------- toggle ---------- */
-.toggle-bar{position:sticky;top:0;z-index:10;background:var(--paper);border-bottom:1px solid var(--line);
-  padding:10px 0;display:flex;align-items:center;gap:14px;margin-top:34px}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--card)}
-.seg button{appearance:none;border:0;background:transparent;color:var(--muted);font:600 14px/1 inherit;
-  padding:9px 18px;cursor:pointer}
-.seg button.on{background:var(--ink);color:var(--paper)}
-.toggle-note{font-size:13px;color:var(--muted)}
+/* ---------- marquee ---------- */
+.marquee{border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden;
+  padding:16px 0;background:color-mix(in srgb,var(--bg2) 70%,transparent)}
+.mtrack{display:flex;gap:0;width:max-content;white-space:nowrap}
+html.motion .mtrack{animation:marquee 30s linear infinite}
+@keyframes marquee{to{transform:translateX(-50%)}}
+.mtrack span{font-family:var(--mono);font-size:13.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);padding:0 26px}
+.mtrack span b{color:var(--text);font-weight:600}
 
-/* ---------- ruled-paper stage ---------- */
-.stage{margin:44px 0 0;border:1px solid var(--line);padding:64px 40px 44px;position:relative;background:var(--field)}
-.stage::before{content:"";position:absolute;inset:0;pointer-events:none;
-  background:repeating-linear-gradient(to bottom,transparent 0 31px,color-mix(in srgb,var(--line) 55%,transparent) 31px 32px);
-  -webkit-mask-image:radial-gradient(85% 85% at 50% 50%,#000 40%,transparent 100%);
-  mask-image:radial-gradient(85% 85% at 50% 50%,#000 40%,transparent 100%)}
-.stage img{max-width:min(760px,100%);width:auto;height:auto;display:block;margin:0 auto;position:relative;
-  filter:drop-shadow(0 16px 26px rgba(12,16,24,.3))}
-.stage figcaption{position:relative;text-align:center;color:var(--muted);font-size:13.5px;margin-top:26px}
+/* ---------- platform toggle + stage ---------- */
+.toggle-bar{display:flex;align-items:center;gap:16px;margin:64px 0 20px;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card)}
+.seg button{appearance:none;border:0;background:transparent;color:var(--muted);font:600 14px var(--sans);
+  padding:9px 20px;cursor:pointer;transition:background .25s,color .25s}
+.seg button.on{background:var(--text);color:var(--bg)}
+.toggle-note{font-size:13.5px;color:var(--muted)}
+.stage{position:relative;border:1px solid var(--line);border-radius:14px;overflow:hidden;
+  background:radial-gradient(ellipse 60% 70% at 50% 42%,color-mix(in srgb,var(--card) 80%,var(--text) 6%),var(--bg2));
+  padding:64px 24px 30px;text-align:center}
+.stage img{display:inline-block;margin:0 auto}
+html.motion .stage img{animation:float 4.4s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+.stage .shadow{width:min(420px,60%);height:16px;margin:18px auto 0;border-radius:50%;
+  background:radial-gradient(ellipse,rgba(0,0,0,.35),transparent 70%)}
+html.motion .stage .shadow{animation:shadowpulse 4.4s ease-in-out infinite}
+@keyframes shadowpulse{0%,100%{transform:scaleX(1);opacity:.8}50%{transform:scaleX(.9);opacity:.5}}
+.stage figcaption{margin-top:20px;font-size:14px;color:var(--muted)}
 
-/* ---------- claim band ---------- */
-.claim{border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:72px 0;padding:56px 0;background:var(--card)}
-.claim .grid{display:grid;grid-template-columns:1.2fr 1fr;gap:48px}
-@media (max-width:800px){.claim .grid{grid-template-columns:1fr}}
-.claim h2{font-size:clamp(26px,4vw,38px);letter-spacing:-.025em;line-height:1.1;margin:0}
-.claim p{color:var(--muted);margin:0 0 14px;font-size:16.5px}
-.claim p strong{color:var(--ink)}
+/* ---------- claim ---------- */
+.claim{margin:110px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  background:color-mix(in srgb,var(--bg2) 70%,transparent)}
+.claim .grid{display:grid;grid-template-columns:1fr 1.15fr;gap:56px;padding:76px 0;align-items:center}
+.bigzero{font-size:clamp(90px,12vw,170px);font-weight:850;letter-spacing:-.04em;line-height:.9;
+  background:linear-gradient(120deg,var(--green),var(--text));-webkit-background-clip:text;background-clip:text;color:transparent}
+.claim .in .bigzero{animation:none}
+html.motion .reveal.in .bigzero{animation:springin .9s cubic-bezier(.2,1.5,.35,1) both}
+@keyframes springin{from{transform:scale(.55);opacity:0}to{transform:scale(1);opacity:1}}
+.zerocap{font-family:var(--mono);font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-top:12px}
+.claim h2{font-size:clamp(24px,2.6vw,34px);letter-spacing:-.02em;line-height:1.2;margin-bottom:16px}
+.claim p{color:var(--muted);margin-top:12px}
+.claim p strong{color:var(--text)}
 
 /* ---------- features ---------- */
-section.feature{padding:52px 0;content-visibility:auto;contain-intrinsic-size:auto 560px}
-.row{display:grid;grid-template-columns:5fr 7fr;gap:48px;align-items:center}
-.row.flip .text{order:2}
-.row.flip .shot{order:1}
-@media (max-width:840px){.row,.row.flip{grid-template-columns:1fr}.row.flip .text{order:0}}
-.feature h2{font-size:29px;letter-spacing:-.02em;margin:6px 0 14px;position:relative}
-.feature h2::before{content:"";display:inline-block;width:.5ch;height:.85em;background:var(--red);
-  vertical-align:-.08em;margin-right:12px}
-.feature .num{font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:var(--muted)}
-.feature p{color:var(--muted);margin:0 0 12px;font-size:16px}
-.feature p b{color:var(--ink);font-weight:600}
-
-/* correction demo */
+.feature{padding:70px 0}
+.feature .cols{display:grid;grid-template-columns:0.9fr 1.1fr;gap:60px;align-items:center}
+.feature:nth-of-type(even) .cols{grid-template-columns:1.1fr 0.9fr}
+.feature:nth-of-type(even) .copy{order:2}
+.num{font-family:var(--mono);font-size:13px;letter-spacing:.2em;color:var(--red);margin-bottom:14px}
+.feature h2{font-size:clamp(24px,2.8vw,36px);letter-spacing:-.02em;line-height:1.15;margin-bottom:18px;position:relative;padding-left:18px}
+.feature h2::before{content:"";position:absolute;left:0;top:.18em;bottom:.18em;width:5px;background:var(--red);border-radius:2px;transform-origin:top}
+html.motion .reveal h2::before{transform:scaleY(0)}
+html.motion .reveal.in h2::before{transition:transform .7s cubic-bezier(.2,.8,.2,1) .25s;transform:scaleY(1)}
+.feature p{color:var(--muted);margin-bottom:14px;max-width:52ch}
+.feature p b,.feature p strong{color:var(--text)}
 .fixdemo del{font-family:var(--mono);font-size:.92em;text-decoration:line-through;
-  text-decoration-color:var(--red);text-decoration-thickness:2px;color:var(--muted)}
-.fixdemo ins{text-decoration:none;color:var(--green-text);font-weight:600}
-
-/* ---------- per-platform screenshot framing ---------- */
-.shot{position:relative}
-.shotbox{display:grid;place-items:center;min-height:clamp(280px,30vw,430px)}
-.shotbox img{max-width:100%;height:auto;display:block;transition:opacity .12s}
+  text-decoration-color:var(--red);color:var(--muted)}
+.fixdemo ins{text-decoration:none;color:var(--green);font-weight:600}
+.shotwrap{perspective:1100px}
+.shotbox{display:grid;place-items:center;min-height:clamp(280px,30vw,430px);
+  transform:rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateY(var(--py,0px));
+  transition:transform .35s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}
+.shotbox img{transition:opacity .12s}
 html[data-platform=linux] .shotbox img{border:1px solid var(--line);
-  box-shadow:0 1px 2px rgba(0,0,0,.06),0 24px 60px -28px rgba(10,14,20,.4)}
-html[data-platform=mac] .shotbox img{border:0;border-radius:0;box-shadow:none;
+  box-shadow:0 24px 60px -22px rgba(0,0,0,.55)}
+html[data-platform=mac] .shotbox img{border:0;box-shadow:none;
   filter:drop-shadow(0 18px 32px rgba(10,14,20,.35));max-width:min(500px,100%)}
-.shot .platform-chip{position:absolute;top:-11px;right:12px;background:var(--field);border:1px solid var(--line);
-  color:var(--muted);font:600 11px/1 var(--mono);letter-spacing:.06em;padding:5px 9px;text-transform:uppercase;display:none;z-index:2}
-html[data-platform=mac] .shot .platform-chip.linux-only{display:block}
 
-.reveal{opacity:0;transform:translateY(14px);transition:opacity .5s ease,transform .5s ease}
-.reveal.in{opacity:1;transform:none}
-@media (prefers-reduced-motion: reduce){
-  .reveal{opacity:1;transform:none;transition:none}
-  .raw del{opacity:.55}
-  .caret{animation:none}
-}
+/* scroll reveal */
+.reveal{opacity:0;transform:perspective(900px) rotateX(6deg) translateY(46px)}
+.reveal.in{opacity:1;transform:none;transition:opacity .8s ease,transform .9s cubic-bezier(.2,.8,.2,1)}
+html:not(.motion) .reveal{opacity:1;transform:none}
 
-/* ---------- downloads / footer ---------- */
-.downloads{padding:64px 0 8px}
-.downloads h2{font-size:clamp(26px,4vw,36px);letter-spacing:-.025em;margin:0 0 28px}
-.cards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-@media (max-width:720px){.cards{grid-template-columns:1fr}}
-.card{background:var(--card);border:1px solid var(--line);padding:28px;transition:border-color .2s,transform .2s}
-.card:hover{border-color:var(--ink);transform:translateY(-2px)}
-.card h3{margin:0 0 10px;font-size:18px;display:flex;align-items:baseline;gap:10px}
-.card h3 .mono{color:var(--muted)}
-.card p{color:var(--muted);font-size:15px;margin:0 0 18px}
-.card code{font-family:var(--mono);font-size:12.5px;background:var(--field);padding:2px 6px;border:1px solid var(--line)}
-.fineprint{font-size:13px;color:var(--muted)}
-footer{margin-top:72px;border-top:1px solid var(--line);padding:26px 0 48px;display:flex;gap:20px;flex-wrap:wrap;
-  color:var(--muted);font-size:14px}
-footer a{color:var(--muted)}
-footer a:hover{color:var(--ink)}
+/* ---------- download ---------- */
+.download{padding:100px 0 60px}
+.download h2{font-size:clamp(28px,3.2vw,42px);letter-spacing:-.02em;margin-bottom:40px}
+.dlgrid{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+.dlcard{border:1px solid var(--line);border-radius:14px;background:var(--card);padding:30px;
+  transition:transform .3s cubic-bezier(.2,1,.4,1),box-shadow .3s,border-color .3s}
+.dlcard:hover{transform:translateY(-6px);box-shadow:0 24px 50px -24px rgba(0,0,0,.5);border-color:color-mix(in srgb,var(--text) 25%,var(--line))}
+.dlcard h3{font-size:21px;margin-bottom:4px}
+.dlcard .sub{font-family:var(--mono);font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.dlcard p{color:var(--muted);font-size:15px;margin:14px 0 20px}
+.dlcard code{font-family:var(--mono);font-size:.9em;background:var(--bg2);padding:2px 6px;border-radius:5px}
+.freshnote{margin-top:26px;font-size:14px;color:var(--muted)}
+
+/* ---------- footer ---------- */
+footer{border-top:1px solid var(--line);margin-top:60px}
+footer .wrap{display:flex;gap:22px;align-items:center;padding:26px 28px;font-size:14px;color:var(--muted);flex-wrap:wrap}
 footer .spacer{flex:1}
+footer a{color:var(--muted);text-decoration:none}
+footer a:hover{color:var(--text)}
+
+@media (max-width: 860px){
+  .feature .cols,.claim .grid,.dlgrid{grid-template-columns:1fr;gap:30px}
+  .feature:nth-of-type(even) .copy{order:0}
+  .hero{padding-top:96px}
+  .eq{height:70px}
+}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <img src="assets/icon.svg?v=7" alt="">
-    <span class="name">Speecher</span>
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+<div id="progress" aria-hidden="true"></div>
+
+<header>
+  <div class="wrap">
+    <a class="logo" href="#"><img src="assets/icon.svg?v=8" alt="">Speecher</a>
     <nav>
       <a href="#features">Features</a>
       <a href="#download">Download</a>
       <a href="https://github.com/firemonster612/speecher">GitHub</a>
     </nav>
-  </header>
+  </div>
+</header>
 
-  <div class="hero">
-    <h1 class="eyebrow mono"><span class="dot" aria-hidden="true"></span> Speecher — dictation for Linux and macOS
-      <span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span></h1>
+<div class="hero">
+  <div class="wrap">
+    <p class="eyebrow rise"><span class="dot"></span>Speecher — dictation for Linux and macOS</p>
 
-    <div class="demo">
-      <p class="raw"><del id="rawline">and if we move the release to thursday we get a full week of nightly builds before</del></p>
-      <p class="clean"><ins>Move the release to <span class="accent">Thursday</span> and we get a full week of nightlies.</ins><span class="caret" aria-hidden="true"></span></p>
-      <p class="statusline" aria-hidden="true"><span id="status">DELIVERED TO: your browser</span></p>
+    <div class="demo rise r2" id="demo" data-phase="clean" aria-label="Live demo: raw dictation being refined and delivered">
+      <div class="dstatus"><span class="sdot"></span><span id="dstate">delivered</span><span id="dtimer">0:04</span>
+        <span class="dwave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+      <div class="dbox">
+        <p class="draw" id="draw" aria-hidden="true"></p>
+        <p class="dclean" id="dclean">Can we push the meeting to Friday? I still haven&rsquo;t finished the deck.</p>
+        <div class="sweep" aria-hidden="true"></div>
+      </div>
+      <div class="chip"><span aria-hidden="true">&#8627;</span> delivered to <b id="dapp">Slack</b></div>
     </div>
 
-    <p class="lede">That's the whole product: press a shortcut, say what you mean, and the cleaned-up
-    text lands in whatever app has focus. <strong>Powered by the Claude or ChatGPT subscription you
-    already pay for.</strong></p>
-    <div class="buttons">
+    <h1 class="rise r2">Dictation that cleans up after itself.</h1>
+    <p class="lede rise r3">Press a shortcut, say what you mean, and polished text lands in whatever app
+    has focus. <strong>Powered by the Claude or ChatGPT subscription you already pay for.</strong></p>
+    <div class="cta rise r3">
       <a class="btn primary" href="https://github.com/firemonster612/speecher/releases">Download</a>
       <a class="btn" href="https://github.com/firemonster612/speecher">View source</a>
     </div>
   </div>
+  <div class="eq" id="eq" aria-hidden="true"></div>
+  <div class="scrollcue" aria-hidden="true">&#8595;</div>
+</div>
 
-  <div class="toggle-bar">
+<div class="marquee" aria-hidden="true">
+  <div class="mtrack" id="mtrack">
+    <span>delivered straight into</span><span><b>Slack</b></span><span><b>VS Code</b></span><span><b>Gmail</b></span>
+    <span><b>your terminal</b></span><span><b>Discord</b></span><span><b>Obsidian</b></span><span><b>Notion</b></span>
+    <span><b>Figma</b></span><span><b>anywhere text goes</b></span>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="toggle-bar" id="features">
     <div class="seg" role="tablist" aria-label="Platform">
       <button id="pick-linux" role="tab" onclick="setPlatform('linux')">Linux</button>
       <button id="pick-mac" role="tab" onclick="setPlatform('mac')">macOS</button>
@@ -234,18 +302,23 @@ footer .spacer{flex:1}
     <span class="toggle-note">Screenshots follow your light/dark preference.</span>
   </div>
 
-  <figure class="stage">
-    <img data-shot data-linux-light="assets/overlay-light.png?v=7" data-linux-dark="assets/overlay-dark.png?v=7"
-         data-mac-light="assets/overlay-mac-light.png?v=7" data-mac-dark="assets/overlay-mac-dark.png?v=7"
-         src="assets/overlay-light.png?v=7" alt="The Speecher overlay while dictating — it is saying the sentence this page's headline was refined from">
-    <figcaption>The overlay mid-dictation, saying the exact sentence above. The entire UI while you talk.</figcaption>
+  <figure class="stage reveal">
+    <img data-shot data-linux-light="assets/overlay-light.png?v=8" data-linux-dark="assets/overlay-dark.png?v=8"
+         data-mac-light="assets/overlay-mac-light.png?v=8" data-mac-dark="assets/overlay-mac-dark.png?v=8"
+         src="assets/overlay-light.png?v=8" alt="The Speecher overlay floating mid-dictation">
+    <div class="shadow" aria-hidden="true"></div>
+    <figcaption>The overlay, mid-dictation. This is the entire UI while you talk.</figcaption>
   </figure>
 </div>
 
 <div class="claim reveal">
   <div class="wrap grid">
-    <h2>No new subscription.<br>No API meter.</h2>
     <div>
+      <div class="bigzero">$0</div>
+      <div class="zerocap">extra per month</div>
+    </div>
+    <div>
+      <h2>No new subscription. No API meter.</h2>
       <p><strong>Sign in with Claude or ChatGPT and you're done.</strong> Speech recognition runs
       through Claude's own voice stack or your ChatGPT account via Codex, and the text cleanup uses
       those same logins.</p>
@@ -255,145 +328,145 @@ footer .spacer{flex:1}
   </div>
 </div>
 
-<div class="wrap" id="features">
-
+<div class="wrap">
   <section class="feature reveal">
-    <div class="row">
-      <div class="text">
-        <p class="num">01 · CAPTURE</p>
+    <div class="cols">
+      <div class="copy">
+        <p class="num">01 &middot; CAPTURE</p>
         <h2>One shortcut, any app</h2>
         <p>Press your <b>Global Shortcut</b> and start talking. The overlay shows words as you say
-        them, playing media pauses until you finish, and the text is delivered into whatever had
-        focus.</p>
+        them, playing media pauses until you finish, and the text is delivered into whatever had focus.</p>
         <p>Delivery is app-aware: <b>per-application paste rules</b> decide whether text is typed in,
         placed on the clipboard, or held back, and Speecher watches the focused control (AT-SPI on
         Linux, the Accessibility API on macOS) so it knows exactly what it's typing into.</p>
       </div>
-      <div class="shot">
-        <div class="shotbox"><img data-shot data-linux-light="assets/linux-dictation-light.png?v=7" data-linux-dark="assets/linux-dictation-dark.png?v=7"
-             data-mac-light="assets/mac-dictation-light.png?v=7" data-mac-dark="assets/mac-dictation-dark.png?v=7"
-             src="assets/linux-dictation-light.png?v=7" alt="The Dictation page: live transcript area, refinement, microphone and output cards, Global Shortcut setup" loading="lazy" decoding="async"></div>
+      <div class="shotwrap">
+        <div class="shotbox"><img data-shot data-linux-light="assets/linux-dictation-light.png?v=8" data-linux-dark="assets/linux-dictation-dark.png?v=8"
+             data-mac-light="assets/mac-dictation-light.png?v=8" data-mac-dark="assets/mac-dictation-dark.png?v=8"
+             src="assets/linux-dictation-light.png?v=8" alt="The Dictation page: live transcript area, refinement, microphone and output cards, Global Shortcut setup" loading="lazy" decoding="async"></div>
       </div>
     </div>
   </section>
 
   <section class="feature reveal">
-    <div class="row flip">
-      <div class="text">
-        <p class="num">02 · REFINE</p>
+    <div class="cols">
+      <div class="copy">
+        <p class="num">02 &middot; REFINE</p>
         <h2>Cleanup that knows where you're typing</h2>
-        <p>Raw transcripts ramble, like the struck-through line you watched get rewritten above.
-        Speecher can pass them through Claude or GPT with a <b>Writing Profile</b> inferred from the
-        target app (Work, Email, Personal, AI coding) or your own override for a specific
-        application. A Slack message and a commit message shouldn't read the same, and they won't.</p>
+        <p>Raw transcripts ramble, like the ones being rewritten in the demo up top. Speecher can pass
+        them through Claude or GPT with a <b>Writing Profile</b> inferred from the target app (Work,
+        Email, Personal, AI coding) or your own override for a specific application. A Slack message
+        and a commit message shouldn't read the same, and they won't.</p>
         <p>You pick the model and cleanup strength per profile, and it can use the target window
         (even a screenshot of it, if you allow that) as context.</p>
       </div>
-      <div class="shot">
-        <div class="shotbox"><img data-shot data-linux-light="assets/linux-refinement-light.png?v=7" data-linux-dark="assets/linux-refinement-dark.png?v=7"
-             data-mac-light="assets/mac-text-light.png?v=7" data-mac-dark="assets/mac-text-dark.png?v=7"
-             src="assets/linux-refinement-light.png?v=7" alt="The Refinement page: per-profile cleanup strength and tone, model choice per provider" loading="lazy" decoding="async"></div>
+      <div class="shotwrap">
+        <div class="shotbox"><img data-shot data-linux-light="assets/linux-refinement-light.png?v=8" data-linux-dark="assets/linux-refinement-dark.png?v=8"
+             data-mac-light="assets/mac-text-light.png?v=8" data-mac-dark="assets/mac-text-dark.png?v=8"
+             src="assets/linux-refinement-light.png?v=8" alt="The Refinement page: per-profile cleanup strength and tone, model choice per provider" loading="lazy" decoding="async"></div>
       </div>
     </div>
   </section>
 
   <section class="feature reveal">
-    <div class="row">
-      <div class="text">
-        <p class="num">03 · LEARN</p>
+    <div class="cols">
+      <div class="copy">
+        <p class="num">03 &middot; LEARN</p>
         <h2>It learns how you talk</h2>
         <p>Add the jargon, names, and project words that generic speech models fumble, and star the
         ones that matter. When you fix a transcript right after it lands, Speecher notices and
-        <b>learns the correction</b> on its own —
+        <b>learns the correction</b> on its own &mdash;
         <span class="fixdemo"><del>at spy</del> <ins>AT&#8209;SPI</ins></span> only ever happens once.</p>
         <p>Spoken <b>snippets</b> expand into text you wrote once and never want to dictate again,
         and replacement rules fix the things a model keeps getting wrong.</p>
       </div>
-      <div class="shot">
-        <div class="shotbox"><img data-shot data-linux-light="assets/linux-vocabulary-light.png?v=7" data-linux-dark="assets/linux-vocabulary-dark.png?v=7"
-             data-mac-light="assets/mac-vocabulary-light.png?v=7" data-mac-dark="assets/mac-vocabulary-dark.png?v=7"
-             src="assets/linux-vocabulary-light.png?v=7" alt="The Vocabulary page: starred terms, learned corrections, replacements and snippets" loading="lazy" decoding="async"></div>
+      <div class="shotwrap">
+        <div class="shotbox"><img data-shot data-linux-light="assets/linux-vocabulary-light.png?v=8" data-linux-dark="assets/linux-vocabulary-dark.png?v=8"
+             data-mac-light="assets/mac-vocabulary-light.png?v=8" data-mac-dark="assets/mac-vocabulary-dark.png?v=8"
+             src="assets/linux-vocabulary-light.png?v=8" alt="The Vocabulary page: starred terms, learned corrections, replacements and snippets" loading="lazy" decoding="async"></div>
       </div>
     </div>
   </section>
 
   <section class="feature reveal">
-    <div class="row flip">
-      <div class="text">
-        <p class="num">04 · UPDATE</p>
+    <div class="cols">
+      <div class="copy">
+        <p class="num">04 &middot; UPDATE</p>
         <h2>Updates that ask first</h2>
         <p>Two <b>Update Channels</b>: Stable Release, or a Nightly Build republished from every push
         to master. By default Speecher only tells you an update exists. One click installs it. The
         silent-background-updates toggle exists, and it's off until you say otherwise.</p>
-        <p>The Linux AppImage <b>replaces itself in place</b>; macOS updates ride Sparkle. After an
-        update, a What's New page shows the release notes next to the new settings themselves, live,
-        so you can try them on the spot.</p>
+        <p>Every update opens a <b>What's New</b> page scoped to the versions you actually skipped,
+        so you read one list, not a changelog archive.</p>
       </div>
-      <div class="shot">
-        <div class="shotbox"><img data-shot data-linux-light="assets/linux-whats-new-light.png?v=7" data-linux-dark="assets/linux-whats-new-dark.png?v=7"
-             data-mac-light="assets/mac-whats-new-light.png?v=7" data-mac-dark="assets/mac-whats-new-dark.png?v=7"
-             src="assets/linux-whats-new-light.png?v=7" alt="The What's New page after an update: release notes plus the newly added settings" loading="lazy" decoding="async"></div>
+      <div class="shotwrap">
+        <div class="shotbox"><img data-shot data-linux-light="assets/linux-whats-new-light.png?v=8" data-linux-dark="assets/linux-whats-new-dark.png?v=8"
+             data-mac-light="assets/mac-whats-new-light.png?v=8" data-mac-dark="assets/mac-whats-new-dark.png?v=8"
+             src="assets/linux-whats-new-light.png?v=8" alt="The What's New page listing changes since your last version" loading="lazy" decoding="async"></div>
       </div>
     </div>
   </section>
 
   <section class="feature reveal">
-    <div class="row">
-      <div class="text">
-        <p class="num">05 · NATIVE</p>
+    <div class="cols">
+      <div class="copy">
+        <p class="num">05 &middot; NATIVE</p>
         <h2>Native on your desktop</h2>
-        <p>On Linux it's a real Qt app that follows your color scheme and feels at home on KDE
-        Plasma. On macOS the settings are <b>native SwiftUI</b>, not a port and not a web view. Same
-        features on both, no Electron anywhere.</p>
-        <p>Everything above is one window with a search box. The update channel, the writing
-        profiles, the paste rules: all of it is a setting you can find, not a config file you have
-        to hunt for.</p>
+        <p>One app, two honest faces: Qt with Breeze on Linux, SwiftUI with Liquid Glass on macOS.
+        Light and dark follow your system, mic and output devices are picked per platform, and the
+        Linux build walks you through registering the Global Shortcut on KDE, GNOME, or Hyprland
+        the first time it runs.</p>
+        <p>Flip the platform toggle above the first screenshot &mdash; every screenshot on this page
+        is the real UI on that OS.</p>
       </div>
-      <div class="shot">
-        <div class="shotbox"><img data-shot data-linux-light="assets/linux-general-light.png?v=7" data-linux-dark="assets/linux-general-dark.png?v=7"
-             data-mac-light="assets/mac-general-light.png?v=7" data-mac-dark="assets/mac-general-dark.png?v=7"
-             src="assets/linux-general-light.png?v=7" alt="The settings window: Breeze Qt on Linux, native SwiftUI on macOS" loading="lazy" decoding="async"></div>
+      <div class="shotwrap">
+        <div class="shotbox"><img data-shot data-linux-light="assets/linux-general-light.png?v=8" data-linux-dark="assets/linux-general-dark.png?v=8"
+             data-mac-light="assets/mac-general-light.png?v=8" data-mac-dark="assets/mac-general-dark.png?v=8"
+             src="assets/linux-general-light.png?v=8" alt="The General page: launch, appearance and update settings" loading="lazy" decoding="async"></div>
       </div>
     </div>
   </section>
 
-  <section class="downloads reveal" id="download">
+  <section class="download reveal" id="download">
     <h2>Get Speecher</h2>
-    <div class="cards">
-      <div class="card">
-        <h3>Linux <span class="mono">x86_64 · wayland</span></h3>
+    <div class="dlgrid">
+      <div class="dlcard">
+        <h3>Linux</h3>
+        <div class="sub">x86_64 &middot; wayland</div>
         <p>One AppImage. <code>chmod +x</code> and run; it updates itself from then on, and carries
         zsync metadata for external update tools. Happiest on KDE Plasma; GNOME and Hyprland covered.</p>
         <a class="btn primary" href="https://github.com/firemonster612/speecher/releases">Download AppImage</a>
       </div>
-      <div class="card">
-        <h3>macOS <span class="mono">apple silicon · 26+</span></h3>
+      <div class="dlcard">
+        <h3>macOS</h3>
+        <div class="sub">apple silicon &middot; 26+</div>
         <p>A standard DMG. The app is unsigned (there's no $99 Apple subscription behind this project
-        either), so the first launch takes one trip to System Settings → Privacy &amp; Security →
+        either), so the first launch takes one trip to System Settings &rarr; Privacy &amp; Security &rarr;
         Open Anyway. Updates are painless after that.</p>
         <a class="btn primary" href="https://github.com/firemonster612/speecher/releases">Download DMG</a>
       </div>
     </div>
-    <p class="fineprint" style="margin-top:16px">Fresh project: if the releases page looks quiet,
-    the first builds are landing. Nightly Builds appear on every push to master.</p>
+    <p class="freshnote">Fresh project: if the releases page looks quiet, the first builds are landing.
+    Nightly Builds appear on every push to master.</p>
   </section>
 </div>
 
-<div class="wrap">
-  <footer>
+<footer>
+  <div class="wrap">
     <span>MIT licensed. Built in the open.</span>
     <span class="spacer"></span>
     <a href="https://github.com/firemonster612/speecher">GitHub</a>
     <a href="https://github.com/firemonster612/speecher/releases">Releases</a>
     <a href="https://github.com/firemonster612/speecher/issues">Report an issue</a>
-  </footer>
-</div>
+  </div>
+</footer>
 
 <script>
 (function(){
-  var mq = window.matchMedia('(prefers-color-scheme: dark)');
   var motion = document.documentElement.classList.contains('motion');
+  var mq = window.matchMedia('(prefers-color-scheme: dark)');
 
+  /* ---- platform screenshot swapping ---- */
   function apply(){
     var platform = document.documentElement.dataset.platform;
     var scheme = mq.matches ? 'Dark' : 'Light';
@@ -419,49 +492,127 @@ footer .spacer{flex:1}
   mq.addEventListener('change', apply);
   setPlatform(document.documentElement.dataset.platform, false);
 
-  // Hero choreography: split the raw line into staggered words, run the status line.
-  if (motion) {
-    var raw = document.getElementById('rawline');
-    var words = raw.textContent.split(/\s+/);
-    raw.textContent = '';
-    words.forEach(function(word, index){
-      var span = document.createElement('span');
-      span.className = 'w';
-      span.style.setProperty('--i', index);
-      span.textContent = word;
-      raw.appendChild(span);
-      if (index < words.length - 1) raw.appendChild(document.createTextNode(' '));
-    });
-    var status = document.getElementById('status');
-    var t0 = performance.now();
-    status.textContent = 'LISTENING · CLAUDE VOICE · 00:00';
-    var tick = setInterval(function(){
-      var s = Math.floor((performance.now() - t0) / 1000);
-      status.textContent = 'LISTENING · CLAUDE VOICE · 00:0' + Math.min(s, 2);
-    }, 250);
-    setTimeout(function(){ clearInterval(tick); status.textContent = 'REFINING…'; }, 2400);
-    setTimeout(function(){
-      status.innerHTML = 'DELIVERED TO: <span class="ok">your browser</span>';
-    }, 3200);
-  } else {
-    document.getElementById('status').innerHTML = 'DELIVERED TO: <span class="ok">your browser</span>';
+  /* ---- big equalizer bars ---- */
+  var eq = document.getElementById('eq');
+  for (var i = 0; i < 56; i++) {
+    var bar = document.createElement('i');
+    bar.style.setProperty('--s', (0.9 + Math.random() * 1.3).toFixed(2) + 's');
+    bar.style.setProperty('--d', (Math.random() * -2).toFixed(2) + 's');
+    bar.style.setProperty('--h', (1.5 + Math.random() * 4.5).toFixed(2));
+    eq.appendChild(bar);
   }
 
-  // Section reveals.
-  if ('IntersectionObserver' in window
-      && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  /* ---- marquee: duplicate track for a seamless loop ---- */
+  var track = document.getElementById('mtrack');
+  track.innerHTML += track.innerHTML;
+
+  /* ---- live hero demo ---- */
+  var DEMOS = [
+    { raw: "um okay so can we push the meeting to friday because i still haven't finished the deck",
+      clean: "Can we push the meeting to Friday? I still haven’t finished the deck.", app: "Slack" },
+    { raw: "hey uh quick heads up the bug only shows up when the window loses focus mid recording",
+      clean: "Heads up — the bug only appears when the window loses focus mid-recording.", app: "a GitHub issue" },
+    { raw: "note to self renew the domain before it uh expires on the ninth",
+      clean: "Renew the domain before it expires on the 9th.", app: "your notes" },
+    { raw: "i love this direction lets uh lets ship it next week",
+      clean: "Love this direction — let’s ship it next week.", app: "Gmail" }
+  ];
+  if (motion) {
+    var demo = document.getElementById('demo'),
+        draw = document.getElementById('draw'),
+        dclean = document.getElementById('dclean'),
+        dstate = document.getElementById('dstate'),
+        dtimer = document.getElementById('dtimer'),
+        dapp = document.getElementById('dapp');
+    var idx = 0;
+    function cycle(){
+      var d = DEMOS[idx % DEMOS.length]; idx++;
+      draw.textContent = '';
+      dclean.textContent = d.clean;
+      dapp.textContent = d.app;
+      dstate.textContent = 'listening';
+      demo.dataset.phase = 'listen';
+      var words = d.raw.split(' '), w = 0, t0 = Date.now();
+      var tick = setInterval(function(){
+        var s = Math.floor((Date.now() - t0) / 1000);
+        dtimer.textContent = '0:' + (s < 10 ? '0' : '') + s;
+      }, 250);
+      var typer = setInterval(function(){
+        draw.textContent += (w ? ' ' : '') + words[w]; w++;
+        if (w >= words.length) {
+          clearInterval(typer);
+          setTimeout(function(){
+            clearInterval(tick);
+            dstate.textContent = 'refining';
+            demo.dataset.phase = 'refine';
+            setTimeout(function(){
+              dstate.textContent = 'delivered';
+              demo.dataset.phase = 'clean';
+              setTimeout(function(){
+                demo.dataset.phase = 'out';
+                setTimeout(cycle, 650);
+              }, 2800);
+            }, 800);
+          }, 700);
+        }
+      }, 105);
+    }
+    cycle();
+  }
+
+  /* ---- scroll reveals ---- */
+  var toReveal = document.querySelectorAll('.reveal');
+  if ('IntersectionObserver' in window) {
     var io = new IntersectionObserver(function(entries){
       entries.forEach(function(e){
         if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
       });
-    }, {rootMargin: '0px 0px -8% 0px'});
-    document.querySelectorAll('.reveal').forEach(function(el){ io.observe(el); });
+    }, { rootMargin: '0px 0px -12% 0px' });
+    toReveal.forEach(function(el){ io.observe(el); });
+    setTimeout(function(){ toReveal.forEach(function(el){
+      if (el.getBoundingClientRect().top < innerHeight) el.classList.add('in');
+    }); }, 1600);
   } else {
-    document.querySelectorAll('.reveal').forEach(function(el){ el.classList.add('in'); });
+    toReveal.forEach(function(el){ el.classList.add('in'); });
   }
-  setTimeout(function(){
-    document.querySelectorAll('.reveal:not(.in)').forEach(function(el){ el.classList.add('in'); });
-  }, 1600);
+
+  /* ---- scroll progress + screenshot parallax ---- */
+  var progress = document.getElementById('progress');
+  var boxes = [].slice.call(document.querySelectorAll('.shotbox'));
+  var raf = null;
+  function onScroll(){
+    if (raf) return;
+    raf = requestAnimationFrame(function(){
+      raf = null;
+      var max = document.documentElement.scrollHeight - innerHeight;
+      progress.style.width = (max > 0 ? (scrollY / max) * 100 : 0) + '%';
+      if (!motion) return;
+      boxes.forEach(function(b){
+        var r = b.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > innerHeight) return;
+        var off = (r.top + r.height / 2 - innerHeight / 2) / innerHeight;
+        b.style.setProperty('--py', (off * -26).toFixed(1) + 'px');
+      });
+    });
+  }
+  addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  /* ---- pointer tilt on screenshots ---- */
+  if (motion && matchMedia('(hover: hover)').matches) {
+    boxes.forEach(function(b){
+      b.addEventListener('pointermove', function(ev){
+        var r = b.getBoundingClientRect();
+        var x = (ev.clientX - r.left) / r.width - 0.5;
+        var y = (ev.clientY - r.top) / r.height - 0.5;
+        b.style.setProperty('--ry', (x * 7).toFixed(2) + 'deg');
+        b.style.setProperty('--rx', (y * -7).toFixed(2) + 'deg');
+      });
+      b.addEventListener('pointerleave', function(){
+        b.style.setProperty('--rx', '0deg'); b.style.setProperty('--ry', '0deg');
+      });
+    });
+  }
 })();
 </script>
 </body>
