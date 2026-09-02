@@ -643,14 +643,12 @@ void AppWindow::refreshUpdateBanner()
         m_updateBannerVersion = availableVersion;
         m_updateBannerInstalledVersion = updates->currentVersion();
     }
-    const bool updateFlowInactive = updates->state() == UpdateController::State::Idle
-        || updates->state() == UpdateController::State::UpToDate
-        || updates->state() == UpdateController::State::CheckFailed;
-    if (updateFlowInactive && !m_controller->pendingWhatsNewVersion().isEmpty()) {
+    if (!updates->bannerVisible() && !m_controller->pendingWhatsNewVersion().isEmpty()) {
         m_showingWhatsNewBanner = true;
         m_updateBanner->show();
         m_updateBannerText->setText(
-            QStringLiteral("Updated to %1 — See what's new").arg(updates->currentVersion()));
+            QStringLiteral("Speecher %1 is installed")
+                .arg(updates->currentVersion().section(QLatin1Char('-'), 0, 0)));
         m_updateProgress->hide();
         m_updateAction->setText(QStringLiteral("See what's new"));
         m_updateAction->setEnabled(true);
@@ -716,7 +714,7 @@ void AppWindow::refreshUpdateBanner()
 
 void AppWindow::showWhatsNew()
 {
-    m_navigation->clearSelection();
+    m_navigation->setCurrentItem(nullptr);
     m_stack->setCurrentWidget(m_pages->whatsNew());
     m_controller->clearPendingWhatsNew();
 }

@@ -60,6 +60,9 @@ private slots:
                  0);
         QVERIFY(compareBaseVersions(QStringLiteral("0.10.0"), QStringLiteral("0.2.0")) > 0);
         QVERIFY(compareBaseVersions(QStringLiteral("0.2.0"), QStringLiteral("0.2.1")) < 0);
+        QCOMPARE(compareBaseVersions(QStringLiteral("0.2.9+g1"), QStringLiteral("0.2.9")),
+                 0);
+        QVERIFY(compareBaseVersions(QString(), QStringLiteral("0.1.0")) < 0);
     }
 
     void whatsNewPageSelectsLiveRowsInTheVersionRange()
@@ -90,6 +93,46 @@ private slots:
                     .value(AppSettings{})
                     .toString()
                     .contains(QStringLiteral("Speecher 0.2.0")));
+
+        context.lastSeenVersion = QStringLiteral("0.1.0");
+        context.currentVersion = QStringLiteral("0.2.0");
+        schema = buildSettingsSchema(context);
+        const SettingsPage &whatsNew = schema.page(QStringLiteral("whatsNew"));
+        QVERIFY(!hasRow(whatsNew, QStringLiteral("checkForUpdates")));
+        QVERIFY(!hasRow(whatsNew, QStringLiteral("currentVersion")));
+        QVERIFY(!hasRow(whatsNew, QStringLiteral("whatsNew")));
+    }
+
+    void whatsNewNotesSelectEveryReleaseInTheVersionRange()
+    {
+        SchemaContext context = fakeContext();
+        context.lastSeenVersion = QStringLiteral("0.0.0");
+        context.currentVersion = QStringLiteral("0.2.0");
+        const QString notes = rowById(buildSettingsSchema(context).page(
+                                          QStringLiteral("whatsNew")),
+                                      QStringLiteral("whatsNewNotes"))
+                                  .value(AppSettings{})
+                                  .toString();
+
+        QVERIFY(notes.contains(QStringLiteral("# Speecher 0.1.0")));
+        QVERIFY(notes.contains(QStringLiteral("# Speecher 0.2.0")));
+        QVERIFY(notes.indexOf(QStringLiteral("# Speecher 0.2.0"))
+                < notes.indexOf(QStringLiteral("# Speecher 0.1.0")));
+    }
+
+    void nightlyNotesLinkToTheComparedCommits()
+    {
+        SchemaContext context = fakeContext();
+        context.lastSeenVersion = QStringLiteral("0.1.0-nightly.20260831+gabc1234");
+        context.currentVersion = QStringLiteral("0.2.0-nightly.20260901+gdef5678");
+        const QString notes = rowById(buildSettingsSchema(context).page(
+                                          QStringLiteral("whatsNew")),
+                                      QStringLiteral("whatsNewNotes"))
+                                  .value(AppSettings{})
+                                  .toString();
+
+        QVERIFY(notes.contains(QStringLiteral(
+            "https://github.com/firemonster612/speecher/compare/abc1234...def5678")));
     }
 
     void rowsRoundTripAValueThroughAppSettings()

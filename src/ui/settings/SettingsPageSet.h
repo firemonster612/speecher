@@ -34,6 +34,9 @@ public:
     };
 
     SettingsPageSet(ApplicationController *controller, QWidget *parent);
+    SettingsPageSet(ApplicationController *controller,
+                    QWidget *parent,
+                    SettingsSchema schema);
 
     // The schema's providers page split across the Models and Auth sidebar
     // sections. Exposed so tests can prove the two lists cover every row.
@@ -58,7 +61,6 @@ public:
     bool save(bool showValidationErrors = true,
               bool refreshPages = true,
               SaveOutcome *outcome = nullptr);
-    bool hasChanges() const;
     void preserveBindingScroll(QScrollArea *scroll);
 
 signals:
@@ -78,6 +80,7 @@ private:
 
     ApplicationController *m_controller;
     SettingsSchema m_schema;
+    AppSettings m_draft;
     OutputCustomRows m_outputRows;
     BindingRows m_bindingRows;
     ProviderCustomRows m_providerRows;
@@ -93,7 +96,6 @@ private:
     SchemaSettingsPage *m_providerModels;
     SchemaSettingsPage *m_providerAuth;
     SchemaSettingsPage *m_whatsNew;
-    SchemaSettingsPage *m_changedPage = nullptr;
 };
 
 } // namespace speecher

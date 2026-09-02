@@ -378,13 +378,6 @@ bool ProviderCustomRows::saveSecret()
     return true;
 }
 
-bool ProviderCustomRows::hasSecretChanges() const
-{
-    return m_authMode->currentData().toString() == kSettingsKeyAuthMode
-        && ((!m_secretLoaded && m_apiKeyEditRevision > 0)
-            || (m_secretLoaded && m_apiKey->text().trimmed() != m_loadedApiKey));
-}
-
 void ProviderCustomRows::updateCredentialControl()
 {
     const quint64 generation = ++m_authStatusGeneration;

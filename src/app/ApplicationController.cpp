@@ -9,6 +9,7 @@
 #endif
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsSchema.h"
 #include "dictation/DictationSession.h"
 #include "providers/AnthropicTranscriptRefiner.h"
 #include "providers/ClaudeSpeechTranscriber.h"
@@ -52,7 +53,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     const QString currentVersion = QStringLiteral(SPEECHER_VERSION);
     const QString previousVersion = m_settings->updatesLastRunVersion();
     if (previousVersion != currentVersion) {
-        if (!previousVersion.isEmpty()
+        if (compareBaseVersions(currentVersion, previousVersion) > 0
             && m_settings->updatesPendingWhatsNewVersion().isEmpty()) {
             m_settings->setUpdatesPendingWhatsNewVersion(previousVersion);
         }
