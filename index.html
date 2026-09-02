@@ -7,9 +7,9 @@
 <meta name="description" content="Hit a shortcut, talk, and clean text lands in whatever app you were using. Runs on your existing Claude or ChatGPT subscription. Open source, Linux and macOS.">
 <meta property="og:title" content="Speecher">
 <meta property="og:description" content="Dictation for Linux and macOS that runs on the Claude or ChatGPT subscription you already pay for.">
-<meta property="og:image" content="https://firemonster612.github.io/speecher/assets/overlay-dark.png">
+<meta property="og:image" content="https://firemonster612.github.io/speecher/assets/overlay-dark.png?v=4">
 <meta property="og:url" content="https://firemonster612.github.io/speecher/">
-<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/icon.svg?v=4" type="image/svg+xml">
 <style>
 :root{
   --bg:#f6f5f2; --fg:#191b1d; --muted:#585e66; --card:#ffffff;
@@ -103,7 +103,7 @@ footer .spacer{flex:1}
 <body data-platform="linux">
 <div class="wrap">
   <header>
-    <img src="assets/icon.svg" alt="">
+    <img src="assets/icon.svg?v=4" alt="">
     <span class="name">Speecher</span>
     <nav>
       <a href="#features">Features</a>
@@ -125,10 +125,18 @@ footer .spacer{flex:1}
     <p class="fineprint">One AppImage on Linux. A DMG on Apple silicon. Free, MIT licensed.</p>
   </div>
 
+  <div class="toggle-bar">
+    <div class="seg" role="tablist" aria-label="Platform">
+      <button id="pick-linux" class="on" onclick="setPlatform('linux')">Linux</button>
+      <button id="pick-mac" onclick="setPlatform('mac')">macOS</button>
+    </div>
+    <span class="toggle-note">Screenshots follow your light/dark preference.</span>
+  </div>
+
   <figure class="stage">
-    <img data-shot data-linux-light="assets/overlay-light.png" data-linux-dark="assets/overlay-dark.png"
-         data-mac-light="assets/overlay-mac-light.png" data-mac-dark="assets/overlay-mac-dark.png"
-         src="assets/overlay-light.png" alt="The Speecher overlay while dictating: a waveform pill above the last few words you said">
+    <img data-shot data-linux-light="assets/overlay-light.png?v=4" data-linux-dark="assets/overlay-dark.png?v=4"
+         data-mac-light="assets/overlay-mac-light.png?v=4" data-mac-dark="assets/overlay-mac-dark.png?v=4"
+         src="assets/overlay-light.png?v=4" alt="The Speecher overlay while dictating: a waveform pill above the last few words you said">
     <figcaption>The entire UI while you dictate. A waveform, your last few words, nothing else in the way.</figcaption>
   </figure>
 </div>
@@ -147,13 +155,6 @@ footer .spacer{flex:1}
 </div>
 
 <div class="wrap" id="features">
-  <div class="toggle-bar">
-    <div class="seg" role="tablist" aria-label="Platform">
-      <button id="pick-linux" class="on" onclick="setPlatform('linux')">Linux</button>
-      <button id="pick-mac" onclick="setPlatform('mac')">macOS</button>
-    </div>
-    <span class="toggle-note">Screenshots follow your light/dark preference.</span>
-  </div>
 
   <section class="feature">
     <div class="row">
@@ -168,9 +169,9 @@ footer .spacer{flex:1}
         over AT-SPI so it knows exactly what it's typing into.</p>
       </div>
       <div class="shot">
-        <img data-shot data-linux-light="assets/linux-dictation-light.png" data-linux-dark="assets/linux-dictation-dark.png"
-             data-mac-light="assets/mac-dictation-light.png" data-mac-dark="assets/mac-dictation-dark.png"
-             src="assets/linux-dictation-light.png" alt="The Dictation page: live transcript area, refinement, microphone and output cards, Global Shortcut setup" loading="lazy">
+        <img data-shot data-linux-light="assets/linux-dictation-light.png?v=4" data-linux-dark="assets/linux-dictation-dark.png?v=4"
+             data-mac-light="assets/mac-dictation-light.png?v=4" data-mac-dark="assets/mac-dictation-dark.png?v=4"
+             src="assets/linux-dictation-light.png?v=4" alt="The Dictation page: live transcript area, refinement, microphone and output cards, Global Shortcut setup" loading="lazy">
       </div>
     </div>
   </section>
@@ -188,9 +189,9 @@ footer .spacer{flex:1}
         (even a screenshot of it, if you allow that) as context.</p>
       </div>
       <div class="shot">
-        <img data-shot data-linux-light="assets/linux-refinement-light.png" data-linux-dark="assets/linux-refinement-dark.png"
-             data-mac-light="assets/mac-text-light.png" data-mac-dark="assets/mac-text-dark.png"
-             src="assets/linux-refinement-light.png" alt="The Refinement page: per-profile cleanup strength and tone, model choice per provider" loading="lazy">
+        <img data-shot data-linux-light="assets/linux-refinement-light.png?v=4" data-linux-dark="assets/linux-refinement-dark.png?v=4"
+             data-mac-light="assets/mac-text-light.png?v=4" data-mac-dark="assets/mac-text-dark.png?v=4"
+             src="assets/linux-refinement-light.png?v=4" alt="The Refinement page: per-profile cleanup strength and tone, model choice per provider" loading="lazy">
       </div>
     </div>
   </section>
@@ -207,9 +208,9 @@ footer .spacer{flex:1}
         and replacement rules fix the things a model keeps getting wrong.</p>
       </div>
       <div class="shot">
-        <img data-shot data-linux-light="assets/linux-vocabulary-light.png" data-linux-dark="assets/linux-vocabulary-dark.png"
-             data-mac-light="assets/mac-vocabulary-light.png" data-mac-dark="assets/mac-vocabulary-dark.png"
-             src="assets/linux-vocabulary-light.png" alt="The Vocabulary page: starred terms, learned corrections, replacements and snippets" loading="lazy">
+        <img data-shot data-linux-light="assets/linux-vocabulary-light.png?v=4" data-linux-dark="assets/linux-vocabulary-dark.png?v=4"
+             data-mac-light="assets/mac-vocabulary-light.png?v=4" data-mac-dark="assets/mac-vocabulary-dark.png?v=4"
+             src="assets/linux-vocabulary-light.png?v=4" alt="The Vocabulary page: starred terms, learned corrections, replacements and snippets" loading="lazy">
       </div>
     </div>
   </section>
@@ -227,9 +228,9 @@ footer .spacer{flex:1}
         so you can try them on the spot.</p>
       </div>
       <div class="shot">
-        <span class="platform-chip linux-only">shown on linux</span>
-        <img data-shot data-linux-light="assets/linux-whats-new-light.png" data-linux-dark="assets/linux-whats-new-dark.png"
-             src="assets/linux-whats-new-light.png" alt="The What's New page after an update: release notes plus the newly added settings" loading="lazy">
+        <img data-shot data-linux-light="assets/linux-whats-new-light.png?v=4" data-linux-dark="assets/linux-whats-new-dark.png?v=4"
+             data-mac-light="assets/mac-whats-new-light.png?v=4" data-mac-dark="assets/mac-whats-new-dark.png?v=4"
+             src="assets/linux-whats-new-light.png?v=4" alt="The What's New page after an update: release notes plus the newly added settings" loading="lazy">
       </div>
     </div>
   </section>
@@ -247,9 +248,9 @@ footer .spacer{flex:1}
         to hunt for.</p>
       </div>
       <div class="shot">
-        <img data-shot data-linux-light="assets/linux-general-light.png" data-linux-dark="assets/linux-general-dark.png"
-             data-mac-light="assets/mac-general-light.png" data-mac-dark="assets/mac-general-dark.png"
-             src="assets/linux-general-light.png" alt="The settings window: Breeze Qt on Linux, native SwiftUI on macOS" loading="lazy">
+        <img data-shot data-linux-light="assets/linux-general-light.png?v=4" data-linux-dark="assets/linux-general-dark.png?v=4"
+             data-mac-light="assets/mac-general-light.png?v=4" data-mac-dark="assets/mac-general-dark.png?v=4"
+             src="assets/linux-general-light.png?v=4" alt="The settings window: Breeze Qt on Linux, native SwiftUI on macOS" loading="lazy">
       </div>
     </div>
   </section>
@@ -305,8 +306,8 @@ footer .spacer{flex:1}
     apply();
   };
   mq.addEventListener('change', apply);
-  var isMac = /Mac/i.test(navigator.platform || '') || /Macintosh/i.test(navigator.userAgent);
-  setPlatform(isMac ? 'mac' : 'linux');
+  var isApple = /mac|iphone|ipad|ipod/i.test(navigator.userAgent || '');
+  setPlatform(isApple ? 'mac' : 'linux');
 })();
 </script>
 </body>
