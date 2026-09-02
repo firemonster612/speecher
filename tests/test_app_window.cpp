@@ -108,7 +108,12 @@ private slots:
         window.show();
         QTRY_COMPARE_WITH_TIMEOUT(theme->currentData().toString(), QStringLiteral("light"), 250);
         theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
-        QTRY_COMPARE_WITH_TIMEOUT(controller.settings()->theme(), QStringLiteral("dark"), 1500);
+        // The change must not save immediately (that is the debounce), but
+        // waiting out the 600ms timer races slow CI runners, so drive the
+        // pending autosave deterministically instead.
+        QCOMPARE(controller.settings()->theme(), QStringLiteral("light"));
+        window.flushPendingAutoSave();
+        QCOMPARE(controller.settings()->theme(), QStringLiteral("dark"));
     }
 
     void dictationSummaryDefersSavedMicrophoneResolutionUntilShow()
