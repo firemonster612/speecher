@@ -25,9 +25,14 @@ if(APPLE)
   endif()
   set(SPEECHER_SPARKLE_FRAMEWORK "${sparkle_SOURCE_DIR}/Sparkle.framework")
   add_library(Sparkle::Sparkle SHARED IMPORTED GLOBAL)
+  # INTERFACE_INCLUDE_DIRECTORIES names the .framework directory itself: CMake
+  # recognizes framework paths and emits -F/-iframework so that
+  # #import <Sparkle/Sparkle.h> resolves when compiling consumers.
   set_target_properties(Sparkle::Sparkle PROPERTIES
+    FRAMEWORK TRUE
     IMPORTED_LOCATION "${SPEECHER_SPARKLE_FRAMEWORK}/Sparkle"
     IMPORTED_SONAME "@rpath/Sparkle.framework/Versions/B/Sparkle"
+    INTERFACE_INCLUDE_DIRECTORIES "${SPEECHER_SPARKLE_FRAMEWORK}"
   )
 endif()
 
