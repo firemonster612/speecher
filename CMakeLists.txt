@@ -260,6 +260,7 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
 )
 
 set(SPEECHER_APP_SOURCES
+  src/app/AppImageUpdater.cpp
   src/app/ApplicationController.cpp
   src/app/CommandLine.cpp
   src/app/CompositionSockets.cpp
@@ -269,6 +270,7 @@ set(SPEECHER_APP_SOURCES
 
 set(SPEECHER_APP_HEADERS
   src/app/AppFrontEnd.h
+  src/app/AppImageUpdater.h
   src/app/ApplicationController.h
   src/app/CommandLine.h
   src/app/CompositionSockets.h
@@ -277,13 +279,13 @@ set(SPEECHER_APP_HEADERS
   src/app/UpdateController.h
 )
 
+# AppImageUpdater is plain Qt/C++ and compiles on every platform so its tests
+# can run everywhere; only Linux composition instantiates it.
 set(SPEECHER_APP_LINUX_SOURCES
-  src/app/AppImageUpdater.cpp
   src/app/LinuxComposition.cpp
 )
 
 set(SPEECHER_APP_LINUX_HEADERS
-  src/app/AppImageUpdater.h
   src/app/LinuxComposition.h
 )
 
