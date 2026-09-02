@@ -148,6 +148,12 @@ jobs:
           arch: clang_64
           modules: qtmultimedia qtwebsockets
 
+      - name: Remove obsolete AGL references
+        run: |
+          # macOS 26 removed AGL, but Qt 6.8.3's prebuilt metadata still links it.
+          find "$QT_ROOT_DIR" -type f \( -name '*.prl' -o -name '*.cmake' \) -exec \
+            sed -i '' -e 's/-framework[[:space:]]*AGL//g' -e 's/AGL;//g' -e 's/AGL\.framework//g' {} +
+
       - name: Configure
         env:
           SPARKLE_ED_PUBLIC_KEY: ${{ secrets.SPARKLE_ED_PUBLIC_KEY }}
