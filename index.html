@@ -363,6 +363,10 @@ footer .spacer{flex:1}
   } else {
     document.querySelectorAll('.reveal').forEach(function(el){ el.classList.add('in'); });
   }
+  // Backstop: content must never stay hidden if the observer misbehaves.
+  setTimeout(function(){
+    document.querySelectorAll('.reveal:not(.in)').forEach(function(el){ el.classList.add('in'); });
+  }, 1600);
 })();
 </script>
 </body>
