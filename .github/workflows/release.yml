@@ -150,7 +150,21 @@ jobs:
 
       - name: Remove obsolete AGL references
         run: |
-          # macOS 26 removed AGL, but Qt 6.8.3's prebuilt metadata still links it.
+          # The macOS 26 SDK removed AGL, but the runner still has a runtime
+          # /System/Library/Frameworks/AGL.framework, so Qt's FindWrapOpenGL
+          # find_library succeeds and CMake emits "-framework AGL", which the
+          # SDK-based linker then cannot resolve. Neutralize both the probe and
+          # the fallback so WrapOpenGL never links AGL at all.
+          wrap="$QT_ROOT_DIR/lib/cmake/Qt6/FindWrapOpenGL.cmake"
+          sed -i '' \
+            -e 's/find_library(WrapOpenGL_AGL NAMES AGL)/set(WrapOpenGL_AGL "")/' \
+            -e 's/set(__opengl_agl_fw_path "-framework AGL")//' \
+            "$wrap"
+          if grep -n 'framework AGL' "$wrap"; then
+            echo "AGL reference survived in FindWrapOpenGL.cmake" >&2
+            exit 1
+          fi
+          # Belt and braces for any remaining textual references.
           find "$QT_ROOT_DIR" -type f \( -name '*.prl' -o -name '*.cmake' \) -exec \
             sed -i '' -e 's/-framework[[:space:]]*AGL//g' -e 's/AGL;//g' -e 's/AGL\.framework//g' {} +
 

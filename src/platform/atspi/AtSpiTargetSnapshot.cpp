@@ -12,7 +12,14 @@
 #ifdef SPEECHER_WITH_ATSPI
 #include <unistd.h>
 
-#if !ATSPI_CHECK_VERSION(2, 46, 0)
+// at-spi before 2.46 lacks these helpers, and 2.44 (Ubuntu 22.04) also lacks
+// ATSPI_CHECK_VERSION itself, so the probe has to be two separate steps.
+#ifdef ATSPI_CHECK_VERSION
+#if ATSPI_CHECK_VERSION(2, 46, 0)
+#define SPEECHER_ATSPI_HAS_IS_TEXT_HELPERS 1
+#endif
+#endif
+#ifndef SPEECHER_ATSPI_HAS_IS_TEXT_HELPERS
 inline gboolean atspi_accessible_is_editable_text(AtspiAccessible *object)
 {
     AtspiEditableText *editableText = atspi_accessible_get_editable_text_iface(object);
