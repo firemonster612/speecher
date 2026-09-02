@@ -188,9 +188,15 @@ std::optional<AppImageFileIdentity> AppImageUpdater::fileIdentity(const QString 
                      .arg(QString::fromLocal8Bit(std::strerror(errno))));
         return std::nullopt;
     }
+    // macOS names the timespec member st_mtimespec; POSIX names it st_mtim.
+#ifdef __APPLE__
+    const auto &modified = status.st_mtimespec;
+#else
+    const auto &modified = status.st_mtim;
+#endif
     return AppImageFileIdentity{quint64(status.st_ino),
-                                qint64(status.st_mtim.tv_sec),
-                                qint64(status.st_mtim.tv_nsec)};
+                                qint64(modified.tv_sec),
+                                qint64(modified.tv_nsec)};
 }
 
 bool AppImageUpdater::swapAppImage(const QString &downloadedPath,
