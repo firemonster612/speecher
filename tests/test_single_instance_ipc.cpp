@@ -48,7 +48,10 @@ public:
 
 static QString uniqueIpcName(const QString &suffix = {})
 {
-    QString name = QStringLiteral("speecher-test-%1").arg(QUuid::createUuid().toString(QUuid::Id128));
+    // Keep names short: on macOS the socket lives under the deep $TMPDIR and
+    // the whole path must fit sun_path's 104 bytes.
+    QString name = QStringLiteral("spchr-t-%1")
+                       .arg(QUuid::createUuid().toString(QUuid::Id128).left(12));
     if (!suffix.isEmpty()) {
         name += QStringLiteral("-") + suffix;
     }
