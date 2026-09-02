@@ -296,6 +296,10 @@ private slots:
             QVERIFY(updater.bannerVisible());
         }
 
+        // The chip half needs the Linux composition, whose updater is an
+        // AppImageUpdater; macOS composes MacSparkleUpdater and Sparkle owns
+        // its own UI there.
+#ifndef Q_OS_MACOS
         ApplicationController controller(true);
         QtFrontEnd frontEnd(&controller);
         auto *controllerUpdater = dynamic_cast<AppImageUpdater *>(controller.updates());
@@ -326,6 +330,7 @@ private slots:
                                             QStringLiteral("install failed"));
         QVERIFY(!chip->isHidden());
         QCOMPARE(chip->text(), QStringLiteral("install failed"));
+#endif
     }
 };
 
