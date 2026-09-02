@@ -434,12 +434,21 @@ SettingsPage generalPage(const SchemaContext &context)
         [](AppSettings &settings, const QString &value) {
             settings.updates.channel = updateChannelFromName(value);
         });
+    updateChannel.sinceVersion = QStringLiteral("0.2.0");
+    SettingsRow autoCheck = toggleRow(
+        QStringLiteral("autoCheckUpdates"),
+        QStringLiteral("Check for updates automatically"),
+        QStringLiteral("Check the selected Update Channel at startup and once a day."),
+        [](const AppSettings &settings) { return settings.updates.autoCheck; },
+        [](AppSettings &settings, bool value) { settings.updates.autoCheck = value; });
+    autoCheck.sinceVersion = QStringLiteral("0.2.0");
     SettingsRow autoInstall = toggleRow(
         QStringLiteral("autoInstallUpdates"),
         QStringLiteral("Download and install updates automatically"),
         QStringLiteral("AppImage updates install in the background and take effect after restart."),
         [](const AppSettings &settings) { return settings.updates.autoInstall; },
         [](AppSettings &settings, bool value) { settings.updates.autoInstall = value; });
+    autoInstall.sinceVersion = QStringLiteral("0.2.0");
     autoInstall.visible = [](const AppSettings &, const Capabilities &capabilities) {
         return capabilities.isAppImage;
     };
@@ -486,11 +495,7 @@ SettingsPage generalPage(const SchemaContext &context)
              QString(),
              {
                  std::move(updateChannel),
-                 toggleRow(QStringLiteral("autoCheckUpdates"),
-                           QStringLiteral("Check for updates automatically"),
-                           QStringLiteral("Check the selected Update Channel at startup and once a day."),
-                           [](const AppSettings &settings) { return settings.updates.autoCheck; },
-                           [](AppSettings &settings, bool value) { settings.updates.autoCheck = value; }),
+                 std::move(autoCheck),
                  std::move(autoInstall),
                  actionRow(QStringLiteral("checkForUpdates"),
                            QStringLiteral("Check for updates"),
@@ -503,30 +508,27 @@ SettingsPage generalPage(const SchemaContext &context)
                              ? QStringLiteral("Unknown")
                              : context.currentVersion),
                  actionRow(kWhatsNewAction,
-                           QStringLiteral("What's new"),
-                           QStringLiteral("Read the bundled release notes and try newly added settings."),
-                           QStringLiteral("What's new…")),
+                           QStringLiteral("What's New"),
+                           QStringLiteral("Release notes for this version, and the settings it added."),
+                           QStringLiteral("What's New…")),
              }},
         },
     };
-    // 0.2.0 is the assumed next Stable Release. Adjust this if the tag differs.
-    // The permanent What's New action stays untagged so the page never links to itself.
-    for (int index = 0; index < page.sections.last().rows.size() - 1; ++index) {
-        page.sections.last().rows[index].sinceVersion = QStringLiteral("0.2.0");
-    }
     return page;
 }
 
-SettingsPage whatsNewPage(const SettingsPage &general, const SchemaContext &context)
+SettingsPage whatsNewPage(const QList<SettingsPage> &pages, const SchemaContext &context)
 {
     QList<SettingsRow> newRows;
     if (!context.lastSeenVersion.isEmpty()) {
-        for (const SettingsSection &section : general.sections) {
-            for (const SettingsRow &row : section.rows) {
-                if (!row.sinceVersion.isEmpty()
-                    && compareBaseVersions(row.sinceVersion, context.lastSeenVersion) > 0
-                    && compareBaseVersions(row.sinceVersion, context.currentVersion) <= 0) {
-                    newRows.append(row);
+        for (const SettingsPage &page : pages) {
+            for (const SettingsSection &section : page.sections) {
+                for (const SettingsRow &row : section.rows) {
+                    if (!row.sinceVersion.isEmpty()
+                        && compareBaseVersions(row.sinceVersion, context.lastSeenVersion) > 0
+                        && compareBaseVersions(row.sinceVersion, context.currentVersion) <= 0) {
+                        newRows.append(row);
+                    }
                 }
             }
         }
@@ -1638,11 +1640,18 @@ QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices, const QStri
 
 int compareBaseVersions(const QString &left, const QString &right)
 {
+    static const QRegularExpression leadingDigits(QStringLiteral("^\\d+"));
+    const auto component = [](const QStringList &parts, int index) {
+        if (index >= parts.size()) {
+            return 0;
+        }
+        return leadingDigits.match(parts.at(index)).captured().toInt();
+    };
     const QStringList leftParts = left.section(QLatin1Char('-'), 0, 0).split(QLatin1Char('.'));
     const QStringList rightParts = right.section(QLatin1Char('-'), 0, 0).split(QLatin1Char('.'));
     for (int index = 0; index < qMax(leftParts.size(), rightParts.size()); ++index) {
-        const int leftPart = index < leftParts.size() ? leftParts.at(index).toInt() : 0;
-        const int rightPart = index < rightParts.size() ? rightParts.at(index).toInt() : 0;
+        const int leftPart = component(leftParts, index);
+        const int rightPart = component(rightParts, index);
         if (leftPart != rightPart) {
             return leftPart < rightPart ? -1 : 1;
         }
@@ -1652,18 +1661,17 @@ int compareBaseVersions(const QString &left, const QString &right)
 
 SettingsSchema buildSettingsSchema(const SchemaContext &context)
 {
-    SettingsPage general = generalPage(context);
-    SettingsPage whatsNew = whatsNewPage(general, context);
-    return {{std::move(general),
-             audioPage(context),
-             applicationsPage(),
-             outputPage(context),
-             refinementPage(context),
-             vocabularyPage(),
-             correctionsPage(),
-             bindingsPage(),
-             providersPage(),
-             std::move(whatsNew)}};
+    QList<SettingsPage> pages{generalPage(context),
+                              audioPage(context),
+                              applicationsPage(),
+                              outputPage(context),
+                              refinementPage(context),
+                              vocabularyPage(),
+                              correctionsPage(),
+                              bindingsPage(),
+                              providersPage()};
+    pages.append(whatsNewPage(pages, context));
+    return {std::move(pages)};
 }
 
 } // namespace speecher

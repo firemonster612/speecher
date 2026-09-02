@@ -1,6 +1,6 @@
 import SwiftUI
 
-// The settings window's eight panes. The schema supplies rows and values; which
+// The settings window's nine panes. The schema supplies rows and values; which
 // pane a row appears on, and under which heading, is this file's decision — see
 // .scratch/macos-port/mac-ia.md.
 

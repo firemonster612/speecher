@@ -7,12 +7,14 @@
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/Theme.h"
 
+#include <QDesktopServices>
 #include <QMessageBox>
 #include <QLabel>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalBlocker>
 #include <QTimer>
+#include <QUrl>
 
 namespace speecher {
 
@@ -40,19 +42,27 @@ SettingsPage providerRowsPage(const SettingsPage &source,
     return page;
 }
 
-SettingsRow *rowById(SettingsSchema &schema, const QString &id)
+SettingsRow *rowById(SettingsPage &page, const QString &id)
 {
-    for (SettingsPage &page : schema.pages) {
-        for (SettingsSection &section : page.sections) {
-            for (SettingsRow &row : section.rows) {
-                if (row.id == id) {
-                    return &row;
-                }
+    for (SettingsSection &section : page.sections) {
+        for (SettingsRow &row : section.rows) {
+            if (row.id == id) {
+                return &row;
             }
         }
     }
     qWarning().noquote() << "settings schema cannot find row" << id;
     return nullptr;
+}
+
+SettingsPage &pageById(SettingsSchema &schema, const QString &id)
+{
+    for (SettingsPage &page : schema.pages) {
+        if (page.id == id) {
+            return page;
+        }
+    }
+    qFatal("settings schema cannot find page %s", qPrintable(id));
 }
 
 SettingsSchema settingsSchema(ApplicationController *controller)
@@ -63,8 +73,9 @@ SettingsSchema settingsSchema(ApplicationController *controller)
         controller->primaryOutputStatus(),
         controller->pendingWhatsNewVersion()));
     UpdateController *updates = controller->updates();
+    SettingsPage &general = pageById(schema, QStringLiteral("general"));
 
-    if (SettingsRow *check = rowById(schema, QStringLiteral("checkForUpdates"))) {
+    if (SettingsRow *check = rowById(general, QStringLiteral("checkForUpdates"))) {
         check->helpValue = [updates](const AppSettings &settings) {
             const QString channel = settings.updates.channel == UpdateChannel::Nightly
                 ? QStringLiteral("Nightly Build")
@@ -122,7 +133,7 @@ SettingsSchema settingsSchema(ApplicationController *controller)
         };
     }
 
-    if (SettingsRow *version = rowById(schema, QStringLiteral("currentVersion"))) {
+    if (SettingsRow *version = rowById(general, QStringLiteral("currentVersion"))) {
         version->value = [updates](const AppSettings &) {
             QString text = updates->currentVersion();
             if (!updates->availableVersion().isEmpty()) {
@@ -132,26 +143,6 @@ SettingsSchema settingsSchema(ApplicationController *controller)
         };
     }
 
-    // The What's New page carries the same descriptor, including these live
-    // updater callbacks, rather than a second description of the control.
-    // rowById returns the first match, which is the configured General-page
-    // copy, so the loop below overwrites the What's New duplicates with it.
-    const SettingsRow *liveCheck = rowById(schema, QStringLiteral("checkForUpdates"));
-    const SettingsRow *liveVersion = rowById(schema, QStringLiteral("currentVersion"));
-    for (SettingsPage &page : schema.pages) {
-        if (page.id != QStringLiteral("whatsNew")) {
-            continue;
-        }
-        for (SettingsSection &section : page.sections) {
-            for (SettingsRow &row : section.rows) {
-                if (liveCheck && row.id == liveCheck->id) {
-                    row = *liveCheck;
-                } else if (liveVersion && row.id == liveVersion->id) {
-                    row = *liveVersion;
-                }
-            }
-        }
-    }
     return schema;
 }
 
@@ -165,7 +156,13 @@ SchemaCustomRow whatsNewCustomRow(const SettingsRow &descriptor,
     auto *notes = new QLabel(parent);
     notes->setTextFormat(Qt::MarkdownText);
     notes->setTextInteractionFlags(Qt::TextBrowserInteraction);
-    notes->setOpenExternalLinks(true);
+    notes->setOpenExternalLinks(false);
+    QObject::connect(notes, &QLabel::linkActivated, notes, [](const QString &link) {
+        const QUrl url(link);
+        if (url.scheme() == QStringLiteral("https")) {
+            QDesktopServices::openUrl(url);
+        }
+    });
     notes->setWordWrap(true);
     return {notes,
             {},
@@ -176,9 +173,16 @@ SchemaCustomRow whatsNewCustomRow(const SettingsRow &descriptor,
 } // namespace
 
 SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *parent)
+    : SettingsPageSet(controller, parent, settingsSchema(controller))
+{
+}
+
+SettingsPageSet::SettingsPageSet(ApplicationController *controller,
+                                 QWidget *parent,
+                                 SettingsSchema schema)
     : QObject(parent)
     , m_controller(controller)
-    , m_schema(settingsSchema(controller))
+    , m_schema(std::move(schema))
     , m_outputRows(*controller->settings())
     , m_providerRows(*controller->settings(), *controller->secretStore())
     , m_general(addPage(QStringLiteral("general"), parent))
@@ -257,7 +261,11 @@ SchemaSettingsPage *SettingsPageSet::addPage(const SettingsPage &descriptor,
 {
     auto *page = new SchemaSettingsPage(descriptor, parent, std::move(customRows));
     connect(page, &SchemaSettingsPage::changed, this, [this, page] {
-        m_changedPage = page;
+        page->appendToDraft(m_draft);
+        for (SchemaSettingsPage *candidate : std::as_const(m_pages)) {
+            const QSignalBlocker blocker(candidate);
+            candidate->load(m_draft);
+        }
         emit changed();
     });
     connect(page, &SchemaSettingsPage::actionTriggered, this, &SettingsPageSet::runPageAction);
@@ -286,24 +294,25 @@ void SettingsPageSet::load()
 void SettingsPageSet::loadBeforeShow()
 {
     const AppSettings snapshot = m_controller->settings()->snapshot();
+    m_draft = snapshot;
     for (SchemaSettingsPage *page : std::as_const(m_pages)) {
+        const QSignalBlocker blocker(page);
         page->load(snapshot);
     }
     m_outputRows.refresh();
     refreshUpdateRows();
-    m_changedPage = nullptr;
 }
 
 void SettingsPageSet::loadAfterShow()
 {
     const AppSettings snapshot = m_controller->settings()->snapshot();
+    m_draft = snapshot;
     for (SchemaSettingsPage *page : std::as_const(m_pages)) {
         const QSignalBlocker blocker(page);
         page->loadExpensiveRows(snapshot);
     }
     m_providerRows.loadSecret();
     refreshUpdateRows();
-    m_changedPage = nullptr;
 }
 
 bool SettingsPageSet::save(bool showValidationErrors,
@@ -341,18 +350,14 @@ bool SettingsPageSet::save(bool showValidationErrors,
                            pasteRuleProblems);
     }
 
-    AppSettings draft = settings->snapshot();
-    for (const SchemaSettingsPage *page : std::as_const(m_pages)) {
-        if (page == m_whatsNew) {
-            continue;
-        }
-        page->appendToDraft(draft);
-    }
-    if (m_changedPage == m_whatsNew) {
-        m_whatsNew->appendToDraft(draft);
-    }
-    settings->applySnapshot(draft);
+    settings->applySnapshot(m_draft);
     Theme::apply(settings->theme());
+    const AppSettings snapshot = settings->snapshot();
+    m_draft = snapshot;
+    for (SchemaSettingsPage *page : std::as_const(m_pages)) {
+        const QSignalBlocker blocker(page);
+        page->load(snapshot);
+    }
     // saveSecret says why itself, because only it knows what the keyring said.
     if (!m_providerRows.saveSecret()) {
         return refuse(SaveFailure::ProviderSecret,
@@ -385,21 +390,6 @@ void SettingsPageSet::preserveBindingScroll(QScrollArea *scroll)
             });
 }
 
-bool SettingsPageSet::hasChanges() const
-{
-    const AppSettings snapshot = m_controller->settings()->snapshot();
-    for (const SchemaSettingsPage *page : m_pages) {
-        if (page == m_whatsNew) {
-            continue;
-        }
-        if (page->hasChanges(snapshot)) {
-            return true;
-        }
-    }
-    return (m_changedPage == m_whatsNew && m_whatsNew->hasChanges(snapshot))
-        || m_providerRows.hasSecretChanges();
-}
-
 void SettingsPageSet::runPageAction(const QString &rowId)
 {
     if (rowId == QStringLiteral("runSetup")) {
@@ -407,12 +397,10 @@ void SettingsPageSet::runPageAction(const QString &rowId)
         return;
     }
     if (rowId == QStringLiteral("checkForUpdates")) {
-        AppSettings draft = m_controller->settings()->snapshot();
-        (m_changedPage == m_whatsNew ? m_whatsNew : m_general)->appendToDraft(draft);
         if (m_controller->updates()->state() == UpdateController::State::UpdateAvailable) {
             m_controller->updates()->updateNow();
         } else {
-            m_controller->updates()->checkForUpdates(draft.updates.channel);
+            m_controller->updates()->checkForUpdates(m_draft.updates.channel);
         }
         return;
     }
