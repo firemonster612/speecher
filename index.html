@@ -55,7 +55,7 @@ header nav a:hover{color:var(--fg)}
 .fineprint{font-size:13px;color:var(--muted)}
 
 .stage{margin:44px 0 0;background:var(--stage);border:1px solid var(--line);padding:64px 40px 44px}
-.stage img{width:min(760px,100%);display:block;margin:0 auto}
+.stage img{max-width:min(760px,100%);width:auto;height:auto;display:block;margin:0 auto}
 .stage figcaption{text-align:center;color:var(--muted);font-size:13.5px;margin-top:26px}
 
 .claim{border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:72px 0;padding:56px 0;background:var(--card)}
@@ -81,7 +81,7 @@ section.feature{padding:44px 0}
 .feature p{color:var(--muted);margin:0 0 12px;font-size:16px}
 .feature p b{color:var(--fg);font-weight:600}
 .shot{position:relative}
-.shot img{width:100%;display:block;border:1px solid var(--line);box-shadow:0 1px 2px rgba(0,0,0,.06),0 24px 60px -28px rgba(10,14,20,.35)}
+.shot img{max-width:100%;width:auto;height:auto;display:block;margin:0 auto;border:1px solid var(--line);box-shadow:0 1px 2px rgba(0,0,0,.06),0 24px 60px -28px rgba(10,14,20,.35)}
 .shot .platform-chip{position:absolute;top:-11px;right:12px;background:var(--chip);border:1px solid var(--line);color:var(--muted);font:600 11px/1 var(--mono);letter-spacing:.06em;padding:5px 9px;text-transform:uppercase;display:none}
 body[data-platform=mac] .shot .platform-chip.linux-only{display:block}
 
@@ -127,8 +127,8 @@ footer .spacer{flex:1}
 
   <figure class="stage">
     <img data-shot data-linux-light="assets/overlay-light.png" data-linux-dark="assets/overlay-dark.png"
-         data-mac-light="assets/overlay-light.png" data-mac-dark="assets/overlay-dark.png"
-         src="assets/overlay-light.png" alt="The Speecher overlay while dictating: a waveform pill above the last few words you said" width="1118" height="220">
+         data-mac-light="assets/overlay-mac-light.png" data-mac-dark="assets/overlay-mac-dark.png"
+         src="assets/overlay-light.png" alt="The Speecher overlay while dictating: a waveform pill above the last few words you said">
     <figcaption>The entire UI while you dictate. A waveform, your last few words, nothing else in the way.</figcaption>
   </figure>
 </div>
@@ -168,8 +168,8 @@ footer .spacer{flex:1}
         over AT-SPI so it knows exactly what it's typing into.</p>
       </div>
       <div class="shot">
-        <span class="platform-chip linux-only">shown on linux</span>
         <img data-shot data-linux-light="assets/linux-dictation-light.png" data-linux-dark="assets/linux-dictation-dark.png"
+             data-mac-light="assets/mac-dictation-light.png" data-mac-dark="assets/mac-dictation-dark.png"
              src="assets/linux-dictation-light.png" alt="The Dictation page: live transcript area, refinement, microphone and output cards, Global Shortcut setup" loading="lazy">
       </div>
     </div>
@@ -188,8 +188,8 @@ footer .spacer{flex:1}
         (even a screenshot of it, if you allow that) as context.</p>
       </div>
       <div class="shot">
-        <span class="platform-chip linux-only">shown on linux</span>
         <img data-shot data-linux-light="assets/linux-refinement-light.png" data-linux-dark="assets/linux-refinement-dark.png"
+             data-mac-light="assets/mac-text-light.png" data-mac-dark="assets/mac-text-dark.png"
              src="assets/linux-refinement-light.png" alt="The Refinement page: per-profile cleanup strength and tone, model choice per provider" loading="lazy">
       </div>
     </div>
@@ -207,8 +207,8 @@ footer .spacer{flex:1}
         and replacement rules fix the things a model keeps getting wrong.</p>
       </div>
       <div class="shot">
-        <span class="platform-chip linux-only">shown on linux</span>
         <img data-shot data-linux-light="assets/linux-vocabulary-light.png" data-linux-dark="assets/linux-vocabulary-dark.png"
+             data-mac-light="assets/mac-vocabulary-light.png" data-mac-dark="assets/mac-vocabulary-dark.png"
              src="assets/linux-vocabulary-light.png" alt="The Vocabulary page: starred terms, learned corrections, replacements and snippets" loading="lazy">
       </div>
     </div>
