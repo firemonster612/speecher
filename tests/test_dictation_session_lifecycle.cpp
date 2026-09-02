@@ -538,11 +538,14 @@ private slots:
         session.startListening();
         QCOMPARE(int(session.state()), int(DictationState::Starting));
         QCOMPARE(shown.count(), 1);
-        QTest::qWait(20);
+        // Pump the loop without sleeping: startListening arms a 50ms fallback
+        // that proceeds without the popup, and wall-clock qWait() here races
+        // it on slow CI runners.
+        QCoreApplication::processEvents();
         QCOMPARE(targetProvider->captureCalls, 0);
         const quint64 generation = shown.first().first().toULongLong();
         session.popupPresented(generation + 1);
-        QTest::qWait(20);
+        QCoreApplication::processEvents();
         QCOMPARE(targetProvider->captureCalls, 0);
         session.popupPresented(generation);
         QTRY_COMPARE_WITH_TIMEOUT(targetProvider->captureCalls, 1, 250);
