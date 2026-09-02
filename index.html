@@ -7,9 +7,9 @@
 <meta name="description" content="Hit a shortcut, talk, and clean text lands in whatever app you were using. Runs on your existing Claude or ChatGPT subscription. Open source, Linux and macOS.">
 <meta property="og:title" content="Speecher">
 <meta property="og:description" content="Dictation for Linux and macOS that runs on the Claude or ChatGPT subscription you already pay for.">
-<meta property="og:image" content="https://firemonster612.github.io/speecher/assets/overlay-dark.png?v=5">
+<meta property="og:image" content="https://firemonster612.github.io/speecher/assets/overlay-dark.png?v=6">
 <meta property="og:url" content="https://firemonster612.github.io/speecher/">
-<link rel="icon" href="assets/icon.svg?v=5" type="image/svg+xml">
+<link rel="icon" href="assets/icon.svg?v=6" type="image/svg+xml">
 <style>
 :root{
   --bg:#f6f5f2; --fg:#191b1d; --muted:#585e66; --card:#ffffff;
@@ -103,7 +103,7 @@ footer .spacer{flex:1}
 <body data-platform="linux">
 <div class="wrap">
   <header>
-    <img src="assets/icon.svg?v=5" alt="">
+    <img src="assets/icon.svg?v=6" alt="">
     <span class="name">Speecher</span>
     <nav>
       <a href="#features">Features</a>
@@ -115,8 +115,7 @@ footer .spacer{flex:1}
   <div class="hero">
     <h1>Talk instead of&nbsp;type.</h1>
     <p class="lede">Press a shortcut, say what you mean, and clean text lands in the app you were
-    already using. <strong>Powered by the Claude or ChatGPT subscription you already pay for.</strong>
-    No API meter, no new bill.</p>
+    already using. <strong>Powered by the Claude or ChatGPT subscription you already pay for.</strong></p>
     <div class="buttons">
       <a class="btn primary" href="https://github.com/firemonster612/speecher/releases">Download</a>
       <a class="btn" href="https://github.com/firemonster612/speecher">View source</a>
@@ -132,9 +131,9 @@ footer .spacer{flex:1}
   </div>
 
   <figure class="stage">
-    <img data-shot data-linux-light="assets/overlay-light.png?v=5" data-linux-dark="assets/overlay-dark.png?v=5"
-         data-mac-light="assets/overlay-mac-light.png?v=5" data-mac-dark="assets/overlay-mac-dark.png?v=5"
-         src="assets/overlay-light.png?v=5" alt="The Speecher overlay while dictating: a waveform pill above the last few words you said">
+    <img data-shot data-linux-light="assets/overlay-light.png?v=6" data-linux-dark="assets/overlay-dark.png?v=6"
+         data-mac-light="assets/overlay-mac-light.png?v=6" data-mac-dark="assets/overlay-mac-dark.png?v=6"
+         src="assets/overlay-light.png?v=6" alt="The Speecher overlay while dictating: a waveform pill above the last few words you said">
     <figcaption>The entire UI while you dictate. A waveform, your last few words, nothing else in the way.</figcaption>
   </figure>
 </div>
@@ -145,7 +144,7 @@ footer .spacer{flex:1}
     <div>
       <p><strong>Sign in with Claude or ChatGPT and you're done.</strong> Speech recognition runs
       through Claude's own voice stack or your ChatGPT account via Codex, and the text cleanup uses
-      those same logins. Prefer an API key? That works too; nobody's making you.</p>
+      those same logins.</p>
       <p>Your audio travels from your machine straight to your provider. There's no Speecher server
       in the middle, nothing is metered, and nothing here costs money.</p>
     </div>
@@ -163,13 +162,12 @@ footer .spacer{flex:1}
         them, playing media pauses until you finish, and the text is delivered into whatever had
         focus.</p>
         <p>Delivery is app-aware: <b>per-application paste rules</b> decide whether text is typed in,
-        placed on the clipboard, or held back — and on Linux, Speecher watches the focused control
-        over AT-SPI so it knows exactly what it's typing into.</p>
+        placed on the clipboard, or held back, and Speecher watches the focused control (AT-SPI on Linux, the Accessibility API on macOS) so it knows exactly what it's typing into.</p>
       </div>
       <div class="shot">
-        <img data-shot data-linux-light="assets/linux-dictation-light.png?v=5" data-linux-dark="assets/linux-dictation-dark.png?v=5"
-             data-mac-light="assets/mac-dictation-light.png?v=5" data-mac-dark="assets/mac-dictation-dark.png?v=5"
-             src="assets/linux-dictation-light.png?v=5" alt="The Dictation page: live transcript area, refinement, microphone and output cards, Global Shortcut setup" loading="lazy">
+        <img data-shot data-linux-light="assets/linux-dictation-light.png?v=6" data-linux-dark="assets/linux-dictation-dark.png?v=6"
+             data-mac-light="assets/mac-dictation-light.png?v=6" data-mac-dark="assets/mac-dictation-dark.png?v=6"
+             src="assets/linux-dictation-light.png?v=6" alt="The Dictation page: live transcript area, refinement, microphone and output cards, Global Shortcut setup" loading="lazy">
       </div>
     </div>
   </section>
@@ -187,9 +185,9 @@ footer .spacer{flex:1}
         (even a screenshot of it, if you allow that) as context.</p>
       </div>
       <div class="shot">
-        <img data-shot data-linux-light="assets/linux-refinement-light.png?v=5" data-linux-dark="assets/linux-refinement-dark.png?v=5"
-             data-mac-light="assets/mac-text-light.png?v=5" data-mac-dark="assets/mac-text-dark.png?v=5"
-             src="assets/linux-refinement-light.png?v=5" alt="The Refinement page: per-profile cleanup strength and tone, model choice per provider" loading="lazy">
+        <img data-shot data-linux-light="assets/linux-refinement-light.png?v=6" data-linux-dark="assets/linux-refinement-dark.png?v=6"
+             data-mac-light="assets/mac-text-light.png?v=6" data-mac-dark="assets/mac-text-dark.png?v=6"
+             src="assets/linux-refinement-light.png?v=6" alt="The Refinement page: per-profile cleanup strength and tone, model choice per provider" loading="lazy">
       </div>
     </div>
   </section>
@@ -206,9 +204,9 @@ footer .spacer{flex:1}
         and replacement rules fix the things a model keeps getting wrong.</p>
       </div>
       <div class="shot">
-        <img data-shot data-linux-light="assets/linux-vocabulary-light.png?v=5" data-linux-dark="assets/linux-vocabulary-dark.png?v=5"
-             data-mac-light="assets/mac-vocabulary-light.png?v=5" data-mac-dark="assets/mac-vocabulary-dark.png?v=5"
-             src="assets/linux-vocabulary-light.png?v=5" alt="The Vocabulary page: starred terms, learned corrections, replacements and snippets" loading="lazy">
+        <img data-shot data-linux-light="assets/linux-vocabulary-light.png?v=6" data-linux-dark="assets/linux-vocabulary-dark.png?v=6"
+             data-mac-light="assets/mac-vocabulary-light.png?v=6" data-mac-dark="assets/mac-vocabulary-dark.png?v=6"
+             src="assets/linux-vocabulary-light.png?v=6" alt="The Vocabulary page: starred terms, learned corrections, replacements and snippets" loading="lazy">
       </div>
     </div>
   </section>
@@ -226,9 +224,9 @@ footer .spacer{flex:1}
         so you can try them on the spot.</p>
       </div>
       <div class="shot">
-        <img data-shot data-linux-light="assets/linux-whats-new-light.png?v=5" data-linux-dark="assets/linux-whats-new-dark.png?v=5"
-             data-mac-light="assets/mac-whats-new-light.png?v=5" data-mac-dark="assets/mac-whats-new-dark.png?v=5"
-             src="assets/linux-whats-new-light.png?v=5" alt="The What's New page after an update: release notes plus the newly added settings" loading="lazy">
+        <img data-shot data-linux-light="assets/linux-whats-new-light.png?v=6" data-linux-dark="assets/linux-whats-new-dark.png?v=6"
+             data-mac-light="assets/mac-whats-new-light.png?v=6" data-mac-dark="assets/mac-whats-new-dark.png?v=6"
+             src="assets/linux-whats-new-light.png?v=6" alt="The What's New page after an update: release notes plus the newly added settings" loading="lazy">
       </div>
     </div>
   </section>
@@ -246,9 +244,9 @@ footer .spacer{flex:1}
         to hunt for.</p>
       </div>
       <div class="shot">
-        <img data-shot data-linux-light="assets/linux-general-light.png?v=5" data-linux-dark="assets/linux-general-dark.png?v=5"
-             data-mac-light="assets/mac-general-light.png?v=5" data-mac-dark="assets/mac-general-dark.png?v=5"
-             src="assets/linux-general-light.png?v=5" alt="The settings window: Breeze Qt on Linux, native SwiftUI on macOS" loading="lazy">
+        <img data-shot data-linux-light="assets/linux-general-light.png?v=6" data-linux-dark="assets/linux-general-dark.png?v=6"
+             data-mac-light="assets/mac-general-light.png?v=6" data-mac-dark="assets/mac-general-dark.png?v=6"
+             src="assets/linux-general-light.png?v=6" alt="The settings window: Breeze Qt on Linux, native SwiftUI on macOS" loading="lazy">
       </div>
     </div>
   </section>
