@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/PlatformComposition.h"
+#include "app/UpdateController.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
