@@ -63,12 +63,16 @@ QString pauseScript(const QStringList &players)
     QString source = QStringLiteral("set pausedPlayers to {}\n");
     for (const QString &player : players) {
         source += QStringLiteral(
+                      "try\n"
                       "tell application id \"%1\"\n"
                       "if (player state as string) is \"playing\" then\n"
                       "pause\n"
                       "set end of my pausedPlayers to \"%1\"\n"
                       "end if\n"
-                      "end tell\n")
+                      "end tell\n"
+                      "on error\n"
+                      "set pauseFailed to true\n"
+                      "end try\n")
                       .arg(player);
     }
     source += QStringLiteral(
@@ -80,7 +84,13 @@ QString resumeScript(const QStringList &players)
 {
     QString source;
     for (const QString &player : players) {
-        source += QStringLiteral("tell application id \"%1\" to play\n").arg(player);
+        source += QStringLiteral(
+                      "try\n"
+                      "tell application id \"%1\" to play\n"
+                      "on error\n"
+                      "set resumeFailed to true\n"
+                      "end try\n")
+                      .arg(player);
     }
     return source;
 }
