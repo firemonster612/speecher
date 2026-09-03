@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
 	<key>CFBundleIdentifier</key>
-	<string>local.speecher</string>
+	<string>io.github.firemonster612.speecher</string>
 	<key>CFBundleIconFile</key>
 	<string>speecher.icns</string>
 	<key>CFBundleInfoDictionaryVersion</key>

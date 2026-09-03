@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="packaging/local.speecher.svg" alt="Speecher icon" width="96" height="96">
+  <img src="packaging/io.github.firemonster612.speecher.svg" alt="Speecher icon" width="96" height="96">
 </p>
 
 <h1 align="center">speecher</h1>
@@ -37,8 +37,8 @@ The Makefile detects your platform; pass `PLATFORM=linux` or `PLATFORM=macos` to
 On Linux this installs to your per-user prefix, `~/.local`:
 
 - binary: `~/.local/bin/speecher`
-- desktop file: `~/.local/share/applications/local.speecher.desktop`
-- icon: `~/.local/share/icons/hicolor/scalable/apps/local.speecher.svg`
+- desktop file: `~/.local/share/applications/io.github.firemonster612.speecher.desktop`
+- icon: `~/.local/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg`
 
 To install somewhere else:
 

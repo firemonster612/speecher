@@ -2,6 +2,7 @@
 #include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsKeys.h"
 #include "frontend/qt/QtFrontEnd.h"
 #include "ui/Theme.h"
 
@@ -13,6 +14,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QTextStream>
 #include <QTimer>
@@ -65,6 +67,25 @@ static QString installLogHandler()
     return path;
 }
 
+static void migrateSettings()
+{
+    constexpr auto oldOrganization = "local.speecher";
+    QSettings newSettings(QString::fromLatin1(SettingsKeys::Organization),
+                          QString::fromLatin1(SettingsKeys::Application));
+    QSettings oldSettings(QString::fromLatin1(oldOrganization),
+                          QString::fromLatin1(SettingsKeys::Application));
+    newSettings.setFallbacksEnabled(false);
+    oldSettings.setFallbacksEnabled(false);
+    const QStringList oldKeys = oldSettings.allKeys();
+    if (newSettings.allKeys().isEmpty() && !oldKeys.isEmpty()) {
+        for (const QString &key : oldKeys) {
+            newSettings.setValue(key, oldSettings.value(key));
+        }
+        newSettings.sync();
+        qInfo() << "Migrated settings keys:" << oldKeys.size();
+    }
+}
+
 static QStringList commandLineArguments(int argc, char **argv)
 {
     QStringList arguments;
@@ -78,9 +99,10 @@ static QStringList commandLineArguments(int argc, char **argv)
 int main(int argc, char **argv)
 {
     QCoreApplication::setApplicationName(QStringLiteral("speecher"));
-    QGuiApplication::setDesktopFileName(QStringLiteral("local.speecher"));
-    QCoreApplication::setOrganizationName(QStringLiteral("local.speecher"));
+    QGuiApplication::setDesktopFileName(QStringLiteral("io.github.firemonster612.speecher"));
+    QCoreApplication::setOrganizationName(QString::fromLatin1(SettingsKeys::Organization));
     const QString logPath = installLogHandler();
+    migrateSettings();
     const std::shared_ptr<const PlatformComposition> platform = platformComposition();
 
     const CommandLineDecision decision =

@@ -4,7 +4,7 @@
 
 namespace speecher::SettingsKeys {
 
-inline constexpr auto Organization = "local.speecher";
+inline constexpr auto Organization = "io.github.firemonster612";
 inline constexpr auto Application = "speecher";
 
 inline const QString SetupCompleted = QStringLiteral("app/setupCompleted");
