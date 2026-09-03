@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Nightly Build: SPEECHER_UPDINFO='gh-releases-zsync|firemonster612|speecher|nightly|Speecher-*x86_64.AppImage.zsync'
+# Stable Release: SPEECHER_UPDINFO='gh-releases-zsync|firemonster612|speecher|latest|Speecher-*x86_64.AppImage.zsync'
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,6 +27,10 @@ Environment:
   SPEECHER_APPDIR       AppDir staging directory. Default: ./dist/AppDir
   SPEECHER_OUTPUT_DIR   Output directory. Default: ./dist
   SPEECHER_BUILD_TYPE   CMake build type. Default: RelWithDebInfo
+  SPEECHER_QT_PREFIX    Qt installation prefix to build and bundle against.
+                        Falls back to QT_ROOT_DIR. Without either, CMake's
+                        default discovery applies (risky on hosts with a
+                        system Qt).
   ARCH                   AppImage arch. Default: x86_64
 EOF
 }
@@ -68,21 +74,53 @@ require_tool() {
 
 require_tool cmake
 require_tool appimagetool
-require_tool qmake6
 require_tool ldd
 
 mkdir -p "$OUTPUT_DIR"
 rm -rf "$APPDIR_PATH"
 
-echo "Configuring AppImage build in $BUILD_DIR"
-cmake -S "$ROOT_DIR" -B "$BUILD_DIR" \
-  -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-  -DSPEECHER_DESKTOP_EXEC=speecher \
+# Pin Qt discovery at configure time; ambient discovery can mix a system Qt
+# into the build (SPEECHER_QT_PREFIX wins, QT_ROOT_DIR is what CI's Qt action exports).
+QT_PREFIX_HINT="${SPEECHER_QT_PREFIX:-${QT_ROOT_DIR:-}}"
+CMAKE_CONFIGURE_ARGS=(
+  -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
+  -DSPEECHER_DESKTOP_EXEC=speecher
   -DSPEECHER_BUILD_TESTS=OFF
+)
+if [[ -n "$QT_PREFIX_HINT" ]]; then
+  CMAKE_CONFIGURE_ARGS+=("-DCMAKE_PREFIX_PATH=$QT_PREFIX_HINT")
+fi
+echo "Configuring AppImage build in $BUILD_DIR"
+cmake -S "$ROOT_DIR" -B "$BUILD_DIR" "${CMAKE_CONFIGURE_ARGS[@]}"
 echo "Compiling speecher"
 cmake --build "$BUILD_DIR" --parallel
 echo "Installing into AppDir at $APPDIR_PATH"
 DESTDIR="$APPDIR_PATH" cmake --install "$BUILD_DIR" --prefix /usr
+
+# Bundle the Qt the build actually linked against. The installed binary has no
+# RPATH and the host may carry a different system Qt, so both the ldd closure
+# and qmake must be pinned to the Qt recorded in the build's CMake cache.
+QT_CMAKE_DIR="$(sed -n 's/^Qt6_DIR:PATH=//p' "$BUILD_DIR/CMakeCache.txt" | head -n1)"
+if [[ -z "$QT_CMAKE_DIR" || ! -d "$QT_CMAKE_DIR" ]]; then
+  echo "Could not resolve Qt6_DIR from $BUILD_DIR/CMakeCache.txt" >&2
+  exit 1
+fi
+QT_LIB_DIR="$(readlink -f "$QT_CMAKE_DIR/../..")"
+QMAKE=""
+for candidate in "$QT_CMAKE_DIR/../../../bin/qmake6" "$QT_CMAKE_DIR/../../../bin/qmake" \
+                 "$QT_CMAKE_DIR/../../../../bin/qmake6" "$QT_CMAKE_DIR/../../../../bin/qmake" \
+                 "$(command -v qmake6 || true)"; do
+  [[ -n "$candidate" && -x "$candidate" ]] || continue
+  if [[ "$(readlink -f "$("$candidate" -query QT_INSTALL_LIBS)")" == "$QT_LIB_DIR" ]]; then
+    QMAKE="$(readlink -f "$candidate")"
+    break
+  fi
+done
+if [[ -z "$QMAKE" ]]; then
+  echo "Could not find a qmake belonging to the build Qt at $QT_LIB_DIR" >&2
+  exit 1
+fi
+echo "Bundling Qt from $QT_LIB_DIR (qmake: $QMAKE)"
 
 if [[ "$BUNDLE_WL_CLIPBOARD" == "1" ]] && command -v wl-copy >/dev/null 2>&1; then
   echo "Bundling wl-copy"
@@ -116,7 +154,7 @@ copy_library() {
 
 copy_deps_for_elf() {
   local elf="$1"
-  ldd "$elf" 2>/dev/null | awk '
+  LD_LIBRARY_PATH="$QT_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$elf" 2>/dev/null | awk '
     /=> \// { print $(NF - 1) }
     /^\// { print $1 }
   ' | while read -r lib; do
@@ -141,7 +179,7 @@ copy_deps_closure() {
 copy_plugin_dir() {
   local name="$1"
   local qt_plugins
-  qt_plugins="$(qmake6 -query QT_INSTALL_PLUGINS)"
+  qt_plugins="$("$QMAKE" -query QT_INSTALL_PLUGINS)"
   [[ -d "$qt_plugins/$name" ]] || return 0
   echo "Copying Qt plugin directory: $name"
   mkdir -p "$APPDIR_PATH/usr/plugins/$name"
@@ -169,6 +207,15 @@ done < <(find "$APPDIR_PATH/usr/plugins" -type f -name '*.so')
 echo "Finishing runtime dependency closure"
 copy_deps_closure
 
+if [[ ! -f "$APPDIR_PATH/usr/lib/libQt6Core.so.6" ]]; then
+  echo "libQt6Core.so.6 was not bundled; the dependency closure is broken" >&2
+  exit 1
+fi
+if ! cmp -s "$APPDIR_PATH/usr/lib/libQt6Core.so.6" "$(readlink -f "$QT_LIB_DIR/libQt6Core.so.6")"; then
+  echo "Bundled libQt6Core.so.6 does not match $QT_LIB_DIR — mixed Qt closure" >&2
+  exit 1
+fi
+
 echo "Writing AppImage runtime files"
 cat > "$APPDIR_PATH/usr/bin/qt.conf" <<'EOF'
 [Paths]
@@ -190,8 +237,23 @@ ln -sf usr/share/applications/io.github.firemonster612.speecher.desktop "$APPDIR
 ln -sf usr/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg "$APPDIR_PATH/io.github.firemonster612.speecher.svg"
 
 ARCH="${ARCH:-x86_64}"
-APPIMAGE_PATH="$OUTPUT_DIR/Speecher-${ARCH}.AppImage"
+APPIMAGE_PATH="$(cd "$OUTPUT_DIR" && pwd -P)/Speecher-${ARCH}.AppImage"
 echo "Building AppImage with appimagetool: $APPIMAGE_PATH"
-appimagetool -n "$APPDIR_PATH" "$APPIMAGE_PATH"
+APPIMAGETOOL_ARGS=(-n)
+if [[ -n "${SPEECHER_UPDINFO:-}" ]]; then
+  APPIMAGETOOL_ARGS+=(-u "$SPEECHER_UPDINFO")
+fi
+(
+  cd "$OUTPUT_DIR"
+  appimagetool "${APPIMAGETOOL_ARGS[@]}" "$APPDIR_PATH" "$APPIMAGE_PATH"
+)
 
 echo "Created $APPIMAGE_PATH"
+if [[ -n "${SPEECHER_UPDINFO:-}" ]]; then
+  ZSYNC_PATH="${APPIMAGE_PATH}.zsync"
+  if [[ ! -f "$ZSYNC_PATH" ]]; then
+    echo "appimagetool did not create expected zsync file: $ZSYNC_PATH" >&2
+    exit 1
+  fi
+  echo "Created $ZSYNC_PATH"
+fi

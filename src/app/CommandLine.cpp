@@ -84,7 +84,7 @@ bool startDetachedSetup(const SingleInstancePlatform *platform)
 CommandLineDecision parseCommandLine(const QStringList &arguments, const QString &logPath)
 {
     if (arguments.contains(QStringLiteral("--version"))) {
-        std::cout << "speecher " << SPEECHER_VERSION << "\n";
+        std::cout << "speecher " << SPEECHER_VERSION << " (build " << SPEECHER_BUILD_NUMBER << ")\n";
         std::cout << "log " << logPath.toStdString() << "\n";
         return {LaunchMode::Exit};
     }

@@ -227,6 +227,8 @@ QString YdotoolSetup::serviceName()
 
 QString YdotoolSetup::helperPath()
 {
+    // pkexec's polkit action pins this helper to its compiled install path;
+    // root also cannot traverse a private squashfuse mount.
     const QString sibling = QCoreApplication::applicationDirPath() + QStringLiteral("/speecher-ydotool-setup");
     if (QFileInfo::exists(sibling)) {
         return sibling;
