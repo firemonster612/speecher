@@ -10,14 +10,9 @@
 
 #import <AppKit/AppKit.h>
 
-@interface SpeecherMacUI : NSObject
-- (instancetype)initWithBridge:(SpeecherBridge *)bridge;
-- (void)showDictationProblem:(NSString *)message;
-- (void)dismissDictationPanel;
-@property (nonatomic, readonly) BOOL dictationPanelVisible;
-@property (nonatomic, readonly) NSInteger dictationPanelLevel;
-@property (nonatomic, readonly) uint64_t dictationPanelPresentedGeneration;
-@end
+// The Swift class's Objective-C runtime name is mangled, so a hand-written
+// @interface cannot stand in for the generated header.
+#import "SpeecherUI-Swift.h"
 
 #include <QAbstractButton>
 #include <QApplication>
