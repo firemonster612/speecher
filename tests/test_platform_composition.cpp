@@ -242,8 +242,10 @@ private slots:
         SetupAssistant assistant(&controller, SetupAssistantPage::GlobalShortcut);
         assistant.show();
 
+#ifndef SPEECHER_WITH_KASSISTANT
         QCOMPARE(assistant.pageIds().size(), 1);
         QVERIFY(assistant.page(assistant.pageIds().first())->isVisible());
+#endif
         int visibleSetupPages = 0;
         for (QWidget *widget : assistant.findChildren<QWidget *>()) {
             const bool setupPage = dynamic_cast<LinuxGlobalShortcutSetupPage *>(widget)

@@ -49,6 +49,12 @@ endif()
 option(SPEECHER_WITH_LAYER_SHELL "Use layer-shell-qt when available" ON)
 option(SPEECHER_WITH_QKEYCHAIN "Use QKeychain when available" ON)
 option(SPEECHER_BUILD_TESTS "Build tests" ON)
+set(SPEECHER_WITH_KDE_DEFAULT OFF)
+if(UNIX AND NOT APPLE)
+  set(SPEECHER_WITH_KDE_DEFAULT ON)
+endif()
+option(SPEECHER_WITH_KDE "Require KDE integration on Linux"
+  ${SPEECHER_WITH_KDE_DEFAULT})
 
 # The native macOS front end. Turning it off leaves the Qt front end driving the
 # mac build, which is why the Swift language stays behind the option too.
@@ -63,6 +69,76 @@ if(APPLE AND SPEECHER_WITH_SWIFT_UI)
 endif()
 
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Multimedia)
+
+function(speecher_assert_single_qt_prefix context)
+  get_filename_component(qt6_dir_real "${Qt6_DIR}" REALPATH)
+  get_filename_component(qt6_core_dir_real "${Qt6Core_DIR}" REALPATH)
+  get_filename_component(qt6_cmake_prefix "${qt6_dir_real}" DIRECTORY)
+  get_filename_component(qt6_core_cmake_prefix "${qt6_core_dir_real}" DIRECTORY)
+  if(NOT qt6_cmake_prefix STREQUAL qt6_core_cmake_prefix)
+    message(FATAL_ERROR
+      "${context} mixed Qt installations: Qt6_DIR is '${Qt6_DIR}', but "
+      "Qt6Core_DIR is '${Qt6Core_DIR}'. Pass -DCMAKE_PREFIX_PATH to a single "
+      "Qt installation, or install KF6 and LayerShellQt packages built for "
+      "Qt ${Qt6_VERSION_MAJOR}.${Qt6_VERSION_MINOR}.")
+  endif()
+  if(NOT Qt6Core_VERSION_MAJOR EQUAL Qt6_VERSION_MAJOR OR
+     NOT Qt6Core_VERSION_MINOR EQUAL Qt6_VERSION_MINOR)
+    message(FATAL_ERROR
+      "${context} mixed Qt ${Qt6_VERSION_MAJOR}.${Qt6_VERSION_MINOR} with "
+      "QtCore ${Qt6Core_VERSION_MAJOR}.${Qt6Core_VERSION_MINOR}. Pass "
+      "-DCMAKE_PREFIX_PATH to a single Qt installation, or install matching "
+      "KF6 and LayerShellQt packages.")
+  endif()
+endfunction()
+
+function(speecher_assert_package_qt_version package_name target_name)
+  get_target_property(imported_configs "${target_name}" IMPORTED_CONFIGURATIONS)
+  foreach(config IN LISTS imported_configs)
+    get_target_property(package_library "${target_name}" "IMPORTED_LOCATION_${config}")
+    if(EXISTS "${package_library}")
+      break()
+    endif()
+  endforeach()
+  if(NOT EXISTS "${package_library}" OR NOT CMAKE_READELF)
+    message(FATAL_ERROR
+      "Could not inspect ${package_name}'s Qt build version. Pass "
+      "-DCMAKE_PREFIX_PATH to a single Qt installation, or install matching "
+      "KF6 and LayerShellQt packages.")
+  endif()
+
+  execute_process(
+    COMMAND "${CMAKE_READELF}" --hex-dump=.qtversion "${package_library}"
+    RESULT_VARIABLE readelf_result
+    OUTPUT_VARIABLE qt_version_section
+    ERROR_QUIET
+  )
+  # Qt stores QT_VERSION as patch, minor, major bytes in each Qt-linked ELF.
+  string(REGEX MATCH
+    "00000000[ \t]+00000000[ \t]+([0-9a-fA-F][0-9a-fA-F])([0-9a-fA-F][0-9a-fA-F])([0-9a-fA-F][0-9a-fA-F])[0-9a-fA-F][0-9a-fA-F]"
+    qt_version_match "${qt_version_section}")
+  if(NOT readelf_result EQUAL 0 OR NOT qt_version_match)
+    message(FATAL_ERROR
+      "Could not read ${package_name}'s Qt build version from "
+      "'${package_library}'. Install a ${package_name} package built for Qt "
+      "${Qt6_VERSION_MAJOR}.${Qt6_VERSION_MINOR}.")
+  endif()
+
+  set(package_qt_minor_hex "${CMAKE_MATCH_2}")
+  set(package_qt_major_hex "${CMAKE_MATCH_3}")
+  math(EXPR package_qt_minor "0x${package_qt_minor_hex}")
+  math(EXPR package_qt_major "0x${package_qt_major_hex}")
+  if(NOT package_qt_major EQUAL Qt6_VERSION_MAJOR OR
+     NOT package_qt_minor EQUAL Qt6_VERSION_MINOR)
+    message(FATAL_ERROR
+      "${package_name} was built for Qt ${package_qt_major}.${package_qt_minor}, "
+      "but CMake found Qt ${Qt6_VERSION_MAJOR}.${Qt6_VERSION_MINOR}. Pass "
+      "-DCMAKE_PREFIX_PATH to a single Qt installation, or install matching "
+      "KF6 and LayerShellQt packages.")
+  endif()
+endfunction()
+
+speecher_assert_single_qt_prefix("Qt discovery")
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
   pkg_check_modules(ATSPI QUIET IMPORTED_TARGET atspi-2 gobject-2.0)
@@ -70,14 +146,37 @@ if(PkgConfig_FOUND)
   pkg_get_variable(WAYLAND_PROTOCOLS_DATA_DIR wayland-protocols pkgdatadir)
 endif()
 find_package(Qt6 6.5 QUIET COMPONENTS WebSockets)
-if(SPEECHER_WITH_LAYER_SHELL)
-  find_package(LayerShellQt QUIET)
-endif()
 if(UNIX AND NOT APPLE)
   find_package(Qt6 6.5 REQUIRED COMPONENTS DBus)
-  find_package(KF6WidgetsAddons QUIET)
-  find_package(KF6ColorScheme QUIET)
-  find_package(KF6GlobalAccel QUIET)
+  if(SPEECHER_WITH_KDE)
+    find_package(KF6GlobalAccel REQUIRED)
+    find_package(KF6WidgetsAddons REQUIRED)
+    find_package(KF6ColorScheme REQUIRED)
+    find_package(LayerShellQt REQUIRED)
+  else()
+    find_package(KF6GlobalAccel QUIET)
+    find_package(KF6WidgetsAddons QUIET)
+    find_package(KF6ColorScheme QUIET)
+    if(SPEECHER_WITH_LAYER_SHELL)
+      find_package(LayerShellQt QUIET)
+    endif()
+  endif()
+
+  speecher_assert_single_qt_prefix("KDE package discovery")
+  if(KF6GlobalAccel_FOUND)
+    speecher_assert_package_qt_version("KF6GlobalAccel" "KF6::GlobalAccel")
+  endif()
+  if(KF6WidgetsAddons_FOUND)
+    speecher_assert_package_qt_version("KF6WidgetsAddons" "KF6::WidgetsAddons")
+  endif()
+  if(KF6ColorScheme_FOUND)
+    speecher_assert_package_qt_version("KF6ColorScheme" "KF6::ColorScheme")
+  endif()
+  if(LayerShellQt_FOUND)
+    speecher_assert_package_qt_version("LayerShellQt" "LayerShellQt::Interface")
+  endif()
+elseif(SPEECHER_WITH_LAYER_SHELL)
+  find_package(LayerShellQt QUIET)
 endif()
 if(SPEECHER_BUILD_TESTS)
   find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
