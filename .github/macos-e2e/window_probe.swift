@@ -2,6 +2,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 import ImageIO
+import Vision
 
 func windows(for pid: pid_t) -> [[String: Any]] {
     guard let all = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID)
@@ -26,6 +27,22 @@ func save(_ value: Any, to path: String) {
         exit(4)
     }
     try? data.write(to: URL(fileURLWithPath: path))
+}
+
+func privacySheet(in path: String) -> Bool {
+    guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
+          let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return false }
+    var text = ""
+    let request = VNRecognizeTextRequest { request, _ in
+        text = (request.results as? [VNRecognizedTextObservation])?
+            .compactMap { $0.topCandidates(1).first?.string }
+            .joined(separator: " ") ?? ""
+    }
+    request.recognitionLevel = .accurate
+    try? VNImageRequestHandler(cgImage: image).perform([request])
+    let normalized = text.lowercased()
+    return normalized.contains("requesting to bypass")
+        || normalized.contains("private window picker")
 }
 
 func panelBounds(_ windows: [[String: Any]]) -> CGRect? {
@@ -59,10 +76,20 @@ func pixels(in path: String, bounds: CGRect) -> [UInt8]? {
                                      count: CFDataGetLength(data)))
 }
 
+let mode = CommandLine.arguments[1]
+if mode == "all", CommandLine.arguments.count == 3 {
+    guard let all = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID)
+        as? [[String: Any]] else { exit(4) }
+    save(all, to: CommandLine.arguments[2])
+    exit(0)
+}
+if mode == "privacy", CommandLine.arguments.count == 3 {
+    exit(privacySheet(in: CommandLine.arguments[2]) ? 0 : 1)
+}
+
 guard CommandLine.arguments.count >= 4,
       let pid = Int32(CommandLine.arguments[2]) else { exit(64) }
 
-let mode = CommandLine.arguments[1]
 let current = windows(for: pid)
 
 if mode == "dump" {

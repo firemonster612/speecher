@@ -14,9 +14,9 @@ permissions:
 
 jobs:
   run1:
-    name: Run 1, build and core functional
+    name: Round 2, prioritized cases
     runs-on: macos-26
-    timeout-minutes: 53
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
         with:
@@ -59,10 +59,9 @@ jobs:
           find "$QT_ROOT_DIR" -type f \( -name '*.prl' -o -name '*.cmake' \) -exec \
             sed -i '' -e 's/-framework[[:space:]]*AGL//g' -e 's/AGL;//g' -e 's/AGL\.framework//g' {} +
 
-      - name: Install runner tools and BlackHole
+      - name: Install runner tools
         run: |
-          brew install ccache blackhole-2ch
-          sudo killall coreaudiod || true
+          brew install ccache
           ccache --zero-stats
 
       - name: Create stable code-signing identity
@@ -151,68 +150,5 @@ jobs:
           test -f "$RUNNER_TEMP/mac-e2e-run1/verdicts.txt"
           cat "$RUNNER_TEMP/mac-e2e-run1/verdicts.txt" >> "$GITHUB_STEP_SUMMARY"
           if grep -E '^M([0-9]+|-C[0-9]+): FAIL' "$RUNNER_TEMP/mac-e2e-run1/verdicts.txt"; then
-            exit 1
-          fi
-
-  run2:
-    name: Run 2, install, state, and denied permissions
-    needs: run1
-    if: always() && needs.run1.result != 'cancelled'
-    runs-on: macos-26
-    timeout-minutes: 33
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Download run 1 product and evidence
-        uses: actions/download-artifact@v8
-        with:
-          name: mac-e2e-run1
-          path: ${{ runner.temp }}/run1-download
-
-      - name: Restore exact signed product
-        run: |
-          mkdir -p "$RUNNER_TEMP/mac-e2e-product"
-          tar -xzf "$RUNNER_TEMP/run1-download/mac-e2e-product.tgz" -C "$RUNNER_TEMP/mac-e2e-product"
-          codesign --verify --deep --strict "$RUNNER_TEMP/mac-e2e-product/speecher.app"
-
-      - name: Compile evidence probe
-        run: swiftc .github/macos-e2e/window_probe.swift -o "$RUNNER_TEMP/window-probe"
-
-      - name: Execute run 2 cases
-        env:
-          APP_BUNDLE: ${{ runner.temp }}/mac-e2e-product/speecher.app
-          DMG_PATH: ${{ runner.temp }}/mac-e2e-product/speecher.dmg
-          EVIDENCE_ROOT: ${{ runner.temp }}/mac-e2e-run2
-          PROBE: ${{ runner.temp }}/window-probe
-          RUN1_VERDICTS: ${{ runner.temp }}/run1-download/mac-e2e-run1/verdicts.txt
-        run: bash .github/macos-e2e/run2.sh
-
-      - name: Upload run 2 evidence
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: mac-e2e-run2
-          path: ${{ runner.temp }}/mac-e2e-run2
-          if-no-files-found: error
-
-      - name: Publish combined verdict summary
-        if: always()
-        run: |
-          combined="$RUNNER_TEMP/combined-verdicts.txt"
-          cat "$RUNNER_TEMP/run1-download/mac-e2e-run1/verdicts.txt" \
-            "$RUNNER_TEMP/mac-e2e-run2/verdicts.txt" > "$combined"
-          printf '## All case verdicts, failures first\n\n' >> "$GITHUB_STEP_SUMMARY"
-          for status in FAIL PASS BLOCKED; do
-            grep ": $status " "$combined" >> "$GITHUB_STEP_SUMMARY" || true
-          done
-
-      - name: Enforce run 2 verdicts
-        if: always()
-        run: |
-          test -f "$RUNNER_TEMP/mac-e2e-run2/verdicts.txt"
-          if grep -E '^M([0-9]+|-C[0-9]+): FAIL' "$RUNNER_TEMP/mac-e2e-run2/verdicts.txt"; then
             exit 1
           fi

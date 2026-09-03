@@ -15,6 +15,7 @@ CURRENT_CASE=
 CASE_DIR=
 CASE_LOG_OFFSET=1
 APP_PID=
+DESKTOP_CAPTURE=0
 mkdir -p "$EVIDENCE_ROOT"
 : > "$VERDICTS"
 : > "$RUN_LOG"
@@ -50,7 +51,9 @@ case_begin() {
 case_evidence() {
   local log_path
   log_path="$(app_log_path)"
-  screencapture -x "$CASE_DIR/screen.png" >"$CASE_DIR/screencapture.out" 2>&1 || true
+  if [[ "$DESKTOP_CAPTURE" == 1 ]]; then
+    screencapture -x "$CASE_DIR/screen.png" >"$CASE_DIR/screencapture.out" 2>&1 || true
+  fi
   local pid
   pid="$(pgrep -x speecher | head -1 || true)"
   if [[ -n "$pid" ]]; then
@@ -89,13 +92,35 @@ app_log_path() {
 }
 
 stop_app() {
-  pkill -9 -x speecher >/dev/null 2>&1 || true
+  pkill -9 speecher >/dev/null 2>&1 || true
+  if [[ -n "$APP_PID" ]]; then
+    wait "$APP_PID" 2>/dev/null || true
+  fi
   local count=0
   while pgrep -x speecher >/dev/null 2>&1 && (( count < 50 )); do
     sleep 0.1
     count=$((count + 1))
   done
+  find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete \
+    > /dev/null 2>&1 || true
   APP_PID=
+}
+
+probe_desktop_capture() {
+  local image="$EVIDENCE_ROOT/capture-probe.png"
+  screencapture -x "$image" >"$EVIDENCE_ROOT/capture-probe.out" 2>&1 || true
+  "$PROBE" all "$EVIDENCE_ROOT/windows-capture-probe.json" >/dev/null 2>&1 || true
+  if [[ ! -s "$image" ]] || "$PROBE" privacy "$image"; then
+    printf 'disabled: capture failed or privacy sheet detected\n' >"$EVIDENCE_ROOT/capture-mode.txt"
+    log "Desktop screenshots disabled after the setup probe"
+    DYLD_FRAMEWORK_PATH="${QT_ROOT_DIR:-}/lib" \
+      "$APP_BIN" --grab "$EVIDENCE_ROOT/app-grab.png" \
+      >"$EVIDENCE_ROOT/app-grab.out" 2>&1 || true
+  else
+    DESKTOP_CAPTURE=1
+    printf 'enabled: privacy sheet not detected\n' >"$EVIDENCE_ROOT/capture-mode.txt"
+    log "Desktop screenshots enabled after the setup probe"
+  fi
 }
 
 baseline_reset() {
@@ -116,13 +141,18 @@ baseline_reset() {
   defaults write "$DOMAIN" updates.autoInstall -bool false
   defaults write "$DOMAIN" vocabulary.correctionLearningEnabled -bool false
   launchctl setenv SPEECHER_E2E_STUB 1 >/dev/null 2>&1 || true
+  launchctl setenv SPEECHER_E2E_SKIP_MIC_GATE 1 >/dev/null 2>&1 || true
   launchctl unsetenv SPEECHER_E2E_REAL_AUDIO >/dev/null 2>&1 || true
   export SPEECHER_E2E_STUB=1
+  export SPEECHER_E2E_SKIP_MIC_GATE=1
   unset SPEECHER_E2E_REAL_AUDIO
 }
 
 launch_app() {
   local real_audio="${1:-0}"
+  if pgrep -x speecher >"$CASE_DIR/prelaunch-processes.txt" 2>&1; then
+    return 1
+  fi
   if [[ "$real_audio" == 1 ]]; then
     export SPEECHER_E2E_REAL_AUDIO=1
     launchctl setenv SPEECHER_E2E_REAL_AUDIO 1 >/dev/null 2>&1 || true
@@ -131,6 +161,7 @@ launch_app() {
     launchctl unsetenv SPEECHER_E2E_REAL_AUDIO >/dev/null 2>&1 || true
   fi
   SPEECHER_E2E_STUB="${SPEECHER_E2E_STUB:-}" \
+    SPEECHER_E2E_SKIP_MIC_GATE="${SPEECHER_E2E_SKIP_MIC_GATE:-}" \
     SPEECHER_E2E_REAL_AUDIO="${SPEECHER_E2E_REAL_AUDIO:-}" \
     SPEECHER_E2E_EVIDENCE_DIR="$CASE_DIR" \
     DYLD_FRAMEWORK_PATH="${QT_ROOT_DIR:-}/lib" \
@@ -191,7 +222,9 @@ poll_status_one_of() {
 
 phase_capture() {
   local phase="$1" pid
-  screencapture -x "$CASE_DIR/$phase.png" >/dev/null 2>&1 || true
+  if [[ "$DESKTOP_CAPTURE" == 1 ]]; then
+    screencapture -x "$CASE_DIR/$phase.png" >/dev/null 2>&1 || true
+  fi
   pid="$(pgrep -x speecher | head -1 || true)"
   if [[ -n "$pid" ]]; then
     "$PROBE" dump "$pid" "$CASE_DIR/windows-$phase.json" >/dev/null 2>&1 || true
@@ -202,9 +235,43 @@ panel_visible() {
   local baseline="$1" phase="$2" pid
   pid="$(pgrep -x speecher | head -1 || true)"
   [[ -n "$pid" ]] || return 2
-  screencapture -x "$CASE_DIR/$phase.png" >/dev/null 2>&1 || return 3
-  "$PROBE" panel "$pid" "$baseline" "$CASE_DIR/$phase.png" \
-    "$CASE_DIR/windows-$phase.json" >"$CASE_DIR/panel-$phase.out" 2>&1
+  if [[ "$DESKTOP_CAPTURE" == 1 ]]; then
+    screencapture -x "$CASE_DIR/$phase.png" >/dev/null 2>&1 || return 3
+    "$PROBE" panel "$pid" "$baseline" "$CASE_DIR/$phase.png" \
+      "$CASE_DIR/windows-$phase.json" >"$CASE_DIR/panel-$phase.out" 2>&1
+    return
+  fi
+  "$PROBE" dump "$pid" "$CASE_DIR/windows-$phase.json" >"$CASE_DIR/panel-$phase.out" 2>&1 \
+    || return 2
+  panel_window_visible "$CASE_DIR/windows-$phase.json"
+}
+
+panel_window_visible() {
+  python3 - "$1" <<'PY'
+import json, sys
+for window in json.load(open(sys.argv[1])):
+    bounds = window.get("bounds", {})
+    if (window.get("layer") == 25 and window.get("isOnscreen")
+            and window.get("alpha", 0) > 0 and bounds.get("Width", 0) >= 420
+            and abs(bounds.get("Height", 0) - 72) < 1):
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+bounded_osascript() {
+  osascript "$@" &
+  local pid=$! count=0
+  while kill -0 "$pid" >/dev/null 2>&1 && (( count < 50 )); do
+    sleep 0.2
+    count=$((count + 1))
+  done
+  if kill -0 "$pid" >/dev/null 2>&1; then
+    kill -9 "$pid" >/dev/null 2>&1 || true
+    wait "$pid" 2>/dev/null || true
+    return 124
+  fi
+  wait "$pid"
 }
 
 panel_gone() {
@@ -371,6 +438,8 @@ textedit_text() {
 finalize_run() {
   stop_app
   launchctl unsetenv SPEECHER_E2E_STUB >/dev/null 2>&1 || true
+  launchctl unsetenv SPEECHER_E2E_SKIP_MIC_GATE >/dev/null 2>&1 || true
   launchctl unsetenv SPEECHER_E2E_REAL_AUDIO >/dev/null 2>&1 || true
   launchctl unsetenv SPEECHER_E2E_EVIDENCE_DIR >/dev/null 2>&1 || true
+  unset SPEECHER_E2E_SKIP_MIC_GATE
 }

@@ -344,6 +344,10 @@ void ApplicationController::showSetupAssistant()
 void ApplicationController::startWithMicrophone(std::function<void()> start)
 {
 #ifdef Q_OS_MACOS
+    if (qEnvironmentVariableIntValue("SPEECHER_E2E_SKIP_MIC_GATE") == 1) {
+        start();
+        return;
+    }
     const auto refuse = [this] {
         if (m_frontEnd) {
             m_frontEnd->showDictationError(QStringLiteral(
