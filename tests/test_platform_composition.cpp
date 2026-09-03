@@ -2,6 +2,7 @@
 
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
+#include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
 #include "core/LearnedCorrection.h"
 #include "core/SettingsStore.h"
@@ -264,6 +265,14 @@ class PlatformCompositionTests : public QObject {
     Q_OBJECT
 
 private slots:
+#ifdef Q_OS_LINUX
+    void guiLaunchKeepsRunningAfterLastWindowCloses()
+    {
+        QVERIFY(!quitOnLastWindowClosed(LaunchMode::RunGui));
+        QVERIFY(!quitOnLastWindowClosed(LaunchMode::RunDaemon));
+    }
+#endif
+
 #ifdef Q_OS_LINUX
     void setupAssistantPutsTheGlobalShortcutBeforeFinish()
     {
