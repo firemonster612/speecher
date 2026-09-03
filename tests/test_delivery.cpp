@@ -982,6 +982,42 @@ private slots:
                               QStringLiteral("29:0")}));
     }
 
+    void ydotoolDeliversIdenticalTextTwice()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString executablePath = dir.filePath(QStringLiteral("ydotool"));
+        const QString logPath = dir.filePath(QStringLiteral("ydotool.log"));
+        QFile executable(executablePath);
+        QVERIFY(executable.open(QIODevice::WriteOnly | QIODevice::Text));
+        executable.write("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$SPEECHER_TEST_YDOTOOL_LOG\"\n");
+        executable.close();
+        QVERIFY(QFile::setPermissions(executablePath,
+                                      QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                          | QFileDevice::ExeOwner));
+
+        const QByteArray oldPath = qgetenv("PATH");
+        const QByteArray oldRuntimeDir = qgetenv("XDG_RUNTIME_DIR");
+        qputenv("PATH", QFile::encodeName(dir.path()) + ':' + oldPath);
+        qputenv("XDG_RUNTIME_DIR", QFile::encodeName(dir.path()));
+        qputenv("SPEECHER_TEST_YDOTOOL_LOG", QFile::encodeName(logPath));
+        const QString text = QStringLiteral("repeat-%1").arg(QUuid::createUuid().toString());
+        QString error;
+        QVERIFY2(YdotoolDelivery().type(text, &error), qPrintable(error));
+        QVERIFY2(YdotoolDelivery().type(text, &error), qPrintable(error));
+        qputenv("PATH", oldPath);
+        qputenv("XDG_RUNTIME_DIR", oldRuntimeDir);
+        qunsetenv("SPEECHER_TEST_YDOTOOL_LOG");
+
+        QFile log(logPath);
+        QVERIFY(log.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QList<QByteArray> calls = log.readAll().split('\n');
+        QCOMPARE(std::count_if(calls.cbegin(), calls.cend(), [](const QByteArray &call) {
+                     return call.startsWith(QByteArrayLiteral("type "));
+                 }),
+                 2);
+    }
+
     void ydotoolStatusEvaluation()
     {
         YdotoolProbeFacts facts;
