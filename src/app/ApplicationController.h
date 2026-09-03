@@ -21,6 +21,7 @@ class GlobalShortcutBinder;
 class ProviderRegistry;
 class SecretStore;
 class SettingsStore;
+class UpdateController;
 
 class ApplicationController : public QObject {
     Q_OBJECT
@@ -44,6 +45,7 @@ public:
     // front end shows only the dictation popup.
     bool popupOnly() const;
     SettingsStore *settings() const;
+    UpdateController *updates() const;
     SecretStore *secretStore() const;
     ProviderRegistry *providerRegistry() const;
     const PlatformComposition *platform() const;
@@ -103,6 +105,7 @@ private:
     ProviderRegistry *m_providers = nullptr;
     AudioInput *m_audio = nullptr;
     DictationSession *m_session = nullptr;
+    UpdateController *m_updates = nullptr;
     GlobalShortcutBinder *m_shortcutBinder = nullptr;
     SingleInstanceIpc *m_ipc = nullptr;
     bool m_accessibilitySupported = false;

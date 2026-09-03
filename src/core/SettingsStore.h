@@ -26,6 +26,8 @@ public:
                                   const QString &applicationId);
 
     using SettingsCodecs::anthropicAuthMode;
+    using SettingsCodecs::autoCheckUpdates;
+    using SettingsCodecs::autoInstallUpdates;
     using SettingsCodecs::anthropicCliproxyAccount;
     using SettingsCodecs::anthropicEffort;
     using SettingsCodecs::anthropicFastMode;
@@ -99,6 +101,8 @@ public:
     using SettingsCodecs::setWritingProfileOverrides;
     using SettingsCodecs::setWritingProfileSettings;
     using SettingsCodecs::setYdotoolEnabled;
+    using SettingsCodecs::setUpdatesDismissedVersion;
+    using SettingsCodecs::setUpdatesLastCheckTime;
     using SettingsCodecs::snapshot;
     using SettingsCodecs::soundsEnabled;
     using SettingsCodecs::speechProvider;
@@ -110,6 +114,9 @@ public:
     using SettingsCodecs::writingProfileOverrides;
     using SettingsCodecs::writingProfileSettings;
     using SettingsCodecs::ydotoolEnabled;
+    using SettingsCodecs::updateChannel;
+    using SettingsCodecs::updatesDismissedVersion;
+    using SettingsCodecs::updatesLastCheckTime;
 
     QString audioInputDeviceId() const;
     void setAudioInputDeviceId(const QString &value);
@@ -126,12 +133,16 @@ public:
     int audioVadThresholdPercent() const;
     void setAudioVadThresholdPercent(int value);
     void setAudioCaptureSettings(const AudioCaptureSettings &value);
+    void setUpdateChannel(UpdateChannel value);
+    void setAutoCheckUpdates(bool value);
+    void setAutoInstallUpdates(bool value);
 
     QSettings &raw();
 
 signals:
     void audioCaptureSettingsChanged(const AudioCaptureSettings &settings);
     void correctionLearningEnabledChanged(bool enabled);
+    void updateSettingsChanged();
 
 private:
     void emitAudioCaptureSettingsChangedIfNeeded(const AudioCaptureSettings &previous);

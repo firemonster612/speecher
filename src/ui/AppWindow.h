@@ -11,6 +11,8 @@ class QLabel;
 class QLineEdit;
 class QListWidget;
 class QPaintEvent;
+class QProgressBar;
+class QPushButton;
 class QShowEvent;
 class QSplitter;
 class QStackedWidget;
@@ -47,6 +49,7 @@ private:
     void refreshHeaderStripColor();
     void runAutoSave();
     void filterSidebarPages(const QString &query);
+    void refreshUpdateBanner();
 
     ApplicationController *m_controller;
     SettingsPageSet *m_pages;
@@ -65,6 +68,15 @@ private:
     QFrame *m_autoSaveWarning = nullptr;
     QLabel *m_autoSaveWarningText = nullptr;
     QTimer *m_autoSaveTimer = nullptr;
+    QFrame *m_updateBanner = nullptr;
+    QLabel *m_updateBannerText = nullptr;
+    QProgressBar *m_updateProgress = nullptr;
+    QPushButton *m_updateAction = nullptr;
+    QPushButton *m_updateLater = nullptr;
+    QPushButton *m_updateDismiss = nullptr;
+    bool m_updateBannerDeferred = false;
+    QString m_updateBannerVersion;
+    QString m_updateBannerInstalledVersion;
     bool m_pageLoadScheduled = false;
     bool m_afterShowLoadScheduled = false;
     bool m_headerDragPending = false;

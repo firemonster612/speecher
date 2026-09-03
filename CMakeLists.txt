@@ -7,6 +7,28 @@ include(cmake/GitVersion.cmake)
 if(APPLE)
   # The macOS platform backend is Objective-C++.
   enable_language(OBJCXX)
+
+  include(FetchContent)
+  FetchContent_Declare(sparkle
+    URL https://github.com/sparkle-project/Sparkle/releases/download/2.9.6/Sparkle-2.9.6.tar.xz
+    URL_HASH SHA256=52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  )
+  FetchContent_MakeAvailable(sparkle)
+
+  set(SPEECHER_SPARKLE_ED_PUBLIC_KEY "" CACHE STRING
+    "Sparkle EdDSA public key embedded in the macOS app")
+  set(SPEECHER_SPARKLE_PUBLIC_KEY_PLIST "")
+  if(SPEECHER_SPARKLE_ED_PUBLIC_KEY)
+    set(SPEECHER_SPARKLE_PUBLIC_KEY_PLIST
+      "<key>SUPublicEDKey</key>\n\t<string>${SPEECHER_SPARKLE_ED_PUBLIC_KEY}</string>")
+  endif()
+  set(SPEECHER_SPARKLE_FRAMEWORK "${sparkle_SOURCE_DIR}/Sparkle.framework")
+  add_library(Sparkle::Sparkle SHARED IMPORTED GLOBAL)
+  set_target_properties(Sparkle::Sparkle PROPERTIES
+    IMPORTED_LOCATION "${SPEECHER_SPARKLE_FRAMEWORK}/Sparkle"
+    IMPORTED_SONAME "@rpath/Sparkle.framework/Versions/B/Sparkle"
+  )
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
@@ -247,22 +269,27 @@ set(SPEECHER_APP_HEADERS
   src/app/CompositionSockets.h
   src/app/PlatformComposition.h
   src/app/SingleInstanceIpc.h
+  src/app/UpdateController.h
 )
 
 set(SPEECHER_APP_LINUX_SOURCES
+  src/app/AppImageUpdater.cpp
   src/app/LinuxComposition.cpp
 )
 
 set(SPEECHER_APP_LINUX_HEADERS
+  src/app/AppImageUpdater.h
   src/app/LinuxComposition.h
 )
 
 set(SPEECHER_APP_MAC_SOURCES
   src/app/MacComposition.mm
+  src/app/MacSparkleUpdater.mm
 )
 
 set(SPEECHER_APP_MAC_HEADERS
   src/app/MacComposition.h
+  src/app/MacSparkleUpdater.h
 )
 
 set(SPEECHER_FRONTEND_QT_SOURCES
@@ -420,7 +447,7 @@ target_compile_definitions(speecher_app PUBLIC
   SPEECHER_BUILD_NUMBER=${SPEECHER_BUILD_NUMBER}
 )
 target_link_libraries(speecher_app PUBLIC
-  speecher_domain speecher_workflow speecher_providers speecher_platform
+  speecher_domain speecher_workflow speecher_providers speecher_platform Qt6::Network
 )
 if(UNIX AND NOT APPLE)
   target_sources(speecher_app PRIVATE
@@ -433,7 +460,11 @@ if(APPLE)
     ${SPEECHER_APP_MAC_SOURCES}
     ${SPEECHER_APP_MAC_HEADERS}
   )
+  set_source_files_properties(src/app/MacSparkleUpdater.mm PROPERTIES
+    COMPILE_OPTIONS -fobjc-arc
+  )
   target_link_libraries(speecher_app PRIVATE
+    Sparkle::Sparkle
     "-framework CoreAudio"
     "-framework Security"
     "-framework ServiceManagement"
@@ -550,6 +581,7 @@ if(TARGET speecher_frontend_mac)
 endif()
 
 if(APPLE)
+  find_program(SPEECHER_DITTO_EXECUTABLE ditto REQUIRED)
   set(SPEECHER_MACOS_RESOURCES
     packaging/macos/speecher.icns
     packaging/macos/speecher-menubar.png
@@ -562,6 +594,17 @@ if(APPLE)
   set_target_properties(speecher PROPERTIES
     MACOSX_BUNDLE TRUE
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/Info.plist.in"
+    BUILD_WITH_INSTALL_RPATH TRUE
+    INSTALL_RPATH "@executable_path/../Frameworks"
+  )
+  add_custom_command(TARGET speecher POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E make_directory
+      "$<TARGET_BUNDLE_CONTENT_DIR:speecher>/Frameworks"
+    COMMAND "${SPEECHER_DITTO_EXECUTABLE}"
+      "${SPEECHER_SPARKLE_FRAMEWORK}"
+      "$<TARGET_BUNDLE_CONTENT_DIR:speecher>/Frameworks/Sparkle.framework"
+    COMMENT "Embedding Sparkle.framework"
+    VERBATIM
   )
 endif()
 
@@ -744,6 +787,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_claude_voice.cpp
     tests/test_codex_dictation.cpp
     tests/test_audio_pcm_converter.cpp
+    tests/test_update_controller.cpp
   )
   target_include_directories(speecher_tests PRIVATE src)
   target_compile_definitions(speecher_tests PRIVATE

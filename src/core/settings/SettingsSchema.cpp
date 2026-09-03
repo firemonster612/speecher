@@ -336,6 +336,32 @@ SettingsPage generalPage(const SchemaContext &context)
                               QStringLiteral("Current platform clipboard path."),
                               context.primaryOutputStatus));
 
+    SettingsRow updateChannel = choiceRow(
+        QStringLiteral("updateChannel"),
+        QStringLiteral("Update channel"),
+        QString(),
+        fixedOptions({
+            {QStringLiteral("stable"),
+             QStringLiteral("Stable Release"),
+             QStringLiteral("Hand-tested releases for general use.")},
+            {QStringLiteral("nightly"),
+             QStringLiteral("Nightly Build"),
+             QStringLiteral("Republished automatically from every push to master.")},
+        }),
+        [](const AppSettings &settings) { return updateChannelName(settings.updates.channel); },
+        [](AppSettings &settings, const QString &value) {
+            settings.updates.channel = updateChannelFromName(value);
+        });
+    SettingsRow autoInstall = toggleRow(
+        QStringLiteral("autoInstallUpdates"),
+        QStringLiteral("Download and install updates automatically"),
+        QStringLiteral("AppImage updates install in the background and take effect after restart."),
+        [](const AppSettings &settings) { return settings.updates.autoInstall; },
+        [](AppSettings &settings, bool value) { settings.updates.autoInstall = value; });
+    autoInstall.visible = [](const AppSettings &, const Capabilities &capabilities) {
+        return capabilities.isAppImage;
+    };
+
     return {
         QStringLiteral("general"),
         QStringLiteral("General"),
@@ -373,10 +399,27 @@ SettingsPage generalPage(const SchemaContext &context)
                            QStringLiteral("Setup assistant"),
                            QStringLiteral("Check sign-in, microphone, accessibility, delivery, and refinement again."),
                            QStringLiteral("Run setup assistant…")),
-                 actionRow(QStringLiteral("openReleases"),
-                           QStringLiteral("Updates"),
-                           QStringLiteral("Updates are manual; open the GitHub releases page when you want to check."),
-                           QStringLiteral("Open releases")),
+             }},
+            {QStringLiteral("Updates"),
+             QString(),
+             {
+                 std::move(updateChannel),
+                 toggleRow(QStringLiteral("autoCheckUpdates"),
+                           QStringLiteral("Check for updates automatically"),
+                           QStringLiteral("Check the selected Update Channel at startup and once a day."),
+                           [](const AppSettings &settings) { return settings.updates.autoCheck; },
+                           [](AppSettings &settings, bool value) { settings.updates.autoCheck = value; }),
+                 std::move(autoInstall),
+                 actionRow(QStringLiteral("checkForUpdates"),
+                           QStringLiteral("Check for updates"),
+                           QStringLiteral("Check the selected Update Channel for a newer build."),
+                           QStringLiteral("Check now")),
+                 infoRow(QStringLiteral("currentVersion"),
+                         QStringLiteral("Current version"),
+                         QString(),
+                         context.currentVersion.isEmpty()
+                             ? QStringLiteral("Unknown")
+                             : context.currentVersion),
              }},
         },
     };

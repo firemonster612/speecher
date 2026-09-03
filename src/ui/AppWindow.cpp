@@ -1,6 +1,7 @@
 #include "ui/AppWindow.h"
 
 #include "app/ApplicationController.h"
+#include "app/UpdateController.h"
 #include "core/SettingsStore.h"
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/DictationPage.h"
@@ -23,6 +24,7 @@
 #include <QListWidget>
 #include <QPalette>
 #include <QPushButton>
+#include <QProgressBar>
 #include <QScrollArea>
 #include <QShortcut>
 #include <QShowEvent>
@@ -127,6 +129,10 @@ AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
     buildSharedPages();
     connect(m_pages, &SettingsPageSet::changed, m_dictation, &DictationPage::refreshSummary);
     connect(m_dictation, &DictationPage::navigateRequested, this, &AppWindow::navigateToSettings);
+    connect(m_controller->updates(),
+            &UpdateController::changed,
+            this,
+            &AppWindow::refreshUpdateBanner);
 
     buildSidebarShell();
     settings::applyLabelHierarchy(this);
@@ -482,6 +488,39 @@ void AppWindow::buildSidebarShell()
     right->setMinimumWidth(480);
     auto *rightLayout = new QVBoxLayout(right);
     rightLayout->setContentsMargins(0, 0, 0, 0);
+    m_updateBanner = new QFrame(right);
+    m_updateBanner->setObjectName(QStringLiteral("updateBanner"));
+    m_updateBanner->setFrameShape(QFrame::StyledPanel);
+    auto *updateLayout = new QHBoxLayout(m_updateBanner);
+    updateLayout->setContentsMargins(settings::relatedSpacing(),
+                                     settings::tightSpacing(),
+                                     settings::relatedSpacing(),
+                                     settings::tightSpacing());
+    m_updateBannerText = new QLabel(m_updateBanner);
+    updateLayout->addWidget(m_updateBannerText, 1);
+    m_updateProgress = new QProgressBar(m_updateBanner);
+    m_updateProgress->setRange(0, 100);
+    m_updateProgress->setTextVisible(true);
+    m_updateProgress->setMaximumWidth(160);
+    updateLayout->addWidget(m_updateProgress);
+    m_updateAction = new QPushButton(m_updateBanner);
+    updateLayout->addWidget(m_updateAction);
+    m_updateLater = new QPushButton(QStringLiteral("Later"), m_updateBanner);
+    updateLayout->addWidget(m_updateLater);
+    m_updateDismiss = new QPushButton(QStringLiteral("×"), m_updateBanner);
+    m_updateDismiss->setAccessibleName(QStringLiteral("Dismiss update"));
+    m_updateDismiss->setFlat(true);
+    updateLayout->addWidget(m_updateDismiss);
+    connect(m_updateAction, &QPushButton::clicked,
+            m_controller->updates(), &UpdateController::updateNow);
+    connect(m_updateLater, &QPushButton::clicked, this, [this] {
+        m_updateBannerDeferred = true;
+        m_updateBanner->hide();
+    });
+    connect(m_updateDismiss, &QPushButton::clicked,
+            m_controller->updates(), &UpdateController::dismissAvailableVersion);
+    rightLayout->addWidget(m_updateBanner);
+    refreshUpdateBanner();
     m_autoSaveWarning = new QFrame(right);
     m_autoSaveWarning->setObjectName(QStringLiteral("autoSaveWarning"));
     m_autoSaveWarning->setFrameShape(QFrame::StyledPanel);
@@ -571,6 +610,73 @@ void AppWindow::buildSidebarShell()
     m_autoSaveTimer->setInterval(600);
     connect(m_pages, &SettingsPageSet::changed, m_autoSaveTimer, qOverload<>(&QTimer::start));
     connect(m_autoSaveTimer, &QTimer::timeout, this, &AppWindow::runAutoSave);
+}
+
+void AppWindow::refreshUpdateBanner()
+{
+    if (!m_updateBanner) {
+        return;
+    }
+    UpdateController *updates = m_controller->updates();
+    const QString availableVersion = updates->availableVersion();
+    if ((!availableVersion.isEmpty() && m_updateBannerVersion != availableVersion)
+        || m_updateBannerInstalledVersion != updates->currentVersion()) {
+        m_updateBannerDeferred = false;
+        m_updateBannerVersion = availableVersion;
+        m_updateBannerInstalledVersion = updates->currentVersion();
+    }
+    if (m_updateBannerDeferred
+        && (updates->state() == UpdateController::State::ReadyToRestart
+            || updates->state() == UpdateController::State::RestartPending)) {
+        m_updateBanner->hide();
+        return;
+    }
+    m_updateBanner->setVisible(updates->bannerVisible());
+    if (!updates->bannerVisible()) {
+        return;
+    }
+
+    m_updateProgress->hide();
+    m_updateAction->show();
+    m_updateAction->setEnabled(true);
+    m_updateLater->hide();
+    m_updateDismiss->hide();
+    switch (updates->state()) {
+    case UpdateController::State::UpdateAvailable:
+        m_updateBannerText->setText(
+            QStringLiteral("Speecher %1 is available").arg(updates->availableVersion()));
+        m_updateAction->setText(QStringLiteral("Update now"));
+        m_updateDismiss->show();
+        break;
+    case UpdateController::State::Downloading:
+        m_updateBannerText->setText(
+            QStringLiteral("Downloading Speecher %1").arg(updates->availableVersion()));
+        m_updateProgress->setValue(updates->downloadPercent());
+        m_updateProgress->show();
+        m_updateAction->hide();
+        m_updateDismiss->hide();
+        break;
+    case UpdateController::State::ReadyToRestart:
+        m_updateBannerText->setText(updates->errorMessage().isEmpty()
+                                        ? QStringLiteral("Restart to finish updating")
+                                        : updates->errorMessage());
+        m_updateAction->setText(QStringLiteral("Restart now"));
+        m_updateLater->show();
+        break;
+    case UpdateController::State::RestartPending:
+        m_updateBannerText->setText(QStringLiteral("Restarting after this dictation…"));
+        m_updateAction->setText(QStringLiteral("Restarting after this dictation…"));
+        m_updateAction->setEnabled(false);
+        break;
+    case UpdateController::State::Error:
+        m_updateBannerText->setText(updates->errorMessage());
+        m_updateAction->setText(QStringLiteral("Try again"));
+        m_updateDismiss->show();
+        break;
+    default:
+        m_updateBanner->hide();
+        break;
+    }
 }
 
 void AppWindow::filterSidebarPages(const QString &query)

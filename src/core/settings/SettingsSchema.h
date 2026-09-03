@@ -102,6 +102,7 @@ struct NumberRange {
 // meaningful when it can. Grows a member when a row needs one, not before.
 struct Capabilities {
     bool targetAccessibility = false;
+    bool isAppImage = false;
 };
 
 struct SettingsRow {
@@ -110,6 +111,7 @@ struct SettingsRow {
     QString id;
     QString label;
     QString help;
+    std::function<QString(const AppSettings &)> helpValue;
     RowKind kind = RowKind::Info;
     // The caption of an Action row's control, which is not its label.
     QString actionLabel;
@@ -183,6 +185,7 @@ struct SchemaContext {
     // This build can set up a virtual keyboard, so the Output page carries the
     // Advanced section that drives it.
     bool virtualKeyboardSetup = false;
+    QString currentVersion;
 };
 
 SettingsSchema buildSettingsSchema(const SchemaContext &context);

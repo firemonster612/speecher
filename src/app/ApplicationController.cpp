@@ -1,6 +1,12 @@
 #include "app/ApplicationController.h"
 
 #include "app/AppFrontEnd.h"
+#include "app/UpdateController.h"
+#ifdef Q_OS_MACOS
+#include "app/MacSparkleUpdater.h"
+#else
+#include "app/AppImageUpdater.h"
+#endif
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
@@ -87,6 +93,11 @@ ApplicationController::ApplicationController(bool popupOnly,
                                      this);
     m_session->setScreenshotContextProvider(
         m_platform->createScreenshotContextProvider(this));
+#ifdef Q_OS_MACOS
+    m_updates = new MacSparkleUpdater(m_settings, this);
+#else
+    m_updates = new AppImageUpdater(m_settings, m_session, this);
+#endif
 
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::stateChanged);
@@ -190,6 +201,11 @@ void ApplicationController::runDeferredStartup()
 SettingsStore *ApplicationController::settings() const
 {
     return m_settings;
+}
+
+UpdateController *ApplicationController::updates() const
+{
+    return m_updates;
 }
 
 SecretStore *ApplicationController::secretStore() const

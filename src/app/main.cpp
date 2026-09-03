@@ -1,4 +1,5 @@
 #include "app/ApplicationController.h"
+#include "app/UpdateController.h"
 #include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
 #include "core/SettingsStore.h"
@@ -138,6 +139,7 @@ int main(int argc, char **argv)
     QtFrontEnd frontEnd(&controller);
 #endif
     controller.setFrontEnd(&frontEnd);
+    controller.updates()->start();
     QString ipcError;
     if (!controller.startIpc(&ipcError)) {
         if (!decision.grabPath.isEmpty()) {

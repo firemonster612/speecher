@@ -89,10 +89,22 @@ step "Bundling Qt into the app (the slow part)"
 run_logged "Bundling Qt" "$MACDEPLOYQT" "$STAGING_DIR/speecher.app" -always-overwrite -codesign="$SIGN_IDENTITY"
 
 step "Signing the bundle"
-# Homebrew's macdeployqt does not reliably sign the whole tree despite
-# -codesign, so sign again explicitly: --deep covers the nested frameworks
-# and dylibs macdeployqt left unsigned, then the bundle itself.
-run_logged "Signing" codesign --force --deep --sign "$SIGN_IDENTITY" "$STAGING_DIR/speecher.app"
+SPARKLE="$STAGING_DIR/speecher.app/Contents/Frameworks/Sparkle.framework"
+# Sign Sparkle's XPC services first because they are its innermost code.
+run_logged "Signing Sparkle Downloader" codesign --force --sign "$SIGN_IDENTITY" \
+  "$SPARKLE/Versions/B/XPCServices/Downloader.xpc"
+run_logged "Signing Sparkle Installer" codesign --force --sign "$SIGN_IDENTITY" \
+  "$SPARKLE/Versions/B/XPCServices/Installer.xpc"
+# Sign the command-line updater nested inside the framework.
+run_logged "Signing Sparkle Autoupdate" codesign --force --sign "$SIGN_IDENTITY" \
+  "$SPARKLE/Versions/B/Autoupdate"
+# Sign Sparkle's updater app after its own nested code.
+run_logged "Signing Sparkle Updater" codesign --force --sign "$SIGN_IDENTITY" \
+  "$SPARKLE/Versions/B/Updater.app"
+# Seal the framework only after every nested component is signed.
+run_logged "Signing Sparkle framework" codesign --force --sign "$SIGN_IDENTITY" "$SPARKLE"
+# macdeployqt signs Qt's code; seal the app last without --deep.
+run_logged "Signing app" codesign --force --sign "$SIGN_IDENTITY" "$STAGING_DIR/speecher.app"
 
 step "Verifying the signature"
 if ! codesign --verify --deep --strict "$STAGING_DIR/speecher.app" >> "$LOG" 2>&1; then

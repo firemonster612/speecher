@@ -7,6 +7,7 @@
 #include <functional>
 
 class QVBoxLayout;
+class QLabel;
 
 namespace speecher {
 
@@ -58,6 +59,7 @@ public:
     void appendToDraft(AppSettings &draft) const;
     bool hasChanges(const AppSettings &settings) const;
     void setCapabilities(const Capabilities &capabilities);
+    void refresh();
 
 signals:
     void changed();
@@ -68,6 +70,7 @@ private:
         SettingsRow descriptor;
         QWidget *frame = nullptr;
         QWidget *control = nullptr;
+        QWidget *description = nullptr;
         // The container the row shares with the rest of its group, which is
         // what gets enabled and carries the group's tooltip.
         QWidget *group = nullptr;
