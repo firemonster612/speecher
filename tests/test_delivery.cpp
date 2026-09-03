@@ -883,6 +883,17 @@ private slots:
     }
 
 #ifdef SPEECHER_WITH_WAYLAND
+    void wlClipboardSnapshotIncludesPrivateFormats()
+    {
+        const QStringList offered{
+            QStringLiteral("text/plain"),
+            QStringLiteral("application/x-libreoffice-embed-source-xml"),
+            QStringLiteral("application/x-qt-image"),
+        };
+
+        QCOMPARE(WlClipboardDelivery::snapshotMimeTypes(offered), offered);
+    }
+
     void wlClipboardSnapshotCapturesAndRestoresEveryMimeType()
     {
         auto *original = new QMimeData;
