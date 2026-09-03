@@ -149,6 +149,8 @@ jobs:
 
           install_old() {
             stop_speecher || true
+            rm -rf "$HOME/Library/Caches/io.github.firemonster612.speecher" \
+              "$HOME/Library/Caches/io.github.firemonster612/speecher"
             rm -rf "$installed"
             mkdir -p "$(dirname "$installed")"
             ditto "$RUNNER_TEMP/old-speecher.app" "$installed"
@@ -165,6 +167,8 @@ jobs:
             else
               record "$label.defaults" FAIL 'QSettings keys did not round-trip'
             fi
+            qsettings_file="$(sed -n 's/^fileName=//p' "$evidence/$label-qsettings-readback.txt")"
+            cp "$qsettings_file" "$evidence/$label-qsettings.plist"
             defaults write "$domain" SUEnableAutomaticChecks -bool true
             defaults export "$domain" "$evidence/$label-defaults.plist"
             plutil -p "$evidence/$label-defaults.plist" > "$evidence/$label-defaults.txt"
@@ -178,6 +182,14 @@ jobs:
 
           collect_logs() {
             local label="$1"
+            if [[ -d "$HOME/Library/Caches/io.github.firemonster612.speecher" ]]; then
+              ditto "$HOME/Library/Caches/io.github.firemonster612.speecher" \
+                "$evidence/$label-sparkle-cache"
+            fi
+            if [[ -d "$HOME/Library/Caches/io.github.firemonster612/speecher" ]]; then
+              ditto "$HOME/Library/Caches/io.github.firemonster612/speecher" \
+                "$evidence/$label-app-cache"
+            fi
             find "$HOME/Library/Caches" -maxdepth 5 \
               \( -iname '*speecher*' -o -iname '*sparkle*' \) -print \
               > "$evidence/$label-cache-paths.txt" 2>&1 || true
@@ -201,6 +213,8 @@ jobs:
               }
               const bool autoInstall = QString::fromLocal8Bit(argv[1]) == QStringLiteral("true");
               QSettings settings(QStringLiteral("io.github.firemonster612"), QStringLiteral("speecher"));
+              settings.setFallbacksEnabled(false);
+              settings.clear();
               settings.setValue(QStringLiteral("app/setupCompleted"), true);
               settings.setValue(QStringLiteral("updates/channel"), QStringLiteral("nightly"));
               settings.setValue(QStringLiteral("updates/autoCheck"), true);
@@ -208,6 +222,7 @@ jobs:
               settings.sync();
 
               QTextStream output(stdout);
+              output << "fileName=" << settings.fileName() << '\n';
               for (const QString &key : settings.allKeys()) {
                   output << key << '=' << settings.value(key).toString() << '\n';
               }
