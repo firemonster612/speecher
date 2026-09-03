@@ -1,0 +1,35 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher stable updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher stable updates</description><item><title>0.2.0</title><pubDate>Thu, 3 Sep 2026 21:18:42 +0100</pubDate><sparkle:version>144</sparkle:version><sparkle:shortVersionString>0.2.0</sparkle:shortVersionString><description><![CDATA[<pre>## New
+
+- Speecher now updates itself. Pick a channel in Settings &gt; General &gt;
+  Updates: Stable Release (default) or Nightly Build, which is republished
+  from every push to master. By default the app only tells you when a new
+  version exists and updates when you press the button; a separate toggle
+  installs updates in the background if you prefer.
+- On Linux, first-run setup starts with a Global Shortcut page. On KDE
+  Plasma the shortcut registers itself; on GNOME, Hyprland, and other
+  desktops with the GlobalShortcuts portal, one click opens your desktop's
+  own binding dialog; everywhere else you get copy-paste instructions.
+  AppImage users can also add Speecher to their app menu and PATH from the
+  same page.
+- After an update, the settings window offers "See what's new", a page with
+  the release notes and the new settings themselves, live, so you can try
+  them without hunting.
+- macOS updates go through Sparkle. The app is still unsigned (see the
+  README for the one-time Gatekeeper step), but every update is verified
+  against the project's own signing key.
+
+## Changed
+
+- The app identity moved from the placeholder `local.speecher` to
+  `io.github.firemonster612.speecher`. Existing settings migrate on first
+  launch; the old files are left in place. On Plasma the toggle shortcut
+  re-registers under the new identity.
+- `speecher --version` now prints the exact build, including the commit a
+  Nightly Build came from.
+
+## Fixed
+
+- The bundled helper programs (ydotool setup, Wayland clipboard) now
+  resolve correctly when Speecher runs from an AppImage or a build tree.
+</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/v0.2.0/speecher.dmg" length="42437718" type="application/x-apple-diskimage" sparkle:edSignature="gtW6H7z5WBZdPam63oXIiC+H97ViUIxAHbDjX1YO8QhcbulXB1opStYWBd0oRmXK1BNYdu04Gml8z7wjGOl2Cw==" /></item></channel></rss>
