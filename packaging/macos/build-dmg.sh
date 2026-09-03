@@ -112,6 +112,12 @@ if ! codesign --verify --deep --strict "$STAGING_DIR/speecher.app" >> "$LOG" 2>&
   tail -15 "$LOG" >&2
   exit 1
 fi
+if [[ "$SIGN_IDENTITY" != "-" ]] \
+  && codesign -dv --verbose=4 "$STAGING_DIR/speecher.app" 2>&1 | grep -q '^Signature=adhoc$'; then
+  echo "The requested signing identity produced an ad-hoc signature." >&2
+  exit 1
+fi
+codesign -d -r- "$STAGING_DIR/speecher.app" 2> "$BUILD_DIR/designated-requirement.txt"
 
 step "Creating the disk image"
 ln -s /Applications "$STAGING_DIR/Applications"
