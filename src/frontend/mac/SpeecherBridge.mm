@@ -755,6 +755,33 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                          }
                      });
     QObject::connect(session,
+                     &DictationSession::popupFrozenChanged,
+                     &_state->lifetime,
+                     [weakSelf](bool frozen) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.popupFrozenChanged) {
+                             bridge.popupFrozenChanged(frozen);
+                         }
+                     });
+    QObject::connect(session,
+                     &DictationSession::popupOAuthRefreshRequested,
+                     &_state->lifetime,
+                     [weakSelf] {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.popupOAuthRefreshRequested) {
+                             bridge.popupOAuthRefreshRequested();
+                         }
+                     });
+    QObject::connect(session,
+                     &DictationSession::popupListeningIndicatorRequested,
+                     &_state->lifetime,
+                     [weakSelf] {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.popupListeningIndicatorRequested) {
+                             bridge.popupListeningIndicatorRequested();
+                         }
+                     });
+    QObject::connect(session,
                      &DictationSession::popupErrorRequested,
                      &_state->lifetime,
                      [weakSelf](const QString &message) {

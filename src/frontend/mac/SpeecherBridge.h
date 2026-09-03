@@ -161,7 +161,10 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, copy, nullable) void (^popupHideRequested)(void);
 @property (nonatomic, copy, nullable) void (^popupStatusChanged)(NSString *status);
 @property (nonatomic, copy, nullable) void (^popupPreviewChanged)(NSString *preview);
+@property (nonatomic, copy, nullable) void (^popupFrozenChanged)(BOOL frozen);
 @property (nonatomic, copy, nullable) void (^popupRefiningChanged)(BOOL refining);
+@property (nonatomic, copy, nullable) void (^popupOAuthRefreshRequested)(void);
+@property (nonatomic, copy, nullable) void (^popupListeningIndicatorRequested)(void);
 @property (nonatomic, copy, nullable) void (^popupErrorRequested)(NSString *message);
 // The panel is on screen, so the session need not wait out its fallback timer
 // before opening the microphone.

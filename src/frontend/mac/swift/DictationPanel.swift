@@ -97,6 +97,7 @@ final class SpeecherDictationPanel {
     private let state = DictationPanelState()
     private let bridge: SpeecherBridge
     private let panel: NSPanel
+    private var frozen = false
     private var levelObserver: AnyCancellable?
     private var screenObserver: AnyCancellable?
     /// The panel is 28pt above the bottom of the screen it sits on, which is
@@ -141,7 +142,15 @@ final class SpeecherDictationPanel {
     private func wire() {
         bridge.popupStatusChanged = { [weak self] status in self?.state.status = status }
         bridge.popupPreviewChanged = { [weak self] preview in self?.setPreview(preview) }
+        bridge.popupFrozenChanged = { [weak self] frozen in self?.frozen = frozen }
         bridge.popupRefiningChanged = { [weak self] refining in self?.state.refining = refining }
+        bridge.popupOAuthRefreshRequested = { [weak self] in
+            self?.state.status = "Refreshing sign-in…"
+            self?.state.preview = "Refreshing sign-in…"
+        }
+        bridge.popupListeningIndicatorRequested = { [weak self] in
+            self?.state.status = "Listening"
+        }
         bridge.popupErrorRequested = { [weak self] message in
             self?.show(problem: message)
         }
@@ -180,6 +189,7 @@ final class SpeecherDictationPanel {
     var level: NSWindow.Level { panel.level }
 
     private func setPreview(_ preview: String) {
+        guard !frozen else { return }
         state.preview = preview
         let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
         let textWidth = (preview as NSString).size(withAttributes: [.font: font]).width
