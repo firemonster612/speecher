@@ -93,8 +93,8 @@ SPARKLE="$STAGING_DIR/speecher.app/Contents/Frameworks/Sparkle.framework"
 # Sign Sparkle's XPC services first because they are its innermost code.
 run_logged "Signing Sparkle Downloader" codesign --force --sign "$SIGN_IDENTITY" \
   "$SPARKLE/Versions/B/XPCServices/Downloader.xpc"
-run_logged "Signing Sparkle InstallerLauncher" codesign --force --sign "$SIGN_IDENTITY" \
-  "$SPARKLE/Versions/B/XPCServices/InstallerLauncher.xpc"
+run_logged "Signing Sparkle Installer" codesign --force --sign "$SIGN_IDENTITY" \
+  "$SPARKLE/Versions/B/XPCServices/Installer.xpc"
 # Sign the command-line updater nested inside the framework.
 run_logged "Signing Sparkle Autoupdate" codesign --force --sign "$SIGN_IDENTITY" \
   "$SPARKLE/Versions/B/Autoupdate"
