@@ -2,7 +2,6 @@
 
 #include "app/CompositionSockets.h"
 #include "core/SettingsStore.h"
-#include "core/settings/SettingsCodecs.h"
 #include "output/TextDelivery.h"
 #include "output/mac/MacPasteDelivery.h"
 #include "platform/audio/QtAudioInput.h"
@@ -236,8 +235,6 @@ bool MacComposition::setLaunchAtLogin(bool enabled, QString *error) const
         if (error) {
             *error = QStringLiteral("Launch at login requires Speecher to run from an app bundle");
         }
-        SettingsCodecs settings;
-        settings.setLaunchAtLogin(false);
         return false;
     }
 
@@ -259,10 +256,6 @@ bool MacComposition::setLaunchAtLogin(bool enabled, QString *error) const
         *error = serviceError
             ? QString::fromUtf8(serviceError.localizedDescription.UTF8String)
             : QStringLiteral("macOS did not change the launch at login service");
-    }
-    if (!changed) {
-        SettingsCodecs settings;
-        settings.setLaunchAtLogin(launchAtLoginEnabled());
     }
     return changed;
 }

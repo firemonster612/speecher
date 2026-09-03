@@ -15,6 +15,7 @@
 #import "SpeecherUI-Swift.h"
 
 #include <QAbstractButton>
+#include <QDeadlineTimer>
 #include <QApplication>
 #include <QCheckBox>
 
@@ -136,9 +137,15 @@ private slots:
 
         QVERIFY(bridge.popupShowRequested);
         bridge.popupShowRequested(generation);
-        QCoreApplication::processEvents();
 
-        QTRY_COMPARE_WITH_TIMEOUT(ui.dictationPanelPresentedGeneration, generation, 250);
+        // The acknowledgement is deferred through the GCD main queue, which
+        // Qt's test event pump does not drain; only the CFRunLoop does.
+        const QDeadlineTimer deadline(2000);
+        while (ui.dictationPanelPresentedGeneration != generation && !deadline.hasExpired()) {
+            CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, true);
+            QCoreApplication::processEvents();
+        }
+        QCOMPARE(ui.dictationPanelPresentedGeneration, generation);
         [ui dismissDictationPanel];
     }
 
