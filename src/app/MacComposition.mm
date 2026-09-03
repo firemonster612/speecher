@@ -236,6 +236,8 @@ bool MacComposition::setLaunchAtLogin(bool enabled, QString *error) const
         if (error) {
             *error = QStringLiteral("Launch at login requires Speecher to run from an app bundle");
         }
+        SettingsCodecs settings;
+        settings.setLaunchAtLogin(false);
         return false;
     }
 

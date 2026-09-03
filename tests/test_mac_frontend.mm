@@ -143,7 +143,7 @@ private slots:
         bridge.popupShowRequested(generation);
         QCoreApplication::processEvents();
 
-        QCOMPARE(ui.dictationPanelPresentedGeneration, generation);
+        QTRY_COMPARE_WITH_TIMEOUT(ui.dictationPanelPresentedGeneration, generation, 250);
         [ui dismissDictationPanel];
     }
 

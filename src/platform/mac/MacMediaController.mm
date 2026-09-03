@@ -66,13 +66,13 @@ QString pauseScript(const QStringList &players)
                       "tell application id \"%1\"\n"
                       "if (player state as string) is \"playing\" then\n"
                       "pause\n"
-                      "set end of pausedPlayers to \"%1\"\n"
+                      "set end of my pausedPlayers to \"%1\"\n"
                       "end if\n"
                       "end tell\n")
                       .arg(player);
     }
     source += QStringLiteral(
-        "set AppleScript's text item delimiters to linefeed\nreturn pausedPlayers as text");
+        "set AppleScript's text item delimiters to linefeed\nreturn my pausedPlayers as text");
     return source;
 }
 

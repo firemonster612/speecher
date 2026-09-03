@@ -71,7 +71,10 @@ bool carbonHotKeyFor(const QKeySequence &shortcut, UInt32 *keyCode, UInt32 *modi
         return false;
     }
     const QKeyCombination combination = shortcut[0];
-    if (combination.keyboardModifiers() == Qt::NoModifier) {
+    const Qt::KeyboardModifiers qtModifiers = combination.keyboardModifiers();
+    const Qt::KeyboardModifiers globalModifiers = Qt::ControlModifier | Qt::MetaModifier
+        | Qt::AltModifier | Qt::ShiftModifier;
+    if (!(qtModifiers & globalModifiers)) {
         if (error) {
             *error = QStringLiteral("A macOS global shortcut must include at least one modifier key");
         }
@@ -89,7 +92,6 @@ bool carbonHotKeyFor(const QKeySequence &shortcut, UInt32 *keyCode, UInt32 *modi
 
     // Qt maps the Mac keyboard onto its portable enum: the Command key arrives as
     // Qt::ControlModifier and the Control key as Qt::MetaModifier.
-    const Qt::KeyboardModifiers qtModifiers = combination.keyboardModifiers();
     *modifiers = 0;
     if (qtModifiers & Qt::ControlModifier) {
         *modifiers |= cmdKey;
