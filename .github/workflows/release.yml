@@ -262,6 +262,7 @@ jobs:
 
           Update channels: https://github.com/${GITHUB_REPOSITORY}#installation--updates
           EOF
+            release_notes=release-notes.md
             if gh release view "$tag" >/dev/null 2>&1; then
               gh release edit "$tag" --prerelease --title "Nightly Build $version" --notes-file release-notes.md
             else
@@ -278,6 +279,10 @@ jobs:
             test "$GITHUB_REF_NAME" = "$tag"
             if [ -f "docs/releases/$version.md" ]; then
               release_notes="docs/releases/$version.md"
+              if ! awk 'NF && $1 !~ /^#/ { body = 1 } END { exit !body }' "$release_notes"; then
+                echo "$release_notes has headings but no release-note body." >&2
+                exit 1
+              fi
             else
               release_notes=release-notes.md
               printf 'Release notes have not been written. Add docs/releases/%s.md before the next release.\n' "$version" > "$release_notes"
@@ -301,6 +306,7 @@ jobs:
             --pub-date "$published_at" \
             --dmg-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/speecher.dmg" \
             --signature artifacts/macos-release/sparkle-signature.txt \
+            --notes-file "$release_notes" \
             --output "appcast-${channel}.xml"
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"

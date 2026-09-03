@@ -3,6 +3,7 @@
 
 import argparse
 from email.utils import formatdate
+from html import escape
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
@@ -35,6 +36,7 @@ def main() -> None:
     parser.add_argument("--pub-date", default=formatdate(usegmt=True))
     parser.add_argument("--dmg-url", required=True)
     parser.add_argument("--signature", type=Path)
+    parser.add_argument("--notes-file", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
@@ -48,6 +50,9 @@ def main() -> None:
     ET.SubElement(item, "pubDate").text = args.pub_date
     ET.SubElement(item, f"{{{SPARKLE_NAMESPACE}}}version").text = args.build_number
     ET.SubElement(item, f"{{{SPARKLE_NAMESPACE}}}shortVersionString").text = args.version
+    description_marker = "SPEECHER_RELEASE_NOTES"
+    if args.notes_file is not None:
+        ET.SubElement(item, "description").text = description_marker
     enclosure = {
         "url": args.dmg_url,
         "length": "0",
@@ -56,7 +61,15 @@ def main() -> None:
     enclosure.update(signature_attributes(args.signature))
     ET.SubElement(item, "enclosure", enclosure)
 
-    ET.ElementTree(rss).write(args.output, encoding="utf-8", xml_declaration=True)
+    xml = ET.tostring(rss, encoding="utf-8", xml_declaration=True).decode()
+    if args.notes_file is not None:
+        notes = escape(args.notes_file.read_text(encoding="utf-8"), quote=False)
+        notes = notes.replace("]]>", "]]&gt;")
+        xml = xml.replace(
+            f"<description>{description_marker}</description>",
+            f"<description><![CDATA[<pre>{notes}</pre>]]></description>",
+        )
+    args.output.write_text(xml, encoding="utf-8")
 
 
 if __name__ == "__main__":

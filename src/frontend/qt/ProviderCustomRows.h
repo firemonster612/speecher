@@ -24,7 +24,6 @@ public:
     void loadSecret();
     // Says why itself when the keyring refuses, because only it knows.
     bool saveSecret();
-    bool hasSecretChanges() const;
 
 private:
     SchemaCustomRow makeAuthModeRow(QWidget *parent, std::function<void()> notifyChanged);

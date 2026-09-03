@@ -48,11 +48,32 @@ struct RowView: View {
     @ViewBuilder private var custom: some View {
         if row.collection != nil {
             WritingProfileRows(row: row, model: model)
+        } else if row.rowId == "whatsNewNotes" {
+            releaseNotes
         } else if row.rowId == "openAiAuth" {
             LabeledContent { CredentialField(model: model) } label: { label }
         } else {
             picker
         }
+    }
+
+    private var releaseNotes: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(Self.text(row.value)
+                    .components(separatedBy: "\n\n").enumerated()), id: \.offset) { _, block in
+                if block == "---" {
+                    Divider()
+                } else {
+                    let heading = block.hasPrefix("#")
+                    let text = block.components(separatedBy: "\n")
+                        .map(Self.releaseNoteLine)
+                        .joined(separator: "\n")
+                    Text(Self.inlineMarkdown(text))
+                        .fontWeight(heading ? .bold : nil)
+                }
+            }
+        }
+        .textSelection(.enabled)
     }
 
     /// A pop-up button, which is what a Picker in a form row already is, and
@@ -81,6 +102,23 @@ struct RowView: View {
     static func flag(_ value: Any?) -> Bool { (value as? NSNumber)?.boolValue ?? false }
     static func number(_ value: Any?) -> Int { (value as? NSNumber)?.intValue ?? 0 }
     static func text(_ value: Any?) -> String { value as? String ?? "" }
+
+    private static func releaseNoteLine(_ line: String) -> String {
+        if line.hasPrefix("#") {
+            return String(line.drop(while: { $0 == "#" || $0 == " " }))
+        }
+        if line.hasPrefix("- ") {
+            return "• " + String(line.dropFirst(2))
+        }
+        return line
+    }
+
+    private static func inlineMarkdown(_ text: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        return (try? AttributedString(markdown: text, options: options))
+            ?? AttributedString(text)
+    }
 }
 
 /// A number with its range and its unit: the system's numeric field and stepper,

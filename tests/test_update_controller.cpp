@@ -332,6 +332,20 @@ private slots:
         QCOMPARE(chip->text(), QStringLiteral("install failed"));
 #endif
     }
+
+    void downgradeDoesNotCreatePendingWhatsNewState()
+    {
+        {
+            SettingsStore existingSettings;
+            existingSettings.raw().clear();
+            existingSettings.setUpdatesLastRunVersion(QStringLiteral("9.0.0"));
+        }
+
+        ApplicationController controller(true);
+        QVERIFY(controller.pendingWhatsNewVersion().isEmpty());
+        QCOMPARE(controller.settings()->updatesLastRunVersion(),
+                 QStringLiteral(SPEECHER_VERSION));
+    }
 };
 
 int runUpdateControllerTests(int argc, char **argv)

@@ -102,6 +102,8 @@ public:
     using SettingsCodecs::setWritingProfileSettings;
     using SettingsCodecs::setYdotoolEnabled;
     using SettingsCodecs::setUpdatesDismissedVersion;
+    using SettingsCodecs::setUpdatesLastRunVersion;
+    using SettingsCodecs::setUpdatesPendingWhatsNewVersion;
     using SettingsCodecs::setUpdatesLastCheckTime;
     using SettingsCodecs::snapshot;
     using SettingsCodecs::soundsEnabled;
@@ -116,6 +118,8 @@ public:
     using SettingsCodecs::ydotoolEnabled;
     using SettingsCodecs::updateChannel;
     using SettingsCodecs::updatesDismissedVersion;
+    using SettingsCodecs::updatesLastRunVersion;
+    using SettingsCodecs::updatesPendingWhatsNewVersion;
     using SettingsCodecs::updatesLastCheckTime;
 
     QString audioInputDeviceId() const;

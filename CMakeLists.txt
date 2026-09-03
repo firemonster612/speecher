@@ -386,6 +386,14 @@ add_library(speecher_domain STATIC
   ${SPEECHER_DOMAIN_SOURCES}
   ${SPEECHER_DOMAIN_HEADERS}
 )
+file(GLOB SPEECHER_RELEASE_NOTES CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/docs/releases/[0-9]*.md"
+)
+qt_add_resources(speecher_domain release_notes
+  PREFIX "/releases"
+  BASE "${CMAKE_CURRENT_SOURCE_DIR}/docs/releases"
+  FILES ${SPEECHER_RELEASE_NOTES}
+)
 target_include_directories(speecher_domain PUBLIC src)
 target_link_libraries(speecher_domain PUBLIC Qt6::Core)
 

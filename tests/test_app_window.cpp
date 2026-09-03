@@ -17,6 +17,7 @@
 #include <QFormLayout>
 #include <QFrame>
 #include <QClipboard>
+#include <QCheckBox>
 #include <QGuiApplication>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -26,6 +27,7 @@
 #include <QSignalSpy>
 #include <QSplitter>
 #include <QStandardPaths>
+#include <QStackedWidget>
 #include <QVBoxLayout>
 
 using namespace speecher;
@@ -106,7 +108,12 @@ private slots:
         window.show();
         QTRY_COMPARE_WITH_TIMEOUT(theme->currentData().toString(), QStringLiteral("light"), 250);
         theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
-        QTRY_COMPARE_WITH_TIMEOUT(controller.settings()->theme(), QStringLiteral("dark"), 1500);
+        // The change must not save immediately (that is the debounce), but
+        // waiting out the 600ms timer races slow CI runners, so drive the
+        // pending autosave deterministically instead.
+        QCOMPARE(controller.settings()->theme(), QStringLiteral("light"));
+        window.flushPendingAutoSave();
+        QCOMPARE(controller.settings()->theme(), QStringLiteral("dark"));
     }
 
     void dictationSummaryDefersSavedMicrophoneResolutionUntilShow()
@@ -200,6 +207,30 @@ private slots:
         QCOMPARE(controller.settings()->theme(), QStringLiteral("dark"));
     }
 
+    void savingAnotherPageDoesNotRevertWhatsNewSettings()
+    {
+        ApplicationController controller(true);
+        QWidget parent;
+        SchemaContext context;
+        context.currentVersion = QStringLiteral("0.2.0");
+        context.lastSeenVersion = QStringLiteral("0.1.0");
+        SettingsPageSet pages(&controller, &parent, buildSettingsSchema(context));
+        pages.loadBeforeShow();
+
+        auto *autoCheck = pages.whatsNew()->findChild<QCheckBox *>(
+            QStringLiteral("autoCheckUpdates"));
+        QVERIFY(autoCheck);
+        autoCheck->setChecked(false);
+        QVERIFY(pages.save(false, false));
+
+        auto *theme = pages.general()->findChild<QComboBox *>(QStringLiteral("themeControl"));
+        QVERIFY(theme);
+        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
+        QVERIFY(pages.save(false, false));
+
+        QVERIFY(!controller.settings()->autoCheckUpdates());
+    }
+
 #ifndef Q_OS_MACOS
     // macOS takes its header colors from the system palette, so there is no
     // kdeglobals reader to exercise there.
@@ -271,6 +302,22 @@ private slots:
         window.navigateToSettings(AppPageId::Output);
         QCOMPARE(window.findChild<QListWidget *>(QStringLiteral("appNavigation"))->currentItem()->text(),
                  QStringLiteral("Output"));
+    }
+
+    void sidebarCanReturnToThePageThatOpenedWhatsNew()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        auto *stack = window.findChild<QStackedWidget *>();
+        auto *whatsNew = window.findChild<QPushButton *>(QStringLiteral("whatsNew"));
+        QVERIFY(navigation && stack && whatsNew);
+
+        navigation->setCurrentRow(1);
+        whatsNew->click();
+        QCOMPARE(stack->currentIndex(), 8);
+        navigation->setCurrentRow(1);
+        QCOMPARE(stack->currentIndex(), 1);
     }
 
     void saveReportsFailedValidator()

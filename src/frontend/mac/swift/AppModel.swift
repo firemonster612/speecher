@@ -150,7 +150,9 @@ final class AppModel: ObservableObject {
                 || (pane.id == "general" && !ownedPages.contains(page.pageId))
             guard belongsHere else { return [] }
             return page.sections.compactMap { section -> PaneCard? in
-                let unplaced = section.rows.filter { !claimed.contains($0.rowId) }
+                let unplaced = page.pageId == "whatsNew"
+                    ? section.rows
+                    : section.rows.filter { !claimed.contains($0.rowId) }
                 guard !unplaced.isEmpty else { return nil }
                 return PaneCard(title: section.title.isEmpty ? page.title : section.title,
                                 help: section.help,
@@ -176,6 +178,7 @@ final class AppModel: ObservableObject {
     }
 
     func trigger(_ rowId: String) {
+        if rowId == "whatsNew" { pane = "whatsNew" }
         bridge.settingsSchema.actionTriggered?(rowId)
     }
 
