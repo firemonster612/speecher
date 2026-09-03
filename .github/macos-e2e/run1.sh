@@ -35,11 +35,11 @@ else
   poll_status idle 10 >"$CASE_DIR/idle-status.txt" || errors+=("session did not return to idle")
   phase_capture hidden
   panel_gone || errors+=("panel remained onscreen after completion")
-  grep -q '"event":"qt-show-emit"' "$CASE_DIR/panel-events.jsonl" 2>/dev/null || errors+=("Qt show emission was not recorded")
-  grep -q '"event":"bridge-show".*"blockWasNil":false' "$CASE_DIR/panel-events.jsonl" 2>/dev/null || errors+=("bridge show block was nil or unrecorded")
-  grep -q '"event":"show"' "$CASE_DIR/panel-events.jsonl" 2>/dev/null || errors+=("Swift show receipt was not recorded")
-  grep -q '"event":"position"' "$CASE_DIR/panel-events.jsonl" 2>/dev/null || errors+=("panel position evidence was not recorded")
-  grep -q '"event":"presented"' "$CASE_DIR/panel-events.jsonl" 2>/dev/null || errors+=("post-ordering panel state was not recorded")
+  panel_event_exists qt-show-emit || errors+=("Qt show emission was not recorded")
+  panel_event_exists bridge-show false || errors+=("bridge show block was nil or unrecorded")
+  panel_event_exists show || errors+=("Swift show receipt was not recorded")
+  panel_event_exists position || errors+=("panel position evidence was not recorded")
+  panel_event_exists presented || errors+=("post-ordering panel state was not recorded")
   if (( ${#errors[@]} )); then fail_case "$(IFS='; '; echo "${errors[*]}")"; else pass_case "The panel appeared with rendered pixels, crossed every instrumented layer, and hid after delivery."; fi
 fi
 

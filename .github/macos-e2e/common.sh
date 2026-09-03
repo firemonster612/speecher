@@ -140,7 +140,8 @@ launch_app() {
 }
 
 poll_process() {
-  local timeout="$1" count=0 limit=$((timeout * 10))
+  local timeout="$1" count=0 limit
+  limit=$((timeout * 10))
   while (( count < limit )); do
     if kill -0 "$APP_PID" >/dev/null 2>&1 && [[ "$(pgrep -x speecher | wc -l | tr -d ' ')" == 1 ]]; then
       return 0
@@ -156,7 +157,8 @@ cli() {
 }
 
 poll_status() {
-  local wanted="$1" timeout="${2:-15}" count=0 limit=$((timeout * 5)) status
+  local wanted="$1" timeout="${2:-15}" count=0 limit status
+  limit=$((timeout * 5))
   while (( count < limit )); do
     status="$(cli status 2>/dev/null | tail -1)"
     if [[ "$status" == "$wanted" ]]; then
@@ -173,7 +175,8 @@ poll_status() {
 poll_status_one_of() {
   local timeout="$1"
   shift
-  local count=0 limit=$((timeout * 5)) status wanted
+  local count=0 limit status wanted
+  limit=$((timeout * 5))
   while (( count < limit )); do
     status="$(cli status 2>/dev/null | tail -1)"
     for wanted in "$@"; do
@@ -216,6 +219,25 @@ for window in json.load(open(sys.argv[1])):
     if (window.get("layer") == 25 and window.get("isOnscreen") and window.get("alpha", 0) > 0
             and bounds.get("Width", 0) >= 420 and abs(bounds.get("Height", 0) - 72) < 1):
         raise SystemExit(1)
+PY
+}
+
+panel_event_exists() {
+  local event="$1" block="${2:-any}" file="$CASE_DIR/panel-events.jsonl"
+  [[ -f "$file" ]] || return 1
+  python3 - "$file" "$event" "$block" <<'PY'
+import json, sys
+path, event, block = sys.argv[1:]
+for raw in open(path):
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        continue
+    if value.get("event") != event:
+        continue
+    if block == "any" or value.get("blockWasNil") is (block == "true"):
+        raise SystemExit(0)
+raise SystemExit(1)
 PY
 }
 

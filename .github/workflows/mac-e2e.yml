@@ -16,9 +16,12 @@ jobs:
   run1:
     name: Run 1, build and core functional
     runs-on: macos-26
-    timeout-minutes: 56
+    timeout-minutes: 53
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Restore build caches
         uses: actions/cache@v4
@@ -71,7 +74,7 @@ jobs:
             -addext 'extendedKeyUsage=codeSigning' \
             -keyout "$RUNNER_TEMP/e2e-key.pem" \
             -out "$RUNNER_TEMP/e2e-cert.pem"
-          openssl pkcs12 -export \
+          openssl pkcs12 -export -legacy \
             -inkey "$RUNNER_TEMP/e2e-key.pem" \
             -in "$RUNNER_TEMP/e2e-cert.pem" \
             -out "$RUNNER_TEMP/e2e-signing.p12" \
@@ -80,7 +83,8 @@ jobs:
           security unlock-keychain -p e2e "$keychain"
           security set-keychain-settings -lut 7200 "$keychain"
           security import "$RUNNER_TEMP/e2e-signing.p12" -k "$keychain" -P e2e -T /usr/bin/codesign
-          security add-trusted-cert -r trustRoot -k "$keychain" "$RUNNER_TEMP/e2e-cert.pem"
+          sudo security add-trusted-cert -d -r trustRoot \
+            -k /Library/Keychains/System.keychain "$RUNNER_TEMP/e2e-cert.pem"
           security set-key-partition-list -S apple-tool:,apple: -s -k e2e "$keychain"
           security list-keychains -d user -s "$keychain"
           security default-keychain -d user -s "$keychain"
@@ -93,6 +97,13 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DSPEECHER_BUILD_TESTS=OFF
+
+      - name: Seed Finder Automation before packaging
+        run: |
+          python3 .github/macos-e2e/tcc_seed.py \
+            "$HOME/Library/Application Support/com.apple.TCC/TCC.db" \
+            kTCCServiceAppleEvents /usr/bin/osascript 2 com.apple.finder 1
+          sudo launchctl kickstart -k system/com.apple.tccd || sudo killall tccd
 
       - name: Build and package once
         env:
@@ -148,9 +159,12 @@ jobs:
     needs: run1
     if: always() && needs.run1.result != 'cancelled'
     runs-on: macos-26
-    timeout-minutes: 34
+    timeout-minutes: 33
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Download run 1 product and evidence
         uses: actions/download-artifact@v8
@@ -187,10 +201,13 @@ jobs:
       - name: Publish combined verdict summary
         if: always()
         run: |
-          printf '## Run 1\n\n' >> "$GITHUB_STEP_SUMMARY"
-          cat "$RUNNER_TEMP/run1-download/mac-e2e-run1/verdicts.txt" >> "$GITHUB_STEP_SUMMARY"
-          printf '\n## Run 2\n\n' >> "$GITHUB_STEP_SUMMARY"
-          cat "$RUNNER_TEMP/mac-e2e-run2/verdicts.txt" >> "$GITHUB_STEP_SUMMARY"
+          combined="$RUNNER_TEMP/combined-verdicts.txt"
+          cat "$RUNNER_TEMP/run1-download/mac-e2e-run1/verdicts.txt" \
+            "$RUNNER_TEMP/mac-e2e-run2/verdicts.txt" > "$combined"
+          printf '## All case verdicts, failures first\n\n' >> "$GITHUB_STEP_SUMMARY"
+          for status in FAIL PASS BLOCKED; do
+            grep ": $status " "$combined" >> "$GITHUB_STEP_SUMMARY" || true
+          done
 
       - name: Enforce run 2 verdicts
         if: always()

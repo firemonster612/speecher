@@ -27,7 +27,7 @@ else
   use_app /Applications/speecher.app
   baseline_reset
   launchctl setenv SPEECHER_E2E_EVIDENCE_DIR "$CASE_DIR" >/dev/null 2>&1 || true
-  if ! open -a Speecher >"$CASE_DIR/open.out" 2>"$CASE_DIR/open.err"; then
+  if ! open "$APP_BUNDLE" >"$CASE_DIR/open.out" 2>"$CASE_DIR/open.err"; then
     fail_case "LaunchServices rejected the copied app."
   else
     APP_PID="$(pgrep -x speecher | head -1 || true)"
@@ -52,7 +52,7 @@ else
   hdiutil detach "$mount" -quiet || true
   use_app /Applications/speecher.app
   xattr -w com.apple.quarantine "0083;$(printf %x "$(date +%s)");Safari;$(uuidgen)" "$APP_BUNDLE"
-  open -a Speecher >"$CASE_DIR/open.out" 2>"$CASE_DIR/open.err" || true
+  open "$APP_BUNDLE" >"$CASE_DIR/open.out" 2>"$CASE_DIR/open.err" || true
   for _ in {1..50}; do pgrep -x speecher >/dev/null || { sleep 0.2; continue; }; break; done
   spctl -a -vv "$APP_BUNDLE" >"$CASE_DIR/spctl.out" 2>"$CASE_DIR/spctl.err"
   spctl_rc=$?
