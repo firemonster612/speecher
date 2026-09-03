@@ -98,6 +98,7 @@ final class SpeecherDictationPanel {
     private let bridge: SpeecherBridge
     private let panel: NSPanel
     private var frozen = false
+    private(set) var presentedGeneration: UInt64 = 0
     private var levelObserver: AnyCancellable?
     private var screenObserver: AnyCancellable?
     /// The panel is 28pt above the bottom of the screen it sits on, which is
@@ -165,7 +166,9 @@ final class SpeecherDictationPanel {
         present()
         // The session waits out a 50ms fallback otherwise; telling it the panel
         // is up lets the microphone open as soon as the frame is on screen.
-        DispatchQueue.main.async { [bridge] in
+        DispatchQueue.main.async { [weak self, bridge] in
+            guard let self else { return }
+            presentedGeneration = generation
             bridge.notePopupPresented(generation: generation)
         }
     }

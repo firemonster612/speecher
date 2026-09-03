@@ -10,6 +10,15 @@
 
 #import <AppKit/AppKit.h>
 
+@interface SpeecherMacUI : NSObject
+- (instancetype)initWithBridge:(SpeecherBridge *)bridge;
+- (void)showDictationProblem:(NSString *)message;
+- (void)dismissDictationPanel;
+@property (nonatomic, readonly) BOOL dictationPanelVisible;
+@property (nonatomic, readonly) NSInteger dictationPanelLevel;
+@property (nonatomic, readonly) uint64_t dictationPanelPresentedGeneration;
+@end
+
 #include <QAbstractButton>
 #include <QApplication>
 #include <QCheckBox>
@@ -99,6 +108,43 @@ private slots:
         MacFrontEnd frontEnd(&controller);
 
         QCOMPARE(widgetCount<TranscriberPopup>(), existingPopups);
+    }
+
+    void nativeDictationProblemCanBeDismissed()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
+
+        [ui showDictationProblem:@"The microphone stopped"];
+        QVERIFY(ui.dictationPanelVisible);
+
+        [ui dismissDictationPanel];
+        QVERIFY(!ui.dictationPanelVisible);
+    }
+
+    void nativeDictationPanelUsesStatusWindowLevel()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
+
+        QCOMPARE(ui.dictationPanelLevel, NSInteger(NSStatusWindowLevel));
+    }
+
+    void popupPresentationAcknowledgesRequestedGeneration()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
+        constexpr uint64_t generation = 73;
+
+        QVERIFY(bridge.popupShowRequested);
+        bridge.popupShowRequested(generation);
+        QCoreApplication::processEvents();
+
+        QCOMPARE(ui.dictationPanelPresentedGeneration, generation);
+        [ui dismissDictationPanel];
     }
 
     void skippingSetupOpensTheNativeSettingsWindow()

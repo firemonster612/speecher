@@ -114,6 +114,9 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @objc public var dictationPanelLevel: Int { panel.level.rawValue }
 
+    @MainActor
+    @objc public var dictationPanelPresentedGeneration: UInt64 { panel.presentedGeneration }
+
     /// Brings Speecher forward so whatever it just put on screen can be seen.
     @MainActor
     @objc public func activate() {
