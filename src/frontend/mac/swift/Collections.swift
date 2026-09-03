@@ -94,7 +94,7 @@ final class CollectionEditor: ObservableObject {
             guard let restored = deleted.popLast() else { return }
             records.insert(restored, at: records.firstIndex { !$0.locked } ?? records.count)
         } else if actionId == "undoLatestLearn" {
-            guard let index = records.firstIndex(where: { !$0.locked }) else { return }
+            guard let index = records.lastIndex(where: { !$0.locked }) else { return }
             deleted.append(records.remove(at: index))
         }
         save()
@@ -355,7 +355,9 @@ struct RecordField: View {
         case .choice:
             Picker("", selection: Binding(get: { text }, set: { value = $0 })) {
                 ForEach(column.options, id: \.rowOptionId) { option in
-                    Text(option.label).tag(option.rowOptionId)
+                    Text(option.label)
+                        .tag(option.rowOptionId)
+                        .disabled(!option.enabled)
                 }
             }
             .labelsHidden()

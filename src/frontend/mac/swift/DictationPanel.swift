@@ -62,6 +62,7 @@ struct DictationPanelView: View {
         }
         .scenePadding()
         .frame(height: pillHeight)
+        .background(.regularMaterial, in: .capsule)
         .glassEffect(in: .capsule)
     }
 
@@ -96,7 +97,10 @@ final class SpeecherDictationPanel {
     private let state = DictationPanelState()
     private let bridge: SpeecherBridge
     private let panel: NSPanel
+    private var frozen = false
+    private(set) var presentedGeneration: UInt64 = 0
     private var levelObserver: AnyCancellable?
+    private var screenObserver: AnyCancellable?
     /// The panel is 28pt above the bottom of the screen it sits on, which is
     /// where the Qt popup put itself and where the eye expects it.
     private let bottomMargin: CGFloat = 28
@@ -113,27 +117,41 @@ final class SpeecherDictationPanel {
                         backing: .buffered,
                         defer: false)
         panel.level = .statusBar
+        panel.isReleasedWhenClosed = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.animationBehavior = .utilityWindow
-        panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.contentView = NSHostingView(rootView: DictationPanelView(state: state) { [bridge] in
-            bridge.stopListening()
+        panel.contentView = NSHostingView(rootView: DictationPanelView(state: state) { [weak self] in
+            self?.dismiss()
         })
         wire()
         // The level arrives through the model, which is the one reader of the
         // bridge's audio callback: two readers of one block would mean the
         // second one silently replaced the first.
         levelObserver = model.$level.sink { [weak self] level in self?.state.level = level }
+        screenObserver = NotificationCenter.default
+            .publisher(for: NSApplication.didChangeScreenParametersNotification)
+            .sink { [weak self] _ in
+                guard self?.panel.isVisible == true else { return }
+                self?.position()
+            }
     }
 
     private func wire() {
         bridge.popupStatusChanged = { [weak self] status in self?.state.status = status }
         bridge.popupPreviewChanged = { [weak self] preview in self?.setPreview(preview) }
+        bridge.popupFrozenChanged = { [weak self] frozen in self?.frozen = frozen }
         bridge.popupRefiningChanged = { [weak self] refining in self?.state.refining = refining }
+        bridge.popupOAuthRefreshRequested = { [weak self] in
+            self?.state.status = "Refreshing sign-in…"
+            self?.state.preview = "Refreshing sign-in…"
+        }
+        bridge.popupListeningIndicatorRequested = { [weak self] in
+            self?.state.status = "Listening"
+        }
         bridge.popupErrorRequested = { [weak self] message in
             self?.show(problem: message)
         }
@@ -148,7 +166,9 @@ final class SpeecherDictationPanel {
         present()
         // The session waits out a 50ms fallback otherwise; telling it the panel
         // is up lets the microphone open as soon as the frame is on screen.
-        DispatchQueue.main.async { [bridge] in
+        DispatchQueue.main.async { [weak self, bridge] in
+            guard let self else { return }
+            presentedGeneration = generation
             bridge.notePopupPresented(generation: generation)
         }
     }
@@ -162,7 +182,17 @@ final class SpeecherDictationPanel {
         present()
     }
 
+    func dismiss() {
+        state.problem = ""
+        panel.orderOut(nil)
+        bridge.stopListening()
+    }
+
+    var isVisible: Bool { panel.isVisible }
+    var level: NSWindow.Level { panel.level }
+
     private func setPreview(_ preview: String) {
+        guard !frozen else { return }
         state.preview = preview
         let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
         let textWidth = (preview as NSString).size(withAttributes: [.font: font]).width
@@ -181,13 +211,19 @@ final class SpeecherDictationPanel {
     /// The panel belongs on the display the user is working on, which on a
     /// multi-display Mac is often not the primary one.
     private func present() {
+        position()
+        panel.orderFrontRegardless()
+    }
+
+    private func position() {
         let pointer = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { $0.frame.contains(pointer) } ?? NSScreen.main
+        let screen = NSScreen.screens.first { $0.visibleFrame.contains(pointer) }
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
         if let area = screen?.visibleFrame {
             let size = panel.frame.size
             panel.setFrameOrigin(NSPoint(x: area.midX - size.width / 2,
                                          y: area.minY + bottomMargin))
         }
-        panel.orderFrontRegardless()
     }
 }

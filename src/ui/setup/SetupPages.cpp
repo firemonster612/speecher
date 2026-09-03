@@ -27,6 +27,7 @@
 #ifdef Q_OS_MACOS
 #include <QApplication>
 #include <QDesktopServices>
+#include <QElapsedTimer>
 #include <QPermissions>
 #include <QTimer>
 #include <QUrl>
@@ -294,10 +295,20 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
     layout->addStretch();
 
     m_input = m_platform.createAudioInput(&m_settings, this);
-    connect(m_input, &AudioInput::levelChanged, this, [this](float level) {
+#ifdef Q_OS_MACOS
+    auto inputVolumeRefresh = std::make_shared<QElapsedTimer>();
+#endif
+    connect(m_input, &AudioInput::levelChanged, this, [this
+#ifdef Q_OS_MACOS
+                                                       , inputVolumeRefresh
+#endif
+    ](float level) {
         m_level->setValue(qBound(0, qRound(level * 100.0f), 100));
 #ifdef Q_OS_MACOS
-        refreshInputVolume();
+        if (!inputVolumeRefresh->isValid() || inputVolumeRefresh->elapsed() >= 500) {
+            inputVolumeRefresh->restart();
+            refreshInputVolume();
+        }
 #endif
         if (level > 0.01f) {
             m_status->setText(QStringLiteral("Microphone input detected."));

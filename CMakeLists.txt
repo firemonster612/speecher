@@ -815,6 +815,9 @@ if(SPEECHER_BUILD_TESTS)
   if(TARGET speecher_frontend_mac)
     target_sources(speecher_tests PRIVATE tests/test_mac_frontend.mm)
     target_compile_definitions(speecher_tests PRIVATE SPEECHER_WITH_SWIFT_UI=1)
+    # The generated Swift header is private to the front-end library; the test
+    # exercises the Swift panel through it, so it needs the same include.
+    target_include_directories(speecher_tests PRIVATE "${SPEECHER_SWIFT_HEADER_DIR}")
     # ARC, as the bridge itself is built: an unmanaged bridge in one test would
     # outlive its controller and every suite after it.
     target_compile_options(speecher_tests PRIVATE
