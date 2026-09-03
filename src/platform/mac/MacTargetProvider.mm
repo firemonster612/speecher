@@ -76,6 +76,19 @@ AXUIElementRef copyFocusedElement()
     return focused;
 }
 
+bool isFocusedElement(AXUIElementRef expected)
+{
+    if (!expected) {
+        return false;
+    }
+    AXUIElementRef focused = copyFocusedElement();
+    const bool matches = focused && CFEqual(focused, expected);
+    if (focused) {
+        CFRelease(focused);
+    }
+    return matches;
+}
+
 QString focusedWindowTitle(pid_t processId)
 {
     if (!AXIsProcessTrusted()) {
@@ -206,6 +219,7 @@ bool MacTargetProvider::canInsertText(const Target &target)
 {
     return !target.secure
         && stillFocused(target)
+        && isFocusedElement(static_cast<AXUIElementRef>(m_focusedElement))
         && selectedTextIsSettable(static_cast<AXUIElementRef>(m_focusedElement));
 }
 
@@ -240,7 +254,8 @@ bool MacTargetProvider::insertText(const Target &target, const QString &plainTex
 
 bool MacTargetProvider::verifyInsertion(const Target &target, const QString &plainText)
 {
-    if (!m_focusedElement || plainText.isEmpty() || target.secure || !stillFocused(target)) {
+    if (!m_focusedElement || plainText.isEmpty() || target.secure || !stillFocused(target)
+        || !isFocusedElement(static_cast<AXUIElementRef>(m_focusedElement))) {
         return false;
     }
     for (int attempt = 0; attempt < insertionVerificationAttempts; ++attempt) {
