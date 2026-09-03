@@ -158,7 +158,8 @@ jobs:
             local auto_install="$1"
             local label="$2"
             defaults delete "$domain" 2>/dev/null || true
-            if "$RUNNER_TEMP/seed-settings" "$auto_install" \
+            if DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib" \
+              "$RUNNER_TEMP/seed-settings" "$auto_install" \
               > "$evidence/$label-qsettings-readback.txt"; then
               record "$label.defaults" PASS 'QSettings keys were written and read back'
             else
@@ -189,8 +190,8 @@ jobs:
           }
 
           cat > "$RUNNER_TEMP/seed-settings.cpp" <<'CPP'
-          #include <QSettings>
-          #include <QTextStream>
+          #include <QtCore/QSettings>
+          #include <QtCore/QTextStream>
 
           int main(int argc, char **argv)
           {
@@ -219,7 +220,8 @@ jobs:
           }
           CPP
           c++ -std=c++20 "$RUNNER_TEMP/seed-settings.cpp" \
-            $(pkg-config --cflags --libs Qt6Core) -o "$RUNNER_TEMP/seed-settings"
+            -F"$QT_ROOT_DIR/lib" -framework QtCore \
+            -Wl,-rpath,"$QT_ROOT_DIR/lib" -o "$RUNNER_TEMP/seed-settings"
 
           cert_dir="$RUNNER_TEMP/certs"
           mkdir -p "$cert_dir"
