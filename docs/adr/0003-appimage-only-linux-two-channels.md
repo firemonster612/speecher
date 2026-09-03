@@ -34,3 +34,11 @@ comparison.
   portal story covers it.
 - CI must checkout with full history and tags (fetch-depth: 0) or
   build numbers stop being monotonic.
+
+## Amendment 2026-09-03
+
+CI builds the AppImage in a Debian trixie container and bundles the matching
+Qt 6 and KDE stack. This sets glibc 2.41 as the Linux compatibility floor. The
+Ubuntu 22.04 build used a separate Qt installation with no KDE Frameworks 6,
+so it could not provide native Plasma styling, icons, Global Shortcuts, or the
+KDE setup assistant.

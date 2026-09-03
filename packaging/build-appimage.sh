@@ -83,9 +83,11 @@ rm -rf "$APPDIR_PATH"
 # into the build (SPEECHER_QT_PREFIX wins, QT_ROOT_DIR is what CI's Qt action exports).
 QT_PREFIX_HINT="${SPEECHER_QT_PREFIX:-${QT_ROOT_DIR:-}}"
 CMAKE_CONFIGURE_ARGS=(
+  -G Ninja
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
   -DSPEECHER_DESKTOP_EXEC=speecher
   -DSPEECHER_BUILD_TESTS=OFF
+  -DSPEECHER_WITH_KDE=ON
 )
 if [[ -n "$QT_PREFIX_HINT" ]]; then
   CMAKE_CONFIGURE_ARGS+=("-DCMAKE_PREFIX_PATH=$QT_PREFIX_HINT")
@@ -133,7 +135,7 @@ skip_library() {
   local name
   name="$(basename "$1")"
   case "$name" in
-    ld-linux*|linux-vdso*|libc.so*|libm.so*|libdl.so*|libpthread.so*|librt.so*|libresolv.so*|libutil.so*|libnss_*.so*|libcrypt.so*|libblkid.so*|libmount.so*|libsasl2.so*|libevent*.so*|libunistring.so*|libGL*.so*|libEGL*.so*|libOpenGL*.so*|libwayland-client.so*|libxcb.so*|libX11.so*|libfontconfig.so*|libfreetype.so*|libharfbuzz.so*)
+    ld-linux*|linux-vdso*|libc.so*|libm.so*|libdl.so*|libpthread.so*|librt.so*|libresolv.so*|libutil.so*|libnss_*.so*|libcrypt.so*|libGL*.so*|libEGL*.so*|libOpenGL*.so*|libwayland-client.so*|libxcb.so*|libX11.so*|libfontconfig.so*|libfreetype.so*|libharfbuzz.so*)
       return 0
       ;;
     *)
@@ -189,6 +191,7 @@ copy_plugin_dir() {
 copy_plugin_dir platforms
 copy_plugin_dir platformthemes
 copy_plugin_dir styles
+copy_plugin_dir iconengines
 copy_plugin_dir tls
 copy_plugin_dir multimedia
 copy_plugin_dir platforminputcontexts
@@ -206,6 +209,15 @@ while IFS= read -r plugin; do
 done < <(find "$APPDIR_PATH/usr/plugins" -type f -name '*.so')
 echo "Finishing runtime dependency closure"
 copy_deps_closure
+
+BREEZE_ICON_DIR="/usr/share/icons/breeze"
+if [[ ! -f "$BREEZE_ICON_DIR/index.theme" ]]; then
+  echo "The breeze-icon-theme package is required to build the AppImage" >&2
+  exit 1
+fi
+echo "Copying Breeze fallback icon theme"
+mkdir -p "$APPDIR_PATH/usr/share/icons"
+cp -a "$BREEZE_ICON_DIR" "$APPDIR_PATH/usr/share/icons/"
 
 if [[ ! -f "$APPDIR_PATH/usr/lib/libQt6Core.so.6" ]]; then
   echo "libQt6Core.so.6 was not bundled; the dependency closure is broken" >&2
@@ -229,6 +241,10 @@ export PATH="$HERE/usr/bin:${PATH:-}"
 export LD_LIBRARY_PATH="$HERE/usr/lib:${LD_LIBRARY_PATH:-}"
 export QT_PLUGIN_PATH="$HERE/usr/plugins"
 export QT_QPA_PLATFORM_PLUGIN_PATH="$HERE/usr/plugins/platforms"
+export XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:$HERE/usr/share"
+if [[ -z "${QT_QPA_PLATFORMTHEME:-}" && "${XDG_CURRENT_DESKTOP:-}" == *KDE* ]]; then
+  export QT_QPA_PLATFORMTHEME=kde
+fi
 exec "$HERE/usr/bin/speecher" "$@"
 EOF
 chmod +x "$APPDIR_PATH/AppRun"
