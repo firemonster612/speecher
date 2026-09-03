@@ -190,6 +190,7 @@ jobs:
           }
 
           cat > "$RUNNER_TEMP/seed-settings.cpp" <<'CPP'
+          #include <arm_acle.h>
           #include <QtCore/QSettings>
           #include <QtCore/QTextStream>
 
