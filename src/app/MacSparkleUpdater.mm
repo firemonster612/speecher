@@ -2,6 +2,10 @@
 
 #include "core/SettingsStore.h"
 
+#include <QTimer>
+
+#include <cstdlib>
+
 #import <Sparkle/Sparkle.h>
 
 namespace speecher {
@@ -29,6 +33,10 @@ NSString *const nightlyFeedUrl = @"https://firemonster612.github.io/speecher/app
 - (NSString *)feedURLStringForUpdater:(SPUUpdater *)updater
 {
     Q_UNUSED(updater);
+    const char *overrideUrl = std::getenv("SPEECHER_APPCAST_URL");
+    if (overrideUrl != nullptr && overrideUrl[0] != '\0') {
+        return [NSString stringWithUTF8String:overrideUrl];
+    }
     return _nightly ? speecher::nightlyFeedUrl : speecher::stableFeedUrl;
 }
 
@@ -63,6 +71,11 @@ MacSparkleUpdater::~MacSparkleUpdater() = default;
 void MacSparkleUpdater::start()
 {
     [m_native->controller startUpdater];
+    if (qEnvironmentVariableIsSet("SPEECHER_E2E_CHECK")) {
+        QTimer::singleShot(1000, this, [this] {
+            [m_native->controller.updater checkForUpdatesInBackground];
+        });
+    }
 }
 
 UpdateController::State MacSparkleUpdater::state() const

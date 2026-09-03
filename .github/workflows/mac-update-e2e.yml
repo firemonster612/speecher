@@ -1,0 +1,325 @@
+name: macOS Sparkle update E2E
+
+on:
+  push:
+    branches:
+      - e2e/mac-update
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Prepare evidence
+        run: |
+          mkdir -p evidence
+          : > evidence/summary.txt
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: clang_64
+          modules: qtmultimedia qtwebsockets
+
+      - name: Remove obsolete AGL references
+        run: |
+          # The macOS 26 SDK removed AGL, but the runner still has a runtime
+          # /System/Library/Frameworks/AGL.framework, so Qt's FindWrapOpenGL
+          # find_library succeeds and CMake emits "-framework AGL", which the
+          # SDK-based linker then cannot resolve. Neutralize both the probe and
+          # the fallback so WrapOpenGL never links AGL at all.
+          wrap="$QT_ROOT_DIR/lib/cmake/Qt6/FindWrapOpenGL.cmake"
+          sed -i '' \
+            -e 's/find_library(WrapOpenGL_AGL NAMES AGL)/set(WrapOpenGL_AGL "")/' \
+            -e 's/set(__opengl_agl_fw_path "-framework AGL")//' \
+            "$wrap"
+          if grep -n 'framework AGL' "$wrap"; then
+            echo "AGL reference survived in FindWrapOpenGL.cmake" >&2
+            exit 1
+          fi
+          # Belt and braces for any remaining textual references.
+          find "$QT_ROOT_DIR" -type f \( -name '*.prl' -o -name '*.cmake' \) -exec \
+            sed -i '' -e 's/-framework[[:space:]]*AGL//g' -e 's/AGL;//g' -e 's/AGL\.framework//g' {} +
+
+      - name: Build signed update fixtures
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'status=$?; if (( status != 0 )); then printf "fixture_build=FAIL (line %s, exit %s)\n" "$LINENO" "$status" >> evidence/summary.txt; fi' EXIT
+
+          cmake -S . -B build-old -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DSPEECHER_BUILD_TESTS=OFF
+
+          generate_keys="$PWD/build-old/_deps/sparkle-src/bin/generate_keys"
+          "$generate_keys" --account speecher-e2e
+          public_key="$("$generate_keys" --account speecher-e2e -p)"
+          "$generate_keys" --account speecher-e2e -x "$RUNNER_TEMP/sparkle-private-key"
+
+          cmake -S . -B build-old -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DSPEECHER_BUILD_TESTS=OFF \
+            -DSPEECHER_SPARKLE_ED_PUBLIC_KEY="$public_key"
+          cmake --build build-old --parallel
+          ditto build-old/speecher.app "$RUNNER_TEMP/old-speecher.app"
+
+          old_plist="$RUNNER_TEMP/old-speecher.app/Contents/Info.plist"
+          old_version="$(plutil -extract CFBundleShortVersionString raw "$old_plist")"
+          old_build="$(plutil -extract CFBundleVersion raw "$old_plist")"
+          embedded_key="$(plutil -extract SUPublicEDKey raw "$old_plist")"
+          test "$embedded_key" = "$public_key"
+          cp "$old_plist" evidence/old-Info.plist
+
+          git -c user.name='Sparkle E2E' -c user.email='sparkle-e2e@localhost' \
+            commit --allow-empty -m 'test: create newer Sparkle fixture'
+          cmake -S . -B build-new -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DSPEECHER_BUILD_TESTS=OFF \
+            -DSPEECHER_SPARKLE_ED_PUBLIC_KEY="$public_key"
+          cmake --build build-new --parallel
+
+          new_plist="build-new/speecher.app/Contents/Info.plist"
+          new_version="$(plutil -extract CFBundleShortVersionString raw "$new_plist")"
+          new_build="$(plutil -extract CFBundleVersion raw "$new_plist")"
+          test "$new_build" -eq "$((old_build + 1))"
+          test "$new_version" != "$old_version"
+          test "$(plutil -extract SUPublicEDKey raw "$new_plist")" = "$public_key"
+          cp "$new_plist" evidence/new-Info.plist
+
+          bash packaging/macos/build-dmg.sh build-new
+          sign_update="$PWD/build-new/_deps/sparkle-src/bin/sign_update"
+          signing_output="$("$sign_update" --ed-key-file "$RUNNER_TEMP/sparkle-private-key" build-new/speecher.dmg)"
+          printf '%s\n' "$signing_output"
+          signature="$(printf '%s\n' "$signing_output" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')"
+          signed_length="$(printf '%s\n' "$signing_output" | sed -n 's/.*length="\([0-9][0-9]*\)".*/\1/p')"
+          test -n "$signature"
+          test -n "$signed_length"
+          printf 'sparkle:edSignature=%s\nlength=%s\n' "$signature" "$signed_length" \
+            > build-new/sparkle-signature.txt
+
+          mkdir -p "$RUNNER_TEMP/update-server"
+          cp build-new/speecher.dmg "$RUNNER_TEMP/update-server/speecher.dmg"
+          python3 scripts/make-appcast.py \
+            --channel nightly \
+            --version "$new_version" \
+            --build-number "$new_build" \
+            --pub-date "$(git log -1 --format=%aD HEAD)" \
+            --dmg-url 'https://localhost:8443/speecher.dmg' \
+            --signature build-new/sparkle-signature.txt \
+            --output "$RUNNER_TEMP/update-server/appcast-nightly.xml"
+          cp "$RUNNER_TEMP/update-server/appcast-nightly.xml" evidence/
+          cp build-new/sparkle-signature.txt evidence/
+          printf 'OLD_VERSION=%s\nOLD_BUILD=%s\nNEW_VERSION=%s\nNEW_BUILD=%s\n' \
+            "$old_version" "$old_build" "$new_version" "$new_build" > "$RUNNER_TEMP/fixture.env"
+          printf 'fixture_build=PASS old=%s/%s new=%s/%s\n' \
+            "$old_version" "$old_build" "$new_version" "$new_build" >> evidence/summary.txt
+
+      - name: Exercise automatic and prompt-first update paths
+        shell: bash
+        run: |
+          set -u
+          source "$RUNNER_TEMP/fixture.env"
+          evidence="$GITHUB_WORKSPACE/evidence"
+          domain='io.github.firemonster612.speecher'
+          installed="$RUNNER_TEMP/installed/speecher.app"
+          appcast_url='https://localhost:8443/appcast-nightly.xml'
+          failures=0
+
+          record() {
+            printf '%s=%s%s\n' "$1" "$2" "${3:+ ($3)}" | tee -a "$evidence/summary.txt"
+            if [[ "$2" == FAIL ]]; then
+              failures=$((failures + 1))
+            fi
+          }
+
+          stop_speecher() {
+            pkill -9 -x speecher 2>/dev/null || true
+            for _ in {1..20}; do
+              pgrep -x speecher >/dev/null || return 0
+              sleep 1
+            done
+            return 1
+          }
+
+          install_old() {
+            stop_speecher || true
+            rm -rf "$installed"
+            mkdir -p "$(dirname "$installed")"
+            ditto "$RUNNER_TEMP/old-speecher.app" "$installed"
+          }
+
+          seed_defaults() {
+            local auto_install="$1"
+            local label="$2"
+            local expected_auto_install=0
+            [[ "$auto_install" == true ]] && expected_auto_install=1
+            defaults delete "$domain" 2>/dev/null || true
+            defaults write "$domain" 'app/setupCompleted' -bool true
+            defaults write "$domain" 'updates/channel' -string nightly
+            defaults write "$domain" 'updates/autoCheck' -bool true
+            defaults write "$domain" 'updates/autoInstall' -bool "$auto_install"
+            defaults write "$domain" SUEnableAutomaticChecks -bool true
+            defaults export "$domain" "$evidence/$label-defaults.plist"
+            plutil -p "$evidence/$label-defaults.plist" > "$evidence/$label-defaults.txt"
+
+            if [[ "$(defaults read "$domain" 'updates/channel')" == nightly ]] \
+              && [[ "$(defaults read "$domain" 'updates/autoCheck')" == 1 ]] \
+              && [[ "$(defaults read "$domain" 'updates/autoInstall')" == "$expected_auto_install" ]] \
+              && [[ "$(defaults read "$domain" SUEnableAutomaticChecks)" == 1 ]]; then
+              record "$label.defaults" PASS 'exact QSettings and Sparkle keys round-tripped through the plist'
+            else
+              record "$label.defaults" FAIL 'defaults did not round-trip'
+            fi
+          }
+
+          collect_logs() {
+            local label="$1"
+            find "$HOME/Library/Caches" -maxdepth 5 \
+              \( -iname '*speecher*' -o -iname '*sparkle*' \) -print \
+              > "$evidence/$label-cache-paths.txt" 2>&1 || true
+            find "$HOME/Library/Caches" -type f \
+              \( -iname '*speecher*.log' -o -iname '*sparkle*.log' \) \
+              -exec cp {} "$evidence" \; 2>/dev/null || true
+            log show --last 10m --style compact \
+              --predicate 'process CONTAINS[c] "speecher" OR process CONTAINS[c] "sparkle" OR subsystem CONTAINS[c] "sparkle"' \
+              > "$evidence/$label-unified.log" 2>&1 || true
+          }
+
+          cert_dir="$RUNNER_TEMP/certs"
+          mkdir -p "$cert_dir"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -keyout "$cert_dir/ca-key.pem" -out "$cert_dir/ca.pem" \
+            -subj '/CN=Speecher Sparkle E2E CA'
+          openssl req -newkey rsa:2048 -nodes \
+            -keyout "$cert_dir/server-key.pem" -out "$cert_dir/server.csr" \
+            -subj '/CN=localhost'
+          printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' > "$cert_dir/server.ext"
+          openssl x509 -req -days 1 -sha256 \
+            -in "$cert_dir/server.csr" -CA "$cert_dir/ca.pem" -CAkey "$cert_dir/ca-key.pem" \
+            -CAcreateserial -out "$cert_dir/server.pem" -extfile "$cert_dir/server.ext"
+          sudo security add-trusted-cert -d -r trustRoot \
+            -k /Library/Keychains/System.keychain "$cert_dir/ca.pem"
+
+          cat > "$RUNNER_TEMP/https-server.py" <<'PY'
+          import http.server
+          import os
+          import ssl
+
+          os.chdir(os.environ["SPEECHER_E2E_SERVER_ROOT"])
+          server = http.server.ThreadingHTTPServer(("127.0.0.1", 8443), http.server.SimpleHTTPRequestHandler)
+          context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+          context.load_cert_chain(os.environ["SPEECHER_E2E_SERVER_CERT"], os.environ["SPEECHER_E2E_SERVER_KEY"])
+          server.socket = context.wrap_socket(server.socket, server_side=True)
+          server.serve_forever()
+          PY
+          SPEECHER_E2E_SERVER_ROOT="$RUNNER_TEMP/update-server" \
+          SPEECHER_E2E_SERVER_CERT="$cert_dir/server.pem" \
+          SPEECHER_E2E_SERVER_KEY="$cert_dir/server-key.pem" \
+            python3 "$RUNNER_TEMP/https-server.py" > "$evidence/https-server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true; stop_speecher || true' EXIT
+          for _ in {1..20}; do
+            curl --fail --silent --cacert "$cert_dir/ca.pem" "$appcast_url" >/dev/null && break
+            sleep 1
+          done
+          if curl --fail --silent --cacert "$cert_dir/ca.pem" "$appcast_url" >/dev/null; then
+            record https_server PASS 'trusted local appcast is reachable'
+          else
+            record https_server FAIL 'local appcast is unreachable'
+          fi
+
+          install_old
+          seed_defaults true automatic
+          DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib" \
+          SPEECHER_APPCAST_URL="$appcast_url" SPEECHER_E2E_CHECK=1 \
+            "$installed/Contents/MacOS/speecher" --daemon \
+            > "$evidence/automatic-stdout.log" 2>&1 &
+          automatic_pid=$!
+          sleep 75
+          defaults export "$domain" "$evidence/automatic-after-download.plist" || true
+          osascript -e 'tell application id "io.github.firemonster612.speecher" to quit' \
+            > "$evidence/automatic-quit.log" 2>&1 || kill -TERM "$automatic_pid" 2>/dev/null || true
+
+          for _ in {1..60}; do
+            installed_version="$(plutil -extract CFBundleShortVersionString raw "$installed/Contents/Info.plist" 2>/dev/null || true)"
+            installed_build="$(plutil -extract CFBundleVersion raw "$installed/Contents/Info.plist" 2>/dev/null || true)"
+            if [[ "$installed_version" == "$NEW_VERSION" && "$installed_build" == "$NEW_BUILD" ]]; then
+              break
+            fi
+            sleep 2
+          done
+          cp "$installed/Contents/Info.plist" "$evidence/automatic-final-Info.plist" 2>/dev/null || true
+          if [[ "${installed_version:-}" == "$NEW_VERSION" && "${installed_build:-}" == "$NEW_BUILD" ]]; then
+            record automatic.install PASS "installed $installed_version/$installed_build"
+          else
+            record automatic.install FAIL "expected $NEW_VERSION/$NEW_BUILD, got ${installed_version:-missing}/${installed_build:-missing}"
+          fi
+          collect_logs automatic
+
+          install_old
+          seed_defaults false prompt
+          DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib" \
+          SPEECHER_APPCAST_URL="$appcast_url" SPEECHER_E2E_CHECK=1 \
+            "$installed/Contents/MacOS/speecher" --daemon \
+            > "$evidence/prompt-stdout.log" 2>&1 &
+          prompt_pid=$!
+
+          cat > "$RUNNER_TEMP/window-list.swift" <<'SWIFT'
+          import CoreGraphics
+          import Foundation
+
+          let targetPID = Int(CommandLine.arguments[1])!
+          let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)! as! [[String: Any]]
+          for window in windows {
+              let pid = window[kCGWindowOwnerPID as String] as? Int ?? -1
+              guard pid == targetPID else { continue }
+              let layer = window[kCGWindowLayer as String] as? Int ?? -1
+              let owner = window[kCGWindowOwnerName as String] as? String ?? ""
+              let name = window[kCGWindowName as String] as? String ?? ""
+              print("pid=\(pid) layer=\(layer) owner=\(owner) name=\(name)")
+          }
+          SWIFT
+          xcrun swiftc "$RUNNER_TEMP/window-list.swift" -o "$RUNNER_TEMP/window-list"
+          : > "$evidence/prompt-window-list.txt"
+          prompt_visible=false
+          for _ in {1..30}; do
+            "$RUNNER_TEMP/window-list" "$prompt_pid" > "$evidence/prompt-window-list.txt" 2>&1 || true
+            if grep -q "pid=$prompt_pid layer=0" "$evidence/prompt-window-list.txt"; then
+              prompt_visible=true
+              break
+            fi
+            sleep 2
+          done
+          screencapture -x "$evidence/prompt-update.png"
+          if [[ "$prompt_visible" == true ]]; then
+            record prompt.alert PASS 'on-screen layer-0 window owned by the daemon app'
+          else
+            record prompt.alert FAIL 'no on-screen app window detected'
+          fi
+          if [[ -s "$evidence/prompt-update.png" ]]; then
+            record prompt.screenshot PASS 'full-screen capture saved'
+          else
+            record prompt.screenshot FAIL 'screen capture missing or empty'
+          fi
+          defaults export "$domain" "$evidence/prompt-after-alert.plist" || true
+          collect_logs prompt
+          stop_speecher || record cleanup FAIL 'speecher process survived pkill wait'
+
+          printf 'assertion_failures=%s\n' "$failures" | tee -a "$evidence/summary.txt"
+          if (( failures != 0 )); then
+            exit 1
+          fi
+
+      - name: Upload E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mac-update-e2e-evidence
+          path: evidence
+          if-no-files-found: error
