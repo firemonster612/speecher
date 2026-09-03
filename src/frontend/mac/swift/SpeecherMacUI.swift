@@ -85,6 +85,7 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     /// settings window, and the menu bar item is the front door.
     @MainActor
     @objc public func showSettings() {
+        model.reloadSettingsDraft()
         if settings == nil {
             settings = SpeecherSettingsWindow(model: model)
         }
@@ -101,6 +102,17 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     @objc public func showDictationProblem(_ message: String) {
         panel.show(problem: message)
     }
+
+    @MainActor
+    @objc public func dismissDictationPanel() {
+        panel.dismiss()
+    }
+
+    @MainActor
+    @objc public var dictationPanelVisible: Bool { panel.isVisible }
+
+    @MainActor
+    @objc public var dictationPanelLevel: Int { panel.level.rawValue }
 
     /// Brings Speecher forward so whatever it just put on screen can be seen.
     @MainActor

@@ -550,6 +550,11 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     _state->draft = _state->store->snapshot();
 }
 
+- (void)reloadDraft
+{
+    _state->draft = _state->store->snapshot();
+}
+
 - (void)loadExpensiveRows
 {
     _state->expensiveReady = YES;
@@ -737,7 +742,6 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                      [weakSelf](const QString &preview) {
                          SpeecherBridge *bridge = weakSelf;
                          if (bridge.popupPreviewChanged) {
-                             qDebug() << "macOS popup preview delivered length=" << preview.size();
                              bridge.popupPreviewChanged(preview.toNSString());
                          }
                      });

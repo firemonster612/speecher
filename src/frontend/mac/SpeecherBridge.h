@@ -127,6 +127,8 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 // belongs to the front end, as it does on Qt.
 @property (nonatomic, copy, nullable) void (^actionTriggered)(NSString *rowId);
 - (void)setValue:(nullable id)value forRowId:(NSString *)rowId;
+// Discards edits left from the last showing and re-reads the store.
+- (void)reloadDraft;
 // Writes the draft back to the store and re-reads it.
 - (void)commit;
 // Lets the rows whose choices are slow to gather — a device enumeration —

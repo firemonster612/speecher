@@ -86,6 +86,11 @@ final class AppModel: ObservableObject {
         DispatchQueue.main.async { [weak self] in self?.loadApiKey() }
     }
 
+    func reloadSettingsDraft() {
+        bridge.settingsSchema.reloadDraft()
+        pages = bridge.settingsSchema.pages
+    }
+
     private func loadApiKey() {
         let edits = apiKeyEdits
         let key = bridge.readApiKey()
