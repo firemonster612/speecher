@@ -88,9 +88,6 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         }
         ++nextPageIndex;
     };
-#ifdef Q_OS_LINUX
-    addSetupPage(m_globalShortcutPage, QStringLiteral("Global Shortcut"));
-#endif
     addSetupPage(welcome, QStringLiteral("Welcome to Speecher"));
     addSetupPage(speechProvider, QStringLiteral("Transcription"));
     addSetupPage(m_microphonePage, QStringLiteral("Microphone"));
@@ -98,6 +95,9 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     addSetupPage(m_deliveryPage, QStringLiteral("Text delivery"));
     addSetupPage(refinement, QStringLiteral("Refinement"));
     addSetupPage(m_profilesPage, QStringLiteral("Writing profiles"));
+#ifdef Q_OS_LINUX
+    addSetupPage(m_globalShortcutPage, QStringLiteral("Global Shortcut"));
+#endif
     addSetupPage(m_finishPage, QStringLiteral("Ready to dictate"));
 #ifdef Q_OS_MACOS
     addSetupPage(m_startAtLoginPage, QStringLiteral("Start at login"));
@@ -137,9 +137,6 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         }
         ++nextPageIndex;
     };
-#ifdef Q_OS_LINUX
-    addSetupPage(m_globalShortcutPage, QStringLiteral("Global Shortcut"));
-#endif
     addSetupPage(welcome, QStringLiteral("Welcome to Speecher"));
     addSetupPage(speechProvider, QStringLiteral("Transcription"));
     addSetupPage(m_microphonePage, QStringLiteral("Microphone"));
@@ -147,6 +144,9 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     addSetupPage(m_deliveryPage, QStringLiteral("Text delivery"));
     addSetupPage(refinement, QStringLiteral("Refinement"));
     addSetupPage(m_profilesPage, QStringLiteral("Writing profiles"));
+#ifdef Q_OS_LINUX
+    addSetupPage(m_globalShortcutPage, QStringLiteral("Global Shortcut"));
+#endif
     addSetupPage(m_finishPage, QStringLiteral("Ready to dictate"));
 #ifdef Q_OS_MACOS
     addSetupPage(m_startAtLoginPage, QStringLiteral("Start at login"));
@@ -185,7 +185,7 @@ int SetupAssistant::pageIndex(SetupAssistantPage page)
     }
 #ifdef Q_OS_LINUX
     if (page == SetupAssistantPage::GlobalShortcut) {
-        return 0;
+        return 7;
     }
 #endif
     return -1;

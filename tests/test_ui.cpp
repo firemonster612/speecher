@@ -247,8 +247,20 @@ private slots:
 
         for (const QString &id : {QStringLiteral("general"), QStringLiteral("audio"),
                                   QStringLiteral("applications")}) {
+            SchemaCustomRowFactory customRows;
+#ifdef Q_OS_LINUX
+            if (id == QStringLiteral("general")) {
+                customRows = [](const SettingsRow &row,
+                                QWidget *parent,
+                                std::function<void()>) {
+                    return row.id == QStringLiteral("globalShortcut")
+                        ? SchemaCustomRow{new QWidget(parent), {}, {}}
+                        : SchemaCustomRow{};
+                };
+            }
+#endif
             const std::unique_ptr<SchemaSettingsPage> page =
-                std::make_unique<SchemaSettingsPage>(schema.page(id));
+                std::make_unique<SchemaSettingsPage>(schema.page(id), nullptr, customRows);
             QCOMPARE(sectionLabels(*page).size(), 0);
         }
     }

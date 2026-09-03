@@ -413,6 +413,12 @@ SettingsPage generalPage(const SchemaContext &context)
         [](const AppSettings &settings) { return settings.launchAtLogin; },
         [](AppSettings &settings, bool value) { settings.launchAtLogin = value; }));
 #endif
+#ifdef Q_OS_LINUX
+    systemRows.append(customRow(
+        QStringLiteral("globalShortcut"),
+        QStringLiteral("Global Shortcut"),
+        QStringLiteral("Start or stop dictation from anywhere.")));
+#endif
     systemRows.append(infoRow(QStringLiteral("clipboardOutputStatus"),
                               QStringLiteral("Clipboard output"),
                               QStringLiteral("Current platform clipboard path."),

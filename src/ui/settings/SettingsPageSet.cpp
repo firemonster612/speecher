@@ -5,6 +5,9 @@
 #include "core/AppSettings.h"
 #include "core/SettingsStore.h"
 #include "frontend/qt/SchemaSettingsPage.h"
+#ifdef Q_OS_LINUX
+#include "ui/setup/LinuxGlobalShortcutSetupPage.h"
+#endif
 #include "ui/Theme.h"
 
 #include <QDesktopServices>
@@ -170,6 +173,24 @@ SchemaCustomRow whatsNewCustomRow(const SettingsRow &descriptor,
             true};
 }
 
+SchemaCustomRowFactory generalCustomRows(ApplicationController *controller)
+{
+#ifdef Q_OS_LINUX
+    return [controller](const SettingsRow &descriptor,
+                        QWidget *parent,
+                        std::function<void()>) {
+        if (descriptor.id != QStringLiteral("globalShortcut")) {
+            return SchemaCustomRow{};
+        }
+        return SchemaCustomRow{
+            new LinuxGlobalShortcutSetupPage(*controller, parent), {}, {}};
+    };
+#else
+    Q_UNUSED(controller)
+    return {};
+#endif
+}
+
 } // namespace
 
 SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *parent)
@@ -185,7 +206,7 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     , m_schema(std::move(schema))
     , m_outputRows(*controller->settings())
     , m_providerRows(*controller->settings(), *controller->secretStore())
-    , m_general(addPage(QStringLiteral("general"), parent))
+    , m_general(addPage(QStringLiteral("general"), parent, generalCustomRows(controller)))
     , m_audio(addPage(QStringLiteral("audio"), parent))
     , m_applications(addPage(QStringLiteral("applications"), parent))
     , m_output(addPage(QStringLiteral("output"), parent, m_outputRows.factory()))

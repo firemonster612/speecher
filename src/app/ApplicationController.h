@@ -64,6 +64,8 @@ public:
     void refreshAccessibilityState();
     bool grabMainWindow(const QString &path) const;
     bool globalShortcutsSupported() const;
+    bool globalShortcutSupportKnown() const;
+    bool globalShortcutUsesDesktopChooser() const;
     QString globalShortcutUnsupportedReason() const;
     QKeySequence globalShortcut() const;
     QString globalShortcutDisplay() const;
@@ -95,6 +97,7 @@ signals:
     void audioLevelChanged(float level);
     void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
     void globalShortcutChanged();
+    void globalShortcutSupportChanged();
     void globalShortcutRegistrationFinished(bool bound, const QString &detail);
     void whatsNewChanged();
 
