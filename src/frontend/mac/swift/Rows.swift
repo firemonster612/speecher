@@ -52,6 +52,14 @@ struct RowView: View {
             releaseNotes
         } else if row.rowId == "openAiAuth" {
             LabeledContent { CredentialField(model: model) } label: { label }
+        } else if row.options.isEmpty, row.value is String {
+            LabeledContent {
+                if row.rowId == "cliproxyApiKey" {
+                    SecureTextRowField(row: row, model: model)
+                } else {
+                    TextRowField(row: row, model: model)
+                }
+            } label: { label }
         } else {
             picker
         }
@@ -81,7 +89,10 @@ struct RowView: View {
     private var picker: some View {
         Picker(selection: model.binding(row, read: Self.text, write: { $0 })) {
             ForEach(row.options, id: \.rowOptionId) { option in
-                Text(option.label).tag(option.rowOptionId).help(option.help)
+                Text(option.label)
+                    .tag(option.rowOptionId)
+                    .help(option.help)
+                    .disabled(!option.enabled)
             }
         } label: {
             label
@@ -141,7 +152,7 @@ struct NumberField: View {
             if !row.suffix.isEmpty {
                 Text(row.suffix.trimmingCharacters(in: .whitespaces))
             }
-            Stepper("", value: $value, in: row.minimum...row.maximum, step: row.step)
+            Stepper("", value: $value, in: lowerBound...upperBound, step: row.step)
                 .labelsHidden()
         }
         .onAppear { value = RowView.number(row.value) }
@@ -152,12 +163,15 @@ struct NumberField: View {
     }
 
     private func commit() {
-        let clamped = min(max(value, row.minimum), row.maximum)
+        let clamped = min(max(value, lowerBound), upperBound)
         if clamped != value { value = clamped }
         if clamped != RowView.number(row.value) {
             model.setValue(clamped as NSNumber, for: row.rowId)
         }
     }
+
+    private var lowerBound: Int { min(row.minimum, row.maximum) }
+    private var upperBound: Int { max(row.minimum, row.maximum) }
 }
 
 /// Free text, saved when the field is done rather than on every keystroke. A row
@@ -186,6 +200,31 @@ struct TextRowField: View {
                 model.setValue(edited, for: row.rowId)
             }
         }
+    }
+
+    private func commit() {
+        if text != RowView.text(row.value) {
+            model.setValue(text, for: row.rowId)
+        }
+    }
+}
+
+struct SecureTextRowField: View {
+    let row: SettingsRowModel
+    @ObservedObject var model: AppModel
+    @State private var text = ""
+    @FocusState private var editing: Bool
+
+    var body: some View {
+        SecureField("", text: $text)
+            .labelsHidden()
+            .focused($editing)
+            .onSubmit { commit() }
+            .onAppear { text = RowView.text(row.value) }
+            .onChange(of: editing) { if !editing { commit() } }
+            .onChange(of: RowView.text(row.value)) { _, stored in
+                if !editing { text = stored }
+            }
     }
 
     private func commit() {
@@ -308,9 +347,13 @@ struct WritingProfileRows: View {
     }
 
     private func choice(_ index: Int, _ columnId: String) -> Binding<String> {
-        Binding(get: { records[index][columnId] as? String ?? "" },
+        Binding(get: {
+                    guard records.indices.contains(index) else { return "" }
+                    return records[index][columnId] as? String ?? ""
+                },
                 set: { newValue in
                     var edited = records
+                    guard edited.indices.contains(index) else { return }
                     edited[index][columnId] = newValue
                     _ = model.save(records: edited, for: row.rowId)
                 })
