@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Speecher · dictation for Linux and macOS on the subscriptions you already have</title>
 <meta name="description" content="Native speech-to-text for Linux and macOS. Press a shortcut, talk, and clean text lands in the app you're using. Runs on your existing Claude Code or ChatGPT login.">
-<link rel="icon" href="assets/icon.svg?v=11" type="image/svg+xml">
+<link rel="icon" href="assets/icon.svg?v=12" type="image/svg+xml">
 <style>
 :root{
   --paper:#f5f2e9; --card:#fffdf6; --ink:#1b1b17; --muted:#6d6c60; --line:#e2ddcd;
@@ -95,18 +95,8 @@ section{padding:88px 0}
 .sechead{max-width:640px}
 h2{font-size:clamp(26px,3.6vw,38px);line-height:1.12;letter-spacing:-.02em;font-weight:700;text-wrap:balance}
 
-/* stage */
-.stage-sec{padding-top:96px}
-.stagebar{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:26px}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card)}
-.seg button{font:inherit;font-size:14px;font-weight:600;padding:8px 20px;border:0;background:transparent;color:var(--muted);cursor:pointer}
-.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
-.stagenote{font-family:var(--mono);font-size:12px;letter-spacing:.08em;color:var(--muted)}
-.shot{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--card);box-shadow:0 18px 50px rgba(0,0,0,.08)}
-.stagelede{margin-top:22px;color:var(--muted);max-width:560px}
-
 /* zero band */
-.zero{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:56px 0}
+.zero{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:56px 0;margin-top:96px}
 .zero .wrap{display:flex;align-items:center;gap:40px;flex-wrap:wrap}
 .zeronum{font-size:64px;font-weight:800;letter-spacing:-.03em;line-height:1;flex:none}
 .zerotext{max-width:560px;font-size:19px;text-wrap:pretty}
@@ -121,6 +111,50 @@ h2{font-size:clamp(26px,3.6vw,38px);line-height:1.12;letter-spacing:-.02em;font-
 .feature p+p{margin-top:12px}
 .feature p b{color:var(--ink)}
 @media (max-width:860px){.feature{grid-template-columns:1fr;gap:28px}.feature.flip .copy{order:0}}
+
+/* viz: capture — window stack with the overlay capsule */
+.viz{user-select:none}
+.vcapture{position:relative;height:330px;max-width:520px}
+.vwin{position:absolute;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 18px}
+.vwin .vname{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:block}
+.vline{height:9px;border-radius:5px;background:color-mix(in srgb,var(--ink) 11%,transparent);margin-top:12px}
+.w1{left:0;top:0;width:64%;height:120px;opacity:.45}
+.w2{right:0;top:22px;width:56%;height:130px;opacity:.7}
+.w3{left:7%;top:74px;width:74%;height:200px;box-shadow:0 18px 50px rgba(0,0,0,.10)}
+.vover{position:absolute;left:24%;top:196px;width:88px;height:46px;background:var(--pill);border-radius:999px;box-shadow:var(--pill-shadow);display:flex;align-items:center;justify-content:center;gap:4px}
+.vover i{width:4px;border-radius:2px;background:var(--ink)}
+.vover i:nth-child(1){height:9px}.vover i:nth-child(2){height:17px}.vover i:nth-child(3){height:12px}
+.vover i:nth-child(4){height:20px}.vover i:nth-child(5){height:14px}.vover i:nth-child(6){height:18px}
+.vover i:nth-child(7){height:10px}
+.vkey{position:absolute;right:8%;bottom:34px;font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--card);border:1px solid var(--line);border-bottom-width:3px;border-radius:9px;padding:9px 16px;box-shadow:0 8px 22px rgba(0,0,0,.08)}
+@media (max-width:860px){.vcapture{width:100%;margin:0 auto}}
+@media (max-width:560px){
+  .vcapture{height:280px}
+  .vwin .vname{font-size:10px;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .w1{display:none}
+  .w2{right:0;top:0;width:72%;height:112px;opacity:.55}
+  .w3{left:0;top:50px;width:82%;height:180px}
+  .vover{left:16%;top:158px}
+  .vkey{right:0;bottom:16px}
+}
+
+/* viz: context — focus readouts */
+.vreadouts{display:grid;gap:14px;max-width:520px}
+.rcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px 22px;font-family:var(--mono);font-size:13px}
+.rrow{display:grid;grid-template-columns:110px 1fr;gap:14px;padding:11px 0;border-top:1px solid var(--line)}
+.rrow:first-child{border-top:0}
+.rrow .rk{letter-spacing:.08em;text-transform:uppercase;font-size:11px;color:var(--muted);align-self:baseline;padding-top:2px}
+.rrow .rv{color:var(--muted)}
+.rrow.rout .rv{color:var(--ink);font-weight:600}
+
+/* viz: learn — the ledger */
+.vledger{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px 22px;max-width:520px}
+.lrow{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding:15px 0;border-top:1px solid var(--line)}
+.lrow:first-child{border-top:0}
+.lrow .lheard{color:var(--muted);font-style:italic}
+.lrow .larr{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.lrow .lout{font-weight:600}
+.lrow .ltag{margin-left:auto;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 10px;white-space:nowrap}
 
 /* before/after cards */
 .pairs{display:grid;gap:14px}
@@ -154,7 +188,7 @@ footer a{color:inherit}
 
 <header>
   <div class="wrap">
-    <a class="logo" href="#"><img src="assets/icon.svg?v=11" alt="">Speecher</a>
+    <a class="logo" href="#"><img src="assets/icon.svg?v=12" alt="">Speecher</a>
     <span class="spacer"></span>
     <nav>
       <a href="https://github.com/firemonster612/speecher">GitHub</a>
@@ -186,25 +220,6 @@ footer a{color:inherit}
   </div>
 </div>
 
-<section class="stage-sec">
-  <div class="wrap">
-    <div class="stagebar">
-      <div class="seg" role="group" aria-label="Platform">
-        <button type="button" data-plat="linux" aria-pressed="true">Linux</button>
-        <button type="button" data-plat="mac" aria-pressed="false">macOS</button>
-      </div>
-      <span class="stagenote">Screenshots follow your light/dark preference</span>
-    </div>
-    <figure class="shot">
-      <img data-shot
-        data-linux-light="assets/linux-general-light.png?v=11" data-linux-dark="assets/linux-general-dark.png?v=11"
-        data-mac-light="assets/mac-general-light.png?v=11" data-mac-dark="assets/mac-general-dark.png?v=11"
-        alt="Speecher settings window" width="2640" height="1704">
-    </figure>
-    <p class="stagelede">Qt at home on Plasma. SwiftUI in the menu bar on macOS. Not a web view in a frame.</p>
-  </div>
-</section>
-
 <div class="zero">
   <div class="wrap">
     <div class="zeronum">$0</div>
@@ -229,10 +244,20 @@ footer a{color:inherit}
       <p>On macOS Speecher registers its own global hotkey. On Linux the compositor owns
         shortcuts, so you bind one key to <code>speecher toggle</code> and you're done.</p>
     </div>
-    <div class="shot"><img data-shot
-      data-linux-light="assets/linux-dictation-light.png?v=11" data-linux-dark="assets/linux-dictation-dark.png?v=11"
-      data-mac-light="assets/mac-dictation-light.png?v=11" data-mac-dark="assets/mac-dictation-dark.png?v=11"
-      alt="Dictation page"></div>
+    <div class="viz vcapture" aria-hidden="true">
+      <div class="vwin w1"><span class="vname">release notes — browser</span></div>
+      <div class="vwin w2"><span class="vname">#standup — chat</span>
+        <div class="vline" style="width:70%"></div>
+        <div class="vline" style="width:44%"></div>
+      </div>
+      <div class="vwin w3"><span class="vname">notes.md — editor</span>
+        <div class="vline" style="width:84%"></div>
+        <div class="vline" style="width:62%"></div>
+        <div class="vline" style="width:38%"></div>
+      </div>
+      <div class="vover"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="vkey">your shortcut</div>
+    </div>
   </section>
 
   <section class="feature flip">
@@ -246,10 +271,19 @@ footer a{color:inherit}
         and a commit message don't come out sounding the same. <b>Cleanup lands in the
         register the destination calls for.</b></p>
     </div>
-    <div class="shot"><img data-shot
-      data-linux-light="assets/linux-refinement-light.png?v=11" data-linux-dark="assets/linux-refinement-dark.png?v=11"
-      data-mac-light="assets/mac-text-light.png?v=11" data-mac-dark="assets/mac-text-dark.png?v=11"
-      alt="Refinement settings"></div>
+    <div class="viz vreadouts" aria-hidden="true">
+      <div class="rcard">
+        <div class="rrow"><span class="rk">app</span><span class="rv">Slack</span></div>
+        <div class="rrow"><span class="rk">field</span><span class="rv">message · #standup</span></div>
+        <div class="rrow"><span class="rk">near caret</span><span class="rv">"…moved to Thursday?"</span></div>
+        <div class="rrow rout"><span class="rk">profile</span><span class="rv">casual, first person</span></div>
+      </div>
+      <div class="rcard">
+        <div class="rrow"><span class="rk">app</span><span class="rv">Terminal</span></div>
+        <div class="rrow"><span class="rk">field</span><span class="rv">git commit message</span></div>
+        <div class="rrow rout"><span class="rk">profile</span><span class="rv">imperative, no filler</span></div>
+      </div>
+    </div>
   </section>
 
   <section class="feature">
@@ -284,10 +318,11 @@ footer a{color:inherit}
       <p>And when you correct a word right after Speecher delivers it, that fix is
         learned locally. <b>Fixing "at spy" to "AT-SPI" only ever happens once.</b></p>
     </div>
-    <div class="shot"><img data-shot
-      data-linux-light="assets/linux-vocabulary-light.png?v=11" data-linux-dark="assets/linux-vocabulary-dark.png?v=11"
-      data-mac-light="assets/mac-vocabulary-light.png?v=11" data-mac-dark="assets/mac-vocabulary-dark.png?v=11"
-      alt="Vocabulary settings"></div>
+    <div class="viz vledger" aria-hidden="true">
+      <div class="lrow"><span class="lheard">"at spy"</span><span class="larr">→</span><span class="lout">AT-SPI</span><span class="ltag">learned from one fix</span></div>
+      <div class="lrow"><span class="lheard">"kube cuddle"</span><span class="larr">→</span><span class="lout"><code>kubectl</code></span><span class="ltag">vocabulary</span></div>
+      <div class="lrow"><span class="lheard">"sign off"</span><span class="larr">→</span><span class="lout">Cheers, Sam</span><span class="ltag">snippet</span></div>
+    </div>
   </section>
 
 </div>
@@ -313,6 +348,7 @@ footer a{color:inherit}
     <p class="dlnote">Transcription needs a Claude Code or ChatGPT sign-in on the same machine.
       Prefer to build it yourself? <a href="https://github.com/firemonster612/speecher#quick-start">make install</a> works too.</p>
     <ul class="facts">
+      <li>Qt Widgets on Plasma, SwiftUI in the menu bar. Not a web view.</li>
       <li>API keys live in your system keyring, not a config file.</li>
       <li>Your clipboard comes back after Speecher pastes.</li>
       <li>Screenshot context is off by default and never stored.</li>
@@ -331,29 +367,11 @@ footer a{color:inherit}
 
 <script>
 (function(){
-  var mqDark = matchMedia('(prefers-color-scheme: dark)');
   var mqStill = matchMedia('(prefers-reduced-motion: reduce)');
-  var plat = /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent) ? 'mac' : 'linux';
-
-  function applyShots(){
-    var scheme = mqDark.matches ? 'dark' : 'light';
-    document.querySelectorAll('img[data-shot]').forEach(function(img){
-      var src = img.getAttribute('data-' + plat + '-' + scheme);
-      if (src && img.getAttribute('src') !== src) img.setAttribute('src', src);
-    });
-    document.querySelectorAll('.seg button').forEach(function(b){
-      b.setAttribute('aria-pressed', String(b.dataset.plat === plat));
-    });
-  }
-  document.querySelectorAll('.seg button').forEach(function(b){
-    b.addEventListener('click', function(){ plat = b.dataset.plat; applyShots(); });
-  });
-  applyShots();
   function onMq(mq, fn){
     if (mq.addEventListener) mq.addEventListener('change', fn);
     else if (mq.addListener) mq.addListener(fn);
   }
-  onMq(mqDark, applyShots);
 
   /* hero demo */
   var demo = document.getElementById('demo');
@@ -371,8 +389,6 @@ footer a{color:inherit}
   ];
   var timers = [];
   var running = false;
-  var cycles = 0;
-  var MAX_CYCLES = 3;
 
   function later(fn, ms){ timers.push(setTimeout(fn, ms)); }
   function every(fn, ms){ var id = setInterval(fn, ms); timers.push(id); return id; }
@@ -426,8 +442,6 @@ footer a{color:inherit}
       }, 900);
     }
     function next(){
-      if (si === scripts.length - 1) cycles++;
-      if (cycles >= MAX_CYCLES){ showStatic(); return; }
       txt.classList.add('fade');
       later(function(){
         si = (si + 1) % scripts.length;
@@ -438,7 +452,7 @@ footer a{color:inherit}
 
   function toggle(){
     if (running){ stopTimers(); running = false; setState('paused', false); }
-    else { cycles = 0; play(); }
+    else { play(); }
   }
   demo.addEventListener('click', toggle);
   demo.addEventListener('keydown', function(e){
