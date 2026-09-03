@@ -407,6 +407,7 @@ footer a{color:inherit}
 
   var si = 0;
   function play(){
+    stopTimers(); /* nothing is pending here; drops fired handles so the loop doesn't accumulate them */
     running = true;
     var s = scripts[si];
     txt.classList.remove('fade');
