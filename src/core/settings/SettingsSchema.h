@@ -102,14 +102,19 @@ struct NumberRange {
 // meaningful when it can. Grows a member when a row needs one, not before.
 struct Capabilities {
     bool targetAccessibility = false;
+    bool isAppImage = false;
 };
 
 struct SettingsRow {
     // Stable across front ends: a renderer uses it to name its control, and a
     // Custom or Action row is recognised by it.
     QString id;
+    // First Stable Release that ships this row. Empty for rows that predate
+    // release-note discovery or should not appear as something new.
+    QString sinceVersion;
     QString label;
     QString help;
+    std::function<QString(const AppSettings &)> helpValue;
     RowKind kind = RowKind::Info;
     // The caption of an Action row's control, which is not its label.
     QString actionLabel;
@@ -183,9 +188,15 @@ struct SchemaContext {
     // This build can set up a virtual keyboard, so the Output page carries the
     // Advanced section that drives it.
     bool virtualKeyboardSetup = false;
+    QString currentVersion;
+    QString lastSeenVersion;
 };
 
 SettingsSchema buildSettingsSchema(const SchemaContext &context);
+
+// Nightly metadata does not make a new Stable Release, and dotted components
+// are numbers rather than text (0.10 follows 0.2).
+int compareBaseVersions(const QString &left, const QString &right);
 
 // The microphone choice as it is offered: a system-default entry ahead of the
 // devices that exist, and a disabled placeholder standing in for a saved device

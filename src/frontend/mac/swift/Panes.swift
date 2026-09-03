@@ -1,7 +1,7 @@
 import SwiftUI
 
-// The settings window's eight panes. The schema supplies rows and values; which
-// pane a row appears on, and under which heading, is this file's decision — see
+// The settings window's eight regular panes and contextual What's New page. The
+// schema supplies rows and values; which pane a row appears on is decided here.
 // .scratch/macos-port/mac-ia.md.
 
 /// One card this file asks a pane for: a heading, a footnote, and the schema
@@ -72,8 +72,15 @@ extension Pane {
         Pane("general", "General", "gearshape", schemaPages: ["general"], [
             PaneGroup("Appearance", ["themeControl", "pauseMedia", "soundsEnabled", "previewWords"]),
             PaneGroup("System", ["launchAtLogin", "clipboardOutputStatus"]),
-            PaneGroup("Maintenance", ["runSetup", "openReleases"]),
+            PaneGroup("Maintenance", ["runSetup"]),
+            PaneGroup("Updates", ["updateChannel",
+                                  "autoCheckUpdates",
+                                  "autoInstallUpdates",
+                                  "checkForUpdates",
+                                  "currentVersion",
+                                  "whatsNew"]),
         ]),
+        Pane("whatsNew", "What's New", "sparkles", schemaPages: ["whatsNew"]),
         Pane("dictation", "Dictation", "mic", schemaPages: ["audio"], [
             PaneGroup("Transcription", ["speechProvider"]),
             PaneGroup("Microphone", ["audioDevice", "captureMode"]),
@@ -125,8 +132,8 @@ extension Pane {
     ]
 
     /// The sidebar's runs, in order. System Settings' own sidebar separates its
-    /// groups with a gap and titles none of them, and eight panes in four runs
-    /// need no second level of naming either.
+    /// groups with a gap and titles none of them. What's New appears only while
+    /// selected, so the eight regular panes need no second level of naming.
     static let sidebarRuns = [
         ["general"],
         ["dictation", "shortcut", "text"],

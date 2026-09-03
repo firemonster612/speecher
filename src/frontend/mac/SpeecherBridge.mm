@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/PlatformComposition.h"
+#include "app/UpdateController.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
@@ -472,7 +473,7 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     SettingsRowModel *model = [[SettingsRowModel alloc] init];
     model.rowId = row.id.toNSString();
     model.label = row.label.toNSString();
-    model.help = row.help.toNSString();
+    model.help = (row.helpValue ? row.helpValue(_state->draft) : row.help).toNSString();
     model.kind = bridgedKind(row.kind);
     model.actionLabel = row.actionLabel.toNSString();
     model.minimum = row.range.minimum;
@@ -546,6 +547,11 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     // What the Qt front end does after a save, and the reason a theme change
     // reaches NSApp.appearance as well as Qt's own palette.
     speecher::Theme::apply(_state->store->theme());
+    _state->draft = _state->store->snapshot();
+}
+
+- (void)reloadDraft
+{
     _state->draft = _state->store->snapshot();
 }
 
@@ -646,13 +652,15 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     _state = new BridgeState;
     _state->controller = controller;
     const Capabilities capabilities{controller->accessibilitySupported()
-                                    && controller->accessibilityEnabled()};
+                                        && controller->accessibilityEnabled(),
+                                    controller->updates()->isAppImage()};
     _settingsSchema = [[SettingsSchemaModel alloc]
         initWithStore:controller->settings()
                schema:speecher::buildSettingsSchema(
                           speecher::qtSchemaContext(*controller->platform(),
                                                     *controller->providerRegistry(),
-                                                    controller->primaryOutputStatus()))
+                                                    controller->primaryOutputStatus(),
+                                                    controller->pendingWhatsNewVersion()))
          capabilities:capabilities];
     __weak SpeecherBridge *weakSelf = self;
     QObject::connect(controller,
@@ -734,7 +742,6 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                      [weakSelf](const QString &preview) {
                          SpeecherBridge *bridge = weakSelf;
                          if (bridge.popupPreviewChanged) {
-                             qDebug() << "macOS popup preview delivered length=" << preview.size();
                              bridge.popupPreviewChanged(preview.toNSString());
                          }
                      });
@@ -745,6 +752,33 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                          SpeecherBridge *bridge = weakSelf;
                          if (bridge.popupRefiningChanged) {
                              bridge.popupRefiningChanged(refining);
+                         }
+                     });
+    QObject::connect(session,
+                     &DictationSession::popupFrozenChanged,
+                     &_state->lifetime,
+                     [weakSelf](bool frozen) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.popupFrozenChanged) {
+                             bridge.popupFrozenChanged(frozen);
+                         }
+                     });
+    QObject::connect(session,
+                     &DictationSession::popupOAuthRefreshRequested,
+                     &_state->lifetime,
+                     [weakSelf] {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.popupOAuthRefreshRequested) {
+                             bridge.popupOAuthRefreshRequested();
+                         }
+                     });
+    QObject::connect(session,
+                     &DictationSession::popupListeningIndicatorRequested,
+                     &_state->lifetime,
+                     [weakSelf] {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.popupListeningIndicatorRequested) {
+                             bridge.popupListeningIndicatorRequested();
                          }
                      });
     QObject::connect(session,

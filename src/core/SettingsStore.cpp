@@ -45,6 +45,9 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setPasteRules(draft.output.pasteRules);
     setRestoreClipboardAfterTyping(draft.output.restoreClipboardAfterTyping);
     setCompletionStatusDurationMs(draft.output.completionStatusDurationMs);
+    setUpdateChannel(draft.updates.channel);
+    setAutoCheckUpdates(draft.updates.autoCheck);
+    setAutoInstallUpdates(draft.updates.autoInstall);
     setVocabularyEntries(draft.vocabulary);
     setLearnedCorrections(draft.learnedCorrections);
     setCorrectionLearningEnabled(draft.correctionLearningEnabled);
@@ -190,6 +193,33 @@ void SettingsStore::setAudioCaptureSettings(const AudioCaptureSettings &value)
     const AudioCaptureSettings previous = audioCaptureSettings();
     SettingsCodecs::setAudioCaptureSettings(value);
     emitAudioCaptureSettingsChangedIfNeeded(previous);
+}
+
+void SettingsStore::setUpdateChannel(UpdateChannel value)
+{
+    if (updateChannel() == value) {
+        return;
+    }
+    SettingsCodecs::setUpdateChannel(value);
+    emit updateSettingsChanged();
+}
+
+void SettingsStore::setAutoCheckUpdates(bool value)
+{
+    if (autoCheckUpdates() == value) {
+        return;
+    }
+    SettingsCodecs::setAutoCheckUpdates(value);
+    emit updateSettingsChanged();
+}
+
+void SettingsStore::setAutoInstallUpdates(bool value)
+{
+    if (autoInstallUpdates() == value) {
+        return;
+    }
+    SettingsCodecs::setAutoInstallUpdates(value);
+    emit updateSettingsChanged();
 }
 
 QSettings &SettingsStore::raw()

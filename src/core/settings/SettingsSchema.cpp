@@ -5,7 +5,18 @@
 #include "core/VocabularyLimit.h"
 
 #include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QLocale>
+#include <QRegularExpression>
+
+#include <algorithm>
+
+static void initializeReleaseNotesResource()
+{
+    Q_INIT_RESOURCE(release_notes);
+}
 
 namespace speecher {
 
@@ -40,6 +51,8 @@ const QString kCreatedAtKey = QStringLiteral("createdAtMs");
 const QString kConfidenceKey = QStringLiteral("confidence");
 const QString kEvidenceCountKey = QStringLiteral("evidenceCount");
 const QString kLastObservedKey = QStringLiteral("lastObservedAtMs");
+const QString kWhatsNewAction = QStringLiteral("whatsNew");
+const QString kWhatsNewNotes = QStringLiteral("whatsNewNotes");
 
 // The paste-method value a category row carries when it defers to the global
 // fallback, which is stored as the absence of a rule.
@@ -308,6 +321,75 @@ SettingsRow infoRow(QString id, QString label, QString help, QString text)
     return row;
 }
 
+QString nightlyChangesLink(const QString &lastVersion, const QString &currentVersion)
+{
+    if (!currentVersion.contains(QStringLiteral("-nightly"))) {
+        return {};
+    }
+    const QRegularExpression sha(QStringLiteral("[+]g([0-9a-fA-F]+)$"));
+    const QRegularExpressionMatch last = sha.match(lastVersion);
+    const QRegularExpressionMatch current = sha.match(currentVersion);
+    if (last.hasMatch() && current.hasMatch()) {
+        return QStringLiteral("[Compare commits](https://github.com/firemonster612/speecher/compare/%1...%2)")
+            .arg(last.captured(1), current.captured(1));
+    }
+    return QStringLiteral("[View releases](https://github.com/firemonster612/speecher/releases)");
+}
+
+QString releaseNotesMarkdown(const SchemaContext &context)
+{
+    static const bool resourceInitialized = [] {
+        initializeReleaseNotesResource();
+        return true;
+    }();
+    Q_UNUSED(resourceInitialized);
+    struct Note {
+        QString version;
+        QString body;
+    };
+    QList<Note> notes;
+    const QDir directory(QStringLiteral(":/releases"));
+    for (const QString &fileName : directory.entryList({QStringLiteral("*.md")}, QDir::Files)) {
+        QFile file(directory.filePath(fileName));
+        if (file.open(QIODevice::ReadOnly)) {
+            notes.append({QFileInfo(fileName).completeBaseName(),
+                          QString::fromUtf8(file.readAll()).trimmed()});
+        }
+    }
+    std::sort(notes.begin(), notes.end(), [](const Note &left, const Note &right) {
+        return compareBaseVersions(left.version, right.version) > 0;
+    });
+
+    QList<Note> selected;
+    if (!context.lastSeenVersion.isEmpty()) {
+        for (const Note &note : notes) {
+            if (compareBaseVersions(note.version, context.lastSeenVersion) > 0
+                && compareBaseVersions(note.version, context.currentVersion) <= 0) {
+                selected.append(note);
+            }
+        }
+    }
+    if (selected.isEmpty() && !notes.isEmpty()) {
+        selected.append(notes.first());
+    }
+
+    QString markdown;
+    for (const Note &note : selected) {
+        if (!markdown.isEmpty()) {
+            markdown += QStringLiteral("\n\n---\n\n");
+        }
+        markdown += QStringLiteral("# Speecher %1\n\n%2").arg(note.version, note.body);
+    }
+    if (markdown.isEmpty()) {
+        markdown = QStringLiteral("Release notes are not available in this build.");
+    }
+    const QString changes = nightlyChangesLink(context.lastSeenVersion, context.currentVersion);
+    if (!changes.isEmpty()) {
+        markdown += QStringLiteral("\n\n%1").arg(changes);
+    }
+    return markdown;
+}
+
 SettingsPage generalPage(const SchemaContext &context)
 {
     SettingsRow theme = choiceRow(
@@ -336,7 +418,42 @@ SettingsPage generalPage(const SchemaContext &context)
                               QStringLiteral("Current platform clipboard path."),
                               context.primaryOutputStatus));
 
-    return {
+    SettingsRow updateChannel = choiceRow(
+        QStringLiteral("updateChannel"),
+        QStringLiteral("Update channel"),
+        QString(),
+        fixedOptions({
+            {QStringLiteral("stable"),
+             QStringLiteral("Stable Release"),
+             QStringLiteral("Hand-tested releases for general use.")},
+            {QStringLiteral("nightly"),
+             QStringLiteral("Nightly Build"),
+             QStringLiteral("Republished automatically from every push to master.")},
+        }),
+        [](const AppSettings &settings) { return updateChannelName(settings.updates.channel); },
+        [](AppSettings &settings, const QString &value) {
+            settings.updates.channel = updateChannelFromName(value);
+        });
+    updateChannel.sinceVersion = QStringLiteral("0.2.0");
+    SettingsRow autoCheck = toggleRow(
+        QStringLiteral("autoCheckUpdates"),
+        QStringLiteral("Check for updates automatically"),
+        QStringLiteral("Check the selected Update Channel at startup and once a day."),
+        [](const AppSettings &settings) { return settings.updates.autoCheck; },
+        [](AppSettings &settings, bool value) { settings.updates.autoCheck = value; });
+    autoCheck.sinceVersion = QStringLiteral("0.2.0");
+    SettingsRow autoInstall = toggleRow(
+        QStringLiteral("autoInstallUpdates"),
+        QStringLiteral("Download and install updates automatically"),
+        QStringLiteral("AppImage updates install in the background and take effect after restart."),
+        [](const AppSettings &settings) { return settings.updates.autoInstall; },
+        [](AppSettings &settings, bool value) { settings.updates.autoInstall = value; });
+    autoInstall.sinceVersion = QStringLiteral("0.2.0");
+    autoInstall.visible = [](const AppSettings &, const Capabilities &capabilities) {
+        return capabilities.isAppImage;
+    };
+
+    SettingsPage page{
         QStringLiteral("general"),
         QStringLiteral("General"),
         QStringLiteral("preferences-system"),
@@ -373,13 +490,62 @@ SettingsPage generalPage(const SchemaContext &context)
                            QStringLiteral("Setup assistant"),
                            QStringLiteral("Check sign-in, microphone, accessibility, delivery, and refinement again."),
                            QStringLiteral("Run setup assistant…")),
-                 actionRow(QStringLiteral("openReleases"),
-                           QStringLiteral("Updates"),
-                           QStringLiteral("Updates are manual; open the GitHub releases page when you want to check."),
-                           QStringLiteral("Open releases")),
+             }},
+            {QStringLiteral("Updates"),
+             QString(),
+             {
+                 std::move(updateChannel),
+                 std::move(autoCheck),
+                 std::move(autoInstall),
+                 actionRow(QStringLiteral("checkForUpdates"),
+                           QStringLiteral("Check for updates"),
+                           QStringLiteral("Check the selected Update Channel for a newer build."),
+                           QStringLiteral("Check now")),
+                 infoRow(QStringLiteral("currentVersion"),
+                         QStringLiteral("Current version"),
+                         QString(),
+                         context.currentVersion.isEmpty()
+                             ? QStringLiteral("Unknown")
+                             : context.currentVersion),
+                 actionRow(kWhatsNewAction,
+                           QStringLiteral("What's New"),
+                           QStringLiteral("Release notes for this version, and the settings it added."),
+                           QStringLiteral("What's New…")),
              }},
         },
     };
+    return page;
+}
+
+SettingsPage whatsNewPage(const QList<SettingsPage> &pages, const SchemaContext &context)
+{
+    QList<SettingsRow> newRows;
+    if (!context.lastSeenVersion.isEmpty()) {
+        for (const SettingsPage &page : pages) {
+            for (const SettingsSection &section : page.sections) {
+                for (const SettingsRow &row : section.rows) {
+                    if (!row.sinceVersion.isEmpty()
+                        && compareBaseVersions(row.sinceVersion, context.lastSeenVersion) > 0
+                        && compareBaseVersions(row.sinceVersion, context.currentVersion) <= 0) {
+                        newRows.append(row);
+                    }
+                }
+            }
+        }
+    }
+
+    SettingsRow notes = customRow(kWhatsNewNotes, QStringLiteral("Release notes"), QString());
+    const QString markdown = releaseNotesMarkdown(context);
+    notes.value = [markdown](const AppSettings &) { return QVariant(markdown); };
+    QList<SettingsSection> sections{{QString(), QString(), {std::move(notes)}}};
+    if (!newRows.isEmpty()) {
+        sections.append({QStringLiteral("Try the new settings"), QString(), std::move(newRows)});
+    }
+    return {QStringLiteral("whatsNew"),
+            QStringLiteral("What's New"),
+            QStringLiteral("help-about"),
+            QStringLiteral("sparkles"),
+            std::move(sections)};
 }
 
 SettingsPage audioPage(const SchemaContext &context)
@@ -1472,17 +1638,40 @@ QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices, const QStri
     return options;
 }
 
+int compareBaseVersions(const QString &left, const QString &right)
+{
+    static const QRegularExpression leadingDigits(QStringLiteral("^\\d+"));
+    const auto component = [](const QStringList &parts, int index) {
+        if (index >= parts.size()) {
+            return 0;
+        }
+        return leadingDigits.match(parts.at(index)).captured().toInt();
+    };
+    const QStringList leftParts = left.section(QLatin1Char('-'), 0, 0).split(QLatin1Char('.'));
+    const QStringList rightParts = right.section(QLatin1Char('-'), 0, 0).split(QLatin1Char('.'));
+    for (int index = 0; index < qMax(leftParts.size(), rightParts.size()); ++index) {
+        const int leftPart = component(leftParts, index);
+        const int rightPart = component(rightParts, index);
+        if (leftPart != rightPart) {
+            return leftPart < rightPart ? -1 : 1;
+        }
+    }
+    return 0;
+}
+
 SettingsSchema buildSettingsSchema(const SchemaContext &context)
 {
-    return {{generalPage(context),
-             audioPage(context),
-             applicationsPage(),
-             outputPage(context),
-             refinementPage(context),
-             vocabularyPage(),
-             correctionsPage(),
-             bindingsPage(),
-             providersPage()}};
+    QList<SettingsPage> pages{generalPage(context),
+                              audioPage(context),
+                              applicationsPage(),
+                              outputPage(context),
+                              refinementPage(context),
+                              vocabularyPage(),
+                              correctionsPage(),
+                              bindingsPage(),
+                              providersPage()};
+    pages.append(whatsNewPage(pages, context));
+    return {std::move(pages)};
 }
 
 } // namespace speecher

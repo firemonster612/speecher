@@ -57,6 +57,12 @@ bool MacPasteDelivery::paste(QString *error)
         }
         return false;
     }
+    if (IsSecureEventInputEnabled()) {
+        if (error) {
+            *error = QStringLiteral("Could not paste because secure input is active");
+        }
+        return false;
+    }
     // macOS has one paste chord: Terminal.app and every other terminal take
     // Cmd+V, so PasteMethod::TerminalPaste needs no keystroke of its own here.
     return postKeyStroke(kVK_ANSI_V, kCGEventFlagMaskCommand, error);

@@ -1,6 +1,8 @@
 #include "frontend/mac/MacFrontEnd.h"
 
 #include "app/ApplicationController.h"
+#include "app/UpdateController.h"
+#include "core/SettingsStore.h"
 #include "frontend/mac/SpeecherBridge.h"
 #include "ui/SetupAssistant.h"
 
@@ -9,9 +11,6 @@
 #import "SpeecherUI-Swift.h"
 
 #include <QApplication>
-#include <QDesktopServices>
-#include <QUrl>
-
 namespace speecher {
 
 struct MacFrontEnd::Native {
@@ -32,9 +31,12 @@ MacFrontEnd::MacFrontEnd(ApplicationController *controller)
             controller->showSetupAssistant();
             return;
         }
-        if (id == QStringLiteral("openReleases")) {
-            QDesktopServices::openUrl(
-                QUrl(QStringLiteral("https://github.com/firemonster612/speecher/releases")));
+        if (id == QStringLiteral("checkForUpdates")) {
+            controller->updates()->checkForUpdates(controller->settings()->updateChannel());
+            return;
+        }
+        if (id == QStringLiteral("whatsNew")) {
+            controller->clearPendingWhatsNew();
         }
     };
     // The menu bar extra is the app's front door, so it exists from launch

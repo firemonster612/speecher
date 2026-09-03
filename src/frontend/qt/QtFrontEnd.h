@@ -13,6 +13,7 @@ class AppWindow;
 class ApplicationController;
 class SetupAssistant;
 class TranscriberPopup;
+class QtFrontEndTestAccess;
 
 // Speecher's user interface on Qt Widgets: the main window, the setup
 // assistant and the dictation popup.
@@ -34,7 +35,10 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+    friend class QtFrontEndTestAccess;
+
     void wireSessionToPopup();
+    void refreshUpdateChip();
     void watchForFirstFrame(QWidget *window);
 
     ApplicationController *m_controller;

@@ -1,4 +1,5 @@
 #include "app/ApplicationController.h"
+#include "app/UpdateController.h"
 #include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
 #include "core/SettingsStore.h"
@@ -77,13 +78,17 @@ static void migrateSettings()
     newSettings.setFallbacksEnabled(false);
     oldSettings.setFallbacksEnabled(false);
     const QStringList oldKeys = oldSettings.allKeys();
+    const bool existingConfig = !newSettings.allKeys().isEmpty() || !oldKeys.isEmpty();
     if (newSettings.allKeys().isEmpty() && !oldKeys.isEmpty()) {
         for (const QString &key : oldKeys) {
             newSettings.setValue(key, oldSettings.value(key));
         }
-        newSettings.sync();
         qInfo() << "Migrated settings keys:" << oldKeys.size();
     }
+    if (existingConfig && !newSettings.contains(SettingsKeys::UpdatesLastRunVersion)) {
+        newSettings.setValue(SettingsKeys::UpdatesLastRunVersion, QStringLiteral("0.1.0"));
+    }
+    newSettings.sync();
 }
 
 static QStringList commandLineArguments(int argc, char **argv)
@@ -138,6 +143,7 @@ int main(int argc, char **argv)
     QtFrontEnd frontEnd(&controller);
 #endif
     controller.setFrontEnd(&frontEnd);
+    controller.updates()->start();
     QString ipcError;
     if (!controller.startIpc(&ipcError)) {
         if (!decision.grabPath.isEmpty()) {

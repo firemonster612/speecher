@@ -1,0 +1,44 @@
+name: Generate Sparkle keys
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: macos-26
+    steps:
+      - name: Download Sparkle
+        run: |
+          # Keep this pin in sync with CMakeLists.txt's Sparkle FetchContent source.
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/Sparkle.tar.xz" \
+            https://github.com/sparkle-project/Sparkle/releases/download/2.9.6/Sparkle-2.9.6.tar.xz
+          echo '52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192  '"$RUNNER_TEMP/Sparkle.tar.xz" | shasum -a 256 --check
+          mkdir -p "$RUNNER_TEMP/sparkle"
+          tar -xf "$RUNNER_TEMP/Sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
+
+      - name: Generate keys
+        run: |
+          mkdir "$RUNNER_TEMP/sparkle-keys"
+          "$RUNNER_TEMP/sparkle/bin/generate_keys"
+          public_key="$("$RUNNER_TEMP/sparkle/bin/generate_keys" -p)"
+          # generate_keys -x refuses to overwrite an existing export file.
+          "$RUNNER_TEMP/sparkle/bin/generate_keys" -x "$RUNNER_TEMP/sparkle-keys/sparkle-private-key"
+          {
+            echo '## Sparkle keys'
+            echo
+            echo 'Store this public key as the `SPARKLE_ED_PUBLIC_KEY` repository secret:'
+            echo
+            echo "\`$public_key\`"
+            echo
+            echo 'Store the `sparkle-private-key` artifact as the `SPARKLE_ED_PRIVATE_KEY` repository secret, then delete the artifact immediately.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload private key
+        uses: actions/upload-artifact@v7
+        with:
+          name: sparkle-private-key
+          path: ${{ runner.temp }}/sparkle-keys/sparkle-private-key
+          retention-days: 1

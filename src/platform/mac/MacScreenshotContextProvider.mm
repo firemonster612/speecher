@@ -7,7 +7,10 @@
 #include <QProcess>
 #include <QUuid>
 
+#import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
+
+#include <optional>
 
 namespace speecher {
 
@@ -20,6 +23,39 @@ QString screenRecordingHint()
 {
     return QStringLiteral(
         "Screen capture failed. Allow Speecher under Privacy & Security > Screen Recording.");
+}
+
+std::optional<CGRect> frontmostWindowBounds()
+{
+    NSRunningApplication *frontmost = NSWorkspace.sharedWorkspace.frontmostApplication;
+    if (!frontmost) {
+        return std::nullopt;
+    }
+    const pid_t targetPid = frontmost.processIdentifier;
+    CFArrayRef windows = CGWindowListCopyWindowInfo(
+        kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+        kCGNullWindowID);
+    if (!windows) {
+        return std::nullopt;
+    }
+    std::optional<CGRect> bounds;
+    for (NSDictionary *window in (__bridge NSArray *)windows) {
+        if ([window[(__bridge NSString *)kCGWindowOwnerPID] intValue] != targetPid
+            || [window[(__bridge NSString *)kCGWindowLayer] intValue] != 0
+            || ![window[(__bridge NSString *)kCGWindowIsOnscreen] boolValue]) {
+            continue;
+        }
+        CGRect candidate;
+        if (CGRectMakeWithDictionaryRepresentation(
+                (__bridge CFDictionaryRef)window[(__bridge NSString *)kCGWindowBounds],
+                &candidate)
+            && candidate.size.width > 0 && candidate.size.height > 0) {
+            bounds = candidate;
+            break;
+        }
+    }
+    CFRelease(windows);
+    return bounds;
 }
 
 } // namespace
@@ -36,8 +72,14 @@ void MacScreenshotContextProvider::capture()
     // Without the grant screencapture still runs and still writes a file, it
     // just hands back the desktop picture. Asking first turns a plausible but
     // useless screenshot into an honest failure.
-    if (!CGPreflightScreenCaptureAccess()) {
+    if (!CGPreflightScreenCaptureAccess() && !CGRequestScreenCaptureAccess()) {
         emit failed(screenRecordingHint());
+        return;
+    }
+
+    const std::optional<CGRect> bounds = frontmostWindowBounds();
+    if (!bounds) {
+        emit failed(QStringLiteral("Could not find the target window to capture"));
         return;
     }
 
@@ -61,10 +103,21 @@ void MacScreenshotContextProvider::capture()
         discardCaptureFile();
         emit failed(QStringLiteral("Could not run the macOS screen capture tool"));
     });
+    const QString region = QStringLiteral("%1,%2,%3,%4")
+                               .arg(qRound(bounds->origin.x))
+                               .arg(qRound(bounds->origin.y))
+                               .arg(qRound(bounds->size.width))
+                               .arg(qRound(bounds->size.height));
     // -x keeps the capture silent; the shutter sound during dictation would land
-    // in the recording.
+    // in the recording. -R confines context to the target instead of recording
+    // every display.
     m_capture->start(QString::fromLatin1(screenCaptureTool),
-                     {QStringLiteral("-x"), QStringLiteral("-t"), QStringLiteral("png"), m_capturePath});
+                     {QStringLiteral("-x"),
+                      QStringLiteral("-t"),
+                      QStringLiteral("png"),
+                      QStringLiteral("-R"),
+                      region,
+                      m_capturePath});
 }
 
 void MacScreenshotContextProvider::cancel()

@@ -10,9 +10,9 @@ namespace speecher {
 // the ones it actually paused. Best effort throughout: a denied Automation
 // prompt or a player that is not running is not worth interrupting dictation.
 //
-// The Apple events go out on a worker thread. A player that is busy, or an
-// Automation prompt the user has not answered, blocks the script for as long as
-// it likes, and dictation must not wait for that.
+// The Apple events go through asynchronous osascript processes. A player that is
+// busy, or an Automation prompt the user has not answered, must not block the
+// GUI thread.
 class MacMediaController : public MediaController {
     Q_OBJECT
 
@@ -22,11 +22,8 @@ public:
     void resumePaused() override;
 
 private:
-    // Owned by the GUI thread; the worker only ever hands back a result.
     QStringList m_pausedPlayers;
-    // False once dictation has asked for its players back, so a pause that is
-    // still in flight knows to undo itself.
-    bool m_pauseWanted = false;
+    quint64 m_generation = 0;
 };
 
 } // namespace speecher

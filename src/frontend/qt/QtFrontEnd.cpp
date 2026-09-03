@@ -2,15 +2,18 @@
 
 #include "app/ApplicationController.h"
 #include "app/PlatformComposition.h"
+#include "app/UpdateController.h"
 #include "dictation/DictationSession.h"
 #include "ui/AppWindow.h"
 #include "ui/SetupAssistant.h"
 #include "ui/TranscriberPopup.h"
 
 #include <QApplication>
+#include <QDesktopServices>
 #include <QEvent>
 #include <QWidget>
 #include <QWindow>
+#include <QUrl>
 
 namespace speecher {
 
@@ -20,6 +23,21 @@ QtFrontEnd::QtFrontEnd(ApplicationController *controller, QObject *parent)
     , m_popup(new TranscriberPopup(controller->platform()->createPopupPositioner(nullptr)))
 {
     wireSessionToPopup();
+    connect(controller->updates(),
+            &UpdateController::changed,
+            this,
+            &QtFrontEnd::refreshUpdateChip);
+    connect(m_popup, &TranscriberPopup::updateRequested,
+            controller->updates(), &UpdateController::updateNow);
+    connect(controller->updates(), &UpdateController::openReleasePageRequested, this, [] {
+        QDesktopServices::openUrl(
+            QUrl(QStringLiteral("https://github.com/firemonster612/speecher/releases")));
+    });
+    connect(controller->session(),
+            &DictationSession::stateChanged,
+            this,
+            &QtFrontEnd::refreshUpdateChip);
+    refreshUpdateChip();
 }
 
 QtFrontEnd::~QtFrontEnd()
@@ -153,6 +171,40 @@ void QtFrontEnd::wireSessionToPopup()
             &ApplicationController::accessibilityStateChanged,
             m_popup,
             &TranscriberPopup::setAccessibilityState);
+}
+
+void QtFrontEnd::refreshUpdateChip()
+{
+    UpdateController *updates = m_controller->updates();
+    const DictationState sessionState = m_controller->session()->state();
+    const bool canAct = sessionState == DictationState::Idle
+        || sessionState == DictationState::Error;
+    switch (updates->state()) {
+    case UpdateController::State::UpdateAvailable:
+        m_popup->setUpdateChip(QStringLiteral("Update available"), true, canAct);
+        break;
+    case UpdateController::State::Downloading:
+        m_popup->setUpdateChip(
+            QStringLiteral("Downloading %1%").arg(updates->downloadPercent()), true, false);
+        break;
+    case UpdateController::State::ReadyToRestart:
+        m_popup->setUpdateChip(updates->errorMessage().isEmpty()
+                                   ? QStringLiteral("Restart to finish updating")
+                                   : updates->errorMessage(),
+                               true,
+                               canAct);
+        break;
+    case UpdateController::State::RestartPending:
+        m_popup->setUpdateChip(
+            QStringLiteral("Restarting after this dictation…"), true, false);
+        break;
+    case UpdateController::State::Error:
+        m_popup->setUpdateChip(updates->errorMessage(), true, canAct);
+        break;
+    default:
+        m_popup->setUpdateChip({}, false, false);
+        break;
+    }
 }
 
 } // namespace speecher

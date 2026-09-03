@@ -22,6 +22,7 @@ class GlobalShortcutBinder;
 class ProviderRegistry;
 class SecretStore;
 class SettingsStore;
+class UpdateController;
 
 class ApplicationController : public QObject {
     Q_OBJECT
@@ -45,6 +46,9 @@ public:
     // front end shows only the dictation popup.
     bool popupOnly() const;
     SettingsStore *settings() const;
+    UpdateController *updates() const;
+    QString pendingWhatsNewVersion() const;
+    void clearPendingWhatsNew();
     SecretStore *secretStore() const;
     ProviderRegistry *providerRegistry() const;
     const PlatformComposition *platform() const;
@@ -92,6 +96,7 @@ signals:
     void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
     void globalShortcutChanged();
     void globalShortcutRegistrationFinished(bool bound, const QString &detail);
+    void whatsNewChanged();
 
 private:
     void registerProviders();
@@ -110,11 +115,13 @@ private:
     ProviderRegistry *m_providers = nullptr;
     AudioInput *m_audio = nullptr;
     DictationSession *m_session = nullptr;
+    UpdateController *m_updates = nullptr;
     GlobalShortcutBinder *m_shortcutBinder = nullptr;
     SingleInstanceIpc *m_ipc = nullptr;
     bool m_accessibilitySupported = false;
     bool m_accessibilityEnabled = false;
     bool m_accessibilityPersistent = false;
+    QString m_pendingWhatsNewVersion;
 #ifdef Q_OS_MACOS
     QTimer *m_accessibilityPoll = nullptr;
 #endif

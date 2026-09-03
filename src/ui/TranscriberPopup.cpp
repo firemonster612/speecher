@@ -13,6 +13,7 @@
 #include <QPalette>
 #include <QPaintEvent>
 #include <QProgressBar>
+#include <QPushButton>
 #include <QPropertyAnimation>
 #include <QResizeEvent>
 #include <QTimer>
@@ -68,6 +69,7 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     , m_errorDismissProgress(new QProgressBar(m_previewPill))
     , m_waveform(new WaveformWidget(this))
     , m_accessibilityNotice(new AccessibilityNotice(this))
+    , m_updateChip(new QPushButton(this))
     , m_positioner(positioner ? positioner : new FallbackPopupPositioner(this))
 {
     if (m_positioner->parent() != this) {
@@ -125,6 +127,13 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     m_layout->setSpacing(10);
     m_layout->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
 
+    m_updateChip->setObjectName(QStringLiteral("updateChip"));
+    m_updateChip->setFlat(true);
+    m_updateChip->setFocusPolicy(Qt::NoFocus);
+    m_updateChip->hide();
+    connect(m_updateChip, &QPushButton::clicked, this, &TranscriberPopup::updateRequested);
+    m_layout->addWidget(m_updateChip, 0, Qt::AlignHCenter);
+
     m_accessibilityNotice->setCompact(true);
     m_accessibilityNotice->setMaximumWidth(620);
     connect(m_accessibilityNotice,
@@ -141,7 +150,10 @@ QSize TranscriberPopup::sizeHint() const
     const int noticeHeight = m_accessibilityNotice->isHidden()
         ? 0
         : m_accessibilityNotice->sizeHint().height() + m_layout->spacing();
-    return QSize(620, 110 + noticeHeight);
+    const int updateHeight = m_updateChip->isHidden()
+        ? 0
+        : m_updateChip->sizeHint().height() + m_layout->spacing();
+    return QSize(620, 110 + noticeHeight + updateHeight);
 }
 
 void TranscriberPopup::setStatus(const QString &status)
@@ -284,6 +296,22 @@ void TranscriberPopup::setAccessibilityState(bool supported,
 void TranscriberPopup::showAccessibilityError(const QString &message)
 {
     m_accessibilityNotice->showError(message);
+    adjustSize();
+    if (isVisible()) {
+        m_positioner->positionBottomCenter(m_surface);
+    }
+}
+
+void TranscriberPopup::setUpdateChip(const QString &text, bool visible, bool enabled)
+{
+    const bool visibilityChanged = m_updateChip->isHidden() == visible;
+    const bool textChanged = m_updateChip->text() != text;
+    m_updateChip->setText(text);
+    m_updateChip->setEnabled(enabled);
+    m_updateChip->setVisible(visible);
+    if (!visibilityChanged && !textChanged) {
+        return;
+    }
     adjustSize();
     if (isVisible()) {
         m_positioner->positionBottomCenter(m_surface);

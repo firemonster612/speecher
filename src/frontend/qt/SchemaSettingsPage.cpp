@@ -215,7 +215,8 @@ QWidget *addRowGroup(const QString &id, QWidget *form)
 
 SchemaContext qtSchemaContext(const PlatformComposition &platform,
                               const ProviderRegistry &providers,
-                              const QString &primaryOutputStatus)
+                              const QString &primaryOutputStatus,
+                              const QString &lastSeenVersion)
 {
     return {
         providerOptions(providers.speechProviders()),
@@ -229,6 +230,8 @@ SchemaContext qtSchemaContext(const PlatformComposition &platform,
 #else
         false,
 #endif
+        QStringLiteral(SPEECHER_VERSION),
+        lastSeenVersion,
     };
 }
 
@@ -333,6 +336,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         form->addRow(editor.widget);
         row.frame = editor.widget;
         row.control = editor.widget;
+        row.description = editor.widget->findChild<QLabel *>(QStringLiteral("rowDescription"));
         row.value = editor.value;
         row.setValue = editor.setValue;
         m_rows.append(row);
@@ -348,10 +352,12 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
                                               descriptor.help,
                                               custom.widget,
                                               host,
-                                              custom.titleAccessory);
+                                              custom.titleAccessory,
+                                              bool(descriptor.helpValue));
             settings::addRow(form, frame, host, false);
             row.frame = frame;
             row.control = custom.widget;
+            row.description = frame->findChild<QLabel *>(QStringLiteral("rowDescription"));
             row.value = custom.value;
             row.setValue = custom.setValue;
             m_rows.append(row);
@@ -380,6 +386,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         form->addRow(container);
         row.frame = container;
         row.control = custom.widget;
+        row.description = headerHelp;
         row.value = custom.value;
         row.setValue = custom.setValue;
         m_rows.append(row);
@@ -392,9 +399,18 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
     if (!descriptor.tooltip.isEmpty()) {
         row.control->setToolTip(descriptor.tooltip);
     }
-    QFrame *frame = settings::makeRow(descriptor.label, descriptor.help, row.control, host);
+    QFrame *frame = settings::makeRow(descriptor.label,
+                                      descriptor.help,
+                                      row.control,
+                                      host,
+                                      nullptr,
+                                      bool(descriptor.helpValue));
     settings::addRow(form, frame, host, false);
     row.frame = frame;
+    row.description = frame->findChild<QLabel *>(QStringLiteral("rowDescription"));
+    if (!row.description) {
+        row.description = qobject_cast<QCheckBox *>(row.control);
+    }
     m_rows.append(row);
     if (descriptor.id == QStringLiteral("audioDevice")) {
         auto *mediaDevices = new QMediaDevices(this);
@@ -584,6 +600,11 @@ void SchemaSettingsPage::setCapabilities(const Capabilities &capabilities)
     refreshRows();
 }
 
+void SchemaSettingsPage::refresh()
+{
+    refreshRows();
+}
+
 // Everything a row can derive from the rest of the page: whether it is worth
 // showing, whether it is usable, and what an Info row currently reads.
 void SchemaSettingsPage::refreshRows()
@@ -602,6 +623,19 @@ void SchemaSettingsPage::refreshRows()
         }
         if (row.descriptor.kind == RowKind::Info && row.descriptor.value && row.setValue) {
             row.setValue(row.descriptor.value(draft));
+        }
+        if (row.descriptor.kind == RowKind::Action && row.descriptor.value) {
+            if (auto *button = qobject_cast<QPushButton *>(row.control)) {
+                button->setText(row.descriptor.value(draft).toString());
+            }
+        }
+        if (row.descriptor.helpValue && row.description) {
+            const QString description = row.descriptor.helpValue(draft);
+            if (auto *label = qobject_cast<QLabel *>(row.description)) {
+                label->setText(description);
+            } else if (auto *checkBox = qobject_cast<QCheckBox *>(row.description)) {
+                checkBox->setText(description);
+            }
         }
         if (row.descriptor.enabled) {
             const bool live = row.descriptor.enabled(draft, m_capabilities);

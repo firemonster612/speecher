@@ -127,6 +127,8 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 // belongs to the front end, as it does on Qt.
 @property (nonatomic, copy, nullable) void (^actionTriggered)(NSString *rowId);
 - (void)setValue:(nullable id)value forRowId:(NSString *)rowId;
+// Discards edits left from the last showing and re-reads the store.
+- (void)reloadDraft;
 // Writes the draft back to the store and re-reads it.
 - (void)commit;
 // Lets the rows whose choices are slow to gather — a device enumeration —
@@ -159,7 +161,10 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, copy, nullable) void (^popupHideRequested)(void);
 @property (nonatomic, copy, nullable) void (^popupStatusChanged)(NSString *status);
 @property (nonatomic, copy, nullable) void (^popupPreviewChanged)(NSString *preview);
+@property (nonatomic, copy, nullable) void (^popupFrozenChanged)(BOOL frozen);
 @property (nonatomic, copy, nullable) void (^popupRefiningChanged)(BOOL refining);
+@property (nonatomic, copy, nullable) void (^popupOAuthRefreshRequested)(void);
+@property (nonatomic, copy, nullable) void (^popupListeningIndicatorRequested)(void);
 @property (nonatomic, copy, nullable) void (^popupErrorRequested)(NSString *message);
 // The panel is on screen, so the session need not wait out its fallback timer
 // before opening the microphone.

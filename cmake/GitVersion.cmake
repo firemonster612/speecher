@@ -52,6 +52,18 @@ if("${git_repository_result}" STREQUAL "0"
   # Stable tags are vX.Y.Z reachable from master. RC and side-branch tags deliberately fall back;
   # the regex is strict on purpose.
   execute_process(
+    COMMAND git rev-parse --verify --quiet refs/heads/master
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESULT_VARIABLE git_local_master_result
+    ERROR_QUIET
+  )
+  if(git_local_master_result STREQUAL "0")
+    set(git_master_ref master)
+  else()
+    set(git_master_ref origin/master)
+  endif()
+
+  execute_process(
     COMMAND git describe --exact-match --tags --match "v*"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     RESULT_VARIABLE git_exact_tag_result
@@ -63,7 +75,7 @@ if("${git_repository_result}" STREQUAL "0"
   if(git_exact_tag_result STREQUAL "0"
      AND git_exact_tag MATCHES "^v([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
     execute_process(
-      COMMAND git merge-base --is-ancestor "${git_exact_tag}" master
+      COMMAND git merge-base --is-ancestor "${git_exact_tag}" "${git_master_ref}"
       WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
       RESULT_VARIABLE git_exact_tag_on_master_result
       ERROR_QUIET
@@ -88,7 +100,7 @@ if("${git_repository_result}" STREQUAL "0"
     if(git_last_tag_result STREQUAL "0"
        AND git_last_tag MATCHES "^v([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
       execute_process(
-        COMMAND git merge-base --is-ancestor "${git_last_tag}" master
+        COMMAND git merge-base --is-ancestor "${git_last_tag}" "${git_master_ref}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         RESULT_VARIABLE git_last_tag_on_master_result
         ERROR_QUIET

@@ -8,6 +8,7 @@
 class QFrame;
 class QEvent;
 class QProgressBar;
+class QPushButton;
 class QPropertyAnimation;
 class QPaintEvent;
 class QResizeEvent;
@@ -40,11 +41,13 @@ public slots:
     void showPopup(quint64 generation);
     void setAccessibilityState(bool supported, bool enabled, bool persistent);
     void showAccessibilityError(const QString &message);
+    void setUpdateChip(const QString &text, bool visible, bool enabled);
 
 signals:
     void errorDismissed();
     void enableAccessibilityRequested();
     void popupPresented(quint64 generation);
+    void updateRequested();
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -64,6 +67,7 @@ private:
     QPropertyAnimation *m_errorDismissAnimation = nullptr;
     WaveformWidget *m_waveform = nullptr;
     AccessibilityNotice *m_accessibilityNotice = nullptr;
+    QPushButton *m_updateChip = nullptr;
     PopupPositioner *m_positioner = nullptr;
     QtPopupSurface m_surface{this};
     quint64 m_pendingPresentationGeneration = 0;

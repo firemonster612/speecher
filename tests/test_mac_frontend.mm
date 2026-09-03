@@ -10,7 +10,12 @@
 
 #import <AppKit/AppKit.h>
 
+// The Swift class's Objective-C runtime name is mangled, so a hand-written
+// @interface cannot stand in for the generated header.
+#import "SpeecherUI-Swift.h"
+
 #include <QAbstractButton>
+#include <QDeadlineTimer>
 #include <QApplication>
 #include <QCheckBox>
 
@@ -99,6 +104,49 @@ private slots:
         MacFrontEnd frontEnd(&controller);
 
         QCOMPARE(widgetCount<TranscriberPopup>(), existingPopups);
+    }
+
+    void nativeDictationProblemCanBeDismissed()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
+
+        [ui showDictationProblem:@"The microphone stopped"];
+        QVERIFY(ui.dictationPanelVisible);
+
+        [ui dismissDictationPanel];
+        QVERIFY(!ui.dictationPanelVisible);
+    }
+
+    void nativeDictationPanelUsesStatusWindowLevel()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
+
+        QCOMPARE(ui.dictationPanelLevel, NSInteger(NSStatusWindowLevel));
+    }
+
+    void popupPresentationAcknowledgesRequestedGeneration()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
+        constexpr uint64_t generation = 73;
+
+        QVERIFY(bridge.popupShowRequested);
+        bridge.popupShowRequested(generation);
+
+        // The acknowledgement is deferred through the GCD main queue, which
+        // Qt's test event pump does not drain; only the CFRunLoop does.
+        const QDeadlineTimer deadline(2000);
+        while (ui.dictationPanelPresentedGeneration != generation && !deadline.hasExpired()) {
+            CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, true);
+            QCoreApplication::processEvents();
+        }
+        QCOMPARE(ui.dictationPanelPresentedGeneration, generation);
+        [ui dismissDictationPanel];
     }
 
     void skippingSetupOpensTheNativeSettingsWindow()

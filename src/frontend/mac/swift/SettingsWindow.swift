@@ -43,9 +43,10 @@ struct RootView: View {
     }
 }
 
-/// The source list: the eight panes in runs, filtered by whatever the search
-/// field holds. The schema is the index, so a pane answers to its own name and
-/// to any group heading, row label or help text it carries.
+/// The source list: eight regular panes in runs, plus What's New while selected,
+/// filtered by whatever the search field holds. The schema is the index, so a
+/// pane answers to its own name and to any group heading, row label or help text
+/// it carries.
 struct SidebarList: View {
     @ObservedObject var model: AppModel
     @Binding var query: String
@@ -53,6 +54,9 @@ struct SidebarList: View {
     var body: some View {
         List(selection: $model.pane) {
             if query.isEmpty {
+                if model.pane == "whatsNew", let pane = Pane.with(id: model.pane) {
+                    row(pane)
+                }
                 ForEach(Array(Pane.sidebarRuns.enumerated()), id: \.offset) { _, run in
                     Section {
                         ForEach(run.compactMap(Pane.with(id:))) { row($0) }

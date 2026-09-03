@@ -6,6 +6,8 @@
 /dist/
 /*.AppImage
 *.zsync
+__pycache__/
+*.pyc
 
 # CMake generated files if configured in-tree
 /CMakeCache.txt

@@ -1,0 +1,343 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
+  pull_request:
+
+concurrency:
+  # GitHub retains only one pending run per group. A newer master push may replace
+  # an intermediate nightly, which is acceptable; tag refs have separate groups.
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libatspi2.0-dev \
+            libdbus-1-dev \
+            libegl1 \
+            libgl1-mesa-dev \
+            libglib2.0-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0 \
+            ninja-build \
+            pulseaudio \
+            wayland-protocols
+
+      - name: Install appimagetool
+        run: |
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/appimagetool.AppImage" \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          echo 'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  '"$RUNNER_TEMP/appimagetool.AppImage" | sha256sum --check
+          sudo install -m 755 "$RUNNER_TEMP/appimagetool.AppImage" /usr/local/bin/appimagetool
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          modules: qtmultimedia qtwebsockets
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Start the test audio server
+        run: |
+          # Keep audio tests enabled on headless runners instead of skipping them.
+          if ! pulseaudio --start --exit-idle-time=-1; then
+            echo "pulseaudio did not start; continuing so ctest can report audio failures." >&2
+          fi
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package AppImage
+        if: github.event_name != 'pull_request'
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          SPEECHER_BUILD_TYPE: Release
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "master" ]; then
+            export SPEECHER_UPDINFO='gh-releases-zsync|firemonster612|speecher|nightly|Speecher-*x86_64.AppImage.zsync'
+          else
+            export SPEECHER_UPDINFO='gh-releases-zsync|firemonster612|speecher|latest|Speecher-*x86_64.AppImage.zsync'
+          fi
+          bash packaging/build-appimage.sh
+
+      - name: Write update manifest
+        if: github.event_name != 'pull_request'
+        run: |
+          version_output="$(build-appimage/speecher --version)"
+          version="$(printf '%s\n' "$version_output" | sed -n 's/^speecher \(.*\) (build [0-9][0-9]*)$/\1/p')"
+          build_number="$(printf '%s\n' "$version_output" | sed -n 's/^speecher .* (build \([0-9][0-9]*\))$/\1/p')"
+          test -n "$version"
+          test -n "$build_number"
+          if [ "${GITHUB_REF_NAME}" = "master" ]; then
+            release_tag=nightly
+          else
+            release_tag="v${version}"
+            test "${GITHUB_REF_NAME}" = "$release_tag"
+          fi
+          sha256="$(sha256sum dist/Speecher-x86_64.AppImage | awk '{print $1}')"
+          python3 - "$version" "$build_number" "$release_tag" "$sha256" > dist/update-manifest.json <<'PY'
+          import json
+          import sys
+
+          version, build_number, release_tag, sha256 = sys.argv[1:]
+          asset_url = (
+              "https://github.com/firemonster612/speecher/releases/download/"
+              f"{release_tag}/Speecher-x86_64.AppImage"
+          )
+          json.dump({
+              "version": version,
+              "buildNumber": int(build_number),
+              "linux-x86_64": {"appimage": asset_url, "sha256": sha256},
+          }, sys.stdout, indent=2)
+          print()
+          PY
+
+      - name: Upload Linux release artifacts
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-release
+          path: |
+            dist/Speecher-x86_64.AppImage
+            dist/Speecher-x86_64.AppImage.zsync
+            dist/update-manifest.json
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: clang_64
+          modules: qtmultimedia qtwebsockets
+
+      - name: Remove obsolete AGL references
+        run: |
+          # The macOS 26 SDK removed AGL, but the runner still has a runtime
+          # /System/Library/Frameworks/AGL.framework, so Qt's FindWrapOpenGL
+          # find_library succeeds and CMake emits "-framework AGL", which the
+          # SDK-based linker then cannot resolve. Neutralize both the probe and
+          # the fallback so WrapOpenGL never links AGL at all.
+          wrap="$QT_ROOT_DIR/lib/cmake/Qt6/FindWrapOpenGL.cmake"
+          sed -i '' \
+            -e 's/find_library(WrapOpenGL_AGL NAMES AGL)/set(WrapOpenGL_AGL "")/' \
+            -e 's/set(__opengl_agl_fw_path "-framework AGL")//' \
+            "$wrap"
+          if grep -n 'framework AGL' "$wrap"; then
+            echo "AGL reference survived in FindWrapOpenGL.cmake" >&2
+            exit 1
+          fi
+          # Belt and braces for any remaining textual references.
+          find "$QT_ROOT_DIR" -type f \( -name '*.prl' -o -name '*.cmake' \) -exec \
+            sed -i '' -e 's/-framework[[:space:]]*AGL//g' -e 's/AGL;//g' -e 's/AGL\.framework//g' {} +
+
+      - name: Configure
+        env:
+          SPARKLE_ED_PUBLIC_KEY: ${{ secrets.SPARKLE_ED_PUBLIC_KEY }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != pull_request ] && [ -z "${SPARKLE_ED_PUBLIC_KEY:-}" ]; then
+            echo "SPARKLE_ED_PUBLIC_KEY is required for publishing." >&2
+            exit 1
+          fi
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DSPEECHER_BUILD_TESTS=ON \
+            -DSPEECHER_SPARKLE_ED_PUBLIC_KEY="${SPARKLE_ED_PUBLIC_KEY:-}"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package DMG
+        if: github.event_name != 'pull_request'
+        run: bash packaging/macos/build-dmg.sh build
+
+      - name: Sign DMG for Sparkle
+        if: github.event_name != 'pull_request'
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          SPARKLE_ED_PUBLIC_KEY: ${{ secrets.SPARKLE_ED_PUBLIC_KEY }}
+        run: |
+          if [ -z "${SPARKLE_ED_PRIVATE_KEY:-}" ] || [ -z "${SPARKLE_ED_PUBLIC_KEY:-}" ]; then
+            echo "SPARKLE_ED_PRIVATE_KEY and SPARKLE_ED_PUBLIC_KEY are required for publishing." >&2
+            exit 1
+          fi
+          length="$(stat -f %z build/speecher.dmg)"
+          printf 'length=%s\n' "$length" > build/sparkle-signature.txt
+          signing_output="$(printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | build/_deps/sparkle-src/bin/sign_update --ed-key-file - build/speecher.dmg)"
+          printf '%s\n' "$signing_output"
+          signature="$(printf '%s\n' "$signing_output" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')"
+          signed_length="$(printf '%s\n' "$signing_output" | sed -n 's/.*length="\([0-9][0-9]*\)".*/\1/p')"
+          test -n "$signature"
+          test -n "$signed_length"
+          printf 'sparkle:edSignature=%s\nlength=%s\n' "$signature" "$signed_length" > build/sparkle-signature.txt
+
+      - name: Upload macOS release artifacts
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-release
+          path: |
+            build/speecher.dmg
+            build/sparkle-signature.txt
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+    needs:
+      - linux
+      - macos
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Publish release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(python3 -c 'import json; print(json.load(open("artifacts/linux-release/update-manifest.json"))["version"])')"
+          build_number="$(python3 -c 'import json; print(json.load(open("artifacts/linux-release/update-manifest.json"))["buildNumber"])')"
+          if [ "${GITHUB_REF_NAME}" = "master" ]; then
+            tag=nightly
+            channel=nightly
+            git tag --force "$tag" "$GITHUB_SHA"
+            git push origin "refs/tags/$tag" --force
+            cat > release-notes.md <<EOF
+          Version: $version
+          Build number: $build_number
+          Commit: $GITHUB_SHA
+
+          This Nightly Build is untested. Use the Stable Release unless you want the latest master build.
+
+          Update channels: https://github.com/${GITHUB_REPOSITORY}#installation--updates
+          EOF
+            release_notes=release-notes.md
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release edit "$tag" --prerelease --title "Nightly Build $version" --notes-file release-notes.md
+            else
+              gh release create "$tag" --prerelease --title "Nightly Build $version" --notes-file release-notes.md
+            fi
+            gh release upload "$tag" \
+              artifacts/linux-release/Speecher-x86_64.AppImage \
+              artifacts/linux-release/Speecher-x86_64.AppImage.zsync \
+              artifacts/macos-release/speecher.dmg \
+              artifacts/linux-release/update-manifest.json --clobber
+          else
+            tag="v$version"
+            channel=stable
+            test "$GITHUB_REF_NAME" = "$tag"
+            if [ -f "docs/releases/$version.md" ]; then
+              release_notes="docs/releases/$version.md"
+              if ! awk 'NF && $1 !~ /^#/ { body = 1 } END { exit !body }' "$release_notes"; then
+                echo "$release_notes has headings but no release-note body." >&2
+                exit 1
+              fi
+            else
+              release_notes=release-notes.md
+              printf 'Release notes have not been written. Add docs/releases/%s.md before the next release.\n' "$version" > "$release_notes"
+            fi
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release edit "$tag" --title "Speecher $version" --notes-file "$release_notes"
+            else
+              gh release create "$tag" --title "Speecher $version" --notes-file "$release_notes"
+            fi
+            gh release upload "$tag" \
+              artifacts/linux-release/Speecher-x86_64.AppImage \
+              artifacts/linux-release/Speecher-x86_64.AppImage.zsync \
+              artifacts/macos-release/speecher.dmg \
+              artifacts/linux-release/update-manifest.json --clobber
+          fi
+          published_at="$(git log -1 --format=%aD HEAD)"
+          python3 scripts/make-appcast.py \
+            --channel "$channel" \
+            --version "$version" \
+            --build-number "$build_number" \
+            --pub-date "$published_at" \
+            --dmg-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/speecher.dmg" \
+            --signature artifacts/macos-release/sparkle-signature.txt \
+            --notes-file "$release_notes" \
+            --output "appcast-${channel}.xml"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Publish appcast
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ steps.release.outputs.channel }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          repository_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code origin gh-pages >/dev/null 2>&1; then
+            git clone --depth=1 --branch gh-pages "$repository_url" pages
+          else
+            status=$?
+            if [ "$status" -ne 2 ]; then
+              echo "Could not determine whether gh-pages exists (git ls-remote exited $status)." >&2
+              exit "$status"
+            fi
+            mkdir pages
+            git -C pages init
+            git -C pages checkout --orphan gh-pages
+            git -C pages remote add origin "$repository_url"
+          fi
+          cp "appcast-${CHANNEL}.xml" pages/
+          git -C pages config user.name github-actions[bot]
+          git -C pages config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git -C pages add "appcast-${CHANNEL}.xml"
+          if git -C pages diff --cached --quiet; then
+            echo "No appcast changes to publish."
+          else
+            git -C pages commit -m "Publish ${CHANNEL} appcast for ${VERSION}"
+            git -C pages push origin HEAD:gh-pages
+          fi
