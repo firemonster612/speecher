@@ -170,6 +170,7 @@ jobs:
             qsettings_file="$(sed -n 's/^fileName=//p' "$evidence/$label-qsettings-readback.txt")"
             cp "$qsettings_file" "$evidence/$label-qsettings.plist"
             defaults write "$domain" SUEnableAutomaticChecks -bool true
+            defaults write "$domain" SULastCheckTime -date "$(date -u '+%Y-%m-%d %H:%M:%S +0000')"
             defaults export "$domain" "$evidence/$label-defaults.plist"
             plutil -p "$evidence/$label-defaults.plist" > "$evidence/$label-defaults.txt"
 
@@ -338,7 +339,8 @@ jobs:
           prompt_visible=false
           for _ in {1..30}; do
             "$RUNNER_TEMP/window-list" "$prompt_pid" > "$evidence/prompt-window-list.txt" 2>&1 || true
-            if grep -q "pid=$prompt_pid layer=0" "$evidence/prompt-window-list.txt"; then
+            if grep -q "pid=$prompt_pid layer=0 .*name=Software Update" \
+              "$evidence/prompt-window-list.txt"; then
               prompt_visible=true
               break
             fi
@@ -346,7 +348,7 @@ jobs:
           done
           screencapture -x "$evidence/prompt-update.png"
           if [[ "$prompt_visible" == true ]]; then
-            record prompt.alert PASS 'on-screen layer-0 window owned by the daemon app'
+            record prompt.alert PASS 'on-screen Software Update window owned by the daemon app'
           else
             record prompt.alert FAIL 'no on-screen app window detected'
           fi

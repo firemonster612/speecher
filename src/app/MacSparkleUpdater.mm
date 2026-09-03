@@ -73,7 +73,11 @@ void MacSparkleUpdater::start()
     [m_native->controller startUpdater];
     if (qEnvironmentVariableIsSet("SPEECHER_E2E_CHECK")) {
         QTimer::singleShot(1000, this, [this] {
-            [m_native->controller.updater checkForUpdatesInBackground];
+            if (m_settings->autoInstallUpdates()) {
+                [m_native->controller.updater checkForUpdatesInBackground];
+            } else {
+                [m_native->controller checkForUpdates:nil];
+            }
         });
     }
 }
