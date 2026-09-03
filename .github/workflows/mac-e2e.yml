@@ -1,0 +1,201 @@
+name: macOS E2E matrix
+
+on:
+  push:
+    branches:
+      - e2e/mac-full
+
+concurrency:
+  group: mac-e2e-full
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run1:
+    name: Run 1, build and core functional
+    runs-on: macos-26
+    timeout-minutes: 56
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Restore build caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/Homebrew
+            ~/.cache/ccache
+          key: mac-e2e-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
+          restore-keys: mac-e2e-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: clang_64
+          modules: qtmultimedia qtwebsockets
+
+      - name: Remove obsolete AGL references
+        run: |
+          # The macOS 26 SDK removed AGL, but the runner still has a runtime
+          # /System/Library/Frameworks/AGL.framework, so Qt's FindWrapOpenGL
+          # find_library succeeds and CMake emits "-framework AGL", which the
+          # SDK-based linker then cannot resolve. Neutralize both the probe and
+          # the fallback so WrapOpenGL never links AGL at all.
+          wrap="$QT_ROOT_DIR/lib/cmake/Qt6/FindWrapOpenGL.cmake"
+          sed -i '' \
+            -e 's/find_library(WrapOpenGL_AGL NAMES AGL)/set(WrapOpenGL_AGL "")/' \
+            -e 's/set(__opengl_agl_fw_path "-framework AGL")//' \
+            "$wrap"
+          if grep -n 'framework AGL' "$wrap"; then
+            echo "AGL reference survived in FindWrapOpenGL.cmake" >&2
+            exit 1
+          fi
+          # Belt and braces for any remaining textual references.
+          find "$QT_ROOT_DIR" -type f \( -name '*.prl' -o -name '*.cmake' \) -exec \
+            sed -i '' -e 's/-framework[[:space:]]*AGL//g' -e 's/AGL;//g' -e 's/AGL\.framework//g' {} +
+
+      - name: Install runner tools and BlackHole
+        run: |
+          brew install ccache blackhole-2ch
+          sudo killall coreaudiod || true
+          ccache --zero-stats
+
+      - name: Create stable code-signing identity
+        run: |
+          keychain="$RUNNER_TEMP/e2e-signing.keychain-db"
+          openssl req -newkey rsa:2048 -nodes -x509 -days 2 \
+            -subj '/CN=Speecher E2E/' \
+            -addext 'keyUsage=digitalSignature' \
+            -addext 'extendedKeyUsage=codeSigning' \
+            -keyout "$RUNNER_TEMP/e2e-key.pem" \
+            -out "$RUNNER_TEMP/e2e-cert.pem"
+          openssl pkcs12 -export \
+            -inkey "$RUNNER_TEMP/e2e-key.pem" \
+            -in "$RUNNER_TEMP/e2e-cert.pem" \
+            -out "$RUNNER_TEMP/e2e-signing.p12" \
+            -passout pass:e2e
+          security create-keychain -p e2e "$keychain"
+          security unlock-keychain -p e2e "$keychain"
+          security set-keychain-settings -lut 7200 "$keychain"
+          security import "$RUNNER_TEMP/e2e-signing.p12" -k "$keychain" -P e2e -T /usr/bin/codesign
+          security add-trusted-cert -r trustRoot -k "$keychain" "$RUNNER_TEMP/e2e-cert.pem"
+          security set-key-partition-list -S apple-tool:,apple: -s -k e2e "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security find-identity -v -p codesigning "$keychain"
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DSPEECHER_BUILD_TESTS=OFF
+
+      - name: Build and package once
+        env:
+          SPEECHER_SIGN_IDENTITY: Speecher E2E
+        run: |
+          cmake --build build --parallel
+          bash packaging/macos/build-dmg.sh build
+          mkdir -p "$RUNNER_TEMP/mac-e2e-product"
+          attach="$(hdiutil attach build/speecher.dmg -nobrowse -readonly)"
+          mount="$(printf '%s\n' "$attach" | sed -n 's|.*\(/Volumes/.*\)$|\1|p' | head -1)"
+          test -d "$mount/speecher.app"
+          ditto "$mount/speecher.app" "$RUNNER_TEMP/mac-e2e-product/speecher.app"
+          hdiutil detach "$mount" -quiet
+          cp build/speecher.dmg "$RUNNER_TEMP/mac-e2e-product/speecher.dmg"
+          codesign --verify --deep --strict "$RUNNER_TEMP/mac-e2e-product/speecher.app"
+          ccache --show-stats
+
+      - name: Compile evidence probe
+        run: swiftc .github/macos-e2e/window_probe.swift -o "$RUNNER_TEMP/window-probe"
+
+      - name: Execute run 1 cases
+        env:
+          APP_BUNDLE: ${{ runner.temp }}/mac-e2e-product/speecher.app
+          EVIDENCE_ROOT: ${{ runner.temp }}/mac-e2e-run1
+          PROBE: ${{ runner.temp }}/window-probe
+        run: bash .github/macos-e2e/run1.sh
+
+      - name: Archive signed product
+        if: always()
+        run: tar -czf "$RUNNER_TEMP/mac-e2e-product.tgz" -C "$RUNNER_TEMP/mac-e2e-product" speecher.app speecher.dmg
+
+      - name: Upload run 1 evidence and product
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mac-e2e-run1
+          path: |
+            ${{ runner.temp }}/mac-e2e-run1
+            ${{ runner.temp }}/mac-e2e-product.tgz
+          if-no-files-found: error
+
+      - name: Enforce run 1 verdicts
+        if: always()
+        run: |
+          test -f "$RUNNER_TEMP/mac-e2e-run1/verdicts.txt"
+          cat "$RUNNER_TEMP/mac-e2e-run1/verdicts.txt" >> "$GITHUB_STEP_SUMMARY"
+          if grep -E '^M([0-9]+|-C[0-9]+): FAIL' "$RUNNER_TEMP/mac-e2e-run1/verdicts.txt"; then
+            exit 1
+          fi
+
+  run2:
+    name: Run 2, install, state, and denied permissions
+    needs: run1
+    if: always() && needs.run1.result != 'cancelled'
+    runs-on: macos-26
+    timeout-minutes: 34
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download run 1 product and evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: mac-e2e-run1
+          path: ${{ runner.temp }}/run1-download
+
+      - name: Restore exact signed product
+        run: |
+          mkdir -p "$RUNNER_TEMP/mac-e2e-product"
+          tar -xzf "$RUNNER_TEMP/run1-download/mac-e2e-product.tgz" -C "$RUNNER_TEMP/mac-e2e-product"
+          codesign --verify --deep --strict "$RUNNER_TEMP/mac-e2e-product/speecher.app"
+
+      - name: Compile evidence probe
+        run: swiftc .github/macos-e2e/window_probe.swift -o "$RUNNER_TEMP/window-probe"
+
+      - name: Execute run 2 cases
+        env:
+          APP_BUNDLE: ${{ runner.temp }}/mac-e2e-product/speecher.app
+          DMG_PATH: ${{ runner.temp }}/mac-e2e-product/speecher.dmg
+          EVIDENCE_ROOT: ${{ runner.temp }}/mac-e2e-run2
+          PROBE: ${{ runner.temp }}/window-probe
+          RUN1_VERDICTS: ${{ runner.temp }}/run1-download/mac-e2e-run1/verdicts.txt
+        run: bash .github/macos-e2e/run2.sh
+
+      - name: Upload run 2 evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mac-e2e-run2
+          path: ${{ runner.temp }}/mac-e2e-run2
+          if-no-files-found: error
+
+      - name: Publish combined verdict summary
+        if: always()
+        run: |
+          printf '## Run 1\n\n' >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/run1-download/mac-e2e-run1/verdicts.txt" >> "$GITHUB_STEP_SUMMARY"
+          printf '\n## Run 2\n\n' >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/mac-e2e-run2/verdicts.txt" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce run 2 verdicts
+        if: always()
+        run: |
+          test -f "$RUNNER_TEMP/mac-e2e-run2/verdicts.txt"
+          if grep -E '^M([0-9]+|-C[0-9]+): FAIL' "$RUNNER_TEMP/mac-e2e-run2/verdicts.txt"; then
+            exit 1
+          fi
