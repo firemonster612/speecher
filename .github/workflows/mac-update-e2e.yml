@@ -157,24 +157,21 @@ jobs:
           seed_defaults() {
             local auto_install="$1"
             local label="$2"
-            local expected_auto_install=0
-            [[ "$auto_install" == true ]] && expected_auto_install=1
             defaults delete "$domain" 2>/dev/null || true
-            defaults write "$domain" 'app/setupCompleted' -bool true
-            defaults write "$domain" 'updates/channel' -string nightly
-            defaults write "$domain" 'updates/autoCheck' -bool true
-            defaults write "$domain" 'updates/autoInstall' -bool "$auto_install"
+            if "$RUNNER_TEMP/seed-settings" "$auto_install" \
+              > "$evidence/$label-qsettings-readback.txt"; then
+              record "$label.defaults" PASS 'QSettings keys were written and read back'
+            else
+              record "$label.defaults" FAIL 'QSettings keys did not round-trip'
+            fi
             defaults write "$domain" SUEnableAutomaticChecks -bool true
             defaults export "$domain" "$evidence/$label-defaults.plist"
             plutil -p "$evidence/$label-defaults.plist" > "$evidence/$label-defaults.txt"
 
-            if [[ "$(defaults read "$domain" 'updates/channel')" == nightly ]] \
-              && [[ "$(defaults read "$domain" 'updates/autoCheck')" == 1 ]] \
-              && [[ "$(defaults read "$domain" 'updates/autoInstall')" == "$expected_auto_install" ]] \
-              && [[ "$(defaults read "$domain" SUEnableAutomaticChecks)" == 1 ]]; then
-              record "$label.defaults" PASS 'exact QSettings and Sparkle keys round-tripped through the plist'
+            if [[ "$(defaults read "$domain" SUEnableAutomaticChecks)" == 1 ]]; then
+              record "$label.sparkle_permission" PASS 'SUEnableAutomaticChecks was pre-seeded'
             else
-              record "$label.defaults" FAIL 'defaults did not round-trip'
+              record "$label.sparkle_permission" FAIL 'SUEnableAutomaticChecks did not round-trip'
             fi
           }
 
@@ -190,6 +187,39 @@ jobs:
               --predicate 'process CONTAINS[c] "speecher" OR process CONTAINS[c] "sparkle" OR subsystem CONTAINS[c] "sparkle"' \
               > "$evidence/$label-unified.log" 2>&1 || true
           }
+
+          cat > "$RUNNER_TEMP/seed-settings.cpp" <<'CPP'
+          #include <QSettings>
+          #include <QTextStream>
+
+          int main(int argc, char **argv)
+          {
+              if (argc != 2) {
+                  return 2;
+              }
+              const bool autoInstall = QString::fromLocal8Bit(argv[1]) == QStringLiteral("true");
+              QSettings settings(QStringLiteral("io.github.firemonster612"), QStringLiteral("speecher"));
+              settings.setValue(QStringLiteral("app/setupCompleted"), true);
+              settings.setValue(QStringLiteral("updates/channel"), QStringLiteral("nightly"));
+              settings.setValue(QStringLiteral("updates/autoCheck"), true);
+              settings.setValue(QStringLiteral("updates/autoInstall"), autoInstall);
+              settings.sync();
+
+              QTextStream output(stdout);
+              for (const QString &key : settings.allKeys()) {
+                  output << key << '=' << settings.value(key).toString() << '\n';
+              }
+              return settings.status() == QSettings::NoError
+                         && settings.value(QStringLiteral("app/setupCompleted")).toBool()
+                         && settings.value(QStringLiteral("updates/channel")).toString() == QStringLiteral("nightly")
+                         && settings.value(QStringLiteral("updates/autoCheck")).toBool()
+                         && settings.value(QStringLiteral("updates/autoInstall")).toBool() == autoInstall
+                     ? 0
+                     : 1;
+          }
+          CPP
+          c++ -std=c++20 "$RUNNER_TEMP/seed-settings.cpp" \
+            $(pkg-config --cflags --libs Qt6Core) -o "$RUNNER_TEMP/seed-settings"
 
           cert_dir="$RUNNER_TEMP/certs"
           mkdir -p "$cert_dir"
