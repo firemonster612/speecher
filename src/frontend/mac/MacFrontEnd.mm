@@ -11,6 +11,7 @@
 #import "SpeecherUI-Swift.h"
 
 #include <QApplication>
+#include <QDebug>
 namespace speecher {
 
 struct MacFrontEnd::Native {
@@ -22,6 +23,9 @@ MacFrontEnd::MacFrontEnd(ApplicationController *controller)
     : m_controller(controller)
     , m_native(std::make_unique<Native>())
 {
+    if (!qEnvironmentVariableIsEmpty("SPEECHER_E2E_EVIDENCE_DIR")) {
+        qInfo() << "macOS front end=SwiftUI";
+    }
     m_native->bridge = [[SpeecherBridge alloc] initWithController:controller];
     // The schema names the commands an Action row offers; what they do belongs
     // to the front end, as it does on Qt.

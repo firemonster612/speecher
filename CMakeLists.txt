@@ -148,6 +148,7 @@ set(SPEECHER_WORKFLOW_HEADERS
 )
 
 set(SPEECHER_PROVIDER_SOURCES
+  src/providers/E2EProviders.cpp
   src/providers/AnthropicApiRefiner.cpp
   src/providers/AnthropicTranscriptRefiner.cpp
   src/providers/ClaudeCredentials.cpp
@@ -164,6 +165,7 @@ set(SPEECHER_PROVIDER_SOURCES
 )
 
 set(SPEECHER_PROVIDER_HEADERS
+  src/providers/E2EProviders.h
   src/providers/AnthropicApiRefiner.h
   src/providers/AnthropicTranscriptRefiner.h
   src/providers/ClaudeCredentials.h

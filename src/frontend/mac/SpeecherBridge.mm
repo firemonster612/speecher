@@ -40,6 +40,34 @@ namespace {
 const QString kWritingProfileGrid = QStringLiteral("writingProfileBehavior");
 const QString kAppSettingsKeyAuthMode = QStringLiteral("settings");
 
+void recordPanelBridgeEvent(NSString *event, uint64_t generation, BOOL blockWasNil)
+{
+    NSString *directory = NSProcessInfo.processInfo.environment[@"SPEECHER_E2E_EVIDENCE_DIR"];
+    if (directory.length == 0) {
+        return;
+    }
+    [NSFileManager.defaultManager createDirectoryAtPath:directory
+                            withIntermediateDirectories:YES
+                                             attributes:nil
+                                                  error:nil];
+    NSString *path = [directory stringByAppendingPathComponent:@"panel-events.jsonl"];
+    if (![NSFileManager.defaultManager fileExistsAtPath:path]) {
+        [NSData.data writeToFile:path atomically:YES];
+    }
+    NSDictionary *record = @{
+        @"ts": @((long long)(NSDate.date.timeIntervalSince1970 * 1000)),
+        @"event": event,
+        @"generation": @(generation),
+        @"blockWasNil": @(blockWasNil),
+    };
+    NSData *json = [NSJSONSerialization dataWithJSONObject:record options:0 error:nil];
+    NSFileHandle *file = [NSFileHandle fileHandleForWritingAtPath:path];
+    [file seekToEndOfFile];
+    [file writeData:json];
+    [file writeData:[@"\n" dataUsingEncoding:NSUTF8StringEncoding]];
+    [file closeFile];
+}
+
 SpeecherRowKind bridgedKind(RowKind kind)
 {
     switch (kind) {
@@ -706,12 +734,16 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                      &_state->lifetime,
                      [weakSelf](quint64 generation) {
                          SpeecherBridge *bridge = weakSelf;
+                         recordPanelBridgeEvent(@"bridge-show",
+                                                generation,
+                                                bridge.popupShowRequested == nil);
                          if (bridge.popupShowRequested) {
                              bridge.popupShowRequested(generation);
                          }
                      });
     QObject::connect(session, &DictationSession::popupHideRequested, &_state->lifetime, [weakSelf] {
         SpeecherBridge *bridge = weakSelf;
+        recordPanelBridgeEvent(@"bridge-hide", 0, bridge.popupHideRequested == nil);
         if (bridge.popupHideRequested) {
             bridge.popupHideRequested();
         }
@@ -786,6 +818,7 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                      &_state->lifetime,
                      [weakSelf](const QString &message) {
                          SpeecherBridge *bridge = weakSelf;
+                         recordPanelBridgeEvent(@"bridge-error", 0, bridge.popupErrorRequested == nil);
                          if (bridge.popupErrorRequested) {
                              bridge.popupErrorRequested(message.toNSString());
                          }

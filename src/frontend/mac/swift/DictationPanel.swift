@@ -15,6 +15,67 @@ private let minimumPillWidth: CGFloat = 420
 private let previewChromeWidth: CGFloat = 190
 private let screenEdgeMargin: CGFloat = 80
 
+private enum E2EPanelEvidence {
+    private static var directory: URL? {
+        guard let path = ProcessInfo.processInfo.environment["SPEECHER_E2E_EVIDENCE_DIR"],
+              !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
+    static func record(_ event: String,
+                       generation: UInt64 = 0,
+                       blockWasNil: Bool = false,
+                       extra: [String: Any] = [:]) {
+        guard let directory else { return }
+        try? FileManager.default.createDirectory(at: directory,
+                                                 withIntermediateDirectories: true)
+        let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
+        var object: [String: Any] = [
+            "ts": timestamp,
+            "event": event,
+            "generation": generation,
+            "blockWasNil": blockWasNil,
+        ]
+        object.merge(extra) { _, new in new }
+        guard var data = try? JSONSerialization.data(withJSONObject: object) else { return }
+        data.append(0x0a)
+        let url = directory.appendingPathComponent("panel-events.jsonl")
+        if !FileManager.default.fileExists(atPath: url.path) {
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+        }
+        guard let file = try? FileHandle(forWritingTo: url) else { return }
+        defer { try? file.close() }
+        try? file.seekToEnd()
+        try? file.write(contentsOf: data)
+    }
+
+    static func dumpWindows(_ event: String) {
+        guard let directory,
+              let all = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID)
+                as? [[String: Any]] else { return }
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let windows = all.filter {
+            ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid
+        }.map { info in
+            [
+                "bounds": info[kCGWindowBounds as String] ?? NSNull(),
+                "layer": info[kCGWindowLayer as String] ?? NSNull(),
+                "alpha": info[kCGWindowAlpha as String] ?? NSNull(),
+                "isOnscreen": info[kCGWindowIsOnscreen as String] ?? false,
+                "ownerPID": info[kCGWindowOwnerPID as String] ?? pid,
+            ] as [String: Any]
+        }
+        try? FileManager.default.createDirectory(at: directory,
+                                                 withIntermediateDirectories: true)
+        let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
+        let url = directory.appendingPathComponent("windows-\(event)-\(timestamp).json")
+        if let data = try? JSONSerialization.data(withJSONObject: windows,
+                                                  options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: url)
+        }
+    }
+}
+
 @MainActor
 final class DictationPanelState: ObservableObject {
     @Published var status = ""
@@ -141,6 +202,7 @@ final class SpeecherDictationPanel {
     }
 
     private func wire() {
+        E2EPanelEvidence.record("swift-wire")
         bridge.popupStatusChanged = { [weak self] status in self?.state.status = status }
         bridge.popupPreviewChanged = { [weak self] preview in self?.setPreview(preview) }
         bridge.popupFrozenChanged = { [weak self] frozen in self?.frozen = frozen }
@@ -156,10 +218,16 @@ final class SpeecherDictationPanel {
             self?.show(problem: message)
         }
         bridge.popupShowRequested = { [weak self] generation in
+            E2EPanelEvidence.record("show", generation: generation)
             self?.state.problem = ""
             self?.show(generation: generation)
+            E2EPanelEvidence.dumpWindows("show")
         }
-        bridge.popupHideRequested = { [weak self] in self?.panel.orderOut(nil) }
+        bridge.popupHideRequested = { [weak self] in
+            E2EPanelEvidence.record("hide")
+            self?.panel.orderOut(nil)
+            E2EPanelEvidence.dumpWindows("hide")
+        }
     }
 
     func show(generation: UInt64) {
@@ -179,7 +247,9 @@ final class SpeecherDictationPanel {
         // state for the next show to flash.
         state.preview = ""
         state.problem = problem
+        E2EPanelEvidence.record("error")
         present()
+        E2EPanelEvidence.dumpWindows("error")
     }
 
     func dismiss() {
@@ -213,6 +283,12 @@ final class SpeecherDictationPanel {
     private func present() {
         position()
         panel.orderFrontRegardless()
+        E2EPanelEvidence.record("presented", extra: [
+            "activationPolicy": NSApp.activationPolicy().rawValue,
+            "isVisible": panel.isVisible,
+            "level": panel.level.rawValue,
+            "panelFrame": NSStringFromRect(panel.frame),
+        ])
     }
 
     private func position() {
@@ -220,6 +296,11 @@ final class SpeecherDictationPanel {
         let screen = NSScreen.screens.first { $0.visibleFrame.contains(pointer) }
             ?? NSScreen.main
             ?? NSScreen.screens.first
+        E2EPanelEvidence.record("position", extra: [
+            "pointer": NSStringFromPoint(pointer),
+            "chosenScreen": screen.map { NSStringFromRect($0.visibleFrame) } ?? "",
+            "screens": NSScreen.screens.map { NSStringFromRect($0.visibleFrame) },
+        ])
         if let area = screen?.visibleFrame {
             let size = panel.frame.size
             panel.setFrameOrigin(NSPoint(x: area.midX - size.width / 2,

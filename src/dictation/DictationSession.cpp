@@ -6,11 +6,40 @@
 #include "providers/ProviderRegistry.h"
 
 #include <QDebug>
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTimer>
 
 #include <utility>
 
 namespace speecher {
+
+namespace {
+
+void recordE2EPanelEvent(const QString &event, quint64 generation, bool blockWasNil = false)
+{
+    const QString directory = qEnvironmentVariable("SPEECHER_E2E_EVIDENCE_DIR");
+    if (directory.isEmpty()) {
+        return;
+    }
+    QDir().mkpath(directory);
+    QFile file(directory + QStringLiteral("/panel-events.jsonl"));
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Append)) {
+        return;
+    }
+    const QJsonObject line{{QStringLiteral("ts"), QDateTime::currentMSecsSinceEpoch()},
+                           {QStringLiteral("event"), event},
+                           {QStringLiteral("generation"), qint64(generation)},
+                           {QStringLiteral("blockWasNil"), blockWasNil}};
+    file.write(QJsonDocument(line).toJson(QJsonDocument::Compact));
+    file.write("\n");
+}
+
+} // namespace
+
 DictationSession::DictationSession(SettingsStore *settings,
                                    AudioInput *audio,
                                    MediaController *mediaController,
@@ -233,6 +262,7 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
     emit popupFrozenChanged(false);
     emit popupRefiningChanged(false);
     emit popupStatusChanged(QStringLiteral("Preparing"));
+    recordE2EPanelEvent(QStringLiteral("qt-show-emit"), generation);
     emit popupShowRequested(generation);
     QTimer::singleShot(50, this, [this, generation] {
         continueStartupAfterPopup(generation);

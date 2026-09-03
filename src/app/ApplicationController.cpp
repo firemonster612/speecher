@@ -14,6 +14,7 @@
 #include "providers/AnthropicTranscriptRefiner.h"
 #include "providers/ClaudeSpeechTranscriber.h"
 #include "providers/CodexSpeechTranscriber.h"
+#include "providers/E2EProviders.h"
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
 #include "platform/GlobalShortcutBinder.h"
@@ -493,6 +494,14 @@ bool ApplicationController::ensureSetupCompleted()
 
 void ApplicationController::registerProviders()
 {
+    if (qEnvironmentVariableIntValue("SPEECHER_E2E_STUB") == 1) {
+        m_providers->registerSpeechProvider(
+            {QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), QString()},
+            createE2ESpeechTranscriber);
+        m_providers->registerRefinementProvider(
+            {QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), QString()},
+            createE2ETranscriptRefiner);
+    }
     m_providers->registerSpeechProvider(
         {QStringLiteral("claude"),
          QStringLiteral("Claude Voice"),
