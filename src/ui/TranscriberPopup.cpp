@@ -72,6 +72,11 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     , m_updateChip(new QPushButton(this))
     , m_positioner(positioner ? positioner : new FallbackPopupPositioner(this))
 {
+    m_layout = new QVBoxLayout(this);
+    m_layout->setContentsMargins(2, 2, 2, 2);
+    m_layout->setSpacing(10);
+    m_layout->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
+
     if (m_positioner->parent() != this) {
         m_positioner->setParent(this);
     }
@@ -122,11 +127,6 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
         emit errorDismissed();
     });
 
-    m_layout = new QVBoxLayout(this);
-    m_layout->setContentsMargins(2, 2, 2, 2);
-    m_layout->setSpacing(10);
-    m_layout->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
-
     m_updateChip->setObjectName(QStringLiteral("updateChip"));
     m_updateChip->setFlat(true);
     m_updateChip->setFocusPolicy(Qt::NoFocus);
@@ -147,12 +147,13 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
 
 QSize TranscriberPopup::sizeHint() const
 {
+    const int spacing = m_layout ? m_layout->spacing() : 0;
     const int noticeHeight = m_accessibilityNotice->isHidden()
         ? 0
-        : m_accessibilityNotice->sizeHint().height() + m_layout->spacing();
+        : m_accessibilityNotice->sizeHint().height() + spacing;
     const int updateHeight = m_updateChip->isHidden()
         ? 0
-        : m_updateChip->sizeHint().height() + m_layout->spacing();
+        : m_updateChip->sizeHint().height() + spacing;
     return QSize(620, 110 + noticeHeight + updateHeight);
 }
 

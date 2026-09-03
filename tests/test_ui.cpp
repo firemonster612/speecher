@@ -45,6 +45,20 @@ QStringList sectionLabels(const QWidget &page)
     return labels;
 }
 
+class SizingPopupPositioner final : public PopupPositioner {
+public:
+    void configurePopup(PopupSurface &surface) override
+    {
+        configuredSize = surface.preferredSize();
+    }
+
+    void positionBottomCenter(PopupSurface &) override
+    {
+    }
+
+    QSize configuredSize;
+};
+
 } // namespace
 
 
@@ -55,6 +69,15 @@ private slots:
     void initTestCase()
     {
         QStandardPaths::setTestModeEnabled(true);
+    }
+
+    void popupCanBeSizedDuringPlatformConfiguration()
+    {
+        auto *positioner = new SizingPopupPositioner;
+        TranscriberPopup popup(positioner);
+
+        QVERIFY(positioner->configuredSize.width() > 0);
+        QVERIFY(positioner->configuredSize.height() > 0);
     }
 
     void wordPreview()
