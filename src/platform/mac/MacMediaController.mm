@@ -1,13 +1,12 @@
 #include "platform/mac/MacMediaController.h"
 
 #include <QDebug>
-#include <QThread>
+#include <QProcess>
 
 #import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
 
-#include <memory>
-#include <optional>
+#include <functional>
 
 namespace speecher {
 namespace {
@@ -29,48 +28,61 @@ bool isRunning(const QString &bundleIdentifier)
         > 0;
 }
 
-// Returns the script's result, or nothing when the script failed — which on
-// macOS most often means the user declined the Automation prompt.
-std::optional<QString> runAppleScript(const QString &source)
+void runAppleScript(QObject *owner,
+                    const QString &source,
+                    std::function<void(bool, const QString &)> completion)
 {
-    @autoreleasepool {
-        NSAppleScript *script = [[NSAppleScript alloc] initWithSource:source.toNSString()];
-        NSDictionary *errorInfo = nil;
-        NSAppleEventDescriptor *result = [script executeAndReturnError:&errorInfo];
-        std::optional<QString> value;
-        if (errorInfo) {
-            qWarning().noquote() << "media script failed:" << QString::fromNSString(errorInfo.description);
-        } else {
-            value = result.stringValue ? QString::fromNSString(result.stringValue) : QString();
+    auto *process = new QProcess(owner);
+    QObject::connect(process,
+                     &QProcess::finished,
+                     owner,
+                     [process, completion](int exitCode, QProcess::ExitStatus status) {
+                         const QString output = QString::fromUtf8(process->readAllStandardOutput()).trimmed();
+                         if (exitCode != 0 || status != QProcess::NormalExit) {
+                             qWarning().noquote()
+                                 << "media script failed:"
+                                 << QString::fromUtf8(process->readAllStandardError()).trimmed();
+                         }
+                         process->deleteLater();
+                         completion(exitCode == 0 && status == QProcess::NormalExit, output);
+                     });
+    QObject::connect(process, &QProcess::errorOccurred, owner, [process, completion](QProcess::ProcessError error) {
+        if (error != QProcess::FailedToStart) {
+            return;
         }
-        [script release];
-        return value;
-    }
+        qWarning().noquote() << "media script failed:" << process->errorString();
+        process->disconnect();
+        process->deleteLater();
+        completion(false, {});
+    });
+    process->start(QStringLiteral("/usr/bin/osascript"), {QStringLiteral("-e"), source});
 }
 
-std::optional<QString> tellPlayer(const QString &bundleIdentifier, const QString &command)
+QString pauseScript(const QStringList &players)
 {
-    return runAppleScript(
-        QStringLiteral("tell application id \"%1\" to %2").arg(bundleIdentifier, command));
+    QString source = QStringLiteral("set pausedPlayers to {}\n");
+    for (const QString &player : players) {
+        source += QStringLiteral(
+                      "tell application id \"%1\"\n"
+                      "if (player state as string) is \"playing\" then\n"
+                      "pause\n"
+                      "set end of pausedPlayers to \"%1\"\n"
+                      "end if\n"
+                      "end tell\n")
+                      .arg(player);
+    }
+    source += QStringLiteral(
+        "set AppleScript's text item delimiters to linefeed\nreturn pausedPlayers as text");
+    return source;
 }
 
-QStringList pauseRunningPlayers()
+QString resumeScript(const QStringList &players)
 {
-    QStringList paused;
-    for (const QString &player : mediaPlayerBundleIdentifiers()) {
-        // Scripting a player that is not running would launch it.
-        if (!isRunning(player)) {
-            continue;
-        }
-        const std::optional<QString> state = tellPlayer(player, QStringLiteral("player state as string"));
-        if (!state || state->compare(QStringLiteral("playing"), Qt::CaseInsensitive) != 0) {
-            continue;
-        }
-        if (tellPlayer(player, QStringLiteral("pause"))) {
-            paused << player;
-        }
+    QString source;
+    for (const QString &player : players) {
+        source += QStringLiteral("tell application id \"%1\" to play\n").arg(player);
     }
-    return paused;
+    return source;
 }
 
 } // namespace
@@ -82,41 +94,47 @@ MacMediaController::MacMediaController(QObject *parent)
 
 void MacMediaController::pausePlaying()
 {
-    m_pauseWanted = true;
-    auto paused = std::make_shared<QStringList>();
-    QThread *thread = QThread::create([paused] { *paused = pauseRunningPlayers(); });
-    connect(thread, &QThread::finished, this, [this, paused] {
-        m_pausedPlayers = *paused;
-        // A short dictation can end before the pause script does; whatever it
-        // paused still has to come back.
-        if (!m_pauseWanted) {
-            resumePaused();
+    const quint64 generation = ++m_generation;
+    m_pausedPlayers.clear();
+    QStringList runningPlayers;
+    for (const QString &player : mediaPlayerBundleIdentifiers()) {
+        // Scripting a player that is not running would launch it.
+        if (isRunning(player)) {
+            runningPlayers << player;
+        }
+    }
+    if (runningPlayers.isEmpty()) {
+        return;
+    }
+    runAppleScript(this, pauseScript(runningPlayers), [this, generation](bool ok, const QString &output) {
+        const QStringList paused = ok ? output.split(QLatin1Char('\n'), Qt::SkipEmptyParts) : QStringList{};
+        if (generation != m_generation) {
+            // A short dictation can end before the pause script does; whatever
+            // it paused still has to come back.
+            if (!paused.isEmpty()) {
+                runAppleScript(this, resumeScript(paused), [](bool, const QString &) {});
+            }
             return;
         }
+        m_pausedPlayers = paused;
         qInfo() << "media paused players=" << m_pausedPlayers.size();
     });
-    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    thread->start();
 }
 
 void MacMediaController::resumePaused()
 {
-    m_pauseWanted = false;
+    const quint64 generation = ++m_generation;
     const QStringList players = m_pausedPlayers;
     if (players.isEmpty()) {
         return;
     }
-    QThread *thread = QThread::create([players] {
-        for (const QString &player : players) {
-            tellPlayer(player, QStringLiteral("play"));
+    runAppleScript(this, resumeScript(players), [this, generation, players](bool, const QString &) {
+        if (generation != m_generation) {
+            return;
         }
-    });
-    connect(thread, &QThread::finished, this, [this, players] {
         m_pausedPlayers.clear();
         qInfo() << "media resumed players=" << players.size();
     });
-    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    thread->start();
 }
 
 } // namespace speecher
