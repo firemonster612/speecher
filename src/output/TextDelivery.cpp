@@ -9,17 +9,12 @@
 #include "output/mac/MacPasteDelivery.h"
 #endif
 
-#include <QEventLoop>
-#include <QTimer>
-
 #include <memory>
 #include <utility>
 
 namespace speecher {
 
 namespace {
-
-constexpr int clipboardRestoreDelayMs = 750;
 
 #ifdef SPEECHER_WITH_WAYLAND
 class YdotoolBackend final : public DeliveryBackend {
@@ -305,13 +300,11 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
             const bool copied = method == QString::fromLatin1(OutputMethod::WlCopy)
                 || method == QString::fromLatin1(OutputMethod::QtClipboard);
             const bool downgraded = content.html.has_value() && !htmlAvailable;
+            const bool verified = !copied
+                && m_targetProvider
+                && m_targetProvider->verifyInsertion(target, content.plainText);
             bool restoredClipboard = false;
-            if (virtualKeyboardInput && canRestoreClipboard) {
-                QEventLoop waitForClipboardConsumer;
-                QTimer::singleShot(clipboardRestoreDelayMs,
-                                   &waitForClipboardConsumer,
-                                   &QEventLoop::quit);
-                waitForClipboardConsumer.exec(QEventLoop::ExcludeUserInputEvents);
+            if (virtualKeyboardInput && verified && canRestoreClipboard) {
                 QString restoreError;
                 restoredClipboard = m_clipboardDelivery.restore(previousClipboard, &restoreError);
                 if (!restoredClipboard) {
@@ -320,9 +313,6 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
                         : QStringLiteral("Previous clipboard could not be restored: %1").arg(restoreError);
                 }
             }
-            const bool verified = !copied
-                && m_targetProvider
-                && m_targetProvider->verifyInsertion(target, content.plainText);
             const QString message = copied
                 ? QStringLiteral("Copied")
                 : virtualKeyboardInput
