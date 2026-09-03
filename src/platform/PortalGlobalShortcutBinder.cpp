@@ -82,11 +82,6 @@ PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(QObject *parent)
     qDBusRegisterMetaType<PortalShortcut>();
     qDBusRegisterMetaType<PortalShortcuts>();
 
-    if (qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains(
-            QStringLiteral("KDE"), Qt::CaseInsensitive)) {
-        m_unsupportedReason = QStringLiteral("Plasma uses its native Global Shortcut service");
-        return;
-    }
     if (!QGuiApplication::platformName().startsWith(QStringLiteral("wayland"),
                                                      Qt::CaseInsensitive)) {
         m_unsupportedReason = QStringLiteral(
@@ -109,8 +104,7 @@ PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(QObject *parent)
             true);
     });
 
-    // A pending property read counts as supported so composition and startup stay non-blocking.
-    m_supported = true;
+    m_supportKnown = false;
     QDBusMessage properties = QDBusMessage::createMethodCall(
         QString::fromLatin1(portalService),
         QString::fromLatin1(portalPath),
@@ -124,16 +118,18 @@ PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(QObject *parent)
             [this, supportWatcher] {
         const QDBusPendingReply<QDBusVariant> reply = *supportWatcher;
         supportWatcher->deleteLater();
-        if (!reply.isError()) {
-            return;
-        }
-        m_supported = false;
-        m_unsupportedReason = QStringLiteral(
-            "Your desktop can't set shortcuts for Speecher automatically. Set one up by hand below.");
-        if (m_requestKind != RequestKind::None) {
-            requestFailed(m_unsupportedReason, true);
+        m_supportKnown = true;
+        if (reply.isError()) {
+            m_supported = false;
+            m_unsupportedReason = QStringLiteral(
+                "Your desktop can't set shortcuts for Speecher automatically.");
         } else {
-            emit registrationFinished(false, m_unsupportedReason);
+            m_supported = true;
+        }
+        emit supportChanged();
+        if (m_supported && m_bindWhenSupported) {
+            m_bindWhenSupported = false;
+            createSession(false);
         }
     });
 
@@ -152,6 +148,16 @@ bool PortalGlobalShortcutBinder::supported() const
     return m_supported;
 }
 
+bool PortalGlobalShortcutBinder::supportKnown() const
+{
+    return m_supportKnown;
+}
+
+bool PortalGlobalShortcutBinder::usesDesktopShortcutChooser() const
+{
+    return true;
+}
+
 QString PortalGlobalShortcutBinder::unsupportedReason() const
 {
     return m_supported ? QString() : m_unsupportedReason;
@@ -159,9 +165,14 @@ QString PortalGlobalShortcutBinder::unsupportedReason() const
 
 void PortalGlobalShortcutBinder::bind()
 {
-    if (m_supported) {
-        createSession(false);
+    if (!m_supportKnown) {
+        m_bindWhenSupported = true;
+        return;
     }
+    if (!m_supported) {
+        return;
+    }
+    createSession(false);
 }
 
 void PortalGlobalShortcutBinder::registerShortcut()

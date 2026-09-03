@@ -21,6 +21,8 @@ public:
     }
 
     virtual bool supported() const = 0;
+    virtual bool supportKnown() const { return true; }
+    virtual bool usesDesktopShortcutChooser() const { return false; }
     // Empty while supported(); otherwise what to tell the user.
     virtual QString unsupportedReason() const = 0;
     // Registers the binding with the desktop shortcut service. Kept out of the
@@ -51,6 +53,7 @@ signals:
     void activated();
     void deactivated();
     void bindingChanged();
+    void supportChanged();
     void registrationFinished(bool bound, const QString &detail);
 };
 
