@@ -7,6 +7,9 @@
 #include "ui/AppWindow.h"
 #include "ui/DictationPage.h"
 #include "ui/settings/SettingsPageSet.h"
+#ifdef Q_OS_LINUX
+#include "ui/setup/LinuxGlobalShortcutSetupPage.h"
+#endif
 
 #include <QComboBox>
 #include <QDir>
@@ -80,6 +83,17 @@ private slots:
         QCOMPARE(window.pageCount(), 8);
         QCOMPARE(window.pageTitles(), titles);
     }
+
+#ifdef Q_OS_LINUX
+    void generalSettingsContainsTheGlobalShortcutEditor()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+
+        auto *control = window.findChild<QWidget *>(QStringLiteral("globalShortcut"));
+        QVERIFY(dynamic_cast<LinuxGlobalShortcutSetupPage *>(control));
+    }
+#endif
 
     void startupDesktopIntegrationWaitsForFirstWindowExposure()
     {

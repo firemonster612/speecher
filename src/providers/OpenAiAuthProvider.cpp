@@ -128,7 +128,7 @@ static bool refreshCodexAuth(QString *error)
     QFile file(authPath);
     if (!file.open(QIODevice::ReadOnly)) {
         if (error) {
-            *error = QStringLiteral("No Codex auth file; sign in with `codex login`");
+            *error = QStringLiteral("No Codex auth file; sign in with codex login");
         }
         return false;
     }
@@ -141,7 +141,7 @@ static bool refreshCodexAuth(QString *error)
     const QString refreshToken = tokens.value(QStringLiteral("refresh_token")).toString().trimmed();
     if (refreshToken.isEmpty()) {
         if (error) {
-            *error = QStringLiteral("Codex login cannot be refreshed; sign in with `codex login`");
+            *error = QStringLiteral("Codex login cannot be refreshed; sign in with codex login");
         }
         return false;
     }

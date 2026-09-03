@@ -25,6 +25,8 @@ public:
     explicit PortalGlobalShortcutBinder(QObject *parent = nullptr);
 
     bool supported() const override;
+    bool supportKnown() const override;
+    bool usesDesktopShortcutChooser() const override;
     QString unsupportedReason() const override;
     void bind() override;
     void registerShortcut() override;
@@ -65,6 +67,8 @@ private:
     void disconnectRequest();
 
     bool m_supported = false;
+    bool m_supportKnown = true;
+    bool m_bindWhenSupported = false;
     bool m_identityReady = false;
     bool m_identityPending = false;
     bool m_registrationAfterIdentity = false;

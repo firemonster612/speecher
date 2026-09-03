@@ -93,6 +93,7 @@ bool KGlobalAccelShortcutBinder::setShortcut(const QKeySequence &shortcut, QStri
         }
         return false;
     }
+    emit bindingChanged();
     return true;
 #else
     Q_UNUSED(shortcut)

@@ -200,13 +200,17 @@ protected:
 
 private:
     ApplicationController &m_controller;
+#ifdef Q_OS_LINUX
+    void updateLinuxShortcutInstruction();
+    QLabel *m_manualCommand = nullptr;
+#endif
 #ifdef Q_OS_MACOS
     QCheckBox *m_createShortcut = nullptr;
     QKeySequenceEdit *m_shortcut = nullptr;
-    QLabel *m_shortcutStatus;
     bool m_shortcutFailureAcknowledged = false;
     bool m_shortcutLoaded = false;
 #endif
+    QLabel *m_shortcutStatus;
     QLabel *m_signInNote;
 };
 

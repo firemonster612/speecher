@@ -67,7 +67,7 @@ void QtFrontEnd::showSetupAssistant(SetupAssistantPage page)
     if (!m_setupAssistant) {
         m_setupAssistant = new SetupAssistant(m_controller, page);
         m_setupAssistant->setAttribute(Qt::WA_DeleteOnClose);
-        connect(m_setupAssistant, &QDialog::accepted, this, [this] {
+        connect(m_setupAssistant, &QDialog::finished, this, [this] {
             if (!m_controller->popupOnly()) {
                 showMainWindow();
             }
