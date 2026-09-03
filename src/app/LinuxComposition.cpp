@@ -7,6 +7,7 @@
 #include "platform/AtSpiTargetProvider.h"
 #include "platform/KGlobalAccelShortcutBinder.h"
 #include "platform/MediaPauseController.h"
+#include "platform/PortalGlobalShortcutBinder.h"
 #include "platform/PortalScreenshotContextProvider.h"
 #include "platform/WaylandLayerShell.h"
 #include "platform/atspi/AtSpiAccess.h"
@@ -124,7 +125,12 @@ PopupPositioner *LinuxComposition::createPopupPositioner(QObject *parent) const
 
 GlobalShortcutBinder *LinuxComposition::createGlobalShortcutBinder(QObject *parent) const
 {
-    return new KGlobalAccelShortcutBinder(parent);
+    auto *plasma = new KGlobalAccelShortcutBinder(parent);
+    if (plasma->supported()) {
+        return plasma;
+    }
+    delete plasma;
+    return new PortalGlobalShortcutBinder(parent);
 }
 
 AccessibilityState LinuxComposition::accessibilityState() const

@@ -200,12 +200,14 @@ protected:
 
 private:
     ApplicationController &m_controller;
+#ifdef Q_OS_MACOS
     QCheckBox *m_createShortcut = nullptr;
     QKeySequenceEdit *m_shortcut = nullptr;
     QLabel *m_shortcutStatus;
-    QLabel *m_signInNote;
     bool m_shortcutFailureAcknowledged = false;
     bool m_shortcutLoaded = false;
+#endif
+    QLabel *m_signInNote;
 };
 
 } // namespace speecher

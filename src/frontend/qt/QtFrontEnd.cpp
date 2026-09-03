@@ -62,10 +62,10 @@ void QtFrontEnd::showSettingsWindow()
     m_appWindow->navigateToSettings();
 }
 
-void QtFrontEnd::showSetupAssistant()
+void QtFrontEnd::showSetupAssistant(SetupAssistantPage page)
 {
     if (!m_setupAssistant) {
-        m_setupAssistant = new SetupAssistant(m_controller);
+        m_setupAssistant = new SetupAssistant(m_controller, page);
         m_setupAssistant->setAttribute(Qt::WA_DeleteOnClose);
         connect(m_setupAssistant, &QDialog::accepted, this, [this] {
             if (!m_controller->popupOnly()) {

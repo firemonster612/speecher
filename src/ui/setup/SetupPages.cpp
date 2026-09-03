@@ -866,15 +866,20 @@ void WritingProfilesSetupPage::saveProfiles()
 FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *parent)
     : QWidget(parent)
     , m_controller(controller)
+#ifdef Q_OS_MACOS
     , m_shortcutStatus(new QLabel(this))
+#endif
     , m_signInNote(new QLabel(this))
 {
     QVBoxLayout *layout = makePage(
         this,
         QStringLiteral("Put the cursor in a text field, trigger dictation, speak, then trigger it again to stop and insert the transcript."));
+#ifdef Q_OS_MACOS
     m_shortcutStatus->setWordWrap(true);
+#endif
     m_signInNote->setWordWrap(true);
 
+#ifdef Q_OS_MACOS
     if (m_controller.globalShortcutsSupported()) {
         m_createShortcut = new QCheckBox(QStringLiteral("Set up a dictation shortcut"), this);
         m_createShortcut->setChecked(true);
@@ -897,6 +902,7 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
             QStringLiteral("Bind `speecher toggle` in your desktop environment's global shortcut settings."));
     }
     layout->addWidget(m_shortcutStatus);
+#endif
     layout->addWidget(m_signInNote);
     layout->addStretch();
 }
@@ -904,6 +910,7 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
 void FinishSetupPage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
+#ifdef Q_OS_MACOS
     if (!m_shortcut || m_shortcutLoaded) {
         return;
     }
@@ -912,6 +919,7 @@ void FinishSetupPage::showEvent(QShowEvent *event)
     if (!existing.isEmpty()) {
         m_shortcut->setKeySequence(existing);
     }
+#endif
 }
 
 void FinishSetupPage::setSignInRequired(bool required)
@@ -924,6 +932,7 @@ void FinishSetupPage::setSignInRequired(bool required)
 
 bool FinishSetupPage::applyShortcut()
 {
+#ifdef Q_OS_MACOS
     if (!m_createShortcut || !m_createShortcut->isChecked()) {
         return true;
     }
@@ -937,6 +946,7 @@ bool FinishSetupPage::applyShortcut()
         return false;
     }
     m_shortcutStatus->setText(QStringLiteral("Dictation shortcut registered."));
+#endif
     return true;
 }
 

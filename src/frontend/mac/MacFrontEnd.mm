@@ -66,10 +66,10 @@ void MacFrontEnd::showSettingsWindow()
     showMainWindow();
 }
 
-void MacFrontEnd::showSetupAssistant()
+void MacFrontEnd::showSetupAssistant(SetupAssistantPage page)
 {
     if (!m_setupAssistant) {
-        m_setupAssistant = new SetupAssistant(m_controller);
+        m_setupAssistant = new SetupAssistant(m_controller, page);
         m_setupAssistant->setAttribute(Qt::WA_DeleteOnClose);
         QObject::connect(m_setupAssistant, &QDialog::accepted, m_setupAssistant, [this] {
             if (!m_controller->popupOnly()) {

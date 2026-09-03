@@ -164,7 +164,9 @@ int main(int argc, char **argv)
     }
 
     if ((!controller.settings()->setupCompleted() && decision.grabPath.isEmpty()) || decision.showSetup) {
-        QTimer::singleShot(0, &controller, &ApplicationController::showSetupAssistant);
+        QTimer::singleShot(0, &controller, [&controller] {
+            controller.showSetupAssistant();
+        });
     } else {
         if (decision.startListening) {
             QTimer::singleShot(0, &controller, [&controller, &decision] {

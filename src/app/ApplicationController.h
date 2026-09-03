@@ -15,6 +15,7 @@ class QTimer;
 namespace speecher {
 
 class AppFrontEnd;
+enum class SetupAssistantPage;
 class DictationSession;
 class AudioInput;
 class GlobalShortcutBinder;
@@ -63,12 +64,16 @@ public:
     void refreshAccessibilityState();
     bool grabMainWindow(const QString &path) const;
     bool globalShortcutsSupported() const;
+    QString globalShortcutUnsupportedReason() const;
     QKeySequence globalShortcut() const;
+    QString globalShortcutDisplay() const;
     bool setGlobalShortcut(const QKeySequence &shortcut, QString *error = nullptr);
+    void registerGlobalShortcut();
 
     void showMainWindow();
     void showSettingsWindow();
     void showSetupAssistant();
+    void showSetupAssistant(SetupAssistantPage page);
     bool startIpc(QString *error = nullptr);
 
 public slots:
@@ -89,6 +94,8 @@ signals:
     void transcriptDelivered(const QString &text);
     void audioLevelChanged(float level);
     void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
+    void globalShortcutChanged();
+    void globalShortcutRegistrationFinished(bool bound, const QString &detail);
     void whatsNewChanged();
 
 private:

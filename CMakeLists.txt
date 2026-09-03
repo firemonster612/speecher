@@ -214,8 +214,10 @@ set(SPEECHER_PLATFORM_LINUX_SOURCES
   src/output/YdotoolSetup.cpp
   src/platform/AtSpiTargetProvider.cpp
   src/platform/KGlobalAccelShortcutBinder.cpp
+  src/platform/LinuxDesktopIntegration.cpp
   src/platform/MediaPauseController.cpp
   src/platform/PortalScreenshotContextProvider.cpp
+  src/platform/PortalGlobalShortcutBinder.cpp
   src/platform/WaylandLayerShell.cpp
   src/platform/atspi/AtSpiAccess.cpp
   src/platform/atspi/AtSpiCorrectionObserver.cpp
@@ -231,8 +233,10 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
   src/output/YdotoolSetup.h
   src/platform/AtSpiTargetProvider.h
   src/platform/KGlobalAccelShortcutBinder.h
+  src/platform/LinuxDesktopIntegration.h
   src/platform/MediaPauseController.h
   src/platform/PortalScreenshotContextProvider.h
+  src/platform/PortalGlobalShortcutBinder.h
   src/platform/WaylandLayerShell.h
   src/platform/atspi/AtSpiAccess.h
   src/platform/atspi/AtSpiCorrectionObserver.h
@@ -344,10 +348,12 @@ set(SPEECHER_FRONTEND_QT_HEADERS
 
 set(SPEECHER_FRONTEND_QT_LINUX_SOURCES
   src/output/YdotoolSetupFlow.cpp
+  src/ui/setup/LinuxGlobalShortcutSetupPage.cpp
 )
 
 set(SPEECHER_FRONTEND_QT_LINUX_HEADERS
   src/output/YdotoolSetupFlow.h
+  src/ui/setup/LinuxGlobalShortcutSetupPage.h
 )
 
 set(SPEECHER_FRONTEND_QT_MAC_SOURCES

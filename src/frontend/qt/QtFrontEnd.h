@@ -26,7 +26,7 @@ public:
 
     void showMainWindow() override;
     void showSettingsWindow() override;
-    void showSetupAssistant() override;
+    void showSetupAssistant(SetupAssistantPage page) override;
     bool captureMainWindow(const QString &path) override;
     void showDictationError(const QString &message) override;
     void alert() override;

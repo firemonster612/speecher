@@ -7,11 +7,23 @@
 #include "core/SettingsStore.h"
 #include "platform/CorrectionDiff.h"
 #include "platform/GlobalShortcutBinder.h"
+#ifdef Q_OS_LINUX
+#include "platform/LinuxDesktopIntegration.h"
+#include "ui/SetupAssistant.h"
+#include "ui/setup/LinuxGlobalShortcutSetupPage.h"
+#include "ui/setup/SetupPages.h"
+#endif
 
+#include <QDir>
+#include <QFile>
+#include <QGroupBox>
+#include <QLabel>
 #include <QList>
 #include <QSignalSpy>
 #include <QStringList>
+#include <QTemporaryDir>
 #include <QTest>
+#include <QToolButton>
 
 #include <memory>
 #include <utility>
@@ -54,6 +66,17 @@ public:
         }
         m_shortcut = shortcut;
         return true;
+    }
+
+    void publishShortcut(const QKeySequence &shortcut)
+    {
+        m_shortcut = shortcut;
+        emit bindingChanged();
+    }
+
+    void publishRegistrationResult(bool bound, const QString &detail)
+    {
+        emit registrationFinished(bound, detail);
     }
 
     int bindCount = 0;
@@ -179,9 +202,11 @@ public:
         calls << QStringLiteral("showSettingsWindow");
     }
 
-    void showSetupAssistant() override
+    void showSetupAssistant(SetupAssistantPage page) override
     {
-        calls << QStringLiteral("showSetupAssistant");
+        calls << (page == SetupAssistantPage::All
+                      ? QStringLiteral("showSetupAssistant")
+                      : QStringLiteral("showSetupAssistant GlobalShortcut"));
     }
 
     bool captureMainWindow(const QString &path) override
@@ -209,6 +234,143 @@ class PlatformCompositionTests : public QObject {
     Q_OBJECT
 
 private slots:
+#ifdef Q_OS_LINUX
+    void globalShortcutSinglePageOnlyShowsTheShortcutPage()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        SetupAssistant assistant(&controller, SetupAssistantPage::GlobalShortcut);
+        assistant.show();
+
+        QCOMPARE(assistant.pageIds().size(), 1);
+        QVERIFY(assistant.page(assistant.pageIds().first())->isVisible());
+        int visibleSetupPages = 0;
+        for (QWidget *widget : assistant.findChildren<QWidget *>()) {
+            const bool setupPage = dynamic_cast<LinuxGlobalShortcutSetupPage *>(widget)
+                || dynamic_cast<WelcomeSetupPage *>(widget)
+                || dynamic_cast<MicrophoneSetupPage *>(widget);
+            visibleSetupPages += setupPage && widget->isVisible();
+        }
+        QCOMPARE(visibleSetupPages, 1);
+    }
+
+    void globalShortcutRegistrationRefreshesAndCollapsesOptions()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        LinuxGlobalShortcutSetupPage page(controller);
+        page.show();
+
+        QGroupBox *manual = nullptr;
+        for (QGroupBox *group : page.findChildren<QGroupBox *>()) {
+            if (group->title() == QStringLiteral("Manual setup")) {
+                manual = group;
+                break;
+            }
+        }
+        QToolButton *moreOptions = nullptr;
+        for (QToolButton *button : page.findChildren<QToolButton *>()) {
+            if (button->text() == QStringLiteral("More options")) {
+                moreOptions = button;
+                break;
+            }
+        }
+        QVERIFY(manual);
+        QVERIFY(moreOptions);
+
+        platform->binder->publishRegistrationResult(false, QStringLiteral("Try manual setup"));
+        QVERIFY(!manual->isHidden());
+
+        const QKeySequence shortcut(Qt::META | Qt::ALT | Qt::Key_D);
+        platform->binder->publishShortcut(shortcut);
+        QVERIFY(manual->isHidden());
+        QVERIFY(!moreOptions->isChecked());
+
+        bool hasWorkingStatus = false;
+        for (QLabel *label : page.findChildren<QLabel *>()) {
+            hasWorkingStatus = hasWorkingStatus
+                || label->text() == QStringLiteral("Try it now: Meta+Alt+D");
+        }
+        QVERIFY(hasWorkingStatus);
+
+        moreOptions->setChecked(true);
+        platform->binder->publishRegistrationResult(true, QStringLiteral("Meta+Alt+D"));
+        QVERIFY(!moreOptions->isChecked());
+    }
+
+    void globalShortcutInstructionCommandMatchesTheInstallation()
+    {
+        QTemporaryDir home;
+        QVERIFY(home.isValid());
+
+        QCOMPARE(globalShortcutInstructionCommand(
+                     home.path(),
+                     QString(),
+                     QStringLiteral("/opt/Speecher Current/bin/speecher")),
+                 QStringLiteral("\"/opt/Speecher Current/bin/speecher\" toggle"));
+        QCOMPARE(globalShortcutInstructionCommand(
+                     home.path(),
+                     QStringLiteral("/opt/Speecher Current.AppImage"),
+                     QStringLiteral("/tmp/.mount/usr/bin/speecher")),
+                 QStringLiteral("\"/opt/Speecher Current.AppImage\" toggle"));
+
+        QVERIFY(QDir().mkpath(home.filePath(QStringLiteral(".local/bin"))));
+        const QString appImage = home.filePath(QStringLiteral("Speecher.AppImage"));
+        QFile source(appImage);
+        QVERIFY(source.open(QIODevice::WriteOnly));
+        source.close();
+        const QString link = home.filePath(QStringLiteral(".local/bin/speecher"));
+        const QString staleImage = home.filePath(QStringLiteral("Old Speecher.AppImage"));
+        QFile stale(staleImage);
+        QVERIFY(stale.open(QIODevice::WriteOnly));
+        stale.close();
+        QVERIFY(QFile::link(staleImage, link));
+        QCOMPARE(globalShortcutInstructionCommand(
+                     home.path(),
+                     appImage,
+                     QStringLiteral("/tmp/.mount/usr/bin/speecher")),
+                 QStringLiteral("\"%1\" toggle").arg(appImage));
+
+        QVERIFY(QFile::remove(link));
+        QVERIFY(QFile::link(appImage, link));
+        QCOMPARE(globalShortcutInstructionCommand(
+                     home.path(),
+                     appImage,
+                     QStringLiteral("/tmp/.mount/usr/bin/speecher")),
+                 QStringLiteral("speecher toggle"));
+    }
+
+    void appImageDesktopFileExecLinesUseTheRealImagePath()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString sourcePath = directory.filePath(QStringLiteral("source.desktop"));
+        const QString targetPath = directory.filePath(QStringLiteral("installed.desktop"));
+        QFile source(sourcePath);
+        QVERIFY(source.open(QIODevice::WriteOnly));
+        source.write("[Desktop Entry]\nExec=speecher\n"
+                     "[Desktop Action ToggleDictation]\nExec=speecher toggle\n"
+                     "[Desktop Action Quoted]\nExec=\"/old Speecher.AppImage\" toggle\n");
+        source.close();
+
+        QString error;
+        QVERIFY2(writeAppImageDesktopFile(sourcePath,
+                                          targetPath,
+                                          QStringLiteral("/opt/Speecher Current.AppImage"),
+                                          &error),
+                 qPrintable(error));
+        QFile installed(targetPath);
+        QVERIFY(installed.open(QIODevice::ReadOnly));
+        QCOMPARE(installed.readAll(),
+                 QByteArray("[Desktop Entry]\n"
+                            "Exec=\"/opt/Speecher Current.AppImage\"\n"
+                            "[Desktop Action ToggleDictation]\n"
+                            "Exec=\"/opt/Speecher Current.AppImage\" toggle\n"
+                            "[Desktop Action Quoted]\n"
+                            "Exec=\"/opt/Speecher Current.AppImage\" toggle\n"));
+    }
+#endif
+
     void correctionTrackerSettlesSamplesWithoutRealTimeWaits()
     {
         CorrectionTracker tracker;
