@@ -25,9 +25,14 @@ if(APPLE)
   endif()
   set(SPEECHER_SPARKLE_FRAMEWORK "${sparkle_SOURCE_DIR}/Sparkle.framework")
   add_library(Sparkle::Sparkle SHARED IMPORTED GLOBAL)
+  # INTERFACE_INCLUDE_DIRECTORIES names the .framework directory itself: CMake
+  # recognizes framework paths and emits -F/-iframework so that
+  # #import <Sparkle/Sparkle.h> resolves when compiling consumers.
   set_target_properties(Sparkle::Sparkle PROPERTIES
+    FRAMEWORK TRUE
     IMPORTED_LOCATION "${SPEECHER_SPARKLE_FRAMEWORK}/Sparkle"
     IMPORTED_SONAME "@rpath/Sparkle.framework/Versions/B/Sparkle"
+    INTERFACE_INCLUDE_DIRECTORIES "${SPEECHER_SPARKLE_FRAMEWORK}"
   )
 endif()
 
@@ -255,6 +260,7 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
 )
 
 set(SPEECHER_APP_SOURCES
+  src/app/AppImageUpdater.cpp
   src/app/ApplicationController.cpp
   src/app/CommandLine.cpp
   src/app/CompositionSockets.cpp
@@ -264,6 +270,7 @@ set(SPEECHER_APP_SOURCES
 
 set(SPEECHER_APP_HEADERS
   src/app/AppFrontEnd.h
+  src/app/AppImageUpdater.h
   src/app/ApplicationController.h
   src/app/CommandLine.h
   src/app/CompositionSockets.h
@@ -272,13 +279,13 @@ set(SPEECHER_APP_HEADERS
   src/app/UpdateController.h
 )
 
+# AppImageUpdater is plain Qt/C++ and compiles on every platform so its tests
+# can run everywhere; only Linux composition instantiates it.
 set(SPEECHER_APP_LINUX_SOURCES
-  src/app/AppImageUpdater.cpp
   src/app/LinuxComposition.cpp
 )
 
 set(SPEECHER_APP_LINUX_HEADERS
-  src/app/AppImageUpdater.h
   src/app/LinuxComposition.h
 )
 

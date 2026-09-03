@@ -53,6 +53,27 @@ Portable packages:
 - Linux: `make appimage` → `dist/Speecher-x86_64.AppImage`
 - macOS: `make dmg` → `build/speecher.dmg`, a drag-to-Applications disk image with Qt bundled
 
+## Installation & updates
+
+On Linux, download the AppImage, make it executable, and run it:
+
+```sh
+chmod +x Speecher-x86_64.AppImage
+./Speecher-x86_64.AppImage
+```
+
+It updates itself from inside the app. External update tools use the zsync metadata embedded for the channel this AppImage was built for, even if you switch the in-app Update Channel.
+
+On macOS, open the DMG and drag `speecher.app` to Applications. On macOS 15 and later, Gatekeeper blocks the first launch. Choose **System Settings > Privacy & Security > Open Anyway**, or run:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/speecher.app
+```
+
+The app is unsigned because there is no Apple Developer account. Later updates are verified with Sparkle EdDSA signatures.
+
+The default Update Channel is Stable Release. Nightly Builds are republished from every push to `master`, not on a nightly schedule. Switch channels in **Settings > General > Updates**.
+
 ### Global shortcut
 
 On macOS, Speecher registers its own global hotkey — set it in the setup assistant or Settings, including press-and-hold push-to-talk. Nothing to configure outside the app.
