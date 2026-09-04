@@ -1,9 +1,9 @@
 <?xml version='1.0' encoding='utf-8'?>
-<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher nightly updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher nightly updates</description><item><title>0.1.2-nightly.20260904+gbf1fab9</title><pubDate>Fri, 4 Sep 2026 08:27:14 +0100</pubDate><sparkle:version>276</sparkle:version><sparkle:shortVersionString>0.1.2-nightly.20260904+gbf1fab9</sparkle:shortVersionString><description><![CDATA[<pre>Version: 0.1.2-nightly.20260904+gbf1fab9
-Build number: 276
-Commit: bf1fab969ab9bc1187838756b3cdc0e79b9fd5e1
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher nightly updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher nightly updates</description><item><title>0.1.2</title><pubDate>Fri, 4 Sep 2026 08:38:20 +0100</pubDate><sparkle:version>290</sparkle:version><sparkle:shortVersionString>0.1.2</sparkle:shortVersionString><description><![CDATA[<pre>Version: 0.1.2
+Build number: 290
+Commit: 057d0fca057ff41fbef215c16fe0c79fae9604aa
 
 This Nightly Build is untested. Use the Stable Release unless you want the latest master build.
 
 Update channels: https://github.com/firemonster612/speecher#installation--updates
-</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/nightly/speecher.dmg" length="42443241" type="application/x-apple-diskimage" sparkle:edSignature="JdAoR9pqHCW9IZ/STmQGjRcDRva+MYO/GtfNWGOscn3ewvO2WKxBFaRZ2aJzvyFNtyjDX0fsG4h/Huzjo1+dAw==" /></item></channel></rss>
+</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/nightly/speecher.dmg" length="42443362" type="application/x-apple-diskimage" sparkle:edSignature="WVQfopN8AvS7uN8to4/3MJTRLcoBCUJkQnCj15LS3OKhLyAdv5emOxDo4jkOJSNeZiRBRjIrJ36YL4NqaI3zBw==" /></item></channel></rss>
