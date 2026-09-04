@@ -9,7 +9,6 @@ namespace speecher {
 class LinuxComposition final : public PlatformComposition {
 public:
     QString outputSummary() const override;
-    QString primaryOutputStatus() const override;
     QString ipcListenName() const override;
     QStringList ipcConnectCandidates() const override;
     QString detachedExecutablePath() const override;

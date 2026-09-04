@@ -133,11 +133,6 @@ public:
         return QStringLiteral("Fake: nothing is delivered");
     }
 
-    QString primaryOutputStatus() const override
-    {
-        return QStringLiteral("Fake output ready");
-    }
-
     QString ipcListenName() const override
     {
         return m_delegate->ipcListenName();
@@ -941,7 +936,6 @@ private slots:
 
         QCOMPARE(controller.platform(), platform.get());
         QCOMPARE(controller.outputSummary(), QStringLiteral("Fake: nothing is delivered"));
-        QCOMPARE(controller.primaryOutputStatus(), QStringLiteral("Fake output ready"));
     }
 
     void shortcutApiDelegatesToTheCompositionsBinder()

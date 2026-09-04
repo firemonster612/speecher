@@ -80,7 +80,6 @@ SettingsSchema settingsSchema(ApplicationController *controller)
     SettingsSchema schema = buildSettingsSchema(qtSchemaContext(
         *controller->platform(),
         *controller->providerRegistry(),
-        controller->primaryOutputStatus(),
         controller->pendingWhatsNewVersion()));
     UpdateController *updates = controller->updates();
     SettingsPage &general = pageById(schema, QStringLiteral("general"));

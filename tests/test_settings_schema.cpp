@@ -19,7 +19,6 @@ SchemaContext fakeContext()
         [] {
             return QList<RowOption>{{QStringLiteral("mic-1"), QStringLiteral("Desk microphone")}};
         },
-        QStringLiteral("Fake clipboard path"),
     };
 }
 

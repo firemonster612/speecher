@@ -55,7 +55,6 @@ public:
     QString stateName() const;
     IpcResponse response(bool ok = true, const QString &message = {}) const;
     QString outputSummary() const;
-    QString primaryOutputStatus() const;
     bool accessibilitySupported() const;
     bool accessibilityEnabled() const;
     bool accessibilityPersistent() const;

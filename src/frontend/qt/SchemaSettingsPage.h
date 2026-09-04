@@ -17,7 +17,6 @@ class ProviderRegistry;
 // What the Qt front end can tell the schema about this machine.
 SchemaContext qtSchemaContext(const PlatformComposition &platform,
                               const ProviderRegistry &providers,
-                              const QString &primaryOutputStatus,
                               const QString &lastSeenVersion = {});
 
 // A widget a Custom row supplies, plus the two closures the renderer needs to

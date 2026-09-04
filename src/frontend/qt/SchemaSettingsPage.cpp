@@ -228,7 +228,6 @@ QWidget *addRowGroup(const QString &id, QWidget *form)
 
 SchemaContext qtSchemaContext(const PlatformComposition &platform,
                               const ProviderRegistry &providers,
-                              const QString &primaryOutputStatus,
                               const QString &lastSeenVersion)
 {
     return {
@@ -237,7 +236,6 @@ SchemaContext qtSchemaContext(const PlatformComposition &platform,
         [&platform] {
             return settings::audioInputDeviceOptions(platform.availableAudioInputDevices());
         },
-        primaryOutputStatus,
 #ifdef SPEECHER_WITH_YDOTOOL
         true,
 #else

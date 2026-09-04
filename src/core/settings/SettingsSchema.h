@@ -192,7 +192,6 @@ struct SchemaContext {
     QList<RowOption> speechProviders;
     QList<RefinementProvider> refinementProviders;
     std::function<QList<RowOption>()> audioInputDevices;
-    QString primaryOutputStatus;
     // This build can set up a virtual keyboard, so the Output page carries the
     // Advanced section that drives it.
     bool virtualKeyboardSetup = false;

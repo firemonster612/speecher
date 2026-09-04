@@ -46,16 +46,6 @@ QString LinuxComposition::outputSummary() const
     return QStringLiteral("Automatic: copies to the clipboard, pastes with the virtual keyboard when set up");
 }
 
-QString LinuxComposition::primaryOutputStatus() const
-{
-    // The Wayland path is only the active one inside a Wayland session with a
-    // helper to drive it; an X11 session with wl-copy installed still copies
-    // through the Qt clipboard.
-    return WlClipboardDelivery::isWaylandSession() && WlClipboardDelivery::isAvailable()
-        ? QStringLiteral("Copies to the clipboard with formatting")
-        : QStringLiteral("Copies to the clipboard as plain text");
-}
-
 QString LinuxComposition::ipcListenName() const
 {
     return isRunningFromOwnAppImage() ? appImageSocketName() : appSocketName();

@@ -289,11 +289,6 @@ QString ApplicationController::outputSummary() const
     return m_platform->outputSummary();
 }
 
-QString ApplicationController::primaryOutputStatus() const
-{
-    return m_platform->primaryOutputStatus();
-}
-
 bool ApplicationController::accessibilitySupported() const
 {
     return m_accessibilitySupported;

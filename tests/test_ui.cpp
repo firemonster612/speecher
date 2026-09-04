@@ -34,7 +34,7 @@ std::unique_ptr<SchemaSettingsPage> schemaPage(const QString &id,
                                                SchemaCustomRowFactory customRows = {})
 {
     const SettingsSchema schema =
-        buildSettingsSchema(qtSchemaContext(platform, providers, QStringLiteral("Clipboard")));
+        buildSettingsSchema(qtSchemaContext(platform, providers));
     return std::make_unique<SchemaSettingsPage>(schema.page(id), nullptr, std::move(customRows));
 }
 
@@ -267,7 +267,7 @@ private slots:
         ProviderRegistry providers;
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
         const SettingsSchema schema =
-            buildSettingsSchema(qtSchemaContext(*platform, providers, QStringLiteral("Clipboard")));
+            buildSettingsSchema(qtSchemaContext(*platform, providers));
         SettingsPage refinementSchema = schema.page(QStringLiteral("refinement"));
         SettingsRow sentinel;
         sentinel.id = QStringLiteral("refinementLayoutSentinel");
