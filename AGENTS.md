@@ -27,7 +27,16 @@ a rewrite of the sidebar, the colours and the Dictation page. Do not repeat it.
   highlights, hover states or shadows, no colours other than palette roles, no
   pixel constants beyond the spacing helpers in `SettingsPageSupport.h`. If a
   widget style draws something square, that is the style's decision; the fix
-  is a different native widget or a newer style, never a `paintEvent`.
+  is a different native widget or a newer style, never a `paintEvent`. The one
+  exception is the settings card container, which mirrors Kirigami Addons'
+  FormCard (a rounded rectangle in the Base colour with a frame at
+  Kirigami's frame contrast) because Qt Widgets has no such container; it uses
+  palette colours only and lives in `SettingsPageSupport.cpp`. Hover on button
+  rows comes from the style's own item primitive, not from us.
+- **Settings pages follow Kirigami Addons FormCard.** Bold header above the
+  card, title and small grey description on the left, control on the right,
+  inset separators, button rows with a trailing arrow, cards capped at 30
+  grid units and centred. See https://develop.kde.org/docs/getting-started/kirigami/addons-delegates/.
 - **Native widgets first.** Group boxes for groups, list views for lists,
   form rows for settings. Prefer the widget the toolkit already has over a
   custom-looking replacement.

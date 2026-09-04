@@ -10,7 +10,6 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
-#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -286,7 +285,11 @@ void SchemaSettingsPage::addSection(const SettingsSection &section,
     auto *columnLayout = new QVBoxLayout(column);
     columnLayout->setContentsMargins(0, 0, 0, 0);
     columnLayout->setSpacing(settings::tightSpacing());
-    QGroupBox *card = settings::makeSettingsCard(section.title, column);
+    if (!section.title.isEmpty()) {
+        entry.label = settings::makeSectionLabel(section.title, column);
+        columnLayout->addWidget(entry.label);
+    }
+    QFrame *card = settings::makeSettingsCard(column);
     columnLayout->addWidget(card);
     QWidget *form = settings::cardFormLayout(card)->parentWidget();
     QWidget *group = nullptr;
@@ -322,6 +325,8 @@ void SchemaSettingsPage::addSection(const SettingsSection &section,
         note->setObjectName(QStringLiteral("noteText"));
         note->setWordWrap(true);
         note->setForegroundRole(QPalette::PlaceholderText);
+        note->setFont(settings::smallFont(note->font()));
+        note->setContentsMargins(settings::gridUnit(), 0, settings::gridUnit(), 0);
         note->setAttribute(Qt::WA_StyledBackground, false);
         columnLayout->addWidget(note);
         entry.note = note;
@@ -358,10 +363,7 @@ QWidget *SchemaSettingsPage::addGateNote(const SettingsRow &descriptor, QWidget 
     note->setObjectName(QStringLiteral("gateNote"));
     auto *layout = new QHBoxLayout(note);
     // Same inset as a card row, so the note lines up with the rows it gates.
-    layout->setContentsMargins(settings::relatedSpacing(),
-                               settings::relatedSpacing(),
-                               settings::relatedSpacing(),
-                               settings::tightSpacing());
+    layout->setContentsMargins(settings::rowPadding());
     layout->setSpacing(settings::relatedSpacing());
     auto *text = new QLabel(descriptor.disabledHelp, note);
     text->setObjectName(QStringLiteral("gateNoteText"));
@@ -433,10 +435,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         auto *containerLayout = new QVBoxLayout(container);
         // Same inset as a card row so the block's text lines up with row titles.
-        containerLayout->setContentsMargins(settings::relatedSpacing(),
-                                            settings::relatedSpacing(),
-                                            settings::relatedSpacing(),
-                                            settings::relatedSpacing());
+        containerLayout->setContentsMargins(settings::rowPadding());
         containerLayout->setSpacing(settings::relatedSpacing());
         auto *header = new QWidget(container);
         header->setObjectName(QStringLiteral("blockHeader"));
@@ -464,6 +463,29 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         return;
     }
 
+    if (descriptor.kind == RowKind::Action) {
+        // FormButtonDelegate: the row itself is the button.
+        QPushButton *button = settings::makeButtonRow(
+            descriptor.actionLabel.isEmpty() ? descriptor.label : descriptor.actionLabel,
+            descriptor.help,
+            host);
+        button->setObjectName(descriptor.id);
+        if (!descriptor.tooltip.isEmpty()) {
+            button->setToolTip(descriptor.tooltip);
+        }
+        connect(button, &QPushButton::clicked, this, [this, id = descriptor.id] {
+            emit actionTriggered(id);
+        });
+        settings::addCardRow(form, button, host);
+        row.frame = button;
+        row.control = button;
+        row.description = button->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        m_rows.append(row);
+        if (!descriptor.expensive) {
+            applyRow(m_rows.last(), AppSettings{});
+        }
+        return;
+    }
     row.control = makeControl(descriptor, host, row);
     row.control->setObjectName(descriptor.id);
     if (!descriptor.tooltip.isEmpty()) {

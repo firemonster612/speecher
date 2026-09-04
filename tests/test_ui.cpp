@@ -45,14 +45,8 @@ std::unique_ptr<SchemaSettingsPage> schemaPage(const QString &id,
 
 QStringList sectionLabels(const QWidget &page)
 {
-    // Section titles are card (group box) titles plus any subsection label a
-    // merged card carries inside it, in top-to-bottom order.
+    // Section titles are the headers above each card, in top-to-bottom order.
     QList<QPair<int, QString>> titles;
-    for (QGroupBox *card : page.findChildren<QGroupBox *>(QStringLiteral("settingsCard"))) {
-        if (!card->title().isEmpty()) {
-            titles.append({card->mapTo(&page, QPoint()).y(), card->title()});
-        }
-    }
     for (QLabel *label : page.findChildren<QLabel *>(QStringLiteral("sectionLabel"))) {
         titles.append({label->mapTo(&page, QPoint()).y(), label->text()});
     }
@@ -311,10 +305,8 @@ private slots:
         auto *profile = refinement->findChild<QTableWidget *>(QStringLiteral("vocabInput"));
         auto *context = refinement->findChild<QWidget *>(QStringLiteral("targetContextControl"));
         QVERIFY(profile && context);
-        const QList<QGroupBox *> refinementCards =
-            refinement->findChildren<QGroupBox *>(QStringLiteral("settingsCard"));
-        QCOMPARE(refinementCards.size(), 1);
-        QCOMPARE(refinementCards.first()->title(), QStringLiteral("Refinement"));
+        QCOMPARE(refinement->findChildren<QFrame *>(QStringLiteral("settingsCard")).size(), 1);
+        QCOMPARE(sectionLabels(*refinement), QStringList{QStringLiteral("Refinement")});
         const int profileBottom =
             profile->mapTo(refinement->widget(), QPoint(0, profile->height())).y();
         const int contextY = context->mapTo(refinement->widget(), QPoint()).y();
@@ -835,7 +827,7 @@ private slots:
         QVERIFY(control->mapTo(describedRow, QPoint()).x()
                 > titleLabel->mapTo(describedRow, QPoint(titleLabel->width(), 0)).x());
         QVERIFY(control->mapTo(describedRow, QPoint(control->width(), 0)).x()
-                >= describedRow->width() - settings::relatedSpacing() - 1);
+                >= describedRow->width() - settings::rowPadding().right() - 1);
 
         // A check box row reads as one sentence: the sentence is the row's
         // title, the box carries no text of its own, and clicking the words

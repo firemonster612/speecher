@@ -3,12 +3,14 @@
 #include "core/settings/SettingsSchema.h"
 
 #include <QColor>
+#include <QFont>
+#include <QMargins>
 #include <QString>
 
 class QColor;
 class QComboBox;
 class QFrame;
-class QGroupBox;
+class QPushButton;
 class QFormLayout;
 class QLabel;
 class QLayout;
@@ -65,7 +67,18 @@ void populateAudioInputDevices(QComboBox *combo,
                                const QString &selectedDeviceId);
 QColor positiveTextColor(const QPalette &palette);
 QLabel *makeSectionLabel(const QString &text, QWidget *parent);
-QGroupBox *makeSettingsCard(const QString &title, QWidget *parent);
+QFrame *makeSettingsCard(QWidget *parent);
+// FormButtonDelegate: the whole row is the button, with a trailing arrow.
+QPushButton *makeButtonRow(const QString &title, const QString &description, QWidget *parent);
+// Kirigami Addons FormCard metrics.
+int gridUnit();
+int smallSpacing();
+int largeSpacing();
+int cornerRadius();
+int cardMaximumWidth();
+QMargins rowPadding();
+QFont smallFont(const QFont &font);
+QColor frameColor(const QPalette &palette);
 QFormLayout *cardFormLayout(QWidget *card);
 // Adds a spanning row to a card, with a hairline above every row after the first.
 void addCardRow(QFormLayout *layout, QWidget *row, QWidget *parent);
