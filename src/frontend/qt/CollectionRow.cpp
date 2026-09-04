@@ -100,6 +100,8 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     , m_notifyChanged(std::move(notifyChanged))
 {
     auto *layout = new QVBoxLayout(this);
+    // Same inset as a card row so the block's text lines up with row titles.
+    layout->setContentsMargins(settings::rowPadding());
     if (!descriptor.label.isEmpty()) {
         auto *title = new QLabel(descriptor.label, this);
         title->setObjectName(QStringLiteral("subsectionLabel"));

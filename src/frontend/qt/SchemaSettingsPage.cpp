@@ -285,8 +285,15 @@ void SchemaSettingsPage::addSection(const SettingsSection &section,
     auto *columnLayout = new QVBoxLayout(column);
     columnLayout->setContentsMargins(0, 0, 0, 0);
     columnLayout->setSpacing(settings::tightSpacing());
-    if (!section.title.isEmpty()) {
-        entry.label = settings::makeSectionLabel(section.title, column);
+    // An untitled card that opens with a named block is titled by that block:
+    // the name goes above the card like every other section header, not inside.
+    const bool leadingBlock = !section.rows.isEmpty()
+        && (section.rows.first().kind == RowKind::Collection
+            || section.rows.first().kind == RowKind::Custom);
+    const QString title = section.title.isEmpty() && leadingBlock ? section.rows.first().label
+                                                                    : section.title;
+    if (!title.isEmpty()) {
+        entry.label = settings::makeSectionLabel(title, column);
         columnLayout->addWidget(entry.label);
     }
     QFrame *card = settings::makeSettingsCard(column);
@@ -313,11 +320,15 @@ void SchemaSettingsPage::addSection(const SettingsSection &section,
             qobject_cast<QFormLayout *>(host->layout())->addRow(row.separator);
         }
     }
-    // A card holding one full-width block repeats nothing: the card's title
-    // already names it, so the block's own header stays hidden.
-    if (section.rows.size() == 1 && section.rows.first().label == section.title) {
-        if (auto *header = card->findChild<QWidget *>(QStringLiteral("blockHeader"))) {
+    // The card's title already names its leading block, so that block's own
+    // heading stays hidden (a custom block's whole header, a collection's title).
+    if (leadingBlock && !title.isEmpty() && section.rows.first().label == title
+        && entry.rowStart < m_rows.size()) {
+        QWidget *block = m_rows.at(entry.rowStart).frame;
+        if (auto *header = block->findChild<QWidget *>(QStringLiteral("blockHeader"))) {
             header->hide();
+        } else if (auto *heading = block->findChild<QLabel *>(QStringLiteral("subsectionLabel"))) {
+            heading->hide();
         }
     }
     if (!section.help.isEmpty()) {

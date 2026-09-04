@@ -707,24 +707,30 @@ QWidget *centerColumn(QWidget *content, QWidget *parent)
     return content;
 }
 
-QVBoxLayout *makeSettingsPage(QScrollArea *scroll)
+void configurePageScroll(QScrollArea *scroll, QWidget *content)
 {
-    scroll->setObjectName(QStringLiteral("settingsScroll"));
+    // The one page container: a frameless scroll area on the window colour
+    // whose content is capped at the card width plus its own margins and
+    // centred when the pane is wider. Every page, composed or schema-driven,
+    // goes through here so their cards share the same edges.
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setBackgroundRole(QPalette::Window);
     scroll->viewport()->setBackgroundRole(QPalette::Window);
+    scroll->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+    content->setAutoFillBackground(false);
+    const QMargins margins = content->layout() ? content->layout()->contentsMargins() : QMargins();
+    content->setMaximumWidth(cardMaximumWidth() + margins.left() + margins.right());
+    scroll->setWidget(content);
+}
 
+QVBoxLayout *makeSettingsPage(QScrollArea *scroll)
+{
+    scroll->setObjectName(QStringLiteral("settingsScroll"));
     auto *page = new QWidget(scroll);
-    page->setAutoFillBackground(false);
     auto *layout = new QVBoxLayout(page);
     applyPageMargins(layout);
-    // Cap the content column and centre it when the pane is wider: titles and
-    // controls stay within one eye span, and every card shares the same edges.
-    const QMargins margins = layout->contentsMargins();
-    page->setMaximumWidth(cardMaximumWidth() + margins.left() + margins.right());
-    scroll->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
-    scroll->setWidget(page);
+    configurePageScroll(scroll, page);
     return layout;
 }
 

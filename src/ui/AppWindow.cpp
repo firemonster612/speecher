@@ -76,12 +76,7 @@ const QList<PageDefinition> kPages{
 QScrollArea *scrollingPage(QWidget *content, QWidget *parent)
 {
     auto *scroll = new QScrollArea(parent);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setBackgroundRole(QPalette::Window);
-    scroll->viewport()->setBackgroundRole(QPalette::Window);
-    content->setAutoFillBackground(false);
-    scroll->setWidget(content);
+    settings::configurePageScroll(scroll, content);
     return scroll;
 }
 
@@ -106,7 +101,10 @@ QWidget *detachedContent(QScrollArea *page, bool removeTitle = false)
     if (removeTitle) {
         removeEmbeddedPageTitle(content);
     }
-    content->layout()->unsetContentsMargins();
+    // The composed page carries the page margins and the width cap; the
+    // detached content contributes neither, so cards on every page line up.
+    content->layout()->setContentsMargins(0, 0, 0, 0);
+    content->setMaximumWidth(QWIDGETSIZE_MAX);
     page->hide();
     return content;
 }

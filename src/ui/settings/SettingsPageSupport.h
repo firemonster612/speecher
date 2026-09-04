@@ -85,6 +85,8 @@ void addCardRow(QFormLayout *layout, QWidget *row, QWidget *parent);
 // Wraps a section (title + card) in the shared, centred content column.
 QWidget *centerColumn(QWidget *content, QWidget *parent);
 void addSectionRow(QFormLayout *form, const QString &title, QWidget *parent);
+// Configures the shared page container; makeSettingsPage and AppWindow both use it.
+void configurePageScroll(QScrollArea *scroll, QWidget *content);
 QVBoxLayout *makeSettingsPage(QScrollArea *scroll);
 
 } // namespace speecher::settings

@@ -157,6 +157,10 @@ SchemaCustomRow ProviderCustomRows::makeAnthropicAuthModeRow(QWidget *parent,
     m_anthropicAuthStatus->setForegroundRole(QPalette::WindowText);
     m_anthropicAuthStatus->setAttribute(Qt::WA_StyledBackground, false);
     m_anthropicAuthStatus->setAutoFillBackground(false);
+    // Wraps under the combo instead of widening the control column and
+    // squeezing the row title.
+    m_anthropicAuthStatus->setWordWrap(true);
+    m_anthropicAuthStatus->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     layout->addWidget(m_anthropicAuthMode);
     layout->addWidget(m_anthropicAuthStatus);
 

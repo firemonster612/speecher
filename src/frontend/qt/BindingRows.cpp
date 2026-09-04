@@ -5,6 +5,8 @@
 #include <QAbstractItemView>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include "ui/settings/SettingsPageSupport.h"
+
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
@@ -93,6 +95,7 @@ SchemaCustomRow BindingRows::makeReplacementRow(const SettingsRow &descriptor,
     m_list->setMinimumHeight(m_collection.minimumHeight);
 
     auto *layout = new QVBoxLayout(control);
+    layout->setContentsMargins(settings::rowPadding());
     auto *title = new QLabel(descriptor.label, control);
     title->setObjectName(QStringLiteral("subsectionLabel"));
     title->setForegroundRole(QPalette::WindowText);
