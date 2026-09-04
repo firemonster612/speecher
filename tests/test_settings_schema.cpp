@@ -187,7 +187,7 @@ private slots:
         QVERIFY(!row.disabledHelp.isEmpty());
     }
 
-    void automaticInstallOnlyAppearsForAppImages()
+    void automaticInstallOnlyAppearsWhenSupported()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
         const SettingsRow &row = rowById(schema.page(QStringLiteral("general")),

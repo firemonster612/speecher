@@ -196,6 +196,16 @@ private slots:
         QVERIFY(found);
     }
 
+    void automaticDownloadsAppearForSparkle()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SettingsRowModel *row = settingsRow(bridge.settingsSchema, @"autoInstallUpdates");
+
+        QVERIFY(row);
+        QVERIFY([row.help containsString:@"Sparkle"]);
+    }
+
     void setupFinishesWithStartAtLoginPage()
     {
         ApplicationController controller(false);

@@ -441,7 +441,7 @@ void SettingsPageSet::updateAccessibilityState(bool supported, bool enabled, boo
 {
     Q_UNUSED(persistent);
     const Capabilities capabilities{supported && enabled,
-                                    m_controller->updates()->isAppImage()};
+                                    m_controller->updates()->supportsAutomaticDownloads()};
     m_general->setCapabilities(capabilities);
     m_output->setCapabilities(capabilities);
     m_applications->setCapabilities(capabilities);

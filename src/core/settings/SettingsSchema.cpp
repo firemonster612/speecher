@@ -451,12 +451,16 @@ SettingsPage generalPage(const SchemaContext &context)
     SettingsRow autoInstall = toggleRow(
         QStringLiteral("autoInstallUpdates"),
         QStringLiteral("Download and install updates automatically"),
+#ifdef Q_OS_MACOS
+        QStringLiteral("Sparkle downloads updates in the background and prompts when they are ready to install."),
+#else
         QStringLiteral("AppImage updates install in the background and take effect after restart."),
+#endif
         [](const AppSettings &settings) { return settings.updates.autoInstall; },
         [](AppSettings &settings, bool value) { settings.updates.autoInstall = value; });
     autoInstall.sinceVersion = QStringLiteral("0.2.0");
     autoInstall.visible = [](const AppSettings &, const Capabilities &capabilities) {
-        return capabilities.isAppImage;
+        return capabilities.automaticUpdateDownloads;
     };
 
     SettingsPage page{

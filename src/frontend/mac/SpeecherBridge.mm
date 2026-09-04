@@ -653,7 +653,7 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     _state->controller = controller;
     const Capabilities capabilities{controller->accessibilitySupported()
                                         && controller->accessibilityEnabled(),
-                                    controller->updates()->isAppImage()};
+                                    controller->updates()->supportsAutomaticDownloads()};
     _settingsSchema = [[SettingsSchemaModel alloc]
         initWithStore:controller->settings()
                schema:speecher::buildSettingsSchema(
