@@ -1,16 +1,11 @@
 <?xml version='1.0' encoding='utf-8'?>
-<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher stable updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher stable updates</description><item><title>0.1.2</title><pubDate>Fri, 4 Sep 2026 08:38:20 +0100</pubDate><sparkle:version>290</sparkle:version><sparkle:shortVersionString>0.1.2</sparkle:shortVersionString><description><![CDATA[<pre>## Changed
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher stable updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher stable updates</description><item><title>0.1.3</title><pubDate>Fri, 4 Sep 2026 14:31:07 +0100</pubDate><sparkle:version>306</sparkle:version><sparkle:shortVersionString>0.1.3</sparkle:shortVersionString><description><![CDATA[<pre>## Changed
 
-- The Linux AppImage now follows your desktop's widget style as well as its
-  colours and icons: Kvantum themes, Adwaita on GNOME, or whatever the style
-  setting in kdeglobals names. Styles the AppImage does not carry fall back
-  to Breeze on Plasma and to Qt's own choice elsewhere.
+- On Plasma the sidebar is now KDE's own page list, so it looks and behaves
+  like other KDE apps.
 
 ## Fixed
 
-- Dictation no longer fails with "Microphone opened but produced no audio" on
-  microphones that take a moment to wake up. The shortest allowed wait is now
-  500 ms; installs that had it lower are raised automatically.
-- The default dictation shortcut is active right after install or upgrade on
-  Plasma.
-</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/v0.1.2/speecher.dmg" length="42443238" type="application/x-apple-diskimage" sparkle:edSignature="hrfLNq/kWg2I8cV3jvS5vsvoJrglbP1kxmK1RUYPSz3kqzCDmG5MCwnm5o4lmy1sjM1i0ZeZBs+aiRQUmzWaBg==" /></item></channel></rss>
+- Speecher no longer crashes while quitting or restarting after an update once
+  a dictation has run.
+</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/v0.1.3/speecher.dmg" length="42442708" type="application/x-apple-diskimage" sparkle:edSignature="+j+I/Mhd1lZQVnMsU6RFoTarFALHgbpdtX1/BktSfo/HaeBm059ReAL/HOgATogY8ZnMTnqUu5UWuoNV8fTTAA==" /></item></channel></rss>
