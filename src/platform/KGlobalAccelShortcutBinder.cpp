@@ -36,17 +36,25 @@ QString KGlobalAccelShortcutBinder::unsupportedReason() const
     return supported() ? QString() : QStringLiteral("KGlobalAccel is unavailable");
 }
 
-void KGlobalAccelShortcutBinder::bind()
+// The action KGlobalAccel identifies Speecher's shortcut by. Built on demand so
+// removal works in a process that never bound.
+QAction *KGlobalAccelShortcutBinder::makeShortcutAction()
 {
-#ifdef SPEECHER_WITH_KGLOBALACCEL
-    KGlobalAccel::self()->cleanComponent(QStringLiteral("local.speecher"));
-    const QKeySequence savedShortcut = shortcut();
     delete m_action;
     m_action = new QAction(QStringLiteral("Toggle dictation"), this);
     m_action->setObjectName(QString::fromLatin1(shortcutAction));
     m_action->setProperty("componentName", QString::fromLatin1(shortcutComponent));
     m_action->setProperty("componentDisplayName", QStringLiteral("Speecher"));
     connect(m_action, &QAction::triggered, this, &GlobalShortcutBinder::activated);
+    return m_action;
+}
+
+void KGlobalAccelShortcutBinder::bind()
+{
+#ifdef SPEECHER_WITH_KGLOBALACCEL
+    KGlobalAccel::self()->cleanComponent(QStringLiteral("local.speecher"));
+    const QKeySequence savedShortcut = shortcut();
+    makeShortcutAction();
     const QKeySequence defaultShortcut = GlobalShortcutBinder::defaultShortcut();
     if (!KGlobalAccel::self()->setDefaultShortcut(m_action, {defaultShortcut})) {
         qWarning() << "Could not set the default Global Shortcut"
@@ -97,6 +105,30 @@ bool KGlobalAccelShortcutBinder::setShortcut(const QKeySequence &shortcut, QStri
     return true;
 #else
     Q_UNUSED(shortcut)
+    if (error) {
+        *error = unsupportedReason();
+    }
+    return false;
+#endif
+}
+
+bool KGlobalAccelShortcutBinder::removeRegistration(QString *error)
+{
+#ifdef SPEECHER_WITH_KGLOBALACCEL
+    if (!supported()) {
+        if (error) {
+            *error = unsupportedReason();
+        }
+        return false;
+    }
+    QAction *action = m_action ? m_action : makeShortcutAction();
+    KGlobalAccel::self()->removeAllShortcuts(action);
+    KGlobalAccel::self()->cleanComponent(QString::fromLatin1(shortcutComponent));
+    delete m_action;
+    m_action = nullptr;
+    emit bindingChanged();
+    return true;
+#else
     if (error) {
         *error = unsupportedReason();
     }

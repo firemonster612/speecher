@@ -344,6 +344,11 @@ void ApplicationController::registerGlobalShortcut()
     m_shortcutBinder->registerShortcut();
 }
 
+bool ApplicationController::removeGlobalShortcutRegistration(QString *error)
+{
+    return m_shortcutBinder->removeRegistration(error);
+}
+
 bool ApplicationController::startIpc(QString *error)
 {
     return m_ipc->listen(error);

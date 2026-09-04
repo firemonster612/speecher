@@ -70,6 +70,8 @@ public:
     QString globalShortcutDisplay() const;
     bool setGlobalShortcut(const QKeySequence &shortcut, QString *error = nullptr);
     void registerGlobalShortcut();
+    // Forgets the desktop's registration of the shortcut, where it keeps one.
+    bool removeGlobalShortcutRegistration(QString *error = nullptr);
 
     void showMainWindow();
     void showSettingsWindow();

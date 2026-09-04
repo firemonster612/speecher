@@ -1,6 +1,5 @@
 #include "ui/TranscriberPopup.h"
 
-#include "ui/AccessibilityNotice.h"
 #include "platform/FallbackPopupPositioner.h"
 #include "ui/WaveformWidget.h"
 
@@ -60,15 +59,38 @@ protected:
     }
 };
 
+// The thin countdown under an error. Painted here rather than by the style: a
+// 3px progress bar in any widget style still draws a frame, and the previous
+// stylesheet that hid it hardcoded the colours it replaced.
+class DismissBar final : public QProgressBar {
+public:
+    using QProgressBar::QProgressBar;
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        if (maximum() <= minimum()) {
+            return;
+        }
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(palette().color(QPalette::Highlight));
+        const qreal fraction = qreal(value() - minimum()) / qreal(maximum() - minimum());
+        QRectF chunk(rect());
+        chunk.setWidth(chunk.width() * fraction);
+        painter.drawRoundedRect(chunk, 1.0, 1.0);
+    }
+};
+
 } // namespace
 
 TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     : QWidget(parent)
     , m_previewPill(new PillFrame(this))
     , m_preview(new QLabel(this))
-    , m_errorDismissProgress(new QProgressBar(m_previewPill))
+    , m_errorDismissProgress(new DismissBar(m_previewPill))
     , m_waveform(new WaveformWidget(this))
-    , m_accessibilityNotice(new AccessibilityNotice(this))
     , m_updateChip(new QPushButton(this))
     , m_positioner(positioner ? positioner : new FallbackPopupPositioner(this))
 {
@@ -91,9 +113,14 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
 #endif
     setObjectName(QStringLiteral("transcriberPopup"));
     m_preview->setObjectName(QStringLiteral("rawTranscript"));
+    // The pill paints a Base fill, so its text takes the Text role; the font
+    // is whatever the desktop chose for the application.
+    m_preview->setForegroundRole(QPalette::Text);
     applyTheme();
 
     m_previewPill->setObjectName(QStringLiteral("previewPill"));
+    m_previewPill->setFrameShape(QFrame::NoFrame);
+    m_previewPill->setAutoFillBackground(false);
     m_previewPill->setFixedHeight(48);
     m_previewPill->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     auto *previewLayout = new QVBoxLayout(m_previewPill);
@@ -133,14 +160,9 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     m_updateChip->hide();
     connect(m_updateChip, &QPushButton::clicked, this, &TranscriberPopup::updateRequested);
     m_layout->addWidget(m_updateChip, 0, Qt::AlignHCenter);
-
-    m_accessibilityNotice->setCompact(true);
-    m_accessibilityNotice->setMaximumWidth(620);
-    connect(m_accessibilityNotice,
-            &AccessibilityNotice::enableRequested,
-            this,
-            &TranscriberPopup::enableAccessibilityRequested);
-    m_layout->addWidget(m_accessibilityNotice, 0, Qt::AlignHCenter);
+    // No settings prompts here: the overlay cannot take focus and shows while
+    // the user is speaking. Desktop accessibility is offered on the Dictation
+    // page and in the setup assistant.
     m_layout->addWidget(m_waveform, 0, Qt::AlignHCenter);
     m_layout->addWidget(m_previewPill, 0, Qt::AlignHCenter);
 }
@@ -148,13 +170,10 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
 QSize TranscriberPopup::sizeHint() const
 {
     const int spacing = m_layout->spacing();
-    const int noticeHeight = m_accessibilityNotice->isHidden()
-        ? 0
-        : m_accessibilityNotice->sizeHint().height() + spacing;
     const int updateHeight = m_updateChip->isHidden()
         ? 0
         : m_updateChip->sizeHint().height() + spacing;
-    return QSize(620, 110 + noticeHeight + updateHeight);
+    return QSize(620, 110 + updateHeight);
 }
 
 void TranscriberPopup::setStatus(const QString &status)
@@ -221,7 +240,7 @@ void TranscriberPopup::showOAuthRefreshIndicator()
 {
     restoreStandardLayout();
     setRefreshLayout(true);
-    m_preview->setText(QStringLiteral("Refreshing OAuth token"));
+    m_preview->setText(QStringLiteral("Renewing sign-in…"));
     m_preview->setVisible(true);
     m_previewPill->setVisible(true);
     m_preview->setMaximumWidth(520);
@@ -283,26 +302,6 @@ void TranscriberPopup::showPopup(quint64 generation)
     update();
 }
 
-void TranscriberPopup::setAccessibilityState(bool supported,
-                                             bool enabled,
-                                             bool persistent)
-{
-    m_accessibilityNotice->setState(supported, enabled, persistent);
-    adjustSize();
-    if (isVisible()) {
-        m_positioner->positionBottomCenter(m_surface);
-    }
-}
-
-void TranscriberPopup::showAccessibilityError(const QString &message)
-{
-    m_accessibilityNotice->showError(message);
-    adjustSize();
-    if (isVisible()) {
-        m_positioner->positionBottomCenter(m_surface);
-    }
-}
-
 void TranscriberPopup::setUpdateChip(const QString &text, bool visible, bool enabled)
 {
     const bool visibilityChanged = m_updateChip->isHidden() == visible;
@@ -352,25 +351,13 @@ void TranscriberPopup::applyTheme()
         return;
     }
     m_applyingTheme = true;
-    const QPalette p = qApp ? qApp->palette() : palette();
-    const QColor text = p.color(QPalette::Text);
-    const QColor accent = p.color(QPalette::Highlight);
-#ifdef Q_OS_MACOS
-    const QString labelFont = QStringLiteral("font-size:14px;");
-#else
-    const QString labelFont = QStringLiteral("font:14px 'Inter','Noto Sans',sans-serif;");
-#endif
-    setStyleSheet(QStringLiteral(
-                      "#transcriberPopup{background:transparent;}"
-                      "QFrame#previewPill{background:transparent;border:0;}"
-                      "QLabel{color:%1;%3}"
-                      "QProgressBar#errorDismissProgress{border:0;background:transparent;}"
-                      "QProgressBar#errorDismissProgress::chunk{background:%2;border-radius:1px;}")
-                      .arg(text.name(QColor::HexRgb),
-                           accent.name(QColor::HexRgb),
-                           labelFont));
+    // Colours come from palette roles set once in the constructor; a palette
+    // change only needs the painted pill and bar redrawn.
     if (m_previewPill) {
         m_previewPill->update();
+    }
+    if (m_errorDismissProgress) {
+        m_errorDismissProgress->update();
     }
     m_applyingTheme = false;
 }

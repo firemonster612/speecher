@@ -195,7 +195,7 @@ ApiKeyCandidate readCodexApiKeyCandidate(QString *status)
     QFile file(codexAuthPath());
     if (!file.open(QIODevice::ReadOnly)) {
         if (status) {
-            *status = QStringLiteral("No Codex auth file");
+            *status = QStringLiteral("The Codex app is not signed in");
         }
         return {};
     }
@@ -266,12 +266,12 @@ OpenAiAuth OpenAiAuthProvider::readCodexOauth(bool refreshExpired)
 {
     QFile file(codexAuthPath());
     if (!file.open(QIODevice::ReadOnly)) {
-        return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("No Codex auth file"), {}, {}, {}, {}, true};
+        return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("The Codex app is not signed in"), {}, {}, {}, {}, true};
     }
     const QJsonObject tokens = QJsonDocument::fromJson(file.readAll()).object().value(QStringLiteral("tokens")).toObject();
     const QString accessToken = tokens.value(QStringLiteral("access_token")).toString().trimmed();
     if (accessToken.isEmpty()) {
-        return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("No Codex OAuth token found"), {}, {}, {}, {}, true};
+        return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("The Codex app has no sign-in to reuse"), {}, {}, {}, {}, true};
     }
     if (jwtExpired(accessToken)) {
         if (!refreshExpired) {
@@ -288,7 +288,7 @@ OpenAiAuth OpenAiAuthProvider::readCodexOauth(bool refreshExpired)
     return {true,
             accessToken,
             QStringLiteral("codex_oauth"),
-            QStringLiteral("Codex OAuth token found"),
+            QStringLiteral("Signed in with the Codex app"),
             {},
             {},
             QStringLiteral("https://chatgpt.com/backend-api/codex"),
@@ -449,7 +449,7 @@ OpenAiAuth OpenAiAuthProvider::refreshCodexOauth() const
         return {true,
                 credentials.accessToken,
                 QStringLiteral("cliproxy"),
-                QStringLiteral("CLI Proxy API Codex token refreshed"),
+                QStringLiteral("Signed in through CLI Proxy API"),
                 {},
                 {},
                 QStringLiteral("https://chatgpt.com/backend-api/codex"),
@@ -465,7 +465,7 @@ QString OpenAiAuthProvider::status() const
     if (!auth.status.isEmpty()) {
         return auth.status;
     }
-    return auth.ok ? QStringLiteral("Credentials found") : QStringLiteral("No credentials found");
+    return auth.ok ? QStringLiteral("Signed in") : QStringLiteral("Not signed in");
 }
 
 } // namespace speecher

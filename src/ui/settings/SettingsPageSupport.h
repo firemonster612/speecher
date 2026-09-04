@@ -48,7 +48,13 @@ int tightSpacing();
 int relatedSpacing();
 int groupGap();
 int sectionGap();
+// True while the KDE platform theme is drawing this process, which is the only
+// time kdeglobals colours match the palette the rest of the window uses.
+bool kdePlatformThemeActive();
 QPalette kdeHeaderPalette(const QPalette &base);
+// The header strip's palette: KDE's header colours under the KDE platform
+// theme, otherwise a shade of the active palette's window colour.
+QPalette headerPalette(const QPalette &base);
 void applyPageMargins(QLayout *layout);
 void applyLabelHierarchy(QWidget *root);
 QLabel *makePageTitle(const QString &text, QWidget *parent);

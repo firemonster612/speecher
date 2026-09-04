@@ -161,16 +161,6 @@ void QtFrontEnd::wireSessionToPopup()
             session->stopListening();
         }
     });
-    connect(m_popup, &TranscriberPopup::enableAccessibilityRequested, this, [this] {
-        QString error;
-        if (!m_controller->enableAccessibility(&error)) {
-            m_popup->showAccessibilityError(error);
-        }
-    });
-    connect(m_controller,
-            &ApplicationController::accessibilityStateChanged,
-            m_popup,
-            &TranscriberPopup::setAccessibilityState);
 }
 
 void QtFrontEnd::refreshUpdateChip()

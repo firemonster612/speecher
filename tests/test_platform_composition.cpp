@@ -15,11 +15,15 @@
 #include "ui/setup/SetupPages.h"
 #endif
 
+#include <QApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QGroupBox>
+#include <QPalette>
 #include <QKeySequenceEdit>
 #include <QLabel>
+#include <QLayout>
 #include <QList>
 #include <QPushButton>
 #include <QSignalSpy>
@@ -320,6 +324,25 @@ private slots:
                 || label->text().contains(QStringLiteral("ends by setting up a Global Shortcut"));
         }
         QVERIFY(mentionsShortcut);
+
+        // The shortcut page is also a settings card control; as an assistant
+        // page it keeps the same margins as the pages around it.
+        LinuxGlobalShortcutSetupPage *shortcut = nullptr;
+        for (QWidget *widget : assistant.findChildren<QWidget *>()) {
+            if (auto *page = dynamic_cast<LinuxGlobalShortcutSetupPage *>(widget)) {
+                shortcut = page;
+                break;
+            }
+        }
+        QVERIFY(shortcut);
+        QCOMPARE(shortcut->layout()->contentsMargins(), welcome->layout()->contentsMargins());
+        QCOMPARE(shortcut->layout()->contentsMargins().left(), setupPageMargin());
+
+        // The assistant keeps the application palette rather than retuning a
+        // role to fight its own style's separator.
+        QVERIFY(!assistant.testAttribute(Qt::WA_SetPalette));
+        QCOMPARE(assistant.palette().color(QPalette::Mid),
+                 QApplication::palette().color(QPalette::Mid));
     }
 
     void globalShortcutSinglePageOnlyShowsTheShortcutPage()
@@ -607,6 +630,69 @@ private slots:
                      appImage,
                      QStringLiteral("/tmp/.mount/usr/bin/speecher")),
                  QStringLiteral("\"%1\" toggle").arg(link));
+    }
+
+    void appImageIntegrationRemovalUndoesTheInstallAndReportsIt()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QDir home(root.filePath(QStringLiteral("home")));
+        QVERIFY(QDir().mkpath(home.path()));
+        // The AppImage mount: usr/bin/speecher with the desktop file and icon
+        // two levels up, as installAppImageIntegration expects.
+        const QString appDir = root.filePath(QStringLiteral("mount"));
+        const QString binDir = appDir + QStringLiteral("/usr/bin");
+        QVERIFY(QDir().mkpath(binDir));
+        const auto writeFile = [](const QString &path, const QByteArray &contents) {
+            QFile file(path);
+            if (!file.open(QIODevice::WriteOnly)) {
+                return false;
+            }
+            return file.write(contents) == contents.size();
+        };
+        QVERIFY(writeFile(appDir + QStringLiteral("/io.github.firemonster612.speecher.desktop"),
+                          "[Desktop Entry]\nExec=speecher\n"));
+        QVERIFY(writeFile(appDir + QStringLiteral("/io.github.firemonster612.speecher.svg"),
+                          "<svg/>"));
+        const QString appImage = root.filePath(QStringLiteral("Speecher.AppImage"));
+        QVERIFY(writeFile(appImage, "image"));
+
+        QString error;
+        QVERIFY2(installAppImageIntegration(home.path(), appImage, binDir, &error), qPrintable(error));
+        const QString desktopFile = home.filePath(
+            QStringLiteral(".local/share/applications/io.github.firemonster612.speecher.desktop"));
+        const QString icon = home.filePath(
+            QStringLiteral(".local/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg"));
+        const QString link = home.filePath(QStringLiteral(".local/bin/speecher"));
+        QVERIFY(QFile::exists(desktopFile));
+        QVERIFY(QFile::exists(icon));
+        QVERIFY(QFileInfo(link).isSymLink());
+
+        DesktopIntegrationRemoval removal = removeAppImageIntegration(home.path());
+        QCOMPARE(removal.removed,
+                 QStringList({QStringLiteral("app menu entry"),
+                              QStringLiteral("speecher command"),
+                              QStringLiteral("app icon")}));
+        QVERIFY(removal.absent.isEmpty());
+        QVERIFY(removal.failed.isEmpty());
+        QVERIFY(!QFile::exists(desktopFile));
+        QVERIFY(!QFile::exists(icon));
+        QVERIFY(!QFileInfo(link).isSymLink() && !QFile::exists(link));
+        // The program file is the user's to delete.
+        QVERIFY(QFile::exists(appImage));
+
+        // A second run finds nothing and says so rather than failing.
+        removal = removeAppImageIntegration(home.path());
+        QVERIFY(removal.removed.isEmpty());
+        QCOMPARE(removal.absent.size(), 3);
+        QVERIFY(removal.failed.isEmpty());
+
+        // A real file where the link belongs is not Speecher's to delete.
+        QVERIFY(writeFile(link, "#!/bin/sh\n"));
+        removal = removeAppImageIntegration(home.path());
+        QCOMPARE(removal.failed.size(), 1);
+        QVERIFY(removal.failed.first().startsWith(QStringLiteral("speecher command")));
+        QVERIFY(QFile::exists(link));
     }
 
     void appImageDesktopFileExecLinesUseTheRealImagePath()

@@ -17,6 +17,7 @@ class QShowEvent;
 class QSplitter;
 class QStackedWidget;
 class QTimer;
+class QToolButton;
 
 namespace speecher {
 
@@ -51,6 +52,7 @@ private:
     void filterSidebarPages(const QString &query);
     void refreshUpdateBanner();
     void showWhatsNew();
+    void leaveWhatsNew();
 
     ApplicationController *m_controller;
     SettingsPageSet *m_pages;
@@ -66,6 +68,9 @@ private:
     QWidget *m_headerUnderline = nullptr;
     QStringList m_pageKeywords;
     QLabel *m_pageTitle = nullptr;
+    QToolButton *m_backButton = nullptr;
+    // The sidebar row that was current when What's New opened.
+    int m_whatsNewReturnRow = 0;
     QFrame *m_autoSaveWarning = nullptr;
     QLabel *m_autoSaveWarningText = nullptr;
     QTimer *m_autoSaveTimer = nullptr;
@@ -74,7 +79,7 @@ private:
     QProgressBar *m_updateProgress = nullptr;
     QPushButton *m_updateAction = nullptr;
     QPushButton *m_updateLater = nullptr;
-    QPushButton *m_updateDismiss = nullptr;
+    QToolButton *m_updateDismiss = nullptr;
     bool m_updateBannerDeferred = false;
     QString m_updateBannerVersion;
     QString m_updateBannerInstalledVersion;

@@ -85,7 +85,7 @@ QList<RowOption> pasteMethodOptions(bool includeDirectInsert, bool includeGlobal
                     QStringLiteral("Terminal paste (Ctrl+Shift+V)")});
     if (includeDirectInsert) {
         options.append({pasteMethodName(PasteMethod::DirectInsert),
-                        QStringLiteral("Direct insertion (AT-SPI)")});
+                        QStringLiteral("Direct insertion (desktop accessibility)")});
     }
 #endif
     options.append({pasteMethodName(PasteMethod::ClipboardOnly), QStringLiteral("Clipboard only")});
@@ -97,7 +97,7 @@ QString applicationIdHint()
 #ifdef Q_OS_MACOS
     return QStringLiteral("Use the app's bundle identifier, such as com.apple.Terminal.");
 #else
-    return QStringLiteral("Use the desktop application ID reported by AT-SPI.");
+    return QStringLiteral("Use the app's desktop ID, such as org.kde.konsole.");
 #endif
 }
 
@@ -115,16 +115,25 @@ QString targetAccessibilityHint()
 #ifdef Q_OS_MACOS
     return QStringLiteral("Grant Accessibility permission so Speecher can identify the target application.");
 #else
-    return QStringLiteral("Enable desktop accessibility (AT-SPI) to identify the target application.");
+    return QStringLiteral("Turn on desktop accessibility to identify the target application.");
 #endif
 }
 
-QString restoreClipboardHint()
+// The action the front end runs to lift an accessibility gate, and the row
+// state that names it. Every row that needs a known target declares this.
+const QString kEnableAccessibilityAction = QStringLiteral("enableAccessibility");
+
+void gateOnTargetAccessibility(SettingsRow &row, const QString &help)
 {
+    row.enabled = [](const AppSettings &, const Capabilities &capabilities) {
+        return capabilities.targetAccessibility;
+    };
+    row.disabledHelp = help;
+    row.disabledAction = kEnableAccessibilityAction;
 #ifdef Q_OS_MACOS
-    return QStringLiteral("Restore the previous clipboard after Speecher pastes.");
+    row.disabledActionLabel = QStringLiteral("Open Accessibility settings");
 #else
-    return QStringLiteral("Restore the previous clipboard after virtual-keyboard paste.");
+    row.disabledActionLabel = QStringLiteral("Enable desktop accessibility");
 #endif
 }
 
@@ -405,6 +414,13 @@ SettingsPage generalPage(const SchemaContext &context)
         }),
         [](const AppSettings &settings) { return settings.ui.theme; },
         [](AppSettings &settings, const QString &value) { settings.ui.theme = value; });
+    // A desktop that ignores the request would otherwise offer Light and Dark
+    // as if they did something.
+    theme.enabled = [](const AppSettings &, const Capabilities &capabilities) {
+        return capabilities.colorSchemeOverride;
+    };
+    theme.disabledHelp = QStringLiteral(
+        "This desktop chooses the colour scheme itself, so Speecher follows it.");
 
     QList<SettingsRow> systemRows;
 #ifdef Q_OS_MACOS
@@ -421,10 +437,25 @@ SettingsPage generalPage(const SchemaContext &context)
         QStringLiteral("Global Shortcut"),
         QStringLiteral("Start or stop dictation from anywhere.")));
 #endif
-    systemRows.append(infoRow(QStringLiteral("clipboardOutputStatus"),
-                              QStringLiteral("Clipboard output"),
-                              QStringLiteral("Current platform clipboard path."),
-                              context.primaryOutputStatus));
+    // No clipboard status row here: the Output page's Method choice says how
+    // text is delivered, and a platform's "clipboard path" is not a setting.
+
+    QList<SettingsRow> maintenanceRows{
+        actionRow(QStringLiteral("runSetup"),
+                  QStringLiteral("Setup assistant"),
+                  QStringLiteral("Go through the first-run steps again, from sign-in to the Global Shortcut."),
+                  QStringLiteral("Run setup assistant…")),
+    };
+#ifdef Q_OS_LINUX
+    // Undoing the per-user install is the app's job on Linux: there is no
+    // package manager entry for an AppImage to fall back on.
+    maintenanceRows.append(actionRow(
+        QStringLiteral("removeSpeecher"),
+        QStringLiteral("Remove Speecher"),
+        QStringLiteral("Undo what Speecher set up here: the app menu entry, the speecher command, "
+                       "the icon and the Global Shortcut, and optionally your settings."),
+        QStringLiteral("Remove Speecher from this computer…")));
+#endif
 
     SettingsRow updateChannel = choiceRow(
         QStringLiteral("updateChannel"),
@@ -486,8 +517,8 @@ SettingsPage generalPage(const SchemaContext &context)
                            [](const AppSettings &settings) { return settings.ui.soundsEnabled; },
                            [](AppSettings &settings, bool value) { settings.ui.soundsEnabled = value; }),
                  numberRow(QStringLiteral("previewWords"),
-                           QStringLiteral("Preview words"),
-                           QStringLiteral("Trailing words shown in the popup."),
+                           QStringLiteral("Live preview"),
+                           QStringLiteral("How many of the latest words the popup shows while you speak."),
                            {1, 40, 1, QString()},
                            [](const AppSettings &settings) { return settings.ui.previewWords; },
                            [](AppSettings &settings, int value) { settings.ui.previewWords = value; }),
@@ -497,12 +528,7 @@ SettingsPage generalPage(const SchemaContext &context)
              std::move(systemRows)},
             {QStringLiteral("Maintenance"),
              QString(),
-             {
-                 actionRow(QStringLiteral("runSetup"),
-                           QStringLiteral("Setup assistant"),
-                           QStringLiteral("Check sign-in, microphone, accessibility, delivery, and refinement again."),
-                           QStringLiteral("Run setup assistant…")),
-             }},
+             std::move(maintenanceRows)},
             {QStringLiteral("Updates"),
              QString(),
              {
@@ -522,7 +548,7 @@ SettingsPage generalPage(const SchemaContext &context)
                  actionRow(kWhatsNewAction,
                            QStringLiteral("What's New"),
                            QStringLiteral("Release notes for this version, and the settings it added."),
-                           QStringLiteral("What's New…")),
+                           QStringLiteral("Open")),
              }},
         },
     };
@@ -588,30 +614,30 @@ SettingsPage audioPage(const SchemaContext &context)
 
     SettingsRow captureMode = choiceRow(
         QStringLiteral("captureMode"),
-        QStringLiteral("Capture mode"),
-        QStringLiteral("Open the microphone only while listening, or keep it warm between captures."),
+        QStringLiteral("Microphone use"),
+        QStringLiteral("Keeping it open starts dictation a little faster, but the microphone "
+                       "shows as in use the whole time."),
         fixedOptions({
-            {QStringLiteral("on_demand"), QStringLiteral("On demand")},
-            {QStringLiteral("warm"), QStringLiteral("Warm")},
+            {QStringLiteral("on_demand"), QStringLiteral("Open only while dictating")},
+            {QStringLiteral("warm"), QStringLiteral("Keep open between dictations")},
         }),
         [](const AppSettings &settings) { return settings.audio.mode; },
         [](AppSettings &settings, const QString &value) { settings.audio.mode = value; });
-    captureMode.tooltip = QStringLiteral(
-        "Warm keeps the microphone stream open between captures for lower startup latency.");
 
     SettingsRow vadEnabled = toggleRow(
         QStringLiteral("vadEnabled"),
         QStringLiteral("Silence"),
-        QStringLiteral("Trim leading and trailing silence"),
+        QStringLiteral("Skip the quiet parts before, after and between sentences"),
         [](const AppSettings &settings) { return settings.audio.vadEnabled; },
         [](AppSettings &settings, bool value) { settings.audio.vadEnabled = value; });
     vadEnabled.tooltip = QStringLiteral(
-        "Suppress leading, trailing, and long in-between silence before audio is sent.");
+        "Quiet stretches are left out of what is sent for transcription.");
 
     SettingsRow vadThreshold = numberRow(
         QStringLiteral("vadThresholdPercent"),
-        QStringLiteral("Voice threshold"),
-        QStringLiteral("RMS level required before VAD treats audio as speech."),
+        QStringLiteral("Counts as quiet below"),
+        QStringLiteral("Raise this if background noise is being kept; lower it if soft speech is "
+                       "being cut."),
         {1, 20, 1, QStringLiteral("%")},
         [](const AppSettings &settings) { return settings.audio.vadThresholdPercent; },
         [](AppSettings &settings, int value) { settings.audio.vadThresholdPercent = value; });
@@ -626,33 +652,35 @@ SettingsPage audioPage(const SchemaContext &context)
         QStringLiteral("waveform"),
         {
             {QStringLiteral("Transcription"), QString(), {std::move(speechProvider)}},
-            {QStringLiteral("Capture"),
+            {QStringLiteral("Capture"), QString(), {std::move(device)}},
+            {QStringLiteral("Silence trimming"),
+             QString(),
+             {std::move(vadEnabled), std::move(vadThreshold)}},
+            // Timing controls most people never need; the labels say what a
+            // change does to the recording rather than how the pipeline works.
+            {QStringLiteral("Advanced"),
              QString(),
              {
-                 std::move(device),
                  std::move(captureMode),
                  numberRow(QStringLiteral("preRollMs"),
-                           QStringLiteral("Pre-roll"),
-                           QStringLiteral("Audio kept before speech or before a warm capture starts."),
+                           QStringLiteral("Keep before speech"),
+                           QStringLiteral("Audio kept from just before you start, so the first word is not clipped."),
                            {0, 1500, 50, QStringLiteral(" ms")},
                            [](const AppSettings &settings) { return settings.audio.preRollMs; },
                            [](AppSettings &settings, int value) { settings.audio.preRollMs = value; }),
                  numberRow(QStringLiteral("postRollMs"),
-                           QStringLiteral("Post-roll"),
-                           QStringLiteral("Audio kept after stop or after speech falls quiet."),
+                           QStringLiteral("Keep after stopping"),
+                           QStringLiteral("Audio kept after you stop or go quiet, so the last word is not clipped."),
                            {0, 1500, 50, QStringLiteral(" ms")},
                            [](const AppSettings &settings) { return settings.audio.postRollMs; },
                            [](AppSettings &settings, int value) { settings.audio.postRollMs = value; }),
                  numberRow(QStringLiteral("readinessTimeoutMs"),
-                           QStringLiteral("Readiness timeout"),
-                           QStringLiteral("How long Speecher waits for the first microphone sample."),
+                           QStringLiteral("Wait for microphone"),
+                           QStringLiteral("How long to wait for the microphone to deliver sound before giving up."),
                            {150, 3000, 50, QStringLiteral(" ms")},
                            [](const AppSettings &settings) { return settings.audio.readinessTimeoutMs; },
                            [](AppSettings &settings, int value) { settings.audio.readinessTimeoutMs = value; }),
              }},
-            {QStringLiteral("Silence trimming"),
-             QString(),
-             {std::move(vadEnabled), std::move(vadThreshold)}},
         },
     };
 }
@@ -671,11 +699,9 @@ SettingsPage refinementPage(const SchemaContext &context)
         QStringLiteral("Send the target app's context to the refiner"),
         [](const AppSettings &settings) { return settings.refinement.useTargetContext; },
         [](AppSettings &settings, bool value) { settings.refinement.useTargetContext = value; });
-    targetContext.disabledHelp =
-        QStringLiteral("Enable desktop accessibility (AT-SPI) to use target-aware refinement.");
-    targetContext.enabled = [](const AppSettings &, const Capabilities &capabilities) {
-        return capabilities.targetAccessibility;
-    };
+    gateOnTargetAccessibility(
+        targetContext,
+        QStringLiteral("Turn on desktop accessibility to send the target app's context."));
 
     SettingsRow screenshots = toggleRow(
         QStringLiteral("includeScreenshotContext"),
@@ -720,8 +746,8 @@ SettingsPage refinementPage(const SchemaContext &context)
              QString(),
              {
                  choiceRow(QStringLiteral("refinementProvider"),
-                           QStringLiteral("Refinement"),
-                           QStringLiteral("Clean up dictated text after capture."),
+                           QStringLiteral("Provider"),
+                           QStringLiteral("Cleans up dictated text after capture; None leaves it as spoken."),
                            fixedOptions(refiners),
                            [](const AppSettings &settings) { return settings.refinement.providerId; },
                            [](AppSettings &settings, const QString &value) { settings.refinement.providerId = value; }),
@@ -819,11 +845,8 @@ SettingsPage applicationsPage()
         QStringLiteral("Built-in matches are read-only. Custom matches take priority and can set the "
                        "app type used for paste rules, the Writing Profile used for refinement, or both."),
         std::move(rules));
-    row.enabled = [](const AppSettings &, const Capabilities &capabilities) {
-        return capabilities.targetAccessibility;
-    };
-    row.disabledHelp =
-        QStringLiteral("Enable desktop accessibility (AT-SPI) to identify target applications.");
+    gateOnTargetAccessibility(
+        row, QStringLiteral("Turn on desktop accessibility to identify target applications."));
 
     return {
         QStringLiteral("applications"),
@@ -943,10 +966,9 @@ SettingsPage outputPage(const SchemaContext &context)
     SettingsRow restoreClipboard = toggleRow(
         QStringLiteral("restoreClipboardAfterTyping"),
         QStringLiteral("Clipboard"),
-        QStringLiteral("Restore previous clipboard contents after typing"),
+        restoreClipboardDescription(),
         [](const AppSettings &settings) { return settings.output.restoreClipboardAfterTyping; },
         [](AppSettings &settings, bool value) { settings.output.restoreClipboardAfterTyping = value; });
-    restoreClipboard.tooltip = restoreClipboardHint();
 
     QList<SettingsRow> pasteRows{choiceRow(
         QStringLiteral("globalPasteRule"),
@@ -975,10 +997,7 @@ SettingsPage outputPage(const SchemaContext &context)
     // they stand or fall together with desktop accessibility.
     for (int index = 1; index < pasteRows.size(); ++index) {
         pasteRows[index].groupId = QStringLiteral("targetPasteControls");
-        pasteRows[index].enabled = [](const AppSettings &, const Capabilities &capabilities) {
-            return capabilities.targetAccessibility;
-        };
-        pasteRows[index].disabledHelp = targetAccessibilityHint();
+        gateOnTargetAccessibility(pasteRows[index], targetAccessibilityHint());
     }
 
     QList<SettingsSection> sections{
@@ -1135,8 +1154,9 @@ SettingsPage vocabularyPage()
           {
               collectionRow(QStringLiteral("vocabularyEntries"),
                             QStringLiteral("Extra vocabulary"),
-                            QStringLiteral("One term per line. Claude voice uses Deepgram Nova-3 "
-                                           "keyterms: 500 tokens and 100 keyterms maximum."),
+                            QStringLiteral("Names and words Speecher should recognize. When the list "
+                                           "is longer than the transcription service accepts, starred "
+                                           "terms are sent first."),
                             std::move(terms)),
               std::move(limit),
           }}},
@@ -1176,11 +1196,8 @@ SettingsPage correctionsPage()
         [](AppSettings &settings, bool value) { settings.correctionLearningEnabled = value; });
     learn.tooltip = QStringLiteral("Observe a verified inserted span briefly and automatically "
                                    "learn high-confidence or repeated corrections.");
-    learn.disabledHelp =
-        QStringLiteral("Enable desktop accessibility (AT-SPI) to learn corrections after insertion.");
-    learn.enabled = [](const AppSettings &, const Capabilities &capabilities) {
-        return capabilities.targetAccessibility;
-    };
+    gateOnTargetAccessibility(
+        learn, QStringLiteral("Turn on desktop accessibility to learn corrections after insertion."));
 
     CollectionDescriptor corrections;
     corrections.columns = {
@@ -1394,21 +1411,20 @@ QList<ProviderAccount> providerAccounts()
     };
     openAi.effort = &RefinementSettings::openAiEffort;
     openAi.fastModeRowId = QStringLiteral("openAiFastMode");
-    openAi.fastModeHelp = QStringLiteral("1.5x speed and increased usage (negligible).");
+    openAi.fastModeHelp = QStringLiteral("Faster answers for slightly more usage.");
     openAi.fastModeTooltip =
         QStringLiteral("Falls back to standard processing when a fast request fails.");
     openAi.fastMode = &RefinementSettings::openAiFastMode;
     openAi.authRows = {
         customRow(QStringLiteral("openAiAuthMode"),
-                  QStringLiteral("OpenAI auth mode"),
-                  QStringLiteral("Credential source for OpenAI refinement and ChatGPT Codex dictation.")),
+                  QStringLiteral("Sign-in"),
+                  QStringLiteral("How Speecher signs in to OpenAI for dictation and text cleanup.")),
         customRow(QStringLiteral("openAiCliproxyAccount"),
-                  QStringLiteral("OpenAI CLI Proxy account"),
-                  QStringLiteral("CLI Proxy API Codex account used for dictation and local refinement.")),
+                  QStringLiteral("Account"),
+                  QStringLiteral("The CLI Proxy API account to use.")),
         customRow(QStringLiteral("openAiAuth"),
-                  QStringLiteral("OpenAI auth"),
-                  QStringLiteral("Current credential source, app settings key, or CLI Proxy "
-                                 "API account.")),
+                  QStringLiteral("Status"),
+                  QStringLiteral("Whether that sign-in works right now.")),
     };
     openAi.authRows[0].value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.openAiAuthMode);
@@ -1432,13 +1448,8 @@ QList<ProviderAccount> providerAccounts()
     anthropic.sectionTitle = QStringLiteral("Anthropic account");
     // The page's closing note, which belongs under the last card there is.
     anthropic.note = QStringLiteral(
-        "Automatic OpenAI auth follows the Codex auth mode when available, then falls back to "
-        "Codex API key, Codex OAuth, OPENAI_API_KEY, and the app settings key. Codex OAuth uses "
-        "the ChatGPT Codex backend. API-key modes apply to refinement; dictation uses Codex "
-        "OAuth or the selected CLI Proxy API Codex account. The app settings key is stored in "
-        "the desktop keyring through QtKeychain when available. CLI Proxy API auth reads OAuth "
-        "accounts from its auto-detected auth directory. With a server URL configured, only "
-        "refinement goes through that server; dictation still uses the selected local account.");
+        "Automatic uses the first OpenAI sign-in it finds: the Codex app, then an API key from "
+        "the environment or saved in Speecher.");
     anthropic.modelRowId = QStringLiteral("anthropicModel");
     anthropic.modelLabel = QStringLiteral("Claude model");
     anthropic.modelHelp = QStringLiteral("Model used for Anthropic refinement.");
@@ -1474,11 +1485,11 @@ QList<ProviderAccount> providerAccounts()
     anthropic.fastMode = &RefinementSettings::anthropicFastMode;
     anthropic.authRows = {
         customRow(QStringLiteral("anthropicAuthMode"),
-                  QStringLiteral("Anthropic auth"),
-                  QStringLiteral("Credential source for Anthropic refinement and Claude Voice dictation.")),
+                  QStringLiteral("Sign-in"),
+                  QStringLiteral("How Speecher signs in to Anthropic for dictation and text cleanup.")),
         customRow(QStringLiteral("anthropicCliproxyAccount"),
-                  QStringLiteral("Claude CLI Proxy account"),
-                  QStringLiteral("CLI Proxy API Claude account used for dictation and local refinement.")),
+                  QStringLiteral("Account"),
+                  QStringLiteral("The CLI Proxy API account to use.")),
     };
     anthropic.authRows[0].value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.anthropicAuthMode);
@@ -1512,8 +1523,8 @@ SettingsSection cliproxyServerSection()
     SettingsRow baseUrl = customRow(
         QStringLiteral("cliproxyBaseUrl"),
         QStringLiteral("Server URL"),
-        QStringLiteral("CLI Proxy API server to send refinement through. When set, the server "
-                       "picks and refreshes accounts; leave empty to read its local token files."));
+        QStringLiteral("Send text cleanup through this CLI Proxy API server. Leave empty to use "
+                       "the account files on this computer."));
     baseUrl.value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.cliproxyBaseUrl);
     };
@@ -1525,7 +1536,7 @@ SettingsSection cliproxyServerSection()
     SettingsRow apiKey = customRow(
         QStringLiteral("cliproxyApiKey"),
         QStringLiteral("Server API key"),
-        QStringLiteral("An entry from the server's api-keys list. Required when the server URL is set."));
+        QStringLiteral("One of the keys the server accepts. Needed when a server URL is set."));
     apiKey.tooltip = QStringLiteral("Stored unencrypted in Speecher's settings file.");
     apiKey.value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.cliproxyApiKey);
@@ -1608,6 +1619,13 @@ SettingsPage providersPage()
 }
 
 } // namespace
+
+QString restoreClipboardDescription()
+{
+    // Restoration follows every paste that is not clipboard-only, whichever
+    // mechanism pasted; the sentence must not promise more than that.
+    return QStringLiteral("Put the previous clipboard contents back after pasting");
+}
 
 const SettingsPage &SettingsSchema::page(const QString &id) const
 {

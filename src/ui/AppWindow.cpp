@@ -36,6 +36,7 @@
 #include <QTabWidget>
 #include <QTextDocument>
 #include <QTimer>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include <utility>
@@ -65,8 +66,8 @@ const QList<PageDefinition> kPages{
     {QStringLiteral("General"), QStringLiteral("preferences-system"), QString()},
     {QStringLiteral("Audio"), QStringLiteral("preferences-desktop-sound"), QString()},
     {QStringLiteral("Applications"), QStringLiteral("preferences-desktop-default-applications"), QString()},
-    {QStringLiteral("Output"), QStringLiteral("klipper"), QStringLiteral("edit-paste")},
-    {QStringLiteral("Auth"), QStringLiteral("preferences-desktop-user-password"), QStringLiteral("dialog-password")},
+    {QStringLiteral("Output"), QStringLiteral("edit-paste"), QStringLiteral("edit-copy")},
+    {QStringLiteral("Accounts"), QStringLiteral("preferences-desktop-user-password"), QStringLiteral("dialog-password")},
     {QStringLiteral("Refinement"), QStringLiteral("tools-wizard"), QStringLiteral("document-edit")},
     {QStringLiteral("Vocabulary"), QStringLiteral("accessories-dictionary"), QStringLiteral("tools-check-spelling")},
 };
@@ -109,11 +110,11 @@ QWidget *detachedContent(QScrollArea *page, bool removeTitle = false)
     return content;
 }
 
-QIcon pageIcon(const PageDefinition &page, QWidget *widget)
+// A theme without the icon leaves the row text-only: a stand-in document icon
+// would say every page is a file.
+QIcon pageIcon(const PageDefinition &page)
 {
-    const QIcon icon = QIcon::fromTheme(
-        page.iconName, QIcon::fromTheme(page.fallbackIconName));
-    return icon.isNull() ? widget->style()->standardIcon(QStyle::SP_FileIcon) : icon;
+    return QIcon::fromTheme(page.iconName, QIcon::fromTheme(page.fallbackIconName));
 }
 
 } // namespace
@@ -181,7 +182,7 @@ void AppWindow::refreshHeaderStripColor()
 #ifdef Q_OS_MACOS
     const QPalette headerPalette = palette();
 #else
-    const QPalette headerPalette = settings::kdeHeaderPalette(palette());
+    const QPalette headerPalette = settings::headerPalette(palette());
 #endif
     const QColor line = settings::separatorColor(headerPalette);
     if (m_headerStrip) {
@@ -194,12 +195,13 @@ void AppWindow::refreshHeaderStripColor()
             hairline->setPalette(linePalette);
         }
     }
-    // Fill the 1px splitter handle: unstyled it stays unpainted, which shows
-    // as a see-through seam between the sidebar and the content.
-    if (m_sidebarSplitter) {
-        m_sidebarSplitter->setStyleSheet(
-            QStringLiteral("QSplitter#sidebarSplitter::handle{background:%1;}")
-                .arg(line.name(QColor::HexRgb)));
+    // Fill the 1px splitter handle: Breeze paints handles in plain window
+    // colour, which shows as a see-through seam between sidebar and content.
+    if (QWidget *handle = m_sidebarSplitter ? m_sidebarSplitter->handle(1) : nullptr) {
+        QPalette handlePalette(handle->palette());
+        handlePalette.setColor(QPalette::Window, line);
+        handle->setPalette(handlePalette);
+        handle->setAutoFillBackground(true);
     }
 }
 
@@ -317,7 +319,7 @@ void AppWindow::buildSharedPages()
     auto *authLayout = new QVBoxLayout(authContent);
     settings::applyPageMargins(authLayout);
     authLayout->setSpacing(0);
-    authLayout->addWidget(settings::makePageTitle(QStringLiteral("Auth"), authContent));
+    authLayout->addWidget(settings::makePageTitle(QStringLiteral("Accounts"), authContent));
     authLayout->addSpacing(settings::sectionGap());
     authLayout->addWidget(detachedContent(m_pages->providerAuth(), true));
     authLayout->addStretch();
@@ -414,15 +416,24 @@ void AppWindow::buildSidebarShell()
                                           settings::relatedSpacing(),
                                           settings::relatedSpacing(),
                                           settings::relatedSpacing());
+    // What's New is not a sidebar page, so while it shows, the header carries
+    // the way back to the page it was opened from, as System Settings does for
+    // a page reached from another one.
+    m_backButton = new QToolButton(headerRight);
+    m_backButton->setObjectName(QStringLiteral("whatsNewBack"));
+    m_backButton->setText(QStringLiteral("Back"));
+    const QIcon backIcon = QIcon::fromTheme(QStringLiteral("go-previous"));
+    m_backButton->setIcon(backIcon);
+    m_backButton->setToolButtonStyle(backIcon.isNull() ? Qt::ToolButtonTextOnly
+                                                       : Qt::ToolButtonIconOnly);
+    m_backButton->setToolTip(QStringLiteral("Back"));
+    m_backButton->setAutoRaise(true);
+    m_backButton->hide();
+    connect(m_backButton, &QToolButton::clicked, this, &AppWindow::leaveWhatsNew);
+    headerRightLayout->addWidget(m_backButton);
     m_pageTitle = settings::makePageTitle(kPages.first().title, headerRight);
     headerRightLayout->addWidget(m_pageTitle);
     headerRightLayout->addStretch();
-    headerRightLayout->addWidget(m_dictation->toggleButton());
-    // Reserve the toggle button's footprint on every page so the strip keeps
-    // one height whether or not the Dictation page is showing.
-    QSizePolicy togglePolicy = m_dictation->toggleButton()->sizePolicy();
-    togglePolicy.setRetainSizeWhenHidden(true);
-    m_dictation->toggleButton()->setSizePolicy(togglePolicy);
     headerLayout->addWidget(headerRight, 1);
     header->installEventFilter(this);
     root->addWidget(header);
@@ -476,9 +487,7 @@ void AppWindow::buildSidebarShell()
     m_navigation->setIconSize(QSize(22, 22));
     for (int index = 0; index < kPages.size(); ++index) {
         const auto &page = kPages.at(index);
-        auto *item = new QListWidgetItem(pageIcon(page, m_navigation),
-                                         page.title,
-                                         m_navigation);
+        auto *item = new QListWidgetItem(pageIcon(page), page.title, m_navigation);
         item->setData(Qt::UserRole, index);
         item->setSizeHint(QSize(0, 32));
     }
@@ -513,9 +522,14 @@ void AppWindow::buildSidebarShell()
     updateLayout->addWidget(m_updateAction);
     m_updateLater = new QPushButton(QStringLiteral("Later"), m_updateBanner);
     updateLayout->addWidget(m_updateLater);
-    m_updateDismiss = new QPushButton(QStringLiteral("×"), m_updateBanner);
+    m_updateDismiss = new QToolButton(m_updateBanner);
+    m_updateDismiss->setObjectName(QStringLiteral("dismissUpdate"));
+    m_updateDismiss->setIcon(QIcon::fromTheme(
+        QStringLiteral("window-close"),
+        style()->standardIcon(QStyle::SP_TitleBarCloseButton)));
+    m_updateDismiss->setToolTip(QStringLiteral("Dismiss"));
     m_updateDismiss->setAccessibleName(QStringLiteral("Dismiss update"));
-    m_updateDismiss->setFlat(true);
+    m_updateDismiss->setAutoRaise(true);
     updateLayout->addWidget(m_updateDismiss);
     connect(m_updateAction, &QPushButton::clicked, this, [this] {
         if (m_showingWhatsNewBanner) {
@@ -528,7 +542,7 @@ void AppWindow::buildSidebarShell()
         m_updateBannerDeferred = true;
         m_updateBanner->hide();
     });
-    connect(m_updateDismiss, &QPushButton::clicked, this, [this] {
+    connect(m_updateDismiss, &QToolButton::clicked, this, [this] {
         if (m_showingWhatsNewBanner) {
             m_controller->clearPendingWhatsNew();
         } else {
@@ -550,16 +564,6 @@ void AppWindow::buildSidebarShell()
     m_sidebarSplitter->addWidget(right);
     m_sidebarSplitter->setStretchFactor(0, 0);
     m_sidebarSplitter->setStretchFactor(1, 1);
-    if (QWidget *handle = m_sidebarSplitter->handle(1)) {
-        // Breeze paints splitter handles in plain window color — invisible.
-        // Fill the 1px handle with the separator blend so the sidebar/content
-        // boundary reads as a hairline, like System Settings.
-        QPalette handlePalette(handle->palette());
-        handlePalette.setColor(QPalette::Window,
-                               settings::separatorColor(handle->palette()));
-        handle->setPalette(handlePalette);
-        handle->setAutoFillBackground(true);
-    }
     m_sidebarPane = sidebar;
     m_searchSection = searchContainer;
     sidebar->installEventFilter(this);
@@ -567,8 +571,8 @@ void AppWindow::buildSidebarShell()
             [searchContainer, sidebar] { searchContainer->setFixedWidth(sidebar->width()); });
     root->addWidget(m_sidebarSplitter, 1);
     setCentralWidget(central);
-    // Re-run now that the hairline widgets exist; the first call above only
-    // colored the strip itself.
+    // Re-run now that the hairline widgets and the splitter handle exist; the
+    // first call above only colored the strip itself.
     refreshHeaderStripColor();
     m_sidebarSplitter->setSizes({220, 680});
     const QByteArray splitterState = m_controller->settings()->raw()
@@ -605,10 +609,9 @@ void AppWindow::buildSidebarShell()
                 }
             });
     connect(m_stack, &QStackedWidget::currentChanged, this, [this](int index) {
-        m_pageTitle->setText(index < kPages.size()
-                                 ? kPages.at(index).title
-                                 : QStringLiteral("What's New"));
-        m_dictation->toggleButton()->setVisible(index == 0);
+        const bool whatsNew = index >= kPages.size();
+        m_pageTitle->setText(whatsNew ? QStringLiteral("What's New") : kPages.at(index).title);
+        m_backButton->setVisible(whatsNew);
     });
     connect(search, &QLineEdit::textChanged, this, &AppWindow::filterSidebarPages);
     connect(search, &QLineEdit::returnPressed, this, [this] {
@@ -697,9 +700,10 @@ void AppWindow::refreshUpdateBanner()
         m_updateLater->show();
         break;
     case UpdateController::State::RestartPending:
+        // The sentence is the whole message; a disabled button repeating it
+        // would only add a control that cannot be used.
         m_updateBannerText->setText(QStringLiteral("Restarting after this dictation…"));
-        m_updateAction->setText(QStringLiteral("Restarting after this dictation…"));
-        m_updateAction->setEnabled(false);
+        m_updateAction->hide();
         break;
     case UpdateController::State::Error:
         m_updateBannerText->setText(updates->errorMessage());
@@ -714,9 +718,17 @@ void AppWindow::refreshUpdateBanner()
 
 void AppWindow::showWhatsNew()
 {
+    if (m_navigation->currentRow() >= 0) {
+        m_whatsNewReturnRow = m_navigation->currentRow();
+    }
     m_navigation->setCurrentItem(nullptr);
     m_stack->setCurrentWidget(m_pages->whatsNew());
     m_controller->clearPendingWhatsNew();
+}
+
+void AppWindow::leaveWhatsNew()
+{
+    m_navigation->setCurrentRow(qBound(0, m_whatsNewReturnRow, m_navigation->count() - 1));
 }
 
 void AppWindow::filterSidebarPages(const QString &query)

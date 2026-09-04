@@ -10,12 +10,14 @@
 #include "ui/settings/SettingsPageSupport.h"
 #include "ui/setup/SetupPages.h"
 
+#include <QApplication>
 #include <QLabel>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFontMetrics>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QSpinBox>
 #include <QStyleHints>
 #include <QTableWidget>
@@ -80,6 +82,39 @@ private slots:
         QVERIFY(positioner->configuredSize.height() > 0);
     }
 
+#ifndef SPEECHER_WITH_KCOLORSCHEME
+    void positiveStatusIsNotColouredLikeALink()
+    {
+        QPalette palette;
+        palette.setColor(QPalette::Link, QColor(0, 0, 200));
+        palette.setColor(QPalette::WindowText, QColor(30, 30, 30));
+        QCOMPARE(settings::positiveTextColor(palette), palette.color(QPalette::WindowText));
+    }
+#endif
+
+    void popupCarriesNoSettingsPrompts()
+    {
+        // The overlay cannot take focus and shows while the user speaks, so a
+        // system-configuration action does not belong on it.
+        TranscriberPopup popup(new SizingPopupPositioner);
+        QVERIFY(!popup.findChild<AccessibilityNotice *>());
+        QVERIFY(!popup.findChild<QPushButton *>(QStringLiteral("enableAccessibilityButton")));
+    }
+
+    void popupUsesTheApplicationFontAndNoStylesheet()
+    {
+        TranscriberPopup popup(new SizingPopupPositioner);
+        QVERIFY(popup.styleSheet().isEmpty());
+        for (const QWidget *child : popup.findChildren<QWidget *>()) {
+            QVERIFY2(child->styleSheet().isEmpty(), qPrintable(child->objectName()));
+        }
+        auto *preview = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
+        QVERIFY(preview);
+        QCOMPARE(preview->font().family(), QApplication::font().family());
+        QCOMPARE(preview->font().pointSizeF(), QApplication::font().pointSizeF());
+        QCOMPARE(preview->foregroundRole(), QPalette::Text);
+    }
+
     void wordPreview()
     {
         QCOMPARE(WordPreview::lastWords(QStringLiteral(" one  two, three\nfour "), 2), QStringLiteral("three four"));
@@ -92,7 +127,12 @@ private slots:
     void themeUsesThePlatformColorSchemeHint()
     {
         Theme::apply(QStringLiteral("dark"));
+        // Whatever the platform did, Theme reports it truthfully so the row
+        // can say when Light and Dark are not going to do anything.
+        QCOMPARE(Theme::overrideHonored(),
+                 qApp->styleHints()->colorScheme() == Qt::ColorScheme::Dark);
         if (qApp->styleHints()->colorScheme() != Qt::ColorScheme::Dark) {
+            Theme::apply(QStringLiteral("system"));
             QSKIP("Platform theme does not honor color-scheme overrides");
         }
         Theme::apply(QStringLiteral("light"));
@@ -126,7 +166,9 @@ private slots:
         QVERIFY(message->text().contains(QStringLiteral("Accessibility is off")));
         QCOMPARE(button->text(), QStringLiteral("Open settings"));
 #else
-        QVERIFY(message->text().contains(QStringLiteral("AT-SPI")));
+        // One user-facing name; the service name stays in the setup page's help.
+        QVERIFY(message->text().contains(QStringLiteral("Desktop accessibility")));
+        QVERIFY(!message->text().contains(QStringLiteral("AT-SPI")));
         QCOMPARE(button->text(), QStringLiteral("Enable permanently"));
 #endif
         QSignalSpy requested(notice, &AccessibilityNotice::enableRequested);
@@ -180,6 +222,24 @@ private slots:
         QVERIFY(!refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(!corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
 
+        // The reason is on the page, not only in a tooltip, with the fix beside it.
+        for (SchemaSettingsPage *page : {&output, &applications, &refinement, &corrections}) {
+            auto *note = page->findChild<QWidget *>(QStringLiteral("gateNote"));
+            QVERIFY(note);
+            QVERIFY(note->isVisibleTo(page));
+            auto *text = note->findChild<QLabel *>(QStringLiteral("gateNoteText"));
+            auto *action = note->findChild<QPushButton *>(QStringLiteral("gateAction"));
+            QVERIFY(text && action);
+            QVERIFY(text->text().contains(QStringLiteral("desktop accessibility")));
+            QCOMPARE(action->text(), QStringLiteral("Enable desktop accessibility"));
+        }
+        // One note for the whole paste-rule group, above it.
+        QCOMPARE(output.findChildren<QWidget *>(QStringLiteral("gateNote")).size(), 1);
+        QSignalSpy triggered(&applications, &SchemaSettingsPage::actionTriggered);
+        applications.findChild<QPushButton *>(QStringLiteral("gateAction"))->click();
+        QCOMPARE(triggered.count(), 1);
+        QCOMPARE(triggered.first().first().toString(), QStringLiteral("enableAccessibility"));
+
         output.setCapabilities({true});
         applications.setCapabilities({true});
         refinement.setCapabilities({true});
@@ -191,6 +251,9 @@ private slots:
         QVERIFY(applications.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
         QVERIFY(refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
+        for (SchemaSettingsPage *page : {&output, &applications, &refinement, &corrections}) {
+            QVERIFY(!page->findChild<QWidget *>(QStringLiteral("gateNote"))->isVisibleTo(page));
+        }
     }
 
     void linuxSettingsLayoutsMatchMasterAndKeepSchemaRows()
@@ -268,8 +331,7 @@ private slots:
         QVERIFY(globalPaste->mapTo(output->widget(), QPoint()).y()
                 < restoreClipboard->mapTo(output->widget(), QPoint()).y());
 
-        for (const QString &id : {QStringLiteral("general"), QStringLiteral("audio"),
-                                  QStringLiteral("applications")}) {
+        for (const QString &id : {QStringLiteral("general"), QStringLiteral("applications")}) {
             SchemaCustomRowFactory customRows;
 #ifdef Q_OS_LINUX
             if (id == QStringLiteral("general")) {
@@ -286,6 +348,20 @@ private slots:
                 std::make_unique<SchemaSettingsPage>(schema.page(id), nullptr, customRows);
             QCOMPARE(sectionLabels(*page).size(), 0);
         }
+
+        // Audio keeps one everyday card and a separate Advanced card for the
+        // timing controls, in that order.
+        const std::unique_ptr<SchemaSettingsPage> audio =
+            std::make_unique<SchemaSettingsPage>(schema.page(QStringLiteral("audio")));
+        QCOMPARE(sectionLabels(*audio), QStringList{QStringLiteral("Advanced")});
+        audio->resize(900, 668);
+        audio->show();
+        QCoreApplication::processEvents();
+        auto *silence = audio->findChild<QWidget *>(QStringLiteral("vadEnabled"));
+        auto *preRoll = audio->findChild<QWidget *>(QStringLiteral("preRollMs"));
+        QVERIFY(silence && preRoll);
+        QVERIFY(silence->mapTo(audio->widget(), QPoint()).y()
+                < preRoll->mapTo(audio->widget(), QPoint()).y());
     }
 
     void outputMethodsOfferAccessibilityInsertion()
@@ -300,6 +376,15 @@ private slots:
         auto *method = page->findChild<QComboBox *>(QStringLiteral("outputMethod"));
         QVERIFY(method);
         QVERIFY(method->findData(QStringLiteral("direct_insert")) >= 0);
+        // Choices describe what happens, not which tool does it.
+        for (int index = 0; index < method->count(); ++index) {
+            const QString text = method->itemText(index);
+            QVERIFY2(!text.contains(QStringLiteral("ydotool"), Qt::CaseInsensitive), qPrintable(text));
+            QVERIFY2(!text.contains(QStringLiteral("wl-copy"), Qt::CaseInsensitive), qPrintable(text));
+            QVERIFY2(!text.contains(QStringLiteral("Qt")), qPrintable(text));
+        }
+        outputRows.refresh();
+        QVERIFY2(!method->toolTip().contains(QStringLiteral("ydotool")), qPrintable(method->toolTip()));
     }
 
     void theVocabularyLimitFollowsTheTable()
@@ -697,23 +782,75 @@ private slots:
         QVERIFY(descriptionLabel);
         QVERIFY(titleLabel);
         QVERIFY(descriptionLabel->wordWrap());
-        QCOMPARE(descriptionLabel->width(),
+        QCOMPARE(descriptionLabel->maximumWidth(),
                  qMin(descriptionLabel->fontMetrics().horizontalAdvance(description) + 8,
                       descriptionLabel->fontMetrics().averageCharWidth() * 62));
-        QVERIFY(descriptionLabel->heightForWidth(descriptionLabel->width())
+        QVERIFY(descriptionLabel->heightForWidth(descriptionLabel->maximumWidth())
                 > descriptionLabel->fontMetrics().height());
         const int requiredRowHeight = control->sizeHint().height()
             + settings::tightSpacing()
-            + descriptionLabel->heightForWidth(descriptionLabel->width());
+            + descriptionLabel->heightForWidth(descriptionLabel->maximumWidth());
         QVERIFY(describedRow->minimumSizeHint().height() >= requiredRowHeight);
         QCOMPARE(titleLabel->alignment(), Qt::AlignRight | Qt::AlignVCenter);
 
-        auto *checkBox = new QCheckBox(QStringLiteral("Short label"), &parent);
-        const QString sentence = QStringLiteral("Enable the complete setting sentence");
+        // A check box's sentence sits beside the box as wrapping text (a
+        // QCheckBox cannot wrap its own), and clicking the words toggles it.
+        auto *checkBox = new QCheckBox(&parent);
+        const QString sentence = QStringLiteral(
+            "Download the update in the background and install it the next time Speecher "
+            "restarts, without asking first.");
         QFrame *checkBoxRow = settings::makeRow(
-            QStringLiteral("Setting"), sentence, checkBox, &parent);
-        QCOMPARE(checkBox->text(), sentence);
+            QStringLiteral("Updates"), sentence, checkBox, &parent);
         QVERIFY(!checkBoxRow->findChild<QLabel *>(QStringLiteral("rowDescription")));
+        auto *caption = checkBoxRow->findChild<QLabel *>(QStringLiteral("checkBoxCaption"));
+        QVERIFY(caption);
+        QVERIFY(checkBox->text().isEmpty());
+        QCOMPARE(checkBox->accessibleName(), sentence);
+        QCOMPARE(caption->text(), sentence);
+        QVERIFY(caption->wordWrap());
+        QVERIFY(caption->maximumWidth() <= caption->fontMetrics().averageCharWidth() * 62);
+        QVERIFY(caption->minimumSizeHint().width() < caption->fontMetrics().horizontalAdvance(sentence));
+        parent.show();
+        QCoreApplication::processEvents();
+        QVERIFY(!checkBox->isChecked());
+        QTest::mouseClick(caption, Qt::LeftButton);
+        QVERIFY(checkBox->isChecked());
+    }
+
+    void settingsCardsFitANarrowPaneWithoutClipping()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        SchemaCustomRowFactory customRows = [](const SettingsRow &row,
+                                               QWidget *parent,
+                                               std::function<void()>) {
+            return row.id == QStringLiteral("globalShortcut")
+                ? SchemaCustomRow{new QWidget(parent), {}, {}}
+                : SchemaCustomRow{};
+        };
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("general"), *platform, providers, customRows);
+        // The long update toggle only shows when automatic downloads exist.
+        page->setCapabilities({false, true});
+        page->resize(500, 700);
+        page->show();
+        QCoreApplication::processEvents();
+
+        QVERIFY(page->horizontalScrollBar()->maximum() == 0);
+        auto *autoInstall = page->findChild<QCheckBox *>(QStringLiteral("autoInstallUpdates"));
+        QVERIFY(autoInstall);
+        QVERIFY(autoInstall->isVisibleTo(page.get()));
+        auto *card = page->findChild<QWidget *>(QStringLiteral("settingsCardForm"));
+        QVERIFY(card);
+        QVERIFY(card->width() <= page->viewport()->width());
+        for (QFrame *row : page->findChildren<QFrame *>(QStringLiteral("settingsRow"))) {
+            if (!row->isVisibleTo(page.get())) {
+                continue;
+            }
+            const QRect inCard(row->mapTo(card, QPoint(0, 0)), row->size());
+            QVERIFY2(inCard.right() <= card->width(), qPrintable(row->objectName()));
+            QVERIFY2(inCard.left() >= 0, qPrintable(row->objectName()));
+        }
     }
 
     void settingsRowsGrowForWrappedDescriptions()

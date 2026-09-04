@@ -3,6 +3,7 @@
 #include "app/ApplicationController.h"
 #include "app/PlatformComposition.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsSchema.h"
 #include "dictation/DictationPorts.h"
 #ifdef SPEECHER_WITH_YDOTOOL
 #include "output/YdotoolSetup.h"
@@ -41,12 +42,19 @@
 #include <memory>
 
 namespace speecher {
+
+int setupPageMargin()
+{
+    return 24;
+}
+
 namespace {
 
 QVBoxLayout *makePage(QWidget *page, const QString &description)
 {
     auto *layout = new QVBoxLayout(page);
-    layout->setContentsMargins(24, 24, 24, 24);
+    const int margin = setupPageMargin();
+    layout->setContentsMargins(margin, margin, margin, margin);
     layout->setSpacing(16);
 
     auto *intro = new QLabel(description, page);
@@ -486,7 +494,7 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
 #ifdef Q_OS_MACOS
         QStringLiteral("Speecher pastes your dictation into the frontmost app with a synthetic Cmd+V. macOS calls that controlling your computer, so it needs Accessibility permission."));
 #else
-        QStringLiteral("AT-SPI lets Speecher identify the target app, paste into compatible fields, edit selected text, and learn corrections."));
+        QStringLiteral("Desktop accessibility (the AT-SPI service) lets Speecher identify the target app, paste into compatible fields, edit selected text, and learn corrections."));
 #endif
     m_status->setWordWrap(true);
     m_enable->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
@@ -585,7 +593,7 @@ void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool pers
     m_enable->setEnabled(!enabled);
 #else
     if (!supported) {
-        status = QStringLiteral("This Speecher build does not include AT-SPI support.");
+        status = QStringLiteral("This Speecher build does not include desktop accessibility support.");
         m_enable->setEnabled(false);
         m_enable->setText(QStringLiteral("Unavailable"));
     } else if (enabled && persistent) {
@@ -611,7 +619,7 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
     , m_status(new QLabel(this))
     , m_setup(new QPushButton(QStringLiteral("Set up virtual keyboard"), this))
     , m_progress(new QProgressBar(this))
-    , m_restoreClipboard(new QCheckBox(QStringLiteral("Restore the previous clipboard after verified paste"), this))
+    , m_restoreClipboard(new QCheckBox(restoreClipboardDescription(), this))
     , m_format(new QComboBox(this))
 {
     QVBoxLayout *layout = makePage(
@@ -619,7 +627,7 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
 #ifdef Q_OS_MACOS
         QStringLiteral("Speecher puts the finished text on your clipboard and pastes it into the frontmost app with Cmd+V. The paste needs the Accessibility permission from the previous step; without it the text still reaches your clipboard."));
 #else
-        QStringLiteral("Speecher can set up ydotool for virtual-keyboard paste. Administrator approval is required once; Speecher remains unprivileged while dictating."));
+        QStringLiteral("Speecher can set up a virtual keyboard so it can paste into apps. Administrator approval is needed once; Speecher stays unprivileged while dictating."));
 #endif
     m_status->setWordWrap(true);
     m_progress->setRange(0, 0);
@@ -677,7 +685,7 @@ void TextDeliverySetupPage::runSetup()
 {
     m_setup->setEnabled(false);
     m_progress->setVisible(true);
-    m_status->setText(QStringLiteral("Setting up ydotool…"));
+    m_status->setText(QStringLiteral("Setting up the virtual keyboard…"));
     if (!startYdotoolSetup(
             m_settings,
             this,
@@ -745,7 +753,7 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
 {
     QVBoxLayout *layout = makePage(
         this,
-        QStringLiteral("Refinement can clean up a raw transcript after dictation. The detected provider is selected by default."));
+        QStringLiteral("Refinement can clean up a raw transcript after dictation. Choose a provider, or None to skip cleanup."));
     for (const ProviderDescriptor &provider : providers.refinementProviders()) {
         m_provider->addItem(provider.label, provider.id);
     }

@@ -10,6 +10,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMediaDevices>
@@ -158,9 +159,21 @@ struct QtPageLayout {
 // KDE order when the same descriptors are rendered by Qt.
 QtPageLayout qtPageLayout(SettingsPage page)
 {
-    if (page.id == QStringLiteral("general") || page.id == QStringLiteral("audio")
-        || page.id == QStringLiteral("applications")) {
+    if (page.id == QStringLiteral("general") || page.id == QStringLiteral("applications")) {
         page.sections = {mergedSection(page.sections)};
+        return {std::move(page), {}};
+    }
+
+    if (page.id == QStringLiteral("audio")) {
+        // One compact card for the everyday rows; Advanced keeps its own card
+        // and title so the timing controls read as optional.
+        QList<SettingsSection> everyday;
+        QList<SettingsSection> advanced;
+        for (SettingsSection &section : page.sections) {
+            (section.title == QStringLiteral("Advanced") ? advanced : everyday).append(section);
+        }
+        page.sections = {mergedSection(everyday)};
+        page.sections.append(advanced);
         return {std::move(page), {}};
     }
 
@@ -272,15 +285,20 @@ void SchemaSettingsPage::addSection(const SettingsSection &section,
     // not on the card itself.
     QWidget *form = settings::cardFormLayout(card)->parentWidget();
     QWidget *group = nullptr;
+    QWidget *groupNote = nullptr;
     for (int index = 0; index < section.rows.size(); ++index) {
         const SettingsRow &descriptor = section.rows.at(index);
         if (descriptor.groupId.isEmpty()) {
             group = nullptr;
+            groupNote = nullptr;
         } else if (!group || group->objectName() != descriptor.groupId) {
+            // Rows of a group share one gate, so one note above the group
+            // explains it for all of them.
+            groupNote = addGateNote(descriptor, form);
             group = addRowGroup(descriptor.groupId, form);
         }
         QWidget *host = group ? group : form;
-        addRow(descriptor, host, group);
+        addRow(descriptor, host, group, group ? groupNote : addGateNote(descriptor, form));
         if (descriptor.id == centeredSeparatorAfterRow) {
             Row &row = m_rows.last();
             row.separator = settings::makeCenteredSeparator(host);
@@ -317,14 +335,47 @@ SchemaCustomRow SchemaSettingsPage::supplyRow(const SettingsRow &descriptor,
     return builtInRow(descriptor, host, notifyChanged);
 }
 
+// A disabled control with a hover tooltip does not explain itself: disabled
+// widgets do not always receive hover, and nothing says how to fix it. The
+// note sits above the gated row (or group) with the explanation and, when the
+// schema names one, the action that lifts the gate.
+QWidget *SchemaSettingsPage::addGateNote(const SettingsRow &descriptor, QWidget *form)
+{
+    if (!descriptor.enabled || descriptor.disabledHelp.isEmpty()) {
+        return nullptr;
+    }
+    auto *note = new QWidget(form);
+    note->setObjectName(QStringLiteral("gateNote"));
+    auto *layout = new QHBoxLayout(note);
+    layout->setContentsMargins(0, 0, 0, settings::tightSpacing());
+    layout->setSpacing(settings::relatedSpacing());
+    auto *text = new QLabel(descriptor.disabledHelp, note);
+    text->setObjectName(QStringLiteral("gateNoteText"));
+    text->setWordWrap(true);
+    layout->addWidget(text, 1);
+    if (!descriptor.disabledAction.isEmpty()) {
+        auto *action = new QPushButton(descriptor.disabledActionLabel, note);
+        action->setObjectName(QStringLiteral("gateAction"));
+        connect(action, &QPushButton::clicked, this, [this, id = descriptor.disabledAction] {
+            emit actionTriggered(id);
+        });
+        layout->addWidget(action, 0, Qt::AlignTop);
+    }
+    note->hide();
+    qobject_cast<QFormLayout *>(form->layout())->addRow(note);
+    return note;
+}
+
 void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
                                 QWidget *host,
-                                QWidget *group)
+                                QWidget *group,
+                                QWidget *gateNote)
 {
     auto *form = qobject_cast<QFormLayout *>(host->layout());
     Row row;
     row.descriptor = descriptor;
     row.group = group;
+    row.gateNote = gateNote;
 
     const auto announce = [this] {
         refreshRows();
@@ -408,6 +459,9 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
     settings::addRow(form, frame, host, false);
     row.frame = frame;
     row.description = frame->findChild<QLabel *>(QStringLiteral("rowDescription"));
+    if (!row.description) {
+        row.description = frame->findChild<QLabel *>(QStringLiteral("checkBoxCaption"));
+    }
     if (!row.description) {
         row.description = qobject_cast<QCheckBox *>(row.control);
     }
@@ -643,6 +697,9 @@ void SchemaSettingsPage::refreshRows()
             QWidget *hinted = row.group ? row.group : row.control;
             gated->setEnabled(live);
             hinted->setToolTip(live ? row.descriptor.tooltip : row.descriptor.disabledHelp);
+            if (row.gateNote) {
+                row.gateNote->setVisible(!live && shown[index]);
+            }
         }
         if (row.separator) {
             row.separator->setVisible(shown[index]);

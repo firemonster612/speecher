@@ -75,10 +75,15 @@ private:
                                 QWidget *parent,
                                 SchemaCustomRowFactory customRows = {});
     void updateAccessibilityState(bool supported, bool enabled, bool persistent);
+    void applyCapabilities();
     void runPageAction(const QString &rowId);
+#ifdef Q_OS_LINUX
+    void removeSpeecher();
+#endif
     void refreshUpdateRows();
 
     ApplicationController *m_controller;
+    bool m_targetAccessibility = false;
     SettingsSchema m_schema;
     AppSettings m_draft;
     OutputCustomRows m_outputRows;
