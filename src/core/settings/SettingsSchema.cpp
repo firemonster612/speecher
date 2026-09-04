@@ -369,8 +369,13 @@ QString releaseNotesMarkdown(const SchemaContext &context)
             }
         }
     }
-    if (selected.isEmpty() && !notes.isEmpty()) {
-        selected.append(notes.first());
+    if (selected.isEmpty()) {
+        const auto note = std::find_if(notes.cbegin(), notes.cend(), [&context](const Note &candidate) {
+            return compareBaseVersions(candidate.version, context.currentVersion) <= 0;
+        });
+        if (note != notes.cend()) {
+            selected.append(*note);
+        }
     }
 
     QString markdown;

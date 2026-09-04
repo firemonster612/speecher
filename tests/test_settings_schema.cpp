@@ -85,6 +85,7 @@ private slots:
                         QStringLiteral("updateChannel")));
 
         context.lastSeenVersion.clear();
+        context.currentVersion = QStringLiteral("0.1.1");
         schema = buildSettingsSchema(context);
         QVERIFY(!hasRow(schema.page(QStringLiteral("whatsNew")),
                         QStringLiteral("updateChannel")));

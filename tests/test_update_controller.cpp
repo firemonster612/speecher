@@ -4,6 +4,7 @@
 #include "app/AppImageUpdater.h"
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsSchema.h"
 #include "dictation/DictationSession.h"
 #include "frontend/qt/QtFrontEnd.h"
 #include "ui/TranscriberPopup.h"
@@ -106,6 +107,27 @@ class UpdateControllerTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void releaseNotesNeverExceedTheRunningVersion()
+    {
+        SchemaContext context;
+        context.currentVersion = QStringLiteral("0.1.0");
+        const SettingsSchema schema = buildSettingsSchema(context);
+        const SettingsPage &page = schema.page(QStringLiteral("whatsNew"));
+        const SettingsRow *notes = nullptr;
+        for (const SettingsSection &section : page.sections) {
+            for (const SettingsRow &row : section.rows) {
+                if (row.id == QStringLiteral("whatsNewNotes")) {
+                    notes = &row;
+                }
+            }
+        }
+
+        QVERIFY(notes);
+        const QString markdown = notes->value(AppSettings{}).toString();
+        QVERIFY(markdown.contains(QStringLiteral("# Speecher 0.1.0")));
+        QVERIFY(!markdown.contains(QStringLiteral("# Speecher 0.1.1")));
+    }
+
     void parsesManifestAndComparesBuildNumbers()
     {
         QString error;
