@@ -197,11 +197,24 @@ private slots:
         MacFrontEnd frontEnd(&controller);
 
         frontEnd.showSettingsPage(QStringLiteral("audio"));
-        NSWindow *window = nativeSettingsWindow();
+        NSWindow *window = nil;
+        const QDeadlineTimer audioDeadline(2000);
+        while ((!window || QString::fromNSString(window.title) != QStringLiteral("Audio"))
+               && !audioDeadline.hasExpired()) {
+            CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, true);
+            QCoreApplication::processEvents();
+            window = nativeSettingsWindow();
+        }
         QVERIFY(window);
         QCOMPARE(QString::fromNSString(window.title), QStringLiteral("Audio"));
 
         frontEnd.showSettingsPage(QStringLiteral("apps"));
+        const QDeadlineTimer outputDeadline(2000);
+        while (QString::fromNSString(window.title) != QStringLiteral("Output")
+               && !outputDeadline.hasExpired()) {
+            CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, true);
+            QCoreApplication::processEvents();
+        }
         QCOMPARE(QString::fromNSString(window.title), QStringLiteral("Output"));
     }
 
