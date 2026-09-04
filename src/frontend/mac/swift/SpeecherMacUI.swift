@@ -77,6 +77,7 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     // during Qt's Cocoa teardown.
     deinit {
         MainActor.assumeIsolated {
+            settings?.close()
             applicationDelegate?.restoreIfInstalled()
         }
     }

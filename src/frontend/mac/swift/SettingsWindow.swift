@@ -158,6 +158,10 @@ final class SpeecherSettingsWindow {
         }
     }
 
+    func close() {
+        window.close()
+    }
+
     // Called from the front end on the main thread, which is where the window
     // has to be touched.
     //
