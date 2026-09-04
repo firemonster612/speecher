@@ -34,7 +34,9 @@ AudioCaptureSettings normalizedAudioCaptureSettings(AudioCaptureSettings setting
     settings.mode = normalizedAudioCaptureMode(settings.mode);
     settings.preRollMs = std::clamp(settings.preRollMs, 0, 1500);
     settings.postRollMs = std::clamp(settings.postRollMs, 0, 1500);
-    settings.readinessTimeoutMs = std::clamp(settings.readinessTimeoutMs, 150, 3000);
+    // A cold microphone routinely needs 100-300 ms to deliver its first samples
+    // through PulseAudio, so anything shorter than half a second fails at the margin.
+    settings.readinessTimeoutMs = std::clamp(settings.readinessTimeoutMs, 500, 3000);
     settings.vadThresholdPercent = std::clamp(settings.vadThresholdPercent, 1, 20);
     return settings;
 }
