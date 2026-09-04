@@ -339,6 +339,11 @@ jobs:
         shell: pwsh
         run: packaging/windows/build-installer.ps1 -BuildDir build
 
+      - name: Verify installer
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        run: packaging/windows/verify-installer.ps1 -InstallerPath dist/Speecher-Setup-x64.exe
+
       - name: Upload Windows release artifacts
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7

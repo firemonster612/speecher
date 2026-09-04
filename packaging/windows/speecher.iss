@@ -37,5 +37,11 @@ Name: "{group}\Speecher"; Filename: "{app}\speecher.exe"
 
 [Run]
 Filename: "{tmp}\WindowsAppRuntimeInstall-x64.exe"; Parameters: "--quiet"; StatusMsg: "Installing Windows App Runtime..."; Flags: runhidden waituntilterminated
-Filename: "{app}\speecher.exe"; Description: "Launch Speecher"; Flags: nowait postinstall skipifsilent
-Filename: "{app}\speecher.exe"; Flags: nowait skipifnotsilent
+Filename: "{app}\speecher.exe"; Description: "Launch Speecher"; Flags: nowait postinstall skipifsilent; Check: ShouldLaunchSpeecher
+Filename: "{app}\speecher.exe"; Flags: nowait skipifnotsilent; Check: ShouldLaunchSpeecher
+
+[Code]
+function ShouldLaunchSpeecher(): Boolean;
+begin
+  Result := ExpandConstant('{param:VERIFYINSTALL|0}') <> '1';
+end;
