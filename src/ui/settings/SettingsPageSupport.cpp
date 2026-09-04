@@ -12,9 +12,15 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QPainter>
+#include <QPen>
+#include <QPushButton>
+#include <QStyleOption>
+#include <QIcon>
 #include <QPalette>
 #include <QResizeEvent>
 #include <QScrollArea>
+#include <QEvent>
 #include <QFile>
 #include <QTextStream>
 #include <QSignalBlocker>
@@ -31,8 +37,120 @@
 namespace speecher::settings {
 
 namespace {
-constexpr int kCardContentWidth = 640;
+
+// Kirigami Addons FormCard metrics, expressed through the font like Kirigami
+// does: a grid unit is one line of text, small spacing a quarter of it.
+int gridUnitFor(const QFont &font)
+{
+    return QFontMetrics(font).height();
+}
+
 } // namespace
+
+int gridUnit() { return gridUnitFor(QApplication::font()); }
+int smallSpacing() { return qMax(2, gridUnit() / 4); }
+int largeSpacing() { return smallSpacing() * 3; }
+int cornerRadius() { return 5; }
+int cardMaximumWidth() { return gridUnit() * 30; }
+
+QColor frameColor(const QPalette &palette)
+{
+    // Kirigami.Theme.frameContrast: a fifth of the text colour over the card.
+    const QColor base = palette.color(QPalette::Base);
+    const QColor text = palette.color(QPalette::Text);
+    return QColor(base.red() + (text.red() - base.red()) / 5,
+                  base.green() + (text.green() - base.green()) / 5,
+                  base.blue() + (text.blue() - base.blue()) / 5);
+}
+
+// The FormCard container. Kirigami draws it as a rounded rectangle in the
+// view colour with a thin frame; there is no Qt Widgets equivalent, so this
+// is the one place a shape is painted, with palette colours only.
+class FormCardFrame final : public QFrame {
+public:
+    explicit FormCardFrame(QWidget *parent)
+        : QFrame(parent)
+    {
+        setAttribute(Qt::WA_TranslucentBackground, false);
+        setAutoFillBackground(false);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const qreal radius = cornerRadius();
+        QRectF box = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+        painter.setPen(QPen(frameColor(palette()), 1));
+        painter.setBrush(palette().color(QPalette::Base));
+        painter.drawRoundedRect(box, radius, radius);
+    }
+};
+
+// FormButtonDelegate: the whole row is the button, text on the left, an arrow
+// on the right, and the style's own item hover as feedback.
+class FormButtonRow final : public QPushButton {
+public:
+    explicit FormButtonRow(QWidget *parent)
+        : QPushButton(parent)
+    {
+        setCursor(Qt::PointingHandCursor);
+        setFlat(true);
+        setFocusPolicy(Qt::StrongFocus);
+        // The row is as tall as its text, not as tall as a button caption.
+        QSizePolicy policy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+        policy.setHeightForWidth(true);
+        setSizePolicy(policy);
+    }
+
+    QSize sizeHint() const override
+    {
+        return layout() ? layout()->sizeHint() : QPushButton::sizeHint();
+    }
+
+    QSize minimumSizeHint() const override
+    {
+        return layout() ? layout()->minimumSize() : QPushButton::minimumSizeHint();
+    }
+
+    bool hasHeightForWidth() const override { return layout() && layout()->hasHeightForWidth(); }
+
+    int heightForWidth(int width) const override
+    {
+        return layout() ? layout()->heightForWidth(width) : QPushButton::heightForWidth(width);
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QPushButton::resizeEvent(event);
+        if (QLayout *rowLayout = layout()) {
+            setMinimumHeight(rowLayout->hasHeightForWidth() ? rowLayout->heightForWidth(width())
+                                                            : rowLayout->minimumSize().height());
+        }
+    }
+
+
+    void paintEvent(QPaintEvent *) override
+    {
+        if (!underMouse() && !isDown() && !hasFocus()) {
+            return;
+        }
+        QStyleOptionViewItem option;
+        option.initFrom(this);
+        option.rect = rect();
+        option.viewItemPosition = QStyleOptionViewItem::OnlyOne;
+        option.state |= QStyle::State_MouseOver;
+        if (isDown()) {
+            option.state |= QStyle::State_Selected;
+        }
+        option.showDecorationSelected = true;
+        QPainter painter(this);
+        style()->drawPrimitive(QStyle::PE_PanelItemViewItem, &option, &painter, this);
+    }
+};
+
 
 QColor separatorColor(const QPalette &palette)
 {
@@ -139,88 +257,100 @@ QFrame *makeRow(const QString &label,
                 QWidget *titleAccessory,
                 bool dynamicDescription)
 {
+    // One card row: title and an optional one-line subtitle on the left, the
+    // control on the right, vertically centred. A text field is the exception:
+    // it wants the full row width, so it sits below the title.
     auto *row = new SettingsRow(parent);
     row->setObjectName(QStringLiteral("settingsRow"));
-    // A wrapped description is only as tall as the row is narrow, and layouts
-    // ignore that unless the policy says the height depends on the width.
     QSizePolicy rowPolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     rowPolicy.setHeightForWidth(true);
     row->setSizePolicy(rowPolicy);
 
-    auto *title = new QLabel(label.endsWith(QLatin1Char(':'))
-                                 ? label
-                                 : label + QLatin1Char(':'),
-                             row);
+    auto *checkBox = qobject_cast<QCheckBox *>(control);
+    // A check box row reads as one sentence: the sentence is the title and
+    // clicking the words toggles the box, as a check box label would.
+    const QString titleText = checkBox && !description.isEmpty() ? description : label;
+    const QString subtitleText = checkBox ? QString() : description;
+
+    auto *text = new QWidget(row);
+    text->setObjectName(QStringLiteral("rowLabelCell"));
+    text->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto *textLayout = new QVBoxLayout(text);
+    textLayout->setContentsMargins(0, 0, 0, 0);
+    textLayout->setSpacing(0);
+
+    QLabel *title = checkBox ? new CheckBoxCaption(titleText, checkBox, text)
+                             : new QLabel(titleText, text);
     title->setObjectName(QStringLiteral("rowTitle"));
-    title->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    title->setMinimumWidth(title->fontMetrics().averageCharWidth() * 24);
-    QWidget *labelField = title;
+    title->setWordWrap(true);
+    title->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    if (checkBox) {
+        checkBox->setText(QString());
+        checkBox->setAccessibleName(titleText);
+    }
     if (titleAccessory) {
-        auto *titleRow = new QWidget(row);
+        auto *titleRow = new QWidget(text);
         titleRow->setObjectName(QStringLiteral("rowText"));
         auto *titleLayout = new QHBoxLayout(titleRow);
         titleLayout->setContentsMargins(0, 0, 0, 0);
+        titleLayout->setSpacing(tightSpacing());
         titleLayout->addWidget(title, 0, Qt::AlignVCenter);
         titleLayout->addWidget(titleAccessory, 0, Qt::AlignVCenter);
-        labelField = titleRow;
-    }
-    labelField->setObjectName(QStringLiteral("rowLabelCell"));
-
-    auto *fieldLayout = new QVBoxLayout(row);
-    fieldLayout->setContentsMargins(0, 0, 0, 0);
-    fieldLayout->setSpacing(tightSpacing());
-    const int maximumTextWidth = row->fontMetrics().averageCharWidth() * 62;
-
-    auto *checkBox = qobject_cast<QCheckBox *>(control);
-    if (checkBox && !description.isEmpty()) {
-        // QCheckBox never wraps its text, so a sentence as the box's own text
-        // fixes the row's minimum width and pushes the card past a narrow
-        // pane. The sentence goes in a wrapping label beside the box instead,
-        // at the style's own box-to-text spacing, so it reads the same.
-        auto *checkRow = new QWidget(row);
-        auto *checkLayout = new QHBoxLayout(checkRow);
-        checkLayout->setContentsMargins(0, 0, 0, 0);
-        checkLayout->setSpacing(
-            checkBox->style()->pixelMetric(QStyle::PM_CheckBoxLabelSpacing, nullptr, checkBox));
-        auto *caption = new CheckBoxCaption(description, checkBox, checkRow);
-        caption->setMaximumWidth(maximumTextWidth);
-        checkBox->setAccessibleName(description);
-        checkLayout->addWidget(checkBox, 0, Qt::AlignTop);
-        checkLayout->addWidget(caption, 1, Qt::AlignTop);
-        fieldLayout->addWidget(checkRow);
-        return row;
-    }
-    if (control->sizePolicy().horizontalPolicy() == QSizePolicy::Expanding) {
-        fieldLayout->addWidget(control);
+        titleLayout->addStretch(1);
+        textLayout->addWidget(titleRow);
     } else {
-        fieldLayout->addWidget(control, 0, Qt::AlignLeft);
+        textLayout->addWidget(title);
     }
-
-    if (!description.isEmpty()) {
-        auto *subtitle = new QLabel(description, row);
+    if (!subtitleText.isEmpty() || dynamicDescription) {
+        // Kirigami's "grayed out description": the small font in the
+        // placeholder colour. Kept (hidden) when the row fills it in later.
+        auto *subtitle = new QLabel(subtitleText, text);
         subtitle->setObjectName(QStringLiteral("rowDescription"));
         subtitle->setWordWrap(true);
-        // A maximum rather than a fixed width: the label may shrink with the
-        // pane and wrap onto more lines, but never widen past a readable
-        // measure. The row's resizeEvent picks up the extra height.
-        const int naturalTextWidth = subtitle->fontMetrics().horizontalAdvance(description);
-        subtitle->setMaximumWidth(dynamicDescription ? maximumTextWidth
-                                                     : qMin(naturalTextWidth + 8, maximumTextWidth));
-        subtitle->setMinimumHeight(subtitle->heightForWidth(subtitle->maximumWidth()));
         subtitle->setForegroundRole(QPalette::PlaceholderText);
-        fieldLayout->addWidget(subtitle);
+        subtitle->setFont(smallFont(subtitle->font()));
+        subtitle->setVisible(!subtitleText.isEmpty());
+        textLayout->addWidget(subtitle);
     }
+
+    const bool fullWidthControl =
+        control->sizePolicy().horizontalPolicy() == QSizePolicy::Expanding && !checkBox;
+    const QMargins padding = rowPadding();
+    if (fullWidthControl) {
+        auto *layout = new QVBoxLayout(row);
+        layout->setContentsMargins(padding);
+        layout->setSpacing(smallSpacing());
+        layout->addWidget(text);
+        layout->addWidget(control);
+        return row;
+    }
+    auto *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(padding);
+    layout->setSpacing(largeSpacing());
+    layout->addWidget(text, 1, Qt::AlignVCenter);
+    layout->addWidget(control, 0, Qt::AlignRight | Qt::AlignVCenter);
     return row;
+}
+
+void addCardRow(QFormLayout *layout, QWidget *row, QWidget *parent)
+{
+    // Rows in a card are separated by the same hairline the rest of the window
+    // uses; the card's frame bounds the first and last.
+    if (layout->rowCount() > 0) {
+        auto *inset = new QWidget(parent);
+        inset->setObjectName(QStringLiteral("rowSeparator"));
+        auto *insetLayout = new QHBoxLayout(inset);
+        insetLayout->setContentsMargins(gridUnit(), 0, gridUnit(), 0);
+        insetLayout->addWidget(makeSeparator(inset));
+        layout->addRow(inset);
+    }
+    layout->addRow(row);
 }
 
 void addRow(QFormLayout *layout, QFrame *row, QWidget *parent, bool addSeparator)
 {
-    QWidget *label = row->findChild<QWidget *>(QStringLiteral("rowLabelCell"),
-                                               Qt::FindDirectChildrenOnly);
-    layout->addRow(label, row);
-    if (addSeparator) {
-        layout->addRow(makeCenteredSeparator(parent));
-    }
+    Q_UNUSED(addSeparator);
+    addCardRow(layout, row, parent);
 }
 
 void selectData(QComboBox *combo, const QString &data)
@@ -450,9 +580,11 @@ QColor positiveTextColor(const QPalette &palette)
 
 QLabel *makeSectionLabel(const QString &text, QWidget *parent)
 {
+    // FormHeader: bold text right above its card, inset like the rows.
     auto *section = new QLabel(text, parent);
     section->setObjectName(QStringLiteral("sectionLabel"));
     section->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    section->setContentsMargins(gridUnit(), 0, gridUnit(), smallSpacing());
     QFont font = section->font();
     font.setBold(true);
     section->setFont(font);
@@ -490,51 +622,170 @@ void addSectionRow(QFormLayout *form, const QString &title, QWidget *parent)
 
 QFrame *makeSettingsCard(QWidget *parent)
 {
-    auto *card = new QFrame(parent);
+    auto *card = new FormCardFrame(parent);
     card->setObjectName(QStringLiteral("settingsCard"));
-    // Center the form as a block between stretches. QFormLayout's own
-    // formAlignment only centers when every row is a label+field pair; one
-    // spanning row (separator, embedded table) makes it lay out full-width
-    // and pins every label to the left edge.
-    auto *outer = new QHBoxLayout(card);
+    card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto *outer = new QVBoxLayout(card);
     outer->setContentsMargins(0, 0, 0, 0);
     auto *host = new QWidget(card);
     host->setObjectName(QStringLiteral("settingsCardForm"));
-    // Shared content column: every card grows to the same width, so sections
-    // on a page share left edges instead of each centering at its own width.
-    // A maximum rather than a minimum, so a narrow pane squeezes the cards
-    // (and wraps their descriptions) instead of clipping them at both edges.
     host->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    host->setMaximumWidth(kCardContentWidth);
     auto *layout = new QFormLayout(host);
     layout->setContentsMargins(0, 0, 0, 0);
+    layout->setVerticalSpacing(0);
     configureFormLayout(layout);
-    outer->addStretch(1);
     outer->addWidget(host);
-    outer->addStretch(1);
     return card;
 }
 
-QFormLayout *cardFormLayout(QFrame *card)
+QPushButton *makeButtonRow(const QString &title, const QString &description, QWidget *parent)
 {
-    QWidget *host = card->findChild<QWidget *>(QStringLiteral("settingsCardForm"),
-                                               Qt::FindDirectChildrenOnly);
+    auto *row = new FormButtonRow(parent);
+    auto *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(rowPadding());
+    layout->setSpacing(largeSpacing());
+    auto *text = new QWidget(row);
+    text->setObjectName(QStringLiteral("rowLabelCell"));
+    text->setAttribute(Qt::WA_TransparentForMouseEvents);
+    auto *textLayout = new QVBoxLayout(text);
+    textLayout->setContentsMargins(0, 0, 0, 0);
+    textLayout->setSpacing(0);
+    auto *titleLabel = new QLabel(title, text);
+    titleLabel->setObjectName(QStringLiteral("rowTitle"));
+    titleLabel->setWordWrap(true);
+    textLayout->addWidget(titleLabel);
+    if (!description.isEmpty()) {
+        auto *subtitle = new QLabel(description, text);
+        subtitle->setObjectName(QStringLiteral("rowDescription"));
+        subtitle->setWordWrap(true);
+        subtitle->setForegroundRole(QPalette::PlaceholderText);
+        subtitle->setFont(smallFont(subtitle->font()));
+        textLayout->addWidget(subtitle);
+    }
+    auto *arrow = new QLabel(row);
+    arrow->setObjectName(QStringLiteral("rowArrow"));
+    arrow->setAttribute(Qt::WA_TransparentForMouseEvents);
+    const QIcon icon = QIcon::fromTheme(QStringLiteral("arrow-right"),
+                                        QIcon::fromTheme(QStringLiteral("go-next")));
+    const int extent = row->style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, row);
+    arrow->setPixmap(icon.pixmap(extent, extent));
+    layout->addWidget(text, 1, Qt::AlignVCenter);
+    layout->addWidget(arrow, 0, Qt::AlignVCenter);
+    row->setAccessibleName(title);
+    return row;
+}
+
+QMargins rowPadding()
+{
+    // AbstractFormDelegate: a grid unit sideways, large plus small vertically.
+    return QMargins(gridUnit(), largeSpacing() + smallSpacing(), gridUnit(), largeSpacing() + smallSpacing());
+}
+
+QFont smallFont(const QFont &font)
+{
+    // Kirigami.Theme.smallFont: one step below the default.
+    QFont small = font;
+    if (small.pointSizeF() > 0) {
+        small.setPointSizeF(small.pointSizeF() * 0.9);
+    } else if (small.pixelSize() > 0) {
+        small.setPixelSize(qMax(1, small.pixelSize() * 9 / 10));
+    }
+    return small;
+}
+
+QFormLayout *cardFormLayout(QWidget *card)
+{
+    QWidget *host = card->findChild<QWidget *>(QStringLiteral("settingsCardForm"));
     return host ? qobject_cast<QFormLayout *>(host->layout()) : nullptr;
+}
+
+QWidget *centerColumn(QWidget *content, QWidget *parent)
+{
+    // The page itself is capped and centred (see makeSettingsPage), so every
+    // section simply fills the page width and all cards share the same edges.
+    content->setParent(parent);
+    content->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    return content;
+}
+
+namespace {
+
+// Keeps a page's width following its viewport: four fifths of the pane, but
+// never narrower than the FormCard width and never wider than a line stays
+// readable. The rest is the centred gutter.
+class PageWidthGovernor : public QObject
+{
+public:
+    PageWidthGovernor(QScrollArea *scroll, QWidget *content)
+        : QObject(scroll)
+        , m_content(content)
+    {
+        setObjectName(QStringLiteral("pageWidthGovernor"));
+        scroll->viewport()->installEventFilter(this);
+        apply(scroll->viewport()->width());
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::Resize) {
+            apply(static_cast<QResizeEvent *>(event)->size().width());
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    void apply(int viewportWidth)
+    {
+        const QMargins margins =
+            m_content->layout() ? m_content->layout()->contentsMargins() : QMargins();
+        const int gutters = margins.left() + margins.right();
+        const int cards = qBound(cardMaximumWidth(), viewportWidth * 4 / 5, cardStretchedWidth());
+        m_content->setMaximumWidth(cards + gutters);
+    }
+
+    QWidget *m_content;
+};
+
+} // namespace
+
+int cardStretchedWidth() { return gridUnit() * 60; }
+
+QWidget *takePageContent(QScrollArea *scroll)
+{
+    QWidget *content = scroll->takeWidget();
+    // The governor that sized the content for this scroll area must go with
+    // it, or a hidden viewport keeps pinning the content's width.
+    for (QObject *governor : scroll->findChildren<QObject *>(QStringLiteral("pageWidthGovernor"),
+                                                             Qt::FindDirectChildrenOnly)) {
+        delete governor;
+    }
+    content->setMaximumWidth(QWIDGETSIZE_MAX);
+    return content;
+}
+
+void configurePageScroll(QScrollArea *scroll, QWidget *content)
+{
+    // The one page container: a frameless scroll area on the window colour
+    // whose content follows the pane width (see PageWidthGovernor) and is
+    // centred in what remains. Every page, composed or schema-driven, goes
+    // through here so their cards share the same edges.
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setBackgroundRole(QPalette::Window);
+    scroll->viewport()->setBackgroundRole(QPalette::Window);
+    scroll->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+    content->setAutoFillBackground(false);
+    scroll->setWidget(content);
+    new PageWidthGovernor(scroll, content);
 }
 
 QVBoxLayout *makeSettingsPage(QScrollArea *scroll)
 {
     scroll->setObjectName(QStringLiteral("settingsScroll"));
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setBackgroundRole(QPalette::Window);
-    scroll->viewport()->setBackgroundRole(QPalette::Window);
-
     auto *page = new QWidget(scroll);
-    page->setAutoFillBackground(false);
     auto *layout = new QVBoxLayout(page);
     applyPageMargins(layout);
-    scroll->setWidget(page);
+    configurePageScroll(scroll, page);
     return layout;
 }
 

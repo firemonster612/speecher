@@ -159,11 +159,6 @@ struct QtPageLayout {
 // KDE order when the same descriptors are rendered by Qt.
 QtPageLayout qtPageLayout(SettingsPage page)
 {
-    if (page.id == QStringLiteral("general") || page.id == QStringLiteral("applications")) {
-        page.sections = {mergedSection(page.sections)};
-        return {std::move(page), {}};
-    }
-
     if (page.id == QStringLiteral("audio")) {
         // One compact card for the everyday rows; Advanced keeps its own card
         // and title so the timing controls read as optional.
@@ -172,7 +167,9 @@ QtPageLayout qtPageLayout(SettingsPage page)
         for (SettingsSection &section : page.sections) {
             (section.title == QStringLiteral("Advanced") ? advanced : everyday).append(section);
         }
-        page.sections = {mergedSection(everyday)};
+        SettingsSection everydayCard = mergedSection(everyday);
+        everydayCard.title = QStringLiteral("Speech to text");
+        page.sections = {std::move(everydayCard)};
         page.sections.append(advanced);
         return {std::move(page), {}};
     }
@@ -191,7 +188,16 @@ QtPageLayout qtPageLayout(SettingsPage page)
                 page.sections.removeAt(virtualKeyboardSection);
             }
         }
-        page.sections.append(std::move(clipboardAndKeyboard));
+        // The app recognition rules stay last: they are the reference table
+        // the paste rules above point at.
+        int recognition = -1;
+        for (int index = 0; index < page.sections.size(); ++index) {
+            if (page.sections.at(index).title == QStringLiteral("Application recognition")) {
+                recognition = index;
+            }
+        }
+        page.sections.insert(recognition >= 0 ? recognition : page.sections.size(),
+                             std::move(clipboardAndKeyboard));
         return {std::move(page), {}};
     }
 
@@ -219,8 +225,9 @@ QWidget *addRowGroup(const QString &id, QWidget *form)
     group->setObjectName(id);
     auto *layout = new QFormLayout(group);
     layout->setContentsMargins(0, 0, 0, 0);
+    layout->setVerticalSpacing(0);
     settings::configureFormLayout(layout);
-    qobject_cast<QFormLayout *>(form->layout())->addRow(group);
+    settings::addCardRow(qobject_cast<QFormLayout *>(form->layout()), group, form);
     return group;
 }
 
@@ -273,14 +280,26 @@ void SchemaSettingsPage::addSection(const SettingsSection &section,
 {
     Section entry;
     entry.rowStart = m_rows.size();
-    if (!section.title.isEmpty()) {
-        entry.label = settings::makeSectionLabel(section.title, this);
-        pageLayout->addWidget(entry.label);
-        pageLayout->addSpacing(settings::tightSpacing());
+    // A section is one column: its title, then its card of rows. The column is
+    // centred and capped so every section on the page shares the same edges.
+    auto *column = new QWidget(this);
+    column->setObjectName(QStringLiteral("settingsSection"));
+    auto *columnLayout = new QVBoxLayout(column);
+    columnLayout->setContentsMargins(0, 0, 0, 0);
+    columnLayout->setSpacing(settings::tightSpacing());
+    // An untitled card that opens with a named block is titled by that block:
+    // the name goes above the card like every other section header, not inside.
+    const bool leadingBlock = !section.rows.isEmpty()
+        && (section.rows.first().kind == RowKind::Collection
+            || section.rows.first().kind == RowKind::Custom);
+    const QString title = section.title.isEmpty() && leadingBlock ? section.rows.first().label
+                                                                    : section.title;
+    if (!title.isEmpty()) {
+        entry.label = settings::makeSectionLabel(title, column);
+        columnLayout->addWidget(entry.label);
     }
-    QFrame *card = settings::makeSettingsCard(this);
-    // The card centers an inner widget that carries the form; rows go there,
-    // not on the card itself.
+    QFrame *card = settings::makeSettingsCard(column);
+    columnLayout->addWidget(card);
     QWidget *form = settings::cardFormLayout(card)->parentWidget();
     QWidget *group = nullptr;
     QWidget *groupNote = nullptr;
@@ -303,20 +322,31 @@ void SchemaSettingsPage::addSection(const SettingsSection &section,
             qobject_cast<QFormLayout *>(host->layout())->addRow(row.separator);
         }
     }
-    pageLayout->addWidget(card);
-    entry.card = card;
-    entry.rowEnd = m_rows.size();
-
+    // The card's title already names its leading block, so that block's own
+    // heading stays hidden (a custom block's whole header, a collection's title).
+    if (leadingBlock && !title.isEmpty() && section.rows.first().label == title
+        && entry.rowStart < m_rows.size()) {
+        QWidget *block = m_rows.at(entry.rowStart).frame;
+        if (auto *header = block->findChild<QWidget *>(QStringLiteral("blockHeader"))) {
+            header->hide();
+        } else if (auto *heading = block->findChild<QLabel *>(QStringLiteral("subsectionLabel"))) {
+            heading->hide();
+        }
+    }
     if (!section.help.isEmpty()) {
-        auto *note = new QLabel(section.help, this);
+        auto *note = new QLabel(section.help, column);
         note->setObjectName(QStringLiteral("noteText"));
         note->setWordWrap(true);
-        note->setForegroundRole(QPalette::WindowText);
+        note->setForegroundRole(QPalette::PlaceholderText);
+        note->setFont(settings::smallFont(note->font()));
+        note->setContentsMargins(settings::gridUnit(), 0, settings::gridUnit(), 0);
         note->setAttribute(Qt::WA_StyledBackground, false);
-        pageLayout->addSpacing(settings::relatedSpacing());
-        pageLayout->addWidget(note);
+        columnLayout->addWidget(note);
         entry.note = note;
     }
+    pageLayout->addWidget(settings::centerColumn(column, this));
+    entry.card = card;
+    entry.rowEnd = m_rows.size();
     m_sections.append(entry);
 }
 
@@ -345,7 +375,8 @@ QWidget *SchemaSettingsPage::addGateNote(const SettingsRow &descriptor, QWidget 
     auto *note = new QWidget(form);
     note->setObjectName(QStringLiteral("gateNote"));
     auto *layout = new QHBoxLayout(note);
-    layout->setContentsMargins(0, 0, 0, settings::tightSpacing());
+    // Same inset as a card row, so the note lines up with the rows it gates.
+    layout->setContentsMargins(settings::rowPadding());
     layout->setSpacing(settings::relatedSpacing());
     auto *text = new QLabel(descriptor.disabledHelp, note);
     text->setObjectName(QStringLiteral("gateNoteText"));
@@ -382,7 +413,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
 
     if (descriptor.kind == RowKind::Collection) {
         const SchemaCustomRow editor = supplyRow(descriptor, host, announce);
-        form->addRow(editor.widget);
+        settings::addCardRow(form, editor.widget, host);
         row.frame = editor.widget;
         row.control = editor.widget;
         row.description = editor.widget->findChild<QLabel *>(QStringLiteral("rowDescription"));
@@ -416,9 +447,11 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         auto *container = new QWidget(host);
         container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         auto *containerLayout = new QVBoxLayout(container);
-        containerLayout->setContentsMargins(0, 0, 0, 0);
+        // Same inset as a card row so the block's text lines up with row titles.
+        containerLayout->setContentsMargins(settings::rowPadding());
         containerLayout->setSpacing(settings::relatedSpacing());
         auto *header = new QWidget(container);
+        header->setObjectName(QStringLiteral("blockHeader"));
         auto *headerLayout = new QVBoxLayout(header);
         headerLayout->setContentsMargins(0, 0, 0, 0);
         headerLayout->setSpacing(settings::tightSpacing());
@@ -432,7 +465,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         containerLayout->addWidget(header);
 
         containerLayout->addWidget(custom.widget);
-        form->addRow(container);
+        settings::addCardRow(form, container, host);
         row.frame = container;
         row.control = custom.widget;
         row.description = headerHelp;
@@ -443,6 +476,29 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         return;
     }
 
+    if (descriptor.kind == RowKind::Action) {
+        // FormButtonDelegate: the row itself is the button.
+        QPushButton *button = settings::makeButtonRow(
+            descriptor.actionLabel.isEmpty() ? descriptor.label : descriptor.actionLabel,
+            descriptor.help,
+            host);
+        button->setObjectName(descriptor.id);
+        if (!descriptor.tooltip.isEmpty()) {
+            button->setToolTip(descriptor.tooltip);
+        }
+        connect(button, &QPushButton::clicked, this, [this, id = descriptor.id] {
+            emit actionTriggered(id);
+        });
+        settings::addCardRow(form, button, host);
+        row.frame = button;
+        row.control = button;
+        row.description = button->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        m_rows.append(row);
+        if (!descriptor.expensive) {
+            applyRow(m_rows.last(), AppSettings{});
+        }
+        return;
+    }
     row.control = makeControl(descriptor, host, row);
     row.control->setObjectName(descriptor.id);
     if (!descriptor.tooltip.isEmpty()) {

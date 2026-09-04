@@ -9,6 +9,7 @@
 #include "ui/Theme.h"
 
 #ifdef Q_OS_LINUX
+#include "ui/HostStylePlugin.h"
 #include "platform/LinuxStyleChoice.h"
 #endif
 
@@ -130,6 +131,22 @@ static void applyHostWidgetStyle(const QString &applicationTheme)
         applicationTheme,
         qApp->styleHints()->colorScheme() == Qt::ColorScheme::Dark);
 
+    // The desktop asked for a style this Qt does not carry: try the plugin
+    // installed on the system before settling for the fallback. Qt refuses a
+    // plugin built for a newer Qt than the one running, so this is best effort.
+    if (!choice.requested.isEmpty()
+        && choice.chosen.compare(choice.requested, Qt::CaseInsensitive) != 0) {
+        QStringList attempts;
+        if (QStyle *host = loadHostStyle(choice.requested, hostStylePluginDirs(), &attempts)) {
+            QApplication::setStyle(host);
+            qInfo().noquote() << "widget style requested=" + choice.requested
+                                    + " chosen=" + qApp->style()->objectName() + " (system plugin)";
+            return;
+        }
+        for (const QString &attempt : attempts) {
+            qInfo().noquote() << "system style plugin " + attempt;
+        }
+    }
     if (currentStyle.compare(choice.chosen, Qt::CaseInsensitive) != 0
         && !QApplication::setStyle(choice.chosen)) {
         qWarning().noquote() << "Could not load widget style " + choice.chosen;

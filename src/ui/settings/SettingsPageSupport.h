@@ -3,11 +3,14 @@
 #include "core/settings/SettingsSchema.h"
 
 #include <QColor>
+#include <QFont>
+#include <QMargins>
 #include <QString>
 
 class QColor;
 class QComboBox;
 class QFrame;
+class QPushButton;
 class QFormLayout;
 class QLabel;
 class QLayout;
@@ -65,8 +68,29 @@ void populateAudioInputDevices(QComboBox *combo,
 QColor positiveTextColor(const QPalette &palette);
 QLabel *makeSectionLabel(const QString &text, QWidget *parent);
 QFrame *makeSettingsCard(QWidget *parent);
-QFormLayout *cardFormLayout(QFrame *card);
+// FormButtonDelegate: the whole row is the button, with a trailing arrow.
+QPushButton *makeButtonRow(const QString &title, const QString &description, QWidget *parent);
+// Kirigami Addons FormCard metrics.
+int gridUnit();
+int smallSpacing();
+int largeSpacing();
+int cornerRadius();
+int cardMaximumWidth();
+// Widest a page column grows on a large pane.
+int cardStretchedWidth();
+QMargins rowPadding();
+QFont smallFont(const QFont &font);
+QColor frameColor(const QPalette &palette);
+QFormLayout *cardFormLayout(QWidget *card);
+// Adds a spanning row to a card, with a hairline above every row after the first.
+void addCardRow(QFormLayout *layout, QWidget *row, QWidget *parent);
+// Wraps a section (title + card) in the shared, centred content column.
+QWidget *centerColumn(QWidget *content, QWidget *parent);
 void addSectionRow(QFormLayout *form, const QString &title, QWidget *parent);
+// Configures the shared page container; makeSettingsPage and AppWindow both use it.
+void configurePageScroll(QScrollArea *scroll, QWidget *content);
+// Detaches a page's content for composing into another page container.
+QWidget *takePageContent(QScrollArea *scroll);
 QVBoxLayout *makeSettingsPage(QScrollArea *scroll);
 
 } // namespace speecher::settings

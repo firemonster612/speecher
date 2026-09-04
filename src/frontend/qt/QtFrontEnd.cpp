@@ -4,11 +4,14 @@
 #include "app/PlatformComposition.h"
 #include "app/UpdateController.h"
 #include "dictation/DictationSession.h"
+#include "ui/AppPage.h"
 #include "ui/AppWindow.h"
 #include "ui/SetupAssistant.h"
 #include "ui/TranscriberPopup.h"
 
 #include <QApplication>
+#include <QTabWidget>
+#include <QCoreApplication>
 #include <QDesktopServices>
 #include <QEvent>
 #include <QWidget>
@@ -81,7 +84,35 @@ void QtFrontEnd::showSetupAssistant(SetupAssistantPage page)
 
 bool QtFrontEnd::captureMainWindow(const QString &path)
 {
-    return m_appWindow && m_appWindow->grab().save(path);
+    if (!m_appWindow) {
+        return false;
+    }
+    // Screenshot automation: SPEECHER_GRAB_PAGE names a settings page
+    // (general, audio, output, auth, refinement, vocabulary), optionally with
+    // a tab index ("vocabulary:2"), to show before the grab. Unset or unknown
+    // leaves the window as launched.
+    static const QStringList pageNames{
+        QStringLiteral("general"), QStringLiteral("audio"), QStringLiteral("output"),
+        QStringLiteral("auth"), QStringLiteral("refinement"), QStringLiteral("vocabulary")};
+    const QStringList request = qEnvironmentVariable("SPEECHER_GRAB_PAGE").toLower().split(u':');
+    const int page = pageNames.indexOf(request.first());
+    // SPEECHER_GRAB_SIZE=WxH resizes the window first.
+    const QStringList size = qEnvironmentVariable("SPEECHER_GRAB_SIZE").split(u'x');
+    if (size.size() == 2) {
+        m_appWindow->resize(size.at(0).toInt(), size.at(1).toInt());
+    }
+    if (page >= 0) {
+        m_appWindow->navigateToSettings(static_cast<AppPageId>(page));
+        if (request.size() > 1) {
+            for (QTabWidget *tabs : m_appWindow->findChildren<QTabWidget *>()) {
+                if (tabs->isVisible()) {
+                    tabs->setCurrentIndex(request.at(1).toInt());
+                }
+            }
+        }
+        QCoreApplication::processEvents();
+    }
+    return m_appWindow->grab().save(path);
 }
 
 void QtFrontEnd::showDictationError(const QString &message)

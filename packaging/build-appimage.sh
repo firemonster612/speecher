@@ -27,8 +27,6 @@ Environment:
   SPEECHER_APPDIR       AppDir staging directory. Default: ./dist/AppDir
   SPEECHER_OUTPUT_DIR   Output directory. Default: ./dist
   SPEECHER_BUILD_TYPE   CMake build type. Default: RelWithDebInfo
-  SPEECHER_BUNDLED_BREEZE_VERSION
-                        Upstream Breeze version when dpkg-query is unavailable.
   SPEECHER_QT_PREFIX    Qt installation prefix to build and bundle against.
                         Falls back to QT_ROOT_DIR. Without either, CMake's
                         default discovery applies (risky on hosts with a
@@ -105,21 +103,6 @@ printf 'Speecher AppDir staging directory\n' > "$APPDIR_MARKER"
 # Pin Qt discovery at configure time; ambient discovery can mix a system Qt
 # into the build (SPEECHER_QT_PREFIX wins, QT_ROOT_DIR is what CI's Qt action exports).
 QT_PREFIX_HINT="${SPEECHER_QT_PREFIX:-${QT_ROOT_DIR:-}}"
-BREEZE_UPSTREAM_VERSION="${SPEECHER_BUNDLED_BREEZE_VERSION:-}"
-if [[ -n "$BREEZE_UPSTREAM_VERSION" ]]; then
-  echo "Building against Breeze upstream $BREEZE_UPSTREAM_VERSION (environment override)"
-elif command -v dpkg-query >/dev/null 2>&1; then
-  BREEZE_PACKAGE_VERSION="$(dpkg-query -W -f='${Version}' breeze 2>/dev/null)" || {
-    echo "The Debian breeze package is required to build the AppImage" >&2
-    exit 1
-  }
-  BREEZE_UPSTREAM_VERSION="${BREEZE_PACKAGE_VERSION#*:}"
-  BREEZE_UPSTREAM_VERSION="${BREEZE_UPSTREAM_VERSION%%-*}"
-  echo "Building against Breeze $BREEZE_PACKAGE_VERSION (upstream $BREEZE_UPSTREAM_VERSION)"
-else
-  echo "Set SPEECHER_BUNDLED_BREEZE_VERSION when dpkg-query is unavailable" >&2
-  exit 1
-fi
 CMAKE_CONFIGURE_ARGS=(
   -G Ninja
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
@@ -127,7 +110,6 @@ CMAKE_CONFIGURE_ARGS=(
   -DSPEECHER_BUILD_TESTS=OFF
   -DSPEECHER_RELEASE_BUILD=ON
   -DSPEECHER_WITH_KDE=ON
-  -DSPEECHER_BUNDLED_BREEZE_VERSION="$BREEZE_UPSTREAM_VERSION"
 )
 if [[ -n "$QT_PREFIX_HINT" ]]; then
   CMAKE_CONFIGURE_ARGS+=("-DCMAKE_PREFIX_PATH=$QT_PREFIX_HINT")
@@ -333,8 +315,8 @@ export PATH="$HERE/usr/bin:$PATH"
 GLIBC_VERSION="$(getconf GNU_LIBC_VERSION 2>/dev/null || true)"
 GLIBC_VERSION="${GLIBC_VERSION##* }"
 if [[ "$GLIBC_VERSION" =~ ^([0-9]+)\.([0-9]+) ]] \
-    && (( BASH_REMATCH[1] < 2 || (BASH_REMATCH[1] == 2 && BASH_REMATCH[2] < 41) )); then
-  echo "Speecher's AppImage requires glibc 2.41 or newer (Debian 13, Fedora 42, Ubuntu 25.04, or later)." >&2
+    && (( BASH_REMATCH[1] < 2 || (BASH_REMATCH[1] == 2 && BASH_REMATCH[2] < 43) )); then
+  echo "Speecher's AppImage requires glibc 2.43 or newer (Debian 14, Fedora 44, Ubuntu 26.04, or later)." >&2
   exit 1
 fi
 export QT_PLUGIN_PATH="$HERE/usr/plugins"

@@ -515,10 +515,17 @@ SettingsPage generalPage(const SchemaContext &context)
         QStringLiteral("preferences-system"),
         QStringLiteral("gearshape"),
         {
-            {QStringLiteral("Appearance & behavior"),
+            {
+#ifdef Q_OS_LINUX
+             QStringLiteral("Dictation"),
+#else
+             QStringLiteral("Appearance & behavior"),
+#endif
              QString(),
              {
+#ifndef Q_OS_LINUX
                  std::move(theme),
+#endif
                  toggleRow(QStringLiteral("pauseMedia"),
                            QStringLiteral("Media"),
                            QStringLiteral("Pause playing media while dictating"),
@@ -536,10 +543,15 @@ SettingsPage generalPage(const SchemaContext &context)
                            [](const AppSettings &settings) { return settings.ui.previewWords; },
                            [](AppSettings &settings, int value) { settings.ui.previewWords = value; }),
              }},
-            {QStringLiteral("System"),
+            {
+#ifdef Q_OS_LINUX
+             QStringLiteral("Global Shortcut"),
+#else
+             QStringLiteral("System"),
+#endif
              QString(),
              std::move(systemRows)},
-            {QStringLiteral("Maintenance"),
+            {QStringLiteral("Setup"),
              QString(),
              std::move(maintenanceRows)},
             {QStringLiteral("Updates"),
@@ -828,7 +840,7 @@ QList<AppRecognitionRule> recognitionRules(const QList<QVariantMap> &records)
     return rules;
 }
 
-SettingsPage applicationsPage()
+SettingsSection applicationRecognitionSection()
 {
     CollectionDescriptor rules;
     rules.columns = {
@@ -861,13 +873,7 @@ SettingsPage applicationsPage()
     gateOnTargetAccessibility(
         row, accessibilityGateHelp(QStringLiteral("identify target applications")));
 
-    return {
-        QStringLiteral("applications"),
-        QStringLiteral("Applications"),
-        QStringLiteral("preferences-desktop-default-applications"),
-        QStringLiteral("square.grid.2x2"),
-        {{QStringLiteral("Application recognition"), QString(), {std::move(row)}}},
-    };
+    return {QStringLiteral("Application recognition"), QString(), {std::move(row)}};
 }
 
 QList<PasteRule> applicationPasteRules(const QList<QVariantMap> &records)
@@ -1050,6 +1056,9 @@ SettingsPage outputPage(const SchemaContext &context)
                                     QString())}});
     }
 
+    // App recognition rules decide which paste rule applies, so they live with
+    // the paste rules instead of on a page of their own.
+    sections.append(applicationRecognitionSection());
     return {
         QStringLiteral("output"),
         QStringLiteral("Output"),
@@ -1703,7 +1712,6 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context)
 {
     QList<SettingsPage> pages{generalPage(context),
                               audioPage(context),
-                              applicationsPage(),
                               outputPage(context),
                               refinementPage(context),
                               vocabularyPage(),

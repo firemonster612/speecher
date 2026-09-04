@@ -152,7 +152,7 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     connect(m_setShortcut, &QPushButton::clicked, this, [this] { setShortcut(); });
     connect(m_chooseShortcut, &QPushButton::clicked, this, [this] { chooseShortcut(); });
     connect(copy, &QToolButton::clicked, this, [this, copy] {
-        QGuiApplication::clipboard()->setText(m_command->text());
+        QGuiApplication::clipboard()->setText(m_command->text().remove(QChar(0x200B)));
         copy->setIcon(QIcon::fromTheme(
             QStringLiteral("checkmark"),
             QIcon::fromTheme(QStringLiteral("dialog-ok-apply"))));
@@ -222,8 +222,11 @@ void LinuxGlobalShortcutSetupPage::chooseShortcut()
 
 void LinuxGlobalShortcutSetupPage::refresh()
 {
-    m_command->setText(globalShortcutInstructionCommand(
-        m_homePath, m_appImagePath, m_binaryPath));
+    // Let the long path wrap at its separators inside a narrow card; the
+    // zero-width spaces are stripped again when the command is copied.
+    m_command->setWordWrap(true);
+    m_command->setText(QString(globalShortcutInstructionCommand(
+        m_homePath, m_appImagePath, m_binaryPath)).replace(QLatin1Char('/'), QStringLiteral("/\u200B")));
     if (!m_appImagePath.isEmpty()) {
         const bool installed = appImageIntegrationInstalled(m_homePath, m_appImagePath);
         m_integrationButton->setText(

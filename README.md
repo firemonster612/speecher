@@ -141,7 +141,7 @@ packaging/build-appimage.sh
 
 The script creates `dist/Speecher-x86_64.AppImage`. It uses CMake install output and `appimagetool`. If `wl-copy` is installed on the build machine, it is bundled into the AppImage by default; pass `--no-bundle-wl-clipboard` to keep wl-clipboard external.
 
-Requirements: Speecher's AppImage requires glibc 2.41 or newer (Debian 13, Fedora 42, Ubuntu 25.04, or later).
+Requirements: Speecher's AppImage requires glibc 2.43 or newer (Debian 14, Fedora 44, Ubuntu 26.04, or later).
 
 ## DMG
 

@@ -7,6 +7,7 @@
 #include "frontend/qt/QtFrontEnd.h"
 #include "ui/AppPage.h"
 #include "ui/AppWindow.h"
+#include "ui/InlineMessage.h"
 #include "ui/DictationPage.h"
 #include "ui/settings/SettingsPageSet.h"
 #include "ui/Theme.h"
@@ -15,12 +16,11 @@
 #endif
 
 #include <QComboBox>
-#include <QAbstractItemDelegate>
 #include <QDir>
 #include <QFile>
 #include <QLabel>
+#include <QSet>
 #include <QLineEdit>
-#include <QListView>
 #include <QListWidget>
 #include <QFormLayout>
 #include <QFrame>
@@ -39,101 +39,7 @@
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-#include <KPageWidget>
-#endif
-
 using namespace speecher;
-
-namespace {
-
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-KPageWidget *sidebar(AppWindow &window)
-{
-    return window.findChild<KPageWidget *>(QStringLiteral("appNavigation"));
-}
-
-KPageWidgetItem *sidebarPage(AppWindow &window, int row)
-{
-    auto *pages = sidebar(window);
-    auto *model = qobject_cast<KPageWidgetModel *>(pages->model());
-    return model->item(model->index(row, 0));
-}
-
-QListView *sidebarView(AppWindow &window)
-{
-    return window.findChild<QListView *>(QStringLiteral("appNavigationView"));
-}
-
-void setSidebarRow(AppWindow &window, int row)
-{
-    sidebar(window)->setCurrentPage(sidebarPage(window, row));
-}
-
-int sidebarCurrentRow(AppWindow &window)
-{
-    auto *pages = sidebar(window);
-    auto *model = qobject_cast<KPageWidgetModel *>(pages->model());
-    return model->index(pages->currentPage()).row();
-}
-
-QString sidebarCurrentTitle(AppWindow &window)
-{
-    return sidebar(window)->currentPage()->name();
-}
-
-bool sidebarRowHidden(AppWindow &window, int row)
-{
-    return sidebarView(window)->isRowHidden(row);
-}
-
-QIcon sidebarIcon(AppWindow &window, int row)
-{
-    return sidebarPage(window, row)->icon();
-}
-
-QWidget *currentSidebarPageWidget(AppWindow &window)
-{
-    return sidebar(window)->currentPage()->widget();
-}
-#else
-QListWidget *sidebar(AppWindow &window)
-{
-    return window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
-}
-
-void setSidebarRow(AppWindow &window, int row)
-{
-    sidebar(window)->setCurrentRow(row);
-}
-
-int sidebarCurrentRow(AppWindow &window)
-{
-    return sidebar(window)->currentRow();
-}
-
-QString sidebarCurrentTitle(AppWindow &window)
-{
-    return sidebar(window)->currentItem()->text();
-}
-
-bool sidebarRowHidden(AppWindow &window, int row)
-{
-    return sidebar(window)->item(row)->isHidden();
-}
-
-QIcon sidebarIcon(AppWindow &window, int row)
-{
-    return sidebar(window)->item(row)->icon();
-}
-
-QWidget *currentSidebarPageWidget(AppWindow &window)
-{
-    return window.findChild<QStackedWidget *>()->currentWidget();
-}
-#endif
-
-} // namespace
 
 class AppWindowTests : public QObject {
     Q_OBJECT
@@ -157,7 +63,7 @@ private slots:
         window.show();
         QTest::qWait(200);
         for (int page = 0; page < window.pageCount(); ++page) {
-            setSidebarRow(window, page);
+            window.findChild<QListWidget *>(QStringLiteral("appNavigation"))->setCurrentRow(page);
             QTest::qWait(120);
             window.grab().save(QStringLiteral("%1/page-%2-%3.png")
                                    .arg(dir)
@@ -173,33 +79,14 @@ private slots:
             QStringLiteral("Dictation"),
             QStringLiteral("General"),
             QStringLiteral("Audio"),
-            QStringLiteral("Applications"),
             QStringLiteral("Output"),
             QStringLiteral("Accounts"),
             QStringLiteral("Refinement"),
             QStringLiteral("Vocabulary"),
         };
         AppWindow window(&controller);
-        QCOMPARE(window.pageCount(), 8);
+        QCOMPARE(window.pageCount(), 7);
         QCOMPARE(window.pageTitles(), titles);
-    }
-
-    void sidebarUsesThePlatformPageWidget()
-    {
-        ApplicationController controller(true);
-        AppWindow window(&controller);
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-        auto *navigation = window.findChild<KPageWidget *>(QStringLiteral("appNavigation"));
-        QVERIFY(navigation);
-        QCOMPARE(navigation->faceType(), KPageView::FlatList);
-        QCOMPARE(sidebarView(window)->itemDelegate()->objectName(),
-                 QStringLiteral("viewItemPositionSidebarDelegate"));
-#else
-        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
-        QVERIFY(navigation);
-        QCOMPARE(navigation->itemDelegate()->objectName(),
-                 QStringLiteral("viewItemPositionSidebarDelegate"));
-#endif
     }
 
 #ifdef Q_OS_LINUX
@@ -263,43 +150,41 @@ private slots:
     void sidebarAutoSavesAfterDebounce()
     {
         ApplicationController controller(true);
-        controller.settings()->setTheme(QStringLiteral("light"));
+        controller.settings()->setUpdateChannel(UpdateChannel::Nightly);
         AppWindow window(&controller);
-        auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
-        QVERIFY(theme);
-        QCOMPARE(theme->currentData().toString(), QStringLiteral("system"));
+        auto *channel = window.findChild<QComboBox *>(QStringLiteral("updateChannel"));
+        QVERIFY(channel);
+        QCOMPARE(channel->currentData().toString(), QStringLiteral("stable"));
         window.show();
-        QTRY_COMPARE_WITH_TIMEOUT(theme->currentData().toString(), QStringLiteral("light"), 250);
-        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
+        QTRY_COMPARE_WITH_TIMEOUT(channel->currentData().toString(), QStringLiteral("nightly"), 250);
+        channel->setCurrentIndex(channel->findData(QStringLiteral("stable")));
         // The change must not save immediately (that is the debounce), but
         // waiting out the 600ms timer races slow CI runners, so drive the
         // pending autosave deterministically instead.
-        QCOMPARE(controller.settings()->theme(), QStringLiteral("light"));
+        QCOMPARE(controller.settings()->updateChannel(), UpdateChannel::Nightly);
         window.flushPendingAutoSave();
-        QCOMPARE(controller.settings()->theme(),
-                 Theme::overrideHonored() ? QStringLiteral("dark")
-                                          : QStringLiteral("system"));
+        QCOMPARE(controller.settings()->updateChannel(), UpdateChannel::Stable);
     }
 
     void settingsDeletionCancelsPendingAutoSave()
     {
         ApplicationController controller(true);
-        controller.settings()->setTheme(QStringLiteral("light"));
+        controller.settings()->setUpdateChannel(UpdateChannel::Nightly);
         AppWindow window(&controller);
-        auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
+        auto *channel = window.findChild<QComboBox *>(QStringLiteral("updateChannel"));
         auto *pages = window.findChild<SettingsPageSet *>();
-        QVERIFY(theme);
+        QVERIFY(channel);
         QVERIFY(pages);
         window.show();
-        QTRY_COMPARE_WITH_TIMEOUT(theme->currentData().toString(), QStringLiteral("light"), 250);
+        QTRY_COMPARE_WITH_TIMEOUT(channel->currentData().toString(), QStringLiteral("nightly"), 250);
 
-        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
+        channel->setCurrentIndex(channel->findData(QStringLiteral("stable")));
         pages->prepareForSettingsDeletion();
         controller.settings()->raw().clear();
         controller.settings()->raw().sync();
         window.flushPendingAutoSave();
 
-        QVERIFY(!controller.settings()->raw().contains(QStringLiteral("ui/theme")));
+        QVERIFY(!controller.settings()->raw().contains(QStringLiteral("updates/channel")));
         QVERIFY(!pages->save(false, false));
     }
 
@@ -449,10 +334,11 @@ private slots:
         }
         ApplicationController controller(true);
         AppWindow window(&controller);
-        QVERIFY(sidebar(window));
-        for (int row = 0; row < window.pageCount(); ++row) {
-            QVERIFY2(sidebarIcon(window, row).isNull(),
-                     qPrintable(window.pageTitles().at(row)));
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        QVERIFY(navigation);
+        for (int row = 0; row < navigation->count(); ++row) {
+            QVERIFY2(navigation->item(row)->icon().isNull(),
+                     qPrintable(navigation->item(row)->text()));
         }
         auto *copy = window.findChild<QToolButton *>(QStringLiteral("copyTranscript"));
         QVERIFY(copy);
@@ -481,17 +367,15 @@ private slots:
     void sidebarFlushesPendingAutoSaveOnClose()
     {
         ApplicationController controller(true);
-        controller.settings()->setTheme(QStringLiteral("light"));
+        controller.settings()->setUpdateChannel(UpdateChannel::Nightly);
         AppWindow window(&controller);
-        auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
-        QVERIFY(theme);
+        auto *channel = window.findChild<QComboBox *>(QStringLiteral("updateChannel"));
+        QVERIFY(channel);
         window.show();
-        QCOMPARE(theme->currentData().toString(), QStringLiteral("light"));
-        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
+        QCOMPARE(channel->currentData().toString(), QStringLiteral("nightly"));
+        channel->setCurrentIndex(channel->findData(QStringLiteral("stable")));
         window.close();
-        QCOMPARE(controller.settings()->theme(),
-                 Theme::overrideHonored() ? QStringLiteral("dark")
-                                          : QStringLiteral("system"));
+        QCOMPARE(controller.settings()->updateChannel(), UpdateChannel::Stable);
     }
 
     void savingAnotherPageDoesNotRevertWhatsNewSettings()
@@ -510,9 +394,9 @@ private slots:
         autoCheck->setChecked(false);
         QVERIFY(pages.save(false, false));
 
-        auto *theme = pages.general()->findChild<QComboBox *>(QStringLiteral("themeControl"));
-        QVERIFY(theme);
-        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
+        auto *channel = pages.general()->findChild<QComboBox *>(QStringLiteral("updateChannel"));
+        QVERIFY(channel);
+        channel->setCurrentIndex(channel->findData(QStringLiteral("nightly")));
         QVERIFY(pages.save(false, false));
 
         QVERIFY(!controller.settings()->autoCheckUpdates());
@@ -586,6 +470,31 @@ private slots:
     }
 #endif
 
+    void bannersAreKirigamiInlineMessages()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        auto *banner = window.findChild<InlineMessage *>(QStringLiteral("updateBanner"));
+        auto *warning = window.findChild<InlineMessage *>(QStringLiteral("autoSaveWarning"));
+        QVERIFY(banner);
+        QVERIFY(warning);
+        QCOMPARE(warning->type(), InlineMessage::Type::Warning);
+        auto *icon = banner->findChild<QLabel *>(QStringLiteral("inlineMessageIcon"));
+        QVERIFY(icon);
+        QVERIFY(!icon->pixmap().isNull());
+        QVERIFY(banner->label()->wordWrap());
+        // Each type has its own colour; the tint and border follow it.
+        QSet<QRgb> colours;
+        for (InlineMessage::Type type : {InlineMessage::Type::Information,
+                                         InlineMessage::Type::Positive,
+                                         InlineMessage::Type::Warning,
+                                         InlineMessage::Type::Error}) {
+            banner->setType(type);
+            colours.insert(banner->typeColor().rgb());
+        }
+        QCOMPARE(colours.size(), 4);
+    }
+
     void updateBannerDismissIsACloseToolButton()
     {
         ApplicationController controller(true);
@@ -608,26 +517,12 @@ private slots:
         ApplicationController controller(true);
         AppWindow window(&controller);
         auto *search = window.findChild<QLineEdit *>(QStringLiteral("appSearch"));
-        QVERIFY(search);
-#ifndef SPEECHER_WITH_KPAGEWIDGET
-        QVERIFY(window.findChild<QSplitter *>());
-#endif
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        QVERIFY(window.findChild<QSplitter *>() && search);
 
         search->setText(QStringLiteral("Keep before speech"));
-        QVERIFY(sidebarRowHidden(window, 1) && !sidebarRowHidden(window, 2));
-
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-        // KF6 6.13 filters after 400 ms. Check after its timer would have fired,
-        // because our replacement filter hides What's New synchronously.
-        QTest::qWait(500);
-        QVERIFY(sidebarRowHidden(window, 8));
-        setSidebarRow(window, 1);
-        QTest::keyClick(search, Qt::Key_Return);
-        QCOMPARE(sidebarCurrentRow(window), 2);
-        search->clear();
-        QTest::qWait(500);
-        QVERIFY(sidebarRowHidden(window, 8));
-#endif
+        QVERIFY(navigation && navigation->item(1)->isHidden()
+                && !navigation->item(2)->isHidden());
     }
 
     void programmaticNavigationUpdatesShellChrome()
@@ -635,22 +530,24 @@ private slots:
         ApplicationController controller(true);
         AppWindow window(&controller);
         window.navigateToSettings(AppPageId::Output);
-        QCOMPARE(sidebarCurrentTitle(window), QStringLiteral("Output"));
+        QCOMPARE(window.findChild<QListWidget *>(QStringLiteral("appNavigation"))->currentItem()->text(),
+                 QStringLiteral("Output"));
     }
 
     void sidebarCanReturnToThePageThatOpenedWhatsNew()
     {
         ApplicationController controller(true);
         AppWindow window(&controller);
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        auto *stack = window.findChild<QStackedWidget *>();
         auto *whatsNew = window.findChild<QPushButton *>(QStringLiteral("whatsNew"));
-        QVERIFY(sidebar(window) && whatsNew);
+        QVERIFY(navigation && stack && whatsNew);
 
-        setSidebarRow(window, 1);
+        navigation->setCurrentRow(1);
         whatsNew->click();
-        QCOMPARE(currentSidebarPageWidget(window),
-                 static_cast<QWidget *>(window.findChild<SettingsPageSet *>()->whatsNew()));
-        setSidebarRow(window, 1);
-        QCOMPARE(sidebarCurrentRow(window), 1);
+        QCOMPARE(stack->currentIndex(), 7);
+        navigation->setCurrentRow(1);
+        QCOMPARE(stack->currentIndex(), 1);
     }
 
     void whatsNewOffersAWayBackToThePageItWasOpenedFrom()
@@ -658,27 +555,25 @@ private slots:
         ApplicationController controller(true);
         AppWindow window(&controller);
         window.show();
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        auto *stack = window.findChild<QStackedWidget *>();
         auto *whatsNew = window.findChild<QPushButton *>(QStringLiteral("whatsNew"));
         auto *back = window.findChild<QToolButton *>(QStringLiteral("whatsNewBack"));
         auto *title = window.findChild<QLabel *>(QStringLiteral("pageTitle"));
-        QVERIFY(sidebar(window) && whatsNew && back && title);
+        QVERIFY(navigation && stack && whatsNew && back && title);
         QVERIFY(!back->isVisible());
 
         // Opened from General, the same way the update banner opens it.
-        setSidebarRow(window, 1);
+        navigation->setCurrentRow(1);
         whatsNew->click();
-        QCOMPARE(currentSidebarPageWidget(window),
-                 static_cast<QWidget *>(window.findChild<SettingsPageSet *>()->whatsNew()));
+        QCOMPARE(stack->currentIndex(), 7);
         QCOMPARE(title->text(), QStringLiteral("What's New"));
         QVERIFY(back->isVisible());
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-        QVERIFY(sidebarRowHidden(window, sidebarCurrentRow(window)));
-#else
-        QVERIFY(!sidebar(window)->currentItem());
-#endif
+        QVERIFY(!navigation->currentItem());
 
         back->click();
-        QCOMPARE(sidebarCurrentRow(window), 1);
+        QCOMPARE(stack->currentIndex(), 1);
+        QCOMPARE(navigation->currentRow(), 1);
         QCOMPARE(title->text(), QStringLiteral("General"));
         QVERIFY(!back->isVisible());
     }

@@ -55,8 +55,6 @@ option(SPEECHER_WITH_LAYER_SHELL "Use layer-shell-qt when available" ON)
 option(SPEECHER_WITH_QKEYCHAIN "Use QKeychain when available" ON)
 option(SPEECHER_BUILD_TESTS "Build tests" ON)
 option(SPEECHER_RELEASE_BUILD "Require every Linux release integration" OFF)
-set(SPEECHER_BUNDLED_BREEZE_VERSION "" CACHE STRING
-  "Upstream Breeze version bundled in the AppImage")
 set(SPEECHER_WITH_KDE_DEFAULT OFF)
 if(UNIX AND NOT APPLE)
   set(SPEECHER_WITH_KDE_DEFAULT ON)
@@ -446,6 +444,8 @@ set(SPEECHER_FRONTEND_QT_SOURCES
   src/ui/setup/SetupPages.cpp
   src/ui/settings/SettingsPageSupport.cpp
   src/ui/settings/SettingsPageSet.cpp
+  src/ui/HostStylePlugin.cpp
+  src/ui/InlineMessage.cpp
   src/ui/Theme.cpp
   src/ui/TranscriberPopup.cpp
   src/ui/WaveformWidget.cpp
@@ -468,6 +468,8 @@ set(SPEECHER_FRONTEND_QT_HEADERS
   src/ui/setup/SetupPages.h
   src/ui/settings/SettingsPageSupport.h
   src/ui/settings/SettingsPageSet.h
+  src/ui/HostStylePlugin.h
+  src/ui/InlineMessage.h
   src/ui/Theme.h
   src/ui/TranscriberPopup.h
   src/ui/WaveformWidget.h
@@ -645,12 +647,6 @@ if(KF6WidgetsAddons_FOUND)
     SPEECHER_WITH_KASSISTANT=1
     SPEECHER_WITH_KPAGEWIDGET=1
   )
-  if(SPEECHER_BUNDLED_BREEZE_VERSION AND
-     SPEECHER_BUNDLED_BREEZE_VERSION VERSION_LESS "6.6.90")
-    target_compile_definitions(speecher_frontend_qt PRIVATE
-      SPEECHER_BUNDLED_BREEZE_NEEDS_VIEW_ITEM_POSITION_COMPAT=1
-    )
-  endif()
   target_link_libraries(speecher_frontend_qt PUBLIC KF6::WidgetsAddons)
 endif()
 if(KF6GlobalAccel_FOUND)

@@ -45,7 +45,6 @@ public:
 
     SchemaSettingsPage *general() const;
     SchemaSettingsPage *audio() const;
-    SchemaSettingsPage *applications() const;
     SchemaSettingsPage *output() const;
     SchemaSettingsPage *refinement() const;
     SchemaSettingsPage *providerModels() const;
@@ -95,7 +94,6 @@ private:
     QList<SchemaSettingsPage *> m_pages;
     SchemaSettingsPage *m_general;
     SchemaSettingsPage *m_audio;
-    SchemaSettingsPage *m_applications;
     SchemaSettingsPage *m_output;
     SchemaSettingsPage *m_refinement;
     SchemaSettingsPage *m_vocabulary;
