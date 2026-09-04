@@ -7,9 +7,11 @@
 
 class QCloseEvent;
 class QFrame;
+class QHBoxLayout;
 class QLabel;
 class QLineEdit;
 class QListWidget;
+class QListView;
 class QPaintEvent;
 class QProgressBar;
 class QPushButton;
@@ -18,6 +20,12 @@ class QSplitter;
 class QStackedWidget;
 class QTimer;
 class QToolButton;
+class QVBoxLayout;
+
+#ifdef SPEECHER_WITH_KPAGEWIDGET
+class KPageWidget;
+class KPageWidgetItem;
+#endif
 
 namespace speecher {
 
@@ -47,6 +55,12 @@ protected:
 private:
     void buildSharedPages();
     void buildSidebarShell();
+    void buildHeaderTitle(QWidget *parent, QHBoxLayout *layout);
+    void buildStatusBanners(QWidget *parent, QVBoxLayout *layout);
+    void watchHeaderColorConfig();
+#ifdef SPEECHER_WITH_KPAGEWIDGET
+    void buildNativeSidebarShell();
+#endif
     void refreshHeaderStripColor();
     void runAutoSave();
     void filterSidebarPages(const QString &query);
@@ -58,8 +72,14 @@ private:
     SettingsPageSet *m_pages;
     DictationPage *m_dictation;
     QList<QWidget *> m_pageWidgets;
+#ifdef SPEECHER_WITH_KPAGEWIDGET
+    KPageWidget *m_navigation = nullptr;
+    QList<KPageWidgetItem *> m_navigationPages;
+    QListView *m_navigationView = nullptr;
+#else
     QStackedWidget *m_stack = nullptr;
     QListWidget *m_navigation = nullptr;
+#endif
     QSplitter *m_sidebarSplitter = nullptr;
     QWidget *m_sidebarPane = nullptr;
     QWidget *m_searchSection = nullptr;
