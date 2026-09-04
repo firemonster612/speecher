@@ -27,6 +27,8 @@ Environment:
   SPEECHER_APPDIR       AppDir staging directory. Default: ./dist/AppDir
   SPEECHER_OUTPUT_DIR   Output directory. Default: ./dist
   SPEECHER_BUILD_TYPE   CMake build type. Default: RelWithDebInfo
+  SPEECHER_BUNDLED_BREEZE_VERSION
+                        Upstream Breeze version when dpkg-query is unavailable.
   SPEECHER_QT_PREFIX    Qt installation prefix to build and bundle against.
                         Falls back to QT_ROOT_DIR. Without either, CMake's
                         default discovery applies (risky on hosts with a
@@ -74,7 +76,6 @@ require_tool() {
 
 require_tool cmake
 require_tool appimagetool
-require_tool dpkg-query
 require_tool file
 require_tool ldd
 require_tool ninja
@@ -104,13 +105,21 @@ printf 'Speecher AppDir staging directory\n' > "$APPDIR_MARKER"
 # Pin Qt discovery at configure time; ambient discovery can mix a system Qt
 # into the build (SPEECHER_QT_PREFIX wins, QT_ROOT_DIR is what CI's Qt action exports).
 QT_PREFIX_HINT="${SPEECHER_QT_PREFIX:-${QT_ROOT_DIR:-}}"
-BREEZE_PACKAGE_VERSION="$(dpkg-query -W -f='${Version}' breeze 2>/dev/null)" || {
-  echo "The breeze package is required to build the AppImage" >&2
+BREEZE_UPSTREAM_VERSION="${SPEECHER_BUNDLED_BREEZE_VERSION:-}"
+if [[ -n "$BREEZE_UPSTREAM_VERSION" ]]; then
+  echo "Building against Breeze upstream $BREEZE_UPSTREAM_VERSION (environment override)"
+elif command -v dpkg-query >/dev/null 2>&1; then
+  BREEZE_PACKAGE_VERSION="$(dpkg-query -W -f='${Version}' breeze 2>/dev/null)" || {
+    echo "The Debian breeze package is required to build the AppImage" >&2
+    exit 1
+  }
+  BREEZE_UPSTREAM_VERSION="${BREEZE_PACKAGE_VERSION#*:}"
+  BREEZE_UPSTREAM_VERSION="${BREEZE_UPSTREAM_VERSION%%-*}"
+  echo "Building against Breeze $BREEZE_PACKAGE_VERSION (upstream $BREEZE_UPSTREAM_VERSION)"
+else
+  echo "Set SPEECHER_BUNDLED_BREEZE_VERSION when dpkg-query is unavailable" >&2
   exit 1
-}
-BREEZE_UPSTREAM_VERSION="${BREEZE_PACKAGE_VERSION#*:}"
-BREEZE_UPSTREAM_VERSION="${BREEZE_UPSTREAM_VERSION%%-*}"
-echo "Building against Breeze $BREEZE_PACKAGE_VERSION (upstream $BREEZE_UPSTREAM_VERSION)"
+fi
 CMAKE_CONFIGURE_ARGS=(
   -G Ninja
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
