@@ -51,6 +51,9 @@ public slots:
     void startListening();
     void stopListening();
     void popupPresented(quint64 generation);
+    // How long startup waits for the popup to paint before proceeding without
+    // it. Tests raise it so a slow runner cannot fire it under an assertion.
+    static void setPopupPaintFallbackMs(int ms);
 
 signals:
     void stateChanged(const QString &stateName);
@@ -70,6 +73,8 @@ signals:
     void popupErrorRequested(const QString &message);
 
 private:
+    static int s_popupPaintFallbackMs;
+
     void setState(DictationState state, const QString &message = {});
     void continueStartupAfterPopup(quint64 generation);
     void finishStartupPreparation(const StartupPreparationResult &result);

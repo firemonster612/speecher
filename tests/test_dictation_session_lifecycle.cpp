@@ -571,12 +571,15 @@ private slots:
             &registry);
         QSignalSpy shown(&session, &DictationSession::popupShowRequested);
 
+        // The startup fallback proceeds without the popup after a delay; a
+        // slow runner can pass that delay inside processEvents(), so hold it
+        // off for this test and restore the default afterwards.
+        DictationSession::setPopupPaintFallbackMs(60000);
+        const auto restoreFallback = qScopeGuard([] { DictationSession::setPopupPaintFallbackMs(50); });
+
         session.startListening();
         QCOMPARE(int(session.state()), int(DictationState::Starting));
         QCOMPARE(shown.count(), 1);
-        // Pump the loop without sleeping: startListening arms a 50ms fallback
-        // that proceeds without the popup, and wall-clock qWait() here races
-        // it on slow CI runners.
         QCoreApplication::processEvents();
         QCOMPARE(targetProvider->captureCalls, 0);
         const quint64 generation = shown.first().first().toULongLong();

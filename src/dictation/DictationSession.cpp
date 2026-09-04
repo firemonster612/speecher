@@ -234,9 +234,16 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
     emit popupRefiningChanged(false);
     emit popupStatusChanged(QStringLiteral("Preparing"));
     emit popupShowRequested(generation);
-    QTimer::singleShot(50, this, [this, generation] {
+    QTimer::singleShot(s_popupPaintFallbackMs, this, [this, generation] {
         continueStartupAfterPopup(generation);
     });
+}
+
+int DictationSession::s_popupPaintFallbackMs = 50;
+
+void DictationSession::setPopupPaintFallbackMs(int ms)
+{
+    s_popupPaintFallbackMs = ms;
 }
 
 void DictationSession::popupPresented(quint64 generation)
