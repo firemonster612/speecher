@@ -22,6 +22,7 @@
 #include <QSpinBox>
 #include <QStyleHints>
 #include <QTableWidget>
+#include <QVBoxLayout>
 
 using namespace speecher::test;
 
@@ -917,6 +918,43 @@ private slots:
                 }
             }
         }
+    }
+
+    void fullWidthSettingsRowsShareOneLeftEdge()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        SchemaCustomRowFactory customRows = [](const SettingsRow &row,
+                                               QWidget *parent,
+                                               std::function<void()>) {
+            if (row.id != QStringLiteral("globalShortcut")) {
+                return SchemaCustomRow{};
+            }
+            auto *body = new QWidget(parent);
+            auto *layout = new QVBoxLayout(body);
+            layout->setContentsMargins(0, 0, 0, 0);
+            auto *text = new QLabel(QStringLiteral("Shortcut body"), body);
+            text->setObjectName(QStringLiteral("shortcutBody"));
+            layout->addWidget(text);
+            return SchemaCustomRow{body, {}, {}, true};
+        };
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("general"), *platform, providers, customRows);
+        page->resize(900, 900);
+        page->show();
+        QCoreApplication::processEvents();
+
+        auto *heading = page->findChild<QLabel *>(QStringLiteral("subsectionLabel"));
+        auto *subtitle = heading ? heading->parentWidget()->findChild<QLabel *>(
+                                      QStringLiteral("rowDescription"))
+                                 : nullptr;
+        auto *body = page->findChild<QLabel *>(QStringLiteral("shortcutBody"));
+        QVERIFY(heading);
+        QVERIFY(subtitle);
+        QVERIFY(body);
+        const int bodyLeft = body->mapTo(page.get(), QPoint()).x();
+        QCOMPARE(heading->mapTo(page.get(), QPoint()).x(), bodyLeft);
+        QCOMPARE(subtitle->mapTo(page.get(), QPoint()).x(), bodyLeft);
     }
 
     void settingsRowsGrowForWrappedDescriptions()

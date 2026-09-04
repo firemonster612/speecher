@@ -417,11 +417,11 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         auto *containerLayout = new QVBoxLayout(container);
         containerLayout->setContentsMargins(0, 0, 0, 0);
-        containerLayout->setSpacing(0);
+        containerLayout->setSpacing(settings::relatedSpacing());
         auto *header = new QWidget(container);
         auto *headerLayout = new QVBoxLayout(header);
-        headerLayout->setContentsMargins(14, 12, 14, 10);
-        headerLayout->setSpacing(2);
+        headerLayout->setContentsMargins(0, 0, 0, 0);
+        headerLayout->setSpacing(settings::tightSpacing());
         auto *headerTitle = new QLabel(descriptor.label, header);
         headerTitle->setObjectName(QStringLiteral("subsectionLabel"));
         auto *headerHelp = new QLabel(descriptor.help, header);
