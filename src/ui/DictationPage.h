@@ -43,6 +43,7 @@ private:
     AccessibilityNotice *m_accessibilityNotice;
     QPushButton *m_heroToggle;
     QLabel *m_status;
+    QLabel *m_errorText = nullptr;
     WaveformWidget *m_waveform;
     QPlainTextEdit *m_transcript;
     QToolButton *m_copyTranscript = nullptr;

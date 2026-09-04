@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
+#include "dictation/DictationSession.h"
 #include "frontend/qt/QtFrontEnd.h"
 #include "ui/AppPage.h"
 #include "ui/AppWindow.h"
@@ -220,6 +221,31 @@ private slots:
             startControls += button->text() == QStringLiteral("Start Dictation");
         }
         QCOMPARE(startControls, 1);
+    }
+
+    void dictationPageKeepsTheLastErrorUntilTheNextSession()
+    {
+        ApplicationController controller(true);
+        DictationPage page(&controller);
+        page.show();
+        QCoreApplication::processEvents();
+
+        auto *error = page.findChild<QLabel *>(QStringLiteral("dictationError"));
+        QVERIFY(error);
+        QVERIFY(!error->isVisible());
+
+        const QString message = QStringLiteral("Claude login expired; sign in again with Claude Code");
+        emit controller.session()->popupErrorRequested(message);
+        page.setStatus(QStringLiteral("error"));
+        QVERIFY(error->isVisible());
+        QCOMPARE(error->text(), message);
+
+        // Leaving the error state does not hide it; only a new session does.
+        page.setStatus(QStringLiteral("idle"));
+        QVERIFY(error->isVisible());
+        page.setStatus(QStringLiteral("listening"));
+        QVERIFY(!error->isVisible());
+        QVERIFY(error->text().isEmpty());
     }
 
     void dictationPageShowsHonestBusyActions()

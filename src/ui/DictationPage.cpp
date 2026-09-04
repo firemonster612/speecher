@@ -4,6 +4,7 @@
 #include "app/PlatformComposition.h"
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
+#include "dictation/DictationSession.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/AccessibilityNotice.h"
 #include "ui/WaveformWidget.h"
@@ -184,6 +185,15 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     m_status->setFont(statusFont);
     m_status->setForegroundRole(QPalette::WindowText);
     heroLayout->addWidget(m_status, 0, Qt::AlignHCenter);
+    // The popup shows a failure for five seconds and cannot take focus, so the
+    // reason also stays here until the next session starts.
+    m_errorText = new QLabel(hero);
+    m_errorText->setObjectName(QStringLiteral("dictationError"));
+    m_errorText->setWordWrap(true);
+    m_errorText->setAlignment(Qt::AlignHCenter);
+    m_errorText->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_errorText->hide();
+    heroLayout->addWidget(m_errorText);
     heroLayout->addWidget(m_waveform, 0, Qt::AlignHCenter);
 
     m_transcript->setObjectName(QStringLiteral("dictationTranscript"));
@@ -291,6 +301,11 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
         m_transcript->setPlainText(text);
         m_transcript->verticalScrollBar()->setValue(m_transcript->verticalScrollBar()->maximum());
     });
+    connect(controller->session(), &DictationSession::popupErrorRequested, this,
+            [this](const QString &message) {
+                m_errorText->setText(message.simplified());
+                m_errorText->setVisible(!message.simplified().isEmpty());
+            });
     connect(m_accessibilityNotice, &AccessibilityNotice::enableRequested, this, [this] {
         QString error;
         if (!m_controller->enableAccessibility(&error)) {
@@ -357,6 +372,8 @@ void DictationPage::applyState(const QString &stateName)
     m_waveform->setVisible(active);
     if (active && !m_sessionActive) {
         m_transcript->clear();
+        m_errorText->clear();
+        m_errorText->hide();
     }
     m_sessionActive = active;
     if (!active) {
