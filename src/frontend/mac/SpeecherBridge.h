@@ -193,7 +193,7 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 // nil once the grant was asked for; otherwise why it could not be.
 - (nullable NSString *)enableAccessibility;
 
-// The OpenAI credential as the Providers page shows it: a status line for every
+// The OpenAI credential as the Accounts page shows it: a status line for every
 // credential source except the app settings key, which is a secret this front
 // end reads from and writes to the keyring itself.
 @property (nonatomic, readonly) BOOL credentialIsEditable;

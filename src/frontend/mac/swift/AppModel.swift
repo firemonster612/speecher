@@ -124,6 +124,16 @@ final class AppModel: ObservableObject {
         return nil
     }
 
+    func title(for pane: Pane) -> String {
+        if pane.id == "dictation" { return "Dictation" }
+        return settingsPage(for: pane)?.title ?? "Settings"
+    }
+
+    func symbol(for pane: Pane) -> String {
+        if pane.id == "dictation" { return "mic" }
+        return settingsPage(for: pane)?.symbolName ?? "gearshape"
+    }
+
     /// A pane's cards: the sections of the schema page it shows, with the rows
     /// the schema currently offers. A schema page no pane names falls back to
     /// General, so a newly added page is never invisible.
@@ -214,10 +224,14 @@ final class AppModel: ObservableObject {
         if query.isEmpty { return true }
         let needle = query.lowercased()
         let hit = { (text: String) in text.lowercased().contains(needle) }
-        if hit(pane.title) { return true }
+        if hit(title(for: pane)) { return true }
         return cards(for: pane).contains { card in
             hit(card.title) || hit(card.help)
                 || card.rows.contains { hit($0.label) || hit($0.help) }
         }
+    }
+
+    private func settingsPage(for pane: Pane) -> SettingsPageModel? {
+        pages.first { pane.schemaPages.contains($0.pageId) }
     }
 }

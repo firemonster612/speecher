@@ -2,7 +2,7 @@ import SwiftUI
 
 // The settings window's seven regular panes and contextual What's New page.
 // The schema decides which rows a page has and how they group into cards; this
-// file only names the panes and the order the sidebar lists them in.
+// file only names the handwritten Dictation pane and the sidebar order.
 
 /// One card a pane shows: a schema section's title, footnote and rows. Both
 /// rendering and the sidebar's search read a pane as these, so a row cannot be
@@ -19,26 +19,21 @@ struct PaneCard: Identifiable {
 enum PaneLayout {
     /// The schema page's sections, one card each.
     case sections
-    /// The shortcut recorder, which has no schema rows behind it.
-    case shortcut
+    /// Live dictation controls and the shortcut recorder, which have no schema
+    /// rows behind them.
+    case dictation
 }
 
 struct Pane: Identifiable {
     let id: String
-    let title: String
-    let symbol: String
     /// The schema page whose sections this pane shows.
     let schemaPages: [String]
     let layout: PaneLayout
 
     init(_ id: String,
-         _ title: String,
-         _ symbol: String,
          schemaPages: [String] = [],
          layout: PaneLayout = .sections) {
         self.id = id
-        self.title = title
-        self.symbol = symbol
         self.schemaPages = schemaPages
         self.layout = layout
     }
@@ -46,14 +41,14 @@ struct Pane: Identifiable {
 
 extension Pane {
     static let all: [Pane] = [
-        Pane("dictation", "Dictation", "mic", layout: .shortcut),
-        Pane("general", "General", "gearshape", schemaPages: ["general"]),
-        Pane("audio", "Audio", "waveform", schemaPages: ["audio"]),
-        Pane("output", "Output", "arrow.right.doc.on.clipboard", schemaPages: ["output"]),
-        Pane("accounts", "Accounts", "person.badge.key", schemaPages: ["accounts"]),
-        Pane("refinement", "Refinement", "wand.and.sparkles", schemaPages: ["refinement"]),
-        Pane("vocabulary", "Vocabulary", "character.book.closed", schemaPages: ["vocabulary"]),
-        Pane("whatsNew", "What's New", "sparkles", schemaPages: ["whatsNew"]),
+        Pane("dictation", layout: .dictation),
+        Pane("general", schemaPages: ["general"]),
+        Pane("audio", schemaPages: ["audio"]),
+        Pane("output", schemaPages: ["output"]),
+        Pane("accounts", schemaPages: ["accounts"]),
+        Pane("refinement", schemaPages: ["refinement"]),
+        Pane("vocabulary", schemaPages: ["vocabulary"]),
+        Pane("whatsNew", schemaPages: ["whatsNew"]),
     ]
 
     /// The sidebar's runs, in order. System Settings' own sidebar separates its
@@ -78,8 +73,8 @@ struct PaneView: View {
 
     var body: some View {
         switch pane.layout {
-        case .shortcut:
-            ShortcutPane(model: model)
+        case .dictation:
+            DictationPane(model: model)
         case .sections:
             Form {
                 ForEach(model.cards(for: pane)) { card($0) }

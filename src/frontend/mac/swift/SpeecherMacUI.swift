@@ -94,6 +94,13 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
+    @objc(showSettingsPane:)
+    public func showSettingsPane(_ pane: String) {
+        model.pane = pane
+        showSettings()
+    }
+
+    @MainActor
     @objc public func captureSettings(toPath path: String) -> Bool {
         settings?.capture(toPath: path) ?? false
     }

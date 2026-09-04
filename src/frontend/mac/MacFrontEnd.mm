@@ -1,6 +1,7 @@
 #include "frontend/mac/MacFrontEnd.h"
 
 #include "app/ApplicationController.h"
+#include "app/SettingsPageName.h"
 #include "app/UpdateController.h"
 #include "core/SettingsStore.h"
 #include "frontend/mac/SpeecherBridge.h"
@@ -61,6 +62,14 @@ void MacFrontEnd::showMainWindow()
 void MacFrontEnd::showSettingsWindow()
 {
     showMainWindow();
+}
+
+void MacFrontEnd::showSettingsPage(const QString &pageId)
+{
+    const QString pane = canonicalSettingsPageName(pageId);
+    const QString selectedPane = pane.isEmpty() ? QStringLiteral("general") : pane;
+    [m_native->ui showSettingsPane:selectedPane.toNSString()];
+    m_controller->frontEndReady();
 }
 
 void MacFrontEnd::showSetupAssistant(SetupAssistantPage page)

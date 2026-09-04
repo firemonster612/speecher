@@ -41,7 +41,7 @@ struct RootView: View {
                     }
                     .scenePadding([.top, .horizontal])
                 }
-                Text(pane.title)
+                Text(model.title(for: pane))
                     .font(.title2.weight(.semibold))
                     .scenePadding([.top, .horizontal])
                 PaneView(pane: pane, model: model)
@@ -54,7 +54,7 @@ struct RootView: View {
     }
 }
 
-/// The source list: eight regular panes in runs, plus What's New while selected,
+/// The source list: seven regular panes in runs, plus What's New while selected,
 /// filtered by whatever the search field holds. The schema is the index, so a
 /// pane answers to its own name and to any group heading, row label or help text
 /// it carries.
@@ -85,7 +85,7 @@ struct SidebarList: View {
     /// Icon plus label, and no colour of our own: sidebar icons take the accent
     /// colour the user chose, and a fixed one would override it.
     private func row(_ pane: Pane) -> some View {
-        Label(pane.title, systemImage: pane.symbol).tag(pane.id)
+        Label(model.title(for: pane), systemImage: model.symbol(for: pane)).tag(pane.id)
     }
 }
 
@@ -134,9 +134,9 @@ final class SpeecherSettingsWindow {
         // resizing persistent without restoring that pre-release frame.
         window.setFrameAutosaveName("SpeecherSettingsV2")
         // The window title is the pane the user is looking at.
-        window.title = Pane.with(id: model.pane)?.title ?? "Settings"
-        titleObserver = model.$pane.sink { [weak window] pane in
-            window?.title = Pane.with(id: pane)?.title ?? "Settings"
+        window.title = Pane.with(id: model.pane).map(model.title(for:)) ?? "Settings"
+        titleObserver = model.$pane.sink { [weak window, model] paneId in
+            window?.title = Pane.with(id: paneId).map(model.title(for:)) ?? "Settings"
         }
     }
 

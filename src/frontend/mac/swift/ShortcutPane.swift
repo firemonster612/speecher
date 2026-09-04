@@ -45,12 +45,22 @@ final class ShortcutRecorder: ObservableObject {
     }
 }
 
-struct ShortcutPane: View {
+struct DictationPane: View {
     @ObservedObject var model: AppModel
     @StateObject private var recorder = ShortcutRecorder()
 
     var body: some View {
         Form {
+            Section {
+                LabeledContent("Status") { Text(statusLabel) }
+                LabeledContent("Dictation") {
+                    Button(model.listening ? "Stop Dictation" : "Start Dictation") {
+                        model.bridge.toggle()
+                    }
+                }
+            } header: {
+                Text("Current Session")
+            }
             Section {
                 LabeledContent {
                     Button(caption) {
@@ -77,6 +87,11 @@ struct ShortcutPane: View {
     private var caption: String {
         if recorder.recording { return "Type a shortcut…" }
         return model.shortcut.isEmpty ? "Record Shortcut" : model.shortcut
+    }
+
+    private var statusLabel: String {
+        let status = model.status
+        return status.isEmpty ? "Idle" : status.prefix(1).uppercased() + status.dropFirst()
     }
 
     private var footnote: String {

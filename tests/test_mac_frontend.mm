@@ -63,16 +63,21 @@ QAbstractButton *visibleButton(const QWidget *within, const QString &text)
     return nullptr;
 }
 
-bool nativeSettingsAreVisible()
+NSWindow *nativeSettingsWindow()
 {
     for (NSWindow *window in NSApp.windows) {
         // The settings window's autosave name, which is stable where its title
         // is the pane the sidebar happens to be on and is hidden anyway.
         if (window.visible && [window.frameAutosaveName isEqualToString:@"SpeecherSettingsV2"]) {
-            return true;
+            return window;
         }
     }
-    return false;
+    return nil;
+}
+
+bool nativeSettingsAreVisible()
+{
+    return nativeSettingsWindow() != nil;
 }
 
 SettingsRowModel *settingsRow(SettingsSchemaModel *schema, NSString *rowId)
@@ -184,6 +189,20 @@ private slots:
         SettingsRowModel *refreshed = settingsRow(bridge.settingsSchema, @"targetContextControl");
         QVERIFY(refreshed);
         QVERIFY(refreshed.enabled);
+    }
+
+    void namedSettingsPageSelectsTheNativePane()
+    {
+        ApplicationController controller(false);
+        MacFrontEnd frontEnd(&controller);
+
+        frontEnd.showSettingsPage(QStringLiteral("audio"));
+        NSWindow *window = nativeSettingsWindow();
+        QVERIFY(window);
+        QCOMPARE(QString::fromNSString(window.title), QStringLiteral("Audio"));
+
+        frontEnd.showSettingsPage(QStringLiteral("apps"));
+        QCOMPARE(QString::fromNSString(window.title), QStringLiteral("Output"));
     }
 
     void outputMethodsOfferAccessibilityInsertion()
