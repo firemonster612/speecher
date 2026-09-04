@@ -12,8 +12,12 @@
 #include <QFile>
 #include <QProcessEnvironment>
 #include <QPushButton>
+#include <QNetworkReply>
 #include <QScopeGuard>
 #include <QTemporaryDir>
+#include <QTimer>
+
+#include <cstring>
 
 using namespace speecher;
 
@@ -56,6 +60,25 @@ public:
     {
         return AppImageUpdater::restartEnvironment(arguments, std::move(environment));
     }
+
+    static void finishCheck(AppImageUpdater &updater,
+                            QNetworkReply *reply,
+                            bool automatic)
+    {
+        updater.m_automaticCheck = automatic;
+        updater.m_reply = reply;
+        updater.finishCheck(reply);
+    }
+
+    static int retryInterval(const AppImageUpdater &updater)
+    {
+        return updater.m_dailyTimer->interval();
+    }
+
+    static void setAutomaticCheckFailures(AppImageUpdater &updater, int failures)
+    {
+        updater.m_automaticCheckFailures = failures;
+    }
 };
 
 class QtFrontEndTestAccess {
@@ -71,6 +94,39 @@ public:
 namespace {
 
 using namespace speecher::test;
+
+class StaticNetworkReply final : public QNetworkReply {
+public:
+    explicit StaticNetworkReply(const QByteArray &body,
+                                NetworkError error = NoError,
+                                QObject *parent = nullptr)
+        : QNetworkReply(parent)
+        , m_body(body)
+    {
+        open(QIODevice::ReadOnly | QIODevice::Unbuffered);
+        if (error != NoError) {
+            setError(error, QStringLiteral("timed out"));
+        }
+    }
+
+    void abort() override {}
+
+protected:
+    qint64 readData(char *data, qint64 maximumSize) override
+    {
+        if (m_offset == m_body.size()) {
+            return -1;
+        }
+        const qint64 size = qMin(maximumSize, m_body.size() - m_offset);
+        std::memcpy(data, m_body.constData() + m_offset, size_t(size));
+        m_offset += size;
+        return size;
+    }
+
+private:
+    QByteArray m_body;
+    qint64 m_offset = 0;
+};
 
 struct UpdateTestContext {
     SettingsStore settings;
@@ -420,6 +476,37 @@ private slots:
         QVERIFY(!normal.contains(QStringLiteral("APPIMAGE_EXTRACT_AND_RUN")));
     }
 
+    void automaticCheckFailuresRetrySoonAndOnlySuccessUpdatesTheTimestamp()
+    {
+        constexpr qint64 previousSuccess = 42;
+        constexpr int minuteMs = 60 * 1000;
+        UpdateTestContext context(true);
+        context.settings.setUpdatesLastCheckTime(previousSuccess);
+        AppImageUpdater updater(&context.settings, context.session.get());
+
+        const QList<int> retryMinutes{5, 10, 20, 40, 60, 60};
+        for (const int retryMinute : retryMinutes) {
+            AppImageUpdaterTestAccess::finishCheck(
+                updater,
+                new StaticNetworkReply({}, QNetworkReply::TimeoutError, &updater),
+                true);
+            QCOMPARE(context.settings.updatesLastCheckTime(), previousSuccess);
+            QCOMPARE(AppImageUpdaterTestAccess::retryInterval(updater),
+                     retryMinute * minuteMs);
+        }
+        QVERIFY(updater.repeatedAutomaticCheckFailure());
+
+        AppImageUpdaterTestAccess::finishCheck(
+            updater, new StaticNetworkReply(validManifestJson(),
+                                            QNetworkReply::NoError,
+                                            &updater),
+            true);
+        QVERIFY(context.settings.updatesLastCheckTime() > previousSuccess);
+        QCOMPARE(AppImageUpdaterTestAccess::retryInterval(updater),
+                 24 * 60 * minuteMs);
+        QVERIFY(!updater.repeatedAutomaticCheckFailure());
+    }
+
     void bannerAndChipVisibilityFollowUpdateState()
     {
         UpdateTestContext context(true);
@@ -470,6 +557,12 @@ private slots:
                                                 QStringLiteral("install failed"));
             QCOMPARE(!chip->isHidden(), visible);
         }
+        AppImageUpdaterTestAccess::setAutomaticCheckFailures(*controllerUpdater, 3);
+        AppImageUpdaterTestAccess::setState(*controllerUpdater,
+                                            UpdateController::State::CheckFailed,
+                                            QStringLiteral("Could not check for updates"));
+        QVERIFY(!chip->isHidden());
+        QCOMPARE(chip->text(), QStringLiteral("Update check failed"));
         AppImageUpdaterTestAccess::setState(*controllerUpdater,
                                             UpdateController::State::Error,
                                             QStringLiteral("install failed"));

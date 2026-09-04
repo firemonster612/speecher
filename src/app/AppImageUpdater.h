@@ -55,6 +55,7 @@ public:
     bool isAppImage() const override;
     bool supportsAutomaticDownloads() const override;
     bool bannerVisible() const override;
+    bool repeatedAutomaticCheckFailure() const override;
     static void waitForRestartParent();
 
     static std::optional<UpdateManifest> parseManifest(const QByteArray &json,
@@ -115,6 +116,7 @@ private:
     UpdateChannel m_selectedChannel;
     bool m_automaticCheck = false;
     bool m_manualInstallRequired = false;
+    int m_automaticCheckFailures = 0;
     State m_state = State::Idle;
     int m_downloadPercent = 0;
     QString m_error;

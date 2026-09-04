@@ -108,6 +108,7 @@ QString MacSparkleUpdater::errorMessage() const { return {}; }
 bool MacSparkleUpdater::isAppImage() const { return false; }
 bool MacSparkleUpdater::supportsAutomaticDownloads() const { return true; }
 bool MacSparkleUpdater::bannerVisible() const { return false; }
+bool MacSparkleUpdater::repeatedAutomaticCheckFailure() const { return false; }
 
 void MacSparkleUpdater::checkForUpdates(UpdateChannel channel)
 {

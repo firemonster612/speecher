@@ -201,6 +201,13 @@ void QtFrontEnd::refreshUpdateChip()
     case UpdateController::State::Error:
         m_popup->setUpdateChip(updates->errorMessage(), true, canAct);
         break;
+    case UpdateController::State::CheckFailed:
+        if (updates->repeatedAutomaticCheckFailure()) {
+            m_popup->setUpdateChip(QStringLiteral("Update check failed"), true, canAct);
+        } else {
+            m_popup->setUpdateChip({}, false, false);
+        }
+        break;
     default:
         m_popup->setUpdateChip({}, false, false);
         break;

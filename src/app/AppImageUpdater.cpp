@@ -31,6 +31,9 @@ namespace {
 
 constexpr qint64 startupCheckIntervalMs = 20LL * 60 * 60 * 1000;
 constexpr int dailyCheckIntervalMs = 24 * 60 * 60 * 1000;
+constexpr int initialRetryIntervalMs = 5 * 60 * 1000;
+constexpr int maximumRetryIntervalMs = 60 * 60 * 1000;
+constexpr int visibleAutomaticFailureCount = 3;
 constexpr int restartHandshakeTimeoutMs = 15000;
 constexpr auto restartSocketEnvironment = "SPEECHER_RESTART_SOCKET";
 const QUrl stableManifestUrl(QStringLiteral(
@@ -48,6 +51,17 @@ void setError(QString *error, const QString &message)
 bool restartSafe(DictationState state)
 {
     return state == DictationState::Idle || state == DictationState::Error;
+}
+
+int automaticRetryInterval(int failureCount)
+{
+    int interval = initialRetryIntervalMs;
+    for (int failure = 1;
+         failure < failureCount && interval < maximumRetryIntervalMs;
+         ++failure) {
+        interval = qMin(interval * 2, maximumRetryIntervalMs);
+    }
+    return interval;
 }
 
 } // namespace
@@ -156,6 +170,11 @@ bool AppImageUpdater::bannerVisible() const
     }
     return m_state == State::Downloading || m_state == State::ReadyToRestart
         || m_state == State::RestartPending;
+}
+
+bool AppImageUpdater::repeatedAutomaticCheckFailure() const
+{
+    return m_automaticCheckFailures >= visibleAutomaticFailureCount;
 }
 
 void AppImageUpdater::waitForRestartParent()
@@ -309,8 +328,6 @@ void AppImageUpdater::beginCheck(UpdateChannel channel, bool automaticCheck)
     m_manualInstallRequired = false;
     m_checkChannel = channel;
     m_automaticCheck = automaticCheck;
-    // The timestamp intentionally records request start, so failed checks still obey the cadence.
-    m_settings->setUpdatesLastCheckTime(QDateTime::currentMSecsSinceEpoch());
     setState(State::Checking);
     QNetworkRequest request(manifestUrl(channel));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
@@ -327,7 +344,7 @@ void AppImageUpdater::updateNow()
         restartNow();
         return;
     }
-    if (m_state == State::Error) {
+    if (m_state == State::Error || m_state == State::CheckFailed) {
         if (m_manualInstallRequired) {
             emit openReleasePageRequested();
             return;
@@ -399,6 +416,11 @@ void AppImageUpdater::finishCheck(QNetworkReply *reply)
         : reply->errorString();
     reply->deleteLater();
     if (!networkError.isEmpty()) {
+        if (m_automaticCheck) {
+            ++m_automaticCheckFailures;
+            m_dailyTimer->setInterval(
+                automaticRetryInterval(m_automaticCheckFailures));
+        }
         setState(State::CheckFailed,
                  QStringLiteral("Could not check for updates: %1").arg(networkError));
         return;
@@ -410,6 +432,9 @@ void AppImageUpdater::finishCheck(QNetworkReply *reply)
         setState(State::CheckFailed, error);
         return;
     }
+    m_settings->setUpdatesLastCheckTime(QDateTime::currentMSecsSinceEpoch());
+    m_automaticCheckFailures = 0;
+    m_dailyTimer->setInterval(dailyCheckIntervalMs);
     if (!shouldOfferManifest(*manifest,
                              currentBuildNumber(),
                              currentVersion(),
