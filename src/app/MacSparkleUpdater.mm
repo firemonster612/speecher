@@ -79,6 +79,7 @@ QString MacSparkleUpdater::availableVersion() const { return {}; }
 int MacSparkleUpdater::downloadPercent() const { return 0; }
 QString MacSparkleUpdater::errorMessage() const { return {}; }
 bool MacSparkleUpdater::isAppImage() const { return false; }
+bool MacSparkleUpdater::supportsAutomaticDownloads() const { return true; }
 bool MacSparkleUpdater::bannerVisible() const { return false; }
 
 void MacSparkleUpdater::checkForUpdates(UpdateChannel channel)

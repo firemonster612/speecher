@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.24)
 
+if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING
+    "Minimum macOS version supported by Speecher")
+endif()
+
 project(speecher VERSION 0.1.0 LANGUAGES C CXX)
 
 include(cmake/GitVersion.cmake)

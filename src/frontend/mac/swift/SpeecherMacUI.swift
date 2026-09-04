@@ -117,6 +117,9 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @objc public var dictationPanelPresentedGeneration: UInt64 { panel.presentedGeneration }
 
+    @MainActor
+    @objc public var whatsNewOfferVisible: Bool { model.whatsNewPending }
+
     /// Brings Speecher forward so whatever it just put on screen can be seen.
     @MainActor
     @objc public func activate() {

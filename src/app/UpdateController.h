@@ -34,6 +34,7 @@ public:
     virtual int downloadPercent() const = 0;
     virtual QString errorMessage() const = 0;
     virtual bool isAppImage() const = 0;
+    virtual bool supportsAutomaticDownloads() const = 0;
     virtual bool bannerVisible() const = 0;
 
 public slots:

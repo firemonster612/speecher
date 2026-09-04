@@ -191,9 +191,41 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: ctest --test-dir build --output-on-failure
 
+      - name: Import macOS signing identity
+        if: github.event_name != 'pull_request'
+        env:
+          MACOS_SIGNING_CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
+          MACOS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "${MACOS_SIGNING_CERTIFICATE:-}" ] || [ -z "${MACOS_SIGNING_CERTIFICATE_PASSWORD:-}" ]; then
+            echo "MACOS_SIGNING_CERTIFICATE and MACOS_SIGNING_CERTIFICATE_PASSWORD are required for publishing." >&2
+            exit 1
+          fi
+          certificate_path="$RUNNER_TEMP/speecher-signing.p12"
+          keychain_path="$RUNNER_TEMP/speecher-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          printf '%s' "$MACOS_SIGNING_CERTIFICATE" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" -P "$MACOS_SIGNING_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          rm "$certificate_path"
+
       - name: Package DMG
         if: github.event_name != 'pull_request'
-        run: bash packaging/macos/build-dmg.sh build
+        env:
+          SPEECHER_SIGN_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          if [ -z "${SPEECHER_SIGN_IDENTITY:-}" ] || [ "$SPEECHER_SIGN_IDENTITY" = - ]; then
+            echo "MACOS_SIGNING_IDENTITY must name the stable release signing identity." >&2
+            exit 1
+          fi
+          bash packaging/macos/build-dmg.sh build
+          test -s build/designated-requirement.txt
 
       - name: Sign DMG for Sparkle
         if: github.event_name != 'pull_request'
@@ -223,6 +255,7 @@ jobs:
           path: |
             build/speecher.dmg
             build/sparkle-signature.txt
+            build/designated-requirement.txt
           if-no-files-found: error
 
   publish:

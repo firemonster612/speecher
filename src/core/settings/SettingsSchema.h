@@ -102,7 +102,7 @@ struct NumberRange {
 // meaningful when it can. Grows a member when a row needs one, not before.
 struct Capabilities {
     bool targetAccessibility = false;
-    bool isAppImage = false;
+    bool automaticUpdateDownloads = false;
 };
 
 struct SettingsRow {

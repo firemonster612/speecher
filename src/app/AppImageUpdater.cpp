@@ -130,6 +130,11 @@ bool AppImageUpdater::isAppImage() const
     return !m_appImagePath.isEmpty();
 }
 
+bool AppImageUpdater::supportsAutomaticDownloads() const
+{
+    return isAppImage();
+}
+
 bool AppImageUpdater::bannerVisible() const
 {
     if (m_state == State::Error) {

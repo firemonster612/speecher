@@ -22,6 +22,7 @@ public:
     int downloadPercent() const override;
     QString errorMessage() const override;
     bool isAppImage() const override;
+    bool supportsAutomaticDownloads() const override;
     bool bannerVisible() const override;
 
 public slots:

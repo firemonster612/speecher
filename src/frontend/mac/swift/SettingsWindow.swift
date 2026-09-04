@@ -30,6 +30,17 @@ struct RootView: View {
     @ViewBuilder private var detail: some View {
         if let pane = Pane.with(id: model.pane) {
             VStack(alignment: .leading, spacing: 0) {
+                if model.whatsNewPending {
+                    GroupBox {
+                        HStack {
+                            Label("Speecher was updated.", systemImage: "sparkles")
+                            Spacer()
+                            Button("See what's new") { model.showWhatsNew() }
+                            Button("Dismiss") { model.dismissWhatsNew() }
+                        }
+                    }
+                    .scenePadding([.top, .horizontal])
+                }
                 Text(pane.title)
                     .font(.title2.weight(.semibold))
                     .scenePadding([.top, .horizontal])

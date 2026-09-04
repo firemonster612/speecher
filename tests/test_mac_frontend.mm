@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsKeys.h"
 #include "frontend/mac/MacFrontEnd.h"
 #include "frontend/mac/SpeecherBridge.h"
 #include "ui/AppWindow.h"
@@ -19,6 +20,8 @@
 #include <QDeadlineTimer>
 #include <QApplication>
 #include <QCheckBox>
+#include <QFile>
+#include <QTemporaryDir>
 
 using namespace speecher;
 
@@ -195,6 +198,56 @@ private slots:
             found = found || [option.rowOptionId isEqualToString:@"direct_insert"];
         }
         QVERIFY(found);
+    }
+
+    void automaticDownloadsAppearForSparkle()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SettingsRowModel *row = settingsRow(bridge.settingsSchema, @"autoInstallUpdates");
+
+        QVERIFY(row);
+        QVERIFY([row.help containsString:@"Sparkle"]);
+    }
+
+    void anthropicCredentialStatusFollowsTheAuthMode()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        ApplicationController controller(false);
+        const QString credentialsPath = directory.filePath(QStringLiteral("credentials.json"));
+        controller.settings()->raw().setValue(SettingsKeys::ClaudeCredentialsPath,
+                                              credentialsPath);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+
+        QVERIFY(bridge.anthropicCredentialStatus.length > 0);
+        __block bool credentialsChanged = false;
+        bridge.anthropicCredentialsChanged = ^{ credentialsChanged = true; };
+        QFile credentials(credentialsPath);
+        QVERIFY(credentials.open(QIODevice::WriteOnly));
+        QVERIFY(credentials.write(QByteArrayLiteral(
+                    R"({"claudeAiOauth":{"accessToken":"token","expiresAt":4102444800000}})"))
+                > 0);
+        credentials.close();
+
+        QTRY_VERIFY_WITH_TIMEOUT(credentialsChanged, 2000);
+        QCOMPARE(bridge.anthropicCredentialStatus,
+                 @"Claude Code OAuth credentials found");
+        [bridge.settingsSchema setValue:@"cliproxy" forRowId:@"anthropicAuthMode"];
+        QCOMPARE(bridge.anthropicCredentialStatus.length, NSUInteger(0));
+    }
+
+    void whatsNewOfferFollowsPendingUpgradeState()
+    {
+        SettingsStore settings;
+        settings.setUpdatesPendingWhatsNewVersion(QStringLiteral("0.1.0"));
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
+
+        QVERIFY(ui.whatsNewOfferVisible);
+        [bridge clearPendingWhatsNew];
+        QVERIFY(!ui.whatsNewOfferVisible);
     }
 
     void setupFinishesWithStartAtLoginPage()

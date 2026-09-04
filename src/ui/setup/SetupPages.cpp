@@ -381,6 +381,17 @@ void MicrophoneSetupPage::addMicrophonePermissionControls(QVBoxLayout *layout)
     connect(m_openMicrophoneSettings, &QPushButton::clicked, this, [] {
         QDesktopServices::openUrl(QUrl(QString::fromLatin1(microphonePaneUrl)));
     });
+    connect(qApp, &QGuiApplication::applicationStateChanged, this,
+            [this](Qt::ApplicationState state) {
+                if (state != Qt::ApplicationActive || !m_active || !isVisible()) {
+                    return;
+                }
+                refreshMicrophonePermission();
+                if (qApp->checkPermission(QMicrophonePermission{})
+                    == Qt::PermissionStatus::Granted) {
+                    startMeter();
+                }
+            });
     refreshMicrophonePermission();
 }
 

@@ -70,7 +70,7 @@ On macOS, open the DMG and drag `speecher.app` to Applications. On macOS 15 and 
 xattr -dr com.apple.quarantine /Applications/speecher.app
 ```
 
-The app is unsigned because there is no Apple Developer account. Later updates are verified with Sparkle EdDSA signatures.
+The app is not Developer ID signed or notarized because there is no Apple Developer account. Releases use one stable self-signed identity so Accessibility grants survive updates. Sparkle verifies later updates with EdDSA signatures.
 
 The default Update Channel is Stable Release. Nightly Builds are republished from every push to `master`, not on a nightly schedule. Switch channels in **Settings > General > Updates**.
 

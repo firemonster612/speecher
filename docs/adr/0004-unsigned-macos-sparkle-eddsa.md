@@ -12,8 +12,10 @@ rejected for now.
 
 ## Decision
 
-Ship the DMG ad-hoc signed and not notarized, with the Gatekeeper
-walkthrough documented in the README. Updates are handled by Sparkle 2,
+Ship the DMG with one stable self-signed code-signing identity and do not
+notarize it, with the Gatekeeper walkthrough documented in the README. CI
+imports the same encrypted PKCS#12 identity for every release and records the
+app's designated requirement. Local builds may use ad-hoc signing. Updates are handled by Sparkle 2,
 which authenticates each update with the project's own EdDSA key
 (SUPublicEDKey in Info.plist, private key only in CI secrets), so
 update integrity does not depend on Apple signing. The channel setting
@@ -25,6 +27,8 @@ Gatekeeper wall is first-install only.
 
 - First-install friction is real and documented; it is the cost of not
   paying Apple, not a bug.
+- Reusing the release signing identity keeps macOS Accessibility grants valid
+  across updates. Losing it resets those grants and requires a new identity.
 - The EdDSA private key is the update trust root: if it leaks, an
   attacker who can also serve the appcast can push updates. Keep it a
   repo secret, rotate by shipping a new public key in a signed-by-old
