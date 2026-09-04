@@ -198,6 +198,10 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context);
 // are numbers rather than text (0.10 follows 0.2).
 int compareBaseVersions(const QString &left, const QString &right);
 
+// The one sentence that describes the restore-clipboard setting, wherever it
+// is offered (Output page, setup assistant).
+QString restoreClipboardDescription();
+
 // The microphone choice as it is offered: a system-default entry ahead of the
 // devices that exist, and a disabled placeholder standing in for a saved device
 // that has gone away. Shared with the setup assistant's own device list.

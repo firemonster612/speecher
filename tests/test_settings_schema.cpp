@@ -487,6 +487,20 @@ private slots:
                  QStringLiteral("Thanks"));
     }
 
+    void restoreClipboardIsDescribedOnceForEverySurface()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("output")),
+                                         QStringLiteral("restoreClipboardAfterTyping"));
+        QCOMPARE(row.help, restoreClipboardDescription());
+        QVERIFY(row.tooltip.isEmpty());
+        // The code restores after any paste, not only after typing or a
+        // verified one, so the sentence must not name a mechanism.
+        QVERIFY(!restoreClipboardDescription().contains(QStringLiteral("typing")));
+        QVERIFY(!restoreClipboardDescription().contains(QStringLiteral("verified")));
+        QVERIFY(!restoreClipboardDescription().contains(QStringLiteral("keyboard")));
+    }
+
     void aSavedMicrophoneSurvivesGoingMissing()
     {
         const QList<RowOption> present{{QStringLiteral("mic-1"), QStringLiteral("Desk microphone")}};

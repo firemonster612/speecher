@@ -117,15 +117,6 @@ QString targetAccessibilityHint()
 #endif
 }
 
-QString restoreClipboardHint()
-{
-#ifdef Q_OS_MACOS
-    return QStringLiteral("Restore the previous clipboard after Speecher pastes.");
-#else
-    return QStringLiteral("Restore the previous clipboard after virtual-keyboard paste.");
-#endif
-}
-
 // The categories the Output page offers a paste rule for. A rule stored for any
 // other category is left alone rather than dropped.
 QList<AppCategory> managedPasteCategories()
@@ -941,10 +932,9 @@ SettingsPage outputPage(const SchemaContext &context)
     SettingsRow restoreClipboard = toggleRow(
         QStringLiteral("restoreClipboardAfterTyping"),
         QStringLiteral("Clipboard"),
-        QStringLiteral("Restore previous clipboard contents after typing"),
+        restoreClipboardDescription(),
         [](const AppSettings &settings) { return settings.output.restoreClipboardAfterTyping; },
         [](AppSettings &settings, bool value) { settings.output.restoreClipboardAfterTyping = value; });
-    restoreClipboard.tooltip = restoreClipboardHint();
 
     QList<SettingsRow> pasteRows{choiceRow(
         QStringLiteral("globalPasteRule"),
@@ -1610,6 +1600,13 @@ SettingsPage providersPage()
 }
 
 } // namespace
+
+QString restoreClipboardDescription()
+{
+    // Restoration follows every paste that is not clipboard-only, whichever
+    // mechanism pasted; the sentence must not promise more than that.
+    return QStringLiteral("Put the previous clipboard contents back after pasting");
+}
 
 const SettingsPage &SettingsSchema::page(const QString &id) const
 {

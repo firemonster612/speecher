@@ -3,6 +3,7 @@
 #include "app/ApplicationController.h"
 #include "app/PlatformComposition.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsSchema.h"
 #include "dictation/DictationPorts.h"
 #ifdef SPEECHER_WITH_YDOTOOL
 #include "output/YdotoolSetup.h"
@@ -618,7 +619,7 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
     , m_status(new QLabel(this))
     , m_setup(new QPushButton(QStringLiteral("Set up virtual keyboard"), this))
     , m_progress(new QProgressBar(this))
-    , m_restoreClipboard(new QCheckBox(QStringLiteral("Restore the previous clipboard after verified paste"), this))
+    , m_restoreClipboard(new QCheckBox(restoreClipboardDescription(), this))
     , m_format(new QComboBox(this))
 {
     QVBoxLayout *layout = makePage(
