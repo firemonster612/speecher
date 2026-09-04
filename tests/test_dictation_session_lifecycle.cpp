@@ -263,8 +263,9 @@ private slots:
         QVERIFY(speech);
         speech->emitFinalText(QStringLiteral("hello"));
         session->stopListening();
+        QTRY_VERIFY_WITH_TIMEOUT(refiner && refiner->refineCalls == 1, 1000);
+        refiner->emitCompletedText(QStringLiteral("hello"));
         QTRY_COMPARE_WITH_TIMEOUT(int(session->state()), int(DictationState::Idle), 1800);
-        QVERIFY(refiner);
 
         // Passing means surviving: the owner of *speech and *refiner goes away
         // first, as in the controller, and the session's destructor must not
