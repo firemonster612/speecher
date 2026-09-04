@@ -164,6 +164,28 @@ private slots:
         QCOMPARE(controller.settings()->theme(), QStringLiteral("dark"));
     }
 
+    void settingsDeletionCancelsPendingAutoSave()
+    {
+        ApplicationController controller(true);
+        controller.settings()->setTheme(QStringLiteral("light"));
+        AppWindow window(&controller);
+        auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
+        auto *pages = window.findChild<SettingsPageSet *>();
+        QVERIFY(theme);
+        QVERIFY(pages);
+        window.show();
+        QTRY_COMPARE_WITH_TIMEOUT(theme->currentData().toString(), QStringLiteral("light"), 250);
+
+        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
+        pages->prepareForSettingsDeletion();
+        controller.settings()->raw().clear();
+        controller.settings()->raw().sync();
+        window.flushPendingAutoSave();
+
+        QVERIFY(!controller.settings()->raw().contains(QStringLiteral("ui/theme")));
+        QVERIFY(!pages->save(false, false));
+    }
+
     void dictationSummaryDefersSavedMicrophoneResolutionUntilShow()
     {
         ApplicationController controller(true);

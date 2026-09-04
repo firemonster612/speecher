@@ -86,6 +86,7 @@ private:
     bool m_showingWhatsNewBanner = false;
     bool m_pageLoadScheduled = false;
     bool m_afterShowLoadScheduled = false;
+    bool m_settingsDeletionStarted = false;
     bool m_headerDragPending = false;
     QPoint m_headerPressPosition;
 };

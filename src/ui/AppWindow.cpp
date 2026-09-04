@@ -141,6 +141,11 @@ AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
             &AppWindow::refreshUpdateBanner);
 
     buildSidebarShell();
+    connect(m_pages, &SettingsPageSet::settingsDeletionStarted, this, [this] {
+        m_settingsDeletionStarted = true;
+        m_autoSaveTimer->stop();
+        m_autoSaveWarning->hide();
+    });
     settings::applyLabelHierarchy(this);
 
     const QByteArray geometry = m_controller->settings()->raw()
@@ -217,6 +222,7 @@ void AppWindow::changeEvent(QEvent *event)
 
 void AppWindow::flushPendingAutoSave()
 {
+    if (m_settingsDeletionStarted) return;
     if (!m_autoSaveTimer || !m_autoSaveTimer->isActive()) return;
     m_autoSaveTimer->stop();
     runAutoSave();
@@ -224,8 +230,10 @@ void AppWindow::flushPendingAutoSave()
 
 void AppWindow::closeEvent(QCloseEvent *event)
 {
-    flushPendingAutoSave();
-    rememberGeometry();
+    if (!m_settingsDeletionStarted) {
+        flushPendingAutoSave();
+        rememberGeometry();
+    }
     QMainWindow::closeEvent(event);
 }
 
@@ -807,6 +815,7 @@ void AppWindow::filterSidebarPages(const QString &query)
 
 void AppWindow::runAutoSave()
 {
+    if (m_settingsDeletionStarted) return;
     SettingsPageSet::SaveOutcome outcome;
     const bool saved = m_pages->save(false, false, &outcome);
     if (!saved) {

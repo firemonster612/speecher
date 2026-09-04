@@ -3,6 +3,7 @@
 #include "app/ApplicationController.h"
 #include "app/UpdateController.h"
 #include "core/AppSettings.h"
+#include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "frontend/qt/SchemaSettingsPage.h"
 #ifdef Q_OS_LINUX
@@ -12,7 +13,6 @@
 #include "ui/Theme.h"
 
 #include <QCheckBox>
-#include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
@@ -354,6 +354,9 @@ bool SettingsPageSet::save(bool showValidationErrors,
                            SaveOutcome *outcome)
 {
     if (outcome) *outcome = {};
+    if (m_settingsDeletionStarted) {
+        return false;
+    }
     const auto refuse = [outcome](SaveFailure failure, const QStringList &messages) {
         if (outcome) *outcome = {failure, messages};
         return false;
@@ -406,6 +409,15 @@ bool SettingsPageSet::save(bool showValidationErrors,
         m_outputRows.refresh();
     }
     return true;
+}
+
+void SettingsPageSet::prepareForSettingsDeletion()
+{
+    if (m_settingsDeletionStarted) {
+        return;
+    }
+    m_settingsDeletionStarted = true;
+    emit settingsDeletionStarted();
 }
 
 void SettingsPageSet::preserveBindingScroll(QScrollArea *scroll)
@@ -518,7 +530,16 @@ void SettingsPageSet::removeSpeecher()
                            : QStringLiteral("Global Shortcut: %1").arg(shortcutError));
     }
 
-    if (deleteSettings->isChecked()) {
+    const bool deleteUserSettings = deleteSettings->isChecked();
+    if (deleteUserSettings) {
+        prepareForSettingsDeletion();
+        if (m_controller->secretStore()->deleteKeyringApiKey()) {
+            done.append(QStringLiteral("Deleted your API key from the desktop keyring."));
+        } else {
+            notDone.append(
+                QStringLiteral("Could not delete your API key from the desktop keyring: %1")
+                    .arg(m_controller->secretStore()->lastError()));
+        }
         QSettings &raw = m_controller->settings()->raw();
         const QString settingsFile = raw.fileName();
         raw.clear();
@@ -547,10 +568,12 @@ void SettingsPageSet::removeSpeecher()
         : QStringLiteral("\n\nTo finish, quit Speecher and delete the file at:\n%1").arg(appImage);
     report.setInformativeText(details);
     QPushButton *quit = report.addButton(QStringLiteral("Quit Speecher"), QMessageBox::AcceptRole);
-    report.addButton(QStringLiteral("Close"), QMessageBox::RejectRole);
+    if (!deleteUserSettings) {
+        report.addButton(QStringLiteral("Close"), QMessageBox::RejectRole);
+    }
     report.exec();
-    if (report.clickedButton() == quit) {
-        QCoreApplication::quit();
+    if (deleteUserSettings || report.clickedButton() == quit) {
+        m_controller->quitApplication();
     }
 }
 #endif

@@ -61,10 +61,12 @@ public:
     bool save(bool showValidationErrors = true,
               bool refreshPages = true,
               SaveOutcome *outcome = nullptr);
+    void prepareForSettingsDeletion();
     void preserveBindingScroll(QScrollArea *scroll);
 
 signals:
     void changed();
+    void settingsDeletionStarted();
     void whatsNewRequested();
 
 private:
@@ -83,6 +85,7 @@ private:
     void refreshUpdateRows();
 
     ApplicationController *m_controller;
+    bool m_settingsDeletionStarted = false;
     bool m_targetAccessibility = false;
     SettingsSchema m_schema;
     AppSettings m_draft;
