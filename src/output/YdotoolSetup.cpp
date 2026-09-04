@@ -1,10 +1,13 @@
 #include "output/YdotoolSetup.h"
 
+#include "output/HelperPath.h"
 #include "output/YdotoolDelivery.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QFileInfo>
 #include <QProcess>
+#include <QSaveFile>
 #include <QStandardPaths>
 
 #ifdef Q_OS_UNIX
@@ -119,6 +122,68 @@ bool runProgram(const QString &program,
     return true;
 }
 
+QString stableHelperPath()
+{
+    const QString dataHome = qEnvironmentVariable("XDG_DATA_HOME");
+    if (!dataHome.isEmpty()) {
+        return QDir(dataHome).filePath(
+            QStringLiteral("speecher/libexec/speecher-ydotool-setup"));
+    }
+    return QDir(QDir::homePath()).filePath(
+        QStringLiteral(".local/libexec/speecher/speecher-ydotool-setup"));
+}
+
+bool copyHelper(const QString &sourcePath, const QString &destinationPath, QString *error)
+{
+    QFile source(sourcePath);
+    if (!QFileInfo(source).isFile() || !QFileInfo(source).isExecutable()
+        || !source.open(QIODevice::ReadOnly)) {
+        if (error) {
+            *error = QStringLiteral("The bundled ydotool setup helper is missing or not executable");
+        }
+        return false;
+    }
+    const QByteArray contents = source.readAll();
+    if (source.error() != QFileDevice::NoError) {
+        if (error) {
+            *error = QStringLiteral("Could not read the bundled ydotool setup helper");
+        }
+        return false;
+    }
+
+    const QFileInfo destination(destinationPath);
+    if (!destination.dir().mkpath(QStringLiteral("."))) {
+        if (error) {
+            *error = QStringLiteral("Could not create the local ydotool helper directory");
+        }
+        return false;
+    }
+    QSaveFile copy(destinationPath);
+    if (!copy.open(QIODevice::WriteOnly)
+        || copy.write(contents) != contents.size()
+        || !copy.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                | QFileDevice::ExeOwner | QFileDevice::ReadGroup
+                                | QFileDevice::ExeGroup | QFileDevice::ReadOther
+                                | QFileDevice::ExeOther)
+        || !copy.commit()) {
+        if (error) {
+            *error = QStringLiteral("Could not install the local ydotool setup helper");
+        }
+        return false;
+    }
+
+    QFile verified(destinationPath);
+    if (!verified.open(QIODevice::ReadOnly) || verified.readAll() != contents
+        || verified.error() != QFileDevice::NoError) {
+        QFile::remove(destinationPath);
+        if (error) {
+            *error = QStringLiteral("The local ydotool setup helper could not be verified");
+        }
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 bool YdotoolSetupStatus::ready() const
@@ -225,15 +290,14 @@ QString YdotoolSetup::serviceName()
     return QStringLiteral("speecher-ydotoold.service");
 }
 
-QString YdotoolSetup::helperPath()
+QString YdotoolSetup::helperPath(QString *error)
 {
-    // pkexec's polkit action pins this helper to its compiled install path;
-    // root also cannot traverse a private squashfuse mount.
-    const QString sibling = QCoreApplication::applicationDirPath() + QStringLiteral("/speecher-ydotool-setup");
-    if (QFileInfo::exists(sibling)) {
-        return sibling;
+    const QString bundled = resolvedHelperPath(SPEECHER_YDOTOOL_HELPER_PATH);
+    if (qEnvironmentVariableIsSet("APPIMAGE")) {
+        const QString stable = stableHelperPath();
+        return copyHelper(bundled, stable, error) ? stable : QString();
     }
-    return QString::fromLatin1(SPEECHER_YDOTOOL_HELPER_PATH);
+    return bundled;
 }
 
 bool YdotoolSetup::runHelper(HelperAction action, QString *error)
@@ -252,8 +316,12 @@ bool YdotoolSetup::runHelper(HelperAction action, QString *error)
         }
         return false;
     }
+    const QString helper = helperPath(error);
+    if (helper.isEmpty()) {
+        return false;
+    }
     return runProgram(pkexec,
-                      {helperPath(),
+                      {helper,
                        action == HelperAction::Install ? QStringLiteral("--install") : QStringLiteral("--remove"),
                        QStringLiteral("--user"),
                        user},

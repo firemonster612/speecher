@@ -3,6 +3,8 @@
 #include "common/test_auth.h"
 #include "output/HelperPath.h"
 
+#include <QScopeGuard>
+
 using namespace speecher::test;
 
 class FakeBackend final : public DeliveryBackend {
@@ -999,6 +1001,35 @@ private slots:
         const YdotoolSetupStatus ready = YdotoolSetup::evaluate(facts);
         QCOMPARE(ready.state, YdotoolSetupState::Ready);
         QVERIFY(ready.ready());
+    }
+
+    void appImageYdotoolHelperUsesStableVerifiedCopy()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString bundled = QCoreApplication::applicationDirPath()
+            + QStringLiteral("/speecher-ydotool-setup");
+        QVERIFY2(QFileInfo::exists(bundled), qPrintable(bundled));
+
+        const QByteArray oldAppImage = qgetenv("APPIMAGE");
+        const QByteArray oldDataHome = qgetenv("XDG_DATA_HOME");
+        const auto restoreEnvironment = qScopeGuard([oldAppImage, oldDataHome] {
+            oldAppImage.isNull() ? qunsetenv("APPIMAGE") : qputenv("APPIMAGE", oldAppImage);
+            oldDataHome.isNull() ? qunsetenv("XDG_DATA_HOME")
+                                 : qputenv("XDG_DATA_HOME", oldDataHome);
+        });
+        qputenv("APPIMAGE", directory.filePath(QStringLiteral("Speecher.AppImage")).toUtf8());
+        qputenv("XDG_DATA_HOME", directory.filePath(QStringLiteral("data")).toUtf8());
+
+        const QString expected = directory.filePath(
+            QStringLiteral("data/speecher/libexec/speecher-ydotool-setup"));
+        QCOMPARE(YdotoolSetup::helperPath(), expected);
+        QFile bundledFile(bundled);
+        QFile stableFile(expected);
+        QVERIFY(bundledFile.open(QIODevice::ReadOnly));
+        QVERIFY(stableFile.open(QIODevice::ReadOnly));
+        QCOMPARE(stableFile.readAll(), bundledFile.readAll());
+        QVERIFY(QFileInfo(expected).isExecutable());
     }
 #endif // SPEECHER_WITH_WAYLAND
 };
