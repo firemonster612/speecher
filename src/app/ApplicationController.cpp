@@ -51,13 +51,25 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_ipc(new SingleInstanceIpc(m_platform, this))
 {
     const QString currentVersion = QStringLiteral(SPEECHER_VERSION);
+    const qint64 currentBuildNumber = SPEECHER_BUILD_NUMBER;
     const QString previousVersion = m_settings->updatesLastRunVersion();
-    if (previousVersion != currentVersion) {
-        if (compareBaseVersions(currentVersion, previousVersion) > 0
+    const qint64 previousBuildNumber = m_settings->updatesLastRunBuildNumber();
+    if (previousVersion != currentVersion || previousBuildNumber != currentBuildNumber) {
+        const bool migratedNightlyUpgrade = previousBuildNumber < 0
+            && !previousVersion.isEmpty()
+            && previousVersion.contains(QStringLiteral("-nightly"))
+            && currentVersion.contains(QStringLiteral("-nightly"))
+            && previousVersion != currentVersion;
+        const bool upgraded = previousBuildNumber >= 0
+            ? currentBuildNumber > previousBuildNumber
+            : compareBaseVersions(currentVersion, previousVersion) > 0
+                || migratedNightlyUpgrade;
+        if (upgraded
             && m_settings->updatesPendingWhatsNewVersion().isEmpty()) {
             m_settings->setUpdatesPendingWhatsNewVersion(previousVersion);
         }
         m_settings->setUpdatesLastRunVersion(currentVersion);
+        m_settings->setUpdatesLastRunBuildNumber(currentBuildNumber);
     }
     m_pendingWhatsNewVersion = m_settings->updatesPendingWhatsNewVersion();
     m_settings->setLaunchAtLoginReconciler(

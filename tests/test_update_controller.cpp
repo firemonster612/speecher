@@ -368,6 +368,28 @@ private slots:
         QCOMPARE(controller.settings()->updatesLastRunVersion(),
                  QStringLiteral(SPEECHER_VERSION));
     }
+
+    void nightlyUpgradeUsesBuildNumberAndKeepsTheFullPreviousVersion()
+    {
+        const QString previous = QStringLiteral(
+            "0.1.1-nightly.20260903+gprevious");
+        {
+            SettingsStore settings;
+            settings.raw().clear();
+            settings.setUpdatesLastRunVersion(previous);
+            settings.raw().setValue(QStringLiteral("updates/lastRunBuildNumber"),
+                                    qint64(SPEECHER_BUILD_NUMBER) - 1);
+        }
+
+        ApplicationController controller(true);
+        QCOMPARE(controller.pendingWhatsNewVersion(), previous);
+        QCOMPARE(controller.settings()->updatesLastRunVersion(),
+                 QStringLiteral(SPEECHER_VERSION));
+        QCOMPARE(controller.settings()->raw()
+                     .value(QStringLiteral("updates/lastRunBuildNumber"))
+                     .toLongLong(),
+                 qint64(SPEECHER_BUILD_NUMBER));
+    }
 };
 
 int runUpdateControllerTests(int argc, char **argv)
