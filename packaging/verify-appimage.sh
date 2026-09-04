@@ -35,7 +35,6 @@ REQUIRED_FILES=(
   usr/libexec/speecher/speecher-ydotool-setup
   usr/libexec/speecher/speecher-wayland-clipboard
   usr/plugins/platforms/libqxcb.so
-  usr/plugins/platforms/libqwayland-generic.so
   usr/plugins/platformthemes/KDEPlasmaPlatformTheme6.so
   usr/plugins/platformthemes/libqgtk3.so
   usr/plugins/platformthemes/libqxdgdesktopportal.so
@@ -57,6 +56,12 @@ for required in "${REQUIRED_FILES[@]}"; do
     exit 1
   fi
 done
+# Qt 6.10 renamed the Wayland platform plugin from libqwayland-generic.so to libqwayland.so.
+if [[ ! -e "$APPDIR/usr/plugins/platforms/libqwayland.so" \
+   && ! -e "$APPDIR/usr/plugins/platforms/libqwayland-generic.so" ]]; then
+  echo "Required AppImage file is missing: usr/plugins/platforms/libqwayland.so" >&2
+  exit 1
+fi
 
 HELPER="$APPDIR/usr/libexec/speecher/speecher-ydotool-setup"
 if ldd "$HELPER" | grep -Fq 'libQt6'; then

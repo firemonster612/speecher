@@ -42,3 +42,13 @@ Qt 6 and KDE stack. This sets glibc 2.41 as the Linux compatibility floor. The
 Ubuntu 22.04 build used a separate Qt installation with no KDE Frameworks 6,
 so it could not provide native Plasma styling, icons, Global Shortcuts, or the
 KDE setup assistant.
+
+## Amendment 2026-09-04: Debian testing base
+
+The trixie base shipped Breeze 6.3, which draws list selections square; the
+rounded selection users see in their own Plasma apps arrived in Breeze 6.7.
+Rather than paint around the style, the AppImage now builds on `debian:forky`
+(Debian testing), which carries Breeze 6.7, KF6 6.28 and Qt 6.10, the same
+generation as current Fedora and Arch desktops. The compatibility floor moves
+to glibc 2.43. Reproducibility relies on the release tag's build number and
+the `apt` state at build time; pin a snapshot if a rebuild must be byte-exact.

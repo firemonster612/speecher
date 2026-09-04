@@ -1,4 +1,4 @@
-FROM debian:trixie
+FROM debian:forky
 
 ARG USER_ID=1000
 

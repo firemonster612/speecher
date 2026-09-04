@@ -315,8 +315,8 @@ export PATH="$HERE/usr/bin:$PATH"
 GLIBC_VERSION="$(getconf GNU_LIBC_VERSION 2>/dev/null || true)"
 GLIBC_VERSION="${GLIBC_VERSION##* }"
 if [[ "$GLIBC_VERSION" =~ ^([0-9]+)\.([0-9]+) ]] \
-    && (( BASH_REMATCH[1] < 2 || (BASH_REMATCH[1] == 2 && BASH_REMATCH[2] < 41) )); then
-  echo "Speecher's AppImage requires glibc 2.41 or newer (Debian 13, Fedora 42, Ubuntu 25.04, or later)." >&2
+    && (( BASH_REMATCH[1] < 2 || (BASH_REMATCH[1] == 2 && BASH_REMATCH[2] < 43) )); then
+  echo "Speecher's AppImage requires glibc 2.43 or newer (Debian 14, Fedora 44, Ubuntu 26.04, or later)." >&2
   exit 1
 fi
 export QT_PLUGIN_PATH="$HERE/usr/plugins"
