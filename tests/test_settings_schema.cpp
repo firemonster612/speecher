@@ -3,7 +3,6 @@
 #include "core/BindingProcessor.h"
 #include "core/VocabularyLimit.h"
 #include "core/settings/SettingsSchema.h"
-#include "ui/settings/SettingsPageSet.h"
 
 #include <algorithm>
 
@@ -170,25 +169,141 @@ private slots:
         QCOMPARE(row.kind, RowKind::Toggle);
         QCOMPARE(row.label, QStringLiteral("Start Speecher at login"));
         QCOMPARE(row.help,
-                 QStringLiteral("Dictation only works while Speecher is running."));
+                 QStringLiteral("Dictation only works while Speecher is running"));
 #else
         QVERIFY(!hasRow(general, QStringLiteral("launchAtLogin")));
 #endif
     }
 
-    void audioTimingControlsSitUnderAdvancedInPlainWords()
+    void pagesAreTheSevenTheSidebarShows()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
-        const SettingsPage &audio = schema.page(QStringLiteral("audio"));
-        const SettingsSection &advanced = audio.sections.last();
-        QCOMPARE(advanced.title, QStringLiteral("Advanced"));
         QStringList ids;
-        for (const SettingsRow &row : advanced.rows) {
+        for (const SettingsPage &page : schema.pages) {
+            ids.append(page.id);
+        }
+        // Dictation is not a schema page; What's New is reached from General.
+        QCOMPARE(ids,
+                 QStringList({QStringLiteral("general"),
+                              QStringLiteral("audio"),
+                              QStringLiteral("output"),
+                              QStringLiteral("accounts"),
+                              QStringLiteral("refinement"),
+                              QStringLiteral("vocabulary"),
+                              QStringLiteral("whatsNew")}));
+    }
+
+    void everyCardHasATitleAndHelpIsOneLine()
+    {
+        SchemaContext context = fakeContext();
+        context.currentVersion = QStringLiteral("0.1.4");
+        const SettingsSchema schema = buildSettingsSchema(context);
+        const auto oneLine = [](const QString &text, const QString &where) {
+            // One sentence, no full stop: a subtitle, not a paragraph.
+            QVERIFY2(!text.contains(QStringLiteral(". ")), qPrintable(where + QStringLiteral(": ") + text));
+            QVERIFY2(!text.endsWith(QLatin1Char('.')), qPrintable(where + QStringLiteral(": ") + text));
+        };
+        for (const SettingsPage &page : schema.pages) {
+            QVERIFY(!page.sections.isEmpty());
+            for (const SettingsSection &section : page.sections) {
+                QVERIFY2(!section.title.isEmpty(), qPrintable(page.id));
+                oneLine(section.help, section.title);
+                for (const SettingsRow &row : section.rows) {
+                    oneLine(row.help, row.id);
+                    oneLine(row.disabledHelp, row.id);
+                }
+            }
+        }
+    }
+
+    void generalCardsFollowTheSettledOrder()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        QStringList titles;
+        for (const SettingsSection &section : schema.page(QStringLiteral("general")).sections) {
+            titles.append(section.title);
+        }
+#ifdef Q_OS_MACOS
+        QCOMPARE(titles,
+                 QStringList({QStringLiteral("Appearance"), QStringLiteral("Dictation"),
+                              QStringLiteral("Startup"), QStringLiteral("Updates"),
+                              QStringLiteral("Setup")}));
+#else
+        // The desktop decides the colour scheme, and there is no start-at-login
+        // switch to offer, so neither card exists here.
+        QCOMPARE(titles,
+                 QStringList({QStringLiteral("Dictation"), QStringLiteral("Updates"),
+                              QStringLiteral("Setup")}));
+        QVERIFY(!hasRow(schema.page(QStringLiteral("general")), QStringLiteral("themeControl")));
+#endif
+        const SettingsSection &updates = schema.page(QStringLiteral("general")).sections.at(
+            titles.indexOf(QStringLiteral("Updates")));
+        QStringList ids;
+        for (const SettingsRow &row : updates.rows) {
             ids.append(row.id);
         }
         QCOMPARE(ids,
-                 QStringList({QStringLiteral("captureMode"),
-                              QStringLiteral("preRollMs"),
+                 QStringList({QStringLiteral("updateChannel"), QStringLiteral("autoCheckUpdates"),
+                              QStringLiteral("autoInstallUpdates"),
+                              QStringLiteral("checkForUpdates"), QStringLiteral("whatsNew")}));
+    }
+
+    void checkForUpdatesNamesTheRunningVersion()
+    {
+        SchemaContext context = fakeContext();
+        context.currentVersion = QStringLiteral("0.1.4");
+        const SettingsSchema schema = buildSettingsSchema(context);
+        const SettingsPage &general = schema.page(QStringLiteral("general"));
+        QCOMPARE(rowById(general, QStringLiteral("checkForUpdates")).help,
+                 QStringLiteral("Speecher 0.1.4"));
+        QVERIFY(!hasRow(general, QStringLiteral("currentVersion")));
+    }
+
+    void outputAudioAndVocabularyCardsFollowTheSettledOrder()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const auto titles = [&schema](const QString &pageId) {
+            QStringList titles;
+            for (const SettingsSection &section : schema.page(pageId).sections) {
+                titles.append(section.title);
+            }
+            return titles;
+        };
+        QCOMPARE(titles(QStringLiteral("audio")),
+                 QStringList({QStringLiteral("Transcription"), QStringLiteral("Microphone"),
+                              QStringLiteral("Silence detection"), QStringLiteral("Timing")}));
+        QCOMPARE(titles(QStringLiteral("output")),
+                 QStringList({QStringLiteral("How text is inserted"), QStringLiteral("Per-app rules"),
+                              QStringLiteral("Feedback")}));
+        QCOMPARE(titles(QStringLiteral("accounts")),
+                 QStringList({QStringLiteral("ChatGPT / Codex"), QStringLiteral("Claude"),
+                              QStringLiteral("CLI Proxy API server")}));
+        QCOMPARE(titles(QStringLiteral("refinement")),
+                 QStringList({QStringLiteral("Refinement"), QStringLiteral("Writing profiles"),
+                              QStringLiteral("OpenAI"), QStringLiteral("Claude")}));
+        QCOMPARE(titles(QStringLiteral("vocabulary")),
+                 QStringList({QStringLiteral("Vocabulary"), QStringLiteral("Learned corrections"),
+                              QStringLiteral("Replacements and snippets")}));
+        // The Applications page is gone; its rules are a row on Output, gated
+        // with the paste rules they share a target with.
+        const SettingsPage &output = schema.page(QStringLiteral("output"));
+        QVERIFY(hasRow(output, QStringLiteral("appRecognitionRules")));
+        QCOMPARE(rowById(output, QStringLiteral("appRecognitionRules")).groupId,
+                 rowById(output, QStringLiteral("applicationPasteRules")).groupId);
+    }
+
+    void audioTimingControlsSitUnderTimingInPlainWords()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsPage &audio = schema.page(QStringLiteral("audio"));
+        const SettingsSection &timing = audio.sections.last();
+        QCOMPARE(timing.title, QStringLiteral("Timing"));
+        QStringList ids;
+        for (const SettingsRow &row : timing.rows) {
+            ids.append(row.id);
+        }
+        QCOMPARE(ids,
+                 QStringList({QStringLiteral("preRollMs"),
                               QStringLiteral("postRollMs"),
                               QStringLiteral("readinessTimeoutMs")}));
         for (const SettingsSection &section : audio.sections) {
@@ -210,7 +325,8 @@ private slots:
 #ifdef Q_OS_LINUX
         const SettingsRow &row = rowById(general, QStringLiteral("removeSpeecher"));
         QCOMPARE(row.kind, RowKind::Action);
-        QCOMPARE(row.actionLabel, QStringLiteral("Remove Speecher from this computer…"));
+        QCOMPARE(row.label, QStringLiteral("Remove Speecher from this computer"));
+        QCOMPARE(row.actionLabel, QStringLiteral("Remove…"));
         QVERIFY(row.help.contains(QStringLiteral("app menu entry")));
 #else
         QVERIFY(!hasRow(general, QStringLiteral("removeSpeecher")));
@@ -273,6 +389,7 @@ private slots:
         }
     }
 
+#ifdef Q_OS_MACOS
     void themeRowExplainsItselfWhenTheDesktopIgnoresIt()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
@@ -285,6 +402,7 @@ private slots:
         QVERIFY(!row.enabled(AppSettings{}, ignored));
         QVERIFY(row.disabledHelp.contains(QStringLiteral("desktop")));
     }
+#endif
 
     void automaticInstallOnlyAppearsWhenSupported()
     {
@@ -329,42 +447,49 @@ private slots:
         QVERIFY(!row.enabled(settings, Capabilities{}));
     }
 
-    void everyProviderAccountIsTheSameFragment()
+    void everyProviderIsTheSameFragmentOnBothPages()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
-        const SettingsPage &page = schema.page(QStringLiteral("providers"));
-        QCOMPARE(page.sections.size(), 3);
-        for (const SettingsSection &section : page.sections.sliced(0, 2)) {
-            QVERIFY(section.title.endsWith(QStringLiteral("account")));
+        // Models on Refinement: one card per service, the same shape each.
+        const SettingsPage &refinement = schema.page(QStringLiteral("refinement"));
+        for (const SettingsSection &section : refinement.sections.sliced(2)) {
             const SettingsRow &model = section.rows.first();
+            QCOMPARE(model.label, QStringLiteral("Model"));
             QCOMPARE(model.kind, RowKind::Text);
             QVERIFY(!model.suggestions(AppSettings{}).isEmpty());
             QVERIFY(std::any_of(section.rows.begin(), section.rows.end(), [](const SettingsRow &row) {
                 return row.kind == RowKind::Choice;
             }));
             QVERIFY(std::any_of(section.rows.begin(), section.rows.end(), [](const SettingsRow &row) {
-                return row.kind == RowKind::Custom;
-            }));
-            QVERIFY(std::any_of(section.rows.begin(), section.rows.end(), [](const SettingsRow &row) {
                 return row.kind == RowKind::Toggle;
             }));
         }
+        // Sign-in on Accounts: one card per service, then the server card.
+        const SettingsPage &accounts = schema.page(QStringLiteral("accounts"));
+        QCOMPARE(accounts.sections.size(), 3);
+        for (const SettingsSection &section : accounts.sections.sliced(0, 2)) {
+            QVERIFY(std::all_of(section.rows.begin(), section.rows.end(), [](const SettingsRow &row) {
+                return row.kind == RowKind::Custom;
+            }));
+            QVERIFY(hasRow(SettingsPage{{}, {}, {}, {}, {section}}, QStringLiteral("openAiAuthMode"))
+                    || hasRow(SettingsPage{{}, {}, {}, {}, {section}}, QStringLiteral("anthropicAuthMode")));
+        }
 
         AppSettings settings;
-        rowById(page, QStringLiteral("openAiModel")).apply(settings, QStringLiteral("gpt-5.4"));
-        rowById(page, QStringLiteral("anthropicEffort")).apply(settings, QStringLiteral("max"));
+        rowById(refinement, QStringLiteral("openAiModel")).apply(settings, QStringLiteral("gpt-5.4"));
+        rowById(refinement, QStringLiteral("anthropicEffort")).apply(settings, QStringLiteral("max"));
         QCOMPARE(settings.refinement.openAiModel, QStringLiteral("gpt-5.4"));
         QCOMPARE(settings.refinement.anthropicEffort, QStringLiteral("max"));
 
-        QCOMPARE(rowById(page, QStringLiteral("openAiFastMode")).value(settings).toBool(), true);
-        QCOMPARE(rowById(page, QStringLiteral("anthropicFastMode")).value(settings).toBool(), true);
-        rowById(page, QStringLiteral("openAiFastMode")).apply(settings, false);
-        rowById(page, QStringLiteral("anthropicFastMode")).apply(settings, false);
+        QCOMPARE(rowById(refinement, QStringLiteral("openAiFastMode")).value(settings).toBool(), true);
+        QCOMPARE(rowById(refinement, QStringLiteral("anthropicFastMode")).value(settings).toBool(), true);
+        rowById(refinement, QStringLiteral("openAiFastMode")).apply(settings, false);
+        rowById(refinement, QStringLiteral("anthropicFastMode")).apply(settings, false);
         QCOMPARE(settings.refinement.openAiFastMode, false);
         QCOMPARE(settings.refinement.anthropicFastMode, false);
 
-        const SettingsSection &server = page.sections.last();
-        QCOMPARE(server.title, QStringLiteral("CLI Proxy API"));
+        const SettingsSection &server = accounts.sections.last();
+        QCOMPARE(server.title, QStringLiteral("CLI Proxy API server"));
         QCOMPARE(server.rows.size(), 2);
         QCOMPARE(server.rows.at(0).id, QStringLiteral("cliproxyBaseUrl"));
         QCOMPARE(server.rows.at(1).id, QStringLiteral("cliproxyApiKey"));
@@ -373,7 +498,7 @@ private slots:
     void accountRowsSpeakOfSignInNotCredentialSources()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
-        const SettingsPage &page = schema.page(QStringLiteral("providers"));
+        const SettingsPage &page = schema.page(QStringLiteral("accounts"));
         for (const SettingsSection &section : page.sections) {
             for (const SettingsRow &row : section.rows) {
                 QVERIFY2(!row.label.contains(QStringLiteral("auth"), Qt::CaseInsensitive),
@@ -382,30 +507,19 @@ private slots:
                 QVERIFY2(!row.help.contains(QStringLiteral("credential"), Qt::CaseInsensitive),
                          qPrintable(row.id));
             }
-            // The closing note is one sentence, not a five-source fallback chain.
+            // The card's one line is one sentence, not a five-source fallback chain.
             QVERIFY2(section.help.count(QStringLiteral(". ")) == 0, qPrintable(section.help));
         }
+        // The status leads each card, then the way the sign-in is chosen.
+        QCOMPARE(page.sections.first().rows.first().id, QStringLiteral("openAiAuth"));
+        QCOMPARE(rowById(page, QStringLiteral("openAiAuth")).label, QStringLiteral("Account"));
         QCOMPARE(rowById(page, QStringLiteral("openAiAuthMode")).label, QStringLiteral("Sign-in"));
-        QCOMPARE(rowById(page, QStringLiteral("openAiAuth")).label, QStringLiteral("Status"));
-    }
-
-    void qtProviderPagesCoverEveryProviderRow()
-    {
-        const SettingsSchema schema = buildSettingsSchema(fakeContext());
-        const QStringList covered = SettingsPageSet::providerModelRowIds()
-            + SettingsPageSet::providerAuthRowIds();
-        for (const SettingsSection &section : schema.page(QStringLiteral("providers")).sections) {
-            for (const SettingsRow &row : section.rows) {
-                QVERIFY2(covered.contains(row.id),
-                         qPrintable(QStringLiteral("row %1 is on no Qt provider page").arg(row.id)));
-            }
-        }
     }
 
     void aModelThatReadsTranscriptsAsInstructionsSaysSo()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
-        const SettingsRow &caution = rowById(schema.page(QStringLiteral("providers")),
+        const SettingsRow &caution = rowById(schema.page(QStringLiteral("refinement")),
                                              QStringLiteral("anthropicModelCaution"));
         AppSettings settings;
         QVERIFY(!caution.visible(settings, Capabilities{}));
@@ -417,7 +531,7 @@ private slots:
     void recognitionRecordsRoundTripAndRetireLegacyOverrides()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
-        const SettingsRow &row = rowById(schema.page(QStringLiteral("applications")),
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("output")),
                                          QStringLiteral("appRecognitionRules"));
         const int locked = row.collection.lockedRecordCount();
         QCOMPARE(locked, int(builtInAppRecognitionRules().size()));
@@ -523,7 +637,7 @@ private slots:
     void aCorrectionKeepsTheFieldsNoColumnShows()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
-        const SettingsRow &row = rowById(schema.page(QStringLiteral("corrections")),
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("vocabulary")),
                                          QStringLiteral("learnedCorrections"));
         AppSettings settings;
         settings.learnedCorrections = {{QStringLiteral("c-1"),
@@ -550,7 +664,7 @@ private slots:
     void aCorrectionColumnCanSayWhatItsRecordKnows()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
-        const SettingsRow &row = rowById(schema.page(QStringLiteral("corrections")),
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("vocabulary")),
                                          QStringLiteral("learnedCorrections"));
         const CollectionColumn &application = row.collection.columns.last();
         QVERIFY(application.recordTooltip);
@@ -561,7 +675,7 @@ private slots:
     void replacementValidationSpeaksForItself()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
-        const SettingsRow &row = rowById(schema.page(QStringLiteral("bindings")),
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("vocabulary")),
                                          QStringLiteral("bindingRules"));
         const QList<QVariantMap> records{
             {{QStringLiteral("phrase"), QStringLiteral("my,email")},
@@ -595,7 +709,7 @@ private slots:
                  QStringLiteral("Deepgram"));
 
         const CollectionImport &json =
-            rowById(schema.page(QStringLiteral("bindings")), QStringLiteral("bindingRules"))
+            rowById(schema.page(QStringLiteral("vocabulary")), QStringLiteral("bindingRules"))
                 .collection.supportsImport;
         const QList<QVariantMap> snippets =
             json.parse(R"([{"phrase": "sign off", "replacement": "Thanks"}])", &error);
@@ -614,7 +728,7 @@ private slots:
         QVERIFY(row.tooltip.isEmpty());
         QCOMPARE(restoreClipboardDescription(),
                  QStringLiteral("Restore the previous clipboard after Speecher confirms the "
-                                "paste, or after a short delay when it cannot."));
+                                "paste, or after a short delay when it cannot"));
     }
 
     void aSavedMicrophoneSurvivesGoingMissing()

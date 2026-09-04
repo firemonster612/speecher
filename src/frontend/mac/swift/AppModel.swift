@@ -61,7 +61,10 @@ final class AppModel: ObservableObject {
         accessibilityEnabled = bridge.accessibilityEnabled
         whatsNewPending = bridge.whatsNewPending
         anthropicCredentialStatus = bridge.anthropicCredentialStatus
-        pane = UserDefaults.standard.string(forKey: Self.paneKey) ?? Pane.all[0].id
+        // A pane remembered from before the pane list changed names no longer
+        // exists; start from the first pane rather than an empty window.
+        let remembered = UserDefaults.standard.string(forKey: Self.paneKey) ?? ""
+        pane = Pane.with(id: remembered) != nil ? remembered : Pane.all[0].id
         bridge.statusChanged = { [weak self] status in
             self?.status = status
         }
@@ -121,75 +124,22 @@ final class AppModel: ObservableObject {
         return nil
     }
 
-    /// The rows a group asks for that the schema currently offers, in the order
-    /// the group named them. A pattern ending in `*` takes every row whose id
-    /// starts with it, which is how the per-category paste rules arrive.
-    func rows(matching patterns: [String]) -> [SettingsRowModel] {
-        var found: [SettingsRowModel] = []
-        for pattern in patterns {
-            guard pattern.hasSuffix("*") else {
-                if let row = row(pattern) { found.append(row) }
-                continue
-            }
-            let prefix = String(pattern.dropLast())
-            for page in pages {
-                for section in page.sections {
-                    found += section.rows.filter { $0.rowId.hasPrefix(prefix) }
-                }
-            }
-        }
-        return found
-    }
-
-    /// A pane's groups, in order, each with the rows the schema currently offers
-    /// it. A group whose rows are all absent stays in the list and draws
-    /// nothing, so the index a segmented picker holds keeps meaning what it did.
-    func groupCards(for pane: Pane) -> [PaneCard] {
-        pane.groups.map { group in
-            let placed = rows(matching: group.rows)
-            return PaneCard(title: group.title, help: footnote(group, placed), rows: placed)
-        }
-    }
-
-    /// Schema rows no pane placed explicitly, as the cards the schema itself
-    /// describes: they appear on the pane that owns their schema page, keeping
-    /// their section's title and help. A newly added schema page falls back to
-    /// General.
-    func unclaimedCards(for pane: Pane) -> [PaneCard] {
-        let claimed = Set(Pane.all.flatMap { candidate in
-            candidate.groups.flatMap { rows(matching: $0.rows).map(\.rowId) }
-        })
+    /// A pane's cards: the sections of the schema page it shows, with the rows
+    /// the schema currently offers. A schema page no pane names falls back to
+    /// General, so a newly added page is never invisible.
+    func cards(for pane: Pane) -> [PaneCard] {
         let ownedPages = Set(Pane.all.flatMap(\.schemaPages))
         return pages.flatMap { page -> [PaneCard] in
             let belongsHere = pane.schemaPages.contains(page.pageId)
                 || (pane.id == "general" && !ownedPages.contains(page.pageId))
             guard belongsHere else { return [] }
             return page.sections.compactMap { section -> PaneCard? in
-                let unplaced = page.pageId == "whatsNew"
-                    ? section.rows
-                    : section.rows.filter { !claimed.contains($0.rowId) }
-                guard !unplaced.isEmpty else { return nil }
+                guard !section.rows.isEmpty else { return nil }
                 return PaneCard(title: section.title.isEmpty ? page.title : section.title,
                                 help: section.help,
-                                rows: unplaced)
+                                rows: section.rows)
             }
         }
-    }
-
-    /// What a group says about itself, or failing that what the schema says
-    /// under the section these rows came from, or the help of a row that fills
-    /// the whole card and so has nowhere else to put it.
-    private func footnote(_ group: PaneGroup, _ rows: [SettingsRowModel]) -> String {
-        if !group.help.isEmpty { return group.help }
-        let ids = Set(rows.map(\.rowId))
-        for page in pages {
-            for section in page.sections where !section.help.isEmpty {
-                if section.rows.contains(where: { ids.contains($0.rowId) }) {
-                    return section.help
-                }
-            }
-        }
-        return rows.first { $0.collection != nil }?.help ?? ""
     }
 
     func trigger(_ rowId: String) {
@@ -265,7 +215,7 @@ final class AppModel: ObservableObject {
         let needle = query.lowercased()
         let hit = { (text: String) in text.lowercased().contains(needle) }
         if hit(pane.title) { return true }
-        return (groupCards(for: pane) + unclaimedCards(for: pane)).contains { card in
+        return cards(for: pane).contains { card in
             hit(card.title) || hit(card.help)
                 || card.rows.contains { hit($0.label) || hit($0.help) }
         }

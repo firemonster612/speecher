@@ -116,6 +116,7 @@ struct SettingsRow {
     // release-note discovery or should not appear as something new.
     QString sinceVersion;
     QString label;
+    // One line under the label, only where the label alone is not enough.
     QString help;
     std::function<QString(const AppSettings &)> helpValue;
     RowKind kind = RowKind::Info;
@@ -155,11 +156,12 @@ struct SettingsRow {
     bool expensive = false;
 };
 
+// One card of a page. Both front ends render a page as its sections, so this
+// is where the information architecture lives: which rows sit together, under
+// what heading, and in what order.
 struct SettingsSection {
-    // A section without a title is one a page has only for the shape, such as a
-    // page that is nothing but its collection.
     QString title;
-    // A footnote below the section's rows.
+    // One line under the title, only where the title alone is not enough.
     QString help;
     QList<SettingsRow> rows;
 };
