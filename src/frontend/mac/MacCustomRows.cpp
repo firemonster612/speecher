@@ -95,17 +95,17 @@ QList<RowOption> customRowOptions(const QString &rowId,
     if (rowId == QStringLiteral("openAiAuthMode")) {
         return {
             {QStringLiteral("auto"), QStringLiteral("Automatic")},
-            {QStringLiteral("codex_api_key"), QStringLiteral("Codex API key")},
-            {QStringLiteral("codex_oauth"), QStringLiteral("Codex OAuth")},
-            {QStringLiteral("env"), QStringLiteral("OPENAI_API_KEY")},
-            {QStringLiteral("settings"), QStringLiteral("App settings key")},
-            {kCliProxyAuthMode, QStringLiteral("CLI Proxy API")},
+            {QStringLiteral("codex_api_key"), QStringLiteral("API key from the Codex app")},
+            {QStringLiteral("codex_oauth"), QStringLiteral("ChatGPT sign-in from the Codex app")},
+            {QStringLiteral("env"), QStringLiteral("API key from the environment")},
+            {QStringLiteral("settings"), QStringLiteral("API key saved in Speecher")},
+            {kCliProxyAuthMode, QStringLiteral("CLI Proxy API account")},
         };
     }
     if (rowId == QStringLiteral("anthropicAuthMode")) {
         return {
-            {QStringLiteral("oauth"), QStringLiteral("Claude OAuth")},
-            {kCliProxyAuthMode, QStringLiteral("CLI Proxy API")},
+            {QStringLiteral("oauth"), QStringLiteral("Claude Code sign-in")},
+            {kCliProxyAuthMode, QStringLiteral("CLI Proxy API account")},
         };
     }
     if (rowId == QStringLiteral("openAiCliproxyAccount")) {
@@ -125,7 +125,7 @@ QString anthropicCredentialStatus(const AppSettings &draft,
     }
     const ClaudeCredentialResult credentials = ClaudeCredentials::load(
         store.claudeCredentialsPath(), false);
-    return credentials.ok ? QStringLiteral("Claude Code OAuth credentials found")
+    return credentials.ok ? QStringLiteral("Signed in with Claude Code")
                           : credentials.error;
 }
 

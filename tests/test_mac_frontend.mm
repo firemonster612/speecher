@@ -210,6 +210,36 @@ private slots:
         QVERIFY([row.help containsString:@"Sparkle"]);
     }
 
+    void accountOptionsUseUserFacingLanguage()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SettingsRowModel *openAi = settingsRow(bridge.settingsSchema, @"openAiAuthMode");
+        SettingsRowModel *anthropic = settingsRow(bridge.settingsSchema, @"anthropicAuthMode");
+        QVERIFY(openAi);
+        QVERIFY(anthropic);
+
+        QStringList openAiLabels;
+        for (RowOptionModel *option in openAi.options) {
+            openAiLabels.append(QString::fromNSString(option.label));
+        }
+        QCOMPARE(openAiLabels,
+                 QStringList({QStringLiteral("Automatic"),
+                              QStringLiteral("API key from the Codex app"),
+                              QStringLiteral("ChatGPT sign-in from the Codex app"),
+                              QStringLiteral("API key from the environment"),
+                              QStringLiteral("API key saved in Speecher"),
+                              QStringLiteral("CLI Proxy API account")}));
+
+        QStringList anthropicLabels;
+        for (RowOptionModel *option in anthropic.options) {
+            anthropicLabels.append(QString::fromNSString(option.label));
+        }
+        QCOMPARE(anthropicLabels,
+                 QStringList({QStringLiteral("Claude Code sign-in"),
+                              QStringLiteral("CLI Proxy API account")}));
+    }
+
     void anthropicCredentialStatusFollowsTheAuthMode()
     {
         QTemporaryDir directory;
@@ -232,7 +262,7 @@ private slots:
 
         QTRY_VERIFY_WITH_TIMEOUT(credentialsChanged, 2000);
         QCOMPARE(QString::fromNSString(bridge.anthropicCredentialStatus),
-                 QStringLiteral("Claude Code OAuth credentials found"));
+                 QStringLiteral("Signed in with Claude Code"));
         [bridge.settingsSchema setValue:@"cliproxy" forRowId:@"anthropicAuthMode"];
         QCOMPARE(bridge.anthropicCredentialStatus.length, NSUInteger(0));
     }
