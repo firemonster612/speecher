@@ -337,7 +337,7 @@ bool setLaunchAtLoginAutostart(bool enabled,
         "Name=Speecher\n"
         "Exec=")
         + quotedExecutablePath(executablePath).toUtf8()
-        + QByteArrayLiteral("\nHidden=false\n");
+        + QByteArrayLiteral(" --daemon\nHidden=false\n");
     return writeFile(targetPath, contents, error);
 }
 

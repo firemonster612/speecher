@@ -9,6 +9,7 @@
 #include "app/PlatformComposition.h"
 #include "core/LearnedCorrection.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsKeys.h"
 #include "platform/CorrectionDiff.h"
 #include "platform/GlobalShortcutBinder.h"
 #ifdef Q_OS_LINUX
@@ -32,6 +33,7 @@
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QScopeGuard>
+#include <QStandardPaths>
 #include <QStringList>
 #include <QTemporaryDir>
 
@@ -698,7 +700,7 @@ private slots:
                             "Name=Speecher\n"
                             "Exec=\"")
                      + QFile::encodeName(executable)
-                     + QByteArray("\"\nHidden=false\n"));
+                     + QByteArray("\" --daemon\nHidden=false\n"));
         QVERIFY(launchAtLoginAutostartEnabled());
 
         QVERIFY2(setLaunchAtLoginAutostart(false, executable, &error), qPrintable(error));
@@ -726,6 +728,44 @@ private slots:
         QVERIFY(composition.launchAtLoginEnabled());
         QVERIFY2(composition.setLaunchAtLogin(false, &error), qPrintable(error));
         QVERIFY(!composition.launchAtLoginEnabled());
+    }
+
+    void startupAdoptsAnExistingLaunchAtLoginEntry()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QByteArray oldHome = qgetenv("HOME");
+        const QByteArray oldConfigHome = qgetenv("XDG_CONFIG_HOME");
+        const auto restoreEnvironment = qScopeGuard([oldHome, oldConfigHome] {
+            oldHome.isNull() ? qunsetenv("HOME") : qputenv("HOME", oldHome);
+            oldConfigHome.isNull() ? qunsetenv("XDG_CONFIG_HOME")
+                                   : qputenv("XDG_CONFIG_HOME", oldConfigHome);
+        });
+        qputenv("HOME", QFile::encodeName(root.filePath(QStringLiteral("home"))));
+        qunsetenv("XDG_CONFIG_HOME");
+        const QString entry = QDir(QStandardPaths::writableLocation(
+                                       QStandardPaths::ConfigLocation))
+                                  .filePath(QStringLiteral(
+                                      "autostart/io.github.firemonster612.speecher.desktop"));
+        SettingsStore stored;
+        stored.raw().clear();
+        stored.raw().setValue(SettingsKeys::LaunchAtLogin, false);
+        stored.raw().sync();
+        QVERIFY(QDir().mkpath(QFileInfo(entry).dir().path()));
+        QFile existing(entry);
+        QVERIFY(existing.open(QIODevice::WriteOnly));
+        QVERIFY(existing.write("[Desktop Entry]\nExec=speecher\n") > 0);
+        existing.close();
+        const auto cleanup = qScopeGuard([entry] {
+            QFile::remove(entry);
+            SettingsStore settings;
+            settings.raw().clear();
+        });
+
+        ApplicationController controller(true, platformComposition());
+
+        QVERIFY(QFile::exists(entry));
+        QVERIFY(controller.settings()->launchAtLogin());
     }
 
     void appImageIntegrationRemovalUndoesTheInstallAndReportsIt()

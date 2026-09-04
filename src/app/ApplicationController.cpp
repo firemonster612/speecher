@@ -76,7 +76,12 @@ ApplicationController::ApplicationController(bool popupOnly,
         [platform = m_platform](bool enabled, QString *error) {
             return platform->setLaunchAtLogin(enabled, error);
         });
-    m_settings->reconcileLaunchAtLogin();
+    const bool launchAtLogin = m_settings->launchAtLogin();
+    if (!launchAtLogin && m_platform->launchAtLoginEnabled()) {
+        m_settings->setLaunchAtLogin(true);
+    } else if (launchAtLogin) {
+        m_settings->reconcileLaunchAtLogin();
+    }
     connect(m_shortcutBinder,
             &GlobalShortcutBinder::activated,
             this,
