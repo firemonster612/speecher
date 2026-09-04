@@ -49,11 +49,11 @@ header .btn{padding:8px 16px}
 h1{font-size:clamp(38px,6.4vw,68px);line-height:1.04;letter-spacing:-.025em;font-weight:750;max-width:840px;margin:0 auto;text-wrap:balance}
 .lede{max-width:620px;margin:26px auto 0;font-size:19px;color:var(--muted);text-wrap:pretty}
 .lede b{color:var(--ink)}
-.cta{margin-top:34px;display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+.cta{margin-top:44px;display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
 .cta .btn{font-size:16px}
 
 /* demo */
-.demo{max-width:640px;margin:72px auto 0;user-select:none}
+.demo{max-width:640px;margin:56px auto 0;user-select:none}
 .dcap{width:118px;height:62px;margin:0 auto;background:var(--pill);border-radius:999px;box-shadow:var(--pill-shadow);display:flex;align-items:center;justify-content:center;gap:6px}
 .dcap i{width:6px;border-radius:3px;background:var(--ink);height:22px;transform-origin:center;animation:bar 1.1s ease-in-out infinite;animation-play-state:paused}
 .demo.listening .dcap i{animation-play-state:running}
@@ -204,11 +204,6 @@ footer a{color:inherit}
     <p class="lede">Press a shortcut, say what you mean, and clean text lands in the app
       you're using. Speecher runs on your existing <b>Claude Code</b> or <b>ChatGPT</b> login.
       No API key, no meter, nothing new to pay for.</p>
-    <div class="cta">
-      <a class="btn primary" href="#download">Download</a>
-      <a class="btn" href="https://github.com/firemonster612/speecher">View source</a>
-    </div>
-
     <div class="demo" id="demo" role="button" tabindex="0" aria-label="Play or pause the dictation demo">
       <div class="dcap" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
       <div class="dpill"><span class="txt" id="dtext"></span></div>
@@ -217,6 +212,11 @@ footer a{color:inherit}
     <p class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">
       Demo: Speecher's overlay transcribes rough speech, strikes out filler and spoken
       corrections, and delivers a clean sentence to the focused app.</p>
+
+    <div class="cta">
+      <a class="btn primary" href="#download">Download</a>
+      <a class="btn" href="https://github.com/firemonster612/speecher">View source</a>
+    </div>
   </div>
 </div>
 
