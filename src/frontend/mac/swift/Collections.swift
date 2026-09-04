@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -164,16 +165,21 @@ struct CollectionRow: View {
     var body: some View {
         VStack(spacing: 0) {
             table
-                // The descriptor says how tall this table is worth being. Left
-                // to itself in a form it takes every point the pane has and
-                // pushes whatever follows it off the bottom.
-                .frame(height: CGFloat(editor.collection.minimumHeight))
+                // Derive the requested row count from the current system font.
+                // Left alone, a table takes the whole pane and pushes out what
+                // follows it.
+                .frame(height: minimumTableHeight)
             accessoryBar
         }
         .onAppear { editor.seed() }
         ForEach(editor.problems, id: \.self) { problem in
             Text(problem)
         }
+    }
+
+    private var minimumTableHeight: CGFloat {
+        let lineHeight = NSFont.preferredFont(forTextStyle: .body).boundingRectForFont.height
+        return CGFloat(max(1, editor.collection.minimumVisibleRows)) * lineHeight * 2
     }
 
     private var table: some View {

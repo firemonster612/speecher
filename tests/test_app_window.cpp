@@ -35,6 +35,7 @@
 #include <QToolButton>
 #include <QSaveFile>
 #include <QScopeGuard>
+#include <QScrollBar>
 #include <QSignalSpy>
 #include <QSplitter>
 #include <QStandardPaths>
@@ -48,6 +49,17 @@
 using namespace speecher;
 
 namespace {
+
+template<typename T>
+T *ancestorOf(QWidget *widget)
+{
+    for (QWidget *candidate = widget->parentWidget(); candidate; candidate = candidate->parentWidget()) {
+        if (auto *match = qobject_cast<T *>(candidate)) {
+            return match;
+        }
+    }
+    return nullptr;
+}
 
 #ifdef SPEECHER_WITH_KPAGEWIDGET
 KPageWidget *sidebar(AppWindow &window)
@@ -399,36 +411,22 @@ private slots:
         QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::Refinement);
     }
 
-    void dictationSummaryNamesTheShortcutAndOutputInUserTerms()
+    void dictationSummaryNamesOutputWithoutRepeatingTheShortcut()
     {
         ApplicationController controller(true);
         DictationPage page(&controller);
         page.show();
         QCoreApplication::processEvents();
 
-        // No Theme card; the slot shows the Global Shortcut.
+        // The editor card at the top is the Global Shortcut summary.
         QVERIFY(!page.findChild<QLabel *>(QStringLiteral("themeSummary")));
         QLabel *shortcut = page.findChild<QLabel *>(QStringLiteral("shortcutSummary"));
-        QVERIFY(shortcut);
-        const QString expected = controller.globalShortcutDisplay().isEmpty()
-            ? QString()
-            : controller.globalShortcutDisplay();
-        if (!expected.isEmpty()) {
-            QCOMPARE(shortcut->property("fullText").toString(), expected);
-        } else {
-            QVERIFY(!shortcut->property("fullText").toString().isEmpty());
-        }
-        QSignalSpy navigate(&page, &DictationPage::navigateRequested);
 #ifdef Q_OS_LINUX
-        // The editor is at the top of this page, so the card stays here.
-        QWidget *card = shortcut->parentWidget();
-        while (card && !card->property("focusesShortcutEditor").isValid()) {
-            card = card->parentWidget();
-        }
-        QVERIFY(card);
-        QTest::mouseClick(card, Qt::LeftButton);
-        QCOMPARE(navigate.count(), 0);
+        QVERIFY(!shortcut);
+        QCOMPARE(page.findChildren<QPushButton *>(QStringLiteral("summaryCard")).size(), 3);
 #else
+        QVERIFY(shortcut);
+        QSignalSpy navigate(&page, &DictationPage::navigateRequested);
         QWidget *card = shortcut->parentWidget();
         while (card && !card->property("navTarget").isValid()) {
             card = card->parentWidget();
@@ -448,6 +446,26 @@ private slots:
             }
         }
         QVERIFY(output);
+    }
+
+    void dictationPageFitsTheMinimumPaneWithoutClippingHelp()
+    {
+        ApplicationController controller(true);
+        DictationPage page(&controller);
+        page.resize(540, 520);
+        page.show();
+        QCoreApplication::processEvents();
+
+        QCOMPARE(page.horizontalScrollBar()->maximum(), 0);
+        for (QLabel *subtitle : page.findChildren<QLabel *>(QStringLiteral("rowSubtitle"))) {
+            if (!subtitle->isVisibleTo(&page)) {
+                continue;
+            }
+            QVERIFY(subtitle->height() >= subtitle->heightForWidth(subtitle->width()));
+            auto *row = ancestorOf<settings::FormRow>(subtitle);
+            QVERIFY(row);
+            QVERIFY(row->rect().contains(QRect(subtitle->mapTo(row, QPoint()), subtitle->size())));
+        }
     }
 
     void dictationTranscriptStaysReadOnlyAndCopies()

@@ -14,6 +14,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QSizePolicy>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -113,6 +114,8 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     m_command = new QLabel(m_manualControls);
     m_command->setObjectName(QStringLiteral("globalShortcutCommand"));
     m_command->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    m_command->setWordWrap(true);
+    m_command->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     m_command->setTextInteractionFlags(Qt::TextSelectableByMouse
                                        | Qt::TextSelectableByKeyboard);
     auto *copy = new QToolButton(m_manualControls);

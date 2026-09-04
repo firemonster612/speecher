@@ -101,6 +101,7 @@ private:
     QWidget *m_headerUnderline = nullptr;
     // The rows the current search query matches, first page first.
     QList<settings::FormRow *> m_rowMatches;
+    settings::FormRow *m_lastAutoJumpRow = nullptr;
     QLabel *m_pageTitle = nullptr;
     QToolButton *m_backButton = nullptr;
     // The sidebar row that was current when What's New opened.

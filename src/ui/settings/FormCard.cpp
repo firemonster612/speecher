@@ -3,12 +3,13 @@
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QAbstractButton>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QFrame>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QLineEdit>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QSizePolicy>
 #include <QStyle>
@@ -21,6 +22,7 @@ namespace speecher::settings {
 namespace {
 
 constexpr int kFlashMilliseconds = 1100;
+constexpr int kCardColumnStretch = 1000;
 
 QLabel *makeSubtitleLabel(const QString &text, QWidget *parent)
 {
@@ -63,6 +65,7 @@ FormRow::FormRow(const QString &title, const QString &subtitle, QWidget *parent)
     , m_textLayout(new QVBoxLayout(m_textColumn))
     , m_headLayout(new QHBoxLayout)
     , m_layout(new QVBoxLayout(this))
+    , m_flashTimer(new QTimer(this))
 {
     setObjectName(QStringLiteral("formRow"));
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
@@ -87,6 +90,13 @@ FormRow::FormRow(const QString &title, const QString &subtitle, QWidget *parent)
     m_layout->addLayout(m_headLayout);
     // A row that is nothing but its editor has no head to show.
     m_textColumn->setVisible(!title.isEmpty() || !subtitle.isEmpty());
+    m_flashTimer->setSingleShot(true);
+    m_flashTimer->setInterval(kFlashMilliseconds);
+    connect(m_flashTimer, &QTimer::timeout, this, [this] {
+        m_flashing = false;
+        applyFlashPalette(false);
+        update();
+    });
 }
 
 void FormRow::setControl(QWidget *control)
@@ -95,8 +105,7 @@ void FormRow::setControl(QWidget *control)
     control->setParent(this);
     // Right-aligned, with the shared minimum so the column of controls lines
     // up when their contents are short.
-    if (qobject_cast<QComboBox *>(control) || qobject_cast<QLineEdit *>(control)
-        || control->inherits("QAbstractSpinBox")) {
+    if (qobject_cast<QComboBox *>(control) || control->inherits("QAbstractSpinBox")) {
         control->setMinimumWidth(qMax(control->minimumWidth(), controlMinimumWidth()));
     }
     if (auto *label = qobject_cast<QLabel *>(control)) {
@@ -105,6 +114,7 @@ void FormRow::setControl(QWidget *control)
         label->setMaximumWidth(valueMaximumWidth());
     }
     m_headLayout->addWidget(control, 0, Qt::AlignRight | Qt::AlignVCenter);
+    m_title->setBuddy(control);
     m_textColumn->show();
 }
 
@@ -114,12 +124,16 @@ void FormRow::setEditor(QWidget *editor)
     editor->setParent(this);
     editor->setSizePolicy(QSizePolicy::Expanding, editor->sizePolicy().verticalPolicy());
     m_layout->addWidget(editor);
+    m_title->setBuddy(editor);
 }
 
 void FormRow::setDetail(QWidget *detail)
 {
     m_detail = detail;
     detail->setParent(m_textColumn);
+    if (auto *label = qobject_cast<QLabel *>(detail)) {
+        label->setForegroundRole(QPalette::PlaceholderText);
+    }
     m_textLayout->addWidget(detail);
     m_textColumn->show();
 }
@@ -157,11 +171,7 @@ void FormRow::flash()
     m_flashing = true;
     applyFlashPalette(true);
     update();
-    QTimer::singleShot(kFlashMilliseconds, this, [this] {
-        m_flashing = false;
-        applyFlashPalette(false);
-        update();
-    });
+    m_flashTimer->start();
 }
 
 // The labels read in the highlight's own text colour while the highlight is
@@ -171,8 +181,20 @@ void FormRow::applyFlashPalette(bool flashing)
     m_title->setForegroundRole(flashing ? QPalette::HighlightedText : QPalette::WindowText);
     m_subtitle->setForegroundRole(flashing ? QPalette::HighlightedText : QPalette::PlaceholderText);
     if (auto *label = qobject_cast<QLabel *>(m_detail)) {
-        label->setForegroundRole(flashing ? QPalette::HighlightedText : QPalette::WindowText);
+        label->setForegroundRole(flashing ? QPalette::HighlightedText : QPalette::PlaceholderText);
     }
+}
+
+void FormRow::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton && isEnabled()) {
+        if (auto *toggle = qobject_cast<QCheckBox *>(m_control); toggle && toggle->isEnabled()) {
+            toggle->toggle();
+            event->accept();
+            return;
+        }
+    }
+    QWidget::mouseReleaseEvent(event);
 }
 
 void FormRow::paintEvent(QPaintEvent *event)
@@ -276,7 +298,7 @@ QVBoxLayout *makeCardColumn(QBoxLayout *pageLayout, QWidget *parent)
     // The column takes the width first, up to its maximum; only what is left
     // over goes to the two margins, in equal shares, which is what centres it.
     row->addStretch(1);
-    row->addWidget(column, 1000);
+    row->addWidget(column, kCardColumnStretch);
     row->addStretch(1);
     pageLayout->addLayout(row);
     return layout;

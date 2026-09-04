@@ -215,7 +215,11 @@ void OutputCustomRows::refresh()
                 ? QStringLiteral("Automatic pastes with the virtual keyboard and falls back to the clipboard.")
                 : QStringLiteral("Automatic copies to the clipboard. Set up the virtual keyboard below to paste as well."));
     if (m_status) {
-        setWrappedText(m_status, status.label + QStringLiteral(". ") + status.detail);
+        setWrappedText(m_status,
+                       status.state == YdotoolSetupState::NotInstalled
+                           ? QStringLiteral("ydotool is not installed")
+                           : status.label);
+        m_status->setToolTip(status.detail);
     }
     updateButtons();
 }

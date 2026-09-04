@@ -6,6 +6,7 @@
 #include <QString>
 
 class QComboBox;
+class QAbstractItemView;
 class QLabel;
 class QLayout;
 class QPalette;
@@ -28,8 +29,7 @@ void setComboItemEnabled(QComboBox *combo,
                          bool enabled,
                          const QString &toolTip = QString());
 
-// The spacing scale every settings surface shares. Nothing else in the UI
-// carries a pixel number of its own.
+// The spacing scale shared by the settings form-card surfaces.
 int tightSpacing();
 int relatedSpacing();
 int groupGap();
@@ -46,6 +46,7 @@ int cardMaximumWidth();
 int controlMinimumWidth();
 // A read-only value on the right wraps rather than growing past this.
 int valueMaximumWidth();
+int collectionEditorMinimumHeight(const QAbstractItemView *view, int visibleRows);
 
 // True while the KDE platform theme is drawing this process, which is the only
 // time kdeglobals colours match the palette the rest of the window uses.

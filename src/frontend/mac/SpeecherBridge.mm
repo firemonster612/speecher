@@ -318,7 +318,7 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @property (nonatomic, copy) NSString *importLabel;
 @property (nonatomic, copy) NSArray<NSString *> *importFileExtensions;
 @property (nonatomic, copy) NSArray<RowOptionModel *> *actions;
-@property (nonatomic) NSInteger minimumHeight;
+@property (nonatomic) NSInteger minimumVisibleRows;
 @end
 
 @implementation CollectionModel
@@ -489,7 +489,7 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
         ? fileExtensions(collection.supportsImport.fileFilter)
         : @[];
     model.actions = [self bridgedOptions:collection.actions];
-    model.minimumHeight = collection.minimumHeight;
+    model.minimumVisibleRows = collection.minimumVisibleRows;
     return model;
 }
 

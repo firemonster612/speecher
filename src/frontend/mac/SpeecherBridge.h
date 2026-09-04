@@ -67,7 +67,7 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, copy) NSArray<NSString *> *importFileExtensions;
 // Commands beyond add and delete, which the editor implements itself.
 @property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *actions;
-@property (nonatomic, readonly) NSInteger minimumHeight;
+@property (nonatomic, readonly) NSInteger minimumVisibleRows;
 @end
 
 @interface SettingsRowModel : NSObject

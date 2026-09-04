@@ -760,7 +760,7 @@ SettingsRow appRecognitionRuleRow()
     rules.blankRecord = {{kSourceColumn, QStringLiteral("Custom")}};
     rules.lockedRecordCount = [] { return int(builtInAppRecognitionRules().size()); };
     rules.addLabel = QStringLiteral("Add application");
-    rules.minimumHeight = 220;
+    rules.minimumVisibleRows = 5;
 
     return collectionRow(
         QStringLiteral("appRecognitionRules"),
@@ -828,7 +828,7 @@ SettingsRow applicationPasteRuleRow()
         return validatePasteRules(applicationPasteRules(records));
     };
     descriptor.addLabel = QStringLiteral("Add rule");
-    descriptor.minimumHeight = 150;
+    descriptor.minimumVisibleRows = 3;
 
     return collectionRow(QStringLiteral("applicationPasteRules"),
                          QStringLiteral("App-specific paste rules"),
@@ -1040,7 +1040,7 @@ SettingsRow vocabularyTermsRow()
             return vocabularyRecords(parseVocabularyCsv(csv, error));
         },
     };
-    terms.minimumHeight = 240;
+    terms.minimumVisibleRows = 6;
     return collectionRow(QStringLiteral("vocabularyEntries"),
                          QStringLiteral("Terms"),
                          QString(),
@@ -1143,7 +1143,7 @@ SettingsRow learnedCorrectionsRow()
         {QStringLiteral("undoLatestLearn"), QStringLiteral("Undo latest learn")},
         {QStringLiteral("undoDelete"), QStringLiteral("Undo delete")},
     };
-    corrections.minimumHeight = 240;
+    corrections.minimumVisibleRows = 6;
     return collectionRow(QStringLiteral("learnedCorrections"),
                          QStringLiteral("Corrections"),
                          QString(),
@@ -1201,7 +1201,7 @@ SettingsRow bindingRulesRow()
             return bindingRecords(BindingProcessor::parseJsonImport(json, error));
         },
     };
-    replacements.minimumHeight = 240;
+    replacements.minimumVisibleRows = 5;
     return collectionRow(QStringLiteral("bindingRules"),
                          QStringLiteral("Replacements"),
                          QString(),

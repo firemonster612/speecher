@@ -1151,8 +1151,11 @@ void AppWindow::filterSidebarPages(const QString &query)
         m_navigation->item(row)->setHidden(hidden.at(row));
     }
 #endif
-    if (m_rowMatches.size() == 1) {
+    if (m_rowMatches.size() == 1 && m_rowMatches.first() != m_lastAutoJumpRow) {
+        m_lastAutoJumpRow = m_rowMatches.first();
         jumpToRow(m_rowMatches.first());
+    } else if (m_rowMatches.size() != 1) {
+        m_lastAutoJumpRow = nullptr;
     }
 }
 

@@ -1,12 +1,12 @@
 #include "ui/settings/SettingsPageSupport.h"
 
-#include "dictation/DictationPorts.h"
-
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QComboBox>
 #include <QFile>
 #include <QFontMetrics>
 #include <QFrame>
+#include <QHeaderView>
 #include <QLabel>
 #include <QPalette>
 #include <QScrollArea>
@@ -14,8 +14,11 @@
 #include <QStandardItemModel>
 #include <QStandardPaths>
 #include <QStyle>
+#include <QTableView>
 #include <QTextStream>
 #include <QVBoxLayout>
+
+#include "dictation/DictationPorts.h"
 
 #ifdef SPEECHER_WITH_KCOLORSCHEME
 #include <KColorScheme>
@@ -98,6 +101,17 @@ int rowVerticalPadding() { return relatedSpacing() + tightSpacing(); }
 int cardMaximumWidth() { return kCardMaximumWidth; }
 int controlMinimumWidth() { return QFontMetrics(QApplication::font()).averageCharWidth() * 18; }
 int valueMaximumWidth() { return QFontMetrics(QApplication::font()).averageCharWidth() * 40; }
+
+int collectionEditorMinimumHeight(const QAbstractItemView *view, int visibleRows)
+{
+    const int rowHeight = view->fontMetrics().height() + 2 * rowVerticalPadding();
+    const int frame = 2 * view->style()->pixelMetric(QStyle::PM_DefaultFrameWidth, nullptr, view);
+    const auto *table = qobject_cast<const QTableView *>(view);
+    const int header = table && !table->horizontalHeader()->isHidden()
+        ? table->horizontalHeader()->sizeHint().height()
+        : 0;
+    return frame + header + qMax(1, visibleRows) * rowHeight;
+}
 
 // kdeglobals is a KConfig file, not valid QSettings INI: subgroup section
 // lines like "[Colors:Header][Inactive]" derail QSettings' parser and its

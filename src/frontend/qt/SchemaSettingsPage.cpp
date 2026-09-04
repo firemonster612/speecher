@@ -10,6 +10,7 @@
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMediaDevices>
@@ -210,10 +211,12 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
 
     if (descriptor.kind == RowKind::Collection || descriptor.kind == RowKind::Custom) {
         const SchemaCustomRow custom = supplyRow(descriptor, frame, announce);
-        const bool spans = custom.fullWidth || descriptor.kind == RowKind::Collection;
-        if (!spans) {
+        const bool spans = custom.fullWidth || descriptor.kind == RowKind::Collection
+            || qobject_cast<QLineEdit *>(custom.widget);
+        if (custom.widget->objectName().isEmpty()) {
             custom.widget->setObjectName(descriptor.id);
         }
+        custom.widget->setAccessibleName(descriptor.label);
         if (spans) {
             frame->setEditor(custom.widget);
         } else {
@@ -232,7 +235,11 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         if (!descriptor.tooltip.isEmpty()) {
             row.control->setToolTip(descriptor.tooltip);
         }
-        frame->setControl(row.control);
+        if (qobject_cast<QLineEdit *>(row.control)) {
+            frame->setEditor(row.control);
+        } else {
+            frame->setControl(row.control);
+        }
     }
     row.frame = frame;
     card->addRow(frame);

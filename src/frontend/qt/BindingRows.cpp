@@ -1,6 +1,7 @@
 #include "frontend/qt/BindingRows.h"
 
 #include "frontend/qt/CollectionRow.h"
+#include "ui/settings/SettingsPageSupport.h"
 
 #include <QAbstractItemView>
 #include <QDialog>
@@ -90,7 +91,8 @@ SchemaCustomRow BindingRows::makeReplacementRow(const SettingsRow &descriptor,
     m_list->setAlternatingRowColors(false);
     m_list->setSelectionMode(QAbstractItemView::SingleSelection);
     m_list->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_list->setMinimumHeight(m_collection.minimumHeight);
+    m_list->setMinimumHeight(
+        settings::collectionEditorMinimumHeight(m_list, m_collection.minimumVisibleRows));
 
     // The row that holds the list carries its title and padding.
     auto *layout = new QVBoxLayout(control);

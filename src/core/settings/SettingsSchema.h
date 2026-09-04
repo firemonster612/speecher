@@ -88,7 +88,9 @@ struct CollectionDescriptor {
     // end can offer the same ones; what they do stays with the front end,
     // because both of today's two undo its own edit history.
     QList<RowOption> actions;
-    int minimumHeight = 0;
+    // How many records should fit without scrolling. Each front end derives
+    // the height from its own font and native table metrics.
+    int minimumVisibleRows = 0;
 };
 
 struct NumberRange {
@@ -161,7 +163,8 @@ struct SettingsRow {
 // what heading, and in what order.
 struct SettingsSection {
     QString title;
-    // One line under the title, only where the title alone is not enough.
+    // Brief help for the card. Qt puts it under the title; SwiftUI uses the
+    // grouped section's native footer.
     QString help;
     QList<SettingsRow> rows;
 };

@@ -122,18 +122,19 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     // Extended, not single: deleting a batch of learned corrections or imported
     // vocabulary one row at a time is the slowest way to use this editor.
     m_table->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    m_table->setMinimumHeight(m_collection.minimumHeight);
+    m_table->setMinimumHeight(
+        settings::collectionEditorMinimumHeight(m_table, m_collection.minimumVisibleRows));
     m_delete->setObjectName(buttonObjectName(QStringLiteral("delete"), descriptor.id));
     m_delete->setEnabled(false);
 
     auto *buttons = new QHBoxLayout;
+    buttons->addStretch();
     if (m_collection.supportsImport.parse) {
         auto *import = new QPushButton(m_collection.supportsImport.actionLabel, this);
         import->setObjectName(buttonObjectName(QStringLiteral("import"), descriptor.id));
         connect(import, &QPushButton::clicked, this, [this] { importRecords(); });
         buttons->addWidget(import);
     }
-    buttons->addStretch();
     for (const RowOption &action : m_collection.actions) {
         auto *button = new QPushButton(action.label, this);
         button->setObjectName(buttonObjectName(action.id, descriptor.id));

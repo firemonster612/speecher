@@ -1,12 +1,14 @@
 #pragma once
 
-#include <QGroupBox>
 #include <QList>
 #include <QString>
 #include <QWidget>
 
 class QBoxLayout;
+class QGroupBox;
 class QLabel;
+class QMouseEvent;
+class QTimer;
 class QVBoxLayout;
 
 namespace speecher::settings {
@@ -43,6 +45,7 @@ public:
     bool isFlashing() const { return m_flashing; }
 
 protected:
+    void mouseReleaseEvent(QMouseEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
 
 private:
@@ -57,6 +60,7 @@ private:
     QWidget *m_control = nullptr;
     QWidget *m_editor = nullptr;
     QWidget *m_detail = nullptr;
+    QTimer *m_flashTimer;
     bool m_flashing = false;
 };
 

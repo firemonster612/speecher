@@ -293,6 +293,23 @@ private slots:
                  rowById(output, QStringLiteral("applicationPasteRules")).groupId);
     }
 
+    void collectionSizesAreRowCountsRatherThanPixels()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        for (const QString &id : {QStringLiteral("appRecognitionRules"),
+                                  QStringLiteral("applicationPasteRules"),
+                                  QStringLiteral("vocabularyEntries"),
+                                  QStringLiteral("learnedCorrections"),
+                                  QStringLiteral("bindingRules")}) {
+            const QString page = id == QStringLiteral("appRecognitionRules")
+                    || id == QStringLiteral("applicationPasteRules")
+                ? QStringLiteral("output")
+                : QStringLiteral("vocabulary");
+            QVERIFY2(rowById(schema.page(page), id).collection.minimumVisibleRows > 0,
+                     qPrintable(id));
+        }
+    }
+
     void audioTimingControlsSitUnderTimingInPlainWords()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());

@@ -25,9 +25,6 @@ class DictationPage : public QScrollArea {
 public:
     explicit DictationPage(ApplicationController *controller, QWidget *parent = nullptr);
     QPushButton *toggleButton() const;
-    // Brings the Global Shortcut editor into view and gives it focus. Nothing
-    // to do where the desktop has no editor.
-    void focusShortcutEditor();
 
 public slots:
     void setStatus(const QString &status);
@@ -59,7 +56,7 @@ private:
     QLabel *m_provider;
     QLabel *m_microphone;
     QLabel *m_output;
-    QLabel *m_shortcut;
+    QLabel *m_shortcut = nullptr;
     bool m_sessionActive = false;
 };
 

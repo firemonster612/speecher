@@ -18,6 +18,7 @@
 #include <QComboBox>
 #include <QFontMetrics>
 #include <QFrame>
+#include <QGroupBox>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QScopeGuard>
@@ -858,6 +859,8 @@ private slots:
         auto *second = new settings::FormRow(QStringLiteral("Second"), QString(), card.body());
         auto *check = new QCheckBox(second);
         second->setControl(check);
+        auto *detail = new QLabel(QStringLiteral("Status"), row);
+        row->setDetail(detail);
         card.addRow(second);
         card.show();
         QCoreApplication::processEvents();
@@ -870,13 +873,18 @@ private slots:
                  row->width() - settings::rowHorizontalPadding());
         QCOMPARE(check->mapTo(second, QPoint(check->width(), 0)).x(),
                  second->width() - settings::rowHorizontalPadding());
+        QCOMPARE(second->titleLabel()->buddy(), check);
+        QCOMPARE(detail->foregroundRole(), QPalette::PlaceholderText);
+        QTest::mouseClick(second,
+                          Qt::LeftButton,
+                          Qt::NoModifier,
+                          QPoint(settings::rowHorizontalPadding(), second->height() / 2));
+        QVERIFY(check->isChecked());
         // The control is vertically centred on the text beside it.
         const QRect controlInRow(control->mapTo(row, QPoint()), control->size());
-        const QRect titleInRow(row->titleLabel()->mapTo(row, QPoint()),
-                               QSize(row->titleLabel()->width(),
-                                     row->subtitleLabel()->mapTo(row, QPoint(0, row->subtitleLabel()->height())).y()
-                                         - row->titleLabel()->mapTo(row, QPoint()).y()));
-        QVERIFY(qAbs(controlInRow.center().y() - titleInRow.center().y()) <= 1);
+        QWidget *textColumn = row->titleLabel()->parentWidget();
+        const QRect textInRow(textColumn->mapTo(row, QPoint()), textColumn->size());
+        QVERIFY(qAbs(controlInRow.center().y() - textInRow.center().y()) <= 1);
         // The subtitle wraps, and the row is tall enough for every line.
         QLabel *help = row->subtitleLabel();
         QVERIFY(help->wordWrap());
@@ -894,7 +902,47 @@ private slots:
         QVERIFY(!row->isFlashing());
         row->flash();
         QVERIFY(row->isFlashing());
-        QTRY_VERIFY_WITH_TIMEOUT(!row->isFlashing(), 3000);
+        QTest::qWait(700);
+        row->flash();
+        QTest::qWait(600);
+        QVERIFY(row->isFlashing());
+        QTRY_VERIFY_WITH_TIMEOUT(!row->isFlashing(), 2000);
+        QCOMPARE(detail->foregroundRole(), QPalette::PlaceholderText);
+    }
+
+    void accountTextFieldsSpanTheCard()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
+        SecretStore secrets(&settings);
+        ProviderRegistry providers;
+        ProviderCustomRows providerRows(settings, secrets);
+        const std::unique_ptr<SchemaSettingsPage> page = schemaPage(
+            QStringLiteral("accounts"), *platformComposition(), providers, providerRows.factory());
+        page->load(settings.snapshot());
+        page->resize(900, 900);
+        page->show();
+        QCoreApplication::processEvents();
+
+        for (const QString &id : {QStringLiteral("cliproxyBaseUrl"),
+                                  QStringLiteral("cliproxyApiKey")}) {
+            auto *edit = page->findChild<QLineEdit *>(id);
+            QVERIFY2(edit, qPrintable(id));
+            QVERIFY2(edit->isVisibleTo(page.get()), qPrintable(id));
+            auto *row = ancestorOf<settings::FormRow>(edit);
+            QVERIFY(row);
+            QCOMPARE(row->editor(), edit);
+            QVERIFY(edit->width() > settings::controlMinimumWidth() * 2);
+        }
+
+        settings.setOpenAiAuthMode(QStringLiteral("settings"));
+        page->load(settings.snapshot());
+        QCoreApplication::processEvents();
+        auto *apiKey = page->findChild<QLineEdit *>(QStringLiteral("openAiAuth"));
+        QVERIFY(apiKey);
+        QVERIFY(apiKey->isVisibleTo(page.get()));
+        QCOMPARE(ancestorOf<settings::FormRow>(apiKey)->editor(), apiKey);
     }
 
     void settingsCardsFitANarrowPaneWithoutClipping()
