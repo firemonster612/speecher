@@ -7,9 +7,7 @@
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
 #endif
 
-#include <QColor>
 #include <QMessageBox>
-#include <QPalette>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -140,15 +138,8 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
                 updateActivePage(current ? current->widget() : nullptr);
             });
 #else
-    setWizardStyle(QWizard::ClassicStyle);
-    QPalette wizardPalette = palette();
-    const QColor window = wizardPalette.color(QPalette::Window);
-    const QColor text = wizardPalette.color(QPalette::WindowText);
-    wizardPalette.setColor(QPalette::Mid,
-                           QColor((window.red() * 4 + text.red()) / 5,
-                                  (window.green() * 4 + text.green()) / 5,
-                                  (window.blue() * 4 + text.blue()) / 5));
-    setPalette(wizardPalette);
+    // The platform's default wizard look, palette untouched: the separator it
+    // draws is the style's own, not one tuned here.
     setOption(QWizard::NoBackButtonOnStartPage);
     if (!m_singlePage) {
         setOption(QWizard::HaveCustomButton1);

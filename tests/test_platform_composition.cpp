@@ -14,9 +14,11 @@
 #include "ui/setup/SetupPages.h"
 #endif
 
+#include <QApplication>
 #include <QDir>
 #include <QFile>
 #include <QGroupBox>
+#include <QPalette>
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLayout>
@@ -312,6 +314,12 @@ private slots:
         QVERIFY(shortcut);
         QCOMPARE(shortcut->layout()->contentsMargins(), welcome->layout()->contentsMargins());
         QCOMPARE(shortcut->layout()->contentsMargins().left(), setupPageMargin());
+
+        // The assistant keeps the application palette rather than retuning a
+        // role to fight its own style's separator.
+        QVERIFY(!assistant.testAttribute(Qt::WA_SetPalette));
+        QCOMPARE(assistant.palette().color(QPalette::Mid),
+                 QApplication::palette().color(QPalette::Mid));
     }
 
     void globalShortcutSinglePageOnlyShowsTheShortcutPage()
