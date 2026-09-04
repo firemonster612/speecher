@@ -690,7 +690,7 @@ SettingsPage audioPage(const SchemaContext &context)
                  numberRow(QStringLiteral("readinessTimeoutMs"),
                            QStringLiteral("Wait for microphone"),
                            QStringLiteral("How long to wait for the microphone to deliver sound before giving up."),
-                           {150, 3000, 50, QStringLiteral(" ms")},
+                           {500, 3000, 50, QStringLiteral(" ms")},
                            [](const AppSettings &settings) { return settings.audio.readinessTimeoutMs; },
                            [](AppSettings &settings, int value) { settings.audio.readinessTimeoutMs = value; }),
              }},
