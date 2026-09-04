@@ -82,15 +82,15 @@ private slots:
         QVERIFY(positioner->configuredSize.height() > 0);
     }
 
-#ifndef SPEECHER_WITH_KCOLORSCHEME
     void positiveStatusIsNotColouredLikeALink()
     {
+        // With KColorScheme the colour comes from the scheme's PositiveText;
+        // without it, plain WindowText. Either way, never the link colour.
         QPalette palette;
         palette.setColor(QPalette::Link, QColor(0, 0, 200));
         palette.setColor(QPalette::WindowText, QColor(30, 30, 30));
-        QCOMPARE(settings::positiveTextColor(palette), palette.color(QPalette::WindowText));
+        QVERIFY(settings::positiveTextColor(palette) != palette.color(QPalette::Link));
     }
-#endif
 
     void popupCarriesNoSettingsPrompts()
     {
@@ -230,8 +230,13 @@ private slots:
             auto *text = note->findChild<QLabel *>(QStringLiteral("gateNoteText"));
             auto *action = note->findChild<QPushButton *>(QStringLiteral("gateAction"));
             QVERIFY(text && action);
+#ifdef Q_OS_MACOS
+            QVERIFY(text->text().contains(QStringLiteral("Accessibility permission")));
+            QCOMPARE(action->text(), QStringLiteral("Open Accessibility settings"));
+#else
             QVERIFY(text->text().contains(QStringLiteral("desktop accessibility")));
             QCOMPARE(action->text(), QStringLiteral("Enable desktop accessibility"));
+#endif
         }
         // One note for the whole paste-rule group, above it.
         QCOMPARE(output.findChildren<QWidget *>(QStringLiteral("gateNote")).size(), 1);
