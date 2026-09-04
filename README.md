@@ -4,7 +4,7 @@
 
 <h1 align="center">speecher</h1>
 
-<p align="center">Speech-to-text for Linux and macOS that reuses your existing subscriptions.</p>
+<p align="center">Speech-to-text for Linux, macOS, and Windows that reuses your existing subscriptions.</p>
 
 ## Quick start
 
@@ -26,13 +26,19 @@ sudo dnf install cmake ninja-build gcc-c++ qt6-qtbase-devel qt6-qtmultimedia-dev
 brew install cmake ninja pkgconf qt qtkeychain
 ```
 
+On Windows 11, install the MSVC 2022 build tools and Qt 6.8.3, then follow
+[`docs/windows.md`](docs/windows.md). Windows release builds install from
+`Speecher-Setup-x64.exe`.
+
 ### Install
 
 ```sh
 make install
 ```
 
-The Makefile detects your platform; pass `PLATFORM=linux` or `PLATFORM=macos` to be explicit.
+The Makefile detects Linux and macOS; pass `PLATFORM=linux` or
+`PLATFORM=macos` to be explicit. Windows build commands are in
+[`docs/windows.md`](docs/windows.md).
 
 On Linux this installs to your per-user prefix, `~/.local`:
 
@@ -52,6 +58,7 @@ Portable packages:
 
 - Linux: `make appimage` → `dist/Speecher-x86_64.AppImage`
 - macOS: `make dmg` → `build/speecher.dmg`, a drag-to-Applications disk image with Qt bundled
+- Windows: `pwsh packaging/windows/build-installer.ps1 -BuildDir build` → `dist\Speecher-Setup-x64.exe`
 
 ## Installation & updates
 
@@ -71,6 +78,13 @@ xattr -dr com.apple.quarantine /Applications/speecher.app
 ```
 
 The app is not Developer ID signed or notarized because there is no Apple Developer account. Releases use one stable self-signed identity so Accessibility grants survive updates. Sparkle verifies later updates with EdDSA signatures.
+
+On Windows, run `Speecher-Setup-x64.exe`. The unsigned installer may show a
+Microsoft Defender SmartScreen warning after a browser download. Choose
+**More info > Run anyway** after checking that the file came from the Speecher
+GitHub release. The installer is per-user and needs no administrator access.
+Speecher downloads later installers in-app, verifies their SHA-256 values, and
+runs them silently after the active Dictation Session finishes.
 
 The default Update Channel is Stable Release. Nightly Builds are republished from every push to `master`, not on a nightly schedule. Switch channels in **Settings > General > Updates**.
 
@@ -126,6 +140,8 @@ ctest --test-dir build --output-on-failure
 ```
 
 On macOS the Makefile adds the Homebrew Qt paths for you; the raw CMake equivalent is in `docs/macos.md`.
+Windows prerequisites, build commands, and installer details are in
+[`docs/windows.md`](docs/windows.md).
 
 Required Qt modules are Core, Widgets, Network, and Multimedia. Linux builds require the KDE GlobalAccel, WidgetsAddons, ColorScheme, and LayerShellQt development packages by default. Pass `-DSPEECHER_WITH_KDE=OFF` only for a reduced development build without the complete Plasma integration.
 
@@ -156,6 +172,7 @@ builds `build/speecher.dmg`: a copy of the app run through `macdeployqt` so Qt t
 ```sh
 ./build/speecher            # Linux
 open build/speecher.app     # macOS
+.\build\speecher.exe         # Windows PowerShell
 ./build/speecher toggle
 ./build/speecher start
 ./build/speecher stop
@@ -166,10 +183,14 @@ open build/speecher.app     # macOS
 The four CLI commands contact the running app through a per-user socket (on macOS the binary lives at `build/speecher.app/Contents/MacOS/speecher`). `toggle` switches recording on or off, `start` only starts it, `stop` only stops it, and `status` prints the current state. If `toggle` or `start` can't find a running instance, it starts a popup-only background process and begins listening. Calling `stop` or `status` without a running instance prints `idle`.
 
 On Linux, Speecher uses one window with a KDE-style sidebar, searchable settings pages, and dictation controls; `speecher settings` opens it on General settings. On macOS, Speecher is a menu bar app: dictation lives in the menu bar item and a floating panel, and settings open in a native window from the menu bar, the Dock, or ⌘,.
+On Windows, Speecher uses a WinUI 3 settings window, a notification-area icon,
+and a non-activating dictation panel.
 
 ## Uninstall
 
 Remove Speecher's shortcut in your desktop's keyboard settings. If you added an AppImage to the app menu, delete `~/.local/bin/speecher`, `~/.local/share/applications/io.github.firemonster612.speecher.desktop`, and `~/.local/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg`.
+
+On Windows, uninstall Speecher from **Settings > Apps > Installed apps**.
 
 ## Transcription
 
