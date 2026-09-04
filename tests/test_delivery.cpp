@@ -915,6 +915,60 @@ private slots:
         QCOMPARE(restored->data(QStringLiteral("image/png")), QByteArrayLiteral("fake-image"));
     }
 
+    void directInsertionRestoresClipboardAfterDelayWhenItCannotBeVerified()
+    {
+        auto *previous = new QMimeData;
+        previous->setText(QStringLiteral("previous clipboard"));
+        previous->setHtml(QStringLiteral("<b>previous clipboard</b>"));
+        previous->setData(QStringLiteral("application/x-speecher-test"),
+                          QByteArrayLiteral("custom-data"));
+        QApplication::clipboard()->setMimeData(previous);
+
+        QList<QString> attempts;
+        QHash<QString, bool> results;
+        FakeTargetProvider targetProvider;
+        targetProvider.directInsertionAvailable = true;
+        targetProvider.inserted = true;
+        targetProvider.verified = false;
+        TextDelivery delivery([&attempts, &results](
+                                  const QString &method,
+                                  const OutputSettings &,
+                                  PasteMethod) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        }, &targetProvider);
+
+        OutputSettings settings;
+        settings.restoreClipboardAfterTyping = true;
+        settings.pasteRules = {
+            {PasteRuleScope::Application,
+             QStringLiteral("org.kde.kate"),
+             PasteMethod::DirectInsert,
+             true},
+        };
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
+
+        QString clipboardDuringDelay;
+        QTimer::singleShot(0, [&clipboardDuringDelay] {
+            clipboardDuringDelay = QApplication::clipboard()->text();
+        });
+        const DeliveryResult result = delivery.deliver(
+            settings,
+            makeDeliveryContent(QStringLiteral("new text"), OutputFormat::Html),
+            target);
+        QCoreApplication::processEvents();
+
+        QCOMPARE(result.receipt, DeliveryReceipt::AcceptedByTarget);
+        QCOMPARE(result.message, QStringLiteral("Accepted by Target"));
+        QCOMPARE(clipboardDuringDelay, QStringLiteral("new text"));
+        const QMimeData *restored = QApplication::clipboard()->mimeData();
+        QCOMPARE(restored->text(), QStringLiteral("previous clipboard"));
+        QCOMPARE(restored->html(), QStringLiteral("<b>previous clipboard</b>"));
+        QCOMPARE(restored->data(QStringLiteral("application/x-speecher-test")),
+                 QByteArrayLiteral("custom-data"));
+        QVERIFY(attempts.isEmpty());
+    }
+
     void outputRestoresClipboardAfterDelayWhenVirtualKeyboardInputCannotBeVerified()
     {
         auto *previous = new QMimeData;
