@@ -108,6 +108,16 @@ std::optional<CFRange> rangeAttribute(AXUIElementRef element, CFStringRef attrib
     return valid ? std::optional<CFRange>(range) : std::nullopt;
 }
 
+std::optional<int> selectedTextOffset(AXUIElementRef element)
+{
+    const std::optional<CFRange> range = rangeAttribute(element, kAXSelectedTextRangeAttribute);
+    if (!range || range->location < 0
+        || range->location > std::numeric_limits<int>::max()) {
+        return std::nullopt;
+    }
+    return static_cast<int>(range->location);
+}
+
 QString focusedWindowTitle(pid_t processId)
 {
     if (!AXIsProcessTrusted()) {
@@ -172,6 +182,7 @@ void MacTargetProvider::releaseFocusedElement()
         m_correctionObserver->cancel();
     }
     m_valueBeforeInsertion.reset();
+    m_insertionOffset.reset();
     if (m_focusedElement) {
         CFRelease(static_cast<AXUIElementRef>(m_focusedElement));
         m_focusedElement = nullptr;
@@ -256,6 +267,7 @@ bool MacTargetProvider::canInsertText(const Target &target)
     return !target.secure
         && stillFocused(target)
         && isFocusedElement(static_cast<AXUIElementRef>(m_focusedElement))
+        && selectedTextOffset(static_cast<AXUIElementRef>(m_focusedElement)).has_value()
         && selectedTextIsSettable(static_cast<AXUIElementRef>(m_focusedElement));
 }
 
@@ -272,6 +284,13 @@ bool MacTargetProvider::insertText(const Target &target, const QString &plainTex
     // from a control that already happened to contain the text.
     m_valueBeforeInsertion = stringAttribute(static_cast<AXUIElementRef>(m_focusedElement),
                                              kAXValueAttribute);
+    m_insertionOffset = selectedTextOffset(static_cast<AXUIElementRef>(m_focusedElement));
+    if (!m_insertionOffset) {
+        if (error) {
+            *error = QStringLiteral("The focused control did not report its insertion point");
+        }
+        return false;
+    }
 
     // Setting the selected text replaces the selection, or inserts at the caret
     // when there is none.
@@ -301,11 +320,11 @@ bool MacTargetProvider::verifyInsertion(const Target &target, const QString &pla
         const QString value = stringAttribute(static_cast<AXUIElementRef>(m_focusedElement),
                                               kAXValueAttribute);
         const bool changed = !m_valueBeforeInsertion || value != *m_valueBeforeInsertion;
-        const int insertedAt = changed ? value.indexOf(plainText) : -1;
-        if (insertedAt < 0) {
+        if (!changed || !m_insertionOffset
+            || value.mid(*m_insertionOffset, plainText.size()) != plainText) {
             continue;
         }
-        observeCorrections(target, value, insertedAt, plainText);
+        observeCorrections(target, value, *m_insertionOffset, plainText);
         return true;
     }
     return false;

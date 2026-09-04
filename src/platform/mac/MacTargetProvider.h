@@ -43,6 +43,9 @@ private:
     // The control's value just before insertText wrote to it. Empty optional on
     // the paste path, where there is no baseline to compare against.
     std::optional<QString> m_valueBeforeInsertion;
+    // The AX selection location immediately before the write, so repeated text
+    // cannot make verification attach correction learning to an older copy.
+    std::optional<int> m_insertionOffset;
     std::unique_ptr<mac::CorrectionObserver> m_correctionObserver;
     bool m_correctionObservationEnabled = true;
 };
