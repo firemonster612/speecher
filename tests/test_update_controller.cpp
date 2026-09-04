@@ -10,6 +10,7 @@
 #include "ui/TranscriberPopup.h"
 
 #include <QFile>
+#include <QProcessEnvironment>
 #include <QPushButton>
 #include <QScopeGuard>
 #include <QTemporaryDir>
@@ -48,6 +49,12 @@ public:
     {
         return AppImageUpdater::shouldOfferManifest(
             manifest, currentBuildNumber, currentVersion, channel, automaticCheck);
+    }
+
+    static QProcessEnvironment restartEnvironment(const QStringList &arguments,
+                                                   QProcessEnvironment environment)
+    {
+        return AppImageUpdater::restartEnvironment(arguments, std::move(environment));
     }
 };
 
@@ -389,6 +396,28 @@ private slots:
         pendingContext.session->stopListening();
         QCOMPARE(pendingContext.session->state(), DictationState::Idle);
         QCOMPARE(pendingRestart.count(), 1);
+    }
+
+    void restartPreservesAppImageExtractAndRunMode()
+    {
+        QProcessEnvironment environment;
+        QProcessEnvironment fromArgument = AppImageUpdaterTestAccess::restartEnvironment(
+            {QStringLiteral("Speecher.AppImage"),
+             QStringLiteral("--appimage-extract-and-run")},
+            environment);
+        QCOMPARE(fromArgument.value(QStringLiteral("APPIMAGE_EXTRACT_AND_RUN")),
+                 QStringLiteral("1"));
+
+        environment.insert(QStringLiteral("APPIMAGE_EXTRACT_AND_RUN"),
+                           QStringLiteral("1"));
+        QProcessEnvironment fromEnvironment =
+            AppImageUpdaterTestAccess::restartEnvironment({}, environment);
+        QCOMPARE(fromEnvironment.value(QStringLiteral("APPIMAGE_EXTRACT_AND_RUN")),
+                 QStringLiteral("1"));
+
+        QProcessEnvironment normal =
+            AppImageUpdaterTestAccess::restartEnvironment({}, {});
+        QVERIFY(!normal.contains(QStringLiteral("APPIMAGE_EXTRACT_AND_RUN")));
     }
 
     void bannerAndChipVisibilityFollowUpdateState()

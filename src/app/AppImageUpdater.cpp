@@ -10,6 +10,8 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLocalServer>
+#include <QLocalSocket>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -17,6 +19,7 @@
 #include <QRegularExpression>
 #include <QTemporaryFile>
 #include <QTimer>
+#include <QUuid>
 
 #include <cerrno>
 #include <cstring>
@@ -28,6 +31,8 @@ namespace {
 
 constexpr qint64 startupCheckIntervalMs = 20LL * 60 * 60 * 1000;
 constexpr int dailyCheckIntervalMs = 24 * 60 * 60 * 1000;
+constexpr int restartHandshakeTimeoutMs = 15000;
+constexpr auto restartSocketEnvironment = "SPEECHER_RESTART_SOCKET";
 const QUrl stableManifestUrl(QStringLiteral(
     "https://github.com/firemonster612/speecher/releases/latest/download/update-manifest.json"));
 const QUrl nightlyManifestUrl(QStringLiteral(
@@ -153,6 +158,21 @@ bool AppImageUpdater::bannerVisible() const
         || m_state == State::RestartPending;
 }
 
+void AppImageUpdater::waitForRestartParent()
+{
+    const QString socketName = qEnvironmentVariable(restartSocketEnvironment);
+    if (socketName.isEmpty()) {
+        return;
+    }
+    qunsetenv(restartSocketEnvironment);
+
+    QLocalSocket socket;
+    socket.connectToServer(socketName);
+    if (socket.waitForConnected(restartHandshakeTimeoutMs)) {
+        socket.waitForDisconnected(restartHandshakeTimeoutMs);
+    }
+}
+
 std::optional<UpdateManifest> AppImageUpdater::parseManifest(const QByteArray &json,
                                                               QString *error)
 {
@@ -198,6 +218,18 @@ bool AppImageUpdater::shouldOfferManifest(const UpdateManifest &manifest,
         || (!automaticCheck
             && channel == UpdateChannel::Stable
             && currentVersion.contains(QStringLiteral("-nightly")));
+}
+
+QProcessEnvironment AppImageUpdater::restartEnvironment(
+    const QStringList &arguments,
+    QProcessEnvironment environment)
+{
+    if (environment.contains(QStringLiteral("APPIMAGE_EXTRACT_AND_RUN"))
+        || arguments.contains(QStringLiteral("--appimage-extract-and-run"))) {
+        environment.insert(QStringLiteral("APPIMAGE_EXTRACT_AND_RUN"),
+                           QStringLiteral("1"));
+    }
+    return environment;
 }
 
 std::optional<AppImageFileIdentity> AppImageUpdater::fileIdentity(const QString &path,
@@ -574,13 +606,46 @@ void AppImageUpdater::restartAppImage()
         emit openReleasePageRequested();
         return;
     }
-    if (!QProcess::startDetached(m_appImagePath,
-                                 {},
-                                 QFileInfo(m_appImagePath).absolutePath())) {
+    m_restartServer = new QLocalServer(this);
+    const QString socketName = QStringLiteral("speecher-restart-%1").arg(
+        QUuid::createUuid().toString(QUuid::WithoutBraces));
+    if (!m_restartServer->listen(socketName)) {
+        delete m_restartServer;
+        m_restartServer = nullptr;
+        setState(State::ReadyToRestart,
+                 QStringLiteral("Could not prepare to restart Speecher."));
+        return;
+    }
+    connect(m_restartServer, &QLocalServer::newConnection, this, [this] {
+        while (QLocalSocket *socket = m_restartServer->nextPendingConnection()) {
+            socket->setParent(m_restartServer);
+        }
+        QCoreApplication::quit();
+    });
+
+    QProcess process;
+    process.setProgram(m_appImagePath);
+    process.setWorkingDirectory(QFileInfo(m_appImagePath).absolutePath());
+    QProcessEnvironment environment = restartEnvironment(
+        QCoreApplication::arguments(), QProcessEnvironment::systemEnvironment());
+    environment.insert(QString::fromLatin1(restartSocketEnvironment), socketName);
+    process.setProcessEnvironment(environment);
+    if (!process.startDetached()) {
+        delete m_restartServer;
+        m_restartServer = nullptr;
         setState(State::ReadyToRestart, QStringLiteral("Could not restart Speecher."));
         return;
     }
-    QCoreApplication::quit();
+    setState(State::RestartPending);
+    QTimer::singleShot(restartHandshakeTimeoutMs, this, [this] {
+        if (!m_restartServer) {
+            return;
+        }
+        delete m_restartServer;
+        m_restartServer = nullptr;
+        setState(State::ReadyToRestart,
+                 QStringLiteral("The updated AppImage did not finish starting."));
+    });
 }
 
 } // namespace speecher

@@ -1,4 +1,5 @@
 #include "app/ApplicationController.h"
+#include "app/AppImageUpdater.h"
 #include "app/UpdateController.h"
 #include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
@@ -123,6 +124,7 @@ int main(int argc, char **argv)
     }
 
     QApplication app(argc, argv);
+    AppImageUpdater::waitForRestartParent();
 #ifdef Q_OS_LINUX
     if (!qEnvironmentVariableIsEmpty("APPIMAGE")) {
         QIcon::setFallbackThemeName(QStringLiteral("breeze"));

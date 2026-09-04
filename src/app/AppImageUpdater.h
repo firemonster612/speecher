@@ -3,12 +3,14 @@
 #include "app/UpdateController.h"
 #include "core/AppSettings.h"
 
+#include <QProcessEnvironment>
 #include <QUrl>
 
 #include <optional>
 
 class QNetworkAccessManager;
 class QNetworkReply;
+class QLocalServer;
 class QTemporaryFile;
 class QTimer;
 
@@ -53,6 +55,7 @@ public:
     bool isAppImage() const override;
     bool supportsAutomaticDownloads() const override;
     bool bannerVisible() const override;
+    static void waitForRestartParent();
 
     static std::optional<UpdateManifest> parseManifest(const QByteArray &json,
                                                        QString *error = nullptr);
@@ -81,6 +84,8 @@ private:
                                     const QString &currentVersion,
                                     UpdateChannel channel,
                                     bool automaticCheck);
+    static QProcessEnvironment restartEnvironment(const QStringList &arguments,
+                                                  QProcessEnvironment environment);
     void beginCheck(UpdateChannel channel, bool automaticCheck);
     void updateSettingsChanged();
     QUrl manifestUrl(UpdateChannel channel) const;
@@ -100,6 +105,7 @@ private:
     QTimer *m_dailyTimer;
     QNetworkReply *m_reply = nullptr;
     QTemporaryFile *m_download = nullptr;
+    QLocalServer *m_restartServer = nullptr;
     UpdateManifest m_manifest;
     std::optional<AppImageFileIdentity> m_appImageIdentity;
     QString m_appImagePath;
