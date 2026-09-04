@@ -617,11 +617,15 @@ private slots:
         QVERIFY(sidebarRowHidden(window, 1) && !sidebarRowHidden(window, 2));
 
 #ifdef SPEECHER_WITH_KPAGEWIDGET
+        // KF6 6.13 filters after 400 ms. Check after its timer would have fired,
+        // because our replacement filter hides What's New synchronously.
+        QTest::qWait(500);
         QVERIFY(sidebarRowHidden(window, 8));
         setSidebarRow(window, 1);
         QTest::keyClick(search, Qt::Key_Return);
         QCOMPARE(sidebarCurrentRow(window), 2);
         search->clear();
+        QTest::qWait(500);
         QVERIFY(sidebarRowHidden(window, 8));
 #endif
     }
