@@ -8,6 +8,7 @@
 class QColor;
 class QComboBox;
 class QFrame;
+class QGroupBox;
 class QFormLayout;
 class QLabel;
 class QLayout;
@@ -64,8 +65,12 @@ void populateAudioInputDevices(QComboBox *combo,
                                const QString &selectedDeviceId);
 QColor positiveTextColor(const QPalette &palette);
 QLabel *makeSectionLabel(const QString &text, QWidget *parent);
-QFrame *makeSettingsCard(QWidget *parent);
-QFormLayout *cardFormLayout(QFrame *card);
+QGroupBox *makeSettingsCard(const QString &title, QWidget *parent);
+QFormLayout *cardFormLayout(QWidget *card);
+// Adds a spanning row to a card, with a hairline above every row after the first.
+void addCardRow(QFormLayout *layout, QWidget *row, QWidget *parent);
+// Wraps a section (title + card) in the shared, centred content column.
+QWidget *centerColumn(QWidget *content, QWidget *parent);
 void addSectionRow(QFormLayout *form, const QString &title, QWidget *parent);
 QVBoxLayout *makeSettingsPage(QScrollArea *scroll);
 

@@ -10,6 +10,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -159,11 +160,6 @@ struct QtPageLayout {
 // KDE order when the same descriptors are rendered by Qt.
 QtPageLayout qtPageLayout(SettingsPage page)
 {
-    if (page.id == QStringLiteral("general") || page.id == QStringLiteral("applications")) {
-        page.sections = {mergedSection(page.sections)};
-        return {std::move(page), {}};
-    }
-
     if (page.id == QStringLiteral("audio")) {
         // One compact card for the everyday rows; Advanced keeps its own card
         // and title so the timing controls read as optional.
@@ -191,7 +187,16 @@ QtPageLayout qtPageLayout(SettingsPage page)
                 page.sections.removeAt(virtualKeyboardSection);
             }
         }
-        page.sections.append(std::move(clipboardAndKeyboard));
+        // The app recognition rules stay last: they are the reference table
+        // the paste rules above point at.
+        int recognition = -1;
+        for (int index = 0; index < page.sections.size(); ++index) {
+            if (page.sections.at(index).title == QStringLiteral("Application recognition")) {
+                recognition = index;
+            }
+        }
+        page.sections.insert(recognition >= 0 ? recognition : page.sections.size(),
+                             std::move(clipboardAndKeyboard));
         return {std::move(page), {}};
     }
 
@@ -219,8 +224,9 @@ QWidget *addRowGroup(const QString &id, QWidget *form)
     group->setObjectName(id);
     auto *layout = new QFormLayout(group);
     layout->setContentsMargins(0, 0, 0, 0);
+    layout->setVerticalSpacing(0);
     settings::configureFormLayout(layout);
-    qobject_cast<QFormLayout *>(form->layout())->addRow(group);
+    settings::addCardRow(qobject_cast<QFormLayout *>(form->layout()), group, form);
     return group;
 }
 
@@ -273,14 +279,15 @@ void SchemaSettingsPage::addSection(const SettingsSection &section,
 {
     Section entry;
     entry.rowStart = m_rows.size();
-    if (!section.title.isEmpty()) {
-        entry.label = settings::makeSectionLabel(section.title, this);
-        pageLayout->addWidget(entry.label);
-        pageLayout->addSpacing(settings::tightSpacing());
-    }
-    QFrame *card = settings::makeSettingsCard(this);
-    // The card centers an inner widget that carries the form; rows go there,
-    // not on the card itself.
+    // A section is one column: its title, then its card of rows. The column is
+    // centred and capped so every section on the page shares the same edges.
+    auto *column = new QWidget(this);
+    column->setObjectName(QStringLiteral("settingsSection"));
+    auto *columnLayout = new QVBoxLayout(column);
+    columnLayout->setContentsMargins(0, 0, 0, 0);
+    columnLayout->setSpacing(settings::tightSpacing());
+    QGroupBox *card = settings::makeSettingsCard(section.title, column);
+    columnLayout->addWidget(card);
     QWidget *form = settings::cardFormLayout(card)->parentWidget();
     QWidget *group = nullptr;
     QWidget *groupNote = nullptr;
@@ -303,20 +310,25 @@ void SchemaSettingsPage::addSection(const SettingsSection &section,
             qobject_cast<QFormLayout *>(host->layout())->addRow(row.separator);
         }
     }
-    pageLayout->addWidget(card);
-    entry.card = card;
-    entry.rowEnd = m_rows.size();
-
+    // A card holding one full-width block repeats nothing: the card's title
+    // already names it, so the block's own header stays hidden.
+    if (section.rows.size() == 1 && section.rows.first().label == section.title) {
+        if (auto *header = card->findChild<QWidget *>(QStringLiteral("blockHeader"))) {
+            header->hide();
+        }
+    }
     if (!section.help.isEmpty()) {
-        auto *note = new QLabel(section.help, this);
+        auto *note = new QLabel(section.help, column);
         note->setObjectName(QStringLiteral("noteText"));
         note->setWordWrap(true);
-        note->setForegroundRole(QPalette::WindowText);
+        note->setForegroundRole(QPalette::PlaceholderText);
         note->setAttribute(Qt::WA_StyledBackground, false);
-        pageLayout->addSpacing(settings::relatedSpacing());
-        pageLayout->addWidget(note);
+        columnLayout->addWidget(note);
         entry.note = note;
     }
+    pageLayout->addWidget(settings::centerColumn(column, this));
+    entry.card = card;
+    entry.rowEnd = m_rows.size();
     m_sections.append(entry);
 }
 
@@ -345,7 +357,11 @@ QWidget *SchemaSettingsPage::addGateNote(const SettingsRow &descriptor, QWidget 
     auto *note = new QWidget(form);
     note->setObjectName(QStringLiteral("gateNote"));
     auto *layout = new QHBoxLayout(note);
-    layout->setContentsMargins(0, 0, 0, settings::tightSpacing());
+    // Same inset as a card row, so the note lines up with the rows it gates.
+    layout->setContentsMargins(settings::relatedSpacing(),
+                               settings::relatedSpacing(),
+                               settings::relatedSpacing(),
+                               settings::tightSpacing());
     layout->setSpacing(settings::relatedSpacing());
     auto *text = new QLabel(descriptor.disabledHelp, note);
     text->setObjectName(QStringLiteral("gateNoteText"));
@@ -382,7 +398,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
 
     if (descriptor.kind == RowKind::Collection) {
         const SchemaCustomRow editor = supplyRow(descriptor, host, announce);
-        form->addRow(editor.widget);
+        settings::addCardRow(form, editor.widget, host);
         row.frame = editor.widget;
         row.control = editor.widget;
         row.description = editor.widget->findChild<QLabel *>(QStringLiteral("rowDescription"));
@@ -416,9 +432,14 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         auto *container = new QWidget(host);
         container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         auto *containerLayout = new QVBoxLayout(container);
-        containerLayout->setContentsMargins(0, 0, 0, 0);
+        // Same inset as a card row so the block's text lines up with row titles.
+        containerLayout->setContentsMargins(settings::relatedSpacing(),
+                                            settings::relatedSpacing(),
+                                            settings::relatedSpacing(),
+                                            settings::relatedSpacing());
         containerLayout->setSpacing(settings::relatedSpacing());
         auto *header = new QWidget(container);
+        header->setObjectName(QStringLiteral("blockHeader"));
         auto *headerLayout = new QVBoxLayout(header);
         headerLayout->setContentsMargins(0, 0, 0, 0);
         headerLayout->setSpacing(settings::tightSpacing());
@@ -432,7 +453,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         containerLayout->addWidget(header);
 
         containerLayout->addWidget(custom.widget);
-        form->addRow(container);
+        settings::addCardRow(form, container, host);
         row.frame = container;
         row.control = custom.widget;
         row.description = headerHelp;
