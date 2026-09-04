@@ -475,8 +475,8 @@ SettingsPage generalPage(const SchemaContext &context)
                            [](const AppSettings &settings) { return settings.ui.soundsEnabled; },
                            [](AppSettings &settings, bool value) { settings.ui.soundsEnabled = value; }),
                  numberRow(QStringLiteral("previewWords"),
-                           QStringLiteral("Preview words"),
-                           QStringLiteral("Trailing words shown in the popup."),
+                           QStringLiteral("Live preview"),
+                           QStringLiteral("How many of the latest words the popup shows while you speak."),
                            {1, 40, 1, QString()},
                            [](const AppSettings &settings) { return settings.ui.previewWords; },
                            [](AppSettings &settings, int value) { settings.ui.previewWords = value; }),
@@ -489,7 +489,7 @@ SettingsPage generalPage(const SchemaContext &context)
              {
                  actionRow(QStringLiteral("runSetup"),
                            QStringLiteral("Setup assistant"),
-                           QStringLiteral("Check sign-in, microphone, accessibility, delivery, and refinement again."),
+                           QStringLiteral("Go through the first-run steps again, from sign-in to the Global Shortcut."),
                            QStringLiteral("Run setup assistant…")),
              }},
             {QStringLiteral("Updates"),
@@ -511,7 +511,7 @@ SettingsPage generalPage(const SchemaContext &context)
                  actionRow(kWhatsNewAction,
                            QStringLiteral("What's New"),
                            QStringLiteral("Release notes for this version, and the settings it added."),
-                           QStringLiteral("What's New…")),
+                           QStringLiteral("Open")),
              }},
         },
     };
