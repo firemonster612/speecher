@@ -569,7 +569,8 @@ private slots:
         speech->autoCompleteOnFinish = false;
         speech->emitFinalText(QStringLiteral("keep this transcript"));
         QSignalSpy message(&session, &DictationSession::popupMessageRequested);
-        speech->emitFailure(QStringLiteral("provider disconnected"));
+        // Non-retryable: the session must not try to reconnect, only deliver.
+        speech->emitFailure(QStringLiteral("provider disconnected"), false);
 
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
         QCOMPARE(delivery->lastText, QStringLiteral("keep this transcript"));
@@ -578,6 +579,111 @@ private slots:
         QCOMPARE(message.count(), 1);
         QCOMPARE(message.first().first().toString(),
                  QStringLiteral("Used raw transcript • Input sent"));
+    }
+
+    void dictationSessionReconnectsSpeechStreamAfterRetryableFailureWhileListening()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("keep this"));
+        speech->emitPartialText(QStringLiteral("and these words"));
+        QSignalSpy status(&session, &DictationSession::popupStatusChanged);
+        QSignalSpy frozen(&session, &DictationSession::popupFrozenChanged);
+        speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QCOMPARE(audio->isActive(), true);
+        QCOMPARE(delivery->calls, 0);
+        QCOMPARE(speech->startCalls, 2);
+        QCOMPARE(media->resumeCalls, 0);
+        QCOMPARE(status.count(), 0);
+        QCOMPARE(frozen.count(), 0);
+        // The transcriber replaces its own client inside startAttempt; no separate cancel.
+        QVERIFY(speech->cancelledAttempts.isEmpty());
+
+        audio->pushAudio(QByteArrayLiteral("pcm"));
+        QCOMPARE(speech->audioChunks, QList<QByteArray>({QByteArrayLiteral("pcm")}));
+
+        speech->emitFinalText(QStringLiteral("after reconnect"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(delivery->lastText, QStringLiteral("keep this and these words after reconnect"));
+    }
+
+    void dictationSessionDeliversTranscriptWhenSpeechReconnectsAreExhausted()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->autoCompleteOnFinish = false;
+        speech->emitFinalText(QStringLiteral("keep this transcript"));
+        speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+        speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+        QCOMPARE(speech->startCalls, 3);
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QCOMPARE(delivery->calls, 0);
+
+        speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(delivery->lastText, QStringLiteral("keep this transcript"));
+        QCOMPARE(speech->startCalls, 3);
+        QCOMPARE(audio->isActive(), false);
+        QCOMPARE(media->resumeCalls, 1);
+
+        // The reconnect budget belongs to the session: a new one starts fresh.
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 2000);
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+        QCOMPARE(speech->startCalls, 5);
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
+    }
+
+    void dictationSessionDoesNotReconnectAfterConnectPhaseFailure()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        // Retryable, but the stream never came up: the user should see the error now.
+        speech->emitFailure(QStringLiteral("connection refused"), true, QStringLiteral("connect"));
+
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Error), 200);
+        QCOMPARE(speech->startCalls, 1);
     }
 
     void dictationSessionFreezesTranscriptAfterSpeechFailureWhileRefining()
