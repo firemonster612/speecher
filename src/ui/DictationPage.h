@@ -41,7 +41,6 @@ private:
 
     ApplicationController *m_controller;
     AccessibilityNotice *m_accessibilityNotice;
-    QPushButton *m_toggle;
     QPushButton *m_heroToggle;
     QLabel *m_status;
     WaveformWidget *m_waveform;

@@ -207,6 +207,21 @@ private slots:
         QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("hello transcript"));
     }
 
+    void dictationHasOneStartControlAndTheHeaderHasNone()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        auto *header = window.findChild<QWidget *>(QStringLiteral("sidebarHeaderStrip"));
+        QVERIFY(header);
+        QVERIFY(header->findChildren<QPushButton *>().isEmpty());
+
+        int startControls = 0;
+        for (const QPushButton *button : window.findChildren<QPushButton *>()) {
+            startControls += button->text() == QStringLiteral("Start Dictation");
+        }
+        QCOMPARE(startControls, 1);
+    }
+
     void dictationPageShowsHonestBusyActions()
     {
         ApplicationController controller(true);

@@ -150,7 +150,6 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     : QWidget(parent)
     , m_controller(controller)
     , m_accessibilityNotice(new AccessibilityNotice(this))
-    , m_toggle(new QPushButton(this))
     , m_heroToggle(new QPushButton(this))
     , m_status(new QLabel(this))
     , m_waveform(new WaveformWidget(this))
@@ -163,8 +162,6 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     auto *pageLayout = new QVBoxLayout(this);
     settings::applyPageMargins(pageLayout);
     pageLayout->setSpacing(settings::relatedSpacing());
-    m_toggle->setMinimumWidth(0);
-    m_toggle->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
     auto *column = new QWidget(this);
     auto *columnLayout = new QVBoxLayout(column);
@@ -280,7 +277,6 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     pageLayout->addWidget(column);
     pageLayout->addStretch();
 
-    connect(m_toggle, &QPushButton::clicked, controller, &ApplicationController::toggle);
     connect(m_heroToggle, &QPushButton::clicked, controller, &ApplicationController::toggle);
     connect(controller, &ApplicationController::stateChanged, this, &DictationPage::applyState);
     connect(controller, &ApplicationController::statusChanged, this, &DictationPage::setDisplayStatus);
@@ -320,7 +316,7 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
 
 QPushButton *DictationPage::toggleButton() const
 {
-    return m_toggle;
+    return m_heroToggle;
 }
 
 void DictationPage::applyToggleState(QPushButton *button,
@@ -355,7 +351,6 @@ void DictationPage::applyState(const QString &stateName)
     const QString state = stateName.toCaseFolded();
     const bool active = state == QStringLiteral("starting") || state == QStringLiteral("listening");
     const bool refining = state == QStringLiteral("refining");
-    applyToggleState(m_toggle, active, refining, state);
     applyToggleState(m_heroToggle, active, refining, state);
     m_waveform->setVisible(active);
     if (active && !m_sessionActive) {

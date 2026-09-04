@@ -417,12 +417,6 @@ void AppWindow::buildSidebarShell()
     m_pageTitle = settings::makePageTitle(kPages.first().title, headerRight);
     headerRightLayout->addWidget(m_pageTitle);
     headerRightLayout->addStretch();
-    headerRightLayout->addWidget(m_dictation->toggleButton());
-    // Reserve the toggle button's footprint on every page so the strip keeps
-    // one height whether or not the Dictation page is showing.
-    QSizePolicy togglePolicy = m_dictation->toggleButton()->sizePolicy();
-    togglePolicy.setRetainSizeWhenHidden(true);
-    m_dictation->toggleButton()->setSizePolicy(togglePolicy);
     headerLayout->addWidget(headerRight, 1);
     header->installEventFilter(this);
     root->addWidget(header);
@@ -608,7 +602,6 @@ void AppWindow::buildSidebarShell()
         m_pageTitle->setText(index < kPages.size()
                                  ? kPages.at(index).title
                                  : QStringLiteral("What's New"));
-        m_dictation->toggleButton()->setVisible(index == 0);
     });
     connect(search, &QLineEdit::textChanged, this, &AppWindow::filterSidebarPages);
     connect(search, &QLineEdit::returnPressed, this, [this] {
