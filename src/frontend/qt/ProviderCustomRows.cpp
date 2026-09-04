@@ -191,7 +191,7 @@ SchemaCustomRow ProviderCustomRows::makeCliproxyBaseUrlRow(
 {
     m_cliproxyBaseUrl = new QLineEdit(parent);
     m_cliproxyBaseUrl->setPlaceholderText(
-        QStringLiteral("http://host:8317 — empty reads local account files"));
+        QStringLiteral("Leave empty to use the account files on this computer"));
     m_cliproxyBaseUrl->setClearButtonEnabled(true);
     QObject::connect(m_cliproxyBaseUrl,
                      &QLineEdit::textEdited,
@@ -217,7 +217,7 @@ SchemaCustomRow ProviderCustomRows::makeCliproxyApiKeyRow(
 {
     m_cliproxyApiKey = new QLineEdit(parent);
     m_cliproxyApiKey->setEchoMode(QLineEdit::Password);
-    m_cliproxyApiKey->setPlaceholderText(QStringLiteral("CLI Proxy API server api-key"));
+    m_cliproxyApiKey->setPlaceholderText(QStringLiteral("A key the server accepts"));
     m_cliproxyApiKey->setToolTip(
         QStringLiteral("Stored unencrypted in Speecher's settings file."));
     QObject::connect(m_cliproxyApiKey,
@@ -302,7 +302,10 @@ void ProviderCustomRows::populateCliproxyAccounts(QComboBox *account,
     }
     if (account->count() == 0) {
         account->addItem(QStringLiteral("No accounts found"), QString());
-        settings::setComboItemEnabled(account, 0, false, directory);
+        settings::setComboItemEnabled(
+            account, 0, false,
+            QStringLiteral("Sign in with CLI Proxy API first; Speecher looks for its accounts in %1.")
+                .arg(directory));
     }
     settings::selectData(account, selected);
 }
@@ -391,7 +394,7 @@ void ProviderCustomRows::updateCredentialControl()
         m_credential->setCurrentWidget(m_apiKey);
         m_apiKey->setPlaceholderText(m_secretLoaded
                                          ? m_secrets.status()
-                                         : QStringLiteral("Loading app settings key…"));
+                                         : QStringLiteral("Loading the saved API key…"));
         return;
     }
     m_credential->setCurrentWidget(m_authStatus);

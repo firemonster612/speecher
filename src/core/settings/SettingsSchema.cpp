@@ -1409,7 +1409,7 @@ QList<ProviderAccount> providerAccounts()
     };
     openAi.effort = &RefinementSettings::openAiEffort;
     openAi.fastModeRowId = QStringLiteral("openAiFastMode");
-    openAi.fastModeHelp = QStringLiteral("1.5x speed and increased usage (negligible).");
+    openAi.fastModeHelp = QStringLiteral("Faster answers for slightly more usage.");
     openAi.fastModeTooltip =
         QStringLiteral("Falls back to standard processing when a fast request fails.");
     openAi.fastMode = &RefinementSettings::openAiFastMode;
@@ -1521,8 +1521,8 @@ SettingsSection cliproxyServerSection()
     SettingsRow baseUrl = customRow(
         QStringLiteral("cliproxyBaseUrl"),
         QStringLiteral("Server URL"),
-        QStringLiteral("CLI Proxy API server to send refinement through. When set, the server "
-                       "picks and refreshes accounts; leave empty to read its local token files."));
+        QStringLiteral("Send text cleanup through this CLI Proxy API server. Leave empty to use "
+                       "the account files on this computer."));
     baseUrl.value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.cliproxyBaseUrl);
     };
@@ -1538,7 +1538,7 @@ SettingsSection cliproxyServerSection()
     SettingsRow apiKey = customRow(
         QStringLiteral("cliproxyApiKey"),
         QStringLiteral("Server API key"),
-        QStringLiteral("An entry from the server's api-keys list. Required when the server URL is set."));
+        QStringLiteral("One of the keys the server accepts. Needed when a server URL is set."));
     apiKey.tooltip = QStringLiteral("Stored unencrypted in Speecher's settings file.");
     apiKey.value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.cliproxyApiKey);

@@ -183,7 +183,7 @@ SchemaCustomRow OutputCustomRows::makeVirtualKeyboardRow(QWidget *parent,
             [error] { YdotoolSetup::startUserService(error.get()); },
             [this, error] {
                 if (!error->isEmpty()) {
-                    QMessageBox::warning(m_status, QStringLiteral("ydotool service"), *error);
+                    QMessageBox::warning(m_status, QStringLiteral("Virtual keyboard service"), *error);
                 }
                 refresh();
             });
@@ -267,11 +267,11 @@ void OutputCustomRows::setUpOrEnable()
             [this](const YdotoolSetupFlowResult &result) {
                 if (!result.helperOk) {
                     QMessageBox::warning(m_status,
-                                         QStringLiteral("ydotool setup failed"),
+                                         QStringLiteral("Virtual keyboard setup failed"),
                                          result.helperError);
                 } else if (!result.serviceError.isEmpty()) {
                     QMessageBox::warning(m_status,
-                                         QStringLiteral("ydotool service"),
+                                         QStringLiteral("Virtual keyboard service"),
                                          result.serviceError);
                 }
                 refresh();
@@ -295,9 +295,9 @@ void OutputCustomRows::removeSetup()
     const int answer = QMessageBox::question(
         m_status,
         QStringLiteral("Remove virtual keyboard setup"),
-        QStringLiteral("Speecher will ask for administrator permission to remove the service, udev "
-                       "rule, module-load file, and Speecher-specific group membership it manages. "
-                       "It will not uninstall the distro ydotool package."),
+        QStringLiteral("Speecher will ask for administrator permission to remove the service, the "
+                       "device rule, the module-load file and the group membership it set up. The "
+                       "ydotool package your distribution installed stays."),
         QMessageBox::Cancel | QMessageBox::Ok,
         QMessageBox::Cancel);
     if (answer != QMessageBox::Ok) {
@@ -322,12 +322,12 @@ void OutputCustomRows::removeSetup()
         [this, result] {
             if (!result->helperOk) {
                 QMessageBox::warning(
-                    m_status, QStringLiteral("ydotool removal failed"), result->helperError);
+                    m_status, QStringLiteral("Virtual keyboard removal failed"), result->helperError);
             } else if (result->status.speecherManagedSetupInstalled) {
                 QMessageBox::warning(
                     m_status,
-                    QStringLiteral("ydotool removal incomplete"),
-                    QStringLiteral("The privileged helper finished, but Speecher-managed setup files are still detected."));
+                    QStringLiteral("Virtual keyboard removal incomplete"),
+                    QStringLiteral("The removal finished, but some of the files Speecher set up are still there."));
             } else {
                 m_settings.setYdotoolEnabled(false);
                 const QSignalBlocker blocker(m_method);

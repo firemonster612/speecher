@@ -240,7 +240,7 @@ void TranscriberPopup::showOAuthRefreshIndicator()
 {
     restoreStandardLayout();
     setRefreshLayout(true);
-    m_preview->setText(QStringLiteral("Refreshing OAuth token"));
+    m_preview->setText(QStringLiteral("Renewing sign-in…"));
     m_preview->setVisible(true);
     m_previewPill->setVisible(true);
     m_preview->setMaximumWidth(520);

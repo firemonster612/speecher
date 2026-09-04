@@ -627,7 +627,7 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
 #ifdef Q_OS_MACOS
         QStringLiteral("Speecher puts the finished text on your clipboard and pastes it into the frontmost app with Cmd+V. The paste needs the Accessibility permission from the previous step; without it the text still reaches your clipboard."));
 #else
-        QStringLiteral("Speecher can set up ydotool for virtual-keyboard paste. Administrator approval is required once; Speecher remains unprivileged while dictating."));
+        QStringLiteral("Speecher can set up a virtual keyboard so it can paste into apps. Administrator approval is needed once; Speecher stays unprivileged while dictating."));
 #endif
     m_status->setWordWrap(true);
     m_progress->setRange(0, 0);
@@ -685,7 +685,7 @@ void TextDeliverySetupPage::runSetup()
 {
     m_setup->setEnabled(false);
     m_progress->setVisible(true);
-    m_status->setText(QStringLiteral("Setting up ydotool…"));
+    m_status->setText(QStringLiteral("Setting up the virtual keyboard…"));
     if (!startYdotoolSetup(
             m_settings,
             this,

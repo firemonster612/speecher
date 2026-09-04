@@ -43,11 +43,13 @@ QStringList limited(const QStringList &terms)
 
 QString summary(const QStringList &terms)
 {
-    return QStringLiteral("%1/%2 tokens, %3/%4 keyterms")
-        .arg(tokenCount(terms))
-        .arg(maxTokens)
+    // The service caps both the number of terms and their total size; say so
+    // as a sentence rather than as two fractions.
+    return QStringLiteral("%1 of %2 terms, using %3 of %4 tokens")
         .arg(terms.size())
-        .arg(maxKeyterms);
+        .arg(maxKeyterms)
+        .arg(tokenCount(terms))
+        .arg(maxTokens);
 }
 
 } // namespace speecher::VocabularyLimit

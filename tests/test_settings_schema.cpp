@@ -217,6 +217,32 @@ private slots:
 #endif
     }
 
+    void schemaCopyNamesNoImplementation()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const QStringList internals{QStringLiteral("AT-SPI"), QStringLiteral("ydotool"),
+                                    QStringLiteral("wl-copy"), QStringLiteral("OAuth"),
+                                    QStringLiteral("QtKeychain"), QStringLiteral("OPENAI_API_KEY"),
+                                    QStringLiteral("Deepgram"), QStringLiteral("RMS"),
+                                    QStringLiteral("VAD")};
+        for (const SettingsPage &page : schema.pages) {
+            for (const SettingsSection &section : page.sections) {
+                for (const SettingsRow &row : section.rows) {
+                    for (const QString &word : internals) {
+                        const QString where = row.id + QStringLiteral(" mentions ") + word;
+                        QVERIFY2(!row.label.contains(word), qPrintable(where));
+                        QVERIFY2(!row.help.contains(word), qPrintable(where));
+                        QVERIFY2(!row.disabledHelp.contains(word), qPrintable(where));
+                        QVERIFY2(!row.actionLabel.contains(word), qPrintable(where));
+                    }
+                }
+                for (const QString &word : internals) {
+                    QVERIFY2(!section.help.contains(word), qPrintable(section.title + word));
+                }
+            }
+        }
+    }
+
     void generalHasNoClipboardStatusRow()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
