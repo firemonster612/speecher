@@ -78,7 +78,9 @@ The default Update Channel is Stable Release. Nightly Builds are republished fro
 
 On macOS, Speecher registers its own global hotkey — set it in the setup assistant or Settings, including press-and-hold push-to-talk. Nothing to configure outside the app.
 
-On Linux the compositor owns global shortcuts, so bind a key to the CLI. On KDE Plasma:
+On KDE Plasma and desktops with a Global Shortcuts portal, Speecher registers the shortcut automatically. Set it in the setup assistant or Settings.
+
+If your desktop does not support either method, bind a key to the CLI manually:
 
 ```sh
 /path/to/speecher toggle
@@ -95,6 +97,8 @@ If you installed an AppImage:
 ```sh
 /path/to/Speecher-x86_64.AppImage toggle
 ```
+
+On Plasma, the manual fallback is:
 
 1. Open `System Settings > Keyboard > Shortcuts`.
 2. Select `Add New > Command or Script`.
