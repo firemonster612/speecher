@@ -78,7 +78,7 @@ private slots:
             QStringLiteral("Audio"),
             QStringLiteral("Applications"),
             QStringLiteral("Output"),
-            QStringLiteral("Auth"),
+            QStringLiteral("Accounts"),
             QStringLiteral("Refinement"),
             QStringLiteral("Vocabulary"),
         };

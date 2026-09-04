@@ -1394,15 +1394,14 @@ QList<ProviderAccount> providerAccounts()
     openAi.fastMode = &RefinementSettings::openAiFastMode;
     openAi.authRows = {
         customRow(QStringLiteral("openAiAuthMode"),
-                  QStringLiteral("OpenAI auth mode"),
-                  QStringLiteral("Credential source for OpenAI refinement and ChatGPT Codex dictation.")),
+                  QStringLiteral("Sign-in"),
+                  QStringLiteral("How Speecher signs in to OpenAI for dictation and text cleanup.")),
         customRow(QStringLiteral("openAiCliproxyAccount"),
-                  QStringLiteral("OpenAI CLI Proxy account"),
-                  QStringLiteral("CLI Proxy API Codex account used for dictation and local refinement.")),
+                  QStringLiteral("Account"),
+                  QStringLiteral("The CLI Proxy API account to use.")),
         customRow(QStringLiteral("openAiAuth"),
-                  QStringLiteral("OpenAI auth"),
-                  QStringLiteral("Current credential source, app settings key, or CLI Proxy "
-                                 "API account.")),
+                  QStringLiteral("Status"),
+                  QStringLiteral("Whether that sign-in works right now.")),
     };
     openAi.authRows[0].value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.openAiAuthMode);
@@ -1426,13 +1425,8 @@ QList<ProviderAccount> providerAccounts()
     anthropic.sectionTitle = QStringLiteral("Anthropic account");
     // The page's closing note, which belongs under the last card there is.
     anthropic.note = QStringLiteral(
-        "Automatic OpenAI auth follows the Codex auth mode when available, then falls back to "
-        "Codex API key, Codex OAuth, OPENAI_API_KEY, and the app settings key. Codex OAuth uses "
-        "the ChatGPT Codex backend. API-key modes apply to refinement; dictation uses Codex "
-        "OAuth or the selected CLI Proxy API Codex account. The app settings key is stored in "
-        "the desktop keyring through QtKeychain when available. CLI Proxy API auth reads OAuth "
-        "accounts from its auto-detected auth directory. With a server URL configured, only "
-        "refinement goes through that server; dictation still uses the selected local account.");
+        "Automatic uses the first OpenAI sign-in it finds: the Codex app, then an API key from "
+        "the environment or saved in Speecher.");
     anthropic.modelRowId = QStringLiteral("anthropicModel");
     anthropic.modelLabel = QStringLiteral("Claude model");
     anthropic.modelHelp = QStringLiteral("Model used for Anthropic refinement.");
@@ -1468,11 +1462,11 @@ QList<ProviderAccount> providerAccounts()
     anthropic.fastMode = &RefinementSettings::anthropicFastMode;
     anthropic.authRows = {
         customRow(QStringLiteral("anthropicAuthMode"),
-                  QStringLiteral("Anthropic auth"),
-                  QStringLiteral("Credential source for Anthropic refinement and Claude Voice dictation.")),
+                  QStringLiteral("Sign-in"),
+                  QStringLiteral("How Speecher signs in to Anthropic for dictation and text cleanup.")),
         customRow(QStringLiteral("anthropicCliproxyAccount"),
-                  QStringLiteral("Claude CLI Proxy account"),
-                  QStringLiteral("CLI Proxy API Claude account used for dictation and local refinement.")),
+                  QStringLiteral("Account"),
+                  QStringLiteral("The CLI Proxy API account to use.")),
     };
     anthropic.authRows[0].value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.anthropicAuthMode);

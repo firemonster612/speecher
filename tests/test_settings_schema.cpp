@@ -290,6 +290,25 @@ private slots:
         QCOMPARE(server.rows.at(1).id, QStringLiteral("cliproxyApiKey"));
     }
 
+    void accountRowsSpeakOfSignInNotCredentialSources()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsPage &page = schema.page(QStringLiteral("providers"));
+        for (const SettingsSection &section : page.sections) {
+            for (const SettingsRow &row : section.rows) {
+                QVERIFY2(!row.label.contains(QStringLiteral("auth"), Qt::CaseInsensitive),
+                         qPrintable(row.label));
+                QVERIFY2(!row.help.contains(QStringLiteral("OPENAI_API_KEY")), qPrintable(row.id));
+                QVERIFY2(!row.help.contains(QStringLiteral("credential"), Qt::CaseInsensitive),
+                         qPrintable(row.id));
+            }
+            // The closing note is one sentence, not a five-source fallback chain.
+            QVERIFY2(section.help.count(QStringLiteral(". ")) == 0, qPrintable(section.help));
+        }
+        QCOMPARE(rowById(page, QStringLiteral("openAiAuthMode")).label, QStringLiteral("Sign-in"));
+        QCOMPARE(rowById(page, QStringLiteral("openAiAuth")).label, QStringLiteral("Status"));
+    }
+
     void qtProviderPagesCoverEveryProviderRow()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());

@@ -67,7 +67,7 @@ const QList<PageDefinition> kPages{
     {QStringLiteral("Audio"), QStringLiteral("preferences-desktop-sound"), QString()},
     {QStringLiteral("Applications"), QStringLiteral("preferences-desktop-default-applications"), QString()},
     {QStringLiteral("Output"), QStringLiteral("edit-paste"), QStringLiteral("edit-copy")},
-    {QStringLiteral("Auth"), QStringLiteral("preferences-desktop-user-password"), QStringLiteral("dialog-password")},
+    {QStringLiteral("Accounts"), QStringLiteral("preferences-desktop-user-password"), QStringLiteral("dialog-password")},
     {QStringLiteral("Refinement"), QStringLiteral("tools-wizard"), QStringLiteral("document-edit")},
     {QStringLiteral("Vocabulary"), QStringLiteral("accessories-dictionary"), QStringLiteral("tools-check-spelling")},
 };
@@ -319,7 +319,7 @@ void AppWindow::buildSharedPages()
     auto *authLayout = new QVBoxLayout(authContent);
     settings::applyPageMargins(authLayout);
     authLayout->setSpacing(0);
-    authLayout->addWidget(settings::makePageTitle(QStringLiteral("Auth"), authContent));
+    authLayout->addWidget(settings::makePageTitle(QStringLiteral("Accounts"), authContent));
     authLayout->addSpacing(settings::sectionGap());
     authLayout->addWidget(detachedContent(m_pages->providerAuth(), true));
     authLayout->addStretch();
