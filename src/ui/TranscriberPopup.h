@@ -18,7 +18,6 @@ namespace speecher {
 
 class PopupPositioner;
 class WaveformWidget;
-class AccessibilityNotice;
 
 class TranscriberPopup : public QWidget {
     Q_OBJECT
@@ -39,13 +38,10 @@ public slots:
     void showMessage(const QString &message);
     void showErrorMessage(const QString &message);
     void showPopup(quint64 generation);
-    void setAccessibilityState(bool supported, bool enabled, bool persistent);
-    void showAccessibilityError(const QString &message);
     void setUpdateChip(const QString &text, bool visible, bool enabled);
 
 signals:
     void errorDismissed();
-    void enableAccessibilityRequested();
     void popupPresented(quint64 generation);
     void updateRequested();
 
@@ -66,7 +62,6 @@ private:
     QProgressBar *m_errorDismissProgress = nullptr;
     QPropertyAnimation *m_errorDismissAnimation = nullptr;
     WaveformWidget *m_waveform = nullptr;
-    AccessibilityNotice *m_accessibilityNotice = nullptr;
     QPushButton *m_updateChip = nullptr;
     PopupPositioner *m_positioner = nullptr;
     QtPopupSurface m_surface{this};

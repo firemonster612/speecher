@@ -92,6 +92,15 @@ private slots:
     }
 #endif
 
+    void popupCarriesNoSettingsPrompts()
+    {
+        // The overlay cannot take focus and shows while the user speaks, so a
+        // system-configuration action does not belong on it.
+        TranscriberPopup popup(new SizingPopupPositioner);
+        QVERIFY(!popup.findChild<AccessibilityNotice *>());
+        QVERIFY(!popup.findChild<QPushButton *>(QStringLiteral("enableAccessibilityButton")));
+    }
+
     void popupUsesTheApplicationFontAndNoStylesheet()
     {
         TranscriberPopup popup(new SizingPopupPositioner);

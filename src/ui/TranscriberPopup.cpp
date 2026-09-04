@@ -1,6 +1,5 @@
 #include "ui/TranscriberPopup.h"
 
-#include "ui/AccessibilityNotice.h"
 #include "platform/FallbackPopupPositioner.h"
 #include "ui/WaveformWidget.h"
 
@@ -92,7 +91,6 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     , m_preview(new QLabel(this))
     , m_errorDismissProgress(new DismissBar(m_previewPill))
     , m_waveform(new WaveformWidget(this))
-    , m_accessibilityNotice(new AccessibilityNotice(this))
     , m_updateChip(new QPushButton(this))
     , m_positioner(positioner ? positioner : new FallbackPopupPositioner(this))
 {
@@ -162,14 +160,9 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     m_updateChip->hide();
     connect(m_updateChip, &QPushButton::clicked, this, &TranscriberPopup::updateRequested);
     m_layout->addWidget(m_updateChip, 0, Qt::AlignHCenter);
-
-    m_accessibilityNotice->setCompact(true);
-    m_accessibilityNotice->setMaximumWidth(620);
-    connect(m_accessibilityNotice,
-            &AccessibilityNotice::enableRequested,
-            this,
-            &TranscriberPopup::enableAccessibilityRequested);
-    m_layout->addWidget(m_accessibilityNotice, 0, Qt::AlignHCenter);
+    // No settings prompts here: the overlay cannot take focus and shows while
+    // the user is speaking. Desktop accessibility is offered on the Dictation
+    // page and in the setup assistant.
     m_layout->addWidget(m_waveform, 0, Qt::AlignHCenter);
     m_layout->addWidget(m_previewPill, 0, Qt::AlignHCenter);
 }
@@ -177,13 +170,10 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
 QSize TranscriberPopup::sizeHint() const
 {
     const int spacing = m_layout->spacing();
-    const int noticeHeight = m_accessibilityNotice->isHidden()
-        ? 0
-        : m_accessibilityNotice->sizeHint().height() + spacing;
     const int updateHeight = m_updateChip->isHidden()
         ? 0
         : m_updateChip->sizeHint().height() + spacing;
-    return QSize(620, 110 + noticeHeight + updateHeight);
+    return QSize(620, 110 + updateHeight);
 }
 
 void TranscriberPopup::setStatus(const QString &status)
@@ -310,26 +300,6 @@ void TranscriberPopup::showPopup(quint64 generation)
     show();
     raise();
     update();
-}
-
-void TranscriberPopup::setAccessibilityState(bool supported,
-                                             bool enabled,
-                                             bool persistent)
-{
-    m_accessibilityNotice->setState(supported, enabled, persistent);
-    adjustSize();
-    if (isVisible()) {
-        m_positioner->positionBottomCenter(m_surface);
-    }
-}
-
-void TranscriberPopup::showAccessibilityError(const QString &message)
-{
-    m_accessibilityNotice->showError(message);
-    adjustSize();
-    if (isVisible()) {
-        m_positioner->positionBottomCenter(m_surface);
-    }
 }
 
 void TranscriberPopup::setUpdateChip(const QString &text, bool visible, bool enabled)
