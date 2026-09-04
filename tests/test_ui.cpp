@@ -217,6 +217,24 @@ private slots:
         QVERIFY(!refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(!corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
 
+        // The reason is on the page, not only in a tooltip, with the fix beside it.
+        for (SchemaSettingsPage *page : {&output, &applications, &refinement, &corrections}) {
+            auto *note = page->findChild<QWidget *>(QStringLiteral("gateNote"));
+            QVERIFY(note);
+            QVERIFY(note->isVisibleTo(page));
+            auto *text = note->findChild<QLabel *>(QStringLiteral("gateNoteText"));
+            auto *action = note->findChild<QPushButton *>(QStringLiteral("gateAction"));
+            QVERIFY(text && action);
+            QVERIFY(text->text().contains(QStringLiteral("desktop accessibility")));
+            QCOMPARE(action->text(), QStringLiteral("Enable desktop accessibility"));
+        }
+        // One note for the whole paste-rule group, above it.
+        QCOMPARE(output.findChildren<QWidget *>(QStringLiteral("gateNote")).size(), 1);
+        QSignalSpy triggered(&applications, &SchemaSettingsPage::actionTriggered);
+        applications.findChild<QPushButton *>(QStringLiteral("gateAction"))->click();
+        QCOMPARE(triggered.count(), 1);
+        QCOMPARE(triggered.first().first().toString(), QStringLiteral("enableAccessibility"));
+
         output.setCapabilities({true});
         applications.setCapabilities({true});
         refinement.setCapabilities({true});
@@ -228,6 +246,9 @@ private slots:
         QVERIFY(applications.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
         QVERIFY(refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
+        for (SchemaSettingsPage *page : {&output, &applications, &refinement, &corrections}) {
+            QVERIFY(!page->findChild<QWidget *>(QStringLiteral("gateNote"))->isVisibleTo(page));
+        }
     }
 
     void linuxSettingsLayoutsMatchMasterAndKeepSchemaRows()

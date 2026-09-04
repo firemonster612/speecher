@@ -125,8 +125,13 @@ struct SettingsRow {
     int contentWidthHint = 0;
     // Shown on the control itself, where help sits beneath the label.
     QString tooltip;
-    // Replaces tooltip while enabled says no.
+    // Replaces tooltip while enabled says no. A front end shows it beside the
+    // disabled control, not only on hover.
     QString disabledHelp;
+    // An action a front end can run to lift the gate, with the caption of the
+    // control that runs it. Empty when nothing in the app can.
+    QString disabledAction;
+    QString disabledActionLabel;
     // Rows that name the same group render inside one container and are enabled
     // or disabled together, so they must all declare the same gate.
     QString groupId;

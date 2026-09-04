@@ -429,6 +429,17 @@ void SettingsPageSet::runPageAction(const QString &rowId)
     if (rowId == QStringLiteral("whatsNew")) {
         m_controller->clearPendingWhatsNew();
         emit whatsNewRequested();
+        return;
+    }
+    if (rowId == QStringLiteral("enableAccessibility")) {
+        QString error;
+        if (!m_controller->enableAccessibility(&error)) {
+            QMessageBox::warning(qobject_cast<QWidget *>(parent()),
+                                 QStringLiteral("Desktop accessibility"),
+                                 error.isEmpty()
+                                     ? QStringLiteral("Desktop accessibility could not be turned on.")
+                                     : error);
+        }
     }
 }
 

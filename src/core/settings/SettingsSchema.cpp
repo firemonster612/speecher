@@ -117,6 +117,24 @@ QString targetAccessibilityHint()
 #endif
 }
 
+// The action the front end runs to lift an accessibility gate, and the row
+// state that names it. Every row that needs a known target declares this.
+const QString kEnableAccessibilityAction = QStringLiteral("enableAccessibility");
+
+void gateOnTargetAccessibility(SettingsRow &row, const QString &help)
+{
+    row.enabled = [](const AppSettings &, const Capabilities &capabilities) {
+        return capabilities.targetAccessibility;
+    };
+    row.disabledHelp = help;
+    row.disabledAction = kEnableAccessibilityAction;
+#ifdef Q_OS_MACOS
+    row.disabledActionLabel = QStringLiteral("Open Accessibility settings");
+#else
+    row.disabledActionLabel = QStringLiteral("Enable desktop accessibility");
+#endif
+}
+
 // The categories the Output page offers a paste rule for. A rule stored for any
 // other category is left alone rather than dropped.
 QList<AppCategory> managedPasteCategories()
@@ -660,11 +678,9 @@ SettingsPage refinementPage(const SchemaContext &context)
         QStringLiteral("Send the target app's context to the refiner"),
         [](const AppSettings &settings) { return settings.refinement.useTargetContext; },
         [](AppSettings &settings, bool value) { settings.refinement.useTargetContext = value; });
-    targetContext.disabledHelp =
-        QStringLiteral("Turn on desktop accessibility to send the target app's context.");
-    targetContext.enabled = [](const AppSettings &, const Capabilities &capabilities) {
-        return capabilities.targetAccessibility;
-    };
+    gateOnTargetAccessibility(
+        targetContext,
+        QStringLiteral("Turn on desktop accessibility to send the target app's context."));
 
     SettingsRow screenshots = toggleRow(
         QStringLiteral("includeScreenshotContext"),
@@ -808,11 +824,8 @@ SettingsPage applicationsPage()
         QStringLiteral("Built-in matches are read-only. Custom matches take priority and can set the "
                        "app type used for paste rules, the Writing Profile used for refinement, or both."),
         std::move(rules));
-    row.enabled = [](const AppSettings &, const Capabilities &capabilities) {
-        return capabilities.targetAccessibility;
-    };
-    row.disabledHelp =
-        QStringLiteral("Turn on desktop accessibility to identify target applications.");
+    gateOnTargetAccessibility(
+        row, QStringLiteral("Turn on desktop accessibility to identify target applications."));
 
     return {
         QStringLiteral("applications"),
@@ -963,10 +976,7 @@ SettingsPage outputPage(const SchemaContext &context)
     // they stand or fall together with desktop accessibility.
     for (int index = 1; index < pasteRows.size(); ++index) {
         pasteRows[index].groupId = QStringLiteral("targetPasteControls");
-        pasteRows[index].enabled = [](const AppSettings &, const Capabilities &capabilities) {
-            return capabilities.targetAccessibility;
-        };
-        pasteRows[index].disabledHelp = targetAccessibilityHint();
+        gateOnTargetAccessibility(pasteRows[index], targetAccessibilityHint());
     }
 
     QList<SettingsSection> sections{
@@ -1165,11 +1175,8 @@ SettingsPage correctionsPage()
         [](AppSettings &settings, bool value) { settings.correctionLearningEnabled = value; });
     learn.tooltip = QStringLiteral("Observe a verified inserted span briefly and automatically "
                                    "learn high-confidence or repeated corrections.");
-    learn.disabledHelp =
-        QStringLiteral("Turn on desktop accessibility to learn corrections after insertion.");
-    learn.enabled = [](const AppSettings &, const Capabilities &capabilities) {
-        return capabilities.targetAccessibility;
-    };
+    gateOnTargetAccessibility(
+        learn, QStringLiteral("Turn on desktop accessibility to learn corrections after insertion."));
 
     CollectionDescriptor corrections;
     corrections.columns = {
