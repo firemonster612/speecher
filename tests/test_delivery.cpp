@@ -82,12 +82,20 @@ private slots:
         QFile bundledFile(bundled);
         QVERIFY(bundledFile.open(QIODevice::WriteOnly));
         bundledFile.close();
+        QVERIFY(QFile::setPermissions(bundled,
+                                      QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                          | QFileDevice::ExeOwner));
         QCOMPARE(resolvedHelperPath("/usr/libexec/speecher/helper", applicationDir),
                  QFileInfo(bundled).canonicalFilePath());
 
         QFile siblingFile(sibling);
         QVERIFY(siblingFile.open(QIODevice::WriteOnly));
         siblingFile.close();
+        QCOMPARE(resolvedHelperPath("/usr/libexec/speecher/helper", applicationDir),
+                 QFileInfo(bundled).canonicalFilePath());
+        QVERIFY(QFile::setPermissions(sibling,
+                                      QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                          | QFileDevice::ExeOwner));
         QCOMPARE(resolvedHelperPath("/usr/libexec/speecher/helper", applicationDir),
                  QFileInfo(sibling).canonicalFilePath());
 
