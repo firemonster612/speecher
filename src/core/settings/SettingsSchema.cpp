@@ -83,7 +83,7 @@ QList<RowOption> pasteMethodOptions(bool includeDirectInsert, bool includeGlobal
                     QStringLiteral("Terminal paste (Ctrl+Shift+V)")});
     if (includeDirectInsert) {
         options.append({pasteMethodName(PasteMethod::DirectInsert),
-                        QStringLiteral("Direct insertion (AT-SPI)")});
+                        QStringLiteral("Direct insertion (desktop accessibility)")});
     }
 #endif
     options.append({pasteMethodName(PasteMethod::ClipboardOnly), QStringLiteral("Clipboard only")});
@@ -95,7 +95,7 @@ QString applicationIdHint()
 #ifdef Q_OS_MACOS
     return QStringLiteral("Use the app's bundle identifier, such as com.apple.Terminal.");
 #else
-    return QStringLiteral("Use the desktop application ID reported by AT-SPI.");
+    return QStringLiteral("Use the app's desktop ID, such as org.kde.konsole.");
 #endif
 }
 
@@ -113,7 +113,7 @@ QString targetAccessibilityHint()
 #ifdef Q_OS_MACOS
     return QStringLiteral("Grant Accessibility permission so Speecher can identify the target application.");
 #else
-    return QStringLiteral("Enable desktop accessibility (AT-SPI) to identify the target application.");
+    return QStringLiteral("Turn on desktop accessibility to identify the target application.");
 #endif
 }
 
@@ -661,7 +661,7 @@ SettingsPage refinementPage(const SchemaContext &context)
         [](const AppSettings &settings) { return settings.refinement.useTargetContext; },
         [](AppSettings &settings, bool value) { settings.refinement.useTargetContext = value; });
     targetContext.disabledHelp =
-        QStringLiteral("Enable desktop accessibility (AT-SPI) to use target-aware refinement.");
+        QStringLiteral("Turn on desktop accessibility to send the target app's context.");
     targetContext.enabled = [](const AppSettings &, const Capabilities &capabilities) {
         return capabilities.targetAccessibility;
     };
@@ -812,7 +812,7 @@ SettingsPage applicationsPage()
         return capabilities.targetAccessibility;
     };
     row.disabledHelp =
-        QStringLiteral("Enable desktop accessibility (AT-SPI) to identify target applications.");
+        QStringLiteral("Turn on desktop accessibility to identify target applications.");
 
     return {
         QStringLiteral("applications"),
@@ -1166,7 +1166,7 @@ SettingsPage correctionsPage()
     learn.tooltip = QStringLiteral("Observe a verified inserted span briefly and automatically "
                                    "learn high-confidence or repeated corrections.");
     learn.disabledHelp =
-        QStringLiteral("Enable desktop accessibility (AT-SPI) to learn corrections after insertion.");
+        QStringLiteral("Turn on desktop accessibility to learn corrections after insertion.");
     learn.enabled = [](const AppSettings &, const Capabilities &capabilities) {
         return capabilities.targetAccessibility;
     };

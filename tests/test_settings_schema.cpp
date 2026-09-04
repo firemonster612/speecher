@@ -185,6 +185,18 @@ private slots:
         QVERIFY(!row.enabled(AppSettings{}, Capabilities{false}));
         QVERIFY(row.enabled(AppSettings{}, Capabilities{true}));
         QVERIFY(!row.disabledHelp.isEmpty());
+
+        // Every gate names the feature the same way, without the service name.
+        for (const SettingsPage &page : schema.pages) {
+            for (const SettingsSection &section : page.sections) {
+                for (const SettingsRow &candidate : section.rows) {
+                    QVERIFY2(!candidate.disabledHelp.contains(QStringLiteral("AT-SPI")),
+                             qPrintable(candidate.id));
+                    QVERIFY2(!candidate.help.contains(QStringLiteral("AT-SPI")),
+                             qPrintable(candidate.id));
+                }
+            }
+        }
     }
 
     void automaticInstallOnlyAppearsWhenSupported()

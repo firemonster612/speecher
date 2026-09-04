@@ -161,7 +161,9 @@ private slots:
         QVERIFY(message->text().contains(QStringLiteral("Accessibility is off")));
         QCOMPARE(button->text(), QStringLiteral("Open settings"));
 #else
-        QVERIFY(message->text().contains(QStringLiteral("AT-SPI")));
+        // One user-facing name; the service name stays in the setup page's help.
+        QVERIFY(message->text().contains(QStringLiteral("Desktop accessibility")));
+        QVERIFY(!message->text().contains(QStringLiteral("AT-SPI")));
         QCOMPARE(button->text(), QStringLiteral("Enable permanently"));
 #endif
         QSignalSpy requested(notice, &AccessibilityNotice::enableRequested);

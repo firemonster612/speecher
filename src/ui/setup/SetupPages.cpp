@@ -494,7 +494,7 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
 #ifdef Q_OS_MACOS
         QStringLiteral("Speecher pastes your dictation into the frontmost app with a synthetic Cmd+V. macOS calls that controlling your computer, so it needs Accessibility permission."));
 #else
-        QStringLiteral("AT-SPI lets Speecher identify the target app, paste into compatible fields, edit selected text, and learn corrections."));
+        QStringLiteral("Desktop accessibility (the AT-SPI service) lets Speecher identify the target app, paste into compatible fields, edit selected text, and learn corrections."));
 #endif
     m_status->setWordWrap(true);
     m_enable->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
@@ -593,7 +593,7 @@ void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool pers
     m_enable->setEnabled(!enabled);
 #else
     if (!supported) {
-        status = QStringLiteral("This Speecher build does not include AT-SPI support.");
+        status = QStringLiteral("This Speecher build does not include desktop accessibility support.");
         m_enable->setEnabled(false);
         m_enable->setText(QStringLiteral("Unavailable"));
     } else if (enabled && persistent) {
