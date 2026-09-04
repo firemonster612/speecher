@@ -10,6 +10,7 @@
 #include "ui/settings/SettingsPageSupport.h"
 #include "ui/setup/SetupPages.h"
 
+#include <QApplication>
 #include <QLabel>
 #include <QCheckBox>
 #include <QComboBox>
@@ -79,6 +80,20 @@ private slots:
 
         QVERIFY(positioner->configuredSize.width() > 0);
         QVERIFY(positioner->configuredSize.height() > 0);
+    }
+
+    void popupUsesTheApplicationFontAndNoStylesheet()
+    {
+        TranscriberPopup popup(new SizingPopupPositioner);
+        QVERIFY(popup.styleSheet().isEmpty());
+        for (const QWidget *child : popup.findChildren<QWidget *>()) {
+            QVERIFY2(child->styleSheet().isEmpty(), qPrintable(child->objectName()));
+        }
+        auto *preview = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
+        QVERIFY(preview);
+        QCOMPARE(preview->font().family(), QApplication::font().family());
+        QCOMPARE(preview->font().pointSizeF(), QApplication::font().pointSizeF());
+        QCOMPARE(preview->foregroundRole(), QPalette::Text);
     }
 
     void wordPreview()

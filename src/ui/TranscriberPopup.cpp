@@ -60,13 +60,37 @@ protected:
     }
 };
 
+// The thin countdown under an error. Painted here rather than by the style: a
+// 3px progress bar in any widget style still draws a frame, and the previous
+// stylesheet that hid it hardcoded the colours it replaced.
+class DismissBar final : public QProgressBar {
+public:
+    using QProgressBar::QProgressBar;
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        if (maximum() <= minimum()) {
+            return;
+        }
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(palette().color(QPalette::Highlight));
+        const qreal fraction = qreal(value() - minimum()) / qreal(maximum() - minimum());
+        QRectF chunk(rect());
+        chunk.setWidth(chunk.width() * fraction);
+        painter.drawRoundedRect(chunk, 1.0, 1.0);
+    }
+};
+
 } // namespace
 
 TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     : QWidget(parent)
     , m_previewPill(new PillFrame(this))
     , m_preview(new QLabel(this))
-    , m_errorDismissProgress(new QProgressBar(m_previewPill))
+    , m_errorDismissProgress(new DismissBar(m_previewPill))
     , m_waveform(new WaveformWidget(this))
     , m_accessibilityNotice(new AccessibilityNotice(this))
     , m_updateChip(new QPushButton(this))
@@ -91,9 +115,14 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
 #endif
     setObjectName(QStringLiteral("transcriberPopup"));
     m_preview->setObjectName(QStringLiteral("rawTranscript"));
+    // The pill paints a Base fill, so its text takes the Text role; the font
+    // is whatever the desktop chose for the application.
+    m_preview->setForegroundRole(QPalette::Text);
     applyTheme();
 
     m_previewPill->setObjectName(QStringLiteral("previewPill"));
+    m_previewPill->setFrameShape(QFrame::NoFrame);
+    m_previewPill->setAutoFillBackground(false);
     m_previewPill->setFixedHeight(48);
     m_previewPill->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     auto *previewLayout = new QVBoxLayout(m_previewPill);
@@ -352,25 +381,13 @@ void TranscriberPopup::applyTheme()
         return;
     }
     m_applyingTheme = true;
-    const QPalette p = qApp ? qApp->palette() : palette();
-    const QColor text = p.color(QPalette::Text);
-    const QColor accent = p.color(QPalette::Highlight);
-#ifdef Q_OS_MACOS
-    const QString labelFont = QStringLiteral("font-size:14px;");
-#else
-    const QString labelFont = QStringLiteral("font:14px 'Inter','Noto Sans',sans-serif;");
-#endif
-    setStyleSheet(QStringLiteral(
-                      "#transcriberPopup{background:transparent;}"
-                      "QFrame#previewPill{background:transparent;border:0;}"
-                      "QLabel{color:%1;%3}"
-                      "QProgressBar#errorDismissProgress{border:0;background:transparent;}"
-                      "QProgressBar#errorDismissProgress::chunk{background:%2;border-radius:1px;}")
-                      .arg(text.name(QColor::HexRgb),
-                           accent.name(QColor::HexRgb),
-                           labelFont));
+    // Colours come from palette roles set once in the constructor; a palette
+    // change only needs the painted pill and bar redrawn.
     if (m_previewPill) {
         m_previewPill->update();
+    }
+    if (m_errorDismissProgress) {
+        m_errorDismissProgress->update();
     }
     m_applyingTheme = false;
 }

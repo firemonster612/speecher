@@ -195,12 +195,13 @@ void AppWindow::refreshHeaderStripColor()
             hairline->setPalette(linePalette);
         }
     }
-    // Fill the 1px splitter handle: unstyled it stays unpainted, which shows
-    // as a see-through seam between the sidebar and the content.
-    if (m_sidebarSplitter) {
-        m_sidebarSplitter->setStyleSheet(
-            QStringLiteral("QSplitter#sidebarSplitter::handle{background:%1;}")
-                .arg(line.name(QColor::HexRgb)));
+    // Fill the 1px splitter handle: Breeze paints handles in plain window
+    // colour, which shows as a see-through seam between sidebar and content.
+    if (QWidget *handle = m_sidebarSplitter ? m_sidebarSplitter->handle(1) : nullptr) {
+        QPalette handlePalette(handle->palette());
+        handlePalette.setColor(QPalette::Window, line);
+        handle->setPalette(handlePalette);
+        handle->setAutoFillBackground(true);
     }
 }
 
@@ -563,16 +564,6 @@ void AppWindow::buildSidebarShell()
     m_sidebarSplitter->addWidget(right);
     m_sidebarSplitter->setStretchFactor(0, 0);
     m_sidebarSplitter->setStretchFactor(1, 1);
-    if (QWidget *handle = m_sidebarSplitter->handle(1)) {
-        // Breeze paints splitter handles in plain window color — invisible.
-        // Fill the 1px handle with the separator blend so the sidebar/content
-        // boundary reads as a hairline, like System Settings.
-        QPalette handlePalette(handle->palette());
-        handlePalette.setColor(QPalette::Window,
-                               settings::separatorColor(handle->palette()));
-        handle->setPalette(handlePalette);
-        handle->setAutoFillBackground(true);
-    }
     m_sidebarPane = sidebar;
     m_searchSection = searchContainer;
     sidebar->installEventFilter(this);
@@ -580,8 +571,8 @@ void AppWindow::buildSidebarShell()
             [searchContainer, sidebar] { searchContainer->setFixedWidth(sidebar->width()); });
     root->addWidget(m_sidebarSplitter, 1);
     setCentralWidget(central);
-    // Re-run now that the hairline widgets exist; the first call above only
-    // colored the strip itself.
+    // Re-run now that the hairline widgets and the splitter handle exist; the
+    // first call above only colored the strip itself.
     refreshHeaderStripColor();
     m_sidebarSplitter->setSizes({220, 680});
     const QByteArray splitterState = m_controller->settings()->raw()

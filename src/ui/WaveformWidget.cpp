@@ -154,8 +154,9 @@ void WaveformWidget::paintDots(QPainter &painter, const QColor &bar)
 
 void WaveformWidget::paintMessage(QPainter &painter, const QColor &bar)
 {
-    QFont font = painter.font();
-    font.setPointSize(12);
+    // The widget's own font is the application font, so the message follows
+    // the desktop's font and size choices.
+    QFont font = this->font();
     font.setWeight(QFont::Normal);
     painter.setFont(font);
     painter.setPen(bar);
