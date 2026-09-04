@@ -11,7 +11,9 @@ namespace speecher {
 
 inline bool keyringDeletionSucceeded(QKeychain::Error error)
 {
-    return error == QKeychain::NoError || error == QKeychain::EntryNotFound;
+    return error == QKeychain::NoError
+        || error == QKeychain::EntryNotFound
+        || error == QKeychain::NoBackendAvailable;
 }
 
 } // namespace speecher

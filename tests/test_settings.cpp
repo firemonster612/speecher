@@ -13,10 +13,11 @@ class SettingsTests : public QObject {
 
 private slots:
 #ifdef SPEECHER_WITH_QKEYCHAIN
-    void missingKeyringEntryCountsAsSuccessfulDeletion()
+    void missingKeyringEntryOrBackendCountsAsSuccessfulDeletion()
     {
         QVERIFY(keyringDeletionSucceeded(QKeychain::NoError));
         QVERIFY(keyringDeletionSucceeded(QKeychain::EntryNotFound));
+        QVERIFY(keyringDeletionSucceeded(QKeychain::NoBackendAvailable));
         QVERIFY(!keyringDeletionSucceeded(QKeychain::AccessDeniedByUser));
     }
 #endif

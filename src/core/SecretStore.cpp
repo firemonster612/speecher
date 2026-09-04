@@ -183,8 +183,8 @@ bool SecretStore::deleteKeyringApiKey() const
     m_lastError = error;
     return false;
 #else
-    m_lastError = QStringLiteral("QtKeychain support was not compiled in");
-    return false;
+    m_lastError.clear();
+    return true;
 #endif
 }
 
