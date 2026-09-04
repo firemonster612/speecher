@@ -241,6 +241,33 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 1800);
     }
 
+    void dictationSessionOutlivesItsProviderRegistry()
+    {
+        // The controller's registry is created before the session and destroyed
+        // before it. After a dictation the session holds the registry's
+        // transcriber; its destructor must not call into the freed object.
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        auto *registry = new ProviderRegistry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(*registry, &speech);
+        auto *session = new DictationSession(&settings, audio.get(), media.get(), delivery.get(), registry);
+        session->startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session->state()), int(DictationState::Listening), 250);
+        QVERIFY(speech);
+        speech->emitFinalText(QStringLiteral("hello"));
+        session->stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session->state()), int(DictationState::Idle), 1800);
+
+        delete registry; // owner of *speech goes away first, as in the controller
+        delete session;  // must not touch the dead transcriber or refiner
+        QVERIFY(true);
+    }
+
     void dictationSessionForwardsAudioDuringStartAndStop()
     {
         SettingsStore settings;

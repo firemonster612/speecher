@@ -539,6 +539,17 @@ void ApplicationController::handleIpcCommand(const QString &command,
     }
 }
 
+// Children are otherwise deleted in creation order, which puts the provider
+// registry (owner of the transcriber and refiner) before the session that still
+// points at them. Tear the dependents down first.
+ApplicationController::~ApplicationController()
+{
+    delete m_updates;
+    m_updates = nullptr;
+    delete m_session;
+    m_session = nullptr;
+}
+
 bool ApplicationController::ensureSetupCompleted()
 {
     if (m_settings->setupCompleted()) {

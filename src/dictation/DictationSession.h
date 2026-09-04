@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QPointer>
+
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationTypes.h"
 #include "dictation/StartupPreparationRunner.h"
@@ -96,8 +98,9 @@ private:
     TranscriptState *m_transcript = nullptr;
     StartupPreparationRunner *m_startupRunner = nullptr;
     QTimer *m_completionTimer = nullptr;
-    SpeechTranscriber *m_transcriber = nullptr;
-    TranscriptRefiner *m_refiner = nullptr;
+    // The registry owns these and may be destroyed first; never call a dead one.
+    QPointer<SpeechTranscriber> m_transcriber;
+    QPointer<TranscriptRefiner> m_refiner;
     QVector<QMetaObject::Connection> m_transcriberConnections;
     QVector<QMetaObject::Connection> m_refinerConnections;
     DictationState m_state = DictationState::Idle;
