@@ -159,9 +159,21 @@ struct QtPageLayout {
 // KDE order when the same descriptors are rendered by Qt.
 QtPageLayout qtPageLayout(SettingsPage page)
 {
-    if (page.id == QStringLiteral("general") || page.id == QStringLiteral("audio")
-        || page.id == QStringLiteral("applications")) {
+    if (page.id == QStringLiteral("general") || page.id == QStringLiteral("applications")) {
         page.sections = {mergedSection(page.sections)};
+        return {std::move(page), {}};
+    }
+
+    if (page.id == QStringLiteral("audio")) {
+        // One compact card for the everyday rows; Advanced keeps its own card
+        // and title so the timing controls read as optional.
+        QList<SettingsSection> everyday;
+        QList<SettingsSection> advanced;
+        for (SettingsSection &section : page.sections) {
+            (section.title == QStringLiteral("Advanced") ? advanced : everyday).append(section);
+        }
+        page.sections = {mergedSection(everyday)};
+        page.sections.append(advanced);
         return {std::move(page), {}};
     }
 

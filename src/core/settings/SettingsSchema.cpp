@@ -593,30 +593,30 @@ SettingsPage audioPage(const SchemaContext &context)
 
     SettingsRow captureMode = choiceRow(
         QStringLiteral("captureMode"),
-        QStringLiteral("Capture mode"),
-        QStringLiteral("Open the microphone only while listening, or keep it warm between captures."),
+        QStringLiteral("Microphone use"),
+        QStringLiteral("Keeping it open starts dictation a little faster, but the microphone "
+                       "shows as in use the whole time."),
         fixedOptions({
-            {QStringLiteral("on_demand"), QStringLiteral("On demand")},
-            {QStringLiteral("warm"), QStringLiteral("Warm")},
+            {QStringLiteral("on_demand"), QStringLiteral("Open only while dictating")},
+            {QStringLiteral("warm"), QStringLiteral("Keep open between dictations")},
         }),
         [](const AppSettings &settings) { return settings.audio.mode; },
         [](AppSettings &settings, const QString &value) { settings.audio.mode = value; });
-    captureMode.tooltip = QStringLiteral(
-        "Warm keeps the microphone stream open between captures for lower startup latency.");
 
     SettingsRow vadEnabled = toggleRow(
         QStringLiteral("vadEnabled"),
         QStringLiteral("Silence"),
-        QStringLiteral("Trim leading and trailing silence"),
+        QStringLiteral("Skip the quiet parts before, after and between sentences"),
         [](const AppSettings &settings) { return settings.audio.vadEnabled; },
         [](AppSettings &settings, bool value) { settings.audio.vadEnabled = value; });
     vadEnabled.tooltip = QStringLiteral(
-        "Suppress leading, trailing, and long in-between silence before audio is sent.");
+        "Quiet stretches are left out of what is sent for transcription.");
 
     SettingsRow vadThreshold = numberRow(
         QStringLiteral("vadThresholdPercent"),
-        QStringLiteral("Voice threshold"),
-        QStringLiteral("RMS level required before VAD treats audio as speech."),
+        QStringLiteral("Counts as quiet below"),
+        QStringLiteral("Raise this if background noise is being kept; lower it if soft speech is "
+                       "being cut."),
         {1, 20, 1, QStringLiteral("%")},
         [](const AppSettings &settings) { return settings.audio.vadThresholdPercent; },
         [](AppSettings &settings, int value) { settings.audio.vadThresholdPercent = value; });
@@ -631,33 +631,35 @@ SettingsPage audioPage(const SchemaContext &context)
         QStringLiteral("waveform"),
         {
             {QStringLiteral("Transcription"), QString(), {std::move(speechProvider)}},
-            {QStringLiteral("Capture"),
+            {QStringLiteral("Capture"), QString(), {std::move(device)}},
+            {QStringLiteral("Silence trimming"),
+             QString(),
+             {std::move(vadEnabled), std::move(vadThreshold)}},
+            // Timing controls most people never need; the labels say what a
+            // change does to the recording rather than how the pipeline works.
+            {QStringLiteral("Advanced"),
              QString(),
              {
-                 std::move(device),
                  std::move(captureMode),
                  numberRow(QStringLiteral("preRollMs"),
-                           QStringLiteral("Pre-roll"),
-                           QStringLiteral("Audio kept before speech or before a warm capture starts."),
+                           QStringLiteral("Keep before speech"),
+                           QStringLiteral("Audio kept from just before you start, so the first word is not clipped."),
                            {0, 1500, 50, QStringLiteral(" ms")},
                            [](const AppSettings &settings) { return settings.audio.preRollMs; },
                            [](AppSettings &settings, int value) { settings.audio.preRollMs = value; }),
                  numberRow(QStringLiteral("postRollMs"),
-                           QStringLiteral("Post-roll"),
-                           QStringLiteral("Audio kept after stop or after speech falls quiet."),
+                           QStringLiteral("Keep after stopping"),
+                           QStringLiteral("Audio kept after you stop or go quiet, so the last word is not clipped."),
                            {0, 1500, 50, QStringLiteral(" ms")},
                            [](const AppSettings &settings) { return settings.audio.postRollMs; },
                            [](AppSettings &settings, int value) { settings.audio.postRollMs = value; }),
                  numberRow(QStringLiteral("readinessTimeoutMs"),
-                           QStringLiteral("Readiness timeout"),
-                           QStringLiteral("How long Speecher waits for the first microphone sample."),
+                           QStringLiteral("Wait for microphone"),
+                           QStringLiteral("How long to wait for the microphone to deliver sound before giving up."),
                            {150, 3000, 50, QStringLiteral(" ms")},
                            [](const AppSettings &settings) { return settings.audio.readinessTimeoutMs; },
                            [](AppSettings &settings, int value) { settings.audio.readinessTimeoutMs = value; }),
              }},
-            {QStringLiteral("Silence trimming"),
-             QString(),
-             {std::move(vadEnabled), std::move(vadThreshold)}},
         },
     };
 }

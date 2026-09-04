@@ -458,7 +458,7 @@ private slots:
         auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
         QVERIFY(window.findChild<QSplitter *>() && search);
 
-        search->setText(QStringLiteral("Pre-roll"));
+        search->setText(QStringLiteral("Keep before speech"));
         QVERIFY(navigation && navigation->item(1)->isHidden()
                 && !navigation->item(2)->isHidden());
     }

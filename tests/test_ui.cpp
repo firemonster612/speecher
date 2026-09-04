@@ -326,8 +326,7 @@ private slots:
         QVERIFY(globalPaste->mapTo(output->widget(), QPoint()).y()
                 < restoreClipboard->mapTo(output->widget(), QPoint()).y());
 
-        for (const QString &id : {QStringLiteral("general"), QStringLiteral("audio"),
-                                  QStringLiteral("applications")}) {
+        for (const QString &id : {QStringLiteral("general"), QStringLiteral("applications")}) {
             SchemaCustomRowFactory customRows;
 #ifdef Q_OS_LINUX
             if (id == QStringLiteral("general")) {
@@ -344,6 +343,20 @@ private slots:
                 std::make_unique<SchemaSettingsPage>(schema.page(id), nullptr, customRows);
             QCOMPARE(sectionLabels(*page).size(), 0);
         }
+
+        // Audio keeps one everyday card and a separate Advanced card for the
+        // timing controls, in that order.
+        const std::unique_ptr<SchemaSettingsPage> audio =
+            std::make_unique<SchemaSettingsPage>(schema.page(QStringLiteral("audio")));
+        QCOMPARE(sectionLabels(*audio), QStringList{QStringLiteral("Advanced")});
+        audio->resize(900, 668);
+        audio->show();
+        QCoreApplication::processEvents();
+        auto *silence = audio->findChild<QWidget *>(QStringLiteral("vadEnabled"));
+        auto *preRoll = audio->findChild<QWidget *>(QStringLiteral("preRollMs"));
+        QVERIFY(silence && preRoll);
+        QVERIFY(silence->mapTo(audio->widget(), QPoint()).y()
+                < preRoll->mapTo(audio->widget(), QPoint()).y());
     }
 
     void outputMethodsOfferAccessibilityInsertion()

@@ -176,6 +176,33 @@ private slots:
 #endif
     }
 
+    void audioTimingControlsSitUnderAdvancedInPlainWords()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsPage &audio = schema.page(QStringLiteral("audio"));
+        const SettingsSection &advanced = audio.sections.last();
+        QCOMPARE(advanced.title, QStringLiteral("Advanced"));
+        QStringList ids;
+        for (const SettingsRow &row : advanced.rows) {
+            ids.append(row.id);
+        }
+        QCOMPARE(ids,
+                 QStringList({QStringLiteral("captureMode"),
+                              QStringLiteral("preRollMs"),
+                              QStringLiteral("postRollMs"),
+                              QStringLiteral("readinessTimeoutMs")}));
+        for (const SettingsSection &section : audio.sections) {
+            for (const SettingsRow &row : section.rows) {
+                for (const QString &jargon : {QStringLiteral("RMS"), QStringLiteral("VAD"),
+                                              QStringLiteral("roll"), QStringLiteral("Warm"),
+                                              QStringLiteral("Readiness")}) {
+                    QVERIFY2(!row.label.contains(jargon) && !row.help.contains(jargon),
+                             qPrintable(row.id + QStringLiteral(": ") + jargon));
+                }
+            }
+        }
+    }
+
     void generalHasNoClipboardStatusRow()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
