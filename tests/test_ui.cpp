@@ -894,7 +894,6 @@ private slots:
                  row->width() - settings::rowHorizontalPadding());
         QCOMPARE(check->mapTo(second, QPoint(check->width(), 0)).x(),
                  second->width() - settings::rowHorizontalPadding());
-        QCOMPARE(second->titleLabel()->buddy(), check);
         QCOMPARE(detail->foregroundRole(), QPalette::PlaceholderText);
         QTest::mousePress(check,
                           Qt::LeftButton,

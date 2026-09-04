@@ -699,6 +699,7 @@ private slots:
                  QByteArray("[Desktop Entry]\n"
                             "Type=Application\n"
                             "Name=Speecher\n"
+                            "Icon=io.github.firemonster612.speecher\n"
                             "Exec=\"")
                      + QFile::encodeName(executable)
                      + QByteArray("\" --daemon\nHidden=false\n"));

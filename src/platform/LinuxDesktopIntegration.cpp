@@ -323,6 +323,7 @@ bool setLaunchAtLoginAutostart(bool enabled,
         "[Desktop Entry]\n"
         "Type=Application\n"
         "Name=Speecher\n"
+        "Icon=io.github.firemonster612.speecher\n"
         "Exec=")
         + quotedExecutablePath(executablePath).toUtf8()
         + QByteArrayLiteral(" --daemon\nHidden=false\n");

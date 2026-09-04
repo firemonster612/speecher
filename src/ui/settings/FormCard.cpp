@@ -114,7 +114,6 @@ void FormRow::setControl(QWidget *control)
         label->setMaximumWidth(valueMaximumWidth());
     }
     m_headLayout->addWidget(control, 0, Qt::AlignRight | Qt::AlignVCenter);
-    m_title->setBuddy(control);
     m_textColumn->show();
 }
 
@@ -124,7 +123,6 @@ void FormRow::setEditor(QWidget *editor)
     editor->setParent(this);
     editor->setSizePolicy(QSizePolicy::Expanding, editor->sizePolicy().verticalPolicy());
     m_layout->addWidget(editor);
-    m_title->setBuddy(editor);
 }
 
 void FormRow::setDetail(QWidget *detail)

@@ -179,6 +179,7 @@ struct CollectionRow: View {
 
     private var minimumTableHeight: CGFloat {
         let lineHeight = NSFont.preferredFont(forTextStyle: .body).boundingRectForFont.height
+        // SwiftUI Table adds about one line of vertical padding around each row.
         return CGFloat(max(1, editor.collection.minimumVisibleRows)) * lineHeight * 2
     }
 

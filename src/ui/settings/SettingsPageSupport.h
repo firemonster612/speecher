@@ -41,8 +41,8 @@ int rowHorizontalPadding();
 int rowVerticalPadding();
 // Cards stretch to this and no further, centred in whatever is left.
 int cardMaximumWidth();
-// Combo boxes, spin boxes and line edits in a row's control column start at
-// this width, so short values still line up down the card.
+// Combo boxes and spin boxes in a row's control column start at this width, so
+// short values still line up down the card.
 int controlMinimumWidth();
 // A read-only value on the right wraps rather than growing past this.
 int valueMaximumWidth();
