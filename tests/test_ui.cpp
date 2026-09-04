@@ -920,6 +920,8 @@ private slots:
         }
     }
 
+#ifdef Q_OS_LINUX
+    // The Global Shortcut row this test aligns against exists only on Linux.
     void fullWidthSettingsRowsShareOneLeftEdge()
     {
         ProviderRegistry providers;
@@ -956,6 +958,7 @@ private slots:
         QCOMPARE(heading->mapTo(page.get(), QPoint()).x(), bodyLeft);
         QCOMPARE(subtitle->mapTo(page.get(), QPoint()).x(), bodyLeft);
     }
+#endif
 
     void settingsRowsGrowForWrappedDescriptions()
     {
