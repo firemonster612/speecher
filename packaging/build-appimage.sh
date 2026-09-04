@@ -160,12 +160,34 @@ copy_library() {
 
 copy_deps_for_elf() {
   local elf="$1"
-  LD_LIBRARY_PATH="$QT_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$elf" 2>/dev/null | awk '
+  local dependencies
+  dependencies="$(LD_LIBRARY_PATH="$QT_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$elf" 2>&1 || true)"
+  if grep -Fq 'not found' <<<"$dependencies"; then
+    echo "Unresolved dependency while bundling $elf:" >&2
+    printf '%s\n' "$dependencies" >&2
+    exit 1
+  fi
+  printf '%s\n' "$dependencies" | awk '
     /=> \// { print $(NF - 1) }
     /^\// { print $1 }
   ' | while read -r lib; do
     copy_library "$lib"
   done
+}
+
+verify_elf_dependencies() {
+  local elf dependencies count=0
+  while IFS= read -r -d '' elf; do
+    [[ "$(file -b "$elf")" == ELF* ]] || continue
+    ((count += 1))
+    dependencies="$(ldd "$elf" 2>&1 || true)"
+    if grep -Fq 'not found' <<<"$dependencies"; then
+      echo "Unresolved dependency in ${elf#"$APPDIR_PATH"/}:" >&2
+      printf '%s\n' "$dependencies" >&2
+      exit 1
+    fi
+  done < <(find "$APPDIR_PATH/usr" -type f -print0)
+  echo "Verified dependencies for $count bundled ELF files"
 }
 
 copy_deps_closure() {
@@ -248,6 +270,9 @@ set_runpath_for_tree "$APPDIR_PATH/usr/bin" '$ORIGIN/../lib'
 set_runpath_for_tree "$APPDIR_PATH/usr/libexec/speecher" '$ORIGIN/../../lib'
 set_runpath_for_tree "$APPDIR_PATH/usr/plugins" '$ORIGIN/../../lib'
 set_runpath_for_tree "$APPDIR_PATH/usr/lib" '$ORIGIN'
+
+echo "Checking bundled ELF dependencies"
+verify_elf_dependencies
 
 echo "Writing AppImage runtime files"
 cat > "$APPDIR_PATH/usr/bin/qt.conf" <<'EOF'
