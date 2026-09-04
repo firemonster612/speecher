@@ -2,6 +2,7 @@
 #include "common/test_http.h"
 #include "common/test_auth.h"
 #include "output/HelperPath.h"
+#include "setup/YdotoolSetupTransaction.h"
 
 using namespace speecher::test;
 
@@ -50,6 +51,21 @@ class DeliveryTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void ydotoolSetupFailureReportsCompletedChanges()
+    {
+        YdotoolSetupTransaction transaction;
+        transaction.record(QStringLiteral("wrote /etc/modules-load.d/speecher-uinput.conf"));
+        transaction.record(QStringLiteral("added efox to speecher-uinput"));
+        QString error = QStringLiteral("Could not write udev rule");
+
+        transaction.appendToError(&error);
+
+        QCOMPARE(error,
+                 QStringLiteral("Could not write udev rule\nChanges left behind:\n"
+                                "- wrote /etc/modules-load.d/speecher-uinput.conf\n"
+                                "- added efox to speecher-uinput"));
+    }
+
     void helperPathPrefersSiblingThenLibexecThenInstalled()
     {
         QTemporaryDir dir;

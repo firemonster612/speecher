@@ -1,3 +1,5 @@
+#include "YdotoolSetupTransaction.h"
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -14,6 +16,8 @@
 #include <unistd.h>
 
 namespace {
+
+using speecher::YdotoolSetupTransaction;
 
 constexpr auto stateDirPath = "/var/lib/speecher";
 constexpr auto stateFilePath = "/var/lib/speecher/ydotool-setup.json";
@@ -145,17 +149,47 @@ bool installYdotoolPackage(QString *error)
     return false;
 }
 
-bool ensureGroup(QString *error)
+bool ensureGroup(bool *created, QString *error)
 {
     if (getgrnam(groupName)) {
         return true;
     }
-    return run(QStringLiteral("groupadd"), {QStringLiteral("--system"), QString::fromLatin1(groupName)}, error);
+    if (!run(QStringLiteral("groupadd"), {QStringLiteral("--system"), QString::fromLatin1(groupName)}, error)) {
+        return false;
+    }
+    *created = true;
+    return true;
 }
 
-bool addUserToGroup(const QString &user, QString *error)
+bool userInGroup(const QString &user)
 {
-    return run(QStringLiteral("usermod"), {QStringLiteral("-aG"), QString::fromLatin1(groupName), user}, error);
+    const QByteArray encoded = user.toLocal8Bit();
+    const passwd *account = getpwnam(encoded.constData());
+    const group *targetGroup = getgrnam(groupName);
+    if (!account || !targetGroup) {
+        return false;
+    }
+    if (account->pw_gid == targetGroup->gr_gid) {
+        return true;
+    }
+    for (char **member = targetGroup->gr_mem; member && *member; ++member) {
+        if (encoded == *member) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool addUserToGroup(const QString &user, bool *added, QString *error)
+{
+    if (userInGroup(user)) {
+        return true;
+    }
+    if (!run(QStringLiteral("usermod"), {QStringLiteral("-aG"), QString::fromLatin1(groupName), user}, error)) {
+        return false;
+    }
+    *added = true;
+    return true;
 }
 
 bool writeState(bool packageWasInstalled, const QString &user, QString *error)
@@ -191,31 +225,57 @@ bool validateUser(const QString &user, QString *error)
 
 bool install(const QString &user, QString *error)
 {
+    YdotoolSetupTransaction transaction;
+    const auto failed = [&transaction, error] {
+        transaction.appendToError(error);
+        return false;
+    };
     const bool packageMissingBeforeInstall = !ydotoolInstalled();
     if (!installYdotoolPackage(error)) {
-        return false;
+        return failed();
+    }
+    if (packageMissingBeforeInstall) {
+        transaction.record(QStringLiteral("installed the ydotool package"));
     }
     if (!run(QStringLiteral("modprobe"), {QStringLiteral("uinput")}, error)) {
-        return false;
+        return failed();
     }
+    transaction.record(QStringLiteral("loaded the uinput kernel module"));
     if (!writeFile(QString::fromLatin1(modulesLoadPath), QStringLiteral("uinput\n"), error)) {
-        return false;
+        return failed();
     }
-    if (!ensureGroup(error) || !addUserToGroup(user, error)) {
-        return false;
+    transaction.record(QStringLiteral("wrote %1").arg(QString::fromLatin1(modulesLoadPath)));
+    bool groupCreated = false;
+    if (!ensureGroup(&groupCreated, error)) {
+        return failed();
+    }
+    if (groupCreated) {
+        transaction.record(QStringLiteral("created group %1").arg(QString::fromLatin1(groupName)));
+    }
+    bool userAdded = false;
+    if (!addUserToGroup(user, &userAdded, error)) {
+        return failed();
+    }
+    if (userAdded) {
+        transaction.record(QStringLiteral("added %1 to %2").arg(user, QString::fromLatin1(groupName)));
     }
     if (!writeFile(QString::fromLatin1(udevRulePath),
                    QStringLiteral("KERNEL==\"uinput\", SUBSYSTEM==\"misc\", OPTIONS+=\"static_node=uinput\", GROUP=\"speecher-uinput\", MODE=\"0660\", TAG+=\"uaccess\"\n"),
                    error)) {
-        return false;
+        return failed();
     }
+    transaction.record(QStringLiteral("wrote %1").arg(QString::fromLatin1(udevRulePath)));
     run(QStringLiteral("udevadm"), {QStringLiteral("control"), QStringLiteral("--reload-rules")}, error, true, true);
     run(QStringLiteral("udevadm"), {QStringLiteral("trigger"), QStringLiteral("--subsystem-match=misc"), QStringLiteral("--attr-match=name=uinput")}, error, true, true);
     if (!writeFile(serviceFilePath(), serviceText(), error)) {
-        return false;
+        return failed();
     }
+    transaction.record(QStringLiteral("wrote %1").arg(serviceFilePath()));
     run(QStringLiteral("systemctl"), {QStringLiteral("--global"), QStringLiteral("enable"), QString::fromLatin1(serviceName)}, error, true, true);
-    return writeState(packageMissingBeforeInstall, user, error);
+    if (!writeState(packageMissingBeforeInstall, user, error)) {
+        return failed();
+    }
+    return true;
 }
 
 bool remove(const QString &user, QString *error)
