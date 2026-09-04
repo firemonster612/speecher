@@ -1123,8 +1123,9 @@ SettingsPage vocabularyPage()
           {
               collectionRow(QStringLiteral("vocabularyEntries"),
                             QStringLiteral("Extra vocabulary"),
-                            QStringLiteral("One term per line. Claude voice uses Deepgram Nova-3 "
-                                           "keyterms: 500 tokens and 100 keyterms maximum."),
+                            QStringLiteral("Names and words Speecher should recognize. When the list "
+                                           "is longer than the transcription service accepts, starred "
+                                           "terms are sent first."),
                             std::move(terms)),
               std::move(limit),
           }}},
