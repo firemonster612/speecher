@@ -30,21 +30,9 @@ QString localDataPath(const QString &homePath)
         : dataHome;
 }
 
-QString localConfigPath(const QString &homePath)
+QString autostartFilePath()
 {
-    const QString configHome = qEnvironmentVariable("XDG_CONFIG_HOME");
-    if (!configHome.isEmpty()) {
-        return configHome;
-    }
-    if (QStandardPaths::isTestModeEnabled() && homePath == QDir::homePath()) {
-        return QStandardPaths::writableLocation(QStandardPaths::ConfigLocation);
-    }
-    return QDir(homePath).filePath(QStringLiteral(".config"));
-}
-
-QString autostartFilePath(const QString &homePath)
-{
-    return QDir(localConfigPath(homePath)).filePath(
+    return QDir(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)).filePath(
         QStringLiteral("autostart/%1.desktop").arg(QString::fromLatin1(appId)));
 }
 
@@ -313,7 +301,7 @@ bool setLaunchAtLoginAutostart(bool enabled,
                                const QString &executablePath,
                                QString *error)
 {
-    const QString targetPath = autostartFilePath(QDir::homePath());
+    const QString targetPath = autostartFilePath();
     if (!enabled) {
         if (!QFileInfo::exists(targetPath) || QFile::remove(targetPath)) {
             return true;
@@ -343,7 +331,7 @@ bool setLaunchAtLoginAutostart(bool enabled,
 
 bool launchAtLoginAutostartEnabled()
 {
-    return QFileInfo::exists(autostartFilePath(QDir::homePath()));
+    return QFileInfo::exists(autostartFilePath());
 }
 
 DesktopIntegrationRemoval removeAppImageIntegration(const QString &homePath)
@@ -359,7 +347,7 @@ DesktopIntegrationRemoval removeAppImageIntegration(const QString &homePath)
     const QString link = localBinaryPath(homePath);
     const QString helper = QDir(localDataPath(homePath)).filePath(
         QStringLiteral("speecher/libexec/speecher-ydotool-setup"));
-    const QString autostart = autostartFilePath(homePath);
+    const QString autostart = autostartFilePath();
     const QString runningAppImage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
 
     const auto removeItem = [&result, &runningAppImage](const QString &name,

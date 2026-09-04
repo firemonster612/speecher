@@ -682,10 +682,11 @@ private slots:
                                    : qputenv("XDG_CONFIG_HOME", oldConfigHome);
         });
         const QString home = root.filePath(QStringLiteral("home"));
-        const QString configHome = root.filePath(QStringLiteral("config"));
         QVERIFY(QDir().mkpath(home));
         qputenv("HOME", QFile::encodeName(home));
-        qputenv("XDG_CONFIG_HOME", QFile::encodeName(configHome));
+        qputenv("XDG_CONFIG_HOME", QFile::encodeName(root.filePath(QStringLiteral("xdg-config"))));
+        const QString configHome = QStandardPaths::writableLocation(
+            QStandardPaths::ConfigLocation);
 
         const QString executable = root.filePath(QStringLiteral("Speecher Current.AppImage"));
         QString error;
@@ -720,7 +721,7 @@ private slots:
                                    : qputenv("XDG_CONFIG_HOME", oldConfigHome);
         });
         qputenv("HOME", QFile::encodeName(root.filePath(QStringLiteral("home"))));
-        qputenv("XDG_CONFIG_HOME", QFile::encodeName(root.filePath(QStringLiteral("config"))));
+        qputenv("XDG_CONFIG_HOME", QFile::encodeName(root.filePath(QStringLiteral("xdg-config"))));
 
         LinuxComposition composition;
         QString error;
@@ -771,13 +772,15 @@ private slots:
     void appImageIntegrationRemovalUndoesTheInstallAndReportsIt()
     {
         const QByteArray oldAppImage = qgetenv("APPIMAGE");
+        const QByteArray oldHome = qgetenv("HOME");
         const QByteArray oldConfigHome = qgetenv("XDG_CONFIG_HOME");
-        const auto restoreEnvironment = qScopeGuard([oldAppImage, oldConfigHome] {
+        const auto restoreEnvironment = qScopeGuard([oldAppImage, oldHome, oldConfigHome] {
             if (oldAppImage.isNull()) {
                 qunsetenv("APPIMAGE");
             } else {
                 qputenv("APPIMAGE", oldAppImage);
             }
+            oldHome.isNull() ? qunsetenv("HOME") : qputenv("HOME", oldHome);
             oldConfigHome.isNull() ? qunsetenv("XDG_CONFIG_HOME")
                                    : qputenv("XDG_CONFIG_HOME", oldConfigHome);
         });
@@ -787,7 +790,8 @@ private slots:
         QVERIFY(root.isValid());
         const QDir home(root.filePath(QStringLiteral("home")));
         QVERIFY(QDir().mkpath(home.path()));
-        qputenv("XDG_CONFIG_HOME", QFile::encodeName(home.filePath(QStringLiteral(".config"))));
+        qputenv("HOME", QFile::encodeName(home.path()));
+        qputenv("XDG_CONFIG_HOME", QFile::encodeName(root.filePath(QStringLiteral("xdg-config"))));
         // The AppImage mount: usr/bin/speecher with the desktop file and icon
         // two levels up, as installAppImageIntegration expects.
         const QString appDir = root.filePath(QStringLiteral("mount"));

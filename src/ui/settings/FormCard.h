@@ -45,6 +45,7 @@ public:
     bool isFlashing() const { return m_flashing; }
 
 protected:
+    void mousePressEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
 
@@ -62,6 +63,7 @@ private:
     QWidget *m_detail = nullptr;
     QTimer *m_flashTimer;
     bool m_flashing = false;
+    bool m_togglePressed = false;
 };
 
 // One card of a settings page: a header above it (title, optional one-line

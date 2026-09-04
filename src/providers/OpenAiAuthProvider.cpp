@@ -469,7 +469,7 @@ QString OpenAiAuthProvider::status() const
         return QStringLiteral("Signed in with the Codex app.");
     }
     if (auth.source == QStringLiteral("cliproxy")) {
-        return QStringLiteral("Signed in through CLI Proxy API.");
+        return QStringLiteral("Uses a CLI Proxy API account.");
     }
     return QStringLiteral("Signed in with an OpenAI API key.");
 }

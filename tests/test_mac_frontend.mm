@@ -285,7 +285,7 @@ private slots:
                  QStringLiteral("Signed in with Claude Code."));
         [bridge.settingsSchema setValue:@"cliproxy" forRowId:@"anthropicAuthMode"];
         QCOMPARE(QString::fromNSString(bridge.anthropicCredentialStatus),
-                 QStringLiteral("Signed in through CLI Proxy API."));
+                 QStringLiteral("Uses a CLI Proxy API account."));
     }
 
     void whatsNewOfferFollowsPendingUpgradeState()

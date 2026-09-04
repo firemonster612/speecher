@@ -156,6 +156,7 @@ private slots:
         settings.raw().setValue(QStringLiteral("ui/theme"), QStringLiteral("dark"));
         Theme::apply(settings.theme());
         QCOMPARE(qApp->styleHints()->colorScheme(), Qt::ColorScheme::Unknown);
+        settings.raw().remove(QStringLiteral("ui/theme"));
 #else
         Theme::apply(QStringLiteral("dark"));
         // Whatever the platform did, Theme reports it truthfully so the row
@@ -719,6 +720,25 @@ private slots:
         QCOMPARE(draft.refinement.openAiCliproxyAccount, QStringLiteral("codex-b@example.com.json"));
     }
 
+    void anthropicAccountStatusDescribesTheSelectedSource()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setAnthropicAuthMode(QStringLiteral("cliproxy"));
+        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("cliproxy"));
+        SecretStore secrets(&settings);
+        ProviderRegistry providers;
+        ProviderCustomRows providerRows(settings, secrets);
+        const std::unique_ptr<SchemaSettingsPage> page = schemaPage(
+            QStringLiteral("accounts"), *platformComposition(), providers, providerRows.factory());
+
+        auto *status = page->findChild<QLabel *>(QStringLiteral("anthropicAuthStatus"));
+        QVERIFY(status);
+        QVERIFY(!status->text().isEmpty());
+        page->load(settings.snapshot());
+        QCOMPARE(status->text(), QStringLiteral("Uses a CLI Proxy API account."));
+    }
+
     void providerSettingsPreservesSpeechAccountsInServerMode()
     {
         SettingsStore settings;
@@ -876,11 +896,26 @@ private slots:
                  second->width() - settings::rowHorizontalPadding());
         QCOMPARE(second->titleLabel()->buddy(), check);
         QCOMPARE(detail->foregroundRole(), QPalette::PlaceholderText);
+        QTest::mousePress(check,
+                          Qt::LeftButton,
+                          Qt::NoModifier,
+                          QPoint(check->width() / 2, check->height() / 2));
+        QTest::mouseRelease(check,
+                            Qt::LeftButton,
+                            Qt::NoModifier,
+                            QPoint(-1, check->height() / 2));
+        QVERIFY(!check->isChecked());
+        QTest::mouseRelease(second,
+                            Qt::LeftButton,
+                            Qt::NoModifier,
+                            QPoint(settings::rowHorizontalPadding(), second->height() / 2));
+        QVERIFY(!check->isChecked());
         QTest::mouseClick(second,
                           Qt::LeftButton,
                           Qt::NoModifier,
                           QPoint(settings::rowHorizontalPadding(), second->height() / 2));
         QVERIFY(check->isChecked());
+        QVERIFY(check->hasFocus());
         // The control is vertically centred on the text beside it.
         const QRect controlInRow(control->mapTo(row, QPoint()), control->size());
         QWidget *textColumn = row->titleLabel()->parentWidget();

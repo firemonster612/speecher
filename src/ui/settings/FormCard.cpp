@@ -185,14 +185,31 @@ void FormRow::applyFlashPalette(bool flashing)
     }
 }
 
-void FormRow::mouseReleaseEvent(QMouseEvent *event)
+void FormRow::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton && isEnabled()) {
         if (auto *toggle = qobject_cast<QCheckBox *>(m_control); toggle && toggle->isEnabled()) {
-            toggle->toggle();
+            m_togglePressed = true;
             event->accept();
             return;
         }
+    }
+    m_togglePressed = false;
+    QWidget::mousePressEvent(event);
+}
+
+void FormRow::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton && m_togglePressed) {
+        m_togglePressed = false;
+        if (rect().contains(event->position().toPoint()) && isEnabled()) {
+            if (auto *toggle = qobject_cast<QCheckBox *>(m_control); toggle && toggle->isEnabled()) {
+                toggle->toggle();
+                toggle->setFocus(Qt::MouseFocusReason);
+            }
+        }
+        event->accept();
+        return;
     }
     QWidget::mouseReleaseEvent(event);
 }

@@ -121,7 +121,7 @@ QString anthropicCredentialStatus(const AppSettings &draft,
                                   const SettingsStore &store)
 {
     if (draft.refinement.anthropicAuthMode == kCliProxyAuthMode) {
-        return QStringLiteral("Signed in through CLI Proxy API.");
+        return QStringLiteral("Uses a CLI Proxy API account.");
     }
     const ClaudeCredentialResult credentials = ClaudeCredentials::load(
         store.claudeCredentialsPath(), false);

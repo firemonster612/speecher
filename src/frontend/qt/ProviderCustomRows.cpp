@@ -443,14 +443,14 @@ void ProviderCustomRows::updateCredentialControl()
 
 void ProviderCustomRows::updateAnthropicAuthControl()
 {
-    if (!m_anthropicAuthMode || !m_anthropicAuthStatus) {
+    if (!m_anthropicAuthStatus) {
         return;
     }
     const QString mode = m_anthropicAuthMode
         ? m_anthropicAuthMode->currentData().toString()
         : m_settings.anthropicAuthMode();
     if (mode == kCliProxyAuthMode) {
-        m_anthropicAuthStatus->setText(QStringLiteral("Signed in through CLI Proxy API."));
+        m_anthropicAuthStatus->setText(QStringLiteral("Uses a CLI Proxy API account."));
         return;
     }
     const ClaudeCredentialResult credentials =
