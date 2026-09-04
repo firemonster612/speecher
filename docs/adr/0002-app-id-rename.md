@@ -26,8 +26,9 @@ log) and deliberately leaves the old file in place.
 - The old settings file at `~/.config/local.speecher/speecher.conf` survives
   indefinitely and can contain API keys; a user purging secrets must delete
   it too.
-- Old KGlobalAccel state under the `local.speecher` component is cleaned up
-  via `cleanComponent` on the next Plasma run so the renamed component can
-  re-register its default; a user's customised key sequence is not migrated.
+- An active KGlobalAccel shortcut under the `local.speecher` component moves
+  to the renamed component on the next Plasma run, then the old component is
+  cleaned up. If the old component has no active shortcut, the renamed
+  component registers the default.
 - On macOS the `CFBundleIdentifier` change resets TCC permission grants for
   any pre-rename install.

@@ -52,20 +52,25 @@ QAction *KGlobalAccelShortcutBinder::makeShortcutAction()
 void KGlobalAccelShortcutBinder::bind()
 {
 #ifdef SPEECHER_WITH_KGLOBALACCEL
+    QKeySequence savedShortcut = shortcut();
+    const QList<QKeySequence> legacyShortcuts = KGlobalAccel::self()->globalShortcut(
+        QStringLiteral("local.speecher"),
+        QString::fromLatin1(shortcutAction));
+    if (savedShortcut.isEmpty() && !legacyShortcuts.isEmpty()) {
+        savedShortcut = legacyShortcuts.first();
+    }
     KGlobalAccel::self()->cleanComponent(QStringLiteral("local.speecher"));
-    const QKeySequence savedShortcut = shortcut();
     makeShortcutAction();
     const QKeySequence defaultShortcut = GlobalShortcutBinder::defaultShortcut();
     if (!KGlobalAccel::self()->setDefaultShortcut(m_action, {defaultShortcut})) {
         qWarning() << "Could not set the default Global Shortcut"
                    << QString::fromLatin1(shortcutComponent) << defaultShortcut;
     }
-    if (!savedShortcut.isEmpty()
-        && !KGlobalAccel::self()->setShortcut(
+    if (!KGlobalAccel::self()->setShortcut(
             m_action,
-            {savedShortcut},
+            {savedShortcut.isEmpty() ? defaultShortcut : savedShortcut},
             KGlobalAccel::Autoloading)) {
-        qWarning() << "Could not restore the saved Global Shortcut";
+        qWarning() << "Could not activate the Global Shortcut";
     }
     emit bindingChanged();
 #endif
