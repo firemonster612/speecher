@@ -36,6 +36,7 @@
 #include <QTabWidget>
 #include <QTextDocument>
 #include <QTimer>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include <utility>
@@ -505,9 +506,14 @@ void AppWindow::buildSidebarShell()
     updateLayout->addWidget(m_updateAction);
     m_updateLater = new QPushButton(QStringLiteral("Later"), m_updateBanner);
     updateLayout->addWidget(m_updateLater);
-    m_updateDismiss = new QPushButton(QStringLiteral("×"), m_updateBanner);
+    m_updateDismiss = new QToolButton(m_updateBanner);
+    m_updateDismiss->setObjectName(QStringLiteral("dismissUpdate"));
+    m_updateDismiss->setIcon(QIcon::fromTheme(
+        QStringLiteral("window-close"),
+        style()->standardIcon(QStyle::SP_TitleBarCloseButton)));
+    m_updateDismiss->setToolTip(QStringLiteral("Dismiss"));
     m_updateDismiss->setAccessibleName(QStringLiteral("Dismiss update"));
-    m_updateDismiss->setFlat(true);
+    m_updateDismiss->setAutoRaise(true);
     updateLayout->addWidget(m_updateDismiss);
     connect(m_updateAction, &QPushButton::clicked, this, [this] {
         if (m_showingWhatsNewBanner) {
@@ -520,7 +526,7 @@ void AppWindow::buildSidebarShell()
         m_updateBannerDeferred = true;
         m_updateBanner->hide();
     });
-    connect(m_updateDismiss, &QPushButton::clicked, this, [this] {
+    connect(m_updateDismiss, &QToolButton::clicked, this, [this] {
         if (m_showingWhatsNewBanner) {
             m_controller->clearPendingWhatsNew();
         } else {
@@ -688,9 +694,10 @@ void AppWindow::refreshUpdateBanner()
         m_updateLater->show();
         break;
     case UpdateController::State::RestartPending:
+        // The sentence is the whole message; a disabled button repeating it
+        // would only add a control that cannot be used.
         m_updateBannerText->setText(QStringLiteral("Restarting after this dictation…"));
-        m_updateAction->setText(QStringLiteral("Restarting after this dictation…"));
-        m_updateAction->setEnabled(false);
+        m_updateAction->hide();
         break;
     case UpdateController::State::Error:
         m_updateBannerText->setText(updates->errorMessage());

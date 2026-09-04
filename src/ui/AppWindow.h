@@ -17,6 +17,7 @@ class QShowEvent;
 class QSplitter;
 class QStackedWidget;
 class QTimer;
+class QToolButton;
 
 namespace speecher {
 
@@ -74,7 +75,7 @@ private:
     QProgressBar *m_updateProgress = nullptr;
     QPushButton *m_updateAction = nullptr;
     QPushButton *m_updateLater = nullptr;
-    QPushButton *m_updateDismiss = nullptr;
+    QToolButton *m_updateDismiss = nullptr;
     bool m_updateBannerDeferred = false;
     QString m_updateBannerVersion;
     QString m_updateBannerInstalledVersion;
