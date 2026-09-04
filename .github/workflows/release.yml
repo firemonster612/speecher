@@ -291,6 +291,9 @@ jobs:
 
   publish:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+    concurrency:
+      group: release-publish-${{ github.repository }}
+      cancel-in-progress: false
     needs:
       - linux
       - macos
@@ -377,34 +380,60 @@ jobs:
             --output "appcast-${channel}.xml"
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
 
       - name: Publish appcast
         env:
           GH_TOKEN: ${{ github.token }}
           CHANNEL: ${{ steps.release.outputs.channel }}
           VERSION: ${{ steps.release.outputs.version }}
+          BUILD_NUMBER: ${{ steps.release.outputs.build_number }}
         run: |
           repository_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          if git ls-remote --exit-code origin gh-pages >/dev/null 2>&1; then
-            git clone --depth=1 --branch gh-pages "$repository_url" pages
-          else
-            status=$?
-            if [ "$status" -ne 2 ]; then
-              echo "Could not determine whether gh-pages exists (git ls-remote exited $status)." >&2
-              exit "$status"
+          for attempt in 1 2 3; do
+            pages="pages-$attempt"
+            if git ls-remote --exit-code origin gh-pages >/dev/null 2>&1; then
+              git clone --depth=1 --branch gh-pages "$repository_url" "$pages"
+            else
+              status=$?
+              if [ "$status" -ne 2 ]; then
+                echo "Could not determine whether gh-pages exists (git ls-remote exited $status)." >&2
+                exit "$status"
+              fi
+              mkdir "$pages"
+              git -C "$pages" init
+              git -C "$pages" checkout --orphan gh-pages
+              git -C "$pages" remote add origin "$repository_url"
             fi
-            mkdir pages
-            git -C pages init
-            git -C pages checkout --orphan gh-pages
-            git -C pages remote add origin "$repository_url"
-          fi
-          cp "appcast-${CHANNEL}.xml" pages/
-          git -C pages config user.name github-actions[bot]
-          git -C pages config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git -C pages add "appcast-${CHANNEL}.xml"
-          if git -C pages diff --cached --quiet; then
-            echo "No appcast changes to publish."
-          else
-            git -C pages commit -m "Publish ${CHANNEL} appcast for ${VERSION}"
-            git -C pages push origin HEAD:gh-pages
-          fi
+            existing_build="$(python3 - "$pages/appcast-${CHANNEL}.xml" <<'PY'
+          import pathlib
+          import sys
+          import xml.etree.ElementTree as ET
+
+          path = pathlib.Path(sys.argv[1])
+          if path.exists():
+              namespace = {"sparkle": "http://www.andymatuschak.org/xml-namespaces/sparkle"}
+              value = ET.parse(path).findtext("./channel/item/sparkle:version", namespaces=namespace)
+              print(value or "")
+          PY
+            )"
+            if [[ "$existing_build" =~ ^[0-9]+$ ]] && (( BUILD_NUMBER < existing_build )); then
+              echo "Refusing to regress the $CHANNEL appcast from build $existing_build to $BUILD_NUMBER." >&2
+              exit 1
+            fi
+            cp "appcast-${CHANNEL}.xml" "$pages/"
+            git -C "$pages" config user.name github-actions[bot]
+            git -C "$pages" config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git -C "$pages" add "appcast-${CHANNEL}.xml"
+            if git -C "$pages" diff --cached --quiet; then
+              echo "No appcast changes to publish."
+              exit 0
+            fi
+            git -C "$pages" commit -m "Publish ${CHANNEL} appcast for ${VERSION}"
+            if git -C "$pages" push origin HEAD:gh-pages; then
+              exit 0
+            fi
+            echo "gh-pages changed during publication; retrying from its latest head." >&2
+          done
+          echo "Could not publish the appcast after 3 attempts." >&2
+          exit 1
