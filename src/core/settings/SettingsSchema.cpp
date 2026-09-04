@@ -110,13 +110,21 @@ QString applicationPasteRuleHint()
 #endif
 }
 
-QString targetAccessibilityHint()
+// One sentence naming the platform's accessibility feature and what it unlocks.
+// macOS calls it the Accessibility permission; Linux desktops expose AT-SPI,
+// which the rest of the UI calls desktop accessibility.
+QString accessibilityGateHelp(const QString &purpose)
 {
 #ifdef Q_OS_MACOS
-    return QStringLiteral("Grant Accessibility permission so Speecher can identify the target application.");
+    return QStringLiteral("Grant Accessibility permission to %1.").arg(purpose);
 #else
-    return QStringLiteral("Turn on desktop accessibility to identify the target application.");
+    return QStringLiteral("Turn on desktop accessibility to %1.").arg(purpose);
 #endif
+}
+
+QString targetAccessibilityHint()
+{
+    return accessibilityGateHelp(QStringLiteral("identify the target application"));
 }
 
 // The action the front end runs to lift an accessibility gate, and the row
@@ -701,7 +709,7 @@ SettingsPage refinementPage(const SchemaContext &context)
         [](AppSettings &settings, bool value) { settings.refinement.useTargetContext = value; });
     gateOnTargetAccessibility(
         targetContext,
-        QStringLiteral("Turn on desktop accessibility to send the target app's context."));
+        accessibilityGateHelp(QStringLiteral("send the target app's context")));
 
     SettingsRow screenshots = toggleRow(
         QStringLiteral("includeScreenshotContext"),
@@ -846,7 +854,7 @@ SettingsPage applicationsPage()
                        "app type used for paste rules, the Writing Profile used for refinement, or both."),
         std::move(rules));
     gateOnTargetAccessibility(
-        row, QStringLiteral("Turn on desktop accessibility to identify target applications."));
+        row, accessibilityGateHelp(QStringLiteral("identify target applications")));
 
     return {
         QStringLiteral("applications"),
@@ -1197,7 +1205,7 @@ SettingsPage correctionsPage()
     learn.tooltip = QStringLiteral("Observe a verified inserted span briefly and automatically "
                                    "learn high-confidence or repeated corrections.");
     gateOnTargetAccessibility(
-        learn, QStringLiteral("Turn on desktop accessibility to learn corrections after insertion."));
+        learn, accessibilityGateHelp(QStringLiteral("learn corrections after insertion")));
 
     CollectionDescriptor corrections;
     corrections.columns = {
