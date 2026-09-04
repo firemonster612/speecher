@@ -32,6 +32,12 @@ private slots:
             << QStringList{QStringLiteral("Breeze"), QStringLiteral("Fusion")}
             << QStringLiteral("system") << false
             << QStringLiteral("Oxygen") << QStringLiteral("Breeze");
+        QTest::newRow("unavailable override keeps current non-GTK style")
+            << QStringLiteral("Oxygen") << QString() << QStringLiteral("LXQt")
+            << QStringLiteral("lxqt") << QStringLiteral("kvantum")
+            << QStringList{QStringLiteral("Fusion"), QStringLiteral("kvantum")}
+            << QStringLiteral("system") << false
+            << QStringLiteral("Oxygen") << QStringLiteral("kvantum");
         QTest::newRow("KDE widget style")
             << QString() << QStringLiteral("kvantum") << QStringLiteral("KDE")
             << QStringLiteral("kde") << QStringLiteral("Breeze")

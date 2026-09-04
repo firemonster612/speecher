@@ -70,11 +70,12 @@ LinuxStyleChoice chooseLinuxStyle(const QString &overrideStyle,
                                   bool desktopPrefersDark)
 {
     const bool kde = currentDesktop.contains(QStringLiteral("KDE"), Qt::CaseInsensitive);
+    const bool gtk = usesGtkPlatformTheme(platformTheme, currentDesktop);
     QString requested = overrideStyle;
     if (requested.isEmpty()) {
         if (kde) {
             requested = kdeWidgetStyle;
-        } else if (usesGtkPlatformTheme(platformTheme, currentDesktop)) {
+        } else if (gtk) {
             requested = prefersDark(applicationTheme, desktopPrefersDark)
                 ? QStringLiteral("adwaita-dark")
                 : QStringLiteral("adwaita");
@@ -89,6 +90,18 @@ LinuxStyleChoice chooseLinuxStyle(const QString &overrideStyle,
     const QString requestedStyle = availableStyle(requested, availableStyles);
     if (!requestedStyle.isEmpty()) {
         return {requested, requestedStyle, fallback};
+    }
+    if (!kde && !gtk) {
+        return {requested, currentStyle, currentStyle};
+    }
+    if (gtk) {
+        const QString adwaita = prefersDark(applicationTheme, desktopPrefersDark)
+            ? QStringLiteral("adwaita-dark")
+            : QStringLiteral("adwaita");
+        const QString availableAdwaita = availableStyle(adwaita, availableStyles);
+        if (!availableAdwaita.isEmpty()) {
+            return {requested, availableAdwaita, fallback};
+        }
     }
 
     return {requested, fallback, fallback};
