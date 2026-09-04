@@ -263,6 +263,14 @@ echo "Copying Breeze fallback icon theme"
 mkdir -p "$APPDIR_PATH/usr/share/icons"
 cp -a "$BREEZE_ICON_DIR" "$APPDIR_PATH/usr/share/icons/"
 
+KVANTUM_THEME_DIR="/usr/share/Kvantum"
+if [[ ! -d "$KVANTUM_THEME_DIR" ]]; then
+  echo "The qt6-style-kvantum package is missing its themes" >&2
+  exit 1
+fi
+echo "Copying bundled Kvantum themes"
+cp -a "$KVANTUM_THEME_DIR" "$APPDIR_PATH/usr/share/"
+
 if [[ ! -f "$APPDIR_PATH/usr/lib/libQt6Core.so.6" ]]; then
   echo "libQt6Core.so.6 was not bundled; the dependency closure is broken" >&2
   exit 1
@@ -322,7 +330,7 @@ fi
 export QT_PLUGIN_PATH="$HERE/usr/plugins"
 export QT_QPA_PLATFORM_PLUGIN_PATH="$HERE/usr/plugins/platforms"
 export XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:$HERE/usr/share"
-# Keep Plasma's native platform integration even when desktop detection is incomplete.
+# Use Plasma's platform integration on KDE unless the user selected another one.
 if [[ -z "${QT_QPA_PLATFORMTHEME:-}" && "${XDG_CURRENT_DESKTOP:-}" == *KDE* ]]; then
   export QT_QPA_PLATFORMTHEME=kde
 fi

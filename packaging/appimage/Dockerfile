@@ -6,6 +6,7 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
         breeze \
         breeze-icon-theme \
+        adwaita-qt6 \
         ca-certificates \
         cmake \
         curl \
@@ -37,6 +38,7 @@ RUN apt-get update \
         pulseaudio \
         python3 \
         qt6-base-dev \
+        qt6-style-kvantum \
         qt6-declarative-dev \
         qt6-gtk-platformtheme \
         qt6-multimedia-dev \
