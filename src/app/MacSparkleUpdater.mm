@@ -39,12 +39,12 @@ NSString *const nightlyFeedUrl = @"https://firemonster612.github.io/speecher/app
 }
 
 - (SUAppcastItem *)bestValidUpdateInAppcast:(SUAppcast *)appcast
-                                  forUpdater:(SPUUpdater *)
+                                  forUpdater:(SPUUpdater *)_updater
 {
     return _allowStableReplacement ? appcast.items.firstObject : nil;
 }
 
-- (id<SUVersionComparison>)versionComparatorForUpdater:(SPUUpdater *)
+- (id<SUVersionComparison>)versionComparatorForUpdater:(SPUUpdater *)_updater
 {
     return self;
 }
@@ -64,25 +64,25 @@ NSString *const nightlyFeedUrl = @"https://firemonster612.github.io/speecher/app
         toVersion:versionB];
 }
 
-- (void)updaterDidNotFindUpdate:(SPUUpdater *)
+- (void)updaterDidNotFindUpdate:(SPUUpdater *)_updater
 {
     _allowStableReplacement = NO;
 }
 
-- (void)updater:(SPUUpdater *)
-        userDidMakeChoice:(SPUUserUpdateChoice)
-        forUpdate:(SUAppcastItem *)
-        state:(SPUUserUpdateState *)
+- (void)updater:(SPUUpdater *)_updater
+        userDidMakeChoice:(SPUUserUpdateChoice)_choice
+        forUpdate:(SUAppcastItem *)_updateItem
+        state:(SPUUserUpdateState *)_state
 {
     _allowStableReplacement = NO;
 }
 
-- (void)updater:(SPUUpdater *)didAbortWithError:(NSError *)
+- (void)updater:(SPUUpdater *)_updater didAbortWithError:(NSError *)_error
 {
     _allowStableReplacement = NO;
 }
 
-- (NSString *)feedURLStringForUpdater:(SPUUpdater *)
+- (NSString *)feedURLStringForUpdater:(SPUUpdater *)_updater
 {
     return _nightly ? speecher::nightlyFeedUrl : speecher::stableFeedUrl;
 }
