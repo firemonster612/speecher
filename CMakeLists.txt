@@ -897,11 +897,6 @@ configure_file(
   "${CMAKE_CURRENT_BINARY_DIR}/io.github.firemonster612.speecher.desktop"
   @ONLY
 )
-configure_file(
-  packaging/io.github.firemonster612.speecher.setup-ydotool.policy.in
-  "${CMAKE_CURRENT_BINARY_DIR}/io.github.firemonster612.speecher.setup-ydotool.policy"
-  @ONLY
-)
 set(SPEECHER_INSTALL_APPLICATIONS_DIR "${CMAKE_INSTALL_DATADIR}/applications")
 set(SPEECHER_INSTALL_HICOLOR_DIR "${CMAKE_INSTALL_DATADIR}/icons/hicolor")
 configure_file(
@@ -920,11 +915,10 @@ if(TARGET speecher-wayland-clipboard)
   install(TARGETS speecher-wayland-clipboard
     RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/speecher)
 endif()
-# The .desktop entry, polkit action, hicolor icon and the post-install hooks that
-# refresh the desktop caches are all freedesktop-only.
+# The .desktop entry, hicolor icon and post-install hooks that refresh the
+# desktop caches are all freedesktop-only.
 if(UNIX AND NOT APPLE)
   install(FILES "${CMAKE_CURRENT_BINARY_DIR}/io.github.firemonster612.speecher.desktop" DESTINATION ${SPEECHER_INSTALL_APPLICATIONS_DIR})
-  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/io.github.firemonster612.speecher.setup-ydotool.policy" DESTINATION ${CMAKE_INSTALL_DATADIR}/polkit-1/actions)
   install(FILES packaging/io.github.firemonster612.speecher.svg DESTINATION ${SPEECHER_INSTALL_HICOLOR_DIR}/scalable/apps)
   install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/post-install.cmake")
 endif()
