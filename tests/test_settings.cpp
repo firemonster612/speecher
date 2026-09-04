@@ -1,6 +1,9 @@
 #include "common/test_doubles.h"
 #include "common/test_http.h"
 #include "common/test_auth.h"
+#ifdef SPEECHER_WITH_QKEYCHAIN
+#include "core/KeyringResult.h"
+#endif
 
 using namespace speecher::test;
 
@@ -9,6 +12,15 @@ class SettingsTests : public QObject {
     Q_OBJECT
 
 private slots:
+#ifdef SPEECHER_WITH_QKEYCHAIN
+    void missingKeyringEntryCountsAsSuccessfulDeletion()
+    {
+        QVERIFY(keyringDeletionSucceeded(QKeychain::NoError));
+        QVERIFY(keyringDeletionSucceeded(QKeychain::EntryNotFound));
+        QVERIFY(!keyringDeletionSucceeded(QKeychain::AccessDeniedByUser));
+    }
+#endif
+
     void identityMigrationMergesOnlyMissingSettingsOnce()
     {
         QTemporaryDir dir;
