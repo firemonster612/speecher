@@ -51,6 +51,34 @@ class DeliveryTests : public QObject {
     Q_OBJECT
 
 private slots:
+#ifdef SPEECHER_WITH_WAYLAND
+    void portalResponseTrackerKeepsResponseUntilActualHandleArrives()
+    {
+        PortalResponseTracker tracker;
+        tracker.begin(QDBusObjectPath(QStringLiteral("/predicted")));
+
+        QVariantMap results;
+        results.insert(QStringLiteral("uri"), QStringLiteral("file:///tmp/screenshot.png"));
+        QVERIFY(!tracker.observe(QStringLiteral("/actual"), 0, results));
+
+        const auto response = tracker.resolve(QDBusObjectPath(QStringLiteral("/actual")));
+        QVERIFY(response);
+        QCOMPARE(response->status, 0U);
+        QCOMPARE(response->results, results);
+    }
+
+    void portalScreenshotTimeoutFailsCapture()
+    {
+        PortalScreenshotContextProvider provider;
+        QSignalSpy failed(&provider, &PortalScreenshotContextProvider::failed);
+
+        QVERIFY(QMetaObject::invokeMethod(&provider, "handleTimeout"));
+
+        QCOMPARE(failed.count(), 1);
+        QCOMPARE(failed.first().first().toString(), QStringLiteral("Screenshot capture timed out"));
+    }
+#endif
+
     void ydotoolSetupFailureReportsCompletedChanges()
     {
         YdotoolSetupTransaction transaction;
