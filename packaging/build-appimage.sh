@@ -79,8 +79,26 @@ require_tool ldd
 require_tool ninja
 require_tool patchelf
 
+BUILD_DIR="$(readlink -m -- "$BUILD_DIR")"
+APPDIR_PATH="$(readlink -m -- "$APPDIR_PATH")"
+OUTPUT_DIR="$(readlink -m -- "$OUTPUT_DIR")"
+APPDIR_MARKER="$APPDIR_PATH/.speecher-appdir-staging"
+case "$APPDIR_PATH" in
+  /|"$ROOT_DIR"|"$BUILD_DIR"|"$OUTPUT_DIR"|"$HOME")
+    echo "Refusing unsafe AppDir staging path: $APPDIR_PATH" >&2
+    exit 1
+    ;;
+esac
+if [[ -e "$APPDIR_PATH" && "$APPDIR_PATH" != "$ROOT_DIR/dist/AppDir"
+      && ! -f "$APPDIR_MARKER" ]]; then
+  echo "Refusing to replace an unmarked AppDir staging path: $APPDIR_PATH" >&2
+  exit 1
+fi
+
 mkdir -p "$OUTPUT_DIR"
-rm -rf "$APPDIR_PATH"
+rm -rf -- "$APPDIR_PATH"
+mkdir -p "$APPDIR_PATH"
+printf 'Speecher AppDir staging directory\n' > "$APPDIR_MARKER"
 
 # Pin Qt discovery at configure time; ambient discovery can mix a system Qt
 # into the build (SPEECHER_QT_PREFIX wins, QT_ROOT_DIR is what CI's Qt action exports).
