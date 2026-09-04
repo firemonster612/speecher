@@ -49,6 +49,10 @@ jobs:
 
       - name: Build Debian trixie image
         uses: docker/build-push-action@v6
+        env:
+          # No build summary or build-record artifact; the publish job must see only release bundles.
+          DOCKER_BUILD_SUMMARY: "false"
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
         with:
           context: .
           file: packaging/appimage/Dockerfile
@@ -317,6 +321,8 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@v8
         with:
+          # Only the two release bundles; the Docker build-record artifact is not wanted here.
+          pattern: "*-release"
           path: artifacts
 
       - name: Publish release
