@@ -219,14 +219,15 @@ private slots:
         QVERIFY(found);
     }
 
-    void automaticDownloadsAppearForSparkle()
+    void automaticDownloadsUsePlainLanguage()
     {
         ApplicationController controller(false);
         SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
         SettingsRowModel *row = settingsRow(bridge.settingsSchema, @"autoInstallUpdates");
 
         QVERIFY(row);
-        QVERIFY([row.help containsString:@"Sparkle"]);
+        QCOMPARE(QString::fromNSString(row.help),
+                 QStringLiteral("Downloads in the background and asks before installing"));
     }
 
     void accountOptionsUseUserFacingLanguage()
