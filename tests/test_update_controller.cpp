@@ -612,8 +612,12 @@ private slots:
                                             UpdateController::State::UpdateAvailable);
         auto *message = window.findChild<QLabel *>(QStringLiteral("updateBannerText"));
         QVERIFY(message);
+        // A Nightly Build is offered a stable replacement; a stable build (the
+        // tag builds CI runs) is offered a plain update.
         QCOMPARE(message->text(),
-                 QStringLiteral("Switch to Stable Release 0.1.1 (replaces this Nightly Build)"));
+                 updater->stableReplacementAvailable()
+                     ? QStringLiteral("Switch to Stable Release 0.1.1 (replaces this Nightly Build)")
+                     : QStringLiteral("Speecher 0.1.1 is available"));
 #endif
     }
 
