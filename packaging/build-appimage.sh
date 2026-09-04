@@ -301,13 +301,16 @@ EOF
 cat > "$APPDIR_PATH/AppRun" <<'EOF'
 #!/usr/bin/env bash
 INHERITED_PATH="${PATH-}"
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PATH=
 IFS=: read -r -a inherited_path_parts <<< "$INHERITED_PATH"
 for path_part in "${inherited_path_parts[@]}"; do
-  [[ "$path_part" == /* ]] && PATH="$PATH:$path_part"
+  [[ "$path_part" == /* ]] && PATH="${PATH:+$PATH:}$path_part"
 done
+PATH="${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}"
 export PATH
-HERE="$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)"
+SOURCE_DIR="${BASH_SOURCE[0]%/*}"
+[[ "$SOURCE_DIR" == "${BASH_SOURCE[0]}" ]] && SOURCE_DIR=.
+HERE="$(cd "$SOURCE_DIR" && pwd -P)" || exit 1
 export PATH="$HERE/usr/bin:$PATH"
 GLIBC_VERSION="$(getconf GNU_LIBC_VERSION 2>/dev/null || true)"
 GLIBC_VERSION="${GLIBC_VERSION##* }"
