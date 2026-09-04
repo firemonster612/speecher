@@ -8,6 +8,10 @@
 #include "frontend/qt/QtFrontEnd.h"
 #include "ui/Theme.h"
 
+#ifdef Q_OS_LINUX
+#include "platform/LinuxStyleChoice.h"
+#endif
+
 #ifdef SPEECHER_WITH_SWIFT_UI
 #include "frontend/mac/MacFrontEnd.h"
 #endif
@@ -19,6 +23,11 @@
 #include <QIcon>
 #include <QSettings>
 #include <QStandardPaths>
+#ifdef Q_OS_LINUX
+#include <QStyle>
+#include <QStyleFactory>
+#include <QStyleHints>
+#endif
 #include <QTextStream>
 #include <QTimer>
 #include <QMutex>
@@ -93,6 +102,34 @@ static QStringList commandLineArguments(int argc, char **argv)
     return arguments;
 }
 
+#ifdef Q_OS_LINUX
+static QString kdeWidgetStyle()
+{
+    const QString configDir = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+    if (configDir.isEmpty()) {
+        return {};
+    }
+    QSettings kdeglobals(configDir + QStringLiteral("/kdeglobals"), QSettings::IniFormat);
+    return kdeglobals.value(QStringLiteral("KDE/widgetStyle")).toString();
+}
+
+static void applyHostWidgetStyle()
+{
+    const LinuxStyleChoice choice = chooseLinuxStyle(
+        qEnvironmentVariable("QT_STYLE_OVERRIDE"),
+        kdeWidgetStyle(),
+        qEnvironmentVariable("XDG_CURRENT_DESKTOP"),
+        QStyleFactory::keys(),
+        qApp->styleHints()->colorScheme() == Qt::ColorScheme::Dark);
+
+    if (qApp->style()->objectName().compare(choice.chosen, Qt::CaseInsensitive) != 0) {
+        QApplication::setStyle(choice.chosen);
+    }
+    const QString requested = choice.requested.isEmpty() ? QStringLiteral("<none>") : choice.requested;
+    qInfo().noquote() << "widget style requested=" + requested + " chosen=" + choice.chosen;
+}
+#endif
+
 int main(int argc, char **argv)
 {
     QCoreApplication::setApplicationName(QStringLiteral("speecher"));
@@ -114,6 +151,9 @@ int main(int argc, char **argv)
     }
 
     QApplication app(argc, argv);
+#ifdef Q_OS_LINUX
+    applyHostWidgetStyle();
+#endif
     AppImageUpdater::waitForRestartParent();
 #ifdef Q_OS_LINUX
     if (!qEnvironmentVariableIsEmpty("APPIMAGE")) {

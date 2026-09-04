@@ -338,6 +338,7 @@ set(SPEECHER_PLATFORM_LINUX_SOURCES
   src/platform/AtSpiTargetProvider.cpp
   src/platform/KGlobalAccelShortcutBinder.cpp
   src/platform/LinuxDesktopIntegration.cpp
+  src/platform/LinuxStyleChoice.cpp
   src/platform/MediaPauseController.cpp
   src/platform/PortalScreenshotContextProvider.cpp
   src/platform/PortalGlobalShortcutBinder.cpp
@@ -357,6 +358,7 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
   src/platform/AtSpiTargetProvider.h
   src/platform/KGlobalAccelShortcutBinder.h
   src/platform/LinuxDesktopIntegration.h
+  src/platform/LinuxStyleChoice.h
   src/platform/MediaPauseController.h
   src/platform/PortalScreenshotContextProvider.h
   src/platform/PortalGlobalShortcutBinder.h
@@ -960,6 +962,9 @@ if(SPEECHER_BUILD_TESTS)
   target_link_libraries(speecher_tests PRIVATE
     speecher_frontend_qt Qt6::Test
   )
+  if(UNIX AND NOT APPLE)
+    target_sources(speecher_tests PRIVATE tests/test_linux_style_choice.cpp)
+  endif()
   if(TARGET speecher_frontend_mac)
     target_sources(speecher_tests PRIVATE tests/test_mac_frontend.mm)
     target_compile_definitions(speecher_tests PRIVATE SPEECHER_WITH_SWIFT_UI=1)

@@ -22,6 +22,9 @@ int main(int argc, char **argv)
     result |= runSettingsSchemaTests(argc, argv);
     result |= runProviderRegistryTests(argc, argv);
     result |= runPlatformCompositionTests(argc, argv);
+#ifdef Q_OS_LINUX
+    result |= runLinuxStyleChoiceTests(argc, argv);
+#endif
     result |= runPlatformLiveTests(argc, argv);
     result |= runSingleInstanceIpcTests(argc, argv);
     result |= runDeliveryTests(argc, argv);
