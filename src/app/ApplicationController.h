@@ -31,6 +31,7 @@ public:
     explicit ApplicationController(bool popupOnly,
                                    std::shared_ptr<const PlatformComposition> platform = platformComposition(),
                                    QObject *parent = nullptr);
+    ~ApplicationController() override;
 
     // The front end outlives the controller and is attached after both exist,
     // because a front end needs the controller it renders.
