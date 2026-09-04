@@ -105,6 +105,20 @@ jobs:
             speecher-appimage:trixie \
             bash -lc 'git config --global --add safe.directory "*" && packaging/build-appimage.sh'
 
+      - name: Verify packaged AppImage
+        if: github.event_name != 'pull_request'
+        run: |
+          expected_version=
+          if [ "${GITHUB_REF_NAME}" != master ]; then
+            expected_version="${GITHUB_REF_NAME#v}"
+          fi
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            --env EXPECTED_VERSION="$expected_version" \
+            speecher-appimage:trixie \
+            bash -lc 'packaging/verify-appimage.sh dist/Speecher-x86_64.AppImage "$EXPECTED_VERSION"'
+
       - name: Write update manifest
         if: github.event_name != 'pull_request'
         run: |
