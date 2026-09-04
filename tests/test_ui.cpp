@@ -15,6 +15,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFontMetrics>
+#include <QFormLayout>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QScrollBar>
@@ -863,6 +864,58 @@ private slots:
             const QRect inCard(row->mapTo(card, QPoint(0, 0)), row->size());
             QVERIFY2(inCard.right() <= card->width(), qPrintable(row->objectName()));
             QVERIFY2(inCard.left() >= 0, qPrintable(row->objectName()));
+        }
+    }
+
+    void generalSettingsHelpFitsWithoutOverlappingRows()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        SchemaCustomRowFactory customRows = [](const SettingsRow &row,
+                                               QWidget *parent,
+                                               std::function<void()>) {
+            return row.id == QStringLiteral("globalShortcut")
+                ? SchemaCustomRow{new QWidget(parent), {}, {}, true}
+                : SchemaCustomRow{};
+        };
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("general"), *platform, providers, customRows);
+        page->resize(900, 900);
+        page->show();
+        QCoreApplication::processEvents();
+
+        auto *formWidget = page->findChild<QWidget *>(QStringLiteral("settingsCardForm"));
+        auto *form = qobject_cast<QFormLayout *>(formWidget ? formWidget->layout() : nullptr);
+        QVERIFY(form);
+        for (int row = 0; row < form->rowCount(); ++row) {
+            QLayoutItem *item = form->itemAt(row, QFormLayout::SpanningRole);
+            if (!item) {
+                item = form->itemAt(row, QFormLayout::FieldRole);
+            }
+            QWidget *rowWidget = item ? item->widget() : nullptr;
+            if (!rowWidget || !rowWidget->isVisibleTo(page.get())) {
+                continue;
+            }
+            const QList<QLabel *> helpLabels = rowWidget->findChildren<QLabel *>(
+                QStringLiteral("rowDescription"));
+            for (QLabel *help : helpLabels) {
+                QVERIFY2(help->height() >= help->heightForWidth(help->width()),
+                         qPrintable(help->text()));
+                for (int nextRow = row + 1; nextRow < form->rowCount(); ++nextRow) {
+                    QLayoutItem *nextItem = form->itemAt(nextRow, QFormLayout::SpanningRole);
+                    if (!nextItem) {
+                        nextItem = form->itemAt(nextRow, QFormLayout::FieldRole);
+                    }
+                    QWidget *nextWidget = nextItem ? nextItem->widget() : nullptr;
+                    if (!nextWidget || !nextWidget->isVisibleTo(page.get())) {
+                        continue;
+                    }
+                    const int helpBottom = help->mapTo(formWidget, QPoint(0, help->height())).y();
+                    const int nextTop = nextWidget->mapTo(formWidget, QPoint()).y();
+                    QVERIFY2(helpBottom <= nextTop, qPrintable(help->text()));
+                    break;
+                }
+            }
         }
     }
 

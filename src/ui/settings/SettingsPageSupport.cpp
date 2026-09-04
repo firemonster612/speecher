@@ -73,7 +73,7 @@ QWidget *makeCenteredSeparator(QWidget *parent)
 void configureFormLayout(QFormLayout *form)
 {
     form->setRowWrapPolicy(QFormLayout::DontWrapRows);
-    form->setFieldGrowthPolicy(QFormLayout::FieldsStayAtSizeHint);
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     form->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
     form->setLabelAlignment(Qt::AlignRight);
 }
