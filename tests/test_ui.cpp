@@ -384,7 +384,8 @@ private slots:
         // timing controls, in that order.
         const std::unique_ptr<SchemaSettingsPage> audio =
             std::make_unique<SchemaSettingsPage>(schema.page(QStringLiteral("audio")));
-        QCOMPARE(sectionLabels(*audio), QStringList{QStringLiteral("Advanced")});
+        QCOMPARE(sectionLabels(*audio),
+                 (QStringList{QStringLiteral("Speech to text"), QStringLiteral("Advanced")}));
         audio->resize(900, 668);
         audio->show();
         QCoreApplication::processEvents();

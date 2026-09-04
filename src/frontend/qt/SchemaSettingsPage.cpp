@@ -167,7 +167,9 @@ QtPageLayout qtPageLayout(SettingsPage page)
         for (SettingsSection &section : page.sections) {
             (section.title == QStringLiteral("Advanced") ? advanced : everyday).append(section);
         }
-        page.sections = {mergedSection(everyday)};
+        SettingsSection everydayCard = mergedSection(everyday);
+        everydayCard.title = QStringLiteral("Speech to text");
+        page.sections = {std::move(everydayCard)};
         page.sections.append(advanced);
         return {std::move(page), {}};
     }
