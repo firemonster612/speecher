@@ -1,11 +1,28 @@
 <?xml version='1.0' encoding='utf-8'?>
-<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher stable updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher stable updates</description><item><title>0.1.3</title><pubDate>Fri, 4 Sep 2026 14:31:07 +0100</pubDate><sparkle:version>306</sparkle:version><sparkle:shortVersionString>0.1.3</sparkle:shortVersionString><description><![CDATA[<pre>## Changed
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher stable updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher stable updates</description><item><title>0.1.4</title><pubDate>Fri, 4 Sep 2026 22:37:06 +0100</pubDate><sparkle:version>323</sparkle:version><sparkle:shortVersionString>0.1.4</sparkle:shortVersionString><description><![CDATA[<pre>## Changed
 
-- On Plasma the sidebar is now KDE's own page list, so it looks and behaves
-  like other KDE apps.
+- Settings pages on Linux are laid out as rows: each setting's name and a
+  short note on the left, its control on the right, grouped in cards with a
+  heading above, the way KDE's own settings pages look. The Applications
+  page's rules now live on the Output page, and the Theme row is gone on
+  Linux because the desktop decides the theme.
+- The sidebar highlight follows your widget style, including rounded
+  selections on current Breeze.
+- Settings pages widen with the window instead of staying at one fixed
+  column width.
+- The update and What's New banner, and the warning shown when a setting
+  cannot be saved, now look like KDE's inline messages: a tinted strip in
+  the message's colour with an icon, the text, its actions and a close
+  button.
+- When the desktop's widget style is not one the AppImage carries (Breeze,
+  Kvantum, Adwaita), Speecher now tries the style plugin installed on the
+  system before falling back to Breeze. That works when the system's Qt is
+  not newer than the AppImage's; otherwise the log says why it fell back.
+  Colours, fonts and icons already came from the desktop.
 
-## Fixed
+## Requirements
 
-- Speecher no longer crashes while quitting or restarting after an update once
-  a dictation has run.
-</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/v0.1.3/speecher.dmg" length="42442708" type="application/x-apple-diskimage" sparkle:edSignature="+j+I/Mhd1lZQVnMsU6RFoTarFALHgbpdtX1/BktSfo/HaeBm059ReAL/HOgATogY8ZnMTnqUu5UWuoNV8fTTAA==" /></item></channel></rss>
+- The Linux AppImage is now built on Debian's testing branch to ship a current
+  KDE stack. It needs glibc 2.43 or newer (Debian 14, Fedora 44, Ubuntu 26.04,
+  or later).
+</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/v0.1.4/speecher.dmg" length="42444622" type="application/x-apple-diskimage" sparkle:edSignature="yje8tPWE0hUgzh5CAHE7pnsHPslfn5+pCDWTkkO6rVZwQfXbPEjM7/AvWz7IyqAJH8cszp3TL3J4HiGyPfihBQ==" /></item></channel></rss>
