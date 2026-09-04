@@ -14,16 +14,43 @@ NSString *const nightlyFeedUrl = @"https://firemonster612.github.io/speecher/app
 } // namespace speecher
 
 @interface SpeecherSparkleDelegate : NSObject <SPUUpdaterDelegate>
-- (void)setNightly:(BOOL)nightly;
+- (void)setNightly:(BOOL)nightly allowStableReplacement:(BOOL)allowStableReplacement;
 @end
 
 @implementation SpeecherSparkleDelegate {
     BOOL _nightly;
+    BOOL _allowStableReplacement;
 }
 
-- (void)setNightly:(BOOL)nightly
+- (void)setNightly:(BOOL)nightly allowStableReplacement:(BOOL)allowStableReplacement
 {
     _nightly = nightly;
+    _allowStableReplacement = allowStableReplacement;
+}
+
+- (SUAppcastItem *)bestValidUpdateInAppcast:(SUAppcast *)appcast
+                                  forUpdater:(SPUUpdater *)updater
+{
+    Q_UNUSED(updater);
+    return _allowStableReplacement ? appcast.items.firstObject : nil;
+}
+
+- (void)updaterDidNotFindUpdate:(SPUUpdater *)updater
+{
+    Q_UNUSED(updater);
+    _allowStableReplacement = NO;
+}
+
+- (void)updater:(SPUUpdater *)updater
+        userDidMakeChoice:(SPUUserUpdateChoice)choice
+        forUpdate:(SUAppcastItem *)updateItem
+        state:(SPUUserUpdateState *)state
+{
+    Q_UNUSED(updater);
+    Q_UNUSED(choice);
+    Q_UNUSED(updateItem);
+    Q_UNUSED(state);
+    _allowStableReplacement = NO;
 }
 
 - (NSString *)feedURLStringForUpdater:(SPUUpdater *)updater
@@ -81,10 +108,14 @@ QString MacSparkleUpdater::errorMessage() const { return {}; }
 bool MacSparkleUpdater::isAppImage() const { return false; }
 bool MacSparkleUpdater::supportsAutomaticDownloads() const { return true; }
 bool MacSparkleUpdater::bannerVisible() const { return false; }
+bool MacSparkleUpdater::repeatedAutomaticCheckFailure() const { return false; }
 
 void MacSparkleUpdater::checkForUpdates(UpdateChannel channel)
 {
-    [m_native->delegate setNightly:channel == UpdateChannel::Nightly];
+    const bool nightly = channel == UpdateChannel::Nightly;
+    const bool stableReplacement = !nightly
+        && currentVersion().contains(QStringLiteral("-nightly"));
+    [m_native->delegate setNightly:nightly allowStableReplacement:stableReplacement];
     [m_native->controller checkForUpdates:nil];
 }
 
@@ -93,7 +124,9 @@ void MacSparkleUpdater::dismissAvailableVersion() {}
 
 void MacSparkleUpdater::applySettings()
 {
-    [m_native->delegate setNightly:m_settings->updateChannel() == UpdateChannel::Nightly];
+    [m_native->delegate
+        setNightly:m_settings->updateChannel() == UpdateChannel::Nightly
+        allowStableReplacement:NO];
     SPUUpdater *updater = m_native->controller.updater;
     updater.automaticallyChecksForUpdates = m_settings->autoCheckUpdates();
     updater.automaticallyDownloadsUpdates = m_settings->autoInstallUpdates();

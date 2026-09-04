@@ -259,6 +259,28 @@ private slots:
         }
     }
 
+    void liveWaylandClipboardFallbackCopiesPlainText()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_CLIPBOARD_FALLBACK")
+            != QStringLiteral("1")) {
+            QSKIP("Live Wayland clipboard fallback check is opt-in");
+        }
+
+        WlClipboardDelivery clipboard;
+        bool htmlAvailable = true;
+        QString error;
+        QVERIFY2(clipboard.copy(makeDeliveryContent(QStringLiteral("Speecher clipboard probe"),
+                                                    OutputFormat::PlainText),
+                                &htmlAvailable,
+                                &error),
+                 qPrintable(error));
+        QVERIFY(!htmlAvailable);
+
+        QString copiedText;
+        QVERIFY2(WlClipboardDelivery::readText(&copiedText, &error), qPrintable(error));
+        QCOMPARE(copiedText, QStringLiteral("Speecher clipboard probe"));
+    }
+
     void liveAtSpiPasswordTargetIsPrivate()
     {
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI_PASSWORD") != QStringLiteral("1")) {

@@ -24,6 +24,7 @@ public:
     bool isAppImage() const override;
     bool supportsAutomaticDownloads() const override;
     bool bannerVisible() const override;
+    bool repeatedAutomaticCheckFailure() const override;
 
 public slots:
     void checkForUpdates(UpdateChannel channel) override;

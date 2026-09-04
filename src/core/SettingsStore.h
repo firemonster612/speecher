@@ -107,6 +107,7 @@ public:
     using SettingsCodecs::setYdotoolEnabled;
     using SettingsCodecs::setUpdatesDismissedVersion;
     using SettingsCodecs::setUpdatesLastRunVersion;
+    using SettingsCodecs::setUpdatesLastRunBuildNumber;
     using SettingsCodecs::setUpdatesPendingWhatsNewVersion;
     using SettingsCodecs::setUpdatesLastCheckTime;
     using SettingsCodecs::snapshot;
@@ -123,6 +124,7 @@ public:
     using SettingsCodecs::updateChannel;
     using SettingsCodecs::updatesDismissedVersion;
     using SettingsCodecs::updatesLastRunVersion;
+    using SettingsCodecs::updatesLastRunBuildNumber;
     using SettingsCodecs::updatesPendingWhatsNewVersion;
     using SettingsCodecs::updatesLastCheckTime;
 

@@ -68,23 +68,24 @@ private slots:
     void whatsNewPageSelectsLiveRowsInTheVersionRange()
     {
         SchemaContext context = fakeContext();
-        context.lastSeenVersion = QStringLiteral("0.1.0");
-        context.currentVersion = QStringLiteral("0.2.0-nightly.20260901+gabc1234");
+        context.lastSeenVersion = QStringLiteral("0.0.0");
+        context.currentVersion = QStringLiteral("0.1.0-nightly.20260901+gabc1234");
         SettingsSchema schema = buildSettingsSchema(context);
         const SettingsRow &channel = rowById(schema.page(QStringLiteral("whatsNew")),
                                              QStringLiteral("updateChannel"));
 
-        QCOMPARE(channel.sinceVersion, QStringLiteral("0.2.0"));
+        QCOMPARE(channel.sinceVersion, QStringLiteral("0.1.0"));
         AppSettings settings;
         channel.apply(settings, QStringLiteral("nightly"));
         QCOMPARE(settings.updates.channel, UpdateChannel::Nightly);
 
-        context.lastSeenVersion = QStringLiteral("0.2.0");
+        context.lastSeenVersion = QStringLiteral("0.1.0");
         schema = buildSettingsSchema(context);
         QVERIFY(!hasRow(schema.page(QStringLiteral("whatsNew")),
                         QStringLiteral("updateChannel")));
 
         context.lastSeenVersion.clear();
+        context.currentVersion = QStringLiteral("0.1.1");
         schema = buildSettingsSchema(context);
         QVERIFY(!hasRow(schema.page(QStringLiteral("whatsNew")),
                         QStringLiteral("updateChannel")));
@@ -92,10 +93,10 @@ private slots:
                         QStringLiteral("whatsNewNotes"))
                     .value(AppSettings{})
                     .toString()
-                    .contains(QStringLiteral("Speecher 0.2.0")));
+                    .contains(QStringLiteral("Speecher 0.1.1")));
 
         context.lastSeenVersion = QStringLiteral("0.1.0");
-        context.currentVersion = QStringLiteral("0.2.0");
+        context.currentVersion = QStringLiteral("0.1.1");
         schema = buildSettingsSchema(context);
         const SettingsPage &whatsNew = schema.page(QStringLiteral("whatsNew"));
         QVERIFY(!hasRow(whatsNew, QStringLiteral("checkForUpdates")));
@@ -107,7 +108,7 @@ private slots:
     {
         SchemaContext context = fakeContext();
         context.lastSeenVersion = QStringLiteral("0.0.0");
-        context.currentVersion = QStringLiteral("0.2.0");
+        context.currentVersion = QStringLiteral("0.1.1");
         const QString notes = rowById(buildSettingsSchema(context).page(
                                           QStringLiteral("whatsNew")),
                                       QStringLiteral("whatsNewNotes"))
@@ -115,8 +116,8 @@ private slots:
                                   .toString();
 
         QVERIFY(notes.contains(QStringLiteral("# Speecher 0.1.0")));
-        QVERIFY(notes.contains(QStringLiteral("# Speecher 0.2.0")));
-        QVERIFY(notes.indexOf(QStringLiteral("# Speecher 0.2.0"))
+        QVERIFY(notes.contains(QStringLiteral("# Speecher 0.1.1")));
+        QVERIFY(notes.indexOf(QStringLiteral("# Speecher 0.1.1"))
                 < notes.indexOf(QStringLiteral("# Speecher 0.1.0")));
     }
 

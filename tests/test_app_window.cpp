@@ -346,8 +346,8 @@ private slots:
         ApplicationController controller(true);
         QWidget parent;
         SchemaContext context;
-        context.currentVersion = QStringLiteral("0.2.0");
-        context.lastSeenVersion = QStringLiteral("0.1.0");
+        context.currentVersion = QStringLiteral("0.1.0");
+        context.lastSeenVersion = QStringLiteral("0.0.0");
         SettingsPageSet pages(&controller, &parent, buildSettingsSchema(context));
         pages.loadBeforeShow();
 

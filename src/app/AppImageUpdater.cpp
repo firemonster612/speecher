@@ -10,6 +10,8 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLocalServer>
+#include <QLocalSocket>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -17,17 +19,25 @@
 #include <QRegularExpression>
 #include <QTemporaryFile>
 #include <QTimer>
+#include <QUuid>
 
 #include <cerrno>
 #include <cstring>
 #include <filesystem>
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 namespace speecher {
 namespace {
 
 constexpr qint64 startupCheckIntervalMs = 20LL * 60 * 60 * 1000;
 constexpr int dailyCheckIntervalMs = 24 * 60 * 60 * 1000;
+constexpr int initialRetryIntervalMs = 5 * 60 * 1000;
+constexpr int maximumRetryIntervalMs = 60 * 60 * 1000;
+constexpr int visibleAutomaticFailureCount = 3;
+constexpr int restartHandshakeTimeoutMs = 15000;
+constexpr auto restartSocketEnvironment = "SPEECHER_RESTART_SOCKET";
 const QUrl stableManifestUrl(QStringLiteral(
     "https://github.com/firemonster612/speecher/releases/latest/download/update-manifest.json"));
 const QUrl nightlyManifestUrl(QStringLiteral(
@@ -45,6 +55,43 @@ bool restartSafe(DictationState state)
     return state == DictationState::Idle || state == DictationState::Error;
 }
 
+int automaticRetryInterval(int failureCount)
+{
+    int interval = initialRetryIntervalMs;
+    for (int failure = 1;
+         failure < failureCount && interval < maximumRetryIntervalMs;
+         ++failure) {
+        interval = qMin(interval * 2, maximumRetryIntervalMs);
+    }
+    return interval;
+}
+
+bool synchronizePath(const QString &path,
+                     int flags,
+                     const QString &description,
+                     QString *error)
+{
+    const QByteArray encodedPath = QFile::encodeName(path);
+    const int descriptor = ::open(encodedPath.constData(), flags);
+    if (descriptor < 0) {
+        setError(error,
+                 QStringLiteral("Could not open the %1 for synchronization: %2")
+                     .arg(description,
+                          QString::fromLocal8Bit(std::strerror(errno))));
+        return false;
+    }
+    if (::fsync(descriptor) != 0) {
+        const QString cause = QString::fromLocal8Bit(std::strerror(errno));
+        ::close(descriptor);
+        setError(error,
+                 QStringLiteral("Could not synchronize the %1: %2")
+                     .arg(description, cause));
+        return false;
+    }
+    ::close(descriptor);
+    return true;
+}
+
 } // namespace
 
 AppImageUpdater::AppImageUpdater(SettingsStore *settings,
@@ -55,6 +102,8 @@ AppImageUpdater::AppImageUpdater(SettingsStore *settings,
     , m_session(session)
     , m_network(new QNetworkAccessManager(this))
     , m_dailyTimer(new QTimer(this))
+    , m_checkChannel(settings->updateChannel())
+    , m_selectedChannel(settings->updateChannel())
 {
     m_network->setTransferTimeout(30000);
     m_dismissedVersion = m_settings->updatesDismissedVersion();
@@ -69,6 +118,10 @@ AppImageUpdater::AppImageUpdater(SettingsStore *settings,
             restartAppImage();
         }
     });
+    connect(m_settings,
+            &SettingsStore::updateSettingsChanged,
+            this,
+            &AppImageUpdater::updateSettingsChanged);
 }
 
 AppImageUpdater::~AppImageUpdater()
@@ -81,7 +134,7 @@ void AppImageUpdater::start()
     m_dailyTimer->setInterval(dailyCheckIntervalMs);
     connect(m_dailyTimer, &QTimer::timeout, this, [this] {
         if (m_settings->autoCheckUpdates()) {
-            checkForUpdates(m_settings->updateChannel());
+            beginCheck(m_settings->updateChannel(), true);
         }
     });
     m_dailyTimer->start();
@@ -90,7 +143,7 @@ void AppImageUpdater::start()
         const qint64 lastCheck = m_settings->updatesLastCheckTime();
         if (m_settings->autoCheckUpdates()
             && QDateTime::currentMSecsSinceEpoch() - lastCheck > startupCheckIntervalMs) {
-            checkForUpdates(m_settings->updateChannel());
+            beginCheck(m_settings->updateChannel(), true);
         }
     });
 }
@@ -147,6 +200,26 @@ bool AppImageUpdater::bannerVisible() const
         || m_state == State::RestartPending;
 }
 
+bool AppImageUpdater::repeatedAutomaticCheckFailure() const
+{
+    return m_automaticCheckFailures >= visibleAutomaticFailureCount;
+}
+
+void AppImageUpdater::waitForRestartParent()
+{
+    const QString socketName = qEnvironmentVariable(restartSocketEnvironment);
+    if (socketName.isEmpty()) {
+        return;
+    }
+    qunsetenv(restartSocketEnvironment);
+
+    QLocalSocket socket;
+    socket.connectToServer(socketName);
+    if (socket.waitForConnected(restartHandshakeTimeoutMs)) {
+        socket.waitForDisconnected(restartHandshakeTimeoutMs);
+    }
+}
+
 std::optional<UpdateManifest> AppImageUpdater::parseManifest(const QByteArray &json,
                                                               QString *error)
 {
@@ -182,6 +255,30 @@ bool AppImageUpdater::isNewerBuild(const UpdateManifest &manifest,
     return manifest.buildNumber > currentBuildNumber;
 }
 
+bool AppImageUpdater::shouldOfferManifest(const UpdateManifest &manifest,
+                                          qint64 currentBuildNumber,
+                                          const QString &currentVersion,
+                                          UpdateChannel channel,
+                                          bool automaticCheck)
+{
+    return isNewerBuild(manifest, currentBuildNumber)
+        || (!automaticCheck
+            && channel == UpdateChannel::Stable
+            && currentVersion.contains(QStringLiteral("-nightly")));
+}
+
+QProcessEnvironment AppImageUpdater::restartEnvironment(
+    const QStringList &arguments,
+    QProcessEnvironment environment)
+{
+    if (environment.contains(QStringLiteral("APPIMAGE_EXTRACT_AND_RUN"))
+        || arguments.contains(QStringLiteral("--appimage-extract-and-run"))) {
+        environment.insert(QStringLiteral("APPIMAGE_EXTRACT_AND_RUN"),
+                           QStringLiteral("1"));
+    }
+    return environment;
+}
+
 std::optional<AppImageFileIdentity> AppImageUpdater::fileIdentity(const QString &path,
                                                                   QString *error)
 {
@@ -209,15 +306,6 @@ bool AppImageUpdater::swapAppImage(const QString &downloadedPath,
                                    const AppImageFileIdentity &expectedIdentity,
                                    QString *error)
 {
-    QFile downloaded(downloadedPath);
-    QFileDevice::Permissions permissions = downloaded.permissions();
-    permissions |= QFileDevice::ExeOwner | QFileDevice::ExeUser
-        | QFileDevice::ExeGroup | QFileDevice::ExeOther;
-    if (!downloaded.setPermissions(permissions)) {
-        setError(error, QStringLiteral("Could not make the downloaded AppImage executable."));
-        return false;
-    }
-
     const std::optional<AppImageFileIdentity> currentIdentity =
         fileIdentity(installedPath, error);
     if (!currentIdentity || *currentIdentity != expectedIdentity) {
@@ -226,6 +314,20 @@ bool AppImageUpdater::swapAppImage(const QString &downloadedPath,
                                 "The installed AppImage changed since the download started; "
                                 "the update was not installed."));
         }
+        return false;
+    }
+
+    QFile downloaded(downloadedPath);
+    QFileDevice::Permissions permissions = QFile::permissions(installedPath);
+    permissions |= QFileDevice::ExeOwner;
+    if (!downloaded.setPermissions(permissions)) {
+        setError(error, QStringLiteral("Could not preserve the installed AppImage permissions."));
+        return false;
+    }
+    if (!synchronizePath(downloadedPath,
+                         O_RDONLY | O_CLOEXEC | O_NONBLOCK,
+                         QStringLiteral("downloaded AppImage"),
+                         error)) {
         return false;
     }
 
@@ -240,10 +342,21 @@ bool AppImageUpdater::swapAppImage(const QString &downloadedPath,
                      .arg(QString::fromStdString(renameError.message())));
         return false;
     }
+    if (!synchronizePath(QFileInfo(installedPath).absolutePath(),
+                         O_RDONLY | O_CLOEXEC | O_DIRECTORY,
+                         QStringLiteral("AppImage folder"),
+                         error)) {
+        return false;
+    }
     return true;
 }
 
 void AppImageUpdater::checkForUpdates(UpdateChannel channel)
+{
+    beginCheck(channel, false);
+}
+
+void AppImageUpdater::beginCheck(UpdateChannel channel, bool automaticCheck)
 {
     if (m_state == State::Checking || m_state == State::Downloading
         || m_state == State::ReadyToRestart || m_state == State::RestartPending) {
@@ -251,8 +364,9 @@ void AppImageUpdater::checkForUpdates(UpdateChannel channel)
     }
 
     m_manifest = {};
-    // The timestamp intentionally records request start, so failed checks still obey the cadence.
-    m_settings->setUpdatesLastCheckTime(QDateTime::currentMSecsSinceEpoch());
+    m_manualInstallRequired = false;
+    m_checkChannel = channel;
+    m_automaticCheck = automaticCheck;
     setState(State::Checking);
     QNetworkRequest request(manifestUrl(channel));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
@@ -269,14 +383,26 @@ void AppImageUpdater::updateNow()
         restartNow();
         return;
     }
-    if (m_state == State::Error) {
+    if (m_state == State::Error || m_state == State::CheckFailed) {
+        if (m_manualInstallRequired) {
+            emit openReleasePageRequested();
+            return;
+        }
         checkForUpdates(m_settings->updateChannel());
         return;
     }
     if (m_state != State::UpdateAvailable) {
         return;
     }
+    if (m_manifest.channel != m_settings->updateChannel()) {
+        beginCheck(m_settings->updateChannel(), false);
+        return;
+    }
     if (!isAppImage()) {
+        emit openReleasePageRequested();
+        return;
+    }
+    if (!appImageDirectoryIsWritable()) {
         emit openReleasePageRequested();
         return;
     }
@@ -298,6 +424,7 @@ void AppImageUpdater::restartNow()
 void AppImageUpdater::dismissAvailableVersion()
 {
     if (m_state == State::Error) {
+        m_manualInstallRequired = false;
         setState(State::Idle);
         return;
     }
@@ -328,6 +455,11 @@ void AppImageUpdater::finishCheck(QNetworkReply *reply)
         : reply->errorString();
     reply->deleteLater();
     if (!networkError.isEmpty()) {
+        if (m_automaticCheck) {
+            ++m_automaticCheckFailures;
+            m_dailyTimer->setInterval(
+                automaticRetryInterval(m_automaticCheckFailures));
+        }
         setState(State::CheckFailed,
                  QStringLiteral("Could not check for updates: %1").arg(networkError));
         return;
@@ -339,17 +471,68 @@ void AppImageUpdater::finishCheck(QNetworkReply *reply)
         setState(State::CheckFailed, error);
         return;
     }
-    if (!isNewerBuild(*manifest, currentBuildNumber())) {
+    m_settings->setUpdatesLastCheckTime(QDateTime::currentMSecsSinceEpoch());
+    m_automaticCheckFailures = 0;
+    m_dailyTimer->setInterval(dailyCheckIntervalMs);
+    if (!shouldOfferManifest(*manifest,
+                             currentBuildNumber(),
+                             currentVersion(),
+                             m_checkChannel,
+                             m_automaticCheck)) {
         m_manifest = {};
         setState(State::UpToDate);
         return;
     }
 
     m_manifest = *manifest;
+    m_manifest.channel = m_checkChannel;
     setState(State::UpdateAvailable);
-    if (m_settings->autoInstallUpdates() && isAppImage()) {
-        beginDownload();
+    const bool stableReplacement = m_checkChannel == UpdateChannel::Stable
+        && currentVersion().contains(QStringLiteral("-nightly"));
+    if (m_settings->autoInstallUpdates() && isAppImage() && !stableReplacement) {
+        if (appImageDirectoryIsWritable()) {
+            beginDownload();
+        }
     }
+}
+
+void AppImageUpdater::updateSettingsChanged()
+{
+    const UpdateChannel channel = m_settings->updateChannel();
+    if (channel == m_selectedChannel) {
+        return;
+    }
+    m_selectedChannel = channel;
+    if (m_state == State::ReadyToRestart || m_state == State::RestartPending) {
+        return;
+    }
+
+    if (m_reply) {
+        QNetworkReply *reply = m_reply;
+        m_reply = nullptr;
+        QObject::disconnect(reply, nullptr, this, nullptr);
+        reply->abort();
+        reply->deleteLater();
+    }
+    clearDownload();
+    m_manifest = {};
+    m_appImageIdentity.reset();
+    m_downloadError.clear();
+    m_downloadPercent = 0;
+    m_manualInstallRequired = false;
+    setState(State::Idle);
+}
+
+bool AppImageUpdater::appImageDirectoryIsWritable()
+{
+    if (QFileInfo(QFileInfo(m_appImagePath).absolutePath()).isWritable()) {
+        return true;
+    }
+    m_manualInstallRequired = true;
+    setState(State::Error,
+             QStringLiteral("The AppImage folder is not writable. Download the replacement "
+                            "from the release page."));
+    return false;
 }
 
 void AppImageUpdater::beginDownload()
@@ -469,7 +652,9 @@ void AppImageUpdater::clearDownload()
     m_download->close();
     delete m_download;
     m_download = nullptr;
-    QFile::remove(path);
+    if (!path.isEmpty()) {
+        QFile::remove(path);
+    }
 }
 
 void AppImageUpdater::setState(State state, const QString &error)
@@ -485,13 +670,46 @@ void AppImageUpdater::restartAppImage()
         emit openReleasePageRequested();
         return;
     }
-    if (!QProcess::startDetached(m_appImagePath,
-                                 {},
-                                 QFileInfo(m_appImagePath).absolutePath())) {
+    m_restartServer = new QLocalServer(this);
+    const QString socketName = QStringLiteral("speecher-restart-%1").arg(
+        QUuid::createUuid().toString(QUuid::WithoutBraces));
+    if (!m_restartServer->listen(socketName)) {
+        delete m_restartServer;
+        m_restartServer = nullptr;
+        setState(State::ReadyToRestart,
+                 QStringLiteral("Could not prepare to restart Speecher."));
+        return;
+    }
+    connect(m_restartServer, &QLocalServer::newConnection, this, [this] {
+        while (QLocalSocket *socket = m_restartServer->nextPendingConnection()) {
+            socket->setParent(m_restartServer);
+        }
+        QCoreApplication::quit();
+    });
+
+    QProcess process;
+    process.setProgram(m_appImagePath);
+    process.setWorkingDirectory(QFileInfo(m_appImagePath).absolutePath());
+    QProcessEnvironment environment = restartEnvironment(
+        QCoreApplication::arguments(), QProcessEnvironment::systemEnvironment());
+    environment.insert(QString::fromLatin1(restartSocketEnvironment), socketName);
+    process.setProcessEnvironment(environment);
+    if (!process.startDetached()) {
+        delete m_restartServer;
+        m_restartServer = nullptr;
         setState(State::ReadyToRestart, QStringLiteral("Could not restart Speecher."));
         return;
     }
-    QCoreApplication::quit();
+    setState(State::RestartPending);
+    QTimer::singleShot(restartHandshakeTimeoutMs, this, [this] {
+        if (!m_restartServer) {
+            return;
+        }
+        delete m_restartServer;
+        m_restartServer = nullptr;
+        setState(State::ReadyToRestart,
+                 QStringLiteral("The updated AppImage did not finish starting."));
+    });
 }
 
 } // namespace speecher

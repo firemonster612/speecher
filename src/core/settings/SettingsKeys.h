@@ -64,6 +64,7 @@ inline const QString UpdatesAutoInstall = QStringLiteral("updates/autoInstall");
 inline const QString UpdatesLastCheckTime = QStringLiteral("updates/lastCheckTime");
 inline const QString UpdatesDismissedVersion = QStringLiteral("updates/dismissedVersion");
 inline const QString UpdatesLastRunVersion = QStringLiteral("updates/lastRunVersion");
+inline const QString UpdatesLastRunBuildNumber = QStringLiteral("updates/lastRunBuildNumber");
 inline const QString UpdatesPendingWhatsNewVersion = QStringLiteral("updates/pendingWhatsNewVersion");
 inline const QString IdentityMigrationVersion = QStringLiteral("migration/identityVersion");
 inline const QString ClaudeCredentialsPath = QStringLiteral("claude/credentialsPath");

@@ -2,7 +2,7 @@
 
 Keep one Markdown file here for each Stable Release. Its filename must start
 with a digit and match the version without the `v` prefix. For example, the
-notes for tag `v0.2.0` live in `0.2.0.md`.
+notes for tag `v0.1.1` live in `0.1.1.md`.
 
 Start the notes at `##`; don't add a release title because each destination
 supplies one. CI uses the file verbatim as the GitHub release body, embeds the

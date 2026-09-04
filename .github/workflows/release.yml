@@ -29,6 +29,18 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Validate stable tag identity
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          other_stable_tags="$(git tag --points-at "$GITHUB_SHA" --list 'v*' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | grep -Fvx "$GITHUB_REF_NAME" || true)"
+          if [ -n "$other_stable_tags" ]; then
+            echo "Another Stable Release tag points at $GITHUB_SHA:" >&2
+            printf '%s\n' "$other_stable_tags" >&2
+            exit 1
+          fi
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Read runner user ID
@@ -77,6 +89,14 @@ jobs:
               QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure
             '
 
+      - name: Test Linux protocol integration
+        run: |
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            speecher-appimage:trixie \
+            packaging/run-linux-protocol-tests.sh build
+
       - name: Package AppImage
         if: github.event_name != 'pull_request'
         run: |
@@ -93,19 +113,38 @@ jobs:
             speecher-appimage:trixie \
             bash -lc 'git config --global --add safe.directory "*" && packaging/build-appimage.sh'
 
+      - name: Verify packaged AppImage
+        if: github.event_name != 'pull_request'
+        run: |
+          expected_version=
+          if [ "${GITHUB_REF_NAME}" != master ]; then
+            expected_version="${GITHUB_REF_NAME#v}"
+          fi
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            --env EXPECTED_VERSION="$expected_version" \
+            speecher-appimage:trixie \
+            bash -lc 'packaging/verify-appimage.sh dist/Speecher-x86_64.AppImage "$EXPECTED_VERSION"'
+
       - name: Write update manifest
         if: github.event_name != 'pull_request'
         run: |
           version_output="$(docker run --rm --volume "$GITHUB_WORKSPACE:/workspace" --workdir /workspace speecher-appimage:trixie build-appimage/speecher --version)"
-          version="$(printf '%s\n' "$version_output" | sed -n 's/^speecher \(.*\) (build [0-9][0-9]*)$/\1/p')"
+          binary_version="$(printf '%s\n' "$version_output" | sed -n 's/^speecher \(.*\) (build [0-9][0-9]*)$/\1/p')"
           build_number="$(printf '%s\n' "$version_output" | sed -n 's/^speecher .* (build \([0-9][0-9]*\))$/\1/p')"
-          test -n "$version"
+          test -n "$binary_version"
           test -n "$build_number"
           if [ "${GITHUB_REF_NAME}" = "master" ]; then
+            version="$binary_version"
             release_tag=nightly
           else
-            release_tag="v${version}"
-            test "${GITHUB_REF_NAME}" = "$release_tag"
+            version="${GITHUB_REF_NAME#v}"
+            release_tag="${GITHUB_REF_NAME}"
+            if [ "$binary_version" != "$version" ]; then
+              echo "Tag version $version does not match binary version $binary_version." >&2
+              exit 1
+            fi
           fi
           sha256="$(sha256sum dist/Speecher-x86_64.AppImage | awk '{print $1}')"
           python3 - "$version" "$build_number" "$release_tag" "$sha256" > dist/update-manifest.json <<'PY'
@@ -260,6 +299,9 @@ jobs:
 
   publish:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+    concurrency:
+      group: release-publish-${{ github.repository }}
+      cancel-in-progress: false
     needs:
       - linux
       - macos
@@ -346,34 +388,60 @@ jobs:
             --output "appcast-${channel}.xml"
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
 
       - name: Publish appcast
         env:
           GH_TOKEN: ${{ github.token }}
           CHANNEL: ${{ steps.release.outputs.channel }}
           VERSION: ${{ steps.release.outputs.version }}
+          BUILD_NUMBER: ${{ steps.release.outputs.build_number }}
         run: |
           repository_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          if git ls-remote --exit-code origin gh-pages >/dev/null 2>&1; then
-            git clone --depth=1 --branch gh-pages "$repository_url" pages
-          else
-            status=$?
-            if [ "$status" -ne 2 ]; then
-              echo "Could not determine whether gh-pages exists (git ls-remote exited $status)." >&2
-              exit "$status"
+          for attempt in 1 2 3; do
+            pages="pages-$attempt"
+            if git ls-remote --exit-code origin gh-pages >/dev/null 2>&1; then
+              git clone --depth=1 --branch gh-pages "$repository_url" "$pages"
+            else
+              status=$?
+              if [ "$status" -ne 2 ]; then
+                echo "Could not determine whether gh-pages exists (git ls-remote exited $status)." >&2
+                exit "$status"
+              fi
+              mkdir "$pages"
+              git -C "$pages" init
+              git -C "$pages" checkout --orphan gh-pages
+              git -C "$pages" remote add origin "$repository_url"
             fi
-            mkdir pages
-            git -C pages init
-            git -C pages checkout --orphan gh-pages
-            git -C pages remote add origin "$repository_url"
-          fi
-          cp "appcast-${CHANNEL}.xml" pages/
-          git -C pages config user.name github-actions[bot]
-          git -C pages config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git -C pages add "appcast-${CHANNEL}.xml"
-          if git -C pages diff --cached --quiet; then
-            echo "No appcast changes to publish."
-          else
-            git -C pages commit -m "Publish ${CHANNEL} appcast for ${VERSION}"
-            git -C pages push origin HEAD:gh-pages
-          fi
+            existing_build="$(python3 - "$pages/appcast-${CHANNEL}.xml" <<'PY'
+          import pathlib
+          import sys
+          import xml.etree.ElementTree as ET
+
+          path = pathlib.Path(sys.argv[1])
+          if path.exists():
+              namespace = {"sparkle": "http://www.andymatuschak.org/xml-namespaces/sparkle"}
+              value = ET.parse(path).findtext("./channel/item/sparkle:version", namespaces=namespace)
+              print(value or "")
+          PY
+            )"
+            if [[ "$existing_build" =~ ^[0-9]+$ ]] && (( BUILD_NUMBER < existing_build )); then
+              echo "Refusing to regress the $CHANNEL appcast from build $existing_build to $BUILD_NUMBER." >&2
+              exit 1
+            fi
+            cp "appcast-${CHANNEL}.xml" "$pages/"
+            git -C "$pages" config user.name github-actions[bot]
+            git -C "$pages" config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git -C "$pages" add "appcast-${CHANNEL}.xml"
+            if git -C "$pages" diff --cached --quiet; then
+              echo "No appcast changes to publish."
+              exit 0
+            fi
+            git -C "$pages" commit -m "Publish ${CHANNEL} appcast for ${VERSION}"
+            if git -C "$pages" push origin HEAD:gh-pages; then
+              exit 0
+            fi
+            echo "gh-pages changed during publication; retrying from its latest head." >&2
+          done
+          echo "Could not publish the appcast after 3 attempts." >&2
+          exit 1

@@ -79,8 +79,26 @@ require_tool ldd
 require_tool ninja
 require_tool patchelf
 
+BUILD_DIR="$(readlink -m -- "$BUILD_DIR")"
+APPDIR_PATH="$(readlink -m -- "$APPDIR_PATH")"
+OUTPUT_DIR="$(readlink -m -- "$OUTPUT_DIR")"
+APPDIR_MARKER="$APPDIR_PATH/.speecher-appdir-staging"
+case "$APPDIR_PATH" in
+  /|"$ROOT_DIR"|"$BUILD_DIR"|"$OUTPUT_DIR"|"$HOME")
+    echo "Refusing unsafe AppDir staging path: $APPDIR_PATH" >&2
+    exit 1
+    ;;
+esac
+if [[ -e "$APPDIR_PATH" && "$APPDIR_PATH" != "$ROOT_DIR/dist/AppDir"
+      && ! -f "$APPDIR_MARKER" ]]; then
+  echo "Refusing to replace an unmarked AppDir staging path: $APPDIR_PATH" >&2
+  exit 1
+fi
+
 mkdir -p "$OUTPUT_DIR"
-rm -rf "$APPDIR_PATH"
+rm -rf -- "$APPDIR_PATH"
+mkdir -p "$APPDIR_PATH"
+printf 'Speecher AppDir staging directory\n' > "$APPDIR_MARKER"
 
 # Pin Qt discovery at configure time; ambient discovery can mix a system Qt
 # into the build (SPEECHER_QT_PREFIX wins, QT_ROOT_DIR is what CI's Qt action exports).
@@ -90,6 +108,7 @@ CMAKE_CONFIGURE_ARGS=(
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
   -DSPEECHER_DESKTOP_EXEC=speecher
   -DSPEECHER_BUILD_TESTS=OFF
+  -DSPEECHER_RELEASE_BUILD=ON
   -DSPEECHER_WITH_KDE=ON
 )
 if [[ -n "$QT_PREFIX_HINT" ]]; then
@@ -159,12 +178,34 @@ copy_library() {
 
 copy_deps_for_elf() {
   local elf="$1"
-  LD_LIBRARY_PATH="$QT_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$elf" 2>/dev/null | awk '
+  local dependencies
+  dependencies="$(LD_LIBRARY_PATH="$QT_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$elf" 2>&1 || true)"
+  if grep -Fq 'not found' <<<"$dependencies"; then
+    echo "Unresolved dependency while bundling $elf:" >&2
+    printf '%s\n' "$dependencies" >&2
+    exit 1
+  fi
+  printf '%s\n' "$dependencies" | awk '
     /=> \// { print $(NF - 1) }
     /^\// { print $1 }
   ' | while read -r lib; do
     copy_library "$lib"
   done
+}
+
+verify_elf_dependencies() {
+  local elf dependencies count=0
+  while IFS= read -r -d '' elf; do
+    [[ "$(file -b "$elf")" == ELF* ]] || continue
+    ((count += 1))
+    dependencies="$(ldd "$elf" 2>&1 || true)"
+    if grep -Fq 'not found' <<<"$dependencies"; then
+      echo "Unresolved dependency in ${elf#"$APPDIR_PATH"/}:" >&2
+      printf '%s\n' "$dependencies" >&2
+      exit 1
+    fi
+  done < <(find "$APPDIR_PATH/usr" -type f -print0)
+  echo "Verified dependencies for $count bundled ELF files"
 }
 
 copy_deps_closure() {
@@ -247,6 +288,9 @@ set_runpath_for_tree "$APPDIR_PATH/usr/bin" '$ORIGIN/../lib'
 set_runpath_for_tree "$APPDIR_PATH/usr/libexec/speecher" '$ORIGIN/../../lib'
 set_runpath_for_tree "$APPDIR_PATH/usr/plugins" '$ORIGIN/../../lib'
 set_runpath_for_tree "$APPDIR_PATH/usr/lib" '$ORIGIN'
+
+echo "Checking bundled ELF dependencies"
+verify_elf_dependencies
 
 echo "Writing AppImage runtime files"
 cat > "$APPDIR_PATH/usr/bin/qt.conf" <<'EOF'

@@ -388,8 +388,13 @@ QString releaseNotesMarkdown(const SchemaContext &context)
             }
         }
     }
-    if (selected.isEmpty() && !notes.isEmpty()) {
-        selected.append(notes.first());
+    if (selected.isEmpty()) {
+        const auto note = std::find_if(notes.cbegin(), notes.cend(), [&context](const Note &candidate) {
+            return compareBaseVersions(candidate.version, context.currentVersion) <= 0;
+        });
+        if (note != notes.cend()) {
+            selected.append(*note);
+        }
     }
 
     QString markdown;
@@ -481,14 +486,14 @@ SettingsPage generalPage(const SchemaContext &context)
         [](AppSettings &settings, const QString &value) {
             settings.updates.channel = updateChannelFromName(value);
         });
-    updateChannel.sinceVersion = QStringLiteral("0.2.0");
+    updateChannel.sinceVersion = QStringLiteral("0.1.0");
     SettingsRow autoCheck = toggleRow(
         QStringLiteral("autoCheckUpdates"),
         QStringLiteral("Check for updates automatically"),
         QStringLiteral("Check the selected Update Channel at startup and once a day."),
         [](const AppSettings &settings) { return settings.updates.autoCheck; },
         [](AppSettings &settings, bool value) { settings.updates.autoCheck = value; });
-    autoCheck.sinceVersion = QStringLiteral("0.2.0");
+    autoCheck.sinceVersion = QStringLiteral("0.1.0");
     SettingsRow autoInstall = toggleRow(
         QStringLiteral("autoInstallUpdates"),
         QStringLiteral("Download and install updates automatically"),
@@ -499,7 +504,7 @@ SettingsPage generalPage(const SchemaContext &context)
 #endif
         [](const AppSettings &settings) { return settings.updates.autoInstall; },
         [](AppSettings &settings, bool value) { settings.updates.autoInstall = value; });
-    autoInstall.sinceVersion = QStringLiteral("0.2.0");
+    autoInstall.sinceVersion = QStringLiteral("0.1.0");
     autoInstall.visible = [](const AppSettings &, const Capabilities &capabilities) {
         return capabilities.automaticUpdateDownloads;
     };

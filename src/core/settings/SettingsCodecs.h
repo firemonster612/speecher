@@ -58,6 +58,7 @@ public:
     qint64 updatesLastCheckTime() const; void setUpdatesLastCheckTime(qint64 value);
     QString updatesDismissedVersion() const; void setUpdatesDismissedVersion(const QString &value);
     QString updatesLastRunVersion() const; void setUpdatesLastRunVersion(const QString &value);
+    qint64 updatesLastRunBuildNumber() const; void setUpdatesLastRunBuildNumber(qint64 value);
     QString updatesPendingWhatsNewVersion() const; void setUpdatesPendingWhatsNewVersion(const QString &value);
     QString claudeCredentialsPath() const; QString claudeEndpointBase() const; QString claudeVoicePath() const;
     QString storedApiKeyFallback() const; void setStoredApiKeyFallback(const QString &value); void clearStoredApiKeyFallback();

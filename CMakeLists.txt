@@ -5,7 +5,7 @@ if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     "Minimum macOS version supported by Speecher")
 endif()
 
-project(speecher VERSION 0.1.0 LANGUAGES C CXX)
+project(speecher VERSION 0.1.1 LANGUAGES C CXX)
 
 include(cmake/GitVersion.cmake)
 
@@ -54,12 +54,20 @@ endif()
 option(SPEECHER_WITH_LAYER_SHELL "Use layer-shell-qt when available" ON)
 option(SPEECHER_WITH_QKEYCHAIN "Use QKeychain when available" ON)
 option(SPEECHER_BUILD_TESTS "Build tests" ON)
+option(SPEECHER_RELEASE_BUILD "Require every Linux release integration" OFF)
 set(SPEECHER_WITH_KDE_DEFAULT OFF)
 if(UNIX AND NOT APPLE)
   set(SPEECHER_WITH_KDE_DEFAULT ON)
 endif()
 option(SPEECHER_WITH_KDE "Require KDE integration on Linux"
   ${SPEECHER_WITH_KDE_DEFAULT})
+if(SPEECHER_RELEASE_BUILD AND (NOT UNIX OR APPLE))
+  message(FATAL_ERROR "SPEECHER_RELEASE_BUILD is the Linux AppImage release profile.")
+endif()
+if(SPEECHER_RELEASE_BUILD AND (NOT SPEECHER_WITH_KDE OR NOT SPEECHER_WITH_QKEYCHAIN))
+  message(FATAL_ERROR
+    "SPEECHER_RELEASE_BUILD requires SPEECHER_WITH_KDE=ON and SPEECHER_WITH_QKEYCHAIN=ON.")
+endif()
 
 # The native macOS front end. Turning it off leaves the Qt front end driving the
 # mac build, which is why the Swift language stays behind the option too.
@@ -144,13 +152,24 @@ function(speecher_assert_package_qt_version package_name target_name)
 endfunction()
 
 speecher_assert_single_qt_prefix("Qt discovery")
-find_package(PkgConfig QUIET)
-if(PkgConfig_FOUND)
+if(SPEECHER_RELEASE_BUILD)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(ATSPI REQUIRED IMPORTED_TARGET atspi-2 gobject-2.0)
+  pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+  pkg_get_variable(WAYLAND_PROTOCOLS_DATA_DIR wayland-protocols pkgdatadir)
+else()
+  find_package(PkgConfig QUIET)
+endif()
+if(PkgConfig_FOUND AND NOT SPEECHER_RELEASE_BUILD)
   pkg_check_modules(ATSPI QUIET IMPORTED_TARGET atspi-2 gobject-2.0)
   pkg_check_modules(WAYLAND_CLIENT QUIET IMPORTED_TARGET wayland-client)
   pkg_get_variable(WAYLAND_PROTOCOLS_DATA_DIR wayland-protocols pkgdatadir)
 endif()
-find_package(Qt6 6.5 QUIET COMPONENTS WebSockets)
+if(SPEECHER_RELEASE_BUILD)
+  find_package(Qt6 6.5 REQUIRED COMPONENTS WebSockets)
+else()
+  find_package(Qt6 6.5 QUIET COMPONENTS WebSockets)
+endif()
 if(UNIX AND NOT APPLE)
   find_package(Qt6 6.5 REQUIRED COMPONENTS DBus)
   if(SPEECHER_WITH_KDE)
@@ -744,6 +763,11 @@ find_program(WAYLAND_SCANNER_EXECUTABLE wayland-scanner)
 set(SPEECHER_EXT_DATA_CONTROL_XML
   "${WAYLAND_PROTOCOLS_DATA_DIR}/staging/ext-data-control/ext-data-control-v1.xml"
 )
+if(SPEECHER_RELEASE_BUILD AND (NOT WAYLAND_SCANNER_EXECUTABLE
+   OR NOT EXISTS "${SPEECHER_EXT_DATA_CONTROL_XML}"))
+  message(FATAL_ERROR
+    "SPEECHER_RELEASE_BUILD requires wayland-scanner and ext-data-control-v1.xml.")
+endif()
 if(UNIX AND NOT APPLE AND WAYLAND_CLIENT_FOUND AND WAYLAND_SCANNER_EXECUTABLE
    AND EXISTS "${SPEECHER_EXT_DATA_CONTROL_XML}")
   set(SPEECHER_EXT_DATA_CONTROL_HEADER
@@ -829,7 +853,11 @@ if(LayerShellQt_FOUND)
 endif()
 
 if(SPEECHER_WITH_QKEYCHAIN)
-  find_package(Qt6Keychain QUIET)
+  if(SPEECHER_RELEASE_BUILD)
+    find_package(Qt6Keychain REQUIRED)
+  else()
+    find_package(Qt6Keychain QUIET)
+  endif()
   if(Qt6Keychain_FOUND)
     if(UNIX AND NOT APPLE)
       speecher_assert_package_qt_version("Qt6Keychain" "qt6keychain")
@@ -838,6 +866,15 @@ if(SPEECHER_WITH_QKEYCHAIN)
     target_link_libraries(speecher_domain PUBLIC qt6keychain)
   endif()
 endif()
+
+message(STATUS "Speecher feature summary:")
+message(STATUS "  release profile: ${SPEECHER_RELEASE_BUILD}")
+message(STATUS "  KDE GlobalAccel/WidgetsAddons/ColorScheme: ${KF6GlobalAccel_FOUND}/${KF6WidgetsAddons_FOUND}/${KF6ColorScheme_FOUND}")
+message(STATUS "  LayerShellQt: ${LayerShellQt_FOUND}")
+message(STATUS "  Qt WebSockets: ${Qt6WebSockets_FOUND}")
+message(STATUS "  QtKeychain: ${Qt6Keychain_FOUND}")
+message(STATUS "  AT-SPI: ${ATSPI_FOUND}")
+message(STATUS "  Wayland helper: ${WAYLAND_CLIENT_FOUND}/${WAYLAND_SCANNER_EXECUTABLE}")
 
 include(GNUInstallDirs)
 if(NOT DEFINED SPEECHER_DESKTOP_EXEC)
@@ -860,11 +897,6 @@ configure_file(
   "${CMAKE_CURRENT_BINARY_DIR}/io.github.firemonster612.speecher.desktop"
   @ONLY
 )
-configure_file(
-  packaging/io.github.firemonster612.speecher.setup-ydotool.policy.in
-  "${CMAKE_CURRENT_BINARY_DIR}/io.github.firemonster612.speecher.setup-ydotool.policy"
-  @ONLY
-)
 set(SPEECHER_INSTALL_APPLICATIONS_DIR "${CMAKE_INSTALL_DATADIR}/applications")
 set(SPEECHER_INSTALL_HICOLOR_DIR "${CMAKE_INSTALL_DATADIR}/icons/hicolor")
 configure_file(
@@ -883,11 +915,10 @@ if(TARGET speecher-wayland-clipboard)
   install(TARGETS speecher-wayland-clipboard
     RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/speecher)
 endif()
-# The .desktop entry, polkit action, hicolor icon and the post-install hooks that
-# refresh the desktop caches are all freedesktop-only.
+# The .desktop entry, hicolor icon and post-install hooks that refresh the
+# desktop caches are all freedesktop-only.
 if(UNIX AND NOT APPLE)
   install(FILES "${CMAKE_CURRENT_BINARY_DIR}/io.github.firemonster612.speecher.desktop" DESTINATION ${SPEECHER_INSTALL_APPLICATIONS_DIR})
-  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/io.github.firemonster612.speecher.setup-ydotool.policy" DESTINATION ${CMAKE_INSTALL_DATADIR}/polkit-1/actions)
   install(FILES packaging/io.github.firemonster612.speecher.svg DESTINATION ${SPEECHER_INSTALL_HICOLOR_DIR}/scalable/apps)
   install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/post-install.cmake")
 endif()

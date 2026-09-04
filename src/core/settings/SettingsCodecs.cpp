@@ -802,6 +802,16 @@ void SettingsCodecs::setUpdatesLastRunVersion(const QString &value)
     m_settings.setValue(SettingsKeys::UpdatesLastRunVersion, value);
 }
 
+qint64 SettingsCodecs::updatesLastRunBuildNumber() const
+{
+    return value(SettingsKeys::UpdatesLastRunBuildNumber, -1).toLongLong();
+}
+
+void SettingsCodecs::setUpdatesLastRunBuildNumber(qint64 value)
+{
+    m_settings.setValue(SettingsKeys::UpdatesLastRunBuildNumber, value);
+}
+
 QString SettingsCodecs::updatesPendingWhatsNewVersion() const
 {
     return value(SettingsKeys::UpdatesPendingWhatsNewVersion, QString()).toString();

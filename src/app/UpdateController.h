@@ -36,6 +36,7 @@ public:
     virtual bool isAppImage() const = 0;
     virtual bool supportsAutomaticDownloads() const = 0;
     virtual bool bannerVisible() const = 0;
+    virtual bool repeatedAutomaticCheckFailure() const = 0;
 
 public slots:
     virtual void checkForUpdates(UpdateChannel channel) = 0;
