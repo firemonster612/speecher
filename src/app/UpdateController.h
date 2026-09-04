@@ -31,6 +31,7 @@ public:
     virtual void start() = 0;
     virtual State state() const = 0;
     virtual QString currentVersion() const = 0;
+    QString displayVersion() const { return currentVersion().section(QLatin1Char('+'), 0, 0); }
     virtual QString availableVersion() const = 0;
     virtual int downloadPercent() const = 0;
     virtual QString errorMessage() const = 0;

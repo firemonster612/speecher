@@ -68,7 +68,7 @@ SettingsSchema settingsSchema(ApplicationController *controller)
             const QString channel = settings.updates.channel == UpdateChannel::Nightly
                 ? QStringLiteral("Nightly Build")
                 : QStringLiteral("Stable Release");
-            const QString running = QStringLiteral("Speecher %1").arg(updates->currentVersion());
+            const QString running = QStringLiteral("Speecher %1").arg(updates->displayVersion());
             switch (updates->state()) {
             case UpdateController::State::Idle:
                 return running;

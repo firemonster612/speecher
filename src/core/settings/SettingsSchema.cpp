@@ -541,9 +541,9 @@ SettingsPage generalPage(const SchemaContext &context)
 
     QList<SettingsRow> setupRows{
         actionRow(QStringLiteral("runSetup"),
-                  QStringLiteral("Setup assistant"),
-                  QStringLiteral("Go through the first-run steps again"),
-                  QStringLiteral("Run setup assistant…")),
+                  QStringLiteral("First-run steps"),
+                  QStringLiteral("Review the choices shown when Speecher first opened"),
+                  QStringLiteral("Open assistant…")),
     };
 #ifdef Q_OS_LINUX
     // Undoing the per-user install is the app's job on Linux: there is no
@@ -673,13 +673,13 @@ SettingsPage audioPage(const SchemaContext &context)
              {
                  numberRow(QStringLiteral("preRollMs"),
                            QStringLiteral("Keep before speech"),
-                           QStringLiteral("So the first word is not clipped"),
+                           QStringLiteral("Prevents the first word from being clipped"),
                            {0, 1500, 50, QStringLiteral(" ms")},
                            [](const AppSettings &settings) { return settings.audio.preRollMs; },
                            [](AppSettings &settings, int value) { settings.audio.preRollMs = value; }),
                  numberRow(QStringLiteral("postRollMs"),
                            QStringLiteral("Keep after stopping"),
-                           QStringLiteral("So the last word is not clipped"),
+                           QStringLiteral("Prevents the last word from being clipped"),
                            {0, 1500, 50, QStringLiteral(" ms")},
                            [](const AppSettings &settings) { return settings.audio.postRollMs; },
                            [](AppSettings &settings, int value) { settings.audio.postRollMs = value; }),
@@ -890,7 +890,7 @@ SettingsPage outputPage(const SchemaContext &context)
     QList<SettingsRow> ruleRows{choiceRow(
         QStringLiteral("globalPasteRule"),
         QStringLiteral("Global fallback"),
-        QStringLiteral("Used unless a rule below overrides it"),
+        QStringLiteral("Used when no app rule matches"),
         fixedOptions(pasteMethodOptions(false, false)),
         [](const AppSettings &settings) {
             for (const PasteRule &rule : settings.output.pasteRules) {
@@ -926,7 +926,7 @@ SettingsPage outputPage(const SchemaContext &context)
         {
             {QStringLiteral("How text is inserted"), QString(), std::move(insertionRows)},
             {QStringLiteral("Per-app rules"),
-             QStringLiteral("Rules for recognised apps win over the global fallback"),
+             QStringLiteral("Choose how recognised apps receive text"),
              std::move(ruleRows)},
             {QStringLiteral("Feedback"),
              QString(),
@@ -1089,7 +1089,7 @@ SettingsRow correctionLearningRow()
     SettingsRow learn = toggleRow(
         QStringLiteral("correctionLearningControl"),
         QStringLiteral("Learn corrections"),
-        QStringLiteral("Watches what you fix right after inserting text"),
+        QStringLiteral("Watch for edits after inserting text"),
         [](const AppSettings &settings) { return settings.correctionLearningEnabled; },
         [](AppSettings &settings, bool value) { settings.correctionLearningEnabled = value; });
     learn.tooltip = QStringLiteral("Observe a verified inserted span briefly and automatically "
@@ -1220,7 +1220,7 @@ SettingsPage vocabularyPage()
              QStringLiteral("Names and words Speecher should recognise"),
              {vocabularyTermsRow(), vocabularyLimitRow()}},
             {QStringLiteral("Learned corrections"),
-             QStringLiteral("Fixes Speecher noticed you make right after it inserted text"),
+             QStringLiteral("Review fixes Speecher learned from your edits"),
              {correctionLearningRow(), learnedCorrectionsRow()}},
             {QStringLiteral("Replacements and snippets"),
              QStringLiteral("Spoken phrases replaced with exact text, even several lines of it"),
