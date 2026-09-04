@@ -409,6 +409,9 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
     row.frame = frame;
     row.description = frame->findChild<QLabel *>(QStringLiteral("rowDescription"));
     if (!row.description) {
+        row.description = frame->findChild<QLabel *>(QStringLiteral("checkBoxCaption"));
+    }
+    if (!row.description) {
         row.description = qobject_cast<QCheckBox *>(row.control);
     }
     m_rows.append(row);

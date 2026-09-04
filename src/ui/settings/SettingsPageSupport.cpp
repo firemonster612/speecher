@@ -11,6 +11,7 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QPalette>
 #include <QResizeEvent>
 #include <QScrollArea>
@@ -28,6 +29,10 @@
 #endif
 
 namespace speecher::settings {
+
+namespace {
+constexpr int kCardContentWidth = 640;
+} // namespace
 
 QColor separatorColor(const QPalette &palette)
 {
@@ -98,6 +103,33 @@ protected:
     }
 };
 
+// The wrapping text beside a check box whose sentence is too long to be the
+// box's own text. Clicking the words toggles the box, as a check box label does.
+class CheckBoxCaption final : public QLabel {
+public:
+    CheckBoxCaption(const QString &text, QCheckBox *checkBox, QWidget *parent)
+        : QLabel(text, parent)
+        , m_checkBox(checkBox)
+    {
+        setObjectName(QStringLiteral("checkBoxCaption"));
+        setWordWrap(true);
+        setBuddy(checkBox);
+    }
+
+protected:
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        QLabel::mouseReleaseEvent(event);
+        if (event->button() == Qt::LeftButton && rect().contains(event->pos())
+            && m_checkBox->isEnabled()) {
+            m_checkBox->toggle();
+        }
+    }
+
+private:
+    QCheckBox *m_checkBox;
+};
+
 } // namespace
 
 QFrame *makeRow(const QString &label,
@@ -137,27 +169,44 @@ QFrame *makeRow(const QString &label,
     auto *fieldLayout = new QVBoxLayout(row);
     fieldLayout->setContentsMargins(0, 0, 0, 0);
     fieldLayout->setSpacing(tightSpacing());
+    const int maximumTextWidth = row->fontMetrics().averageCharWidth() * 62;
+
+    auto *checkBox = qobject_cast<QCheckBox *>(control);
+    if (checkBox && !description.isEmpty()) {
+        // QCheckBox never wraps its text, so a sentence as the box's own text
+        // fixes the row's minimum width and pushes the card past a narrow
+        // pane. The sentence goes in a wrapping label beside the box instead,
+        // at the style's own box-to-text spacing, so it reads the same.
+        auto *checkRow = new QWidget(row);
+        auto *checkLayout = new QHBoxLayout(checkRow);
+        checkLayout->setContentsMargins(0, 0, 0, 0);
+        checkLayout->setSpacing(
+            checkBox->style()->pixelMetric(QStyle::PM_CheckBoxLabelSpacing, nullptr, checkBox));
+        auto *caption = new CheckBoxCaption(description, checkBox, checkRow);
+        caption->setMaximumWidth(maximumTextWidth);
+        checkBox->setAccessibleName(description);
+        checkLayout->addWidget(checkBox, 0, Qt::AlignTop);
+        checkLayout->addWidget(caption, 1, Qt::AlignTop);
+        fieldLayout->addWidget(checkRow);
+        return row;
+    }
     if (control->sizePolicy().horizontalPolicy() == QSizePolicy::Expanding) {
         fieldLayout->addWidget(control);
     } else {
         fieldLayout->addWidget(control, 0, Qt::AlignLeft);
     }
 
-    if (auto *checkBox = qobject_cast<QCheckBox *>(control); checkBox && !description.isEmpty()) {
-        checkBox->setText(description);
-    } else if (!description.isEmpty()) {
+    if (!description.isEmpty()) {
         auto *subtitle = new QLabel(description, row);
         subtitle->setObjectName(QStringLiteral("rowDescription"));
         subtitle->setWordWrap(true);
-        const int maximumTextWidth = subtitle->fontMetrics().averageCharWidth() * 62;
-        if (dynamicDescription) {
-            subtitle->setMaximumWidth(maximumTextWidth);
-            subtitle->setMinimumHeight(subtitle->heightForWidth(maximumTextWidth));
-        } else {
-            const int naturalTextWidth = subtitle->fontMetrics().horizontalAdvance(description);
-            subtitle->setFixedWidth(qMin(naturalTextWidth + 8, maximumTextWidth));
-            subtitle->setMinimumHeight(subtitle->heightForWidth(subtitle->width()));
-        }
+        // A maximum rather than a fixed width: the label may shrink with the
+        // pane and wrap onto more lines, but never widen past a readable
+        // measure. The row's resizeEvent picks up the extra height.
+        const int naturalTextWidth = subtitle->fontMetrics().horizontalAdvance(description);
+        subtitle->setMaximumWidth(dynamicDescription ? maximumTextWidth
+                                                     : qMin(naturalTextWidth + 8, maximumTextWidth));
+        subtitle->setMinimumHeight(subtitle->heightForWidth(subtitle->maximumWidth()));
         subtitle->setForegroundRole(QPalette::PlaceholderText);
         fieldLayout->addWidget(subtitle);
     }
@@ -424,10 +473,12 @@ QFrame *makeSettingsCard(QWidget *parent)
     outer->setContentsMargins(0, 0, 0, 0);
     auto *host = new QWidget(card);
     host->setObjectName(QStringLiteral("settingsCardForm"));
-    host->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
-    // Shared content column: every card is at least this wide, so sections on
-    // a page share left edges instead of each centering at its own width.
-    host->setMinimumWidth(640);
+    // Shared content column: every card grows to the same width, so sections
+    // on a page share left edges instead of each centering at its own width.
+    // A maximum rather than a minimum, so a narrow pane squeezes the cards
+    // (and wraps their descriptions) instead of clipping them at both edges.
+    host->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    host->setMaximumWidth(kCardContentWidth);
     auto *layout = new QFormLayout(host);
     layout->setContentsMargins(0, 0, 0, 0);
     configureFormLayout(layout);

@@ -16,6 +16,7 @@
 #include <QFontMetrics>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QSpinBox>
 #include <QStyleHints>
 #include <QTableWidget>
@@ -697,23 +698,75 @@ private slots:
         QVERIFY(descriptionLabel);
         QVERIFY(titleLabel);
         QVERIFY(descriptionLabel->wordWrap());
-        QCOMPARE(descriptionLabel->width(),
+        QCOMPARE(descriptionLabel->maximumWidth(),
                  qMin(descriptionLabel->fontMetrics().horizontalAdvance(description) + 8,
                       descriptionLabel->fontMetrics().averageCharWidth() * 62));
-        QVERIFY(descriptionLabel->heightForWidth(descriptionLabel->width())
+        QVERIFY(descriptionLabel->heightForWidth(descriptionLabel->maximumWidth())
                 > descriptionLabel->fontMetrics().height());
         const int requiredRowHeight = control->sizeHint().height()
             + settings::tightSpacing()
-            + descriptionLabel->heightForWidth(descriptionLabel->width());
+            + descriptionLabel->heightForWidth(descriptionLabel->maximumWidth());
         QVERIFY(describedRow->minimumSizeHint().height() >= requiredRowHeight);
         QCOMPARE(titleLabel->alignment(), Qt::AlignRight | Qt::AlignVCenter);
 
-        auto *checkBox = new QCheckBox(QStringLiteral("Short label"), &parent);
-        const QString sentence = QStringLiteral("Enable the complete setting sentence");
+        // A check box's sentence sits beside the box as wrapping text (a
+        // QCheckBox cannot wrap its own), and clicking the words toggles it.
+        auto *checkBox = new QCheckBox(&parent);
+        const QString sentence = QStringLiteral(
+            "Download the update in the background and install it the next time Speecher "
+            "restarts, without asking first.");
         QFrame *checkBoxRow = settings::makeRow(
-            QStringLiteral("Setting"), sentence, checkBox, &parent);
-        QCOMPARE(checkBox->text(), sentence);
+            QStringLiteral("Updates"), sentence, checkBox, &parent);
         QVERIFY(!checkBoxRow->findChild<QLabel *>(QStringLiteral("rowDescription")));
+        auto *caption = checkBoxRow->findChild<QLabel *>(QStringLiteral("checkBoxCaption"));
+        QVERIFY(caption);
+        QVERIFY(checkBox->text().isEmpty());
+        QCOMPARE(checkBox->accessibleName(), sentence);
+        QCOMPARE(caption->text(), sentence);
+        QVERIFY(caption->wordWrap());
+        QVERIFY(caption->maximumWidth() <= caption->fontMetrics().averageCharWidth() * 62);
+        QVERIFY(caption->minimumSizeHint().width() < caption->fontMetrics().horizontalAdvance(sentence));
+        parent.show();
+        QCoreApplication::processEvents();
+        QVERIFY(!checkBox->isChecked());
+        QTest::mouseClick(caption, Qt::LeftButton);
+        QVERIFY(checkBox->isChecked());
+    }
+
+    void settingsCardsFitANarrowPaneWithoutClipping()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        SchemaCustomRowFactory customRows = [](const SettingsRow &row,
+                                               QWidget *parent,
+                                               std::function<void()>) {
+            return row.id == QStringLiteral("globalShortcut")
+                ? SchemaCustomRow{new QWidget(parent), {}, {}}
+                : SchemaCustomRow{};
+        };
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("general"), *platform, providers, customRows);
+        // The long update toggle only shows when automatic downloads exist.
+        page->setCapabilities({false, true});
+        page->resize(500, 700);
+        page->show();
+        QCoreApplication::processEvents();
+
+        QVERIFY(page->horizontalScrollBar()->maximum() == 0);
+        auto *autoInstall = page->findChild<QCheckBox *>(QStringLiteral("autoInstallUpdates"));
+        QVERIFY(autoInstall);
+        QVERIFY(autoInstall->isVisibleTo(page.get()));
+        auto *card = page->findChild<QWidget *>(QStringLiteral("settingsCardForm"));
+        QVERIFY(card);
+        QVERIFY(card->width() <= page->viewport()->width());
+        for (QFrame *row : page->findChildren<QFrame *>(QStringLiteral("settingsRow"))) {
+            if (!row->isVisibleTo(page.get())) {
+                continue;
+            }
+            const QRect inCard(row->mapTo(card, QPoint(0, 0)), row->size());
+            QVERIFY2(inCard.right() <= card->width(), qPrintable(row->objectName()));
+            QVERIFY2(inCard.left() >= 0, qPrintable(row->objectName()));
+        }
     }
 
     void settingsRowsGrowForWrappedDescriptions()
