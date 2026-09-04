@@ -654,6 +654,27 @@ private slots:
         QCOMPARE(failed.size(), 0);
     }
 
+    void openAiFastFallbackSharesAbsoluteDeadline()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        OpenAiRefiner refiner(nullptr, 60, 100);
+        QSignalSpy failed(&refiner, &OpenAiRefiner::failed);
+
+        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
+                       QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
+                       {}, false, QStringLiteral("gpt-test"), QStringLiteral("low"), true,
+                       QStringLiteral("balanced"), {});
+
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 100);
+            QTcpSocket *socket = server.nextPendingConnection();
+            QVERIFY(socket);
+            QVERIFY(!readHttpRequest(socket, 100).isEmpty());
+        }
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 55);
+    }
+
     void anthropicApiRefinerSendsFastModeForOpusAndRetriesWithout()
     {
         QTcpServer server;
@@ -732,6 +753,27 @@ private slots:
             QJsonDocument::fromJson(latchedRequest.mid(latchedRequest.indexOf("\r\n\r\n") + 4)).object();
         QVERIFY(!latchedBody.contains(QStringLiteral("speed")));
         refiner.cancel();
+    }
+
+    void anthropicFastFallbackSharesAbsoluteDeadline()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        AnthropicApiRefiner refiner(nullptr, 60, 100);
+        QSignalSpy failed(&refiner, &AnthropicApiRefiner::failed);
+
+        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"),
+                       QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
+                       QStringLiteral("claude-opus-4-8"), QStringLiteral("low"), true,
+                       QStringLiteral("balanced"), {});
+
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 100);
+            QTcpSocket *socket = server.nextPendingConnection();
+            QVERIFY(socket);
+            QVERIFY(!readHttpRequest(socket, 100).isEmpty());
+        }
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 55);
     }
 
     void openAiRefinerFailsOnceWhenBothSpeedsFail()

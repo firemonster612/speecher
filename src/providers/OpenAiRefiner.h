@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QDeadlineTimer>
 #include <QNetworkAccessManager>
 #include <QStringList>
 #include <QTimer>
@@ -15,7 +16,9 @@ class OpenAiRefiner : public QObject {
     Q_OBJECT
 
 public:
-    explicit OpenAiRefiner(QObject *parent = nullptr, int requestTimeoutMs = 20000);
+    explicit OpenAiRefiner(QObject *parent = nullptr,
+                           int requestTimeoutMs = 20000,
+                           int absoluteDeadlineMs = 120000);
 
     void refine(const QString &rawTranscript,
                 const QStringList &vocabulary,
@@ -47,10 +50,13 @@ private:
     std::function<void()> m_fastModeFallback;
     bool m_fastModePendingLatch = false;
     bool m_fastModeUnavailable = false;
+    bool m_retryingFastMode = false;
     QTimer m_inactivityTimer;
     QTimer m_deadlineTimer;
+    QDeadlineTimer m_operationDeadline;
     QNetworkReply *m_reply = nullptr;
     int m_requestTimeoutMs = 20000;
+    int m_absoluteDeadlineMs = 120000;
     QByteArray m_buffer;
     QString m_accumulated;
     bool m_failed = false;
