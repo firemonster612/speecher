@@ -76,6 +76,8 @@ int smallSpacing();
 int largeSpacing();
 int cornerRadius();
 int cardMaximumWidth();
+// Widest a page column grows on a large pane.
+int cardStretchedWidth();
 QMargins rowPadding();
 QFont smallFont(const QFont &font);
 QColor frameColor(const QPalette &palette);
@@ -87,6 +89,8 @@ QWidget *centerColumn(QWidget *content, QWidget *parent);
 void addSectionRow(QFormLayout *form, const QString &title, QWidget *parent);
 // Configures the shared page container; makeSettingsPage and AppWindow both use it.
 void configurePageScroll(QScrollArea *scroll, QWidget *content);
+// Detaches a page's content for composing into another page container.
+QWidget *takePageContent(QScrollArea *scroll);
 QVBoxLayout *makeSettingsPage(QScrollArea *scroll);
 
 } // namespace speecher::settings

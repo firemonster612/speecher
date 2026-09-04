@@ -97,14 +97,13 @@ void removeEmbeddedPageTitle(QWidget *content)
 
 QWidget *detachedContent(QScrollArea *page, bool removeTitle = false)
 {
-    QWidget *content = page->takeWidget();
+    QWidget *content = settings::takePageContent(page);
     if (removeTitle) {
         removeEmbeddedPageTitle(content);
     }
     // The composed page carries the page margins and the width cap; the
     // detached content contributes neither, so cards on every page line up.
     content->layout()->setContentsMargins(0, 0, 0, 0);
-    content->setMaximumWidth(QWIDGETSIZE_MAX);
     page->hide();
     return content;
 }

@@ -96,6 +96,11 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
         QStringLiteral("auth"), QStringLiteral("refinement"), QStringLiteral("vocabulary")};
     const QStringList request = qEnvironmentVariable("SPEECHER_GRAB_PAGE").toLower().split(u':');
     const int page = pageNames.indexOf(request.first());
+    // SPEECHER_GRAB_SIZE=WxH resizes the window first.
+    const QStringList size = qEnvironmentVariable("SPEECHER_GRAB_SIZE").split(u'x');
+    if (size.size() == 2) {
+        m_appWindow->resize(size.at(0).toInt(), size.at(1).toInt());
+    }
     if (page >= 0) {
         m_appWindow->navigateToSettings(static_cast<AppPageId>(page));
         if (request.size() > 1) {

@@ -20,6 +20,7 @@
 #include <QPalette>
 #include <QResizeEvent>
 #include <QScrollArea>
+#include <QEvent>
 #include <QFile>
 #include <QTextStream>
 #include <QSignalBlocker>
@@ -707,21 +708,75 @@ QWidget *centerColumn(QWidget *content, QWidget *parent)
     return content;
 }
 
+namespace {
+
+// Keeps a page's width following its viewport: four fifths of the pane, but
+// never narrower than the FormCard width and never wider than a line stays
+// readable. The rest is the centred gutter.
+class PageWidthGovernor : public QObject
+{
+public:
+    PageWidthGovernor(QScrollArea *scroll, QWidget *content)
+        : QObject(scroll)
+        , m_content(content)
+    {
+        setObjectName(QStringLiteral("pageWidthGovernor"));
+        scroll->viewport()->installEventFilter(this);
+        apply(scroll->viewport()->width());
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::Resize) {
+            apply(static_cast<QResizeEvent *>(event)->size().width());
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    void apply(int viewportWidth)
+    {
+        const QMargins margins =
+            m_content->layout() ? m_content->layout()->contentsMargins() : QMargins();
+        const int gutters = margins.left() + margins.right();
+        const int cards = qBound(cardMaximumWidth(), viewportWidth * 4 / 5, cardStretchedWidth());
+        m_content->setMaximumWidth(cards + gutters);
+    }
+
+    QWidget *m_content;
+};
+
+} // namespace
+
+int cardStretchedWidth() { return gridUnit() * 60; }
+
+QWidget *takePageContent(QScrollArea *scroll)
+{
+    QWidget *content = scroll->takeWidget();
+    // The governor that sized the content for this scroll area must go with
+    // it, or a hidden viewport keeps pinning the content's width.
+    for (QObject *governor : scroll->findChildren<QObject *>(QStringLiteral("pageWidthGovernor"),
+                                                             Qt::FindDirectChildrenOnly)) {
+        delete governor;
+    }
+    content->setMaximumWidth(QWIDGETSIZE_MAX);
+    return content;
+}
+
 void configurePageScroll(QScrollArea *scroll, QWidget *content)
 {
     // The one page container: a frameless scroll area on the window colour
-    // whose content is capped at the card width plus its own margins and
-    // centred when the pane is wider. Every page, composed or schema-driven,
-    // goes through here so their cards share the same edges.
+    // whose content follows the pane width (see PageWidthGovernor) and is
+    // centred in what remains. Every page, composed or schema-driven, goes
+    // through here so their cards share the same edges.
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setBackgroundRole(QPalette::Window);
     scroll->viewport()->setBackgroundRole(QPalette::Window);
     scroll->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
     content->setAutoFillBackground(false);
-    const QMargins margins = content->layout() ? content->layout()->contentsMargins() : QMargins();
-    content->setMaximumWidth(cardMaximumWidth() + margins.left() + margins.right());
     scroll->setWidget(content);
+    new PageWidthGovernor(scroll, content);
 }
 
 QVBoxLayout *makeSettingsPage(QScrollArea *scroll)
