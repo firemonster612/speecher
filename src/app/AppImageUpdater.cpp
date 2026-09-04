@@ -24,7 +24,9 @@
 #include <cerrno>
 #include <cstring>
 #include <filesystem>
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 namespace speecher {
 namespace {
@@ -62,6 +64,32 @@ int automaticRetryInterval(int failureCount)
         interval = qMin(interval * 2, maximumRetryIntervalMs);
     }
     return interval;
+}
+
+bool synchronizePath(const QString &path,
+                     int flags,
+                     const QString &description,
+                     QString *error)
+{
+    const QByteArray encodedPath = QFile::encodeName(path);
+    const int descriptor = ::open(encodedPath.constData(), flags);
+    if (descriptor < 0) {
+        setError(error,
+                 QStringLiteral("Could not open the %1 for synchronization: %2")
+                     .arg(description,
+                          QString::fromLocal8Bit(std::strerror(errno))));
+        return false;
+    }
+    if (::fsync(descriptor) != 0) {
+        const QString cause = QString::fromLocal8Bit(std::strerror(errno));
+        ::close(descriptor);
+        setError(error,
+                 QStringLiteral("Could not synchronize the %1: %2")
+                     .arg(description, cause));
+        return false;
+    }
+    ::close(descriptor);
+    return true;
 }
 
 } // namespace
@@ -286,6 +314,12 @@ bool AppImageUpdater::swapAppImage(const QString &downloadedPath,
         setError(error, QStringLiteral("Could not make the downloaded AppImage executable."));
         return false;
     }
+    if (!synchronizePath(downloadedPath,
+                         O_RDONLY | O_CLOEXEC | O_NONBLOCK,
+                         QStringLiteral("downloaded AppImage"),
+                         error)) {
+        return false;
+    }
 
     const std::optional<AppImageFileIdentity> currentIdentity =
         fileIdentity(installedPath, error);
@@ -307,6 +341,12 @@ bool AppImageUpdater::swapAppImage(const QString &downloadedPath,
         setError(error,
                  QStringLiteral("Could not install the new AppImage: %1")
                      .arg(QString::fromStdString(renameError.message())));
+        return false;
+    }
+    if (!synchronizePath(QFileInfo(installedPath).absolutePath(),
+                         O_RDONLY | O_CLOEXEC | O_DIRECTORY,
+                         QStringLiteral("AppImage folder"),
+                         error)) {
         return false;
     }
     return true;

@@ -18,6 +18,7 @@
 #include <QTimer>
 
 #include <cstring>
+#include <sys/stat.h>
 
 using namespace speecher;
 
@@ -379,6 +380,25 @@ private slots:
         QCOMPARE(readFile(installedPath), QByteArrayLiteral("old AppImage"));
         QCOMPARE(readFile(downloadedPath), QByteArrayLiteral("verified update"));
         QVERIFY(error.startsWith(QStringLiteral("Could not install the new AppImage:")));
+    }
+
+    void refusesSwapWhenDownloadedFileCannotBeSynchronized()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString installedPath = directory.filePath(QStringLiteral("Speecher.AppImage"));
+        const QString downloadedPath = directory.filePath(QStringLiteral("downloaded.AppImage"));
+        writeFile(installedPath, QByteArrayLiteral("old AppImage"));
+        QCOMPARE(::mkfifo(QFile::encodeName(downloadedPath).constData(), 0600), 0);
+
+        QString error;
+        const std::optional<AppImageFileIdentity> identity =
+            AppImageUpdater::fileIdentity(installedPath, &error);
+        QVERIFY2(identity.has_value(), qPrintable(error));
+        QVERIFY(!AppImageUpdater::swapAppImage(
+            downloadedPath, installedPath, *identity, &error));
+        QCOMPARE(readFile(installedPath), QByteArrayLiteral("old AppImage"));
+        QVERIFY(error.contains(QStringLiteral("synchronize")));
     }
 
     void unwritableAppImageDirectoryOpensTheReleasePage()
