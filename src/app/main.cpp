@@ -105,28 +105,43 @@ static QStringList commandLineArguments(int argc, char **argv)
 #ifdef Q_OS_LINUX
 static QString kdeWidgetStyle()
 {
-    const QString configDir = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
-    if (configDir.isEmpty()) {
-        return {};
+    const QStringList paths = QStandardPaths::locateAll(
+        QStandardPaths::GenericConfigLocation,
+        QStringLiteral("kdeglobals"));
+    for (const QString &path : paths) {
+        QSettings kdeglobals(path, QSettings::IniFormat);
+        if (kdeglobals.contains(QStringLiteral("KDE/widgetStyle"))) {
+            return kdeglobals.value(QStringLiteral("KDE/widgetStyle")).toString();
+        }
     }
-    QSettings kdeglobals(configDir + QStringLiteral("/kdeglobals"), QSettings::IniFormat);
-    return kdeglobals.value(QStringLiteral("KDE/widgetStyle")).toString();
+    return {};
 }
 
-static void applyHostWidgetStyle()
+static void applyHostWidgetStyle(const QString &applicationTheme)
 {
+    const QString currentStyle = qApp->style()->objectName();
     const LinuxStyleChoice choice = chooseLinuxStyle(
         qEnvironmentVariable("QT_STYLE_OVERRIDE"),
         kdeWidgetStyle(),
         qEnvironmentVariable("XDG_CURRENT_DESKTOP"),
+        qEnvironmentVariable("QT_QPA_PLATFORMTHEME"),
+        currentStyle,
         QStyleFactory::keys(),
+        applicationTheme,
         qApp->styleHints()->colorScheme() == Qt::ColorScheme::Dark);
 
-    if (qApp->style()->objectName().compare(choice.chosen, Qt::CaseInsensitive) != 0) {
-        QApplication::setStyle(choice.chosen);
+    if (currentStyle.compare(choice.chosen, Qt::CaseInsensitive) != 0
+        && !QApplication::setStyle(choice.chosen)) {
+        qWarning().noquote() << "Could not load widget style " + choice.chosen;
+        if (currentStyle.compare(choice.fallback, Qt::CaseInsensitive) != 0
+            && choice.chosen.compare(choice.fallback, Qt::CaseInsensitive) != 0
+            && !QApplication::setStyle(choice.fallback)) {
+            qWarning().noquote() << "Could not load fallback widget style " + choice.fallback;
+        }
     }
     const QString requested = choice.requested.isEmpty() ? QStringLiteral("<none>") : choice.requested;
-    qInfo().noquote() << "widget style requested=" + requested + " chosen=" + choice.chosen;
+    qInfo().noquote() << "widget style requested=" + requested
+                            + " chosen=" + qApp->style()->objectName();
 }
 #endif
 
@@ -151,8 +166,13 @@ int main(int argc, char **argv)
     }
 
     QApplication app(argc, argv);
+    // A second store, because the theme has to be applied before the first
+    // widget exists and the controller's store is not built yet.
+    SettingsStore startupSettings;
 #ifdef Q_OS_LINUX
-    applyHostWidgetStyle();
+    if (!qEnvironmentVariableIsEmpty("APPIMAGE")) {
+        applyHostWidgetStyle(startupSettings.theme());
+    }
 #endif
     AppImageUpdater::waitForRestartParent();
 #ifdef Q_OS_LINUX
@@ -160,9 +180,6 @@ int main(int argc, char **argv)
         QIcon::setFallbackThemeName(QStringLiteral("breeze"));
     }
 #endif
-    // A second store, because the theme has to be applied before the first
-    // widget exists and the controller's store is not built yet.
-    SettingsStore startupSettings;
     Theme::apply(startupSettings.theme());
 
     const bool daemon = decision.mode == LaunchMode::RunDaemon;

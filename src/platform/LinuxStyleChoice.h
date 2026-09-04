@@ -9,12 +9,16 @@ struct LinuxStyleChoice
 {
     QString requested;
     QString chosen;
+    QString fallback;
 };
 
 LinuxStyleChoice chooseLinuxStyle(const QString &overrideStyle,
                                   const QString &kdeWidgetStyle,
                                   const QString &currentDesktop,
+                                  const QString &platformTheme,
+                                  const QString &currentStyle,
                                   const QStringList &availableStyles,
-                                  bool prefersDark);
+                                  const QString &applicationTheme,
+                                  bool desktopPrefersDark);
 
 }
