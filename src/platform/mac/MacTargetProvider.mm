@@ -10,6 +10,8 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import <Carbon/Carbon.h>
 
+#include <limits>
+
 namespace speecher {
 namespace {
 
@@ -89,6 +91,23 @@ bool isFocusedElement(AXUIElementRef expected)
     return matches;
 }
 
+std::optional<CFRange> rangeAttribute(AXUIElementRef element, CFStringRef attribute)
+{
+    if (!element) {
+        return std::nullopt;
+    }
+    CFTypeRef value = nullptr;
+    if (AXUIElementCopyAttributeValue(element, attribute, &value) != kAXErrorSuccess || !value) {
+        return std::nullopt;
+    }
+    CFRange range;
+    const bool valid = CFGetTypeID(value) == AXValueGetTypeID()
+        && AXValueGetType(static_cast<AXValueRef>(value)) == kAXValueCFRangeType
+        && AXValueGetValue(static_cast<AXValueRef>(value), kAXValueCFRangeType, &range);
+    CFRelease(value);
+    return valid ? std::optional<CFRange>(range) : std::nullopt;
+}
+
 QString focusedWindowTitle(pid_t processId)
 {
     if (!AXIsProcessTrusted()) {
@@ -111,6 +130,7 @@ QString focusedWindowTitle(pid_t processId)
 // the new value on their next run-loop turn.
 constexpr int insertionVerificationAttempts = 5;
 constexpr int insertionVerificationPauseMs = 30;
+constexpr int targetContextCharacters = 240;
 
 // Sleeping here would freeze Speecher's own event loop, including the dictation
 // popup. Spinning it instead keeps the UI alive; user input stays excluded so a
@@ -190,10 +210,26 @@ Target MacTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
         target.role = stringAttribute(focused, kAXRoleAttribute);
         target.controlName = stringAttribute(focused, kAXTitleAttribute);
         if (!target.secure) {
-            target.selectedText = stringAttribute(focused, kAXSelectedTextAttribute);
-            if (!target.selectedText.isEmpty()) {
-                target.selectionStart = 0;
-                target.selectionEnd = target.selectedText.size();
+            const std::optional<CFRange> selectedRange = rangeAttribute(
+                focused, kAXSelectedTextRangeAttribute);
+            if (selectedRange && selectedRange->location >= 0 && selectedRange->length >= 0
+                && selectedRange->location <= std::numeric_limits<int>::max()
+                && selectedRange->length
+                    <= std::numeric_limits<int>::max() - selectedRange->location) {
+                const int start = static_cast<int>(selectedRange->location);
+                const int length = static_cast<int>(selectedRange->length);
+                target.caretOffset = start;
+                if (length > 0) {
+                    target.selectionStart = start;
+                    target.selectionEnd = start + length;
+                    target.selectedText = stringAttribute(focused, kAXSelectedTextAttribute);
+                }
+
+                const QString value = stringAttribute(focused, kAXValueAttribute);
+                if (start <= value.size() && length <= value.size() - start) {
+                    target.nearbyTextBefore = value.left(start).right(targetContextCharacters);
+                    target.nearbyTextAfter = value.mid(start, targetContextCharacters);
+                }
             }
         }
     }
