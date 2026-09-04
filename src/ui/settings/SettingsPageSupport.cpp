@@ -318,6 +318,31 @@ static QColor kdeGlobalsColor(const QString &section, const QString &key)
     return {};
 }
 
+bool kdePlatformThemeActive()
+{
+    // plasma-integration publishes the scheme it loaded on the application;
+    // no other platform theme sets this property.
+    if (qApp && qApp->property("KDE_COLOR_SCHEME_PATH").isValid()) {
+        return true;
+    }
+    return qEnvironmentVariable("QT_QPA_PLATFORMTHEME")
+               .compare(QStringLiteral("kde"), Qt::CaseInsensitive)
+        == 0;
+}
+
+QPalette headerPalette(const QPalette &base)
+{
+    if (kdePlatformThemeActive()) {
+        return kdeHeaderPalette(base);
+    }
+    QPalette result(base);
+    const QColor shade = base.color(QPalette::Active, QPalette::Window).darker(110);
+    result.setColor(QPalette::Active, QPalette::Window, shade);
+    result.setColor(QPalette::Inactive, QPalette::Window, shade);
+    result.setColor(QPalette::Disabled, QPalette::Window, shade);
+    return result;
+}
+
 QPalette kdeHeaderPalette(const QPalette &base)
 {
     QPalette result(base);

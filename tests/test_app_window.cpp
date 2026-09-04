@@ -399,6 +399,23 @@ private slots:
             "[Colors:Header]\nBackgroundNormal=10,20,30\nForegroundNormal=220,221,222\n"
             "[Colors:Header][Inactive]\nBackgroundNormal=40,50,60\nForegroundNormal=180,181,182\n"));
         ApplicationController controller(true);
+
+        // Without the KDE platform theme the body is not drawn in KDE colours,
+        // so the strip stays a shade of the active palette, whatever kdeglobals says.
+        qApp->setProperty("KDE_COLOR_SCHEME_PATH", QVariant());
+        {
+            AppWindow plain(&controller);
+            auto *plainStrip = plain.findChild<QWidget *>(QStringLiteral("sidebarHeaderStrip"));
+            QVERIFY(plainStrip);
+            QCOMPARE(plainStrip->palette().color(QPalette::Active, QPalette::Window),
+                     plain.palette().color(QPalette::Active, QPalette::Window).darker(110));
+        }
+
+        // plasma-integration publishes the loaded scheme on the application.
+        qApp->setProperty("KDE_COLOR_SCHEME_PATH", configPath);
+        const auto clearProperty = qScopeGuard([] {
+            qApp->setProperty("KDE_COLOR_SCHEME_PATH", QVariant());
+        });
         AppWindow window(&controller);
         auto *strip = window.findChild<QWidget *>(QStringLiteral("sidebarHeaderStrip"));
         QVERIFY(strip);

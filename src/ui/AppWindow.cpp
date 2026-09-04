@@ -182,7 +182,7 @@ void AppWindow::refreshHeaderStripColor()
 #ifdef Q_OS_MACOS
     const QPalette headerPalette = palette();
 #else
-    const QPalette headerPalette = settings::kdeHeaderPalette(palette());
+    const QPalette headerPalette = settings::headerPalette(palette());
 #endif
     const QColor line = settings::separatorColor(headerPalette);
     if (m_headerStrip) {
