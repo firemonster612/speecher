@@ -7,6 +7,7 @@
 
 class QCloseEvent;
 class QFrame;
+class QHBoxLayout;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -54,6 +55,7 @@ protected:
 private:
     void buildSharedPages();
     void buildSidebarShell();
+    void buildHeaderTitle(QWidget *parent, QHBoxLayout *layout);
     void buildStatusBanners(QWidget *parent, QVBoxLayout *layout);
     void watchHeaderColorConfig();
 #ifdef SPEECHER_WITH_KPAGEWIDGET
@@ -107,6 +109,11 @@ private:
     bool m_settingsDeletionStarted = false;
     bool m_headerDragPending = false;
     QPoint m_headerPressPosition;
+#ifdef SPEECHER_WITH_KPAGEWIDGET
+    bool m_sidebarResizing = false;
+    int m_sidebarResizeStartX = 0;
+    int m_sidebarResizeStartWidth = 0;
+#endif
 };
 
 } // namespace speecher

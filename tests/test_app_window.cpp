@@ -615,6 +615,15 @@ private slots:
 
         search->setText(QStringLiteral("Keep before speech"));
         QVERIFY(sidebarRowHidden(window, 1) && !sidebarRowHidden(window, 2));
+
+#ifdef SPEECHER_WITH_KPAGEWIDGET
+        QVERIFY(sidebarRowHidden(window, 8));
+        setSidebarRow(window, 1);
+        QTest::keyClick(search, Qt::Key_Return);
+        QCOMPARE(sidebarCurrentRow(window), 2);
+        search->clear();
+        QVERIFY(sidebarRowHidden(window, 8));
+#endif
     }
 
     void programmaticNavigationUpdatesShellChrome()

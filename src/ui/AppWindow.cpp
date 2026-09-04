@@ -83,6 +83,10 @@ const QList<PageDefinition> kPages{
     {QStringLiteral("Vocabulary"), QStringLiteral("accessories-dictionary"), QStringLiteral("tools-check-spelling")},
 };
 
+constexpr int kSidebarMinimumWidth = 180;
+constexpr int kSidebarDefaultWidth = 220;
+constexpr int kSidebarMaximumWidth = 320;
+
 QScrollArea *scrollingPage(QWidget *content, QWidget *parent)
 {
     auto *scroll = new QScrollArea(parent);
@@ -408,10 +412,57 @@ bool AppWindow::eventFilter(QObject *watched, QEvent *event)
         mac::updateSidebarWidth(this, m_sidebarPane->width());
 #endif
     }
+#ifdef SPEECHER_WITH_KPAGEWIDGET
+    if (m_navigationView
+        && (watched == m_navigationView || watched == m_navigationView->viewport())) {
+        auto *target = static_cast<QWidget *>(watched);
+        const int edgeX = m_navigationView->mapToGlobal(
+            QPoint(m_navigationView->width() - 1, 0)).x();
+        const int grabWidth = qMax(style()->pixelMetric(QStyle::PM_SplitterWidth),
+                                   QApplication::startDragDistance() / 2);
+        if (event->type() == QEvent::MouseButtonPress) {
+            const auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::LeftButton
+                && qAbs(mouseEvent->globalPosition().x() - edgeX) <= grabWidth) {
+                m_sidebarResizing = true;
+                m_sidebarResizeStartX = qRound(mouseEvent->globalPosition().x());
+                m_sidebarResizeStartWidth = m_navigationView->width();
+                target->grabMouse();
+                return true;
+            }
+        }
+        if (event->type() == QEvent::MouseMove) {
+            const auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (m_sidebarResizing) {
+                if (!(mouseEvent->buttons() & Qt::LeftButton)) {
+                    m_sidebarResizing = false;
+                    target->releaseMouse();
+                    return true;
+                }
+                const int width = m_sidebarResizeStartWidth
+                    + qRound(mouseEvent->globalPosition().x()) - m_sidebarResizeStartX;
+                m_navigationView->setFixedWidth(
+                    qBound(kSidebarMinimumWidth, width, kSidebarMaximumWidth));
+                return true;
+            }
+            target->setCursor(qAbs(mouseEvent->globalPosition().x() - edgeX) <= grabWidth
+                                  ? Qt::SplitHCursor
+                                  : Qt::ArrowCursor);
+        }
+        if (event->type() == QEvent::MouseButtonRelease && m_sidebarResizing) {
+            m_sidebarResizing = false;
+            target->releaseMouse();
+            return true;
+        }
+        if (event->type() == QEvent::Leave && !m_sidebarResizing) {
+            target->unsetCursor();
+        }
+    }
+#endif
     // The header strip reads as part of the title bar, so empty space in it
     // must drag and double-click the window like the title bar does. Only
     // events the interactive children ignore bubble up to the strip itself.
-    if (watched == m_headerStrip) {
+    if (watched == m_headerStrip || watched == m_searchSection) {
         if (event->type() == QEvent::MouseButtonPress
             && static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
             m_headerDragPending = true;
@@ -567,6 +618,25 @@ void AppWindow::buildStatusBanners(QWidget *parent, QVBoxLayout *layout)
     layout->addWidget(m_autoSaveWarning);
 }
 
+void AppWindow::buildHeaderTitle(QWidget *parent, QHBoxLayout *layout)
+{
+    m_backButton = new QToolButton(parent);
+    m_backButton->setObjectName(QStringLiteral("whatsNewBack"));
+    m_backButton->setText(QStringLiteral("Back"));
+    const QIcon backIcon = QIcon::fromTheme(QStringLiteral("go-previous"));
+    m_backButton->setIcon(backIcon);
+    m_backButton->setToolButtonStyle(backIcon.isNull() ? Qt::ToolButtonTextOnly
+                                                       : Qt::ToolButtonIconOnly);
+    m_backButton->setToolTip(QStringLiteral("Back"));
+    m_backButton->setAutoRaise(true);
+    m_backButton->hide();
+    connect(m_backButton, &QToolButton::clicked, this, &AppWindow::leaveWhatsNew);
+    layout->addWidget(m_backButton);
+    m_pageTitle = settings::makePageTitle(kPages.first().title, parent);
+    layout->addWidget(m_pageTitle);
+    layout->addStretch();
+}
+
 void AppWindow::watchHeaderColorConfig()
 {
 #ifndef Q_OS_MACOS
@@ -637,6 +707,9 @@ void AppWindow::buildNativeSidebarShell()
         m_searchSection->setAutoFillBackground(true);
         search = m_searchSection->findChild<QLineEdit *>();
         if (search) {
+            // KPageView's delayed filter would unhide the permanently hidden
+            // What's New Page after Clear. Replace only that signal's wiring.
+            QObject::disconnect(search, SIGNAL(textChanged(QString)), nullptr, nullptr);
             search->setObjectName(QStringLiteral("appSearch"));
         } else {
             qWarning().noquote()
@@ -677,21 +750,7 @@ void AppWindow::buildNativeSidebarShell()
     headerContentLayout->setSpacing(settings::tightSpacing());
     auto *titleLayout = new QHBoxLayout;
     titleLayout->setContentsMargins(0, 0, 0, 0);
-    m_backButton = new QToolButton(headerContent);
-    m_backButton->setObjectName(QStringLiteral("whatsNewBack"));
-    m_backButton->setText(QStringLiteral("Back"));
-    const QIcon backIcon = QIcon::fromTheme(QStringLiteral("go-previous"));
-    m_backButton->setIcon(backIcon);
-    m_backButton->setToolButtonStyle(backIcon.isNull() ? Qt::ToolButtonTextOnly
-                                                       : Qt::ToolButtonIconOnly);
-    m_backButton->setToolTip(QStringLiteral("Back"));
-    m_backButton->setAutoRaise(true);
-    m_backButton->hide();
-    connect(m_backButton, &QToolButton::clicked, this, &AppWindow::leaveWhatsNew);
-    titleLayout->addWidget(m_backButton);
-    m_pageTitle = settings::makePageTitle(kPages.first().title, headerContent);
-    titleLayout->addWidget(m_pageTitle);
-    titleLayout->addStretch();
+    buildHeaderTitle(headerContent, titleLayout);
     headerContentLayout->addLayout(titleLayout);
     headerLayout->addWidget(headerContent, 1);
     m_headerStrip = header;
@@ -740,10 +799,23 @@ void AppWindow::buildNativeSidebarShell()
     m_sidebarPane = m_navigationView;
     if (m_sidebarPane) {
         m_sidebarPane->installEventFilter(this);
+        m_navigationView->viewport()->installEventFilter(this);
+        const int savedSidebarWidth = m_controller->settings()->raw()
+                                          .value(QStringLiteral("ui/appWindow/a/sidebarWidth"),
+                                                 kSidebarDefaultWidth)
+                                          .toInt();
+        m_navigationView->setFixedWidth(qBound(kSidebarMinimumWidth,
+                                               savedSidebarWidth,
+                                               kSidebarMaximumWidth));
     }
-    if (m_searchSection && m_sidebarPane) {
-        m_searchSection->setFixedWidth(m_sidebarPane->width());
+    if (m_searchSection) {
+        m_searchSection->installEventFilter(this);
     }
+    QTimer::singleShot(0, this, [this] {
+        if (m_searchSection && m_sidebarPane) {
+            m_searchSection->setFixedWidth(m_sidebarPane->width());
+        }
+    });
     refreshHeaderStripColor();
 
     connect(m_navigation,
@@ -751,6 +823,9 @@ void AppWindow::buildNativeSidebarShell()
             this,
             [this](KPageWidgetItem *item) {
                 const int index = m_navigationPages.indexOf(item);
+                if (index < 0) {
+                    return;
+                }
                 const bool whatsNew = index >= kPages.size();
                 m_pageTitle->setText(whatsNew ? QStringLiteral("What's New")
                                               : kPages.at(index).title);
@@ -841,21 +916,7 @@ void AppWindow::buildSidebarShell()
     // What's New is not a sidebar page, so while it shows, the header carries
     // the way back to the page it was opened from, as System Settings does for
     // a page reached from another one.
-    m_backButton = new QToolButton(headerRight);
-    m_backButton->setObjectName(QStringLiteral("whatsNewBack"));
-    m_backButton->setText(QStringLiteral("Back"));
-    const QIcon backIcon = QIcon::fromTheme(QStringLiteral("go-previous"));
-    m_backButton->setIcon(backIcon);
-    m_backButton->setToolButtonStyle(backIcon.isNull() ? Qt::ToolButtonTextOnly
-                                                       : Qt::ToolButtonIconOnly);
-    m_backButton->setToolTip(QStringLiteral("Back"));
-    m_backButton->setAutoRaise(true);
-    m_backButton->hide();
-    connect(m_backButton, &QToolButton::clicked, this, &AppWindow::leaveWhatsNew);
-    headerRightLayout->addWidget(m_backButton);
-    m_pageTitle = settings::makePageTitle(kPages.first().title, headerRight);
-    headerRightLayout->addWidget(m_pageTitle);
-    headerRightLayout->addStretch();
+    buildHeaderTitle(headerRight, headerRightLayout);
     headerLayout->addWidget(headerRight, 1);
     header->installEventFilter(this);
     root->addWidget(header);
@@ -877,8 +938,8 @@ void AppWindow::buildSidebarShell()
     auto *sidebar = new QWidget(m_sidebarSplitter);
     sidebar->setBackgroundRole(QPalette::Base);
     sidebar->setAutoFillBackground(true);
-    sidebar->setMinimumWidth(180);
-    sidebar->setMaximumWidth(320);
+    sidebar->setMinimumWidth(kSidebarMinimumWidth);
+    sidebar->setMaximumWidth(kSidebarMaximumWidth);
     auto *sidebarLayout = new QVBoxLayout(sidebar);
     sidebarLayout->setContentsMargins(settings::relatedSpacing(),
                                       settings::relatedSpacing(),
@@ -929,6 +990,7 @@ void AppWindow::buildSidebarShell()
     m_sidebarPane = sidebar;
     m_searchSection = searchContainer;
     sidebar->installEventFilter(this);
+    searchContainer->installEventFilter(this);
     connect(m_sidebarSplitter, &QSplitter::splitterMoved, searchContainer,
             [searchContainer, sidebar] { searchContainer->setFixedWidth(sidebar->width()); });
     root->addWidget(m_sidebarSplitter, 1);
@@ -936,7 +998,7 @@ void AppWindow::buildSidebarShell()
     // Re-run now that the hairline widgets and the splitter handle exist; the
     // first call above only colored the strip itself.
     refreshHeaderStripColor();
-    m_sidebarSplitter->setSizes({220, 680});
+    m_sidebarSplitter->setSizes({kSidebarDefaultWidth, 680});
     const QByteArray splitterState = m_controller->settings()->raw()
                                          .value(QStringLiteral("ui/appWindow/a/splitter"))
                                          .toByteArray();
@@ -971,6 +1033,9 @@ void AppWindow::buildSidebarShell()
                 }
             });
     connect(m_stack, &QStackedWidget::currentChanged, this, [this](int index) {
+        if (index < 0) {
+            return;
+        }
         const bool whatsNew = index >= kPages.size();
         m_pageTitle->setText(whatsNew ? QStringLiteral("What's New") : kPages.at(index).title);
         m_backButton->setVisible(whatsNew);
@@ -1210,6 +1275,12 @@ void AppWindow::rememberGeometry()
 {
     m_controller->settings()->raw().setValue(
         QStringLiteral("ui/appWindow/a/geometry"), saveGeometry());
+#ifdef SPEECHER_WITH_KPAGEWIDGET
+    if (m_navigationView) {
+        m_controller->settings()->raw().setValue(
+            QStringLiteral("ui/appWindow/a/sidebarWidth"), m_navigationView->width());
+    }
+#endif
     if (m_sidebarSplitter) {
         m_controller->settings()->raw().setValue(
             QStringLiteral("ui/appWindow/a/splitter"), m_sidebarSplitter->saveState());
