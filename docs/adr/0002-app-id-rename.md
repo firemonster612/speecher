@@ -19,7 +19,7 @@ publishing any artifact. QSettings organization becomes
 KGlobalAccel component, and `CFBundleIdentifier` all carry the full id. A
 one-time startup migration copies QSettings keys from the old organization
 (the only user state that exists; the cache directory holds a regenerable
-log) and deliberately leaves the old file in place.
+log) and deliberately leaves the old file in place. On Plasma a key set under the old KGlobalAccel component is carried over to the new one, but only where the old component still exists: 0.1.0 and 0.1.1 already removed it, so their upgraders get the default key.
 
 ## Consequences
 
