@@ -282,7 +282,11 @@ QVBoxLayout *makeSettingsPage(QScrollArea *scroll)
     auto *page = new QWidget(scroll);
     page->setAutoFillBackground(false);
     auto *layout = new QVBoxLayout(page);
-    applyPageMargins(layout);
+    // The same breathing room around the cards as the rows keep inside them.
+    layout->setContentsMargins(rowHorizontalPadding(),
+                               rowVerticalPadding(),
+                               rowHorizontalPadding(),
+                               rowVerticalPadding());
     scroll->setWidget(page);
     return layout;
 }

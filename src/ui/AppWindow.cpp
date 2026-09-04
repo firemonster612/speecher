@@ -418,11 +418,21 @@ void AppWindow::showEvent(QShowEvent *event)
         const QSignalBlocker blocker(m_pages);
         m_pages->loadBeforeShow();
     }
+    // The children fill the window, so the window itself may never get a
+    // paint event; the native window's exposure says it is on screen too.
+    if (QWindow *handle = windowHandle()) {
+        handle->installEventFilter(this);
+    }
 }
 
 void AppWindow::paintEvent(QPaintEvent *event)
 {
     QMainWindow::paintEvent(event);
+    scheduleAfterShowLoad();
+}
+
+void AppWindow::scheduleAfterShowLoad()
+{
     if (!m_pageLoadScheduled || m_afterShowLoadScheduled) {
         return;
     }
@@ -435,6 +445,10 @@ void AppWindow::paintEvent(QPaintEvent *event)
 
 bool AppWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    if (event->type() == QEvent::Expose && watched == windowHandle()
+        && windowHandle()->isExposed()) {
+        scheduleAfterShowLoad();
+    }
     // Keep the header's search section exactly as wide as the sidebar pane,
     // whatever resizes it (layout settling, splitter drag, window resize).
     if (watched == m_sidebarPane && event->type() == QEvent::Resize

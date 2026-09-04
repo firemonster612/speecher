@@ -40,8 +40,11 @@ QtFrontEnd::QtFrontEnd(ApplicationController *controller, QObject *parent)
     refreshUpdateChip();
 }
 
+// The windows are the front end's: the main window has no parent and would
+// otherwise outlive the controller it still asks for settings.
 QtFrontEnd::~QtFrontEnd()
 {
+    delete m_appWindow;
     delete m_popup;
 }
 

@@ -69,6 +69,9 @@ private:
     void buildNativeSidebarShell();
 #endif
     void refreshHeaderStripColor();
+    // The slow rows load a turn after the window is first on screen, whether
+    // the window's own paint or its native exposure says so first.
+    void scheduleAfterShowLoad();
     void runAutoSave();
     void filterSidebarPages(const QString &query);
     void openSearchResult();

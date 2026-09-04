@@ -349,6 +349,21 @@ private slots:
         QVERIFY(!pages->save(false, false));
     }
 
+    void slowRowsLoadOnceTheWindowIsOnScreen()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        auto *device = window.findChild<QComboBox *>(QStringLiteral("audioDevice"));
+        QVERIFY(device);
+        // Nothing before the window shows: enumerating devices would hold up
+        // the first frame.
+        QCOMPARE(device->count(), 0);
+        window.show();
+        // Whether the platform paints the window or merely exposes it, the
+        // device list arrives once it is on screen.
+        QTRY_VERIFY_WITH_TIMEOUT(device->count() > 0, 2000);
+    }
+
     void dictationSummaryDefersSavedMicrophoneResolutionUntilShow()
     {
         ApplicationController controller(true);
