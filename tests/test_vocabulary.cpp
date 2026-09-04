@@ -78,6 +78,43 @@ private slots:
         QCOMPARE(imported.first().source, QStringLiteral("research"));
         QCOMPARE(imported.first().frequency, 4);
     }
+
+    void vocabularyUsageRequiresTermBoundaries()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setVocabularyEntries({
+            {QStringLiteral("cat"), QStringLiteral("manual"), false, 0, 0},
+            {QStringLiteral("go"), QStringLiteral("manual"), false, 0, 0},
+            {QStringLiteral("New York"), QStringLiteral("manual"), false, 0, 0},
+            {QStringLiteral("東京"), QStringLiteral("manual"), false, 0, 0},
+        });
+
+        settings.recordVocabularyUsage(QStringLiteral("Education is ongoing near 東京駅 and New\nYork."));
+        const QList<VocabularyEntry> entries = settings.vocabularyEntries();
+        const auto frequency = [&entries](const QString &term) {
+            const auto entry = std::find_if(entries.cbegin(), entries.cend(), [&term](const auto &candidate) {
+                return candidate.term == term;
+            });
+            return entry == entries.cend() ? -1 : entry->frequency;
+        };
+
+        QCOMPARE(frequency(QStringLiteral("cat")), 0);
+        QCOMPARE(frequency(QStringLiteral("go")), 0);
+        QCOMPARE(frequency(QStringLiteral("New York")), 1);
+        QCOMPARE(frequency(QStringLiteral("東京")), 1);
+
+        settings.recordVocabularyUsage(QStringLiteral("A cat, ready to go!"));
+        const QList<VocabularyEntry> updated = settings.vocabularyEntries();
+        const auto updatedFrequency = [&updated](const QString &term) {
+            const auto entry = std::find_if(updated.cbegin(), updated.cend(), [&term](const auto &candidate) {
+                return candidate.term == term;
+            });
+            return entry == updated.cend() ? -1 : entry->frequency;
+        };
+        QCOMPARE(updatedFrequency(QStringLiteral("cat")), 1);
+        QCOMPARE(updatedFrequency(QStringLiteral("go")), 1);
+    }
 };
 
 int runVocabularyTests(int argc, char **argv)
