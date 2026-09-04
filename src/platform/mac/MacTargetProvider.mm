@@ -102,8 +102,8 @@ std::optional<CFRange> rangeAttribute(AXUIElementRef element, CFStringRef attrib
     }
     CFRange range;
     const bool valid = CFGetTypeID(value) == AXValueGetTypeID()
-        && AXValueGetType(static_cast<AXValueRef>(value)) == kAXValueCFRangeType
-        && AXValueGetValue(static_cast<AXValueRef>(value), kAXValueCFRangeType, &range);
+        && AXValueGetType(static_cast<AXValueRef>(value)) == kAXValueTypeCFRange
+        && AXValueGetValue(static_cast<AXValueRef>(value), kAXValueTypeCFRange, &range);
     CFRelease(value);
     return valid ? std::optional<CFRange>(range) : std::nullopt;
 }
