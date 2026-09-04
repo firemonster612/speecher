@@ -176,6 +176,13 @@ private slots:
 #endif
     }
 
+    void generalHasNoClipboardStatusRow()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        QVERIFY(!hasRow(schema.page(QStringLiteral("general")),
+                        QStringLiteral("clipboardOutputStatus")));
+    }
+
     void targetContextNeedsAccessibility()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());

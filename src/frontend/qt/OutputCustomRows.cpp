@@ -18,7 +18,6 @@
 #include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QThread>
-#include <QToolTip>
 #include <QVBoxLayout>
 
 #include <memory>
@@ -111,14 +110,13 @@ SchemaCustomRow OutputCustomRows::makeMethodRow(QWidget *parent, std::function<v
         // preserve.
         m_unlistedMethod.clear();
 #ifdef SPEECHER_WITH_YDOTOOL
+        // The item is disabled (and says so) while the virtual keyboard is not
+        // set up, so this only guards a programmatic selection.
         if (m_method->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool)) {
             const YdotoolSetupStatus status = YdotoolSetup::probe(m_settings.ydotoolEnabled());
             if (!status.ready() || !m_settings.ydotoolEnabled()) {
                 const QSignalBlocker blocker(m_method);
                 settings::selectData(m_method, m_settings.outputMethod());
-                QToolTip::showText(m_method->mapToGlobal(m_method->rect().bottomLeft()),
-                                   QStringLiteral("Set up ydotool first"),
-                                   m_method);
                 return;
             }
         }
@@ -206,18 +204,25 @@ void OutputCustomRows::refresh()
     const YdotoolSetupStatus status = YdotoolSetup::probe(m_settings.ydotoolEnabled());
     const bool enabled = m_settings.ydotoolEnabled() && status.ready();
     const int index = m_method->findData(QString::fromLatin1(OutputMethod::Ydotool));
-    settings::setComboItemEnabled(m_method,
-                                  index,
-                                  enabled,
-                                  enabled ? QString() : QStringLiteral("Set up ydotool first"));
+    // The choice says in its own text why it cannot be picked; a hover tooltip
+    // on a disabled item is not something everyone sees.
+    const QString pasteLabel = OutputMethod::label(QString::fromLatin1(OutputMethod::Ydotool));
+    m_method->setItemText(index,
+                          enabled ? pasteLabel
+                                  : QStringLiteral("%1 (not set up)").arg(pasteLabel));
+    settings::setComboItemEnabled(
+        m_method,
+        index,
+        enabled,
+        enabled ? QString() : QStringLiteral("Set up the virtual keyboard below first."));
     const bool unavailableSelection = !enabled
         && m_method->currentData().toString() == QString::fromLatin1(OutputMethod::Ydotool);
     m_method->setToolTip(
         unavailableSelection
-            ? QStringLiteral("Type with ydotool paste is selected but unavailable until virtual keyboard setup passes.")
+            ? QStringLiteral("The virtual keyboard is not set up yet, so text is copied to the clipboard instead.")
             : enabled
-                ? QStringLiteral("Automatic tries ydotool paste, wl-copy, then Qt clipboard.")
-                : QStringLiteral("Type with ydotool paste is disabled until virtual keyboard setup passes."));
+                ? QStringLiteral("Automatic pastes with the virtual keyboard and falls back to the clipboard.")
+                : QStringLiteral("Automatic copies to the clipboard. Set up the virtual keyboard below to paste as well."));
     if (m_status) {
         setWrappedText(m_status, status.label + QStringLiteral(". ") + status.detail);
     }
@@ -337,12 +342,14 @@ void OutputCustomRows::removeSetup()
 // the schema leaves the section out, so only the method row exists here.
 void OutputCustomRows::refresh()
 {
-#ifdef Q_OS_MACOS
     if (m_method) {
         m_method->setToolTip(
+#ifdef Q_OS_MACOS
             QStringLiteral("Automatic pastes with Cmd+V, then falls back to the clipboard."));
-    }
+#else
+            QStringLiteral("Automatic copies to the clipboard; this build has no virtual keyboard to paste with."));
 #endif
+    }
 }
 
 void OutputCustomRows::updateButtons() {}

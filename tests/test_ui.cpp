@@ -358,6 +358,15 @@ private slots:
         auto *method = page->findChild<QComboBox *>(QStringLiteral("outputMethod"));
         QVERIFY(method);
         QVERIFY(method->findData(QStringLiteral("direct_insert")) >= 0);
+        // Choices describe what happens, not which tool does it.
+        for (int index = 0; index < method->count(); ++index) {
+            const QString text = method->itemText(index);
+            QVERIFY2(!text.contains(QStringLiteral("ydotool"), Qt::CaseInsensitive), qPrintable(text));
+            QVERIFY2(!text.contains(QStringLiteral("wl-copy"), Qt::CaseInsensitive), qPrintable(text));
+            QVERIFY2(!text.contains(QStringLiteral("Qt")), qPrintable(text));
+        }
+        outputRows.refresh();
+        QVERIFY2(!method->toolTip().contains(QStringLiteral("ydotool")), qPrintable(method->toolTip()));
     }
 
     void theVocabularyLimitFollowsTheTable()

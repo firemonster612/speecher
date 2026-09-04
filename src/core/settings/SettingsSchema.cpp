@@ -428,10 +428,8 @@ SettingsPage generalPage(const SchemaContext &context)
         QStringLiteral("Global Shortcut"),
         QStringLiteral("Start or stop dictation from anywhere.")));
 #endif
-    systemRows.append(infoRow(QStringLiteral("clipboardOutputStatus"),
-                              QStringLiteral("Clipboard output"),
-                              QStringLiteral("Current platform clipboard path."),
-                              context.primaryOutputStatus));
+    // No clipboard status row here: the Output page's Method choice says how
+    // text is delivered, and a platform's "clipboard path" is not a setting.
 
     SettingsRow updateChannel = choiceRow(
         QStringLiteral("updateChannel"),
