@@ -412,6 +412,13 @@ SettingsPage generalPage(const SchemaContext &context)
         }),
         [](const AppSettings &settings) { return settings.ui.theme; },
         [](AppSettings &settings, const QString &value) { settings.ui.theme = value; });
+    // A desktop that ignores the request would otherwise offer Light and Dark
+    // as if they did something.
+    theme.enabled = [](const AppSettings &, const Capabilities &capabilities) {
+        return capabilities.colorSchemeOverride;
+    };
+    theme.disabledHelp = QStringLiteral(
+        "This desktop chooses the colour scheme itself, so Speecher follows it.");
 
     QList<SettingsRow> systemRows;
 #ifdef Q_OS_MACOS

@@ -374,6 +374,9 @@ bool SettingsPageSet::save(bool showValidationErrors,
 
     settings->applySnapshot(m_draft);
     Theme::apply(settings->theme());
+    // Applying the theme is the moment that reveals whether the platform
+    // honours it, which the Theme row's gate depends on.
+    applyCapabilities();
     const AppSettings snapshot = settings->snapshot();
     m_draft = snapshot;
     for (SchemaSettingsPage *page : std::as_const(m_pages)) {
@@ -452,8 +455,15 @@ void SettingsPageSet::refreshUpdateRows()
 void SettingsPageSet::updateAccessibilityState(bool supported, bool enabled, bool persistent)
 {
     Q_UNUSED(persistent);
-    const Capabilities capabilities{supported && enabled,
-                                    m_controller->updates()->supportsAutomaticDownloads()};
+    m_targetAccessibility = supported && enabled;
+    applyCapabilities();
+}
+
+void SettingsPageSet::applyCapabilities()
+{
+    const Capabilities capabilities{m_targetAccessibility,
+                                    m_controller->updates()->supportsAutomaticDownloads(),
+                                    Theme::overrideHonored()};
     m_general->setCapabilities(capabilities);
     m_output->setCapabilities(capabilities);
     m_applications->setCapabilities(capabilities);

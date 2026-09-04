@@ -233,6 +233,19 @@ private slots:
         }
     }
 
+    void themeRowExplainsItselfWhenTheDesktopIgnoresIt()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("general")),
+                                         QStringLiteral("themeControl"));
+        Capabilities honoured;
+        QVERIFY(row.enabled(AppSettings{}, honoured));
+        Capabilities ignored;
+        ignored.colorSchemeOverride = false;
+        QVERIFY(!row.enabled(AppSettings{}, ignored));
+        QVERIFY(row.disabledHelp.contains(QStringLiteral("desktop")));
+    }
+
     void automaticInstallOnlyAppearsWhenSupported()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());

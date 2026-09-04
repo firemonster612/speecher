@@ -127,7 +127,12 @@ private slots:
     void themeUsesThePlatformColorSchemeHint()
     {
         Theme::apply(QStringLiteral("dark"));
+        // Whatever the platform did, Theme reports it truthfully so the row
+        // can say when Light and Dark are not going to do anything.
+        QCOMPARE(Theme::overrideHonored(),
+                 qApp->styleHints()->colorScheme() == Qt::ColorScheme::Dark);
         if (qApp->styleHints()->colorScheme() != Qt::ColorScheme::Dark) {
+            Theme::apply(QStringLiteral("system"));
             QSKIP("Platform theme does not honor color-scheme overrides");
         }
         Theme::apply(QStringLiteral("light"));

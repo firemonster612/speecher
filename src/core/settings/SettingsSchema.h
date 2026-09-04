@@ -103,6 +103,9 @@ struct NumberRange {
 struct Capabilities {
     bool targetAccessibility = false;
     bool automaticUpdateDownloads = false;
+    // The platform theme honours a Light or Dark request. Assumed until a
+    // request is seen to be ignored.
+    bool colorSchemeOverride = true;
 };
 
 struct SettingsRow {
