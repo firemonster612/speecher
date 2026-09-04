@@ -26,6 +26,12 @@ private slots:
             << QStringList{QStringLiteral("Breeze"), QStringLiteral("Fusion"), QStringLiteral("Windows")}
             << QStringLiteral("system") << false
             << QStringLiteral("Windows") << QStringLiteral("Windows");
+        QTest::newRow("Speecher light overrides Adwaita override")
+            << QStringLiteral("Adwaita-Dark") << QString() << QStringLiteral("GNOME")
+            << QStringLiteral("gtk3") << QStringLiteral("Adwaita-Dark")
+            << QStringList{QStringLiteral("Adwaita"), QStringLiteral("Adwaita-Dark"), QStringLiteral("Fusion")}
+            << QStringLiteral("light") << true
+            << QStringLiteral("Adwaita-Dark") << QStringLiteral("Adwaita");
         QTest::newRow("unavailable override")
             << QStringLiteral("Oxygen") << QStringLiteral("Breeze")
             << QStringLiteral("KDE") << QStringLiteral("kde") << QStringLiteral("Breeze")

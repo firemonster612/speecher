@@ -87,7 +87,14 @@ LinuxStyleChoice chooseLinuxStyle(const QString &overrideStyle,
     const QString fallbackName = kde ? QStringLiteral("Breeze") : QStringLiteral("Fusion");
     const QString availableFallback = availableStyle(fallbackName, availableStyles);
     const QString fallback = availableFallback.isEmpty() ? currentStyle : availableFallback;
-    const QString requestedStyle = availableStyle(requested, availableStyles);
+    QString requestedName = requested;
+    if (requested.compare(QStringLiteral("Adwaita"), Qt::CaseInsensitive) == 0
+        || requested.compare(QStringLiteral("Adwaita-Dark"), Qt::CaseInsensitive) == 0) {
+        requestedName = prefersDark(applicationTheme, desktopPrefersDark)
+            ? QStringLiteral("adwaita-dark")
+            : QStringLiteral("adwaita");
+    }
+    const QString requestedStyle = availableStyle(requestedName, availableStyles);
     if (!requestedStyle.isEmpty()) {
         return {requested, requestedStyle, fallback};
     }
