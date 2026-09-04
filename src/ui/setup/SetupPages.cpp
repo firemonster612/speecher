@@ -752,7 +752,7 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
 {
     QVBoxLayout *layout = makePage(
         this,
-        QStringLiteral("Refinement can clean up a raw transcript after dictation. The detected provider is selected by default."));
+        QStringLiteral("Refinement can clean up a raw transcript after dictation. Choose a provider, or None to skip cleanup."));
     for (const ProviderDescriptor &provider : providers.refinementProviders()) {
         m_provider->addItem(provider.label, provider.id);
     }
