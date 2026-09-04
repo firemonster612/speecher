@@ -464,7 +464,7 @@ SettingsPage generalPage(const SchemaContext &context)
         },
     });
 
-#ifdef Q_OS_MACOS
+#if defined(Q_OS_MACOS) || defined(Q_OS_LINUX)
     sections.append({
         QStringLiteral("Startup"),
         QString(),
@@ -551,7 +551,7 @@ SettingsPage generalPage(const SchemaContext &context)
     setupRows.append(actionRow(
         QStringLiteral("removeSpeecher"),
         QStringLiteral("Remove Speecher from this computer"),
-        QStringLiteral("Undoes the app menu entry, the speecher command, the icon and the Global Shortcut"),
+        QStringLiteral("Undoes startup, the app menu entry, the speecher command, the icon and the Global Shortcut"),
         QStringLiteral("Remove…")));
 #endif
     sections.append({QStringLiteral("Setup"), QString(), std::move(setupRows)});

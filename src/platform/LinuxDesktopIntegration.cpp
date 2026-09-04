@@ -30,6 +30,24 @@ QString localDataPath(const QString &homePath)
         : dataHome;
 }
 
+QString localConfigPath(const QString &homePath)
+{
+    const QString configHome = qEnvironmentVariable("XDG_CONFIG_HOME");
+    if (!configHome.isEmpty()) {
+        return configHome;
+    }
+    if (QStandardPaths::isTestModeEnabled() && homePath == QDir::homePath()) {
+        return QStandardPaths::writableLocation(QStandardPaths::ConfigLocation);
+    }
+    return QDir(homePath).filePath(QStringLiteral(".config"));
+}
+
+QString autostartFilePath(const QString &homePath)
+{
+    return QDir(localConfigPath(homePath)).filePath(
+        QStringLiteral("autostart/%1.desktop").arg(QString::fromLatin1(appId)));
+}
+
 bool readableSource(const QString &path, const QString &artifact, QString *error)
 {
     QFile source(path);
@@ -291,6 +309,43 @@ bool installAppImageIntegration(const QString &homePath,
     return true;
 }
 
+bool setLaunchAtLoginAutostart(bool enabled,
+                               const QString &executablePath,
+                               QString *error)
+{
+    const QString targetPath = autostartFilePath(QDir::homePath());
+    if (!enabled) {
+        if (!QFileInfo::exists(targetPath) || QFile::remove(targetPath)) {
+            return true;
+        }
+        if (error) {
+            *error = QStringLiteral("Could not remove %1").arg(targetPath);
+        }
+        return false;
+    }
+
+    const QString directory = QFileInfo(targetPath).dir().path();
+    if (!QDir().mkpath(directory)) {
+        if (error) {
+            *error = QStringLiteral("Could not create the autostart directory: %1").arg(directory);
+        }
+        return false;
+    }
+    const QByteArray contents = QByteArrayLiteral(
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        "Name=Speecher\n"
+        "Exec=")
+        + quotedExecutablePath(executablePath).toUtf8()
+        + QByteArrayLiteral("\nHidden=false\n");
+    return writeFile(targetPath, contents, error);
+}
+
+bool launchAtLoginAutostartEnabled()
+{
+    return QFileInfo::exists(autostartFilePath(QDir::homePath()));
+}
+
 DesktopIntegrationRemoval removeAppImageIntegration(const QString &homePath)
 {
     DesktopIntegrationRemoval result;
@@ -304,6 +359,7 @@ DesktopIntegrationRemoval removeAppImageIntegration(const QString &homePath)
     const QString link = localBinaryPath(homePath);
     const QString helper = QDir(localDataPath(homePath)).filePath(
         QStringLiteral("speecher/libexec/speecher-ydotool-setup"));
+    const QString autostart = autostartFilePath(homePath);
     const QString runningAppImage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
 
     const auto removeItem = [&result, &runningAppImage](const QString &name,
@@ -342,6 +398,7 @@ DesktopIntegrationRemoval removeAppImageIntegration(const QString &homePath)
     removeItem(QStringLiteral("speecher command"), link, true);
     removeItem(QStringLiteral("app icon"), icon, false);
     removeItem(QStringLiteral("local ydotool setup helper"), helper, false);
+    removeItem(QStringLiteral("launch at login entry"), autostart, false);
 
     if (!result.removed.isEmpty()) {
         const QString updater = QStandardPaths::findExecutable(

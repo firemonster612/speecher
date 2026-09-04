@@ -25,6 +25,8 @@ public:
     AccessibilityState accessibilityState() const override;
     bool requestAccessibility(QString *error = nullptr) const override;
     bool enableAccessibilityPermanently(QString *error = nullptr) const override;
+    bool setLaunchAtLogin(bool enabled, QString *error = nullptr) const override;
+    bool launchAtLoginEnabled() const override;
 };
 
 std::shared_ptr<const LinuxComposition> linuxComposition();

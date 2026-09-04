@@ -404,8 +404,9 @@ void SettingsPageSet::removeSpeecher()
     confirm.setWindowTitle(QStringLiteral("Remove Speecher"));
     confirm.setText(QStringLiteral("Remove Speecher from this computer?"));
     confirm.setInformativeText(QStringLiteral(
-        "This removes the app menu entry, the speecher command, the app icon and the Global "
-        "Shortcut registration. The Speecher program file stays where you put it."));
+        "This removes the start-at-login entry, the app menu entry, the speecher command, "
+        "the app icon and the Global Shortcut registration. The Speecher program file stays "
+        "where you put it."));
     auto *deleteSettings = new QCheckBox(
         QStringLiteral("Also delete my settings, vocabulary and learned corrections"), &confirm);
     confirm.setCheckBox(deleteSettings);

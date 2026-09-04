@@ -6,6 +6,7 @@
 #include "output/WlClipboardDelivery.h"
 #include "platform/AtSpiTargetProvider.h"
 #include "platform/KGlobalAccelShortcutBinder.h"
+#include "platform/LinuxDesktopIntegration.h"
 #include "platform/MediaPauseController.h"
 #include "platform/PortalGlobalShortcutBinder.h"
 #include "platform/PortalScreenshotContextProvider.h"
@@ -139,6 +140,16 @@ bool LinuxComposition::requestAccessibility(QString *error) const
 bool LinuxComposition::enableAccessibilityPermanently(QString *error) const
 {
     return atspi::enableAccessibilityPermanently(error);
+}
+
+bool LinuxComposition::setLaunchAtLogin(bool enabled, QString *error) const
+{
+    return setLaunchAtLoginAutostart(enabled, detachedExecutablePath(), error);
+}
+
+bool LinuxComposition::launchAtLoginEnabled() const
+{
+    return launchAtLoginAutostartEnabled();
 }
 
 std::shared_ptr<const LinuxComposition> linuxComposition()

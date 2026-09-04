@@ -159,11 +159,11 @@ private slots:
         QVERIFY(profiles.value(settings) != profiles.value(AppSettings{}));
     }
 
-    void launchAtLoginOnlyAppearsOnMacOS()
+    void launchAtLoginAppearsOnDesktopPlatforms()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
         const SettingsPage &general = schema.page(QStringLiteral("general"));
-#ifdef Q_OS_MACOS
+#if defined(Q_OS_MACOS) || defined(Q_OS_LINUX)
         QVERIFY(hasRow(general, QStringLiteral("launchAtLogin")));
         const SettingsRow &row = rowById(general, QStringLiteral("launchAtLogin"));
         QCOMPARE(row.kind, RowKind::Toggle);
@@ -229,10 +229,11 @@ private slots:
                               QStringLiteral("Startup"), QStringLiteral("Updates"),
                               QStringLiteral("Setup")}));
 #else
-        // The desktop decides the colour scheme, and there is no start-at-login
-        // switch to offer, so neither card exists here.
+        // The desktop decides the colour scheme, while start-at-login is an
+        // XDG autostart entry on Linux.
         QCOMPARE(titles,
-                 QStringList({QStringLiteral("Dictation"), QStringLiteral("Updates"),
+                 QStringList({QStringLiteral("Dictation"), QStringLiteral("Startup"),
+                              QStringLiteral("Updates"),
                               QStringLiteral("Setup")}));
         QVERIFY(!hasRow(schema.page(QStringLiteral("general")), QStringLiteral("themeControl")));
 #endif

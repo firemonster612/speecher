@@ -25,6 +25,11 @@ bool installAppImageIntegration(const QString &homePath,
                                 const QString &applicationDirPath,
                                 QString *error = nullptr);
 
+bool setLaunchAtLoginAutostart(bool enabled,
+                               const QString &executablePath,
+                               QString *error = nullptr);
+bool launchAtLoginAutostartEnabled();
+
 // What removal did, in the words a person sees: each entry names the item
 // (app menu entry, speecher command, icon) and, for failures, why.
 struct DesktopIntegrationRemoval {
@@ -34,9 +39,10 @@ struct DesktopIntegrationRemoval {
 };
 
 // Undoes installAppImageIntegration: the desktop file, the icon and the
-// ~/.local/bin/speecher link, and the relocated setup helper. The command link
-// is removed only when its target is the running AppImage, or when APPIMAGE is
-// unavailable and the target has a Speecher AppImage name.
+// ~/.local/bin/speecher link, the relocated setup helper and the XDG autostart
+// entry. The command link is removed only when its target is the running
+// AppImage, or when APPIMAGE is unavailable and the target has a Speecher
+// AppImage name.
 DesktopIntegrationRemoval removeAppImageIntegration(const QString &homePath);
 
 } // namespace speecher

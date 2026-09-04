@@ -3,6 +3,9 @@
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
 #include "app/CommandLine.h"
+#ifdef Q_OS_LINUX
+#include "app/LinuxComposition.h"
+#endif
 #include "app/PlatformComposition.h"
 #include "core/LearnedCorrection.h"
 #include "core/SettingsStore.h"
@@ -665,15 +668,78 @@ private slots:
                  QStringLiteral("\"%1\" toggle").arg(link));
     }
 
+    void launchAtLoginWritesAndRemovesTheXdgAutostartEntry()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QByteArray oldHome = qgetenv("HOME");
+        const QByteArray oldConfigHome = qgetenv("XDG_CONFIG_HOME");
+        const auto restoreEnvironment = qScopeGuard([oldHome, oldConfigHome] {
+            oldHome.isNull() ? qunsetenv("HOME") : qputenv("HOME", oldHome);
+            oldConfigHome.isNull() ? qunsetenv("XDG_CONFIG_HOME")
+                                   : qputenv("XDG_CONFIG_HOME", oldConfigHome);
+        });
+        const QString home = root.filePath(QStringLiteral("home"));
+        const QString configHome = root.filePath(QStringLiteral("config"));
+        QVERIFY(QDir().mkpath(home));
+        qputenv("HOME", QFile::encodeName(home));
+        qputenv("XDG_CONFIG_HOME", QFile::encodeName(configHome));
+
+        const QString executable = root.filePath(QStringLiteral("Speecher Current.AppImage"));
+        QString error;
+        QVERIFY2(setLaunchAtLoginAutostart(true, executable, &error), qPrintable(error));
+        const QString entry = QDir(configHome).filePath(
+            QStringLiteral("autostart/io.github.firemonster612.speecher.desktop"));
+        QFile file(entry);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(),
+                 QByteArray("[Desktop Entry]\n"
+                            "Type=Application\n"
+                            "Name=Speecher\n"
+                            "Exec=\"")
+                     + QFile::encodeName(executable)
+                     + QByteArray("\"\nHidden=false\n"));
+        QVERIFY(launchAtLoginAutostartEnabled());
+
+        QVERIFY2(setLaunchAtLoginAutostart(false, executable, &error), qPrintable(error));
+        QVERIFY(!QFile::exists(entry));
+        QVERIFY(!launchAtLoginAutostartEnabled());
+    }
+
+    void linuxCompositionReportsLaunchAtLoginState()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QByteArray oldHome = qgetenv("HOME");
+        const QByteArray oldConfigHome = qgetenv("XDG_CONFIG_HOME");
+        const auto restoreEnvironment = qScopeGuard([oldHome, oldConfigHome] {
+            oldHome.isNull() ? qunsetenv("HOME") : qputenv("HOME", oldHome);
+            oldConfigHome.isNull() ? qunsetenv("XDG_CONFIG_HOME")
+                                   : qputenv("XDG_CONFIG_HOME", oldConfigHome);
+        });
+        qputenv("HOME", QFile::encodeName(root.filePath(QStringLiteral("home"))));
+        qputenv("XDG_CONFIG_HOME", QFile::encodeName(root.filePath(QStringLiteral("config"))));
+
+        LinuxComposition composition;
+        QString error;
+        QVERIFY2(composition.setLaunchAtLogin(true, &error), qPrintable(error));
+        QVERIFY(composition.launchAtLoginEnabled());
+        QVERIFY2(composition.setLaunchAtLogin(false, &error), qPrintable(error));
+        QVERIFY(!composition.launchAtLoginEnabled());
+    }
+
     void appImageIntegrationRemovalUndoesTheInstallAndReportsIt()
     {
         const QByteArray oldAppImage = qgetenv("APPIMAGE");
-        const auto restoreEnvironment = qScopeGuard([oldAppImage] {
+        const QByteArray oldConfigHome = qgetenv("XDG_CONFIG_HOME");
+        const auto restoreEnvironment = qScopeGuard([oldAppImage, oldConfigHome] {
             if (oldAppImage.isNull()) {
                 qunsetenv("APPIMAGE");
             } else {
                 qputenv("APPIMAGE", oldAppImage);
             }
+            oldConfigHome.isNull() ? qunsetenv("XDG_CONFIG_HOME")
+                                   : qputenv("XDG_CONFIG_HOME", oldConfigHome);
         });
         qunsetenv("APPIMAGE");
 
@@ -681,6 +747,7 @@ private slots:
         QVERIFY(root.isValid());
         const QDir home(root.filePath(QStringLiteral("home")));
         QVERIFY(QDir().mkpath(home.path()));
+        qputenv("XDG_CONFIG_HOME", QFile::encodeName(home.filePath(QStringLiteral(".config"))));
         // The AppImage mount: usr/bin/speecher with the desktop file and icon
         // two levels up, as installAppImageIntegration expects.
         const QString appDir = root.filePath(QStringLiteral("mount"));
@@ -715,13 +782,15 @@ private slots:
         QVERIFY(QFile::exists(icon));
         QVERIFY(QFile::exists(helper));
         QVERIFY(QFileInfo(link).isSymLink());
+        QVERIFY(setLaunchAtLoginAutostart(true, appImage, &error));
 
         DesktopIntegrationRemoval removal = removeAppImageIntegration(home.path());
         QCOMPARE(removal.removed,
                  QStringList({QStringLiteral("app menu entry"),
                               QStringLiteral("speecher command"),
                               QStringLiteral("app icon"),
-                              QStringLiteral("local ydotool setup helper")}));
+                              QStringLiteral("local ydotool setup helper"),
+                              QStringLiteral("launch at login entry")}));
         QVERIFY(removal.absent.isEmpty());
         QVERIFY(removal.failed.isEmpty());
         QVERIFY(!QFile::exists(desktopFile));
@@ -734,7 +803,7 @@ private slots:
         // A second run finds nothing and says so rather than failing.
         removal = removeAppImageIntegration(home.path());
         QVERIFY(removal.removed.isEmpty());
-        QCOMPARE(removal.absent.size(), 4);
+        QCOMPARE(removal.absent.size(), 5);
         QVERIFY(removal.failed.isEmpty());
 
         // A real file where the link belongs is not Speecher's to delete.
