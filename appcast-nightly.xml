@@ -1,9 +1,9 @@
 <?xml version='1.0' encoding='utf-8'?>
-<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher nightly updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher nightly updates</description><item><title>0.1.4-nightly.20260904+gfea0eda</title><pubDate>Fri, 4 Sep 2026 22:37:06 +0100</pubDate><sparkle:version>323</sparkle:version><sparkle:shortVersionString>0.1.4-nightly.20260904+gfea0eda</sparkle:shortVersionString><description><![CDATA[<pre>Version: 0.1.4-nightly.20260904+gfea0eda
-Build number: 323
-Commit: fea0eda7a22489d783885f59622722c14ba85a53
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher nightly updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher nightly updates</description><item><title>0.1.5-nightly.20260904+gcb26b1b</title><pubDate>Sat, 5 Sep 2026 00:01:44 +0100</pubDate><sparkle:version>325</sparkle:version><sparkle:shortVersionString>0.1.5-nightly.20260904+gcb26b1b</sparkle:shortVersionString><description><![CDATA[<pre>Version: 0.1.5-nightly.20260904+gcb26b1b
+Build number: 325
+Commit: cb26b1bdb766255405fd8b6005465c8eabb207d8
 
 This Nightly Build is untested. Use the Stable Release unless you want the latest master build.
 
 Update channels: https://github.com/firemonster612/speecher#installation--updates
-</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/nightly/speecher.dmg" length="42444823" type="application/x-apple-diskimage" sparkle:edSignature="bm7cXnJWQhOMnFqyEq0AWfmfFc3DP2KWWkbe4t0BkvuNHBmZDURhFjIS6UQitLLQWVUv2S3Xxi54IC507J70Cw==" /></item></channel></rss>
+</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/nightly/speecher.dmg" length="42444950" type="application/x-apple-diskimage" sparkle:edSignature="2DMJQkIl63dN4RKCBGLtqiCK2ySKcFBtt3jzUHQ6KupUdlAbXHstOJa5bGOgEt2peoUPsSSAvEGW09AMWtWABQ==" /></item></channel></rss>
