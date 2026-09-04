@@ -3,6 +3,7 @@
 #include "app/AppFrontEnd.h"
 #include "app/PlatformComposition.h"
 #include "app/ApplicationController.h"
+#include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "providers/ProviderRegistry.h"
@@ -167,7 +168,7 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     , m_provider(new QLabel(this))
     , m_microphone(new QLabel(this))
     , m_output(new QLabel(this))
-    , m_theme(new QLabel(this))
+    , m_shortcut(new QLabel(this))
 {
     auto *pageLayout = new QVBoxLayout(this);
     settings::applyPageMargins(pageLayout);
@@ -256,7 +257,7 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     auto *cardsRow = new FlowLayout(settings::relatedSpacing(), cardsHost);
     cardsRow->setContentsMargins(0, 0, 0, 0);
     const int valueWidth = fontMetrics().horizontalAdvance(QString(22, QLatin1Char('x')));
-    for (QLabel *label : {m_provider, m_microphone, m_output, m_theme}) {
+    for (QLabel *label : {m_provider, m_microphone, m_output, m_shortcut}) {
         label->setFixedWidth(valueWidth);
         label->installEventFilter(this);
     }
@@ -273,37 +274,13 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
                                                    QStringLiteral("edit-copy")),
                                         QStringLiteral("Output"), m_output,
                                         AppPageId::Output, this));
-    cardsRow->addWidget(makeSummaryCard(themedIcon(QStringLiteral("preferences-system")),
-                                        QStringLiteral("Theme"), m_theme,
+    // The shortcut editor lives on General, so the card opens that page.
+    m_shortcut->setObjectName(QStringLiteral("shortcutSummary"));
+    cardsRow->addWidget(makeSummaryCard(themedIcon(QStringLiteral("input-keyboard"),
+                                                   QStringLiteral("preferences-desktop-keyboard")),
+                                        QStringLiteral("Global Shortcut"), m_shortcut,
                                         AppPageId::General, this));
     columnLayout->addWidget(cardsHost);
-
-#ifdef Q_OS_LINUX
-    auto *shortcutRow = new QFrame(column);
-    shortcutRow->setObjectName(QStringLiteral("settingsCard"));
-    shortcutRow->setFrameShape(QFrame::StyledPanel);
-    auto *shortcutLayout = new QHBoxLayout(shortcutRow);
-    shortcutLayout->setContentsMargins(12, 10, 12, 10);
-    auto *shortcutCopy = new QWidget(shortcutRow);
-    auto *shortcutCopyLayout = new QVBoxLayout(shortcutCopy);
-    shortcutCopyLayout->setContentsMargins(0, 0, 0, 0);
-    shortcutCopyLayout->setSpacing(2);
-    auto *shortcutLabel = new QLabel(QStringLiteral("Global Shortcut"), shortcutCopy);
-    auto *shortcutHelp = new QLabel(
-        QStringLiteral("Start dictation from anywhere on your desktop."), shortcutCopy);
-    shortcutHelp->setForegroundRole(QPalette::PlaceholderText);
-    shortcutCopyLayout->addWidget(shortcutLabel);
-    shortcutCopyLayout->addWidget(shortcutHelp);
-    auto *setupShortcut = new QPushButton(
-        QStringLiteral("Set up Global Shortcut…"), shortcutRow);
-    setupShortcut->setObjectName(QStringLiteral("setupGlobalShortcut"));
-    shortcutLayout->addWidget(shortcutCopy, 1);
-    shortcutLayout->addWidget(setupShortcut);
-    columnLayout->addWidget(shortcutRow);
-    connect(setupShortcut, &QPushButton::clicked, controller, [controller] {
-        controller->showSetupAssistant(SetupAssistantPage::GlobalShortcut);
-    });
-#endif
 
     pageLayout->addWidget(column);
     pageLayout->addStretch();
@@ -325,6 +302,12 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
                 m_errorText->setText(message.simplified());
                 m_errorText->setVisible(!message.simplified().isEmpty());
             });
+    connect(controller, &ApplicationController::globalShortcutChanged,
+            this, &DictationPage::updateShortcutSummary);
+    connect(controller, &ApplicationController::globalShortcutSupportChanged,
+            this, &DictationPage::updateShortcutSummary);
+    connect(controller, &ApplicationController::globalShortcutRegistrationFinished,
+            this, &DictationPage::updateShortcutSummary);
     connect(m_accessibilityNotice, &AccessibilityNotice::enableRequested, this, [this] {
         QString error;
         if (!m_controller->enableAccessibility(&error)) {
@@ -447,9 +430,19 @@ void DictationPage::updateSummary(bool resolveMicrophone)
         }
     }
     setSummaryText(m_microphone, microphone);
-    setSummaryText(m_output, m_controller->primaryOutputStatus());
-    const QString theme = m_controller->settings()->theme();
-    setSummaryText(m_theme, theme.left(1).toUpper() + theme.mid(1));
+    setSummaryText(m_output, OutputMethod::label(m_controller->settings()->outputMethod()));
+    updateShortcutSummary();
+}
+
+void DictationPage::updateShortcutSummary()
+{
+    QString shortcut = m_controller->globalShortcutDisplay();
+    if (shortcut.isEmpty()) {
+        shortcut = !m_controller->globalShortcutSupportKnown() ? QStringLiteral("Checking…")
+            : m_controller->globalShortcutsSupported()         ? QStringLiteral("Not set")
+                                                               : QStringLiteral("Set up in your desktop");
+    }
+    setSummaryText(m_shortcut, shortcut);
 }
 
 bool DictationPage::eventFilter(QObject *watched, QEvent *event)

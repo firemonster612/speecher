@@ -1,6 +1,7 @@
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
+#include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "frontend/qt/QtFrontEnd.h"
@@ -183,6 +184,46 @@ private slots:
         QTest::mouseClick(card, Qt::LeftButton);
         QCOMPARE(navigate.count(), 1);
         QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::Refinement);
+    }
+
+    void dictationSummaryNamesTheShortcutAndOutputInUserTerms()
+    {
+        ApplicationController controller(true);
+        DictationPage page(&controller);
+        page.show();
+        QCoreApplication::processEvents();
+
+        // No Theme card; the slot shows the Global Shortcut and opens General.
+        QVERIFY(!page.findChild<QLabel *>(QStringLiteral("themeSummary")));
+        QLabel *shortcut = page.findChild<QLabel *>(QStringLiteral("shortcutSummary"));
+        QVERIFY(shortcut);
+        const QString expected = controller.globalShortcutDisplay().isEmpty()
+            ? QString()
+            : controller.globalShortcutDisplay();
+        if (!expected.isEmpty()) {
+            QCOMPARE(shortcut->property("fullText").toString(), expected);
+        } else {
+            QVERIFY(!shortcut->property("fullText").toString().isEmpty());
+        }
+        QWidget *card = shortcut->parentWidget();
+        while (card && !card->property("navTarget").isValid()) {
+            card = card->parentWidget();
+        }
+        QVERIFY(card);
+        QSignalSpy navigate(&page, &DictationPage::navigateRequested);
+        QTest::mouseClick(card, Qt::LeftButton);
+        QCOMPARE(navigate.count(), 1);
+        QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::General);
+
+        // The Output card names the chosen method, not the platform's status.
+        QLabel *output = nullptr;
+        for (QLabel *label : page.findChildren<QLabel *>()) {
+            if (label->property("fullText").toString()
+                == OutputMethod::label(controller.settings()->outputMethod())) {
+                output = label;
+            }
+        }
+        QVERIFY(output);
     }
 
     void dictationTranscriptStaysReadOnlyAndCopies()
