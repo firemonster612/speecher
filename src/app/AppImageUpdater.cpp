@@ -274,6 +274,7 @@ void AppImageUpdater::beginCheck(UpdateChannel channel, bool automaticCheck)
     }
 
     m_manifest = {};
+    m_manualInstallRequired = false;
     m_checkChannel = channel;
     m_automaticCheck = automaticCheck;
     // The timestamp intentionally records request start, so failed checks still obey the cadence.
@@ -295,6 +296,10 @@ void AppImageUpdater::updateNow()
         return;
     }
     if (m_state == State::Error) {
+        if (m_manualInstallRequired) {
+            emit openReleasePageRequested();
+            return;
+        }
         checkForUpdates(m_settings->updateChannel());
         return;
     }
@@ -306,6 +311,10 @@ void AppImageUpdater::updateNow()
         return;
     }
     if (!isAppImage()) {
+        emit openReleasePageRequested();
+        return;
+    }
+    if (!appImageDirectoryIsWritable()) {
         emit openReleasePageRequested();
         return;
     }
@@ -327,6 +336,7 @@ void AppImageUpdater::restartNow()
 void AppImageUpdater::dismissAvailableVersion()
 {
     if (m_state == State::Error) {
+        m_manualInstallRequired = false;
         setState(State::Idle);
         return;
     }
@@ -384,7 +394,9 @@ void AppImageUpdater::finishCheck(QNetworkReply *reply)
     const bool stableReplacement = m_checkChannel == UpdateChannel::Stable
         && currentVersion().contains(QStringLiteral("-nightly"));
     if (m_settings->autoInstallUpdates() && isAppImage() && !stableReplacement) {
-        beginDownload();
+        if (appImageDirectoryIsWritable()) {
+            beginDownload();
+        }
     }
 }
 
@@ -411,7 +423,20 @@ void AppImageUpdater::updateSettingsChanged()
     m_appImageIdentity.reset();
     m_downloadError.clear();
     m_downloadPercent = 0;
+    m_manualInstallRequired = false;
     setState(State::Idle);
+}
+
+bool AppImageUpdater::appImageDirectoryIsWritable()
+{
+    if (QFileInfo(QFileInfo(m_appImagePath).absolutePath()).isWritable()) {
+        return true;
+    }
+    m_manualInstallRequired = true;
+    setState(State::Error,
+             QStringLiteral("The AppImage folder is not writable. Download the replacement "
+                            "from the release page."));
+    return false;
 }
 
 void AppImageUpdater::beginDownload()
@@ -531,7 +556,9 @@ void AppImageUpdater::clearDownload()
     m_download->close();
     delete m_download;
     m_download = nullptr;
-    QFile::remove(path);
+    if (!path.isEmpty()) {
+        QFile::remove(path);
+    }
 }
 
 void AppImageUpdater::setState(State state, const QString &error)

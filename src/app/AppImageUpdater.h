@@ -85,6 +85,7 @@ private:
     void updateSettingsChanged();
     QUrl manifestUrl(UpdateChannel channel) const;
     void finishCheck(QNetworkReply *reply);
+    bool appImageDirectoryIsWritable();
     void beginDownload();
     void writeDownloadedData();
     void finishDownload(QNetworkReply *reply);
@@ -107,6 +108,7 @@ private:
     UpdateChannel m_checkChannel;
     UpdateChannel m_selectedChannel;
     bool m_automaticCheck = false;
+    bool m_manualInstallRequired = false;
     State m_state = State::Idle;
     int m_downloadPercent = 0;
     QString m_error;

@@ -318,6 +318,42 @@ private slots:
         QVERIFY(error.startsWith(QStringLiteral("Could not install the new AppImage:")));
     }
 
+    void unwritableAppImageDirectoryOpensTheReleasePage()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString appImagePath = directory.filePath(QStringLiteral("Speecher.AppImage"));
+        writeFile(appImagePath, QByteArrayLiteral("installed AppImage"));
+
+        const QByteArray oldAppImage = qgetenv("APPIMAGE");
+        qputenv("APPIMAGE", QFile::encodeName(appImagePath));
+        const auto restoreAppImage = qScopeGuard([oldAppImage] {
+            if (oldAppImage.isEmpty()) {
+                qunsetenv("APPIMAGE");
+            } else {
+                qputenv("APPIMAGE", oldAppImage);
+            }
+        });
+
+        const QFileDevice::Permissions permissions = QFile::permissions(directory.path());
+        QVERIFY(QFile::setPermissions(directory.path(),
+                                      QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+        UpdateTestContext context(true);
+        AppImageUpdater updater(&context.settings, context.session.get());
+        AppImageUpdaterTestAccess::setAvailableVersion(
+            updater, QStringLiteral("0.1.1"), context.settings.updateChannel());
+        AppImageUpdaterTestAccess::setState(updater,
+                                            UpdateController::State::UpdateAvailable);
+        QSignalSpy releasePage(&updater, &UpdateController::openReleasePageRequested);
+
+        updater.updateNow();
+        QVERIFY(QFile::setPermissions(directory.path(), permissions));
+
+        QCOMPARE(updater.state(), UpdateController::State::Error);
+        QCOMPARE(releasePage.count(), 1);
+        QVERIFY(updater.errorMessage().contains(QStringLiteral("release page")));
+    }
+
     void restartPendingAllowsSessionErrorAndRestartsOnIdle()
     {
         const QByteArray appImage = qgetenv("APPIMAGE");
