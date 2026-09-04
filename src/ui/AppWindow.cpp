@@ -678,6 +678,8 @@ void AppWindow::refreshUpdateBanner()
         return;
     }
     m_showingWhatsNewBanner = false;
+    // "Later" hides states where restart is not yet underway.
+    // Once restarting has begun, keep its status visible to explain the exit.
     if (m_updateBannerDeferred
         && (updates->state() == UpdateController::State::ReadyToRestart
             || updates->state() == UpdateController::State::RestartPending)) {
