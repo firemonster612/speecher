@@ -374,8 +374,13 @@ private slots:
             // Every card carries its section title; General's cards are the
             // agreed four and Output keeps its schema order plus the rules.
             const QStringList generalLabels{
+#ifdef Q_OS_LINUX
                 QStringLiteral("Dictation"),
                 QStringLiteral("Global Shortcut"),
+#else
+                QStringLiteral("Appearance & behavior"),
+                QStringLiteral("System"),
+#endif
                 QStringLiteral("Setup"),
                 QStringLiteral("Updates"),
             };
