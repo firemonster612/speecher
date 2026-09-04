@@ -34,6 +34,16 @@ public:
         return shortcut().toString(QKeySequence::NativeText);
     }
     virtual bool setShortcut(const QKeySequence &shortcut, QString *error = nullptr) = 0;
+    // Forgets the registration the desktop keeps for Speecher, where the
+    // desktop keeps one. Portal shortcuts live with the session and need no
+    // removal; the default says so.
+    virtual bool removeRegistration(QString *error = nullptr)
+    {
+        if (error) {
+            *error = QStringLiteral("Your desktop keeps no shortcut registration to remove.");
+        }
+        return false;
+    }
     virtual void registerShortcut()
     {
         if (!supported()) {

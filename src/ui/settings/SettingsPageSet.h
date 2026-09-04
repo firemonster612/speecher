@@ -77,6 +77,9 @@ private:
     void updateAccessibilityState(bool supported, bool enabled, bool persistent);
     void applyCapabilities();
     void runPageAction(const QString &rowId);
+#ifdef Q_OS_LINUX
+    void removeSpeecher();
+#endif
     void refreshUpdateRows();
 
     ApplicationController *m_controller;

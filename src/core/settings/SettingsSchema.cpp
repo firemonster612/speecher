@@ -438,6 +438,23 @@ SettingsPage generalPage(const SchemaContext &context)
     // No clipboard status row here: the Output page's Method choice says how
     // text is delivered, and a platform's "clipboard path" is not a setting.
 
+    QList<SettingsRow> maintenanceRows{
+        actionRow(QStringLiteral("runSetup"),
+                  QStringLiteral("Setup assistant"),
+                  QStringLiteral("Go through the first-run steps again, from sign-in to the Global Shortcut."),
+                  QStringLiteral("Run setup assistant…")),
+    };
+#ifdef Q_OS_LINUX
+    // Undoing the per-user install is the app's job on Linux: there is no
+    // package manager entry for an AppImage to fall back on.
+    maintenanceRows.append(actionRow(
+        QStringLiteral("removeSpeecher"),
+        QStringLiteral("Remove Speecher"),
+        QStringLiteral("Undo what Speecher set up here: the app menu entry, the speecher command, "
+                       "the icon and the Global Shortcut, and optionally your settings."),
+        QStringLiteral("Remove Speecher from this computer…")));
+#endif
+
     SettingsRow updateChannel = choiceRow(
         QStringLiteral("updateChannel"),
         QStringLiteral("Update channel"),
@@ -509,12 +526,7 @@ SettingsPage generalPage(const SchemaContext &context)
              std::move(systemRows)},
             {QStringLiteral("Maintenance"),
              QString(),
-             {
-                 actionRow(QStringLiteral("runSetup"),
-                           QStringLiteral("Setup assistant"),
-                           QStringLiteral("Go through the first-run steps again, from sign-in to the Global Shortcut."),
-                           QStringLiteral("Run setup assistant…")),
-             }},
+             std::move(maintenanceRows)},
             {QStringLiteral("Updates"),
              QString(),
              {

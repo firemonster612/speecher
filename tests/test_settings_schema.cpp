@@ -203,6 +203,20 @@ private slots:
         }
     }
 
+    void linuxGeneralOffersRemoval()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsPage &general = schema.page(QStringLiteral("general"));
+#ifdef Q_OS_LINUX
+        const SettingsRow &row = rowById(general, QStringLiteral("removeSpeecher"));
+        QCOMPARE(row.kind, RowKind::Action);
+        QCOMPARE(row.actionLabel, QStringLiteral("Remove Speecher from this computer…"));
+        QVERIFY(row.help.contains(QStringLiteral("app menu entry")));
+#else
+        QVERIFY(!hasRow(general, QStringLiteral("removeSpeecher")));
+#endif
+    }
+
     void generalHasNoClipboardStatusRow()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());

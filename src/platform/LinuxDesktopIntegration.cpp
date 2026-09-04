@@ -261,4 +261,47 @@ bool installAppImageIntegration(const QString &homePath,
     return true;
 }
 
+DesktopIntegrationRemoval removeAppImageIntegration(const QString &homePath)
+{
+    DesktopIntegrationRemoval result;
+    const QDir home(homePath);
+    const QString applicationsDir = home.filePath(QStringLiteral(".local/share/applications"));
+    const QString desktopFile = QDir(applicationsDir).filePath(
+        QStringLiteral("%1.desktop").arg(QString::fromLatin1(appId)));
+    const QString icon = home.filePath(
+        QStringLiteral(".local/share/icons/hicolor/scalable/apps/%1.svg")
+            .arg(QString::fromLatin1(appId)));
+    const QString link = localBinaryPath(homePath);
+
+    const auto removeItem = [&result](const QString &name, const QString &path, bool onlyLink) {
+        const QFileInfo info(path);
+        if (!info.exists() && !info.isSymLink()) {
+            result.absent.append(name);
+            return;
+        }
+        if (onlyLink && !info.isSymLink()) {
+            result.failed.append(
+                QStringLiteral("%1: something other than Speecher's link is at %2").arg(name, path));
+            return;
+        }
+        if (QFile::remove(path)) {
+            result.removed.append(name);
+        } else {
+            result.failed.append(QStringLiteral("%1: could not delete %2").arg(name, path));
+        }
+    };
+    removeItem(QStringLiteral("app menu entry"), desktopFile, false);
+    removeItem(QStringLiteral("speecher command"), link, true);
+    removeItem(QStringLiteral("app icon"), icon, false);
+
+    if (!result.removed.isEmpty()) {
+        const QString updater = QStandardPaths::findExecutable(
+            QStringLiteral("update-desktop-database"));
+        if (!updater.isEmpty()) {
+            QProcess::startDetached(updater, {applicationsDir});
+        }
+    }
+    return result;
+}
+
 } // namespace speecher
