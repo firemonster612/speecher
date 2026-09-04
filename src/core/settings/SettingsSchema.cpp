@@ -1635,9 +1635,8 @@ SettingsPage providersPage()
 
 QString restoreClipboardDescription()
 {
-    // Restoration follows every paste that is not clipboard-only, whichever
-    // mechanism pasted; the sentence must not promise more than that.
-    return QStringLiteral("Put the previous clipboard contents back after pasting");
+    return QStringLiteral("Restore the previous clipboard after Speecher confirms the paste, or "
+                          "after a short delay when it cannot.");
 }
 
 const SettingsPage &SettingsSchema::page(const QString &id) const

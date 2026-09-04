@@ -9,12 +9,17 @@
 #include "output/mac/MacPasteDelivery.h"
 #endif
 
+#include <QEventLoop>
+#include <QTimer>
+
 #include <memory>
 #include <utility>
 
 namespace speecher {
 
 namespace {
+
+constexpr int clipboardRestoreDelayMs = 750;
 
 #ifdef SPEECHER_WITH_WAYLAND
 class YdotoolBackend final : public DeliveryBackend {
@@ -304,7 +309,14 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
                 && m_targetProvider
                 && m_targetProvider->verifyInsertion(target, content.plainText);
             bool restoredClipboard = false;
-            if (virtualKeyboardInput && verified && canRestoreClipboard) {
+            if (virtualKeyboardInput && canRestoreClipboard) {
+                if (!verified) {
+                    QEventLoop waitForClipboardConsumer;
+                    QTimer::singleShot(clipboardRestoreDelayMs,
+                                       &waitForClipboardConsumer,
+                                       &QEventLoop::quit);
+                    waitForClipboardConsumer.exec(QEventLoop::ExcludeUserInputEvents);
+                }
                 QString restoreError;
                 restoredClipboard = m_clipboardDelivery.restore(previousClipboard, &restoreError);
                 if (!restoredClipboard) {

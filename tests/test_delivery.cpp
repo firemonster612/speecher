@@ -891,7 +891,7 @@ private slots:
         QCOMPARE(restored->data(QStringLiteral("image/png")), QByteArrayLiteral("fake-image"));
     }
 
-    void outputKeepsClipboardUntilVirtualKeyboardInputIsVerified()
+    void outputRestoresClipboardAfterDelayWhenVirtualKeyboardInputCannotBeVerified()
     {
         auto *previous = new QMimeData;
         previous->setText(QStringLiteral("previous clipboard"));
@@ -927,11 +927,13 @@ private slots:
             target);
         QCoreApplication::processEvents();
         QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
-        QCOMPARE(result.message, QStringLiteral("Copied • Input sent"));
+        QCOMPARE(result.message, QStringLiteral("Input sent"));
         QCOMPARE(consumedText, QStringLiteral("new text"));
         const QMimeData *clipboard = QApplication::clipboard()->mimeData();
-        QCOMPARE(clipboard->text(), QStringLiteral("new text"));
-        QVERIFY(!clipboard->hasFormat(QStringLiteral("application/x-speecher-test")));
+        QCOMPARE(clipboard->text(), QStringLiteral("previous clipboard"));
+        QCOMPARE(clipboard->html(), QStringLiteral("<b>previous clipboard</b>"));
+        QCOMPARE(clipboard->data(QStringLiteral("application/x-speecher-test")),
+                 QByteArrayLiteral("custom-data"));
     }
 
 #ifdef SPEECHER_WITH_WAYLAND

@@ -613,11 +613,9 @@ private slots:
                                          QStringLiteral("restoreClipboardAfterTyping"));
         QCOMPARE(row.help, restoreClipboardDescription());
         QVERIFY(row.tooltip.isEmpty());
-        // The code restores after any paste, not only after typing or a
-        // verified one, so the sentence must not name a mechanism.
-        QVERIFY(!restoreClipboardDescription().contains(QStringLiteral("typing")));
-        QVERIFY(!restoreClipboardDescription().contains(QStringLiteral("verified")));
-        QVERIFY(!restoreClipboardDescription().contains(QStringLiteral("keyboard")));
+        QCOMPARE(restoreClipboardDescription(),
+                 QStringLiteral("Restore the previous clipboard after Speecher confirms the "
+                                "paste, or after a short delay when it cannot."));
     }
 
     void aSavedMicrophoneSurvivesGoingMissing()

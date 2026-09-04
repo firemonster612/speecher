@@ -230,6 +230,9 @@ Target MacTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
                 const int start = static_cast<int>(selectedRange->location);
                 const int length = static_cast<int>(selectedRange->length);
                 target.caretOffset = start;
+                // Cmd+V does not pass through insertText(), so capture the
+                // same verification anchor and before-value for that path.
+                m_insertionOffset = start;
                 if (length > 0) {
                     target.selectionStart = start;
                     target.selectionEnd = start + length;
@@ -237,6 +240,7 @@ Target MacTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
                 }
 
                 const QString value = stringAttribute(focused, kAXValueAttribute);
+                m_valueBeforeInsertion = value;
                 if (start <= value.size() && length <= value.size() - start) {
                     target.nearbyTextBefore = value.left(start).right(targetContextCharacters);
                     target.nearbyTextAfter = value.mid(start, targetContextCharacters);
