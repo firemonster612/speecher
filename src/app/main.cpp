@@ -171,7 +171,7 @@ int main(int argc, char **argv)
     SettingsStore startupSettings;
 #ifdef Q_OS_LINUX
     if (!qEnvironmentVariableIsEmpty("APPIMAGE")) {
-        applyHostWidgetStyle(startupSettings.theme());
+        applyHostWidgetStyle(QStringLiteral("system"));
     }
 #endif
     AppImageUpdater::waitForRestartParent();

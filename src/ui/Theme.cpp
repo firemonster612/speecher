@@ -47,11 +47,13 @@ void apply(const QString &theme)
         return;
     }
     Qt::ColorScheme scheme = Qt::ColorScheme::Unknown;
+#ifndef Q_OS_LINUX
     if (theme == QStringLiteral("light")) {
         scheme = Qt::ColorScheme::Light;
     } else if (theme == QStringLiteral("dark")) {
         scheme = Qt::ColorScheme::Dark;
     }
+#endif
     qApp->styleHints()->setColorScheme(scheme);
     // Some platform themes ignore the request. Only an explicit scheme can
     // tell; "system" always matches whatever the desktop reports.
@@ -59,7 +61,8 @@ void apply(const QString &theme)
         s_overrideHonored = qApp->styleHints()->colorScheme() == scheme;
     }
 #ifdef Q_OS_LINUX
-    applyAdwaitaVariant(theme);
+    Q_UNUSED(theme);
+    applyAdwaitaVariant(QStringLiteral("system"));
 #endif
 #ifdef Q_OS_MACOS
     // Qt only repaints its own widgets; the traffic lights and the vibrancy
@@ -70,7 +73,13 @@ void apply(const QString &theme)
 
 QString normalizedSetting(const QString &theme, bool overrideHonored)
 {
+#ifdef Q_OS_LINUX
+    Q_UNUSED(theme);
+    Q_UNUSED(overrideHonored);
+    return QStringLiteral("system");
+#else
     return overrideHonored ? theme : QStringLiteral("system");
+#endif
 }
 
 bool overrideHonored()

@@ -149,6 +149,12 @@ private slots:
 
     void themeUsesThePlatformColorSchemeHint()
     {
+#ifdef Q_OS_LINUX
+        SettingsStore settings;
+        settings.raw().setValue(QStringLiteral("ui/theme"), QStringLiteral("dark"));
+        Theme::apply(settings.theme());
+        QCOMPARE(qApp->styleHints()->colorScheme(), Qt::ColorScheme::Unknown);
+#else
         Theme::apply(QStringLiteral("dark"));
         // Whatever the platform did, Theme reports it truthfully so the row
         // can say when Light and Dark are not going to do anything.
@@ -162,14 +168,20 @@ private slots:
         QCOMPARE(qApp->styleHints()->colorScheme(), Qt::ColorScheme::Light);
         Theme::apply(QStringLiteral("system"));
         QCOMPARE(qApp->styleHints()->colorScheme(), Qt::ColorScheme::Unknown);
+#endif
     }
 
     void ignoredThemeChoicesReturnToSystem()
     {
         QCOMPARE(Theme::normalizedSetting(QStringLiteral("dark"), false),
                  QStringLiteral("system"));
+#ifdef Q_OS_LINUX
+        QCOMPARE(Theme::normalizedSetting(QStringLiteral("light"), true),
+                 QStringLiteral("system"));
+#else
         QCOMPARE(Theme::normalizedSetting(QStringLiteral("light"), true),
                  QStringLiteral("light"));
+#endif
     }
 
     void accessibilityNoticeExplainsAndOffersTheFix()
