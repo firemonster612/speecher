@@ -1,5 +1,7 @@
 #pragma once
 
+#include "app/SettingsPageName.h"
+
 #include <QString>
 
 #include <optional>
@@ -21,26 +23,23 @@ enum class AppPageId {
 // went: the Applications page became a card on Output.
 inline std::optional<AppPageId> appPageFromName(const QString &name)
 {
-    const QString key = name.trimmed().toLower();
+    const QString key = canonicalSettingsPageName(name);
     if (key == QStringLiteral("general")) {
         return AppPageId::General;
     }
     if (key == QStringLiteral("audio")) {
         return AppPageId::Audio;
     }
-    if (key == QStringLiteral("output") || key == QStringLiteral("applications")
-        || key == QStringLiteral("apps")) {
+    if (key == QStringLiteral("output")) {
         return AppPageId::Output;
     }
-    if (key == QStringLiteral("accounts") || key == QStringLiteral("auth")
-        || key == QStringLiteral("providers")) {
+    if (key == QStringLiteral("accounts")) {
         return AppPageId::Accounts;
     }
     if (key == QStringLiteral("refinement")) {
         return AppPageId::Refinement;
     }
-    if (key == QStringLiteral("vocabulary") || key == QStringLiteral("corrections")
-        || key == QStringLiteral("bindings")) {
+    if (key == QStringLiteral("vocabulary")) {
         return AppPageId::Vocabulary;
     }
     return std::nullopt;

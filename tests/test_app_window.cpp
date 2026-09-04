@@ -232,6 +232,30 @@ private slots:
         QCOMPARE(sidebarCurrentTitle(*shown), QStringLiteral("Output"));
     }
 
+    void commandLineRejectsUnknownSettingsPages()
+    {
+        const CommandLineDecision decision = parseCommandLine(
+            {QStringLiteral("speecher"), QStringLiteral("settings"), QStringLiteral("nonsense")},
+            QString());
+
+        QCOMPARE(decision.mode, LaunchMode::Exit);
+        QCOMPARE(decision.exitCode, 2);
+    }
+
+    void daemonSettingsPageOptionIsPreserved()
+    {
+        const CommandLineDecision decision = parseCommandLine(
+            {QStringLiteral("speecher"),
+             QStringLiteral("--daemon"),
+             QStringLiteral("--show-settings"),
+             QStringLiteral("--settings-page=output")},
+            QString());
+
+        QCOMPARE(decision.mode, LaunchMode::RunDaemon);
+        QVERIFY(decision.showSettings);
+        QCOMPARE(decision.settingsPage, QStringLiteral("output"));
+    }
+
     void sidebarUsesThePlatformPageWidget()
     {
         ApplicationController controller(true);

@@ -406,6 +406,7 @@ set(SPEECHER_APP_HEADERS
   src/app/CommandLine.h
   src/app/CompositionSockets.h
   src/app/PlatformComposition.h
+  src/app/SettingsPageName.h
   src/app/SingleInstanceIpc.h
   src/app/UpdateController.h
 )

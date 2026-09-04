@@ -1,6 +1,7 @@
 #include "app/CommandLine.h"
 
 #include "app/PlatformComposition.h"
+#include "app/SettingsPageName.h"
 #include "app/SingleInstanceIpc.h"
 
 #include <QProcess>
@@ -128,6 +129,13 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
             std::cerr << optionError.toStdString() << "\n";
             return {LaunchMode::Exit, 2};
         }
+    }
+    if (!decision.settingsPage.isEmpty()
+        && canonicalSettingsPageName(decision.settingsPage).isEmpty()) {
+        std::cerr << "Unknown settings page: " << decision.settingsPage.toStdString()
+                  << ". Choose from: " << settingsPageNames().join(QStringLiteral(", ")).toStdString()
+                  << "\n";
+        return {LaunchMode::Exit, 2};
     }
 
     QString formatError;
