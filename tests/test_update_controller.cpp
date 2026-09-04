@@ -522,6 +522,9 @@ private slots:
         QVERIFY(!normal.contains(QStringLiteral("APPIMAGE_EXTRACT_AND_RUN")));
     }
 
+#ifdef Q_OS_LINUX
+    // The AppImage restart handshake only exists on Linux; on macOS the
+    // runner's deep $TMPDIR also overflows the local-socket name limit.
     void restartHandshakeCannotBeEnteredTwice()
     {
         const QByteArray previousAppImage = qgetenv("APPIMAGE");
@@ -541,6 +544,7 @@ private slots:
 
         QCOMPARE(AppImageUpdaterTestAccess::restartServer(updater), firstServer);
     }
+#endif
 
     void automaticCheckFailuresRetrySoonAndOnlySuccessUpdatesTheTimestamp()
     {
