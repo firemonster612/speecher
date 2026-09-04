@@ -7,6 +7,7 @@
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
 #endif
 
+#include <QAbstractButton>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -118,6 +119,9 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
 #ifdef Q_OS_MACOS
     pageContents.append(m_startAtLoginPage);
 #endif
+    if (!m_singlePage) {
+        m_lastPage = pageContents.last();
+    }
     const QStringList titles = setupPageTitles();
 #ifdef SPEECHER_WITH_KASSISTANT
     for (int index = 0; index < pageContents.size(); ++index) {
@@ -127,9 +131,9 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         }
     }
     if (!m_singlePage) {
-        auto *skip = new QPushButton(QStringLiteral("Skip setup"), this);
-        addActionButton(skip);
-        connect(skip, &QPushButton::clicked, this, &SetupAssistant::skipSetup);
+        m_skipButton = new QPushButton(QStringLiteral("Skip setup"), this);
+        addActionButton(m_skipButton);
+        connect(m_skipButton, &QAbstractButton::clicked, this, &SetupAssistant::skipSetup);
     }
     connect(this,
             &KAssistantDialog::currentPageChanged,
@@ -144,6 +148,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     if (!m_singlePage) {
         setOption(QWizard::HaveCustomButton1);
         setButtonText(QWizard::CustomButton1, QStringLiteral("Skip setup"));
+        m_skipButton = button(QWizard::CustomButton1);
     }
     for (int index = 0; index < pageContents.size(); ++index) {
         QWidget *content = pageContents.at(index);
@@ -257,6 +262,9 @@ void SetupAssistant::updateActivePage(QWidget *page)
 {
     if (m_microphonePage) {
         m_microphonePage->setActive(page == m_microphonePage);
+    }
+    if (m_skipButton) {
+        m_skipButton->setVisible(page != m_lastPage);
     }
     if (page == m_finishPage && m_finishPage) {
         m_finishPage->setSignInRequired(m_deliveryPage->needsSignIn());

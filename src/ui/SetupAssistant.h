@@ -10,6 +10,8 @@
 #endif
 #include <QStringList>
 
+class QAbstractButton;
+
 namespace speecher {
 
 class ApplicationController;
@@ -50,6 +52,8 @@ private:
     TextDeliverySetupPage *m_deliveryPage = nullptr;
     WritingProfilesSetupPage *m_profilesPage = nullptr;
     FinishSetupPage *m_finishPage = nullptr;
+    QWidget *m_lastPage = nullptr;
+    QAbstractButton *m_skipButton = nullptr;
     bool m_singlePage = false;
 #ifdef Q_OS_LINUX
     LinuxGlobalShortcutSetupPage *m_globalShortcutPage = nullptr;

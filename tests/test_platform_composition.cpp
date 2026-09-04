@@ -16,6 +16,7 @@
 #endif
 
 #include <QApplication>
+#include <QAbstractButton>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -29,6 +30,10 @@
 #include <QSignalSpy>
 #include <QStringList>
 #include <QTemporaryDir>
+
+#ifdef SPEECHER_WITH_KASSISTANT
+#include <KPageWidget>
+#endif
 #include <QTest>
 
 #include <memory>
@@ -340,6 +345,36 @@ private slots:
         QVERIFY(!assistant.testAttribute(Qt::WA_SetPalette));
         QCOMPARE(assistant.palette().color(QPalette::Mid),
                  QApplication::palette().color(QPalette::Mid));
+    }
+
+    void setupAssistantHidesSkipOnTheLastPage()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        SetupAssistant assistant(&controller);
+        assistant.show();
+        QCoreApplication::processEvents();
+
+        QAbstractButton *skip = nullptr;
+        for (QAbstractButton *button : assistant.findChildren<QAbstractButton *>()) {
+            if (button->text() == QStringLiteral("Skip setup")) {
+                skip = button;
+                break;
+            }
+        }
+        QVERIFY(skip);
+        QVERIFY(skip->isVisible());
+        const int lastPage = assistant.pageTitles().indexOf(QStringLiteral("Ready to dictate"));
+        QCOMPARE(lastPage, assistant.pageTitles().size() - 1);
+#ifdef SPEECHER_WITH_KASSISTANT
+        auto *pages = assistant.findChild<KPageWidget *>();
+        QVERIFY(pages);
+        pages->setCurrentPage(pages->pages().at(lastPage));
+#else
+        assistant.setCurrentId(assistant.pageIds().at(lastPage));
+#endif
+        QCoreApplication::processEvents();
+        QVERIFY(!skip->isVisible());
     }
 
     void globalShortcutSinglePageOnlyShowsTheShortcutPage()
