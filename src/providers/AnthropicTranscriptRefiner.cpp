@@ -1,5 +1,6 @@
 #include "providers/AnthropicTranscriptRefiner.h"
 
+#include "core/CliProxyUrl.h"
 #include "providers/AnthropicApiRefiner.h"
 #include "providers/ClaudeCredentials.h"
 #include "providers/CliProxyCredentials.h"
@@ -142,7 +143,7 @@ void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,
                          vocabulary,
                          settings.bindingVocabulary,
                          m_accessToken,
-                         remoteCliproxy ? settings.cliproxyBaseUrl + QStringLiteral("/v1")
+                         remoteCliproxy ? cliproxyApiBase(settings.cliproxyBaseUrl)
                                         : settings.anthropicEndpointBase,
                          settings.anthropicModel,
                          settings.anthropicEffort,

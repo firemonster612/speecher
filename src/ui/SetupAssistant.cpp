@@ -7,9 +7,8 @@
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
 #endif
 
-#include <QColor>
+#include <QAbstractButton>
 #include <QMessageBox>
-#include <QPalette>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -21,6 +20,27 @@
 
 namespace speecher {
 namespace {
+
+QStringList setupPageTitles()
+{
+    QStringList titles{
+        QStringLiteral("Welcome to Speecher"),
+        QStringLiteral("Transcription"),
+        QStringLiteral("Microphone"),
+        QStringLiteral("Desktop accessibility"),
+        QStringLiteral("Text delivery"),
+        QStringLiteral("Refinement"),
+        QStringLiteral("Writing profiles"),
+    };
+#ifdef Q_OS_LINUX
+    titles.append(QStringLiteral("Global Shortcut"));
+#endif
+    titles.append(QStringLiteral("Ready to dictate"));
+#ifdef Q_OS_MACOS
+    titles.append(QStringLiteral("Start at login"));
+#endif
+    return titles;
+}
 
 #ifndef SPEECHER_WITH_KASSISTANT
 QWizardPage *wizardPage(QWidget *content, const QString &title)
@@ -55,6 +75,10 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
 #ifdef Q_OS_LINUX
     if (!m_singlePage || page == SetupAssistantPage::GlobalShortcut) {
         m_globalShortcutPage = new LinuxGlobalShortcutSetupPage(*controller, this);
+        // The same control sits flush inside a settings card; as an assistant
+        // page it takes the margin every other page has.
+        const int margin = setupPageMargin();
+        m_globalShortcutPage->layout()->setContentsMargins(margin, margin, margin, margin);
     }
 #endif
     WelcomeSetupPage *welcome = nullptr;
@@ -79,33 +103,37 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         m_startAtLoginPage = new StartAtLoginSetupPage(*controller->settings(), this);
 #endif
     }
-#ifdef SPEECHER_WITH_KASSISTANT
-    int nextPageIndex = 0;
-    const auto addSetupPage = [this, requestedPageIndex, &nextPageIndex](QWidget *content,
-                                                                          const QString &title) {
-        if (content && (requestedPageIndex < 0 || requestedPageIndex == nextPageIndex)) {
-            addPage(content, title);
-        }
-        ++nextPageIndex;
+    QList<QWidget *> pageContents{
+        welcome,
+        speechProvider,
+        m_microphonePage,
+        m_accessibilityPage,
+        m_deliveryPage,
+        refinement,
+        m_profilesPage,
     };
 #ifdef Q_OS_LINUX
-    addSetupPage(m_globalShortcutPage, QStringLiteral("Global Shortcut"));
+    pageContents.append(m_globalShortcutPage);
 #endif
-    addSetupPage(welcome, QStringLiteral("Welcome to Speecher"));
-    addSetupPage(speechProvider, QStringLiteral("Transcription"));
-    addSetupPage(m_microphonePage, QStringLiteral("Microphone"));
-    addSetupPage(m_accessibilityPage, QStringLiteral("Desktop accessibility"));
-    addSetupPage(m_deliveryPage, QStringLiteral("Text delivery"));
-    addSetupPage(refinement, QStringLiteral("Refinement"));
-    addSetupPage(m_profilesPage, QStringLiteral("Writing profiles"));
-    addSetupPage(m_finishPage, QStringLiteral("Ready to dictate"));
+    pageContents.append(m_finishPage);
 #ifdef Q_OS_MACOS
-    addSetupPage(m_startAtLoginPage, QStringLiteral("Start at login"));
+    pageContents.append(m_startAtLoginPage);
 #endif
     if (!m_singlePage) {
-        auto *skip = new QPushButton(QStringLiteral("Skip setup"), this);
-        addActionButton(skip);
-        connect(skip, &QPushButton::clicked, this, &SetupAssistant::skipSetup);
+        m_lastPage = pageContents.last();
+    }
+    const QStringList titles = setupPageTitles();
+#ifdef SPEECHER_WITH_KASSISTANT
+    for (int index = 0; index < pageContents.size(); ++index) {
+        QWidget *content = pageContents.at(index);
+        if (content && (requestedPageIndex < 0 || requestedPageIndex == index)) {
+            addPage(content, titles.at(index));
+        }
+    }
+    if (!m_singlePage) {
+        m_skipButton = new QPushButton(QStringLiteral("Skip setup"), this);
+        addActionButton(m_skipButton);
+        connect(m_skipButton, &QAbstractButton::clicked, this, &SetupAssistant::skipSetup);
     }
     connect(this,
             &KAssistantDialog::currentPageChanged,
@@ -114,43 +142,21 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
                 updateActivePage(current ? current->widget() : nullptr);
             });
 #else
-    setWizardStyle(QWizard::ClassicStyle);
-    QPalette wizardPalette = palette();
-    const QColor window = wizardPalette.color(QPalette::Window);
-    const QColor text = wizardPalette.color(QPalette::WindowText);
-    wizardPalette.setColor(QPalette::Mid,
-                           QColor((window.red() * 4 + text.red()) / 5,
-                                  (window.green() * 4 + text.green()) / 5,
-                                  (window.blue() * 4 + text.blue()) / 5));
-    setPalette(wizardPalette);
+    // The platform's default wizard look, palette untouched: the separator it
+    // draws is the style's own, not one tuned here.
     setOption(QWizard::NoBackButtonOnStartPage);
     if (!m_singlePage) {
         setOption(QWizard::HaveCustomButton1);
         setButtonText(QWizard::CustomButton1, QStringLiteral("Skip setup"));
+        m_skipButton = button(QWizard::CustomButton1);
     }
-    int nextPageIndex = 0;
-    const auto addSetupPage = [this, requestedPageIndex, &nextPageIndex](QWidget *content,
-                                                                          const QString &title) {
-        if (content && (requestedPageIndex < 0 || requestedPageIndex == nextPageIndex)) {
-            const int id = addPage(wizardPage(content, title));
+    for (int index = 0; index < pageContents.size(); ++index) {
+        QWidget *content = pageContents.at(index);
+        if (content && (requestedPageIndex < 0 || requestedPageIndex == index)) {
+            const int id = addPage(wizardPage(content, titles.at(index)));
             m_pageContents.insert(id, content);
         }
-        ++nextPageIndex;
-    };
-#ifdef Q_OS_LINUX
-    addSetupPage(m_globalShortcutPage, QStringLiteral("Global Shortcut"));
-#endif
-    addSetupPage(welcome, QStringLiteral("Welcome to Speecher"));
-    addSetupPage(speechProvider, QStringLiteral("Transcription"));
-    addSetupPage(m_microphonePage, QStringLiteral("Microphone"));
-    addSetupPage(m_accessibilityPage, QStringLiteral("Desktop accessibility"));
-    addSetupPage(m_deliveryPage, QStringLiteral("Text delivery"));
-    addSetupPage(refinement, QStringLiteral("Refinement"));
-    addSetupPage(m_profilesPage, QStringLiteral("Writing profiles"));
-    addSetupPage(m_finishPage, QStringLiteral("Ready to dictate"));
-#ifdef Q_OS_MACOS
-    addSetupPage(m_startAtLoginPage, QStringLiteral("Start at login"));
-#endif
+    }
     connect(this, &QWizard::customButtonClicked, this, [this](int button) {
         if (button == QWizard::CustomButton1) {
             skipSetup();
@@ -178,6 +184,22 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
 #endif
 }
 
+QStringList SetupAssistant::pageTitles() const
+{
+    QStringList titles;
+#ifdef SPEECHER_WITH_KASSISTANT
+    const QAbstractItemModel *model = pageWidget()->model();
+    for (int row = 0; row < model->rowCount(); ++row) {
+        titles.append(model->index(row, 0).data(Qt::DisplayRole).toString());
+    }
+#else
+    for (const int id : pageIds()) {
+        titles.append(page(id)->title());
+    }
+#endif
+    return titles;
+}
+
 int SetupAssistant::pageIndex(SetupAssistantPage page)
 {
     if (page == SetupAssistantPage::All) {
@@ -185,7 +207,7 @@ int SetupAssistant::pageIndex(SetupAssistantPage page)
     }
 #ifdef Q_OS_LINUX
     if (page == SetupAssistantPage::GlobalShortcut) {
-        return 0;
+        return setupPageTitles().indexOf(QStringLiteral("Global Shortcut"));
     }
 #endif
     return -1;
@@ -240,6 +262,9 @@ void SetupAssistant::updateActivePage(QWidget *page)
 {
     if (m_microphonePage) {
         m_microphonePage->setActive(page == m_microphonePage);
+    }
+    if (m_skipButton) {
+        m_skipButton->setVisible(page != m_lastPage);
     }
     if (page == m_finishPage && m_finishPage) {
         m_finishPage->setSignInRequired(m_deliveryPage->needsSignIn());

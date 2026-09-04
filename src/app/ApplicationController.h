@@ -55,7 +55,6 @@ public:
     QString stateName() const;
     IpcResponse response(bool ok = true, const QString &message = {}) const;
     QString outputSummary() const;
-    QString primaryOutputStatus() const;
     bool accessibilitySupported() const;
     bool accessibilityEnabled() const;
     bool accessibilityPersistent() const;
@@ -64,11 +63,14 @@ public:
     void refreshAccessibilityState();
     bool grabMainWindow(const QString &path) const;
     bool globalShortcutsSupported() const;
-    QString globalShortcutUnsupportedReason() const;
+    bool globalShortcutSupportKnown() const;
+    bool globalShortcutUsesDesktopChooser() const;
     QKeySequence globalShortcut() const;
     QString globalShortcutDisplay() const;
     bool setGlobalShortcut(const QKeySequence &shortcut, QString *error = nullptr);
     void registerGlobalShortcut();
+    // Forgets the desktop's registration of the shortcut, where it keeps one.
+    bool removeGlobalShortcutRegistration(QString *error = nullptr);
 
     void showMainWindow();
     void showSettingsWindow();
@@ -83,6 +85,7 @@ public slots:
     void showMain();
     void showSettings();
     void showSetup();
+    void quitApplication();
     void handleIpcCommand(const QString &command,
                           const QString &outputFormat,
                           QLocalSocket *socket);
@@ -95,8 +98,10 @@ signals:
     void audioLevelChanged(float level);
     void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
     void globalShortcutChanged();
+    void globalShortcutSupportChanged();
     void globalShortcutRegistrationFinished(bool bound, const QString &detail);
     void whatsNewChanged();
+    void quitRequested();
 
 private:
     void registerProviders();

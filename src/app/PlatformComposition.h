@@ -25,7 +25,6 @@ public:
 class PlatformComposition : public SingleInstancePlatform {
 public:
     virtual QString outputSummary() const = 0;
-    virtual QString primaryOutputStatus() const = 0;
 
     virtual QList<AudioInputDeviceInfo> availableAudioInputDevices() const = 0;
     virtual AudioInput *createAudioInput(SettingsStore *settings, QObject *parent) const = 0;

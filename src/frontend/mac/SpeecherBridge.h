@@ -151,6 +151,9 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, copy, nullable) void (^statusChanged)(NSString *status);
 @property (nonatomic, copy, nullable) void (^audioLevelChanged)(float level);
 @property (nonatomic, copy, nullable) void (^accessibilityChanged)(void);
+@property (nonatomic, readonly) BOOL whatsNewPending;
+@property (nonatomic, copy, nullable) void (^whatsNewChanged)(void);
+- (void)clearPendingWhatsNew;
 - (void)toggle;
 - (void)startListening;
 - (void)stopListening;
@@ -195,6 +198,8 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 // end reads from and writes to the keyring itself.
 @property (nonatomic, readonly) BOOL credentialIsEditable;
 @property (nonatomic, readonly, copy) NSString *credentialStatus;
+@property (nonatomic, readonly, copy) NSString *anthropicCredentialStatus;
+@property (nonatomic, copy, nullable) void (^anthropicCredentialsChanged)(void);
 - (NSString *)readApiKey;
 // nil when the keyring took it, otherwise why it refused.
 - (nullable NSString *)saveApiKey:(NSString *)apiKey;

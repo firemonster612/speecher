@@ -3,13 +3,23 @@
 #include "app/ApplicationController.h"
 #include "app/UpdateController.h"
 #include "core/AppSettings.h"
+#include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "frontend/qt/SchemaSettingsPage.h"
+#ifdef Q_OS_LINUX
+#include "platform/LinuxDesktopIntegration.h"
+#include "ui/setup/LinuxGlobalShortcutSetupPage.h"
+#endif
 #include "ui/Theme.h"
 
+#include <QCheckBox>
 #include <QDesktopServices>
+#include <QDir>
+#include <QFile>
 #include <QMessageBox>
 #include <QLabel>
+#include <QPushButton>
+#include <QSettings>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalBlocker>
@@ -70,7 +80,6 @@ SettingsSchema settingsSchema(ApplicationController *controller)
     SettingsSchema schema = buildSettingsSchema(qtSchemaContext(
         *controller->platform(),
         *controller->providerRegistry(),
-        controller->primaryOutputStatus(),
         controller->pendingWhatsNewVersion()));
     UpdateController *updates = controller->updates();
     SettingsPage &general = pageById(schema, QStringLiteral("general"));
@@ -101,6 +110,8 @@ SettingsSchema settingsSchema(ApplicationController *controller)
                     : updates->errorMessage();
             case UpdateController::State::RestartPending:
                 return QStringLiteral("Restarting after this dictation…");
+            case UpdateController::State::Restarting:
+                return QStringLiteral("Restarting…");
             case UpdateController::State::Error:
                 return updates->errorMessage();
             }
@@ -118,6 +129,8 @@ SettingsSchema settingsSchema(ApplicationController *controller)
                 return QVariant(QStringLiteral("Downloading…"));
             case UpdateController::State::RestartPending:
                 return QVariant(QStringLiteral("Restarting after this dictation…"));
+            case UpdateController::State::Restarting:
+                return QVariant(QStringLiteral("Restarting…"));
             case UpdateController::State::CheckFailed:
             case UpdateController::State::Error:
                 return QVariant(QStringLiteral("Try again"));
@@ -129,7 +142,8 @@ SettingsSchema settingsSchema(ApplicationController *controller)
             return updates->state() != UpdateController::State::Checking
                 && updates->state() != UpdateController::State::Downloading
                 && updates->state() != UpdateController::State::ReadyToRestart
-                && updates->state() != UpdateController::State::RestartPending;
+                && updates->state() != UpdateController::State::RestartPending
+                && updates->state() != UpdateController::State::Restarting;
         };
     }
 
@@ -170,6 +184,25 @@ SchemaCustomRow whatsNewCustomRow(const SettingsRow &descriptor,
             true};
 }
 
+SchemaCustomRowFactory generalCustomRows(ApplicationController *controller)
+{
+#ifdef Q_OS_LINUX
+    return [controller](const SettingsRow &descriptor,
+                        QWidget *parent,
+                        std::function<void()>) {
+        if (descriptor.id != QStringLiteral("globalShortcut")) {
+            return SchemaCustomRow{};
+        }
+        auto *page = new LinuxGlobalShortcutSetupPage(*controller, parent);
+        page->hideAppMenuIntegration();
+        return SchemaCustomRow{page, {}, {}, true};
+    };
+#else
+    Q_UNUSED(controller)
+    return {};
+#endif
+}
+
 } // namespace
 
 SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *parent)
@@ -185,7 +218,7 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     , m_schema(std::move(schema))
     , m_outputRows(*controller->settings())
     , m_providerRows(*controller->settings(), *controller->secretStore())
-    , m_general(addPage(QStringLiteral("general"), parent))
+    , m_general(addPage(QStringLiteral("general"), parent, generalCustomRows(controller)))
     , m_audio(addPage(QStringLiteral("audio"), parent))
     , m_applications(addPage(QStringLiteral("applications"), parent))
     , m_output(addPage(QStringLiteral("output"), parent, m_outputRows.factory()))
@@ -320,6 +353,9 @@ bool SettingsPageSet::save(bool showValidationErrors,
                            SaveOutcome *outcome)
 {
     if (outcome) *outcome = {};
+    if (m_settingsDeletionStarted) {
+        return false;
+    }
     const auto refuse = [outcome](SaveFailure failure, const QStringList &messages) {
         if (outcome) *outcome = {failure, messages};
         return false;
@@ -352,6 +388,16 @@ bool SettingsPageSet::save(bool showValidationErrors,
 
     settings->applySnapshot(m_draft);
     Theme::apply(settings->theme());
+    const QString savedTheme = Theme::normalizedSetting(m_draft.ui.theme,
+                                                        Theme::overrideHonored());
+    if (savedTheme != m_draft.ui.theme) {
+        m_draft.ui.theme = savedTheme;
+        settings->setTheme(savedTheme);
+        Theme::apply(savedTheme);
+    }
+    // Applying the theme is the moment that reveals whether the platform
+    // honours it, which the Theme row's gate depends on.
+    applyCapabilities();
     const AppSettings snapshot = settings->snapshot();
     m_draft = snapshot;
     for (SchemaSettingsPage *page : std::as_const(m_pages)) {
@@ -369,6 +415,15 @@ bool SettingsPageSet::save(bool showValidationErrors,
         m_outputRows.refresh();
     }
     return true;
+}
+
+void SettingsPageSet::prepareForSettingsDeletion()
+{
+    if (m_settingsDeletionStarted) {
+        return;
+    }
+    m_settingsDeletionStarted = true;
+    emit settingsDeletionStarted();
 }
 
 void SettingsPageSet::preserveBindingScroll(QScrollArea *scroll)
@@ -407,6 +462,23 @@ void SettingsPageSet::runPageAction(const QString &rowId)
     if (rowId == QStringLiteral("whatsNew")) {
         m_controller->clearPendingWhatsNew();
         emit whatsNewRequested();
+        return;
+    }
+#ifdef Q_OS_LINUX
+    if (rowId == QStringLiteral("removeSpeecher")) {
+        removeSpeecher();
+        return;
+    }
+#endif
+    if (rowId == QStringLiteral("enableAccessibility")) {
+        QString error;
+        if (!m_controller->enableAccessibility(&error)) {
+            QMessageBox::warning(qobject_cast<QWidget *>(parent()),
+                                 QStringLiteral("Desktop accessibility"),
+                                 error.isEmpty()
+                                     ? QStringLiteral("Desktop accessibility could not be turned on.")
+                                     : error);
+        }
     }
 }
 
@@ -416,11 +488,114 @@ void SettingsPageSet::refreshUpdateRows()
     m_whatsNew->refresh();
 }
 
+#ifdef Q_OS_LINUX
+// One confirmation, then everything Speecher set up for this user is undone
+// and the outcome is reported item by item. The program file itself stays: a
+// running AppImage cannot delete itself safely, and the person knows where
+// they put it.
+void SettingsPageSet::removeSpeecher()
+{
+    QWidget *window = qobject_cast<QWidget *>(parent());
+    QMessageBox confirm(window);
+    confirm.setIcon(QMessageBox::Question);
+    confirm.setWindowTitle(QStringLiteral("Remove Speecher"));
+    confirm.setText(QStringLiteral("Remove Speecher from this computer?"));
+    confirm.setInformativeText(QStringLiteral(
+        "This removes the app menu entry, the speecher command, the app icon and the Global "
+        "Shortcut registration. The Speecher program file stays where you put it."));
+    auto *deleteSettings = new QCheckBox(
+        QStringLiteral("Also delete my settings, vocabulary and learned corrections"), &confirm);
+    confirm.setCheckBox(deleteSettings);
+    QPushButton *remove = confirm.addButton(QStringLiteral("Remove"), QMessageBox::DestructiveRole);
+    confirm.addButton(QMessageBox::Cancel);
+    confirm.setDefaultButton(QMessageBox::Cancel);
+    confirm.exec();
+    if (confirm.clickedButton() != remove) {
+        return;
+    }
+
+    QStringList done;
+    QStringList notDone;
+    const DesktopIntegrationRemoval files = removeAppImageIntegration(QDir::homePath());
+    for (const QString &item : files.removed) {
+        done.append(QStringLiteral("Removed the %1.").arg(item));
+    }
+    for (const QString &item : files.absent) {
+        done.append(QStringLiteral("There was no %1 to remove.").arg(item));
+    }
+    for (const QString &failure : files.failed) {
+        notDone.append(QStringLiteral("Could not remove the %1.").arg(failure));
+    }
+
+    QString shortcutError;
+    if (m_controller->removeGlobalShortcutRegistration(&shortcutError)) {
+        done.append(QStringLiteral("Removed the Global Shortcut registration."));
+    } else {
+        notDone.append(shortcutError.isEmpty()
+                           ? QStringLiteral("The Global Shortcut registration could not be removed.")
+                           : QStringLiteral("Global Shortcut: %1").arg(shortcutError));
+    }
+
+    const bool deleteUserSettings = deleteSettings->isChecked();
+    if (deleteUserSettings) {
+        prepareForSettingsDeletion();
+        if (m_controller->secretStore()->deleteKeyringApiKey()) {
+            done.append(QStringLiteral("Deleted your API key from the desktop keyring."));
+        } else {
+            notDone.append(
+                QStringLiteral("Could not delete your API key from the desktop keyring: %1")
+                    .arg(m_controller->secretStore()->lastError()));
+        }
+        QSettings &raw = m_controller->settings()->raw();
+        const QString settingsFile = raw.fileName();
+        raw.clear();
+        raw.sync();
+        if (!QFile::exists(settingsFile) || QFile::remove(settingsFile)) {
+            done.append(QStringLiteral("Deleted your settings."));
+        } else {
+            notDone.append(QStringLiteral("Could not delete the settings file at %1.").arg(settingsFile));
+        }
+    } else {
+        done.append(QStringLiteral("Kept your settings."));
+    }
+
+    const QString appImage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
+    QMessageBox report(window);
+    report.setIcon(notDone.isEmpty() ? QMessageBox::Information : QMessageBox::Warning);
+    report.setWindowTitle(QStringLiteral("Remove Speecher"));
+    report.setText(notDone.isEmpty() ? QStringLiteral("Speecher has been removed from this computer.")
+                                     : QStringLiteral("Speecher was removed, with some things left to do by hand."));
+    QString details = done.join(QLatin1Char('\n'));
+    if (!notDone.isEmpty()) {
+        details += QStringLiteral("\n\n") + notDone.join(QLatin1Char('\n'));
+    }
+    details += appImage.isEmpty()
+        ? QStringLiteral("\n\nDelete the Speecher program file yourself to finish.")
+        : QStringLiteral("\n\nTo finish, quit Speecher and delete the file at:\n%1").arg(appImage);
+    report.setInformativeText(details);
+    QPushButton *quit = report.addButton(QStringLiteral("Quit Speecher"), QMessageBox::AcceptRole);
+    if (!deleteUserSettings) {
+        report.addButton(QStringLiteral("Close"), QMessageBox::RejectRole);
+    }
+    report.exec();
+    if (deleteUserSettings || report.clickedButton() == quit) {
+        m_controller->quitApplication();
+    }
+}
+#endif
+
 void SettingsPageSet::updateAccessibilityState(bool supported, bool enabled, bool persistent)
 {
     Q_UNUSED(persistent);
-    const Capabilities capabilities{supported && enabled,
-                                    m_controller->updates()->isAppImage()};
+    m_targetAccessibility = supported && enabled;
+    applyCapabilities();
+}
+
+void SettingsPageSet::applyCapabilities()
+{
+    const Capabilities capabilities{m_targetAccessibility,
+                                    m_controller->updates()->supportsAutomaticDownloads(),
+                                    Theme::overrideHonored()};
     m_general->setCapabilities(capabilities);
     m_output->setCapabilities(capabilities);
     m_applications->setCapabilities(capabilities);

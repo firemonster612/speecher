@@ -8,6 +8,9 @@
 #include <QHash>
 #include <QWizard>
 #endif
+#include <QStringList>
+
+class QAbstractButton;
 
 namespace speecher {
 
@@ -33,6 +36,7 @@ public:
     explicit SetupAssistant(ApplicationController *controller,
                             SetupAssistantPage page = SetupAssistantPage::All,
                             QWidget *parent = nullptr);
+    QStringList pageTitles() const;
 
 protected:
     void accept() override;
@@ -48,6 +52,8 @@ private:
     TextDeliverySetupPage *m_deliveryPage = nullptr;
     WritingProfilesSetupPage *m_profilesPage = nullptr;
     FinishSetupPage *m_finishPage = nullptr;
+    QWidget *m_lastPage = nullptr;
+    QAbstractButton *m_skipButton = nullptr;
     bool m_singlePage = false;
 #ifdef Q_OS_LINUX
     LinuxGlobalShortcutSetupPage *m_globalShortcutPage = nullptr;

@@ -9,6 +9,10 @@
 
 namespace speecher {
 
+bool migrateSettingsIdentity(QSettings &newSettings,
+                             QSettings &oldSettings,
+                             QString *error = nullptr);
+
 class SettingsStore : public QObject, private SettingsCodecs {
     Q_OBJECT
 
@@ -103,6 +107,7 @@ public:
     using SettingsCodecs::setYdotoolEnabled;
     using SettingsCodecs::setUpdatesDismissedVersion;
     using SettingsCodecs::setUpdatesLastRunVersion;
+    using SettingsCodecs::setUpdatesLastRunBuildNumber;
     using SettingsCodecs::setUpdatesPendingWhatsNewVersion;
     using SettingsCodecs::setUpdatesLastCheckTime;
     using SettingsCodecs::snapshot;
@@ -119,6 +124,7 @@ public:
     using SettingsCodecs::updateChannel;
     using SettingsCodecs::updatesDismissedVersion;
     using SettingsCodecs::updatesLastRunVersion;
+    using SettingsCodecs::updatesLastRunBuildNumber;
     using SettingsCodecs::updatesPendingWhatsNewVersion;
     using SettingsCodecs::updatesLastCheckTime;
 

@@ -82,20 +82,15 @@ PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(QObject *parent)
     qDBusRegisterMetaType<PortalShortcut>();
     qDBusRegisterMetaType<PortalShortcuts>();
 
-    if (qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains(
-            QStringLiteral("KDE"), Qt::CaseInsensitive)) {
-        m_unsupportedReason = QStringLiteral("Plasma uses its native Global Shortcut service");
-        return;
-    }
     if (!QGuiApplication::platformName().startsWith(QStringLiteral("wayland"),
                                                      Qt::CaseInsensitive)) {
         m_unsupportedReason = QStringLiteral(
-            "Automatic setup needs a Wayland session. Set a shortcut up by hand below.");
+            "Automatic setup needs a Wayland session.");
         return;
     }
     if (!QDBusConnection::sessionBus().isConnected()) {
         m_unsupportedReason = QStringLiteral(
-            "Speecher can't reach your desktop settings. Set a shortcut up by hand below.");
+            "Speecher can't reach your desktop settings.");
         return;
     }
 
@@ -104,13 +99,11 @@ PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(QObject *parent)
         requestFailed(
             m_requestKind == RequestKind::Bind
                 ? QStringLiteral("Your desktop didn't finish setting the shortcut.")
-                : QStringLiteral(
-                      "Your desktop didn't answer. Try again, or set a shortcut up by hand below."),
+                : QStringLiteral("Your desktop didn't answer. Try again."),
             true);
     });
 
-    // A pending property read counts as supported so composition and startup stay non-blocking.
-    m_supported = true;
+    m_supportKnown = false;
     QDBusMessage properties = QDBusMessage::createMethodCall(
         QString::fromLatin1(portalService),
         QString::fromLatin1(portalPath),
@@ -124,16 +117,18 @@ PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(QObject *parent)
             [this, supportWatcher] {
         const QDBusPendingReply<QDBusVariant> reply = *supportWatcher;
         supportWatcher->deleteLater();
-        if (!reply.isError()) {
-            return;
-        }
-        m_supported = false;
-        m_unsupportedReason = QStringLiteral(
-            "Your desktop can't set shortcuts for Speecher automatically. Set one up by hand below.");
-        if (m_requestKind != RequestKind::None) {
-            requestFailed(m_unsupportedReason, true);
+        m_supportKnown = true;
+        if (reply.isError()) {
+            m_supported = false;
+            m_unsupportedReason = QStringLiteral(
+                "Your desktop can't set shortcuts for Speecher automatically.");
         } else {
-            emit registrationFinished(false, m_unsupportedReason);
+            m_supported = true;
+        }
+        emit supportChanged();
+        if (m_supported && m_bindWhenSupported) {
+            m_bindWhenSupported = false;
+            createSession(false);
         }
     });
 
@@ -152,6 +147,16 @@ bool PortalGlobalShortcutBinder::supported() const
     return m_supported;
 }
 
+bool PortalGlobalShortcutBinder::supportKnown() const
+{
+    return m_supportKnown;
+}
+
+bool PortalGlobalShortcutBinder::usesDesktopShortcutChooser() const
+{
+    return true;
+}
+
 QString PortalGlobalShortcutBinder::unsupportedReason() const
 {
     return m_supported ? QString() : m_unsupportedReason;
@@ -159,13 +164,21 @@ QString PortalGlobalShortcutBinder::unsupportedReason() const
 
 void PortalGlobalShortcutBinder::bind()
 {
-    if (m_supported) {
-        createSession(false);
+    if (!m_supportKnown) {
+        m_bindWhenSupported = true;
+        return;
     }
+    if (!m_supported) {
+        return;
+    }
+    createSession(false);
 }
 
 void PortalGlobalShortcutBinder::registerShortcut()
 {
+    if (!m_supportKnown) {
+        return;
+    }
     if (!m_supported) {
         emit registrationFinished(false, m_unsupportedReason);
         return;
@@ -188,7 +201,7 @@ bool PortalGlobalShortcutBinder::setShortcut(const QKeySequence &, QString *erro
 {
     if (error) {
         *error = QStringLiteral(
-            "Your desktop picks this key combination itself — use Register instead.");
+            "Your desktop picks this key combination itself. Use Choose shortcut instead.");
     }
     return false;
 }
@@ -309,10 +322,11 @@ void PortalGlobalShortcutBinder::sendRequest(const QString &member,
 
     m_requestKind = kind;
     m_requestPath = predictedRequestPath(token);
+    m_responseTracker.begin(m_requestPath);
     const QDBusObjectPath predictedPath = m_requestPath;
     if (!QDBusConnection::sessionBus().connect(
             QString::fromLatin1(portalService),
-            m_requestPath.path(),
+            QString(),
             QString::fromLatin1(requestInterface),
             QStringLiteral("Response"),
             this,
@@ -341,26 +355,9 @@ void PortalGlobalShortcutBinder::sendRequest(const QString &member,
             requestFailed(reply.error().message());
             return;
         }
-        if (reply.value().path() == m_requestPath.path()) {
-            return;
-        }
-        // xdg-desktop-portal < 0.9 really does return a different handle, so it is not dead code.
-        QDBusConnection::sessionBus().disconnect(
-            QString::fromLatin1(portalService),
-            m_requestPath.path(),
-            QString::fromLatin1(requestInterface),
-            QStringLiteral("Response"),
-            this,
-            SLOT(handleRequestResponse(uint,QVariantMap)));
         m_requestPath = reply.value();
-        if (!QDBusConnection::sessionBus().connect(
-                QString::fromLatin1(portalService),
-                m_requestPath.path(),
-                QString::fromLatin1(requestInterface),
-                QStringLiteral("Response"),
-                this,
-                SLOT(handleRequestResponse(uint,QVariantMap)))) {
-            requestFailed(QStringLiteral("Could not watch the portal request"));
+        if (const auto response = m_responseTracker.resolve(m_requestPath)) {
+            processRequestResponse(*response);
         }
     });
     m_requestTimer->start(timeoutMs);
@@ -369,23 +366,27 @@ void PortalGlobalShortcutBinder::sendRequest(const QString &member,
 void PortalGlobalShortcutBinder::handleRequestResponse(uint response,
                                                        const QVariantMap &results)
 {
-    if (message().path() != m_requestPath.path()) {
+    const auto matched = m_responseTracker.observe(message().path(), response, results);
+    if (!matched) {
         return;
     }
+    processRequestResponse(*matched);
+}
+
+void PortalGlobalShortcutBinder::processRequestResponse(const PortalResponse &response)
+{
     const RequestKind kind = m_requestKind;
-    if (response != 0) {
-        requestFailed(response == 1
-                          ? QStringLiteral(
-                                "Setup was cancelled. Try again, or set a shortcut up by hand below.")
-                          : QStringLiteral(
-                                "Couldn't set the shortcut. Set one up by hand below."));
+    if (response.status != 0) {
+        requestFailed(response.status == 1
+                          ? QStringLiteral("Setup was cancelled. Try again.")
+                          : QStringLiteral("Couldn't set the shortcut. Try again."));
         return;
     }
     disconnectRequest();
 
     if (kind == RequestKind::CreateForRestore
         || kind == RequestKind::CreateForRegistration) {
-        const QVariant session = results.value(QStringLiteral("session_handle"));
+        const QVariant session = response.results.value(QStringLiteral("session_handle"));
         QString sessionPath = qdbus_cast<QDBusObjectPath>(session).path();
         if (sessionPath.isEmpty()) {
             sessionPath = session.toString();
@@ -402,7 +403,7 @@ void PortalGlobalShortcutBinder::handleRequestResponse(uint response,
     }
     if (kind == RequestKind::List) {
         QString trigger;
-        if (shortcutTrigger(results, &trigger)) {
+        if (shortcutTrigger(response.results, &trigger)) {
             activatePendingSession(trigger);
         } else {
             closePendingSession();
@@ -411,7 +412,7 @@ void PortalGlobalShortcutBinder::handleRequestResponse(uint response,
     }
     if (kind == RequestKind::Bind) {
         QString trigger;
-        if (!shortcutTrigger(results, &trigger)) {
+        if (!shortcutTrigger(response.results, &trigger)) {
             m_requestKind = kind;
             requestFailed(QStringLiteral("Your desktop didn't say which keys it assigned."));
             return;
@@ -511,13 +512,14 @@ void PortalGlobalShortcutBinder::disconnectRequest()
     if (!m_requestPath.path().isEmpty()) {
         QDBusConnection::sessionBus().disconnect(
             QString::fromLatin1(portalService),
-            m_requestPath.path(),
+            QString(),
             QString::fromLatin1(requestInterface),
             QStringLiteral("Response"),
             this,
             SLOT(handleRequestResponse(uint,QVariantMap)));
     }
     m_requestPath = {};
+    m_responseTracker.clear();
     m_requestKind = RequestKind::None;
 }
 

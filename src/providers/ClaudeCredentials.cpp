@@ -9,6 +9,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLockFile>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QNetworkAccessManager>
@@ -34,7 +35,7 @@ ClaudeCredentialResult readCredentials(const QString &path)
     ClaudeCredentialResult result;
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
-        result.error = QStringLiteral("Claude credentials not found at %1; run `claude` in a terminal and use the `/login` command").arg(path);
+        result.error = QStringLiteral("Claude credentials not found at %1; run claude in a terminal and use the /login command").arg(path);
         return result;
     }
 
@@ -62,7 +63,7 @@ ClaudeCredentialResult readCredentials(const QString &path)
         return result;
     }
     if (result.expiresAt.isValid() && result.expiresAt <= QDateTime::currentDateTimeUtc()) {
-        result.error = QStringLiteral("Claude login expired; run `claude` in a terminal and use the `/login` command");
+        result.error = QStringLiteral("Claude login expired; run claude in a terminal and use the /login command");
         return result;
     }
 
@@ -96,6 +97,7 @@ QString tokenUrl()
 }
 
 bool saveRefreshedCredentials(const QString &path,
+                              const QString &sourceRefreshToken,
                               const QString &accessToken,
                               const QString &refreshToken,
                               qint64 expiresAtMs,
@@ -121,6 +123,12 @@ bool saveRefreshedCredentials(const QString &path,
 
     QJsonObject root = document.object();
     QJsonObject oauth = root.value(QStringLiteral("claudeAiOauth")).toObject();
+    if (oauth.value(QStringLiteral("refreshToken")).toString() != sourceRefreshToken) {
+        if (error) {
+            *error = QStringLiteral("Claude credentials changed during refresh; try again");
+        }
+        return false;
+    }
     oauth.insert(QStringLiteral("accessToken"), accessToken);
     oauth.insert(QStringLiteral("refreshToken"), refreshToken);
     oauth.insert(QStringLiteral("expiresAt"), double(expiresAtMs));
@@ -154,7 +162,7 @@ bool refreshClaudeAuth(const QString &path, const ClaudeCredentialResult &creden
 {
     if (credentials.refreshToken.isEmpty()) {
         if (error) {
-            *error = QStringLiteral("Claude login cannot be refreshed; run `claude` in a terminal and use the `/login` command");
+            *error = QStringLiteral("Claude login cannot be refreshed; run claude in a terminal and use the /login command");
         }
         return false;
     }
@@ -201,7 +209,7 @@ bool refreshClaudeAuth(const QString &path, const ClaudeCredentialResult &creden
         if (error) {
             const QString code = response.value(QStringLiteral("error")).toString();
             *error = code == QStringLiteral("invalid_grant")
-                ? QStringLiteral("Claude login expired; run `claude` in a terminal and use the `/login` command")
+                ? QStringLiteral("Claude login expired; run claude in a terminal and use the /login command")
                 : QStringLiteral("Could not refresh Claude login (HTTP %1); check the network and try again").arg(status);
         }
         return false;
@@ -230,6 +238,7 @@ bool refreshClaudeAuth(const QString &path, const ClaudeCredentialResult &creden
         refreshedScopes = requestedScopes;
     }
     return saveRefreshedCredentials(path,
+                                    credentials.refreshToken,
                                     accessToken,
                                     refreshToken,
                                     QDateTime::currentMSecsSinceEpoch() + expiresIn * 1000,
@@ -297,6 +306,18 @@ ClaudeCredentialResult ClaudeCredentials::load(const QString &path, bool refresh
 {
     ClaudeCredentialResult result = readCredentials(path);
     if (result.ok || !refreshExpired || !result.expiresAt.isValid()
+        || result.expiresAt > QDateTime::currentDateTimeUtc()) {
+        return result;
+    }
+
+    QLockFile lock(path + QStringLiteral(".lock"));
+    if (!lock.tryLock(1000)) {
+        result.error = QStringLiteral("Could not lock Claude credentials for refresh");
+        return result;
+    }
+
+    result = readCredentials(path);
+    if (result.ok || !result.expiresAt.isValid()
         || result.expiresAt > QDateTime::currentDateTimeUtc()) {
         return result;
     }

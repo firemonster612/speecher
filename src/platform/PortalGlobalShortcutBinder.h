@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/GlobalShortcutBinder.h"
+#include "platform/PortalResponseTracker.h"
 
 #include <QDBusContext>
 #include <QDBusObjectPath>
@@ -25,6 +26,8 @@ public:
     explicit PortalGlobalShortcutBinder(QObject *parent = nullptr);
 
     bool supported() const override;
+    bool supportKnown() const override;
+    bool usesDesktopShortcutChooser() const override;
     QString unsupportedReason() const override;
     void bind() override;
     void registerShortcut() override;
@@ -57,6 +60,7 @@ private:
                      int optionsIndex,
                      RequestKind kind,
                      int timeoutMs);
+    void processRequestResponse(const PortalResponse &response);
     void requestFailed(const QString &reason, bool closeRequest = false);
     bool shortcutTrigger(const QVariantMap &results, QString *trigger) const;
     void activatePendingSession(const QString &trigger);
@@ -65,6 +69,8 @@ private:
     void disconnectRequest();
 
     bool m_supported = false;
+    bool m_supportKnown = true;
+    bool m_bindWhenSupported = false;
     bool m_identityReady = false;
     bool m_identityPending = false;
     bool m_registrationAfterIdentity = false;
@@ -73,6 +79,7 @@ private:
     QDBusObjectPath m_sessionPath;
     QDBusObjectPath m_pendingSessionPath;
     QDBusObjectPath m_requestPath;
+    PortalResponseTracker m_responseTracker;
     RequestKind m_requestKind = RequestKind::None;
     QTimer *m_requestTimer = nullptr;
 };

@@ -16,6 +16,7 @@ public:
 
     QString apiKey() const;
     bool saveApiKey(const QString &apiKey);
+    bool deleteKeyringApiKey() const;
     QString status() const;
     QString lastError() const;
     bool usesInsecureSettingsFallback() const;
@@ -23,7 +24,6 @@ public:
 private:
     QString keyringApiKey() const;
     bool writeKeyringApiKey(const QString &apiKey) const;
-    bool deleteKeyringApiKey() const;
     void migrateLegacySettingsKey();
 
     SettingsStore *m_settings;

@@ -15,6 +15,17 @@ private let minimumPillWidth: CGFloat = 420
 private let previewChromeWidth: CGFloat = 190
 private let screenEdgeMargin: CGFloat = 80
 
+private struct DictationPanelGlass: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.glassEffect(in: .capsule)
+        } else {
+            content
+        }
+    }
+}
+
 @MainActor
 final class DictationPanelState: ObservableObject {
     @Published var status = ""
@@ -63,7 +74,7 @@ struct DictationPanelView: View {
         .scenePadding()
         .frame(height: pillHeight)
         .background(.regularMaterial, in: .capsule)
-        .glassEffect(in: .capsule)
+        .modifier(DictationPanelGlass())
     }
 
     /// One symbol and one label per phase, from the same mapping, so what a

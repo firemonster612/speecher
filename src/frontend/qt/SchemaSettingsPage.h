@@ -17,7 +17,6 @@ class ProviderRegistry;
 // What the Qt front end can tell the schema about this machine.
 SchemaContext qtSchemaContext(const PlatformComposition &platform,
                               const ProviderRegistry &providers,
-                              const QString &primaryOutputStatus,
                               const QString &lastSeenVersion = {});
 
 // A widget a Custom row supplies, plus the two closures the renderer needs to
@@ -76,6 +75,9 @@ private:
         // what gets enabled and carries the group's tooltip.
         QWidget *group = nullptr;
         QWidget *separator = nullptr;
+        // The visible explanation (and fix) shown above the row or its group
+        // while the row's gate says no. Shared by every row of a group.
+        QWidget *gateNote = nullptr;
         std::function<QVariant()> value;
         std::function<void(const QVariant &)> setValue;
     };
@@ -93,7 +95,8 @@ private:
     void addSection(const SettingsSection &section,
                     const QString &centeredSeparatorAfterRow,
                     QVBoxLayout *pageLayout);
-    void addRow(const SettingsRow &descriptor, QWidget *host, QWidget *group);
+    void addRow(const SettingsRow &descriptor, QWidget *host, QWidget *group, QWidget *gateNote);
+    QWidget *addGateNote(const SettingsRow &descriptor, QWidget *form);
     SchemaCustomRow supplyRow(const SettingsRow &descriptor,
                               QWidget *host,
                               const std::function<void()> &notifyChanged);

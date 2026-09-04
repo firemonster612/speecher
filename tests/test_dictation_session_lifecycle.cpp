@@ -279,7 +279,10 @@ private slots:
         FakeSpeechTranscriber *speech = nullptr;
         registerFakeSpeechProvider(registry, &speech);
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
-        audio->onStart = [&] { session.stopListening(); };
+        audio->onStart = [&] {
+            session.stopListening();
+            audio->startResult = false;
+        };
 
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 250);

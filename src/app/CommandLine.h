@@ -39,6 +39,9 @@ struct CommandLineDecision {
 // rejected option itself, because both are the whole of what those runs do.
 CommandLineDecision parseCommandLine(const QStringList &arguments, const QString &logPath);
 
+// Linux and macOS keep handling shortcuts and IPC after their last window closes.
+bool quitOnLastWindowClosed(LaunchMode mode);
+
 // Sends the decision's command to a running instance, or starts one detached
 // when there is none. Needs a running QCoreApplication for the socket.
 int runCliCommand(const CommandLineDecision &decision,

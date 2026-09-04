@@ -63,18 +63,18 @@ void AccessibilityNotice::setState(bool supported, bool enabled, bool persistent
 #else
     if (!enabled) {
         m_message->setText(m_compact
-                               ? QStringLiteral("AT-SPI is off. App-aware paste and selection editing need it.")
+                               ? QStringLiteral("Desktop accessibility is off. Pasting into the right app and editing selected text need it.")
                                : QStringLiteral(
-                                     "Desktop accessibility (AT-SPI) is off. Target-aware paste, selected-text editing, "
-                                     "target context, and correction learning are unavailable."));
+                                     "Desktop accessibility is off, so Speecher cannot tell which app you are in, "
+                                     "paste into it, edit selected text, or learn corrections."));
         m_enableButton->setEnabled(true);
         m_enableButton->setText(QStringLiteral("Enable permanently"));
     } else {
         m_message->setText(m_compact
-                               ? QStringLiteral("AT-SPI is enabled only for this session.")
+                               ? QStringLiteral("Desktop accessibility is on only for this session.")
                                : QStringLiteral(
-                                     "Desktop accessibility (AT-SPI) is enabled only for this session. Enable it "
-                                     "permanently so target-aware features keep working after you sign in again."));
+                                     "Desktop accessibility is on only for this session. Enable it permanently "
+                                     "so these features keep working after you sign in again."));
         m_enableButton->setEnabled(true);
         m_enableButton->setText(QStringLiteral("Enable permanently"));
     }
@@ -102,7 +102,7 @@ void AccessibilityNotice::showError(const QString &message)
 #ifdef Q_OS_MACOS
     m_message->setText(QStringLiteral("Could not open Accessibility settings: %1").arg(message));
 #else
-    m_message->setText(QStringLiteral("Could not enable AT-SPI: %1").arg(message));
+    m_message->setText(QStringLiteral("Could not enable desktop accessibility: %1").arg(message));
 #endif
     show();
 }

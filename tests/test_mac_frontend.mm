@@ -2,11 +2,13 @@
 
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsKeys.h"
 #include "frontend/mac/MacFrontEnd.h"
 #include "frontend/mac/SpeecherBridge.h"
 #include "ui/AppWindow.h"
 #include "ui/SetupAssistant.h"
 #include "ui/TranscriberPopup.h"
+#include "ui/setup/SetupPages.h"
 
 #import <AppKit/AppKit.h>
 
@@ -18,6 +20,8 @@
 #include <QDeadlineTimer>
 #include <QApplication>
 #include <QCheckBox>
+#include <QFile>
+#include <QTemporaryDir>
 
 using namespace speecher;
 
@@ -196,6 +200,86 @@ private slots:
         QVERIFY(found);
     }
 
+    void automaticDownloadsAppearForSparkle()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SettingsRowModel *row = settingsRow(bridge.settingsSchema, @"autoInstallUpdates");
+
+        QVERIFY(row);
+        QVERIFY([row.help containsString:@"Sparkle"]);
+    }
+
+    void accountOptionsUseUserFacingLanguage()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SettingsRowModel *openAi = settingsRow(bridge.settingsSchema, @"openAiAuthMode");
+        SettingsRowModel *anthropic = settingsRow(bridge.settingsSchema, @"anthropicAuthMode");
+        QVERIFY(openAi);
+        QVERIFY(anthropic);
+
+        QStringList openAiLabels;
+        for (RowOptionModel *option in openAi.options) {
+            openAiLabels.append(QString::fromNSString(option.label));
+        }
+        QCOMPARE(openAiLabels,
+                 QStringList({QStringLiteral("Automatic"),
+                              QStringLiteral("API key from the Codex app"),
+                              QStringLiteral("ChatGPT sign-in from the Codex app"),
+                              QStringLiteral("API key from the environment"),
+                              QStringLiteral("API key saved in Speecher"),
+                              QStringLiteral("CLI Proxy API account")}));
+
+        QStringList anthropicLabels;
+        for (RowOptionModel *option in anthropic.options) {
+            anthropicLabels.append(QString::fromNSString(option.label));
+        }
+        QCOMPARE(anthropicLabels,
+                 QStringList({QStringLiteral("Claude Code sign-in"),
+                              QStringLiteral("CLI Proxy API account")}));
+    }
+
+    void anthropicCredentialStatusFollowsTheAuthMode()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        ApplicationController controller(false);
+        const QString credentialsPath = directory.filePath(QStringLiteral("credentials.json"));
+        controller.settings()->raw().setValue(SettingsKeys::ClaudeCredentialsPath,
+                                              credentialsPath);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+
+        QVERIFY(bridge.anthropicCredentialStatus.length > 0);
+        __block bool credentialsChanged = false;
+        bridge.anthropicCredentialsChanged = ^{ credentialsChanged = true; };
+        QFile credentials(credentialsPath);
+        QVERIFY(credentials.open(QIODevice::WriteOnly));
+        QVERIFY(credentials.write(QByteArrayLiteral(
+                    R"({"claudeAiOauth":{"accessToken":"token","expiresAt":4102444800000}})"))
+                > 0);
+        credentials.close();
+
+        QTRY_VERIFY_WITH_TIMEOUT(credentialsChanged, 2000);
+        QCOMPARE(QString::fromNSString(bridge.anthropicCredentialStatus),
+                 QStringLiteral("Signed in with Claude Code"));
+        [bridge.settingsSchema setValue:@"cliproxy" forRowId:@"anthropicAuthMode"];
+        QCOMPARE(bridge.anthropicCredentialStatus.length, NSUInteger(0));
+    }
+
+    void whatsNewOfferFollowsPendingUpgradeState()
+    {
+        SettingsStore settings;
+        settings.setUpdatesPendingWhatsNewVersion(QStringLiteral("0.1.0"));
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
+
+        QVERIFY(ui.whatsNewOfferVisible);
+        [bridge clearPendingWhatsNew];
+        QVERIFY(!ui.whatsNewOfferVisible);
+    }
+
     void setupFinishesWithStartAtLoginPage()
     {
         ApplicationController controller(false);
@@ -208,6 +292,24 @@ private slots:
         auto *startAtLogin = last->findChild<QCheckBox *>(QStringLiteral("launchAtLogin"));
         QVERIFY(startAtLogin);
         QVERIFY(startAtLogin->isChecked());
+    }
+
+    void setupWelcomeDoesNotDescribeTheLinuxFinishFlow()
+    {
+        ApplicationController controller(false);
+        SetupAssistant assistant(&controller);
+        WelcomeSetupPage *welcome = nullptr;
+        for (QWidget *widget : assistant.findChildren<QWidget *>()) {
+            if (auto *page = dynamic_cast<WelcomeSetupPage *>(widget)) {
+                welcome = page;
+                break;
+            }
+        }
+        QVERIFY(welcome);
+        for (const QLabel *label : welcome->findChildren<QLabel *>()) {
+            QVERIFY(!label->text().contains(
+                QStringLiteral("ends by setting up a Global Shortcut")));
+        }
     }
 };
 

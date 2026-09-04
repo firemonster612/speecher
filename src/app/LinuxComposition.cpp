@@ -43,14 +43,7 @@ bool isRunningFromOwnAppImage()
 
 QString LinuxComposition::outputSummary() const
 {
-    return QStringLiteral("Automatic: Wayland multi-format clipboard, optional ydotool paste, Qt fallback");
-}
-
-QString LinuxComposition::primaryOutputStatus() const
-{
-    return WlClipboardDelivery::isAvailable()
-        ? QStringLiteral("Wayland multi-format clipboard available")
-        : QStringLiteral("Qt clipboard fallback");
+    return QStringLiteral("Automatic: copies to the clipboard, pastes with the virtual keyboard when set up");
 }
 
 QString LinuxComposition::ipcListenName() const

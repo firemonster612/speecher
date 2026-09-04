@@ -33,23 +33,25 @@ QString normalized(const QString &method)
     return isValid(method) ? method : QString::fromLatin1(Automatic);
 }
 
+// What each method does for the person choosing it. The tools that do it
+// (ydotool, wl-copy, the Qt clipboard) are not the choice being made.
 QString label(const QString &method)
 {
     const QString value = normalized(method);
     if (value == QString::fromLatin1(Ydotool)) {
-        return QStringLiteral("Type with ydotool paste");
+        return QStringLiteral("Paste with the virtual keyboard");
     }
     if (value == QString::fromLatin1(DirectInsert)) {
-        return QStringLiteral("Direct accessibility insertion");
+        return QStringLiteral("Insert into the text field (desktop accessibility)");
     }
     if (value == QString::fromLatin1(WlCopy)) {
-        return QStringLiteral("Copy with wl-copy");
+        return QStringLiteral("Copy to the clipboard only");
     }
     if (value == QString::fromLatin1(MacPaste)) {
-        return QStringLiteral("Keyboard paste");
+        return QStringLiteral("Paste with the keyboard");
     }
     if (value == QString::fromLatin1(QtClipboard)) {
-        return QStringLiteral("Copy with Qt clipboard");
+        return QStringLiteral("Copy to the clipboard only (plain text)");
     }
     return QStringLiteral("Automatic");
 }

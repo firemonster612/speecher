@@ -2,6 +2,16 @@
 #include "common/test_http.h"
 #include "common/test_auth.h"
 #include "output/HelperPath.h"
+#include "setup/YdotoolSetupState.h"
+#include "setup/YdotoolSetupTransaction.h"
+
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QScopeGuard>
+
+#ifdef Q_OS_UNIX
+#include <sys/stat.h>
+#endif
 
 using namespace speecher::test;
 
@@ -50,6 +60,66 @@ class DeliveryTests : public QObject {
     Q_OBJECT
 
 private slots:
+#ifdef SPEECHER_WITH_WAYLAND
+    void portalResponseTrackerKeepsResponseUntilActualHandleArrives()
+    {
+        PortalResponseTracker tracker;
+        tracker.begin(QDBusObjectPath(QStringLiteral("/predicted")));
+
+        QVariantMap results;
+        results.insert(QStringLiteral("uri"), QStringLiteral("file:///tmp/screenshot.png"));
+        QVERIFY(!tracker.observe(QStringLiteral("/actual"), 0, results));
+
+        const auto response = tracker.resolve(QDBusObjectPath(QStringLiteral("/actual")));
+        QVERIFY(response);
+        QCOMPARE(response->status, 0U);
+        QCOMPARE(response->results, results);
+    }
+
+    void portalScreenshotTimeoutFailsCapture()
+    {
+        PortalScreenshotContextProvider provider;
+        QSignalSpy failed(&provider, &PortalScreenshotContextProvider::failed);
+
+        QVERIFY(QMetaObject::invokeMethod(&provider, "handleTimeout"));
+
+        QCOMPARE(failed.count(), 1);
+        QCOMPARE(failed.first().first().toString(), QStringLiteral("Screenshot capture timed out"));
+    }
+#endif
+
+    void ydotoolSetupFailureReportsCompletedChanges()
+    {
+        YdotoolSetupTransaction transaction;
+        transaction.record("wrote /etc/modules-load.d/speecher-uinput.conf");
+        transaction.record("added efox to speecher-uinput");
+        std::string error = "Could not write udev rule";
+
+        transaction.appendToError(error);
+
+        QCOMPARE(QString::fromStdString(error),
+                 QStringLiteral("Could not write udev rule\nChanges left behind:\n"
+                                "- wrote /etc/modules-load.d/speecher-uinput.conf\n"
+                                "- added efox to speecher-uinput"));
+    }
+
+    void ydotoolSetupStateEscapesJsonStrings()
+    {
+        const std::string state = ydotoolSetupStateText(
+            true, R"(/usr/lib/systemd/user/service\"name)", "user\\name\n");
+        QJsonParseError error;
+        const QJsonDocument document = QJsonDocument::fromJson(
+            QByteArray::fromStdString(state), &error);
+
+        QCOMPARE(error.error, QJsonParseError::NoError);
+        QCOMPARE(document.object().value(QStringLiteral("packageInstalledBySpeecher")).toBool(),
+                 true);
+        QCOMPARE(document.object().value(QStringLiteral("serviceFile")).toString(),
+                 QStringLiteral("/usr/lib/systemd/user/service\\\"name"));
+        QCOMPARE(document.object().value(QStringLiteral("targetUser")).toString(),
+                 QStringLiteral("user\\name\n"));
+    }
+
     void helperPathPrefersSiblingThenLibexecThenInstalled()
     {
         QTemporaryDir dir;
@@ -66,12 +136,20 @@ private slots:
         QFile bundledFile(bundled);
         QVERIFY(bundledFile.open(QIODevice::WriteOnly));
         bundledFile.close();
+        QVERIFY(QFile::setPermissions(bundled,
+                                      QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                          | QFileDevice::ExeOwner));
         QCOMPARE(resolvedHelperPath("/usr/libexec/speecher/helper", applicationDir),
                  QFileInfo(bundled).canonicalFilePath());
 
         QFile siblingFile(sibling);
         QVERIFY(siblingFile.open(QIODevice::WriteOnly));
         siblingFile.close();
+        QCOMPARE(resolvedHelperPath("/usr/libexec/speecher/helper", applicationDir),
+                 QFileInfo(bundled).canonicalFilePath());
+        QVERIFY(QFile::setPermissions(sibling,
+                                      QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                          | QFileDevice::ExeOwner));
         QCOMPARE(resolvedHelperPath("/usr/libexec/speecher/helper", applicationDir),
                  QFileInfo(sibling).canonicalFilePath());
 
@@ -837,7 +915,61 @@ private slots:
         QCOMPARE(restored->data(QStringLiteral("image/png")), QByteArrayLiteral("fake-image"));
     }
 
-    void outputRestoresClipboardAfterSuccessfulVirtualKeyboardInputWithoutReadback()
+    void directInsertionRestoresClipboardAfterDelayWhenItCannotBeVerified()
+    {
+        auto *previous = new QMimeData;
+        previous->setText(QStringLiteral("previous clipboard"));
+        previous->setHtml(QStringLiteral("<b>previous clipboard</b>"));
+        previous->setData(QStringLiteral("application/x-speecher-test"),
+                          QByteArrayLiteral("custom-data"));
+        QApplication::clipboard()->setMimeData(previous);
+
+        QList<QString> attempts;
+        QHash<QString, bool> results;
+        FakeTargetProvider targetProvider;
+        targetProvider.directInsertionAvailable = true;
+        targetProvider.inserted = true;
+        targetProvider.verified = false;
+        TextDelivery delivery([&attempts, &results](
+                                  const QString &method,
+                                  const OutputSettings &,
+                                  PasteMethod) {
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        }, &targetProvider);
+
+        OutputSettings settings;
+        settings.restoreClipboardAfterTyping = true;
+        settings.pasteRules = {
+            {PasteRuleScope::Application,
+             QStringLiteral("org.kde.kate"),
+             PasteMethod::DirectInsert,
+             true},
+        };
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
+
+        QString clipboardDuringDelay;
+        QTimer::singleShot(0, [&clipboardDuringDelay] {
+            clipboardDuringDelay = QApplication::clipboard()->text();
+        });
+        const DeliveryResult result = delivery.deliver(
+            settings,
+            makeDeliveryContent(QStringLiteral("new text"), OutputFormat::Html),
+            target);
+        QCoreApplication::processEvents();
+
+        QCOMPARE(result.receipt, DeliveryReceipt::AcceptedByTarget);
+        QCOMPARE(result.message, QStringLiteral("Accepted by Target"));
+        QCOMPARE(clipboardDuringDelay, QStringLiteral("new text"));
+        const QMimeData *restored = QApplication::clipboard()->mimeData();
+        QCOMPARE(restored->text(), QStringLiteral("previous clipboard"));
+        QCOMPARE(restored->html(), QStringLiteral("<b>previous clipboard</b>"));
+        QCOMPARE(restored->data(QStringLiteral("application/x-speecher-test")),
+                 QByteArrayLiteral("custom-data"));
+        QVERIFY(attempts.isEmpty());
+    }
+
+    void outputRestoresClipboardAfterDelayWhenVirtualKeyboardInputCannotBeVerified()
     {
         auto *previous = new QMimeData;
         previous->setText(QStringLiteral("previous clipboard"));
@@ -875,14 +1007,25 @@ private slots:
         QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
         QCOMPARE(result.message, QStringLiteral("Input sent"));
         QCOMPARE(consumedText, QStringLiteral("new text"));
-        const QMimeData *restored = QApplication::clipboard()->mimeData();
-        QCOMPARE(restored->text(), QStringLiteral("previous clipboard"));
-        QCOMPARE(restored->html(), QStringLiteral("<b>previous clipboard</b>"));
-        QCOMPARE(restored->data(QStringLiteral("application/x-speecher-test")),
+        const QMimeData *clipboard = QApplication::clipboard()->mimeData();
+        QCOMPARE(clipboard->text(), QStringLiteral("previous clipboard"));
+        QCOMPARE(clipboard->html(), QStringLiteral("<b>previous clipboard</b>"));
+        QCOMPARE(clipboard->data(QStringLiteral("application/x-speecher-test")),
                  QByteArrayLiteral("custom-data"));
     }
 
 #ifdef SPEECHER_WITH_WAYLAND
+    void wlClipboardSnapshotIncludesPrivateFormats()
+    {
+        const QStringList offered{
+            QStringLiteral("text/plain"),
+            QStringLiteral("application/x-libreoffice-embed-source-xml"),
+            QStringLiteral("application/x-qt-image"),
+        };
+
+        QCOMPARE(WlClipboardDelivery::snapshotMimeTypes(offered), offered);
+    }
+
     void wlClipboardSnapshotCapturesAndRestoresEveryMimeType()
     {
         auto *original = new QMimeData;
@@ -973,6 +1116,42 @@ private slots:
                               QStringLiteral("29:0")}));
     }
 
+    void ydotoolDeliversIdenticalTextTwice()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString executablePath = dir.filePath(QStringLiteral("ydotool"));
+        const QString logPath = dir.filePath(QStringLiteral("ydotool.log"));
+        QFile executable(executablePath);
+        QVERIFY(executable.open(QIODevice::WriteOnly | QIODevice::Text));
+        executable.write("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$SPEECHER_TEST_YDOTOOL_LOG\"\n");
+        executable.close();
+        QVERIFY(QFile::setPermissions(executablePath,
+                                      QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                          | QFileDevice::ExeOwner));
+
+        const QByteArray oldPath = qgetenv("PATH");
+        const QByteArray oldRuntimeDir = qgetenv("XDG_RUNTIME_DIR");
+        qputenv("PATH", QFile::encodeName(dir.path()) + ':' + oldPath);
+        qputenv("XDG_RUNTIME_DIR", QFile::encodeName(dir.path()));
+        qputenv("SPEECHER_TEST_YDOTOOL_LOG", QFile::encodeName(logPath));
+        const QString text = QStringLiteral("repeat-%1").arg(QUuid::createUuid().toString());
+        QString error;
+        QVERIFY2(YdotoolDelivery().type(text, &error), qPrintable(error));
+        QVERIFY2(YdotoolDelivery().type(text, &error), qPrintable(error));
+        qputenv("PATH", oldPath);
+        qputenv("XDG_RUNTIME_DIR", oldRuntimeDir);
+        qunsetenv("SPEECHER_TEST_YDOTOOL_LOG");
+
+        QFile log(logPath);
+        QVERIFY(log.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QList<QByteArray> calls = log.readAll().split('\n');
+        QCOMPARE(std::count_if(calls.cbegin(), calls.cend(), [](const QByteArray &call) {
+                     return call.startsWith(QByteArrayLiteral("type "));
+                 }),
+                 2);
+    }
+
     void ydotoolStatusEvaluation()
     {
         YdotoolProbeFacts facts;
@@ -999,6 +1178,44 @@ private slots:
         const YdotoolSetupStatus ready = YdotoolSetup::evaluate(facts);
         QCOMPARE(ready.state, YdotoolSetupState::Ready);
         QVERIFY(ready.ready());
+    }
+
+    void appImageYdotoolHelperUsesStableVerifiedCopy()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString bundled = QCoreApplication::applicationDirPath()
+            + QStringLiteral("/speecher-ydotool-setup");
+        QVERIFY2(QFileInfo::exists(bundled), qPrintable(bundled));
+
+        const QByteArray oldAppImage = qgetenv("APPIMAGE");
+        const QByteArray oldDataHome = qgetenv("XDG_DATA_HOME");
+        const auto restoreEnvironment = qScopeGuard([oldAppImage, oldDataHome] {
+            oldAppImage.isNull() ? qunsetenv("APPIMAGE") : qputenv("APPIMAGE", oldAppImage);
+            oldDataHome.isNull() ? qunsetenv("XDG_DATA_HOME")
+                                 : qputenv("XDG_DATA_HOME", oldDataHome);
+        });
+        qputenv("APPIMAGE", directory.filePath(QStringLiteral("Speecher.AppImage")).toUtf8());
+        qputenv("XDG_DATA_HOME", directory.filePath(QStringLiteral("data")).toUtf8());
+
+        const QString expected = directory.filePath(
+            QStringLiteral("data/speecher/libexec/speecher-ydotool-setup"));
+        QString error;
+        const QString actual = YdotoolSetup::helperPath(&error);
+        QVERIFY2(actual == expected, qPrintable(error));
+        QFile bundledFile(bundled);
+        QFile stableFile(expected);
+        QVERIFY(bundledFile.open(QIODevice::ReadOnly));
+        QVERIFY(stableFile.open(QIODevice::ReadOnly));
+        QCOMPARE(stableFile.readAll(), bundledFile.readAll());
+        struct stat helperStatus {};
+        struct stat directoryStatus {};
+        QCOMPARE(::stat(QFile::encodeName(expected).constData(), &helperStatus), 0);
+        QCOMPARE(::stat(QFile::encodeName(QFileInfo(expected).dir().absolutePath()).constData(),
+                        &directoryStatus),
+                 0);
+        QCOMPARE(helperStatus.st_mode & 0777, mode_t(0500));
+        QCOMPARE(directoryStatus.st_mode & 0777, mode_t(0700));
     }
 #endif // SPEECHER_WITH_WAYLAND
 };

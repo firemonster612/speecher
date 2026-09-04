@@ -74,18 +74,42 @@ require_tool() {
 
 require_tool cmake
 require_tool appimagetool
+require_tool file
 require_tool ldd
+require_tool ninja
+require_tool patchelf
+
+BUILD_DIR="$(readlink -m -- "$BUILD_DIR")"
+APPDIR_PATH="$(readlink -m -- "$APPDIR_PATH")"
+OUTPUT_DIR="$(readlink -m -- "$OUTPUT_DIR")"
+APPDIR_MARKER="$APPDIR_PATH/.speecher-appdir-staging"
+case "$APPDIR_PATH" in
+  /|"$ROOT_DIR"|"$BUILD_DIR"|"$OUTPUT_DIR"|"$HOME")
+    echo "Refusing unsafe AppDir staging path: $APPDIR_PATH" >&2
+    exit 1
+    ;;
+esac
+if [[ -e "$APPDIR_PATH" && "$APPDIR_PATH" != "$ROOT_DIR/dist/AppDir"
+      && ! -f "$APPDIR_MARKER" ]]; then
+  echo "Refusing to replace an unmarked AppDir staging path: $APPDIR_PATH" >&2
+  exit 1
+fi
 
 mkdir -p "$OUTPUT_DIR"
-rm -rf "$APPDIR_PATH"
+rm -rf -- "$APPDIR_PATH"
+mkdir -p "$APPDIR_PATH"
+printf 'Speecher AppDir staging directory\n' > "$APPDIR_MARKER"
 
 # Pin Qt discovery at configure time; ambient discovery can mix a system Qt
 # into the build (SPEECHER_QT_PREFIX wins, QT_ROOT_DIR is what CI's Qt action exports).
 QT_PREFIX_HINT="${SPEECHER_QT_PREFIX:-${QT_ROOT_DIR:-}}"
 CMAKE_CONFIGURE_ARGS=(
+  -G Ninja
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
   -DSPEECHER_DESKTOP_EXEC=speecher
   -DSPEECHER_BUILD_TESTS=OFF
+  -DSPEECHER_RELEASE_BUILD=ON
+  -DSPEECHER_WITH_KDE=ON
 )
 if [[ -n "$QT_PREFIX_HINT" ]]; then
   CMAKE_CONFIGURE_ARGS+=("-DCMAKE_PREFIX_PATH=$QT_PREFIX_HINT")
@@ -133,7 +157,7 @@ skip_library() {
   local name
   name="$(basename "$1")"
   case "$name" in
-    ld-linux*|linux-vdso*|libc.so*|libm.so*|libdl.so*|libpthread.so*|librt.so*|libresolv.so*|libutil.so*|libnss_*.so*|libcrypt.so*|libblkid.so*|libmount.so*|libsasl2.so*|libevent*.so*|libunistring.so*|libGL*.so*|libEGL*.so*|libOpenGL*.so*|libwayland-client.so*|libxcb.so*|libX11.so*|libfontconfig.so*|libfreetype.so*|libharfbuzz.so*)
+    ld-linux*|linux-vdso*|libc.so*|libm.so*|libdl.so*|libpthread.so*|librt.so*|libresolv.so*|libutil.so*|libnss_*.so*|libcrypt.so*|libGL*.so*|libEGL*.so*|libOpenGL*.so*|libwayland-client.so*|libxcb.so*|libX11.so*|libfontconfig.so*|libfreetype.so*|libharfbuzz.so*)
       return 0
       ;;
     *)
@@ -154,12 +178,34 @@ copy_library() {
 
 copy_deps_for_elf() {
   local elf="$1"
-  LD_LIBRARY_PATH="$QT_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$elf" 2>/dev/null | awk '
+  local dependencies
+  dependencies="$(LD_LIBRARY_PATH="$QT_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$elf" 2>&1 || true)"
+  if grep -Fq 'not found' <<<"$dependencies"; then
+    echo "Unresolved dependency while bundling $elf:" >&2
+    printf '%s\n' "$dependencies" >&2
+    exit 1
+  fi
+  printf '%s\n' "$dependencies" | awk '
     /=> \// { print $(NF - 1) }
     /^\// { print $1 }
   ' | while read -r lib; do
     copy_library "$lib"
   done
+}
+
+verify_elf_dependencies() {
+  local elf dependencies count=0
+  while IFS= read -r -d '' elf; do
+    [[ "$(file -b "$elf")" == ELF* ]] || continue
+    ((count += 1))
+    dependencies="$(ldd "$elf" 2>&1 || true)"
+    if grep -Fq 'not found' <<<"$dependencies"; then
+      echo "Unresolved dependency in ${elf#"$APPDIR_PATH"/}:" >&2
+      printf '%s\n' "$dependencies" >&2
+      exit 1
+    fi
+  done < <(find "$APPDIR_PATH/usr" -type f -print0)
+  echo "Verified dependencies for $count bundled ELF files"
 }
 
 copy_deps_closure() {
@@ -189,6 +235,7 @@ copy_plugin_dir() {
 copy_plugin_dir platforms
 copy_plugin_dir platformthemes
 copy_plugin_dir styles
+copy_plugin_dir iconengines
 copy_plugin_dir tls
 copy_plugin_dir multimedia
 copy_plugin_dir platforminputcontexts
@@ -207,6 +254,15 @@ done < <(find "$APPDIR_PATH/usr/plugins" -type f -name '*.so')
 echo "Finishing runtime dependency closure"
 copy_deps_closure
 
+BREEZE_ICON_DIR="/usr/share/icons/breeze"
+if [[ ! -f "$BREEZE_ICON_DIR/index.theme" ]]; then
+  echo "The breeze-icon-theme package is required to build the AppImage" >&2
+  exit 1
+fi
+echo "Copying Breeze fallback icon theme"
+mkdir -p "$APPDIR_PATH/usr/share/icons"
+cp -a "$BREEZE_ICON_DIR" "$APPDIR_PATH/usr/share/icons/"
+
 if [[ ! -f "$APPDIR_PATH/usr/lib/libQt6Core.so.6" ]]; then
   echo "libQt6Core.so.6 was not bundled; the dependency closure is broken" >&2
   exit 1
@@ -216,6 +272,26 @@ if ! cmp -s "$APPDIR_PATH/usr/lib/libQt6Core.so.6" "$(readlink -f "$QT_LIB_DIR/l
   exit 1
 fi
 
+set_runpath_for_tree() {
+  local tree="$1"
+  local runpath="$2"
+  [[ -d "$tree" ]] || return 0
+  while IFS= read -r -d '' elf; do
+    if [[ "$(file -b "$elf")" == ELF* ]]; then
+      patchelf --set-rpath "$runpath" "$elf"
+    fi
+  done < <(find "$tree" -type f -print0)
+}
+
+echo "Writing relative RUNPATHs"
+set_runpath_for_tree "$APPDIR_PATH/usr/bin" '$ORIGIN/../lib'
+set_runpath_for_tree "$APPDIR_PATH/usr/libexec/speecher" '$ORIGIN/../../lib'
+set_runpath_for_tree "$APPDIR_PATH/usr/plugins" '$ORIGIN/../../lib'
+set_runpath_for_tree "$APPDIR_PATH/usr/lib" '$ORIGIN'
+
+echo "Checking bundled ELF dependencies"
+verify_elf_dependencies
+
 echo "Writing AppImage runtime files"
 cat > "$APPDIR_PATH/usr/bin/qt.conf" <<'EOF'
 [Paths]
@@ -224,11 +300,32 @@ EOF
 
 cat > "$APPDIR_PATH/AppRun" <<'EOF'
 #!/usr/bin/env bash
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PATH="$HERE/usr/bin:${PATH:-}"
-export LD_LIBRARY_PATH="$HERE/usr/lib:${LD_LIBRARY_PATH:-}"
+INHERITED_PATH="${PATH-}"
+PATH=
+IFS=: read -r -a inherited_path_parts <<< "$INHERITED_PATH"
+for path_part in "${inherited_path_parts[@]}"; do
+  [[ "$path_part" == /* ]] && PATH="${PATH:+$PATH:}$path_part"
+done
+PATH="${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}"
+export PATH
+SOURCE_DIR="${BASH_SOURCE[0]%/*}"
+[[ "$SOURCE_DIR" == "${BASH_SOURCE[0]}" ]] && SOURCE_DIR=.
+HERE="$(cd "$SOURCE_DIR" && pwd -P)" || exit 1
+export PATH="$HERE/usr/bin:$PATH"
+GLIBC_VERSION="$(getconf GNU_LIBC_VERSION 2>/dev/null || true)"
+GLIBC_VERSION="${GLIBC_VERSION##* }"
+if [[ "$GLIBC_VERSION" =~ ^([0-9]+)\.([0-9]+) ]] \
+    && (( BASH_REMATCH[1] < 2 || (BASH_REMATCH[1] == 2 && BASH_REMATCH[2] < 41) )); then
+  echo "Speecher's AppImage requires glibc 2.41 or newer (Debian 13, Fedora 42, Ubuntu 25.04, or later)." >&2
+  exit 1
+fi
 export QT_PLUGIN_PATH="$HERE/usr/plugins"
 export QT_QPA_PLATFORM_PLUGIN_PATH="$HERE/usr/plugins/platforms"
+export XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:$HERE/usr/share"
+# Keep Plasma's native platform integration even when desktop detection is incomplete.
+if [[ -z "${QT_QPA_PLATFORMTHEME:-}" && "${XDG_CURRENT_DESKTOP:-}" == *KDE* ]]; then
+  export QT_QPA_PLATFORMTHEME=kde
+fi
 exec "$HERE/usr/bin/speecher" "$@"
 EOF
 chmod +x "$APPDIR_PATH/AppRun"

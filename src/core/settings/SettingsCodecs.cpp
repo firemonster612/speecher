@@ -1,4 +1,6 @@
 #include "core/settings/SettingsCodecs.h"
+
+#include "core/CliProxyUrl.h"
 #include "core/settings/SettingsKeys.h"
 
 #include "core/BindingProcessor.h"
@@ -800,6 +802,16 @@ void SettingsCodecs::setUpdatesLastRunVersion(const QString &value)
     m_settings.setValue(SettingsKeys::UpdatesLastRunVersion, value);
 }
 
+qint64 SettingsCodecs::updatesLastRunBuildNumber() const
+{
+    return value(SettingsKeys::UpdatesLastRunBuildNumber, -1).toLongLong();
+}
+
+void SettingsCodecs::setUpdatesLastRunBuildNumber(qint64 value)
+{
+    m_settings.setValue(SettingsKeys::UpdatesLastRunBuildNumber, value);
+}
+
 QString SettingsCodecs::updatesPendingWhatsNewVersion() const
 {
     return value(SettingsKeys::UpdatesPendingWhatsNewVersion, QString()).toString();
@@ -858,20 +870,12 @@ QString SettingsCodecs::cliproxyOauthDir() const
 
 QString SettingsCodecs::cliproxyBaseUrl() const
 {
-    QString base = value(SettingsKeys::CliproxyBaseUrl, QString()).toString().trimmed();
-    while (base.endsWith(QLatin1Char('/'))) {
-        base.chop(1);
-    }
-    return base;
+    return cliproxyServerBase(value(SettingsKeys::CliproxyBaseUrl, QString()).toString());
 }
 
 void SettingsCodecs::setCliproxyBaseUrl(const QString &value)
 {
-    QString base = value.trimmed();
-    while (base.endsWith(QLatin1Char('/'))) {
-        base.chop(1);
-    }
-    m_settings.setValue(SettingsKeys::CliproxyBaseUrl, base);
+    m_settings.setValue(SettingsKeys::CliproxyBaseUrl, cliproxyServerBase(value));
 }
 
 QString SettingsCodecs::cliproxyApiKey() const

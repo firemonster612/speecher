@@ -223,6 +223,19 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         }
         return message;
     };
+    const auto restorePreviousClipboard = [&](bool verified, QString *error) {
+        if (!canRestoreClipboard) {
+            return false;
+        }
+        if (!verified) {
+            QEventLoop waitForClipboardConsumer;
+            QTimer::singleShot(clipboardRestoreDelayMs,
+                               &waitForClipboardConsumer,
+                               &QEventLoop::quit);
+            waitForClipboardConsumer.exec(QEventLoop::ExcludeUserInputEvents);
+        }
+        return m_clipboardDelivery.restore(previousClipboard, error);
+    };
     bool initiallyHtmlAvailable = false;
     QString initialCopyError;
     if (!m_clipboardDelivery.copy(content, &initiallyHtmlAvailable, &initialCopyError)) {
@@ -242,13 +255,11 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         && m_targetProvider->insertText(target, content.plainText, &insertionError)) {
         const bool verified = m_targetProvider->verifyInsertion(target, content.plainText);
         QString restoreError;
-        const bool restored = !verified
-            || !canRestoreClipboard
-            || m_clipboardDelivery.restore(previousClipboard, &restoreError);
+        const bool restored = restorePreviousClipboard(verified, &restoreError);
         QString message = verified
             ? QStringLiteral("Verified in Target")
             : QStringLiteral("Accepted by Target");
-        if (verified && canRestoreClipboard && !restored) {
+        if (canRestoreClipboard && !restored) {
             clipboardWarning = restoreError.isEmpty()
                 ? QStringLiteral("Previous clipboard could not be restored")
                 : QStringLiteral("Previous clipboard could not be restored: %1").arg(restoreError);
@@ -305,24 +316,19 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
             const bool copied = method == QString::fromLatin1(OutputMethod::WlCopy)
                 || method == QString::fromLatin1(OutputMethod::QtClipboard);
             const bool downgraded = content.html.has_value() && !htmlAvailable;
+            const bool verified = !copied
+                && m_targetProvider
+                && m_targetProvider->verifyInsertion(target, content.plainText);
             bool restoredClipboard = false;
             if (virtualKeyboardInput && canRestoreClipboard) {
-                QEventLoop waitForClipboardConsumer;
-                QTimer::singleShot(clipboardRestoreDelayMs,
-                                   &waitForClipboardConsumer,
-                                   &QEventLoop::quit);
-                waitForClipboardConsumer.exec(QEventLoop::ExcludeUserInputEvents);
                 QString restoreError;
-                restoredClipboard = m_clipboardDelivery.restore(previousClipboard, &restoreError);
+                restoredClipboard = restorePreviousClipboard(verified, &restoreError);
                 if (!restoredClipboard) {
                     clipboardWarning = restoreError.isEmpty()
                         ? QStringLiteral("Previous clipboard could not be restored")
                         : QStringLiteral("Previous clipboard could not be restored: %1").arg(restoreError);
                 }
             }
-            const bool verified = !copied
-                && m_targetProvider
-                && m_targetProvider->verifyInsertion(target, content.plainText);
             const QString message = copied
                 ? QStringLiteral("Copied")
                 : virtualKeyboardInput

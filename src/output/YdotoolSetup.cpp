@@ -1,10 +1,13 @@
 #include "output/YdotoolSetup.h"
 
+#include "output/HelperPath.h"
 #include "output/YdotoolDelivery.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QFileInfo>
 #include <QProcess>
+#include <QSaveFile>
 #include <QStandardPaths>
 
 #ifdef Q_OS_UNIX
@@ -119,6 +122,101 @@ bool runProgram(const QString &program,
     return true;
 }
 
+QString stableHelperPath()
+{
+    const QString dataHome = qEnvironmentVariable("XDG_DATA_HOME");
+    const QString root = dataHome.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+        : dataHome;
+    return QDir(root)
+        .filePath(QStringLiteral("speecher/libexec/speecher-ydotool-setup"));
+}
+
+bool verifyHelperCopy(const QString &sourcePath, const QString &destinationPath, QString *error)
+{
+    QFile source(sourcePath);
+    QFile destination(destinationPath);
+    if (!source.open(QIODevice::ReadOnly)
+        || !destination.open(QIODevice::ReadOnly)
+        || source.readAll() != destination.readAll()
+        || source.error() != QFileDevice::NoError
+        || destination.error() != QFileDevice::NoError) {
+        if (error) {
+            *error = QStringLiteral("The local ydotool setup helper could not be verified");
+        }
+        return false;
+    }
+    return true;
+}
+
+bool copyHelper(const QString &sourcePath, const QString &destinationPath, QString *error)
+{
+    QFile source(sourcePath);
+    if (!QFileInfo(source).isFile() || !QFileInfo(source).isExecutable()
+        || !source.open(QIODevice::ReadOnly)) {
+        if (error) {
+            *error = QStringLiteral("The bundled ydotool setup helper is missing or not executable");
+        }
+        return false;
+    }
+    const QByteArray contents = source.readAll();
+    if (source.error() != QFileDevice::NoError) {
+        if (error) {
+            *error = QStringLiteral("Could not read the bundled ydotool setup helper");
+        }
+        return false;
+    }
+
+    const QFileInfo destination(destinationPath);
+    const QString directory = destination.dir().absolutePath();
+    if (!destination.dir().mkpath(QStringLiteral("."))
+        || !QFile::setPermissions(directory,
+                                  QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                      | QFileDevice::ExeOwner)) {
+        if (error) {
+            *error = QStringLiteral("Could not create the local ydotool helper directory");
+        }
+        return false;
+    }
+    QSaveFile copy(destinationPath);
+    if (QFileInfo::exists(destinationPath)
+        && !QFile::setPermissions(destinationPath,
+                                  QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                      | QFileDevice::ExeOwner)) {
+        if (error) {
+            *error = QStringLiteral("Could not replace the local ydotool setup helper");
+        }
+        return false;
+    }
+    if (!copy.open(QIODevice::WriteOnly)) {
+        if (error) {
+            *error = QStringLiteral("Could not open the local ydotool setup helper: %1")
+                         .arg(copy.errorString());
+        }
+        return false;
+    }
+    if (copy.write(contents) != contents.size() || !copy.commit()) {
+        if (error) {
+            *error = QStringLiteral("Could not install the local ydotool setup helper: %1")
+                         .arg(copy.errorString());
+        }
+        return false;
+    }
+    if (!QFile::setPermissions(destinationPath,
+                               QFileDevice::ReadOwner | QFileDevice::ExeOwner)) {
+        if (error) {
+            *error = QStringLiteral("Could not secure the local ydotool setup helper");
+        }
+        return false;
+    }
+
+    if (!verifyHelperCopy(sourcePath, destinationPath, error)) {
+        QFile::remove(destinationPath);
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 bool YdotoolSetupStatus::ready() const
@@ -225,15 +323,14 @@ QString YdotoolSetup::serviceName()
     return QStringLiteral("speecher-ydotoold.service");
 }
 
-QString YdotoolSetup::helperPath()
+QString YdotoolSetup::helperPath(QString *error)
 {
-    // pkexec's polkit action pins this helper to its compiled install path;
-    // root also cannot traverse a private squashfuse mount.
-    const QString sibling = QCoreApplication::applicationDirPath() + QStringLiteral("/speecher-ydotool-setup");
-    if (QFileInfo::exists(sibling)) {
-        return sibling;
+    const QString bundled = resolvedHelperPath(SPEECHER_YDOTOOL_HELPER_PATH);
+    if (qEnvironmentVariableIsSet("APPIMAGE")) {
+        const QString stable = stableHelperPath();
+        return copyHelper(bundled, stable, error) ? stable : QString();
     }
-    return QString::fromLatin1(SPEECHER_YDOTOOL_HELPER_PATH);
+    return bundled;
 }
 
 bool YdotoolSetup::runHelper(HelperAction action, QString *error)
@@ -252,8 +349,21 @@ bool YdotoolSetup::runHelper(HelperAction action, QString *error)
         }
         return false;
     }
+    const QString helper = helperPath(error);
+    if (helper.isEmpty()) {
+        return false;
+    }
+    if (qEnvironmentVariableIsSet("APPIMAGE")) {
+        const QString bundled = resolvedHelperPath(SPEECHER_YDOTOOL_HELPER_PATH);
+        // A same-uid process can still replace this path after verification.
+        // That residual risk is accepted because it can already inject into
+        // Speecher, while an fd or shell path makes pkexec's prompt unreadable.
+        if (!verifyHelperCopy(bundled, helper, error)) {
+            return false;
+        }
+    }
     return runProgram(pkexec,
-                      {helperPath(),
+                      {helper,
                        action == HelperAction::Install ? QStringLiteral("--install") : QStringLiteral("--remove"),
                        QStringLiteral("--user"),
                        user},

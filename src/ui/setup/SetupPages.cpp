@@ -3,6 +3,7 @@
 #include "app/ApplicationController.h"
 #include "app/PlatformComposition.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsSchema.h"
 #include "dictation/DictationPorts.h"
 #ifdef SPEECHER_WITH_YDOTOOL
 #include "output/YdotoolSetup.h"
@@ -10,10 +11,14 @@
 #endif
 #include "providers/ProviderRegistry.h"
 #include "ui/settings/SettingsPageSupport.h"
+#ifdef Q_OS_LINUX
+#include "ui/setup/LinuxGlobalShortcutSetupPage.h"
+#endif
 
 #include <QCheckBox>
 #include <QColor>
 #include <QComboBox>
+#include <QFontDatabase>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QKeySequenceEdit>
@@ -37,12 +42,19 @@
 #include <memory>
 
 namespace speecher {
+
+int setupPageMargin()
+{
+    return 24;
+}
+
 namespace {
 
 QVBoxLayout *makePage(QWidget *page, const QString &description)
 {
     auto *layout = new QVBoxLayout(page);
-    layout->setContentsMargins(24, 24, 24, 24);
+    const int margin = setupPageMargin();
+    layout->setContentsMargins(margin, margin, margin, margin);
     layout->setSpacing(16);
 
     auto *intro = new QLabel(description, page);
@@ -92,25 +104,19 @@ constexpr auto microphonePaneUrl =
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
 #endif
 
+#ifdef Q_OS_MACOS
 QString shortcutHint()
 {
-#ifdef Q_OS_MACOS
     // Qt maps Meta to Control and Alt to Option on macOS, so the shared default
     // sequence reaches the user as Ctrl+Option+D.
     return QStringLiteral("Tap the shortcut to start dictation and tap it again to stop, or hold it and talk — dictation ends when you let go. The default reads as Ctrl+Option+D on this keyboard.");
-#else
-    return QStringLiteral("The shortcut triggers `speecher toggle`.");
-#endif
 }
 
 QString shortcutFailureHint()
 {
-#ifdef Q_OS_MACOS
     return QStringLiteral("Could not register the shortcut: %1. Another app probably owns that combination. Change the sequence and try again, or click Finish again to continue without it.");
-#else
-    return QStringLiteral("Could not register the shortcut: %1. You can bind `speecher toggle` in your desktop environment's shortcut settings. Change the sequence and try again, or click Finish again to continue without it.");
-#endif
 }
+#endif
 
 QString profileLabel(WritingProfile profile)
 {
@@ -137,9 +143,12 @@ WelcomeSetupPage::WelcomeSetupPage(QWidget *parent)
     QVBoxLayout *layout = makePage(
         this,
         QStringLiteral("Speecher records a short dictation, turns it into text, and sends it to the app you were using."));
-    auto *checks = new QLabel(
-        QStringLiteral("This assistant checks your transcription provider, microphone, desktop accessibility, text delivery, refinement, and writing profiles."),
-        this);
+    QString checksText = QStringLiteral(
+        "This assistant checks your transcription provider, microphone, desktop accessibility, text delivery, refinement, and writing profiles.");
+#ifdef Q_OS_LINUX
+    checksText += QStringLiteral(" It ends by setting up a Global Shortcut.");
+#endif
+    auto *checks = new QLabel(checksText, this);
     checks->setWordWrap(true);
     layout->addWidget(checks);
     layout->addStretch();
@@ -380,6 +389,17 @@ void MicrophoneSetupPage::addMicrophonePermissionControls(QVBoxLayout *layout)
     connect(m_openMicrophoneSettings, &QPushButton::clicked, this, [] {
         QDesktopServices::openUrl(QUrl(QString::fromLatin1(microphonePaneUrl)));
     });
+    connect(qApp, &QGuiApplication::applicationStateChanged, this,
+            [this](Qt::ApplicationState state) {
+                if (state != Qt::ApplicationActive || !m_active || !isVisible()) {
+                    return;
+                }
+                refreshMicrophonePermission();
+                if (qApp->checkPermission(QMicrophonePermission{})
+                    == Qt::PermissionStatus::Granted) {
+                    startMeter();
+                }
+            });
     refreshMicrophonePermission();
 }
 
@@ -474,7 +494,7 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
 #ifdef Q_OS_MACOS
         QStringLiteral("Speecher pastes your dictation into the frontmost app with a synthetic Cmd+V. macOS calls that controlling your computer, so it needs Accessibility permission."));
 #else
-        QStringLiteral("AT-SPI lets Speecher identify the target app, paste into compatible fields, edit selected text, and learn corrections."));
+        QStringLiteral("Desktop accessibility (the AT-SPI service) lets Speecher identify the target app, paste into compatible fields, edit selected text, and learn corrections."));
 #endif
     m_status->setWordWrap(true);
     m_enable->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
@@ -573,7 +593,7 @@ void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool pers
     m_enable->setEnabled(!enabled);
 #else
     if (!supported) {
-        status = QStringLiteral("This Speecher build does not include AT-SPI support.");
+        status = QStringLiteral("This Speecher build does not include desktop accessibility support.");
         m_enable->setEnabled(false);
         m_enable->setText(QStringLiteral("Unavailable"));
     } else if (enabled && persistent) {
@@ -599,7 +619,7 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
     , m_status(new QLabel(this))
     , m_setup(new QPushButton(QStringLiteral("Set up virtual keyboard"), this))
     , m_progress(new QProgressBar(this))
-    , m_restoreClipboard(new QCheckBox(QStringLiteral("Restore the previous clipboard after verified paste"), this))
+    , m_restoreClipboard(new QCheckBox(restoreClipboardDescription(), this))
     , m_format(new QComboBox(this))
 {
     QVBoxLayout *layout = makePage(
@@ -607,7 +627,7 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
 #ifdef Q_OS_MACOS
         QStringLiteral("Speecher puts the finished text on your clipboard and pastes it into the frontmost app with Cmd+V. The paste needs the Accessibility permission from the previous step; without it the text still reaches your clipboard."));
 #else
-        QStringLiteral("Speecher can set up ydotool for virtual-keyboard paste. Administrator approval is required once; Speecher remains unprivileged while dictating."));
+        QStringLiteral("Speecher can set up a virtual keyboard so it can paste into apps. Administrator approval is needed once; Speecher stays unprivileged while dictating."));
 #endif
     m_status->setWordWrap(true);
     m_progress->setRange(0, 0);
@@ -665,12 +685,12 @@ void TextDeliverySetupPage::runSetup()
 {
     m_setup->setEnabled(false);
     m_progress->setVisible(true);
-    m_status->setText(QStringLiteral("Setting up ydotool…"));
+    m_status->setText(QStringLiteral("Setting up the virtual keyboard…"));
     if (!startYdotoolSetup(
             m_settings,
             this,
             YdotoolSetupFlowOptions{
-                .confirmInstall = false,
+                .confirmInstall = true,
                 .applyAutomaticOutputMethod = true,
             },
             this,
@@ -733,7 +753,7 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
 {
     QVBoxLayout *layout = makePage(
         this,
-        QStringLiteral("Refinement can clean up a raw transcript after dictation. The detected provider is selected by default."));
+        QStringLiteral("Refinement can clean up a raw transcript after dictation. Choose a provider, or None to skip cleanup."));
     for (const ProviderDescriptor &provider : providers.refinementProviders()) {
         m_provider->addItem(provider.label, provider.id);
     }
@@ -866,17 +886,14 @@ void WritingProfilesSetupPage::saveProfiles()
 FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *parent)
     : QWidget(parent)
     , m_controller(controller)
-#ifdef Q_OS_MACOS
     , m_shortcutStatus(new QLabel(this))
-#endif
     , m_signInNote(new QLabel(this))
 {
     QVBoxLayout *layout = makePage(
         this,
-        QStringLiteral("Put the cursor in a text field, trigger dictation, speak, then trigger it again to stop and insert the transcript."));
-#ifdef Q_OS_MACOS
+        QStringLiteral("Setup is complete."));
     m_shortcutStatus->setWordWrap(true);
-#endif
+    m_shortcutStatus->setObjectName(QStringLiteral("finishGlobalShortcutStatus"));
     m_signInNote->setWordWrap(true);
 
 #ifdef Q_OS_MACOS
@@ -899,9 +916,26 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
         m_shortcutStatus->setText(shortcutHint());
     } else {
         m_shortcutStatus->setText(
-            QStringLiteral("Bind `speecher toggle` in your desktop environment's global shortcut settings."));
+            QStringLiteral("Bind speecher toggle in your desktop's keyboard settings."));
     }
+#elif defined(Q_OS_LINUX)
+    m_manualCommand = new QLabel(this);
+    m_manualCommand->setObjectName(QStringLiteral("finishGlobalShortcutCommand"));
+    m_manualCommand->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    m_manualCommand->setTextInteractionFlags(Qt::TextSelectableByMouse
+                                             | Qt::TextSelectableByKeyboard);
+    connect(&m_controller,
+            &ApplicationController::globalShortcutChanged,
+            this,
+            [this] { updateLinuxShortcutInstruction(); });
+    updateLinuxShortcutInstruction();
+#else
+    m_shortcutStatus->setText(
+        QStringLiteral("Use your Global Shortcut to start and stop dictation."));
+#endif
     layout->addWidget(m_shortcutStatus);
+#ifdef Q_OS_LINUX
+    layout->addWidget(m_manualCommand);
 #endif
     layout->addWidget(m_signInNote);
     layout->addStretch();
@@ -910,6 +944,9 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
 void FinishSetupPage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
+#ifdef Q_OS_LINUX
+    updateLinuxShortcutInstruction();
+#endif
 #ifdef Q_OS_MACOS
     if (!m_shortcut || m_shortcutLoaded) {
         return;
@@ -921,6 +958,27 @@ void FinishSetupPage::showEvent(QShowEvent *event)
     }
 #endif
 }
+
+#ifdef Q_OS_LINUX
+void FinishSetupPage::updateLinuxShortcutInstruction()
+{
+    const QString display = m_controller.globalShortcutDisplay();
+    if (!display.isEmpty()) {
+        m_shortcutStatus->setText(
+            QStringLiteral("Press %1 to start dictating, speak, then press it again to stop and insert the text.")
+                .arg(display));
+        m_manualCommand->hide();
+        return;
+    }
+    m_shortcutStatus->setText(
+        m_controller.globalShortcutsSupported()
+            ? QStringLiteral(
+                  "No Global Shortcut is set yet. Go back to set one, or bind this command yourself:")
+            : linuxGlobalShortcutManualInstruction());
+    m_manualCommand->setText(linuxGlobalShortcutCommand());
+    m_manualCommand->show();
+}
+#endif
 
 void FinishSetupPage::setSignInRequired(bool required)
 {

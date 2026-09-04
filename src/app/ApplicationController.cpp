@@ -51,13 +51,25 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_ipc(new SingleInstanceIpc(m_platform, this))
 {
     const QString currentVersion = QStringLiteral(SPEECHER_VERSION);
+    const qint64 currentBuildNumber = SPEECHER_BUILD_NUMBER;
     const QString previousVersion = m_settings->updatesLastRunVersion();
-    if (previousVersion != currentVersion) {
-        if (compareBaseVersions(currentVersion, previousVersion) > 0
+    const qint64 previousBuildNumber = m_settings->updatesLastRunBuildNumber();
+    if (previousVersion != currentVersion || previousBuildNumber != currentBuildNumber) {
+        const bool migratedNightlyUpgrade = previousBuildNumber < 0
+            && !previousVersion.isEmpty()
+            && previousVersion.contains(QStringLiteral("-nightly"))
+            && currentVersion.contains(QStringLiteral("-nightly"))
+            && previousVersion != currentVersion;
+        const bool upgraded = previousBuildNumber >= 0
+            ? currentBuildNumber > previousBuildNumber
+            : compareBaseVersions(currentVersion, previousVersion) > 0
+                || migratedNightlyUpgrade;
+        if (upgraded
             && m_settings->updatesPendingWhatsNewVersion().isEmpty()) {
             m_settings->setUpdatesPendingWhatsNewVersion(previousVersion);
         }
         m_settings->setUpdatesLastRunVersion(currentVersion);
+        m_settings->setUpdatesLastRunBuildNumber(currentBuildNumber);
     }
     m_pendingWhatsNewVersion = m_settings->updatesPendingWhatsNewVersion();
     m_settings->setLaunchAtLoginReconciler(
@@ -77,6 +89,10 @@ ApplicationController::ApplicationController(bool popupOnly,
             &GlobalShortcutBinder::bindingChanged,
             this,
             &ApplicationController::globalShortcutChanged);
+    connect(m_shortcutBinder,
+            &GlobalShortcutBinder::supportChanged,
+            this,
+            &ApplicationController::globalShortcutSupportChanged);
     connect(m_shortcutBinder,
             &GlobalShortcutBinder::registrationFinished,
             this,
@@ -273,11 +289,6 @@ QString ApplicationController::outputSummary() const
     return m_platform->outputSummary();
 }
 
-QString ApplicationController::primaryOutputStatus() const
-{
-    return m_platform->primaryOutputStatus();
-}
-
 bool ApplicationController::accessibilitySupported() const
 {
     return m_accessibilitySupported;
@@ -310,9 +321,14 @@ bool ApplicationController::globalShortcutsSupported() const
     return m_shortcutBinder->supported();
 }
 
-QString ApplicationController::globalShortcutUnsupportedReason() const
+bool ApplicationController::globalShortcutSupportKnown() const
 {
-    return m_shortcutBinder->unsupportedReason();
+    return m_shortcutBinder->supportKnown();
+}
+
+bool ApplicationController::globalShortcutUsesDesktopChooser() const
+{
+    return m_shortcutBinder->usesDesktopShortcutChooser();
 }
 
 QKeySequence ApplicationController::globalShortcut() const
@@ -333,6 +349,11 @@ bool ApplicationController::setGlobalShortcut(const QKeySequence &shortcut, QStr
 void ApplicationController::registerGlobalShortcut()
 {
     m_shortcutBinder->registerShortcut();
+}
+
+bool ApplicationController::removeGlobalShortcutRegistration(QString *error)
+{
+    return m_shortcutBinder->removeRegistration(error);
 }
 
 bool ApplicationController::startIpc(QString *error)
@@ -463,6 +484,11 @@ void ApplicationController::showSetup()
     showSetupAssistant();
 }
 
+void ApplicationController::quitApplication()
+{
+    emit quitRequested();
+}
+
 void ApplicationController::handleIpcCommand(const QString &command,
                                              const QString &outputFormat,
                                              QLocalSocket *socket)
@@ -505,6 +531,9 @@ void ApplicationController::handleIpcCommand(const QString &command,
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("status")) {
         SingleInstanceIpc::writeResponse(socket, response());
+    } else if (command == QStringLiteral("quit")) {
+        SingleInstanceIpc::writeResponse(socket, response());
+        quitApplication();
     } else {
         SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown command")));
     }
@@ -524,14 +553,14 @@ void ApplicationController::registerProviders()
     m_providers->registerSpeechProvider(
         {QStringLiteral("claude"),
          QStringLiteral("Claude Voice"),
-         QStringLiteral("Sign in with Claude Code. If needed, run `claude` and use `/login`, then check again.")},
+         QStringLiteral("Sign in with Claude Code. If needed, run claude and use /login, then check again.")},
         [](QObject *parent) {
             return new ClaudeSpeechTranscriber(parent);
         });
     m_providers->registerSpeechProvider(
         {QStringLiteral("codex"),
          QStringLiteral("ChatGPT Codex"),
-         QStringLiteral("Sign in with ChatGPT using the ChatGPT app (`/usr/bin/chatgpt`) or Codex CLI, then check again.")},
+         QStringLiteral("Sign in with ChatGPT using the ChatGPT app or Codex CLI, then check again.")},
         [](QObject *parent) {
             return new CodexSpeechTranscriber(parent);
         });

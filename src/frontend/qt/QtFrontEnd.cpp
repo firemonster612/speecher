@@ -67,7 +67,7 @@ void QtFrontEnd::showSetupAssistant(SetupAssistantPage page)
     if (!m_setupAssistant) {
         m_setupAssistant = new SetupAssistant(m_controller, page);
         m_setupAssistant->setAttribute(Qt::WA_DeleteOnClose);
-        connect(m_setupAssistant, &QDialog::accepted, this, [this] {
+        connect(m_setupAssistant, &QDialog::finished, this, [this] {
             if (!m_controller->popupOnly()) {
                 showMainWindow();
             }
@@ -161,16 +161,6 @@ void QtFrontEnd::wireSessionToPopup()
             session->stopListening();
         }
     });
-    connect(m_popup, &TranscriberPopup::enableAccessibilityRequested, this, [this] {
-        QString error;
-        if (!m_controller->enableAccessibility(&error)) {
-            m_popup->showAccessibilityError(error);
-        }
-    });
-    connect(m_controller,
-            &ApplicationController::accessibilityStateChanged,
-            m_popup,
-            &TranscriberPopup::setAccessibilityState);
 }
 
 void QtFrontEnd::refreshUpdateChip()
@@ -198,8 +188,18 @@ void QtFrontEnd::refreshUpdateChip()
         m_popup->setUpdateChip(
             QStringLiteral("Restarting after this dictation…"), true, false);
         break;
+    case UpdateController::State::Restarting:
+        m_popup->setUpdateChip(QStringLiteral("Restarting…"), true, false);
+        break;
     case UpdateController::State::Error:
         m_popup->setUpdateChip(updates->errorMessage(), true, canAct);
+        break;
+    case UpdateController::State::CheckFailed:
+        if (updates->repeatedAutomaticCheckFailure()) {
+            m_popup->setUpdateChip(QStringLiteral("Update check failed"), true, canAct);
+        } else {
+            m_popup->setUpdateChip({}, false, false);
+        }
         break;
     default:
         m_popup->setUpdateChip({}, false, false);

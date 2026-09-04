@@ -78,15 +78,16 @@ SchemaCustomRow ProviderCustomRows::makeAuthModeRow(QWidget *parent,
                                                     std::function<void()> notifyChanged)
 {
     m_authMode = new QComboBox(parent);
+    // Where the sign-in comes from, in the words a person would use for it.
     m_authMode->addItem(QStringLiteral("Automatic"), QStringLiteral("auto"));
-    m_authMode->addItem(QStringLiteral("Codex API key"), QStringLiteral("codex_api_key"));
-    m_authMode->addItem(QStringLiteral("Codex OAuth"), QStringLiteral("codex_oauth"));
-    m_authMode->addItem(QStringLiteral("OPENAI_API_KEY"), QStringLiteral("env"));
-    m_authMode->addItem(QStringLiteral("App settings key"), kSettingsKeyAuthMode);
-    m_authMode->addItem(QStringLiteral("CLI Proxy API"), kCliProxyAuthMode);
+    m_authMode->addItem(QStringLiteral("API key from the Codex app"), QStringLiteral("codex_api_key"));
+    m_authMode->addItem(QStringLiteral("ChatGPT sign-in from the Codex app"), QStringLiteral("codex_oauth"));
+    m_authMode->addItem(QStringLiteral("API key from the environment"), QStringLiteral("env"));
+    m_authMode->addItem(QStringLiteral("API key saved in Speecher"), kSettingsKeyAuthMode);
+    m_authMode->addItem(QStringLiteral("CLI Proxy API account"), kCliProxyAuthMode);
     m_authMode->setToolTip(QStringLiteral(
-        "API-key modes apply to OpenAI refinement. Dictation uses Codex OAuth or the selected "
-        "CLI Proxy API Codex account."));
+        "API keys only cover text cleanup. Dictation needs the ChatGPT sign-in or a CLI Proxy "
+        "API account."));
     QObject::connect(m_authMode,
                      &QComboBox::currentIndexChanged,
                      m_authMode,
@@ -146,10 +147,10 @@ SchemaCustomRow ProviderCustomRows::makeAnthropicAuthModeRow(QWidget *parent,
     layout->setSpacing(6);
 
     m_anthropicAuthMode = new QComboBox(container);
-    m_anthropicAuthMode->addItem(QStringLiteral("Claude OAuth"), QStringLiteral("oauth"));
-    m_anthropicAuthMode->addItem(QStringLiteral("CLI Proxy API"), kCliProxyAuthMode);
+    m_anthropicAuthMode->addItem(QStringLiteral("Claude Code sign-in"), QStringLiteral("oauth"));
+    m_anthropicAuthMode->addItem(QStringLiteral("CLI Proxy API account"), kCliProxyAuthMode);
     m_anthropicAuthMode->setToolTip(QStringLiteral(
-        "Claude OAuth uses the existing Claude Code session. CLI Proxy API uses an OAuth "
+        "Claude Code sign-in reuses the login from the claude command. CLI Proxy API uses an "
         "account saved by CLI Proxy API."));
     m_anthropicAuthStatus = new QLabel(container);
     m_anthropicAuthStatus->setObjectName(QStringLiteral("anthropicAuthStatus"));
@@ -190,7 +191,7 @@ SchemaCustomRow ProviderCustomRows::makeCliproxyBaseUrlRow(
 {
     m_cliproxyBaseUrl = new QLineEdit(parent);
     m_cliproxyBaseUrl->setPlaceholderText(
-        QStringLiteral("http://host:8317 — empty reads local account files"));
+        QStringLiteral("Leave empty to use the account files on this computer"));
     m_cliproxyBaseUrl->setClearButtonEnabled(true);
     QObject::connect(m_cliproxyBaseUrl,
                      &QLineEdit::textEdited,
@@ -216,7 +217,7 @@ SchemaCustomRow ProviderCustomRows::makeCliproxyApiKeyRow(
 {
     m_cliproxyApiKey = new QLineEdit(parent);
     m_cliproxyApiKey->setEchoMode(QLineEdit::Password);
-    m_cliproxyApiKey->setPlaceholderText(QStringLiteral("CLI Proxy API server api-key"));
+    m_cliproxyApiKey->setPlaceholderText(QStringLiteral("A key the server accepts"));
     m_cliproxyApiKey->setToolTip(
         QStringLiteral("Stored unencrypted in Speecher's settings file."));
     QObject::connect(m_cliproxyApiKey,
@@ -301,7 +302,10 @@ void ProviderCustomRows::populateCliproxyAccounts(QComboBox *account,
     }
     if (account->count() == 0) {
         account->addItem(QStringLiteral("No accounts found"), QString());
-        settings::setComboItemEnabled(account, 0, false, directory);
+        settings::setComboItemEnabled(
+            account, 0, false,
+            QStringLiteral("Sign in with CLI Proxy API first; Speecher looks for its accounts in %1.")
+                .arg(directory));
     }
     settings::selectData(account, selected);
 }
@@ -390,7 +394,7 @@ void ProviderCustomRows::updateCredentialControl()
         m_credential->setCurrentWidget(m_apiKey);
         m_apiKey->setPlaceholderText(m_secretLoaded
                                          ? m_secrets.status()
-                                         : QStringLiteral("Loading app settings key…"));
+                                         : QStringLiteral("Loading the saved API key…"));
         return;
     }
     m_credential->setCurrentWidget(m_authStatus);
@@ -447,7 +451,7 @@ void ProviderCustomRows::updateAnthropicAuthControl()
         const ClaudeCredentialResult credentials =
             ClaudeCredentials::load(m_settings.claudeCredentialsPath(), false);
         m_anthropicAuthStatus->setText(
-            credentials.ok ? QStringLiteral("Claude Code OAuth credentials found")
+            credentials.ok ? QStringLiteral("Signed in with Claude Code")
                            : credentials.error);
     }
     m_anthropicAuthStatus->setVisible(!cliproxy);

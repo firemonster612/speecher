@@ -1,4 +1,5 @@
 #include "app/ApplicationController.h"
+#include "app/AppImageUpdater.h"
 #include "app/UpdateController.h"
 #include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
@@ -15,6 +16,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QIcon>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTextStream>
@@ -75,20 +77,10 @@ static void migrateSettings()
                           QString::fromLatin1(SettingsKeys::Application));
     QSettings oldSettings(QString::fromLatin1(oldOrganization),
                           QString::fromLatin1(SettingsKeys::Application));
-    newSettings.setFallbacksEnabled(false);
-    oldSettings.setFallbacksEnabled(false);
-    const QStringList oldKeys = oldSettings.allKeys();
-    const bool existingConfig = !newSettings.allKeys().isEmpty() || !oldKeys.isEmpty();
-    if (newSettings.allKeys().isEmpty() && !oldKeys.isEmpty()) {
-        for (const QString &key : oldKeys) {
-            newSettings.setValue(key, oldSettings.value(key));
-        }
-        qInfo() << "Migrated settings keys:" << oldKeys.size();
+    QString error;
+    if (!migrateSettingsIdentity(newSettings, oldSettings, &error)) {
+        qWarning().noquote() << error;
     }
-    if (existingConfig && !newSettings.contains(SettingsKeys::UpdatesLastRunVersion)) {
-        newSettings.setValue(SettingsKeys::UpdatesLastRunVersion, QStringLiteral("0.1.0"));
-    }
-    newSettings.sync();
 }
 
 static QStringList commandLineArguments(int argc, char **argv)
@@ -122,19 +114,26 @@ int main(int argc, char **argv)
     }
 
     QApplication app(argc, argv);
+    AppImageUpdater::waitForRestartParent();
+#ifdef Q_OS_LINUX
+    if (!qEnvironmentVariableIsEmpty("APPIMAGE")) {
+        QIcon::setFallbackThemeName(QStringLiteral("breeze"));
+    }
+#endif
     // A second store, because the theme has to be applied before the first
     // widget exists and the controller's store is not built yet.
     SettingsStore startupSettings;
     Theme::apply(startupSettings.theme());
 
     const bool daemon = decision.mode == LaunchMode::RunDaemon;
-#ifdef Q_OS_MACOS
-    app.setQuitOnLastWindowClosed(false);
-#else
-    app.setQuitOnLastWindowClosed(!daemon);
-#endif
+    app.setQuitOnLastWindowClosed(quitOnLastWindowClosed(decision.mode));
 
     ApplicationController controller(daemon, platform);
+    QObject::connect(&controller,
+                     &ApplicationController::quitRequested,
+                     &app,
+                     &QCoreApplication::quit,
+                     Qt::QueuedConnection);
     // The one place a platform's front end is chosen; see
     // docs/adr/0001-per-platform-front-ends.md.
 #ifdef SPEECHER_WITH_SWIFT_UI

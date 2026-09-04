@@ -36,21 +36,22 @@ private:
     void applyState(const QString &stateName);
     void setDisplayStatus(const QString &status);
     void updateSummary(bool resolveMicrophone);
+    void updateShortcutSummary();
     void setSummaryText(QLabel *label, const QString &text);
     void applyToggleState(QPushButton *button, bool active, bool refining, const QString &state) const;
 
     ApplicationController *m_controller;
     AccessibilityNotice *m_accessibilityNotice;
-    QPushButton *m_toggle;
     QPushButton *m_heroToggle;
     QLabel *m_status;
+    QLabel *m_errorText = nullptr;
     WaveformWidget *m_waveform;
     QPlainTextEdit *m_transcript;
     QToolButton *m_copyTranscript = nullptr;
     QLabel *m_provider;
     QLabel *m_microphone;
     QLabel *m_output;
-    QLabel *m_theme;
+    QLabel *m_shortcut;
     bool m_sessionActive = false;
 };
 

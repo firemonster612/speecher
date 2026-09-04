@@ -11,7 +11,6 @@ public:
     MacComposition();
 
     QString outputSummary() const override;
-    QString primaryOutputStatus() const override;
     QString ipcListenName() const override;
     QStringList ipcConnectCandidates() const override;
     QString detachedExecutablePath() const override;

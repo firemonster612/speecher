@@ -1,5 +1,6 @@
 #include "core/SecretStore.h"
 
+#include "core/KeyringResult.h"
 #include "core/SettingsStore.h"
 
 #ifdef SPEECHER_WITH_QKEYCHAIN
@@ -113,15 +114,16 @@ QString SecretStore::status() const
 #ifdef SPEECHER_WITH_QKEYCHAIN
     const QString key = m_hasApiKeyResult ? m_lastApiKey : apiKey();
     if (!key.isEmpty()) {
-        return usesInsecureSettingsFallback() ? QStringLiteral("Settings API key found in legacy plaintext settings")
-                                             : QStringLiteral("Settings API key stored in desktop keyring");
+        return usesInsecureSettingsFallback()
+            ? QStringLiteral("API key saved in Speecher's settings file, not in the keyring")
+            : QStringLiteral("API key saved in the desktop keyring");
     }
     if (!m_lastError.isEmpty()) {
-        return QStringLiteral("Desktop keyring unavailable: %1").arg(m_lastError);
+        return QStringLiteral("The desktop keyring is not available: %1").arg(m_lastError);
     }
-    return QStringLiteral("No app settings API key found");
+    return QStringLiteral("No API key saved");
 #else
-    return QStringLiteral("QtKeychain support was not compiled in");
+    return QStringLiteral("This build cannot save an API key in the desktop keyring");
 #endif
 }
 
@@ -172,10 +174,17 @@ bool SecretStore::deleteKeyringApiKey() const
 #ifdef SPEECHER_WITH_QKEYCHAIN
     QKeychain::DeletePasswordJob job(QString::fromLatin1(keyringService));
     job.setKey(QString::fromLatin1(openAiApiKeyEntry));
-    return runKeychainJob(job, &m_lastError);
-#else
-    m_lastError = QStringLiteral("QtKeychain support was not compiled in");
+    QString error;
+    runKeychainJob(job, &error);
+    if (keyringDeletionSucceeded(job.error())) {
+        m_lastError.clear();
+        return true;
+    }
+    m_lastError = error;
     return false;
+#else
+    m_lastError.clear();
+    return true;
 #endif
 }
 

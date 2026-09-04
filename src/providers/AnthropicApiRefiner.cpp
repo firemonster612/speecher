@@ -16,8 +16,6 @@
 namespace speecher {
 namespace {
 
-constexpr int absoluteDeadlineMs = 120000;
-
 QString anthropicErrorMessage(const QByteArray &payload, const QString &fallback)
 {
     const QJsonObject object = QJsonDocument::fromJson(payload).object();
@@ -87,9 +85,12 @@ QString claudeCodeSystemPrompt(const QString &refinementStyle,
 
 } // namespace
 
-AnthropicApiRefiner::AnthropicApiRefiner(QObject *parent, int requestTimeoutMs)
+AnthropicApiRefiner::AnthropicApiRefiner(QObject *parent,
+                                         int requestTimeoutMs,
+                                         int absoluteDeadlineMs)
     : QObject(parent)
     , m_requestTimeoutMs(requestTimeoutMs)
+    , m_absoluteDeadlineMs(absoluteDeadlineMs)
 {
     m_inactivityTimer.setSingleShot(true);
     m_deadlineTimer.setSingleShot(true);
@@ -123,7 +124,12 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
                                  const QString &refinementStyle,
                                  const RefinementContext &context)
 {
+    const bool retryingFastMode = m_retryingFastMode;
+    m_retryingFastMode = false;
     cancel();
+    if (!retryingFastMode) {
+        m_operationDeadline = QDeadlineTimer(m_absoluteDeadlineMs);
+    }
     m_accumulated.clear();
     m_buffer.clear();
     m_failed = false;
@@ -205,7 +211,7 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
     QNetworkReply *reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
     m_reply = reply;
     m_inactivityTimer.start(m_requestTimeoutMs);
-    m_deadlineTimer.start(absoluteDeadlineMs);
+    m_deadlineTimer.start(qMax(1, int(m_operationDeadline.remainingTime())));
     connect(reply, &QNetworkReply::readyRead, this, [this, reply] {
         if (reply != m_reply) {
             return;
@@ -327,6 +333,7 @@ bool AnthropicApiRefiner::retryWithoutFastMode(const QString &reason, bool latch
         return false;
     }
     qWarning().noquote() << "anthropic fast mode refinement failed, retrying at standard speed:" << reason;
+    m_retryingFastMode = true;
     fallback();
     // Set after the fallback's refine() reset it: an error (rather than a
     // stall) on the fast attempt followed by a standard success reads as the

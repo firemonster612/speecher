@@ -2,6 +2,7 @@
 
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
+#include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
 #include "core/LearnedCorrection.h"
 #include "core/SettingsStore.h"
@@ -14,16 +15,27 @@
 #include "ui/setup/SetupPages.h"
 #endif
 
+#include <QApplication>
+#include <QAbstractButton>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QGroupBox>
+#include <QPalette>
+#include <QKeySequenceEdit>
 #include <QLabel>
+#include <QLayout>
 #include <QList>
+#include <QPushButton>
 #include <QSignalSpy>
+#include <QScopeGuard>
 #include <QStringList>
 #include <QTemporaryDir>
+
+#ifdef SPEECHER_WITH_KASSISTANT
+#include <KPageWidget>
+#endif
 #include <QTest>
-#include <QToolButton>
 
 #include <memory>
 #include <utility>
@@ -38,12 +50,16 @@ public:
 
     bool supported() const override
     {
-        return true;
+        return shortcutsSupported;
     }
+
+    bool supportKnown() const override { return shortcutSupportKnown; }
+
+    bool usesDesktopShortcutChooser() const override { return desktopChooser; }
 
     QString unsupportedReason() const override
     {
-        return {};
+        return unsupported;
     }
 
     void bind() override
@@ -58,6 +74,12 @@ public:
 
     bool setShortcut(const QKeySequence &shortcut, QString *error) override
     {
+        if (!setShortcutError.isEmpty()) {
+            if (error) {
+                *error = setShortcutError;
+            }
+            return false;
+        }
         if (shortcut.isEmpty()) {
             if (error) {
                 *error = QStringLiteral("fake binder rejects an empty sequence");
@@ -66,6 +88,11 @@ public:
         }
         m_shortcut = shortcut;
         return true;
+    }
+
+    void registerShortcut() override
+    {
+        registerCount += 1;
     }
 
     void publishShortcut(const QKeySequence &shortcut)
@@ -79,7 +106,20 @@ public:
         emit registrationFinished(bound, detail);
     }
 
+    void publishSupport(bool known, bool supported)
+    {
+        shortcutSupportKnown = known;
+        shortcutsSupported = supported;
+        emit supportChanged();
+    }
+
     int bindCount = 0;
+    int registerCount = 0;
+    bool shortcutSupportKnown = true;
+    bool shortcutsSupported = true;
+    bool desktopChooser = false;
+    QString unsupported;
+    QString setShortcutError;
 
 private:
     QKeySequence m_shortcut;
@@ -97,11 +137,6 @@ public:
     QString outputSummary() const override
     {
         return QStringLiteral("Fake: nothing is delivered");
-    }
-
-    QString primaryOutputStatus() const override
-    {
-        return QStringLiteral("Fake output ready");
     }
 
     QString ipcListenName() const override
@@ -235,6 +270,114 @@ class PlatformCompositionTests : public QObject {
 
 private slots:
 #ifdef Q_OS_LINUX
+    void guiLaunchKeepsRunningAfterLastWindowCloses()
+    {
+        QVERIFY(!quitOnLastWindowClosed(LaunchMode::RunGui));
+        QVERIFY(!quitOnLastWindowClosed(LaunchMode::RunDaemon));
+    }
+
+    void quitIsAClientCommand()
+    {
+        const CommandLineDecision decision = parseCommandLine(
+            {QStringLiteral("speecher"), QStringLiteral("quit")}, {});
+        QCOMPARE(decision.mode, LaunchMode::RunCli);
+        QCOMPARE(decision.ipcCommand, QStringLiteral("quit"));
+
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        QSignalSpy requested(&controller, &ApplicationController::quitRequested);
+        controller.handleIpcCommand(QStringLiteral("quit"), {}, nullptr);
+        QCOMPARE(requested.count(), 1);
+    }
+
+#endif
+
+#ifdef Q_OS_LINUX
+    void setupAssistantPutsTheGlobalShortcutBeforeFinish()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        SetupAssistant assistant(&controller);
+
+        const QStringList titles = assistant.pageTitles();
+        QCOMPARE(titles,
+                 QStringList({QStringLiteral("Welcome to Speecher"),
+                              QStringLiteral("Transcription"),
+                              QStringLiteral("Microphone"),
+                              QStringLiteral("Desktop accessibility"),
+                              QStringLiteral("Text delivery"),
+                              QStringLiteral("Refinement"),
+                              QStringLiteral("Writing profiles"),
+                              QStringLiteral("Global Shortcut"),
+                              QStringLiteral("Ready to dictate")}));
+        QVERIFY(titles.indexOf(QStringLiteral("Global Shortcut"))
+                < titles.indexOf(QStringLiteral("Ready to dictate")));
+
+        WelcomeSetupPage *welcome = nullptr;
+        for (QWidget *widget : assistant.findChildren<QWidget *>()) {
+            if (auto *page = dynamic_cast<WelcomeSetupPage *>(widget)) {
+                welcome = page;
+                break;
+            }
+        }
+        QVERIFY(welcome);
+        bool mentionsShortcut = false;
+        for (const QLabel *label : welcome->findChildren<QLabel *>()) {
+            mentionsShortcut = mentionsShortcut
+                || label->text().contains(QStringLiteral("ends by setting up a Global Shortcut"));
+        }
+        QVERIFY(mentionsShortcut);
+
+        // The shortcut page is also a settings card control; as an assistant
+        // page it keeps the same margins as the pages around it.
+        LinuxGlobalShortcutSetupPage *shortcut = nullptr;
+        for (QWidget *widget : assistant.findChildren<QWidget *>()) {
+            if (auto *page = dynamic_cast<LinuxGlobalShortcutSetupPage *>(widget)) {
+                shortcut = page;
+                break;
+            }
+        }
+        QVERIFY(shortcut);
+        QCOMPARE(shortcut->layout()->contentsMargins(), welcome->layout()->contentsMargins());
+        QCOMPARE(shortcut->layout()->contentsMargins().left(), setupPageMargin());
+
+        // The assistant keeps the application palette rather than retuning a
+        // role to fight its own style's separator.
+        QVERIFY(!assistant.testAttribute(Qt::WA_SetPalette));
+        QCOMPARE(assistant.palette().color(QPalette::Mid),
+                 QApplication::palette().color(QPalette::Mid));
+    }
+
+    void setupAssistantHidesSkipOnTheLastPage()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        SetupAssistant assistant(&controller);
+        assistant.show();
+        QCoreApplication::processEvents();
+
+        QAbstractButton *skip = nullptr;
+        for (QAbstractButton *button : assistant.findChildren<QAbstractButton *>()) {
+            if (button->text() == QStringLiteral("Skip setup")) {
+                skip = button;
+                break;
+            }
+        }
+        QVERIFY(skip);
+        QVERIFY(skip->isVisible());
+        const int lastPage = assistant.pageTitles().indexOf(QStringLiteral("Ready to dictate"));
+        QCOMPARE(lastPage, assistant.pageTitles().size() - 1);
+#ifdef SPEECHER_WITH_KASSISTANT
+        for (int step = 0; step < lastPage; ++step) {
+            assistant.next();
+        }
+#else
+        assistant.setCurrentId(assistant.pageIds().at(lastPage));
+#endif
+        QCoreApplication::processEvents();
+        QVERIFY(!skip->isVisible());
+    }
+
     void globalShortcutSinglePageOnlyShowsTheShortcutPage()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
@@ -242,8 +385,7 @@ private slots:
         SetupAssistant assistant(&controller, SetupAssistantPage::GlobalShortcut);
         assistant.show();
 
-        QCOMPARE(assistant.pageIds().size(), 1);
-        QVERIFY(assistant.page(assistant.pageIds().first())->isVisible());
+        QCOMPARE(assistant.pageTitles(), QStringList({QStringLiteral("Global Shortcut")}));
         int visibleSetupPages = 0;
         for (QWidget *widget : assistant.findChildren<QWidget *>()) {
             const bool setupPage = dynamic_cast<LinuxGlobalShortcutSetupPage *>(widget)
@@ -254,48 +396,231 @@ private slots:
         QCOMPARE(visibleSetupPages, 1);
     }
 
-    void globalShortcutRegistrationRefreshesAndCollapsesOptions()
+    void globalShortcutPageEditsNativeShortcut()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
+        const QKeySequence initial(Qt::META | Qt::ALT | Qt::Key_D);
+        platform->binder->publishShortcut(initial);
         LinuxGlobalShortcutSetupPage page(controller);
+
+        auto *sequence = page.findChild<QKeySequenceEdit *>();
+        QVERIFY(sequence);
+        QCOMPARE(sequence->keySequence(), initial);
+        bool hasGuidance = false;
+        for (const QLabel *label : page.findChildren<QLabel *>()) {
+            hasGuidance = hasGuidance
+                || label->text() == QStringLiteral(
+                    "Press the keys you want to use for dictation.");
+        }
+        QVERIFY(hasGuidance);
+
+        QPushButton *setShortcut = nullptr;
+        for (QPushButton *button : page.findChildren<QPushButton *>()) {
+            if (button->text() == QStringLiteral("Set shortcut")) {
+                setShortcut = button;
+                break;
+            }
+        }
+        QVERIFY(setShortcut);
+        QVERIFY(!setShortcut->isEnabled());
+        sequence->clear();
+        QVERIFY(!setShortcut->isEnabled());
+
         page.show();
+        sequence->setFocus();
+        QTRY_VERIFY(sequence->hasFocus());
+        const QKeySequence chosen(Qt::CTRL | Qt::ALT | Qt::Key_Space);
+        sequence->setKeySequence(chosen);
+        QVERIFY(setShortcut->isEnabled());
+        platform->binder->publishShortcut(QKeySequence(Qt::CTRL | Qt::Key_D));
+        QCOMPARE(sequence->keySequence(), chosen);
+        setShortcut->click();
+        QCOMPARE(controller.globalShortcut(), chosen);
+        QVERIFY(!setShortcut->isEnabled());
 
-        QGroupBox *manual = nullptr;
-        for (QGroupBox *group : page.findChildren<QGroupBox *>()) {
-            if (group->title() == QStringLiteral("Manual setup")) {
-                manual = group;
-                break;
-            }
-        }
-        QToolButton *moreOptions = nullptr;
-        for (QToolButton *button : page.findChildren<QToolButton *>()) {
-            if (button->text() == QStringLiteral("More options")) {
-                moreOptions = button;
-                break;
-            }
-        }
-        QVERIFY(manual);
-        QVERIFY(moreOptions);
-
-        platform->binder->publishRegistrationResult(false, QStringLiteral("Try manual setup"));
-        QVERIFY(!manual->isHidden());
-
-        const QKeySequence shortcut(Qt::META | Qt::ALT | Qt::Key_D);
-        platform->binder->publishShortcut(shortcut);
-        QVERIFY(manual->isHidden());
-        QVERIFY(!moreOptions->isChecked());
-
-        bool hasWorkingStatus = false;
+        bool hasStatus = false;
         for (QLabel *label : page.findChildren<QLabel *>()) {
-            hasWorkingStatus = hasWorkingStatus
-                || label->text() == QStringLiteral("Try it now: Meta+Alt+D");
+            hasStatus = hasStatus
+                || label->text() == QStringLiteral("Shortcut set to Ctrl+Alt+Space. Try it now.");
         }
-        QVERIFY(hasWorkingStatus);
+        QVERIFY(hasStatus);
 
-        moreOptions->setChecked(true);
-        platform->binder->publishRegistrationResult(true, QStringLiteral("Meta+Alt+D"));
-        QVERIFY(!moreOptions->isChecked());
+        platform->binder->setShortcutError = QStringLiteral("That shortcut is already in use.");
+        sequence->setKeySequence(QKeySequence(Qt::CTRL | Qt::Key_D));
+        setShortcut->click();
+        QCOMPARE(page.findChild<QLabel *>(QStringLiteral("globalShortcutStatus"))->text(),
+                 QStringLiteral("That shortcut is already in use."));
+    }
+
+    void globalShortcutPageWaitsForPortalSupportAndShowsItsResult()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        platform->binder->shortcutSupportKnown = false;
+        platform->binder->shortcutsSupported = false;
+        platform->binder->desktopChooser = true;
+        LinuxGlobalShortcutSetupPage page(controller);
+
+        auto *portal = page.findChild<QWidget *>(QStringLiteral("portalShortcut"));
+        auto *status = page.findChild<QLabel *>(QStringLiteral("globalShortcutStatus"));
+        QVERIFY(portal);
+        QVERIFY(!portal->isHidden());
+        bool hasGuidance = false;
+        for (const QLabel *label : portal->findChildren<QLabel *>()) {
+            hasGuidance = hasGuidance
+                || label->text() == QStringLiteral(
+                    "Your desktop will ask you to pick a key combination.");
+        }
+        QVERIFY(hasGuidance);
+        QVERIFY(status);
+        QCOMPARE(status->text(), QStringLiteral("Checking your desktop…"));
+
+        QPushButton *chooseShortcut = nullptr;
+        for (QPushButton *button : page.findChildren<QPushButton *>()) {
+            if (button->text() == QStringLiteral("Choose shortcut")) {
+                chooseShortcut = button;
+                break;
+            }
+        }
+        QVERIFY(chooseShortcut);
+        QVERIFY(!chooseShortcut->isEnabled());
+
+        platform->binder->publishSupport(true, true);
+        QVERIFY(chooseShortcut->isEnabled());
+        chooseShortcut->click();
+        QCOMPARE(platform->binder->registerCount, 1);
+
+        const QString result = QStringLiteral("Ctrl+Alt+Space");
+        platform->binder->publishShortcut(QKeySequence(result));
+        platform->binder->publishRegistrationResult(true, result);
+        QCOMPARE(status->text(),
+                 QStringLiteral("Shortcut set to Ctrl+Alt+Space. Try it now."));
+    }
+
+    void globalShortcutPageKeepsPortalFailureAfterRestoringTheOldShortcut()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        platform->binder->desktopChooser = true;
+        const QKeySequence existing(Qt::CTRL | Qt::ALT | Qt::Key_Space);
+        platform->binder->publishShortcut(existing);
+        LinuxGlobalShortcutSetupPage page(controller);
+        auto *status = page.findChild<QLabel *>(QStringLiteral("globalShortcutStatus"));
+        QVERIFY(status);
+
+        platform->binder->publishRegistrationResult(
+            false, QStringLiteral("Setup was cancelled. Try again."));
+        platform->binder->publishShortcut(existing);
+
+        QCOMPARE(status->text(), QStringLiteral("Setup was cancelled. Try again."));
+    }
+
+    void globalShortcutPageShowsOnlyManualSetupWhenUnsupported()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        platform->binder->shortcutsSupported = false;
+        platform->binder->unsupported = QStringLiteral("Internal binder detail");
+        LinuxGlobalShortcutSetupPage page(controller);
+
+        auto *manual = page.findChild<QWidget *>(QStringLiteral("manualShortcut"));
+        QVERIFY(manual);
+        QVERIFY(!manual->isHidden());
+        QVERIFY(page.findChild<QWidget *>(QStringLiteral("keySequenceShortcut"))->isHidden());
+        QVERIFY(page.findChild<QWidget *>(QStringLiteral("portalShortcut"))->isHidden());
+        QCOMPARE(page.findChildren<QGroupBox *>().size(), 0);
+
+        bool hasInstruction = false;
+        bool hasInternalDetail = false;
+        for (const QLabel *label : page.findChildren<QLabel *>()) {
+            hasInstruction = hasInstruction
+                || label->text() == linuxGlobalShortcutManualInstruction();
+            hasInternalDetail = hasInternalDetail
+                || label->text() == QStringLiteral("Internal binder detail");
+        }
+        QVERIFY(hasInstruction);
+        QVERIFY(!hasInternalDetail);
+        auto *command = page.findChild<QLabel *>(QStringLiteral("globalShortcutCommand"));
+        QVERIFY(command);
+        QVERIFY(command->textInteractionFlags().testFlag(Qt::TextSelectableByMouse));
+        QVERIFY(!command->text().isEmpty());
+    }
+
+    void finishPageNamesTheBoundGlobalShortcut()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        platform->binder->publishShortcut(
+            QKeySequence(Qt::META | Qt::ALT | Qt::Key_D));
+        FinishSetupPage page(controller);
+        page.show();
+        QCoreApplication::processEvents();
+
+        bool hasInstruction = false;
+        for (const QLabel *label : page.findChildren<QLabel *>()) {
+            hasInstruction = hasInstruction
+                || label->text() == QStringLiteral(
+                    "Press Meta+Alt+D to start dictating, speak, then press it again to stop and insert the text.");
+        }
+        QVERIFY(hasInstruction);
+    }
+
+    void finishPageShowsTheManualGlobalShortcutCommand()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        platform->binder->shortcutsSupported = false;
+        FinishSetupPage page(controller);
+        page.show();
+        QCoreApplication::processEvents();
+
+        bool hasInstruction = false;
+        for (const QLabel *label : page.findChildren<QLabel *>()) {
+            hasInstruction = hasInstruction
+                || label->text() == linuxGlobalShortcutManualInstruction();
+        }
+        QVERIFY(hasInstruction);
+        auto *command = page.findChild<QLabel *>(
+            QStringLiteral("finishGlobalShortcutCommand"));
+        QVERIFY(command);
+        QCOMPARE(command->text(), linuxGlobalShortcutCommand());
+        QVERIFY(!command->isHidden());
+    }
+
+    void finishPageExplainsWhenASupportedShortcutIsUnset()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        platform->binder->shortcutsSupported = true;
+        FinishSetupPage page(controller);
+
+        auto *status = page.findChild<QLabel *>(QStringLiteral("finishGlobalShortcutStatus"));
+        auto *command = page.findChild<QLabel *>(
+            QStringLiteral("finishGlobalShortcutCommand"));
+        QVERIFY(status);
+        QCOMPARE(status->text(), QStringLiteral(
+            "No Global Shortcut is set yet. Go back to set one, or bind this command yourself:"));
+        QVERIFY(command);
+        QVERIFY(!command->isHidden());
+    }
+
+    void finishPageUpdatesWhenThePortalPublishesAShortcut()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        FinishSetupPage page(controller);
+        auto *status = page.findChild<QLabel *>(QStringLiteral("finishGlobalShortcutStatus"));
+        auto *command = page.findChild<QLabel *>(
+            QStringLiteral("finishGlobalShortcutCommand"));
+        QVERIFY(status);
+        QVERIFY(command);
+
+        platform->binder->publishShortcut(QKeySequence(Qt::META | Qt::ALT | Qt::Key_D));
+
+        QCOMPARE(status->text(), QStringLiteral(
+            "Press Meta+Alt+D to start dictating, speak, then press it again to stop and insert the text."));
+        QVERIFY(command->isHidden());
     }
 
     void globalShortcutInstructionCommandMatchesTheInstallation()
@@ -337,7 +662,105 @@ private slots:
                      home.path(),
                      appImage,
                      QStringLiteral("/tmp/.mount/usr/bin/speecher")),
-                 QStringLiteral("speecher toggle"));
+                 QStringLiteral("\"%1\" toggle").arg(link));
+    }
+
+    void appImageIntegrationRemovalUndoesTheInstallAndReportsIt()
+    {
+        const QByteArray oldAppImage = qgetenv("APPIMAGE");
+        const auto restoreEnvironment = qScopeGuard([oldAppImage] {
+            if (oldAppImage.isNull()) {
+                qunsetenv("APPIMAGE");
+            } else {
+                qputenv("APPIMAGE", oldAppImage);
+            }
+        });
+        qunsetenv("APPIMAGE");
+
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QDir home(root.filePath(QStringLiteral("home")));
+        QVERIFY(QDir().mkpath(home.path()));
+        // The AppImage mount: usr/bin/speecher with the desktop file and icon
+        // two levels up, as installAppImageIntegration expects.
+        const QString appDir = root.filePath(QStringLiteral("mount"));
+        const QString binDir = appDir + QStringLiteral("/usr/bin");
+        QVERIFY(QDir().mkpath(binDir));
+        const auto writeFile = [](const QString &path, const QByteArray &contents) {
+            QFile file(path);
+            if (!file.open(QIODevice::WriteOnly)) {
+                return false;
+            }
+            return file.write(contents) == contents.size();
+        };
+        QVERIFY(writeFile(appDir + QStringLiteral("/io.github.firemonster612.speecher.desktop"),
+                          "[Desktop Entry]\nExec=speecher\n"));
+        QVERIFY(writeFile(appDir + QStringLiteral("/io.github.firemonster612.speecher.svg"),
+                          "<svg/>"));
+        const QString appImage = root.filePath(QStringLiteral("Speecher.AppImage"));
+        QVERIFY(writeFile(appImage, "image"));
+
+        QString error;
+        QVERIFY2(installAppImageIntegration(home.path(), appImage, binDir, &error), qPrintable(error));
+        const QString desktopFile = home.filePath(
+            QStringLiteral(".local/share/applications/io.github.firemonster612.speecher.desktop"));
+        const QString icon = home.filePath(
+            QStringLiteral(".local/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg"));
+        const QString link = home.filePath(QStringLiteral(".local/bin/speecher"));
+        const QString helper = home.filePath(
+            QStringLiteral(".local/share/speecher/libexec/speecher-ydotool-setup"));
+        QVERIFY(QDir().mkpath(QFileInfo(helper).dir().path()));
+        QVERIFY(writeFile(helper, "helper"));
+        QVERIFY(QFile::exists(desktopFile));
+        QVERIFY(QFile::exists(icon));
+        QVERIFY(QFile::exists(helper));
+        QVERIFY(QFileInfo(link).isSymLink());
+
+        DesktopIntegrationRemoval removal = removeAppImageIntegration(home.path());
+        QCOMPARE(removal.removed,
+                 QStringList({QStringLiteral("app menu entry"),
+                              QStringLiteral("speecher command"),
+                              QStringLiteral("app icon"),
+                              QStringLiteral("local ydotool setup helper")}));
+        QVERIFY(removal.absent.isEmpty());
+        QVERIFY(removal.failed.isEmpty());
+        QVERIFY(!QFile::exists(desktopFile));
+        QVERIFY(!QFile::exists(icon));
+        QVERIFY(!QFile::exists(helper));
+        QVERIFY(!QFileInfo(link).isSymLink() && !QFile::exists(link));
+        // The program file is the user's to delete.
+        QVERIFY(QFile::exists(appImage));
+
+        // A second run finds nothing and says so rather than failing.
+        removal = removeAppImageIntegration(home.path());
+        QVERIFY(removal.removed.isEmpty());
+        QCOMPARE(removal.absent.size(), 4);
+        QVERIFY(removal.failed.isEmpty());
+
+        // A real file where the link belongs is not Speecher's to delete.
+        QVERIFY(writeFile(link, "#!/bin/sh\n"));
+        removal = removeAppImageIntegration(home.path());
+        QCOMPARE(removal.failed.size(), 1);
+        QVERIFY(removal.failed.first().startsWith(QStringLiteral("speecher command")));
+        QVERIFY(QFile::exists(link));
+
+        QVERIFY(QFile::remove(link));
+        const QString renamed = root.filePath(QStringLiteral("dictation"));
+        QVERIFY(writeFile(renamed, "image"));
+        QVERIFY(QFile::link(renamed, link));
+        qputenv("APPIMAGE", QFile::encodeName(renamed));
+        removal = removeAppImageIntegration(home.path());
+        QVERIFY(removal.removed.contains(QStringLiteral("speecher command")));
+        QVERIFY(!QFileInfo(link).isSymLink());
+
+        qunsetenv("APPIMAGE");
+        const QString unrelated = home.filePath(QStringLiteral("SomeoneElse.AppImage"));
+        QVERIFY(writeFile(unrelated, "image"));
+        QVERIFY(QFile::link(unrelated, link));
+        removal = removeAppImageIntegration(home.path());
+        QVERIFY(removal.failed.contains(QStringLiteral(
+            "speecher command: the link does not point to a Speecher AppImage")));
+        QVERIFY(QFileInfo(link).isSymLink());
     }
 
     void appImageDesktopFileExecLinesUseTheRealImagePath()
@@ -368,6 +791,51 @@ private slots:
                             "Exec=\"/opt/Speecher Current.AppImage\" toggle\n"
                             "[Desktop Action Quoted]\n"
                             "Exec=\"/opt/Speecher Current.AppImage\" toggle\n"));
+    }
+
+    void appImageIntegrationReplacesAStaleCommandLink()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString home = directory.filePath(QStringLiteral("home"));
+        const QString appDir = directory.filePath(QStringLiteral("AppDir"));
+        const QString binaryDir = QDir(appDir).filePath(QStringLiteral("usr/bin"));
+        QVERIFY(QDir().mkpath(binaryDir));
+
+        const QString desktop = QDir(appDir).filePath(
+            QStringLiteral("io.github.firemonster612.speecher.desktop"));
+        QFile desktopFile(desktop);
+        QVERIFY(desktopFile.open(QIODevice::WriteOnly));
+        desktopFile.write("[Desktop Entry]\nExec=speecher\n");
+        desktopFile.close();
+
+        const QString icon = QDir(appDir).filePath(
+            QStringLiteral("io.github.firemonster612.speecher.svg"));
+        QFile iconFile(icon);
+        QVERIFY(iconFile.open(QIODevice::WriteOnly));
+        iconFile.write("<svg/>\n");
+        iconFile.close();
+
+        const QString oldImage = directory.filePath(QStringLiteral("old.AppImage"));
+        const QString newImage = directory.filePath(QStringLiteral("new.AppImage"));
+        for (const QString &path : {oldImage, newImage}) {
+            QFile image(path);
+            QVERIFY(image.open(QIODevice::WriteOnly));
+        }
+
+        const QString commandDir = QDir(home).filePath(QStringLiteral(".local/bin"));
+        QVERIFY(QDir().mkpath(commandDir));
+        const QString command = QDir(commandDir).filePath(QStringLiteral("speecher"));
+        QVERIFY(QFile::link(oldImage, command));
+
+        QString error;
+        QVERIFY2(installAppImageIntegration(home, newImage, binaryDir, &error),
+                 qPrintable(error));
+        QCOMPARE(resolvedPath(QFileInfo(command).symLinkTarget()), resolvedPath(newImage));
+        QVERIFY(QFileInfo::exists(QDir(home).filePath(
+            QStringLiteral(".local/share/applications/io.github.firemonster612.speecher.desktop"))));
+        QVERIFY(QFileInfo::exists(QDir(home).filePath(
+            QStringLiteral(".local/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg"))));
     }
 #endif
 
@@ -511,7 +979,6 @@ private slots:
 
         QCOMPARE(controller.platform(), platform.get());
         QCOMPARE(controller.outputSummary(), QStringLiteral("Fake: nothing is delivered"));
-        QCOMPARE(controller.primaryOutputStatus(), QStringLiteral("Fake output ready"));
     }
 
     void shortcutApiDelegatesToTheCompositionsBinder()

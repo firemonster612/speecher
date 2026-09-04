@@ -1,12 +1,18 @@
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
+#include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
+#include "dictation/DictationSession.h"
 #include "frontend/qt/QtFrontEnd.h"
 #include "ui/AppPage.h"
 #include "ui/AppWindow.h"
 #include "ui/DictationPage.h"
 #include "ui/settings/SettingsPageSet.h"
+#include "ui/Theme.h"
+#ifdef Q_OS_LINUX
+#include "ui/setup/LinuxGlobalShortcutSetupPage.h"
+#endif
 
 #include <QComboBox>
 #include <QDir>
@@ -19,6 +25,7 @@
 #include <QClipboard>
 #include <QCheckBox>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QToolButton>
@@ -72,7 +79,7 @@ private slots:
             QStringLiteral("Audio"),
             QStringLiteral("Applications"),
             QStringLiteral("Output"),
-            QStringLiteral("Auth"),
+            QStringLiteral("Accounts"),
             QStringLiteral("Refinement"),
             QStringLiteral("Vocabulary"),
         };
@@ -80,6 +87,48 @@ private slots:
         QCOMPARE(window.pageCount(), 8);
         QCOMPARE(window.pageTitles(), titles);
     }
+
+#ifdef Q_OS_LINUX
+    void generalSettingsContainsTheGlobalShortcutEditor()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+
+        LinuxGlobalShortcutSetupPage *control = nullptr;
+        for (QWidget *widget : window.findChildren<QWidget *>()) {
+            if (auto *page = dynamic_cast<LinuxGlobalShortcutSetupPage *>(widget)) {
+                control = page;
+                break;
+            }
+        }
+        QVERIFY(control);
+        auto *integration = control->findChild<QWidget *>(
+            QStringLiteral("appMenuIntegration"));
+        QVERIFY(integration);
+        QVERIFY(integration->isHidden());
+
+        bool hasFullWidthHeading = false;
+        for (const QLabel *label : window.findChildren<QLabel *>(
+                 QStringLiteral("subsectionLabel"))) {
+            hasFullWidthHeading = hasFullWidthHeading
+                || label->text() == QStringLiteral("Global Shortcut");
+        }
+        QVERIFY(hasFullWidthHeading);
+    }
+
+    void sidebarOffersQuitSpeecher()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        auto *quit = window.findChild<QPushButton *>(QStringLiteral("quitSpeecher"));
+        QVERIFY(quit);
+        QCOMPARE(quit->text(), QStringLiteral("Quit Speecher"));
+        QSignalSpy requested(&controller, SIGNAL(quitRequested()));
+        QVERIFY(requested.isValid());
+        quit->click();
+        QCOMPARE(requested.count(), 1);
+    }
+#endif
 
     void startupDesktopIntegrationWaitsForFirstWindowExposure()
     {
@@ -113,7 +162,31 @@ private slots:
         // pending autosave deterministically instead.
         QCOMPARE(controller.settings()->theme(), QStringLiteral("light"));
         window.flushPendingAutoSave();
-        QCOMPARE(controller.settings()->theme(), QStringLiteral("dark"));
+        QCOMPARE(controller.settings()->theme(),
+                 Theme::overrideHonored() ? QStringLiteral("dark")
+                                          : QStringLiteral("system"));
+    }
+
+    void settingsDeletionCancelsPendingAutoSave()
+    {
+        ApplicationController controller(true);
+        controller.settings()->setTheme(QStringLiteral("light"));
+        AppWindow window(&controller);
+        auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
+        auto *pages = window.findChild<SettingsPageSet *>();
+        QVERIFY(theme);
+        QVERIFY(pages);
+        window.show();
+        QTRY_COMPARE_WITH_TIMEOUT(theme->currentData().toString(), QStringLiteral("light"), 250);
+
+        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
+        pages->prepareForSettingsDeletion();
+        controller.settings()->raw().clear();
+        controller.settings()->raw().sync();
+        window.flushPendingAutoSave();
+
+        QVERIFY(!controller.settings()->raw().contains(QStringLiteral("ui/theme")));
+        QVERIFY(!pages->save(false, false));
     }
 
     void dictationSummaryDefersSavedMicrophoneResolutionUntilShow()
@@ -151,7 +224,47 @@ private slots:
         QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::Refinement);
     }
 
-    void dictationTranscriptCopiesAndUnlocksAfterSession()
+    void dictationSummaryNamesTheShortcutAndOutputInUserTerms()
+    {
+        ApplicationController controller(true);
+        DictationPage page(&controller);
+        page.show();
+        QCoreApplication::processEvents();
+
+        // No Theme card; the slot shows the Global Shortcut and opens General.
+        QVERIFY(!page.findChild<QLabel *>(QStringLiteral("themeSummary")));
+        QLabel *shortcut = page.findChild<QLabel *>(QStringLiteral("shortcutSummary"));
+        QVERIFY(shortcut);
+        const QString expected = controller.globalShortcutDisplay().isEmpty()
+            ? QString()
+            : controller.globalShortcutDisplay();
+        if (!expected.isEmpty()) {
+            QCOMPARE(shortcut->property("fullText").toString(), expected);
+        } else {
+            QVERIFY(!shortcut->property("fullText").toString().isEmpty());
+        }
+        QWidget *card = shortcut->parentWidget();
+        while (card && !card->property("navTarget").isValid()) {
+            card = card->parentWidget();
+        }
+        QVERIFY(card);
+        QSignalSpy navigate(&page, &DictationPage::navigateRequested);
+        QTest::mouseClick(card, Qt::LeftButton);
+        QCOMPARE(navigate.count(), 1);
+        QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::General);
+
+        // The Output card names the chosen method, not the platform's status.
+        QLabel *output = nullptr;
+        for (QLabel *label : page.findChildren<QLabel *>()) {
+            if (label->property("fullText").toString()
+                == OutputMethod::label(controller.settings()->outputMethod())) {
+                output = label;
+            }
+        }
+        QVERIFY(output);
+    }
+
+    void dictationTranscriptStaysReadOnlyAndCopies()
     {
         ApplicationController controller(true);
         DictationPage page(&controller);
@@ -160,19 +273,78 @@ private slots:
 
         auto *transcript = page.findChild<QPlainTextEdit *>(QStringLiteral("dictationTranscript"));
         QVERIFY(transcript);
-        QVERIFY(!transcript->isReadOnly());
+        // Edits would go nowhere, so the transcript never unlocks.
+        QVERIFY(transcript->isReadOnly());
         page.setStatus(QStringLiteral("listening"));
         QVERIFY(transcript->isReadOnly());
-        page.setStatus(QStringLiteral("refining"));
-        QVERIFY(transcript->isReadOnly());
         page.setStatus(QStringLiteral("idle"));
-        QVERIFY(!transcript->isReadOnly());
+        QVERIFY(transcript->isReadOnly());
+        QVERIFY(transcript->textInteractionFlags() & Qt::TextSelectableByMouse);
 
         transcript->setPlainText(QStringLiteral("hello transcript"));
         auto *copy = transcript->findChild<QToolButton *>(QStringLiteral("copyTranscript"));
         QVERIFY(copy);
         copy->click();
         QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("hello transcript"));
+    }
+
+    void dictationHasOneStartControlAndTheHeaderHasNone()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        auto *header = window.findChild<QWidget *>(QStringLiteral("sidebarHeaderStrip"));
+        QVERIFY(header);
+        QVERIFY(header->findChildren<QPushButton *>().isEmpty());
+
+        int startControls = 0;
+        for (const QPushButton *button : window.findChildren<QPushButton *>()) {
+            startControls += button->text() == QStringLiteral("Start Dictation");
+        }
+        QCOMPARE(startControls, 1);
+    }
+
+    void dictationPageKeepsTheLastErrorUntilTheNextSession()
+    {
+        ApplicationController controller(true);
+        DictationPage page(&controller);
+        page.show();
+        QCoreApplication::processEvents();
+
+        auto *error = page.findChild<QLabel *>(QStringLiteral("dictationError"));
+        QVERIFY(error);
+        QVERIFY(!error->isVisible());
+
+        const QString message = QStringLiteral("Claude login expired; sign in again with Claude Code");
+        emit controller.session()->popupErrorRequested(message);
+        page.setStatus(QStringLiteral("error"));
+        QVERIFY(error->isVisible());
+        QCOMPARE(error->text(), message);
+
+        // Leaving the error state does not hide it; only a new session does.
+        page.setStatus(QStringLiteral("idle"));
+        QVERIFY(error->isVisible());
+        page.setStatus(QStringLiteral("listening"));
+        QVERIFY(!error->isVisible());
+        QVERIFY(error->text().isEmpty());
+    }
+
+    void missingThemeIconsLeaveTextRatherThanADocumentIcon()
+    {
+        if (!QIcon::fromTheme(QStringLiteral("edit-paste")).isNull()) {
+            QSKIP("An icon theme is installed, so nothing falls back here");
+        }
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        QVERIFY(navigation);
+        for (int row = 0; row < navigation->count(); ++row) {
+            QVERIFY2(navigation->item(row)->icon().isNull(),
+                     qPrintable(navigation->item(row)->text()));
+        }
+        auto *copy = window.findChild<QToolButton *>(QStringLiteral("copyTranscript"));
+        QVERIFY(copy);
+        QCOMPARE(copy->text(), QStringLiteral("Copy"));
+        QCOMPARE(copy->toolButtonStyle(), Qt::ToolButtonTextOnly);
     }
 
     void dictationPageShowsHonestBusyActions()
@@ -204,7 +376,9 @@ private slots:
         QCOMPARE(theme->currentData().toString(), QStringLiteral("light"));
         theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
         window.close();
-        QCOMPARE(controller.settings()->theme(), QStringLiteral("dark"));
+        QCOMPARE(controller.settings()->theme(),
+                 Theme::overrideHonored() ? QStringLiteral("dark")
+                                          : QStringLiteral("system"));
     }
 
     void savingAnotherPageDoesNotRevertWhatsNewSettings()
@@ -212,8 +386,8 @@ private slots:
         ApplicationController controller(true);
         QWidget parent;
         SchemaContext context;
-        context.currentVersion = QStringLiteral("0.2.0");
-        context.lastSeenVersion = QStringLiteral("0.1.0");
+        context.currentVersion = QStringLiteral("0.1.0");
+        context.lastSeenVersion = QStringLiteral("0.0.0");
         SettingsPageSet pages(&controller, &parent, buildSettingsSchema(context));
         pages.loadBeforeShow();
 
@@ -265,6 +439,23 @@ private slots:
             "[Colors:Header]\nBackgroundNormal=10,20,30\nForegroundNormal=220,221,222\n"
             "[Colors:Header][Inactive]\nBackgroundNormal=40,50,60\nForegroundNormal=180,181,182\n"));
         ApplicationController controller(true);
+
+        // Without the KDE platform theme the body is not drawn in KDE colours,
+        // so the strip stays a shade of the active palette, whatever kdeglobals says.
+        qApp->setProperty("KDE_COLOR_SCHEME_PATH", QVariant());
+        {
+            AppWindow plain(&controller);
+            auto *plainStrip = plain.findChild<QWidget *>(QStringLiteral("sidebarHeaderStrip"));
+            QVERIFY(plainStrip);
+            QCOMPARE(plainStrip->palette().color(QPalette::Active, QPalette::Window),
+                     plain.palette().color(QPalette::Active, QPalette::Window).darker(110));
+        }
+
+        // plasma-integration publishes the loaded scheme on the application.
+        qApp->setProperty("KDE_COLOR_SCHEME_PATH", configPath);
+        const auto clearProperty = qScopeGuard([] {
+            qApp->setProperty("KDE_COLOR_SCHEME_PATH", QVariant());
+        });
         AppWindow window(&controller);
         auto *strip = window.findChild<QWidget *>(QStringLiteral("sidebarHeaderStrip"));
         QVERIFY(strip);
@@ -282,6 +473,23 @@ private slots:
     }
 #endif
 
+    void updateBannerDismissIsACloseToolButton()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        auto *banner = window.findChild<QFrame *>(QStringLiteral("updateBanner"));
+        QVERIFY(banner);
+        auto *dismiss = banner->findChild<QToolButton *>(QStringLiteral("dismissUpdate"));
+        QVERIFY(dismiss);
+        QVERIFY(dismiss->text().isEmpty());
+        QVERIFY(!dismiss->icon().isNull());
+        QCOMPARE(dismiss->toolTip(), QStringLiteral("Dismiss"));
+        // No text-glyph stand-in for a close button remains.
+        for (const QPushButton *button : banner->findChildren<QPushButton *>()) {
+            QVERIFY(button->text() != QStringLiteral("×"));
+        }
+    }
+
     void sidebarShellSupportsPageSearch()
     {
         ApplicationController controller(true);
@@ -290,7 +498,7 @@ private slots:
         auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
         QVERIFY(window.findChild<QSplitter *>() && search);
 
-        search->setText(QStringLiteral("Pre-roll"));
+        search->setText(QStringLiteral("Keep before speech"));
         QVERIFY(navigation && navigation->item(1)->isHidden()
                 && !navigation->item(2)->isHidden());
     }
@@ -318,6 +526,34 @@ private slots:
         QCOMPARE(stack->currentIndex(), 8);
         navigation->setCurrentRow(1);
         QCOMPARE(stack->currentIndex(), 1);
+    }
+
+    void whatsNewOffersAWayBackToThePageItWasOpenedFrom()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        window.show();
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        auto *stack = window.findChild<QStackedWidget *>();
+        auto *whatsNew = window.findChild<QPushButton *>(QStringLiteral("whatsNew"));
+        auto *back = window.findChild<QToolButton *>(QStringLiteral("whatsNewBack"));
+        auto *title = window.findChild<QLabel *>(QStringLiteral("pageTitle"));
+        QVERIFY(navigation && stack && whatsNew && back && title);
+        QVERIFY(!back->isVisible());
+
+        // Opened from General, the same way the update banner opens it.
+        navigation->setCurrentRow(1);
+        whatsNew->click();
+        QCOMPARE(stack->currentIndex(), 8);
+        QCOMPARE(title->text(), QStringLiteral("What's New"));
+        QVERIFY(back->isVisible());
+        QVERIFY(!navigation->currentItem());
+
+        back->click();
+        QCOMPARE(stack->currentIndex(), 1);
+        QCOMPARE(navigation->currentRow(), 1);
+        QCOMPARE(title->text(), QStringLiteral("General"));
+        QVERIFY(!back->isVisible());
     }
 
     void saveReportsFailedValidator()

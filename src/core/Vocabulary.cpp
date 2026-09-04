@@ -4,6 +4,7 @@
 
 #include <QRegularExpression>
 #include <QStringList>
+#include <QTextBoundaryFinder>
 
 #include <algorithm>
 
@@ -72,6 +73,36 @@ QString fieldAt(const QStringList &row, int index)
 }
 
 } // namespace
+
+bool containsVocabularyTerm(const QString &text, const QString &term)
+{
+    const QStringList words = term.simplified().split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    if (words.isEmpty()) {
+        return false;
+    }
+
+    QStringList escapedWords;
+    escapedWords.reserve(words.size());
+    for (const QString &word : words) {
+        escapedWords.append(QRegularExpression::escape(word));
+    }
+    const QRegularExpression expression(
+        escapedWords.join(QStringLiteral("\\s+")),
+        QRegularExpression::CaseInsensitiveOption
+            | QRegularExpression::UseUnicodePropertiesOption);
+    QTextBoundaryFinder boundaries(QTextBoundaryFinder::Word, text);
+    auto matches = expression.globalMatch(text);
+    while (matches.hasNext()) {
+        const QRegularExpressionMatch match = matches.next();
+        boundaries.setPosition(match.capturedStart());
+        const bool startsAtBoundary = boundaries.isAtBoundary();
+        boundaries.setPosition(match.capturedEnd());
+        if (startsAtBoundary && boundaries.isAtBoundary()) {
+            return true;
+        }
+    }
+    return false;
+}
 
 QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &entries)
 {

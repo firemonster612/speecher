@@ -17,8 +17,11 @@ public:
     void bind() override;
     QKeySequence shortcut() const override;
     bool setShortcut(const QKeySequence &shortcut, QString *error = nullptr) override;
+    bool removeRegistration(QString *error = nullptr) override;
 
 private:
+    QAction *makeShortcutAction();
+
     QAction *m_action = nullptr;
 };
 

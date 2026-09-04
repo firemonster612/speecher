@@ -6,6 +6,11 @@
 #include <QProcess>
 #include <QSaveFile>
 #include <QStandardPaths>
+#include <QUuid>
+
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
 
 namespace speecher {
 namespace {
@@ -15,6 +20,14 @@ constexpr auto appId = "io.github.firemonster612.speecher";
 QString localBinaryPath(const QString &homePath)
 {
     return QDir(homePath).filePath(QStringLiteral(".local/bin/speecher"));
+}
+
+QString localDataPath(const QString &homePath)
+{
+    const QString dataHome = qEnvironmentVariable("XDG_DATA_HOME");
+    return dataHome.isEmpty()
+        ? QDir(homePath).filePath(QStringLiteral(".local/share"))
+        : dataHome;
 }
 
 bool readableSource(const QString &path, const QString &artifact, QString *error)
@@ -87,6 +100,32 @@ bool copyFile(const QString &sourcePath, const QString &targetPath, QString *err
     return writeFile(targetPath, source.readAll(), error);
 }
 
+bool replaceCommandLink(const QString &image, const QString &binary, QString *error)
+{
+    const QString staged = binary + QStringLiteral(".new-")
+        + QUuid::createUuid().toString(QUuid::WithoutBraces);
+    if (!QFile::link(image, staged)) {
+        if (error) {
+            *error = QStringLiteral("could not create %1").arg(staged);
+        }
+        return false;
+    }
+
+    const QByteArray stagedName = QFile::encodeName(staged);
+    const QByteArray binaryName = QFile::encodeName(binary);
+    if (std::rename(stagedName.constData(), binaryName.constData()) == 0) {
+        return true;
+    }
+
+    const int renameError = errno;
+    QFile::remove(staged);
+    if (error) {
+        *error = QStringLiteral("could not replace %1: %2")
+                     .arg(binary, QString::fromLocal8Bit(std::strerror(renameError)));
+    }
+    return false;
+}
+
 } // namespace
 
 QString resolvedPath(const QString &path)
@@ -112,7 +151,7 @@ QString globalShortcutInstructionCommand(const QString &homePath,
 {
     if (!appImagePath.isEmpty()
         && appImageIntegrationInstalled(homePath, appImagePath)) {
-        return QStringLiteral("speecher toggle");
+        return quotedExecutablePath(localBinaryPath(homePath)) + QStringLiteral(" toggle");
     }
     if (!appImagePath.isEmpty()) {
         return quotedExecutablePath(appImagePath) + QStringLiteral(" toggle");
@@ -236,19 +275,10 @@ bool installAppImageIntegration(const QString &homePath,
         return false;
     }
 
-    if (existing.isSymLink() && resolvedPath(existing.symLinkTarget()) != image) {
-        if (!QFile::remove(binary)) {
-            if (error) {
-                *error = QStringLiteral("Command link installation failed: could not replace %1")
-                             .arg(binary);
-            }
-            return false;
-        }
-    }
-    if (!QFileInfo(binary).isSymLink() && !QFile::link(image, binary)) {
+    if ((!existing.isSymLink() || resolvedPath(existing.symLinkTarget()) != image)
+        && !replaceCommandLink(image, binary, &artifactError)) {
         if (error) {
-            *error = QStringLiteral("Command link installation failed: could not create %1")
-                         .arg(binary);
+            *error = QStringLiteral("Command link installation failed: %1").arg(artifactError);
         }
         return false;
     }
@@ -259,6 +289,68 @@ bool installAppImageIntegration(const QString &homePath,
         QProcess::startDetached(updater, {applicationsDir});
     }
     return true;
+}
+
+DesktopIntegrationRemoval removeAppImageIntegration(const QString &homePath)
+{
+    DesktopIntegrationRemoval result;
+    const QDir home(homePath);
+    const QString applicationsDir = home.filePath(QStringLiteral(".local/share/applications"));
+    const QString desktopFile = QDir(applicationsDir).filePath(
+        QStringLiteral("%1.desktop").arg(QString::fromLatin1(appId)));
+    const QString icon = home.filePath(
+        QStringLiteral(".local/share/icons/hicolor/scalable/apps/%1.svg")
+            .arg(QString::fromLatin1(appId)));
+    const QString link = localBinaryPath(homePath);
+    const QString helper = QDir(localDataPath(homePath)).filePath(
+        QStringLiteral("speecher/libexec/speecher-ydotool-setup"));
+    const QString runningAppImage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
+
+    const auto removeItem = [&result, &runningAppImage](const QString &name,
+                                                       const QString &path,
+                                                       bool onlyLink) {
+        const QFileInfo info(path);
+        if (!info.exists() && !info.isSymLink()) {
+            result.absent.append(name);
+            return;
+        }
+        if (onlyLink && !info.isSymLink()) {
+            result.failed.append(
+                QStringLiteral("%1: something other than Speecher's link is at %2").arg(name, path));
+            return;
+        }
+        if (onlyLink) {
+            const QString target = info.symLinkTarget();
+            const QString targetName = QFileInfo(target).fileName();
+            const bool isSpeecherAppImage = runningAppImage.isEmpty()
+                ? targetName.contains(QStringLiteral("Speecher"), Qt::CaseInsensitive)
+                    && targetName.endsWith(QStringLiteral(".AppImage"), Qt::CaseInsensitive)
+                : resolvedPath(target) == resolvedPath(runningAppImage);
+            if (!isSpeecherAppImage) {
+                result.failed.append(
+                    QStringLiteral("%1: the link does not point to a Speecher AppImage").arg(name));
+                return;
+            }
+        }
+        if (QFile::remove(path)) {
+            result.removed.append(name);
+        } else {
+            result.failed.append(QStringLiteral("%1: could not delete %2").arg(name, path));
+        }
+    };
+    removeItem(QStringLiteral("app menu entry"), desktopFile, false);
+    removeItem(QStringLiteral("speecher command"), link, true);
+    removeItem(QStringLiteral("app icon"), icon, false);
+    removeItem(QStringLiteral("local ydotool setup helper"), helper, false);
+
+    if (!result.removed.isEmpty()) {
+        const QString updater = QStandardPaths::findExecutable(
+            QStringLiteral("update-desktop-database"));
+        if (!updater.isEmpty()) {
+            QProcess::startDetached(updater, {applicationsDir});
+        }
+    }
+    return result;
 }
 
 } // namespace speecher

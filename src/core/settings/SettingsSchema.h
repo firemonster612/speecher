@@ -102,7 +102,10 @@ struct NumberRange {
 // meaningful when it can. Grows a member when a row needs one, not before.
 struct Capabilities {
     bool targetAccessibility = false;
-    bool isAppImage = false;
+    bool automaticUpdateDownloads = false;
+    // The platform theme honours a Light or Dark request. Assumed until a
+    // request is seen to be ignored.
+    bool colorSchemeOverride = true;
 };
 
 struct SettingsRow {
@@ -125,8 +128,13 @@ struct SettingsRow {
     int contentWidthHint = 0;
     // Shown on the control itself, where help sits beneath the label.
     QString tooltip;
-    // Replaces tooltip while enabled says no.
+    // Replaces tooltip while enabled says no. A front end shows it beside the
+    // disabled control, not only on hover.
     QString disabledHelp;
+    // An action a front end can run to lift the gate, with the caption of the
+    // control that runs it. Empty when nothing in the app can.
+    QString disabledAction;
+    QString disabledActionLabel;
     // Rows that name the same group render inside one container and are enabled
     // or disabled together, so they must all declare the same gate.
     QString groupId;
@@ -184,7 +192,6 @@ struct SchemaContext {
     QList<RowOption> speechProviders;
     QList<RefinementProvider> refinementProviders;
     std::function<QList<RowOption>()> audioInputDevices;
-    QString primaryOutputStatus;
     // This build can set up a virtual keyboard, so the Output page carries the
     // Advanced section that drives it.
     bool virtualKeyboardSetup = false;
@@ -197,6 +204,10 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context);
 // Nightly metadata does not make a new Stable Release, and dotted components
 // are numbers rather than text (0.10 follows 0.2).
 int compareBaseVersions(const QString &left, const QString &right);
+
+// The one sentence that describes the restore-clipboard setting, wherever it
+// is offered (Output page, setup assistant).
+QString restoreClipboardDescription();
 
 // The microphone choice as it is offered: a system-default entry ahead of the
 // devices that exist, and a disabled placeholder standing in for a saved device

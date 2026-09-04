@@ -4,6 +4,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 #include <memory>
 
@@ -24,6 +25,7 @@ public:
     static bool isWaylandSession();
     static bool canSnapshot();
     static bool readText(QString *text, QString *error = nullptr);
+    static QStringList snapshotMimeTypes(const QStringList &offeredMimeTypes);
     static bool capture(ClipboardSnapshot *snapshot, QString *error = nullptr);
     static bool restore(const ClipboardSnapshot &snapshot, QString *error = nullptr);
 

@@ -109,13 +109,6 @@ QString MacComposition::outputSummary() const
     return QStringLiteral("Automatic: keyboard paste (Cmd+V), Qt clipboard fallback");
 }
 
-QString MacComposition::primaryOutputStatus() const
-{
-    return MacPasteDelivery::isAvailable()
-        ? QStringLiteral("Keyboard paste available")
-        : QStringLiteral("Qt clipboard only until Accessibility is granted");
-}
-
 QString MacComposition::ipcListenName() const
 {
     return appSocketName();

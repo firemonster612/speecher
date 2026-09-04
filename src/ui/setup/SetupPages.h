@@ -25,6 +25,10 @@ class PlatformComposition;
 class ProviderRegistry;
 class SettingsStore;
 
+// The margin every assistant page keeps around its content, so a page built
+// elsewhere can match when it is shown as one.
+int setupPageMargin();
+
 class WelcomeSetupPage final : public QWidget {
 public:
     explicit WelcomeSetupPage(QWidget *parent = nullptr);
@@ -200,13 +204,17 @@ protected:
 
 private:
     ApplicationController &m_controller;
+#ifdef Q_OS_LINUX
+    void updateLinuxShortcutInstruction();
+    QLabel *m_manualCommand = nullptr;
+#endif
 #ifdef Q_OS_MACOS
     QCheckBox *m_createShortcut = nullptr;
     QKeySequenceEdit *m_shortcut = nullptr;
-    QLabel *m_shortcutStatus;
     bool m_shortcutFailureAcknowledged = false;
     bool m_shortcutLoaded = false;
 #endif
+    QLabel *m_shortcutStatus;
     QLabel *m_signInNote;
 };
 

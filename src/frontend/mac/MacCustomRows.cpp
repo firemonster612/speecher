@@ -3,6 +3,7 @@
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "core/Target.h"
+#include "providers/ClaudeCredentials.h"
 #include "providers/CliProxyCredentials.h"
 
 namespace speecher::mac {
@@ -94,17 +95,17 @@ QList<RowOption> customRowOptions(const QString &rowId,
     if (rowId == QStringLiteral("openAiAuthMode")) {
         return {
             {QStringLiteral("auto"), QStringLiteral("Automatic")},
-            {QStringLiteral("codex_api_key"), QStringLiteral("Codex API key")},
-            {QStringLiteral("codex_oauth"), QStringLiteral("Codex OAuth")},
-            {QStringLiteral("env"), QStringLiteral("OPENAI_API_KEY")},
-            {QStringLiteral("settings"), QStringLiteral("App settings key")},
-            {kCliProxyAuthMode, QStringLiteral("CLI Proxy API")},
+            {QStringLiteral("codex_api_key"), QStringLiteral("API key from the Codex app")},
+            {QStringLiteral("codex_oauth"), QStringLiteral("ChatGPT sign-in from the Codex app")},
+            {QStringLiteral("env"), QStringLiteral("API key from the environment")},
+            {QStringLiteral("settings"), QStringLiteral("API key saved in Speecher")},
+            {kCliProxyAuthMode, QStringLiteral("CLI Proxy API account")},
         };
     }
     if (rowId == QStringLiteral("anthropicAuthMode")) {
         return {
-            {QStringLiteral("oauth"), QStringLiteral("Claude OAuth")},
-            {kCliProxyAuthMode, QStringLiteral("CLI Proxy API")},
+            {QStringLiteral("oauth"), QStringLiteral("Claude Code sign-in")},
+            {kCliProxyAuthMode, QStringLiteral("CLI Proxy API account")},
         };
     }
     if (rowId == QStringLiteral("openAiCliproxyAccount")) {
@@ -114,6 +115,18 @@ QList<RowOption> customRowOptions(const QString &rowId,
         return cliproxyAccounts(QStringLiteral("claude"), draft.refinement.anthropicCliproxyAccount, store);
     }
     return {};
+}
+
+QString anthropicCredentialStatus(const AppSettings &draft,
+                                  const SettingsStore &store)
+{
+    if (draft.refinement.anthropicAuthMode == kCliProxyAuthMode) {
+        return {};
+    }
+    const ClaudeCredentialResult credentials = ClaudeCredentials::load(
+        store.claudeCredentialsPath(), false);
+    return credentials.ok ? QStringLiteral("Signed in with Claude Code")
+                          : credentials.error;
 }
 
 CollectionDescriptor writingProfileGrid()

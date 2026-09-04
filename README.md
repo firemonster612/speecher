@@ -14,13 +14,13 @@ Sign in to at least one transcription service: Claude Code for Claude Voice, or 
 
 ```sh
 # Arch
-sudo pacman -S cmake ninja gcc qt6-base qt6-multimedia qt6-websockets qt6-wayland layer-shell-qt qtkeychain-qt6 wl-clipboard at-spi2-core
+sudo pacman -S cmake ninja gcc qt6-base qt6-multimedia qt6-websockets qt6-wayland layer-shell-qt qtkeychain-qt6 wl-clipboard at-spi2-core kglobalaccel kwidgetsaddons kcolorscheme
 
 # Debian
-sudo apt install cmake ninja-build g++ qt6-base-dev qt6-multimedia-dev qt6-websockets-dev qt6-wayland liblayershellqtinterface-dev qtkeychain-qt6-dev wl-clipboard libatspi2.0-dev
+sudo apt install cmake ninja-build g++ qt6-base-dev qt6-multimedia-dev qt6-websockets-dev qt6-wayland liblayershellqtinterface-dev qtkeychain-qt6-dev wl-clipboard libatspi2.0-dev libkf6globalaccel-dev libkf6widgetsaddons-dev libkf6colorscheme-dev
 
 # Fedora
-sudo dnf install cmake ninja-build gcc-c++ qt6-qtbase-devel qt6-qtmultimedia-devel qt6-qtwebsockets-devel qt6-qtwayland layer-shell-qt-devel qtkeychain-qt6-devel wl-clipboard at-spi2-core-devel
+sudo dnf install cmake ninja-build gcc-c++ qt6-qtbase-devel qt6-qtmultimedia-devel qt6-qtwebsockets-devel qt6-qtwayland layer-shell-qt-devel qtkeychain-qt6-devel wl-clipboard at-spi2-core-devel kf6-kglobalaccel-devel kf6-kwidgetsaddons-devel kf6-kcolorscheme-devel
 
 # macOS
 brew install cmake ninja pkgconf qt qtkeychain
@@ -70,7 +70,7 @@ On macOS, open the DMG and drag `speecher.app` to Applications. On macOS 15 and 
 xattr -dr com.apple.quarantine /Applications/speecher.app
 ```
 
-The app is unsigned because there is no Apple Developer account. Later updates are verified with Sparkle EdDSA signatures.
+The app is not Developer ID signed or notarized because there is no Apple Developer account. Releases use one stable self-signed identity so Accessibility grants survive updates. Sparkle verifies later updates with EdDSA signatures.
 
 The default Update Channel is Stable Release. Nightly Builds are republished from every push to `master`, not on a nightly schedule. Switch channels in **Settings > General > Updates**.
 
@@ -78,7 +78,9 @@ The default Update Channel is Stable Release. Nightly Builds are republished fro
 
 On macOS, Speecher registers its own global hotkey — set it in the setup assistant or Settings, including press-and-hold push-to-talk. Nothing to configure outside the app.
 
-On Linux the compositor owns global shortcuts, so bind a key to the CLI. On KDE Plasma:
+On KDE Plasma and desktops with a Global Shortcuts portal, Speecher registers the shortcut automatically. Set it in the setup assistant or Settings.
+
+If your desktop does not support either method, bind a key to the CLI manually:
 
 ```sh
 /path/to/speecher toggle
@@ -95,6 +97,8 @@ If you installed an AppImage:
 ```sh
 /path/to/Speecher-x86_64.AppImage toggle
 ```
+
+On Plasma, the manual fallback is:
 
 1. Open `System Settings > Keyboard > Shortcuts`.
 2. Select `Add New > Command or Script`.
@@ -123,7 +127,9 @@ ctest --test-dir build --output-on-failure
 
 On macOS the Makefile adds the Homebrew Qt paths for you; the raw CMake equivalent is in `docs/macos.md`.
 
-Required Qt modules: Core, Widgets, Network, Multimedia, and Qt WebSockets. On Linux, AT-SPI development files are used for target discovery, context, and paste verification; on macOS the same jobs go through the Accessibility API and need no extra packages.
+Required Qt modules are Core, Widgets, Network, and Multimedia. Linux builds require the KDE GlobalAccel, WidgetsAddons, ColorScheme, and LayerShellQt development packages by default. Pass `-DSPEECHER_WITH_KDE=OFF` only for a reduced development build without the complete Plasma integration.
+
+CMake prints a `Speecher feature summary` for KDE, LayerShellQt, Qt WebSockets, QtKeychain, AT-SPI, and the Wayland helper. A missing optional dependency appears as `0` there and omits that integration. Release AppImages use `SPEECHER_RELEASE_BUILD=ON`, which rejects every missing release integration. AT-SPI supplies target discovery, context, and paste verification on Linux; macOS uses the Accessibility API instead.
 
 ## AppImage
 
@@ -134,6 +140,8 @@ packaging/build-appimage.sh
 ```
 
 The script creates `dist/Speecher-x86_64.AppImage`. It uses CMake install output and `appimagetool`. If `wl-copy` is installed on the build machine, it is bundled into the AppImage by default; pass `--no-bundle-wl-clipboard` to keep wl-clipboard external.
+
+Requirements: Speecher's AppImage requires glibc 2.41 or newer (Debian 13, Fedora 42, Ubuntu 25.04, or later).
 
 ## DMG
 
@@ -158,6 +166,10 @@ open build/speecher.app     # macOS
 The four CLI commands contact the running app through a per-user socket (on macOS the binary lives at `build/speecher.app/Contents/MacOS/speecher`). `toggle` switches recording on or off, `start` only starts it, `stop` only stops it, and `status` prints the current state. If `toggle` or `start` can't find a running instance, it starts a popup-only background process and begins listening. Calling `stop` or `status` without a running instance prints `idle`.
 
 On Linux, Speecher uses one window with a KDE-style sidebar, searchable settings pages, and dictation controls; `speecher settings` opens it on General settings. On macOS, Speecher is a menu bar app: dictation lives in the menu bar item and a floating panel, and settings open in a native window from the menu bar, the Dock, or ⌘,.
+
+## Uninstall
+
+Remove Speecher's shortcut in your desktop's keyboard settings. If you added an AppImage to the app menu, delete `~/.local/bin/speecher`, `~/.local/share/applications/io.github.firemonster612.speecher.desktop`, and `~/.local/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg`.
 
 ## Transcription
 

@@ -13,22 +13,77 @@ NSString *const nightlyFeedUrl = @"https://firemonster612.github.io/speecher/app
 } // namespace
 } // namespace speecher
 
-@interface SpeecherSparkleDelegate : NSObject <SPUUpdaterDelegate>
-- (void)setNightly:(BOOL)nightly;
+@interface SpeecherSparkleDelegate : NSObject <SPUUpdaterDelegate, SUVersionComparison>
+- (void)setNightly:(BOOL)nightly allowStableReplacement:(BOOL)allowStableReplacement;
 @end
 
 @implementation SpeecherSparkleDelegate {
     BOOL _nightly;
+    BOOL _allowStableReplacement;
+    NSString *_runningVersion;
 }
 
-- (void)setNightly:(BOOL)nightly
+- (instancetype)init
+{
+    self = [super init];
+    if (self) {
+        _runningVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"];
+    }
+    return self;
+}
+
+- (void)setNightly:(BOOL)nightly allowStableReplacement:(BOOL)allowStableReplacement
 {
     _nightly = nightly;
+    _allowStableReplacement = allowStableReplacement;
 }
 
-- (NSString *)feedURLStringForUpdater:(SPUUpdater *)updater
+- (SUAppcastItem *)bestValidUpdateInAppcast:(SUAppcast *)appcast
+                                  forUpdater:(SPUUpdater *)_updater
 {
-    Q_UNUSED(updater);
+    return _allowStableReplacement ? appcast.items.firstObject : nil;
+}
+
+- (id<SUVersionComparison>)versionComparatorForUpdater:(SPUUpdater *)_updater
+{
+    return self;
+}
+
+- (NSComparisonResult)compareVersion:(NSString *)versionA toVersion:(NSString *)versionB
+{
+    if (_allowStableReplacement && ![versionA isEqualToString:versionB]) {
+        if ([versionB isEqualToString:_runningVersion]) {
+            return NSOrderedDescending;
+        }
+        if ([versionA isEqualToString:_runningVersion]) {
+            return NSOrderedAscending;
+        }
+    }
+    return [[SUStandardVersionComparator defaultComparator]
+        compareVersion:versionA
+        toVersion:versionB];
+}
+
+- (void)updaterDidNotFindUpdate:(SPUUpdater *)_updater
+{
+    _allowStableReplacement = NO;
+}
+
+- (void)updater:(SPUUpdater *)_updater
+        userDidMakeChoice:(SPUUserUpdateChoice)_choice
+        forUpdate:(SUAppcastItem *)_updateItem
+        state:(SPUUserUpdateState *)_state
+{
+    _allowStableReplacement = NO;
+}
+
+- (void)updater:(SPUUpdater *)_updater didAbortWithError:(NSError *)_error
+{
+    _allowStableReplacement = NO;
+}
+
+- (NSString *)feedURLStringForUpdater:(SPUUpdater *)_updater
+{
     return _nightly ? speecher::nightlyFeedUrl : speecher::stableFeedUrl;
 }
 
@@ -79,11 +134,18 @@ QString MacSparkleUpdater::availableVersion() const { return {}; }
 int MacSparkleUpdater::downloadPercent() const { return 0; }
 QString MacSparkleUpdater::errorMessage() const { return {}; }
 bool MacSparkleUpdater::isAppImage() const { return false; }
+bool MacSparkleUpdater::supportsAutomaticDownloads() const { return true; }
 bool MacSparkleUpdater::bannerVisible() const { return false; }
+bool MacSparkleUpdater::repeatedAutomaticCheckFailure() const { return false; }
+bool MacSparkleUpdater::manualInstallRequired() const { return false; }
+bool MacSparkleUpdater::stableReplacementAvailable() const { return false; }
 
 void MacSparkleUpdater::checkForUpdates(UpdateChannel channel)
 {
-    [m_native->delegate setNightly:channel == UpdateChannel::Nightly];
+    const bool nightly = channel == UpdateChannel::Nightly;
+    const bool stableReplacement = !nightly
+        && currentVersion().contains(QStringLiteral("-nightly"));
+    [m_native->delegate setNightly:nightly allowStableReplacement:stableReplacement];
     [m_native->controller checkForUpdates:nil];
 }
 
@@ -92,7 +154,9 @@ void MacSparkleUpdater::dismissAvailableVersion() {}
 
 void MacSparkleUpdater::applySettings()
 {
-    [m_native->delegate setNightly:m_settings->updateChannel() == UpdateChannel::Nightly];
+    [m_native->delegate
+        setNightly:m_settings->updateChannel() == UpdateChannel::Nightly
+        allowStableReplacement:NO];
     SPUUpdater *updater = m_native->controller.updater;
     updater.automaticallyChecksForUpdates = m_settings->autoCheckUpdates();
     updater.automaticallyDownloadsUpdates = m_settings->autoInstallUpdates();
