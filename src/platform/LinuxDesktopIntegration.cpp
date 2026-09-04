@@ -6,6 +6,11 @@
 #include <QProcess>
 #include <QSaveFile>
 #include <QStandardPaths>
+#include <QUuid>
+
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
 
 namespace speecher {
 namespace {
@@ -85,6 +90,32 @@ bool copyFile(const QString &sourcePath, const QString &targetPath, QString *err
         return false;
     }
     return writeFile(targetPath, source.readAll(), error);
+}
+
+bool replaceCommandLink(const QString &image, const QString &binary, QString *error)
+{
+    const QString staged = binary + QStringLiteral(".new-")
+        + QUuid::createUuid().toString(QUuid::WithoutBraces);
+    if (!QFile::link(image, staged)) {
+        if (error) {
+            *error = QStringLiteral("could not create %1").arg(staged);
+        }
+        return false;
+    }
+
+    const QByteArray stagedName = QFile::encodeName(staged);
+    const QByteArray binaryName = QFile::encodeName(binary);
+    if (std::rename(stagedName.constData(), binaryName.constData()) == 0) {
+        return true;
+    }
+
+    const int renameError = errno;
+    QFile::remove(staged);
+    if (error) {
+        *error = QStringLiteral("could not replace %1: %2")
+                     .arg(binary, QString::fromLocal8Bit(std::strerror(renameError)));
+    }
+    return false;
 }
 
 } // namespace
@@ -236,19 +267,10 @@ bool installAppImageIntegration(const QString &homePath,
         return false;
     }
 
-    if (existing.isSymLink() && resolvedPath(existing.symLinkTarget()) != image) {
-        if (!QFile::remove(binary)) {
-            if (error) {
-                *error = QStringLiteral("Command link installation failed: could not replace %1")
-                             .arg(binary);
-            }
-            return false;
-        }
-    }
-    if (!QFileInfo(binary).isSymLink() && !QFile::link(image, binary)) {
+    if ((!existing.isSymLink() || resolvedPath(existing.symLinkTarget()) != image)
+        && !replaceCommandLink(image, binary, &artifactError)) {
         if (error) {
-            *error = QStringLiteral("Command link installation failed: could not create %1")
-                         .arg(binary);
+            *error = QStringLiteral("Command link installation failed: %1").arg(artifactError);
         }
         return false;
     }

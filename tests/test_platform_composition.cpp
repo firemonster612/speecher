@@ -616,6 +616,51 @@ private slots:
                             "[Desktop Action Quoted]\n"
                             "Exec=\"/opt/Speecher Current.AppImage\" toggle\n"));
     }
+
+    void appImageIntegrationReplacesAStaleCommandLink()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString home = directory.filePath(QStringLiteral("home"));
+        const QString appDir = directory.filePath(QStringLiteral("AppDir"));
+        const QString binaryDir = QDir(appDir).filePath(QStringLiteral("usr/bin"));
+        QVERIFY(QDir().mkpath(binaryDir));
+
+        const QString desktop = QDir(appDir).filePath(
+            QStringLiteral("io.github.firemonster612.speecher.desktop"));
+        QFile desktopFile(desktop);
+        QVERIFY(desktopFile.open(QIODevice::WriteOnly));
+        desktopFile.write("[Desktop Entry]\nExec=speecher\n");
+        desktopFile.close();
+
+        const QString icon = QDir(appDir).filePath(
+            QStringLiteral("io.github.firemonster612.speecher.svg"));
+        QFile iconFile(icon);
+        QVERIFY(iconFile.open(QIODevice::WriteOnly));
+        iconFile.write("<svg/>\n");
+        iconFile.close();
+
+        const QString oldImage = directory.filePath(QStringLiteral("old.AppImage"));
+        const QString newImage = directory.filePath(QStringLiteral("new.AppImage"));
+        for (const QString &path : {oldImage, newImage}) {
+            QFile image(path);
+            QVERIFY(image.open(QIODevice::WriteOnly));
+        }
+
+        const QString commandDir = QDir(home).filePath(QStringLiteral(".local/bin"));
+        QVERIFY(QDir().mkpath(commandDir));
+        const QString command = QDir(commandDir).filePath(QStringLiteral("speecher"));
+        QVERIFY(QFile::link(oldImage, command));
+
+        QString error;
+        QVERIFY2(installAppImageIntegration(home, newImage, binaryDir, &error),
+                 qPrintable(error));
+        QCOMPARE(resolvedPath(QFileInfo(command).symLinkTarget()), resolvedPath(newImage));
+        QVERIFY(QFileInfo::exists(QDir(home).filePath(
+            QStringLiteral(".local/share/applications/io.github.firemonster612.speecher.desktop"))));
+        QVERIFY(QFileInfo::exists(QDir(home).filePath(
+            QStringLiteral(".local/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg"))));
+    }
 #endif
 
     void correctionTrackerSettlesSamplesWithoutRealTimeWaits()
