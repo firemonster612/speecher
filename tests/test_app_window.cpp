@@ -183,7 +183,7 @@ private slots:
         QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::Refinement);
     }
 
-    void dictationTranscriptCopiesAndUnlocksAfterSession()
+    void dictationTranscriptStaysReadOnlyAndCopies()
     {
         ApplicationController controller(true);
         DictationPage page(&controller);
@@ -192,13 +192,13 @@ private slots:
 
         auto *transcript = page.findChild<QPlainTextEdit *>(QStringLiteral("dictationTranscript"));
         QVERIFY(transcript);
-        QVERIFY(!transcript->isReadOnly());
+        // Edits would go nowhere, so the transcript never unlocks.
+        QVERIFY(transcript->isReadOnly());
         page.setStatus(QStringLiteral("listening"));
         QVERIFY(transcript->isReadOnly());
-        page.setStatus(QStringLiteral("refining"));
-        QVERIFY(transcript->isReadOnly());
         page.setStatus(QStringLiteral("idle"));
-        QVERIFY(!transcript->isReadOnly());
+        QVERIFY(transcript->isReadOnly());
+        QVERIFY(transcript->textInteractionFlags() & Qt::TextSelectableByMouse);
 
         transcript->setPlainText(QStringLiteral("hello transcript"));
         auto *copy = transcript->findChild<QToolButton *>(QStringLiteral("copyTranscript"));

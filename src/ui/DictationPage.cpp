@@ -187,6 +187,8 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     heroLayout->addWidget(m_waveform, 0, Qt::AlignHCenter);
 
     m_transcript->setObjectName(QStringLiteral("dictationTranscript"));
+    // A record of what was delivered: edits here would go nowhere, so the
+    // text stays read-only and selectable in every state.
     m_transcript->setReadOnly(true);
     m_transcript->setPlaceholderText(
         QStringLiteral("What you say appears here while you dictate."));
@@ -360,11 +362,6 @@ void DictationPage::applyState(const QString &stateName)
     if (!active) {
         m_waveform->setLevel(0.0f);
     }
-    // The transcript is live output while a session runs; once the session is
-    // over the delivered text stays and can be edited, selected, and copied.
-    const bool sessionRunning = active || refining
-        || state == QStringLiteral("stopping") || state == QStringLiteral("delivering");
-    m_transcript->setReadOnly(sessionRunning);
 }
 
 void DictationPage::setDisplayStatus(const QString &status)
