@@ -15,6 +15,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QIcon>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTextStream>
@@ -122,6 +123,11 @@ int main(int argc, char **argv)
     }
 
     QApplication app(argc, argv);
+#ifdef Q_OS_LINUX
+    if (!qEnvironmentVariableIsEmpty("APPIMAGE")) {
+        QIcon::setFallbackThemeName(QStringLiteral("breeze"));
+    }
+#endif
     // A second store, because the theme has to be applied before the first
     // widget exists and the controller's store is not built yet.
     SettingsStore startupSettings;

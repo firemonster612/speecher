@@ -29,12 +29,22 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Read runner user ID
+        id: runner-user
+        run: echo "id=$(id -u)" >> "$GITHUB_OUTPUT"
+
       - name: Build Debian trixie image
-        run: |
-          docker build \
-            --build-arg USER_ID="$(id -u)" \
-            --file packaging/appimage/Dockerfile \
-            --tag speecher-appimage:trixie .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packaging/appimage/Dockerfile
+          load: true
+          tags: speecher-appimage:trixie
+          build-args: USER_ID=${{ steps.runner-user.outputs.id }}
+          cache-from: type=gha,scope=speecher-appimage-trixie
+          cache-to: type=gha,mode=max,scope=speecher-appimage-trixie
 
       - name: Configure
         run: |

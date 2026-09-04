@@ -74,7 +74,10 @@ require_tool() {
 
 require_tool cmake
 require_tool appimagetool
+require_tool file
 require_tool ldd
+require_tool ninja
+require_tool patchelf
 
 mkdir -p "$OUTPUT_DIR"
 rm -rf "$APPDIR_PATH"
@@ -228,6 +231,23 @@ if ! cmp -s "$APPDIR_PATH/usr/lib/libQt6Core.so.6" "$(readlink -f "$QT_LIB_DIR/l
   exit 1
 fi
 
+set_runpath_for_tree() {
+  local tree="$1"
+  local runpath="$2"
+  [[ -d "$tree" ]] || return 0
+  while IFS= read -r -d '' elf; do
+    if [[ "$(file -b "$elf")" == ELF* ]]; then
+      patchelf --set-rpath "$runpath" "$elf"
+    fi
+  done < <(find "$tree" -type f -print0)
+}
+
+echo "Writing relative RUNPATHs"
+set_runpath_for_tree "$APPDIR_PATH/usr/bin" '$ORIGIN/../lib'
+set_runpath_for_tree "$APPDIR_PATH/usr/libexec/speecher" '$ORIGIN/../../lib'
+set_runpath_for_tree "$APPDIR_PATH/usr/plugins" '$ORIGIN/../../lib'
+set_runpath_for_tree "$APPDIR_PATH/usr/lib" '$ORIGIN'
+
 echo "Writing AppImage runtime files"
 cat > "$APPDIR_PATH/usr/bin/qt.conf" <<'EOF'
 [Paths]
@@ -237,11 +257,18 @@ EOF
 cat > "$APPDIR_PATH/AppRun" <<'EOF'
 #!/usr/bin/env bash
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GLIBC_VERSION="$(getconf GNU_LIBC_VERSION 2>/dev/null || true)"
+GLIBC_VERSION="${GLIBC_VERSION##* }"
+if [[ "$GLIBC_VERSION" =~ ^([0-9]+)\.([0-9]+) ]] \
+    && (( BASH_REMATCH[1] < 2 || (BASH_REMATCH[1] == 2 && BASH_REMATCH[2] < 41) )); then
+  echo "Speecher's AppImage requires glibc 2.41 or newer (Debian 13, Fedora 42, Ubuntu 25.04, or later)." >&2
+  exit 1
+fi
 export PATH="$HERE/usr/bin:${PATH:-}"
-export LD_LIBRARY_PATH="$HERE/usr/lib:${LD_LIBRARY_PATH:-}"
 export QT_PLUGIN_PATH="$HERE/usr/plugins"
 export QT_QPA_PLATFORM_PLUGIN_PATH="$HERE/usr/plugins/platforms"
 export XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:$HERE/usr/share"
+# Keep Plasma's native platform integration even when desktop detection is incomplete.
 if [[ -z "${QT_QPA_PLATFORMTHEME:-}" && "${XDG_CURRENT_DESKTOP:-}" == *KDE* ]]; then
   export QT_QPA_PLATFORMTHEME=kde
 fi
