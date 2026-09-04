@@ -279,7 +279,7 @@ private slots:
         QCOMPARE(settings.audioVadEnabled(), true);
         QCOMPARE(settings.audioPreRollMs(), 1500);
         QCOMPARE(settings.audioPostRollMs(), 0);
-        QCOMPARE(settings.audioReadinessTimeoutMs(), 150);
+        QCOMPARE(settings.audioReadinessTimeoutMs(), 500);
         QCOMPARE(settings.audioVadThresholdPercent(), 20);
     }
 
@@ -622,6 +622,10 @@ private slots:
         QCOMPARE(snapshot.audio.preRollMs, 300);
         QCOMPARE(snapshot.audio.postRollMs, 250);
         QCOMPARE(snapshot.audio.readinessTimeoutMs, 700);
+
+        // Values stored by older builds at the old 150 ms floor load at the new floor.
+        settings.setAudioCaptureSettings({QStringLiteral("device-1"), QStringLiteral("warm"), true, 300, 250, 150, 4});
+        QCOMPARE(settings.snapshot().audio.readinessTimeoutMs, 500);
         QCOMPARE(snapshot.audio.vadThresholdPercent, 4);
         QCOMPARE(snapshot.bindings.size(), 1);
         QCOMPARE(snapshot.bindings.at(0).replacement, QStringLiteral("efox@example.com"));
