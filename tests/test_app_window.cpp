@@ -23,6 +23,7 @@
 #include <QClipboard>
 #include <QCheckBox>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QToolButton>
@@ -246,6 +247,25 @@ private slots:
         page.setStatus(QStringLiteral("listening"));
         QVERIFY(!error->isVisible());
         QVERIFY(error->text().isEmpty());
+    }
+
+    void missingThemeIconsLeaveTextRatherThanADocumentIcon()
+    {
+        if (!QIcon::fromTheme(QStringLiteral("edit-paste")).isNull()) {
+            QSKIP("An icon theme is installed, so nothing falls back here");
+        }
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        QVERIFY(navigation);
+        for (int row = 0; row < navigation->count(); ++row) {
+            QVERIFY2(navigation->item(row)->icon().isNull(),
+                     qPrintable(navigation->item(row)->text()));
+        }
+        auto *copy = window.findChild<QToolButton *>(QStringLiteral("copyTranscript"));
+        QVERIFY(copy);
+        QCOMPARE(copy->text(), QStringLiteral("Copy"));
+        QCOMPARE(copy->toolButtonStyle(), Qt::ToolButtonTextOnly);
     }
 
     void dictationPageShowsHonestBusyActions()

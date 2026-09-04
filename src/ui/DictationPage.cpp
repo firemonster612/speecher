@@ -100,7 +100,15 @@ private:
     int m_spacing = 8;
 };
 
-QWidget *makeSummaryCard(const QString &iconName,
+// Freedesktop names first, so themes other than Breeze find them; a theme with
+// neither leaves the card text-only rather than showing a blank square.
+QIcon themedIcon(const QString &name, const QString &fallback = QString())
+{
+    return fallback.isEmpty() ? QIcon::fromTheme(name)
+                              : QIcon::fromTheme(name, QIcon::fromTheme(fallback));
+}
+
+QWidget *makeSummaryCard(const QIcon &cardIcon,
                          const QString &title,
                          QLabel *value,
                          AppPageId page,
@@ -122,8 +130,9 @@ QWidget *makeSummaryCard(const QString &iconName,
     titleLayout->setContentsMargins(0, 0, 0, 0);
     titleLayout->setSpacing(6);
     auto *icon = new QLabel(titleRow);
-    icon->setPixmap(QIcon::fromTheme(iconName).pixmap(16, 16));
+    icon->setPixmap(cardIcon.pixmap(16, 16));
     icon->setFixedSize(16, 16);
+    icon->setVisible(!cardIcon.isNull());
     auto *titleLabel = new QLabel(title, titleRow);
     titleLayout->addWidget(icon, 0, Qt::AlignVCenter);
     titleLayout->addWidget(titleLabel, 0, Qt::AlignVCenter);
@@ -208,23 +217,31 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
 
     m_copyTranscript = new QToolButton(m_transcript);
     m_copyTranscript->setObjectName(QStringLiteral("copyTranscript"));
-    m_copyTranscript->setIcon(QIcon::fromTheme(QStringLiteral("edit-copy")));
+    const QIcon copyIcon = themedIcon(QStringLiteral("edit-copy"));
+    // Without a themed icon an icon-only button is invisible; fall back to a
+    // word.
+    m_copyTranscript->setText(QStringLiteral("Copy"));
+    m_copyTranscript->setIcon(copyIcon);
+    m_copyTranscript->setToolButtonStyle(copyIcon.isNull() ? Qt::ToolButtonTextOnly
+                                                           : Qt::ToolButtonIconOnly);
     m_copyTranscript->setAutoRaise(true);
     m_copyTranscript->setCursor(Qt::ArrowCursor);
     m_copyTranscript->setToolTip(QStringLiteral("Copy transcript"));
     m_copyTranscript->setFocusPolicy(Qt::NoFocus);
     m_copyTranscript->hide();
     m_transcript->installEventFilter(this);
-    connect(m_copyTranscript, &QToolButton::clicked, this, [this] {
+    connect(m_copyTranscript, &QToolButton::clicked, this, [this, copyIcon] {
         const QString text = m_transcript->toPlainText();
         if (text.isEmpty()) {
             return;
         }
         QGuiApplication::clipboard()->setText(text);
-        m_copyTranscript->setIcon(QIcon::fromTheme(QStringLiteral("checkmark"),
-                                                   QIcon::fromTheme(QStringLiteral("dialog-ok-apply"))));
-        QTimer::singleShot(1500, m_copyTranscript, [this] {
-            m_copyTranscript->setIcon(QIcon::fromTheme(QStringLiteral("edit-copy")));
+        m_copyTranscript->setIcon(themedIcon(QStringLiteral("checkmark"),
+                                             QStringLiteral("dialog-ok-apply")));
+        m_copyTranscript->setText(QStringLiteral("Copied"));
+        QTimer::singleShot(1500, m_copyTranscript, [this, copyIcon] {
+            m_copyTranscript->setIcon(copyIcon);
+            m_copyTranscript->setText(QStringLiteral("Copy"));
         });
     });
 
@@ -245,16 +262,18 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     }
     m_provider->setObjectName(QStringLiteral("refinementSummary"));
     m_microphone->setObjectName(QStringLiteral("microphoneSummary"));
-    cardsRow->addWidget(makeSummaryCard(QStringLiteral("tools-wizard"),
+    cardsRow->addWidget(makeSummaryCard(themedIcon(QStringLiteral("document-edit"),
+                                                   QStringLiteral("tools-wizard")),
                                         QStringLiteral("Refinement"), m_provider,
                                         AppPageId::Refinement, this));
-    cardsRow->addWidget(makeSummaryCard(QStringLiteral("audio-input-microphone"),
+    cardsRow->addWidget(makeSummaryCard(themedIcon(QStringLiteral("audio-input-microphone")),
                                         QStringLiteral("Microphone"), m_microphone,
                                         AppPageId::Audio, this));
-    cardsRow->addWidget(makeSummaryCard(QStringLiteral("klipper"),
+    cardsRow->addWidget(makeSummaryCard(themedIcon(QStringLiteral("edit-paste"),
+                                                   QStringLiteral("edit-copy")),
                                         QStringLiteral("Output"), m_output,
                                         AppPageId::Output, this));
-    cardsRow->addWidget(makeSummaryCard(QStringLiteral("preferences-system"),
+    cardsRow->addWidget(makeSummaryCard(themedIcon(QStringLiteral("preferences-system")),
                                         QStringLiteral("Theme"), m_theme,
                                         AppPageId::General, this));
     columnLayout->addWidget(cardsHost);

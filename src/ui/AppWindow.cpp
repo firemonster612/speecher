@@ -65,7 +65,7 @@ const QList<PageDefinition> kPages{
     {QStringLiteral("General"), QStringLiteral("preferences-system"), QString()},
     {QStringLiteral("Audio"), QStringLiteral("preferences-desktop-sound"), QString()},
     {QStringLiteral("Applications"), QStringLiteral("preferences-desktop-default-applications"), QString()},
-    {QStringLiteral("Output"), QStringLiteral("klipper"), QStringLiteral("edit-paste")},
+    {QStringLiteral("Output"), QStringLiteral("edit-paste"), QStringLiteral("edit-copy")},
     {QStringLiteral("Auth"), QStringLiteral("preferences-desktop-user-password"), QStringLiteral("dialog-password")},
     {QStringLiteral("Refinement"), QStringLiteral("tools-wizard"), QStringLiteral("document-edit")},
     {QStringLiteral("Vocabulary"), QStringLiteral("accessories-dictionary"), QStringLiteral("tools-check-spelling")},
@@ -109,11 +109,11 @@ QWidget *detachedContent(QScrollArea *page, bool removeTitle = false)
     return content;
 }
 
-QIcon pageIcon(const PageDefinition &page, QWidget *widget)
+// A theme without the icon leaves the row text-only: a stand-in document icon
+// would say every page is a file.
+QIcon pageIcon(const PageDefinition &page)
 {
-    const QIcon icon = QIcon::fromTheme(
-        page.iconName, QIcon::fromTheme(page.fallbackIconName));
-    return icon.isNull() ? widget->style()->standardIcon(QStyle::SP_FileIcon) : icon;
+    return QIcon::fromTheme(page.iconName, QIcon::fromTheme(page.fallbackIconName));
 }
 
 } // namespace
@@ -470,9 +470,7 @@ void AppWindow::buildSidebarShell()
     m_navigation->setIconSize(QSize(22, 22));
     for (int index = 0; index < kPages.size(); ++index) {
         const auto &page = kPages.at(index);
-        auto *item = new QListWidgetItem(pageIcon(page, m_navigation),
-                                         page.title,
-                                         m_navigation);
+        auto *item = new QListWidgetItem(pageIcon(page), page.title, m_navigation);
         item->setData(Qt::UserRole, index);
         item->setSizeHint(QSize(0, 32));
     }
