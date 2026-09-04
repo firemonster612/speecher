@@ -519,6 +519,7 @@ void AppWindow::buildSidebarShell()
                                      settings::relatedSpacing(),
                                      settings::tightSpacing());
     m_updateBannerText = new QLabel(m_updateBanner);
+    m_updateBannerText->setObjectName(QStringLiteral("updateBannerText"));
     updateLayout->addWidget(m_updateBannerText, 1);
     m_updateProgress = new QProgressBar(m_updateBanner);
     m_updateProgress->setRange(0, 100);
@@ -526,6 +527,7 @@ void AppWindow::buildSidebarShell()
     m_updateProgress->setMaximumWidth(160);
     updateLayout->addWidget(m_updateProgress);
     m_updateAction = new QPushButton(m_updateBanner);
+    m_updateAction->setObjectName(QStringLiteral("updateAction"));
     updateLayout->addWidget(m_updateAction);
     m_updateLater = new QPushButton(QStringLiteral("Later"), m_updateBanner);
     updateLayout->addWidget(m_updateLater);
@@ -686,8 +688,12 @@ void AppWindow::refreshUpdateBanner()
     m_updateDismiss->hide();
     switch (updates->state()) {
     case UpdateController::State::UpdateAvailable:
-        m_updateBannerText->setText(
-            QStringLiteral("Speecher %1 is available").arg(updates->availableVersion()));
+        m_updateBannerText->setText(updates->stableReplacementAvailable()
+                                        ? QStringLiteral("Switch to Stable Release %1 (replaces "
+                                                         "this Nightly Build)")
+                                              .arg(updates->availableVersion())
+                                        : QStringLiteral("Speecher %1 is available")
+                                              .arg(updates->availableVersion()));
         m_updateAction->setText(QStringLiteral("Update now"));
         m_updateDismiss->show();
         break;
@@ -712,9 +718,15 @@ void AppWindow::refreshUpdateBanner()
         m_updateBannerText->setText(QStringLiteral("Restarting after this dictation…"));
         m_updateAction->hide();
         break;
+    case UpdateController::State::Restarting:
+        m_updateBannerText->setText(QStringLiteral("Restarting…"));
+        m_updateAction->hide();
+        break;
     case UpdateController::State::Error:
         m_updateBannerText->setText(updates->errorMessage());
-        m_updateAction->setText(QStringLiteral("Try again"));
+        m_updateAction->setText(updates->manualInstallRequired()
+                                    ? QStringLiteral("Open release page")
+                                    : QStringLiteral("Try again"));
         m_updateDismiss->show();
         break;
     default:

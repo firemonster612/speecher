@@ -188,6 +188,9 @@ void QtFrontEnd::refreshUpdateChip()
         m_popup->setUpdateChip(
             QStringLiteral("Restarting after this dictation…"), true, false);
         break;
+    case UpdateController::State::Restarting:
+        m_popup->setUpdateChip(QStringLiteral("Restarting…"), true, false);
+        break;
     case UpdateController::State::Error:
         m_popup->setUpdateChip(updates->errorMessage(), true, canAct);
         break;

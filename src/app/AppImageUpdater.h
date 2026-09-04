@@ -56,6 +56,8 @@ public:
     bool supportsAutomaticDownloads() const override;
     bool bannerVisible() const override;
     bool repeatedAutomaticCheckFailure() const override;
+    bool manualInstallRequired() const override;
+    bool stableReplacementAvailable() const override;
     static void waitForRestartParent();
 
     static std::optional<UpdateManifest> parseManifest(const QByteArray &json,
@@ -91,6 +93,7 @@ private:
     void updateSettingsChanged();
     QUrl manifestUrl(UpdateChannel channel) const;
     void finishCheck(QNetworkReply *reply);
+    void recordAutomaticCheckFailure();
     bool appImageDirectoryIsWritable();
     void beginDownload();
     void writeDownloadedData();

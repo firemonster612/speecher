@@ -111,6 +111,8 @@ SettingsSchema settingsSchema(ApplicationController *controller)
                     : updates->errorMessage();
             case UpdateController::State::RestartPending:
                 return QStringLiteral("Restarting after this dictation…");
+            case UpdateController::State::Restarting:
+                return QStringLiteral("Restarting…");
             case UpdateController::State::Error:
                 return updates->errorMessage();
             }
@@ -128,6 +130,8 @@ SettingsSchema settingsSchema(ApplicationController *controller)
                 return QVariant(QStringLiteral("Downloading…"));
             case UpdateController::State::RestartPending:
                 return QVariant(QStringLiteral("Restarting after this dictation…"));
+            case UpdateController::State::Restarting:
+                return QVariant(QStringLiteral("Restarting…"));
             case UpdateController::State::CheckFailed:
             case UpdateController::State::Error:
                 return QVariant(QStringLiteral("Try again"));
@@ -139,7 +143,8 @@ SettingsSchema settingsSchema(ApplicationController *controller)
             return updates->state() != UpdateController::State::Checking
                 && updates->state() != UpdateController::State::Downloading
                 && updates->state() != UpdateController::State::ReadyToRestart
-                && updates->state() != UpdateController::State::RestartPending;
+                && updates->state() != UpdateController::State::RestartPending
+                && updates->state() != UpdateController::State::Restarting;
         };
     }
 

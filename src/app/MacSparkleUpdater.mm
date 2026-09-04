@@ -13,13 +13,23 @@ NSString *const nightlyFeedUrl = @"https://firemonster612.github.io/speecher/app
 } // namespace
 } // namespace speecher
 
-@interface SpeecherSparkleDelegate : NSObject <SPUUpdaterDelegate>
+@interface SpeecherSparkleDelegate : NSObject <SPUUpdaterDelegate, SUVersionComparison>
 - (void)setNightly:(BOOL)nightly allowStableReplacement:(BOOL)allowStableReplacement;
 @end
 
 @implementation SpeecherSparkleDelegate {
     BOOL _nightly;
     BOOL _allowStableReplacement;
+    NSString *_runningVersion;
+}
+
+- (instancetype)init
+{
+    self = [super init];
+    if (self) {
+        _runningVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"];
+    }
+    return self;
 }
 
 - (void)setNightly:(BOOL)nightly allowStableReplacement:(BOOL)allowStableReplacement
@@ -29,33 +39,51 @@ NSString *const nightlyFeedUrl = @"https://firemonster612.github.io/speecher/app
 }
 
 - (SUAppcastItem *)bestValidUpdateInAppcast:(SUAppcast *)appcast
-                                  forUpdater:(SPUUpdater *)updater
+                                  forUpdater:(SPUUpdater *)
 {
-    Q_UNUSED(updater);
     return _allowStableReplacement ? appcast.items.firstObject : nil;
 }
 
-- (void)updaterDidNotFindUpdate:(SPUUpdater *)updater
+- (id<SUVersionComparison>)versionComparatorForUpdater:(SPUUpdater *)
 {
-    Q_UNUSED(updater);
+    return self;
+}
+
+- (NSComparisonResult)compareVersion:(NSString *)versionA toVersion:(NSString *)versionB
+{
+    if (_allowStableReplacement && ![versionA isEqualToString:versionB]) {
+        if ([versionB isEqualToString:_runningVersion]) {
+            return NSOrderedDescending;
+        }
+        if ([versionA isEqualToString:_runningVersion]) {
+            return NSOrderedAscending;
+        }
+    }
+    return [[SUStandardVersionComparator defaultComparator]
+        compareVersion:versionA
+        toVersion:versionB];
+}
+
+- (void)updaterDidNotFindUpdate:(SPUUpdater *)
+{
     _allowStableReplacement = NO;
 }
 
-- (void)updater:(SPUUpdater *)updater
-        userDidMakeChoice:(SPUUserUpdateChoice)choice
-        forUpdate:(SUAppcastItem *)updateItem
-        state:(SPUUserUpdateState *)state
+- (void)updater:(SPUUpdater *)
+        userDidMakeChoice:(SPUUserUpdateChoice)
+        forUpdate:(SUAppcastItem *)
+        state:(SPUUserUpdateState *)
 {
-    Q_UNUSED(updater);
-    Q_UNUSED(choice);
-    Q_UNUSED(updateItem);
-    Q_UNUSED(state);
     _allowStableReplacement = NO;
 }
 
-- (NSString *)feedURLStringForUpdater:(SPUUpdater *)updater
+- (void)updater:(SPUUpdater *)didAbortWithError:(NSError *)
 {
-    Q_UNUSED(updater);
+    _allowStableReplacement = NO;
+}
+
+- (NSString *)feedURLStringForUpdater:(SPUUpdater *)
+{
     return _nightly ? speecher::nightlyFeedUrl : speecher::stableFeedUrl;
 }
 
@@ -109,6 +137,8 @@ bool MacSparkleUpdater::isAppImage() const { return false; }
 bool MacSparkleUpdater::supportsAutomaticDownloads() const { return true; }
 bool MacSparkleUpdater::bannerVisible() const { return false; }
 bool MacSparkleUpdater::repeatedAutomaticCheckFailure() const { return false; }
+bool MacSparkleUpdater::manualInstallRequired() const { return false; }
+bool MacSparkleUpdater::stableReplacementAvailable() const { return false; }
 
 void MacSparkleUpdater::checkForUpdates(UpdateChannel channel)
 {

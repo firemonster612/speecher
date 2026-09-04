@@ -197,12 +197,23 @@ bool AppImageUpdater::bannerVisible() const
         return m_manifest.version != m_dismissedVersion;
     }
     return m_state == State::Downloading || m_state == State::ReadyToRestart
-        || m_state == State::RestartPending;
+        || m_state == State::RestartPending || m_state == State::Restarting;
 }
 
 bool AppImageUpdater::repeatedAutomaticCheckFailure() const
 {
     return m_automaticCheckFailures >= visibleAutomaticFailureCount;
+}
+
+bool AppImageUpdater::manualInstallRequired() const
+{
+    return m_manualInstallRequired;
+}
+
+bool AppImageUpdater::stableReplacementAvailable() const
+{
+    return m_manifest.channel == UpdateChannel::Stable
+        && currentVersion().contains(QStringLiteral("-nightly"));
 }
 
 void AppImageUpdater::waitForRestartParent()
@@ -359,7 +370,8 @@ void AppImageUpdater::checkForUpdates(UpdateChannel channel)
 void AppImageUpdater::beginCheck(UpdateChannel channel, bool automaticCheck)
 {
     if (m_state == State::Checking || m_state == State::Downloading
-        || m_state == State::ReadyToRestart || m_state == State::RestartPending) {
+        || m_state == State::ReadyToRestart || m_state == State::RestartPending
+        || m_state == State::Restarting) {
         return;
     }
 
@@ -392,10 +404,6 @@ void AppImageUpdater::updateNow()
         return;
     }
     if (m_state != State::UpdateAvailable) {
-        return;
-    }
-    if (m_manifest.channel != m_settings->updateChannel()) {
-        beginCheck(m_settings->updateChannel(), false);
         return;
     }
     if (!isAppImage()) {
@@ -455,11 +463,7 @@ void AppImageUpdater::finishCheck(QNetworkReply *reply)
         : reply->errorString();
     reply->deleteLater();
     if (!networkError.isEmpty()) {
-        if (m_automaticCheck) {
-            ++m_automaticCheckFailures;
-            m_dailyTimer->setInterval(
-                automaticRetryInterval(m_automaticCheckFailures));
-        }
+        recordAutomaticCheckFailure();
         setState(State::CheckFailed,
                  QStringLiteral("Could not check for updates: %1").arg(networkError));
         return;
@@ -468,6 +472,7 @@ void AppImageUpdater::finishCheck(QNetworkReply *reply)
     QString error;
     const std::optional<UpdateManifest> manifest = parseManifest(body, &error);
     if (!manifest) {
+        recordAutomaticCheckFailure();
         setState(State::CheckFailed, error);
         return;
     }
@@ -496,6 +501,15 @@ void AppImageUpdater::finishCheck(QNetworkReply *reply)
     }
 }
 
+void AppImageUpdater::recordAutomaticCheckFailure()
+{
+    if (!m_automaticCheck) {
+        return;
+    }
+    ++m_automaticCheckFailures;
+    m_dailyTimer->setInterval(automaticRetryInterval(m_automaticCheckFailures));
+}
+
 void AppImageUpdater::updateSettingsChanged()
 {
     const UpdateChannel channel = m_settings->updateChannel();
@@ -503,7 +517,8 @@ void AppImageUpdater::updateSettingsChanged()
         return;
     }
     m_selectedChannel = channel;
-    if (m_state == State::ReadyToRestart || m_state == State::RestartPending) {
+    if (m_state == State::ReadyToRestart || m_state == State::RestartPending
+        || m_state == State::Restarting) {
         return;
     }
 
@@ -666,6 +681,9 @@ void AppImageUpdater::setState(State state, const QString &error)
 
 void AppImageUpdater::restartAppImage()
 {
+    if (m_restartServer) {
+        return;
+    }
     if (!isAppImage()) {
         emit openReleasePageRequested();
         return;
@@ -689,6 +707,7 @@ void AppImageUpdater::restartAppImage()
 
     QProcess process;
     process.setProgram(m_appImagePath);
+    process.setArguments(QCoreApplication::arguments().mid(1));
     process.setWorkingDirectory(QFileInfo(m_appImagePath).absolutePath());
     QProcessEnvironment environment = restartEnvironment(
         QCoreApplication::arguments(), QProcessEnvironment::systemEnvironment());
@@ -700,7 +719,7 @@ void AppImageUpdater::restartAppImage()
         setState(State::ReadyToRestart, QStringLiteral("Could not restart Speecher."));
         return;
     }
-    setState(State::RestartPending);
+    setState(State::Restarting);
     QTimer::singleShot(restartHandshakeTimeoutMs, this, [this] {
         if (!m_restartServer) {
             return;
