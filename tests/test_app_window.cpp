@@ -15,12 +15,10 @@
 #endif
 
 #include <QComboBox>
-#include <QAbstractItemDelegate>
 #include <QDir>
 #include <QFile>
 #include <QLabel>
 #include <QLineEdit>
-#include <QListView>
 #include <QListWidget>
 #include <QFormLayout>
 #include <QFrame>
@@ -39,101 +37,7 @@
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-#include <KPageWidget>
-#endif
-
 using namespace speecher;
-
-namespace {
-
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-KPageWidget *sidebar(AppWindow &window)
-{
-    return window.findChild<KPageWidget *>(QStringLiteral("appNavigation"));
-}
-
-KPageWidgetItem *sidebarPage(AppWindow &window, int row)
-{
-    auto *pages = sidebar(window);
-    auto *model = qobject_cast<KPageWidgetModel *>(pages->model());
-    return model->item(model->index(row, 0));
-}
-
-QListView *sidebarView(AppWindow &window)
-{
-    return window.findChild<QListView *>(QStringLiteral("appNavigationView"));
-}
-
-void setSidebarRow(AppWindow &window, int row)
-{
-    sidebar(window)->setCurrentPage(sidebarPage(window, row));
-}
-
-int sidebarCurrentRow(AppWindow &window)
-{
-    auto *pages = sidebar(window);
-    auto *model = qobject_cast<KPageWidgetModel *>(pages->model());
-    return model->index(pages->currentPage()).row();
-}
-
-QString sidebarCurrentTitle(AppWindow &window)
-{
-    return sidebar(window)->currentPage()->name();
-}
-
-bool sidebarRowHidden(AppWindow &window, int row)
-{
-    return sidebarView(window)->isRowHidden(row);
-}
-
-QIcon sidebarIcon(AppWindow &window, int row)
-{
-    return sidebarPage(window, row)->icon();
-}
-
-QWidget *currentSidebarPageWidget(AppWindow &window)
-{
-    return sidebar(window)->currentPage()->widget();
-}
-#else
-QListWidget *sidebar(AppWindow &window)
-{
-    return window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
-}
-
-void setSidebarRow(AppWindow &window, int row)
-{
-    sidebar(window)->setCurrentRow(row);
-}
-
-int sidebarCurrentRow(AppWindow &window)
-{
-    return sidebar(window)->currentRow();
-}
-
-QString sidebarCurrentTitle(AppWindow &window)
-{
-    return sidebar(window)->currentItem()->text();
-}
-
-bool sidebarRowHidden(AppWindow &window, int row)
-{
-    return sidebar(window)->item(row)->isHidden();
-}
-
-QIcon sidebarIcon(AppWindow &window, int row)
-{
-    return sidebar(window)->item(row)->icon();
-}
-
-QWidget *currentSidebarPageWidget(AppWindow &window)
-{
-    return window.findChild<QStackedWidget *>()->currentWidget();
-}
-#endif
-
-} // namespace
 
 class AppWindowTests : public QObject {
     Q_OBJECT
@@ -157,7 +61,7 @@ private slots:
         window.show();
         QTest::qWait(200);
         for (int page = 0; page < window.pageCount(); ++page) {
-            setSidebarRow(window, page);
+            window.findChild<QListWidget *>(QStringLiteral("appNavigation"))->setCurrentRow(page);
             QTest::qWait(120);
             window.grab().save(QStringLiteral("%1/page-%2-%3.png")
                                    .arg(dir)
@@ -182,24 +86,6 @@ private slots:
         AppWindow window(&controller);
         QCOMPARE(window.pageCount(), 8);
         QCOMPARE(window.pageTitles(), titles);
-    }
-
-    void sidebarUsesThePlatformPageWidget()
-    {
-        ApplicationController controller(true);
-        AppWindow window(&controller);
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-        auto *navigation = window.findChild<KPageWidget *>(QStringLiteral("appNavigation"));
-        QVERIFY(navigation);
-        QCOMPARE(navigation->faceType(), KPageView::FlatList);
-        QCOMPARE(sidebarView(window)->itemDelegate()->objectName(),
-                 QStringLiteral("viewItemPositionSidebarDelegate"));
-#else
-        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
-        QVERIFY(navigation);
-        QCOMPARE(navigation->itemDelegate()->objectName(),
-                 QStringLiteral("viewItemPositionSidebarDelegate"));
-#endif
     }
 
 #ifdef Q_OS_LINUX
@@ -449,10 +335,11 @@ private slots:
         }
         ApplicationController controller(true);
         AppWindow window(&controller);
-        QVERIFY(sidebar(window));
-        for (int row = 0; row < window.pageCount(); ++row) {
-            QVERIFY2(sidebarIcon(window, row).isNull(),
-                     qPrintable(window.pageTitles().at(row)));
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        QVERIFY(navigation);
+        for (int row = 0; row < navigation->count(); ++row) {
+            QVERIFY2(navigation->item(row)->icon().isNull(),
+                     qPrintable(navigation->item(row)->text()));
         }
         auto *copy = window.findChild<QToolButton *>(QStringLiteral("copyTranscript"));
         QVERIFY(copy);
@@ -608,26 +495,12 @@ private slots:
         ApplicationController controller(true);
         AppWindow window(&controller);
         auto *search = window.findChild<QLineEdit *>(QStringLiteral("appSearch"));
-        QVERIFY(search);
-#ifndef SPEECHER_WITH_KPAGEWIDGET
-        QVERIFY(window.findChild<QSplitter *>());
-#endif
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        QVERIFY(window.findChild<QSplitter *>() && search);
 
         search->setText(QStringLiteral("Keep before speech"));
-        QVERIFY(sidebarRowHidden(window, 1) && !sidebarRowHidden(window, 2));
-
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-        // KF6 6.13 filters after 400 ms. Check after its timer would have fired,
-        // because our replacement filter hides What's New synchronously.
-        QTest::qWait(500);
-        QVERIFY(sidebarRowHidden(window, 8));
-        setSidebarRow(window, 1);
-        QTest::keyClick(search, Qt::Key_Return);
-        QCOMPARE(sidebarCurrentRow(window), 2);
-        search->clear();
-        QTest::qWait(500);
-        QVERIFY(sidebarRowHidden(window, 8));
-#endif
+        QVERIFY(navigation && navigation->item(1)->isHidden()
+                && !navigation->item(2)->isHidden());
     }
 
     void programmaticNavigationUpdatesShellChrome()
@@ -635,22 +508,24 @@ private slots:
         ApplicationController controller(true);
         AppWindow window(&controller);
         window.navigateToSettings(AppPageId::Output);
-        QCOMPARE(sidebarCurrentTitle(window), QStringLiteral("Output"));
+        QCOMPARE(window.findChild<QListWidget *>(QStringLiteral("appNavigation"))->currentItem()->text(),
+                 QStringLiteral("Output"));
     }
 
     void sidebarCanReturnToThePageThatOpenedWhatsNew()
     {
         ApplicationController controller(true);
         AppWindow window(&controller);
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        auto *stack = window.findChild<QStackedWidget *>();
         auto *whatsNew = window.findChild<QPushButton *>(QStringLiteral("whatsNew"));
-        QVERIFY(sidebar(window) && whatsNew);
+        QVERIFY(navigation && stack && whatsNew);
 
-        setSidebarRow(window, 1);
+        navigation->setCurrentRow(1);
         whatsNew->click();
-        QCOMPARE(currentSidebarPageWidget(window),
-                 static_cast<QWidget *>(window.findChild<SettingsPageSet *>()->whatsNew()));
-        setSidebarRow(window, 1);
-        QCOMPARE(sidebarCurrentRow(window), 1);
+        QCOMPARE(stack->currentIndex(), 8);
+        navigation->setCurrentRow(1);
+        QCOMPARE(stack->currentIndex(), 1);
     }
 
     void whatsNewOffersAWayBackToThePageItWasOpenedFrom()
@@ -658,27 +533,25 @@ private slots:
         ApplicationController controller(true);
         AppWindow window(&controller);
         window.show();
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        auto *stack = window.findChild<QStackedWidget *>();
         auto *whatsNew = window.findChild<QPushButton *>(QStringLiteral("whatsNew"));
         auto *back = window.findChild<QToolButton *>(QStringLiteral("whatsNewBack"));
         auto *title = window.findChild<QLabel *>(QStringLiteral("pageTitle"));
-        QVERIFY(sidebar(window) && whatsNew && back && title);
+        QVERIFY(navigation && stack && whatsNew && back && title);
         QVERIFY(!back->isVisible());
 
         // Opened from General, the same way the update banner opens it.
-        setSidebarRow(window, 1);
+        navigation->setCurrentRow(1);
         whatsNew->click();
-        QCOMPARE(currentSidebarPageWidget(window),
-                 static_cast<QWidget *>(window.findChild<SettingsPageSet *>()->whatsNew()));
+        QCOMPARE(stack->currentIndex(), 8);
         QCOMPARE(title->text(), QStringLiteral("What's New"));
         QVERIFY(back->isVisible());
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-        QVERIFY(sidebarRowHidden(window, sidebarCurrentRow(window)));
-#else
-        QVERIFY(!sidebar(window)->currentItem());
-#endif
+        QVERIFY(!navigation->currentItem());
 
         back->click();
-        QCOMPARE(sidebarCurrentRow(window), 1);
+        QCOMPARE(stack->currentIndex(), 1);
+        QCOMPARE(navigation->currentRow(), 1);
         QCOMPARE(title->text(), QStringLiteral("General"));
         QVERIFY(!back->isVisible());
     }

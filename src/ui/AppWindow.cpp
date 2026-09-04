@@ -9,12 +9,9 @@
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QCloseEvent>
-#include <QAbstractItemDelegate>
-#include <QAbstractItemView>
 #include <QEvent>
 #include <QApplication>
 #include <QCheckBox>
-#include <QDebug>
 #include <QFileSystemWatcher>
 #include <QFrame>
 #include <QGroupBox>
@@ -25,9 +22,7 @@
 #include <QWindow>
 #include <QLineEdit>
 #include <QListWidget>
-#include <QListView>
 #include <QPalette>
-#include <QPainter>
 #include <QPushButton>
 #include <QProgressBar>
 #include <QScrollArea>
@@ -38,7 +33,6 @@
 #include <QStackedWidget>
 #include <QStandardPaths>
 #include <QStyle>
-#include <QStyledItemDelegate>
 #include <QTabWidget>
 #include <QTextDocument>
 #include <QTimer>
@@ -46,11 +40,6 @@
 #include <QVBoxLayout>
 
 #include <utility>
-
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-#include <KPageWidget>
-#include <KPageWidgetItem>
-#endif
 
 #ifdef Q_OS_MACOS
 #include "platform/mac/MacWindowChrome.h"
@@ -82,10 +71,6 @@ const QList<PageDefinition> kPages{
     {QStringLiteral("Refinement"), QStringLiteral("tools-wizard"), QStringLiteral("document-edit")},
     {QStringLiteral("Vocabulary"), QStringLiteral("accessories-dictionary"), QStringLiteral("tools-check-spelling")},
 };
-
-constexpr int kSidebarMinimumWidth = 180;
-constexpr int kSidebarDefaultWidth = 220;
-constexpr int kSidebarMaximumWidth = 320;
 
 QScrollArea *scrollingPage(QWidget *content, QWidget *parent)
 {
@@ -131,122 +116,6 @@ QIcon pageIcon(const PageDefinition &page)
 {
     return QIcon::fromTheme(page.iconName, QIcon::fromTheme(page.fallbackIconName));
 }
-
-class ViewItemPositionDelegate final : public QAbstractItemDelegate {
-public:
-    ViewItemPositionDelegate(QAbstractItemDelegate *delegate, QObject *parent)
-        : QAbstractItemDelegate(parent)
-        , m_delegate(delegate)
-    {
-        setObjectName(QStringLiteral("viewItemPositionSidebarDelegate"));
-    }
-
-    void paint(QPainter *painter,
-               const QStyleOptionViewItem &option,
-               const QModelIndex &index) const override
-    {
-        QStyleOptionViewItem roundedOption(option);
-        roundedOption.viewItemPosition = QStyleOptionViewItem::OnlyOne;
-#ifdef SPEECHER_BUNDLED_BREEZE_NEEDS_VIEW_ITEM_POSITION_COMPAT
-        const QStyle *style = roundedOption.widget ? roundedOption.widget->style()
-                                                   : QApplication::style();
-        // Breeze commit aba0f922 added rounded viewItemPosition painting in
-        // 6.6.90. Older bundled releases need the same shape for hover and
-        // selection; every other host-selected style still paints itself.
-        if ((roundedOption.state & (QStyle::State_Selected | QStyle::State_MouseOver))
-            && style->objectName().compare(QStringLiteral("breeze"), Qt::CaseInsensitive) == 0) {
-            const QPalette::ColorGroup group =
-                !(roundedOption.state & QStyle::State_Enabled)
-                ? QPalette::Disabled
-                : (roundedOption.state & QStyle::State_Active) ? QPalette::Active
-                                                               : QPalette::Inactive;
-            QColor highlight = roundedOption.palette.color(group, QPalette::Highlight);
-            if (roundedOption.state & QStyle::State_MouseOver) {
-                if (roundedOption.state & QStyle::State_Selected) {
-                    highlight = highlight.lighter(110);
-                } else {
-                    highlight.setAlphaF(0.2);
-                }
-            }
-            const int frameWidth = style->pixelMetric(
-                QStyle::PM_DefaultFrameWidth, &roundedOption, roundedOption.widget);
-            const int focusMargin = style->pixelMetric(
-                QStyle::PM_FocusFrameHMargin, &roundedOption, roundedOption.widget);
-            const int radius = qMax(frameWidth, focusMargin * 2);
-            const int horizontalInset = radius;
-            const int verticalInset = qMax(0, frameWidth / 2);
-            painter->save();
-            painter->setRenderHint(QPainter::Antialiasing);
-            painter->setPen(Qt::NoPen);
-            painter->setBrush(highlight);
-            painter->drawRoundedRect(
-                roundedOption.rect.adjusted(horizontalInset,
-                                            verticalInset,
-                                            -horizontalInset,
-                                            -verticalInset),
-                radius,
-                radius);
-            painter->restore();
-            for (const auto colorGroup : {QPalette::Active,
-                                          QPalette::Inactive,
-                                          QPalette::Disabled}) {
-                roundedOption.palette.setColor(colorGroup, QPalette::Highlight, Qt::transparent);
-            }
-        }
-#endif
-        m_delegate->paint(painter, roundedOption, index);
-    }
-
-    QSize sizeHint(const QStyleOptionViewItem &option,
-                   const QModelIndex &index) const override
-    {
-        return m_delegate->sizeHint(option, index);
-    }
-
-private:
-    QAbstractItemDelegate *m_delegate;
-};
-
-class FallbackSidebarItemDelegate final : public QStyledItemDelegate {
-public:
-    explicit FallbackSidebarItemDelegate(QObject *parent)
-        : QStyledItemDelegate(parent)
-    {
-        setObjectName(QStringLiteral("viewItemPositionSidebarDelegate"));
-    }
-
-    void paint(QPainter *painter,
-               const QStyleOptionViewItem &option,
-               const QModelIndex &index) const override
-    {
-        QStyleOptionViewItem roundedOption(option);
-        roundedOption.viewItemPosition = QStyleOptionViewItem::OnlyOne;
-        QStyledItemDelegate::paint(painter, roundedOption, index);
-    }
-};
-
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-class NativePageWidget final : public KPageWidget {
-public:
-    explicit NativePageWidget(QWidget *parent)
-        : KPageWidget(parent)
-    {
-    }
-
-    QListView *navigationView() const { return m_navigationView; }
-
-protected:
-    QAbstractItemView *createView() override
-    {
-        QAbstractItemView *view = KPageWidget::createView();
-        m_navigationView = qobject_cast<QListView *>(view);
-        return view;
-    }
-
-private:
-    QListView *m_navigationView = nullptr;
-};
-#endif
 
 } // namespace
 
@@ -301,9 +170,6 @@ int AppWindow::pageCount() const { return kPages.size(); }
 void AppWindow::navigateToSettings(AppPageId page)
 {
     const int settingsIndex = static_cast<int>(page);
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-    m_navigation->setCurrentPage(m_navigationPages.at(settingsIndex + 1));
-#else
     for (int row = 0; row < m_navigation->count(); ++row) {
         QListWidgetItem *item = m_navigation->item(row);
         if (item->data(Qt::UserRole).toInt() == settingsIndex + 1) {
@@ -311,7 +177,6 @@ void AppWindow::navigateToSettings(AppPageId page)
             break;
         }
     }
-#endif
 }
 
 void AppWindow::refreshHeaderStripColor()
@@ -327,9 +192,6 @@ void AppWindow::refreshHeaderStripColor()
     const QColor line = settings::separatorColor(headerPalette);
     if (m_headerStrip) {
         m_headerStrip->setPalette(headerPalette);
-    }
-    if (m_searchSection) {
-        m_searchSection->setPalette(headerPalette);
     }
     for (QWidget *hairline : {m_headerDividerLine, m_headerUnderline}) {
         if (hairline) {
@@ -415,7 +277,7 @@ bool AppWindow::eventFilter(QObject *watched, QEvent *event)
     // The header strip reads as part of the title bar, so empty space in it
     // must drag and double-click the window like the title bar does. Only
     // events the interactive children ignore bubble up to the strip itself.
-    if (watched == m_headerStrip || watched == m_searchSection) {
+    if (watched == m_headerStrip) {
         if (event->type() == QEvent::MouseButtonPress
             && static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
             m_headerDragPending = true;
@@ -508,304 +370,8 @@ void AppWindow::buildSharedPages()
     }
 }
 
-void AppWindow::buildStatusBanners(QWidget *parent, QVBoxLayout *layout)
-{
-    m_updateBanner = new QFrame(parent);
-    m_updateBanner->setObjectName(QStringLiteral("updateBanner"));
-    m_updateBanner->setFrameShape(QFrame::StyledPanel);
-    auto *updateLayout = new QHBoxLayout(m_updateBanner);
-    updateLayout->setContentsMargins(settings::relatedSpacing(),
-                                     settings::tightSpacing(),
-                                     settings::relatedSpacing(),
-                                     settings::tightSpacing());
-    m_updateBannerText = new QLabel(m_updateBanner);
-    m_updateBannerText->setObjectName(QStringLiteral("updateBannerText"));
-    updateLayout->addWidget(m_updateBannerText, 1);
-    m_updateProgress = new QProgressBar(m_updateBanner);
-    m_updateProgress->setRange(0, 100);
-    m_updateProgress->setTextVisible(true);
-    m_updateProgress->setMaximumWidth(160);
-    updateLayout->addWidget(m_updateProgress);
-    m_updateAction = new QPushButton(m_updateBanner);
-    m_updateAction->setObjectName(QStringLiteral("updateAction"));
-    updateLayout->addWidget(m_updateAction);
-    m_updateLater = new QPushButton(QStringLiteral("Later"), m_updateBanner);
-    updateLayout->addWidget(m_updateLater);
-    m_updateDismiss = new QToolButton(m_updateBanner);
-    m_updateDismiss->setObjectName(QStringLiteral("dismissUpdate"));
-    m_updateDismiss->setIcon(QIcon::fromTheme(
-        QStringLiteral("window-close"),
-        style()->standardIcon(QStyle::SP_TitleBarCloseButton)));
-    m_updateDismiss->setToolTip(QStringLiteral("Dismiss"));
-    m_updateDismiss->setAccessibleName(QStringLiteral("Dismiss update"));
-    m_updateDismiss->setAutoRaise(true);
-    updateLayout->addWidget(m_updateDismiss);
-    connect(m_updateAction, &QPushButton::clicked, this, [this] {
-        if (m_showingWhatsNewBanner) {
-            showWhatsNew();
-        } else {
-            m_controller->updates()->updateNow();
-        }
-    });
-    connect(m_updateLater, &QPushButton::clicked, this, [this] {
-        m_updateBannerDeferred = true;
-        m_updateBanner->hide();
-    });
-    connect(m_updateDismiss, &QToolButton::clicked, this, [this] {
-        if (m_showingWhatsNewBanner) {
-            m_controller->clearPendingWhatsNew();
-        } else {
-            m_controller->updates()->dismissAvailableVersion();
-        }
-    });
-    layout->addWidget(m_updateBanner);
-    refreshUpdateBanner();
-
-    m_autoSaveWarning = new QFrame(parent);
-    m_autoSaveWarning->setObjectName(QStringLiteral("autoSaveWarning"));
-    m_autoSaveWarning->setFrameShape(QFrame::StyledPanel);
-    auto *warningLayout = new QHBoxLayout(m_autoSaveWarning);
-    m_autoSaveWarningText = new QLabel(m_autoSaveWarning);
-    warningLayout->addWidget(m_autoSaveWarningText);
-    m_autoSaveWarning->hide();
-    layout->addWidget(m_autoSaveWarning);
-}
-
-void AppWindow::buildHeaderTitle(QWidget *parent, QHBoxLayout *layout)
-{
-    m_backButton = new QToolButton(parent);
-    m_backButton->setObjectName(QStringLiteral("whatsNewBack"));
-    m_backButton->setText(QStringLiteral("Back"));
-    const QIcon backIcon = QIcon::fromTheme(QStringLiteral("go-previous"));
-    m_backButton->setIcon(backIcon);
-    m_backButton->setToolButtonStyle(backIcon.isNull() ? Qt::ToolButtonTextOnly
-                                                       : Qt::ToolButtonIconOnly);
-    m_backButton->setToolTip(QStringLiteral("Back"));
-    m_backButton->setAutoRaise(true);
-    m_backButton->hide();
-    connect(m_backButton, &QToolButton::clicked, this, &AppWindow::leaveWhatsNew);
-    layout->addWidget(m_backButton);
-    m_pageTitle = settings::makePageTitle(kPages.first().title, parent);
-    layout->addWidget(m_pageTitle);
-    layout->addStretch();
-}
-
-void AppWindow::watchHeaderColorConfig()
-{
-#ifndef Q_OS_MACOS
-    auto *watcher = new QFileSystemWatcher(this);
-    const QString kdeGlobals =
-        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
-        + QStringLiteral("/kdeglobals");
-    watcher->addPath(kdeGlobals);
-    connect(watcher, &QFileSystemWatcher::fileChanged, this, [this, watcher](const QString &path) {
-        watcher->addPath(path);
-        QTimer::singleShot(0, this, &AppWindow::refreshHeaderStripColor);
-    });
-#endif
-}
-
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-void AppWindow::buildNativeSidebarShell()
-{
-    resize(900, 640);
-    setMinimumSize(760, 520);
-
-    auto *nativeNavigation = new NativePageWidget(this);
-    m_navigation = nativeNavigation;
-    m_navigation->setObjectName(QStringLiteral("appNavigation"));
-    m_navigation->setFaceType(KPageView::FlatList);
-    m_navigation->setBackgroundRole(QPalette::Window);
-    m_navigation->setAutoFillBackground(true);
-    setCentralWidget(m_navigation);
-
-    for (int index = 0; index < m_pageWidgets.size(); ++index) {
-        const bool whatsNew = index >= kPages.size();
-        auto *item = m_navigation->addPage(
-            m_pageWidgets.at(index),
-            whatsNew ? QStringLiteral("What's New") : kPages.at(index).title);
-        item->setHeaderVisible(false);
-        if (!whatsNew) {
-            item->setIcon(pageIcon(kPages.at(index)));
-        }
-        m_navigationPages.append(item);
-    }
-
-    m_navigationView = nativeNavigation->navigationView();
-    if (m_navigationView) {
-        m_navigationView->setObjectName(QStringLiteral("appNavigationView"));
-        m_navigationView->setIconSize(QSize(22, 22));
-        m_navigationView->setRowHidden(kPages.size(), true);
-        m_navigationView->setBackgroundRole(QPalette::Base);
-        m_navigationView->setAutoFillBackground(true);
-        m_navigationView->viewport()->setBackgroundRole(QPalette::Base);
-        m_navigationView->viewport()->setAutoFillBackground(true);
-    } else {
-        qWarning().noquote()
-            << "KPageView FlatList navigation view was not found; sidebar view customization was skipped";
-    }
-    if (QAbstractItemDelegate *nativeDelegate = m_navigation->itemDelegate()) {
-        m_navigation->setItemDelegate(
-            new ViewItemPositionDelegate(nativeDelegate, m_navigation));
-    } else {
-        qWarning().noquote()
-            << "KPageView item delegate was not found; rounded selection hint was skipped";
-    }
-
-    m_searchSection = m_navigation->findChild<QWidget *>(QStringLiteral("KPageView::Search"));
-    QLineEdit *search = nullptr;
-    if (m_searchSection) {
-        m_searchSection->setObjectName(QStringLiteral("sidebarSearchContainer"));
-        m_searchSection->setBackgroundRole(QPalette::Window);
-        m_searchSection->setAutoFillBackground(true);
-        search = m_searchSection->findChild<QLineEdit *>();
-        if (search) {
-            // KPageView's delayed filter would unhide the permanently hidden
-            // What's New Page after Clear. Replace only that signal's wiring.
-            QObject::disconnect(search, SIGNAL(textChanged(QString)), nullptr, nullptr);
-            search->setObjectName(QStringLiteral("appSearch"));
-        } else {
-            qWarning().noquote()
-                << "KPageView search field was not found; sidebar search wiring was skipped";
-        }
-    } else {
-        qWarning().noquote()
-            << "KPageView search container was not found; sidebar search wiring was skipped";
-    }
-
-    auto *pageHeader = new QWidget(m_navigation);
-    auto *pageHeaderLayout = new QVBoxLayout(pageHeader);
-    pageHeaderLayout->setContentsMargins(0, 0, 0, 0);
-    pageHeaderLayout->setSpacing(0);
-    auto *header = new QWidget(pageHeader);
-    header->setObjectName(QStringLiteral("sidebarHeaderStrip"));
-    header->setBackgroundRole(QPalette::Window);
-    header->setAutoFillBackground(true);
-    auto *headerLayout = new QHBoxLayout(header);
-    headerLayout->setContentsMargins(0, 0, 0, 0);
-    headerLayout->setSpacing(0);
-
-    auto *headerDivider = new QWidget(header);
-    auto *dividerLayout = new QVBoxLayout(headerDivider);
-    dividerLayout->setContentsMargins(0, settings::relatedSpacing(), 0, settings::relatedSpacing());
-    m_headerDividerLine = new QWidget(headerDivider);
-    m_headerDividerLine->setFixedWidth(1);
-    m_headerDividerLine->setAutoFillBackground(true);
-    dividerLayout->addWidget(m_headerDividerLine);
-    headerLayout->addWidget(headerDivider);
-
-    auto *headerContent = new QWidget(header);
-    auto *headerContentLayout = new QVBoxLayout(headerContent);
-    headerContentLayout->setContentsMargins(settings::relatedSpacing(),
-                                            settings::relatedSpacing(),
-                                            settings::relatedSpacing(),
-                                            settings::relatedSpacing());
-    headerContentLayout->setSpacing(settings::tightSpacing());
-    auto *titleLayout = new QHBoxLayout;
-    titleLayout->setContentsMargins(0, 0, 0, 0);
-    buildHeaderTitle(headerContent, titleLayout);
-    headerContentLayout->addLayout(titleLayout);
-    headerLayout->addWidget(headerContent, 1);
-    m_headerStrip = header;
-    header->installEventFilter(this);
-    pageHeaderLayout->addWidget(header);
-    // The filled widgets use one shared palette color, so the horizontal and
-    // vertical hairlines meet without QFrame applying a second style tint.
-    m_headerUnderline = new QWidget(pageHeader);
-    m_headerUnderline->setFixedHeight(1);
-    m_headerUnderline->setAutoFillBackground(true);
-    pageHeaderLayout->addWidget(m_headerUnderline);
-    buildStatusBanners(pageHeader, pageHeaderLayout);
-    m_navigation->setPageHeader(pageHeader);
-
-    QFrame *nativeHeaderSeparator = nullptr;
-    for (QFrame *frame : m_navigation->findChildren<QFrame *>(
-             QString(), Qt::FindDirectChildrenOnly)) {
-        if (frame->frameShape() == QFrame::HLine) {
-            nativeHeaderSeparator = frame;
-            break;
-        }
-    }
-    if (nativeHeaderSeparator) {
-        nativeHeaderSeparator->hide();
-    } else {
-        qWarning().noquote()
-            << "KPageView header separator was not found; native separator hiding was skipped";
-    }
-
-#ifdef Q_OS_LINUX
-    auto *footer = new QWidget(m_navigation);
-    auto *footerLayout = new QVBoxLayout(footer);
-    footerLayout->setContentsMargins(settings::relatedSpacing(),
-                                     settings::relatedSpacing(),
-                                     settings::relatedSpacing(),
-                                     settings::relatedSpacing());
-    auto *quit = new QPushButton(QStringLiteral("Quit Speecher"), footer);
-    quit->setObjectName(QStringLiteral("quitSpeecher"));
-    connect(quit, &QPushButton::clicked, m_controller, &ApplicationController::quitApplication);
-    footerLayout->addWidget(quit);
-    m_navigation->setPageFooter(footer);
-#endif
-
-    watchHeaderColorConfig();
-
-    m_sidebarPane = m_navigationView;
-    if (m_sidebarPane) {
-        m_sidebarPane->installEventFilter(this);
-    }
-    if (m_searchSection) {
-        m_searchSection->installEventFilter(this);
-    }
-    QTimer::singleShot(0, this, [this] {
-        if (m_searchSection && m_sidebarPane) {
-            m_searchSection->setFixedWidth(m_sidebarPane->width());
-        }
-    });
-    refreshHeaderStripColor();
-
-    connect(m_navigation,
-            &KPageWidget::currentPageChanged,
-            this,
-            [this](KPageWidgetItem *item) {
-                const int index = m_navigationPages.indexOf(item);
-                if (index < 0) {
-                    return;
-                }
-                const bool whatsNew = index >= kPages.size();
-                m_pageTitle->setText(whatsNew ? QStringLiteral("What's New")
-                                              : kPages.at(index).title);
-                m_backButton->setVisible(whatsNew);
-            });
-    if (search && m_navigationView) {
-        connect(search, &QLineEdit::textChanged, this, &AppWindow::filterSidebarPages);
-        connect(search, &QLineEdit::returnPressed, this, [this] {
-            for (int row = 0; row < kPages.size(); ++row) {
-                if (!m_navigationView->isRowHidden(row)) {
-                    m_navigation->setCurrentPage(m_navigationPages.at(row));
-                    return;
-                }
-            }
-        });
-        auto *clearSearch = new QShortcut(QKeySequence(Qt::Key_Escape), search);
-        clearSearch->setContext(Qt::WidgetShortcut);
-        connect(clearSearch, &QShortcut::activated, search, &QLineEdit::clear);
-    }
-    m_navigation->setCurrentPage(m_navigationPages.first());
-
-    m_autoSaveTimer = new QTimer(this);
-    m_autoSaveTimer->setSingleShot(true);
-    m_autoSaveTimer->setInterval(600);
-    connect(m_pages, &SettingsPageSet::changed, m_autoSaveTimer, qOverload<>(&QTimer::start));
-    connect(m_autoSaveTimer, &QTimer::timeout, this, &AppWindow::runAutoSave);
-}
-#endif
-
 void AppWindow::buildSidebarShell()
 {
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-    buildNativeSidebarShell();
-    return;
-#else
     resize(900, 640);
     setMinimumSize(760, 520);
     auto *central = new QWidget(this);
@@ -861,12 +427,39 @@ void AppWindow::buildSidebarShell()
     // What's New is not a sidebar page, so while it shows, the header carries
     // the way back to the page it was opened from, as System Settings does for
     // a page reached from another one.
-    buildHeaderTitle(headerRight, headerRightLayout);
+    m_backButton = new QToolButton(headerRight);
+    m_backButton->setObjectName(QStringLiteral("whatsNewBack"));
+    m_backButton->setText(QStringLiteral("Back"));
+    const QIcon backIcon = QIcon::fromTheme(QStringLiteral("go-previous"));
+    m_backButton->setIcon(backIcon);
+    m_backButton->setToolButtonStyle(backIcon.isNull() ? Qt::ToolButtonTextOnly
+                                                       : Qt::ToolButtonIconOnly);
+    m_backButton->setToolTip(QStringLiteral("Back"));
+    m_backButton->setAutoRaise(true);
+    m_backButton->hide();
+    connect(m_backButton, &QToolButton::clicked, this, &AppWindow::leaveWhatsNew);
+    headerRightLayout->addWidget(m_backButton);
+    m_pageTitle = settings::makePageTitle(kPages.first().title, headerRight);
+    headerRightLayout->addWidget(m_pageTitle);
+    headerRightLayout->addStretch();
     headerLayout->addWidget(headerRight, 1);
     header->installEventFilter(this);
     root->addWidget(header);
 
-    watchHeaderColorConfig();
+#ifndef Q_OS_MACOS
+    auto *colorConfigWatcher = new QFileSystemWatcher(this);
+    const QString kdeGlobals =
+        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+        + QStringLiteral("/kdeglobals");
+    colorConfigWatcher->addPath(kdeGlobals);
+    connect(colorConfigWatcher,
+            &QFileSystemWatcher::fileChanged,
+            this,
+            [this, colorConfigWatcher](const QString &path) {
+                colorConfigWatcher->addPath(path);
+                QTimer::singleShot(0, this, &AppWindow::refreshHeaderStripColor);
+            });
+#endif
 
     // Same fill mechanism and color as the splitter handle, so the strip's
     // bottom edge and the sidebar/content hairline match exactly.
@@ -883,8 +476,8 @@ void AppWindow::buildSidebarShell()
     auto *sidebar = new QWidget(m_sidebarSplitter);
     sidebar->setBackgroundRole(QPalette::Base);
     sidebar->setAutoFillBackground(true);
-    sidebar->setMinimumWidth(kSidebarMinimumWidth);
-    sidebar->setMaximumWidth(kSidebarMaximumWidth);
+    sidebar->setMinimumWidth(180);
+    sidebar->setMaximumWidth(320);
     auto *sidebarLayout = new QVBoxLayout(sidebar);
     sidebarLayout->setContentsMargins(settings::relatedSpacing(),
                                       settings::relatedSpacing(),
@@ -898,7 +491,6 @@ void AppWindow::buildSidebarShell()
     m_navigation->viewport()->setBackgroundRole(QPalette::Base);
     m_navigation->viewport()->setAutoFillBackground(true);
     m_navigation->setFrameShape(QFrame::NoFrame);
-    m_navigation->setItemDelegate(new FallbackSidebarItemDelegate(m_navigation));
     m_navigation->setSpacing(2);
     m_navigation->setIconSize(QSize(22, 22));
     for (int index = 0; index < kPages.size(); ++index) {
@@ -926,7 +518,64 @@ void AppWindow::buildSidebarShell()
     right->setMinimumWidth(480);
     auto *rightLayout = new QVBoxLayout(right);
     rightLayout->setContentsMargins(0, 0, 0, 0);
-    buildStatusBanners(right, rightLayout);
+    m_updateBanner = new QFrame(right);
+    m_updateBanner->setObjectName(QStringLiteral("updateBanner"));
+    m_updateBanner->setFrameShape(QFrame::StyledPanel);
+    auto *updateLayout = new QHBoxLayout(m_updateBanner);
+    updateLayout->setContentsMargins(settings::relatedSpacing(),
+                                     settings::tightSpacing(),
+                                     settings::relatedSpacing(),
+                                     settings::tightSpacing());
+    m_updateBannerText = new QLabel(m_updateBanner);
+    m_updateBannerText->setObjectName(QStringLiteral("updateBannerText"));
+    updateLayout->addWidget(m_updateBannerText, 1);
+    m_updateProgress = new QProgressBar(m_updateBanner);
+    m_updateProgress->setRange(0, 100);
+    m_updateProgress->setTextVisible(true);
+    m_updateProgress->setMaximumWidth(160);
+    updateLayout->addWidget(m_updateProgress);
+    m_updateAction = new QPushButton(m_updateBanner);
+    m_updateAction->setObjectName(QStringLiteral("updateAction"));
+    updateLayout->addWidget(m_updateAction);
+    m_updateLater = new QPushButton(QStringLiteral("Later"), m_updateBanner);
+    updateLayout->addWidget(m_updateLater);
+    m_updateDismiss = new QToolButton(m_updateBanner);
+    m_updateDismiss->setObjectName(QStringLiteral("dismissUpdate"));
+    m_updateDismiss->setIcon(QIcon::fromTheme(
+        QStringLiteral("window-close"),
+        style()->standardIcon(QStyle::SP_TitleBarCloseButton)));
+    m_updateDismiss->setToolTip(QStringLiteral("Dismiss"));
+    m_updateDismiss->setAccessibleName(QStringLiteral("Dismiss update"));
+    m_updateDismiss->setAutoRaise(true);
+    updateLayout->addWidget(m_updateDismiss);
+    connect(m_updateAction, &QPushButton::clicked, this, [this] {
+        if (m_showingWhatsNewBanner) {
+            showWhatsNew();
+        } else {
+            m_controller->updates()->updateNow();
+        }
+    });
+    connect(m_updateLater, &QPushButton::clicked, this, [this] {
+        m_updateBannerDeferred = true;
+        m_updateBanner->hide();
+    });
+    connect(m_updateDismiss, &QToolButton::clicked, this, [this] {
+        if (m_showingWhatsNewBanner) {
+            m_controller->clearPendingWhatsNew();
+        } else {
+            m_controller->updates()->dismissAvailableVersion();
+        }
+    });
+    rightLayout->addWidget(m_updateBanner);
+    refreshUpdateBanner();
+    m_autoSaveWarning = new QFrame(right);
+    m_autoSaveWarning->setObjectName(QStringLiteral("autoSaveWarning"));
+    m_autoSaveWarning->setFrameShape(QFrame::StyledPanel);
+    auto *warningLayout = new QHBoxLayout(m_autoSaveWarning);
+    m_autoSaveWarningText = new QLabel(m_autoSaveWarning);
+    warningLayout->addWidget(m_autoSaveWarningText);
+    m_autoSaveWarning->hide();
+    rightLayout->addWidget(m_autoSaveWarning);
     rightLayout->addWidget(m_stack, 1);
     m_sidebarSplitter->addWidget(sidebar);
     m_sidebarSplitter->addWidget(right);
@@ -935,7 +584,6 @@ void AppWindow::buildSidebarShell()
     m_sidebarPane = sidebar;
     m_searchSection = searchContainer;
     sidebar->installEventFilter(this);
-    searchContainer->installEventFilter(this);
     connect(m_sidebarSplitter, &QSplitter::splitterMoved, searchContainer,
             [searchContainer, sidebar] { searchContainer->setFixedWidth(sidebar->width()); });
     root->addWidget(m_sidebarSplitter, 1);
@@ -943,7 +591,7 @@ void AppWindow::buildSidebarShell()
     // Re-run now that the hairline widgets and the splitter handle exist; the
     // first call above only colored the strip itself.
     refreshHeaderStripColor();
-    m_sidebarSplitter->setSizes({kSidebarDefaultWidth, 680});
+    m_sidebarSplitter->setSizes({220, 680});
     const QByteArray splitterState = m_controller->settings()->raw()
                                          .value(QStringLiteral("ui/appWindow/a/splitter"))
                                          .toByteArray();
@@ -978,9 +626,6 @@ void AppWindow::buildSidebarShell()
                 }
             });
     connect(m_stack, &QStackedWidget::currentChanged, this, [this](int index) {
-        if (index < 0) {
-            return;
-        }
         const bool whatsNew = index >= kPages.size();
         m_pageTitle->setText(whatsNew ? QStringLiteral("What's New") : kPages.at(index).title);
         m_backButton->setVisible(whatsNew);
@@ -1003,7 +648,6 @@ void AppWindow::buildSidebarShell()
     m_autoSaveTimer->setInterval(600);
     connect(m_pages, &SettingsPageSet::changed, m_autoSaveTimer, qOverload<>(&QTimer::start));
     connect(m_autoSaveTimer, &QTimer::timeout, this, &AppWindow::runAutoSave);
-#endif
 }
 
 void AppWindow::refreshUpdateBanner()
@@ -1103,50 +747,25 @@ void AppWindow::refreshUpdateBanner()
 
 void AppWindow::showWhatsNew()
 {
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-    const int currentRow = m_navigationPages.indexOf(m_navigation->currentPage());
-    if (currentRow >= 0 && currentRow < kPages.size()) {
-        m_whatsNewReturnRow = currentRow;
-    }
-    m_navigation->setCurrentPage(m_navigationPages.last());
-#else
     if (m_navigation->currentRow() >= 0) {
         m_whatsNewReturnRow = m_navigation->currentRow();
     }
     m_navigation->setCurrentItem(nullptr);
     m_stack->setCurrentWidget(m_pages->whatsNew());
-#endif
     m_controller->clearPendingWhatsNew();
 }
 
 void AppWindow::leaveWhatsNew()
 {
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-    m_navigation->setCurrentPage(
-        m_navigationPages.at(qBound(0, m_whatsNewReturnRow, kPages.size() - 1)));
-#else
     m_navigation->setCurrentRow(qBound(0, m_whatsNewReturnRow, m_navigation->count() - 1));
-#endif
 }
 
 void AppWindow::filterSidebarPages(const QString &query)
 {
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-    if (!m_navigationView) {
-        return;
-    }
-#endif
     if (query.isEmpty()) {
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-        for (int row = 0; row < kPages.size(); ++row) {
-            m_navigationView->setRowHidden(row, false);
-        }
-        m_navigationView->setRowHidden(kPages.size(), true);
-#else
         for (int row = 0; row < m_navigation->count(); ++row) {
             m_navigation->item(row)->setHidden(false);
         }
-#endif
         return;
     }
 
@@ -1190,18 +809,10 @@ void AppWindow::filterSidebarPages(const QString &query)
         }
     }
 
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-    for (int row = 0; row < kPages.size(); ++row) {
-        m_navigationView->setRowHidden(
-            row, !m_pageKeywords.at(row).contains(query, Qt::CaseInsensitive));
-    }
-    m_navigationView->setRowHidden(kPages.size(), true);
-#else
     for (int row = 0; row < m_navigation->count(); ++row) {
         m_navigation->item(row)->setHidden(
             !m_pageKeywords.at(row).contains(query, Qt::CaseInsensitive));
     }
-#endif
 }
 
 void AppWindow::runAutoSave()
