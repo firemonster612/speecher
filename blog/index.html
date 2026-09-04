@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speecher 0.1.0 \ Enzothropic</title>
+<meta name="description" content="Today we're releasing Speecher 0.1.0, the first public version of our dictation app for Linux and macOS. It runs on the Claude Code or ChatGPT subscription you already pay for.">
+<link rel="icon" href="mark.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#faf9f5; --ink:#141413; --ink-2:#0f0f0e; --muted:#5e5d59; --rule:#e8e6dc;
+  --clay:#d97757; --foot-link:#b0aea5;
+  --sans:"Styrene B","anthropicSans",Manrope,"Helvetica Neue",Arial,sans-serif;
+  --serif:"Tiempos Text","anthropicSerif","Source Serif 4",Georgia,serif;
+  --gutter:64px; --max:1400px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{background:var(--paper)}
+body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size:16px;line-height:1.25;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+a{color:inherit;text-decoration:none}
+ul{list-style:none}
+svg{display:block}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.sans{font-family:var(--sans)}
+.wrap{max-width:var(--max);margin:0 auto;padding:0 var(--gutter)}
+
+/* skip links */
+.skip{position:absolute;top:-1000px;left:50%;transform:translateX(-50%);padding:12px 20px;background:var(--ink);color:var(--paper);font-family:var(--sans);font-size:15px;border-radius:0 0 8px 8px;z-index:20}
+.skip:focus{top:0}
+
+/* header */
+.site-header{background:var(--paper);color:var(--ink-2);padding:16px 0;position:sticky;top:0;z-index:10}
+.site-header .wrap{display:flex;align-items:center;justify-content:space-between;height:36px}
+.wordmark{display:flex;align-items:center;height:16px;font-family:var(--sans);font-weight:700;font-size:19.5px;letter-spacing:.135em;line-height:1;color:var(--ink-2);text-transform:uppercase;white-space:nowrap}
+.wordmark .slash{display:inline-block;width:.62em;position:relative;height:1em;vertical-align:top;margin:0 .04em 0 .1em}
+.wordmark .slash::before{content:"";position:absolute;left:.04em;top:-.02em;width:.2em;height:1.06em;background:currentColor;transform:skewX(20deg);transform-origin:top left}
+.site-header .right{display:flex;align-items:center;gap:24px}
+.site-nav ul{display:flex;align-items:center;gap:24px}
+.site-nav a,.site-nav button{display:flex;align-items:center;gap:8px;font-family:var(--sans);font-size:15px;line-height:21px;letter-spacing:-.0025em;color:var(--ink-2)}
+.site-nav a:hover,.site-nav button:hover{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+.caret{width:12px;height:6.13px;flex:none}
+.cta{display:flex;align-items:stretch;font-family:var(--sans)}
+.cta a{display:flex;align-items:center;padding:8px 16px;background:var(--ink-2);color:var(--paper);font-size:15px;line-height:21px;border-radius:8px 0 0 8px;border-right:1px solid rgba(250,249,245,.18)}
+.cta .drop{display:flex;align-items:center;padding:12px 16px;background:var(--ink-2);color:var(--paper);border-radius:0 8px 8px 0}
+.cta a:hover,.cta .drop:hover{background:#2b2b28}
+
+/* post header */
+.post-head{padding-top:48px;display:flex;flex-direction:column;align-items:center;gap:32px;text-align:center}
+.eyebrow{font-family:var(--sans);font-size:15px;font-weight:700;line-height:21px}
+h1{font-family:var(--sans);font-size:52px;font-weight:700;line-height:1.1;letter-spacing:0;max-width:880px}
+.date{font-family:var(--sans);font-size:15px;line-height:21px}
+.hero{width:100%;max-width:880px;aspect-ratio:880/495;background:var(--clay);border-radius:24px;padding:64px;display:flex;align-items:center;justify-content:center}
+.hero svg{width:100%;height:100%}
+
+/* body */
+.post-body{padding-top:48px}
+.reading{max-width:640px;margin-left:auto;margin-right:auto}
+.post-body p{font-size:17px;line-height:1.55;margin:0 auto 16px}
+.post-body p a,.post-body li a{text-decoration:underline;text-decoration-thickness:1.36px;text-underline-offset:2px}
+.post-body p a:hover,.post-body li a:hover{color:var(--clay)}
+.post-body h2{font-family:var(--sans);font-size:32px;font-weight:600;line-height:1.2;margin:64px auto 32px}
+.post-body strong{font-weight:600}
+.post-body code{font-family:ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;font-size:.9em;background:#efede4;padding:.1em .35em;border-radius:4px}
+.post-body ul.bullets{max-width:640px;margin:0 auto 16px;padding-left:20px;list-style:disc;font-size:17px;line-height:1.55}
+.post-body ul.bullets li{margin-bottom:8px}
+figure{margin:32px auto;max-width:640px}
+figure table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14px;line-height:1.35;border:1px solid var(--rule);border-radius:12px;overflow:hidden}
+figure table{border-radius:12px}
+figure thead th{background:var(--ink);color:var(--paper);font-weight:600;text-align:left;padding:14px 14px;vertical-align:bottom}
+figure thead th.us{background:var(--clay);color:var(--ink)}
+figure thead th:first-child{background:transparent;color:var(--muted);font-weight:500}
+figure tbody th{font-weight:500;text-align:left;padding:12px 14px;border-top:1px solid var(--rule);color:var(--ink)}
+figure tbody td{padding:12px 14px;border-top:1px solid var(--rule);font-variant-numeric:tabular-nums}
+figure tbody td.us{font-weight:600}
+figure tbody tr:nth-child(odd) td,figure tbody tr:nth-child(odd) th{background:#fff}
+figcaption{font-family:var(--sans);font-size:13px;line-height:1.4;color:var(--muted);margin-top:12px}
+
+/* appendix (full width like the source) */
+.appendix{margin-top:64px}
+.appendix h4{font-family:var(--sans);font-size:25px;font-weight:600;line-height:30px;margin-bottom:24px}
+.appendix p{font-size:16px;line-height:1.55;margin:0 0 16px;max-width:none}
+.appendix ul{list-style:disc;padding-left:20px;margin:16px 0;font-size:16px;line-height:1.55}
+
+/* share + like */
+.share{margin-top:32px;padding-top:32px;border-top:1px solid var(--rule);display:flex;align-items:center;gap:0}
+.share a,.share button{display:flex;align-items:center;justify-content:center;width:32px;height:32px;color:#191919}
+.share a:hover,.share button:hover{color:var(--clay)}
+.like{gap:6px;width:auto !important;padding:0 6px;border-radius:8px;font-family:var(--sans);font-size:15px;line-height:1}
+.like svg{width:28px;height:28px}
+.like .fill{opacity:0;transition:opacity .15s ease}
+.like[aria-pressed="true"]{color:var(--clay)}
+.like[aria-pressed="true"] .fill{opacity:1}
+.like[aria-pressed="true"] .outline{opacity:0}
+.like .count{min-width:1ch;font-variant-numeric:tabular-nums;color:var(--ink)}
+.like:focus-visible,.share a:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:6px}
+@media (prefers-reduced-motion:no-preference){
+  .like:active svg{transform:scale(.9)}
+  .like svg{transition:transform .1s ease}
+}
+
+/* related */
+.related{padding:96px 0 48px}
+.related h2{font-family:var(--sans);font-size:32px;font-weight:600;line-height:1.2;margin-bottom:32px}
+.cards{display:flex;gap:32px}
+.card{flex:1 1 0;max-width:640px;display:flex;flex-direction:column;gap:8px}
+.card h3{font-family:var(--sans);font-size:19px;font-weight:600;line-height:1.2}
+.card p{font-size:17px;line-height:1.35}
+.card .more{margin-top:8px;display:flex;align-items:center;gap:8px;color:var(--muted);font-family:var(--sans);font-size:15px;line-height:21px}
+.card .more svg{width:20px;height:20px;transition:transform .15s ease}
+.card .more:hover{color:var(--ink)}
+.card .more:hover svg{transform:translateX(3px)}
+
+/* footer */
+.site-footer{background:var(--ink);color:var(--paper)}
+.site-footer .wrap{display:grid;grid-template-columns:3fr 9fr;gap:64px;padding-top:64px;padding-bottom:64px}
+.foot-left{display:flex;flex-direction:column;justify-content:space-between;gap:48px}
+.foot-left .mark{width:46px;height:32px}
+.foot-nav{display:grid;grid-template-columns:repeat(4,1fr);gap:32px}
+.col{display:flex;flex-direction:column;gap:48px}
+.col h3{font-family:var(--sans);font-size:12px;font-weight:700;line-height:16.8px;margin-bottom:16px}
+.col li{margin-bottom:12px;line-height:20px}
+.col li:last-child{margin-bottom:0}
+.col a,.col button{font-family:var(--sans);font-size:12px;line-height:16.8px;color:var(--foot-link)}
+.col a:hover,.col button:hover{color:var(--paper)}
+.legal{display:flex;flex-direction:column;gap:12px}
+.legal small{font-family:var(--sans);font-size:12px;line-height:16.8px;color:var(--foot-link);display:block}
+.social{display:flex;gap:12px}
+.social a{color:var(--foot-link)}
+.social a:hover{color:var(--paper)}
+.social svg{width:24px;height:24px}
+
+/* cookie banner */
+.cookies{position:fixed;right:24px;bottom:24px;width:390px;max-width:calc(100vw - 48px);background:var(--ink);color:var(--paper);border-radius:12px;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.35);z-index:30}
+.cookies[hidden]{display:none}
+.cookies h2{font-family:var(--sans);font-size:20px;font-weight:500;line-height:1.2;margin-bottom:12px}
+.cookies p{font-size:15px;line-height:1.35;margin-bottom:20px}
+.cookies p a{text-decoration:underline;text-underline-offset:2px}
+.cookies .row{display:flex;gap:8px;flex-wrap:wrap}
+.cookies button{flex:1 1 auto;border:1px solid var(--paper);border-radius:8px;padding:9px 12px;font-family:var(--sans);font-size:15px;line-height:21px;color:var(--paper);white-space:nowrap}
+.cookies button.wide{flex-basis:100%}
+.cookies button:hover{background:var(--paper);color:var(--ink)}
+
+/* responsive */
+@media (max-width:1100px){
+  :root{--gutter:32px}
+  .site-footer .wrap{grid-template-columns:1fr;gap:48px}
+  .foot-nav{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:900px){
+  .site-nav{display:none}
+  h1{font-size:40px}
+  .cards{flex-direction:column}
+  .hero{padding:32px;border-radius:16px}
+}
+@media (max-width:600px){
+  :root{--gutter:20px}
+  h1{font-size:32px}
+  .post-body h2,.related h2{font-size:26px}
+  .foot-nav{grid-template-columns:1fr}
+  .cookies{right:12px;bottom:12px;padding:20px}
+}
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <a class="skip" href="#main-content">Skip to main content</a>
+  <a class="skip" href="#footer">Skip to footer</a>
+  <div class="wrap">
+    <a class="wordmark" href="../" aria-label="Home">ENZOTHROP<span class="slash" aria-hidden="true"></span>C</a>
+    <div class="right">
+      <nav class="site-nav" aria-label="Main">
+        <ul>
+          <li><a href="https://github.com/firemonster612/speecher">Research <svg class="caret" viewBox="0 0 8 5" aria-hidden="true"><path d="M7.3016 0.231808C7.44932 0.0678162 7.70306 0.0546398 7.86724 0.20212C8.03137 0.349888 8.04461 0.603568 7.89692 0.767766L4.29684 4.76791L4.23434 4.82417C4.16662 4.87328 4.08425 4.89995 3.99918 4.89995C3.88588 4.89989 3.77733 4.85213 3.70152 4.76791L0.10144 0.767766L0.0537825 0.702139C-0.040206 0.541753 -0.0124254 0.331356 0.131128 0.20212C0.274775 0.0728844 0.486972 0.0674593 0.636608 0.1779L0.696765 0.231808L3.99918 3.90148L7.3016 0.231808Z" fill="currentColor"/></svg></a></li>
+          <li><a href="https://github.com/firemonster612/speecher#installation--updates">Policy</a></li>
+          <li><a href="#responsible-dictation">Commitments <svg class="caret" viewBox="0 0 8 5" aria-hidden="true"><path d="M7.3016 0.231808C7.44932 0.0678162 7.70306 0.0546398 7.86724 0.20212C8.03137 0.349888 8.04461 0.603568 7.89692 0.767766L4.29684 4.76791L4.23434 4.82417C4.16662 4.87328 4.08425 4.89995 3.99918 4.89995C3.88588 4.89989 3.77733 4.85213 3.70152 4.76791L0.10144 0.767766L0.0537825 0.702139C-0.040206 0.541753 -0.0124254 0.331356 0.131128 0.20212C0.274775 0.0728844 0.486972 0.0674593 0.636608 0.1779L0.696765 0.231808L3.99918 3.90148L7.3016 0.231808Z" fill="currentColor"/></svg></a></li>
+          <li><a href="https://github.com/firemonster612/speecher#quick-start">Learn <svg class="caret" viewBox="0 0 8 5" aria-hidden="true"><path d="M7.3016 0.231808C7.44932 0.0678162 7.70306 0.0546398 7.86724 0.20212C8.03137 0.349888 8.04461 0.603568 7.89692 0.767766L4.29684 4.76791L4.23434 4.82417C4.16662 4.87328 4.08425 4.89995 3.99918 4.89995C3.88588 4.89989 3.77733 4.85213 3.70152 4.76791L0.10144 0.767766L0.0537825 0.702139C-0.040206 0.541753 -0.0124254 0.331356 0.131128 0.20212C0.274775 0.0728844 0.486972 0.0674593 0.636608 0.1779L0.696765 0.231808L3.99918 3.90148L7.3016 0.231808Z" fill="currentColor"/></svg></a></li>
+          <li><a href="./">News</a></li>
+        </ul>
+      </nav>
+      <div class="cta">
+        <a href="../#download">Try Speecher</a>
+        <a class="drop" href="https://github.com/firemonster612/speecher/releases" aria-label="More download options"><svg class="caret" viewBox="0 0 8 5" aria-hidden="true"><path d="M7.3016 0.231808C7.44932 0.0678162 7.70306 0.0546398 7.86724 0.20212C8.03137 0.349888 8.04461 0.603568 7.89692 0.767766L4.29684 4.76791L4.23434 4.82417C4.16662 4.87328 4.08425 4.89995 3.99918 4.89995C3.88588 4.89989 3.77733 4.85213 3.70152 4.76791L0.10144 0.767766L0.0537825 0.702139C-0.040206 0.541753 -0.0124254 0.331356 0.131128 0.20212C0.274775 0.0728844 0.486972 0.0674593 0.636608 0.1779L0.696765 0.231808L3.99918 3.90148L7.3016 0.231808Z" fill="currentColor"/></svg></a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main id="main-content">
+<article>
+  <div class="wrap">
+    <div class="post-head">
+      <span class="eyebrow">Announcements</span>
+      <h1>Speecher 0.1.0</h1>
+      <div class="date">Sep 3, 2026</div>
+      <div class="hero" role="img" aria-label="Cream shapes on terracotta: a capsule, a circle, a square and a triangle, with a black hand-drawn waveform running through them and ending in a text cursor.">
+        <svg viewBox="0 0 752 367" fill="none" aria-hidden="true">
+          <g fill="#faf9f5">
+            <circle cx="182" cy="150" r="76"/>
+            <rect x="286" y="62" width="150" height="150" rx="10"/>
+            <path d="M462 212 L537 62 L612 212 Z"/>
+            <rect x="120" y="248" width="340" height="66" rx="33"/>
+            <circle cx="611" cy="288" r="26"/>
+          </g>
+          <path d="M96 292 C130 292 128 262 160 262 S186 322 220 322 S246 250 280 250 S300 300 332 300 S356 282 388 282 S414 306 448 306 S476 270 508 270 S526 296 560 296 S588 280 620 280 L662 280" stroke="#141413" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M662 280 L662 252 M662 280 L662 308" stroke="#141413" stroke-width="9" stroke-linecap="round"/>
+          <path d="M256 150 C268 138 286 132 306 136 M356 108 C370 118 376 138 370 158" stroke="#141413" stroke-width="9" stroke-linecap="round"/>
+          <path d="M182 108 C214 128 214 172 182 192" stroke="#d97757" stroke-width="9" stroke-linecap="round"/>
+          <path d="M150 128 C170 142 170 158 150 172" stroke="#d97757" stroke-width="9" stroke-linecap="round"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap post-body">
+    <div class="reading">
+      <p>Today we're releasing Speecher 0.1.0, the first public version of Speecher, a dictation app for Linux and macOS that runs on the Claude Code or ChatGPT subscription you already pay for. We plan to release substantially smaller improvements in the coming weeks, mostly to fix the things this release breaks.</p>
+      <p>Speecher 0.1.0 is available now as an <a href="https://github.com/firemonster612/speecher/releases">AppImage for Linux and a DMG for macOS</a>. It's also on GitHub, which is the only place it is. Pricing is the same as before: there isn't any.</p>
+
+      <h2>Speecher 0.1.0</h2>
+      <p>Speecher advances our state-of-the-art in getting words out of your mouth and into whatever app has your cursor. Press a shortcut, talk, and clean text lands where you were typing. It also improves Speecher's handling of spoken edits, especially "scratch that", and it learns your own vocabulary so it stops spelling your project names wrong.</p>
+      <p><strong>Enzo</strong> notes that Speecher 0.1.0 improves across most capabilities relative to Speecher 0.0.0, which did not exist, with particularly notable gains in existing. <strong>Enzo's terminal</strong> reports that Speecher pinpoints the exact text field without pasting into the wrong window, with the team (also Enzo) preferring this precision for everyday dictation. <strong>A Plasma desktop</strong> in the test fleet finds the global shortcut registers itself on first run, showing roughly the same leap as the jump from "not installed" to "installed".</p>
+
+      <figure>
+        <table>
+          <thead>
+            <tr><th scope="col">&nbsp;</th><th scope="col" class="us">Speecher 0.1.0</th><th scope="col">Typing it yourself</th><th scope="col">A $15/month dictation app</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">New subscriptions required</th><td class="us">0</td><td>0</td><td>1</td></tr>
+            <tr><th scope="row">Monthly cost</th><td class="us">$0</td><td>$0</td><td>$15</td></tr>
+            <tr><th scope="row">Runs in a web view</th><td class="us">No</td><td>No</td><td>Usually</td></tr>
+            <tr><th scope="row">Clipboard restored after paste</th><td class="us">Yes</td><td>N/A</td><td>Sometimes</td></tr>
+            <tr><th scope="row">Screenshots stored</th><td class="us">Never</td><td>N/A</td><td>Ask them</td></tr>
+            <tr><th scope="row">Gatekeeper warning on macOS</th><td class="us">Yes, sorry</td><td>No</td><td>No</td></tr>
+          </tbody>
+        </table>
+        <figcaption>Speecher 0.1.0 compared with the alternatives most people actually use. See the appendix for methodology.</figcaption>
+      </figure>
+
+      <p>Here is what 0.1.0 ships, taken from the <a href="https://github.com/firemonster612/speecher/blob/master/docs/releases/0.1.0.md">release notes</a> rather than from memory:</p>
+      <ul class="bullets">
+        <li>Speecher updates itself. Pick Stable Release or Nightly Build in Settings. By default it only tells you a new version exists and waits for you to press the button.</li>
+        <li>On Linux, first-run setup starts with a Global Shortcut page. Plasma registers the shortcut itself. GNOME, Hyprland and other desktops with the GlobalShortcuts portal get one click into their own binding dialog. Everywhere else gets copy-paste instructions.</li>
+        <li>After an update, the settings window offers "See what's new", with the release notes and the new settings themselves, live.</li>
+        <li>macOS updates go through Sparkle and are verified against the project's own signing key. The app is still unsigned, because there is no Apple Developer account.</li>
+        <li>The app identity moved to <code>io.github.firemonster612.speecher</code>. Existing settings migrate on first launch.</li>
+        <li><code>speecher --version</code> prints the exact build, including the commit a Nightly Build came from.</li>
+        <li>The bundled helper programs now resolve correctly when Speecher runs from an AppImage.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <p>We recommend upgrading from nothing to Speecher 0.1.0 for all uses. On Linux, download the AppImage, make it executable and run it. On macOS, open the DMG, drag Speecher to Applications, then tell Gatekeeper you meant it under System Settings, Privacy &amp; Security, Open Anyway. If you're a developer, simply <code>make install</code>. You can also explore our <a href="https://github.com/firemonster612/speecher#readme">README</a>, <a href="https://github.com/firemonster612/speecher/tree/master/docs/releases">release notes</a>, <a href="../">product page</a>, and <a href="https://github.com/firemonster612/speecher">source</a> to learn more.</p>
+      <p>Transcription needs a Claude Code or ChatGPT sign-in on the same machine. Speecher does not ship a model of its own. We think that is the whole point.</p>
+      <p>As always, your <a href="https://github.com/firemonster612/speecher/issues">feedback</a> helps us improve, especially the bug reports. Especially those.</p>
+    </div>
+
+    <div class="appendix">
+      <h4>Appendix</h4>
+      <p><strong>Data sources</strong></p>
+      <ul>
+        <li>Speecher: <a href="https://github.com/firemonster612/speecher/blob/master/docs/releases/0.1.0.md">0.1.0 release notes</a>, <a href="https://github.com/firemonster612/speecher#readme">README</a></li>
+        <li>Typing it yourself: the author's hands</li>
+        <li>The $15/month dictation app: its pricing page, viewed once, in a private window</li>
+      </ul>
+      <p><strong>Benchmark reporting</strong></p>
+      <p>Speecher is not a hybrid reasoning model. The results in this blog post show the highest scores achieved with or without coffee. We've noted below for each result whether coffee was used:</p>
+      <ul>
+        <li>With coffee: all of them</li>
+      </ul>
+      <p><strong>Comparison methodology</strong></p>
+      <p>Scores were achieved by one person dictating into a terminal on a Thursday. To accommodate the additional retries a first release incurs, the maximum number of attempts was increased from 30 to 100 (most dictations completed on the first attempt, with only one reaching above 50, and that one was the microphone's fault). We did not run the comparison apps. We read their pricing pages, which is the only benchmark most people run anyway. n=1.</p>
+
+      <div class="share" id="share">
+        <a href="https://twitter.com/intent/tweet?text=https://firemonster612.github.io/speecher/blog/" target="_blank" rel="noopener" aria-label="Share on X"><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><path d="M28 28L18.6145 14.0124L18.6305 14.0255L27.0929 4H24.265L17.3713 12.16L11.8968 4H4.48021L13.2425 17.0593L13.2414 17.0582L4 28H6.82792L14.4921 18.9215L20.5834 28H28ZM10.7763 6.18182L23.9449 25.8182H21.7039L8.52468 6.18182H10.7763Z" fill="currentColor"/></svg></a>
+        <a href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://firemonster612.github.io/speecher/blog/" target="_blank" rel="noopener" aria-label="Share on LinkedIn"><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><path d="M25.8182 4H6.18182C4.97636 4 4 4.97636 4 6.18182V25.8182C4 27.0236 4.97636 28 6.18182 28H25.8182C27.0236 28 28 27.0236 28 25.8182V6.18182C28 4.97636 27.0236 4 25.8182 4ZM11.5862 23.6364H8.368V13.2815H11.5862V23.6364ZM9.94436 11.8011C8.90691 11.8011 8.068 10.96 8.068 9.92473C8.068 8.88945 8.908 8.04945 9.94436 8.04945C10.9785 8.04945 11.8196 8.89055 11.8196 9.92473C11.8196 10.96 10.9785 11.8011 9.94436 11.8011ZM23.6407 23.6364H20.4247V18.6007C20.4247 17.3996 20.4029 15.8549 18.7524 15.8549C17.0778 15.8549 16.8204 17.1629 16.8204 18.5135V23.6364H13.6044V13.2815H16.6916V14.6964H16.7353C17.1651 13.8825 18.2145 13.024 19.78 13.024C23.0385 13.024 23.6407 15.1687 23.6407 17.9571V23.6364Z" fill="currentColor"/></svg></a>
+        <button class="like" id="like" type="button" aria-pressed="false" aria-label="Like this post">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <path class="fill" d="M16 27.5 5.6 17.6C3.2 15.3 2.9 11.5 5 8.9c2.6-3.2 7.4-3.3 10.2-.4l.8.8.8-.8c2.8-2.9 7.6-2.8 10.2.4 2.1 2.6 1.8 6.4-.6 8.7L16 27.5Z" fill="currentColor"/>
+            <path class="outline" d="M16 27.5 5.6 17.6C3.2 15.3 2.9 11.5 5 8.9c2.6-3.2 7.4-3.3 10.2-.4l.8.8.8-.8c2.8-2.9 7.6-2.8 10.2.4 2.1 2.6 1.8 6.4-.6 8.7L16 27.5Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+          </svg>
+          <span class="count" id="like-count">0</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <section class="related" aria-labelledby="related-title">
+    <div class="wrap">
+      <h2 id="related-title">Related content</h2>
+      <div class="cards">
+        <div class="card">
+          <h3>Speecher 0.1.1 to 0.1.4: the ones that work on Linux</h3>
+          <a class="more" href="https://github.com/firemonster612/speecher/releases"><span>Read more</span><svg viewBox="0 0 21 21" aria-hidden="true"><path d="M4.14585 9.87492L14.4584 9.87492L9.60419 5.04158L10.5 4.14575L16.8542 10.4999L10.5 16.8541L9.60419 15.9583L14.4584 11.1249L4.14585 11.1249L4.14585 9.87492Z" fill="currentColor"/></svg></a>
+        </div>
+        <div class="card" id="responsible-dictation">
+          <h3>Our Responsible Dictation Policy</h3>
+          <p>Screenshot context is off by default and never stored. API keys live in your system keyring, not a config file. Your clipboard comes back after Speecher pastes. Updates ask before they install. We wrote these down on the product page so we would have to keep doing them.</p>
+          <a class="more" href="../#download"><span>Read more</span><svg viewBox="0 0 21 21" aria-hidden="true"><path d="M4.14585 9.87492L14.4584 9.87492L9.60419 5.04158L10.5 4.14575L16.8542 10.4999L10.5 16.8541L9.60419 15.9583L14.4584 11.1249L4.14585 11.1249L4.14585 9.87492Z" fill="currentColor"/></svg></a>
+        </div>
+        <div class="card">
+          <h3>Building it yourself</h3>
+          <p>Speecher is Qt Widgets on Linux and SwiftUI in the macOS menu bar, not a web view. If you'd rather compile than download, the README lists the packages for Arch, Debian, Fedora and Homebrew, and <code>make install</code> does the rest.</p>
+          <a class="more" href="https://github.com/firemonster612/speecher#quick-start"><span>Read more</span><svg viewBox="0 0 21 21" aria-hidden="true"><path d="M4.14585 9.87492L14.4584 9.87492L9.60419 5.04158L10.5 4.14575L16.8542 10.4999L10.5 16.8541L9.60419 15.9583L14.4584 11.1249L4.14585 11.1249L4.14585 9.87492Z" fill="currentColor"/></svg></a>
+        </div>
+      </div>
+    </div>
+  </section>
+</article>
+</main>
+
+<footer class="site-footer" id="footer" aria-label="Site footer">
+  <div class="wrap">
+    <div class="foot-left">
+      <a href="../" aria-label="Return to homepage"><svg class="mark" viewBox="0 0 46 32" aria-hidden="true"><path fill="#faf9f5" d="M32.73 0h-6.945L38.45 32h6.945L32.73 0ZM0 0h21.5v5.75H6.6v3.05h13.1v5.75H6.6v3.05h13.1v5.75H6.6v2.9h14.9V32H0V0Z"/></svg></a>
+      <div class="legal">
+        <small>© 2026 Enzothropic PBC. Services in the EU are provided by the same laptop.</small>
+        <ul class="social" aria-label="Social media links">
+          <li><a href="https://github.com/firemonster612/speecher" aria-label="Visit our GitHub repository"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2.17c-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.78 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.7 5.4-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg></a></li>
+        </ul>
+      </div>
+    </div>
+    <nav class="foot-nav" aria-label="Footer navigation">
+      <div class="col">
+        <div><h3>Products</h3><ul>
+          <li><a href="../">Speecher</a></li>
+          <li><a href="../#download">Speecher for Linux</a></li>
+          <li><a href="../#download">Speecher for macOS</a></li>
+          <li><a href="https://github.com/firemonster612/speecher/releases">Download app</a></li>
+          <li><a href="../#download">Pricing ($0)</a></li>
+          <li><a href="https://github.com/firemonster612/speecher#prerequisites">Log in to something else</a></li>
+        </ul></div>
+        <div><h3>Models</h3><ul>
+          <li><a href="https://github.com/firemonster612/speecher#prerequisites">Claude Voice</a></li>
+          <li><a href="https://github.com/firemonster612/speecher#prerequisites">ChatGPT Codex</a></li>
+          <li><a href="https://github.com/firemonster612/speecher#prerequisites">Whichever you already pay for</a></li>
+        </ul></div>
+      </div>
+      <div class="col">
+        <div><h3>Solutions</h3><ul>
+          <li><a href="../">Terminals</a></li>
+          <li><a href="../">Chat boxes</a></li>
+          <li><a href="../">Commit messages</a></li>
+          <li><a href="../">Emails you'd rather say out loud</a></li>
+          <li><a href="../">Swearing at compilers</a></li>
+          <li><a href="../">Small business</a></li>
+        </ul></div>
+        <div><h3>Enzothropic Platform</h3><ul>
+          <li><a href="https://github.com/firemonster612/speecher#readme">Overview</a></li>
+          <li><a href="https://github.com/firemonster612/speecher#quick-start">Developer docs</a></li>
+          <li><a href="https://github.com/firemonster612/speecher">Source code</a></li>
+          <li><a href="https://github.com/firemonster612/speecher/issues">Issue tracker</a></li>
+        </ul></div>
+      </div>
+      <div class="col">
+        <div><h3>Resources</h3><ul>
+          <li><a href="./">Blog</a></li>
+          <li><a href="https://github.com/firemonster612/speecher/tree/master/docs/releases">Release notes</a></li>
+          <li><a href="https://github.com/firemonster612/speecher#readme">README</a></li>
+          <li><a href="https://github.com/firemonster612/speecher/tree/master/docs/adr">Engineering at Enzothropic</a></li>
+          <li><a href="https://github.com/firemonster612/speecher/commits/master">Events</a></li>
+        </ul></div>
+        <div><h3>Programs</h3><ul>
+          <li><a href="https://github.com/firemonster612/speecher#installation--updates">Stable Release</a></li>
+          <li><a href="https://github.com/firemonster612/speecher#installation--updates">Nightly Build</a></li>
+        </ul></div>
+        <div><h3>Help and security</h3><ul>
+          <li><a href="https://www.githubstatus.com/">Status</a></li>
+          <li><a href="https://github.com/firemonster612/speecher/issues">Support center</a></li>
+        </ul></div>
+      </div>
+      <div class="col">
+        <div><h3>Company</h3><ul>
+          <li><a href="../">Enzothropic</a></li>
+          <li><a href="https://github.com/firemonster612/speecher/issues">Careers</a></li>
+          <li><a href="https://github.com/firemonster612">Leadership</a></li>
+          <li><a href="https://github.com/firemonster612/speecher#installation--updates">Policy</a></li>
+          <li><a href="https://github.com/firemonster612/speecher/tree/master/docs/research">Research</a></li>
+          <li><a href="./">News</a></li>
+          <li><a href="#responsible-dictation">Speecher's Constitution</a></li>
+          <li><a href="../">Keep talking</a></li>
+          <li><a href="#responsible-dictation">Responsible Dictation Policy</a></li>
+          <li><a href="https://github.com/firemonster612/speecher">Transparency</a></li>
+        </ul></div>
+        <div><h3>Terms and policies</h3><ul>
+          <li><button type="button" id="cookie-open">Privacy choices</button></li>
+          <li><a href="https://github.com/firemonster612/speecher/blob/master/LICENSE">MIT license</a></li>
+          <li><a href="#responsible-dictation">Privacy policy</a></li>
+          <li><a href="#responsible-dictation">Usage policy</a></li>
+        </ul></div>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<div class="cookies" id="cookies" role="dialog" aria-labelledby="cookies-title" hidden>
+  <h2 id="cookies-title">Cookie Settings</h2>
+  <p>We use zero cookies to deliver and improve our services. This page keeps one localStorage entry so the Like button remembers you, and one so this box stays closed. You can read our Cookie Policy <a href="#cookies-title">here</a>; it is this paragraph.</p>
+  <div class="row">
+    <button type="button" class="wide" data-cookies="close">Customize cookie settings</button>
+    <button type="button" data-cookies="close">Reject all cookies</button>
+    <button type="button" data-cookies="close">Accept all cookies</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  var KEY = 'enzothropic.like.speecher-0.1.0';
+  var btn = document.getElementById('like');
+  var out = document.getElementById('like-count');
+  var state = {liked:false, count:0};
+  try { state = Object.assign(state, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
+  function render(){
+    btn.setAttribute('aria-pressed', state.liked ? 'true' : 'false');
+    btn.setAttribute('aria-label', (state.liked ? 'Unlike this post' : 'Like this post') + ', ' + state.count + (state.count === 1 ? ' like' : ' likes'));
+    out.textContent = state.count;
+  }
+  btn.addEventListener('click', function(){
+    state.liked = !state.liked;
+    state.count = Math.max(0, state.count + (state.liked ? 1 : -1));
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+    render();
+  });
+  render();
+
+  var CK = 'enzothropic.cookies.dismissed';
+  var box = document.getElementById('cookies');
+  var seen = false;
+  try { seen = localStorage.getItem(CK) === '1'; } catch (e) {}
+  if (!seen) box.hidden = false;
+  box.addEventListener('click', function(e){
+    if (!e.target.closest('[data-cookies="close"]')) return;
+    box.hidden = true;
+    try { localStorage.setItem(CK, '1'); } catch (e2) {}
+  });
+  document.getElementById('cookie-open').addEventListener('click', function(){
+    box.hidden = false;
+    box.querySelector('button').focus();
+  });
+})();
+</script>
+</body>
+</html>
