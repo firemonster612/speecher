@@ -304,8 +304,11 @@ DesktopIntegrationRemoval removeAppImageIntegration(const QString &homePath)
     const QString link = localBinaryPath(homePath);
     const QString helper = QDir(localDataPath(homePath)).filePath(
         QStringLiteral("speecher/libexec/speecher-ydotool-setup"));
+    const QString runningAppImage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
 
-    const auto removeItem = [&result](const QString &name, const QString &path, bool onlyLink) {
+    const auto removeItem = [&result, &runningAppImage](const QString &name,
+                                                       const QString &path,
+                                                       bool onlyLink) {
         const QFileInfo info(path);
         if (!info.exists() && !info.isSymLink()) {
             result.absent.append(name);
@@ -317,9 +320,13 @@ DesktopIntegrationRemoval removeAppImageIntegration(const QString &homePath)
             return;
         }
         if (onlyLink) {
-            const QString targetName = QFileInfo(info.symLinkTarget()).fileName();
-            if (!targetName.contains(QStringLiteral("Speecher"), Qt::CaseInsensitive)
-                || !targetName.endsWith(QStringLiteral(".AppImage"), Qt::CaseInsensitive)) {
+            const QString target = info.symLinkTarget();
+            const QString targetName = QFileInfo(target).fileName();
+            const bool isSpeecherAppImage = runningAppImage.isEmpty()
+                ? targetName.contains(QStringLiteral("Speecher"), Qt::CaseInsensitive)
+                    && targetName.endsWith(QStringLiteral(".AppImage"), Qt::CaseInsensitive)
+                : resolvedPath(target) == resolvedPath(runningAppImage);
+            if (!isSpeecherAppImage) {
                 result.failed.append(
                     QStringLiteral("%1: the link does not point to a Speecher AppImage").arg(name));
                 return;

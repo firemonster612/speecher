@@ -28,6 +28,7 @@
 #include <QList>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QScopeGuard>
 #include <QStringList>
 #include <QTemporaryDir>
 
@@ -666,6 +667,16 @@ private slots:
 
     void appImageIntegrationRemovalUndoesTheInstallAndReportsIt()
     {
+        const QByteArray oldAppImage = qgetenv("APPIMAGE");
+        const auto restoreEnvironment = qScopeGuard([oldAppImage] {
+            if (oldAppImage.isNull()) {
+                qunsetenv("APPIMAGE");
+            } else {
+                qputenv("APPIMAGE", oldAppImage);
+            }
+        });
+        qunsetenv("APPIMAGE");
+
         QTemporaryDir root;
         QVERIFY(root.isValid());
         const QDir home(root.filePath(QStringLiteral("home")));
@@ -734,6 +745,15 @@ private slots:
         QVERIFY(QFile::exists(link));
 
         QVERIFY(QFile::remove(link));
+        const QString renamed = root.filePath(QStringLiteral("dictation"));
+        QVERIFY(writeFile(renamed, "image"));
+        QVERIFY(QFile::link(renamed, link));
+        qputenv("APPIMAGE", QFile::encodeName(renamed));
+        removal = removeAppImageIntegration(home.path());
+        QVERIFY(removal.removed.contains(QStringLiteral("speecher command")));
+        QVERIFY(!QFileInfo(link).isSymLink());
+
+        qunsetenv("APPIMAGE");
         const QString unrelated = home.filePath(QStringLiteral("SomeoneElse.AppImage"));
         QVERIFY(writeFile(unrelated, "image"));
         QVERIFY(QFile::link(unrelated, link));
