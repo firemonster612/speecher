@@ -114,6 +114,19 @@ private slots:
         }
         QVERIFY(hasFullWidthHeading);
     }
+
+    void sidebarOffersQuitSpeecher()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        auto *quit = window.findChild<QPushButton *>(QStringLiteral("quitSpeecher"));
+        QVERIFY(quit);
+        QCOMPARE(quit->text(), QStringLiteral("Quit Speecher"));
+        QSignalSpy requested(&controller, SIGNAL(quitRequested()));
+        QVERIFY(requested.isValid());
+        quit->click();
+        QCOMPARE(requested.count(), 1);
+    }
 #endif
 
     void startupDesktopIntegrationWaitsForFirstWindowExposure()

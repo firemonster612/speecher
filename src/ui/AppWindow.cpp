@@ -474,7 +474,7 @@ void AppWindow::buildSidebarShell()
     sidebarLayout->setContentsMargins(settings::relatedSpacing(),
                                       settings::relatedSpacing(),
                                       settings::relatedSpacing(),
-                                      0);
+                                      settings::relatedSpacing());
     sidebarLayout->setSpacing(0);
     m_navigation = new QListWidget(sidebar);
     m_navigation->setObjectName(QStringLiteral("appNavigation"));
@@ -492,6 +492,13 @@ void AppWindow::buildSidebarShell()
         item->setSizeHint(QSize(0, 32));
     }
     sidebarLayout->addWidget(m_navigation, 1);
+#ifdef Q_OS_LINUX
+    sidebarLayout->addSpacing(settings::relatedSpacing());
+    auto *quit = new QPushButton(QStringLiteral("Quit Speecher"), sidebar);
+    quit->setObjectName(QStringLiteral("quitSpeecher"));
+    connect(quit, &QPushButton::clicked, m_controller, &ApplicationController::quitApplication);
+    sidebarLayout->addWidget(quit);
+#endif
     m_stack = new QStackedWidget(m_sidebarSplitter);
     m_stack->setObjectName(QStringLiteral("appPageStack"));
     for (QWidget *page : std::as_const(m_pageWidgets)) {

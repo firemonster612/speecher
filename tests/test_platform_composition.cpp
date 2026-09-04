@@ -275,6 +275,20 @@ private slots:
         QVERIFY(!quitOnLastWindowClosed(LaunchMode::RunDaemon));
     }
 
+    void quitIsAClientCommand()
+    {
+        const CommandLineDecision decision = parseCommandLine(
+            {QStringLiteral("speecher"), QStringLiteral("quit")}, {});
+        QCOMPARE(decision.mode, LaunchMode::RunCli);
+        QCOMPARE(decision.ipcCommand, QStringLiteral("quit"));
+
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        QSignalSpy requested(&controller, &ApplicationController::quitRequested);
+        controller.handleIpcCommand(QStringLiteral("quit"), {}, nullptr);
+        QCOMPARE(requested.count(), 1);
+    }
+
     void atSpiCaptureDoesNotSynthesizeAClipboardCopy()
     {
         const QString sourcePath = QDir(QStringLiteral(QT_TESTCASE_SOURCEDIR))

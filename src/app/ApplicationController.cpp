@@ -489,6 +489,11 @@ void ApplicationController::showSetup()
     showSetupAssistant();
 }
 
+void ApplicationController::quitApplication()
+{
+    emit quitRequested();
+}
+
 void ApplicationController::handleIpcCommand(const QString &command,
                                              const QString &outputFormat,
                                              QLocalSocket *socket)
@@ -531,6 +536,9 @@ void ApplicationController::handleIpcCommand(const QString &command,
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("status")) {
         SingleInstanceIpc::writeResponse(socket, response());
+    } else if (command == QStringLiteral("quit")) {
+        SingleInstanceIpc::writeResponse(socket, response());
+        quitApplication();
     } else {
         SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown command")));
     }

@@ -129,6 +129,11 @@ int main(int argc, char **argv)
     app.setQuitOnLastWindowClosed(quitOnLastWindowClosed(decision.mode));
 
     ApplicationController controller(daemon, platform);
+    QObject::connect(&controller,
+                     &ApplicationController::quitRequested,
+                     &app,
+                     &QCoreApplication::quit,
+                     Qt::QueuedConnection);
     // The one place a platform's front end is chosen; see
     // docs/adr/0001-per-platform-front-ends.md.
 #ifdef SPEECHER_WITH_SWIFT_UI

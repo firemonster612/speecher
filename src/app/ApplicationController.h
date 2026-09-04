@@ -86,6 +86,7 @@ public slots:
     void showMain();
     void showSettings();
     void showSetup();
+    void quitApplication();
     void handleIpcCommand(const QString &command,
                           const QString &outputFormat,
                           QLocalSocket *socket);
@@ -101,6 +102,7 @@ signals:
     void globalShortcutSupportChanged();
     void globalShortcutRegistrationFinished(bool bound, const QString &detail);
     void whatsNewChanged();
+    void quitRequested();
 
 private:
     void registerProviders();
