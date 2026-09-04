@@ -19,15 +19,16 @@ publishing any artifact. QSettings organization becomes
 KGlobalAccel component, and `CFBundleIdentifier` all carry the full id. A
 one-time startup migration copies QSettings keys from the old organization
 (the only user state that exists; the cache directory holds a regenerable
-log) and deliberately leaves the old file in place.
+log) and deliberately leaves the old file in place. On Plasma a key set under the old KGlobalAccel component is carried over to the new one, but only where the old component still exists: 0.1.0 and 0.1.1 already removed it, so their upgraders get the default key.
 
 ## Consequences
 
 - The old settings file at `~/.config/local.speecher/speecher.conf` survives
   indefinitely and can contain API keys; a user purging secrets must delete
   it too.
-- Old KGlobalAccel state under the `local.speecher` component is cleaned up
-  via `cleanComponent` on the next Plasma run so the renamed component can
-  re-register its default; a user's customised key sequence is not migrated.
+- An active KGlobalAccel shortcut under the `local.speecher` component moves
+  to the renamed component on the next Plasma run, then the old component is
+  cleaned up. If the old component has no active shortcut, the renamed
+  component registers the default.
 - On macOS the `CFBundleIdentifier` change resets TCC permission grants for
   any pre-rename install.

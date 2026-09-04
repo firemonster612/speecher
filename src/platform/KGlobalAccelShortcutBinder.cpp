@@ -11,6 +11,7 @@ namespace speecher {
 namespace {
 
 constexpr auto shortcutComponent = "io.github.firemonster612.speecher";
+constexpr auto legacyShortcutComponent = "local.speecher";
 constexpr auto shortcutAction = "toggle-dictation";
 
 } // namespace
@@ -52,20 +53,29 @@ QAction *KGlobalAccelShortcutBinder::makeShortcutAction()
 void KGlobalAccelShortcutBinder::bind()
 {
 #ifdef SPEECHER_WITH_KGLOBALACCEL
-    KGlobalAccel::self()->cleanComponent(QStringLiteral("local.speecher"));
-    const QKeySequence savedShortcut = shortcut();
+    QKeySequence savedShortcut = shortcut();
+    const QList<QKeySequence> legacyShortcuts = KGlobalAccel::self()->globalShortcut(
+        QString::fromLatin1(legacyShortcutComponent),
+        QString::fromLatin1(shortcutAction));
+    if (savedShortcut.isEmpty() && !legacyShortcuts.isEmpty()) {
+        savedShortcut = legacyShortcuts.first();
+    }
+    KGlobalAccel::self()->cleanComponent(QString::fromLatin1(legacyShortcutComponent));
     makeShortcutAction();
     const QKeySequence defaultShortcut = GlobalShortcutBinder::defaultShortcut();
     if (!KGlobalAccel::self()->setDefaultShortcut(m_action, {defaultShortcut})) {
         qWarning() << "Could not set the default Global Shortcut"
                    << QString::fromLatin1(shortcutComponent) << defaultShortcut;
     }
-    if (!savedShortcut.isEmpty()
-        && !KGlobalAccel::self()->setShortcut(
-            m_action,
-            {savedShortcut},
-            KGlobalAccel::Autoloading)) {
-        qWarning() << "Could not restore the saved Global Shortcut";
+    const QKeySequence wanted = savedShortcut.isEmpty() ? defaultShortcut : savedShortcut;
+    if (!KGlobalAccel::self()->setShortcut(m_action, {wanted}, KGlobalAccel::Autoloading)) {
+        qWarning() << "Could not activate the Global Shortcut" << wanted;
+    }
+    // The daemon reports success but stores no key when another component owns it.
+    const QList<QKeySequence> active = KGlobalAccel::self()->shortcut(m_action);
+    if (active.isEmpty() || active.first() != wanted) {
+        qWarning() << "Global Shortcut differs from the requested keys: wanted" << wanted
+                   << "active" << (active.isEmpty() ? QKeySequence() : active.first());
     }
     emit bindingChanged();
 #endif
