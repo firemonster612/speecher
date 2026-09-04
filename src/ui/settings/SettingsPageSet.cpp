@@ -182,8 +182,9 @@ SchemaCustomRowFactory generalCustomRows(ApplicationController *controller)
         if (descriptor.id != QStringLiteral("globalShortcut")) {
             return SchemaCustomRow{};
         }
-        return SchemaCustomRow{
-            new LinuxGlobalShortcutSetupPage(*controller, parent), {}, {}};
+        auto *page = new LinuxGlobalShortcutSetupPage(*controller, parent);
+        page->hideAppMenuIntegration();
+        return SchemaCustomRow{page, {}, {}, true};
     };
 #else
     Q_UNUSED(controller)

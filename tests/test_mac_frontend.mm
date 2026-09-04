@@ -7,6 +7,7 @@
 #include "ui/AppWindow.h"
 #include "ui/SetupAssistant.h"
 #include "ui/TranscriberPopup.h"
+#include "ui/setup/SetupPages.h"
 
 #import <AppKit/AppKit.h>
 
@@ -208,6 +209,24 @@ private slots:
         auto *startAtLogin = last->findChild<QCheckBox *>(QStringLiteral("launchAtLogin"));
         QVERIFY(startAtLogin);
         QVERIFY(startAtLogin->isChecked());
+    }
+
+    void setupWelcomeDoesNotDescribeTheLinuxFinishFlow()
+    {
+        ApplicationController controller(false);
+        SetupAssistant assistant(&controller);
+        WelcomeSetupPage *welcome = nullptr;
+        for (QWidget *widget : assistant.findChildren<QWidget *>()) {
+            if (auto *page = dynamic_cast<WelcomeSetupPage *>(widget)) {
+                welcome = page;
+                break;
+            }
+        }
+        QVERIFY(welcome);
+        for (const QLabel *label : welcome->findChildren<QLabel *>()) {
+            QVERIFY(!label->text().contains(
+                QStringLiteral("ends by setting up a Global Shortcut")));
+        }
     }
 };
 

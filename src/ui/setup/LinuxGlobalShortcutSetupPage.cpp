@@ -28,6 +28,11 @@ QLabel *guidanceLabel(const QString &text, QWidget *parent)
     return label;
 }
 
+QString shortcutSetStatus(const QString &display)
+{
+    return QStringLiteral("Shortcut set to %1. Try it now.").arg(display);
+}
+
 } // namespace
 
 QString linuxGlobalShortcutManualInstruction()
@@ -120,10 +125,11 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     layout->addWidget(m_manualControls);
 
     m_integration = new QWidget(this);
+    m_integration->setObjectName(QStringLiteral("appMenuIntegration"));
     auto *integrationLayout = new QVBoxLayout(m_integration);
     integrationLayout->setContentsMargins(0, 0, 0, 0);
     integrationLayout->addWidget(guidanceLabel(
-        QStringLiteral("Add Speecher to your app menu and make the speecher command available."),
+        QStringLiteral("This also makes the speecher command available for desktop shortcuts."),
         m_integration));
     auto *integrationRow = new QHBoxLayout;
     m_integrationButton = new QPushButton(
@@ -140,7 +146,8 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
             &QKeySequenceEdit::keySequenceChanged,
             m_setShortcut,
             [this](const QKeySequence &sequence) {
-                m_setShortcut->setEnabled(!sequence.isEmpty());
+                m_setShortcut->setEnabled(
+                    !sequence.isEmpty() && sequence != m_controller.globalShortcut());
             });
     connect(m_setShortcut, &QPushButton::clicked, this, [this] { setShortcut(); });
     connect(m_chooseShortcut, &QPushButton::clicked, this, [this] { chooseShortcut(); });
@@ -168,11 +175,16 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     connect(&m_controller,
             &ApplicationController::globalShortcutRegistrationFinished,
             this,
-            [this](bool, const QString &detail) {
-                showRegistrationResult(detail);
+            [this](bool bound, const QString &detail) {
+                showRegistrationResult(bound, detail);
             });
 
     refresh();
+}
+
+void LinuxGlobalShortcutSetupPage::hideAppMenuIntegration()
+{
+    m_integration->hide();
 }
 
 void LinuxGlobalShortcutSetupPage::installIntegration()
@@ -197,8 +209,8 @@ void LinuxGlobalShortcutSetupPage::setShortcut()
                                           : error);
         return;
     }
-    m_status->setText(QStringLiteral("Shortcut set to %1. Try it now.")
-                          .arg(m_controller.globalShortcutDisplay()));
+    m_setShortcut->setEnabled(false);
+    m_status->setText(shortcutSetStatus(m_controller.globalShortcutDisplay()));
 }
 
 void LinuxGlobalShortcutSetupPage::chooseShortcut()
@@ -238,18 +250,33 @@ void LinuxGlobalShortcutSetupPage::refresh()
     }
     if (desktopChooser) {
         m_chooseShortcut->setEnabled(true);
-        m_status->setText(m_controller.globalShortcutDisplay());
+        const QString display = m_controller.globalShortcutDisplay();
+        if (display != m_displayedShortcut) {
+            m_displayedShortcut = display;
+            m_status->setText(display.isEmpty() ? QString() : shortcutSetStatus(display));
+        }
         return;
     }
 
-    const QSignalBlocker blocker(m_sequence);
-    m_sequence->setKeySequence(m_controller.globalShortcut());
-    m_setShortcut->setEnabled(!m_sequence->keySequence().isEmpty());
+    if (!m_sequence->hasFocus()) {
+        const QSignalBlocker blocker(m_sequence);
+        m_sequence->setKeySequence(m_controller.globalShortcut());
+    }
+    m_setShortcut->setEnabled(
+        !m_sequence->keySequence().isEmpty()
+        && m_sequence->keySequence() != m_controller.globalShortcut());
 }
 
-void LinuxGlobalShortcutSetupPage::showRegistrationResult(const QString &detail)
+void LinuxGlobalShortcutSetupPage::showRegistrationResult(bool bound,
+                                                           const QString &detail)
 {
     m_chooseShortcut->setEnabled(m_controller.globalShortcutsSupported());
+    const QString display = m_controller.globalShortcutDisplay();
+    if (bound && !display.isEmpty()) {
+        m_displayedShortcut = display;
+        m_status->setText(shortcutSetStatus(display));
+        return;
+    }
     m_status->setText(detail);
 }
 

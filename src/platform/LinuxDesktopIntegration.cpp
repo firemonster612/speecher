@@ -112,7 +112,7 @@ QString globalShortcutInstructionCommand(const QString &homePath,
 {
     if (!appImagePath.isEmpty()
         && appImageIntegrationInstalled(homePath, appImagePath)) {
-        return QStringLiteral("speecher toggle");
+        return quotedExecutablePath(localBinaryPath(homePath)) + QStringLiteral(" toggle");
     }
     if (!appImagePath.isEmpty()) {
         return quotedExecutablePath(appImagePath) + QStringLiteral(" toggle");

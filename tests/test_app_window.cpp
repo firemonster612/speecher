@@ -90,8 +90,26 @@ private slots:
         ApplicationController controller(true);
         AppWindow window(&controller);
 
-        auto *control = window.findChild<QWidget *>(QStringLiteral("globalShortcut"));
-        QVERIFY(dynamic_cast<LinuxGlobalShortcutSetupPage *>(control));
+        LinuxGlobalShortcutSetupPage *control = nullptr;
+        for (QWidget *widget : window.findChildren<QWidget *>()) {
+            if (auto *page = dynamic_cast<LinuxGlobalShortcutSetupPage *>(widget)) {
+                control = page;
+                break;
+            }
+        }
+        QVERIFY(control);
+        auto *integration = control->findChild<QWidget *>(
+            QStringLiteral("appMenuIntegration"));
+        QVERIFY(integration);
+        QVERIFY(integration->isHidden());
+
+        bool hasFullWidthHeading = false;
+        for (const QLabel *label : window.findChildren<QLabel *>(
+                 QStringLiteral("subsectionLabel"))) {
+            hasFullWidthHeading = hasFullWidthHeading
+                || label->text() == QStringLiteral("Global Shortcut");
+        }
+        QVERIFY(hasFullWidthHeading);
     }
 #endif
 

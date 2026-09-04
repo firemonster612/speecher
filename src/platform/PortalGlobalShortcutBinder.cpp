@@ -85,12 +85,12 @@ PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(QObject *parent)
     if (!QGuiApplication::platformName().startsWith(QStringLiteral("wayland"),
                                                      Qt::CaseInsensitive)) {
         m_unsupportedReason = QStringLiteral(
-            "Automatic setup needs a Wayland session. Set a shortcut up by hand below.");
+            "Automatic setup needs a Wayland session.");
         return;
     }
     if (!QDBusConnection::sessionBus().isConnected()) {
         m_unsupportedReason = QStringLiteral(
-            "Speecher can't reach your desktop settings. Set a shortcut up by hand below.");
+            "Speecher can't reach your desktop settings.");
         return;
     }
 
@@ -99,8 +99,7 @@ PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(QObject *parent)
         requestFailed(
             m_requestKind == RequestKind::Bind
                 ? QStringLiteral("Your desktop didn't finish setting the shortcut.")
-                : QStringLiteral(
-                      "Your desktop didn't answer. Try again, or set a shortcut up by hand below."),
+                : QStringLiteral("Your desktop didn't answer. Try again."),
             true);
     });
 
@@ -177,6 +176,9 @@ void PortalGlobalShortcutBinder::bind()
 
 void PortalGlobalShortcutBinder::registerShortcut()
 {
+    if (!m_supportKnown) {
+        return;
+    }
     if (!m_supported) {
         emit registrationFinished(false, m_unsupportedReason);
         return;
@@ -199,7 +201,7 @@ bool PortalGlobalShortcutBinder::setShortcut(const QKeySequence &, QString *erro
 {
     if (error) {
         *error = QStringLiteral(
-            "Your desktop picks this key combination itself — use Register instead.");
+            "Your desktop picks this key combination itself. Use Choose shortcut instead.");
     }
     return false;
 }
@@ -386,10 +388,8 @@ void PortalGlobalShortcutBinder::handleRequestResponse(uint response,
     const RequestKind kind = m_requestKind;
     if (response != 0) {
         requestFailed(response == 1
-                          ? QStringLiteral(
-                                "Setup was cancelled. Try again, or set a shortcut up by hand below.")
-                          : QStringLiteral(
-                                "Couldn't set the shortcut. Set one up by hand below."));
+                          ? QStringLiteral("Setup was cancelled. Try again.")
+                          : QStringLiteral("Couldn't set the shortcut. Try again."));
         return;
     }
     disconnectRequest();

@@ -135,9 +135,12 @@ WelcomeSetupPage::WelcomeSetupPage(QWidget *parent)
     QVBoxLayout *layout = makePage(
         this,
         QStringLiteral("Speecher records a short dictation, turns it into text, and sends it to the app you were using."));
-    auto *checks = new QLabel(
-        QStringLiteral("This assistant checks your transcription provider, microphone, desktop accessibility, text delivery, refinement, and writing profiles. It ends by setting up a Global Shortcut."),
-        this);
+    QString checksText = QStringLiteral(
+        "This assistant checks your transcription provider, microphone, desktop accessibility, text delivery, refinement, and writing profiles.");
+#ifdef Q_OS_LINUX
+    checksText += QStringLiteral(" It ends by setting up a Global Shortcut.");
+#endif
+    auto *checks = new QLabel(checksText, this);
     checks->setWordWrap(true);
     layout->addWidget(checks);
     layout->addStretch();
@@ -871,6 +874,7 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
         this,
         QStringLiteral("Setup is complete."));
     m_shortcutStatus->setWordWrap(true);
+    m_shortcutStatus->setObjectName(QStringLiteral("finishGlobalShortcutStatus"));
     m_signInNote->setWordWrap(true);
 
 #ifdef Q_OS_MACOS
@@ -901,6 +905,10 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
     m_manualCommand->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     m_manualCommand->setTextInteractionFlags(Qt::TextSelectableByMouse
                                              | Qt::TextSelectableByKeyboard);
+    connect(&m_controller,
+            &ApplicationController::globalShortcutChanged,
+            this,
+            [this] { updateLinuxShortcutInstruction(); });
     updateLinuxShortcutInstruction();
 #else
     m_shortcutStatus->setText(
@@ -943,7 +951,11 @@ void FinishSetupPage::updateLinuxShortcutInstruction()
         m_manualCommand->hide();
         return;
     }
-    m_shortcutStatus->setText(linuxGlobalShortcutManualInstruction());
+    m_shortcutStatus->setText(
+        m_controller.globalShortcutsSupported()
+            ? QStringLiteral(
+                  "No Global Shortcut is set yet. Go back to set one, or bind this command yourself:")
+            : linuxGlobalShortcutManualInstruction());
     m_manualCommand->setText(linuxGlobalShortcutCommand());
     m_manualCommand->show();
 }

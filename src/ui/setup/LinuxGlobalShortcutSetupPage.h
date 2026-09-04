@@ -17,13 +17,14 @@ class LinuxGlobalShortcutSetupPage final : public QWidget {
 public:
     explicit LinuxGlobalShortcutSetupPage(ApplicationController &controller,
                                           QWidget *parent = nullptr);
+    void hideAppMenuIntegration();
 
 private:
     void installIntegration();
     void setShortcut();
     void chooseShortcut();
     void refresh();
-    void showRegistrationResult(const QString &detail);
+    void showRegistrationResult(bool bound, const QString &detail);
 
     ApplicationController &m_controller;
     QString m_homePath;
@@ -37,6 +38,7 @@ private:
     QPushButton *m_chooseShortcut = nullptr;
     QLabel *m_status = nullptr;
     QLabel *m_command = nullptr;
+    QString m_displayedShortcut;
     QWidget *m_integration = nullptr;
     QPushButton *m_integrationButton = nullptr;
     QLabel *m_integrationStatus = nullptr;

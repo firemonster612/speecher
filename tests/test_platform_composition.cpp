@@ -25,7 +25,6 @@
 #include <QStringList>
 #include <QTemporaryDir>
 #include <QTest>
-#include <QToolButton>
 
 #include <memory>
 #include <utility>
@@ -267,17 +266,11 @@ private slots:
 #ifdef Q_OS_LINUX
     void setupAssistantPutsTheGlobalShortcutBeforeFinish()
     {
-#ifdef SPEECHER_WITH_KASSISTANT
-        QSKIP("This host does not build the KAssistantDialog path");
-#else
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
         SetupAssistant assistant(&controller);
 
-        QStringList titles;
-        for (const int id : assistant.pageIds()) {
-            titles.append(assistant.page(id)->title());
-        }
+        const QStringList titles = assistant.pageTitles();
         QCOMPARE(titles,
                  QStringList({QStringLiteral("Welcome to Speecher"),
                               QStringLiteral("Transcription"),
@@ -305,7 +298,6 @@ private slots:
                 || label->text().contains(QStringLiteral("ends by setting up a Global Shortcut"));
         }
         QVERIFY(mentionsShortcut);
-#endif
     }
 
     void globalShortcutSinglePageOnlyShowsTheShortcutPage()
@@ -315,10 +307,7 @@ private slots:
         SetupAssistant assistant(&controller, SetupAssistantPage::GlobalShortcut);
         assistant.show();
 
-#ifndef SPEECHER_WITH_KASSISTANT
-        QCOMPARE(assistant.pageIds().size(), 1);
-        QVERIFY(assistant.page(assistant.pageIds().first())->isVisible());
-#endif
+        QCOMPARE(assistant.pageTitles(), QStringList({QStringLiteral("Global Shortcut")}));
         int visibleSetupPages = 0;
         for (QWidget *widget : assistant.findChildren<QWidget *>()) {
             const bool setupPage = dynamic_cast<LinuxGlobalShortcutSetupPage *>(widget)
@@ -356,14 +345,21 @@ private slots:
             }
         }
         QVERIFY(setShortcut);
+        QVERIFY(!setShortcut->isEnabled());
         sequence->clear();
         QVERIFY(!setShortcut->isEnabled());
 
+        page.show();
+        sequence->setFocus();
+        QTRY_VERIFY(sequence->hasFocus());
         const QKeySequence chosen(Qt::CTRL | Qt::ALT | Qt::Key_Space);
         sequence->setKeySequence(chosen);
         QVERIFY(setShortcut->isEnabled());
+        platform->binder->publishShortcut(QKeySequence(Qt::CTRL | Qt::Key_D));
+        QCOMPARE(sequence->keySequence(), chosen);
         setShortcut->click();
         QCOMPARE(controller.globalShortcut(), chosen);
+        QVERIFY(!setShortcut->isEnabled());
 
         bool hasStatus = false;
         for (QLabel *label : page.findChildren<QLabel *>()) {
@@ -418,8 +414,28 @@ private slots:
         QCOMPARE(platform->binder->registerCount, 1);
 
         const QString result = QStringLiteral("Ctrl+Alt+Space");
+        platform->binder->publishShortcut(QKeySequence(result));
         platform->binder->publishRegistrationResult(true, result);
-        QCOMPARE(status->text(), result);
+        QCOMPARE(status->text(),
+                 QStringLiteral("Shortcut set to Ctrl+Alt+Space. Try it now."));
+    }
+
+    void globalShortcutPageKeepsPortalFailureAfterRestoringTheOldShortcut()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        platform->binder->desktopChooser = true;
+        const QKeySequence existing(Qt::CTRL | Qt::ALT | Qt::Key_Space);
+        platform->binder->publishShortcut(existing);
+        LinuxGlobalShortcutSetupPage page(controller);
+        auto *status = page.findChild<QLabel *>(QStringLiteral("globalShortcutStatus"));
+        QVERIFY(status);
+
+        platform->binder->publishRegistrationResult(
+            false, QStringLiteral("Setup was cancelled. Try again."));
+        platform->binder->publishShortcut(existing);
+
+        QCOMPARE(status->text(), QStringLiteral("Setup was cancelled. Try again."));
     }
 
     void globalShortcutPageShowsOnlyManualSetupWhenUnsupported()
@@ -494,6 +510,41 @@ private slots:
         QVERIFY(!command->isHidden());
     }
 
+    void finishPageExplainsWhenASupportedShortcutIsUnset()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        platform->binder->shortcutsSupported = true;
+        FinishSetupPage page(controller);
+
+        auto *status = page.findChild<QLabel *>(QStringLiteral("finishGlobalShortcutStatus"));
+        auto *command = page.findChild<QLabel *>(
+            QStringLiteral("finishGlobalShortcutCommand"));
+        QVERIFY(status);
+        QCOMPARE(status->text(), QStringLiteral(
+            "No Global Shortcut is set yet. Go back to set one, or bind this command yourself:"));
+        QVERIFY(command);
+        QVERIFY(!command->isHidden());
+    }
+
+    void finishPageUpdatesWhenThePortalPublishesAShortcut()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        FinishSetupPage page(controller);
+        auto *status = page.findChild<QLabel *>(QStringLiteral("finishGlobalShortcutStatus"));
+        auto *command = page.findChild<QLabel *>(
+            QStringLiteral("finishGlobalShortcutCommand"));
+        QVERIFY(status);
+        QVERIFY(command);
+
+        platform->binder->publishShortcut(QKeySequence(Qt::META | Qt::ALT | Qt::Key_D));
+
+        QCOMPARE(status->text(), QStringLiteral(
+            "Press Meta+Alt+D to start dictating, speak, then press it again to stop and insert the text."));
+        QVERIFY(command->isHidden());
+    }
+
     void globalShortcutInstructionCommandMatchesTheInstallation()
     {
         QTemporaryDir home;
@@ -533,7 +584,7 @@ private slots:
                      home.path(),
                      appImage,
                      QStringLiteral("/tmp/.mount/usr/bin/speecher")),
-                 QStringLiteral("speecher toggle"));
+                 QStringLiteral("\"%1\" toggle").arg(link));
     }
 
     void appImageDesktopFileExecLinesUseTheRealImagePath()

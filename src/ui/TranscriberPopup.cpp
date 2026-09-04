@@ -147,7 +147,7 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
 
 QSize TranscriberPopup::sizeHint() const
 {
-    const int spacing = m_layout ? m_layout->spacing() : 0;
+    const int spacing = m_layout->spacing();
     const int noticeHeight = m_accessibilityNotice->isHidden()
         ? 0
         : m_accessibilityNotice->sizeHint().height() + spacing;

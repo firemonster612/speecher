@@ -66,7 +66,6 @@ public:
     bool globalShortcutsSupported() const;
     bool globalShortcutSupportKnown() const;
     bool globalShortcutUsesDesktopChooser() const;
-    QString globalShortcutUnsupportedReason() const;
     QKeySequence globalShortcut() const;
     QString globalShortcutDisplay() const;
     bool setGlobalShortcut(const QKeySequence &shortcut, QString *error = nullptr);

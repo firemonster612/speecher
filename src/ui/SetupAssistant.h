@@ -8,6 +8,7 @@
 #include <QHash>
 #include <QWizard>
 #endif
+#include <QStringList>
 
 namespace speecher {
 
@@ -33,6 +34,7 @@ public:
     explicit SetupAssistant(ApplicationController *controller,
                             SetupAssistantPage page = SetupAssistantPage::All,
                             QWidget *parent = nullptr);
+    QStringList pageTitles() const;
 
 protected:
     void accept() override;

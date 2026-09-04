@@ -324,11 +324,6 @@ bool ApplicationController::globalShortcutUsesDesktopChooser() const
     return m_shortcutBinder->usesDesktopShortcutChooser();
 }
 
-QString ApplicationController::globalShortcutUnsupportedReason() const
-{
-    return m_shortcutBinder->unsupportedReason();
-}
-
 QKeySequence ApplicationController::globalShortcut() const
 {
     return m_shortcutBinder->shortcut();

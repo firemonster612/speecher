@@ -530,7 +530,9 @@ SettingsPage whatsNewPage(const QList<SettingsPage> &pages, const SchemaContext 
         for (const SettingsPage &page : pages) {
             for (const SettingsSection &section : page.sections) {
                 for (const SettingsRow &row : section.rows) {
-                    if (!row.sinceVersion.isEmpty()
+                    // Custom rows need a page-specific factory, which What's New does not have.
+                    if (row.kind != RowKind::Custom
+                        && !row.sinceVersion.isEmpty()
                         && compareBaseVersions(row.sinceVersion, context.lastSeenVersion) > 0
                         && compareBaseVersions(row.sinceVersion, context.currentVersion) <= 0) {
                         newRows.append(row);
