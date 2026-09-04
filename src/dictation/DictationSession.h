@@ -1,13 +1,12 @@
 #pragma once
 
-#include <QPointer>
-
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationTypes.h"
 #include "dictation/StartupPreparationRunner.h"
 #include "dictation/TranscriptPipeline.h"
 
 #include <QMetaObject>
+#include <QPointer>
 #include <QVector>
 
 #include <optional>

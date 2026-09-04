@@ -248,13 +248,15 @@ private slots:
         // transcriber; its destructor must not call into the freed object.
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.setRefinementProvider(QStringLiteral("openai"));
         auto audio = std::make_unique<FakeAudioInput>();
         auto media = std::make_unique<FakeMediaController>();
         auto delivery = std::make_unique<FakeDelivery>();
         auto *registry = new ProviderRegistry;
         FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
         registerFakeSpeechProvider(*registry, &speech);
+        registerFakeRefiner(*registry, &refiner);
         auto *session = new DictationSession(&settings, audio.get(), media.get(), delivery.get(), registry);
         session->startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session->state()), int(DictationState::Listening), 250);
@@ -262,10 +264,13 @@ private slots:
         speech->emitFinalText(QStringLiteral("hello"));
         session->stopListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session->state()), int(DictationState::Idle), 1800);
+        QVERIFY(refiner);
 
-        delete registry; // owner of *speech goes away first, as in the controller
-        delete session;  // must not touch the dead transcriber or refiner
-        QVERIFY(true);
+        // Passing means surviving: the owner of *speech and *refiner goes away
+        // first, as in the controller, and the session's destructor must not
+        // touch either dead object.
+        delete registry;
+        delete session;
     }
 
     void dictationSessionForwardsAudioDuringStartAndStop()
