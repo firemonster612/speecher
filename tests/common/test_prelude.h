@@ -35,6 +35,7 @@
 #include "platform/atspi/AtSpiCorrectionObserver.h"
 #include "platform/atspi/AtSpiTargetSnapshot.h"
 #include "platform/PortalScreenshotContextProvider.h"
+#include "platform/PortalResponseTracker.h"
 #endif
 #include "platform/audio/AudioPcmConverter.h"
 #include "platform/audio/QtAudioInput.h"

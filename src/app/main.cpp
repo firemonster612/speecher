@@ -76,20 +76,10 @@ static void migrateSettings()
                           QString::fromLatin1(SettingsKeys::Application));
     QSettings oldSettings(QString::fromLatin1(oldOrganization),
                           QString::fromLatin1(SettingsKeys::Application));
-    newSettings.setFallbacksEnabled(false);
-    oldSettings.setFallbacksEnabled(false);
-    const QStringList oldKeys = oldSettings.allKeys();
-    const bool existingConfig = !newSettings.allKeys().isEmpty() || !oldKeys.isEmpty();
-    if (newSettings.allKeys().isEmpty() && !oldKeys.isEmpty()) {
-        for (const QString &key : oldKeys) {
-            newSettings.setValue(key, oldSettings.value(key));
-        }
-        qInfo() << "Migrated settings keys:" << oldKeys.size();
+    QString error;
+    if (!migrateSettingsIdentity(newSettings, oldSettings, &error)) {
+        qWarning().noquote() << error;
     }
-    if (existingConfig && !newSettings.contains(SettingsKeys::UpdatesLastRunVersion)) {
-        newSettings.setValue(SettingsKeys::UpdatesLastRunVersion, QStringLiteral("0.1.0"));
-    }
-    newSettings.sync();
 }
 
 static QStringList commandLineArguments(int argc, char **argv)
@@ -134,11 +124,7 @@ int main(int argc, char **argv)
     Theme::apply(startupSettings.theme());
 
     const bool daemon = decision.mode == LaunchMode::RunDaemon;
-#ifdef Q_OS_MACOS
-    app.setQuitOnLastWindowClosed(false);
-#else
-    app.setQuitOnLastWindowClosed(!daemon);
-#endif
+    app.setQuitOnLastWindowClosed(quitOnLastWindowClosed(decision.mode));
 
     ApplicationController controller(daemon, platform);
     // The one place a platform's front end is chosen; see

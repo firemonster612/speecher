@@ -1,26 +1,15 @@
 #include "output/YdotoolDelivery.h"
 
-#include <QCryptographicHash>
-#include <QDateTime>
-#include <QDir>
-#include <QFile>
-#include <QLockFile>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QStandardPaths>
-#include <QTextStream>
 
 #include <limits>
-
-#ifdef Q_OS_UNIX
-#include <unistd.h>
-#endif
 
 namespace speecher {
 
 namespace {
 
-constexpr qint64 duplicateWindowMs = 2500;
 constexpr int keyDelayMs = 1;
 constexpr int keyHoldMs = 2;
 constexpr int shortcutKeyDelayMs = 2;
@@ -28,80 +17,6 @@ constexpr int modifierTimeoutMs = 500;
 constexpr int shortcutTimeoutMs = 1000;
 constexpr int typeBaseTimeoutMs = 2000;
 constexpr int typeSlackPerCharacterMs = 5;
-
-QString runtimeDirectory()
-{
-    QString runtime = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
-    if (runtime.isEmpty()) {
-        runtime = QDir::tempPath();
-    }
-    QDir().mkpath(runtime);
-    return runtime;
-}
-
-QString userToken()
-{
-#ifdef Q_OS_UNIX
-    return QString::number(getuid());
-#else
-    return qEnvironmentVariable("USER", qEnvironmentVariable("USERNAME", QStringLiteral("user")));
-#endif
-}
-
-QString deliveryStatePath()
-{
-    return runtimeDirectory() + QStringLiteral("/speecher-ydotool-delivery-%1.state").arg(userToken());
-}
-
-QString deliveryLockPath()
-{
-    return runtimeDirectory() + QStringLiteral("/speecher-ydotool-delivery-%1.lock").arg(userToken());
-}
-
-QString textHash(const QString &text)
-{
-    return QString::fromLatin1(QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha256).toHex());
-}
-
-bool wasRecentlyDelivered(const QString &text)
-{
-    QLockFile lock(deliveryLockPath());
-    lock.setStaleLockTime(5000);
-    if (!lock.tryLock(250)) {
-        return false;
-    }
-
-    const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    const QString currentHash = textHash(text);
-
-    QFile state(deliveryStatePath());
-    if (state.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QTextStream stream(&state);
-        const qint64 previousTime = stream.readLine().toLongLong();
-        const QString previousHash = stream.readLine().trimmed();
-        state.close();
-        if (previousHash == currentHash && now - previousTime >= 0 && now - previousTime < duplicateWindowMs) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-void recordSuccessfulDelivery(const QString &text)
-{
-    QLockFile lock(deliveryLockPath());
-    lock.setStaleLockTime(5000);
-    if (!lock.tryLock(250)) {
-        return;
-    }
-
-    QFile state(deliveryStatePath());
-    if (state.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
-        QTextStream stream(&state);
-        stream << QDateTime::currentMSecsSinceEpoch() << '\n' << textHash(text) << '\n';
-    }
-}
 
 bool runYdotool(const QString &executable,
                 const QProcessEnvironment &env,
@@ -230,10 +145,6 @@ bool YdotoolDelivery::type(const QString &text, QString *error)
         return true;
     }
 
-    if (wasRecentlyDelivered(typedText)) {
-        return true;
-    }
-
     const QString executable = QStandardPaths::findExecutable(QStringLiteral("ydotool"));
     if (executable.isEmpty()) {
         if (error) {
@@ -257,7 +168,6 @@ bool YdotoolDelivery::type(const QString &text, QString *error)
         releaseModifierKeys(executable, env);
         return false;
     }
-    recordSuccessfulDelivery(typedText);
     releaseModifierKeys(executable, env);
     return true;
 }
@@ -265,10 +175,6 @@ bool YdotoolDelivery::type(const QString &text, QString *error)
 bool YdotoolDelivery::pasteFromClipboard(const QString &text, PasteMethod method, QString *error)
 {
     if (text.isEmpty()) {
-        return true;
-    }
-
-    if (wasRecentlyDelivered(text)) {
         return true;
     }
 
@@ -291,7 +197,6 @@ bool YdotoolDelivery::pasteFromClipboard(const QString &text, PasteMethod method
         releaseModifierKeys(executable, env);
         return false;
     }
-    recordSuccessfulDelivery(text);
     releaseModifierKeys(executable, env);
     return true;
 }

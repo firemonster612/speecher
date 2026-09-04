@@ -63,7 +63,7 @@ void recordUsage(QSettings &settings, const QString &text)
     QList<VocabularyEntry> entries = load(settings);
     bool changed = false;
     for (VocabularyEntry &entry : entries) {
-        if (text.contains(entry.term, Qt::CaseInsensitive)) {
+        if (containsVocabularyTerm(text, entry.term)) {
             ++entry.frequency;
             entry.lastUsedMs = QDateTime::currentMSecsSinceEpoch();
             changed = true;

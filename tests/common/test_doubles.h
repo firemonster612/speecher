@@ -26,7 +26,10 @@ public:
         if (onStart) {
             onStart();
         }
-        return true;
+        if (!startResult) {
+            active = false;
+        }
+        return startResult;
     }
 
     void stop() override

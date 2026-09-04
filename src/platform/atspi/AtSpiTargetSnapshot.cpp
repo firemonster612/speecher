@@ -817,18 +817,6 @@ bool TargetSnapshot::valid() const
     return bool(m_accessible);
 }
 
-bool TargetSnapshot::safeForSelectionProbe() const
-{
-#ifdef SPEECHER_WITH_ATSPI
-    return m_accessible
-        && atspi_accessible_is_text(m_accessible.get())
-        && atspi_accessible_is_editable_text(m_accessible.get())
-        && isFocusedText();
-#else
-    return false;
-#endif
-}
-
 bool TargetSnapshot::matches(const Target &target, bool requireFocus) const
 {
 #ifdef SPEECHER_WITH_ATSPI

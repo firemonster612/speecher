@@ -1,53 +1,12 @@
 #include "platform/AtSpiTargetProvider.h"
 
-#include "output/WlClipboardDelivery.h"
-#include "output/YdotoolDelivery.h"
 #include "platform/atspi/AtSpiAccess.h"
 #include "platform/atspi/AtSpiCorrectionObserver.h"
 #include "platform/atspi/AtSpiTargetSnapshot.h"
 
 #include <QThread>
-#include <QUuid>
 
 namespace speecher {
-
-namespace {
-
-QString copiedSelection()
-{
-    if (!WlClipboardDelivery::canSnapshot() || !YdotoolDelivery::isAvailable()) {
-        return {};
-    }
-
-    ClipboardSnapshot previous;
-    if (!WlClipboardDelivery::capture(&previous)) {
-        return {};
-    }
-
-    const QString marker = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    WlClipboardDelivery clipboard;
-    if (!clipboard.copy({marker, std::nullopt})
-        || !YdotoolDelivery().copySelection(PasteMethod::StandardPaste)) {
-        WlClipboardDelivery::restore(previous);
-        return {};
-    }
-
-    QString selectedText;
-    for (int attempt = 0; attempt < 5; ++attempt) {
-        if (attempt > 0) {
-            QThread::msleep(20);
-        }
-        QString text;
-        if (WlClipboardDelivery::readText(&text) && !text.isEmpty() && text != marker) {
-            selectedText = text;
-            break;
-        }
-    }
-    WlClipboardDelivery::restore(previous);
-    return selectedText;
-}
-
-} // namespace
 
 AtSpiTargetProvider::AtSpiTargetProvider(QObject *parent)
     : TargetProvider(parent)
@@ -62,7 +21,6 @@ AtSpiTargetProvider::~AtSpiTargetProvider()
 void AtSpiTargetProvider::clearAccessible()
 {
     if (m_correctionObserver) m_correctionObserver->cancel();
-    m_fallbackSelection.clear();
     m_snapshot.reset();
 }
 
@@ -72,28 +30,12 @@ Target AtSpiTargetProvider::capture(const QList<AppRecognitionRule> &recognition
     m_snapshot = std::make_unique<atspi::TargetSnapshot>(atspi::TargetSnapshot::capture());
     Target target = m_snapshot->target();
     target.category = classifyTarget(target, recognitionRules);
-    if (!target.hasSelection()
-        && !target.secure
-        && !isTerminalTarget(target)
-        && m_snapshot->safeForSelectionProbe()) {
-        target.selectedText = copiedSelection();
-        if (!target.selectedText.isEmpty()) {
-            m_fallbackSelection = target.selectedText;
-            target.selectionStart = 0;
-            target.selectionEnd = target.selectedText.size();
-        }
-    }
     return target;
 }
 
 bool AtSpiTargetProvider::stillFocused(const Target &target)
 {
-    if (!m_snapshot || !m_snapshot->matches(target, true)) {
-        return false;
-    }
-    return m_fallbackSelection.isEmpty()
-        || (m_snapshot->safeForSelectionProbe()
-            && copiedSelection() == m_fallbackSelection);
+    return m_snapshot && m_snapshot->matches(target, true);
 }
 
 bool AtSpiTargetProvider::canInsertText(const Target &target)

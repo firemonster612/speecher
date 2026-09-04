@@ -1,5 +1,7 @@
 #include "providers/OpenAiAuthProvider.h"
 
+#include "core/CliProxyUrl.h"
+
 #include "core/SecretStore.h"
 #include "providers/CliProxyCredentials.h"
 
@@ -331,7 +333,7 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
                     QStringLiteral("Using CLI Proxy API at %1").arg(m_cliproxyBaseUrl),
                     {},
                     {},
-                    m_cliproxyBaseUrl + QStringLiteral("/v1"),
+                    cliproxyApiBase(m_cliproxyBaseUrl),
                     {},
                     false};
         }

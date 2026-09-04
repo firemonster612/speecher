@@ -1,9 +1,49 @@
 #include "core/SettingsStore.h"
 #include "core/settings/CorrectionSettingsCodec.h"
+#include "core/settings/SettingsKeys.h"
 
 #include <utility>
 
 namespace speecher {
+
+bool migrateSettingsIdentity(QSettings &newSettings, QSettings &oldSettings, QString *error)
+{
+    constexpr int currentMigrationVersion = 1;
+    newSettings.setFallbacksEnabled(false);
+    oldSettings.setFallbacksEnabled(false);
+    if (newSettings.value(SettingsKeys::IdentityMigrationVersion).toInt()
+        >= currentMigrationVersion) {
+        return true;
+    }
+
+    const QStringList oldKeys = oldSettings.allKeys();
+    const bool existingConfig = !newSettings.allKeys().isEmpty() || !oldKeys.isEmpty();
+    for (const QString &key : oldKeys) {
+        if (!newSettings.contains(key)) {
+            newSettings.setValue(key, oldSettings.value(key));
+        }
+    }
+    if (existingConfig && !newSettings.contains(SettingsKeys::UpdatesLastRunVersion)) {
+        newSettings.setValue(SettingsKeys::UpdatesLastRunVersion, QStringLiteral("0.1.0"));
+    }
+    newSettings.sync();
+    if (newSettings.status() != QSettings::NoError) {
+        if (error) {
+            *error = QStringLiteral("Could not persist migrated settings");
+        }
+        return false;
+    }
+
+    newSettings.setValue(SettingsKeys::IdentityMigrationVersion, currentMigrationVersion);
+    newSettings.sync();
+    if (newSettings.status() != QSettings::NoError) {
+        if (error) {
+            *error = QStringLiteral("Could not record settings migration");
+        }
+        return false;
+    }
+    return true;
+}
 
 SettingsStore::SettingsStore(QObject *parent)
     : QObject(parent)

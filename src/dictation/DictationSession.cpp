@@ -424,6 +424,12 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation, const
         if (m_audioGeneration == generation) {
             m_audioGeneration = 0;
         }
+        if (generation != m_generation
+            || m_state != DictationState::Starting
+            || !m_sessionSettings) {
+            qInfo() << "audio start failed for a cancelled generation";
+            return;
+        }
         qWarning().noquote() << "audio start failed message=" + audioError;
         m_transcriber->cancelAttempt(m_attemptId);
         clearScreenshotContext();

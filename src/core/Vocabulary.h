@@ -9,5 +9,6 @@ namespace speecher {
 
 QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &entries);
 QList<VocabularyEntry> parseVocabularyCsv(const QByteArray &csv, QString *error = nullptr);
+bool containsVocabularyTerm(const QString &text, const QString &term);
 
 } // namespace speecher

@@ -9,6 +9,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLockFile>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QNetworkAccessManager>
@@ -96,6 +97,7 @@ QString tokenUrl()
 }
 
 bool saveRefreshedCredentials(const QString &path,
+                              const QString &sourceRefreshToken,
                               const QString &accessToken,
                               const QString &refreshToken,
                               qint64 expiresAtMs,
@@ -121,6 +123,12 @@ bool saveRefreshedCredentials(const QString &path,
 
     QJsonObject root = document.object();
     QJsonObject oauth = root.value(QStringLiteral("claudeAiOauth")).toObject();
+    if (oauth.value(QStringLiteral("refreshToken")).toString() != sourceRefreshToken) {
+        if (error) {
+            *error = QStringLiteral("Claude credentials changed during refresh; try again");
+        }
+        return false;
+    }
     oauth.insert(QStringLiteral("accessToken"), accessToken);
     oauth.insert(QStringLiteral("refreshToken"), refreshToken);
     oauth.insert(QStringLiteral("expiresAt"), double(expiresAtMs));
@@ -230,6 +238,7 @@ bool refreshClaudeAuth(const QString &path, const ClaudeCredentialResult &creden
         refreshedScopes = requestedScopes;
     }
     return saveRefreshedCredentials(path,
+                                    credentials.refreshToken,
                                     accessToken,
                                     refreshToken,
                                     QDateTime::currentMSecsSinceEpoch() + expiresIn * 1000,
@@ -297,6 +306,18 @@ ClaudeCredentialResult ClaudeCredentials::load(const QString &path, bool refresh
 {
     ClaudeCredentialResult result = readCredentials(path);
     if (result.ok || !refreshExpired || !result.expiresAt.isValid()
+        || result.expiresAt > QDateTime::currentDateTimeUtc()) {
+        return result;
+    }
+
+    QLockFile lock(path + QStringLiteral(".lock"));
+    if (!lock.tryLock(1000)) {
+        result.error = QStringLiteral("Could not lock Claude credentials for refresh");
+        return result;
+    }
+
+    result = readCredentials(path);
+    if (result.ok || !result.expiresAt.isValid()
         || result.expiresAt > QDateTime::currentDateTimeUtc()) {
         return result;
     }

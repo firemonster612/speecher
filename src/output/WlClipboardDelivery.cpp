@@ -50,20 +50,6 @@ QString preferredMimeType(const QStringList &mimeTypes)
     return mimeTypes.isEmpty() ? QString() : mimeTypes.first();
 }
 
-QStringList offeredRestorableMimeTypes(const QStringList &offeredMimeTypes)
-{
-    QStringList result;
-    for (const QString &supported : restorableMimeTypes()) {
-        for (const QString &offered : offeredMimeTypes) {
-            if (offered.compare(supported, Qt::CaseInsensitive) == 0) {
-                result.append(offered);
-                break;
-            }
-        }
-    }
-    return result;
-}
-
 bool copyBytes(const QByteArray &data, const QString &mimeType, QString *error)
 {
     const QString executable = WaylandClipboardProcess::wlCopyExecutable();
@@ -147,6 +133,11 @@ bool WlClipboardDelivery::readText(QString *text, QString *error)
     }
     *text = QString::fromUtf8(output);
     return true;
+}
+
+QStringList WlClipboardDelivery::snapshotMimeTypes(const QStringList &offeredMimeTypes)
+{
+    return offeredMimeTypes;
 }
 
 bool WlClipboardDelivery::copy(const DeliveryContent &content, bool *htmlAvailable,
@@ -245,7 +236,7 @@ bool WlClipboardDelivery::capture(ClipboardSnapshot *snapshot, QString *error)
             offeredMimeTypes << mimeType;
         }
     }
-    const QStringList mimeTypes = offeredRestorableMimeTypes(offeredMimeTypes);
+    const QStringList mimeTypes = snapshotMimeTypes(offeredMimeTypes);
 
     if (offeredMimeTypes.isEmpty()) {
         return true;

@@ -2,6 +2,7 @@
 
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
+#include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
 #include "core/LearnedCorrection.h"
 #include "core/SettingsStore.h"
@@ -263,6 +264,27 @@ class PlatformCompositionTests : public QObject {
     Q_OBJECT
 
 private slots:
+#ifdef Q_OS_LINUX
+    void guiLaunchKeepsRunningAfterLastWindowCloses()
+    {
+        QVERIFY(!quitOnLastWindowClosed(LaunchMode::RunGui));
+        QVERIFY(!quitOnLastWindowClosed(LaunchMode::RunDaemon));
+    }
+
+    void atSpiCaptureDoesNotSynthesizeAClipboardCopy()
+    {
+        const QString sourcePath = QDir(QStringLiteral(QT_TESTCASE_SOURCEDIR))
+                                       .filePath(QStringLiteral("src/platform/AtSpiTargetProvider.cpp"));
+        QFile source(sourcePath);
+        QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(sourcePath));
+        const QByteArray implementation = source.readAll();
+
+        QVERIFY(!implementation.contains("copySelection("));
+        QVERIFY(!implementation.contains("WlClipboardDelivery"));
+        QVERIFY(!implementation.contains("YdotoolDelivery"));
+    }
+#endif
+
 #ifdef Q_OS_LINUX
     void setupAssistantPutsTheGlobalShortcutBeforeFinish()
     {

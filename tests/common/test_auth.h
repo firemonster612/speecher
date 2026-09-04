@@ -4,7 +4,10 @@
 
 namespace speecher::test {
 
-inline bool writeJsonCredentials(const QString &path, const QString &accessToken, const QDateTime &expiresAt)
+inline bool writeJsonCredentials(const QString &path,
+                                 const QString &accessToken,
+                                 const QDateTime &expiresAt,
+                                 const QString &refreshToken = {})
     {
         QFile file(path);
         if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -12,6 +15,7 @@ inline bool writeJsonCredentials(const QString &path, const QString &accessToken
         }
         QJsonObject oauth{
             {QStringLiteral("accessToken"), accessToken},
+            {QStringLiteral("refreshToken"), refreshToken},
             {QStringLiteral("expiresAt"), double(expiresAt.toSecsSinceEpoch())},
         };
         file.write(QJsonDocument(QJsonObject{{QStringLiteral("claudeAiOauth"), oauth}}).toJson());

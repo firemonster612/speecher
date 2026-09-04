@@ -1,5 +1,6 @@
 #include "core/SecretStore.h"
 
+#include "core/KeyringResult.h"
 #include "core/SettingsStore.h"
 
 #ifdef SPEECHER_WITH_QKEYCHAIN
@@ -172,7 +173,14 @@ bool SecretStore::deleteKeyringApiKey() const
 #ifdef SPEECHER_WITH_QKEYCHAIN
     QKeychain::DeletePasswordJob job(QString::fromLatin1(keyringService));
     job.setKey(QString::fromLatin1(openAiApiKeyEntry));
-    return runKeychainJob(job, &m_lastError);
+    QString error;
+    runKeychainJob(job, &error);
+    if (keyringDeletionSucceeded(job.error())) {
+        m_lastError.clear();
+        return true;
+    }
+    m_lastError = error;
+    return false;
 #else
     m_lastError = QStringLiteral("QtKeychain support was not compiled in");
     return false;

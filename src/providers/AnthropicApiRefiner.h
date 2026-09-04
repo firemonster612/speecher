@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QNetworkAccessManager>
+#include <QDeadlineTimer>
 #include <QObject>
 #include <QStringList>
 #include <QTimer>
@@ -17,7 +18,9 @@ class AnthropicApiRefiner final : public QObject {
     Q_OBJECT
 
 public:
-    explicit AnthropicApiRefiner(QObject *parent = nullptr, int requestTimeoutMs = 20000);
+    explicit AnthropicApiRefiner(QObject *parent = nullptr,
+                                 int requestTimeoutMs = 20000,
+                                 int absoluteDeadlineMs = 120000);
 
     void refine(const QString &rawTranscript,
                 const QStringList &vocabulary,
@@ -45,10 +48,13 @@ private:
     std::function<void()> m_fastModeFallback;
     bool m_fastModePendingLatch = false;
     bool m_fastModeUnavailable = false;
+    bool m_retryingFastMode = false;
     QTimer m_inactivityTimer;
     QTimer m_deadlineTimer;
+    QDeadlineTimer m_operationDeadline;
     QNetworkReply *m_reply = nullptr;
     int m_requestTimeoutMs;
+    int m_absoluteDeadlineMs;
     QByteArray m_buffer;
     QString m_accumulated;
     bool m_failed = false;

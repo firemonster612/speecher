@@ -135,6 +135,16 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     return decision;
 }
 
+bool quitOnLastWindowClosed(LaunchMode mode)
+{
+#if defined(Q_OS_LINUX) || defined(Q_OS_MACOS)
+    Q_UNUSED(mode)
+    return false;
+#else
+    return mode != LaunchMode::RunDaemon;
+#endif
+}
+
 int runCliCommand(const CommandLineDecision &decision,
                   const std::shared_ptr<const SingleInstancePlatform> &platform)
 {

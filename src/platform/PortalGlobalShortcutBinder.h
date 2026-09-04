@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/GlobalShortcutBinder.h"
+#include "platform/PortalResponseTracker.h"
 
 #include <QDBusContext>
 #include <QDBusObjectPath>
@@ -59,6 +60,7 @@ private:
                      int optionsIndex,
                      RequestKind kind,
                      int timeoutMs);
+    void processRequestResponse(const PortalResponse &response);
     void requestFailed(const QString &reason, bool closeRequest = false);
     bool shortcutTrigger(const QVariantMap &results, QString *trigger) const;
     void activatePendingSession(const QString &trigger);
@@ -77,6 +79,7 @@ private:
     QDBusObjectPath m_sessionPath;
     QDBusObjectPath m_pendingSessionPath;
     QDBusObjectPath m_requestPath;
+    PortalResponseTracker m_responseTracker;
     RequestKind m_requestKind = RequestKind::None;
     QTimer *m_requestTimer = nullptr;
 };

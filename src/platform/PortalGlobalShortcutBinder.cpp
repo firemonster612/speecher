@@ -322,10 +322,11 @@ void PortalGlobalShortcutBinder::sendRequest(const QString &member,
 
     m_requestKind = kind;
     m_requestPath = predictedRequestPath(token);
+    m_responseTracker.begin(m_requestPath);
     const QDBusObjectPath predictedPath = m_requestPath;
     if (!QDBusConnection::sessionBus().connect(
             QString::fromLatin1(portalService),
-            m_requestPath.path(),
+            QString(),
             QString::fromLatin1(requestInterface),
             QStringLiteral("Response"),
             this,
@@ -354,26 +355,9 @@ void PortalGlobalShortcutBinder::sendRequest(const QString &member,
             requestFailed(reply.error().message());
             return;
         }
-        if (reply.value().path() == m_requestPath.path()) {
-            return;
-        }
-        // xdg-desktop-portal < 0.9 really does return a different handle, so it is not dead code.
-        QDBusConnection::sessionBus().disconnect(
-            QString::fromLatin1(portalService),
-            m_requestPath.path(),
-            QString::fromLatin1(requestInterface),
-            QStringLiteral("Response"),
-            this,
-            SLOT(handleRequestResponse(uint,QVariantMap)));
         m_requestPath = reply.value();
-        if (!QDBusConnection::sessionBus().connect(
-                QString::fromLatin1(portalService),
-                m_requestPath.path(),
-                QString::fromLatin1(requestInterface),
-                QStringLiteral("Response"),
-                this,
-                SLOT(handleRequestResponse(uint,QVariantMap)))) {
-            requestFailed(QStringLiteral("Could not watch the portal request"));
+        if (const auto response = m_responseTracker.resolve(m_requestPath)) {
+            processRequestResponse(*response);
         }
     });
     m_requestTimer->start(timeoutMs);
@@ -382,12 +366,18 @@ void PortalGlobalShortcutBinder::sendRequest(const QString &member,
 void PortalGlobalShortcutBinder::handleRequestResponse(uint response,
                                                        const QVariantMap &results)
 {
-    if (message().path() != m_requestPath.path()) {
+    const auto matched = m_responseTracker.observe(message().path(), response, results);
+    if (!matched) {
         return;
     }
+    processRequestResponse(*matched);
+}
+
+void PortalGlobalShortcutBinder::processRequestResponse(const PortalResponse &response)
+{
     const RequestKind kind = m_requestKind;
-    if (response != 0) {
-        requestFailed(response == 1
+    if (response.status != 0) {
+        requestFailed(response.status == 1
                           ? QStringLiteral("Setup was cancelled. Try again.")
                           : QStringLiteral("Couldn't set the shortcut. Try again."));
         return;
@@ -396,7 +386,7 @@ void PortalGlobalShortcutBinder::handleRequestResponse(uint response,
 
     if (kind == RequestKind::CreateForRestore
         || kind == RequestKind::CreateForRegistration) {
-        const QVariant session = results.value(QStringLiteral("session_handle"));
+        const QVariant session = response.results.value(QStringLiteral("session_handle"));
         QString sessionPath = qdbus_cast<QDBusObjectPath>(session).path();
         if (sessionPath.isEmpty()) {
             sessionPath = session.toString();
@@ -413,7 +403,7 @@ void PortalGlobalShortcutBinder::handleRequestResponse(uint response,
     }
     if (kind == RequestKind::List) {
         QString trigger;
-        if (shortcutTrigger(results, &trigger)) {
+        if (shortcutTrigger(response.results, &trigger)) {
             activatePendingSession(trigger);
         } else {
             closePendingSession();
@@ -422,7 +412,7 @@ void PortalGlobalShortcutBinder::handleRequestResponse(uint response,
     }
     if (kind == RequestKind::Bind) {
         QString trigger;
-        if (!shortcutTrigger(results, &trigger)) {
+        if (!shortcutTrigger(response.results, &trigger)) {
             m_requestKind = kind;
             requestFailed(QStringLiteral("Your desktop didn't say which keys it assigned."));
             return;
@@ -522,13 +512,14 @@ void PortalGlobalShortcutBinder::disconnectRequest()
     if (!m_requestPath.path().isEmpty()) {
         QDBusConnection::sessionBus().disconnect(
             QString::fromLatin1(portalService),
-            m_requestPath.path(),
+            QString(),
             QString::fromLatin1(requestInterface),
             QStringLiteral("Response"),
             this,
             SLOT(handleRequestResponse(uint,QVariantMap)));
     }
     m_requestPath = {};
+    m_responseTracker.clear();
     m_requestKind = RequestKind::None;
 }
 
