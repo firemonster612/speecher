@@ -177,6 +177,57 @@ private slots:
         QVERIFY(!result.error.contains(QStringLiteral("secret-refresh-token")));
     }
 
+    void claudeCredentialsRefreshDoesNotOverwriteNewerLogin()
+    {
+        QTemporaryDir dir;
+        const QString credentialsPath = dir.filePath(QStringLiteral("credentials.json"));
+        QVERIFY(writeJsonCredentials(credentialsPath,
+                                     QStringLiteral("expired-token"),
+                                     QDateTime::currentDateTimeUtc().addSecs(-60),
+                                     QStringLiteral("old-refresh-token")));
+
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        qputenv("SPEECHER_TEST_CLAUDE_TOKEN_URL",
+                QStringLiteral("http://127.0.0.1:%1/token").arg(server.serverPort()).toUtf8());
+        const auto cleanup = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_CLAUDE_TOKEN_URL");
+        });
+
+        auto refresh = std::async(std::launch::async, [&] {
+            return ClaudeCredentials::load(credentialsPath, true);
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(socket);
+        readHttpRequest(socket, 1000);
+        const bool lockWasHeld = QFileInfo::exists(credentialsPath + QStringLiteral(".lock"));
+
+        QVERIFY(writeJsonCredentials(credentialsPath,
+                                     QStringLiteral("newer-token"),
+                                     QDateTime::currentDateTimeUtc().addSecs(3600),
+                                     QStringLiteral("newer-refresh-token")));
+        const QByteArray responseBody = QByteArrayLiteral(
+            R"({"access_token":"stale-refreshed-token","refresh_token":"stale-rotated-token","expires_in":3600})");
+        socket->write(QByteArrayLiteral(
+                          "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ")
+                      + QByteArray::number(responseBody.size())
+                      + QByteArrayLiteral("\r\nConnection: close\r\n\r\n")
+                      + responseBody);
+        QVERIFY(socket->waitForBytesWritten(1000));
+        socket->disconnectFromHost();
+
+        const ClaudeCredentialResult result = refresh.get();
+        QVERIFY(lockWasHeld);
+        QVERIFY(!result.ok);
+        QVERIFY(result.error.contains(QStringLiteral("changed during refresh")));
+
+        const ClaudeCredentialResult saved = ClaudeCredentials::load(credentialsPath);
+        QVERIFY(saved.ok);
+        QCOMPARE(saved.accessToken, QStringLiteral("newer-token"));
+        QCOMPARE(saved.refreshToken, QStringLiteral("newer-refresh-token"));
+    }
+
     void claudeInstalledVersion()
     {
         const QString version = ClaudeCredentials::installedVersion();
