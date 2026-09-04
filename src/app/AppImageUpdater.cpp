@@ -81,7 +81,7 @@ void AppImageUpdater::start()
     m_dailyTimer->setInterval(dailyCheckIntervalMs);
     connect(m_dailyTimer, &QTimer::timeout, this, [this] {
         if (m_settings->autoCheckUpdates()) {
-            checkForUpdates(m_settings->updateChannel());
+            beginCheck(m_settings->updateChannel(), true);
         }
     });
     m_dailyTimer->start();
@@ -90,7 +90,7 @@ void AppImageUpdater::start()
         const qint64 lastCheck = m_settings->updatesLastCheckTime();
         if (m_settings->autoCheckUpdates()
             && QDateTime::currentMSecsSinceEpoch() - lastCheck > startupCheckIntervalMs) {
-            checkForUpdates(m_settings->updateChannel());
+            beginCheck(m_settings->updateChannel(), true);
         }
     });
 }
@@ -182,6 +182,18 @@ bool AppImageUpdater::isNewerBuild(const UpdateManifest &manifest,
     return manifest.buildNumber > currentBuildNumber;
 }
 
+bool AppImageUpdater::shouldOfferManifest(const UpdateManifest &manifest,
+                                          qint64 currentBuildNumber,
+                                          const QString &currentVersion,
+                                          UpdateChannel channel,
+                                          bool automaticCheck)
+{
+    return isNewerBuild(manifest, currentBuildNumber)
+        || (!automaticCheck
+            && channel == UpdateChannel::Stable
+            && currentVersion.contains(QStringLiteral("-nightly")));
+}
+
 std::optional<AppImageFileIdentity> AppImageUpdater::fileIdentity(const QString &path,
                                                                   QString *error)
 {
@@ -245,12 +257,19 @@ bool AppImageUpdater::swapAppImage(const QString &downloadedPath,
 
 void AppImageUpdater::checkForUpdates(UpdateChannel channel)
 {
+    beginCheck(channel, false);
+}
+
+void AppImageUpdater::beginCheck(UpdateChannel channel, bool automaticCheck)
+{
     if (m_state == State::Checking || m_state == State::Downloading
         || m_state == State::ReadyToRestart || m_state == State::RestartPending) {
         return;
     }
 
     m_manifest = {};
+    m_checkChannel = channel;
+    m_automaticCheck = automaticCheck;
     // The timestamp intentionally records request start, so failed checks still obey the cadence.
     m_settings->setUpdatesLastCheckTime(QDateTime::currentMSecsSinceEpoch());
     setState(State::Checking);
@@ -339,7 +358,11 @@ void AppImageUpdater::finishCheck(QNetworkReply *reply)
         setState(State::CheckFailed, error);
         return;
     }
-    if (!isNewerBuild(*manifest, currentBuildNumber())) {
+    if (!shouldOfferManifest(*manifest,
+                             currentBuildNumber(),
+                             currentVersion(),
+                             m_checkChannel,
+                             m_automaticCheck)) {
         m_manifest = {};
         setState(State::UpToDate);
         return;
@@ -347,7 +370,9 @@ void AppImageUpdater::finishCheck(QNetworkReply *reply)
 
     m_manifest = *manifest;
     setState(State::UpdateAvailable);
-    if (m_settings->autoInstallUpdates() && isAppImage()) {
+    const bool stableReplacement = m_checkChannel == UpdateChannel::Stable
+        && currentVersion().contains(QStringLiteral("-nightly"));
+    if (m_settings->autoInstallUpdates() && isAppImage() && !stableReplacement) {
         beginDownload();
     }
 }

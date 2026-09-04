@@ -36,6 +36,16 @@ public:
     {
         updater.restartNow();
     }
+
+    static bool shouldOfferManifest(const UpdateManifest &manifest,
+                                    qint64 currentBuildNumber,
+                                    const QString &currentVersion,
+                                    UpdateChannel channel,
+                                    bool automaticCheck)
+    {
+        return AppImageUpdater::shouldOfferManifest(
+            manifest, currentBuildNumber, currentVersion, channel, automaticCheck);
+    }
 };
 
 class QtFrontEndTestAccess {
@@ -144,6 +154,28 @@ private slots:
         QVERIFY(AppImageUpdater::isNewerBuild(*manifest, 122));
         QVERIFY(!AppImageUpdater::isNewerBuild(*manifest, 123));
         QVERIFY(!AppImageUpdater::isNewerBuild(*manifest, 124));
+    }
+
+    void manualStableCheckCanOfferAnOlderBuildToANightlyUser()
+    {
+        UpdateManifest stable;
+        stable.version = QStringLiteral("0.1.0");
+        stable.buildNumber = 145;
+
+        QVERIFY(AppImageUpdaterTestAccess::shouldOfferManifest(
+            stable,
+            150,
+            QStringLiteral("0.1.1-nightly.20260904+gnightly"),
+            UpdateChannel::Stable,
+            false));
+        QVERIFY(!AppImageUpdaterTestAccess::shouldOfferManifest(
+            stable,
+            150,
+            QStringLiteral("0.1.1-nightly.20260904+gnightly"),
+            UpdateChannel::Stable,
+            true));
+        QVERIFY(!AppImageUpdaterTestAccess::shouldOfferManifest(
+            stable, 150, QStringLiteral("0.1.1"), UpdateChannel::Stable, false));
     }
 
     void rejectsInvalidManifest_data()

@@ -74,6 +74,12 @@ public slots:
 private:
     friend class AppImageUpdaterTestAccess;
 
+    static bool shouldOfferManifest(const UpdateManifest &manifest,
+                                    qint64 currentBuildNumber,
+                                    const QString &currentVersion,
+                                    UpdateChannel channel,
+                                    bool automaticCheck);
+    void beginCheck(UpdateChannel channel, bool automaticCheck);
     QUrl manifestUrl(UpdateChannel channel) const;
     void finishCheck(QNetworkReply *reply);
     void beginDownload();
@@ -95,6 +101,8 @@ private:
     QString m_appImagePath;
     QString m_downloadError;
     QString m_dismissedVersion;
+    UpdateChannel m_checkChannel;
+    bool m_automaticCheck = false;
     State m_state = State::Idle;
     int m_downloadPercent = 0;
     QString m_error;
