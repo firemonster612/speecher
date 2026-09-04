@@ -56,6 +56,12 @@ private slots:
             << QStringList{QStringLiteral("Adwaita"), QStringLiteral("Adwaita-Dark"), QStringLiteral("Fusion")}
             << QStringLiteral("system") << true
             << QStringLiteral("adwaita-dark") << QStringLiteral("Adwaita-Dark");
+        QTest::newRow("GNOME portal platform theme")
+            << QString() << QString() << QStringLiteral("ubuntu:GNOME")
+            << QStringLiteral("xdgdesktopportal") << QStringLiteral("Fusion")
+            << QStringList{QStringLiteral("Adwaita"), QStringLiteral("Adwaita-Dark"), QStringLiteral("Fusion")}
+            << QStringLiteral("system") << false
+            << QStringLiteral("adwaita") << QStringLiteral("Adwaita");
         QTest::newRow("Speecher light overrides desktop dark")
             << QString() << QString() << QStringLiteral("GNOME")
             << QStringLiteral("gtk3") << QStringLiteral("Adwaita-Dark")

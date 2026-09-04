@@ -36,8 +36,13 @@ bool isGtkDesktop(const QString &desktop)
 
 bool usesGtkPlatformTheme(const QString &platformTheme, const QString &desktop)
 {
-    if (!platformTheme.isEmpty()) {
-        return platformTheme.contains(QStringLiteral("gtk"), Qt::CaseInsensitive);
+    if (platformTheme.contains(QStringLiteral("gtk"), Qt::CaseInsensitive)) {
+        return true;
+    }
+    if (!platformTheme.isEmpty()
+        && !platformTheme.contains(QStringLiteral("portal"), Qt::CaseInsensitive)
+        && platformTheme.compare(QStringLiteral("gnome"), Qt::CaseInsensitive) != 0) {
+        return false;
     }
     return isGtkDesktop(desktop);
 }
