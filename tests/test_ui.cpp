@@ -82,6 +82,16 @@ private slots:
         QVERIFY(positioner->configuredSize.height() > 0);
     }
 
+#ifndef SPEECHER_WITH_KCOLORSCHEME
+    void positiveStatusIsNotColouredLikeALink()
+    {
+        QPalette palette;
+        palette.setColor(QPalette::Link, QColor(0, 0, 200));
+        palette.setColor(QPalette::WindowText, QColor(30, 30, 30));
+        QCOMPARE(settings::positiveTextColor(palette), palette.color(QPalette::WindowText));
+    }
+#endif
+
     void popupUsesTheApplicationFontAndNoStylesheet()
     {
         TranscriberPopup popup(new SizingPopupPositioner);

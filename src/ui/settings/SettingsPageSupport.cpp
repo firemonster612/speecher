@@ -442,7 +442,9 @@ QColor positiveTextColor(const QPalette &palette)
     const KColorScheme colors(palette.currentColorGroup(), KColorScheme::View);
     return colors.foreground(KColorScheme::PositiveText).color();
 #else
-    return palette.color(QPalette::Link);
+    // Without a scheme that names a positive colour, plain text: link blue
+    // would read as something to click.
+    return palette.color(QPalette::WindowText);
 #endif
 }
 
