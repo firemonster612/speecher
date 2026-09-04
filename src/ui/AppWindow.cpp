@@ -606,7 +606,11 @@ void AppWindow::buildNativeSidebarShell()
     QObject::disconnect(search, nullptr, nullptr, nullptr);
     search->setObjectName(QStringLiteral("appSearch"));
 
-    auto *header = new QWidget(m_navigation);
+    auto *pageHeader = new QWidget(m_navigation);
+    auto *pageHeaderLayout = new QVBoxLayout(pageHeader);
+    pageHeaderLayout->setContentsMargins(0, 0, 0, 0);
+    pageHeaderLayout->setSpacing(0);
+    auto *header = new QWidget(pageHeader);
     header->setObjectName(QStringLiteral("sidebarHeaderStrip"));
     header->setBackgroundRole(QPalette::Window);
     header->setAutoFillBackground(true);
@@ -652,14 +656,25 @@ void AppWindow::buildNativeSidebarShell()
     headerLayout->addWidget(headerContent, 1);
     m_headerStrip = header;
     header->installEventFilter(this);
-    m_navigation->setPageHeader(header);
+    pageHeaderLayout->addWidget(header);
+    // The filled widgets use one shared palette color, so the horizontal and
+    // vertical hairlines meet without QFrame applying a second style tint.
+    m_headerUnderline = new QWidget(pageHeader);
+    m_headerUnderline->setFixedHeight(1);
+    m_headerUnderline->setAutoFillBackground(true);
+    pageHeaderLayout->addWidget(m_headerUnderline);
+    m_navigation->setPageHeader(pageHeader);
 
+    QFrame *nativeHeaderSeparator = nullptr;
     for (QFrame *frame : m_navigation->findChildren<QFrame *>(
              QString(), Qt::FindDirectChildrenOnly)) {
         if (frame->frameShape() == QFrame::HLine) {
-            m_headerUnderline = frame;
+            nativeHeaderSeparator = frame;
             break;
         }
+    }
+    if (nativeHeaderSeparator) {
+        nativeHeaderSeparator->hide();
     }
 
 #ifdef Q_OS_LINUX
