@@ -9,6 +9,28 @@ class SettingsTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void identityMigrationMergesOnlyMissingSettingsOnce()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings oldSettings(dir.filePath(QStringLiteral("old.ini")), QSettings::IniFormat);
+        QSettings newSettings(dir.filePath(QStringLiteral("new.ini")), QSettings::IniFormat);
+        oldSettings.setValue(QStringLiteral("appearance/theme"), QStringLiteral("old-theme"));
+        oldSettings.setValue(QStringLiteral("output/method"), QStringLiteral("ydotool"));
+        newSettings.setValue(QStringLiteral("appearance/theme"), QStringLiteral("new-theme"));
+
+        QString error;
+        QVERIFY2(migrateSettingsIdentity(newSettings, oldSettings, &error), qPrintable(error));
+        QCOMPARE(newSettings.value(QStringLiteral("appearance/theme")).toString(),
+                 QStringLiteral("new-theme"));
+        QCOMPARE(newSettings.value(QStringLiteral("output/method")).toString(),
+                 QStringLiteral("ydotool"));
+
+        newSettings.remove(QStringLiteral("output/method"));
+        QVERIFY2(migrateSettingsIdentity(newSettings, oldSettings, &error), qPrintable(error));
+        QVERIFY(!newSettings.contains(QStringLiteral("output/method")));
+    }
+
     void settingsDefaults()
     {
         qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");

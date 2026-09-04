@@ -65,6 +65,7 @@ inline const QString UpdatesLastCheckTime = QStringLiteral("updates/lastCheckTim
 inline const QString UpdatesDismissedVersion = QStringLiteral("updates/dismissedVersion");
 inline const QString UpdatesLastRunVersion = QStringLiteral("updates/lastRunVersion");
 inline const QString UpdatesPendingWhatsNewVersion = QStringLiteral("updates/pendingWhatsNewVersion");
+inline const QString IdentityMigrationVersion = QStringLiteral("migration/identityVersion");
 inline const QString ClaudeCredentialsPath = QStringLiteral("claude/credentialsPath");
 inline const QString ClaudeEndpointBase = QStringLiteral("claude/endpointBase");
 inline const QString ClaudeVoicePath = QStringLiteral("claude/voicePath");

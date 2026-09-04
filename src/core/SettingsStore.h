@@ -9,6 +9,10 @@
 
 namespace speecher {
 
+bool migrateSettingsIdentity(QSettings &newSettings,
+                             QSettings &oldSettings,
+                             QString *error = nullptr);
+
 class SettingsStore : public QObject, private SettingsCodecs {
     Q_OBJECT
 
