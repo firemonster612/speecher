@@ -35,9 +35,6 @@ MacFrontEnd::MacFrontEnd(ApplicationController *controller)
             controller->updates()->checkForUpdates(controller->settings()->updateChannel());
             return;
         }
-        if (id == QStringLiteral("whatsNew")) {
-            controller->clearPendingWhatsNew();
-        }
     };
     // The menu bar extra is the app's front door, so it exists from launch
     // rather than waiting for someone to ask for a window.

@@ -236,6 +236,19 @@ private slots:
         QCOMPARE(bridge.anthropicCredentialStatus.length, NSUInteger(0));
     }
 
+    void whatsNewOfferFollowsPendingUpgradeState()
+    {
+        SettingsStore settings;
+        settings.setUpdatesPendingWhatsNewVersion(QStringLiteral("0.1.0"));
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
+
+        QVERIFY(ui.whatsNewOfferVisible);
+        [bridge clearPendingWhatsNew];
+        QVERIFY(!ui.whatsNewOfferVisible);
+    }
+
     void setupFinishesWithStartAtLoginPage()
     {
         ApplicationController controller(false);

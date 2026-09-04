@@ -734,6 +734,15 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                              bridge.accessibilityChanged();
                          }
                      });
+    QObject::connect(controller,
+                     &ApplicationController::whatsNewChanged,
+                     &_state->lifetime,
+                     [weakSelf] {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.whatsNewChanged) {
+                             bridge.whatsNewChanged();
+                         }
+                     });
     [self connectPanelTo:controller->session()];
     return self;
 }
@@ -914,6 +923,16 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 - (void)stopListening
 {
     _state->controller->stopListening();
+}
+
+- (BOOL)whatsNewPending
+{
+    return !_state->controller->pendingWhatsNewVersion().isEmpty();
+}
+
+- (void)clearPendingWhatsNew
+{
+    _state->controller->clearPendingWhatsNew();
 }
 
 - (BOOL)accessibilitySupported

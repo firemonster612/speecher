@@ -18,6 +18,7 @@ final class AppModel: ObservableObject {
     /// The last thing Speecher heard, which the menu bar panel offers to copy.
     @Published private(set) var transcript: String
     @Published private(set) var accessibilityEnabled: Bool
+    @Published private(set) var whatsNewPending: Bool
     /// Why the accessibility grant could not be asked for, when it could not.
     @Published var accessibilityProblem = ""
     /// The app settings key, which lives in the keyring rather than in the
@@ -58,6 +59,7 @@ final class AppModel: ObservableObject {
         transcript = bridge.lastTranscript
         shortcut = bridge.shortcutDisplay
         accessibilityEnabled = bridge.accessibilityEnabled
+        whatsNewPending = bridge.whatsNewPending
         anthropicCredentialStatus = bridge.anthropicCredentialStatus
         pane = UserDefaults.standard.string(forKey: Self.paneKey) ?? Pane.all[0].id
         bridge.statusChanged = { [weak self] status in
@@ -76,6 +78,9 @@ final class AppModel: ObservableObject {
         }
         bridge.anthropicCredentialsChanged = { [weak self] in
             self?.anthropicCredentialStatus = bridge.anthropicCredentialStatus
+        }
+        bridge.whatsNewChanged = { [weak self] in
+            self?.whatsNewPending = bridge.whatsNewPending
         }
     }
 
@@ -188,8 +193,17 @@ final class AppModel: ObservableObject {
     }
 
     func trigger(_ rowId: String) {
-        if rowId == "whatsNew" { pane = "whatsNew" }
+        if rowId == "whatsNew" { showWhatsNew() }
         bridge.settingsSchema.actionTriggered?(rowId)
+    }
+
+    func showWhatsNew() {
+        pane = "whatsNew"
+        bridge.clearPendingWhatsNew()
+    }
+
+    func dismissWhatsNew() {
+        bridge.clearPendingWhatsNew()
     }
 
     func setValue(_ value: Any?, for rowId: String) {
