@@ -8,7 +8,6 @@
 #include "frontend/qt/SchemaSettingsPage.h"
 #ifdef Q_OS_LINUX
 #include "platform/LinuxDesktopIntegration.h"
-#include "ui/setup/LinuxGlobalShortcutSetupPage.h"
 #endif
 #include "ui/Theme.h"
 
@@ -29,28 +28,6 @@
 namespace speecher {
 
 namespace {
-
-SettingsPage providerRowsPage(const SettingsPage &source,
-                              const QStringList &rowIds,
-                              bool includeSectionHelp)
-{
-    SettingsPage page = source;
-    page.sections.clear();
-    for (const SettingsSection &sourceSection : source.sections) {
-        SettingsSection section{sourceSection.title,
-                                includeSectionHelp ? sourceSection.help : QString(),
-                                {}};
-        for (const SettingsRow &row : sourceSection.rows) {
-            if (rowIds.contains(row.id)) {
-                section.rows.append(row);
-            }
-        }
-        if (!section.rows.isEmpty()) {
-            page.sections.append(std::move(section));
-        }
-    }
-    return page;
-}
 
 SettingsRow *rowById(SettingsPage &page, const QString &id)
 {
@@ -85,28 +62,31 @@ SettingsSchema settingsSchema(ApplicationController *controller)
     SettingsPage &general = pageById(schema, QStringLiteral("general"));
 
     if (SettingsRow *check = rowById(general, QStringLiteral("checkForUpdates"))) {
+        // The running version is the row's one line until a check has
+        // something to say instead.
         check->helpValue = [updates](const AppSettings &settings) {
             const QString channel = settings.updates.channel == UpdateChannel::Nightly
                 ? QStringLiteral("Nightly Build")
                 : QStringLiteral("Stable Release");
+            const QString running = QStringLiteral("Speecher %1").arg(updates->currentVersion());
             switch (updates->state()) {
             case UpdateController::State::Idle:
-                return QStringLiteral("Check the %1 feed for a newer build.").arg(channel);
+                return running;
             case UpdateController::State::Checking:
-                return QStringLiteral("Checking the %1 feed.").arg(channel);
+                return QStringLiteral("Checking the %1 feed…").arg(channel);
             case UpdateController::State::CheckFailed:
                 return updates->errorMessage();
             case UpdateController::State::UpToDate:
-                return QStringLiteral("Speecher is up to date.");
+                return running + QStringLiteral(" is up to date");
             case UpdateController::State::UpdateAvailable:
-                return QStringLiteral("Speecher %1 is available.").arg(updates->availableVersion());
+                return QStringLiteral("Speecher %1 is available").arg(updates->availableVersion());
             case UpdateController::State::Downloading:
                 return QStringLiteral("Downloading Speecher %1 (%2%)")
                     .arg(updates->availableVersion())
                     .arg(updates->downloadPercent());
             case UpdateController::State::ReadyToRestart:
                 return updates->errorMessage().isEmpty()
-                    ? QStringLiteral("Restart to finish updating.")
+                    ? QStringLiteral("Restart to finish updating")
                     : updates->errorMessage();
             case UpdateController::State::RestartPending:
                 return QStringLiteral("Restarting after this dictation…");
@@ -115,7 +95,7 @@ SettingsSchema settingsSchema(ApplicationController *controller)
             case UpdateController::State::Error:
                 return updates->errorMessage();
             }
-            return QString();
+            return running;
         };
         check->value = [updates](const AppSettings &) {
             switch (updates->state()) {
@@ -147,16 +127,6 @@ SettingsSchema settingsSchema(ApplicationController *controller)
         };
     }
 
-    if (SettingsRow *version = rowById(general, QStringLiteral("currentVersion"))) {
-        version->value = [updates](const AppSettings &) {
-            QString text = updates->currentVersion();
-            if (!updates->availableVersion().isEmpty()) {
-                text += QStringLiteral(" — %1 available").arg(updates->availableVersion());
-            }
-            return QVariant(text);
-        };
-    }
-
     return schema;
 }
 
@@ -184,25 +154,6 @@ SchemaCustomRow whatsNewCustomRow(const SettingsRow &descriptor,
             true};
 }
 
-SchemaCustomRowFactory generalCustomRows(ApplicationController *controller)
-{
-#ifdef Q_OS_LINUX
-    return [controller](const SettingsRow &descriptor,
-                        QWidget *parent,
-                        std::function<void()>) {
-        if (descriptor.id != QStringLiteral("globalShortcut")) {
-            return SchemaCustomRow{};
-        }
-        auto *page = new LinuxGlobalShortcutSetupPage(*controller, parent);
-        page->hideAppMenuIntegration();
-        return SchemaCustomRow{page, {}, {}, true};
-    };
-#else
-    Q_UNUSED(controller)
-    return {};
-#endif
-}
-
 } // namespace
 
 SettingsPageSet::SettingsPageSet(ApplicationController *controller, QWidget *parent)
@@ -218,25 +169,12 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     , m_schema(std::move(schema))
     , m_outputRows(*controller->settings())
     , m_providerRows(*controller->settings(), *controller->secretStore())
-    , m_general(addPage(QStringLiteral("general"), parent, generalCustomRows(controller)))
+    , m_general(addPage(QStringLiteral("general"), parent))
     , m_audio(addPage(QStringLiteral("audio"), parent))
-    , m_applications(addPage(QStringLiteral("applications"), parent))
     , m_output(addPage(QStringLiteral("output"), parent, m_outputRows.factory()))
+    , m_accounts(addPage(QStringLiteral("accounts"), parent, m_providerRows.factory()))
     , m_refinement(addPage(QStringLiteral("refinement"), parent))
-    , m_vocabulary(addPage(QStringLiteral("vocabulary"), parent))
-    , m_corrections(addPage(QStringLiteral("corrections"), parent))
-    , m_bindings(addPage(QStringLiteral("bindings"), parent, m_bindingRows.factory()))
-    , m_providerModels(addPage(
-          providerRowsPage(m_schema.page(QStringLiteral("providers")),
-                           providerModelRowIds(),
-                           false),
-          parent))
-    , m_providerAuth(addPage(
-          providerRowsPage(m_schema.page(QStringLiteral("providers")),
-                           providerAuthRowIds(),
-                           true),
-          parent,
-          m_providerRows.factory()))
+    , m_vocabulary(addPage(QStringLiteral("vocabulary"), parent, m_bindingRows.factory()))
     , m_whatsNew(addPage(QStringLiteral("whatsNew"), parent, whatsNewCustomRow))
 {
     connect(controller,
@@ -255,44 +193,11 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     refreshUpdateRows();
 }
 
-// Every row of the schema's providers page must appear in exactly one of these
-// lists, or it silently never renders on the Qt frontend; the schema tests
-// check that coverage.
-QStringList SettingsPageSet::providerModelRowIds()
-{
-    return {QStringLiteral("openAiModel"),
-            QStringLiteral("openAiModelCaution"),
-            QStringLiteral("openAiEffort"),
-            QStringLiteral("openAiFastMode"),
-            QStringLiteral("anthropicModel"),
-            QStringLiteral("anthropicModelCaution"),
-            QStringLiteral("anthropicEffort"),
-            QStringLiteral("anthropicFastMode")};
-}
-
-QStringList SettingsPageSet::providerAuthRowIds()
-{
-    return {QStringLiteral("openAiAuthMode"),
-            QStringLiteral("openAiCliproxyAccount"),
-            QStringLiteral("openAiAuth"),
-            QStringLiteral("anthropicAuthMode"),
-            QStringLiteral("anthropicCliproxyAccount"),
-            QStringLiteral("cliproxyBaseUrl"),
-            QStringLiteral("cliproxyApiKey")};
-}
-
 SchemaSettingsPage *SettingsPageSet::addPage(const QString &id,
                                              QWidget *parent,
                                              SchemaCustomRowFactory customRows)
 {
-    return addPage(m_schema.page(id), parent, std::move(customRows));
-}
-
-SchemaSettingsPage *SettingsPageSet::addPage(const SettingsPage &descriptor,
-                                             QWidget *parent,
-                                             SchemaCustomRowFactory customRows)
-{
-    auto *page = new SchemaSettingsPage(descriptor, parent, std::move(customRows));
+    auto *page = new SchemaSettingsPage(m_schema.page(id), parent, std::move(customRows));
     connect(page, &SchemaSettingsPage::changed, this, [this, page] {
         page->appendToDraft(m_draft);
         for (SchemaSettingsPage *candidate : std::as_const(m_pages)) {
@@ -308,14 +213,10 @@ SchemaSettingsPage *SettingsPageSet::addPage(const SettingsPage &descriptor,
 
 SchemaSettingsPage *SettingsPageSet::general() const { return m_general; }
 SchemaSettingsPage *SettingsPageSet::audio() const { return m_audio; }
-SchemaSettingsPage *SettingsPageSet::applications() const { return m_applications; }
 SchemaSettingsPage *SettingsPageSet::output() const { return m_output; }
+SchemaSettingsPage *SettingsPageSet::accounts() const { return m_accounts; }
 SchemaSettingsPage *SettingsPageSet::refinement() const { return m_refinement; }
-SchemaSettingsPage *SettingsPageSet::providerModels() const { return m_providerModels; }
-SchemaSettingsPage *SettingsPageSet::providerAuth() const { return m_providerAuth; }
 SchemaSettingsPage *SettingsPageSet::vocabulary() const { return m_vocabulary; }
-SchemaSettingsPage *SettingsPageSet::corrections() const { return m_corrections; }
-SchemaSettingsPage *SettingsPageSet::bindings() const { return m_bindings; }
 SchemaSettingsPage *SettingsPageSet::whatsNew() const { return m_whatsNew; }
 
 void SettingsPageSet::load()
@@ -371,10 +272,12 @@ bool SettingsPageSet::save(bool showValidationErrors,
     };
 
     SettingsStore *settings = m_controller->settings();
-    const QStringList replacementProblems = m_bindings->validate();
+    // The replacements are the only collection on the vocabulary page with a
+    // validator, so its problems are theirs.
+    const QStringList replacementProblems = m_vocabulary->validate();
     if (!replacementProblems.isEmpty()) {
         return refuseAloud(SaveFailure::InvalidReplacementRules,
-                           m_bindings,
+                           m_vocabulary,
                            QStringLiteral("Replacements not saved"),
                            replacementProblems);
     }
@@ -596,12 +499,9 @@ void SettingsPageSet::applyCapabilities()
     const Capabilities capabilities{m_targetAccessibility,
                                     m_controller->updates()->supportsAutomaticDownloads(),
                                     Theme::overrideHonored()};
-    m_general->setCapabilities(capabilities);
-    m_output->setCapabilities(capabilities);
-    m_applications->setCapabilities(capabilities);
-    m_refinement->setCapabilities(capabilities);
-    m_corrections->setCapabilities(capabilities);
-    m_whatsNew->setCapabilities(capabilities);
+    for (SchemaSettingsPage *page : std::as_const(m_pages)) {
+        page->setCapabilities(capabilities);
+    }
 }
 
 } // namespace speecher

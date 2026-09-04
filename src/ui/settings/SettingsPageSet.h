@@ -15,6 +15,8 @@ namespace speecher {
 class ApplicationController;
 class SchemaSettingsPage;
 
+// The schema's pages as Qt widgets, one per sidebar entry after Dictation,
+// plus What's New. Owns the draft they all edit and the save that commits it.
 class SettingsPageSet : public QObject {
     Q_OBJECT
 
@@ -38,21 +40,12 @@ public:
                     QWidget *parent,
                     SettingsSchema schema);
 
-    // The schema's providers page split across the Models and Auth sidebar
-    // sections. Exposed so tests can prove the two lists cover every row.
-    static QStringList providerModelRowIds();
-    static QStringList providerAuthRowIds();
-
     SchemaSettingsPage *general() const;
     SchemaSettingsPage *audio() const;
-    SchemaSettingsPage *applications() const;
     SchemaSettingsPage *output() const;
+    SchemaSettingsPage *accounts() const;
     SchemaSettingsPage *refinement() const;
-    SchemaSettingsPage *providerModels() const;
-    SchemaSettingsPage *providerAuth() const;
     SchemaSettingsPage *vocabulary() const;
-    SchemaSettingsPage *corrections() const;
-    SchemaSettingsPage *bindings() const;
     SchemaSettingsPage *whatsNew() const;
 
     void load();
@@ -71,9 +64,6 @@ signals:
 
 private:
     SchemaSettingsPage *addPage(const QString &id,
-                                QWidget *parent,
-                                SchemaCustomRowFactory customRows = {});
-    SchemaSettingsPage *addPage(const SettingsPage &page,
                                 QWidget *parent,
                                 SchemaCustomRowFactory customRows = {});
     void updateAccessibilityState(bool supported, bool enabled, bool persistent);
@@ -95,14 +85,10 @@ private:
     QList<SchemaSettingsPage *> m_pages;
     SchemaSettingsPage *m_general;
     SchemaSettingsPage *m_audio;
-    SchemaSettingsPage *m_applications;
     SchemaSettingsPage *m_output;
+    SchemaSettingsPage *m_accounts;
     SchemaSettingsPage *m_refinement;
     SchemaSettingsPage *m_vocabulary;
-    SchemaSettingsPage *m_corrections;
-    SchemaSettingsPage *m_bindings;
-    SchemaSettingsPage *m_providerModels;
-    SchemaSettingsPage *m_providerAuth;
     SchemaSettingsPage *m_whatsNew;
 };
 

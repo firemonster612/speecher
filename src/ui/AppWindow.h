@@ -33,6 +33,10 @@ class ApplicationController;
 class DictationPage;
 class SettingsPageSet;
 
+namespace settings {
+class FormRow;
+}
+
 class AppWindow : public QMainWindow {
     Q_OBJECT
 
@@ -42,6 +46,9 @@ public:
     QStringList pageTitles() const;
     int pageCount() const;
     void navigateToSettings(AppPageId page = AppPageId::General);
+    // A page named from outside, such as `speecher settings output`. Unknown
+    // names land on General; the result says whether the name was known.
+    bool navigateToSettingsPage(const QString &name);
     void flushPendingAutoSave();
     void rememberGeometry();
 
@@ -64,6 +71,9 @@ private:
     void refreshHeaderStripColor();
     void runAutoSave();
     void filterSidebarPages(const QString &query);
+    void openSearchResult();
+    void showPage(int index);
+    void jumpToRow(settings::FormRow *row);
     void refreshUpdateBanner();
     void showWhatsNew();
     void leaveWhatsNew();
@@ -86,7 +96,8 @@ private:
     QWidget *m_headerStrip = nullptr;
     QWidget *m_headerDividerLine = nullptr;
     QWidget *m_headerUnderline = nullptr;
-    QStringList m_pageKeywords;
+    // The rows the current search query matches, first page first.
+    QList<settings::FormRow *> m_rowMatches;
     QLabel *m_pageTitle = nullptr;
     QToolButton *m_backButton = nullptr;
     // The sidebar row that was current when What's New opened.

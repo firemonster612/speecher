@@ -2,7 +2,7 @@
 
 #include "ui/AppPage.h"
 
-#include <QWidget>
+#include <QScrollArea>
 
 class QLabel;
 class QPlainTextEdit;
@@ -13,14 +13,21 @@ namespace speecher {
 
 class AccessibilityNotice;
 class ApplicationController;
+class LinuxGlobalShortcutSetupPage;
 class WaveformWidget;
 
-class DictationPage : public QWidget {
+// The first page: the Global Shortcut editor where the desktop offers one,
+// the dictation status with its transcript, and a summary of the settings
+// that shape a session.
+class DictationPage : public QScrollArea {
     Q_OBJECT
 
 public:
     explicit DictationPage(ApplicationController *controller, QWidget *parent = nullptr);
     QPushButton *toggleButton() const;
+    // Brings the Global Shortcut editor into view and gives it focus. Nothing
+    // to do where the desktop has no editor.
+    void focusShortcutEditor();
 
 public slots:
     void setStatus(const QString &status);
@@ -41,6 +48,7 @@ private:
     void applyToggleState(QPushButton *button, bool active, bool refining, const QString &state) const;
 
     ApplicationController *m_controller;
+    LinuxGlobalShortcutSetupPage *m_shortcutEditor = nullptr;
     AccessibilityNotice *m_accessibilityNotice;
     QPushButton *m_heroToggle;
     QLabel *m_status;

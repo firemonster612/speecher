@@ -65,11 +65,13 @@ bool startDetachedListening(const SingleInstancePlatform *platform, std::optiona
     return QProcess::startDetached(platform->detachedExecutablePath(), arguments);
 }
 
-bool startDetachedSettings(const SingleInstancePlatform *platform)
+bool startDetachedSettings(const SingleInstancePlatform *platform, const QString &page)
 {
-    return QProcess::startDetached(
-        platform->detachedExecutablePath(),
-        {QStringLiteral("--daemon"), QStringLiteral("--show-settings")});
+    QStringList arguments{QStringLiteral("--daemon"), QStringLiteral("--show-settings")};
+    if (!page.isEmpty()) {
+        arguments << QStringLiteral("--settings-page=%1").arg(page);
+    }
+    return QProcess::startDetached(platform->detachedExecutablePath(), arguments);
 }
 
 bool startDetachedSetup(const SingleInstancePlatform *platform)
@@ -80,6 +82,12 @@ bool startDetachedSetup(const SingleInstancePlatform *platform)
 }
 
 } // namespace
+
+QString showSettingsCommand(const QString &page)
+{
+    return page.isEmpty() ? QStringLiteral("showSettings")
+                          : QStringLiteral("showSettings %1").arg(page);
+}
 
 CommandLineDecision parseCommandLine(const QStringList &arguments, const QString &logPath)
 {
@@ -108,6 +116,19 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     decision.startListening = arguments.contains(QStringLiteral("--start-listening"));
     decision.showSettings = arguments.contains(QStringLiteral("--show-settings"));
     decision.showSetup = arguments.contains(QStringLiteral("--show-setup"));
+    if (verb == QStringLiteral("settings") && arguments.size() >= 3
+        && !arguments.at(2).startsWith(QLatin1Char('-'))) {
+        decision.settingsPage = arguments.at(2).trimmed().toLower();
+    } else {
+        decision.settingsPage =
+            requestedOption(arguments, QStringLiteral("--settings-page"), &optionError)
+                .trimmed()
+                .toLower();
+        if (!optionError.isEmpty()) {
+            std::cerr << optionError.toStdString() << "\n";
+            return {LaunchMode::Exit, 2};
+        }
+    }
 
     QString formatError;
     decision.outputFormat = requestedOutputFormat(arguments, &formatError);
@@ -123,7 +144,7 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
         }
         decision.mode = LaunchMode::RunCli;
         decision.ipcCommand = verb == QStringLiteral("settings")
-            ? QStringLiteral("showSettings")
+            ? showSettingsCommand(decision.settingsPage)
             : verb == QStringLiteral("setup")
                 ? QStringLiteral("showSetup")
                 : verb;
@@ -172,8 +193,8 @@ int runCliCommand(const CommandLineDecision &decision,
         std::cout << "idle\n";
         return 0;
     }
-    const bool started = command == QStringLiteral("showSettings")
-        ? startDetachedSettings(platform.get())
+    const bool started = command.startsWith(QStringLiteral("showSettings"))
+        ? startDetachedSettings(platform.get(), decision.settingsPage)
         : command == QStringLiteral("showSetup")
             ? startDetachedSetup(platform.get())
             : startDetachedListening(platform.get(), decision.outputFormat);

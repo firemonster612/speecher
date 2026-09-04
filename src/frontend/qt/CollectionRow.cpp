@@ -99,18 +99,9 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     , m_lockedCount(m_collection.lockedRecordCount ? m_collection.lockedRecordCount() : 0)
     , m_notifyChanged(std::move(notifyChanged))
 {
+    // The row that holds the editor carries its title and padding.
     auto *layout = new QVBoxLayout(this);
-    if (!descriptor.label.isEmpty()) {
-        auto *title = new QLabel(descriptor.label, this);
-        title->setObjectName(QStringLiteral("subsectionLabel"));
-        layout->addWidget(title);
-    }
-    if (!descriptor.help.isEmpty()) {
-        auto *help = new QLabel(descriptor.help, this);
-        help->setObjectName(QStringLiteral("rowDescription"));
-        help->setWordWrap(true);
-        layout->addWidget(help);
-    }
+    layout->setContentsMargins(0, 0, 0, 0);
 
     QStringList titles;
     titles.reserve(m_collection.columns.size());

@@ -19,6 +19,13 @@ public:
 
     virtual void showMainWindow() = 0;
     virtual void showSettingsWindow() = 0;
+    // The settings window open at a named page, from `speecher settings
+    // <page>`. A front end without named pages shows its settings as usual.
+    virtual void showSettingsPage(const QString &pageId)
+    {
+        Q_UNUSED(pageId)
+        showSettingsWindow();
+    }
     virtual void showSetupAssistant(SetupAssistantPage page) = 0;
 
     // Saves a picture of the main window, for the --grab screenshot path.

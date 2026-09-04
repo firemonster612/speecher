@@ -74,7 +74,7 @@ public:
     bool removeGlobalShortcutRegistration(QString *error = nullptr);
 
     void showMainWindow();
-    void showSettingsWindow();
+    void showSettingsWindow(const QString &page = {});
     void showSetupAssistant();
     void showSetupAssistant(SetupAssistantPage page);
     bool startIpc(QString *error = nullptr);
@@ -84,7 +84,8 @@ public slots:
     void startListening();
     void stopListening();
     void showMain();
-    void showSettings();
+    // `page` names a settings page, or is empty for whichever page is current.
+    void showSettings(const QString &page = {});
     void showSetup();
     void quitApplication();
     void handleIpcCommand(const QString &command,

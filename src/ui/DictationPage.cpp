@@ -9,7 +9,11 @@
 #include "providers/ProviderRegistry.h"
 #include "ui/AccessibilityNotice.h"
 #include "ui/WaveformWidget.h"
+#include "ui/settings/FormCard.h"
 #include "ui/settings/SettingsPageSupport.h"
+#ifdef Q_OS_LINUX
+#include "ui/setup/LinuxGlobalShortcutSetupPage.h"
+#endif
 
 #include <QClipboard>
 #include <QEvent>
@@ -17,6 +21,7 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QKeySequenceEdit>
 #include <QLabel>
 #include <QGuiApplication>
 #include <QPlainTextEdit>
@@ -112,7 +117,7 @@ QIcon themedIcon(const QString &name, const QString &fallback = QString())
 QWidget *makeSummaryCard(const QIcon &cardIcon,
                          const QString &title,
                          QLabel *value,
-                         AppPageId page,
+                         const std::function<void()> &activate,
                          DictationPage *owner)
 {
     // A real push button so the card carries native hover/press/focus states;
@@ -120,7 +125,6 @@ QWidget *makeSummaryCard(const QIcon &cardIcon,
     auto *card = new QPushButton(owner);
     card->setObjectName(QStringLiteral("summaryCard"));
     card->setCursor(Qt::PointingHandCursor);
-    card->setProperty("navTarget", static_cast<int>(page));
     card->setToolTip(QStringLiteral("Open %1 settings").arg(title));
     auto *layout = new QVBoxLayout(card);
     layout->setContentsMargins(12, 10, 12, 10);
@@ -150,15 +154,27 @@ QWidget *makeSummaryCard(const QIcon &cardIcon,
         child->setAttribute(Qt::WA_TransparentForMouseEvents);
     }
     icon->setAttribute(Qt::WA_TransparentForMouseEvents);
-    QObject::connect(card, &QPushButton::clicked, owner,
-                     [owner, page] { emit owner->navigateRequested(page); });
+    QObject::connect(card, &QPushButton::clicked, owner, activate);
+    return card;
+}
+
+// A summary card that opens a settings page.
+QWidget *makeNavigationCard(const QIcon &cardIcon,
+                            const QString &title,
+                            QLabel *value,
+                            AppPageId page,
+                            DictationPage *owner)
+{
+    QWidget *card = makeSummaryCard(
+        cardIcon, title, value, [owner, page] { emit owner->navigateRequested(page); }, owner);
+    card->setProperty("navTarget", static_cast<int>(page));
     return card;
 }
 
 } // namespace
 
 DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
-    : QWidget(parent)
+    : QScrollArea(parent)
     , m_controller(controller)
     , m_accessibilityNotice(new AccessibilityNotice(this))
     , m_heroToggle(new QPushButton(this))
@@ -170,14 +186,26 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     , m_output(new QLabel(this))
     , m_shortcut(new QLabel(this))
 {
-    auto *pageLayout = new QVBoxLayout(this);
-    settings::applyPageMargins(pageLayout);
-    pageLayout->setSpacing(settings::relatedSpacing());
-
-    auto *column = new QWidget(this);
-    auto *columnLayout = new QVBoxLayout(column);
-    columnLayout->setContentsMargins(0, 0, 0, 0);
+    QVBoxLayout *pageLayout = settings::makeSettingsPage(this);
+    QWidget *column = widget();
+    // Everything sits in the same centred column the settings pages use, so
+    // the shortcut card and the dictation card share their edges.
+    QVBoxLayout *columnLayout = settings::makeCardColumn(pageLayout, column);
     columnLayout->setSpacing(settings::relatedSpacing());
+
+#ifdef Q_OS_LINUX
+    auto *shortcutCard = new settings::SettingsCard(
+        QStringLiteral("Global Shortcut"),
+        QStringLiteral("Start or stop dictation from anywhere"),
+        column);
+    m_shortcutEditor = new LinuxGlobalShortcutSetupPage(*controller, shortcutCard);
+    m_shortcutEditor->hideAppMenuIntegration();
+    auto *shortcutRow = new settings::FormRow(QString(), QString(), shortcutCard->body());
+    shortcutRow->setEditor(m_shortcutEditor);
+    shortcutCard->addRow(shortcutRow);
+    columnLayout->addWidget(shortcutCard);
+    columnLayout->addSpacing(settings::sectionGap() - settings::relatedSpacing());
+#endif
 
     m_accessibilityNotice->setCompact(true);
     columnLayout->addWidget(m_accessibilityNotice);
@@ -263,26 +291,33 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
     }
     m_provider->setObjectName(QStringLiteral("refinementSummary"));
     m_microphone->setObjectName(QStringLiteral("microphoneSummary"));
-    cardsRow->addWidget(makeSummaryCard(themedIcon(QStringLiteral("document-edit"),
-                                                   QStringLiteral("tools-wizard")),
-                                        QStringLiteral("Refinement"), m_provider,
-                                        AppPageId::Refinement, this));
-    cardsRow->addWidget(makeSummaryCard(themedIcon(QStringLiteral("audio-input-microphone")),
-                                        QStringLiteral("Microphone"), m_microphone,
-                                        AppPageId::Audio, this));
-    cardsRow->addWidget(makeSummaryCard(themedIcon(QStringLiteral("edit-paste"),
-                                                   QStringLiteral("edit-copy")),
-                                        QStringLiteral("Output"), m_output,
-                                        AppPageId::Output, this));
-    // The shortcut editor lives on General, so the card opens that page.
+    cardsRow->addWidget(makeNavigationCard(themedIcon(QStringLiteral("document-edit"),
+                                                      QStringLiteral("tools-wizard")),
+                                           QStringLiteral("Refinement"), m_provider,
+                                           AppPageId::Refinement, this));
+    cardsRow->addWidget(makeNavigationCard(themedIcon(QStringLiteral("audio-input-microphone")),
+                                           QStringLiteral("Microphone"), m_microphone,
+                                           AppPageId::Audio, this));
+    cardsRow->addWidget(makeNavigationCard(themedIcon(QStringLiteral("edit-paste"),
+                                                      QStringLiteral("edit-copy")),
+                                           QStringLiteral("Output"), m_output,
+                                           AppPageId::Output, this));
     m_shortcut->setObjectName(QStringLiteral("shortcutSummary"));
-    cardsRow->addWidget(makeSummaryCard(themedIcon(QStringLiteral("input-keyboard"),
-                                                   QStringLiteral("preferences-desktop-keyboard")),
-                                        QStringLiteral("Global Shortcut"), m_shortcut,
-                                        AppPageId::General, this));
+    const QIcon shortcutIcon = themedIcon(QStringLiteral("input-keyboard"),
+                                          QStringLiteral("preferences-desktop-keyboard"));
+    if (m_shortcutEditor) {
+        // The editor is at the top of this very page, so the card goes there.
+        QWidget *shortcutCard = makeSummaryCard(
+            shortcutIcon, QStringLiteral("Global Shortcut"), m_shortcut,
+            [this] { focusShortcutEditor(); }, this);
+        shortcutCard->setProperty("focusesShortcutEditor", true);
+        cardsRow->addWidget(shortcutCard);
+    } else {
+        cardsRow->addWidget(makeNavigationCard(shortcutIcon,
+                                               QStringLiteral("Global Shortcut"), m_shortcut,
+                                               AppPageId::General, this));
+    }
     columnLayout->addWidget(cardsHost);
-
-    pageLayout->addWidget(column);
     pageLayout->addStretch();
 
     connect(m_heroToggle, &QPushButton::clicked, controller, &ApplicationController::toggle);
@@ -336,6 +371,19 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
 QPushButton *DictationPage::toggleButton() const
 {
     return m_heroToggle;
+}
+
+void DictationPage::focusShortcutEditor()
+{
+    if (!m_shortcutEditor) {
+        return;
+    }
+    ensureWidgetVisible(m_shortcutEditor);
+    if (auto *sequence = m_shortcutEditor->findChild<QKeySequenceEdit *>()) {
+        if (sequence->isVisible()) {
+            sequence->setFocus(Qt::OtherFocusReason);
+        }
+    }
 }
 
 void DictationPage::applyToggleState(QPushButton *button,
@@ -476,7 +524,7 @@ bool DictationPage::eventFilter(QObject *watched, QEvent *event)
             break;
         }
     }
-    return QWidget::eventFilter(watched, event);
+    return QScrollArea::eventFilter(watched, event);
 }
 
 void DictationPage::setSummaryText(QLabel *label, const QString &text)

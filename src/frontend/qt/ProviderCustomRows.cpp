@@ -13,9 +13,7 @@
 #include <QMessageBox>
 #include <QPalette>
 #include <QSignalBlocker>
-#include <QStackedWidget>
 #include <QThread>
-#include <QVBoxLayout>
 
 #include <memory>
 
@@ -116,49 +114,43 @@ SchemaCustomRow ProviderCustomRows::makeAuthModeRow(QWidget *parent,
 SchemaCustomRow ProviderCustomRows::makeCredentialRow(QWidget *parent,
                                                       std::function<void()> notifyChanged)
 {
-    m_credential = new QStackedWidget(parent);
-    m_authStatus = new QLabel(m_credential);
-    m_apiKey = new QLineEdit(m_credential);
-    m_apiKey->setEchoMode(QLineEdit::Password);
-    m_apiKey->setPlaceholderText(QStringLiteral("Enter OpenAI API key"));
+    // The status reads under the row's title; the key field is the row's
+    // control, shown only while the key is what signs Speecher in.
+    m_authStatus = new QLabel(parent);
     m_authStatus->setObjectName(QStringLiteral("openAiAuthStatus"));
-    m_authStatus->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    m_authStatus->setWordWrap(false);
+    m_authStatus->setWordWrap(true);
     m_authStatus->setAttribute(Qt::WA_StyledBackground, false);
     m_authStatus->setAutoFillBackground(false);
     m_authStatus->setForegroundRole(QPalette::WindowText);
-    m_credential->addWidget(m_authStatus);
-    m_credential->addWidget(m_apiKey);
+    m_apiKey = new QLineEdit(parent);
+    m_apiKey->setEchoMode(QLineEdit::Password);
+    m_apiKey->setPlaceholderText(QStringLiteral("OpenAI API key"));
+    m_apiKey->hide();
 
     QObject::connect(m_apiKey, &QLineEdit::textEdited, m_apiKey, [this] { ++m_apiKeyEditRevision; });
     QObject::connect(m_apiKey,
                      &QLineEdit::textChanged,
                      m_apiKey,
                      [notifyChanged = std::move(notifyChanged)] { notifyChanged(); });
-    return {m_credential, {}, {}};
+    return {m_apiKey, {}, {}, false, m_authStatus};
 }
 
 SchemaCustomRow ProviderCustomRows::makeAnthropicAuthModeRow(QWidget *parent,
                                                              std::function<void()> notifyChanged)
 {
-    auto *container = new QWidget(parent);
-    auto *layout = new QVBoxLayout(container);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(6);
-
-    m_anthropicAuthMode = new QComboBox(container);
+    m_anthropicAuthMode = new QComboBox(parent);
     m_anthropicAuthMode->addItem(QStringLiteral("Claude Code sign-in"), QStringLiteral("oauth"));
     m_anthropicAuthMode->addItem(QStringLiteral("CLI Proxy API account"), kCliProxyAuthMode);
     m_anthropicAuthMode->setToolTip(QStringLiteral(
         "Claude Code sign-in reuses the login from the claude command. CLI Proxy API uses an "
         "account saved by CLI Proxy API."));
-    m_anthropicAuthStatus = new QLabel(container);
+    // The status reads under the row's title.
+    m_anthropicAuthStatus = new QLabel(parent);
     m_anthropicAuthStatus->setObjectName(QStringLiteral("anthropicAuthStatus"));
+    m_anthropicAuthStatus->setWordWrap(true);
     m_anthropicAuthStatus->setForegroundRole(QPalette::WindowText);
     m_anthropicAuthStatus->setAttribute(Qt::WA_StyledBackground, false);
     m_anthropicAuthStatus->setAutoFillBackground(false);
-    layout->addWidget(m_anthropicAuthMode);
-    layout->addWidget(m_anthropicAuthStatus);
 
     QObject::connect(m_anthropicAuthMode,
                      &QComboBox::currentIndexChanged,
@@ -176,12 +168,14 @@ SchemaCustomRow ProviderCustomRows::makeAnthropicAuthModeRow(QWidget *parent,
                      });
 
     return {
-        container,
+        m_anthropicAuthMode,
         [this] { return QVariant(m_anthropicAuthMode->currentData().toString()); },
         [this](const QVariant &value) {
             settings::selectData(m_anthropicAuthMode, value.toString());
             updateAnthropicAuthControl();
         },
+        false,
+        m_anthropicAuthStatus,
     };
 }
 
@@ -368,7 +362,7 @@ bool ProviderCustomRows::saveSecret()
         && ((!m_secretLoaded && m_apiKeyEditRevision > 0)
             || (m_secretLoaded && m_apiKey->text().trimmed() != m_loadedApiKey))) {
         if (!m_secrets.saveApiKey(m_apiKey->text().trimmed())) {
-            QMessageBox::warning(m_credential,
+            QMessageBox::warning(m_apiKey,
                                  QStringLiteral("OpenAI key not saved"),
                                  m_secrets.status());
             return false;
@@ -386,18 +380,19 @@ void ProviderCustomRows::updateCredentialControl()
 {
     const quint64 generation = ++m_authStatusGeneration;
     // The auth-mode row is built before the credential it switches.
-    if (!m_credential) {
+    if (!m_apiKey) {
         return;
     }
     const QString mode = m_authMode->currentData().toString();
-    if (mode == kSettingsKeyAuthMode) {
-        m_credential->setCurrentWidget(m_apiKey);
+    const bool keyInSettings = mode == kSettingsKeyAuthMode;
+    m_apiKey->setVisible(keyInSettings);
+    m_authStatus->setVisible(!keyInSettings);
+    if (keyInSettings) {
         m_apiKey->setPlaceholderText(m_secretLoaded
                                          ? m_secrets.status()
                                          : QStringLiteral("Loading the saved API key…"));
         return;
     }
-    m_credential->setCurrentWidget(m_authStatus);
     m_authStatus->setText(QStringLiteral("Checking…"));
 
     const QString account = m_openAiCliproxyAccount

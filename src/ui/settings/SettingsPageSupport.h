@@ -5,13 +5,9 @@
 #include <QColor>
 #include <QString>
 
-class QColor;
 class QComboBox;
-class QFrame;
-class QFormLayout;
 class QLabel;
 class QLayout;
-class QListWidget;
 class QPalette;
 class QScrollArea;
 class QVBoxLayout;
@@ -23,20 +19,7 @@ struct AudioInputDeviceInfo;
 
 namespace speecher::settings {
 
-QFrame *makeSeparator(QWidget *parent);
 QColor separatorColor(const QPalette &palette);
-QWidget *makeCenteredSeparator(QWidget *parent);
-void configureFormLayout(QFormLayout *form);
-QFrame *makeRow(const QString &label,
-                const QString &description,
-                QWidget *control,
-                QWidget *parent,
-                QWidget *titleAccessory = nullptr,
-                bool dynamicDescription = false);
-void addRow(QFormLayout *layout,
-            QFrame *row,
-            QWidget *parent,
-            bool addSeparator = false);
 void selectData(QComboBox *combo, const QString &data);
 void selectEditableText(QComboBox *combo, const QString &text);
 QString editableComboValue(const QComboBox *combo);
@@ -44,10 +27,26 @@ void setComboItemEnabled(QComboBox *combo,
                          int index,
                          bool enabled,
                          const QString &toolTip = QString());
+
+// The spacing scale every settings surface shares. Nothing else in the UI
+// carries a pixel number of its own.
 int tightSpacing();
 int relatedSpacing();
 int groupGap();
 int sectionGap();
+// The height of a line of the application font, which is what the row
+// padding and the control widths are measured in.
+int gridUnit();
+int rowHorizontalPadding();
+int rowVerticalPadding();
+// Cards stretch to this and no further, centred in whatever is left.
+int cardMaximumWidth();
+// Combo boxes, spin boxes and line edits in a row's control column start at
+// this width, so short values still line up down the card.
+int controlMinimumWidth();
+// A read-only value on the right wraps rather than growing past this.
+int valueMaximumWidth();
+
 // True while the KDE platform theme is drawing this process, which is the only
 // time kdeglobals colours match the palette the rest of the window uses.
 bool kdePlatformThemeActive();
@@ -56,17 +55,14 @@ QPalette kdeHeaderPalette(const QPalette &base);
 // theme, otherwise a shade of the active palette's window colour.
 QPalette headerPalette(const QPalette &base);
 void applyPageMargins(QLayout *layout);
-void applyLabelHierarchy(QWidget *root);
 QLabel *makePageTitle(const QString &text, QWidget *parent);
 QList<RowOption> audioInputDeviceOptions(const QList<AudioInputDeviceInfo> &devices);
 void populateAudioInputDevices(QComboBox *combo,
                                const QList<AudioInputDeviceInfo> &devices,
                                const QString &selectedDeviceId);
 QColor positiveTextColor(const QPalette &palette);
-QLabel *makeSectionLabel(const QString &text, QWidget *parent);
-QFrame *makeSettingsCard(QWidget *parent);
-QFormLayout *cardFormLayout(QFrame *card);
-void addSectionRow(QFormLayout *form, const QString &title, QWidget *parent);
+// Turns a scroll area into a settings page: frameless, window-coloured, with
+// a resizable content widget whose layout this returns.
 QVBoxLayout *makeSettingsPage(QScrollArea *scroll);
 
 } // namespace speecher::settings

@@ -444,6 +444,7 @@ set(SPEECHER_FRONTEND_QT_SOURCES
   src/ui/DictationPage.cpp
   src/ui/SetupAssistant.cpp
   src/ui/setup/SetupPages.cpp
+  src/ui/settings/FormCard.cpp
   src/ui/settings/SettingsPageSupport.cpp
   src/ui/settings/SettingsPageSet.cpp
   src/ui/Theme.cpp
@@ -466,6 +467,7 @@ set(SPEECHER_FRONTEND_QT_HEADERS
   src/ui/DictationPage.h
   src/ui/SetupAssistant.h
   src/ui/setup/SetupPages.h
+  src/ui/settings/FormCard.h
   src/ui/settings/SettingsPageSupport.h
   src/ui/settings/SettingsPageSet.h
   src/ui/Theme.h

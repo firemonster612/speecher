@@ -368,10 +368,15 @@ void ApplicationController::showMainWindow()
     }
 }
 
-void ApplicationController::showSettingsWindow()
+void ApplicationController::showSettingsWindow(const QString &page)
 {
-    if (m_frontEnd) {
+    if (!m_frontEnd) {
+        return;
+    }
+    if (page.isEmpty()) {
         m_frontEnd->showSettingsWindow();
+    } else {
+        m_frontEnd->showSettingsPage(page);
     }
 }
 
@@ -471,12 +476,12 @@ void ApplicationController::showMain()
     showMainWindow();
 }
 
-void ApplicationController::showSettings()
+void ApplicationController::showSettings(const QString &page)
 {
     if (!ensureSetupCompleted()) {
         return;
     }
-    showSettingsWindow();
+    showSettingsWindow(page);
 }
 
 void ApplicationController::showSetup()
@@ -523,8 +528,10 @@ void ApplicationController::handleIpcCommand(const QString &command,
     } else if (command == QStringLiteral("showMain")) {
         showMain();
         SingleInstanceIpc::writeResponse(socket, response());
-    } else if (command == QStringLiteral("showSettings")) {
-        showSettings();
+    } else if (command == QStringLiteral("showSettings")
+               || command.startsWith(QStringLiteral("showSettings "))) {
+        // "showSettings output" names the page to open.
+        showSettings(command.section(QLatin1Char(' '), 1).trimmed());
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("showSetup")) {
         showSetup();

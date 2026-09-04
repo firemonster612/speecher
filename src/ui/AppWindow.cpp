@@ -5,6 +5,7 @@
 #include "core/SettingsStore.h"
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/DictationPage.h"
+#include "ui/settings/FormCard.h"
 #include "ui/settings/SettingsPageSet.h"
 #include "ui/settings/SettingsPageSupport.h"
 
@@ -17,7 +18,6 @@
 #include <QDebug>
 #include <QFileSystemWatcher>
 #include <QFrame>
-#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
@@ -39,7 +39,6 @@
 #include <QStandardPaths>
 #include <QStyle>
 #include <QStyledItemDelegate>
-#include <QTabWidget>
 #include <QTextDocument>
 #include <QTimer>
 #include <QToolButton>
@@ -72,11 +71,12 @@ struct PageDefinition {
     QString fallbackIconName;
 };
 
+// The sidebar, in order: Dictation, then the schema's pages as AppPageId
+// numbers them.
 const QList<PageDefinition> kPages{
     {QStringLiteral("Dictation"), QStringLiteral("audio-input-microphone"), QString()},
     {QStringLiteral("General"), QStringLiteral("preferences-system"), QString()},
     {QStringLiteral("Audio"), QStringLiteral("preferences-desktop-sound"), QString()},
-    {QStringLiteral("Applications"), QStringLiteral("preferences-desktop-default-applications"), QString()},
     {QStringLiteral("Output"), QStringLiteral("edit-paste"), QStringLiteral("edit-copy")},
     {QStringLiteral("Accounts"), QStringLiteral("preferences-desktop-user-password"), QStringLiteral("dialog-password")},
     {QStringLiteral("Refinement"), QStringLiteral("tools-wizard"), QStringLiteral("document-edit")},
@@ -87,42 +87,43 @@ constexpr int kSidebarMinimumWidth = 180;
 constexpr int kSidebarDefaultWidth = 220;
 constexpr int kSidebarMaximumWidth = 320;
 
-QScrollArea *scrollingPage(QWidget *content, QWidget *parent)
+// The words on a page that a search can match: its rows, and anything else
+// with text on it, such as the Dictation page's summary cards.
+QString pageSearchText(const QString &title, QWidget *page)
 {
-    auto *scroll = new QScrollArea(parent);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setBackgroundRole(QPalette::Window);
-    scroll->viewport()->setBackgroundRole(QPalette::Window);
-    content->setAutoFillBackground(false);
-    scroll->setWidget(content);
-    return scroll;
-}
-
-void removeEmbeddedPageTitle(QWidget *content)
-{
-    QLabel *title = content->findChild<QLabel *>(QStringLiteral("pageTitle"));
-    if (!title || !title->parentWidget() || !title->parentWidget()->layout()) {
-        return;
+    const auto cleanText = [](QString text) {
+        text = text.trimmed();
+        while (text.endsWith(QLatin1Char(':')) || text.endsWith(QChar(0x2026))) {
+            text.chop(1);
+            text = text.trimmed();
+        }
+        return text;
+    };
+    QStringList keywords{title};
+    for (QLabel *label : page->findChildren<QLabel *>()) {
+        if (!label->isHidden() && !Qt::mightBeRichText(label->text())) {
+            const QString text = cleanText(label->text());
+            if (!text.isEmpty()) keywords.append(text);
+        }
     }
-    QLayout *layout = title->parentWidget()->layout();
-    const int index = layout->indexOf(title);
-    delete layout->takeAt(index);
-    delete title;
-    if (QLayoutItem *gap = layout->takeAt(index)) {
-        delete gap;
+    for (QCheckBox *checkBox : page->findChildren<QCheckBox *>()) {
+        if (!checkBox->isHidden()) {
+            const QString text = cleanText(checkBox->text());
+            if (!text.isEmpty()) keywords.append(text);
+        }
     }
-}
-
-QWidget *detachedContent(QScrollArea *page, bool removeTitle = false)
-{
-    QWidget *content = page->takeWidget();
-    if (removeTitle) {
-        removeEmbeddedPageTitle(content);
+    for (QPushButton *button : page->findChildren<QPushButton *>()) {
+        if (!button->isHidden()) {
+            const QString text = cleanText(button->text());
+            if (!text.isEmpty()) keywords.append(text);
+        }
     }
-    content->layout()->unsetContentsMargins();
-    page->hide();
-    return content;
+    for (settings::FormRow *row : page->findChildren<settings::FormRow *>()) {
+        if (row->isVisibleTo(page)) {
+            keywords.append(row->searchText());
+        }
+    }
+    return keywords.join(QLatin1Char('\n'));
 }
 
 // A theme without the icon leaves the row text-only: a stand-in document icon
@@ -277,7 +278,6 @@ AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
         m_autoSaveTimer->stop();
         m_autoSaveWarning->hide();
     });
-    settings::applyLabelHierarchy(this);
 
     const QByteArray geometry = m_controller->settings()->raw()
                                     .value(QStringLiteral("ui/appWindow/a/geometry"))
@@ -300,18 +300,50 @@ int AppWindow::pageCount() const { return kPages.size(); }
 
 void AppWindow::navigateToSettings(AppPageId page)
 {
-    const int settingsIndex = static_cast<int>(page);
+    showPage(static_cast<int>(page) + 1);
+}
+
+bool AppWindow::navigateToSettingsPage(const QString &name)
+{
+    const std::optional<AppPageId> page = appPageFromName(name);
+    navigateToSettings(page.value_or(AppPageId::General));
+    return page.has_value();
+}
+
+void AppWindow::showPage(int index)
+{
 #ifdef SPEECHER_WITH_KPAGEWIDGET
-    m_navigation->setCurrentPage(m_navigationPages.at(settingsIndex + 1));
+    m_navigation->setCurrentPage(m_navigationPages.at(index));
 #else
     for (int row = 0; row < m_navigation->count(); ++row) {
         QListWidgetItem *item = m_navigation->item(row);
-        if (item->data(Qt::UserRole).toInt() == settingsIndex + 1) {
+        if (item->data(Qt::UserRole).toInt() == index) {
             m_navigation->setCurrentItem(item);
             break;
         }
     }
 #endif
+}
+
+// Shows the page the row is on, scrolls it into view and points at it.
+void AppWindow::jumpToRow(settings::FormRow *row)
+{
+    for (int index = 0; index < m_pageWidgets.size(); ++index) {
+        if (m_pageWidgets.at(index)->isAncestorOf(row)) {
+            showPage(index);
+            break;
+        }
+    }
+    // The page has just been switched to, so its layout settles a turn later.
+    QTimer::singleShot(0, row, [row] {
+        for (QWidget *ancestor = row->parentWidget(); ancestor; ancestor = ancestor->parentWidget()) {
+            if (auto *scroll = qobject_cast<QScrollArea *>(ancestor)) {
+                scroll->ensureWidgetVisible(row, 0, settings::sectionGap());
+                break;
+            }
+        }
+        row->flash();
+    });
 }
 
 void AppWindow::refreshHeaderStripColor()
@@ -449,63 +481,17 @@ bool AppWindow::eventFilter(QObject *watched, QEvent *event)
 
 void AppWindow::buildSharedPages()
 {
-    auto *refinementContent = new QWidget(this);
-    auto *refinementLayout = new QVBoxLayout(refinementContent);
-    settings::applyPageMargins(refinementLayout);
-    refinementLayout->setSpacing(0);
-    refinementLayout->addWidget(settings::makePageTitle(QStringLiteral("Refinement"), refinementContent));
-    refinementLayout->addSpacing(settings::sectionGap());
-    refinementLayout->addWidget(detachedContent(m_pages->refinement(), true));
-    refinementLayout->addSpacing(settings::groupGap());
-    refinementLayout->addWidget(detachedContent(m_pages->providerModels(), true));
-    refinementLayout->addStretch();
-    QWidget *refinement = scrollingPage(refinementContent, this);
-
-    auto *authContent = new QWidget(this);
-    auto *authLayout = new QVBoxLayout(authContent);
-    settings::applyPageMargins(authLayout);
-    authLayout->setSpacing(0);
-    authLayout->addWidget(settings::makePageTitle(QStringLiteral("Accounts"), authContent));
-    authLayout->addSpacing(settings::sectionGap());
-    authLayout->addWidget(detachedContent(m_pages->providerAuth(), true));
-    authLayout->addStretch();
-    QWidget *auth = scrollingPage(authContent, this);
-
-    auto *tabs = new QTabWidget(this);
-    const auto addTab = [tabs](QScrollArea *page, const QString &title) {
-        QWidget *content = detachedContent(page, true);
-        settings::applyPageMargins(content->layout());
-        auto *scroll = scrollingPage(content, tabs);
-        tabs->addTab(scroll, title);
-        return scroll;
-    };
-    addTab(m_pages->vocabulary(), QStringLiteral("Vocabulary"));
-    addTab(m_pages->corrections(), QStringLiteral("Learned corrections"));
-    m_pages->preserveBindingScroll(
-        addTab(m_pages->bindings(), QStringLiteral("Replacements && snippets")));
-
-    auto *vocabularyContent = new QWidget(this);
-    auto *vocabularyLayout = new QVBoxLayout(vocabularyContent);
-    settings::applyPageMargins(vocabularyLayout);
-    vocabularyLayout->setSpacing(0);
-    vocabularyLayout->addWidget(settings::makePageTitle(QStringLiteral("Vocabulary"), vocabularyContent));
-    vocabularyLayout->addSpacing(settings::sectionGap());
-    vocabularyLayout->addWidget(tabs, 1);
-
+    m_pages->preserveBindingScroll(m_pages->vocabulary());
     m_pageWidgets = {
         m_dictation,
         m_pages->general(),
         m_pages->audio(),
-        m_pages->applications(),
         m_pages->output(),
-        auth,
-        refinement,
-        vocabularyContent,
+        m_pages->accounts(),
+        m_pages->refinement(),
+        m_pages->vocabulary(),
         m_pages->whatsNew(),
     };
-    for (QWidget *page : std::as_const(m_pageWidgets)) {
-        removeEmbeddedPageTitle(page);
-    }
 }
 
 void AppWindow::buildStatusBanners(QWidget *parent, QVBoxLayout *layout)
@@ -778,14 +764,7 @@ void AppWindow::buildNativeSidebarShell()
             });
     if (search && m_navigationView) {
         connect(search, &QLineEdit::textChanged, this, &AppWindow::filterSidebarPages);
-        connect(search, &QLineEdit::returnPressed, this, [this] {
-            for (int row = 0; row < kPages.size(); ++row) {
-                if (!m_navigationView->isRowHidden(row)) {
-                    m_navigation->setCurrentPage(m_navigationPages.at(row));
-                    return;
-                }
-            }
-        });
+        connect(search, &QLineEdit::returnPressed, this, &AppWindow::openSearchResult);
         auto *clearSearch = new QShortcut(QKeySequence(Qt::Key_Escape), search);
         clearSearch->setContext(Qt::WidgetShortcut);
         connect(clearSearch, &QShortcut::activated, search, &QLineEdit::clear);
@@ -986,14 +965,7 @@ void AppWindow::buildSidebarShell()
         m_backButton->setVisible(whatsNew);
     });
     connect(search, &QLineEdit::textChanged, this, &AppWindow::filterSidebarPages);
-    connect(search, &QLineEdit::returnPressed, this, [this] {
-        for (int row = 0; row < m_navigation->count(); ++row) {
-            if (!m_navigation->item(row)->isHidden()) {
-                m_navigation->setCurrentRow(row);
-                return;
-            }
-        }
-    });
+    connect(search, &QLineEdit::returnPressed, this, &AppWindow::openSearchResult);
     auto *clearSearch = new QShortcut(QKeySequence(Qt::Key_Escape), search);
     clearSearch->setContext(Qt::WidgetShortcut);
     connect(clearSearch, &QShortcut::activated, search, &QLineEdit::clear);
@@ -1129,6 +1101,9 @@ void AppWindow::leaveWhatsNew()
 #endif
 }
 
+// Hides the sidebar pages the query matches nothing on, and remembers the
+// rows it does match. One matching row is unambiguous, so the search goes
+// straight to it.
 void AppWindow::filterSidebarPages(const QString &query)
 {
 #ifdef SPEECHER_WITH_KPAGEWIDGET
@@ -1136,72 +1111,56 @@ void AppWindow::filterSidebarPages(const QString &query)
         return;
     }
 #endif
-    if (query.isEmpty()) {
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-        for (int row = 0; row < kPages.size(); ++row) {
-            m_navigationView->setRowHidden(row, false);
-        }
-        m_navigationView->setRowHidden(kPages.size(), true);
-#else
-        for (int row = 0; row < m_navigation->count(); ++row) {
-            m_navigation->item(row)->setHidden(false);
-        }
-#endif
-        return;
-    }
-
-    if (m_pageKeywords.isEmpty()) {
-        const auto cleanText = [](QString text) {
-            text = text.trimmed();
-            while (text.endsWith(QLatin1Char(':')) || text.endsWith(QChar(0x2026))) {
-                text.chop(1);
-                text = text.trimmed();
-            }
-            return text;
-        };
+    m_rowMatches.clear();
+    QList<bool> hidden(kPages.size(), false);
+    if (!query.isEmpty()) {
         for (int pageIndex = 0; pageIndex < kPages.size(); ++pageIndex) {
-            QStringList keywords{kPages.at(pageIndex).title};
             QWidget *page = m_pageWidgets.at(pageIndex);
-            for (QLabel *label : page->findChildren<QLabel *>()) {
-                if (!label->isHidden() && !Qt::mightBeRichText(label->text())) {
-                    const QString text = cleanText(label->text());
-                    if (!text.isEmpty()) keywords.append(text);
+            hidden[pageIndex] = !pageSearchText(kPages.at(pageIndex).title, page)
+                                     .contains(query, Qt::CaseInsensitive);
+            for (settings::FormRow *row : page->findChildren<settings::FormRow *>()) {
+                if (row->isVisibleTo(page) && row->objectName() != QStringLiteral("gateNote")
+                    && row->searchText().contains(query, Qt::CaseInsensitive)) {
+                    m_rowMatches.append(row);
                 }
             }
-            for (QCheckBox *checkBox : page->findChildren<QCheckBox *>()) {
-                if (!checkBox->isHidden()) {
-                    const QString text = cleanText(checkBox->text());
-                    if (!text.isEmpty()) keywords.append(text);
-                }
-            }
-            for (QGroupBox *group : page->findChildren<QGroupBox *>()) {
-                if (!group->isHidden()) {
-                    const QString text = cleanText(group->title());
-                    if (!text.isEmpty()) keywords.append(text);
-                }
-            }
-            for (QPushButton *button : page->findChildren<QPushButton *>()) {
-                if (!button->isHidden()) {
-                    const QString text = cleanText(button->text());
-                    if (!text.isEmpty()) keywords.append(text);
-                }
-            }
-            m_pageKeywords.append(keywords.join(QLatin1Char('\n')));
         }
     }
 
 #ifdef SPEECHER_WITH_KPAGEWIDGET
     for (int row = 0; row < kPages.size(); ++row) {
-        m_navigationView->setRowHidden(
-            row, !m_pageKeywords.at(row).contains(query, Qt::CaseInsensitive));
+        m_navigationView->setRowHidden(row, hidden.at(row));
     }
     m_navigationView->setRowHidden(kPages.size(), true);
 #else
     for (int row = 0; row < m_navigation->count(); ++row) {
-        m_navigation->item(row)->setHidden(
-            !m_pageKeywords.at(row).contains(query, Qt::CaseInsensitive));
+        m_navigation->item(row)->setHidden(hidden.at(row));
     }
 #endif
+    if (m_rowMatches.size() == 1) {
+        jumpToRow(m_rowMatches.first());
+    }
+}
+
+// Enter in the search field: the first matching row, or failing that the
+// first page still shown.
+void AppWindow::openSearchResult()
+{
+    if (!m_rowMatches.isEmpty()) {
+        jumpToRow(m_rowMatches.first());
+        return;
+    }
+    for (int row = 0; row < kPages.size(); ++row) {
+#ifdef SPEECHER_WITH_KPAGEWIDGET
+        const bool shown = !m_navigationView->isRowHidden(row);
+#else
+        const bool shown = !m_navigation->item(row)->isHidden();
+#endif
+        if (shown) {
+            showPage(row);
+            return;
+        }
+    }
 }
 
 void AppWindow::runAutoSave()

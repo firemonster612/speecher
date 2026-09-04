@@ -210,8 +210,9 @@ int main(int argc, char **argv)
             }
             return 1;
         }
-        const QString showCommand = decision.showSettings ? QStringLiteral("showSettings")
-                                                          : QStringLiteral("showMain");
+        const QString showCommand = decision.showSettings
+            ? showSettingsCommand(decision.settingsPage)
+            : QStringLiteral("showMain");
         if (!daemon && SingleInstanceIpc::sendCommand(showCommand, nullptr)) {
             return 0;
         }
@@ -236,7 +237,9 @@ int main(int argc, char **argv)
             });
         }
         if (decision.showSettings) {
-            QTimer::singleShot(0, &controller, &ApplicationController::showSettings);
+            QTimer::singleShot(0, &controller, [&controller, &decision] {
+                controller.showSettings(decision.settingsPage);
+            });
         }
         if (!daemon || !decision.grabPath.isEmpty()) {
             controller.showMainWindow();

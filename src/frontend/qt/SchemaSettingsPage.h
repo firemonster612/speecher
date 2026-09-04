@@ -7,12 +7,16 @@
 #include <functional>
 
 class QVBoxLayout;
-class QLabel;
 
 namespace speecher {
 
 class PlatformComposition;
 class ProviderRegistry;
+
+namespace settings {
+class FormRow;
+class SettingsCard;
+} // namespace settings
 
 // What the Qt front end can tell the schema about this machine.
 SchemaContext qtSchemaContext(const PlatformComposition &platform,
@@ -25,11 +29,11 @@ struct SchemaCustomRow {
     QWidget *widget = nullptr;
     std::function<QVariant()> value;
     std::function<void(const QVariant &)> setValue;
-    // Too wide to sit in a row's control column, so it gets the whole card
-    // width under a heading of its own.
+    // Too wide for a row's control column, so it spans the row below the
+    // title instead.
     bool fullWidth = false;
-    // Sits beside the row's title rather than in its control column.
-    QWidget *titleAccessory = nullptr;
+    // Shown under the row's subtitle, such as a sign-in status.
+    QWidget *detail = nullptr;
 };
 
 // How a front end hands the renderer a widget for a row it wants to draw
@@ -40,7 +44,7 @@ struct SchemaCustomRow {
 using SchemaCustomRowFactory = std::function<
     SchemaCustomRow(const SettingsRow &descriptor, QWidget *parent, std::function<void()> notifyChanged)>;
 
-// Renders one SettingsPage as the Qt front end's settings page, and drives
+// Renders one SettingsPage as a column of cards, one per section, and drives
 // load, appendToDraft and hasChanges from the descriptors rather than from a
 // hand-written line per field.
 class SchemaSettingsPage : public QScrollArea {
@@ -68,39 +72,32 @@ signals:
 private:
     struct Row {
         SettingsRow descriptor;
-        QWidget *frame = nullptr;
+        settings::FormRow *frame = nullptr;
         QWidget *control = nullptr;
-        QWidget *description = nullptr;
-        // The container the row shares with the rest of its group, which is
-        // what gets enabled and carries the group's tooltip.
-        QWidget *group = nullptr;
-        QWidget *separator = nullptr;
-        // The visible explanation (and fix) shown above the row or its group
-        // while the row's gate says no. Shared by every row of a group.
-        QWidget *gateNote = nullptr;
+        // The row-shaped explanation (and fix) shown above the row while its
+        // gate says no. Rows of one group share it.
+        settings::FormRow *gateNote = nullptr;
         std::function<QVariant()> value;
         std::function<void(const QVariant &)> setValue;
     };
 
-    // A section's chrome — its card, title and help note — only earns its
-    // place on screen while at least one of its rows does.
+    // A card only earns its place on screen while at least one of its rows
+    // does.
     struct Section {
-        QWidget *card = nullptr;
-        QWidget *label = nullptr;
-        QWidget *note = nullptr;
+        settings::SettingsCard *card = nullptr;
         int rowStart = 0;
         int rowEnd = 0;
     };
 
-    void addSection(const SettingsSection &section,
-                    const QString &centeredSeparatorAfterRow,
-                    QVBoxLayout *pageLayout);
-    void addRow(const SettingsRow &descriptor, QWidget *host, QWidget *group, QWidget *gateNote);
-    QWidget *addGateNote(const SettingsRow &descriptor, QWidget *form);
+    void addSection(const SettingsSection &section, QVBoxLayout *column);
+    void addRow(const SettingsRow &descriptor,
+                settings::SettingsCard *card,
+                settings::FormRow *gateNote);
+    settings::FormRow *addGateNote(const SettingsRow &descriptor, settings::SettingsCard *card);
     SchemaCustomRow supplyRow(const SettingsRow &descriptor,
                               QWidget *host,
                               const std::function<void()> &notifyChanged);
-    QWidget *makeControl(const SettingsRow &descriptor, QWidget *card, Row &row);
+    QWidget *makeControl(const SettingsRow &descriptor, QWidget *host, Row &row);
     void applyRow(const Row &row, const AppSettings &settings);
     void refreshRows();
 

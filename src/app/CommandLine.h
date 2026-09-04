@@ -30,9 +30,15 @@ struct CommandLineDecision {
     std::optional<OutputFormat> outputFormat;
     bool startListening = false;
     bool showSettings = false;
+    // The settings page to open, from `speecher settings <page>` or
+    // --settings-page; empty for whichever page is current.
+    QString settingsPage;
     bool showSetup = false;
     QString grabPath;
 };
+
+// The IPC command that opens settings, at `page` when one is named.
+QString showSettingsCommand(const QString &page);
 
 // Decides what the process is for, before any GUI type is constructed, so that
 // `speecher status` never opens a display. Prints the --version banner and any

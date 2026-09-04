@@ -16,9 +16,7 @@
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QSignalBlocker>
-#include <QSizePolicy>
 #include <QThread>
-#include <QVBoxLayout>
 
 #include <memory>
 #include <utility>
@@ -146,32 +144,25 @@ SchemaCustomRow OutputCustomRows::makeVirtualKeyboardRow(QWidget *parent,
                                                          std::function<void()> notifyChanged)
 {
     m_notifyChanged = std::move(notifyChanged);
-    auto *control = new QWidget(parent);
-    auto *layout = new QVBoxLayout(control);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(8);
-
-    m_status = new WrappedStatusLabel(control);
+    // The status reads under the row's title; the buttons are the row's
+    // control.
+    m_status = new WrappedStatusLabel(parent);
     m_status->setObjectName(QStringLiteral("statusText"));
     m_status->setWordWrap(true);
-    m_status->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_status->setForegroundRole(QPalette::WindowText);
     m_status->setAttribute(Qt::WA_StyledBackground, false);
 
+    auto *control = new QWidget(parent);
     m_setUp = new QPushButton(QStringLiteral("Set up"), control);
     m_start = new QPushButton(QStringLiteral("Start service"), control);
     m_disable = new QPushButton(QStringLiteral("Disable in Speecher"), control);
     m_remove = new QPushButton(QStringLiteral("Remove setup"), control);
-    auto *buttons = new QHBoxLayout;
+    auto *buttons = new QHBoxLayout(control);
     buttons->setContentsMargins(0, 0, 0, 0);
-    buttons->setSpacing(8);
+    buttons->setSpacing(settings::relatedSpacing());
     for (QPushButton *button : {m_setUp, m_start, m_disable, m_remove}) {
-        button->setMinimumWidth(button->fontMetrics().horizontalAdvance(button->text()) + 36);
-        button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
         buttons->addWidget(button);
     }
-    layout->addWidget(m_status);
-    layout->addLayout(buttons);
 
 #ifdef SPEECHER_WITH_YDOTOOL
     QObject::connect(m_setUp, &QPushButton::clicked, control, [this] { setUpOrEnable(); });
@@ -192,7 +183,7 @@ SchemaCustomRow OutputCustomRows::makeVirtualKeyboardRow(QWidget *parent,
     QObject::connect(m_remove, &QPushButton::clicked, control, [this] { removeSetup(); });
 #endif
     updateButtons();
-    return {control, {}, {}};
+    return {control, {}, {}, false, m_status};
 }
 
 #ifdef SPEECHER_WITH_YDOTOOL

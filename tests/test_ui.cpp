@@ -4,9 +4,11 @@
 #include "core/VocabularyLimit.h"
 #include "ui/AccessibilityNotice.h"
 #include "core/SecretStore.h"
+#include "frontend/qt/BindingRows.h"
 #include "frontend/qt/OutputCustomRows.h"
 #include "frontend/qt/ProviderCustomRows.h"
 #include "frontend/qt/SchemaSettingsPage.h"
+#include "ui/settings/FormCard.h"
 #include "ui/settings/SettingsPageSupport.h"
 #include "ui/setup/SetupPages.h"
 
@@ -15,7 +17,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFontMetrics>
-#include <QFormLayout>
+#include <QFrame>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QScrollBar>
@@ -28,8 +30,8 @@ using namespace speecher::test;
 
 namespace {
 
-// The migrated pages are the generic renderer over the core schema, so a test
-// builds them the same way the front end does.
+// The pages are the generic renderer over the core schema, so a test builds
+// them the same way the front end does.
 std::unique_ptr<SchemaSettingsPage> schemaPage(const QString &id,
                                                const PlatformComposition &platform,
                                                const ProviderRegistry &providers,
@@ -40,13 +42,32 @@ std::unique_ptr<SchemaSettingsPage> schemaPage(const QString &id,
     return std::make_unique<SchemaSettingsPage>(schema.page(id), nullptr, std::move(customRows));
 }
 
-QStringList sectionLabels(const QWidget &page)
+template <typename T>
+T *ancestorOf(QWidget *widget)
 {
-    QStringList labels;
-    for (QLabel *label : page.findChildren<QLabel *>(QStringLiteral("sectionLabel"))) {
-        labels.append(label->text());
+    for (QWidget *candidate = widget->parentWidget(); candidate; candidate = candidate->parentWidget()) {
+        if (auto *match = qobject_cast<T *>(candidate)) {
+            return match;
+        }
     }
-    return labels;
+    return nullptr;
+}
+
+QList<settings::FormRow *> shownRows(SchemaSettingsPage &page)
+{
+    QList<settings::FormRow *> rows;
+    for (settings::FormRow *row : page.findChildren<settings::FormRow *>()) {
+        if (row->isVisibleTo(&page) && row->objectName() != QStringLiteral("gateNote")) {
+            rows.append(row);
+        }
+    }
+    return rows;
+}
+
+// The column every control's right edge must sit on, in page coordinates.
+int controlRightEdge(settings::FormRow *row, QWidget *page)
+{
+    return row->mapTo(page, QPoint(row->width() - settings::rowHorizontalPadding(), 0)).x();
 }
 
 class SizingPopupPositioner final : public PopupPositioner {
@@ -205,16 +226,13 @@ private slots:
         const std::unique_ptr<SchemaSettingsPage> outputPage =
             schemaPage(QStringLiteral("output"), *platform, providers, outputRows.factory());
         SchemaSettingsPage &output = *outputPage;
-        const std::unique_ptr<SchemaSettingsPage> applicationsPage =
-            schemaPage(QStringLiteral("applications"), *platform, providers);
-        SchemaSettingsPage &applications = *applicationsPage;
         const std::unique_ptr<SchemaSettingsPage> page =
             schemaPage(QStringLiteral("refinement"), *platform, providers);
         SchemaSettingsPage &refinement = *page;
-        const std::unique_ptr<SchemaSettingsPage> correctionsPage =
-            schemaPage(QStringLiteral("corrections"), *platform, providers);
-        SchemaSettingsPage &corrections = *correctionsPage;
-        auto *correctionLearning = corrections.findChild<QCheckBox *>(
+        const std::unique_ptr<SchemaSettingsPage> vocabularyPage =
+            schemaPage(QStringLiteral("vocabulary"), *platform, providers);
+        SchemaSettingsPage &vocabulary = *vocabularyPage;
+        auto *correctionLearning = vocabulary.findChild<QCheckBox *>(
             QStringLiteral("correctionLearningControl"));
         QVERIFY(correctionLearning);
         refinement.load(settings.snapshot());
@@ -223,17 +241,20 @@ private slots:
         QCOMPARE(profileSettings->rowCount(), 5);
 
         output.setCapabilities({false});
-        applications.setCapabilities({false});
         refinement.setCapabilities({false});
-        corrections.setCapabilities({false});
+        vocabulary.setCapabilities({false});
 
-        QVERIFY(!output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
-        QVERIFY(!applications.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
+        // Every row that needs a known target is off, tables and combos alike;
+        // the global fallback needs none and stays usable.
+        QVERIFY(!output.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
+        QVERIFY(!output.findChild<QTableWidget *>(QStringLiteral("applicationPasteRules"))->isEnabled());
+        QVERIFY(!output.findChild<QComboBox *>(QStringLiteral("categoryPasteRule_terminal"))->isEnabled());
+        QVERIFY(output.findChild<QComboBox *>(QStringLiteral("globalPasteRule"))->isEnabled());
         QVERIFY(!refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
-        QVERIFY(!corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
+        QVERIFY(!vocabulary.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
 
         // The reason is on the page, not only in a tooltip, with the fix beside it.
-        for (SchemaSettingsPage *page : {&output, &applications, &refinement, &corrections}) {
+        for (SchemaSettingsPage *page : {&output, &refinement, &vocabulary}) {
             auto *note = page->findChild<QWidget *>(QStringLiteral("gateNote"));
             QVERIFY(note);
             QVERIFY(note->isVisibleTo(page));
@@ -248,135 +269,116 @@ private slots:
             QCOMPARE(action->text(), QStringLiteral("Enable desktop accessibility"));
 #endif
         }
-        // One note for the whole paste-rule group, above it.
+        // One note for the whole per-app rules group, above it.
         QCOMPARE(output.findChildren<QWidget *>(QStringLiteral("gateNote")).size(), 1);
-        QSignalSpy triggered(&applications, &SchemaSettingsPage::actionTriggered);
-        applications.findChild<QPushButton *>(QStringLiteral("gateAction"))->click();
+        QSignalSpy triggered(&output, &SchemaSettingsPage::actionTriggered);
+        output.findChild<QPushButton *>(QStringLiteral("gateAction"))->click();
         QCOMPARE(triggered.count(), 1);
         QCOMPARE(triggered.first().first().toString(), QStringLiteral("enableAccessibility"));
 
         output.setCapabilities({true});
-        applications.setCapabilities({true});
         refinement.setCapabilities({true});
-        corrections.setCapabilities({true});
+        vocabulary.setCapabilities({true});
         // A row that is usable says what it does; one that is not says why.
         QVERIFY(correctionLearning->toolTip().contains(QStringLiteral("repeated")));
         QVERIFY(!correctionLearning->toolTip().contains(QStringLiteral("only high-confidence")));
-        QVERIFY(output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
-        QVERIFY(applications.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
+        QVERIFY(output.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
+        QVERIFY(output.findChild<QComboBox *>(QStringLiteral("categoryPasteRule_terminal"))->isEnabled());
         QVERIFY(refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
-        QVERIFY(corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
-        for (SchemaSettingsPage *page : {&output, &applications, &refinement, &corrections}) {
+        QVERIFY(vocabulary.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
+        for (SchemaSettingsPage *page : {&output, &refinement, &vocabulary}) {
             QVERIFY(!page->findChild<QWidget *>(QStringLiteral("gateNote"))->isVisibleTo(page));
         }
     }
 
-    void linuxSettingsLayoutsMatchMasterAndKeepSchemaRows()
+    void everySettingsRowSitsInATitledCard()
     {
         SettingsStore settings;
+        SecretStore secrets(&settings);
         ProviderRegistry providers;
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        OutputCustomRows outputRows(settings);
+        ProviderCustomRows providerRows(settings, secrets);
+        BindingRows bindingRows;
         const SettingsSchema schema =
             buildSettingsSchema(qtSchemaContext(*platform, providers));
-        SettingsPage refinementSchema = schema.page(QStringLiteral("refinement"));
-        SettingsRow sentinel;
-        sentinel.id = QStringLiteral("refinementLayoutSentinel");
-        sentinel.label = QStringLiteral("Sentinel");
-        sentinel.kind = RowKind::Toggle;
-        refinementSchema.sections.append({QStringLiteral("Later"), QString(), {sentinel}});
-        const std::unique_ptr<SchemaSettingsPage> refinement =
-            std::make_unique<SchemaSettingsPage>(refinementSchema);
-
-        for (const SettingsSection &section : refinementSchema.sections) {
-            for (const SettingsRow &row : section.rows) {
-                const QString control = row.id == QStringLiteral("writingProfileBehavior")
-                    ? QStringLiteral("vocabInput")
-                    : row.id;
-                QVERIFY2(refinement->findChild<QWidget *>(control), qPrintable(control));
-            }
-        }
-        refinement->resize(900, 668);
-        refinement->show();
-        QCoreApplication::processEvents();
-        auto *profile = refinement->findChild<QTableWidget *>(QStringLiteral("vocabInput"));
-        auto *context = refinement->findChild<QWidget *>(QStringLiteral("targetContextControl"));
-        QVERIFY(profile && context);
-        const QList<QLabel *> refinementLabels =
-            refinement->findChildren<QLabel *>(QStringLiteral("sectionLabel"));
-        QCOMPARE(refinementLabels.size(), 1);
-        QCOMPARE(refinementLabels.first()->text(), QStringLiteral("Refinement"));
-        const QList<QFrame *> separators =
-            refinement->findChildren<QFrame *>(QStringLiteral("settingsSeparator"));
-        QCOMPARE(separators.size(), 1);
-        const int profileBottom =
-            profile->mapTo(refinement->widget(), QPoint(0, profile->height())).y();
-        const int separatorY = separators.first()->mapTo(refinement->widget(), QPoint()).y();
-        const int contextY = context->mapTo(refinement->widget(), QPoint()).y();
-        QVERIFY(profileBottom <= separatorY && separatorY < contextY);
-
-        OutputCustomRows outputRows(settings);
-        const std::unique_ptr<SchemaSettingsPage> output =
-            std::make_unique<SchemaSettingsPage>(schema.page(QStringLiteral("output")),
-                                                 nullptr,
-                                                 outputRows.factory());
-        const bool virtualKeyboard = [&schema] {
-            for (const SettingsSection &section : schema.page(QStringLiteral("output")).sections) {
+        const QList<std::pair<QString, SchemaCustomRowFactory>> pages{
+            {QStringLiteral("general"), {}},
+            {QStringLiteral("audio"), {}},
+            {QStringLiteral("output"), outputRows.factory()},
+            {QStringLiteral("accounts"), providerRows.factory()},
+            {QStringLiteral("refinement"), {}},
+            {QStringLiteral("vocabulary"), bindingRows.factory()},
+        };
+        for (const auto &[id, factory] : pages) {
+            const SettingsPage &descriptor = schema.page(id);
+            SchemaSettingsPage page(descriptor, nullptr, factory);
+            for (const SettingsSection &section : descriptor.sections) {
                 for (const SettingsRow &row : section.rows) {
-                    if (row.id == QStringLiteral("virtualKeyboard")) {
-                        return true;
-                    }
+                    const QString control = row.id == QStringLiteral("writingProfileBehavior")
+                        ? QStringLiteral("vocabInput")
+                        : row.id == QStringLiteral("bindingRules") ? QStringLiteral("bindingList")
+                                                                    : row.id;
+                    QWidget *widget = page.findChild<QWidget *>(control);
+                    QVERIFY2(widget, qPrintable(control));
+                    auto *formRow = ancestorOf<settings::FormRow>(widget);
+                    auto *card = ancestorOf<settings::SettingsCard>(widget);
+                    QVERIFY2(formRow && card, qPrintable(control));
+                    QCOMPARE(card->title(), section.title);
+                    QVERIFY2(!card->title().isEmpty(), qPrintable(control));
                 }
             }
-            return false;
-        }();
-        const QStringList outputLabels{
-            QStringLiteral("Delivery"),
-            QStringLiteral("Paste behavior"),
-            virtualKeyboard ? QStringLiteral("Clipboard & virtual keyboard")
-                            : QStringLiteral("Clipboard"),
-        };
-        QCOMPARE(sectionLabels(*output), outputLabels);
-        output->resize(900, 668);
-        output->show();
-        QCoreApplication::processEvents();
-        auto *globalPaste = output->findChild<QWidget *>(QStringLiteral("globalPasteRule"));
-        auto *restoreClipboard =
-            output->findChild<QWidget *>(QStringLiteral("restoreClipboardAfterTyping"));
-        QVERIFY(globalPaste && restoreClipboard);
-        QVERIFY(globalPaste->mapTo(output->widget(), QPoint()).y()
-                < restoreClipboard->mapTo(output->widget(), QPoint()).y());
-
-        for (const QString &id : {QStringLiteral("general"), QStringLiteral("applications")}) {
-            SchemaCustomRowFactory customRows;
-#ifdef Q_OS_LINUX
-            if (id == QStringLiteral("general")) {
-                customRows = [](const SettingsRow &row,
-                                QWidget *parent,
-                                std::function<void()>) {
-                    return row.id == QStringLiteral("globalShortcut")
-                        ? SchemaCustomRow{new QWidget(parent), {}, {}}
-                        : SchemaCustomRow{};
-                };
-            }
-#endif
-            const std::unique_ptr<SchemaSettingsPage> page =
-                std::make_unique<SchemaSettingsPage>(schema.page(id), nullptr, customRows);
-            QCOMPARE(sectionLabels(*page).size(), 0);
         }
+    }
 
-        // Audio keeps one everyday card and a separate Advanced card for the
-        // timing controls, in that order.
-        const std::unique_ptr<SchemaSettingsPage> audio =
-            std::make_unique<SchemaSettingsPage>(schema.page(QStringLiteral("audio")));
-        QCOMPARE(sectionLabels(*audio), QStringList{QStringLiteral("Advanced")});
-        audio->resize(900, 668);
-        audio->show();
+    void cardsHideWithTheirLastRowAndSeparatorsFollow()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        SecretStore secrets(&settings);
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        ProviderCustomRows providerRows(settings, secrets);
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("accounts"), *platform, providers, providerRows.factory());
+        page->load(settings.snapshot());
+        page->resize(900, 900);
+        page->show();
         QCoreApplication::processEvents();
-        auto *silence = audio->findChild<QWidget *>(QStringLiteral("vadEnabled"));
-        auto *preRoll = audio->findChild<QWidget *>(QStringLiteral("preRollMs"));
-        QVERIFY(silence && preRoll);
-        QVERIFY(silence->mapTo(audio->widget(), QPoint()).y()
-                < preRoll->mapTo(audio->widget(), QPoint()).y());
+
+        // The server card has nothing to show until a sign-in routes through it.
+        settings::SettingsCard *server = nullptr;
+        for (settings::SettingsCard *card : page->findChildren<settings::SettingsCard *>()) {
+            if (card->title() == QStringLiteral("CLI Proxy API server")) {
+                server = card;
+            }
+        }
+        QVERIFY(server);
+        QVERIFY(!server->isVisibleTo(page.get()));
+        settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
+        page->load(settings.snapshot());
+        QVERIFY(server->isVisibleTo(page.get()));
+
+        // A separator only sits between two rows that are both shown.
+        auto *account = page->findChild<QComboBox *>(QStringLiteral("openAiCliproxyAccount"));
+        QVERIFY(account);
+        auto *accountRow = ancestorOf<settings::FormRow>(account);
+        auto *codex = ancestorOf<settings::SettingsCard>(account);
+        QVERIFY(accountRow && codex);
+        QVERIFY(accountRow->isVisibleTo(page.get()));
+        int shownSeparators = 0;
+        for (QFrame *separator : codex->findChildren<QFrame *>(QStringLiteral("rowSeparator"))) {
+            shownSeparators += separator->isVisibleTo(page.get());
+        }
+        QCOMPARE(shownSeparators, 2);
+        settings.setOpenAiAuthMode(QStringLiteral("auto"));
+        page->load(settings.snapshot());
+        QVERIFY(!accountRow->isVisibleTo(page.get()));
+        shownSeparators = 0;
+        for (QFrame *separator : codex->findChildren<QFrame *>(QStringLiteral("rowSeparator"))) {
+            shownSeparators += separator->isVisibleTo(page.get());
+        }
+        QCOMPARE(shownSeparators, 1);
     }
 
     void outputMethodsOfferAccessibilityInsertion()
@@ -429,7 +431,7 @@ private slots:
         ProviderRegistry providers;
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
         const std::unique_ptr<SchemaSettingsPage> page =
-            schemaPage(QStringLiteral("corrections"), *platform, providers);
+            schemaPage(QStringLiteral("vocabulary"), *platform, providers);
         AppSettings settings;
         settings.learnedCorrections = {
             {QStringLiteral("c-1"), QStringLiteral("speecher"), QStringLiteral("Speecher"),
@@ -469,7 +471,7 @@ private slots:
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
         ProviderCustomRows providerRows(settings, secrets);
         const std::unique_ptr<SchemaSettingsPage> page =
-            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+            schemaPage(QStringLiteral("refinement"), *platform, providers, providerRows.factory());
         auto *caution = page->findChild<QLabel *>(QStringLiteral("anthropicModelCaution"));
         auto *model = page->findChild<QComboBox *>(QStringLiteral("anthropicModel"));
         QVERIFY(caution && model);
@@ -574,7 +576,7 @@ private slots:
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
         ProviderCustomRows providerRows(settings, secrets);
         const std::unique_ptr<SchemaSettingsPage> page =
-            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+            schemaPage(QStringLiteral("accounts"), *platform, providers, providerRows.factory());
         page->load(settings.snapshot());
         for (const char *name : {"openAiCliproxyAccount", "anthropicCliproxyAccount"}) {
             auto *combo = page->findChild<QComboBox *>(QString::fromLatin1(name));
@@ -599,7 +601,7 @@ private slots:
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
         ProviderCustomRows providerRows(settings, secrets);
         const std::unique_ptr<SchemaSettingsPage> page =
-            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+            schemaPage(QStringLiteral("accounts"), *platform, providers, providerRows.factory());
         page->load(settings.snapshot());
         providerRows.loadSecret();
 
@@ -627,7 +629,7 @@ private slots:
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
         ProviderCustomRows providerRows(settings, secrets);
         const std::unique_ptr<SchemaSettingsPage> page =
-            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+            schemaPage(QStringLiteral("accounts"), *platform, providers, providerRows.factory());
         page->load(settings.snapshot());
 
         auto *mode = page->findChild<QComboBox *>(QStringLiteral("openAiAuthMode"));
@@ -680,7 +682,7 @@ private slots:
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
         ProviderCustomRows providerRows(settings, secrets);
         const std::unique_ptr<SchemaSettingsPage> page =
-            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+            schemaPage(QStringLiteral("accounts"), *platform, providers, providerRows.factory());
         page->load(settings.snapshot());
         auto *openAi = page->findChild<QComboBox *>(QStringLiteral("openAiCliproxyAccount"));
         auto *anthropic = page->findChild<QComboBox *>(QStringLiteral("anthropicCliproxyAccount"));
@@ -718,7 +720,7 @@ private slots:
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
         ProviderCustomRows providerRows(settings, secrets);
         const std::unique_ptr<SchemaSettingsPage> page =
-            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+            schemaPage(QStringLiteral("accounts"), *platform, providers, providerRows.factory());
         page->load(settings.snapshot());
 
         auto *baseUrl = page->findChild<QLineEdit *>(QStringLiteral("cliproxyBaseUrl"));
@@ -745,11 +747,13 @@ private slots:
 
     void applicationSettingsShowsBuiltInsAndAddsCustomRules()
     {
+        SettingsStore store;
         ProviderRegistry providers;
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
-        const std::unique_ptr<SchemaSettingsPage> applications =
-            schemaPage(QStringLiteral("applications"), *platform, providers);
-        SchemaSettingsPage &page = *applications;
+        OutputCustomRows outputRows(store);
+        const std::unique_ptr<SchemaSettingsPage> output =
+            schemaPage(QStringLiteral("output"), *platform, providers, outputRows.factory());
+        SchemaSettingsPage &page = *output;
         AppSettings settings;
         settings.refinement.writingProfileOverrides = {
             {QStringLiteral("org.legacy.chat"), WritingProfile::Personal, true},
@@ -782,69 +786,65 @@ private slots:
         QCOMPARE(settings.appRecognitionRules.last().writingProfile, WritingProfile::Work);
     }
 
-    void sharedSettingsRowsFollowSystemSettingsLayout()
+    void formRowsPutTheControlOnTheRightAndWrapTheSubtitle()
     {
-        QWidget parent;
-        auto *control = new QPushButton(QStringLiteral("Control"), &parent);
-        const QString description = QStringLiteral(
-            "A long description whose deterministic wrap width lets the form row grow to fit descenders properly.");
-        QFrame *describedRow = settings::makeRow(
-            QStringLiteral("Category"), description, control, &parent);
-        auto *descriptionLabel = describedRow->findChild<QLabel *>(
-            QStringLiteral("rowDescription"));
-        auto *titleLabel = describedRow->findChild<QLabel *>(
-            QStringLiteral("rowLabelCell"));
-        QVERIFY(descriptionLabel);
-        QVERIFY(titleLabel);
-        QVERIFY(descriptionLabel->wordWrap());
-        QCOMPARE(descriptionLabel->maximumWidth(),
-                 qMin(descriptionLabel->fontMetrics().horizontalAdvance(description) + 8,
-                      descriptionLabel->fontMetrics().averageCharWidth() * 62));
-        QVERIFY(descriptionLabel->heightForWidth(descriptionLabel->maximumWidth())
-                > descriptionLabel->fontMetrics().height());
-        const int requiredRowHeight = control->sizeHint().height()
-            + settings::tightSpacing()
-            + descriptionLabel->heightForWidth(descriptionLabel->maximumWidth());
-        QVERIFY(describedRow->minimumSizeHint().height() >= requiredRowHeight);
-        QCOMPARE(titleLabel->alignment(), Qt::AlignRight | Qt::AlignVCenter);
-
-        // A check box's sentence sits beside the box as wrapping text (a
-        // QCheckBox cannot wrap its own), and clicking the words toggles it.
-        auto *checkBox = new QCheckBox(&parent);
-        const QString sentence = QStringLiteral(
-            "Download the update in the background and install it the next time Speecher "
-            "restarts, without asking first.");
-        QFrame *checkBoxRow = settings::makeRow(
-            QStringLiteral("Updates"), sentence, checkBox, &parent);
-        QVERIFY(!checkBoxRow->findChild<QLabel *>(QStringLiteral("rowDescription")));
-        auto *caption = checkBoxRow->findChild<QLabel *>(QStringLiteral("checkBoxCaption"));
-        QVERIFY(caption);
-        QVERIFY(checkBox->text().isEmpty());
-        QCOMPARE(checkBox->accessibleName(), sentence);
-        QCOMPARE(caption->text(), sentence);
-        QVERIFY(caption->wordWrap());
-        QVERIFY(caption->maximumWidth() <= caption->fontMetrics().averageCharWidth() * 62);
-        QVERIFY(caption->minimumSizeHint().width() < caption->fontMetrics().horizontalAdvance(sentence));
-        parent.show();
+        settings::SettingsCard card(QStringLiteral("Card"), QStringLiteral("One line under it"));
+        card.setFixedWidth(420);
+        const QString subtitle = QStringLiteral(
+            "A long subtitle whose wrap width at this card size lets the row grow to fit every "
+            "line rather than clipping the last one.");
+        auto *row = new settings::FormRow(QStringLiteral("Title"), subtitle, card.body());
+        auto *control = new QPushButton(QStringLiteral("Control"), row);
+        row->setControl(control);
+        card.addRow(row);
+        auto *second = new settings::FormRow(QStringLiteral("Second"), QString(), card.body());
+        auto *check = new QCheckBox(second);
+        second->setControl(check);
+        card.addRow(second);
+        card.show();
         QCoreApplication::processEvents();
-        QVERIFY(!checkBox->isChecked());
-        QTest::mouseClick(caption, Qt::LeftButton);
-        QVERIFY(checkBox->isChecked());
+
+        QVERIFY(card.titleLabel()->font().bold());
+        QCOMPARE(card.title(), QStringLiteral("Card"));
+        // Controls of different widths end on the same column: the row's right
+        // padding edge.
+        QCOMPARE(control->mapTo(row, QPoint(control->width(), 0)).x(),
+                 row->width() - settings::rowHorizontalPadding());
+        QCOMPARE(check->mapTo(second, QPoint(check->width(), 0)).x(),
+                 second->width() - settings::rowHorizontalPadding());
+        // The control is vertically centred on the text beside it.
+        const QRect controlInRow(control->mapTo(row, QPoint()), control->size());
+        const QRect titleInRow(row->titleLabel()->mapTo(row, QPoint()),
+                               QSize(row->titleLabel()->width(),
+                                     row->subtitleLabel()->mapTo(row, QPoint(0, row->subtitleLabel()->height())).y()
+                                         - row->titleLabel()->mapTo(row, QPoint()).y()));
+        QVERIFY(qAbs(controlInRow.center().y() - titleInRow.center().y()) <= 1);
+        // The subtitle wraps, and the row is tall enough for every line.
+        QLabel *help = row->subtitleLabel();
+        QVERIFY(help->wordWrap());
+        QVERIFY(help->heightForWidth(help->width()) > help->fontMetrics().height());
+        QVERIFY(help->height() >= help->heightForWidth(help->width()));
+        QVERIFY(row->rect().contains(QRect(help->mapTo(row, QPoint()), help->size())));
+        // One separator between two rows, drawn by the style as a line frame.
+        const QList<QFrame *> separators = card.findChildren<QFrame *>(QStringLiteral("rowSeparator"));
+        QCOMPARE(separators.size(), 1);
+        QCOMPARE(separators.first()->frameShape(), QFrame::HLine);
+        QVERIFY(card.body()->title().isEmpty());
+        QVERIFY(!card.body()->isFlat());
+        // A row is what a search matches and points at.
+        QVERIFY(row->searchText().contains(QStringLiteral("Control")));
+        QVERIFY(!row->isFlashing());
+        row->flash();
+        QVERIFY(row->isFlashing());
+        QTRY_VERIFY_WITH_TIMEOUT(!row->isFlashing(), 3000);
     }
 
     void settingsCardsFitANarrowPaneWithoutClipping()
     {
         ProviderRegistry providers;
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
-        SchemaCustomRowFactory customRows = [](const SettingsRow &row,
-                                               QWidget *parent,
-                                               std::function<void()>) {
-            return row.id == QStringLiteral("globalShortcut")
-                ? SchemaCustomRow{new QWidget(parent), {}, {}}
-                : SchemaCustomRow{};
-        };
         const std::unique_ptr<SchemaSettingsPage> page =
-            schemaPage(QStringLiteral("general"), *platform, providers, customRows);
+            schemaPage(QStringLiteral("general"), *platform, providers);
         // The long update toggle only shows when automatic downloads exist.
         page->setCapabilities({false, true});
         page->resize(500, 700);
@@ -855,131 +855,102 @@ private slots:
         auto *autoInstall = page->findChild<QCheckBox *>(QStringLiteral("autoInstallUpdates"));
         QVERIFY(autoInstall);
         QVERIFY(autoInstall->isVisibleTo(page.get()));
-        auto *card = page->findChild<QWidget *>(QStringLiteral("settingsCardForm"));
-        QVERIFY(card);
-        QVERIFY(card->width() <= page->viewport()->width());
-        for (QFrame *row : page->findChildren<QFrame *>(QStringLiteral("settingsRow"))) {
-            if (!row->isVisibleTo(page.get())) {
-                continue;
-            }
-            const QRect inCard(row->mapTo(card, QPoint(0, 0)), row->size());
-            QVERIFY2(inCard.right() <= card->width(), qPrintable(row->objectName()));
-            QVERIFY2(inCard.left() >= 0, qPrintable(row->objectName()));
+        auto *column = page->findChild<QWidget *>(QStringLiteral("cardColumn"));
+        QVERIFY(column);
+        QVERIFY(column->width() <= page->viewport()->width());
+        for (settings::FormRow *row : shownRows(*page)) {
+            QWidget *body = row->parentWidget();
+            const QRect inBody(row->mapTo(body, QPoint(0, 0)), row->size());
+            QVERIFY2(inBody.right() <= body->width(), qPrintable(row->title()));
+            QVERIFY2(inBody.left() >= 0, qPrintable(row->title()));
         }
     }
 
-    void generalSettingsHelpFitsWithoutOverlappingRows()
+    // At the window sizes people actually use: every subtitle fits its row
+    // unclipped, and every control ends on the same right-hand column.
+    void settingsPagesKeepHelpUnclippedAndControlsAligned()
     {
+        SettingsStore settings;
+        SecretStore secrets(&settings);
         ProviderRegistry providers;
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
-        SchemaCustomRowFactory customRows = [](const SettingsRow &row,
-                                               QWidget *parent,
-                                               std::function<void()>) {
-            return row.id == QStringLiteral("globalShortcut")
-                ? SchemaCustomRow{new QWidget(parent), {}, {}, true}
-                : SchemaCustomRow{};
-        };
-        const std::unique_ptr<SchemaSettingsPage> page =
-            schemaPage(QStringLiteral("general"), *platform, providers, customRows);
-        page->resize(900, 900);
-        page->show();
-        QCoreApplication::processEvents();
+        // 900x900 is the screenshot size; 540x520 is what a 760x520 window
+        // leaves beside its sidebar.
+        for (const QSize &size : {QSize(900, 900), QSize(540, 520)}) {
+            // The custom-row helpers hold on to the widgets they made, so each
+            // set of pages gets its own.
+            OutputCustomRows outputRows(settings);
+            ProviderCustomRows providerRows(settings, secrets);
+            BindingRows bindingRows;
+            const QList<std::pair<QString, SchemaCustomRowFactory>> pages{
+                {QStringLiteral("general"), {}},
+                {QStringLiteral("audio"), {}},
+                {QStringLiteral("output"), outputRows.factory()},
+                {QStringLiteral("accounts"), providerRows.factory()},
+                {QStringLiteral("refinement"), {}},
+                {QStringLiteral("vocabulary"), bindingRows.factory()},
+            };
+            for (const auto &[id, factory] : pages) {
+                const std::unique_ptr<SchemaSettingsPage> page =
+                    schemaPage(id, *platform, providers, factory);
+                page->setCapabilities({true, true});
+                page->load(settings.snapshot());
+                page->resize(size);
+                page->show();
+                QCoreApplication::processEvents();
 
-        auto *formWidget = page->findChild<QWidget *>(QStringLiteral("settingsCardForm"));
-        auto *form = qobject_cast<QFormLayout *>(formWidget ? formWidget->layout() : nullptr);
-        QVERIFY(form);
-        for (int row = 0; row < form->rowCount(); ++row) {
-            QLayoutItem *item = form->itemAt(row, QFormLayout::SpanningRole);
-            if (!item) {
-                item = form->itemAt(row, QFormLayout::FieldRole);
-            }
-            QWidget *rowWidget = item ? item->widget() : nullptr;
-            if (!rowWidget || !rowWidget->isVisibleTo(page.get())) {
-                continue;
-            }
-            const QList<QLabel *> helpLabels = rowWidget->findChildren<QLabel *>(
-                QStringLiteral("rowDescription"));
-            for (QLabel *help : helpLabels) {
-                QVERIFY2(help->height() >= help->heightForWidth(help->width()),
-                         qPrintable(help->text()));
-                for (int nextRow = row + 1; nextRow < form->rowCount(); ++nextRow) {
-                    QLayoutItem *nextItem = form->itemAt(nextRow, QFormLayout::SpanningRole);
-                    if (!nextItem) {
-                        nextItem = form->itemAt(nextRow, QFormLayout::FieldRole);
+                QVERIFY2(page->horizontalScrollBar()->maximum() == 0, qPrintable(id));
+                QWidget *content = page->widget();
+                std::optional<int> column;
+                for (settings::FormRow *row : shownRows(*page)) {
+                    const QString where = id + QStringLiteral("/") + row->title();
+                    QLabel *help = row->subtitleLabel();
+                    if (help->isVisibleTo(page.get())) {
+                        QVERIFY2(help->height() >= help->heightForWidth(help->width()), qPrintable(where));
+                        QVERIFY2(row->rect().contains(QRect(help->mapTo(row, QPoint()), help->size())),
+                                 qPrintable(where));
                     }
-                    QWidget *nextWidget = nextItem ? nextItem->widget() : nullptr;
-                    if (!nextWidget || !nextWidget->isVisibleTo(page.get())) {
-                        continue;
+                    QWidget *control = row->control();
+                    if (control && control->isVisibleTo(page.get())) {
+                        const int right = control->mapTo(content, QPoint(control->width(), 0)).x();
+                        QCOMPARE(right, controlRightEdge(row, content));
+                        if (!column) {
+                            column = right;
+                        }
+                        QVERIFY2(right == *column, qPrintable(where));
                     }
-                    const int helpBottom = help->mapTo(formWidget, QPoint(0, help->height())).y();
-                    const int nextTop = nextWidget->mapTo(formWidget, QPoint()).y();
-                    QVERIFY2(helpBottom <= nextTop, qPrintable(help->text()));
-                    break;
+                    if (QWidget *editor = row->editor()) {
+                        // A spanning editor starts where the title does.
+                        const int editorLeft = editor->mapTo(row, QPoint()).x();
+                        QCOMPARE(editorLeft, settings::rowHorizontalPadding());
+                        if (!row->title().isEmpty()) {
+                            QCOMPARE(row->titleLabel()->mapTo(row, QPoint()).x(), editorLeft);
+                        }
+                    }
                 }
             }
         }
     }
-
-#ifdef Q_OS_LINUX
-    // The Global Shortcut row this test aligns against exists only on Linux.
-    void fullWidthSettingsRowsShareOneLeftEdge()
-    {
-        ProviderRegistry providers;
-        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
-        SchemaCustomRowFactory customRows = [](const SettingsRow &row,
-                                               QWidget *parent,
-                                               std::function<void()>) {
-            if (row.id != QStringLiteral("globalShortcut")) {
-                return SchemaCustomRow{};
-            }
-            auto *body = new QWidget(parent);
-            auto *layout = new QVBoxLayout(body);
-            layout->setContentsMargins(0, 0, 0, 0);
-            auto *text = new QLabel(QStringLiteral("Shortcut body"), body);
-            text->setObjectName(QStringLiteral("shortcutBody"));
-            layout->addWidget(text);
-            return SchemaCustomRow{body, {}, {}, true};
-        };
-        const std::unique_ptr<SchemaSettingsPage> page =
-            schemaPage(QStringLiteral("general"), *platform, providers, customRows);
-        page->resize(900, 900);
-        page->show();
-        QCoreApplication::processEvents();
-
-        auto *heading = page->findChild<QLabel *>(QStringLiteral("subsectionLabel"));
-        auto *subtitle = heading ? heading->parentWidget()->findChild<QLabel *>(
-                                      QStringLiteral("rowDescription"))
-                                 : nullptr;
-        auto *body = page->findChild<QLabel *>(QStringLiteral("shortcutBody"));
-        QVERIFY(heading);
-        QVERIFY(subtitle);
-        QVERIFY(body);
-        const int bodyLeft = body->mapTo(page.get(), QPoint()).x();
-        QCOMPARE(heading->mapTo(page.get(), QPoint()).x(), bodyLeft);
-        QCOMPARE(subtitle->mapTo(page.get(), QPoint()).x(), bodyLeft);
-    }
-#endif
 
     void settingsRowsGrowForWrappedDescriptions()
     {
         QWidget surface;
         surface.resize(520, 240);
         auto *layout = new QVBoxLayout(&surface);
-        auto *control = new QPushButton(QStringLiteral("A deliberately wide control"), &surface);
-        control->setFixedWidth(250);
-        QFrame *row = settings::makeRow(
+        auto *row = new settings::FormRow(
             QStringLiteral("Output"),
             QStringLiteral("How Speecher delivers final text after dictation has completed, "
-                           "including the fallback used when the preferred delivery is missing."),
-            control,
+                           "including the fallback used when the preferred delivery is missing"),
             &surface);
+        auto *control = new QPushButton(QStringLiteral("A deliberately wide control"), row);
+        control->setFixedWidth(250);
+        row->setControl(control);
         layout->addWidget(row);
         layout->addStretch();
 
         surface.show();
         QCoreApplication::processEvents();
-        auto *description = row->findChild<QLabel *>(QStringLiteral("rowDescription"));
-        QVERIFY(description);
+        QLabel *description = row->subtitleLabel();
         QVERIFY(description->heightForWidth(description->width())
                 > description->fontMetrics().height());
         QVERIFY(description->height() >= description->heightForWidth(description->width()));

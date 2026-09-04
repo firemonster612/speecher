@@ -5,7 +5,6 @@
 class QComboBox;
 class QLabel;
 class QLineEdit;
-class QStackedWidget;
 
 namespace speecher {
 
@@ -56,7 +55,6 @@ private:
     QComboBox *m_anthropicCliproxyAccount = nullptr;
     QLineEdit *m_cliproxyBaseUrl = nullptr;
     QLineEdit *m_cliproxyApiKey = nullptr;
-    QStackedWidget *m_credential = nullptr;
     QLabel *m_authStatus = nullptr;
     QLabel *m_anthropicAuthStatus = nullptr;
     QLineEdit *m_apiKey = nullptr;

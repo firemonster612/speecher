@@ -1,6 +1,7 @@
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
+#include "app/CommandLine.h"
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
@@ -8,6 +9,7 @@
 #include "ui/AppPage.h"
 #include "ui/AppWindow.h"
 #include "ui/DictationPage.h"
+#include "ui/settings/FormCard.h"
 #include "ui/settings/SettingsPageSet.h"
 #include "ui/Theme.h"
 #ifdef Q_OS_LINUX
@@ -173,15 +175,49 @@ private slots:
             QStringLiteral("Dictation"),
             QStringLiteral("General"),
             QStringLiteral("Audio"),
-            QStringLiteral("Applications"),
             QStringLiteral("Output"),
             QStringLiteral("Accounts"),
             QStringLiteral("Refinement"),
             QStringLiteral("Vocabulary"),
         };
         AppWindow window(&controller);
-        QCOMPARE(window.pageCount(), 8);
+        QCOMPARE(window.pageCount(), 7);
         QCOMPARE(window.pageTitles(), titles);
+    }
+
+    void removedPageNamesStillOpenWhereTheirRowsWent()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        QVERIFY(window.navigateToSettingsPage(QStringLiteral("applications")));
+        QCOMPARE(sidebarCurrentTitle(window), QStringLiteral("Output"));
+        QVERIFY(window.navigateToSettingsPage(QStringLiteral("Vocabulary")));
+        QCOMPARE(sidebarCurrentTitle(window), QStringLiteral("Vocabulary"));
+        QVERIFY(!window.navigateToSettingsPage(QStringLiteral("nonsense")));
+        QCOMPARE(sidebarCurrentTitle(window), QStringLiteral("General"));
+
+        // `speecher settings applications` travels as one IPC command.
+        const CommandLineDecision decision = parseCommandLine(
+            {QStringLiteral("speecher"), QStringLiteral("settings"), QStringLiteral("Applications")},
+            QString());
+        QCOMPARE(decision.mode, LaunchMode::RunCli);
+        QCOMPARE(decision.ipcCommand, QStringLiteral("showSettings applications"));
+        QCOMPARE(parseCommandLine({QStringLiteral("speecher"), QStringLiteral("settings")}, QString())
+                     .ipcCommand,
+                 QStringLiteral("showSettings"));
+
+        controller.settings()->setSetupCompleted(true);
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
+        controller.handleIpcCommand(QStringLiteral("showSettings applications"), QString(), nullptr);
+        AppWindow *shown = nullptr;
+        for (QWidget *candidate : QApplication::topLevelWidgets()) {
+            if (auto *appWindow = qobject_cast<AppWindow *>(candidate); appWindow && appWindow != &window) {
+                shown = appWindow;
+            }
+        }
+        QVERIFY(shown);
+        QCOMPARE(sidebarCurrentTitle(*shown), QStringLiteral("Output"));
     }
 
     void sidebarUsesThePlatformPageWidget()
@@ -203,7 +239,7 @@ private slots:
     }
 
 #ifdef Q_OS_LINUX
-    void generalSettingsContainsTheGlobalShortcutEditor()
+    void dictationPageOpensWithTheGlobalShortcutCard()
     {
         ApplicationController controller(true);
         AppWindow window(&controller);
@@ -221,13 +257,26 @@ private slots:
         QVERIFY(integration);
         QVERIFY(integration->isHidden());
 
-        bool hasFullWidthHeading = false;
-        for (const QLabel *label : window.findChildren<QLabel *>(
-                 QStringLiteral("subsectionLabel"))) {
-            hasFullWidthHeading = hasFullWidthHeading
-                || label->text() == QStringLiteral("Global Shortcut");
+        auto *dictation = window.findChild<DictationPage *>();
+        QVERIFY(dictation);
+        QVERIFY(dictation->isAncestorOf(control));
+        settings::SettingsCard *card = nullptr;
+        for (QWidget *ancestor = control->parentWidget(); ancestor; ancestor = ancestor->parentWidget()) {
+            if (auto *candidate = qobject_cast<settings::SettingsCard *>(ancestor)) {
+                card = candidate;
+                break;
+            }
         }
-        QVERIFY(hasFullWidthHeading);
+        QVERIFY(card);
+        QCOMPARE(card->title(), QStringLiteral("Global Shortcut"));
+        // First thing on the page: nothing sits above it.
+        const QList<settings::SettingsCard *> cards = dictation->findChildren<settings::SettingsCard *>();
+        QCOMPARE(cards.first(), card);
+        window.show();
+        setSidebarRow(window, 0);
+        QCoreApplication::processEvents();
+        QVERIFY(card->mapTo(dictation->widget(), QPoint()).y()
+                < dictation->toggleButton()->mapTo(dictation->widget(), QPoint()).y());
     }
 
     void sidebarOffersQuitSpeecher()
@@ -263,43 +312,40 @@ private slots:
     void sidebarAutoSavesAfterDebounce()
     {
         ApplicationController controller(true);
-        controller.settings()->setTheme(QStringLiteral("light"));
+        controller.settings()->setSoundsEnabled(false);
         AppWindow window(&controller);
-        auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
-        QVERIFY(theme);
-        QCOMPARE(theme->currentData().toString(), QStringLiteral("system"));
+        auto *sounds = window.findChild<QCheckBox *>(QStringLiteral("soundsEnabled"));
+        QVERIFY(sounds);
         window.show();
-        QTRY_COMPARE_WITH_TIMEOUT(theme->currentData().toString(), QStringLiteral("light"), 250);
-        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
+        QTRY_VERIFY_WITH_TIMEOUT(!sounds->isChecked(), 250);
+        sounds->setChecked(true);
         // The change must not save immediately (that is the debounce), but
         // waiting out the 600ms timer races slow CI runners, so drive the
         // pending autosave deterministically instead.
-        QCOMPARE(controller.settings()->theme(), QStringLiteral("light"));
+        QVERIFY(!controller.settings()->soundsEnabled());
         window.flushPendingAutoSave();
-        QCOMPARE(controller.settings()->theme(),
-                 Theme::overrideHonored() ? QStringLiteral("dark")
-                                          : QStringLiteral("system"));
+        QVERIFY(controller.settings()->soundsEnabled());
     }
 
     void settingsDeletionCancelsPendingAutoSave()
     {
         ApplicationController controller(true);
-        controller.settings()->setTheme(QStringLiteral("light"));
+        controller.settings()->setSoundsEnabled(false);
         AppWindow window(&controller);
-        auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
+        auto *sounds = window.findChild<QCheckBox *>(QStringLiteral("soundsEnabled"));
         auto *pages = window.findChild<SettingsPageSet *>();
-        QVERIFY(theme);
+        QVERIFY(sounds);
         QVERIFY(pages);
         window.show();
-        QTRY_COMPARE_WITH_TIMEOUT(theme->currentData().toString(), QStringLiteral("light"), 250);
+        QTRY_VERIFY_WITH_TIMEOUT(!sounds->isChecked(), 250);
 
-        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
+        sounds->setChecked(true);
         pages->prepareForSettingsDeletion();
         controller.settings()->raw().clear();
         controller.settings()->raw().sync();
         window.flushPendingAutoSave();
 
-        QVERIFY(!controller.settings()->raw().contains(QStringLiteral("ui/theme")));
+        QVERIFY(controller.settings()->raw().allKeys().isEmpty());
         QVERIFY(!pages->save(false, false));
     }
 
@@ -345,7 +391,7 @@ private slots:
         page.show();
         QCoreApplication::processEvents();
 
-        // No Theme card; the slot shows the Global Shortcut and opens General.
+        // No Theme card; the slot shows the Global Shortcut.
         QVERIFY(!page.findChild<QLabel *>(QStringLiteral("themeSummary")));
         QLabel *shortcut = page.findChild<QLabel *>(QStringLiteral("shortcutSummary"));
         QVERIFY(shortcut);
@@ -357,15 +403,26 @@ private slots:
         } else {
             QVERIFY(!shortcut->property("fullText").toString().isEmpty());
         }
+        QSignalSpy navigate(&page, &DictationPage::navigateRequested);
+#ifdef Q_OS_LINUX
+        // The editor is at the top of this page, so the card stays here.
+        QWidget *card = shortcut->parentWidget();
+        while (card && !card->property("focusesShortcutEditor").isValid()) {
+            card = card->parentWidget();
+        }
+        QVERIFY(card);
+        QTest::mouseClick(card, Qt::LeftButton);
+        QCOMPARE(navigate.count(), 0);
+#else
         QWidget *card = shortcut->parentWidget();
         while (card && !card->property("navTarget").isValid()) {
             card = card->parentWidget();
         }
         QVERIFY(card);
-        QSignalSpy navigate(&page, &DictationPage::navigateRequested);
         QTest::mouseClick(card, Qt::LeftButton);
         QCOMPARE(navigate.count(), 1);
         QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::General);
+#endif
 
         // The Output card names the chosen method, not the platform's status.
         QLabel *output = nullptr;
@@ -481,17 +538,15 @@ private slots:
     void sidebarFlushesPendingAutoSaveOnClose()
     {
         ApplicationController controller(true);
-        controller.settings()->setTheme(QStringLiteral("light"));
+        controller.settings()->setSoundsEnabled(false);
         AppWindow window(&controller);
-        auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
-        QVERIFY(theme);
+        auto *sounds = window.findChild<QCheckBox *>(QStringLiteral("soundsEnabled"));
+        QVERIFY(sounds);
         window.show();
-        QCOMPARE(theme->currentData().toString(), QStringLiteral("light"));
-        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
+        QVERIFY(!sounds->isChecked());
+        sounds->setChecked(true);
         window.close();
-        QCOMPARE(controller.settings()->theme(),
-                 Theme::overrideHonored() ? QStringLiteral("dark")
-                                          : QStringLiteral("system"));
+        QVERIFY(controller.settings()->soundsEnabled());
     }
 
     void savingAnotherPageDoesNotRevertWhatsNewSettings()
@@ -510,9 +565,9 @@ private slots:
         autoCheck->setChecked(false);
         QVERIFY(pages.save(false, false));
 
-        auto *theme = pages.general()->findChild<QComboBox *>(QStringLiteral("themeControl"));
-        QVERIFY(theme);
-        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
+        auto *sounds = pages.general()->findChild<QCheckBox *>(QStringLiteral("soundsEnabled"));
+        QVERIFY(sounds);
+        sounds->setChecked(!sounds->isChecked());
         QVERIFY(pages.save(false, false));
 
         QVERIFY(!controller.settings()->autoCheckUpdates());
@@ -620,14 +675,56 @@ private slots:
         // KF6 6.13 filters after 400 ms. Check after its timer would have fired,
         // because our replacement filter hides What's New synchronously.
         QTest::qWait(500);
-        QVERIFY(sidebarRowHidden(window, 8));
+        QVERIFY(sidebarRowHidden(window, 7));
         setSidebarRow(window, 1);
         QTest::keyClick(search, Qt::Key_Return);
         QCOMPARE(sidebarCurrentRow(window), 2);
         search->clear();
         QTest::qWait(500);
-        QVERIFY(sidebarRowHidden(window, 8));
+        QVERIFY(sidebarRowHidden(window, 7));
 #endif
+    }
+
+    void searchJumpsToTheOnlyMatchingRowAndPointsAtIt()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        window.show();
+        auto *search = window.findChild<QLineEdit *>(QStringLiteral("appSearch"));
+        QVERIFY(search);
+        setSidebarRow(window, 1);
+
+        // One row answers to this, so typing it is enough to land there.
+        search->setText(QStringLiteral("Counts as quiet"));
+        QCoreApplication::processEvents();
+        QCOMPARE(sidebarCurrentTitle(window), QStringLiteral("Audio"));
+        settings::FormRow *threshold = nullptr;
+        for (settings::FormRow *row : window.findChildren<settings::FormRow *>()) {
+            if (row->property("rowId").toString() == QStringLiteral("vadThresholdPercent")) {
+                threshold = row;
+            }
+        }
+        QVERIFY(threshold);
+        QTRY_VERIFY_WITH_TIMEOUT(threshold->isFlashing(), 1000);
+        QTRY_VERIFY_WITH_TIMEOUT(!threshold->isFlashing(), 3000);
+
+        // Several rows answer to this one, so nothing moves until Enter, which
+        // takes the first of them.
+        setSidebarRow(window, 1);
+        search->setText(QStringLiteral("Fast mode"));
+        QCoreApplication::processEvents();
+        QCOMPARE(sidebarCurrentTitle(window), QStringLiteral("General"));
+        QTest::keyClick(search, Qt::Key_Return);
+        QCoreApplication::processEvents();
+        QCOMPARE(sidebarCurrentTitle(window), QStringLiteral("Refinement"));
+        settings::FormRow *fastMode = nullptr;
+        for (settings::FormRow *row : window.findChildren<settings::FormRow *>()) {
+            if (row->property("rowId").toString() == QStringLiteral("openAiFastMode")) {
+                fastMode = row;
+            }
+        }
+        QVERIFY(fastMode);
+        QTRY_VERIFY_WITH_TIMEOUT(fastMode->isFlashing(), 1000);
     }
 
     void programmaticNavigationUpdatesShellChrome()
@@ -715,7 +812,7 @@ private slots:
             {QStringLiteral("my email"), QStringLiteral("one")},
             {QStringLiteral("MY email"), QStringLiteral("two")},
         };
-        pages.bindings()->load(withDuplicateBinding);
+        pages.vocabulary()->load(withDuplicateBinding);
 
         QVERIFY(!pages.save(false, true, &outcome));
         QCOMPARE(outcome.failure, SettingsPageSet::SaveFailure::InvalidReplacementRules);

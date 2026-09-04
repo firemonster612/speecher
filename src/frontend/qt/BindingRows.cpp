@@ -92,15 +92,9 @@ SchemaCustomRow BindingRows::makeReplacementRow(const SettingsRow &descriptor,
     m_list->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_list->setMinimumHeight(m_collection.minimumHeight);
 
+    // The row that holds the list carries its title and padding.
     auto *layout = new QVBoxLayout(control);
-    auto *title = new QLabel(descriptor.label, control);
-    title->setObjectName(QStringLiteral("subsectionLabel"));
-    title->setForegroundRole(QPalette::WindowText);
-    title->setAttribute(Qt::WA_StyledBackground, false);
-    auto *description = new QLabel(descriptor.help, control);
-    description->setObjectName(QStringLiteral("rowDescription"));
-    description->setWordWrap(true);
-    description->setAttribute(Qt::WA_StyledBackground, false);
+    layout->setContentsMargins(0, 0, 0, 0);
     auto *addButton = new QPushButton(m_collection.addLabel, control);
     addButton->setIcon(QIcon::fromTheme(QStringLiteral("list-add")));
     auto *importButton = new QPushButton(m_collection.supportsImport.actionLabel, control);
@@ -108,8 +102,6 @@ SchemaCustomRow BindingRows::makeReplacementRow(const SettingsRow &descriptor,
     buttons->addStretch();
     buttons->addWidget(importButton);
     buttons->addWidget(addButton);
-    layout->addWidget(title);
-    layout->addWidget(description);
     layout->addWidget(m_list);
     layout->addLayout(buttons);
 

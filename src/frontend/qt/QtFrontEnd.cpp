@@ -62,6 +62,12 @@ void QtFrontEnd::showSettingsWindow()
     m_appWindow->navigateToSettings();
 }
 
+void QtFrontEnd::showSettingsPage(const QString &pageId)
+{
+    showMainWindow();
+    m_appWindow->navigateToSettingsPage(pageId);
+}
+
 void QtFrontEnd::showSetupAssistant(SetupAssistantPage page)
 {
     if (!m_setupAssistant) {
