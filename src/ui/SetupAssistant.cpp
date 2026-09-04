@@ -76,6 +76,10 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
 #ifdef Q_OS_LINUX
     if (!m_singlePage || page == SetupAssistantPage::GlobalShortcut) {
         m_globalShortcutPage = new LinuxGlobalShortcutSetupPage(*controller, this);
+        // The same control sits flush inside a settings card; as an assistant
+        // page it takes the margin every other page has.
+        const int margin = setupPageMargin();
+        m_globalShortcutPage->layout()->setContentsMargins(margin, margin, margin, margin);
     }
 #endif
     WelcomeSetupPage *welcome = nullptr;

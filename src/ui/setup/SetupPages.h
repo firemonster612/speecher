@@ -25,6 +25,10 @@ class PlatformComposition;
 class ProviderRegistry;
 class SettingsStore;
 
+// The margin every assistant page keeps around its content, so a page built
+// elsewhere can match when it is shown as one.
+int setupPageMargin();
+
 class WelcomeSetupPage final : public QWidget {
 public:
     explicit WelcomeSetupPage(QWidget *parent = nullptr);

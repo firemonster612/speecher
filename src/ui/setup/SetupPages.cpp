@@ -41,12 +41,19 @@
 #include <memory>
 
 namespace speecher {
+
+int setupPageMargin()
+{
+    return 24;
+}
+
 namespace {
 
 QVBoxLayout *makePage(QWidget *page, const QString &description)
 {
     auto *layout = new QVBoxLayout(page);
-    layout->setContentsMargins(24, 24, 24, 24);
+    const int margin = setupPageMargin();
+    layout->setContentsMargins(margin, margin, margin, margin);
     layout->setSpacing(16);
 
     auto *intro = new QLabel(description, page);

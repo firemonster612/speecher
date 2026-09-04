@@ -19,6 +19,7 @@
 #include <QGroupBox>
 #include <QKeySequenceEdit>
 #include <QLabel>
+#include <QLayout>
 #include <QList>
 #include <QPushButton>
 #include <QSignalSpy>
@@ -298,6 +299,19 @@ private slots:
                 || label->text().contains(QStringLiteral("ends by setting up a Global Shortcut"));
         }
         QVERIFY(mentionsShortcut);
+
+        // The shortcut page is also a settings card control; as an assistant
+        // page it keeps the same margins as the pages around it.
+        LinuxGlobalShortcutSetupPage *shortcut = nullptr;
+        for (QWidget *widget : assistant.findChildren<QWidget *>()) {
+            if (auto *page = dynamic_cast<LinuxGlobalShortcutSetupPage *>(widget)) {
+                shortcut = page;
+                break;
+            }
+        }
+        QVERIFY(shortcut);
+        QCOMPARE(shortcut->layout()->contentsMargins(), welcome->layout()->contentsMargins());
+        QCOMPARE(shortcut->layout()->contentsMargins().left(), setupPageMargin());
     }
 
     void globalShortcutSinglePageOnlyShowsTheShortcutPage()
