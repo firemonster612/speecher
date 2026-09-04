@@ -12,6 +12,8 @@ struct LinuxStyleChoice
     QString fallback;
 };
 
+QString adwaitaStyleName(const QString &applicationTheme, bool desktopPrefersDark);
+
 LinuxStyleChoice chooseLinuxStyle(const QString &overrideStyle,
                                   const QString &kdeWidgetStyle,
                                   const QString &currentDesktop,

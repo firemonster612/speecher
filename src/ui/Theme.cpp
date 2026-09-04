@@ -4,6 +4,10 @@
 #include <QStyle>
 #include <QStyleHints>
 
+#ifdef Q_OS_LINUX
+#include "platform/LinuxStyleChoice.h"
+#endif
+
 #ifdef Q_OS_MACOS
 #include "platform/mac/MacWindowChrome.h"
 #endif
@@ -20,14 +24,15 @@ void applyAdwaitaVariant(const QString &theme)
         return;
     }
     const QString current = qApp->style()->objectName();
-    if (current.compare(QStringLiteral("Adwaita"), Qt::CaseInsensitive) != 0
-        && current.compare(QStringLiteral("Adwaita-Dark"), Qt::CaseInsensitive) != 0) {
+    const QString light = adwaitaStyleName(QStringLiteral("light"), false);
+    const QString dark = adwaitaStyleName(QStringLiteral("dark"), false);
+    if (current.compare(light, Qt::CaseInsensitive) != 0
+        && current.compare(dark, Qt::CaseInsensitive) != 0) {
         return;
     }
-    const bool dark = theme == QStringLiteral("dark")
-        || (theme != QStringLiteral("light")
-            && qApp->styleHints()->colorScheme() == Qt::ColorScheme::Dark);
-    const QString requested = dark ? QStringLiteral("Adwaita-Dark") : QStringLiteral("Adwaita");
+    const QString requested = adwaitaStyleName(
+        theme,
+        qApp->styleHints()->colorScheme() == Qt::ColorScheme::Dark);
     if (current.compare(requested, Qt::CaseInsensitive) != 0
         && !QApplication::setStyle(requested)) {
         qWarning().noquote() << "Could not load widget style " + requested;

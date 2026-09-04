@@ -47,17 +47,13 @@ bool usesGtkPlatformTheme(const QString &platformTheme, const QString &desktop)
     return isGtkDesktop(desktop);
 }
 
-bool prefersDark(const QString &applicationTheme, bool desktopPrefersDark)
-{
-    if (applicationTheme == QStringLiteral("light")) {
-        return false;
-    }
-    if (applicationTheme == QStringLiteral("dark")) {
-        return true;
-    }
-    return desktopPrefersDark;
 }
 
+QString adwaitaStyleName(const QString &applicationTheme, bool desktopPrefersDark)
+{
+    const bool dark = applicationTheme == QStringLiteral("dark")
+        || (applicationTheme != QStringLiteral("light") && desktopPrefersDark);
+    return dark ? QStringLiteral("adwaita-dark") : QStringLiteral("adwaita");
 }
 
 LinuxStyleChoice chooseLinuxStyle(const QString &overrideStyle,
@@ -76,9 +72,7 @@ LinuxStyleChoice chooseLinuxStyle(const QString &overrideStyle,
         if (kde) {
             requested = kdeWidgetStyle;
         } else if (gtk) {
-            requested = prefersDark(applicationTheme, desktopPrefersDark)
-                ? QStringLiteral("adwaita-dark")
-                : QStringLiteral("adwaita");
+            requested = adwaitaStyleName(applicationTheme, desktopPrefersDark);
         } else {
             return {{}, currentStyle, currentStyle};
         }
@@ -90,9 +84,7 @@ LinuxStyleChoice chooseLinuxStyle(const QString &overrideStyle,
     QString requestedName = requested;
     if (requested.compare(QStringLiteral("Adwaita"), Qt::CaseInsensitive) == 0
         || requested.compare(QStringLiteral("Adwaita-Dark"), Qt::CaseInsensitive) == 0) {
-        requestedName = prefersDark(applicationTheme, desktopPrefersDark)
-            ? QStringLiteral("adwaita-dark")
-            : QStringLiteral("adwaita");
+        requestedName = adwaitaStyleName(applicationTheme, desktopPrefersDark);
     }
     const QString requestedStyle = availableStyle(requestedName, availableStyles);
     if (!requestedStyle.isEmpty()) {
@@ -102,9 +94,7 @@ LinuxStyleChoice chooseLinuxStyle(const QString &overrideStyle,
         return {requested, currentStyle, currentStyle};
     }
     if (gtk) {
-        const QString adwaita = prefersDark(applicationTheme, desktopPrefersDark)
-            ? QStringLiteral("adwaita-dark")
-            : QStringLiteral("adwaita");
+        const QString adwaita = adwaitaStyleName(applicationTheme, desktopPrefersDark);
         const QString availableAdwaita = availableStyle(adwaita, availableStyles);
         if (!availableAdwaita.isEmpty()) {
             return {requested, availableAdwaita, fallback};
