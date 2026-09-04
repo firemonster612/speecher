@@ -109,11 +109,6 @@ private:
     bool m_settingsDeletionStarted = false;
     bool m_headerDragPending = false;
     QPoint m_headerPressPosition;
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-    bool m_sidebarResizing = false;
-    int m_sidebarResizeStartX = 0;
-    int m_sidebarResizeStartWidth = 0;
-#endif
 };
 
 } // namespace speecher

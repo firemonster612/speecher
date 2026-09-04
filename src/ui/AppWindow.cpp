@@ -412,53 +412,6 @@ bool AppWindow::eventFilter(QObject *watched, QEvent *event)
         mac::updateSidebarWidth(this, m_sidebarPane->width());
 #endif
     }
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-    if (m_navigationView
-        && (watched == m_navigationView || watched == m_navigationView->viewport())) {
-        auto *target = static_cast<QWidget *>(watched);
-        const int edgeX = m_navigationView->mapToGlobal(
-            QPoint(m_navigationView->width() - 1, 0)).x();
-        const int grabWidth = qMax(style()->pixelMetric(QStyle::PM_SplitterWidth),
-                                   QApplication::startDragDistance() / 2);
-        if (event->type() == QEvent::MouseButtonPress) {
-            const auto *mouseEvent = static_cast<QMouseEvent *>(event);
-            if (mouseEvent->button() == Qt::LeftButton
-                && qAbs(mouseEvent->globalPosition().x() - edgeX) <= grabWidth) {
-                m_sidebarResizing = true;
-                m_sidebarResizeStartX = qRound(mouseEvent->globalPosition().x());
-                m_sidebarResizeStartWidth = m_navigationView->width();
-                target->grabMouse();
-                return true;
-            }
-        }
-        if (event->type() == QEvent::MouseMove) {
-            const auto *mouseEvent = static_cast<QMouseEvent *>(event);
-            if (m_sidebarResizing) {
-                if (!(mouseEvent->buttons() & Qt::LeftButton)) {
-                    m_sidebarResizing = false;
-                    target->releaseMouse();
-                    return true;
-                }
-                const int width = m_sidebarResizeStartWidth
-                    + qRound(mouseEvent->globalPosition().x()) - m_sidebarResizeStartX;
-                m_navigationView->setFixedWidth(
-                    qBound(kSidebarMinimumWidth, width, kSidebarMaximumWidth));
-                return true;
-            }
-            target->setCursor(qAbs(mouseEvent->globalPosition().x() - edgeX) <= grabWidth
-                                  ? Qt::SplitHCursor
-                                  : Qt::ArrowCursor);
-        }
-        if (event->type() == QEvent::MouseButtonRelease && m_sidebarResizing) {
-            m_sidebarResizing = false;
-            target->releaseMouse();
-            return true;
-        }
-        if (event->type() == QEvent::Leave && !m_sidebarResizing) {
-            target->unsetCursor();
-        }
-    }
-#endif
     // The header strip reads as part of the title bar, so empty space in it
     // must drag and double-click the window like the title bar does. Only
     // events the interactive children ignore bubble up to the strip itself.
@@ -799,14 +752,6 @@ void AppWindow::buildNativeSidebarShell()
     m_sidebarPane = m_navigationView;
     if (m_sidebarPane) {
         m_sidebarPane->installEventFilter(this);
-        m_navigationView->viewport()->installEventFilter(this);
-        const int savedSidebarWidth = m_controller->settings()->raw()
-                                          .value(QStringLiteral("ui/appWindow/a/sidebarWidth"),
-                                                 kSidebarDefaultWidth)
-                                          .toInt();
-        m_navigationView->setFixedWidth(qBound(kSidebarMinimumWidth,
-                                               savedSidebarWidth,
-                                               kSidebarMaximumWidth));
     }
     if (m_searchSection) {
         m_searchSection->installEventFilter(this);
@@ -1275,12 +1220,6 @@ void AppWindow::rememberGeometry()
 {
     m_controller->settings()->raw().setValue(
         QStringLiteral("ui/appWindow/a/geometry"), saveGeometry());
-#ifdef SPEECHER_WITH_KPAGEWIDGET
-    if (m_navigationView) {
-        m_controller->settings()->raw().setValue(
-            QStringLiteral("ui/appWindow/a/sidebarWidth"), m_navigationView->width());
-    }
-#endif
     if (m_sidebarSplitter) {
         m_controller->settings()->raw().setValue(
             QStringLiteral("ui/appWindow/a/splitter"), m_sidebarSplitter->saveState());
