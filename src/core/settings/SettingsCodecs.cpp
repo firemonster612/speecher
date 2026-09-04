@@ -1,4 +1,6 @@
 #include "core/settings/SettingsCodecs.h"
+
+#include "core/CliProxyUrl.h"
 #include "core/settings/SettingsKeys.h"
 
 #include "core/BindingProcessor.h"
@@ -858,20 +860,12 @@ QString SettingsCodecs::cliproxyOauthDir() const
 
 QString SettingsCodecs::cliproxyBaseUrl() const
 {
-    QString base = value(SettingsKeys::CliproxyBaseUrl, QString()).toString().trimmed();
-    while (base.endsWith(QLatin1Char('/'))) {
-        base.chop(1);
-    }
-    return base;
+    return cliproxyServerBase(value(SettingsKeys::CliproxyBaseUrl, QString()).toString());
 }
 
 void SettingsCodecs::setCliproxyBaseUrl(const QString &value)
 {
-    QString base = value.trimmed();
-    while (base.endsWith(QLatin1Char('/'))) {
-        base.chop(1);
-    }
-    m_settings.setValue(SettingsKeys::CliproxyBaseUrl, base);
+    m_settings.setValue(SettingsKeys::CliproxyBaseUrl, cliproxyServerBase(value));
 }
 
 QString SettingsCodecs::cliproxyApiKey() const

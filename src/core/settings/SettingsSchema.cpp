@@ -1,5 +1,7 @@
 #include "core/settings/SettingsSchema.h"
 
+#include "core/CliProxyUrl.h"
+
 #include "core/BindingProcessor.h"
 #include "core/Vocabulary.h"
 #include "core/VocabularyLimit.h"
@@ -1510,11 +1512,7 @@ SettingsSection cliproxyServerSection()
         return QVariant(settings.refinement.cliproxyBaseUrl);
     };
     baseUrl.apply = [](AppSettings &settings, const QVariant &value) {
-        QString base = value.toString().trimmed();
-        while (base.endsWith(QLatin1Char('/'))) {
-            base.chop(1);
-        }
-        settings.refinement.cliproxyBaseUrl = base;
+        settings.refinement.cliproxyBaseUrl = cliproxyServerBase(value.toString());
     };
     baseUrl.visible = cliproxyServerRowVisible;
 

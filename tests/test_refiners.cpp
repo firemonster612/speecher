@@ -876,13 +876,23 @@ private slots:
         QVERIFY(!openAiCompleted.first().first().toString().trimmed().isEmpty());
     }
 
+    void refinersUseRemoteCliproxyServerWhenBaseUrlSet_data()
+    {
+        QTest::addColumn<QString>("path");
+        QTest::newRow("origin") << QString();
+        QTest::newRow("api-base") << QStringLiteral("/v1");
+    }
+
     void refinersUseRemoteCliproxyServerWhenBaseUrlSet()
     {
+        QFETCH(QString, path);
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
 
         RefinementSettings settings;
-        settings.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+        settings.cliproxyBaseUrl = QStringLiteral("http://127.0.0.1:%1%2")
+                                        .arg(server.serverPort())
+                                        .arg(path);
         settings.cliproxyApiKey = QStringLiteral("proxy-key");
         RefinementContext context;
 
