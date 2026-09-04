@@ -137,7 +137,11 @@ bool installYdotoolPackage(QString *error)
         return run(QStringLiteral("zypper"), {QStringLiteral("--non-interactive"), QStringLiteral("install"), QStringLiteral("ydotool")}, error);
     }
     if (!QStandardPaths::findExecutable(QStringLiteral("pacman")).isEmpty()) {
-        return run(QStringLiteral("pacman"), {QStringLiteral("-Sy"), QStringLiteral("--needed"), QStringLiteral("--noconfirm"), QStringLiteral("ydotool")}, error);
+        if (error) {
+            *error = QStringLiteral(
+                "Install ydotool through a full Arch system upgrade (sudo pacman -Syu ydotool), then run setup again");
+        }
+        return false;
     }
     if (error) {
         *error = QStringLiteral("No supported package manager found for installing ydotool");
