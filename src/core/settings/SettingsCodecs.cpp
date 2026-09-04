@@ -58,6 +58,10 @@ SettingsCodecs::SettingsCodecs()
     : m_settings(QString::fromLatin1(SettingsKeys::Organization),
                  QString::fromLatin1(SettingsKeys::Application))
 {
+    // Settings belong to this application only. On macOS, QSettings otherwise
+    // includes values from its parent preference domains in allKeys(), and
+    // clear() cannot remove those fallback values.
+    m_settings.setFallbacksEnabled(false);
 }
 
 QVariant SettingsCodecs::value(const QString &key, const QVariant &fallback) const

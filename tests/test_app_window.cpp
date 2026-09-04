@@ -381,7 +381,7 @@ private slots:
         controller.settings()->raw().sync();
         window.flushPendingAutoSave();
 
-        QVERIFY(controller.settings()->raw().allKeys().isEmpty());
+        QCOMPARE(controller.settings()->raw().allKeys(), QStringList());
         QVERIFY(!pages->save(false, false));
     }
 
