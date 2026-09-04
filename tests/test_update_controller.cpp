@@ -309,7 +309,7 @@ private slots:
         QVERIFY(error.contains(QStringLiteral("SHA-256")));
     }
 
-    void swapsAppImageAndMakesReplacementExecutable()
+    void swapsAppImageAndPreservesPermissionsWithOwnerExecute()
     {
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
@@ -318,6 +318,8 @@ private slots:
 
         writeFile(installedPath, QByteArrayLiteral("old AppImage"));
         writeFile(downloadedPath, QByteArrayLiteral("new AppImage"));
+        QCOMPARE(::chmod(QFile::encodeName(installedPath).constData(), 0640), 0);
+        QCOMPARE(::chmod(QFile::encodeName(downloadedPath).constData(), 0600), 0);
 
         QString error;
         const std::optional<AppImageFileIdentity> identity =
@@ -327,7 +329,9 @@ private slots:
                      downloadedPath, installedPath, *identity, &error),
                  qPrintable(error));
         QCOMPARE(readFile(installedPath), QByteArrayLiteral("new AppImage"));
-        QVERIFY(QFileInfo(installedPath).isExecutable());
+        struct stat status {};
+        QCOMPARE(::stat(QFile::encodeName(installedPath).constData(), &status), 0);
+        QCOMPARE(int(status.st_mode & 0777), 0740);
         QVERIFY(!QFileInfo::exists(downloadedPath));
     }
 

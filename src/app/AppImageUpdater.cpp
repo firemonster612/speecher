@@ -306,21 +306,6 @@ bool AppImageUpdater::swapAppImage(const QString &downloadedPath,
                                    const AppImageFileIdentity &expectedIdentity,
                                    QString *error)
 {
-    QFile downloaded(downloadedPath);
-    QFileDevice::Permissions permissions = downloaded.permissions();
-    permissions |= QFileDevice::ExeOwner | QFileDevice::ExeUser
-        | QFileDevice::ExeGroup | QFileDevice::ExeOther;
-    if (!downloaded.setPermissions(permissions)) {
-        setError(error, QStringLiteral("Could not make the downloaded AppImage executable."));
-        return false;
-    }
-    if (!synchronizePath(downloadedPath,
-                         O_RDONLY | O_CLOEXEC | O_NONBLOCK,
-                         QStringLiteral("downloaded AppImage"),
-                         error)) {
-        return false;
-    }
-
     const std::optional<AppImageFileIdentity> currentIdentity =
         fileIdentity(installedPath, error);
     if (!currentIdentity || *currentIdentity != expectedIdentity) {
@@ -329,6 +314,20 @@ bool AppImageUpdater::swapAppImage(const QString &downloadedPath,
                                 "The installed AppImage changed since the download started; "
                                 "the update was not installed."));
         }
+        return false;
+    }
+
+    QFile downloaded(downloadedPath);
+    QFileDevice::Permissions permissions = QFile::permissions(installedPath);
+    permissions |= QFileDevice::ExeOwner;
+    if (!downloaded.setPermissions(permissions)) {
+        setError(error, QStringLiteral("Could not preserve the installed AppImage permissions."));
+        return false;
+    }
+    if (!synchronizePath(downloadedPath,
+                         O_RDONLY | O_CLOEXEC | O_NONBLOCK,
+                         QStringLiteral("downloaded AppImage"),
+                         error)) {
         return false;
     }
 
