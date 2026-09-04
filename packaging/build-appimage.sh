@@ -263,14 +263,6 @@ echo "Copying Breeze fallback icon theme"
 mkdir -p "$APPDIR_PATH/usr/share/icons"
 cp -a "$BREEZE_ICON_DIR" "$APPDIR_PATH/usr/share/icons/"
 
-KVANTUM_THEME_DIR="/usr/share/Kvantum"
-if [[ ! -d "$KVANTUM_THEME_DIR" ]]; then
-  echo "The qt6-style-kvantum package is missing its themes" >&2
-  exit 1
-fi
-echo "Copying bundled Kvantum themes"
-cp -a "$KVANTUM_THEME_DIR" "$APPDIR_PATH/usr/share/"
-
 if [[ ! -f "$APPDIR_PATH/usr/lib/libQt6Core.so.6" ]]; then
   echo "libQt6Core.so.6 was not bundled; the dependency closure is broken" >&2
   exit 1

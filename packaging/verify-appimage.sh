@@ -50,7 +50,6 @@ REQUIRED_FILES=(
   usr/lib/libLayerShellQtInterface.so.6
   usr/lib/libqt6keychain.so.1
   usr/share/icons/breeze/index.theme
-  usr/share/Kvantum/KvAdapta/KvAdapta.kvconfig
 )
 for required in "${REQUIRED_FILES[@]}"; do
   if [[ ! -e "$APPDIR/$required" ]]; then
