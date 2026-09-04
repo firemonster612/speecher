@@ -471,6 +471,34 @@ private slots:
         QCOMPARE(stack->currentIndex(), 1);
     }
 
+    void whatsNewOffersAWayBackToThePageItWasOpenedFrom()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        window.show();
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        auto *stack = window.findChild<QStackedWidget *>();
+        auto *whatsNew = window.findChild<QPushButton *>(QStringLiteral("whatsNew"));
+        auto *back = window.findChild<QToolButton *>(QStringLiteral("whatsNewBack"));
+        auto *title = window.findChild<QLabel *>(QStringLiteral("pageTitle"));
+        QVERIFY(navigation && stack && whatsNew && back && title);
+        QVERIFY(!back->isVisible());
+
+        // Opened from General, the same way the update banner opens it.
+        navigation->setCurrentRow(1);
+        whatsNew->click();
+        QCOMPARE(stack->currentIndex(), 8);
+        QCOMPARE(title->text(), QStringLiteral("What's New"));
+        QVERIFY(back->isVisible());
+        QVERIFY(!navigation->currentItem());
+
+        back->click();
+        QCOMPARE(stack->currentIndex(), 1);
+        QCOMPARE(navigation->currentRow(), 1);
+        QCOMPARE(title->text(), QStringLiteral("General"));
+        QVERIFY(!back->isVisible());
+    }
+
     void saveReportsFailedValidator()
     {
         ApplicationController controller(true);

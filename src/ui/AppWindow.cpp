@@ -415,6 +415,21 @@ void AppWindow::buildSidebarShell()
                                           settings::relatedSpacing(),
                                           settings::relatedSpacing(),
                                           settings::relatedSpacing());
+    // What's New is not a sidebar page, so while it shows, the header carries
+    // the way back to the page it was opened from, as System Settings does for
+    // a page reached from another one.
+    m_backButton = new QToolButton(headerRight);
+    m_backButton->setObjectName(QStringLiteral("whatsNewBack"));
+    m_backButton->setText(QStringLiteral("Back"));
+    const QIcon backIcon = QIcon::fromTheme(QStringLiteral("go-previous"));
+    m_backButton->setIcon(backIcon);
+    m_backButton->setToolButtonStyle(backIcon.isNull() ? Qt::ToolButtonTextOnly
+                                                       : Qt::ToolButtonIconOnly);
+    m_backButton->setToolTip(QStringLiteral("Back"));
+    m_backButton->setAutoRaise(true);
+    m_backButton->hide();
+    connect(m_backButton, &QToolButton::clicked, this, &AppWindow::leaveWhatsNew);
+    headerRightLayout->addWidget(m_backButton);
     m_pageTitle = settings::makePageTitle(kPages.first().title, headerRight);
     headerRightLayout->addWidget(m_pageTitle);
     headerRightLayout->addStretch();
@@ -603,9 +618,9 @@ void AppWindow::buildSidebarShell()
                 }
             });
     connect(m_stack, &QStackedWidget::currentChanged, this, [this](int index) {
-        m_pageTitle->setText(index < kPages.size()
-                                 ? kPages.at(index).title
-                                 : QStringLiteral("What's New"));
+        const bool whatsNew = index >= kPages.size();
+        m_pageTitle->setText(whatsNew ? QStringLiteral("What's New") : kPages.at(index).title);
+        m_backButton->setVisible(whatsNew);
     });
     connect(search, &QLineEdit::textChanged, this, &AppWindow::filterSidebarPages);
     connect(search, &QLineEdit::returnPressed, this, [this] {
@@ -712,9 +727,17 @@ void AppWindow::refreshUpdateBanner()
 
 void AppWindow::showWhatsNew()
 {
+    if (m_navigation->currentRow() >= 0) {
+        m_whatsNewReturnRow = m_navigation->currentRow();
+    }
     m_navigation->setCurrentItem(nullptr);
     m_stack->setCurrentWidget(m_pages->whatsNew());
     m_controller->clearPendingWhatsNew();
+}
+
+void AppWindow::leaveWhatsNew()
+{
+    m_navigation->setCurrentRow(qBound(0, m_whatsNewReturnRow, m_navigation->count() - 1));
 }
 
 void AppWindow::filterSidebarPages(const QString &query)
