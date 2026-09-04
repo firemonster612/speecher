@@ -1376,24 +1376,25 @@ QList<ProviderAccount> providerAccounts()
         QStringLiteral("Only Opus models support fast mode; other models refine at standard speed.");
     anthropic.fastMode = &RefinementSettings::anthropicFastMode;
     anthropic.authRows = {
+        customRow(QStringLiteral("anthropicAuth"), QStringLiteral("Account"), QString()),
         customRow(QStringLiteral("anthropicAuthMode"), QStringLiteral("Sign-in"), QString()),
         customRow(QStringLiteral("anthropicCliproxyAccount"),
                   QStringLiteral("CLI Proxy API account"),
                   QString()),
     };
-    anthropic.authRows[0].value = [](const AppSettings &settings) {
+    anthropic.authRows[1].value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.anthropicAuthMode);
     };
-    anthropic.authRows[0].apply = [](AppSettings &settings, const QVariant &value) {
+    anthropic.authRows[1].apply = [](AppSettings &settings, const QVariant &value) {
         settings.refinement.anthropicAuthMode = value.toString();
     };
-    anthropic.authRows[1].value = [](const AppSettings &settings) {
+    anthropic.authRows[2].value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.anthropicCliproxyAccount);
     };
-    anthropic.authRows[1].apply = [](AppSettings &settings, const QVariant &value) {
+    anthropic.authRows[2].apply = [](AppSettings &settings, const QVariant &value) {
         settings.refinement.anthropicCliproxyAccount = value.toString();
     };
-    anthropic.authRows[1].visible = [](const AppSettings &settings, const Capabilities &) {
+    anthropic.authRows[2].visible = [](const AppSettings &settings, const Capabilities &) {
         return settings.refinement.anthropicAuthMode == kCliProxyAuthMode;
     };
 

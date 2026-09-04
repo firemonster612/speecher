@@ -52,13 +52,8 @@ struct RowView: View {
             releaseNotes
         } else if row.rowId == "openAiAuth" {
             LabeledContent { CredentialField(model: model) } label: { label }
-        } else if row.rowId == "anthropicAuthMode" {
-            VStack(alignment: .leading) {
-                picker
-                if !model.anthropicCredentialStatus.isEmpty {
-                    Text(model.anthropicCredentialStatus)
-                }
-            }
+        } else if row.rowId == "anthropicAuth" {
+            LabeledContent { Text(model.anthropicCredentialStatus) } label: { label }
         } else if row.options.isEmpty, row.value is String {
             LabeledContent {
                 if row.rowId == "cliproxyApiKey" {

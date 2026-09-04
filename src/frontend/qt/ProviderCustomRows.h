@@ -11,7 +11,7 @@ namespace speecher {
 class SecretStore;
 class SettingsStore;
 
-// The three rows on the Providers page no descriptor can carry a value for:
+// The account rows no descriptor can carry a value for:
 // which credential source to use, and the credential itself, which lives in the
 // keyring rather than in AppSettings.
 class ProviderCustomRows {
@@ -27,6 +27,7 @@ public:
 private:
     SchemaCustomRow makeAuthModeRow(QWidget *parent, std::function<void()> notifyChanged);
     SchemaCustomRow makeCredentialRow(QWidget *parent, std::function<void()> notifyChanged);
+    SchemaCustomRow makeAnthropicCredentialRow(QWidget *parent);
     SchemaCustomRow makeAnthropicAuthModeRow(QWidget *parent, std::function<void()> notifyChanged);
     SchemaCustomRow makeCliproxyBaseUrlRow(QWidget *parent,
                                            std::function<void()> notifyChanged);

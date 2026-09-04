@@ -262,9 +262,10 @@ private slots:
 
         QTRY_VERIFY_WITH_TIMEOUT(credentialsChanged, 2000);
         QCOMPARE(QString::fromNSString(bridge.anthropicCredentialStatus),
-                 QStringLiteral("Signed in with Claude Code"));
+                 QStringLiteral("Signed in with Claude Code."));
         [bridge.settingsSchema setValue:@"cliproxy" forRowId:@"anthropicAuthMode"];
-        QCOMPARE(bridge.anthropicCredentialStatus.length, NSUInteger(0));
+        QCOMPARE(QString::fromNSString(bridge.anthropicCredentialStatus),
+                 QStringLiteral("Signed in through CLI Proxy API."));
     }
 
     void whatsNewOfferFollowsPendingUpgradeState()

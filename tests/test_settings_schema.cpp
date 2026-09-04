@@ -472,6 +472,7 @@ private slots:
             QVERIFY(std::all_of(section.rows.begin(), section.rows.end(), [](const SettingsRow &row) {
                 return row.kind == RowKind::Custom;
             }));
+            QCOMPARE(section.rows.first().label, QStringLiteral("Account"));
             QVERIFY(hasRow(SettingsPage{{}, {}, {}, {}, {section}}, QStringLiteral("openAiAuthMode"))
                     || hasRow(SettingsPage{{}, {}, {}, {}, {section}}, QStringLiteral("anthropicAuthMode")));
         }
@@ -513,8 +514,11 @@ private slots:
         }
         // The status leads each card, then the way the sign-in is chosen.
         QCOMPARE(page.sections.first().rows.first().id, QStringLiteral("openAiAuth"));
+        QCOMPARE(page.sections.at(1).rows.first().id, QStringLiteral("anthropicAuth"));
         QCOMPARE(rowById(page, QStringLiteral("openAiAuth")).label, QStringLiteral("Account"));
+        QCOMPARE(rowById(page, QStringLiteral("anthropicAuth")).label, QStringLiteral("Account"));
         QCOMPARE(rowById(page, QStringLiteral("openAiAuthMode")).label, QStringLiteral("Sign-in"));
+        QCOMPARE(rowById(page, QStringLiteral("anthropicAuthMode")).label, QStringLiteral("Sign-in"));
     }
 
     void aModelThatReadsTranscriptsAsInstructionsSaysSo()

@@ -248,6 +248,17 @@ bool refreshClaudeAuth(const QString &path, const ClaudeCredentialResult &creden
 
 } // namespace
 
+QString claudeSignInStatus(const ClaudeCredentialResult &credentials)
+{
+    if (credentials.ok) {
+        return QStringLiteral("Signed in with Claude Code.");
+    }
+    if (credentials.error.contains(QStringLiteral("expired"), Qt::CaseInsensitive)) {
+        return QStringLiteral("Sign-in expired. Run claude and sign in there.");
+    }
+    return QStringLiteral("Not signed in. Run claude and sign in there.");
+}
+
 QString ClaudeCredentials::installedVersion()
 {
     const QString executable = findClaudeExecutable();

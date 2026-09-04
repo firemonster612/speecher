@@ -121,12 +121,11 @@ QString anthropicCredentialStatus(const AppSettings &draft,
                                   const SettingsStore &store)
 {
     if (draft.refinement.anthropicAuthMode == kCliProxyAuthMode) {
-        return {};
+        return QStringLiteral("Signed in through CLI Proxy API.");
     }
     const ClaudeCredentialResult credentials = ClaudeCredentials::load(
         store.claudeCredentialsPath(), false);
-    return credentials.ok ? QStringLiteral("Signed in with Claude Code")
-                          : credentials.error;
+    return claudeSignInStatus(credentials);
 }
 
 CollectionDescriptor writingProfileGrid()

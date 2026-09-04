@@ -43,6 +43,9 @@ SchemaCustomRowFactory ProviderCustomRows::factory()
         if (descriptor.id == QStringLiteral("openAiAuth")) {
             return makeCredentialRow(parent, std::move(notifyChanged));
         }
+        if (descriptor.id == QStringLiteral("anthropicAuth")) {
+            return makeAnthropicCredentialRow(parent);
+        }
         if (descriptor.id == QStringLiteral("anthropicAuthMode")) {
             return makeAnthropicAuthModeRow(parent, std::move(notifyChanged));
         }
@@ -144,14 +147,6 @@ SchemaCustomRow ProviderCustomRows::makeAnthropicAuthModeRow(QWidget *parent,
     m_anthropicAuthMode->setToolTip(QStringLiteral(
         "Claude Code sign-in reuses the login from the claude command. CLI Proxy API uses an "
         "account saved by CLI Proxy API."));
-    // The status reads under the row's title.
-    m_anthropicAuthStatus = new QLabel(parent);
-    m_anthropicAuthStatus->setObjectName(QStringLiteral("anthropicAuthStatus"));
-    m_anthropicAuthStatus->setWordWrap(true);
-    m_anthropicAuthStatus->setForegroundRole(QPalette::WindowText);
-    m_anthropicAuthStatus->setAttribute(Qt::WA_StyledBackground, false);
-    m_anthropicAuthStatus->setAutoFillBackground(false);
-
     QObject::connect(m_anthropicAuthMode,
                      &QComboBox::currentIndexChanged,
                      m_anthropicAuthMode,
@@ -177,6 +172,19 @@ SchemaCustomRow ProviderCustomRows::makeAnthropicAuthModeRow(QWidget *parent,
         false,
         m_anthropicAuthStatus,
     };
+}
+
+SchemaCustomRow ProviderCustomRows::makeAnthropicCredentialRow(QWidget *parent)
+{
+    auto *emptyControl = new QWidget(parent);
+    emptyControl->hide();
+    m_anthropicAuthStatus = new QLabel(parent);
+    m_anthropicAuthStatus->setObjectName(QStringLiteral("anthropicAuthStatus"));
+    m_anthropicAuthStatus->setWordWrap(true);
+    m_anthropicAuthStatus->setAttribute(Qt::WA_StyledBackground, false);
+    m_anthropicAuthStatus->setAutoFillBackground(false);
+    updateAnthropicAuthControl();
+    return {emptyControl, {}, {}, false, m_anthropicAuthStatus};
 }
 
 SchemaCustomRow ProviderCustomRows::makeCliproxyBaseUrlRow(
@@ -379,8 +387,8 @@ bool ProviderCustomRows::saveSecret()
 void ProviderCustomRows::updateCredentialControl()
 {
     const quint64 generation = ++m_authStatusGeneration;
-    // The auth-mode row is built before the credential it switches.
-    if (!m_apiKey) {
+    // Both rows must exist before one can switch the other.
+    if (!m_apiKey || !m_authMode) {
         return;
     }
     const QString mode = m_authMode->currentData().toString();
@@ -440,16 +448,16 @@ void ProviderCustomRows::updateAnthropicAuthControl()
     if (!m_anthropicAuthMode || !m_anthropicAuthStatus) {
         return;
     }
-    const bool cliproxy =
-        m_anthropicAuthMode->currentData().toString() == kCliProxyAuthMode;
-    if (!cliproxy) {
-        const ClaudeCredentialResult credentials =
-            ClaudeCredentials::load(m_settings.claudeCredentialsPath(), false);
-        m_anthropicAuthStatus->setText(
-            credentials.ok ? QStringLiteral("Signed in with Claude Code")
-                           : credentials.error);
+    const QString mode = m_anthropicAuthMode
+        ? m_anthropicAuthMode->currentData().toString()
+        : m_settings.anthropicAuthMode();
+    if (mode == kCliProxyAuthMode) {
+        m_anthropicAuthStatus->setText(QStringLiteral("Signed in through CLI Proxy API."));
+        return;
     }
-    m_anthropicAuthStatus->setVisible(!cliproxy);
+    const ClaudeCredentialResult credentials =
+        ClaudeCredentials::load(m_settings.claudeCredentialsPath(), false);
+    m_anthropicAuthStatus->setText(claudeSignInStatus(credentials));
 }
 
 } // namespace speecher

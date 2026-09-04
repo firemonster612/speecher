@@ -20,6 +20,7 @@
 #include <QFrame>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QScopeGuard>
 #include <QScrollBar>
 #include <QSpinBox>
 #include <QStyleHints>
@@ -622,6 +623,51 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!status->text().isEmpty()
                                      && status->text() != QStringLiteral("Checking…"),
                                  20000);
+    }
+
+    void signedOutAccountRowsGivePlainSignInDirections()
+    {
+        QTemporaryDir home;
+        QVERIFY(home.isValid());
+        const QByteArray oldHome = qgetenv("HOME");
+        const QByteArray oldOpenAiKey = qgetenv("OPENAI_API_KEY");
+        const auto restoreEnvironment = qScopeGuard([oldHome, oldOpenAiKey] {
+            oldHome.isNull() ? qunsetenv("HOME") : qputenv("HOME", oldHome);
+            oldOpenAiKey.isNull() ? qunsetenv("OPENAI_API_KEY")
+                                  : qputenv("OPENAI_API_KEY", oldOpenAiKey);
+        });
+        qputenv("HOME", QFile::encodeName(home.path()));
+        qunsetenv("OPENAI_API_KEY");
+
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.raw().setValue(QStringLiteral("claude/credentialsPath"),
+                                home.filePath(QStringLiteral("private/credentials.json")));
+        settings.setOpenAiAuthMode(QStringLiteral("auto"));
+        settings.setAnthropicAuthMode(QStringLiteral("oauth"));
+        SecretStore secrets(&settings);
+        ProviderRegistry providers;
+        ProviderCustomRows providerRows(settings, secrets);
+        const std::unique_ptr<SchemaSettingsPage> page = schemaPage(
+            QStringLiteral("accounts"), *platformComposition(), providers, providerRows.factory());
+        page->load(settings.snapshot());
+        providerRows.loadSecret();
+
+        auto *openAi = page->findChild<QLabel *>(QStringLiteral("openAiAuthStatus"));
+        auto *claude = page->findChild<QLabel *>(QStringLiteral("anthropicAuthStatus"));
+        QVERIFY(openAi);
+        QVERIFY(claude);
+        QTRY_COMPARE_WITH_TIMEOUT(
+            openAi->text(),
+            QStringLiteral("Not signed in. Sign in with the Codex app or run codex login."),
+            20000);
+        QCOMPARE(claude->text(),
+                 QStringLiteral("Not signed in. Run claude and sign in there."));
+        for (const QLabel *status : {openAi, claude}) {
+            QVERIFY(!status->text().contains(home.path()));
+            QVERIFY(!status->text().contains(QStringLiteral("credential"), Qt::CaseInsensitive));
+            QVERIFY(!status->text().contains(QStringLiteral("/login")));
+        }
     }
 
     void providerSettingsCliproxyAccountPicker()

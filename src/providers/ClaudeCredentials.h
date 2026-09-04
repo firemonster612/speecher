@@ -24,4 +24,6 @@ public:
     static QString installedVersion();
 };
 
+QString claudeSignInStatus(const ClaudeCredentialResult &credentials);
+
 } // namespace speecher

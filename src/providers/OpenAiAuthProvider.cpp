@@ -462,10 +462,16 @@ OpenAiAuth OpenAiAuthProvider::refreshCodexOauth() const
 QString OpenAiAuthProvider::status() const
 {
     const OpenAiAuth auth = resolve(false);
-    if (!auth.status.isEmpty()) {
-        return auth.status;
+    if (!auth.ok) {
+        return QStringLiteral("Not signed in. Sign in with the Codex app or run codex login.");
     }
-    return auth.ok ? QStringLiteral("Signed in") : QStringLiteral("Not signed in");
+    if (auth.source == QStringLiteral("codex_oauth")) {
+        return QStringLiteral("Signed in with the Codex app.");
+    }
+    if (auth.source == QStringLiteral("cliproxy")) {
+        return QStringLiteral("Signed in through CLI Proxy API.");
+    }
+    return QStringLiteral("Signed in with an OpenAI API key.");
 }
 
 } // namespace speecher
