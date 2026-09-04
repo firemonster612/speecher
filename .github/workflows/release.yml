@@ -29,6 +29,18 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Validate stable tag identity
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          other_stable_tags="$(git tag --points-at "$GITHUB_SHA" --list 'v*' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | grep -Fvx "$GITHUB_REF_NAME" || true)"
+          if [ -n "$other_stable_tags" ]; then
+            echo "Another Stable Release tag points at $GITHUB_SHA:" >&2
+            printf '%s\n' "$other_stable_tags" >&2
+            exit 1
+          fi
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Read runner user ID
@@ -97,15 +109,20 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           version_output="$(docker run --rm --volume "$GITHUB_WORKSPACE:/workspace" --workdir /workspace speecher-appimage:trixie build-appimage/speecher --version)"
-          version="$(printf '%s\n' "$version_output" | sed -n 's/^speecher \(.*\) (build [0-9][0-9]*)$/\1/p')"
+          binary_version="$(printf '%s\n' "$version_output" | sed -n 's/^speecher \(.*\) (build [0-9][0-9]*)$/\1/p')"
           build_number="$(printf '%s\n' "$version_output" | sed -n 's/^speecher .* (build \([0-9][0-9]*\))$/\1/p')"
-          test -n "$version"
+          test -n "$binary_version"
           test -n "$build_number"
           if [ "${GITHUB_REF_NAME}" = "master" ]; then
+            version="$binary_version"
             release_tag=nightly
           else
-            release_tag="v${version}"
-            test "${GITHUB_REF_NAME}" = "$release_tag"
+            version="${GITHUB_REF_NAME#v}"
+            release_tag="${GITHUB_REF_NAME}"
+            if [ "$binary_version" != "$version" ]; then
+              echo "Tag version $version does not match binary version $binary_version." >&2
+              exit 1
+            fi
           fi
           sha256="$(sha256sum dist/Speecher-x86_64.AppImage | awk '{print $1}')"
           python3 - "$version" "$build_number" "$release_tag" "$sha256" > dist/update-manifest.json <<'PY'

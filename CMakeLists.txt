@@ -5,7 +5,7 @@ if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     "Minimum macOS version supported by Speecher")
 endif()
 
-project(speecher VERSION 0.1.0 LANGUAGES C CXX)
+project(speecher VERSION 0.1.1 LANGUAGES C CXX)
 
 include(cmake/GitVersion.cmake)
 
