@@ -125,12 +125,28 @@ bool runProgram(const QString &program,
 QString stableHelperPath()
 {
     const QString dataHome = qEnvironmentVariable("XDG_DATA_HOME");
-    if (!dataHome.isEmpty()) {
-        return QDir(dataHome).filePath(
-            QStringLiteral("speecher/libexec/speecher-ydotool-setup"));
+    const QString root = dataHome.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+        : dataHome;
+    return QDir(root)
+        .filePath(QStringLiteral("speecher/libexec/speecher-ydotool-setup"));
+}
+
+bool verifyHelperCopy(const QString &sourcePath, const QString &destinationPath, QString *error)
+{
+    QFile source(sourcePath);
+    QFile destination(destinationPath);
+    if (!source.open(QIODevice::ReadOnly)
+        || !destination.open(QIODevice::ReadOnly)
+        || source.readAll() != destination.readAll()
+        || source.error() != QFileDevice::NoError
+        || destination.error() != QFileDevice::NoError) {
+        if (error) {
+            *error = QStringLiteral("The local ydotool setup helper could not be verified");
+        }
+        return false;
     }
-    return QDir(QDir::homePath()).filePath(
-        QStringLiteral(".local/libexec/speecher/speecher-ydotool-setup"));
+    return true;
 }
 
 bool copyHelper(const QString &sourcePath, const QString &destinationPath, QString *error)
@@ -152,33 +168,50 @@ bool copyHelper(const QString &sourcePath, const QString &destinationPath, QStri
     }
 
     const QFileInfo destination(destinationPath);
-    if (!destination.dir().mkpath(QStringLiteral("."))) {
+    const QString directory = destination.dir().absolutePath();
+    if (!destination.dir().mkpath(QStringLiteral("."))
+        || !QFile::setPermissions(directory,
+                                  QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                      | QFileDevice::ExeOwner)) {
         if (error) {
             *error = QStringLiteral("Could not create the local ydotool helper directory");
         }
         return false;
     }
     QSaveFile copy(destinationPath);
-    if (!copy.open(QIODevice::WriteOnly)
-        || copy.write(contents) != contents.size()
-        || !copy.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner
-                                | QFileDevice::ExeOwner | QFileDevice::ReadGroup
-                                | QFileDevice::ExeGroup | QFileDevice::ReadOther
-                                | QFileDevice::ExeOther)
-        || !copy.commit()) {
+    if (QFileInfo::exists(destinationPath)
+        && !QFile::setPermissions(destinationPath,
+                                  QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                      | QFileDevice::ExeOwner)) {
         if (error) {
-            *error = QStringLiteral("Could not install the local ydotool setup helper");
+            *error = QStringLiteral("Could not replace the local ydotool setup helper");
+        }
+        return false;
+    }
+    if (!copy.open(QIODevice::WriteOnly)) {
+        if (error) {
+            *error = QStringLiteral("Could not open the local ydotool setup helper: %1")
+                         .arg(copy.errorString());
+        }
+        return false;
+    }
+    if (copy.write(contents) != contents.size() || !copy.commit()) {
+        if (error) {
+            *error = QStringLiteral("Could not install the local ydotool setup helper: %1")
+                         .arg(copy.errorString());
+        }
+        return false;
+    }
+    if (!QFile::setPermissions(destinationPath,
+                               QFileDevice::ReadOwner | QFileDevice::ExeOwner)) {
+        if (error) {
+            *error = QStringLiteral("Could not secure the local ydotool setup helper");
         }
         return false;
     }
 
-    QFile verified(destinationPath);
-    if (!verified.open(QIODevice::ReadOnly) || verified.readAll() != contents
-        || verified.error() != QFileDevice::NoError) {
+    if (!verifyHelperCopy(sourcePath, destinationPath, error)) {
         QFile::remove(destinationPath);
-        if (error) {
-            *error = QStringLiteral("The local ydotool setup helper could not be verified");
-        }
         return false;
     }
     return true;
@@ -319,6 +352,15 @@ bool YdotoolSetup::runHelper(HelperAction action, QString *error)
     const QString helper = helperPath(error);
     if (helper.isEmpty()) {
         return false;
+    }
+    if (qEnvironmentVariableIsSet("APPIMAGE")) {
+        const QString bundled = resolvedHelperPath(SPEECHER_YDOTOOL_HELPER_PATH);
+        // A same-uid process can still replace this path after verification.
+        // That residual risk is accepted because it can already inject into
+        // Speecher, while an fd or shell path makes pkexec's prompt unreadable.
+        if (!verifyHelperCopy(bundled, helper, error)) {
+            return false;
+        }
     }
     return runProgram(pkexec,
                       {helper,

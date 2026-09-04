@@ -664,19 +664,26 @@ private slots:
         const QString icon = home.filePath(
             QStringLiteral(".local/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg"));
         const QString link = home.filePath(QStringLiteral(".local/bin/speecher"));
+        const QString helper = home.filePath(
+            QStringLiteral(".local/share/speecher/libexec/speecher-ydotool-setup"));
+        QVERIFY(QDir().mkpath(QFileInfo(helper).dir().path()));
+        QVERIFY(writeFile(helper, "helper"));
         QVERIFY(QFile::exists(desktopFile));
         QVERIFY(QFile::exists(icon));
+        QVERIFY(QFile::exists(helper));
         QVERIFY(QFileInfo(link).isSymLink());
 
         DesktopIntegrationRemoval removal = removeAppImageIntegration(home.path());
         QCOMPARE(removal.removed,
                  QStringList({QStringLiteral("app menu entry"),
                               QStringLiteral("speecher command"),
-                              QStringLiteral("app icon")}));
+                              QStringLiteral("app icon"),
+                              QStringLiteral("local ydotool setup helper")}));
         QVERIFY(removal.absent.isEmpty());
         QVERIFY(removal.failed.isEmpty());
         QVERIFY(!QFile::exists(desktopFile));
         QVERIFY(!QFile::exists(icon));
+        QVERIFY(!QFile::exists(helper));
         QVERIFY(!QFileInfo(link).isSymLink() && !QFile::exists(link));
         // The program file is the user's to delete.
         QVERIFY(QFile::exists(appImage));
@@ -684,7 +691,7 @@ private slots:
         // A second run finds nothing and says so rather than failing.
         removal = removeAppImageIntegration(home.path());
         QVERIFY(removal.removed.isEmpty());
-        QCOMPARE(removal.absent.size(), 3);
+        QCOMPARE(removal.absent.size(), 4);
         QVERIFY(removal.failed.isEmpty());
 
         // A real file where the link belongs is not Speecher's to delete.
@@ -693,6 +700,15 @@ private slots:
         QCOMPARE(removal.failed.size(), 1);
         QVERIFY(removal.failed.first().startsWith(QStringLiteral("speecher command")));
         QVERIFY(QFile::exists(link));
+
+        QVERIFY(QFile::remove(link));
+        const QString unrelated = home.filePath(QStringLiteral("SomeoneElse.AppImage"));
+        QVERIFY(writeFile(unrelated, "image"));
+        QVERIFY(QFile::link(unrelated, link));
+        removal = removeAppImageIntegration(home.path());
+        QVERIFY(removal.failed.contains(QStringLiteral(
+            "speecher command: the link does not point to a Speecher AppImage")));
+        QVERIFY(QFileInfo(link).isSymLink());
     }
 
     void appImageDesktopFileExecLinesUseTheRealImagePath()

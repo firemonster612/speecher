@@ -300,7 +300,15 @@ EOF
 
 cat > "$APPDIR_PATH/AppRun" <<'EOF'
 #!/usr/bin/env bash
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INHERITED_PATH="${PATH-}"
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+IFS=: read -r -a inherited_path_parts <<< "$INHERITED_PATH"
+for path_part in "${inherited_path_parts[@]}"; do
+  [[ "$path_part" == /* ]] && PATH="$PATH:$path_part"
+done
+export PATH
+HERE="$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)"
+export PATH="$HERE/usr/bin:$PATH"
 GLIBC_VERSION="$(getconf GNU_LIBC_VERSION 2>/dev/null || true)"
 GLIBC_VERSION="${GLIBC_VERSION##* }"
 if [[ "$GLIBC_VERSION" =~ ^([0-9]+)\.([0-9]+) ]] \
@@ -308,7 +316,6 @@ if [[ "$GLIBC_VERSION" =~ ^([0-9]+)\.([0-9]+) ]] \
   echo "Speecher's AppImage requires glibc 2.41 or newer (Debian 13, Fedora 42, Ubuntu 25.04, or later)." >&2
   exit 1
 fi
-export PATH="$HERE/usr/bin:${PATH:-}"
 export QT_PLUGIN_PATH="$HERE/usr/plugins"
 export QT_QPA_PLATFORM_PLUGIN_PATH="$HERE/usr/plugins/platforms"
 export XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:$HERE/usr/share"

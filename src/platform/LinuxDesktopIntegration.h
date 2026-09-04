@@ -34,8 +34,8 @@ struct DesktopIntegrationRemoval {
 };
 
 // Undoes installAppImageIntegration: the desktop file, the icon and the
-// ~/.local/bin/speecher link. Only a symbolic link is removed at that path; a
-// real file there was never Speecher's.
+// ~/.local/bin/speecher link, and the relocated setup helper. The command link
+// is removed only when its target is a Speecher AppImage.
 DesktopIntegrationRemoval removeAppImageIntegration(const QString &homePath);
 
 } // namespace speecher

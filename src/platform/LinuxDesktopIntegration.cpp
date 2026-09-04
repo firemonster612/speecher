@@ -22,6 +22,14 @@ QString localBinaryPath(const QString &homePath)
     return QDir(homePath).filePath(QStringLiteral(".local/bin/speecher"));
 }
 
+QString localDataPath(const QString &homePath)
+{
+    const QString dataHome = qEnvironmentVariable("XDG_DATA_HOME");
+    return dataHome.isEmpty()
+        ? QDir(homePath).filePath(QStringLiteral(".local/share"))
+        : dataHome;
+}
+
 bool readableSource(const QString &path, const QString &artifact, QString *error)
 {
     QFile source(path);
@@ -294,6 +302,8 @@ DesktopIntegrationRemoval removeAppImageIntegration(const QString &homePath)
         QStringLiteral(".local/share/icons/hicolor/scalable/apps/%1.svg")
             .arg(QString::fromLatin1(appId)));
     const QString link = localBinaryPath(homePath);
+    const QString helper = QDir(localDataPath(homePath)).filePath(
+        QStringLiteral("speecher/libexec/speecher-ydotool-setup"));
 
     const auto removeItem = [&result](const QString &name, const QString &path, bool onlyLink) {
         const QFileInfo info(path);
@@ -306,6 +316,15 @@ DesktopIntegrationRemoval removeAppImageIntegration(const QString &homePath)
                 QStringLiteral("%1: something other than Speecher's link is at %2").arg(name, path));
             return;
         }
+        if (onlyLink) {
+            const QString targetName = QFileInfo(info.symLinkTarget()).fileName();
+            if (!targetName.contains(QStringLiteral("Speecher"), Qt::CaseInsensitive)
+                || !targetName.endsWith(QStringLiteral(".AppImage"), Qt::CaseInsensitive)) {
+                result.failed.append(
+                    QStringLiteral("%1: the link does not point to a Speecher AppImage").arg(name));
+                return;
+            }
+        }
         if (QFile::remove(path)) {
             result.removed.append(name);
         } else {
@@ -315,6 +334,7 @@ DesktopIntegrationRemoval removeAppImageIntegration(const QString &homePath)
     removeItem(QStringLiteral("app menu entry"), desktopFile, false);
     removeItem(QStringLiteral("speecher command"), link, true);
     removeItem(QStringLiteral("app icon"), icon, false);
+    removeItem(QStringLiteral("local ydotool setup helper"), helper, false);
 
     if (!result.removed.isEmpty()) {
         const QString updater = QStandardPaths::findExecutable(

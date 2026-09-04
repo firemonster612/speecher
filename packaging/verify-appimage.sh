@@ -56,6 +56,32 @@ for required in "${REQUIRED_FILES[@]}"; do
   fi
 done
 
+HELPER="$APPDIR/usr/libexec/speecher/speecher-ydotool-setup"
+if ldd "$HELPER" | grep -Fq 'libQt6'; then
+  echo "The relocated ydotool setup helper depends on Qt." >&2
+  ldd "$HELPER" >&2
+  exit 1
+fi
+mkdir "$EXTRACT_DIR/relocated-helper"
+cp "$HELPER" "$EXTRACT_DIR/relocated-helper/"
+env -u LD_LIBRARY_PATH "$EXTRACT_DIR/relocated-helper/speecher-ydotool-setup" --help >/dev/null
+
+mkdir "$EXTRACT_DIR/untrusted-launch-directory"
+cat > "$EXTRACT_DIR/untrusted-launch-directory/getconf" <<'EOF'
+#!/bin/sh
+touch app-run-used-current-directory
+printf '%s\n' 'glibc 999.0'
+EOF
+chmod +x "$EXTRACT_DIR/untrusted-launch-directory/getconf"
+(
+  cd "$EXTRACT_DIR/untrusted-launch-directory"
+  env -u PATH QT_QPA_PLATFORM=offscreen "$APPDIR/AppRun" --version >/dev/null
+  if [[ -e app-run-used-current-directory ]]; then
+    echo "AppRun searched the launch directory when PATH was unset." >&2
+    exit 1
+  fi
+)
+
 ELF_COUNT=0
 while IFS= read -r -d '' candidate; do
   if [[ "$(file -b "$candidate")" != ELF* ]]; then

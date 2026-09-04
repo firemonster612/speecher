@@ -753,10 +753,14 @@ if(APPLE)
 endif()
 
 if(UNIX AND NOT APPLE)
-  qt_add_executable(speecher-ydotool-setup
+  add_executable(speecher-ydotool-setup
     src/setup/YdotoolSetupHelper.cpp
   )
-  target_link_libraries(speecher-ydotool-setup PRIVATE Qt6::Core)
+  set_target_properties(speecher-ydotool-setup PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+  )
 endif()
 
 find_program(WAYLAND_SCANNER_EXECUTABLE wayland-scanner)

@@ -6,6 +6,10 @@
 
 #include <QScopeGuard>
 
+#ifdef Q_OS_UNIX
+#include <sys/stat.h>
+#endif
+
 using namespace speecher::test;
 
 class FakeBackend final : public DeliveryBackend {
@@ -1122,13 +1126,22 @@ private slots:
 
         const QString expected = directory.filePath(
             QStringLiteral("data/speecher/libexec/speecher-ydotool-setup"));
-        QCOMPARE(YdotoolSetup::helperPath(), expected);
+        QString error;
+        const QString actual = YdotoolSetup::helperPath(&error);
+        QVERIFY2(actual == expected, qPrintable(error));
         QFile bundledFile(bundled);
         QFile stableFile(expected);
         QVERIFY(bundledFile.open(QIODevice::ReadOnly));
         QVERIFY(stableFile.open(QIODevice::ReadOnly));
         QCOMPARE(stableFile.readAll(), bundledFile.readAll());
-        QVERIFY(QFileInfo(expected).isExecutable());
+        struct stat helperStatus {};
+        struct stat directoryStatus {};
+        QCOMPARE(::stat(QFile::encodeName(expected).constData(), &helperStatus), 0);
+        QCOMPARE(::stat(QFile::encodeName(QFileInfo(expected).dir().absolutePath()).constData(),
+                        &directoryStatus),
+                 0);
+        QCOMPARE(helperStatus.st_mode & 0777, mode_t(0500));
+        QCOMPARE(directoryStatus.st_mode & 0777, mode_t(0700));
     }
 #endif // SPEECHER_WITH_WAYLAND
 };
