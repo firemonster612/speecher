@@ -444,6 +444,7 @@ set(SPEECHER_FRONTEND_QT_SOURCES
   src/ui/setup/SetupPages.cpp
   src/ui/settings/SettingsPageSupport.cpp
   src/ui/settings/SettingsPageSet.cpp
+  src/ui/HostStylePlugin.cpp
   src/ui/Theme.cpp
   src/ui/TranscriberPopup.cpp
   src/ui/WaveformWidget.cpp
@@ -466,6 +467,7 @@ set(SPEECHER_FRONTEND_QT_HEADERS
   src/ui/setup/SetupPages.h
   src/ui/settings/SettingsPageSupport.h
   src/ui/settings/SettingsPageSet.h
+  src/ui/HostStylePlugin.h
   src/ui/Theme.h
   src/ui/TranscriberPopup.h
   src/ui/WaveformWidget.h

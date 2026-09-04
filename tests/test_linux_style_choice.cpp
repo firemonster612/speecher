@@ -1,5 +1,11 @@
 #include "common/test_suites.h"
+#include "ui/HostStylePlugin.h"
 #include "platform/LinuxStyleChoice.h"
+
+#include <QFile>
+#include <QStyle>
+
+#include <memory>
 
 using namespace speecher;
 
@@ -7,6 +13,25 @@ class LinuxStyleChoiceTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void loadsSystemStylePlugin()
+    {
+        QString root;
+        for (const QString &dir : hostStylePluginDirs()) {
+            if (QFile::exists(dir + QStringLiteral("/styles/breeze6.so"))) {
+                root = dir;
+            }
+        }
+        if (root.isEmpty()) {
+            QSKIP("no Breeze style plugin installed on this host");
+        }
+        QStringList log;
+        const std::unique_ptr<QStyle> style(loadHostStyle(QStringLiteral("Breeze"), {root}, &log));
+        QVERIFY2(style, qPrintable(log.join(QLatin1Char('\n'))));
+        QCOMPARE(style->objectName().toLower(), QStringLiteral("breeze"));
+        QVERIFY(!loadHostStyle(QStringLiteral("NoSuchStyle"), {root}, nullptr));
+        QVERIFY(!loadHostStyle(QStringLiteral("Breeze"), {QStringLiteral("/nonexistent")}, nullptr));
+    }
+
     void choosesHostStyle_data()
     {
         QTest::addColumn<QString>("overrideStyle");
