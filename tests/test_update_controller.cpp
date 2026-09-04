@@ -27,9 +27,12 @@ public:
         updater.setState(state, error);
     }
 
-    static void setAvailableVersion(AppImageUpdater &updater, const QString &version)
+    static void setAvailableVersion(AppImageUpdater &updater,
+                                    const QString &version,
+                                    UpdateChannel channel = UpdateChannel::Stable)
     {
         updater.m_manifest.version = version;
+        updater.m_manifest.channel = channel;
     }
 
     static void restartNow(AppImageUpdater &updater)
@@ -176,6 +179,29 @@ private slots:
             true));
         QVERIFY(!AppImageUpdaterTestAccess::shouldOfferManifest(
             stable, 150, QStringLiteral("0.1.1"), UpdateChannel::Stable, false));
+    }
+
+    void changingChannelInvalidatesAnAvailableUpdate()
+    {
+        UpdateTestContext context(true);
+        AppImageUpdater updater(&context.settings, context.session.get());
+        AppImageUpdaterTestAccess::setAvailableVersion(
+            updater, QStringLiteral("0.1.1"), UpdateChannel::Stable);
+        AppImageUpdaterTestAccess::setState(updater,
+                                            UpdateController::State::UpdateAvailable);
+
+        context.settings.setUpdateChannel(UpdateChannel::Nightly);
+
+        QCOMPARE(updater.state(), UpdateController::State::Idle);
+        QVERIFY(updater.availableVersion().isEmpty());
+
+        AppImageUpdaterTestAccess::setAvailableVersion(
+            updater, QStringLiteral("nightly"), UpdateChannel::Nightly);
+        AppImageUpdaterTestAccess::setState(updater,
+                                            UpdateController::State::Downloading);
+        context.settings.setUpdateChannel(UpdateChannel::Stable);
+        QCOMPARE(updater.state(), UpdateController::State::Idle);
+        QVERIFY(updater.availableVersion().isEmpty());
     }
 
     void rejectsInvalidManifest_data()

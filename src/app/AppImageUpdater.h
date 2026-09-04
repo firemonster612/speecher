@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/UpdateController.h"
+#include "core/AppSettings.h"
 
 #include <QUrl>
 
@@ -22,6 +23,7 @@ struct UpdateManifest {
     qint64 buildNumber = 0;
     QUrl appImageUrl;
     QByteArray sha256;
+    UpdateChannel channel = UpdateChannel::Stable;
 };
 
 struct AppImageFileIdentity {
@@ -80,6 +82,7 @@ private:
                                     UpdateChannel channel,
                                     bool automaticCheck);
     void beginCheck(UpdateChannel channel, bool automaticCheck);
+    void updateSettingsChanged();
     QUrl manifestUrl(UpdateChannel channel) const;
     void finishCheck(QNetworkReply *reply);
     void beginDownload();
@@ -102,6 +105,7 @@ private:
     QString m_downloadError;
     QString m_dismissedVersion;
     UpdateChannel m_checkChannel;
+    UpdateChannel m_selectedChannel;
     bool m_automaticCheck = false;
     State m_state = State::Idle;
     int m_downloadPercent = 0;

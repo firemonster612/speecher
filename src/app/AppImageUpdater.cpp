@@ -55,6 +55,8 @@ AppImageUpdater::AppImageUpdater(SettingsStore *settings,
     , m_session(session)
     , m_network(new QNetworkAccessManager(this))
     , m_dailyTimer(new QTimer(this))
+    , m_checkChannel(settings->updateChannel())
+    , m_selectedChannel(settings->updateChannel())
 {
     m_network->setTransferTimeout(30000);
     m_dismissedVersion = m_settings->updatesDismissedVersion();
@@ -69,6 +71,10 @@ AppImageUpdater::AppImageUpdater(SettingsStore *settings,
             restartAppImage();
         }
     });
+    connect(m_settings,
+            &SettingsStore::updateSettingsChanged,
+            this,
+            &AppImageUpdater::updateSettingsChanged);
 }
 
 AppImageUpdater::~AppImageUpdater()
@@ -295,6 +301,10 @@ void AppImageUpdater::updateNow()
     if (m_state != State::UpdateAvailable) {
         return;
     }
+    if (m_manifest.channel != m_settings->updateChannel()) {
+        beginCheck(m_settings->updateChannel(), false);
+        return;
+    }
     if (!isAppImage()) {
         emit openReleasePageRequested();
         return;
@@ -369,12 +379,39 @@ void AppImageUpdater::finishCheck(QNetworkReply *reply)
     }
 
     m_manifest = *manifest;
+    m_manifest.channel = m_checkChannel;
     setState(State::UpdateAvailable);
     const bool stableReplacement = m_checkChannel == UpdateChannel::Stable
         && currentVersion().contains(QStringLiteral("-nightly"));
     if (m_settings->autoInstallUpdates() && isAppImage() && !stableReplacement) {
         beginDownload();
     }
+}
+
+void AppImageUpdater::updateSettingsChanged()
+{
+    const UpdateChannel channel = m_settings->updateChannel();
+    if (channel == m_selectedChannel) {
+        return;
+    }
+    m_selectedChannel = channel;
+    if (m_state == State::ReadyToRestart || m_state == State::RestartPending) {
+        return;
+    }
+
+    if (m_reply) {
+        QNetworkReply *reply = m_reply;
+        m_reply = nullptr;
+        QObject::disconnect(reply, nullptr, this, nullptr);
+        reply->abort();
+        reply->deleteLater();
+    }
+    clearDownload();
+    m_manifest = {};
+    m_appImageIdentity.reset();
+    m_downloadError.clear();
+    m_downloadPercent = 0;
+    setState(State::Idle);
 }
 
 void AppImageUpdater::beginDownload()
