@@ -652,7 +652,6 @@ void AppWindow::buildNativeSidebarShell()
     titleLayout->addWidget(m_pageTitle);
     titleLayout->addStretch();
     headerContentLayout->addLayout(titleLayout);
-    buildStatusBanners(headerContent, headerContentLayout);
     headerLayout->addWidget(headerContent, 1);
     m_headerStrip = header;
     header->installEventFilter(this);
@@ -663,6 +662,7 @@ void AppWindow::buildNativeSidebarShell()
     m_headerUnderline->setFixedHeight(1);
     m_headerUnderline->setAutoFillBackground(true);
     pageHeaderLayout->addWidget(m_headerUnderline);
+    buildStatusBanners(pageHeader, pageHeaderLayout);
     m_navigation->setPageHeader(pageHeader);
 
     QFrame *nativeHeaderSeparator = nullptr;

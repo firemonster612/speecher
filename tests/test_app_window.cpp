@@ -408,9 +408,7 @@ private slots:
         AppWindow window(&controller);
         auto *header = window.findChild<QWidget *>(QStringLiteral("sidebarHeaderStrip"));
         QVERIFY(header);
-        for (const QPushButton *button : header->findChildren<QPushButton *>()) {
-            QVERIFY(button->text() != QStringLiteral("Start Dictation"));
-        }
+        QVERIFY(header->findChildren<QPushButton *>().isEmpty());
 
         int startControls = 0;
         for (const QPushButton *button : window.findChildren<QPushButton *>()) {
