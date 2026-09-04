@@ -24,6 +24,7 @@ final class AppModel: ObservableObject {
     /// settings, so the schema knows nothing about it.
     @Published var apiKey = ""
     @Published var credentialProblem = ""
+    @Published private(set) var anthropicCredentialStatus: String
     @Published private(set) var shortcut: String
     @Published private(set) var shortcutProblem = ""
     /// The pane the sidebar is on, remembered between openings because people
@@ -57,6 +58,7 @@ final class AppModel: ObservableObject {
         transcript = bridge.lastTranscript
         shortcut = bridge.shortcutDisplay
         accessibilityEnabled = bridge.accessibilityEnabled
+        anthropicCredentialStatus = bridge.anthropicCredentialStatus
         pane = UserDefaults.standard.string(forKey: Self.paneKey) ?? Pane.all[0].id
         bridge.statusChanged = { [weak self] status in
             self?.status = status
@@ -71,6 +73,9 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             accessibilityEnabled = bridge.accessibilityEnabled
             pages = bridge.settingsSchema.pages
+        }
+        bridge.anthropicCredentialsChanged = { [weak self] in
+            self?.anthropicCredentialStatus = bridge.anthropicCredentialStatus
         }
     }
 
@@ -191,6 +196,9 @@ final class AppModel: ObservableObject {
         bridge.settingsSchema.setValue(value, forRowId: rowId)
         bridge.settingsSchema.commit()
         pages = bridge.settingsSchema.pages
+        if rowId == "anthropicAuthMode" {
+            anthropicCredentialStatus = bridge.anthropicCredentialStatus
+        }
     }
 
     func binding<Value>(_ row: SettingsRowModel,

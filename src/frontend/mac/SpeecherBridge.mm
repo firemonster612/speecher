@@ -17,6 +17,8 @@
 #include "ui/Theme.h"
 
 #include <QDebug>
+#include <QFileInfo>
+#include <QFileSystemWatcher>
 #include <QKeySequence>
 #include <QObject>
 #include <QRegularExpression>
@@ -210,10 +212,33 @@ struct BridgeState {
     ApplicationController *controller = nullptr;
     // Owns the signal connections, so they end when the bridge does.
     QObject lifetime;
+    QFileSystemWatcher credentialWatcher;
     // The transcript survives the dictation that produced it, so the menu bar
     // panel can still offer it once the panel that showed it has gone.
     QString lastTranscript;
 };
+
+void refreshCredentialWatch(QFileSystemWatcher *watcher, const QString &credentialsPath)
+{
+    if (!watcher->files().isEmpty()) {
+        watcher->removePaths(watcher->files());
+    }
+    if (!watcher->directories().isEmpty()) {
+        watcher->removePaths(watcher->directories());
+    }
+    if (QFileInfo::exists(credentialsPath)) {
+        watcher->addPath(credentialsPath);
+    }
+    QString directory = QFileInfo(credentialsPath).absolutePath();
+    while (!QFileInfo::exists(directory)) {
+        const QString parent = QFileInfo(directory).absolutePath();
+        if (parent == directory) {
+            return;
+        }
+        directory = parent;
+    }
+    watcher->addPath(directory);
+}
 
 // The Qt key an NSEvent's unmodified characters stand for. Qt's key enum uses
 // the unshifted ASCII code for every printable key the shortcut binder accepts,
@@ -663,6 +688,24 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                                                     controller->pendingWhatsNewVersion()))
          capabilities:capabilities];
     __weak SpeecherBridge *weakSelf = self;
+    BridgeState *state = _state;
+    const QString credentialsPath = controller->settings()->claudeCredentialsPath();
+    refreshCredentialWatch(&state->credentialWatcher, credentialsPath);
+    const auto credentialsChanged = [weakSelf, state, credentialsPath] {
+        refreshCredentialWatch(&state->credentialWatcher, credentialsPath);
+        SpeecherBridge *bridge = weakSelf;
+        if (bridge.anthropicCredentialsChanged) {
+            bridge.anthropicCredentialsChanged();
+        }
+    };
+    QObject::connect(&state->credentialWatcher,
+                     &QFileSystemWatcher::fileChanged,
+                     &state->lifetime,
+                     [credentialsChanged](const QString &) { credentialsChanged(); });
+    QObject::connect(&state->credentialWatcher,
+                     &QFileSystemWatcher::directoryChanged,
+                     &state->lifetime,
+                     [credentialsChanged](const QString &) { credentialsChanged(); });
     QObject::connect(controller,
                      &ApplicationController::statusChanged,
                      &_state->lifetime,
@@ -905,6 +948,13 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                                         draft.refinement.openAiCliproxyAccount,
                                         _state->controller->settings()->cliproxyOauthDir())
         .status()
+        .toNSString();
+}
+
+- (NSString *)anthropicCredentialStatus
+{
+    return speecher::mac::anthropicCredentialStatus(
+               [_settingsSchema draft], *_state->controller->settings())
         .toNSString();
 }
 

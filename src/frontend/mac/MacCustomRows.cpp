@@ -3,6 +3,7 @@
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "core/Target.h"
+#include "providers/ClaudeCredentials.h"
 #include "providers/CliProxyCredentials.h"
 
 namespace speecher::mac {
@@ -114,6 +115,18 @@ QList<RowOption> customRowOptions(const QString &rowId,
         return cliproxyAccounts(QStringLiteral("claude"), draft.refinement.anthropicCliproxyAccount, store);
     }
     return {};
+}
+
+QString anthropicCredentialStatus(const AppSettings &draft,
+                                  const SettingsStore &store)
+{
+    if (draft.refinement.anthropicAuthMode == kCliProxyAuthMode) {
+        return {};
+    }
+    const ClaudeCredentialResult credentials = ClaudeCredentials::load(
+        store.claudeCredentialsPath(), false);
+    return credentials.ok ? QStringLiteral("Claude Code OAuth credentials found")
+                          : credentials.error;
 }
 
 CollectionDescriptor writingProfileGrid()
