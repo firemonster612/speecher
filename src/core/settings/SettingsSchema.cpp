@@ -709,8 +709,8 @@ SettingsPage refinementPage(const SchemaContext &context)
              QString(),
              {
                  choiceRow(QStringLiteral("refinementProvider"),
-                           QStringLiteral("Refinement"),
-                           QStringLiteral("Clean up dictated text after capture."),
+                           QStringLiteral("Provider"),
+                           QStringLiteral("Cleans up dictated text after capture; None leaves it as spoken."),
                            fixedOptions(refiners),
                            [](const AppSettings &settings) { return settings.refinement.providerId; },
                            [](AppSettings &settings, const QString &value) { settings.refinement.providerId = value; }),
