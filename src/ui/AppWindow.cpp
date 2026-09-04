@@ -5,6 +5,7 @@
 #include "core/SettingsStore.h"
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/DictationPage.h"
+#include "ui/InlineMessage.h"
 #include "ui/settings/SettingsPageSet.h"
 #include "ui/settings/SettingsPageSupport.h"
 
@@ -533,36 +534,27 @@ void AppWindow::buildSidebarShell()
     right->setMinimumWidth(480);
     auto *rightLayout = new QVBoxLayout(right);
     rightLayout->setContentsMargins(0, 0, 0, 0);
-    m_updateBanner = new QFrame(right);
+    m_updateBanner = new InlineMessage(right);
     m_updateBanner->setObjectName(QStringLiteral("updateBanner"));
-    m_updateBanner->setFrameShape(QFrame::StyledPanel);
-    auto *updateLayout = new QHBoxLayout(m_updateBanner);
-    updateLayout->setContentsMargins(settings::relatedSpacing(),
-                                     settings::tightSpacing(),
-                                     settings::relatedSpacing(),
-                                     settings::tightSpacing());
-    m_updateBannerText = new QLabel(m_updateBanner);
+    m_updateBanner->setPosition(InlineMessage::Position::Header);
+    m_updateBannerText = m_updateBanner->label();
     m_updateBannerText->setObjectName(QStringLiteral("updateBannerText"));
-    updateLayout->addWidget(m_updateBannerText, 1);
     m_updateProgress = new QProgressBar(m_updateBanner);
     m_updateProgress->setRange(0, 100);
     m_updateProgress->setTextVisible(true);
     m_updateProgress->setMaximumWidth(160);
-    updateLayout->addWidget(m_updateProgress);
+    m_updateBanner->addAction(m_updateProgress);
     m_updateAction = new QPushButton(m_updateBanner);
     m_updateAction->setObjectName(QStringLiteral("updateAction"));
-    updateLayout->addWidget(m_updateAction);
+    m_updateBanner->addAction(m_updateAction);
     m_updateLater = new QPushButton(QStringLiteral("Later"), m_updateBanner);
-    updateLayout->addWidget(m_updateLater);
-    m_updateDismiss = new QToolButton(m_updateBanner);
+    m_updateBanner->addAction(m_updateLater);
+    m_updateDismiss = m_updateBanner->closeButton();
     m_updateDismiss->setObjectName(QStringLiteral("dismissUpdate"));
-    m_updateDismiss->setIcon(QIcon::fromTheme(
-        QStringLiteral("window-close"),
-        style()->standardIcon(QStyle::SP_TitleBarCloseButton)));
     m_updateDismiss->setToolTip(QStringLiteral("Dismiss"));
     m_updateDismiss->setAccessibleName(QStringLiteral("Dismiss update"));
-    m_updateDismiss->setAutoRaise(true);
-    updateLayout->addWidget(m_updateDismiss);
+    // The controller decides when the banner goes; the button only reports.
+    disconnect(m_updateDismiss, &QToolButton::clicked, m_updateBanner, nullptr);
     connect(m_updateAction, &QPushButton::clicked, this, [this] {
         if (m_showingWhatsNewBanner) {
             showWhatsNew();
@@ -583,12 +575,11 @@ void AppWindow::buildSidebarShell()
     });
     rightLayout->addWidget(m_updateBanner);
     refreshUpdateBanner();
-    m_autoSaveWarning = new QFrame(right);
+    m_autoSaveWarning = new InlineMessage(right);
     m_autoSaveWarning->setObjectName(QStringLiteral("autoSaveWarning"));
-    m_autoSaveWarning->setFrameShape(QFrame::StyledPanel);
-    auto *warningLayout = new QHBoxLayout(m_autoSaveWarning);
-    m_autoSaveWarningText = new QLabel(m_autoSaveWarning);
-    warningLayout->addWidget(m_autoSaveWarningText);
+    m_autoSaveWarning->setPosition(InlineMessage::Position::Header);
+    m_autoSaveWarning->setType(InlineMessage::Type::Warning);
+    m_autoSaveWarningText = m_autoSaveWarning->label();
     m_autoSaveWarning->hide();
     rightLayout->addWidget(m_autoSaveWarning);
     rightLayout->addWidget(m_stack, 1);
@@ -680,6 +671,7 @@ void AppWindow::refreshUpdateBanner()
     }
     if (!updates->bannerVisible() && !m_controller->pendingWhatsNewVersion().isEmpty()) {
         m_showingWhatsNewBanner = true;
+        m_updateBanner->setType(InlineMessage::Type::Positive);
         m_updateBanner->show();
         m_updateBannerText->setText(
             QStringLiteral("Speecher %1 is installed")
@@ -711,6 +703,9 @@ void AppWindow::refreshUpdateBanner()
     m_updateAction->setEnabled(true);
     m_updateLater->hide();
     m_updateDismiss->hide();
+    m_updateBanner->setType(updates->state() == UpdateController::State::Error
+                                ? InlineMessage::Type::Error
+                                : InlineMessage::Type::Information);
     switch (updates->state()) {
     case UpdateController::State::UpdateAvailable:
         m_updateBannerText->setText(updates->stableReplacementAvailable()

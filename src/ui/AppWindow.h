@@ -21,6 +21,8 @@ class QToolButton;
 
 namespace speecher {
 
+class InlineMessage;
+
 class ApplicationController;
 class DictationPage;
 class SettingsPageSet;
@@ -71,10 +73,10 @@ private:
     QToolButton *m_backButton = nullptr;
     // The sidebar row that was current when What's New opened.
     int m_whatsNewReturnRow = 0;
-    QFrame *m_autoSaveWarning = nullptr;
+    InlineMessage *m_autoSaveWarning = nullptr;
     QLabel *m_autoSaveWarningText = nullptr;
     QTimer *m_autoSaveTimer = nullptr;
-    QFrame *m_updateBanner = nullptr;
+    InlineMessage *m_updateBanner = nullptr;
     QLabel *m_updateBannerText = nullptr;
     QProgressBar *m_updateProgress = nullptr;
     QPushButton *m_updateAction = nullptr;

@@ -7,6 +7,7 @@
 #include "frontend/qt/QtFrontEnd.h"
 #include "ui/AppPage.h"
 #include "ui/AppWindow.h"
+#include "ui/InlineMessage.h"
 #include "ui/DictationPage.h"
 #include "ui/settings/SettingsPageSet.h"
 #include "ui/Theme.h"
@@ -18,6 +19,7 @@
 #include <QDir>
 #include <QFile>
 #include <QLabel>
+#include <QSet>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QFormLayout>
@@ -467,6 +469,31 @@ private slots:
                  QColor(45, 55, 65));
     }
 #endif
+
+    void bannersAreKirigamiInlineMessages()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        auto *banner = window.findChild<InlineMessage *>(QStringLiteral("updateBanner"));
+        auto *warning = window.findChild<InlineMessage *>(QStringLiteral("autoSaveWarning"));
+        QVERIFY(banner);
+        QVERIFY(warning);
+        QCOMPARE(warning->type(), InlineMessage::Type::Warning);
+        auto *icon = banner->findChild<QLabel *>(QStringLiteral("inlineMessageIcon"));
+        QVERIFY(icon);
+        QVERIFY(!icon->pixmap().isNull());
+        QVERIFY(banner->label()->wordWrap());
+        // Each type has its own colour; the tint and border follow it.
+        QSet<QRgb> colours;
+        for (InlineMessage::Type type : {InlineMessage::Type::Information,
+                                         InlineMessage::Type::Positive,
+                                         InlineMessage::Type::Warning,
+                                         InlineMessage::Type::Error}) {
+            banner->setType(type);
+            colours.insert(banner->typeColor().rgb());
+        }
+        QCOMPARE(colours.size(), 4);
+    }
 
     void updateBannerDismissIsACloseToolButton()
     {
