@@ -664,6 +664,7 @@ private slots:
             20000);
         QCOMPARE(claude->text(),
                  QStringLiteral("Not signed in. Run claude and sign in there."));
+        QCOMPARE(ancestorOf<settings::FormRow>(claude)->title(), QStringLiteral("Account"));
         for (const QLabel *status : {openAi, claude}) {
             QVERIFY(!status->text().contains(home.path()));
             QVERIFY(!status->text().contains(QStringLiteral("credential"), Qt::CaseInsensitive));

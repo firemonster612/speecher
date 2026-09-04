@@ -169,8 +169,6 @@ SchemaCustomRow ProviderCustomRows::makeAnthropicAuthModeRow(QWidget *parent,
             settings::selectData(m_anthropicAuthMode, value.toString());
             updateAnthropicAuthControl();
         },
-        false,
-        m_anthropicAuthStatus,
     };
 }
 
