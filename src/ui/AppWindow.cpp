@@ -23,6 +23,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPalette>
+#include <QPainter>
 #include <QPushButton>
 #include <QProgressBar>
 #include <QScrollArea>
@@ -31,6 +32,7 @@
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
+#include <QStyledItemDelegate>
 #include <QStandardPaths>
 #include <QStyle>
 #include <QTabWidget>
@@ -65,7 +67,6 @@ const QList<PageDefinition> kPages{
     {QStringLiteral("Dictation"), QStringLiteral("audio-input-microphone"), QString()},
     {QStringLiteral("General"), QStringLiteral("preferences-system"), QString()},
     {QStringLiteral("Audio"), QStringLiteral("preferences-desktop-sound"), QString()},
-    {QStringLiteral("Applications"), QStringLiteral("preferences-desktop-default-applications"), QString()},
     {QStringLiteral("Output"), QStringLiteral("edit-paste"), QStringLiteral("edit-copy")},
     {QStringLiteral("Accounts"), QStringLiteral("preferences-desktop-user-password"), QStringLiteral("dialog-password")},
     {QStringLiteral("Refinement"), QStringLiteral("tools-wizard"), QStringLiteral("document-edit")},
@@ -112,6 +113,23 @@ QWidget *detachedContent(QScrollArea *page, bool removeTitle = false)
 
 // A theme without the icon leaves the row text-only: a stand-in document icon
 // would say every page is a file.
+// Tells the style where an item sits in its view. Qt's list views leave this
+// unset, and Breeze only rounds a selection it knows is a whole item; nothing
+// is painted here, the style does all the drawing.
+class WholeItemDelegate final : public QStyledItemDelegate {
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter,
+               const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem whole(option);
+        whole.viewItemPosition = QStyleOptionViewItem::OnlyOne;
+        QStyledItemDelegate::paint(painter, whole, index);
+    }
+};
+
 QIcon pageIcon(const PageDefinition &page)
 {
     return QIcon::fromTheme(page.iconName, QIcon::fromTheme(page.fallbackIconName));
@@ -358,7 +376,6 @@ void AppWindow::buildSharedPages()
         m_dictation,
         m_pages->general(),
         m_pages->audio(),
-        m_pages->applications(),
         m_pages->output(),
         auth,
         refinement,
@@ -493,6 +510,7 @@ void AppWindow::buildSidebarShell()
     m_navigation->setFrameShape(QFrame::NoFrame);
     m_navigation->setSpacing(2);
     m_navigation->setIconSize(QSize(22, 22));
+    m_navigation->setItemDelegate(new WholeItemDelegate(m_navigation));
     for (int index = 0; index < kPages.size(); ++index) {
         const auto &page = kPages.at(index);
         auto *item = new QListWidgetItem(pageIcon(page), page.title, m_navigation);

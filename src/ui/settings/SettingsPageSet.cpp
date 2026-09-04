@@ -220,7 +220,6 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     , m_providerRows(*controller->settings(), *controller->secretStore())
     , m_general(addPage(QStringLiteral("general"), parent, generalCustomRows(controller)))
     , m_audio(addPage(QStringLiteral("audio"), parent))
-    , m_applications(addPage(QStringLiteral("applications"), parent))
     , m_output(addPage(QStringLiteral("output"), parent, m_outputRows.factory()))
     , m_refinement(addPage(QStringLiteral("refinement"), parent))
     , m_vocabulary(addPage(QStringLiteral("vocabulary"), parent))
@@ -308,7 +307,6 @@ SchemaSettingsPage *SettingsPageSet::addPage(const SettingsPage &descriptor,
 
 SchemaSettingsPage *SettingsPageSet::general() const { return m_general; }
 SchemaSettingsPage *SettingsPageSet::audio() const { return m_audio; }
-SchemaSettingsPage *SettingsPageSet::applications() const { return m_applications; }
 SchemaSettingsPage *SettingsPageSet::output() const { return m_output; }
 SchemaSettingsPage *SettingsPageSet::refinement() const { return m_refinement; }
 SchemaSettingsPage *SettingsPageSet::providerModels() const { return m_providerModels; }
@@ -598,7 +596,6 @@ void SettingsPageSet::applyCapabilities()
                                     Theme::overrideHonored()};
     m_general->setCapabilities(capabilities);
     m_output->setCapabilities(capabilities);
-    m_applications->setCapabilities(capabilities);
     m_refinement->setCapabilities(capabilities);
     m_corrections->setCapabilities(capabilities);
     m_whatsNew->setCapabilities(capabilities);
