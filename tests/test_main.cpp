@@ -9,6 +9,10 @@ int main(int argc, char **argv)
     QStandardPaths::setTestModeEnabled(true);
     setTestArguments(argc, argv);
 
+    if (qEnvironmentVariable("SPEECHER_TEST_ONLY_PLATFORM_LIVE") == QStringLiteral("1")) {
+        return runPlatformLiveTests(argc, argv);
+    }
+
     int result = 0;
     result |= runUiTests(argc, argv);
     result |= runAppWindowTests(argc, argv);

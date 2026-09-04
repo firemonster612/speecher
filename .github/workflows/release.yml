@@ -89,6 +89,14 @@ jobs:
               QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure
             '
 
+      - name: Test Linux protocol integration
+        run: |
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            speecher-appimage:trixie \
+            packaging/run-linux-protocol-tests.sh build
+
       - name: Package AppImage
         if: github.event_name != 'pull_request'
         run: |

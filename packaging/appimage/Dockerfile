@@ -9,9 +9,13 @@ RUN apt-get update \
         ca-certificates \
         cmake \
         curl \
+        at-spi2-core \
+        dbus-x11 \
         file \
         g++ \
         git \
+        kwin-wayland \
+        libcap2-bin \
         libatspi2.0-dev \
         libdbus-1-dev \
         libegl1 \
@@ -42,6 +46,7 @@ RUN apt-get update \
         qt6-xdgdesktopportal-platformtheme \
         wayland-protocols \
         wl-clipboard \
+    && setcap -r /usr/bin/kwin_wayland \
     && curl --fail --location --retry 3 \
         --output /tmp/qtkeychain.tar.gz \
         "https://github.com/frankosterfeld/qtkeychain/archive/refs/tags/0.15.0.tar.gz" \
