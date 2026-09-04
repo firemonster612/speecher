@@ -388,6 +388,13 @@ bool SettingsPageSet::save(bool showValidationErrors,
 
     settings->applySnapshot(m_draft);
     Theme::apply(settings->theme());
+    const QString savedTheme = Theme::normalizedSetting(m_draft.ui.theme,
+                                                        Theme::overrideHonored());
+    if (savedTheme != m_draft.ui.theme) {
+        m_draft.ui.theme = savedTheme;
+        settings->setTheme(savedTheme);
+        Theme::apply(savedTheme);
+    }
     // Applying the theme is the moment that reveals whether the platform
     // honours it, which the Theme row's gate depends on.
     applyCapabilities();

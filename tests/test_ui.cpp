@@ -141,6 +141,14 @@ private slots:
         QCOMPARE(qApp->styleHints()->colorScheme(), Qt::ColorScheme::Unknown);
     }
 
+    void ignoredThemeChoicesReturnToSystem()
+    {
+        QCOMPARE(Theme::normalizedSetting(QStringLiteral("dark"), false),
+                 QStringLiteral("system"));
+        QCOMPARE(Theme::normalizedSetting(QStringLiteral("light"), true),
+                 QStringLiteral("light"));
+    }
+
     void accessibilityNoticeExplainsAndOffersTheFix()
     {
         QWidget window;

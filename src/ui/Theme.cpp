@@ -37,6 +37,11 @@ void apply(const QString &theme)
 #endif
 }
 
+QString normalizedSetting(const QString &theme, bool overrideHonored)
+{
+    return overrideHonored ? theme : QStringLiteral("system");
+}
+
 bool overrideHonored()
 {
     return s_overrideHonored;

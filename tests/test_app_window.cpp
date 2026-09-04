@@ -9,6 +9,7 @@
 #include "ui/AppWindow.h"
 #include "ui/DictationPage.h"
 #include "ui/settings/SettingsPageSet.h"
+#include "ui/Theme.h"
 #ifdef Q_OS_LINUX
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
 #endif
@@ -161,7 +162,9 @@ private slots:
         // pending autosave deterministically instead.
         QCOMPARE(controller.settings()->theme(), QStringLiteral("light"));
         window.flushPendingAutoSave();
-        QCOMPARE(controller.settings()->theme(), QStringLiteral("dark"));
+        QCOMPARE(controller.settings()->theme(),
+                 Theme::overrideHonored() ? QStringLiteral("dark")
+                                          : QStringLiteral("system"));
     }
 
     void settingsDeletionCancelsPendingAutoSave()
@@ -373,7 +376,9 @@ private slots:
         QCOMPARE(theme->currentData().toString(), QStringLiteral("light"));
         theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
         window.close();
-        QCOMPARE(controller.settings()->theme(), QStringLiteral("dark"));
+        QCOMPARE(controller.settings()->theme(),
+                 Theme::overrideHonored() ? QStringLiteral("dark")
+                                          : QStringLiteral("system"));
     }
 
     void savingAnotherPageDoesNotRevertWhatsNewSettings()
