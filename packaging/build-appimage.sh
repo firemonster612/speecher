@@ -74,6 +74,7 @@ require_tool() {
 
 require_tool cmake
 require_tool appimagetool
+require_tool dpkg-query
 require_tool file
 require_tool ldd
 require_tool ninja
@@ -103,6 +104,13 @@ printf 'Speecher AppDir staging directory\n' > "$APPDIR_MARKER"
 # Pin Qt discovery at configure time; ambient discovery can mix a system Qt
 # into the build (SPEECHER_QT_PREFIX wins, QT_ROOT_DIR is what CI's Qt action exports).
 QT_PREFIX_HINT="${SPEECHER_QT_PREFIX:-${QT_ROOT_DIR:-}}"
+BREEZE_PACKAGE_VERSION="$(dpkg-query -W -f='${Version}' breeze 2>/dev/null)" || {
+  echo "The breeze package is required to build the AppImage" >&2
+  exit 1
+}
+BREEZE_UPSTREAM_VERSION="${BREEZE_PACKAGE_VERSION#*:}"
+BREEZE_UPSTREAM_VERSION="${BREEZE_UPSTREAM_VERSION%%-*}"
+echo "Building against Breeze $BREEZE_PACKAGE_VERSION (upstream $BREEZE_UPSTREAM_VERSION)"
 CMAKE_CONFIGURE_ARGS=(
   -G Ninja
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
@@ -110,6 +118,7 @@ CMAKE_CONFIGURE_ARGS=(
   -DSPEECHER_BUILD_TESTS=OFF
   -DSPEECHER_RELEASE_BUILD=ON
   -DSPEECHER_WITH_KDE=ON
+  -DSPEECHER_BUNDLED_BREEZE_VERSION="$BREEZE_UPSTREAM_VERSION"
 )
 if [[ -n "$QT_PREFIX_HINT" ]]; then
   CMAKE_CONFIGURE_ARGS+=("-DCMAKE_PREFIX_PATH=$QT_PREFIX_HINT")

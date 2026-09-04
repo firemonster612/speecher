@@ -192,11 +192,13 @@ private slots:
         auto *navigation = window.findChild<KPageWidget *>(QStringLiteral("appNavigation"));
         QVERIFY(navigation);
         QCOMPARE(navigation->faceType(), KPageView::FlatList);
+        QCOMPARE(sidebarView(window)->itemDelegate()->objectName(),
+                 QStringLiteral("viewItemPositionSidebarDelegate"));
 #else
         auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
         QVERIFY(navigation);
         QCOMPARE(navigation->itemDelegate()->objectName(),
-                 QStringLiteral("roundedSidebarItemDelegate"));
+                 QStringLiteral("viewItemPositionSidebarDelegate"));
 #endif
     }
 

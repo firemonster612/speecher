@@ -9,6 +9,7 @@
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QCloseEvent>
+#include <QAbstractItemDelegate>
 #include <QEvent>
 #include <QApplication>
 #include <QCheckBox>
@@ -126,12 +127,13 @@ QIcon pageIcon(const PageDefinition &page)
     return QIcon::fromTheme(page.iconName, QIcon::fromTheme(page.fallbackIconName));
 }
 
-class SidebarItemDelegate final : public QStyledItemDelegate {
+class ViewItemPositionDelegate final : public QAbstractItemDelegate {
 public:
-    explicit SidebarItemDelegate(QObject *parent)
-        : QStyledItemDelegate(parent)
+    ViewItemPositionDelegate(QAbstractItemDelegate *delegate, QObject *parent)
+        : QAbstractItemDelegate(parent)
+        , m_delegate(delegate)
     {
-        setObjectName(QStringLiteral("roundedSidebarItemDelegate"));
+        setObjectName(QStringLiteral("viewItemPositionSidebarDelegate"));
     }
 
     void paint(QPainter *painter,
@@ -140,22 +142,80 @@ public:
     {
         QStyleOptionViewItem roundedOption(option);
         roundedOption.viewItemPosition = QStyleOptionViewItem::OnlyOne;
+#ifdef SPEECHER_BUNDLED_BREEZE_NEEDS_VIEW_ITEM_POSITION_COMPAT
         const QStyle *style = roundedOption.widget ? roundedOption.widget->style()
                                                    : QApplication::style();
-        // The AppImage's Breeze 6.3 predates its viewItemPosition renderer.
-        // Keep that release on palette roles until the bundled style catches up.
-        if ((roundedOption.state & QStyle::State_Selected)
+        // Breeze commit aba0f922 added rounded viewItemPosition painting in
+        // 6.6.90. Older bundled releases need the same shape for hover and
+        // selection; every other host-selected style still paints itself.
+        if ((roundedOption.state & (QStyle::State_Selected | QStyle::State_MouseOver))
             && style->objectName().compare(QStringLiteral("breeze"), Qt::CaseInsensitive) == 0) {
+            const QPalette::ColorGroup group =
+                !(roundedOption.state & QStyle::State_Enabled)
+                ? QPalette::Disabled
+                : (roundedOption.state & QStyle::State_Active) ? QPalette::Active
+                                                               : QPalette::Inactive;
+            QColor highlight = roundedOption.palette.color(group, QPalette::Highlight);
+            if (roundedOption.state & QStyle::State_MouseOver) {
+                if (roundedOption.state & QStyle::State_Selected) {
+                    highlight = highlight.lighter(110);
+                } else {
+                    highlight.setAlphaF(0.2);
+                }
+            }
+            const int frameWidth = style->pixelMetric(
+                QStyle::PM_DefaultFrameWidth, &roundedOption, roundedOption.widget);
+            const int focusMargin = style->pixelMetric(
+                QStyle::PM_FocusFrameHMargin, &roundedOption, roundedOption.widget);
+            const int radius = qMax(frameWidth, focusMargin * 2);
+            const int horizontalInset = radius;
+            const int verticalInset = qMax(0, frameWidth / 2);
             painter->save();
             painter->setRenderHint(QPainter::Antialiasing);
             painter->setPen(Qt::NoPen);
-            painter->setBrush(roundedOption.palette.brush(QPalette::Highlight));
-            painter->drawRoundedRect(roundedOption.rect.adjusted(4, 1, -4, -1), 4, 4);
+            painter->setBrush(highlight);
+            painter->drawRoundedRect(
+                roundedOption.rect.adjusted(horizontalInset,
+                                            verticalInset,
+                                            -horizontalInset,
+                                            -verticalInset),
+                radius,
+                radius);
             painter->restore();
-            roundedOption.state &= ~(QStyle::State_Selected | QStyle::State_MouseOver);
-            roundedOption.palette.setBrush(
-                QPalette::Text, roundedOption.palette.brush(QPalette::HighlightedText));
+            for (const auto colorGroup : {QPalette::Active,
+                                          QPalette::Inactive,
+                                          QPalette::Disabled}) {
+                roundedOption.palette.setColor(colorGroup, QPalette::Highlight, Qt::transparent);
+            }
         }
+#endif
+        m_delegate->paint(painter, roundedOption, index);
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem &option,
+                   const QModelIndex &index) const override
+    {
+        return m_delegate->sizeHint(option, index);
+    }
+
+private:
+    QAbstractItemDelegate *m_delegate;
+};
+
+class FallbackSidebarItemDelegate final : public QStyledItemDelegate {
+public:
+    explicit FallbackSidebarItemDelegate(QObject *parent)
+        : QStyledItemDelegate(parent)
+    {
+        setObjectName(QStringLiteral("viewItemPositionSidebarDelegate"));
+    }
+
+    void paint(QPainter *painter,
+               const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem roundedOption(option);
+        roundedOption.viewItemPosition = QStyleOptionViewItem::OnlyOne;
         QStyledItemDelegate::paint(painter, roundedOption, index);
     }
 };
@@ -527,7 +587,8 @@ void AppWindow::buildNativeSidebarShell()
         QString(), Qt::FindDirectChildrenOnly);
     Q_ASSERT(m_navigationView);
     m_navigationView->setObjectName(QStringLiteral("appNavigationView"));
-    m_navigation->setItemDelegate(new SidebarItemDelegate(m_navigation));
+    m_navigation->setItemDelegate(new ViewItemPositionDelegate(
+        m_navigation->itemDelegate(), m_navigation));
     m_navigationView->setIconSize(QSize(22, 22));
     m_navigationView->setRowHidden(kPages.size(), true);
     m_navigationView->setBackgroundRole(QPalette::Base);
@@ -768,7 +829,7 @@ void AppWindow::buildSidebarShell()
     m_navigation->viewport()->setBackgroundRole(QPalette::Base);
     m_navigation->viewport()->setAutoFillBackground(true);
     m_navigation->setFrameShape(QFrame::NoFrame);
-    m_navigation->setItemDelegate(new SidebarItemDelegate(m_navigation));
+    m_navigation->setItemDelegate(new FallbackSidebarItemDelegate(m_navigation));
     m_navigation->setSpacing(2);
     m_navigation->setIconSize(QSize(22, 22));
     for (int index = 0; index < kPages.size(); ++index) {
