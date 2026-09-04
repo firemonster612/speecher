@@ -10,13 +10,14 @@
 
 #include <QCloseEvent>
 #include <QAbstractItemDelegate>
+#include <QAbstractItemView>
 #include <QEvent>
 #include <QApplication>
 #include <QCheckBox>
+#include <QDebug>
 #include <QFileSystemWatcher>
 #include <QFrame>
 #include <QGroupBox>
-#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
@@ -219,6 +220,29 @@ public:
         QStyledItemDelegate::paint(painter, roundedOption, index);
     }
 };
+
+#ifdef SPEECHER_WITH_KPAGEWIDGET
+class NativePageWidget final : public KPageWidget {
+public:
+    explicit NativePageWidget(QWidget *parent)
+        : KPageWidget(parent)
+    {
+    }
+
+    QListView *navigationView() const { return m_navigationView; }
+
+protected:
+    QAbstractItemView *createView() override
+    {
+        QAbstractItemView *view = KPageWidget::createView();
+        m_navigationView = qobject_cast<QListView *>(view);
+        return view;
+    }
+
+private:
+    QListView *m_navigationView = nullptr;
+};
+#endif
 
 } // namespace
 
@@ -564,7 +588,8 @@ void AppWindow::buildNativeSidebarShell()
     resize(900, 640);
     setMinimumSize(760, 520);
 
-    m_navigation = new KPageWidget(this);
+    auto *nativeNavigation = new NativePageWidget(this);
+    m_navigation = nativeNavigation;
     m_navigation->setObjectName(QStringLiteral("appNavigation"));
     m_navigation->setFaceType(KPageView::FlatList);
     m_navigation->setBackgroundRole(QPalette::Window);
@@ -583,28 +608,44 @@ void AppWindow::buildNativeSidebarShell()
         m_navigationPages.append(item);
     }
 
-    m_navigationView = m_navigation->findChild<QListView *>(
-        QString(), Qt::FindDirectChildrenOnly);
-    Q_ASSERT(m_navigationView);
-    m_navigationView->setObjectName(QStringLiteral("appNavigationView"));
-    m_navigation->setItemDelegate(new ViewItemPositionDelegate(
-        m_navigation->itemDelegate(), m_navigation));
-    m_navigationView->setIconSize(QSize(22, 22));
-    m_navigationView->setRowHidden(kPages.size(), true);
-    m_navigationView->setBackgroundRole(QPalette::Base);
-    m_navigationView->setAutoFillBackground(true);
-    m_navigationView->viewport()->setBackgroundRole(QPalette::Base);
-    m_navigationView->viewport()->setAutoFillBackground(true);
+    m_navigationView = nativeNavigation->navigationView();
+    if (m_navigationView) {
+        m_navigationView->setObjectName(QStringLiteral("appNavigationView"));
+        m_navigationView->setIconSize(QSize(22, 22));
+        m_navigationView->setRowHidden(kPages.size(), true);
+        m_navigationView->setBackgroundRole(QPalette::Base);
+        m_navigationView->setAutoFillBackground(true);
+        m_navigationView->viewport()->setBackgroundRole(QPalette::Base);
+        m_navigationView->viewport()->setAutoFillBackground(true);
+    } else {
+        qWarning().noquote()
+            << "KPageView FlatList navigation view was not found; sidebar view customization was skipped";
+    }
+    if (QAbstractItemDelegate *nativeDelegate = m_navigation->itemDelegate()) {
+        m_navigation->setItemDelegate(
+            new ViewItemPositionDelegate(nativeDelegate, m_navigation));
+    } else {
+        qWarning().noquote()
+            << "KPageView item delegate was not found; rounded selection hint was skipped";
+    }
 
     m_searchSection = m_navigation->findChild<QWidget *>(QStringLiteral("KPageView::Search"));
-    Q_ASSERT(m_searchSection);
-    m_searchSection->setObjectName(QStringLiteral("sidebarSearchContainer"));
-    m_searchSection->setBackgroundRole(QPalette::Window);
-    m_searchSection->setAutoFillBackground(true);
-    auto *search = m_searchSection->findChild<QLineEdit *>();
-    Q_ASSERT(search);
-    QObject::disconnect(search, nullptr, nullptr, nullptr);
-    search->setObjectName(QStringLiteral("appSearch"));
+    QLineEdit *search = nullptr;
+    if (m_searchSection) {
+        m_searchSection->setObjectName(QStringLiteral("sidebarSearchContainer"));
+        m_searchSection->setBackgroundRole(QPalette::Window);
+        m_searchSection->setAutoFillBackground(true);
+        search = m_searchSection->findChild<QLineEdit *>();
+        if (search) {
+            search->setObjectName(QStringLiteral("appSearch"));
+        } else {
+            qWarning().noquote()
+                << "KPageView search field was not found; sidebar search wiring was skipped";
+        }
+    } else {
+        qWarning().noquote()
+            << "KPageView search container was not found; sidebar search wiring was skipped";
+    }
 
     auto *pageHeader = new QWidget(m_navigation);
     auto *pageHeaderLayout = new QVBoxLayout(pageHeader);
@@ -675,6 +716,9 @@ void AppWindow::buildNativeSidebarShell()
     }
     if (nativeHeaderSeparator) {
         nativeHeaderSeparator->hide();
+    } else {
+        qWarning().noquote()
+            << "KPageView header separator was not found; native separator hiding was skipped";
     }
 
 #ifdef Q_OS_LINUX
@@ -688,16 +732,18 @@ void AppWindow::buildNativeSidebarShell()
     quit->setObjectName(QStringLiteral("quitSpeecher"));
     connect(quit, &QPushButton::clicked, m_controller, &ApplicationController::quitApplication);
     footerLayout->addWidget(quit);
-    auto *pageLayout = qobject_cast<QGridLayout *>(m_navigation->layout());
-    Q_ASSERT(pageLayout);
-    pageLayout->addWidget(footer, 4, 0);
+    m_navigation->setPageFooter(footer);
 #endif
 
     watchHeaderColorConfig();
 
     m_sidebarPane = m_navigationView;
-    m_sidebarPane->installEventFilter(this);
-    m_searchSection->setFixedWidth(m_sidebarPane->width());
+    if (m_sidebarPane) {
+        m_sidebarPane->installEventFilter(this);
+    }
+    if (m_searchSection && m_sidebarPane) {
+        m_searchSection->setFixedWidth(m_sidebarPane->width());
+    }
     refreshHeaderStripColor();
 
     connect(m_navigation,
@@ -710,18 +756,20 @@ void AppWindow::buildNativeSidebarShell()
                                               : kPages.at(index).title);
                 m_backButton->setVisible(whatsNew);
             });
-    connect(search, &QLineEdit::textChanged, this, &AppWindow::filterSidebarPages);
-    connect(search, &QLineEdit::returnPressed, this, [this] {
-        for (int row = 0; row < kPages.size(); ++row) {
-            if (!m_navigationView->isRowHidden(row)) {
-                m_navigation->setCurrentPage(m_navigationPages.at(row));
-                return;
+    if (search && m_navigationView) {
+        connect(search, &QLineEdit::textChanged, this, &AppWindow::filterSidebarPages);
+        connect(search, &QLineEdit::returnPressed, this, [this] {
+            for (int row = 0; row < kPages.size(); ++row) {
+                if (!m_navigationView->isRowHidden(row)) {
+                    m_navigation->setCurrentPage(m_navigationPages.at(row));
+                    return;
+                }
             }
-        }
-    });
-    auto *clearSearch = new QShortcut(QKeySequence(Qt::Key_Escape), search);
-    clearSearch->setContext(Qt::WidgetShortcut);
-    connect(clearSearch, &QShortcut::activated, search, &QLineEdit::clear);
+        });
+        auto *clearSearch = new QShortcut(QKeySequence(Qt::Key_Escape), search);
+        clearSearch->setContext(Qt::WidgetShortcut);
+        connect(clearSearch, &QShortcut::activated, search, &QLineEdit::clear);
+    }
     m_navigation->setCurrentPage(m_navigationPages.first());
 
     m_autoSaveTimer = new QTimer(this);
@@ -1073,6 +1121,11 @@ void AppWindow::leaveWhatsNew()
 
 void AppWindow::filterSidebarPages(const QString &query)
 {
+#ifdef SPEECHER_WITH_KPAGEWIDGET
+    if (!m_navigationView) {
+        return;
+    }
+#endif
     if (query.isEmpty()) {
 #ifdef SPEECHER_WITH_KPAGEWIDGET
         for (int row = 0; row < kPages.size(); ++row) {
