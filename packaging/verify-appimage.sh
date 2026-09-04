@@ -40,6 +40,8 @@ REQUIRED_FILES=(
   usr/plugins/platformthemes/libqgtk3.so
   usr/plugins/platformthemes/libqxdgdesktopportal.so
   usr/plugins/styles/breeze6.so
+  usr/plugins/styles/adwaita.so
+  usr/plugins/styles/libkvantum.so
   usr/plugins/iconengines/libqsvgicon.so
   usr/lib/libQt6Core.so.6
   usr/lib/libKF6ColorScheme.so.6

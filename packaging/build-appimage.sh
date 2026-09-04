@@ -322,7 +322,7 @@ fi
 export QT_PLUGIN_PATH="$HERE/usr/plugins"
 export QT_QPA_PLATFORM_PLUGIN_PATH="$HERE/usr/plugins/platforms"
 export XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:$HERE/usr/share"
-# Keep Plasma's native platform integration even when desktop detection is incomplete.
+# Use Plasma's platform integration on KDE unless the user selected another one.
 if [[ -z "${QT_QPA_PLATFORMTHEME:-}" && "${XDG_CURRENT_DESKTOP:-}" == *KDE* ]]; then
   export QT_QPA_PLATFORMTHEME=kde
 fi

@@ -4,6 +4,7 @@ ARG USER_ID=1000
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+        adwaita-qt6 \
         breeze \
         breeze-icon-theme \
         ca-certificates \
@@ -40,6 +41,7 @@ RUN apt-get update \
         qt6-declarative-dev \
         qt6-gtk-platformtheme \
         qt6-multimedia-dev \
+        qt6-style-kvantum \
         qt6-svg-plugins \
         qt6-wayland \
         qt6-websockets-dev \
