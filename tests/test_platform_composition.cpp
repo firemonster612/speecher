@@ -368,9 +368,9 @@ private slots:
         const int lastPage = assistant.pageTitles().indexOf(QStringLiteral("Ready to dictate"));
         QCOMPARE(lastPage, assistant.pageTitles().size() - 1);
 #ifdef SPEECHER_WITH_KASSISTANT
-        auto *pages = assistant.findChild<KPageWidget *>();
-        QVERIFY(pages);
-        pages->setCurrentPage(pages->pages().at(lastPage));
+        for (int step = 0; step < lastPage; ++step) {
+            assistant.next();
+        }
 #else
         assistant.setCurrentId(assistant.pageIds().at(lastPage));
 #endif
