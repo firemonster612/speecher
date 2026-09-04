@@ -2,8 +2,11 @@
 #include "common/test_http.h"
 #include "common/test_auth.h"
 #include "output/HelperPath.h"
+#include "setup/YdotoolSetupState.h"
 #include "setup/YdotoolSetupTransaction.h"
 
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QScopeGuard>
 
 #ifdef Q_OS_UNIX
@@ -88,16 +91,33 @@ private slots:
     void ydotoolSetupFailureReportsCompletedChanges()
     {
         YdotoolSetupTransaction transaction;
-        transaction.record(QStringLiteral("wrote /etc/modules-load.d/speecher-uinput.conf"));
-        transaction.record(QStringLiteral("added efox to speecher-uinput"));
-        QString error = QStringLiteral("Could not write udev rule");
+        transaction.record("wrote /etc/modules-load.d/speecher-uinput.conf");
+        transaction.record("added efox to speecher-uinput");
+        std::string error = "Could not write udev rule";
 
-        transaction.appendToError(&error);
+        transaction.appendToError(error);
 
-        QCOMPARE(error,
+        QCOMPARE(QString::fromStdString(error),
                  QStringLiteral("Could not write udev rule\nChanges left behind:\n"
                                 "- wrote /etc/modules-load.d/speecher-uinput.conf\n"
                                 "- added efox to speecher-uinput"));
+    }
+
+    void ydotoolSetupStateEscapesJsonStrings()
+    {
+        const std::string state = ydotoolSetupStateText(
+            true, R"(/usr/lib/systemd/user/service\"name)", "user\\name\n");
+        QJsonParseError error;
+        const QJsonDocument document = QJsonDocument::fromJson(
+            QByteArray::fromStdString(state), &error);
+
+        QCOMPARE(error.error, QJsonParseError::NoError);
+        QCOMPARE(document.object().value(QStringLiteral("packageInstalledBySpeecher")).toBool(),
+                 true);
+        QCOMPARE(document.object().value(QStringLiteral("serviceFile")).toString(),
+                 QStringLiteral("/usr/lib/systemd/user/service\\\"name"));
+        QCOMPARE(document.object().value(QStringLiteral("targetUser")).toString(),
+                 QStringLiteral("user\\name\n"));
     }
 
     void helperPathPrefersSiblingThenLibexecThenInstalled()

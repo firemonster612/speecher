@@ -1,3 +1,6 @@
+#include "YdotoolSetupState.h"
+#include "YdotoolSetupTransaction.h"
+
 #include <chrono>
 #include <cerrno>
 #include <cstdio>
@@ -8,7 +11,6 @@
 #include <string>
 #include <string_view>
 #include <thread>
-#include <utility>
 #include <vector>
 
 #include <fcntl.h>
@@ -28,31 +30,10 @@ constexpr std::string_view udevRulePath = "/etc/udev/rules.d/70-speecher-uinput.
 constexpr std::string_view serviceName = "speecher-ydotoold.service";
 constexpr std::string_view groupName = "speecher-uinput";
 
-class SetupTransaction {
-public:
-    void record(std::string change)
-    {
-        m_changes.push_back(std::move(change));
-    }
-
-    void appendToError(std::string &error) const
-    {
-        if (m_changes.empty()) {
-            return;
-        }
-        error += "\nChanges left behind:";
-        for (const std::string &change : m_changes) {
-            error += "\n- " + change;
-        }
-    }
-
-private:
-    std::vector<std::string> m_changes;
-};
-
 std::string serviceFilePath()
 {
-    if (std::filesystem::is_directory("/usr/lib/systemd/user")) {
+    std::error_code error;
+    if (std::filesystem::is_directory("/usr/lib/systemd/user", error)) {
         return "/usr/lib/systemd/user/" + std::string(serviceName);
     }
     return "/lib/systemd/user/" + std::string(serviceName);
@@ -136,9 +117,12 @@ std::optional<std::string> findExecutable(std::string_view program)
     while (begin <= path.size()) {
         const std::size_t end = path.find(':', begin);
         const std::string directory = path.substr(begin, end - begin);
-        if (!directory.empty() && directory != ".") {
+        if (!directory.empty() && directory.front() == '/') {
             const std::string candidate = directory + "/" + std::string(program);
-            if (access(candidate.c_str(), X_OK) == 0) {
+            struct stat status {};
+            if (stat(candidate.c_str(), &status) == 0
+                && S_ISREG(status.st_mode)
+                && access(candidate.c_str(), X_OK) == 0) {
                 return candidate;
             }
         }
@@ -186,6 +170,14 @@ bool run(std::string_view program,
     }
     const pid_t child = fork();
     if (child == 0) {
+        const int stdoutFile = open("/dev/null", O_WRONLY);
+        if (stdoutFile < 0
+            || (stdoutFile != STDOUT_FILENO && dup2(stdoutFile, STDOUT_FILENO) < 0)) {
+            _exit(127);
+        }
+        if (stdoutFile != STDOUT_FILENO) {
+            close(stdoutFile);
+        }
         dup2(fileno(stderrFile), STDERR_FILENO);
         std::vector<char *> argv;
         argv.reserve(arguments.size() + 2);
@@ -298,11 +290,10 @@ bool addUserToGroup(const std::string &user, bool &added, std::string &error)
 
 bool writeState(bool packageWasInstalled, const std::string &user, std::string &error)
 {
-    const std::string state = "{\"packageInstalledBySpeecher\":"
-        + std::string(packageWasInstalled ? "true" : "false")
-        + ",\"serviceFile\":\"" + serviceFilePath()
-        + "\",\"targetUser\":\"" + user + "\"}";
-    return writeFile(std::string(stateFilePath), state, error);
+    return writeFile(std::string(stateFilePath),
+                     speecher::ydotoolSetupStateText(
+                         packageWasInstalled, serviceFilePath(), user),
+                     error);
 }
 
 bool validateUser(const std::string &user, std::string &error)
@@ -320,7 +311,7 @@ bool validateUser(const std::string &user, std::string &error)
 
 bool install(const std::string &user, std::string &error)
 {
-    SetupTransaction transaction;
+    speecher::YdotoolSetupTransaction transaction;
     const auto failed = [&] {
         transaction.appendToError(error);
         return false;
