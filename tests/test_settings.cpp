@@ -279,7 +279,7 @@ private slots:
         QCOMPARE(settings.audioVadEnabled(), true);
         QCOMPARE(settings.audioPreRollMs(), 1500);
         QCOMPARE(settings.audioPostRollMs(), 0);
-        QCOMPARE(settings.audioReadinessTimeoutMs(), 150);
+        QCOMPARE(settings.audioReadinessTimeoutMs(), 500);
         QCOMPARE(settings.audioVadThresholdPercent(), 20);
     }
 
