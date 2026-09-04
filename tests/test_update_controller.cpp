@@ -386,6 +386,9 @@ private slots:
         QVERIFY(error.startsWith(QStringLiteral("Could not install the new AppImage:")));
     }
 
+#ifdef Q_OS_LINUX
+    // fsync() on a FIFO fails with EINVAL on Linux; macOS accepts it, and the
+    // AppImage swap only runs on Linux anyway.
     void refusesSwapWhenDownloadedFileCannotBeSynchronized()
     {
         QTemporaryDir directory;
@@ -404,6 +407,7 @@ private slots:
         QCOMPARE(readFile(installedPath), QByteArrayLiteral("old AppImage"));
         QVERIFY(error.contains(QStringLiteral("synchronize")));
     }
+#endif
 
     void unwritableAppImageDirectoryOpensTheReleasePage()
     {
