@@ -231,8 +231,8 @@ private slots:
         credentials.close();
 
         QTRY_VERIFY_WITH_TIMEOUT(credentialsChanged, 2000);
-        QCOMPARE(bridge.anthropicCredentialStatus,
-                 @"Claude Code OAuth credentials found");
+        QCOMPARE(QString::fromNSString(bridge.anthropicCredentialStatus),
+                 QStringLiteral("Claude Code OAuth credentials found"));
         [bridge.settingsSchema setValue:@"cliproxy" forRowId:@"anthropicAuthMode"];
         QCOMPARE(bridge.anthropicCredentialStatus.length, NSUInteger(0));
     }
