@@ -11,6 +11,9 @@
 #include "ui/setup/SetupPages.h"
 
 #include <QApplication>
+#include <QGroupBox>
+
+#include <algorithm>
 #include <QLabel>
 #include <QCheckBox>
 #include <QComboBox>
@@ -42,9 +45,21 @@ std::unique_ptr<SchemaSettingsPage> schemaPage(const QString &id,
 
 QStringList sectionLabels(const QWidget &page)
 {
-    QStringList labels;
+    // Section titles are card (group box) titles plus any subsection label a
+    // merged card carries inside it, in top-to-bottom order.
+    QList<QPair<int, QString>> titles;
+    for (QGroupBox *card : page.findChildren<QGroupBox *>(QStringLiteral("settingsCard"))) {
+        if (!card->title().isEmpty()) {
+            titles.append({card->mapTo(&page, QPoint()).y(), card->title()});
+        }
+    }
     for (QLabel *label : page.findChildren<QLabel *>(QStringLiteral("sectionLabel"))) {
-        labels.append(label->text());
+        titles.append({label->mapTo(&page, QPoint()).y(), label->text()});
+    }
+    std::sort(titles.begin(), titles.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+    QStringList labels;
+    for (const auto &title : titles) {
+        labels.append(title.second);
     }
     return labels;
 }
@@ -205,9 +220,6 @@ private slots:
         const std::unique_ptr<SchemaSettingsPage> outputPage =
             schemaPage(QStringLiteral("output"), *platform, providers, outputRows.factory());
         SchemaSettingsPage &output = *outputPage;
-        const std::unique_ptr<SchemaSettingsPage> applicationsPage =
-            schemaPage(QStringLiteral("applications"), *platform, providers);
-        SchemaSettingsPage &applications = *applicationsPage;
         const std::unique_ptr<SchemaSettingsPage> page =
             schemaPage(QStringLiteral("refinement"), *platform, providers);
         SchemaSettingsPage &refinement = *page;
@@ -223,17 +235,16 @@ private slots:
         QCOMPARE(profileSettings->rowCount(), 5);
 
         output.setCapabilities({false});
-        applications.setCapabilities({false});
         refinement.setCapabilities({false});
         corrections.setCapabilities({false});
 
         QVERIFY(!output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
-        QVERIFY(!applications.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
+        QVERIFY(!output.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
         QVERIFY(!refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(!corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
 
         // The reason is on the page, not only in a tooltip, with the fix beside it.
-        for (SchemaSettingsPage *page : {&output, &applications, &refinement, &corrections}) {
+        for (SchemaSettingsPage *page : {&output, &refinement, &corrections}) {
             auto *note = page->findChild<QWidget *>(QStringLiteral("gateNote"));
             QVERIFY(note);
             QVERIFY(note->isVisibleTo(page));
@@ -248,25 +259,24 @@ private slots:
             QCOMPARE(action->text(), QStringLiteral("Enable desktop accessibility"));
 #endif
         }
-        // One note for the whole paste-rule group, above it.
-        QCOMPARE(output.findChildren<QWidget *>(QStringLiteral("gateNote")).size(), 1);
-        QSignalSpy triggered(&applications, &SchemaSettingsPage::actionTriggered);
-        applications.findChild<QPushButton *>(QStringLiteral("gateAction"))->click();
+        // One note per gated group: the paste rules and the app recognition rules.
+        QCOMPARE(output.findChildren<QWidget *>(QStringLiteral("gateNote")).size(), 2);
+        QSignalSpy triggered(&output, &SchemaSettingsPage::actionTriggered);
+        output.findChild<QPushButton *>(QStringLiteral("gateAction"))->click();
         QCOMPARE(triggered.count(), 1);
         QCOMPARE(triggered.first().first().toString(), QStringLiteral("enableAccessibility"));
 
         output.setCapabilities({true});
-        applications.setCapabilities({true});
         refinement.setCapabilities({true});
         corrections.setCapabilities({true});
         // A row that is usable says what it does; one that is not says why.
         QVERIFY(correctionLearning->toolTip().contains(QStringLiteral("repeated")));
         QVERIFY(!correctionLearning->toolTip().contains(QStringLiteral("only high-confidence")));
         QVERIFY(output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
-        QVERIFY(applications.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
+        QVERIFY(output.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
         QVERIFY(refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
-        for (SchemaSettingsPage *page : {&output, &applications, &refinement, &corrections}) {
+        for (SchemaSettingsPage *page : {&output, &refinement, &corrections}) {
             QVERIFY(!page->findChild<QWidget *>(QStringLiteral("gateNote"))->isVisibleTo(page));
         }
     }
@@ -301,18 +311,14 @@ private slots:
         auto *profile = refinement->findChild<QTableWidget *>(QStringLiteral("vocabInput"));
         auto *context = refinement->findChild<QWidget *>(QStringLiteral("targetContextControl"));
         QVERIFY(profile && context);
-        const QList<QLabel *> refinementLabels =
-            refinement->findChildren<QLabel *>(QStringLiteral("sectionLabel"));
-        QCOMPARE(refinementLabels.size(), 1);
-        QCOMPARE(refinementLabels.first()->text(), QStringLiteral("Refinement"));
-        const QList<QFrame *> separators =
-            refinement->findChildren<QFrame *>(QStringLiteral("settingsSeparator"));
-        QCOMPARE(separators.size(), 1);
+        const QList<QGroupBox *> refinementCards =
+            refinement->findChildren<QGroupBox *>(QStringLiteral("settingsCard"));
+        QCOMPARE(refinementCards.size(), 1);
+        QCOMPARE(refinementCards.first()->title(), QStringLiteral("Refinement"));
         const int profileBottom =
             profile->mapTo(refinement->widget(), QPoint(0, profile->height())).y();
-        const int separatorY = separators.first()->mapTo(refinement->widget(), QPoint()).y();
         const int contextY = context->mapTo(refinement->widget(), QPoint()).y();
-        QVERIFY(profileBottom <= separatorY && separatorY < contextY);
+        QVERIFY(profileBottom <= contextY);
 
         OutputCustomRows outputRows(settings);
         const std::unique_ptr<SchemaSettingsPage> output =
@@ -334,6 +340,7 @@ private slots:
             QStringLiteral("Paste behavior"),
             virtualKeyboard ? QStringLiteral("Clipboard & virtual keyboard")
                             : QStringLiteral("Clipboard"),
+            QStringLiteral("Application recognition"),
         };
         QCOMPARE(sectionLabels(*output), outputLabels);
         output->resize(900, 668);
@@ -346,8 +353,11 @@ private slots:
         QVERIFY(globalPaste->mapTo(output->widget(), QPoint()).y()
                 < restoreClipboard->mapTo(output->widget(), QPoint()).y());
 
-        for (const QString &id : {QStringLiteral("general"), QStringLiteral("applications")}) {
+        for (const QString &id : {QStringLiteral("general"), QStringLiteral("output")}) {
             SchemaCustomRowFactory customRows;
+            if (id == QStringLiteral("output")) {
+                customRows = outputRows.factory();
+            }
 #ifdef Q_OS_LINUX
             if (id == QStringLiteral("general")) {
                 customRows = [](const SettingsRow &row,
@@ -361,7 +371,16 @@ private slots:
 #endif
             const std::unique_ptr<SchemaSettingsPage> page =
                 std::make_unique<SchemaSettingsPage>(schema.page(id), nullptr, customRows);
-            QCOMPARE(sectionLabels(*page).size(), 0);
+            // Every card carries its section title; General's cards are the
+            // agreed four and Output keeps its schema order plus the rules.
+            const QStringList generalLabels{
+                QStringLiteral("Dictation"),
+                QStringLiteral("Global Shortcut"),
+                QStringLiteral("Setup"),
+                QStringLiteral("Updates"),
+            };
+            QCOMPARE(sectionLabels(*page),
+                     id == QStringLiteral("general") ? generalLabels : outputLabels);
         }
 
         // Audio keeps one everyday card and a separate Advanced card for the
@@ -747,9 +766,11 @@ private slots:
     {
         ProviderRegistry providers;
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
-        const std::unique_ptr<SchemaSettingsPage> applications =
-            schemaPage(QStringLiteral("applications"), *platform, providers);
-        SchemaSettingsPage &page = *applications;
+        SettingsStore store;
+        OutputCustomRows outputRows(store);
+        const std::unique_ptr<SchemaSettingsPage> outputPage =
+            schemaPage(QStringLiteral("output"), *platform, providers, outputRows.factory());
+        SchemaSettingsPage &page = *outputPage;
         AppSettings settings;
         settings.refinement.writingProfileOverrides = {
             {QStringLiteral("org.legacy.chat"), WritingProfile::Personal, true},
@@ -792,24 +813,28 @@ private slots:
             QStringLiteral("Category"), description, control, &parent);
         auto *descriptionLabel = describedRow->findChild<QLabel *>(
             QStringLiteral("rowDescription"));
-        auto *titleLabel = describedRow->findChild<QLabel *>(
-            QStringLiteral("rowLabelCell"));
+        auto *titleLabel = describedRow->findChild<QLabel *>(QStringLiteral("rowTitle"));
         QVERIFY(descriptionLabel);
         QVERIFY(titleLabel);
+        // Title and note on the left, in reading order; the control on the right.
+        QCOMPARE(titleLabel->text(), QStringLiteral("Category"));
+        QCOMPARE(titleLabel->alignment(), Qt::AlignLeft | Qt::AlignVCenter);
         QVERIFY(descriptionLabel->wordWrap());
-        QCOMPARE(descriptionLabel->maximumWidth(),
-                 qMin(descriptionLabel->fontMetrics().horizontalAdvance(description) + 8,
-                      descriptionLabel->fontMetrics().averageCharWidth() * 62));
-        QVERIFY(descriptionLabel->heightForWidth(descriptionLabel->maximumWidth())
-                > descriptionLabel->fontMetrics().height());
-        const int requiredRowHeight = control->sizeHint().height()
-            + settings::tightSpacing()
-            + descriptionLabel->heightForWidth(descriptionLabel->maximumWidth());
-        QVERIFY(describedRow->minimumSizeHint().height() >= requiredRowHeight);
-        QCOMPARE(titleLabel->alignment(), Qt::AlignRight | Qt::AlignVCenter);
+        parent.resize(600, 400);
+        parent.show();
+        describedRow->resize(600, describedRow->sizeHint().height());
+        describedRow->layout()->activate();
+        QCoreApplication::processEvents();
+        QVERIFY(titleLabel->mapTo(describedRow, QPoint()).y()
+                < descriptionLabel->mapTo(describedRow, QPoint()).y());
+        QVERIFY(control->mapTo(describedRow, QPoint()).x()
+                > titleLabel->mapTo(describedRow, QPoint(titleLabel->width(), 0)).x());
+        QVERIFY(control->mapTo(describedRow, QPoint(control->width(), 0)).x()
+                >= describedRow->width() - settings::relatedSpacing() - 1);
 
-        // A check box's sentence sits beside the box as wrapping text (a
-        // QCheckBox cannot wrap its own), and clicking the words toggles it.
+        // A check box row reads as one sentence: the sentence is the row's
+        // title, the box carries no text of its own, and clicking the words
+        // toggles it.
         auto *checkBox = new QCheckBox(&parent);
         const QString sentence = QStringLiteral(
             "Download the update in the background and install it the next time Speecher "
@@ -817,14 +842,12 @@ private slots:
         QFrame *checkBoxRow = settings::makeRow(
             QStringLiteral("Updates"), sentence, checkBox, &parent);
         QVERIFY(!checkBoxRow->findChild<QLabel *>(QStringLiteral("rowDescription")));
-        auto *caption = checkBoxRow->findChild<QLabel *>(QStringLiteral("checkBoxCaption"));
+        auto *caption = checkBoxRow->findChild<QLabel *>(QStringLiteral("rowTitle"));
         QVERIFY(caption);
         QVERIFY(checkBox->text().isEmpty());
         QCOMPARE(checkBox->accessibleName(), sentence);
         QCOMPARE(caption->text(), sentence);
         QVERIFY(caption->wordWrap());
-        QVERIFY(caption->maximumWidth() <= caption->fontMetrics().averageCharWidth() * 62);
-        QVERIFY(caption->minimumSizeHint().width() < caption->fontMetrics().horizontalAdvance(sentence));
         parent.show();
         QCoreApplication::processEvents();
         QVERIFY(!checkBox->isChecked());
@@ -862,9 +885,15 @@ private slots:
             if (!row->isVisibleTo(page.get())) {
                 continue;
             }
-            const QRect inCard(row->mapTo(card, QPoint(0, 0)), row->size());
-            QVERIFY2(inCard.right() <= card->width(), qPrintable(row->objectName()));
-            QVERIFY2(inCard.left() >= 0, qPrintable(row->objectName()));
+            QWidget *host = row->parentWidget();
+            while (host && host->objectName() != QStringLiteral("settingsCardForm")) {
+                host = host->parentWidget();
+            }
+            QVERIFY(host);
+            const QRect inCard(row->mapTo(host, QPoint(0, 0)), row->size());
+            auto *rowTitle = row->findChild<QLabel *>(QStringLiteral("rowTitle"));
+            QVERIFY2(inCard.right() <= host->width(), qPrintable(rowTitle ? rowTitle->text() : row->objectName()));
+            QVERIFY2(inCard.left() >= 0, qPrintable(rowTitle ? rowTitle->text() : row->objectName()));
         }
     }
 
@@ -946,17 +975,22 @@ private slots:
         page->show();
         QCoreApplication::processEvents();
 
+        // The card is titled "Global Shortcut" and holds only this block, so the
+        // block's own header stays hidden and its body lines up with row titles.
         auto *heading = page->findChild<QLabel *>(QStringLiteral("subsectionLabel"));
-        auto *subtitle = heading ? heading->parentWidget()->findChild<QLabel *>(
-                                      QStringLiteral("rowDescription"))
-                                 : nullptr;
         auto *body = page->findChild<QLabel *>(QStringLiteral("shortcutBody"));
         QVERIFY(heading);
-        QVERIFY(subtitle);
         QVERIFY(body);
-        const int bodyLeft = body->mapTo(page.get(), QPoint()).x();
-        QCOMPARE(heading->mapTo(page.get(), QPoint()).x(), bodyLeft);
-        QCOMPARE(subtitle->mapTo(page.get(), QPoint()).x(), bodyLeft);
+        QVERIFY(!heading->isVisibleTo(page.get()));
+        QLabel *rowTitle = nullptr;
+        for (QLabel *candidate : page->findChildren<QLabel *>(QStringLiteral("rowTitle"))) {
+            if (candidate->isVisibleTo(page.get())) {
+                rowTitle = candidate;
+                break;
+            }
+        }
+        QVERIFY(rowTitle);
+        QCOMPARE(body->mapTo(page.get(), QPoint()).x(), rowTitle->mapTo(page.get(), QPoint()).x());
     }
 #endif
 

@@ -77,14 +77,13 @@ private slots:
             QStringLiteral("Dictation"),
             QStringLiteral("General"),
             QStringLiteral("Audio"),
-            QStringLiteral("Applications"),
             QStringLiteral("Output"),
             QStringLiteral("Accounts"),
             QStringLiteral("Refinement"),
             QStringLiteral("Vocabulary"),
         };
         AppWindow window(&controller);
-        QCOMPARE(window.pageCount(), 8);
+        QCOMPARE(window.pageCount(), 7);
         QCOMPARE(window.pageTitles(), titles);
     }
 
@@ -149,43 +148,41 @@ private slots:
     void sidebarAutoSavesAfterDebounce()
     {
         ApplicationController controller(true);
-        controller.settings()->setTheme(QStringLiteral("light"));
+        controller.settings()->setUpdateChannel(UpdateChannel::Nightly);
         AppWindow window(&controller);
-        auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
-        QVERIFY(theme);
-        QCOMPARE(theme->currentData().toString(), QStringLiteral("system"));
+        auto *channel = window.findChild<QComboBox *>(QStringLiteral("updateChannel"));
+        QVERIFY(channel);
+        QCOMPARE(channel->currentData().toString(), QStringLiteral("stable"));
         window.show();
-        QTRY_COMPARE_WITH_TIMEOUT(theme->currentData().toString(), QStringLiteral("light"), 250);
-        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
+        QTRY_COMPARE_WITH_TIMEOUT(channel->currentData().toString(), QStringLiteral("nightly"), 250);
+        channel->setCurrentIndex(channel->findData(QStringLiteral("stable")));
         // The change must not save immediately (that is the debounce), but
         // waiting out the 600ms timer races slow CI runners, so drive the
         // pending autosave deterministically instead.
-        QCOMPARE(controller.settings()->theme(), QStringLiteral("light"));
+        QCOMPARE(controller.settings()->updateChannel(), UpdateChannel::Nightly);
         window.flushPendingAutoSave();
-        QCOMPARE(controller.settings()->theme(),
-                 Theme::overrideHonored() ? QStringLiteral("dark")
-                                          : QStringLiteral("system"));
+        QCOMPARE(controller.settings()->updateChannel(), UpdateChannel::Stable);
     }
 
     void settingsDeletionCancelsPendingAutoSave()
     {
         ApplicationController controller(true);
-        controller.settings()->setTheme(QStringLiteral("light"));
+        controller.settings()->setUpdateChannel(UpdateChannel::Nightly);
         AppWindow window(&controller);
-        auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
+        auto *channel = window.findChild<QComboBox *>(QStringLiteral("updateChannel"));
         auto *pages = window.findChild<SettingsPageSet *>();
-        QVERIFY(theme);
+        QVERIFY(channel);
         QVERIFY(pages);
         window.show();
-        QTRY_COMPARE_WITH_TIMEOUT(theme->currentData().toString(), QStringLiteral("light"), 250);
+        QTRY_COMPARE_WITH_TIMEOUT(channel->currentData().toString(), QStringLiteral("nightly"), 250);
 
-        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
+        channel->setCurrentIndex(channel->findData(QStringLiteral("stable")));
         pages->prepareForSettingsDeletion();
         controller.settings()->raw().clear();
         controller.settings()->raw().sync();
         window.flushPendingAutoSave();
 
-        QVERIFY(!controller.settings()->raw().contains(QStringLiteral("ui/theme")));
+        QVERIFY(!controller.settings()->raw().contains(QStringLiteral("updates/channel")));
         QVERIFY(!pages->save(false, false));
     }
 
@@ -368,17 +365,15 @@ private slots:
     void sidebarFlushesPendingAutoSaveOnClose()
     {
         ApplicationController controller(true);
-        controller.settings()->setTheme(QStringLiteral("light"));
+        controller.settings()->setUpdateChannel(UpdateChannel::Nightly);
         AppWindow window(&controller);
-        auto *theme = window.findChild<QComboBox *>(QStringLiteral("themeControl"));
-        QVERIFY(theme);
+        auto *channel = window.findChild<QComboBox *>(QStringLiteral("updateChannel"));
+        QVERIFY(channel);
         window.show();
-        QCOMPARE(theme->currentData().toString(), QStringLiteral("light"));
-        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
+        QCOMPARE(channel->currentData().toString(), QStringLiteral("nightly"));
+        channel->setCurrentIndex(channel->findData(QStringLiteral("stable")));
         window.close();
-        QCOMPARE(controller.settings()->theme(),
-                 Theme::overrideHonored() ? QStringLiteral("dark")
-                                          : QStringLiteral("system"));
+        QCOMPARE(controller.settings()->updateChannel(), UpdateChannel::Stable);
     }
 
     void savingAnotherPageDoesNotRevertWhatsNewSettings()
@@ -397,9 +392,9 @@ private slots:
         autoCheck->setChecked(false);
         QVERIFY(pages.save(false, false));
 
-        auto *theme = pages.general()->findChild<QComboBox *>(QStringLiteral("themeControl"));
-        QVERIFY(theme);
-        theme->setCurrentIndex(theme->findData(QStringLiteral("dark")));
+        auto *channel = pages.general()->findChild<QComboBox *>(QStringLiteral("updateChannel"));
+        QVERIFY(channel);
+        channel->setCurrentIndex(channel->findData(QStringLiteral("nightly")));
         QVERIFY(pages.save(false, false));
 
         QVERIFY(!controller.settings()->autoCheckUpdates());
@@ -523,7 +518,7 @@ private slots:
 
         navigation->setCurrentRow(1);
         whatsNew->click();
-        QCOMPARE(stack->currentIndex(), 8);
+        QCOMPARE(stack->currentIndex(), 7);
         navigation->setCurrentRow(1);
         QCOMPARE(stack->currentIndex(), 1);
     }
@@ -544,7 +539,7 @@ private slots:
         // Opened from General, the same way the update banner opens it.
         navigation->setCurrentRow(1);
         whatsNew->click();
-        QCOMPARE(stack->currentIndex(), 8);
+        QCOMPARE(stack->currentIndex(), 7);
         QCOMPARE(title->text(), QStringLiteral("What's New"));
         QVERIFY(back->isVisible());
         QVERIFY(!navigation->currentItem());

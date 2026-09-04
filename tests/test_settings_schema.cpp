@@ -275,6 +275,9 @@ private slots:
 
     void themeRowExplainsItselfWhenTheDesktopIgnoresIt()
     {
+#ifdef Q_OS_LINUX
+        QSKIP("The Theme row is not offered on Linux; the desktop decides the theme.");
+#endif
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
         const SettingsRow &row = rowById(schema.page(QStringLiteral("general")),
                                          QStringLiteral("themeControl"));
@@ -417,7 +420,7 @@ private slots:
     void recognitionRecordsRoundTripAndRetireLegacyOverrides()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
-        const SettingsRow &row = rowById(schema.page(QStringLiteral("applications")),
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("output")),
                                          QStringLiteral("appRecognitionRules"));
         const int locked = row.collection.lockedRecordCount();
         QCOMPARE(locked, int(builtInAppRecognitionRules().size()));
