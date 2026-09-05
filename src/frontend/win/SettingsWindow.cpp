@@ -209,6 +209,7 @@ struct SettingsWindow::Native {
     {
         if (window) {
             window.Activate();
+            SetForegroundWindow(windowHandle());
             return;
         }
         // Edits left from the last showing are not edits any more.
@@ -220,6 +221,7 @@ struct SettingsWindow::Native {
         // What's New only exists while pending or selected; a remembered
         // selection of it stays honoured.
         createWindow();
+        SetForegroundWindow(windowHandle());
     }
 
     void createWindow()

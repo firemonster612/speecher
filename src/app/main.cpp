@@ -23,6 +23,7 @@
 #ifdef SPEECHER_WITH_WINUI
 #include "frontend/win/WinFrontEnd.h"
 #include "frontend/win/WinUiHost.h"
+#include <windows.h>
 #endif
 
 #include <QApplication>
@@ -254,6 +255,11 @@ int main(int argc, char **argv)
         }
         const QString showCommand = decision.showSettings ? QStringLiteral("showSettings")
                                                           : QStringLiteral("showMain");
+#ifdef Q_OS_WIN
+        if (!daemon) {
+            AllowSetForegroundWindow(ASFW_ANY);
+        }
+#endif
         if (!daemon && SingleInstanceIpc::sendCommand(showCommand, nullptr)) {
             return 0;
         }
