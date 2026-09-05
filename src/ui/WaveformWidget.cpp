@@ -19,13 +19,16 @@ QColor withAlpha(QColor color, int alpha)
     return color;
 }
 
+// The pill's width when it holds the waveform or the dots; a message widens it.
+constexpr int pillWidth = 126;
+
 } // namespace
 
 WaveformWidget::WaveformWidget(QWidget *parent)
     : QWidget(parent)
     , m_bars(10, 0.12f)
 {
-    setFixedSize(126, 48);
+    setFixedSize(pillWidth, 48);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_timer.setInterval(24);
     connect(&m_timer, &QTimer::timeout, this, [this] {
@@ -75,6 +78,7 @@ void WaveformWidget::setMode(Mode mode)
     m_mode = mode;
     if (mode != Mode::Message) {
         m_message.clear();
+        setFixedWidth(pillWidth);
     }
     m_targetLevel = 0.0f;
     update();
@@ -85,6 +89,11 @@ void WaveformWidget::setMessage(const QString &message)
     m_message = message.simplified();
     m_mode = m_message.isEmpty() ? Mode::Waveform : Mode::Message;
     m_targetLevel = 0.0f;
+    // At the waveform's width anything longer than "Input sent" clips against
+    // the pill; the text margins match paintMessage's 12px insets.
+    setFixedWidth(m_mode == Mode::Message
+        ? std::max(pillWidth, fontMetrics().horizontalAdvance(m_message) + 32)
+        : pillWidth);
     update();
 }
 
