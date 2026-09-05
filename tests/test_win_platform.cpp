@@ -76,6 +76,22 @@ private slots:
         }
     }
 
+    void keyboardBreakReleasesPressedShortcut()
+    {
+        WinGlobalShortcutBinder shortcut;
+        QSignalSpy deactivated(&shortcut, &GlobalShortcutBinder::deactivated);
+        shortcut.m_virtualKey = 'D';
+        shortcut.m_pressed = true;
+
+        RAWINPUT input{};
+        input.header.dwType = RIM_TYPEKEYBOARD;
+        input.data.keyboard.VKey = 'D';
+        input.data.keyboard.Flags = RI_KEY_BREAK;
+        shortcut.handleRawInput(input);
+
+        QCOMPARE(deactivated.count(), 1);
+    }
+
     void qtClipboardSnapshotRestoresFormatsWithoutAManifest()
     {
         auto *original = new QMimeData;

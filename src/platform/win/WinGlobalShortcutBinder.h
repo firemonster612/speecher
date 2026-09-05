@@ -8,6 +8,8 @@
 
 #include <windows.h>
 
+class WinPlatformTests;
+
 namespace speecher {
 
 class WinGlobalShortcutBinder : public GlobalShortcutBinder,
@@ -38,6 +40,7 @@ public:
     static QKeySequence keySequenceForHotKey(quint32 modifiers, quint32 virtualKey);
 
 private:
+    friend class ::WinPlatformTests;
     static LRESULT CALLBACK messageWindowProc(HWND window,
                                                UINT message,
                                                WPARAM wParam,
@@ -46,6 +49,7 @@ private:
     bool ensureMessageWindow(QString *error);
     void unregisterShortcut();
     void handleRawInput(HRAWINPUT handle);
+    void handleRawInput(const RAWINPUT &input);
 
     QKeySequence m_shortcut;
     HWND m_messageWindow = nullptr;

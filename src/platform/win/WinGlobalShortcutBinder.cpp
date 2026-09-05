@@ -334,8 +334,15 @@ void WinGlobalShortcutBinder::handleRawInput(HRAWINPUT handle)
 {
     RAWINPUT input{};
     UINT size = sizeof(input);
-    if (GetRawInputData(handle, RID_INPUT, &input, &size, sizeof(RAWINPUTHEADER)) != size
-        || input.header.dwType != RIM_TYPEKEYBOARD
+    if (GetRawInputData(handle, RID_INPUT, &input, &size, sizeof(RAWINPUTHEADER)) == UINT(-1)) {
+        return;
+    }
+    handleRawInput(input);
+}
+
+void WinGlobalShortcutBinder::handleRawInput(const RAWINPUT &input)
+{
+    if (input.header.dwType != RIM_TYPEKEYBOARD
         || !(input.data.keyboard.Flags & RI_KEY_BREAK)
         || input.data.keyboard.VKey != m_virtualKey
         || !m_pressed) {
