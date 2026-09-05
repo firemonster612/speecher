@@ -15,14 +15,10 @@ class QAbstractButton;
 namespace speecher {
 
 class ApplicationController;
-class AccessibilitySetupPage;
 class FinishSetupPage;
 class MicrophoneSetupPage;
 #ifdef Q_OS_LINUX
 class LinuxGlobalShortcutSetupPage;
-#endif
-#ifdef Q_OS_MACOS
-class StartAtLoginSetupPage;
 #endif
 class TextDeliverySetupPage;
 class WritingProfilesSetupPage;
@@ -47,7 +43,6 @@ private:
     void updateActivePage(QWidget *page);
 
     ApplicationController *m_controller;
-    AccessibilitySetupPage *m_accessibilityPage = nullptr;
     MicrophoneSetupPage *m_microphonePage = nullptr;
     TextDeliverySetupPage *m_deliveryPage = nullptr;
     WritingProfilesSetupPage *m_profilesPage = nullptr;
@@ -57,9 +52,6 @@ private:
     bool m_singlePage = false;
 #ifdef Q_OS_LINUX
     LinuxGlobalShortcutSetupPage *m_globalShortcutPage = nullptr;
-#endif
-#ifdef Q_OS_MACOS
-    StartAtLoginSetupPage *m_startAtLoginPage = nullptr;
 #endif
 #ifndef SPEECHER_WITH_KASSISTANT
     QHash<int, QWidget *> m_pageContents;

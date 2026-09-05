@@ -54,6 +54,7 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     private let panel: SpeecherDictationPanel
     private var menuBar: SpeecherMenuBarExtra!
     private var settings: SpeecherSettingsWindow?
+    private var setupAssistant: SpeecherSetupAssistant?
     private var applicationDelegate: ReopenApplicationDelegate?
 
     @MainActor
@@ -96,6 +97,33 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @objc public func captureSettings(toPath path: String) -> Bool {
         settings?.capture(toPath: path) ?? false
+    }
+
+    /// A fresh flow every run: the assistant that was closed mid-way starts
+    /// over, which is what a course of checks means. The completion runs when
+    /// setup finishes without a relaunch.
+    @MainActor
+    @objc public func showSetupAssistant(completion: @escaping () -> Void) {
+        model.reloadSettingsDraft()
+        // The device rows the microphone step offers are the deferred ones.
+        model.loadDeferredRows()
+        if let setupAssistant {
+            setupAssistant.update(onFinished: completion)
+        } else {
+            setupAssistant = SpeecherSetupAssistant(
+                model: model,
+                onFinished: completion,
+                onClosed: { [weak self] in self?.setupAssistant = nil })
+        }
+        setupAssistant?.show()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// For the front end's teardown: an assistant left open would outlive the
+    /// controller its callbacks reach into.
+    @MainActor
+    @objc public func dismissSetupAssistant() {
+        setupAssistant?.close()
     }
 
     @MainActor

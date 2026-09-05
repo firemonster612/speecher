@@ -1,0 +1,130 @@
+name: macOS setup assistant E2E
+
+# Exercises the SwiftUI setup assistant on a macOS runner: unit tests, then a
+# packaged launch with a fresh profile driven through every step by real AX
+# clicks. The evidence artifact carries a PNG of every step.
+
+on:
+  push:
+    branches:
+      - feat/mac-swift-setup-assistant
+  pull_request:
+    paths:
+      - src/frontend/mac/**
+      - src/app/**
+      - .github/macos-e2e/**
+      - .github/workflows/mac-setup-e2e.yml
+  workflow_dispatch:
+
+concurrency:
+  group: mac-setup-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  setup-e2e:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: clang_64
+          modules: qtmultimedia qtwebsockets
+
+      - name: Remove obsolete AGL references
+        run: |
+          # The macOS 26 SDK removed AGL, but the runner still has a runtime
+          # /System/Library/Frameworks/AGL.framework, so Qt's FindWrapOpenGL
+          # find_library succeeds and CMake emits "-framework AGL", which the
+          # SDK-based linker then cannot resolve. Neutralize both the probe and
+          # the fallback so WrapOpenGL never links AGL at all.
+          wrap="$QT_ROOT_DIR/lib/cmake/Qt6/FindWrapOpenGL.cmake"
+          sed -i '' \
+            -e 's/find_library(WrapOpenGL_AGL NAMES AGL)/set(WrapOpenGL_AGL "")/' \
+            -e 's/set(__opengl_agl_fw_path "-framework AGL")//' \
+            "$wrap"
+          if grep -n 'framework AGL' "$wrap"; then
+            echo "AGL reference survived in FindWrapOpenGL.cmake" >&2
+            exit 1
+          fi
+          find "$QT_ROOT_DIR" -type f \( -name '*.prl' -o -name '*.cmake' \) -exec \
+            sed -i '' -e 's/-framework[[:space:]]*AGL//g' -e 's/AGL;//g' -e 's/AGL\.framework//g' {} +
+
+      - name: Create stable code-signing identity
+        run: |
+          keychain="$RUNNER_TEMP/e2e-signing.keychain-db"
+          openssl req -newkey rsa:2048 -nodes -x509 -days 2 \
+            -subj '/CN=Speecher E2E/' \
+            -addext 'keyUsage=digitalSignature' \
+            -addext 'extendedKeyUsage=codeSigning' \
+            -keyout "$RUNNER_TEMP/e2e-key.pem" \
+            -out "$RUNNER_TEMP/e2e-cert.pem"
+          openssl pkcs12 -export -legacy \
+            -inkey "$RUNNER_TEMP/e2e-key.pem" \
+            -in "$RUNNER_TEMP/e2e-cert.pem" \
+            -out "$RUNNER_TEMP/e2e-signing.p12" \
+            -passout pass:e2e
+          security create-keychain -p e2e "$keychain"
+          security unlock-keychain -p e2e "$keychain"
+          security set-keychain-settings -lut 7200 "$keychain"
+          security import "$RUNNER_TEMP/e2e-signing.p12" -k "$keychain" -P e2e -T /usr/bin/codesign
+          sudo security add-trusted-cert -d -r trustRoot \
+            -k /Library/Keychains/System.keychain "$RUNNER_TEMP/e2e-cert.pem"
+          security set-key-partition-list -S apple-tool:,apple: -s -k e2e "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security find-identity -v -p codesigning "$keychain"
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DSPEECHER_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package app bundle
+        env:
+          SPEECHER_SIGN_IDENTITY: Speecher E2E
+        run: |
+          bash packaging/macos/build-dmg.sh build
+          mkdir -p "$RUNNER_TEMP/product"
+          attach="$(hdiutil attach build/speecher.dmg -nobrowse -readonly)"
+          mount="$(printf '%s\n' "$attach" | sed -n 's|.*\(/Volumes/.*\)$|\1|p' | head -1)"
+          test -d "$mount/speecher.app"
+          ditto "$mount/speecher.app" "$RUNNER_TEMP/product/speecher.app"
+          hdiutil detach "$mount" -quiet
+          codesign --verify --deep --strict "$RUNNER_TEMP/product/speecher.app"
+
+      - name: Compile evidence probe
+        run: swiftc .github/macos-e2e/window_probe.swift -o "$RUNNER_TEMP/window-probe"
+
+      - name: Run setup assistant E2E
+        timeout-minutes: 5
+        env:
+          APP_BUNDLE: ${{ runner.temp }}/product/speecher.app
+          EVIDENCE_ROOT: ${{ runner.temp }}/setup-e2e
+          PROBE: ${{ runner.temp }}/window-probe
+        run: bash .github/macos-e2e/setup_run.sh
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: setup-e2e-evidence
+          path: ${{ runner.temp }}/setup-e2e
+          if-no-files-found: warn

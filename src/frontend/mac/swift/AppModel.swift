@@ -263,6 +263,14 @@ final class AppModel: ObservableObject {
         shortcut = bridge.shortcutDisplay
     }
 
+    /// Registers the sequence the binder already reports — the stored one, or
+    /// its built-in default on a first run — which is what finishing setup
+    /// without recording a new shortcut means.
+    func bindCurrentShortcut() {
+        shortcutProblem = bridge.bindCurrentShortcut() ?? ""
+        shortcut = bridge.shortcutDisplay
+    }
+
     func copyTranscript() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(transcript, forType: .string)

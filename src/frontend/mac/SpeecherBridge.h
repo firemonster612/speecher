@@ -216,11 +216,49 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 - (nullable NSString *)bindShortcutWithCharacters:(NSString *)characters
                                     modifierFlags:(NSUInteger)modifierFlags
     NS_SWIFT_NAME(bindShortcut(characters:modifierFlags:));
+// Registers the sequence the binder already reports, which is its built-in
+// default before anything was ever stored. nil once bound, otherwise why not.
+- (nullable NSString *)bindCurrentShortcut;
 
 @property (nonatomic, readonly) BOOL accessibilitySupported;
 @property (nonatomic, readonly) BOOL accessibilityEnabled;
 // nil once the grant was asked for; otherwise why it could not be.
 - (nullable NSString *)enableAccessibility;
+
+// The setup assistant's seams into the core, which the Qt assistant reached
+// through C++ and the SwiftUI one reaches here.
+
+// What a transcription service asks a person to do before it works, or empty
+// when it needs nothing.
+- (NSString *)setupHintForSpeechProvider:(NSString *)providerId;
+// Prepares the transcription service the settings currently name, off the main
+// thread when the provider offers that, and answers on the main thread. A newer
+// check supersedes an older one, whose reply is dropped.
+- (void)checkSpeechProviderReady:(void (^)(BOOL ok, NSString *message))completion;
+
+// A live microphone meter over the input device the settings name. Levels and
+// failures arrive on the main thread until the meter is stopped.
+- (void)startMicrophoneMeterOnLevel:(void (^)(float level))onLevel
+                            failure:(void (^)(NSString *message))onFailure
+    NS_SWIFT_NAME(startMicrophoneMeter(onLevel:failure:));
+- (void)stopMicrophoneMeter;
+// The system input volume of the default microphone, 0 to 1, or -1 when macOS
+// does not say.
+- (float)microphoneInputVolume;
+
+// Re-reads the Accessibility grant. macOS records it against the app signature
+// and never tells the process that asked, so noticing it means looking again;
+// a change arrives through accessibilityChanged.
+- (void)refreshAccessibilityState;
+// Shows the system Accessibility prompt and opens System Settings on it. nil
+// unless macOS refused in a way worth repeating to the person.
+- (nullable NSString *)requestAccessibilityGrant;
+
+// Marks setup complete, which is what stops the assistant appearing at launch.
+- (void)completeSetup;
+// Quits and starts this build again. The Accessibility grant only reaches a
+// process started after it was given.
+- (void)relaunch;
 
 // The OpenAI credential as the Providers page shows it: a status line for every
 // credential source except the app settings key, which is a secret this front
