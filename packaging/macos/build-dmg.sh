@@ -90,9 +90,10 @@ run_logged "Bundling Qt" "$MACDEPLOYQT" "$STAGING_DIR/speecher.app" -always-over
 
 step "Verifying the microphone permission plugin"
 SPEECHER_SYMBOLS="$WORK_DIR/speecher-symbols.txt"
-if ! nm -gU "$STAGING_DIR/speecher.app/Contents/MacOS/speecher" \
+if ! nm -U "$STAGING_DIR/speecher.app/Contents/MacOS/speecher" \
   > "$SPEECHER_SYMBOLS" 2>> "$LOG"; then
-  echo "Could not inspect Speecher's symbols; see $LOG" >&2
+  echo "Could not inspect Speecher's symbols. Last lines of $LOG:" >&2
+  tail -15 "$LOG" >&2
   exit 1
 fi
 if ! grep -q 'QDarwinMicrophonePermissionPlugin' "$SPEECHER_SYMBOLS"; then
