@@ -269,7 +269,7 @@ class PlatformCompositionTests : public QObject {
     Q_OBJECT
 
 private slots:
-#ifdef Q_OS_LINUX
+#if defined(Q_OS_LINUX) || defined(Q_OS_WIN)
     void guiLaunchKeepsRunningAfterLastWindowCloses()
     {
         QVERIFY(!quitOnLastWindowClosed(LaunchMode::RunGui));

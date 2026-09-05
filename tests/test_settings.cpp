@@ -60,7 +60,7 @@ private slots:
         QCOMPARE(settings.theme(), QStringLiteral("system"));
         QCOMPARE(settings.pauseMediaDuringTranscription(), true);
         QCOMPARE(settings.soundsEnabled(), false);
-#ifdef Q_OS_MACOS
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
         QCOMPARE(settings.launchAtLogin(), true);
 #else
         QCOMPARE(settings.launchAtLogin(), false);

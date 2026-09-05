@@ -1,32 +1,16 @@
 #pragma once
 
-#include "app/UpdateController.h"
-#include "core/AppSettings.h"
+#include "app/ManifestUpdater.h"
 
 #include <QProcessEnvironment>
-#include <QUrl>
 
-#include <optional>
-
-class QNetworkAccessManager;
-class QNetworkReply;
 class QLocalServer;
-class QTemporaryFile;
-class QTimer;
 
 namespace speecher {
 
+class AppImageUpdaterTestAccess;
 class DictationSession;
 class SettingsStore;
-class AppImageUpdaterTestAccess;
-
-struct UpdateManifest {
-    QString version;
-    qint64 buildNumber = 0;
-    QUrl appImageUrl;
-    QByteArray sha256;
-    UpdateChannel channel = UpdateChannel::Stable;
-};
 
 struct AppImageFileIdentity {
     quint64 inode = 0;
@@ -36,36 +20,18 @@ struct AppImageFileIdentity {
     bool operator==(const AppImageFileIdentity &) const = default;
 };
 
-class AppImageUpdater final : public UpdateController {
+class AppImageUpdater final : public ManifestUpdater {
     Q_OBJECT
 
 public:
     AppImageUpdater(SettingsStore *settings,
                     DictationSession *session,
                     QObject *parent = nullptr);
-    ~AppImageUpdater() override;
 
-    void start() override;
-    State state() const override;
-    QString currentVersion() const override;
-    qint64 currentBuildNumber() const;
-    QString availableVersion() const override;
-    int downloadPercent() const override;
-    QString errorMessage() const override;
     bool isAppImage() const override;
     bool supportsAutomaticDownloads() const override;
-    bool bannerVisible() const override;
-    bool repeatedAutomaticCheckFailure() const override;
-    bool manualInstallRequired() const override;
-    bool stableReplacementAvailable() const override;
     static void waitForRestartParent();
 
-    static std::optional<UpdateManifest> parseManifest(const QByteArray &json,
-                                                       QString *error = nullptr);
-    static bool isNewerBuild(const UpdateManifest &manifest, qint64 currentBuildNumber);
-    static bool verifyDownload(const QString &path,
-                               const QByteArray &expectedSha,
-                               QString *error = nullptr);
     static std::optional<AppImageFileIdentity> fileIdentity(
         const QString &path,
         QString *error = nullptr);
@@ -74,55 +40,21 @@ public:
                              const AppImageFileIdentity &expectedIdentity,
                              QString *error = nullptr);
 
-public slots:
-    void checkForUpdates(UpdateChannel channel) override;
-    void updateNow() override;
-    void dismissAvailableVersion() override;
+protected:
+    std::unique_ptr<QFile> createDownload(QString *error,
+                                          bool *manualInstallRequired) override;
+    bool installDownload(const QString &path, QString *error) override;
+    void restartApplication() override;
 
 private:
     friend class AppImageUpdaterTestAccess;
 
-    static bool shouldOfferManifest(const UpdateManifest &manifest,
-                                    qint64 currentBuildNumber,
-                                    const QString &currentVersion,
-                                    UpdateChannel channel,
-                                    bool automaticCheck);
     static QProcessEnvironment restartEnvironment(const QStringList &arguments,
-                                                  QProcessEnvironment environment);
-    void beginCheck(UpdateChannel channel, bool automaticCheck);
-    void updateSettingsChanged();
-    QUrl manifestUrl(UpdateChannel channel) const;
-    void finishCheck(QNetworkReply *reply);
-    void recordAutomaticCheckFailure();
-    bool appImageDirectoryIsWritable();
-    void beginDownload();
-    void writeDownloadedData();
-    void finishDownload(QNetworkReply *reply);
-    void clearDownload();
-    void setState(State state, const QString &error = {});
-    void restartNow();
-    void restartAppImage();
+                                                   QProcessEnvironment environment);
 
-    SettingsStore *m_settings;
-    DictationSession *m_session;
-    QNetworkAccessManager *m_network;
-    QTimer *m_dailyTimer;
-    QNetworkReply *m_reply = nullptr;
-    QTemporaryFile *m_download = nullptr;
-    QLocalServer *m_restartServer = nullptr;
-    UpdateManifest m_manifest;
     std::optional<AppImageFileIdentity> m_appImageIdentity;
     QString m_appImagePath;
-    QString m_downloadError;
-    QString m_dismissedVersion;
-    UpdateChannel m_checkChannel;
-    UpdateChannel m_selectedChannel;
-    bool m_automaticCheck = false;
-    bool m_manualInstallRequired = false;
-    int m_automaticCheckFailures = 0;
-    State m_state = State::Idle;
-    int m_downloadPercent = 0;
-    QString m_error;
+    QLocalServer *m_restartServer = nullptr;
 };
 
 } // namespace speecher

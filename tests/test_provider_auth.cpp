@@ -5,7 +5,6 @@
 
 using namespace speecher::test;
 
-
 class ProviderAuthTests : public QObject {
     Q_OBJECT
 
@@ -238,6 +237,9 @@ private slots:
 
     void claudeInstalledVersionIsCachedUntilExecutableChanges()
     {
+#ifdef Q_OS_WIN
+        QSKIP("This test uses a POSIX shell script as the fake Claude executable");
+#else
         QTemporaryDir dir;
         const QString countPath = dir.filePath(QStringLiteral("version-count"));
         const QString fakeClaude = writeFakeClaudeScript(
@@ -268,6 +270,7 @@ private slots:
         QCOMPARE(ClaudeCredentials::installedVersion(), QStringLiteral("1.2.3"));
         QVERIFY(count.open(QIODevice::ReadOnly));
         QCOMPARE(count.readAll(), QByteArrayLiteral("xx"));
+#endif
     }
 
     void codexOauthRefreshesExpiredToken()
@@ -293,16 +296,12 @@ private slots:
             socket->flush();
         });
 
-        const QByteArray oldHome = qgetenv("HOME");
-        qputenv("HOME", QFile::encodeName(dir.path()));
+        qputenv("SPEECHER_TEST_CODEX_AUTH_PATH",
+                QFile::encodeName(dir.filePath(QStringLiteral(".codex/auth.json"))));
         qputenv("SPEECHER_CODEX_TOKEN_URL",
                 QStringLiteral("http://127.0.0.1:%1/oauth/token").arg(server.serverPort()).toUtf8());
-        const auto cleanup = qScopeGuard([oldHome] {
-            if (oldHome.isEmpty()) {
-                qunsetenv("HOME");
-            } else {
-                qputenv("HOME", oldHome);
-            }
+        const auto cleanup = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_CODEX_AUTH_PATH");
             qunsetenv("SPEECHER_CODEX_TOKEN_URL");
         });
 
@@ -344,16 +343,12 @@ private slots:
             socket->flush();
         });
 
-        const QByteArray oldHome = qgetenv("HOME");
-        qputenv("HOME", QFile::encodeName(dir.path()));
+        qputenv("SPEECHER_TEST_CODEX_AUTH_PATH",
+                QFile::encodeName(dir.filePath(QStringLiteral(".codex/auth.json"))));
         qputenv("SPEECHER_CODEX_TOKEN_URL",
                 QStringLiteral("http://127.0.0.1:%1/oauth/token").arg(server.serverPort()).toUtf8());
-        const auto cleanup = qScopeGuard([oldHome] {
-            if (oldHome.isEmpty()) {
-                qunsetenv("HOME");
-            } else {
-                qputenv("HOME", oldHome);
-            }
+        const auto cleanup = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_CODEX_AUTH_PATH");
             qunsetenv("SPEECHER_CODEX_TOKEN_URL");
         });
 
@@ -381,19 +376,15 @@ private slots:
             socket->flush();
         });
 
-        const QByteArray oldHome = qgetenv("HOME");
         const bool hadOpenAiKey = qEnvironmentVariableIsSet("OPENAI_API_KEY");
         const QByteArray oldOpenAiKey = qgetenv("OPENAI_API_KEY");
-        qputenv("HOME", QFile::encodeName(dir.path()));
+        qputenv("SPEECHER_TEST_CODEX_AUTH_PATH",
+                QFile::encodeName(dir.filePath(QStringLiteral(".codex/auth.json"))));
         qputenv("SPEECHER_CODEX_TOKEN_URL",
                 QStringLiteral("http://127.0.0.1:%1/oauth/token").arg(server.serverPort()).toUtf8());
         qunsetenv("OPENAI_API_KEY");
-        const auto cleanup = qScopeGuard([oldHome, hadOpenAiKey, oldOpenAiKey] {
-            if (oldHome.isEmpty()) {
-                qunsetenv("HOME");
-            } else {
-                qputenv("HOME", oldHome);
-            }
+        const auto cleanup = qScopeGuard([hadOpenAiKey, oldOpenAiKey] {
+            qunsetenv("SPEECHER_TEST_CODEX_AUTH_PATH");
             qunsetenv("SPEECHER_CODEX_TOKEN_URL");
             if (hadOpenAiKey) {
                 qputenv("OPENAI_API_KEY", oldOpenAiKey);

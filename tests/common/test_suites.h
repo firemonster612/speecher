@@ -6,6 +6,11 @@
 #include <QVector>
 
 #include <cstdio>
+#include <memory>
+
+namespace speecher {
+class WinUiHost;
+}
 
 inline QVector<QByteArray> &testArguments()
 {
@@ -70,7 +75,16 @@ int runProviderAuthTests(int argc, char **argv);
 int runClaudeVoiceTests(int argc, char **argv);
 int runCodexDictationTests(int argc, char **argv);
 int runAudioPcmConverterTests(int argc, char **argv);
+#ifdef Q_OS_UNIX
 int runUpdateControllerTests(int argc, char **argv);
+#endif
 #ifdef SPEECHER_WITH_SWIFT_UI
 int runMacFrontEndTests(int argc, char **argv);
+#endif
+#ifdef Q_OS_WIN
+int runWinPlatformTests(int argc, char **argv);
+#endif
+#ifdef SPEECHER_WITH_WINUI
+int runWinFrontEndTests(int argc, char **argv,
+                        std::unique_ptr<speecher::WinUiHost> host);
 #endif

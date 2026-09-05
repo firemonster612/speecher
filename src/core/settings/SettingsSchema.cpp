@@ -79,6 +79,14 @@ QList<RowOption> pasteMethodOptions(bool includeDirectInsert, bool includeGlobal
         options.append({pasteMethodName(PasteMethod::DirectInsert),
                         QStringLiteral("Direct insertion (Accessibility)")});
     }
+#elif defined(Q_OS_WIN)
+    options.append({pasteMethodName(PasteMethod::StandardPaste), QStringLiteral("Standard paste (Ctrl+V)")});
+    options.append({pasteMethodName(PasteMethod::TerminalPaste),
+                    QStringLiteral("Terminal paste (Ctrl+Shift+V)")});
+    if (includeDirectInsert) {
+        options.append({pasteMethodName(PasteMethod::DirectInsert),
+                        QStringLiteral("Direct insertion (UI Automation)")});
+    }
 #else
     options.append({pasteMethodName(PasteMethod::StandardPaste), QStringLiteral("Standard paste (Ctrl+V)")});
     options.append({pasteMethodName(PasteMethod::TerminalPaste),
@@ -96,6 +104,8 @@ QString applicationIdHint()
 {
 #ifdef Q_OS_MACOS
     return QStringLiteral("Use the app's bundle identifier, such as com.apple.Terminal.");
+#elif defined(Q_OS_WIN)
+    return QStringLiteral("Use the lowercase executable name without .exe, such as notepad.");
 #else
     return QStringLiteral("Use the app's desktop ID, such as org.kde.konsole.");
 #endif
@@ -105,6 +115,8 @@ QString applicationPasteRuleHint()
 {
 #ifdef Q_OS_MACOS
     return QStringLiteral("Override paste behavior for an exact bundle identifier, such as com.apple.Terminal.");
+#elif defined(Q_OS_WIN)
+    return QStringLiteral("Override paste behavior for an exact lowercase executable name, such as notepad.");
 #else
     return QStringLiteral("Override paste behavior for an exact application ID, such as org.kde.konsole.");
 #endif
@@ -117,6 +129,8 @@ QString accessibilityGateHelp(const QString &purpose)
 {
 #ifdef Q_OS_MACOS
     return QStringLiteral("Grant Accessibility permission to %1.").arg(purpose);
+#elif defined(Q_OS_WIN)
+    return QStringLiteral("UI Automation must be available to %1.").arg(purpose);
 #else
     return QStringLiteral("Turn on desktop accessibility to %1.").arg(purpose);
 #endif
@@ -140,6 +154,8 @@ void gateOnTargetAccessibility(SettingsRow &row, const QString &help)
     row.disabledAction = kEnableAccessibilityAction;
 #ifdef Q_OS_MACOS
     row.disabledActionLabel = QStringLiteral("Open Accessibility settings");
+#elif defined(Q_OS_WIN)
+    row.disabledActionLabel = QStringLiteral("UI Automation unavailable");
 #else
     row.disabledActionLabel = QStringLiteral("Enable desktop accessibility");
 #endif
@@ -436,7 +452,7 @@ SettingsPage generalPage(const SchemaContext &context)
         "This desktop chooses the colour scheme itself, so Speecher follows it.");
 
     QList<SettingsRow> systemRows;
-#ifdef Q_OS_MACOS
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     systemRows.append(toggleRow(
         QStringLiteral("launchAtLogin"),
         QStringLiteral("Start Speecher at login"),
@@ -499,6 +515,8 @@ SettingsPage generalPage(const SchemaContext &context)
         QStringLiteral("Download and install updates automatically"),
 #ifdef Q_OS_MACOS
         QStringLiteral("Sparkle downloads updates in the background and prompts when they are ready to install."),
+#elif defined(Q_OS_WIN)
+        QStringLiteral("Speecher downloads Windows updates in the background and prompts when they are ready to install."),
 #else
         QStringLiteral("AppImage updates install in the background and take effect after restart."),
 #endif
@@ -514,6 +532,7 @@ SettingsPage generalPage(const SchemaContext &context)
         QStringLiteral("General"),
         QStringLiteral("preferences-system"),
         QStringLiteral("gearshape"),
+        QStringLiteral("settings"),
         {
             {
 #ifdef Q_OS_LINUX
@@ -610,6 +629,7 @@ SettingsPage whatsNewPage(const QList<SettingsPage> &pages, const SchemaContext 
             QStringLiteral("What's New"),
             QStringLiteral("help-about"),
             QStringLiteral("sparkles"),
+            QStringLiteral("whatsNew"),
             std::move(sections)};
 }
 
@@ -675,6 +695,7 @@ SettingsPage audioPage(const SchemaContext &context)
         QStringLiteral("Audio"),
         QStringLiteral("preferences-desktop-sound"),
         QStringLiteral("waveform"),
+        QStringLiteral("microphone"),
         {
             {QStringLiteral("Transcription"), QString(), {std::move(speechProvider)}},
             {QStringLiteral("Capture"), QString(), {std::move(device)}},
@@ -766,6 +787,7 @@ SettingsPage refinementPage(const SchemaContext &context)
         QStringLiteral("Refinement"),
         QStringLiteral("tools-wizard"),
         QStringLiteral("wand.and.sparkles"),
+        QStringLiteral("text"),
         {
             {QStringLiteral("Refinement"),
              QString(),
@@ -1064,6 +1086,7 @@ SettingsPage outputPage(const SchemaContext &context)
         QStringLiteral("Output"),
         QStringLiteral("klipper"),
         QStringLiteral("doc.on.clipboard"),
+        QStringLiteral("clipboard"),
         sections,
     };
 }
@@ -1171,6 +1194,7 @@ SettingsPage vocabularyPage()
         QStringLiteral("Vocabulary"),
         QStringLiteral("accessories-dictionary"),
         QStringLiteral("character.book.closed"),
+        QStringLiteral("dictionary"),
         {{QString(),
           QString(),
           {
@@ -1270,6 +1294,7 @@ SettingsPage correctionsPage()
         QStringLiteral("Learned corrections"),
         QStringLiteral("tools-check-spelling"),
         QStringLiteral("checkmark.bubble"),
+        QStringLiteral("checkmark"),
         {{QString(),
           QString(),
           {
@@ -1341,6 +1366,7 @@ SettingsPage bindingsPage()
         QStringLiteral("Replacements & snippets"),
         QStringLiteral("edit-find-replace"),
         QStringLiteral("arrow.left.arrow.right"),
+        QStringLiteral("swap"),
         {{QString(),
           QString(),
           {collectionRow(QStringLiteral("bindingRules"),
@@ -1636,6 +1662,7 @@ SettingsPage providersPage()
         QStringLiteral("Providers"),
         QStringLiteral("preferences-system-network"),
         QStringLiteral("key.horizontal"),
+        QStringLiteral("key"),
         sections,
     };
 }

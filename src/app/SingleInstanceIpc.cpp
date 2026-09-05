@@ -70,6 +70,11 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                     socket->disconnectFromServer();
                     return;
                 }
+                // A command handler can pump the message loop (XAML islands do
+                // on Windows) and process a deleteLater queued by this socket's
+                // own disconnect, freeing it while we still hold the pointer.
+                // Hold deletion off until every frame is handled.
+                m_socketsInCommand.insert(socket);
                 for (const QByteArray &frame : frames) {
                     QJsonParseError parseError;
                     const QJsonDocument document = QJsonDocument::fromJson(frame, &parseError);
@@ -81,8 +86,19 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                                          object.value(QStringLiteral("outputFormat")).toString(),
                                          socket);
                 }
+                m_socketsInCommand.remove(socket);
+                if (m_socketsPendingDelete.remove(socket)) {
+                    m_requestBuffers.remove(socket);
+                    socket->deleteLater();
+                }
             });
             connect(socket, &QLocalSocket::disconnected, this, [this, socket] {
+                // Deferred while a command from this socket is in flight; the
+                // readyRead handler deletes it once its loop unwinds.
+                if (m_socketsInCommand.contains(socket)) {
+                    m_socketsPendingDelete.insert(socket);
+                    return;
+                }
                 m_requestBuffers.remove(socket);
                 socket->deleteLater();
             });
@@ -114,6 +130,14 @@ QString SingleInstanceIpc::socketName(std::shared_ptr<const SingleInstancePlatfo
 bool SingleInstanceIpc::listen(QString *error)
 {
     const QString listenName = socketName();
+#ifdef Q_OS_WIN
+    if (canConnectToServer(listenName, 200)) {
+        if (error) {
+            *error = activeInstanceMessage(listenName);
+        }
+        return false;
+    }
+#endif
     for (const QString &candidate : m_platform->ipcConnectCandidates()) {
         if (candidate != listenName && canConnectToServer(candidate, 200)) {
             if (error) {
@@ -233,7 +257,10 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
 
 void SingleInstanceIpc::writeResponse(QLocalSocket *socket, const IpcResponse &response)
 {
-    if (!socket) {
+    // A client that disconnects right after sending can deliver its command
+    // from inside the socket's own dying state change; writing the response
+    // into that teardown crashes inside QIODevice::write on Windows.
+    if (!socket || socket->state() != QLocalSocket::ConnectedState) {
         return;
     }
     const QJsonObject object{

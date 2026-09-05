@@ -184,6 +184,9 @@ private slots:
 #ifdef Q_OS_MACOS
         QVERIFY(message->text().contains(QStringLiteral("Accessibility is off")));
         QCOMPARE(button->text(), QStringLiteral("Open settings"));
+#elif defined(Q_OS_WIN)
+        QVERIFY(message->text().contains(QStringLiteral("UI Automation")));
+        QCOMPARE(button->text(), QStringLiteral("Unavailable"));
 #else
         // One user-facing name; the service name stays in the setup page's help.
         QVERIFY(message->text().contains(QStringLiteral("Desktop accessibility")));
@@ -192,11 +195,15 @@ private slots:
 #endif
         QSignalSpy requested(notice, &AccessibilityNotice::enableRequested);
         button->click();
+#ifdef Q_OS_WIN
+        QCOMPARE(requested.count(), 0);
+#else
         QCOMPARE(requested.count(), 1);
+#endif
 
         notice->setState(true, true, false);
         QVERIFY(notice->isVisible());
-#ifndef Q_OS_MACOS
+#if !defined(Q_OS_MACOS) && !defined(Q_OS_WIN)
         // macOS has no session-only grant; enabled always means permanent.
         QVERIFY(message->text().contains(QStringLiteral("only for this session")));
 #endif
@@ -248,6 +255,9 @@ private slots:
 #ifdef Q_OS_MACOS
             QVERIFY(text->text().contains(QStringLiteral("Accessibility permission")));
             QCOMPARE(action->text(), QStringLiteral("Open Accessibility settings"));
+#elif defined(Q_OS_WIN)
+            QVERIFY(text->text().contains(QStringLiteral("UI Automation")));
+            QCOMPARE(action->text(), QStringLiteral("UI Automation unavailable"));
 #else
             QVERIFY(text->text().contains(QStringLiteral("desktop accessibility")));
             QCOMPARE(action->text(), QStringLiteral("Enable desktop accessibility"));

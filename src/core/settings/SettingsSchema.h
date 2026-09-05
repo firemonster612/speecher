@@ -169,6 +169,7 @@ struct SettingsPage {
     QString title;
     QString iconName;   // freedesktop icon theme name
     QString symbolName; // SF Symbol name
+    QString iconId;     // platform-neutral icon key, mapped to a glyph per front end
     QList<SettingsSection> sections;
 };
 

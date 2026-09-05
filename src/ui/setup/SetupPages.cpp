@@ -485,6 +485,8 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
 #ifdef Q_OS_MACOS
     , m_enable(new QPushButton(QStringLiteral("Grant Accessibility access"), this))
     , m_poll(new QTimer(this))
+#elif defined(Q_OS_WIN)
+    , m_enable(new QPushButton(QStringLiteral("No action needed"), this))
 #else
     , m_enable(new QPushButton(QStringLiteral("Enable permanently"), this))
 #endif
@@ -493,6 +495,8 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
         this,
 #ifdef Q_OS_MACOS
         QStringLiteral("Speecher pastes your dictation into the frontmost app with a synthetic Cmd+V. macOS calls that controlling your computer, so it needs Accessibility permission."));
+#elif defined(Q_OS_WIN)
+        QStringLiteral("Windows UI Automation lets Speecher identify the target app, read nearby text, and learn corrections. It does not require a permission grant."));
 #else
         QStringLiteral("Desktop accessibility (the AT-SPI service) lets Speecher identify the target app, paste into compatible fields, edit selected text, and learn corrections."));
 #endif
@@ -514,6 +518,8 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
         }
         refreshFromController();
     });
+#elif defined(Q_OS_WIN)
+    m_enable->hide();
 #else
     layout->addWidget(m_enable, 0, Qt::AlignLeft);
     connect(m_enable, &QPushButton::clicked, this, [this] {
@@ -591,6 +597,12 @@ void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool pers
                : QStringLiteral("Accessibility is granted."))
         : QStringLiteral("Accessibility is off, so Speecher can copy your dictation but not paste it. Grant it below — Speecher restarts itself when setup finishes.");
     m_enable->setEnabled(!enabled);
+#elif defined(Q_OS_WIN)
+    Q_UNUSED(supported);
+    Q_UNUSED(enabled);
+    Q_UNUSED(persistent);
+    status = QStringLiteral("UI Automation is available. No permission grant is needed.");
+    m_enable->hide();
 #else
     if (!supported) {
         status = QStringLiteral("This Speecher build does not include desktop accessibility support.");
@@ -626,6 +638,8 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
         this,
 #ifdef Q_OS_MACOS
         QStringLiteral("Speecher puts the finished text on your clipboard and pastes it into the frontmost app with Cmd+V. The paste needs the Accessibility permission from the previous step; without it the text still reaches your clipboard."));
+#elif defined(Q_OS_WIN)
+        QStringLiteral("Speecher puts the finished text on your clipboard and pastes it into the frontmost app with Ctrl+V. Nothing extra needs to be installed."));
 #else
         QStringLiteral("Speecher can set up a virtual keyboard so it can paste into apps. Administrator approval is needed once; Speecher stays unprivileged while dictating."));
 #endif
@@ -732,6 +746,8 @@ void TextDeliverySetupPage::refreshStatus()
     m_status->setText(
 #ifdef Q_OS_MACOS
         QStringLiteral("Nothing to install — Speecher uses the keyboard paste built into macOS."));
+#elif defined(Q_OS_WIN)
+        QStringLiteral("Nothing to install — Speecher uses the Ctrl+V paste built into Windows."));
 #else
         QStringLiteral("Nothing to install — Speecher pastes with the system clipboard."));
 #endif

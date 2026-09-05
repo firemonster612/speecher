@@ -121,7 +121,7 @@ struct UpdateSettings {
 
 struct AppSettings {
     bool setupCompleted = false;
-#ifdef Q_OS_MACOS
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     bool launchAtLogin = true;
 #else
     bool launchAtLogin = false;
