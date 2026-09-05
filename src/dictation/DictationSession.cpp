@@ -235,8 +235,11 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
     m_transcript->clear();
     m_refinedText.clear();
     m_transcriptPipeline = {};
-    emit previewDisplayChanged({});
+    // Unfreeze before clearing: a front end whose preview honours the frozen
+    // flag (macOS, Windows) would otherwise drop this clear and keep showing the
+    // previous dictation's delivered words until the first new partial arrives.
     emit popupFrozenChanged(false);
+    emit previewDisplayChanged({});
     emit popupRefiningChanged(false);
     emit popupStatusChanged(QStringLiteral("Preparing"));
     emit popupShowRequested(generation);
