@@ -1,6 +1,7 @@
 #include "frontend/win/ShortcutRecorder.h"
 
 #include "app/ApplicationController.h"
+#include "platform/win/WinGlobalShortcutBinder.h"
 
 #include <QKeySequence>
 
@@ -22,8 +23,6 @@ using namespace winrt::Windows::Foundation;
 using namespace winrt::Microsoft::UI::Xaml;
 using namespace winrt::Microsoft::UI::Xaml::Controls;
 using winrt::Windows::System::VirtualKey;
-
-const QKeySequence kDefaultShortcut(Qt::CTRL | Qt::ALT | Qt::Key_D);
 
 // The Qt key a Windows virtual key stands for. Qt's enum uses the unshifted
 // character for every printable key the binder accepts, so the binder's own
@@ -147,7 +146,7 @@ void ShortcutRecorder::appendPane(const StackPanel &column, PaneHost &host)
     reset.Click([&host](const auto &, const auto &) {
         QString error;
         host.shortcutRecording = false;
-        if (host.controller->setGlobalShortcut(kDefaultShortcut, &error)) {
+        if (host.controller->setGlobalShortcut(WinGlobalShortcutBinder::defaultShortcut(), &error)) {
             host.shortcutProblem.clear();
         } else {
             host.shortcutProblem = error.isEmpty()

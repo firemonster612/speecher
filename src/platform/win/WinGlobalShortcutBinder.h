@@ -38,6 +38,7 @@ public:
     static std::optional<NativeHotKey> nativeHotKey(const QKeySequence &shortcut,
                                                      QString *error = nullptr);
     static QKeySequence keySequenceForHotKey(quint32 modifiers, quint32 virtualKey);
+    static QKeySequence defaultShortcut();
 
 private:
     friend class ::WinPlatformTests;

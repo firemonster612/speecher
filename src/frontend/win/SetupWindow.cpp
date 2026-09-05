@@ -7,6 +7,7 @@
 #include "dictation/DictationPorts.h"
 #include "frontend/win/SettingsPage.h"
 #include "platform/GlobalShortcutBinder.h"
+#include "platform/win/WinGlobalShortcutBinder.h"
 #include "providers/ProviderRegistry.h"
 
 #include <windows.h>
@@ -567,7 +568,7 @@ struct SetupWindow::Native {
         recorder.PlaceholderText(L"Press a shortcut");
         QKeySequence current = controller->globalShortcut();
         if (current.isEmpty()) {
-            current = QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_D);
+            current = WinGlobalShortcutBinder::defaultShortcut();
         }
         recorder.Text(hstring(current.toString(QKeySequence::NativeText).toStdWString()));
         shortcutStatus = textBlock(QStringLiteral("The default is Ctrl+Alt+D."));
@@ -634,7 +635,7 @@ struct SetupWindow::Native {
             controller->settings()->setLaunchAtLogin(launchAtLogin);
             if (controller->globalShortcut().isEmpty()) {
                 QString error;
-                const QKeySequence shortcut(Qt::CTRL | Qt::ALT | Qt::Key_D);
+                const QKeySequence shortcut = WinGlobalShortcutBinder::defaultShortcut();
                 if (!controller->setGlobalShortcut(shortcut, &error)) {
                     showPage(shortcutPage);
                     shortcutStatus.Text(hstring(QStringLiteral("Could not register the shortcut: %1")

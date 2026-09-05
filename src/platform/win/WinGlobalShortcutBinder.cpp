@@ -14,11 +14,6 @@ constexpr int firstHotKeyId = 0x5350;
 constexpr int secondHotKeyId = 0x5351;
 constexpr auto messageWindowClass = L"SpeecherShortcutRawInput";
 
-QKeySequence defaultShortcut()
-{
-    return QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_D);
-}
-
 const QHash<int, quint32> &virtualKeys()
 {
     static const QHash<int, quint32> keys{
@@ -80,7 +75,7 @@ QKeySequence savedShortcut()
     QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
                        QString::fromLatin1(SettingsKeys::Application));
     const QString stored = settings.value(SettingsKeys::GlobalShortcut).toString();
-    return stored.isEmpty() ? defaultShortcut() : QKeySequence(stored);
+    return stored.isEmpty() ? WinGlobalShortcutBinder::defaultShortcut() : QKeySequence(stored);
 }
 
 void storeShortcut(const QKeySequence &shortcut)
@@ -91,6 +86,11 @@ void storeShortcut(const QKeySequence &shortcut)
 }
 
 } // namespace
+
+QKeySequence WinGlobalShortcutBinder::defaultShortcut()
+{
+    return QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_D);
+}
 
 WinGlobalShortcutBinder::WinGlobalShortcutBinder(QObject *parent)
     : GlobalShortcutBinder(parent)
