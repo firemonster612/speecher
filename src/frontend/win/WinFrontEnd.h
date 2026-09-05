@@ -4,13 +4,16 @@
 
 #include <memory>
 
+#include <QObject>
+
 namespace speecher {
 
 class ApplicationController;
-
-class WinFrontEnd final : public AppFrontEnd {
+class WinFrontEndTests;
+class WinUiHost;
+class WinFrontEnd final : public QObject, public AppFrontEnd {
 public:
-    explicit WinFrontEnd(ApplicationController *controller);
+    WinFrontEnd(ApplicationController *controller, std::unique_ptr<WinUiHost> host);
     ~WinFrontEnd() override;
 
     void showMainWindow() override;
@@ -21,6 +24,15 @@ public:
     void alert() override;
 
 private:
+    friend class WinFrontEndTests;
+    void showPanelForTest(quint64 generation);
+    void dismissPanelForTest();
+    bool panelVisibleForTest() const;
+    quint64 panelPresentedGenerationForTest() const;
+    qintptr panelWindowStyleForTest() const;
+    void actionTriggered(const QString &rowId);
+    void reportReady();
+
     struct Native;
 
     ApplicationController *m_controller;

@@ -23,7 +23,6 @@
 #ifdef SPEECHER_WITH_WINUI
 #include "frontend/win/WinFrontEnd.h"
 #include "frontend/win/WinUiHost.h"
-#include <QScopeGuard>
 #endif
 
 #include <QApplication>
@@ -192,12 +191,11 @@ int main(int argc, char **argv)
     }
 
 #ifdef SPEECHER_WITH_WINUI
-    WinUiHost winUiHost;
+    auto winUiHost = std::make_unique<WinUiHost>();
 #endif
     QApplication app(argc, argv);
 #ifdef SPEECHER_WITH_WINUI
-    winUiHost.installNativeEventFilter();
-    const auto winUiShutdown = qScopeGuard([&winUiHost] { winUiHost.shutdown(); });
+    winUiHost->installNativeEventFilter();
 #endif
     // A second store, because the theme has to be applied before the first
     // widget exists and the controller's store is not built yet.
@@ -231,7 +229,7 @@ int main(int argc, char **argv)
     // The one place a platform's front end is chosen; see
     // docs/adr/0001-per-platform-front-ends.md.
 #ifdef SPEECHER_WITH_WINUI
-    WinFrontEnd frontEnd(&controller);
+    WinFrontEnd frontEnd(&controller, std::move(winUiHost));
 #elif defined(SPEECHER_WITH_SWIFT_UI)
     MacFrontEnd frontEnd(&controller);
 #else

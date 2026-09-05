@@ -535,11 +535,20 @@ set(SPEECHER_FRONTEND_MAC_SWIFT_SOURCES
 )
 
 set(SPEECHER_FRONTEND_WIN_SOURCES
+  src/frontend/win/DictationPanel.cpp
+  src/frontend/win/SetupWindow.cpp
+  src/frontend/win/TrayFlyout.cpp
+  src/frontend/win/TrayIcon.cpp
   src/frontend/win/WinFrontEnd.cpp
   src/frontend/win/WinUiHost.cpp
 )
 
 set(SPEECHER_FRONTEND_WIN_HEADERS
+  src/frontend/win/DictationPanel.h
+  src/frontend/win/SettingsWindow.h
+  src/frontend/win/SetupWindow.h
+  src/frontend/win/TrayFlyout.h
+  src/frontend/win/TrayIcon.h
   src/frontend/win/WinFrontEnd.h
   src/frontend/win/WinUiHost.h
 )
@@ -800,6 +809,12 @@ if(TARGET speecher_frontend_win)
       "${SPEECHER_WASDK_BOOTSTRAP_DLL}" "$<TARGET_FILE_DIR:speecher>"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
       ${SPEECHER_WASDK_WINMDS} "$<TARGET_FILE_DIR:speecher>"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/tray-light.ico"
+      "$<TARGET_FILE_DIR:speecher>/tray-light.ico"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/tray-dark.ico"
+      "$<TARGET_FILE_DIR:speecher>/tray-dark.ico"
     COMMAND_EXPAND_LISTS
     COMMENT "Copying Windows App SDK runtime files"
     VERBATIM
