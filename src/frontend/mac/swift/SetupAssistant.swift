@@ -272,7 +272,9 @@ final class SetupFlowModel: ObservableObject {
         }
         // macOS records the grant against the app signature and never delivers
         // it to the process that asked, so the only way to notice is to keep
-        // looking while the page is up.
+        // looking while the page is up. SwiftUI can re-attach a view and call
+        // onAppear again, so the previous timer must not be orphaned.
+        accessibilityPoll?.invalidate()
         accessibilityPoll = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             DispatchQueue.main.async { self?.model.bridge.refreshAccessibilityState() }
         }
@@ -321,17 +323,19 @@ final class SetupFlowModel: ObservableObject {
         shortcutStatus = Self.shortcutHint
     }
 
-    /// Mirrors the Qt assistant: a failed registration holds setup open once,
-    /// with the failure on the shortcut step; finishing again continues without
-    /// the shortcut.
+    /// Mirrors the Qt assistant: finishing always tries to register the shown
+    /// sequence — the binder reports its built-in default even before anything
+    /// was ever bound, so "nothing recorded" still has to register and store
+    /// it. A failed registration holds setup open once, with the failure on
+    /// the shortcut step; finishing again continues without the shortcut.
     private func applyShortcut() -> Bool {
         guard createShortcut, !shortcutFailureAcknowledged else { return true }
-        guard !pendingShortcut.characters.isEmpty else {
-            // Nothing recorded over an existing binding, which stays as it is.
-            return true
+        if pendingShortcut.characters.isEmpty {
+            model.bindCurrentShortcut()
+        } else {
+            model.bindShortcut(characters: pendingShortcut.characters,
+                               modifierFlags: pendingShortcut.flags)
         }
-        model.bindShortcut(characters: pendingShortcut.characters,
-                           modifierFlags: pendingShortcut.flags)
         if model.shortcutProblem.isEmpty {
             shortcutStatus = "Dictation shortcut registered."
             return true
@@ -339,7 +343,7 @@ final class SetupFlowModel: ObservableObject {
         shortcutFailureAcknowledged = true
         shortcutStatus = "Could not register the shortcut: \(model.shortcutProblem). "
             + "Another app probably owns that combination. Change the shortcut and try again, "
-            + "or click Finish again to continue without it."
+            + "or finish setup again to continue without it."
         return false
     }
 
@@ -726,6 +730,18 @@ final class SpeecherSetupAssistant: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
         // Once shown, so the first capture is of a window that has laid out.
         installCaptureSeam()
+    }
+
+    /// Re-showing an already-open assistant must not keep running the finish
+    /// handler of the request that first opened it.
+    func update(onFinished: @escaping () -> Void) {
+        flow.onFinished = onFinished
+    }
+
+    /// The front end going away takes the assistant with it; an orphaned
+    /// window would keep a flow whose callbacks point into freed memory.
+    func close() {
+        window.close()
     }
 
     func windowWillClose(_ notification: Notification) {

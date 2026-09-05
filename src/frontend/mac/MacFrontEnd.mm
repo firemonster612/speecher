@@ -42,7 +42,12 @@ MacFrontEnd::MacFrontEnd(ApplicationController *controller)
     m_native->ui = [[SpeecherMacUI alloc] initWithBridge:m_native->bridge];
 }
 
-MacFrontEnd::~MacFrontEnd() = default;
+MacFrontEnd::~MacFrontEnd()
+{
+    // An assistant left open holds callbacks into this front end and its
+    // controller; closing it here is what the Qt front end's delete did.
+    [m_native->ui dismissSetupAssistant];
+}
 
 // One window: the settings are all a Mac app puts in a window of its own, and
 // dictation itself lives in the menu bar and the floating panel.

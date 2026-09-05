@@ -242,8 +242,9 @@ struct BridgeState {
     // The transcript survives the dictation that produced it, so the menu bar
     // panel can still offer it once the panel that showed it has gone.
     QString lastTranscript;
-    // The setup assistant's microphone meter, made on first use and kept: the
-    // device it reads follows the settings at every start.
+    // The setup assistant's microphone meter. Made per start and destroyed on
+    // stop: an input object kept past the assistant can hold the capture
+    // source open alongside dictation's own.
     speecher::AudioInput *setupMeter = nullptr;
     // A provider check that outlived the choice it checked answers to nobody.
     quint64 setupCheckGeneration = 0;
@@ -991,6 +992,15 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     return error.isEmpty() ? @"That shortcut could not be bound." : error.toNSString();
 }
 
+- (NSString *)bindCurrentShortcut
+{
+    QString error;
+    if (_state->controller->setGlobalShortcut(_state->controller->globalShortcut(), &error)) {
+        return nil;
+    }
+    return error.isEmpty() ? @"That shortcut could not be bound." : error.toNSString();
+}
+
 - (void)dealloc
 {
     delete _state;
@@ -1104,33 +1114,30 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 - (void)startMicrophoneMeterOnLevel:(void (^)(float level))onLevel
                             failure:(void (^)(NSString *message))onFailure
 {
+    [self stopMicrophoneMeter];
     self.setupMeterLevel = onLevel;
     self.setupMeterFailure = onFailure;
-    if (!_state->setupMeter) {
-        _state->setupMeter = _state->controller->platform()->createAudioInput(
-            _state->controller->settings(), &_state->lifetime);
-        __weak SpeecherBridge *weakSelf = self;
-        QObject::connect(_state->setupMeter,
-                         &speecher::AudioInput::levelChanged,
-                         &_state->lifetime,
-                         [weakSelf](float level) {
-                             SpeecherBridge *bridge = weakSelf;
-                             if (bridge.setupMeterLevel) {
-                                 bridge.setupMeterLevel(level);
-                             }
-                         });
-        QObject::connect(_state->setupMeter,
-                         &speecher::AudioInput::failed,
-                         &_state->lifetime,
-                         [weakSelf](const QString &message) {
-                             SpeecherBridge *bridge = weakSelf;
-                             if (bridge.setupMeterFailure) {
-                                 bridge.setupMeterFailure(message.toNSString());
-                             }
-                         });
-    } else {
-        _state->setupMeter->stop();
-    }
+    _state->setupMeter = _state->controller->platform()->createAudioInput(
+        _state->controller->settings(), &_state->lifetime);
+    __weak SpeecherBridge *weakSelf = self;
+    QObject::connect(_state->setupMeter,
+                     &speecher::AudioInput::levelChanged,
+                     &_state->lifetime,
+                     [weakSelf](float level) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.setupMeterLevel) {
+                             bridge.setupMeterLevel(level);
+                         }
+                     });
+    QObject::connect(_state->setupMeter,
+                     &speecher::AudioInput::failed,
+                     &_state->lifetime,
+                     [weakSelf](const QString &message) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.setupMeterFailure) {
+                             bridge.setupMeterFailure(message.toNSString());
+                         }
+                     });
     QString error;
     if (!_state->setupMeter->start(&error) && self.setupMeterFailure) {
         self.setupMeterFailure(error.toNSString());
@@ -1143,6 +1150,10 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     self.setupMeterFailure = nil;
     if (_state->setupMeter) {
         _state->setupMeter->stop();
+        // deleteLater rather than delete: a stop can arrive from inside the
+        // meter's own failure signal.
+        _state->setupMeter->deleteLater();
+        _state->setupMeter = nullptr;
     }
 }
 

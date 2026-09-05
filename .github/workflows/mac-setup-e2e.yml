@@ -2,13 +2,18 @@ name: macOS setup assistant E2E
 
 # Exercises the SwiftUI setup assistant on a macOS runner: unit tests, then a
 # packaged launch with a fresh profile driven through every step by real AX
-# clicks. Lives on the feature branch while the migration is proven; the
-# evidence artifact carries a PNG of every step.
+# clicks. The evidence artifact carries a PNG of every step.
 
 on:
   push:
     branches:
       - feat/mac-swift-setup-assistant
+  pull_request:
+    paths:
+      - src/frontend/mac/**
+      - src/app/**
+      - .github/macos-e2e/**
+      - .github/workflows/mac-setup-e2e.yml
   workflow_dispatch:
 
 concurrency:

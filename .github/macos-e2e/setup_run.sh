@@ -142,11 +142,32 @@ print("PASS: all nine captures show the expected title and step number")
 SWIFT
 }
 
+# The stored shortcut, flattened from SettingsKeys::GlobalShortcut
+# ("shortcuts/toggleDictation") the way QSettings writes groups to defaults.
+stored_shortcut() {
+  defaults read "$DOMAIN" shortcuts.toggleDictation 2>/dev/null
+}
+
+# The settings window's AX name is the pane it shows, so any other window — an
+# alert, the updater — does not satisfy this.
+SETTINGS_PANE_TITLES='General|What.s New|Dictation|Shortcut|Text|Delivery|Apps|Vocabulary|Settings'
+
 settings_window_present() {
   local deadline=$((SECONDS + 20))
   while (( SECONDS < deadline )); do
     if assistant_ui 'get name of windows' 2>/dev/null \
-        | tr ',' '\n' | grep -qvE "^\s*($ASSISTANT_WINDOW)?\s*$"; then
+        | tr ',' '\n' | grep -qE "^\s*(${SETTINGS_PANE_TITLES})\s*$"; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  return 1
+}
+
+assistant_gone() {
+  local deadline=$((SECONDS + 10))
+  while (( SECONDS < deadline )); do
+    if ! assistant_ui "get name of window \"$ASSISTANT_WINDOW\"" >/dev/null 2>&1; then
       return 0
     fi
     sleep 0.2
@@ -192,9 +213,13 @@ else
   sleep 2
   setup_completed || errors+=("app.setupCompleted was not written")
   kill -0 "$APP_PID" 2>/dev/null || errors+=("the app quit after Finish")
+  assistant_gone || errors+=("the assistant window stayed open after Finish")
   settings_window_present || errors+=("no settings window followed the assistant")
-  shortcut="$(defaults read "$DOMAIN" 2>/dev/null | grep -i shortcut || true)"
-  printf '%s\n' "$shortcut" > "$CASE_DIR/shortcut-defaults.txt"
+  # Finish registers and stores the default shortcut on a fresh profile;
+  # Qt writes META|ALT as its portable Meta+Alt spelling.
+  stored_shortcut > "$CASE_DIR/shortcut-defaults.txt"
+  [[ "$(stored_shortcut)" == "Meta+Alt+D" ]] \
+    || errors+=("Finish did not store the default shortcut (got '$(stored_shortcut)')")
   check_page_captures || errors+=("page rendering checks failed; see page-checks.out")
   if (( ${#errors[@]} )); then
     fail_case "$(IFS='; '; echo "${errors[*]}")"
@@ -218,7 +243,11 @@ else
   sleep 2
   setup_completed || errors+=("app.setupCompleted was not written after skipping")
   kill -0 "$APP_PID" 2>/dev/null || errors+=("the app quit after skipping")
+  assistant_gone || errors+=("the assistant window stayed open after skipping")
   settings_window_present || errors+=("no settings window followed skipping")
+  # Skipping must not bind or store what the later steps would have.
+  [[ -z "$(stored_shortcut)" ]] \
+    || errors+=("skipping still stored a shortcut ('$(stored_shortcut)')")
   if (( ${#errors[@]} )); then
     fail_case "$(IFS='; '; echo "${errors[*]}")"
   else

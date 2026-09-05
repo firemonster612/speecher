@@ -107,7 +107,9 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         model.reloadSettingsDraft()
         // The device rows the microphone step offers are the deferred ones.
         model.loadDeferredRows()
-        if setupAssistant == nil {
+        if let setupAssistant {
+            setupAssistant.update(onFinished: completion)
+        } else {
             setupAssistant = SpeecherSetupAssistant(
                 model: model,
                 onFinished: completion,
@@ -115,6 +117,13 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         }
         setupAssistant?.show()
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// For the front end's teardown: an assistant left open would outlive the
+    /// controller its callbacks reach into.
+    @MainActor
+    @objc public func dismissSetupAssistant() {
+        setupAssistant?.close()
     }
 
     @MainActor
