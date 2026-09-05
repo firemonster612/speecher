@@ -114,6 +114,14 @@ QString SingleInstanceIpc::socketName(std::shared_ptr<const SingleInstancePlatfo
 bool SingleInstanceIpc::listen(QString *error)
 {
     const QString listenName = socketName();
+#ifdef Q_OS_WIN
+    if (canConnectToServer(listenName, 200)) {
+        if (error) {
+            *error = activeInstanceMessage(listenName);
+        }
+        return false;
+    }
+#endif
     for (const QString &candidate : m_platform->ipcConnectCandidates()) {
         if (candidate != listenName && canConnectToServer(candidate, 200)) {
             if (error) {
