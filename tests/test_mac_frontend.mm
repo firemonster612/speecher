@@ -8,7 +8,6 @@
 #include "ui/AppWindow.h"
 #include "ui/SetupAssistant.h"
 #include "ui/TranscriberPopup.h"
-#include "ui/setup/SetupPages.h"
 
 #import <AppKit/AppKit.h>
 
@@ -16,27 +15,14 @@
 // @interface cannot stand in for the generated header.
 #import "SpeecherUI-Swift.h"
 
-#include <QAbstractButton>
 #include <QDeadlineTimer>
 #include <QApplication>
-#include <QCheckBox>
 #include <QFile>
 #include <QTemporaryDir>
 
 using namespace speecher;
 
 namespace {
-
-template<typename Widget>
-Widget *widgetOfType()
-{
-    for (QWidget *widget : QApplication::allWidgets()) {
-        if (auto *match = dynamic_cast<Widget *>(widget)) {
-            return match;
-        }
-    }
-    return nullptr;
-}
 
 // Every widget, not only the top-level ones: giving one of these a parent must
 // not be enough to make a count of them pass.
@@ -48,31 +34,6 @@ int widgetCount()
         count += dynamic_cast<Widget *>(widget) != nullptr;
     }
     return count;
-}
-
-// The setup assistant offers Skip setup as a wizard custom button or as a
-// KAssistantDialog action button depending on the build, and only one of those
-// exists to be named.
-QAbstractButton *visibleButton(const QWidget *within, const QString &text)
-{
-    for (QAbstractButton *button : within->findChildren<QAbstractButton *>()) {
-        if (button->isVisible() && button->text() == text) {
-            return button;
-        }
-    }
-    return nullptr;
-}
-
-bool nativeSettingsAreVisible()
-{
-    for (NSWindow *window in NSApp.windows) {
-        // The settings window's autosave name, which is stable where its title
-        // is the pane the sidebar happens to be on and is hidden anyway.
-        if (window.visible && [window.frameAutosaveName isEqualToString:@"SpeecherSettingsV2"]) {
-            return true;
-        }
-    }
-    return false;
 }
 
 SettingsRowModel *settingsRow(SettingsSchemaModel *schema, NSString *rowId)
@@ -153,22 +114,30 @@ private slots:
         [ui dismissDictationPanel];
     }
 
-    void skippingSetupOpensTheNativeSettingsWindow()
+    // Skip, all nine pages, and Finish are driven through the native AX tree
+    // in macOS setup assistant E2E. This catches a Qt wizard returning here.
+    void setupUsesANativeWindow()
     {
+        const int existingQtAssistants = widgetCount<SetupAssistant>();
         const int existingQtWindows = widgetCount<AppWindow>();
         ApplicationController controller(false);
         MacFrontEnd frontEnd(&controller);
         controller.setFrontEnd(&frontEnd);
 
         controller.showSetupAssistant();
-        SetupAssistant *assistant = widgetOfType<SetupAssistant>();
+        NSWindow *assistant = nil;
+        for (NSWindow *window in NSApp.windows) {
+            if (window.visible && [window.title isEqualToString:@"Speecher Setup Assistant"]) {
+                assistant = window;
+                break;
+            }
+        }
         QVERIFY(assistant);
-        QAbstractButton *skip = visibleButton(assistant, QStringLiteral("Skip setup"));
-        QVERIFY(skip);
-        skip->click();
-
-        QVERIFY(nativeSettingsAreVisible());
+        QCOMPARE(widgetCount<SetupAssistant>(), existingQtAssistants);
         QCOMPARE(widgetCount<AppWindow>(), existingQtWindows);
+        QVERIFY(!controller.settings()->setupCompleted());
+        [assistant close];
+        QVERIFY(!controller.settings()->setupCompleted());
     }
 
     void settingsCapabilitiesFollowAccessibilityChanges()
@@ -278,38 +247,6 @@ private slots:
         QVERIFY(ui.whatsNewOfferVisible);
         [bridge clearPendingWhatsNew];
         QVERIFY(!ui.whatsNewOfferVisible);
-    }
-
-    void setupFinishesWithStartAtLoginPage()
-    {
-        ApplicationController controller(false);
-        SetupAssistant assistant(&controller);
-        const QList<int> ids = assistant.pageIds();
-
-        QCOMPARE(ids.size(), 9);
-        QWizardPage *last = assistant.page(ids.last());
-        QCOMPARE(last->title(), QStringLiteral("Start at login"));
-        auto *startAtLogin = last->findChild<QCheckBox *>(QStringLiteral("launchAtLogin"));
-        QVERIFY(startAtLogin);
-        QVERIFY(startAtLogin->isChecked());
-    }
-
-    void setupWelcomeDoesNotDescribeTheLinuxFinishFlow()
-    {
-        ApplicationController controller(false);
-        SetupAssistant assistant(&controller);
-        WelcomeSetupPage *welcome = nullptr;
-        for (QWidget *widget : assistant.findChildren<QWidget *>()) {
-            if (auto *page = dynamic_cast<WelcomeSetupPage *>(widget)) {
-                welcome = page;
-                break;
-            }
-        }
-        QVERIFY(welcome);
-        for (const QLabel *label : welcome->findChildren<QLabel *>()) {
-            QVERIFY(!label->text().contains(
-                QStringLiteral("ends by setting up a Global Shortcut")));
-        }
     }
 };
 

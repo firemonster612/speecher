@@ -23,7 +23,7 @@ seed_setup_tcc() {
   python3 "$TCC_SEED" "$USER_TCC_DB" \
     kTCCServiceAppleEvents /usr/bin/osascript 2 "$BUNDLE_ID" 1 || return 1
   sudo python3 "$TCC_SEED" "$SYSTEM_TCC_DB" \
-    kTCCServiceAccessibility /usr/bin/osascript 2 || return 1
+    kTCCServiceAccessibility /usr/bin/osascript 2 UNUSED 1 || return 1
   # The microphone step opens the input device; the seeded grant is what keeps
   # macOS from raising a consent sheet no one is there to click.
   python3 "$TCC_SEED" "$USER_TCC_DB" kTCCServiceMicrophone "$BUNDLE_ID" 2 || return 1
@@ -161,6 +161,7 @@ else
   sleep 2
   setup_completed || errors+=("app.setupCompleted was not written after skipping")
   kill -0 "$APP_PID" 2>/dev/null || errors+=("the app quit after skipping")
+  settings_window_present || errors+=("no settings window followed skipping")
   if (( ${#errors[@]} )); then
     fail_case "$(IFS='; '; echo "${errors[*]}")"
   else
@@ -175,7 +176,11 @@ if ! launch_setup; then
   fail_case "The app did not relaunch on the completed profile."
 else
   sleep 3
-  if assistant_ui "get name of window \"$ASSISTANT_WINDOW\"" >/dev/null 2>&1; then
+  if ! kill -0 "$APP_PID" 2>/dev/null; then
+    fail_case "The app quit after relaunching on the completed profile."
+  elif ! settings_window_present; then
+    fail_case "No settings window appeared on the completed profile."
+  elif assistant_ui "get name of window \"$ASSISTANT_WINDOW\"" >/dev/null 2>&1; then
     fail_case "The assistant reappeared although setup is complete."
   else
     pass_case "A completed profile launches without the assistant."
