@@ -476,45 +476,52 @@ void CollectionEditor::openAddDialog()
 winrt::fire_and_forget CollectionEditor::importFromFile()
 {
     auto weak = weak_from_this();
-    Windows::Storage::Pickers::FileOpenPicker picker;
-    picker.as<::IInitializeWithWindow>()->Initialize(m_host.hwnd());
-    if (m_collection.importFileExtensions.isEmpty()) {
-        picker.FileTypeFilter().Append(L"*");
-    } else {
-        for (const QString &extension : m_collection.importFileExtensions) {
-            picker.FileTypeFilter().Append(hs(QStringLiteral(".") + extension));
+    try {
+        Windows::Storage::Pickers::FileOpenPicker picker;
+        check_hresult(picker.as<::IInitializeWithWindow>()->Initialize(m_host.hwnd()));
+        if (m_collection.importFileExtensions.isEmpty()) {
+            picker.FileTypeFilter().Append(L"*");
+        } else {
+            for (const QString &extension : m_collection.importFileExtensions) {
+                picker.FileTypeFilter().Append(hs(QStringLiteral(".") + extension));
+            }
+        }
+        const Windows::Storage::StorageFile file = co_await picker.PickSingleFileAsync();
+        auto self = weak.lock();
+        if (!self || !file) {
+            co_return;
+        }
+        QFile source(qs(file.Path()));
+        if (!source.open(QIODevice::ReadOnly)) {
+            self->showProblems({QStringLiteral("Could not read %1.").arg(qs(file.Name()))});
+            co_return;
+        }
+        const SettingsModel::ImportResult result =
+            self->m_host.model->recordsImportedFrom(source.readAll(),
+                                                    self->editableRecords(),
+                                                    self->m_rowId);
+        if (!result.records) {
+            self->showProblems({result.problem});
+            co_return;
+        }
+        QList<Record> merged;
+        for (const Record &record : self->m_records) {
+            if (record.locked) {
+                merged.append(record);
+            }
+        }
+        for (const QVariantMap &values : *result.records) {
+            merged.append({values, false});
+        }
+        self->m_records = merged;
+        self->rebuildRows();
+        self->save();
+    } catch (const winrt::hresult_error &error) {
+        if (auto self = weak.lock()) {
+            self->showProblems({QStringLiteral("Could not import %1: %2")
+                                    .arg(self->m_rowLabel, qs(error.message()))});
         }
     }
-    const Windows::Storage::StorageFile file = co_await picker.PickSingleFileAsync();
-    auto self = weak.lock();
-    if (!self || !file) {
-        co_return;
-    }
-    QFile source(qs(file.Path()));
-    if (!source.open(QIODevice::ReadOnly)) {
-        self->showProblems({QStringLiteral("Could not read %1.").arg(qs(file.Name()))});
-        co_return;
-    }
-    const SettingsModel::ImportResult result =
-        self->m_host.model->recordsImportedFrom(source.readAll(),
-                                                self->editableRecords(),
-                                                self->m_rowId);
-    if (!result.records) {
-        self->showProblems({result.problem});
-        co_return;
-    }
-    QList<Record> merged;
-    for (const Record &record : self->m_records) {
-        if (record.locked) {
-            merged.append(record);
-        }
-    }
-    for (const QVariantMap &values : *result.records) {
-        merged.append({values, false});
-    }
-    self->m_records = merged;
-    self->rebuildRows();
-    self->save();
 }
 
 void CollectionEditor::removeSelected()

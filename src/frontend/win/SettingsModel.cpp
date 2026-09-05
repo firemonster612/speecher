@@ -14,6 +14,8 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 
+#include <algorithm>
+
 namespace speecher::win {
 
 namespace {
@@ -87,6 +89,17 @@ void refreshCredentialWatch(QFileSystemWatcher *watcher, const QString &credenti
         directory = parent;
     }
     watcher->addPath(directory);
+}
+
+QString recordIdentityColumn(const QString &rowId)
+{
+    if (rowId == QStringLiteral("learnedCorrections")) {
+        return QStringLiteral("id");
+    }
+    if (rowId == QStringLiteral("vocabularyEntries")) {
+        return QStringLiteral("term");
+    }
+    return {};
 }
 
 } // namespace
@@ -301,9 +314,42 @@ QStringList SettingsModel::problemsWith(const QList<QVariantMap> &records,
 
 QStringList SettingsModel::save(const QList<QVariantMap> &records, const QString &rowId)
 {
-    const QStringList problems = problemsWith(records, rowId);
+    QList<QVariantMap> merged = records;
+    const SettingsRow *row = rowWithId(rowId);
+    const CollectionDescriptor *collection = row ? collectionForRow(*row) : nullptr;
+    const QString identityColumn = recordIdentityColumn(rowId);
+    const AppSettings stored = m_store->snapshot();
+    if (collection && !identityColumn.isEmpty()) {
+        const QList<QVariantMap> previous = collection->records(m_draft);
+        const QList<QVariantMap> current = collection->records(stored);
+        for (const QVariantMap &currentRecord : current) {
+            const QVariant identity = currentRecord.value(identityColumn);
+            const auto sameIdentity = [&identity, &identityColumn](const QVariantMap &record) {
+                return record.value(identityColumn) == identity;
+            };
+            const auto previousRecord = std::find_if(previous.cbegin(), previous.cend(), sameIdentity);
+            auto editedRecord = std::find_if(merged.begin(), merged.end(), sameIdentity);
+            if (previousRecord == previous.cend()) {
+                if (editedRecord == merged.end()) {
+                    merged.append(currentRecord);
+                }
+                continue;
+            }
+            if (editedRecord == merged.end()) {
+                continue;
+            }
+            for (auto value = currentRecord.cbegin(); value != currentRecord.cend(); ++value) {
+                if (editedRecord->value(value.key()) == previousRecord->value(value.key())) {
+                    editedRecord->insert(value.key(), value.value());
+                }
+            }
+        }
+    }
+
+    const QStringList problems = problemsWith(merged, rowId);
     if (problems.isEmpty()) {
-        setValue(rowId, QVariant::fromValue(records));
+        m_draft = stored;
+        setValue(rowId, QVariant::fromValue(merged));
         commit();
     }
     return problems;
