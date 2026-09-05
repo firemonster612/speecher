@@ -6,6 +6,7 @@
 #include <QLocalServer>
 #include <QHash>
 #include <QObject>
+#include <QSet>
 
 #include <memory>
 #include <optional>
@@ -63,6 +64,12 @@ private:
     std::shared_ptr<const SingleInstancePlatform> m_platform;
     QLocalServer m_server;
     QHash<QLocalSocket *, QByteArray> m_requestBuffers;
+    // Sockets currently inside their own command handling. A command can pump
+    // the message loop (XAML islands on Windows do), so we hold off deleting a
+    // disconnected socket until its handler returns rather than let the nested
+    // pump free it underneath us.
+    QSet<QLocalSocket *> m_socketsInCommand;
+    QSet<QLocalSocket *> m_socketsPendingDelete;
 };
 
 } // namespace speecher

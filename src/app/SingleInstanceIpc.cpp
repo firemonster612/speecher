@@ -70,6 +70,11 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                     socket->disconnectFromServer();
                     return;
                 }
+                // A command handler can pump the message loop (XAML islands do
+                // on Windows) and process a deleteLater queued by this socket's
+                // own disconnect, freeing it while we still hold the pointer.
+                // Hold deletion off until every frame is handled.
+                m_socketsInCommand.insert(socket);
                 for (const QByteArray &frame : frames) {
                     QJsonParseError parseError;
                     const QJsonDocument document = QJsonDocument::fromJson(frame, &parseError);
@@ -81,8 +86,19 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                                          object.value(QStringLiteral("outputFormat")).toString(),
                                          socket);
                 }
+                m_socketsInCommand.remove(socket);
+                if (m_socketsPendingDelete.remove(socket)) {
+                    m_requestBuffers.remove(socket);
+                    socket->deleteLater();
+                }
             });
             connect(socket, &QLocalSocket::disconnected, this, [this, socket] {
+                // Deferred while a command from this socket is in flight; the
+                // readyRead handler deletes it once its loop unwinds.
+                if (m_socketsInCommand.contains(socket)) {
+                    m_socketsPendingDelete.insert(socket);
+                    return;
+                }
                 m_requestBuffers.remove(socket);
                 socket->deleteLater();
             });

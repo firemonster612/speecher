@@ -216,7 +216,9 @@ private slots:
         socket.connectToServer(name);
         QVERIFY(socket.waitForConnected(500));
         socket.write(QByteArrayLiteral("{\"command\":\"stop\"}\n"));
-        QVERIFY(socket.waitForBytesWritten(500));
+        // flush() queues the bytes to the OS; on Windows named pipes the write
+        // completes synchronously so waitForBytesWritten would see nothing left.
+        socket.flush();
         socket.disconnectFromServer();
         QTRY_COMPARE(commands.count(), 1);
         // Surviving the response write is the assertion; a crash fails the run.

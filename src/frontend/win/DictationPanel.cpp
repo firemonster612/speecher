@@ -217,6 +217,9 @@ struct DictationPanel::Native : QObject {
     void show(quint64 generation)
     {
         problem.clear();
+        // The previous dictation's words are spent; the session's clearing
+        // preview can be dropped by the frozen guard, so clear here too.
+        preview.clear();
         completed = false;
         pendingGeneration = generation;
         ensureWindow();
