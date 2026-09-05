@@ -11,6 +11,7 @@
 #include "platform/win/WinTargetProvider.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QSettings>
 
 #include <endpointvolume.h>
@@ -27,7 +28,8 @@ constexpr auto runValue = "Speecher";
 
 QString launchCommand()
 {
-    return QStringLiteral("\"%1\" --daemon").arg(QCoreApplication::applicationFilePath());
+    return QStringLiteral("\"%1\" --daemon")
+        .arg(QDir::toNativeSeparators(QCoreApplication::applicationFilePath()));
 }
 
 } // namespace
