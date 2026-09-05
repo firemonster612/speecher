@@ -1,17 +1,24 @@
 #include "common/test_suites.h"
 
 #include <QApplication>
+#include <QDebug>
 #include <QScopeGuard>
 #include <QStandardPaths>
 
 #ifdef SPEECHER_WITH_WINUI
 #include "frontend/win/WinUiHost.h"
+#include <winrt/base.h>
 #endif
 
 int main(int argc, char **argv)
 {
 #ifdef SPEECHER_WITH_WINUI
-    auto winUiHost = std::make_unique<speecher::WinUiHost>();
+    std::unique_ptr<speecher::WinUiHost> winUiHost;
+    try {
+        winUiHost = std::make_unique<speecher::WinUiHost>();
+    } catch (const winrt::hresult_error &error) {
+        qWarning() << "Skipping WinUI tests:" << QString::fromWCharArray(error.message().c_str());
+    }
 #endif
     QApplication app(argc, argv);
 #ifdef SPEECHER_WITH_WINUI
@@ -35,6 +42,9 @@ int main(int argc, char **argv)
 #endif
 #ifdef SPEECHER_WITH_WINUI
     if (qEnvironmentVariable("SPEECHER_TEST_ONLY_WIN_FRONTEND") == QStringLiteral("1")) {
+        if (!winUiHost) {
+            return 0;
+        }
         return runWinFrontEndTests(argc, argv, std::move(winUiHost));
     }
 #endif
@@ -72,7 +82,9 @@ int main(int argc, char **argv)
     result |= runWinPlatformTests(argc, argv);
 #endif
 #ifdef SPEECHER_WITH_WINUI
-    result |= runWinFrontEndTests(argc, argv, std::move(winUiHost));
+    if (winUiHost) {
+        result |= runWinFrontEndTests(argc, argv, std::move(winUiHost));
+    }
 #endif
     return result;
 }

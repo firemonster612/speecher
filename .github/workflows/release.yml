@@ -328,6 +328,20 @@ jobs:
         shell: pwsh
         run: cmake --build build --parallel
 
+      - name: Install Windows App Runtime
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "WindowsAppRuntimeInstall-x64.exe"
+          Invoke-WebRequest "https://aka.ms/windowsappsdk/2.4/2.4.0/windowsappruntimeinstall-x64.exe" -OutFile $installer
+          $sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha256 -ne "851c35b0b0a59ce4c55f9171f601193322fc3413143b0dc3390ea11e14cfa7fc") {
+            throw "Windows App Runtime installer checksum mismatch: $sha256"
+          }
+          $process = Start-Process $installer -ArgumentList "--quiet" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Windows App Runtime installer exited with code $($process.ExitCode)"
+          }
+
       - name: Test
         shell: pwsh
         env:

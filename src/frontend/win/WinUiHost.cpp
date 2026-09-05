@@ -70,7 +70,7 @@ struct WinUiHost::Native {
               WINDOWSAPPSDK_RELEASE_MAJORMINOR,
               WINDOWSAPPSDK_RELEASE_VERSION_TAG_W,
               WINDOWSAPPSDK_RUNTIME_VERSION_UINT64,
-              MddBootstrap::InitializeOptions::OnNoMatch_ShowUI))
+              MddBootstrap::InitializeOptions::OnNoMatch_None))
     {
         winrt::init_apartment(winrt::apartment_type::single_threaded);
         dispatcher = winrt::Microsoft::UI::Dispatching::DispatcherQueueController::CreateOnCurrentThread();
