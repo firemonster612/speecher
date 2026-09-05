@@ -12,6 +12,10 @@ import SwiftUI
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var pages: [SettingsPageModel]
+    /// The sidebar's panes and their runs, as the schema arranges them. Fixed
+    /// for the life of the app, so a plain let.
+    let panes: [Pane]
+    let sidebarRuns: [[String]]
     /// The dictation state's name, as the controller reports it.
     @Published private(set) var status: String
     @Published private(set) var level: Float = 0
@@ -55,13 +59,16 @@ final class AppModel: ObservableObject {
     init(bridge: SpeecherBridge) {
         self.bridge = bridge
         pages = bridge.settingsSchema.pages
+        let panes = bridge.settingsSchema.panes.map(Pane.init)
+        self.panes = panes
+        sidebarRuns = bridge.settingsSchema.sidebarRuns
         status = bridge.stateName
         transcript = bridge.lastTranscript
         shortcut = bridge.shortcutDisplay
         accessibilityEnabled = bridge.accessibilityEnabled
         whatsNewPending = bridge.whatsNewPending
         anthropicCredentialStatus = bridge.anthropicCredentialStatus
-        pane = UserDefaults.standard.string(forKey: Self.paneKey) ?? Pane.all[0].id
+        pane = UserDefaults.standard.string(forKey: Self.paneKey) ?? panes[0].id
         bridge.statusChanged = { [weak self] status in
             self?.status = status
         }
@@ -110,6 +117,10 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func pane(withId id: String) -> Pane? {
+        panes.first { $0.id == id }
+    }
+
     func row(_ rowId: String) -> SettingsRowModel? {
         for page in pages {
             for section in page.sections {
@@ -156,10 +167,10 @@ final class AppModel: ObservableObject {
     /// their section's title and help. A newly added schema page falls back to
     /// General.
     func unclaimedCards(for pane: Pane) -> [PaneCard] {
-        let claimed = Set(Pane.all.flatMap { candidate in
+        let claimed = Set(panes.flatMap { candidate in
             candidate.groups.flatMap { rows(matching: $0.rows).map(\.rowId) }
         })
-        let ownedPages = Set(Pane.all.flatMap(\.schemaPages))
+        let ownedPages = Set(panes.flatMap(\.schemaPages))
         return pages.flatMap { page -> [PaneCard] in
             let belongsHere = pane.schemaPages.contains(page.pageId)
                 || (pane.id == "general" && !ownedPages.contains(page.pageId))

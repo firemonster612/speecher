@@ -1,24 +1,24 @@
 import SwiftUI
 
-// The settings window's eight regular panes and contextual What's New page. The
-// schema supplies rows and values; which pane a row appears on is decided here.
-// .scratch/macos-port/mac-ia.md.
+// The settings window's panes, exactly as the schema arranges them. The schema
+// supplies rows and values, and also which pane a row appears on and how the
+// sidebar runs group, so macOS and Windows read one arrangement (see
+// settingsPanes() in SettingsSchema.cpp). This file only renders it.
 
 /// One card this file asks a pane for: a heading, a footnote, and the schema
-/// rows it names.
+/// rows it names. A row pattern ending in `*` takes every row whose id starts
+/// with it.
 struct PaneGroup: Identifiable {
     let title: String
     let help: String
-    /// Schema row ids, in the order they should read. A pattern ending in `*`
-    /// takes every row whose id starts with it.
     let rows: [String]
 
     var id: String { title + rows.joined() }
 
-    init(_ title: String, _ rows: [String], help: String = "") {
-        self.title = title
-        self.help = help
-        self.rows = rows
+    init(_ model: SettingsPaneGroupModel) {
+        title = model.title
+        help = model.help
+        rows = model.rows
     }
 }
 
@@ -41,6 +41,15 @@ enum PaneLayout {
     case alternatives
     /// The shortcut recorder, which has no schema rows behind it.
     case shortcut
+
+    init(_ layout: SpeecherPaneLayout) {
+        switch layout {
+        case .alternatives: self = .alternatives
+        case .shortcut: self = .shortcut
+        case .sections: self = .sections
+        @unknown default: self = .sections
+        }
+    }
 }
 
 struct Pane: Identifiable {
@@ -52,97 +61,13 @@ struct Pane: Identifiable {
     let layout: PaneLayout
     let groups: [PaneGroup]
 
-    init(_ id: String,
-         _ title: String,
-         _ symbol: String,
-         schemaPages: [String] = [],
-         layout: PaneLayout = .sections,
-         _ groups: [PaneGroup] = []) {
-        self.id = id
-        self.title = title
-        self.symbol = symbol
-        self.schemaPages = schemaPages
-        self.layout = layout
-        self.groups = groups
-    }
-}
-
-extension Pane {
-    static let all: [Pane] = [
-        Pane("general", "General", "gearshape", schemaPages: ["general"], [
-            PaneGroup("Appearance", ["themeControl", "pauseMedia", "soundsEnabled", "previewWords"]),
-            PaneGroup("System", ["launchAtLogin", "clipboardOutputStatus"]),
-            PaneGroup("Maintenance", ["runSetup"]),
-            PaneGroup("Updates", ["updateChannel",
-                                  "autoCheckUpdates",
-                                  "autoInstallUpdates",
-                                  "checkForUpdates",
-                                  "currentVersion",
-                                  "whatsNew"]),
-        ]),
-        Pane("whatsNew", "What's New", "sparkles", schemaPages: ["whatsNew"]),
-        Pane("dictation", "Dictation", "mic", schemaPages: ["audio"], [
-            PaneGroup("Transcription", ["speechProvider"]),
-            PaneGroup("Microphone", ["audioDevice", "captureMode"]),
-            PaneGroup("Timing", ["preRollMs", "postRollMs", "readinessTimeoutMs"]),
-            PaneGroup("Silence", ["vadEnabled", "vadThresholdPercent"]),
-        ]),
-        Pane("shortcut", "Shortcut", "command", layout: .shortcut),
-        Pane("text", "Text", "text.cursor", schemaPages: ["refinement"], [
-            PaneGroup("Refinement", ["refinementProvider",
-                                     "defaultWritingProfile",
-                                     "targetContextControl",
-                                     "includeScreenshotContext"]),
-            PaneGroup("Profile Behavior", ["writingProfileBehavior"]),
-        ]),
-        Pane("delivery", "Delivery", "arrow.right.doc.on.clipboard", schemaPages: ["output"], [
-            PaneGroup("Delivery", ["outputMethod",
-                                   "outputFormat",
-                                   "completionStatusDuration",
-                                   "restoreClipboardAfterTyping"]),
-            PaneGroup("Paste Behavior", ["globalPasteRule", "categoryPasteRule_*"]),
-            // Only a build that can set up a virtual keyboard has this row, and
-            // macOS is not one; an empty group draws nothing.
-            PaneGroup("Advanced", ["virtualKeyboard"]),
-        ]),
-        Pane("apps", "Apps", "square.grid.2x2", schemaPages: ["applications"], layout: .alternatives, [
-            PaneGroup("Application Recognition", ["appRecognitionRules"]),
-            PaneGroup("App-Specific Paste Rules", ["applicationPasteRules"]),
-        ]),
-        Pane("vocabulary", "Vocabulary", "character.book.closed",
-             schemaPages: ["vocabulary", "corrections", "bindings"], layout: .alternatives, [
-            PaneGroup("Terms", ["vocabularyEntries", "vocabularyLimit"]),
-            PaneGroup("Corrections", ["correctionLearningControl", "learnedCorrections"]),
-            PaneGroup("Replacements", ["bindingRules"]),
-        ]),
-        Pane("accounts", "Accounts", "person.badge.key", schemaPages: ["providers"], [
-            PaneGroup("OpenAI", ["openAiModel",
-                                 "openAiEffort",
-                                 "openAiFastMode",
-                                 "openAiAuthMode",
-                                 "openAiCliproxyAccount",
-                                 "openAiAuth"]),
-            PaneGroup("Anthropic", ["anthropicModel",
-                                    "anthropicModelCaution",
-                                    "anthropicEffort",
-                                    "anthropicFastMode",
-                                    "anthropicAuthMode",
-                                    "anthropicCliproxyAccount"]),
-        ]),
-    ]
-
-    /// The sidebar's runs, in order. System Settings' own sidebar separates its
-    /// groups with a gap and titles none of them. What's New appears only while
-    /// selected, so the eight regular panes need no second level of naming.
-    static let sidebarRuns = [
-        ["general"],
-        ["dictation", "shortcut", "text"],
-        ["delivery", "apps"],
-        ["vocabulary", "accounts"],
-    ]
-
-    static func with(id: String) -> Pane? {
-        all.first { $0.id == id }
+    init(_ model: SettingsPaneModel) {
+        id = model.paneId
+        title = model.title
+        symbol = model.symbolName
+        schemaPages = model.schemaPages
+        layout = PaneLayout(model.layout)
+        groups = model.groups.map(PaneGroup.init)
     }
 }
 
