@@ -532,6 +532,7 @@ SettingsPage generalPage(const SchemaContext &context)
         QStringLiteral("General"),
         QStringLiteral("preferences-system"),
         QStringLiteral("gearshape"),
+        QStringLiteral("settings"),
         {
             {
 #ifdef Q_OS_LINUX
@@ -628,6 +629,7 @@ SettingsPage whatsNewPage(const QList<SettingsPage> &pages, const SchemaContext 
             QStringLiteral("What's New"),
             QStringLiteral("help-about"),
             QStringLiteral("sparkles"),
+            QStringLiteral("whatsNew"),
             std::move(sections)};
 }
 
@@ -693,6 +695,7 @@ SettingsPage audioPage(const SchemaContext &context)
         QStringLiteral("Audio"),
         QStringLiteral("preferences-desktop-sound"),
         QStringLiteral("waveform"),
+        QStringLiteral("microphone"),
         {
             {QStringLiteral("Transcription"), QString(), {std::move(speechProvider)}},
             {QStringLiteral("Capture"), QString(), {std::move(device)}},
@@ -784,6 +787,7 @@ SettingsPage refinementPage(const SchemaContext &context)
         QStringLiteral("Refinement"),
         QStringLiteral("tools-wizard"),
         QStringLiteral("wand.and.sparkles"),
+        QStringLiteral("text"),
         {
             {QStringLiteral("Refinement"),
              QString(),
@@ -1082,6 +1086,7 @@ SettingsPage outputPage(const SchemaContext &context)
         QStringLiteral("Output"),
         QStringLiteral("klipper"),
         QStringLiteral("doc.on.clipboard"),
+        QStringLiteral("clipboard"),
         sections,
     };
 }
@@ -1189,6 +1194,7 @@ SettingsPage vocabularyPage()
         QStringLiteral("Vocabulary"),
         QStringLiteral("accessories-dictionary"),
         QStringLiteral("character.book.closed"),
+        QStringLiteral("dictionary"),
         {{QString(),
           QString(),
           {
@@ -1288,6 +1294,7 @@ SettingsPage correctionsPage()
         QStringLiteral("Learned corrections"),
         QStringLiteral("tools-check-spelling"),
         QStringLiteral("checkmark.bubble"),
+        QStringLiteral("checkmark"),
         {{QString(),
           QString(),
           {
@@ -1359,6 +1366,7 @@ SettingsPage bindingsPage()
         QStringLiteral("Replacements & snippets"),
         QStringLiteral("edit-find-replace"),
         QStringLiteral("arrow.left.arrow.right"),
+        QStringLiteral("swap"),
         {{QString(),
           QString(),
           {collectionRow(QStringLiteral("bindingRules"),
@@ -1654,6 +1662,7 @@ SettingsPage providersPage()
         QStringLiteral("Providers"),
         QStringLiteral("preferences-system-network"),
         QStringLiteral("key.horizontal"),
+        QStringLiteral("key"),
         sections,
     };
 }
