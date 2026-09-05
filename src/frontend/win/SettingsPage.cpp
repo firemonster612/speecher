@@ -42,12 +42,7 @@ Style lookupStyle(const wchar_t *key)
 
 TextBlock styledText(const QString &text, const wchar_t *styleKey)
 {
-    return styledTextBlock(text, styleKey, false);
-}
-
-TextBlock secondaryText(const QString &text, const wchar_t *styleKey)
-{
-    return styledTextBlock(text, styleKey, true);
+    return styledTextBlock(text, styleKey);
 }
 
 // The room a Choice or Text control reserves, from the schema's width hint in
@@ -199,7 +194,7 @@ UIElement numberField(const RowSnapshot &row, PaneHost &host)
     panel.Orientation(Orientation::Horizontal);
     panel.Spacing(8);
     panel.Children().Append(box);
-    TextBlock suffix = secondaryText(row.range.suffix.trimmed(), L"SettingsInfoTextStyle");
+    TextBlock suffix = secondaryTextBlock(row.range.suffix.trimmed(), L"SettingsInfoTextStyle", host);
     suffix.VerticalAlignment(VerticalAlignment::Center);
     panel.Children().Append(suffix);
     return panel;
@@ -233,7 +228,7 @@ UIElement rowControl(const RowSnapshot &row, PaneHost &host)
     case RowKind::Action:
         return actionButton(row, host);
     case RowKind::Info:
-        return secondaryText(row.value.toString(), L"SettingsInfoTextStyle");
+        return secondaryTextBlock(row.value.toString(), L"SettingsInfoTextStyle", host);
     case RowKind::Collection:
         return nullptr;
     case RowKind::Custom:
@@ -305,7 +300,7 @@ void appendCard(const StackPanel &column, const PaneCard &card, PaneHost &host, 
     }
     column.Children().Append(cards);
     if (!card.help.isEmpty()) {
-        column.Children().Append(secondaryText(card.help, L"SettingsFootnoteStyle"));
+        column.Children().Append(secondaryTextBlock(card.help, L"SettingsFootnoteStyle", host));
     }
 }
 
@@ -348,20 +343,34 @@ void appendAlternatives(const StackPanel &column,
 
 } // namespace
 
-TextBlock styledTextBlock(const QString &text, const wchar_t *styleKey, bool secondary)
+TextBlock styledTextBlock(const QString &text, const wchar_t *styleKey)
 {
-    TextBlock block{nullptr};
-    if (secondary) {
-        // Parsed, not composed: only element-level markup keeps a ThemeResource
-        // brush following the element's ActualTheme.
-        const hstring xaml = hstring(L"<TextBlock ") + kXmlns + LR"( Style="{StaticResource )"
-            + styleKey + LR"(}" Foreground="{ThemeResource SettingsCardDescriptionForeground}"/>)";
-        block = XamlReader::Load(xaml).as<TextBlock>();
-    } else {
-        block = TextBlock();
-        block.Style(lookupStyle(styleKey));
-    }
+    TextBlock block;
+    block.Style(lookupStyle(styleKey));
     block.Text(hs(text));
+    return block;
+}
+
+TextBlock secondaryTextBlock(const QString &text, const wchar_t *styleKey, const PaneHost &host)
+{
+    TextBlock block = styledTextBlock(text, styleKey);
+    const ElementTheme theme = host.effectiveTheme ? host.effectiveTheme()
+                                                   : ElementTheme::Default;
+    const hstring themeKey = theme == ElementTheme::Light ? L"Light" : L"Dark";
+    // The style dictionary is the merged dictionary that carries our theme
+    // dictionaries; walk the merged list rather than assuming its position.
+    for (const auto &merged : Application::Current().Resources().MergedDictionaries()) {
+        const auto themes = merged.ThemeDictionaries();
+        if (!themes.HasKey(box_value(themeKey))) {
+            continue;
+        }
+        const auto dictionary = themes.Lookup(box_value(themeKey)).as<ResourceDictionary>();
+        if (const auto brush = dictionary.TryLookup(
+                box_value(L"SettingsCardDescriptionForeground"))) {
+            block.Foreground(brush.as<winrt::Microsoft::UI::Xaml::Media::Brush>());
+        }
+        break;
+    }
     return block;
 }
 
@@ -430,7 +439,7 @@ Grid rowGrid(const RowSnapshot &row, const UIElement &control, PaneHost &host, b
     // disabledHelp replaces the description while enabled says no.
     const QString description = row.enabled ? row.help : row.disabledHelp;
     if (!description.isEmpty()) {
-        header.Children().Append(secondaryText(description, L"SettingsCardDescriptionStyle"));
+        header.Children().Append(secondaryTextBlock(description, L"SettingsCardDescriptionStyle", host));
     }
     if (!row.enabled && !row.disabledAction.isEmpty()) {
         HyperlinkButton lift;

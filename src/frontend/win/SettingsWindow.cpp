@@ -112,6 +112,9 @@ struct SettingsWindow::Native {
         host.xamlRoot = [this] {
             return root ? root.XamlRoot() : winrt::Microsoft::UI::Xaml::XamlRoot{nullptr};
         };
+        host.effectiveTheme = [this] {
+            return root ? root.ActualTheme() : ElementTheme::Default;
+        };
         model.themeChanged = [this] { applyTheme(); };
         model.capabilitiesChanged = [this] { queueRebuild(); };
         model.anthropicCredentialsChanged = [this] { queueRebuild(); };
@@ -177,6 +180,9 @@ struct SettingsWindow::Native {
         contentRow.Height({1, GridUnitType::Star});
         root.RowDefinitions().Append(titleRow);
         root.RowDefinitions().Append(contentRow);
+        // The code-resolved secondary brushes follow the theme only through a
+        // rebuild; this also covers the system flipping while set to System.
+        root.ActualThemeChanged([this](const auto &, const auto &) { queueRebuild(); });
 
         titleBar = TitleBar();
         titleBar.Title(L"Speecher");

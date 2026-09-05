@@ -65,9 +65,12 @@ Grid columnGrid(const QList<CollectionColumnSnapshot> &columns)
     return grid;
 }
 
-TextBlock cellText(const QString &text, const wchar_t *styleKey, bool secondary)
+TextBlock cellText(const QString &text,
+                   const wchar_t *styleKey,
+                   const PaneHost *secondaryOf)
 {
-    TextBlock block = styledTextBlock(text, styleKey, secondary);
+    TextBlock block = secondaryOf ? secondaryTextBlock(text, styleKey, *secondaryOf)
+                                  : styledTextBlock(text, styleKey);
     block.TextTrimming(TextTrimming::CharacterEllipsis);
     block.TextWrapping(TextWrapping::NoWrap);
     block.VerticalAlignment(VerticalAlignment::Center);
@@ -171,7 +174,7 @@ void CollectionEditor::build()
     for (qsizetype index = 0; index < m_collection.columns.size(); ++index) {
         TextBlock title = cellText(m_collection.columns.at(index).title,
                                    L"SettingsCardDescriptionStyle",
-                                   true);
+                                   &m_host);
         Grid::SetColumn(title, static_cast<int32_t>(index));
         header.Children().Append(title);
     }
@@ -233,7 +236,7 @@ UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column, int 
         cell = cellText(displayText(column, value),
                         column.kind == ColumnKind::ReadOnly ? L"SettingsCardDescriptionStyle"
                                                             : L"SettingsCardBodyStyle",
-                        column.kind == ColumnKind::ReadOnly);
+                        column.kind == ColumnKind::ReadOnly ? &m_host : nullptr);
     } else if (column.kind == ColumnKind::Toggle) {
         CheckBox box;
         box.MinWidth(0);

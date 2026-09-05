@@ -105,9 +105,9 @@ QList<RowOption> writingTones()
     };
 }
 
-TextBlock secondaryText(const QString &text)
+TextBlock secondaryText(const QString &text, const PaneHost &host)
 {
-    return styledTextBlock(text, L"SettingsCardDescriptionStyle", true);
+    return secondaryTextBlock(text, L"SettingsCardDescriptionStyle", host);
 }
 
 // Free text with a commit on Enter or blur, shared by the two CLI Proxy rows.
@@ -163,7 +163,7 @@ PasswordBox commitPasswordBox(const RowSnapshot &row, PaneHost &host, const wcha
 UIElement credentialField(PaneHost &host)
 {
     if (!host.model->credentialIsEditable()) {
-        return secondaryText(host.model->credentialStatus());
+        return secondaryText(host.model->credentialStatus(), host);
     }
     StackPanel panel;
     panel.Spacing(4);
@@ -194,7 +194,7 @@ UIElement credentialField(PaneHost &host)
     });
     panel.Children().Append(box);
     if (!host.credentialProblem.isEmpty()) {
-        panel.Children().Append(secondaryText(host.credentialProblem));
+        panel.Children().Append(secondaryText(host.credentialProblem, host));
     }
     return panel;
 }
@@ -399,7 +399,7 @@ UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
         panel.Children().Append(combo);
         const QString status = host.model->anthropicCredentialStatus();
         if (!status.isEmpty()) {
-            TextBlock text = secondaryText(status);
+            TextBlock text = secondaryText(status, host);
             text.HorizontalAlignment(HorizontalAlignment::Right);
             text.TextAlignment(TextAlignment::End);
             panel.Children().Append(text);

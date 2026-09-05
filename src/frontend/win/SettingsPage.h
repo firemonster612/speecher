@@ -48,6 +48,10 @@ struct PaneHost {
     std::function<HWND()> hwnd;
     // The window's XamlRoot, which ContentDialog needs.
     std::function<winrt::Microsoft::UI::Xaml::XamlRoot()> xamlRoot;
+    // The root's ActualTheme, which the code-resolved brushes follow: an
+    // element-level ThemeResource resolves against the application theme, not
+    // the window's, so brushes are picked from the theme dictionaries by hand.
+    std::function<winrt::Microsoft::UI::Xaml::ElementTheme()> effectiveTheme;
     // Collection editors by row id, kept across pane rebuilds so an undo
     // history survives an unrelated setting changing.
     QHash<QString, std::shared_ptr<CollectionEditor>> editors;
@@ -88,13 +92,18 @@ winrt::Microsoft::UI::Xaml::Controls::Grid rowGrid(const RowSnapshot &row,
 // cached element can be shown in a rebuilt one.
 void detachFromParent(const winrt::Microsoft::UI::Xaml::UIElement &element);
 
-// A styled TextBlock. Secondary text carries its Foreground as element-level
-// markup ({ThemeResource SettingsCardDescriptionForeground}) because a Style
-// setter's ThemeResource resolves once at application scope and would freeze
-// to the system theme.
+// A styled TextBlock in the window's primary foreground.
 winrt::Microsoft::UI::Xaml::Controls::TextBlock styledTextBlock(const QString &text,
-                                                                const wchar_t *styleKey,
-                                                                bool secondary = false);
+                                                                const wchar_t *styleKey);
+
+// A styled TextBlock in the secondary foreground of the window's ActualTheme.
+// Resolved in code from the style dictionary's theme dictionaries: every
+// XAML-side route (style setters, element-level ThemeResource on parsed
+// elements) resolves against the application theme, which stays the system's
+// while the window follows the theme setting.
+winrt::Microsoft::UI::Xaml::Controls::TextBlock secondaryTextBlock(const QString &text,
+                                                                   const wchar_t *styleKey,
+                                                                   const PaneHost &host);
 
 // A Choice row's control: options as items, disabled ones kept visible, the
 // write going through setValueAndCommit. Shared with the pickers the custom

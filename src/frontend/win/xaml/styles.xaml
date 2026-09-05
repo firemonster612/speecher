@@ -10,12 +10,15 @@
     <ResourceDictionary x:Key="Light">
       <StaticResource x:Key="SettingsCardBackground" ResourceKey="CardBackgroundFillColorDefaultBrush"/>
       <StaticResource x:Key="SettingsCardBorderBrush" ResourceKey="CardStrokeColorDefaultBrush"/>
-      <StaticResource x:Key="SettingsCardDescriptionForeground" ResourceKey="TextFillColorSecondaryBrush"/>
+      <!-- TextFillColorSecondary's literal value: the brush is fetched from
+           this dictionary in code by the window's ActualTheme, so it cannot
+           alias a theme resource that resolves against the app theme. -->
+      <SolidColorBrush x:Key="SettingsCardDescriptionForeground" Color="#9E000000"/>
     </ResourceDictionary>
     <ResourceDictionary x:Key="Dark">
       <StaticResource x:Key="SettingsCardBackground" ResourceKey="CardBackgroundFillColorDefaultBrush"/>
       <StaticResource x:Key="SettingsCardBorderBrush" ResourceKey="CardStrokeColorDefaultBrush"/>
-      <StaticResource x:Key="SettingsCardDescriptionForeground" ResourceKey="TextFillColorSecondaryBrush"/>
+      <SolidColorBrush x:Key="SettingsCardDescriptionForeground" Color="#C5FFFFFF"/>
     </ResourceDictionary>
     <ResourceDictionary x:Key="HighContrast">
       <SolidColorBrush x:Key="SettingsCardBackground" Color="{ThemeResource SystemColorButtonFaceColor}"/>
