@@ -97,6 +97,8 @@ SchemaCustomRow OutputCustomRows::makeMethodRow(QWidget *parent, std::function<v
     addMethod(OutputMethod::DirectInsert);
 #ifdef Q_OS_MACOS
     addMethod(OutputMethod::MacPaste);
+#elif defined(Q_OS_WIN)
+    addMethod(OutputMethod::WinPaste);
 #else
     addMethod(OutputMethod::Ydotool);
     addMethod(OutputMethod::WlCopy);

@@ -167,12 +167,12 @@ private slots:
         socket.connectToServer(name);
         QVERIFY(socket.waitForConnected(500));
         socket.write(QByteArrayLiteral("{\"command\":\"tog"));
-        QVERIFY(socket.waitForBytesWritten(500));
+        socket.flush();
         QCoreApplication::processEvents();
         QCOMPARE(commands.count(), 0);
 
         socket.write(QByteArrayLiteral("gle\"}\n"));
-        QVERIFY(socket.waitForBytesWritten(500));
+        socket.flush();
         QTRY_COMPARE(commands.count(), 1);
         QCOMPARE(commands.first().at(0).toString(), QStringLiteral("toggle"));
     }
@@ -190,10 +190,40 @@ private slots:
         socket.connectToServer(name);
         QVERIFY(socket.waitForConnected(500));
         socket.write(QByteArrayLiteral("{\"command\":\"start\"}\n{\"command\":\"stop\"}\n"));
-        QVERIFY(socket.waitForBytesWritten(500));
+        socket.flush();
         QTRY_COMPARE(commands.count(), 2);
         QCOMPARE(commands.at(0).at(0).toString(), QStringLiteral("start"));
         QCOMPARE(commands.at(1).at(0).toString(), QStringLiteral("stop"));
+    }
+
+    void singleInstanceIpcSurvivesAClientThatDisconnectsAfterSending()
+    {
+        // A CLI client can send its command and drop the connection without
+        // waiting. The command may then arrive from inside the socket's own
+        // dying state change; answering it must not write into the teardown.
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QVERIFY(ipc.listen());
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
+        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
+                [&ipc](const QString &, const QString &, QLocalSocket *socket) {
+                    ipc.writeResponse(socket, {true, QStringLiteral("idle"), {}});
+                });
+
+        QLocalSocket socket;
+        socket.connectToServer(name);
+        QVERIFY(socket.waitForConnected(500));
+        socket.write(QByteArrayLiteral("{\"command\":\"stop\"}\n"));
+        // flush() queues the bytes to the OS; on Windows named pipes the write
+        // completes synchronously so waitForBytesWritten would see nothing left.
+        socket.flush();
+        socket.disconnectFromServer();
+        QTRY_COMPARE(commands.count(), 1);
+        // Surviving the response write is the assertion; a crash fails the run.
+        QCoreApplication::processEvents();
+        QCoreApplication::processEvents();
     }
 };
 

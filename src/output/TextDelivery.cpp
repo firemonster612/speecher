@@ -8,6 +8,9 @@
 #ifdef SPEECHER_WITH_MAC
 #include "output/mac/MacPasteDelivery.h"
 #endif
+#ifdef SPEECHER_WITH_WIN
+#include "output/win/WinPasteDelivery.h"
+#endif
 
 #include <QEventLoop>
 #include <QTimer>
@@ -101,6 +104,35 @@ private:
 };
 #endif // SPEECHER_WITH_MAC
 
+#ifdef SPEECHER_WITH_WIN
+class WinPasteBackend final : public DeliveryBackend {
+public:
+    WinPasteBackend(ClipboardDelivery *clipboardDelivery, PasteMethod pasteMethod)
+        : m_clipboardDelivery(clipboardDelivery)
+        , m_pasteMethod(pasteMethod)
+    {
+    }
+
+    bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
+    {
+        QString copyError;
+        if (!m_clipboardDelivery->copy(content, htmlAvailable, &copyError)) {
+            if (error) {
+                *error = copyError.isEmpty()
+                    ? QStringLiteral("Could not copy text before keyboard paste")
+                    : QStringLiteral("Could not copy text before keyboard paste: %1").arg(copyError);
+            }
+            return false;
+        }
+        return WinPasteDelivery().paste(m_pasteMethod, error);
+    }
+
+private:
+    ClipboardDelivery *m_clipboardDelivery = nullptr;
+    PasteMethod m_pasteMethod = PasteMethod::StandardPaste;
+};
+#endif // SPEECHER_WITH_WIN
+
 class QtClipboardBackend final : public DeliveryBackend {
 public:
     explicit QtClipboardBackend(ClipboardDelivery *clipboardDelivery)
@@ -164,6 +196,11 @@ void TextDelivery::useDefaultBackendFactory()
 #ifdef SPEECHER_WITH_MAC
         if (method == QString::fromLatin1(OutputMethod::MacPaste)) {
             return std::make_unique<MacPasteBackend>(&m_clipboardDelivery);
+        }
+#endif
+#ifdef SPEECHER_WITH_WIN
+        if (method == QString::fromLatin1(OutputMethod::WinPaste)) {
+            return std::make_unique<WinPasteBackend>(&m_clipboardDelivery, pasteMethod);
         }
 #endif
         if (method == QString::fromLatin1(OutputMethod::QtClipboard)) {
@@ -312,7 +349,8 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         bool htmlAvailable = false;
         if (backend->deliver(content, &htmlAvailable, &error)) {
             const bool virtualKeyboardInput = method == QString::fromLatin1(OutputMethod::Ydotool)
-                || method == QString::fromLatin1(OutputMethod::MacPaste);
+                || method == QString::fromLatin1(OutputMethod::MacPaste)
+                || method == QString::fromLatin1(OutputMethod::WinPaste);
             const bool copied = method == QString::fromLatin1(OutputMethod::WlCopy)
                 || method == QString::fromLatin1(OutputMethod::QtClipboard);
             const bool downgraded = content.html.has_value() && !htmlAvailable;
@@ -351,7 +389,8 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         // A failed paste already left the text on the clipboard, so the later
         // clipboard methods would only re-report what the caller already has.
         if (method == QString::fromLatin1(OutputMethod::Ydotool)
-            || method == QString::fromLatin1(OutputMethod::MacPaste)) {
+            || method == QString::fromLatin1(OutputMethod::MacPaste)
+            || method == QString::fromLatin1(OutputMethod::WinPaste)) {
             break;
         }
     }
@@ -390,6 +429,19 @@ QStringList TextDelivery::orderedMethods(const OutputSettings &settings, PasteMe
     }
     // The Linux-only methods have no backend here; the factory returns nothing
     // for them and the clipboard copy deliver() already made is the net.
+    return {method};
+#elif defined(SPEECHER_WITH_WIN)
+    const QString method = OutputMethod::normalized(settings.method);
+    if (method == QString::fromLatin1(OutputMethod::Automatic)) {
+        return pasteMethod == PasteMethod::ClipboardOnly
+            ? QStringList{QString::fromLatin1(OutputMethod::QtClipboard)}
+            : QStringList{QString::fromLatin1(OutputMethod::WinPaste),
+                          QString::fromLatin1(OutputMethod::QtClipboard)};
+    }
+    if (method == QString::fromLatin1(OutputMethod::WinPaste)
+        && pasteMethod == PasteMethod::ClipboardOnly) {
+        return {QString::fromLatin1(OutputMethod::QtClipboard)};
+    }
     return {method};
 #else
     const QString method = OutputMethod::normalized(settings.method);

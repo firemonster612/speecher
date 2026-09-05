@@ -301,6 +301,74 @@ jobs:
             build/designated-requirement.txt
           if-no-files-found: error
 
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: win64_msvc2022_64
+          modules: qtmultimedia qtwebsockets
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --parallel
+
+      - name: Install Windows App Runtime
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "WindowsAppRuntimeInstall-x64.exe"
+          Invoke-WebRequest "https://aka.ms/windowsappsdk/2.4/2.4.0/windowsappruntimeinstall-x64.exe" -OutFile $installer
+          $sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha256 -ne "851c35b0b0a59ce4c55f9171f601193322fc3413143b0dc3390ea11e14cfa7fc") {
+            throw "Windows App Runtime installer checksum mismatch: $sha256"
+          }
+          $process = Start-Process $installer -ArgumentList "--quiet" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Windows App Runtime installer exited with code $($process.ExitCode)"
+          }
+
+      - name: Test
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package installer
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        run: packaging/windows/build-installer.ps1 -BuildDir build
+
+      - name: Verify installer
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        run: packaging/windows/verify-installer.ps1 -InstallerPath dist/Speecher-Setup-x64.exe
+
+      - name: Upload Windows release artifacts
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-release
+          path: |
+            dist/Speecher-Setup-x64.exe
+            dist/Speecher-Setup-x64.exe.sha256
+            dist/speecher-version.txt
+          if-no-files-found: error
+
   publish:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
     concurrency:
@@ -309,6 +377,7 @@ jobs:
     needs:
       - linux
       - macos
+      - windows
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -321,7 +390,7 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@v8
         with:
-          # Only the two release bundles; the Docker build-record artifact is not wanted here.
+          # Only release bundles; the Docker build-record artifact is not wanted here.
           pattern: "*-release"
           path: artifacts
 
@@ -335,6 +404,30 @@ jobs:
           if [ "${GITHUB_REF_NAME}" = "master" ]; then
             tag=nightly
             channel=nightly
+          else
+            tag="v$version"
+            channel=stable
+            test "$GITHUB_REF_NAME" = "$tag"
+          fi
+          windows_sha256="$(awk '{print $1}' artifacts/windows-release/Speecher-Setup-x64.exe.sha256)"
+          python3 - "$tag" "$windows_sha256" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          tag, sha256 = sys.argv[1:]
+          path = pathlib.Path("artifacts/linux-release/update-manifest.json")
+          manifest = json.loads(path.read_text())
+          manifest["windows-x86_64"] = {
+              "installer": (
+                  "https://github.com/firemonster612/speecher/releases/download/"
+                  f"{tag}/Speecher-Setup-x64.exe"
+              ),
+              "sha256": sha256,
+          }
+          path.write_text(json.dumps(manifest, indent=2) + "\n")
+          PY
+          if [ "${GITHUB_REF_NAME}" = "master" ]; then
             git tag --force "$tag" "$GITHUB_SHA"
             git push origin "refs/tags/$tag" --force
             cat > release-notes.md <<EOF
@@ -343,6 +436,8 @@ jobs:
           Commit: $GITHUB_SHA
 
           This Nightly Build is untested. Use the Stable Release unless you want the latest master build.
+
+          Windows installer: Speecher-Setup-x64.exe
 
           Update channels: https://github.com/${GITHUB_REPOSITORY}#installation--updates
           EOF
@@ -356,11 +451,10 @@ jobs:
               artifacts/linux-release/Speecher-x86_64.AppImage \
               artifacts/linux-release/Speecher-x86_64.AppImage.zsync \
               artifacts/macos-release/speecher.dmg \
+              artifacts/windows-release/Speecher-Setup-x64.exe \
+              artifacts/windows-release/Speecher-Setup-x64.exe.sha256 \
               artifacts/linux-release/update-manifest.json --clobber
           else
-            tag="v$version"
-            channel=stable
-            test "$GITHUB_REF_NAME" = "$tag"
             if [ -f "docs/releases/$version.md" ]; then
               release_notes="docs/releases/$version.md"
               if ! awk 'NF && $1 !~ /^#/ { body = 1 } END { exit !body }' "$release_notes"; then
@@ -380,6 +474,8 @@ jobs:
               artifacts/linux-release/Speecher-x86_64.AppImage \
               artifacts/linux-release/Speecher-x86_64.AppImage.zsync \
               artifacts/macos-release/speecher.dmg \
+              artifacts/windows-release/Speecher-Setup-x64.exe \
+              artifacts/windows-release/Speecher-Setup-x64.exe.sha256 \
               artifacts/linux-release/update-manifest.json --clobber
           fi
           published_at="$(git log -1 --format=%aD HEAD)"

@@ -4,6 +4,8 @@
 #include "app/UpdateController.h"
 #ifdef Q_OS_MACOS
 #include "app/MacSparkleUpdater.h"
+#elif defined(Q_OS_WIN)
+#include "app/WindowsInstallerUpdater.h"
 #else
 #include "app/AppImageUpdater.h"
 #endif
@@ -130,6 +132,8 @@ ApplicationController::ApplicationController(bool popupOnly,
         m_platform->createScreenshotContextProvider(this));
 #ifdef Q_OS_MACOS
     m_updates = new MacSparkleUpdater(m_settings, this);
+#elif defined(Q_OS_WIN)
+    m_updates = new WindowsInstallerUpdater(m_settings, m_session, this);
 #else
     m_updates = new AppImageUpdater(m_settings, m_session, this);
 #endif

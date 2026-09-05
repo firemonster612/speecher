@@ -51,6 +51,8 @@ static QString virtualKeyboardMethod()
 {
 #ifdef Q_OS_MACOS
     return QString::fromLatin1(OutputMethod::MacPaste);
+#elif defined(Q_OS_WIN)
+    return QString::fromLatin1(OutputMethod::WinPaste);
 #else
     return QString::fromLatin1(OutputMethod::Ydotool);
 #endif
@@ -120,6 +122,7 @@ private slots:
                  QStringLiteral("user\\name\n"));
     }
 
+#ifndef Q_OS_WIN
     void helperPathPrefersSiblingThenLibexecThenInstalled()
     {
         QTemporaryDir dir;
@@ -160,6 +163,7 @@ private slots:
         QVERIFY(QFile::remove(bundled));
         QCOMPARE(resolvedHelperPath("/usr/libexec/speecher/helper", applicationDir), installed);
     }
+#endif
 
     void outputDeliverySelection()
     {
@@ -180,6 +184,17 @@ private slots:
         settings.method = QString::fromLatin1(OutputMethod::MacPaste);
         QCOMPARE(TextDelivery::orderedMethods(settings),
                  QStringList({QString::fromLatin1(OutputMethod::MacPaste)}));
+#elif defined(Q_OS_WIN)
+        QCOMPARE(TextDelivery::orderedMethods(settings),
+                 QStringList({QString::fromLatin1(OutputMethod::WinPaste),
+                              QString::fromLatin1(OutputMethod::QtClipboard)}));
+        settings.ydotoolEnabled = false;
+        QCOMPARE(TextDelivery::orderedMethods(settings),
+                 QStringList({QString::fromLatin1(OutputMethod::WinPaste),
+                              QString::fromLatin1(OutputMethod::QtClipboard)}));
+        settings.method = QString::fromLatin1(OutputMethod::WinPaste);
+        QCOMPARE(TextDelivery::orderedMethods(settings),
+                 QStringList({QString::fromLatin1(OutputMethod::WinPaste)}));
 #else
         QCOMPARE(TextDelivery::orderedMethods(settings),
                  QStringList({QString::fromLatin1(OutputMethod::Ydotool),
@@ -568,6 +583,8 @@ private slots:
         settings.method = QString::fromLatin1(OutputMethod::Automatic);
         settings.ydotoolEnabled = true;
 #ifdef Q_OS_MACOS
+        const QStringList expected{QString::fromLatin1(OutputMethod::QtClipboard)};
+#elif defined(Q_OS_WIN)
         const QStringList expected{QString::fromLatin1(OutputMethod::QtClipboard)};
 #else
         const QStringList expected{QString::fromLatin1(OutputMethod::WlCopy),

@@ -343,14 +343,25 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
     : QWidget(parent)
     , m_controller(controller)
     , m_status(new QLabel(this))
+#ifdef Q_OS_WIN
+    , m_enable(new QPushButton(QStringLiteral("No action needed"), this))
+#else
     , m_enable(new QPushButton(QStringLiteral("Enable permanently"), this))
+#endif
 {
     QVBoxLayout *layout = makePage(
         this,
+#ifdef Q_OS_WIN
+        QStringLiteral("Windows UI Automation lets Speecher identify the target app, read nearby text, and learn corrections. It does not require a permission grant."));
+#else
         QStringLiteral("Desktop accessibility (the AT-SPI service) lets Speecher identify the target app, paste into compatible fields, edit selected text, and learn corrections."));
+#endif
     m_status->setWordWrap(true);
     m_enable->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     layout->addWidget(m_status);
+#ifdef Q_OS_WIN
+    m_enable->hide();
+#else
     layout->addWidget(m_enable, 0, Qt::AlignLeft);
     connect(m_enable, &QPushButton::clicked, this, [this] {
         m_lastError.clear();
@@ -362,6 +373,7 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
         // the error existed.
         refreshFromController();
     });
+#endif
     layout->addStretch();
     connect(&m_controller,
             &ApplicationController::accessibilityStateChanged,
@@ -380,6 +392,13 @@ void AccessibilitySetupPage::refreshFromController()
 void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool persistent)
 {
     QString status;
+#ifdef Q_OS_WIN
+    Q_UNUSED(supported);
+    Q_UNUSED(enabled);
+    Q_UNUSED(persistent);
+    status = QStringLiteral("UI Automation is available. No permission grant is needed.");
+    m_enable->hide();
+#else
     if (!supported) {
         status = QStringLiteral("This Speecher build does not include desktop accessibility support.");
         m_enable->setEnabled(false);
@@ -397,6 +416,7 @@ void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool pers
         m_enable->setEnabled(true);
         m_enable->setText(QStringLiteral("Enable permanently"));
     }
+#endif
     m_status->setText(m_lastError.isEmpty() ? status : m_lastError);
 }
 
@@ -411,7 +431,11 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
 {
     QVBoxLayout *layout = makePage(
         this,
+#ifdef Q_OS_WIN
+        QStringLiteral("Speecher puts the finished text on your clipboard and pastes it into the frontmost app with Ctrl+V. Nothing extra needs to be installed."));
+#else
         QStringLiteral("Speecher can set up a virtual keyboard so it can paste into apps. Administrator approval is needed once; Speecher stays unprivileged while dictating."));
+#endif
     m_status->setWordWrap(true);
     m_progress->setRange(0, 0);
     m_progress->setVisible(false);
@@ -513,7 +537,11 @@ void TextDeliverySetupPage::runSetup()
 void TextDeliverySetupPage::refreshStatus()
 {
     m_status->setText(
+#ifdef Q_OS_WIN
+        QStringLiteral("Nothing to install — Speecher uses the Ctrl+V paste built into Windows."));
+#else
         QStringLiteral("Nothing to install — Speecher pastes with the system clipboard."));
+#endif
     m_setup->setVisible(false);
     m_progress->setVisible(false);
 }

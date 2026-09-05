@@ -1,8 +1,11 @@
 #include "common/test_suites.h"
 #include "common/test_doubles.h"
 
-#include "app/AppImageUpdater.h"
 #include "app/ApplicationController.h"
+#include "app/ManifestUpdater.h"
+#ifdef Q_OS_LINUX
+#include "app/AppImageUpdater.h"
+#endif
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
 #include "dictation/DictationSession.h"
@@ -12,7 +15,6 @@
 
 #include <QFile>
 #include <QLabel>
-#include <QLocalServer>
 #include <QProcessEnvironment>
 #include <QPushButton>
 #include <QNetworkReply>
@@ -21,22 +23,25 @@
 #include <QTimer>
 
 #include <cstring>
+#ifdef Q_OS_LINUX
+#include <QLocalServer>
 #include <sys/stat.h>
+#endif
 
 using namespace speecher;
 
 namespace speecher {
 
-class AppImageUpdaterTestAccess {
+class ManifestUpdaterTestAccess {
 public:
-    static void setState(AppImageUpdater &updater,
+    static void setState(ManifestUpdater &updater,
                          UpdateController::State state,
                          const QString &error = {})
     {
         updater.setState(state, error);
     }
 
-    static void setAvailableVersion(AppImageUpdater &updater,
+    static void setAvailableVersion(ManifestUpdater &updater,
                                     const QString &version,
                                     UpdateChannel channel = UpdateChannel::Stable)
     {
@@ -44,19 +49,9 @@ public:
         updater.m_manifest.channel = channel;
     }
 
-    static void restartNow(AppImageUpdater &updater)
+    static void restartNow(ManifestUpdater &updater)
     {
         updater.restartNow();
-    }
-
-    static void restartAppImage(AppImageUpdater &updater)
-    {
-        updater.restartAppImage();
-    }
-
-    static QLocalServer *restartServer(const AppImageUpdater &updater)
-    {
-        return updater.m_restartServer;
     }
 
     static bool shouldOfferManifest(const UpdateManifest &manifest,
@@ -65,17 +60,11 @@ public:
                                     UpdateChannel channel,
                                     bool automaticCheck)
     {
-        return AppImageUpdater::shouldOfferManifest(
+        return ManifestUpdater::shouldOfferManifest(
             manifest, currentBuildNumber, currentVersion, channel, automaticCheck);
     }
 
-    static QProcessEnvironment restartEnvironment(const QStringList &arguments,
-                                                   QProcessEnvironment environment)
-    {
-        return AppImageUpdater::restartEnvironment(arguments, std::move(environment));
-    }
-
-    static void finishCheck(AppImageUpdater &updater,
+    static void finishCheck(ManifestUpdater &updater,
                             QNetworkReply *reply,
                             bool automatic)
     {
@@ -84,21 +73,42 @@ public:
         updater.finishCheck(reply);
     }
 
-    static int retryInterval(const AppImageUpdater &updater)
+    static int retryInterval(const ManifestUpdater &updater)
     {
         return updater.m_dailyTimer->interval();
     }
 
-    static void setAutomaticCheckFailures(AppImageUpdater &updater, int failures)
+    static void setAutomaticCheckFailures(ManifestUpdater &updater, int failures)
     {
         updater.m_automaticCheckFailures = failures;
     }
 
-    static void setManualInstallRequired(AppImageUpdater &updater, bool required)
+    static void setManualInstallRequired(ManifestUpdater &updater, bool required)
     {
         updater.m_manualInstallRequired = required;
     }
 };
+
+#ifdef Q_OS_LINUX
+class AppImageUpdaterTestAccess {
+public:
+    static void restartAppImage(AppImageUpdater &updater)
+    {
+        updater.restartApplication();
+    }
+
+    static QLocalServer *restartServer(const AppImageUpdater &updater)
+    {
+        return updater.m_restartServer;
+    }
+
+    static QProcessEnvironment restartEnvironment(const QStringList &arguments,
+                                                   QProcessEnvironment environment)
+    {
+        return AppImageUpdater::restartEnvironment(arguments, std::move(environment));
+    }
+};
+#endif
 
 class QtFrontEndTestAccess {
 public:
@@ -168,6 +178,27 @@ struct UpdateTestContext {
     }
 };
 
+class TestManifestUpdater final : public ManifestUpdater {
+public:
+    TestManifestUpdater(SettingsStore *settings, DictationSession *session)
+        : ManifestUpdater(settings,
+                          session,
+                          QStringLiteral("linux-x86_64"),
+                          QStringLiteral("appimage"),
+                          QStringLiteral("AppImage"))
+    {
+    }
+
+    bool isAppImage() const override { return false; }
+    bool supportsAutomaticDownloads() const override { return false; }
+    int restartCount = 0;
+
+protected:
+    std::unique_ptr<QFile> createDownload(QString *, bool *) override { return {}; }
+    bool installDownload(const QString &, QString *) override { return false; }
+    void restartApplication() override { ++restartCount; }
+};
+
 QByteArray readFile(const QString &path)
 {
     QFile file(path);
@@ -185,6 +216,10 @@ QByteArray validManifestJson()
         "linux-x86_64": {
             "appimage": "https:\/\/github.com/firemonster612/speecher/releases/download/nightly/Speecher-x86_64.AppImage",
             "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        },
+        "windows-x86_64": {
+            "installer": "https:\/\/github.com/firemonster612/speecher/releases/download/nightly/Speecher-Setup-x64.exe",
+            "sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
         }
     })json";
 }
@@ -227,18 +262,32 @@ private slots:
     {
         QString error;
         const std::optional<UpdateManifest> manifest =
-            AppImageUpdater::parseManifest(validManifestJson(), &error);
+            ManifestUpdater::parseManifest(validManifestJson(),
+                                            QStringLiteral("linux-x86_64"),
+                                            QStringLiteral("appimage"),
+                                            &error);
 
         QVERIFY2(manifest.has_value(), qPrintable(error));
         QCOMPARE(manifest->version, QStringLiteral("0.1.1-nightly.20260901+gabc1234"));
         QCOMPARE(manifest->buildNumber, 123);
-        QCOMPARE(manifest->appImageUrl.toString(),
+        QCOMPARE(manifest->downloadUrl.toString(),
                  QStringLiteral("https://github.com/firemonster612/speecher/releases/download/nightly/Speecher-x86_64.AppImage"));
         QCOMPARE(manifest->sha256,
                  QByteArrayLiteral("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"));
-        QVERIFY(AppImageUpdater::isNewerBuild(*manifest, 122));
-        QVERIFY(!AppImageUpdater::isNewerBuild(*manifest, 123));
-        QVERIFY(!AppImageUpdater::isNewerBuild(*manifest, 124));
+        QVERIFY(ManifestUpdater::isNewerBuild(*manifest, 122));
+        QVERIFY(!ManifestUpdater::isNewerBuild(*manifest, 123));
+        QVERIFY(!ManifestUpdater::isNewerBuild(*manifest, 124));
+
+        const std::optional<UpdateManifest> windows =
+            ManifestUpdater::parseManifest(validManifestJson(),
+                                            QStringLiteral("windows-x86_64"),
+                                            QStringLiteral("installer"),
+                                            &error);
+        QVERIFY2(windows.has_value(), qPrintable(error));
+        QCOMPARE(windows->downloadUrl.toString(),
+                 QStringLiteral("https://github.com/firemonster612/speecher/releases/download/nightly/Speecher-Setup-x64.exe"));
+        QCOMPARE(windows->sha256,
+                 QByteArrayLiteral("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"));
     }
 
     void manualStableCheckCanOfferAnOlderBuildToANightlyUser()
@@ -247,29 +296,29 @@ private slots:
         stable.version = QStringLiteral("0.1.0");
         stable.buildNumber = 145;
 
-        QVERIFY(AppImageUpdaterTestAccess::shouldOfferManifest(
+        QVERIFY(ManifestUpdaterTestAccess::shouldOfferManifest(
             stable,
             150,
             QStringLiteral("0.1.1-nightly.20260904+gnightly"),
             UpdateChannel::Stable,
             false));
-        QVERIFY(!AppImageUpdaterTestAccess::shouldOfferManifest(
+        QVERIFY(!ManifestUpdaterTestAccess::shouldOfferManifest(
             stable,
             150,
             QStringLiteral("0.1.1-nightly.20260904+gnightly"),
             UpdateChannel::Stable,
             true));
-        QVERIFY(!AppImageUpdaterTestAccess::shouldOfferManifest(
+        QVERIFY(!ManifestUpdaterTestAccess::shouldOfferManifest(
             stable, 150, QStringLiteral("0.1.1"), UpdateChannel::Stable, false));
     }
 
     void changingChannelInvalidatesAnAvailableUpdate()
     {
         UpdateTestContext context(true);
-        AppImageUpdater updater(&context.settings, context.session.get());
-        AppImageUpdaterTestAccess::setAvailableVersion(
+        TestManifestUpdater updater(&context.settings, context.session.get());
+        ManifestUpdaterTestAccess::setAvailableVersion(
             updater, QStringLiteral("0.1.1"), UpdateChannel::Stable);
-        AppImageUpdaterTestAccess::setState(updater,
+        ManifestUpdaterTestAccess::setState(updater,
                                             UpdateController::State::UpdateAvailable);
 
         context.settings.setUpdateChannel(UpdateChannel::Nightly);
@@ -277,9 +326,9 @@ private slots:
         QCOMPARE(updater.state(), UpdateController::State::Idle);
         QVERIFY(updater.availableVersion().isEmpty());
 
-        AppImageUpdaterTestAccess::setAvailableVersion(
+        ManifestUpdaterTestAccess::setAvailableVersion(
             updater, QStringLiteral("nightly"), UpdateChannel::Nightly);
-        AppImageUpdaterTestAccess::setState(updater,
+        ManifestUpdaterTestAccess::setState(updater,
                                             UpdateController::State::Downloading);
         context.settings.setUpdateChannel(UpdateChannel::Stable);
         QCOMPARE(updater.state(), UpdateController::State::Idle);
@@ -309,7 +358,10 @@ private slots:
     void rejectsInvalidManifest()
     {
         QFETCH(QByteArray, json);
-        QVERIFY(!AppImageUpdater::parseManifest(json).has_value());
+        QVERIFY(!ManifestUpdater::parseManifest(json,
+                                                QStringLiteral("linux-x86_64"),
+                                                QStringLiteral("appimage"))
+                     .has_value());
     }
 
     void rejectsDownloadWithMismatchedChecksum()
@@ -320,13 +372,15 @@ private slots:
         writeFile(path, QByteArrayLiteral("new AppImage"));
 
         QString error;
-        QVERIFY(!AppImageUpdater::verifyDownload(
+        QVERIFY(!ManifestUpdater::verifyDownload(
             path,
             QByteArrayLiteral("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+            QStringLiteral("AppImage"),
             &error));
         QVERIFY(error.contains(QStringLiteral("SHA-256")));
     }
 
+#ifdef Q_OS_LINUX
     void swapsAppImageAndPreservesPermissionsWithOwnerExecute()
     {
         QTemporaryDir directory;
@@ -449,9 +503,9 @@ private slots:
                                       QFileDevice::ReadOwner | QFileDevice::ExeOwner));
         UpdateTestContext context(true);
         AppImageUpdater updater(&context.settings, context.session.get());
-        AppImageUpdaterTestAccess::setAvailableVersion(
+        ManifestUpdaterTestAccess::setAvailableVersion(
             updater, QStringLiteral("0.1.1"), context.settings.updateChannel());
-        AppImageUpdaterTestAccess::setState(updater,
+        ManifestUpdaterTestAccess::setState(updater,
                                             UpdateController::State::UpdateAvailable);
         QSignalSpy releasePage(&updater, &UpdateController::openReleasePageRequested);
 
@@ -462,44 +516,35 @@ private slots:
         QCOMPARE(releasePage.count(), 1);
         QVERIFY(updater.errorMessage().contains(QStringLiteral("release page")));
     }
+#endif
 
     void restartPendingAllowsSessionErrorAndRestartsOnIdle()
     {
-        const QByteArray appImage = qgetenv("APPIMAGE");
-        qunsetenv("APPIMAGE");
-        const auto restoreAppImage = qScopeGuard([appImage] {
-            if (appImage.isEmpty()) {
-                qunsetenv("APPIMAGE");
-            } else {
-                qputenv("APPIMAGE", appImage);
-            }
-        });
-
         UpdateTestContext errorContext(false);
         errorContext.session->startListening();
         QCOMPARE(errorContext.session->state(), DictationState::Error);
-        AppImageUpdater errorUpdater(&errorContext.settings, errorContext.session.get());
-        QSignalSpy errorRestart(&errorUpdater, &UpdateController::openReleasePageRequested);
-        AppImageUpdaterTestAccess::setState(errorUpdater,
+        TestManifestUpdater errorUpdater(&errorContext.settings, errorContext.session.get());
+        ManifestUpdaterTestAccess::setState(errorUpdater,
                                             UpdateController::State::ReadyToRestart);
-        AppImageUpdaterTestAccess::restartNow(errorUpdater);
+        ManifestUpdaterTestAccess::restartNow(errorUpdater);
         QCOMPARE(errorUpdater.state(), UpdateController::State::ReadyToRestart);
-        QCOMPARE(errorRestart.count(), 1);
+        QCOMPARE(errorUpdater.restartCount, 1);
 
         UpdateTestContext pendingContext(true);
         pendingContext.session->startListening();
         QCOMPARE(pendingContext.session->state(), DictationState::Starting);
-        AppImageUpdater pendingUpdater(&pendingContext.settings, pendingContext.session.get());
-        QSignalSpy pendingRestart(&pendingUpdater, &UpdateController::openReleasePageRequested);
-        AppImageUpdaterTestAccess::setState(pendingUpdater,
+        TestManifestUpdater pendingUpdater(&pendingContext.settings,
+                                           pendingContext.session.get());
+        ManifestUpdaterTestAccess::setState(pendingUpdater,
                                             UpdateController::State::ReadyToRestart);
-        AppImageUpdaterTestAccess::restartNow(pendingUpdater);
+        ManifestUpdaterTestAccess::restartNow(pendingUpdater);
         QCOMPARE(pendingUpdater.state(), UpdateController::State::RestartPending);
         pendingContext.session->stopListening();
         QCOMPARE(pendingContext.session->state(), DictationState::Idle);
-        QCOMPARE(pendingRestart.count(), 1);
+        QCOMPARE(pendingUpdater.restartCount, 1);
     }
 
+#ifdef Q_OS_LINUX
     void restartPreservesAppImageExtractAndRunMode()
     {
         QProcessEnvironment environment;
@@ -521,6 +566,7 @@ private slots:
             AppImageUpdaterTestAccess::restartEnvironment({}, {});
         QVERIFY(!normal.contains(QStringLiteral("APPIMAGE_EXTRACT_AND_RUN")));
     }
+#endif
 
 #ifdef Q_OS_LINUX
     // The AppImage restart handshake only exists on Linux; on macOS the
@@ -552,38 +598,39 @@ private slots:
         constexpr int minuteMs = 60 * 1000;
         UpdateTestContext context(true);
         context.settings.setUpdatesLastCheckTime(previousSuccess);
-        AppImageUpdater updater(&context.settings, context.session.get());
+        TestManifestUpdater updater(&context.settings, context.session.get());
 
         const QList<int> retryMinutes{5, 10, 20, 40, 60, 60};
         for (const int retryMinute : retryMinutes) {
-            AppImageUpdaterTestAccess::finishCheck(
+            ManifestUpdaterTestAccess::finishCheck(
                 updater,
                 new StaticNetworkReply({}, QNetworkReply::TimeoutError, &updater),
                 true);
             QCOMPARE(context.settings.updatesLastCheckTime(), previousSuccess);
-            QCOMPARE(AppImageUpdaterTestAccess::retryInterval(updater),
+            QCOMPARE(ManifestUpdaterTestAccess::retryInterval(updater),
                      retryMinute * minuteMs);
         }
         QVERIFY(updater.repeatedAutomaticCheckFailure());
 
         UpdateTestContext invalidContext(true);
         invalidContext.settings.setUpdatesLastCheckTime(previousSuccess);
-        AppImageUpdater invalidUpdater(&invalidContext.settings, invalidContext.session.get());
-        AppImageUpdaterTestAccess::finishCheck(
+        TestManifestUpdater invalidUpdater(&invalidContext.settings,
+                                           invalidContext.session.get());
+        ManifestUpdaterTestAccess::finishCheck(
             invalidUpdater, new StaticNetworkReply(QByteArrayLiteral("{"),
                                                    QNetworkReply::NoError,
                                                    &invalidUpdater),
             true);
         QCOMPARE(invalidContext.settings.updatesLastCheckTime(), previousSuccess);
-        QCOMPARE(AppImageUpdaterTestAccess::retryInterval(invalidUpdater), 5 * minuteMs);
+        QCOMPARE(ManifestUpdaterTestAccess::retryInterval(invalidUpdater), 5 * minuteMs);
 
-        AppImageUpdaterTestAccess::finishCheck(
+        ManifestUpdaterTestAccess::finishCheck(
             updater, new StaticNetworkReply(validManifestJson(),
                                             QNetworkReply::NoError,
                                             &updater),
             true);
         QVERIFY(context.settings.updatesLastCheckTime() > previousSuccess);
-        QCOMPARE(AppImageUpdaterTestAccess::retryInterval(updater),
+        QCOMPARE(ManifestUpdaterTestAccess::retryInterval(updater),
                  24 * 60 * minuteMs);
         QVERIFY(!updater.repeatedAutomaticCheckFailure());
     }
@@ -592,12 +639,12 @@ private slots:
     {
 #ifndef Q_OS_MACOS
         ApplicationController controller(true);
-        auto *updater = dynamic_cast<AppImageUpdater *>(controller.updates());
+        auto *updater = dynamic_cast<ManifestUpdater *>(controller.updates());
         QVERIFY(updater);
         AppWindow window(&controller);
 
-        AppImageUpdaterTestAccess::setManualInstallRequired(*updater, true);
-        AppImageUpdaterTestAccess::setState(
+        ManifestUpdaterTestAccess::setManualInstallRequired(*updater, true);
+        ManifestUpdaterTestAccess::setState(
             *updater,
             UpdateController::State::Error,
             QStringLiteral("Download the replacement from the release page."));
@@ -605,10 +652,10 @@ private slots:
         QVERIFY(action);
         QCOMPARE(action->text(), QStringLiteral("Open release page"));
 
-        AppImageUpdaterTestAccess::setManualInstallRequired(*updater, false);
-        AppImageUpdaterTestAccess::setAvailableVersion(
+        ManifestUpdaterTestAccess::setManualInstallRequired(*updater, false);
+        ManifestUpdaterTestAccess::setAvailableVersion(
             *updater, QStringLiteral("0.1.1"), UpdateChannel::Stable);
-        AppImageUpdaterTestAccess::setState(*updater,
+        ManifestUpdaterTestAccess::setState(*updater,
                                             UpdateController::State::UpdateAvailable);
         auto *message = window.findChild<QLabel *>(QStringLiteral("updateBannerText"));
         QVERIFY(message);
@@ -624,22 +671,22 @@ private slots:
     void bannerAndChipVisibilityFollowUpdateState()
     {
         UpdateTestContext context(true);
-        AppImageUpdater updater(&context.settings, context.session.get());
+        TestManifestUpdater updater(&context.settings, context.session.get());
         for (const UpdateController::State state : {UpdateController::State::Idle,
                                                     UpdateController::State::Checking,
                                                     UpdateController::State::CheckFailed,
                                                     UpdateController::State::UpToDate}) {
-            AppImageUpdaterTestAccess::setState(updater, state, QStringLiteral("check failed"));
+            ManifestUpdaterTestAccess::setState(updater, state, QStringLiteral("check failed"));
             QVERIFY(!updater.bannerVisible());
         }
-        AppImageUpdaterTestAccess::setAvailableVersion(updater, QStringLiteral("2.0"));
+        ManifestUpdaterTestAccess::setAvailableVersion(updater, QStringLiteral("2.0"));
         for (const UpdateController::State state : {UpdateController::State::UpdateAvailable,
                                                     UpdateController::State::Downloading,
                                                     UpdateController::State::ReadyToRestart,
                                                     UpdateController::State::RestartPending,
                                                     UpdateController::State::Restarting,
                                                     UpdateController::State::Error}) {
-            AppImageUpdaterTestAccess::setState(updater, state, QStringLiteral("install failed"));
+            ManifestUpdaterTestAccess::setState(updater, state, QStringLiteral("install failed"));
             QVERIFY(updater.bannerVisible());
         }
 
@@ -649,12 +696,12 @@ private slots:
 #ifndef Q_OS_MACOS
         ApplicationController controller(true);
         QtFrontEnd frontEnd(&controller);
-        auto *controllerUpdater = dynamic_cast<AppImageUpdater *>(controller.updates());
+        auto *controllerUpdater = dynamic_cast<ManifestUpdater *>(controller.updates());
         QVERIFY(controllerUpdater);
         QPushButton *chip = QtFrontEndTestAccess::updateChip(frontEnd);
         QVERIFY(chip);
-        AppImageUpdaterTestAccess::setAvailableVersion(*controllerUpdater,
-                                                        QStringLiteral("2.0"));
+        ManifestUpdaterTestAccess::setAvailableVersion(*controllerUpdater,
+                                                       QStringLiteral("2.0"));
         const QList<std::pair<UpdateController::State, bool>> chipStates{
             {UpdateController::State::Idle, false},
             {UpdateController::State::Checking, false},
@@ -668,23 +715,23 @@ private slots:
             {UpdateController::State::Error, true},
         };
         for (const auto &[state, visible] : chipStates) {
-            AppImageUpdaterTestAccess::setState(*controllerUpdater,
+            ManifestUpdaterTestAccess::setState(*controllerUpdater,
                                                 state,
                                                 QStringLiteral("install failed"));
             QCOMPARE(!chip->isHidden(), visible);
         }
-        AppImageUpdaterTestAccess::setAutomaticCheckFailures(*controllerUpdater, 3);
-        AppImageUpdaterTestAccess::setState(*controllerUpdater,
+        ManifestUpdaterTestAccess::setAutomaticCheckFailures(*controllerUpdater, 3);
+        ManifestUpdaterTestAccess::setState(*controllerUpdater,
                                             UpdateController::State::CheckFailed,
                                             QStringLiteral("Could not check for updates"));
         QVERIFY(!chip->isHidden());
         QCOMPARE(chip->text(), QStringLiteral("Update check failed"));
-        AppImageUpdaterTestAccess::setState(*controllerUpdater,
+        ManifestUpdaterTestAccess::setState(*controllerUpdater,
                                             UpdateController::State::Error,
                                             QStringLiteral("install failed"));
         QVERIFY(!chip->isHidden());
         QCOMPARE(chip->text(), QStringLiteral("install failed"));
-        AppImageUpdaterTestAccess::setState(*controllerUpdater,
+        ManifestUpdaterTestAccess::setState(*controllerUpdater,
                                             UpdateController::State::Restarting);
         QCOMPARE(chip->text(), QStringLiteral("Restarting…"));
 #endif

@@ -1,12 +1,16 @@
 #include "app/ApplicationController.h"
+#ifdef Q_OS_LINUX
 #include "app/AppImageUpdater.h"
+#endif
 #include "app/UpdateController.h"
 #include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
+#ifndef SPEECHER_WITH_WINUI
 #include "frontend/qt/QtFrontEnd.h"
 #include "ui/Theme.h"
+#endif
 
 #ifdef Q_OS_LINUX
 #include "ui/HostStylePlugin.h"
@@ -15,6 +19,11 @@
 
 #ifdef SPEECHER_WITH_SWIFT_UI
 #include "frontend/mac/MacFrontEnd.h"
+#endif
+#ifdef SPEECHER_WITH_WINUI
+#include "frontend/win/WinFrontEnd.h"
+#include "frontend/win/WinUiHost.h"
+#include <windows.h>
 #endif
 
 #include <QApplication>
@@ -171,8 +180,8 @@ int main(int argc, char **argv)
     migrateSettings();
     const std::shared_ptr<const PlatformComposition> platform = platformComposition();
 
-    const CommandLineDecision decision =
-        parseCommandLine(commandLineArguments(argc, argv), logPath);
+    const QStringList arguments = commandLineArguments(argc, argv);
+    const CommandLineDecision decision = parseCommandLine(arguments, logPath);
     if (decision.mode == LaunchMode::Exit) {
         return decision.exitCode;
     }
@@ -182,7 +191,13 @@ int main(int argc, char **argv)
         return runCliCommand(decision, platform);
     }
 
+#ifdef SPEECHER_WITH_WINUI
+    auto winUiHost = std::make_unique<WinUiHost>();
+#endif
     QApplication app(argc, argv);
+#ifdef SPEECHER_WITH_WINUI
+    winUiHost->installNativeEventFilter();
+#endif
     // A second store, because the theme has to be applied before the first
     // widget exists and the controller's store is not built yet.
     SettingsStore startupSettings;
@@ -191,13 +206,15 @@ int main(int argc, char **argv)
         applyHostWidgetStyle(startupSettings.theme());
     }
 #endif
-    AppImageUpdater::waitForRestartParent();
 #ifdef Q_OS_LINUX
+    AppImageUpdater::waitForRestartParent();
     if (!qEnvironmentVariableIsEmpty("APPIMAGE")) {
         QIcon::setFallbackThemeName(QStringLiteral("breeze"));
     }
 #endif
+#ifndef SPEECHER_WITH_WINUI
     Theme::apply(startupSettings.theme());
+#endif
 
     const bool daemon = decision.mode == LaunchMode::RunDaemon;
     app.setQuitOnLastWindowClosed(quitOnLastWindowClosed(decision.mode));
@@ -210,12 +227,21 @@ int main(int argc, char **argv)
                      Qt::QueuedConnection);
     // The one place a platform's front end is chosen; see
     // docs/adr/0001-per-platform-front-ends.md.
-#ifdef SPEECHER_WITH_SWIFT_UI
+#ifdef SPEECHER_WITH_WINUI
+    WinFrontEnd frontEnd(&controller, std::move(winUiHost));
+#elif defined(SPEECHER_WITH_SWIFT_UI)
     MacFrontEnd frontEnd(&controller);
 #else
     QtFrontEnd frontEnd(&controller);
 #endif
     controller.setFrontEnd(&frontEnd);
+#ifdef SPEECHER_WITH_WINUI
+    if (arguments.contains(QStringLiteral("--winui-spike"))) {
+        QTimer::singleShot(0, &controller, [&frontEnd] {
+            frontEnd.showDictationError(QStringLiteral("WinUI hosting spike"));
+        });
+    }
+#endif
     controller.updates()->start();
     QString ipcError;
     if (!controller.startIpc(&ipcError)) {
@@ -229,6 +255,11 @@ int main(int argc, char **argv)
         }
         const QString showCommand = decision.showSettings ? QStringLiteral("showSettings")
                                                           : QStringLiteral("showMain");
+#ifdef Q_OS_WIN
+        if (!daemon) {
+            AllowSetForegroundWindow(ASFW_ANY);
+        }
+#endif
         if (!daemon && SingleInstanceIpc::sendCommand(showCommand, nullptr)) {
             return 0;
         }

@@ -40,7 +40,7 @@ and rendering:
 | --- | --- |
 | Linux | Qt Widgets, KDE-flavoured (the existing UI) |
 | macOS | SwiftUI, with AppKit islands for the collection editors |
-| Windows | the Qt front end initially; a Win32 front end may replace it later |
+| Windows | WinUI 3 hosted in the Qt-owned process |
 
 The macOS front end talks to the C++ core through one `@objc` Objective-C++
 facade, so Swift never sees a C++ header and no C++ interop mode is required.

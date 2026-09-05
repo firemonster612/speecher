@@ -55,6 +55,12 @@ option(SPEECHER_WITH_LAYER_SHELL "Use layer-shell-qt when available" ON)
 option(SPEECHER_WITH_QKEYCHAIN "Use QKeychain when available" ON)
 option(SPEECHER_BUILD_TESTS "Build tests" ON)
 option(SPEECHER_RELEASE_BUILD "Require every Linux release integration" OFF)
+set(SPEECHER_WINUI_DEFAULT OFF)
+if(WIN32)
+  set(SPEECHER_WINUI_DEFAULT ON)
+endif()
+option(SPEECHER_WITH_WINUI "Build the WinUI Windows front end"
+  ${SPEECHER_WINUI_DEFAULT})
 set(SPEECHER_WITH_KDE_DEFAULT OFF)
 if(UNIX AND NOT APPLE)
   set(SPEECHER_WITH_KDE_DEFAULT ON)
@@ -79,6 +85,10 @@ option(SPEECHER_WITH_SWIFT_UI "Build the AppKit/SwiftUI macOS front end"
   ${SPEECHER_SWIFT_UI_DEFAULT})
 if(APPLE AND SPEECHER_WITH_SWIFT_UI)
   enable_language(Swift)
+endif()
+
+if(WIN32 AND SPEECHER_WITH_WINUI)
+  include(cmake/WindowsAppSdk.cmake)
 endif()
 
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Multimedia)
@@ -388,34 +398,59 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
   src/platform/mac/MacTargetProvider.h
 )
 
+set(SPEECHER_PLATFORM_WIN_SOURCES
+  src/output/win/WinPasteDelivery.cpp
+  src/platform/win/WinCorrectionObserver.cpp
+  src/platform/win/WinGlobalShortcutBinder.cpp
+  src/platform/win/WinMediaController.cpp
+  src/platform/win/WinScreenshotContextProvider.cpp
+  src/platform/win/WinTargetProvider.cpp
+)
+set(SPEECHER_PLATFORM_WIN_HEADERS
+  src/output/win/WinPasteDelivery.h
+  src/platform/win/WinCorrectionObserver.h
+  src/platform/win/WinGlobalShortcutBinder.h
+  src/platform/win/WinMediaController.h
+  src/platform/win/WinScreenshotContextProvider.h
+  src/platform/win/WinTargetProvider.h
+)
+
 set(SPEECHER_APP_SOURCES
-  src/app/AppImageUpdater.cpp
   src/app/ApplicationController.cpp
   src/app/CommandLine.cpp
   src/app/CompositionSockets.cpp
+  src/app/ManifestUpdater.cpp
   src/app/PlatformSelection.cpp
   src/app/SingleInstanceIpc.cpp
 )
 
 set(SPEECHER_APP_HEADERS
   src/app/AppFrontEnd.h
-  src/app/AppImageUpdater.h
   src/app/ApplicationController.h
   src/app/CommandLine.h
   src/app/CompositionSockets.h
+  src/app/ManifestUpdater.h
   src/app/PlatformComposition.h
   src/app/SingleInstanceIpc.h
   src/app/UpdateController.h
 )
 
-# AppImageUpdater is plain Qt/C++ and compiles on every platform so its tests
-# can run everywhere; only Linux composition instantiates it.
 set(SPEECHER_APP_LINUX_SOURCES
   src/app/LinuxComposition.cpp
 )
 
 set(SPEECHER_APP_LINUX_HEADERS
   src/app/LinuxComposition.h
+)
+
+set(SPEECHER_APP_WIN_SOURCES
+  src/app/WindowsComposition.cpp
+  src/app/WindowsInstallerUpdater.cpp
+)
+
+set(SPEECHER_APP_WIN_HEADERS
+  src/app/WindowsComposition.h
+  src/app/WindowsInstallerUpdater.h
 )
 
 set(SPEECHER_APP_MAC_SOURCES
@@ -518,6 +553,36 @@ set(SPEECHER_FRONTEND_MAC_SWIFT_SOURCES
   src/frontend/mac/swift/SpeecherMacUI.swift
 )
 
+set(SPEECHER_FRONTEND_WIN_SOURCES
+  src/frontend/win/CollectionEditor.cpp
+  src/frontend/win/CustomRows.cpp
+  src/frontend/win/DictationPanel.cpp
+  src/frontend/win/SettingsModel.cpp
+  src/frontend/win/SettingsPage.cpp
+  src/frontend/win/SettingsWindow.cpp
+  src/frontend/win/ShortcutRecorder.cpp
+  src/frontend/win/SetupWindow.cpp
+  src/frontend/win/TrayFlyout.cpp
+  src/frontend/win/TrayIcon.cpp
+  src/frontend/win/WinFrontEnd.cpp
+  src/frontend/win/WinUiHost.cpp
+)
+
+set(SPEECHER_FRONTEND_WIN_HEADERS
+  src/frontend/win/CollectionEditor.h
+  src/frontend/win/CustomRows.h
+  src/frontend/win/DictationPanel.h
+  src/frontend/win/SettingsModel.h
+  src/frontend/win/SettingsPage.h
+  src/frontend/win/SettingsWindow.h
+  src/frontend/win/ShortcutRecorder.h
+  src/frontend/win/SetupWindow.h
+  src/frontend/win/TrayFlyout.h
+  src/frontend/win/TrayIcon.h
+  src/frontend/win/WinFrontEnd.h
+  src/frontend/win/WinUiHost.h
+)
+
 add_library(speecher_domain STATIC
   ${SPEECHER_DOMAIN_SOURCES}
   ${SPEECHER_DOMAIN_HEADERS}
@@ -579,6 +644,20 @@ if(APPLE)
     "-framework ApplicationServices"
   )
 endif()
+if(WIN32)
+  target_sources(speecher_platform PRIVATE
+    ${SPEECHER_PLATFORM_WIN_SOURCES}
+    ${SPEECHER_PLATFORM_WIN_HEADERS}
+  )
+  target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_WIN=1)
+  target_compile_definitions(speecher_platform PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+  target_link_libraries(speecher_platform PUBLIC
+    uiautomationcore user32 ole32 shell32 gdi32 windowsapp
+  )
+  if(TARGET winappsdk)
+    target_link_libraries(speecher_platform PRIVATE winappsdk)
+  endif()
+endif()
 if(ATSPI_FOUND)
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_ATSPI=1)
   target_link_libraries(speecher_platform PUBLIC PkgConfig::ATSPI)
@@ -600,6 +679,12 @@ target_compile_definitions(speecher_app PUBLIC
 target_link_libraries(speecher_app PUBLIC
   speecher_domain speecher_workflow speecher_providers speecher_platform Qt6::Network
 )
+if(UNIX)
+  target_sources(speecher_app PRIVATE
+    src/app/AppImageUpdater.cpp
+    src/app/AppImageUpdater.h
+  )
+endif()
 if(UNIX AND NOT APPLE)
   target_sources(speecher_app PRIVATE
     ${SPEECHER_APP_LINUX_SOURCES}
@@ -619,6 +704,12 @@ if(APPLE)
     "-framework CoreAudio"
     "-framework Security"
     "-framework ServiceManagement"
+  )
+endif()
+if(WIN32)
+  target_sources(speecher_app PRIVATE
+    ${SPEECHER_APP_WIN_SOURCES}
+    ${SPEECHER_APP_WIN_HEADERS}
   )
 endif()
 
@@ -717,6 +808,20 @@ if(APPLE AND SPEECHER_WITH_SWIFT_UI)
   add_dependencies(speecher_frontend_mac speecher_frontend_mac_swift)
 endif()
 
+if(WIN32 AND SPEECHER_WITH_WINUI)
+  add_library(speecher_frontend_win STATIC
+    ${SPEECHER_FRONTEND_WIN_SOURCES}
+    ${SPEECHER_FRONTEND_WIN_HEADERS}
+  )
+  target_include_directories(speecher_frontend_win PUBLIC src)
+  target_link_libraries(speecher_frontend_win PUBLIC speecher_app winappsdk)
+  qt_add_resources(speecher_frontend_win "win_xaml"
+    PREFIX "/win"
+    BASE "src/frontend/win"
+    FILES src/frontend/win/xaml/styles.xaml
+  )
+endif()
+
 qt_add_executable(speecher
   src/app/main.cpp
 )
@@ -732,7 +837,12 @@ target_compile_definitions(speecher PRIVATE
   SPEECHER_VERSION="${SPEECHER_VERSION}"
   SPEECHER_BUILD_NUMBER=${SPEECHER_BUILD_NUMBER}
 )
-target_link_libraries(speecher PRIVATE speecher_frontend_qt)
+if(TARGET speecher_frontend_win)
+  target_compile_definitions(speecher PRIVATE SPEECHER_WITH_WINUI=1)
+  target_link_libraries(speecher PRIVATE speecher_frontend_win Qt6::Widgets)
+else()
+  target_link_libraries(speecher PRIVATE speecher_frontend_qt)
+endif()
 if(TARGET speecher_frontend_mac)
   target_compile_definitions(speecher PRIVATE SPEECHER_WITH_SWIFT_UI=1)
   target_link_libraries(speecher PRIVATE speecher_frontend_mac)
@@ -740,6 +850,31 @@ if(TARGET speecher_frontend_mac)
   # linker flags Qt's plugin importer contributes, and reject them. The Swift
   # runtime still arrives, autolinked from the Swift objects.
   set_target_properties(speecher PROPERTIES LINKER_LANGUAGE CXX)
+endif()
+
+if(WIN32)
+  target_sources(speecher PRIVATE packaging/windows/speecher.manifest)
+endif()
+if(TARGET speecher_frontend_win)
+  set_target_properties(speecher PROPERTIES WIN32_EXECUTABLE TRUE)
+  add_custom_command(TARGET speecher POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      "${SPEECHER_WASDK_BOOTSTRAP_DLL}" "$<TARGET_FILE_DIR:speecher>"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      ${SPEECHER_WASDK_WINMDS} "$<TARGET_FILE_DIR:speecher>"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/speecher.ico"
+      "$<TARGET_FILE_DIR:speecher>"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/tray-light.ico"
+      "$<TARGET_FILE_DIR:speecher>/tray-light.ico"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/tray-dark.ico"
+      "$<TARGET_FILE_DIR:speecher>/tray-dark.ico"
+    COMMAND_EXPAND_LISTS
+    COMMENT "Copying Windows App SDK runtime files"
+    VERBATIM
+  )
 endif()
 
 if(APPLE)
@@ -880,7 +1015,24 @@ if(SPEECHER_WITH_QKEYCHAIN)
   else()
     find_package(Qt6Keychain QUIET)
   endif()
-  if(Qt6Keychain_FOUND)
+  if(WIN32 AND NOT Qt6Keychain_FOUND)
+    include(FetchContent)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(BUILD_WITH_QT6 ON CACHE BOOL "" FORCE)
+    set(BUILD_TEST_APPLICATION OFF CACHE BOOL "" FORCE)
+    set(BUILD_TRANSLATIONS OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(qtkeychain
+      GIT_REPOSITORY https://github.com/frankosterfeld/qtkeychain.git
+      GIT_TAG v0.14.0
+    )
+    FetchContent_MakeAvailable(qtkeychain)
+    target_include_directories(qt6keychain PUBLIC
+      "$<BUILD_INTERFACE:${qtkeychain_SOURCE_DIR}>"
+      "$<BUILD_INTERFACE:${qtkeychain_BINARY_DIR}>"
+    )
+    set(Qt6Keychain_FOUND TRUE)
+  endif()
+  if(TARGET qt6keychain)
     if(UNIX AND NOT APPLE)
       speecher_assert_package_qt_version("Qt6Keychain" "qt6keychain")
     endif()
@@ -968,8 +1120,13 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_claude_voice.cpp
     tests/test_codex_dictation.cpp
     tests/test_audio_pcm_converter.cpp
-    tests/test_update_controller.cpp
   )
+  if(UNIX)
+    target_sources(speecher_tests PRIVATE tests/test_update_controller.cpp)
+  endif()
+  if(WIN32)
+    target_sources(speecher_tests PRIVATE tests/test_win_platform.cpp)
+  endif()
   if(APPLE)
     qt_import_plugins(speecher_tests INCLUDE Qt6::QDarwinMicrophonePermissionPlugin)
   endif()
@@ -997,6 +1154,14 @@ if(SPEECHER_BUILD_TESTS)
     )
     target_link_libraries(speecher_tests PRIVATE speecher_frontend_mac)
     set_target_properties(speecher_tests PROPERTIES LINKER_LANGUAGE CXX)
+  endif()
+  if(TARGET speecher_frontend_win)
+    target_sources(speecher_tests PRIVATE
+      tests/test_win_frontend.cpp
+      packaging/windows/speecher.manifest
+    )
+    target_compile_definitions(speecher_tests PRIVATE SPEECHER_WITH_WINUI=1)
+    target_link_libraries(speecher_tests PRIVATE speecher_frontend_win)
   endif()
   add_test(NAME speecher_tests COMMAND speecher_tests)
   set_tests_properties(speecher_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
