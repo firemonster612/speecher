@@ -10,6 +10,7 @@
 #include "frontend/win/WinUiHost.h"
 
 #include <windows.h>
+#include <shellapi.h>
 
 #include <QTimer>
 
@@ -71,6 +72,14 @@ WinFrontEnd::WinFrontEnd(ApplicationController *controller,
     , m_controller(controller)
     , m_native(std::make_unique<Native>(controller, this, std::move(host)))
 {
+    connect(m_controller->updates(), &UpdateController::openReleasePageRequested, this, [] {
+        ShellExecuteW(nullptr,
+                      L"open",
+                      L"https://github.com/firemonster612/speecher/releases",
+                      nullptr,
+                      nullptr,
+                      SW_SHOWNORMAL);
+    });
 }
 
 WinFrontEnd::~WinFrontEnd() = default;
