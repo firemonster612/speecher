@@ -179,7 +179,7 @@ struct SettingsWindow::Native {
     ~Native()
     {
         if (window) {
-            window.Closed([](const auto &, const auto &) {});
+            window.Closed(closedToken);
             window.Close();
         }
     }
@@ -307,7 +307,7 @@ struct SettingsWindow::Native {
         window.SetTitleBar(titleBar);
         applyTheme();
         restoreGeometry();
-        window.Closed([this](const auto &, const auto &) { windowClosed(); });
+        closedToken = window.Closed([this](const auto &, const auto &) { windowClosed(); });
 
         rebuildSidebar();
         rebuildPage();
@@ -687,6 +687,7 @@ struct SettingsWindow::Native {
     QObject lifetime;
 
     Window window{nullptr};
+    winrt::event_token closedToken{};
     Grid root{nullptr};
     TitleBar titleBar{nullptr};
     NavigationView navigation{nullptr};
