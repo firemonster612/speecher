@@ -1,17 +1,38 @@
 #include "common/test_suites.h"
 
 #include <QApplication>
+#include <QScopeGuard>
 #include <QStandardPaths>
+
+#ifdef SPEECHER_WITH_WINUI
+#include "frontend/win/WinUiHost.h"
+#endif
 
 int main(int argc, char **argv)
 {
+#ifdef SPEECHER_WITH_WINUI
+    auto winUiHost = std::make_unique<speecher::WinUiHost>();
+#endif
     QApplication app(argc, argv);
+#ifdef SPEECHER_WITH_WINUI
+    winUiHost->installNativeEventFilter();
+    const auto winUiShutdown = qScopeGuard([&winUiHost] {
+        if (winUiHost) {
+            winUiHost->shutdown();
+        }
+    });
+#endif
     QStandardPaths::setTestModeEnabled(true);
     setTestArguments(argc, argv);
 
     if (qEnvironmentVariable("SPEECHER_TEST_ONLY_PLATFORM_LIVE") == QStringLiteral("1")) {
         return runPlatformLiveTests(argc, argv);
     }
+#ifdef SPEECHER_WITH_WINUI
+    if (qEnvironmentVariable("SPEECHER_TEST_ONLY_WIN_FRONTEND") == QStringLiteral("1")) {
+        return runWinFrontEndTests(argc, argv, std::move(winUiHost));
+    }
+#endif
 
     int result = 0;
     result |= runUiTests(argc, argv);
@@ -41,6 +62,9 @@ int main(int argc, char **argv)
 #endif
 #ifdef SPEECHER_WITH_SWIFT_UI
     result |= runMacFrontEndTests(argc, argv);
+#endif
+#ifdef SPEECHER_WITH_WINUI
+    result |= runWinFrontEndTests(argc, argv, std::move(winUiHost));
 #endif
     return result;
 }

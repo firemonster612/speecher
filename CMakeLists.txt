@@ -1092,6 +1092,14 @@ if(SPEECHER_BUILD_TESTS)
     target_link_libraries(speecher_tests PRIVATE speecher_frontend_mac)
     set_target_properties(speecher_tests PROPERTIES LINKER_LANGUAGE CXX)
   endif()
+  if(TARGET speecher_frontend_win)
+    target_sources(speecher_tests PRIVATE
+      tests/test_win_frontend.cpp
+      packaging/windows/speecher.manifest
+    )
+    target_compile_definitions(speecher_tests PRIVATE SPEECHER_WITH_WINUI=1)
+    target_link_libraries(speecher_tests PRIVATE speecher_frontend_win)
+  endif()
   add_test(NAME speecher_tests COMMAND speecher_tests)
   set_tests_properties(speecher_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
