@@ -34,8 +34,8 @@ using namespace Microsoft::UI::Xaml::Controls;
 using namespace Microsoft::UI::Xaml::Hosting;
 using namespace Microsoft::UI::Xaml::Media;
 
-constexpr int minimumWidth = 420;
-constexpr int panelHeight = 72;
+constexpr int minimumWidth = 300;
+constexpr int panelHeight = 52;
 constexpr int previewChromeWidth = 190;
 constexpr int screenEdgeMargin = 80;
 constexpr int bottomMargin = 28;
