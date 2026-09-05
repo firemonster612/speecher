@@ -104,6 +104,32 @@ private slots:
         peer->deleteLater();
     }
 
+    void codexDictationClientReportsUnexpectedRemoteClose()
+    {
+        QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
+        server.setSupportedSubprotocols({QStringLiteral("openai-bearer.test-token")});
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        CodexDictationClient client;
+        QSignalSpy connected(&client, &CodexDictationClient::connected);
+        QSignalSpy failed(&client, &CodexDictationClient::failed);
+        client.start(QUrl(QStringLiteral("ws://127.0.0.1:%1/dictation/stream")
+                              .arg(server.serverPort())),
+                     QStringLiteral("test-token"),
+                     16000);
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        std::unique_ptr<QWebSocket> peer(server.nextPendingConnection());
+        peer->sendTextMessage(QStringLiteral(
+            R"({"type":"session.started","sequence_no":1,"session":{"session_id":"s1","status":"active","config":{"provider_mode":"streaming_sse","transcript_delivery_mode":"final_only"}}})"));
+        QTRY_COMPARE_WITH_TIMEOUT(connected.count(), 1, 1000);
+
+        peer->close();
+
+        QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
+        QCOMPARE(failed.first().at(1).toBool(), true);
+        QCOMPARE(failed.first().at(2).toString(), QStringLiteral("streaming"));
+    }
+
     void speechTranscribersLoadCliproxyAccounts()
     {
         QTemporaryDir dir;

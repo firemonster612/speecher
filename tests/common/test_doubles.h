@@ -239,9 +239,9 @@ public:
         emit finalTranscript(currentAttemptId, text);
     }
 
-    void emitFailure(const QString &message, bool retryable = false)
+    void emitFailure(const QString &message, bool retryable = false, const QString &phase = {})
     {
-        emit failed({currentAttemptId, message, retryable});
+        emit failed({currentAttemptId, message, retryable, phase});
     }
 
     void emitCompletion()

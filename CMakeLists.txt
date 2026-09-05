@@ -820,6 +820,12 @@ qt_add_executable(speecher
   src/app/main.cpp
 )
 
+if(APPLE)
+  # Darwin permission backends are static opt-in Qt plugins. Without this,
+  # QMicrophonePermission cannot check or request the microphone grant.
+  qt_import_plugins(speecher INCLUDE Qt6::QDarwinMicrophonePermissionPlugin)
+endif()
+
 target_include_directories(speecher PRIVATE src)
 target_compile_definitions(speecher PRIVATE
   SPEECHER_VERSION="${SPEECHER_VERSION}"
@@ -1114,6 +1120,9 @@ if(SPEECHER_BUILD_TESTS)
   endif()
   if(WIN32)
     target_sources(speecher_tests PRIVATE tests/test_win_platform.cpp)
+  endif()
+  if(APPLE)
+    qt_import_plugins(speecher_tests INCLUDE Qt6::QDarwinMicrophonePermissionPlugin)
   endif()
   target_include_directories(speecher_tests PRIVATE src)
   target_compile_definitions(speecher_tests PRIVATE

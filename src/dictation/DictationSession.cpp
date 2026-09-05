@@ -11,6 +11,11 @@
 #include <utility>
 
 namespace speecher {
+namespace {
+// Dropped speech streams the session reopens before giving up and delivering.
+constexpr int kSpeechReconnectsPerSession = 2;
+}
+
 DictationSession::DictationSession(SettingsStore *settings,
                                    AudioInput *audio,
                                    MediaController *mediaController,
@@ -221,6 +226,7 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
     const quint64 generation = m_generation;
     m_sessionSettings = settings;
     m_heardSpeech = false;
+    m_speechReconnectsLeft = kSpeechReconnectsPerSession;
     m_target = {};
     setState(DictationState::Starting);
     qInfo().noquote() << "startListening speechProvider=" + settings.speech.providerId
@@ -229,8 +235,11 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
     m_transcript->clear();
     m_refinedText.clear();
     m_transcriptPipeline = {};
-    emit previewDisplayChanged({});
+    // Unfreeze before clearing: a front end whose preview honours the frozen
+    // flag (macOS, Windows) would otherwise drop this clear and keep showing the
+    // previous dictation's delivered words until the first new partial arrives.
     emit popupFrozenChanged(false);
+    emit previewDisplayChanged({});
     emit popupRefiningChanged(false);
     emit popupStatusChanged(QStringLiteral("Preparing"));
     emit popupShowRequested(generation);
@@ -647,6 +656,24 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
     if (m_state != DictationState::Starting
         && m_state != DictationState::Listening
         && m_state != DictationState::Stopping) {
+        return;
+    }
+    if (m_state == DictationState::Listening && failure.retryable
+        && failure.phase == QStringLiteral("streaming") && m_sessionSettings
+        && m_speechReconnectsLeft > 0) {
+        // A dropped stream mid-sentence is a transient connection loss, not the
+        // end of the Dictation Session: keep the audio running and open a fresh
+        // attempt on the same transcriber. The partial for the current utterance
+        // will never be finalised by the dead stream, so commit it now.
+        --m_speechReconnectsLeft;
+        ++m_attemptId;
+        qInfo().noquote() << "speech stream reconnecting attempt=" << m_attemptId
+                          << "reason=" + failure.message;
+        const QString partial = m_transcript->partial();
+        if (!partial.isEmpty()) {
+            m_transcript->commitFinal(partial);
+        }
+        m_transcriber->startAttempt(m_attemptId, m_sessionSettings->speech);
         return;
     }
     qWarning().noquote() << "speech transcriber failed transcriptEmpty=" << m_transcript->isEmpty()

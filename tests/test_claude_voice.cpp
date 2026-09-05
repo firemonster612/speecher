@@ -115,6 +115,7 @@ private slots:
         socket->close();
 
         QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
+        QCOMPARE(failed.first().at(1).toBool(), true);
         QCOMPARE(failed.first().at(2).toString(), QStringLiteral("streaming"));
     }
 

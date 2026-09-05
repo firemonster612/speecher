@@ -173,8 +173,48 @@ struct SettingsPage {
     QList<SettingsSection> sections;
 };
 
+// What a pane's groups are to each other.
+enum class PaneLayout {
+    // Sections of one page, shown together.
+    Sections,
+    // Views of one idea, one at a time, chosen with a segmented control.
+    Alternatives,
+    // The shortcut recorder, which has no schema rows behind it.
+    Shortcut,
+};
+
+// One card a pane shows: a heading, a footnote, and the schema rows it names.
+struct SettingsPaneGroup {
+    QString title;
+    // A footnote below the group's rows. Empty falls back to the schema
+    // section the rows came from.
+    QString help;
+    // Schema row ids, in the order they should read. A pattern ending in `*`
+    // takes every row whose id starts with it. A named row a build does not
+    // have is skipped, so a group can mention rows only some platforms carry.
+    QStringList rows;
+};
+
+// One sidebar entry of the settings window on macOS and Windows. The schema's
+// pages supply rows and values; which pane a row appears on is decided here.
+// The Qt front end keeps its own flat page list and ignores these.
+struct SettingsPane {
+    QString id;
+    QString title;
+    QString symbolName; // SF Symbol name
+    // Schema pages whose otherwise-unmapped rows fall back to this pane.
+    QStringList schemaPages;
+    PaneLayout layout = PaneLayout::Sections;
+    QList<SettingsPaneGroup> groups;
+};
+
 struct SettingsSchema {
     QList<SettingsPage> pages;
+    QList<SettingsPane> panes;
+    // The sidebar's runs, in order: pane ids, each run separated from the next
+    // by a gap and none of them titled, as System Settings does. A pane in no
+    // run (What's New) appears only while selected.
+    QList<QStringList> sidebarRuns;
 
     const SettingsPage &page(const QString &id) const;
 };

@@ -43,7 +43,7 @@ fi
 # only when a stage genuinely fails.
 : > "$LOG"
 STEP=0
-STEPS=7
+STEPS=8
 step() {
   STEP=$((STEP + 1))
   printf '[%d/%d] %s\n' "$STEP" "$STEPS" "$1"
@@ -87,6 +87,19 @@ step "Bundling Qt into the app (the slow part)"
 # Without signing the deployed binary and Qt dylibs are unsigned and macOS
 # refuses to launch the copy a user drags out of the image.
 run_logged "Bundling Qt" "$MACDEPLOYQT" "$STAGING_DIR/speecher.app" -always-overwrite -codesign="$SIGN_IDENTITY"
+
+step "Verifying the microphone permission plugin"
+SPEECHER_SYMBOLS="$WORK_DIR/speecher-symbols.txt"
+if ! nm -U "$STAGING_DIR/speecher.app/Contents/MacOS/speecher" \
+  > "$SPEECHER_SYMBOLS" 2>> "$LOG"; then
+  echo "Could not inspect Speecher's symbols. Last lines of $LOG:" >&2
+  tail -15 "$LOG" >&2
+  exit 1
+fi
+if ! grep -q 'QDarwinMicrophonePermissionPlugin' "$SPEECHER_SYMBOLS"; then
+  echo "Speecher does not contain Qt's macOS microphone permission plugin." >&2
+  exit 1
+fi
 
 step "Signing the bundle"
 SPARKLE="$STAGING_DIR/speecher.app/Contents/Frameworks/Sparkle.framework"

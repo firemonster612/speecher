@@ -1735,6 +1735,109 @@ int compareBaseVersions(const QString &left, const QString &right)
     return 0;
 }
 
+// The settings window's eight regular panes and contextual What's New page, as
+// macOS shows them and Windows will. The pages above supply rows and values;
+// which pane a row appears on is decided here, so both front ends read one
+// arrangement instead of each keeping its own.
+static QList<SettingsPane> settingsPanes()
+{
+    const auto pane = [](const char *id, const char *title, const char *symbol,
+                         QStringList schemaPages, PaneLayout layout,
+                         QList<SettingsPaneGroup> groups) {
+        return SettingsPane{QLatin1String(id),      QLatin1String(title),
+                            QLatin1String(symbol),  std::move(schemaPages),
+                            layout,                 std::move(groups)};
+    };
+    const auto group = [](const char *title, QStringList rows) {
+        return SettingsPaneGroup{QLatin1String(title), QString(), std::move(rows)};
+    };
+    return {
+        pane("general", "General", "gearshape", {QStringLiteral("general")},
+             PaneLayout::Sections,
+             {group("Appearance", {QStringLiteral("themeControl"),
+                                   QStringLiteral("pauseMedia"),
+                                   QStringLiteral("soundsEnabled"),
+                                   QStringLiteral("previewWords")}),
+              group("System", {QStringLiteral("launchAtLogin")}),
+              group("Maintenance", {QStringLiteral("runSetup")}),
+              group("Updates", {QStringLiteral("updateChannel"),
+                                QStringLiteral("autoCheckUpdates"),
+                                QStringLiteral("autoInstallUpdates"),
+                                QStringLiteral("checkForUpdates"),
+                                QStringLiteral("currentVersion"),
+                                QStringLiteral("whatsNew")})}),
+        pane("whatsNew", "What's New", "sparkles", {QStringLiteral("whatsNew")},
+             PaneLayout::Sections, {}),
+        pane("dictation", "Dictation", "mic", {QStringLiteral("audio")},
+             PaneLayout::Sections,
+             {group("Transcription", {QStringLiteral("speechProvider")}),
+              group("Microphone", {QStringLiteral("audioDevice"),
+                                   QStringLiteral("captureMode")}),
+              group("Timing", {QStringLiteral("preRollMs"),
+                               QStringLiteral("postRollMs"),
+                               QStringLiteral("readinessTimeoutMs")}),
+              group("Silence", {QStringLiteral("vadEnabled"),
+                                QStringLiteral("vadThresholdPercent")})}),
+        pane("shortcut", "Shortcut", "command", {}, PaneLayout::Shortcut, {}),
+        pane("text", "Text", "text.cursor", {QStringLiteral("refinement")},
+             PaneLayout::Sections,
+             {group("Refinement", {QStringLiteral("refinementProvider"),
+                                   QStringLiteral("defaultWritingProfile"),
+                                   QStringLiteral("targetContextControl"),
+                                   QStringLiteral("includeScreenshotContext")}),
+              group("Profile Behavior", {QStringLiteral("writingProfileBehavior")})}),
+        pane("delivery", "Delivery", "arrow.right.doc.on.clipboard",
+             {QStringLiteral("output")}, PaneLayout::Sections,
+             {group("Delivery", {QStringLiteral("outputMethod"),
+                                 QStringLiteral("outputFormat"),
+                                 QStringLiteral("completionStatusDuration"),
+                                 QStringLiteral("restoreClipboardAfterTyping")}),
+              group("Paste Behavior", {QStringLiteral("globalPasteRule"),
+                                       QStringLiteral("categoryPasteRule_*")}),
+              // Only a build that can set up a virtual keyboard has this row;
+              // an empty group draws nothing.
+              group("Advanced", {QStringLiteral("virtualKeyboard")})}),
+        // The Apps rows live on the schema's output page; the groups claim
+        // them by id, so the pane owns no page of its own.
+        pane("apps", "Apps", "square.grid.2x2", {}, PaneLayout::Alternatives,
+             {group("Application Recognition", {QStringLiteral("appRecognitionRules")}),
+              group("App-Specific Paste Rules", {QStringLiteral("applicationPasteRules")})}),
+        pane("vocabulary", "Vocabulary", "character.book.closed",
+             {QStringLiteral("vocabulary"), QStringLiteral("corrections"),
+              QStringLiteral("bindings")},
+             PaneLayout::Alternatives,
+             {group("Terms", {QStringLiteral("vocabularyEntries"),
+                              QStringLiteral("vocabularyLimit")}),
+              group("Corrections", {QStringLiteral("correctionLearningControl"),
+                                    QStringLiteral("learnedCorrections")}),
+              group("Replacements", {QStringLiteral("bindingRules")})}),
+        pane("accounts", "Accounts", "person.badge.key",
+             {QStringLiteral("providers")}, PaneLayout::Sections,
+             {group("OpenAI", {QStringLiteral("openAiModel"),
+                               QStringLiteral("openAiEffort"),
+                               QStringLiteral("openAiFastMode"),
+                               QStringLiteral("openAiAuthMode"),
+                               QStringLiteral("openAiCliproxyAccount"),
+                               QStringLiteral("openAiAuth")}),
+              group("Anthropic", {QStringLiteral("anthropicModel"),
+                                  QStringLiteral("anthropicModelCaution"),
+                                  QStringLiteral("anthropicEffort"),
+                                  QStringLiteral("anthropicFastMode"),
+                                  QStringLiteral("anthropicAuthMode"),
+                                  QStringLiteral("anthropicCliproxyAccount")})}),
+    };
+}
+
+static QList<QStringList> settingsSidebarRuns()
+{
+    return {
+        {QStringLiteral("general")},
+        {QStringLiteral("dictation"), QStringLiteral("shortcut"), QStringLiteral("text")},
+        {QStringLiteral("delivery"), QStringLiteral("apps")},
+        {QStringLiteral("vocabulary"), QStringLiteral("accounts")},
+    };
+}
+
 SettingsSchema buildSettingsSchema(const SchemaContext &context)
 {
     QList<SettingsPage> pages{generalPage(context),
@@ -1746,7 +1849,7 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context)
                               bindingsPage(),
                               providersPage()};
     pages.append(whatsNewPage(pages, context));
-    return {std::move(pages)};
+    return {std::move(pages), settingsPanes(), settingsSidebarRuns()};
 }
 
 } // namespace speecher

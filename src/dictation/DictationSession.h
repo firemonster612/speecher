@@ -122,6 +122,7 @@ private:
     quint64 m_screenshotCaptureGeneration = 0;
     quint64 m_refinementGeneration = 0;
     bool m_heardSpeech = false;
+    int m_speechReconnectsLeft = 0;
 };
 
 } // namespace speecher
