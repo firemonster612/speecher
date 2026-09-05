@@ -551,11 +551,15 @@ set(SPEECHER_FRONTEND_MAC_SWIFT_SOURCES
 set(SPEECHER_FRONTEND_WIN_SOURCES
   src/frontend/win/CollectionEditor.cpp
   src/frontend/win/CustomRows.cpp
+  src/frontend/win/DictationPanel.cpp
   src/frontend/win/Panes.cpp
   src/frontend/win/SettingsModel.cpp
   src/frontend/win/SettingsPage.cpp
   src/frontend/win/SettingsWindow.cpp
   src/frontend/win/ShortcutRecorder.cpp
+  src/frontend/win/SetupWindow.cpp
+  src/frontend/win/TrayFlyout.cpp
+  src/frontend/win/TrayIcon.cpp
   src/frontend/win/WinFrontEnd.cpp
   src/frontend/win/WinUiHost.cpp
 )
@@ -563,11 +567,15 @@ set(SPEECHER_FRONTEND_WIN_SOURCES
 set(SPEECHER_FRONTEND_WIN_HEADERS
   src/frontend/win/CollectionEditor.h
   src/frontend/win/CustomRows.h
+  src/frontend/win/DictationPanel.h
   src/frontend/win/Panes.h
   src/frontend/win/SettingsModel.h
   src/frontend/win/SettingsPage.h
   src/frontend/win/SettingsWindow.h
   src/frontend/win/ShortcutRecorder.h
+  src/frontend/win/SetupWindow.h
+  src/frontend/win/TrayFlyout.h
+  src/frontend/win/TrayIcon.h
   src/frontend/win/WinFrontEnd.h
   src/frontend/win/WinUiHost.h
 )
@@ -840,6 +848,12 @@ if(TARGET speecher_frontend_win)
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
       "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/speecher.ico"
       "$<TARGET_FILE_DIR:speecher>"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/tray-light.ico"
+      "$<TARGET_FILE_DIR:speecher>/tray-light.ico"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/tray-dark.ico"
+      "$<TARGET_FILE_DIR:speecher>/tray-dark.ico"
     COMMAND_EXPAND_LISTS
     COMMENT "Copying Windows App SDK runtime files"
     VERBATIM
@@ -1129,6 +1143,14 @@ if(SPEECHER_BUILD_TESTS)
     )
     target_link_libraries(speecher_tests PRIVATE speecher_frontend_mac)
     set_target_properties(speecher_tests PROPERTIES LINKER_LANGUAGE CXX)
+  endif()
+  if(TARGET speecher_frontend_win)
+    target_sources(speecher_tests PRIVATE
+      tests/test_win_frontend.cpp
+      packaging/windows/speecher.manifest
+    )
+    target_compile_definitions(speecher_tests PRIVATE SPEECHER_WITH_WINUI=1)
+    target_link_libraries(speecher_tests PRIVATE speecher_frontend_win)
   endif()
   add_test(NAME speecher_tests COMMAND speecher_tests)
   set_tests_properties(speecher_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

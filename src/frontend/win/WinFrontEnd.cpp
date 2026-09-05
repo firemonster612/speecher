@@ -1,136 +1,75 @@
 #include "frontend/win/WinFrontEnd.h"
 
 #include "app/ApplicationController.h"
+#include "app/UpdateController.h"
+#include "core/SettingsStore.h"
+#include "frontend/win/DictationPanel.h"
 #include "frontend/win/SettingsWindow.h"
+#include "frontend/win/SetupWindow.h"
+#include "frontend/win/TrayIcon.h"
+#include "frontend/win/WinUiHost.h"
 
 #include <windows.h>
-#include <dwmapi.h>
-
-#pragma push_macro("GetCurrentTime")
-#undef GetCurrentTime
-#include <winrt/Windows.Foundation.h>
-#include <winrt/Windows.Foundation.Collections.h>
-#include <winrt/Windows.UI.Xaml.Interop.h>
-#include <winrt/Microsoft.UI.Content.h>
-#include <winrt/Microsoft.UI.Interop.h>
-#include <winrt/Microsoft.UI.Xaml.h>
-#include <winrt/Microsoft.UI.Xaml.Controls.h>
-#include <winrt/Microsoft.UI.Xaml.Hosting.h>
-#include <winrt/Microsoft.UI.Xaml.Media.h>
-#pragma pop_macro("GetCurrentTime")
 
 #include <QTimer>
 
+#include <utility>
+
 namespace speecher {
-namespace {
-
-using namespace winrt;
-using namespace Microsoft::UI::Xaml;
-using namespace Microsoft::UI::Xaml::Controls;
-using namespace Microsoft::UI::Xaml::Hosting;
-using namespace Microsoft::UI::Xaml::Media;
-
-constexpr int pillWidth = 420;
-constexpr int pillHeight = 64;
-constexpr int pillBottomMargin = 28;
-constexpr auto pillClassName = L"SpeecherWinUiPill";
-
-LRESULT CALLBACK pillWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
-{
-    return DefWindowProcW(window, message, wParam, lParam);
-}
-
-} // namespace
 
 struct WinFrontEnd::Native {
-    explicit Native(ApplicationController *controller)
-        : settingsWindow(controller)
+    Native(ApplicationController *owner,
+           WinFrontEnd *q,
+           std::unique_ptr<WinUiHost> winUiHost)
+        : controller(owner)
+        , frontEnd(q)
+        , host(std::move(winUiHost))
     {
+        panel = std::make_unique<DictationPanel>(controller, frontEnd);
+        tray = std::make_unique<TrayIcon>(
+            controller, [q] { q->showSettingsWindow(); }, frontEnd);
+        trayReady = new QTimer(frontEnd);
+        trayReady->setSingleShot(true);
+        trayReady->setInterval(50);
+        QObject::connect(trayReady, &QTimer::timeout, frontEnd, &WinFrontEnd::reportReady);
+        trayReady->start();
     }
 
     ~Native()
     {
-        if (pillSource) {
-            pillSource.Close();
-        }
-        if (pillWindow) {
-            DestroyWindow(pillWindow);
-        }
+        setup.reset();
+        settings.reset();
+        tray.reset();
+        panel.reset();
+        host->shutdown();
     }
 
-    // W4 replaces this spike pill with the real DictationPanel.
-    void showPill(const QString &message)
+    win::SettingsWindow *settingsWindow()
     {
-        const HWND foregroundWindow = GetForegroundWindow();
-        if (!pillWindow) {
-            WNDCLASSW windowClass{};
-            windowClass.lpfnWndProc = pillWindowProc;
-            windowClass.hInstance = GetModuleHandleW(nullptr);
-            windowClass.lpszClassName = pillClassName;
-            RegisterClassW(&windowClass);
-            pillWindow = CreateWindowExW(
-                WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
-                pillClassName,
-                L"Speecher",
-                WS_POPUP,
-                0,
-                0,
-                pillWidth,
-                pillHeight,
-                nullptr,
-                nullptr,
-                windowClass.hInstance,
-                nullptr);
-
-            const DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
-            DwmSetWindowAttribute(pillWindow,
-                                  DWMWA_WINDOW_CORNER_PREFERENCE,
-                                  &corner,
-                                  sizeof(corner));
-
-            pillSource = DesktopWindowXamlSource();
-            pillSource.Initialize(Microsoft::UI::GetWindowIdFromWindow(pillWindow));
-
-            Border border;
-            border.Padding({18, 0, 18, 0});
-            pillText = TextBlock();
-            pillText.VerticalAlignment(VerticalAlignment::Center);
-            pillText.TextTrimming(TextTrimming::CharacterEllipsis);
-            border.Child(pillText);
-            pillSource.Content(border);
-            pillSource.SystemBackdrop(DesktopAcrylicBackdrop());
-            pillSource.SiteBridge().MoveAndResize({0, 0, pillWidth, pillHeight});
+        if (!settings) {
+            settings = std::make_unique<win::SettingsWindow>(controller);
+            settings->setActionHook(
+                [q = frontEnd](const QString &id) { q->actionTriggered(id); });
         }
-
-        pillText.Text(winrt::hstring(message.toStdWString()));
-        MONITORINFO monitorInfo{sizeof(monitorInfo)};
-        GetMonitorInfoW(MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY), &monitorInfo);
-        const int x = monitorInfo.rcWork.left
-            + (monitorInfo.rcWork.right - monitorInfo.rcWork.left - pillWidth) / 2;
-        const int y = monitorInfo.rcWork.bottom - pillHeight - pillBottomMargin;
-        SetWindowPos(pillWindow,
-                     HWND_TOPMOST,
-                     x,
-                     y,
-                     pillWidth,
-                     pillHeight,
-                     SWP_NOACTIVATE | SWP_SHOWWINDOW);
-        QTimer::singleShot(0, [foregroundWindow] {
-            if (foregroundWindow) {
-                SetForegroundWindow(foregroundWindow);
-            }
-        });
+        return settings.get();
     }
 
-    win::SettingsWindow settingsWindow;
-    HWND pillWindow = nullptr;
-    DesktopWindowXamlSource pillSource{nullptr};
-    TextBlock pillText{nullptr};
+    ApplicationController *controller;
+    WinFrontEnd *frontEnd;
+    std::unique_ptr<WinUiHost> host;
+    std::unique_ptr<DictationPanel> panel;
+    std::unique_ptr<TrayIcon> tray;
+    std::unique_ptr<win::SettingsWindow> settings;
+    std::unique_ptr<SetupWindow> setup;
+    QTimer *trayReady = nullptr;
+    bool ready = false;
 };
 
-WinFrontEnd::WinFrontEnd(ApplicationController *controller)
-    : m_controller(controller)
-    , m_native(std::make_unique<Native>(controller))
+WinFrontEnd::WinFrontEnd(ApplicationController *controller,
+                         std::unique_ptr<WinUiHost> host)
+    : QObject(controller)
+    , m_controller(controller)
+    , m_native(std::make_unique<Native>(controller, this, std::move(host)))
 {
 }
 
@@ -138,34 +77,90 @@ WinFrontEnd::~WinFrontEnd() = default;
 
 void WinFrontEnd::showMainWindow()
 {
-    m_native->settingsWindow.show();
-    QTimer::singleShot(0, m_controller, &ApplicationController::frontEndReady);
+    showSettingsWindow();
 }
 
 void WinFrontEnd::showSettingsWindow()
 {
-    showMainWindow();
+    m_native->trayReady->stop();
+    m_native->settingsWindow()->show();
+    QTimer::singleShot(0, this, &WinFrontEnd::reportReady);
 }
 
 void WinFrontEnd::showSetupAssistant(SetupAssistantPage page)
 {
-    Q_UNUSED(page);
-    showMainWindow();
+    m_native->trayReady->stop();
+    if (!m_native->setup) {
+        m_native->setup = std::make_unique<SetupWindow>(
+            m_controller, [this] { reportReady(); }, this);
+    }
+    m_native->setup->show(page);
 }
 
 bool WinFrontEnd::captureMainWindow(const QString &path)
 {
-    return m_native->settingsWindow.capture(path);
+    return m_native->settings && m_native->settings->capture(path);
 }
 
 void WinFrontEnd::showDictationError(const QString &message)
 {
-    m_native->showPill(message);
+    m_native->panel->showProblem(message);
 }
 
 void WinFrontEnd::alert()
 {
     MessageBeep(MB_OK);
+}
+
+void WinFrontEnd::showPanelForTest(quint64 generation)
+{
+    m_native->panel->showForTest(generation);
+}
+
+void WinFrontEnd::dismissPanelForTest()
+{
+    m_native->panel->dismissForTest();
+}
+
+bool WinFrontEnd::panelVisibleForTest() const
+{
+    return m_native->panel->visibleForTest();
+}
+
+quint64 WinFrontEnd::panelPresentedGenerationForTest() const
+{
+    return m_native->panel->presentedGenerationForTest();
+}
+
+qintptr WinFrontEnd::panelWindowStyleForTest() const
+{
+    return m_native->panel->windowStyleForTest();
+}
+
+void WinFrontEnd::actionTriggered(const QString &rowId)
+{
+    if (rowId == QStringLiteral("runSetup")) {
+        m_controller->showSetupAssistant();
+    } else if (rowId == QStringLiteral("checkForUpdates")) {
+        if (m_controller->updates()->state() == UpdateController::State::UpdateAvailable) {
+            m_controller->updates()->updateNow();
+        } else {
+            m_controller->updates()->checkForUpdates(m_controller->settings()->updateChannel());
+        }
+    } else if (rowId == QStringLiteral("whatsNew")) {
+        m_controller->clearPendingWhatsNew();
+    }
+    // Windows UI Automation has no consent switch, so enableAccessibility is
+    // deliberately a no-op.
+}
+
+void WinFrontEnd::reportReady()
+{
+    if (m_native->ready) {
+        return;
+    }
+    m_native->ready = true;
+    m_controller->frontEndReady();
 }
 
 } // namespace speecher
