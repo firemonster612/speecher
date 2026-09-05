@@ -8,6 +8,7 @@
 namespace speecher {
 
 class ApplicationController;
+class WinFrontEndTests;
 
 namespace win {
 
@@ -35,6 +36,8 @@ public:
     void setActionHook(std::function<void(const QString &id)> hook);
 
 private:
+    friend class ::speecher::WinFrontEndTests;
+    static bool offersWhatsNew(const QString &currentPane, const QString &pendingVersion);
     struct Native;
     std::unique_ptr<Native> m_native;
 };

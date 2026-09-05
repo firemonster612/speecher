@@ -4,7 +4,9 @@
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
+#include "frontend/win/CustomRows.h"
 #include "frontend/win/DictationPanel.h"
+#include "frontend/win/SettingsWindow.h"
 #include "frontend/win/SetupWindow.h"
 #include "frontend/win/WinFrontEnd.h"
 #include "frontend/win/WinUiHost.h"
@@ -128,22 +130,48 @@ private slots:
 
     void outputMethodsIncludeWindowsPaste()
     {
-        const QStringList methods = OutputMethod::all();
-        QVERIFY(methods.contains(QStringLiteral("direct_insert")));
-        if (!methods.contains(QStringLiteral("win-paste"))) {
-            QSKIP("win-paste is supplied by W1 and asserted here after W5 merges it");
+        const QList<RowOption> methods = win::customRowOptions(
+            QStringLiteral("outputMethod"), controller->settings()->snapshot(),
+            *controller->settings());
+        for (const RowOption &method : methods) {
+            if (method.id == QString::fromLatin1(OutputMethod::WinPaste)) {
+                QCOMPARE(method.label, QStringLiteral("Keyboard paste (Ctrl+V)"));
+                return;
+            }
         }
-        QVERIFY(methods.contains(QStringLiteral("win-paste")));
+        QFAIL("Windows paste is missing from the output methods");
     }
 
     void authOptionLabelsAreReconciledWithW2()
     {
-        QSKIP("the auth option model belongs to W2 CustomRows");
+        const AppSettings draft = controller->settings()->snapshot();
+        const auto labels = [](const QList<RowOption> &options) {
+            QStringList result;
+            for (const RowOption &option : options) {
+                result.append(option.label);
+            }
+            return result;
+        };
+        QCOMPARE(labels(win::customRowOptions(QStringLiteral("openAiAuthMode"), draft,
+                                              *controller->settings())),
+                 QStringList({QStringLiteral("Automatic"),
+                              QStringLiteral("API key from the Codex app"),
+                              QStringLiteral("ChatGPT sign-in from the Codex app"),
+                              QStringLiteral("API key from the environment"),
+                              QStringLiteral("API key saved in Speecher"),
+                              QStringLiteral("CLI Proxy API account")}));
+        QCOMPARE(labels(win::customRowOptions(QStringLiteral("anthropicAuthMode"), draft,
+                                              *controller->settings())),
+                 QStringList({QStringLiteral("Claude Code sign-in"),
+                              QStringLiteral("CLI Proxy API account")}));
     }
 
     void whatsNewOfferIsReconciledWithW2()
     {
-        QSKIP("the What's New offer belongs to W2 SettingsWindow");
+        QVERIFY(win::SettingsWindow::offersWhatsNew(QStringLiteral("general"),
+                                                    QStringLiteral("0.1.0")));
+        QVERIFY(win::SettingsWindow::offersWhatsNew(QStringLiteral("whatsNew"), {}));
+        QVERIFY(!win::SettingsWindow::offersWhatsNew(QStringLiteral("general"), {}));
     }
 
     void setupPageOrderAndCopyMatchTheWindowsFlow()

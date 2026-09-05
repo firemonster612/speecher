@@ -33,9 +33,6 @@ const QString kProfileColumn = QStringLiteral("profile");
 const QString kProfileIdKey = QStringLiteral("profileId");
 const QString kCleanupColumn = QStringLiteral("cleanup");
 const QString kToneColumn = QStringLiteral("tone");
-// W1's OutputMethod id for SendInput Ctrl+V. Named here until the core knows
-// it, so the picker already offers the Windows paste path.
-const QString kWinPaste = QStringLiteral("win-paste");
 
 QList<RowOption> outputMethods()
 {
@@ -44,11 +41,9 @@ QList<RowOption> outputMethods()
     QList<RowOption> methods;
     for (const QString &method : {QString::fromLatin1(OutputMethod::Automatic),
                                   QString::fromLatin1(OutputMethod::DirectInsert),
-                                  kWinPaste,
+                                  QString::fromLatin1(OutputMethod::WinPaste),
                                   QString::fromLatin1(OutputMethod::QtClipboard)}) {
-        methods.append({method,
-                        method == kWinPaste ? QStringLiteral("Paste with the keyboard")
-                                            : OutputMethod::label(method)});
+        methods.append({method, OutputMethod::label(method)});
     }
     return methods;
 }

@@ -413,8 +413,9 @@ struct SettingsWindow::Native {
         };
         const QList<PageSnapshot> pages = model.pages();
         // What's New sits on top only while pending or selected, as before.
-        if (query.isEmpty() && (currentPane == kWhatsNewPane
-                                || !controller->pendingWhatsNewVersion().isEmpty())) {
+        if (query.isEmpty()
+            && SettingsWindow::offersWhatsNew(currentPane,
+                                              controller->pendingWhatsNewVersion())) {
             if (const PageSnapshot *whatsNew = pageWithId(pages, kWhatsNewPane)) {
                 append(whatsNew->id, whatsNew->title, glyphForIconId(whatsNew->iconId));
                 navigation.MenuItems().Append(NavigationViewItemSeparator());
@@ -712,6 +713,11 @@ SettingsWindow::SettingsWindow(ApplicationController *controller)
 }
 
 SettingsWindow::~SettingsWindow() = default;
+
+bool SettingsWindow::offersWhatsNew(const QString &currentPane, const QString &pendingVersion)
+{
+    return currentPane == kWhatsNewPane || !pendingVersion.isEmpty();
+}
 
 void SettingsWindow::show()
 {
