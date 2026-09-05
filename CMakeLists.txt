@@ -988,6 +988,15 @@ if(SPEECHER_WITH_QKEYCHAIN)
     endif()
     target_compile_definitions(speecher_domain PUBLIC SPEECHER_WITH_QKEYCHAIN=1)
     target_link_libraries(speecher_domain PUBLIC qt6keychain)
+    # The FetchContent qtkeychain is a shared library; without this neither
+    # the app nor the tests start from the build directory (0xc0000135).
+    if(WIN32 AND NOT Qt6Keychain_DIR)
+      add_custom_command(TARGET speecher POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+          "$<TARGET_FILE:qt6keychain>" "$<TARGET_FILE_DIR:speecher>"
+        VERBATIM
+      )
+    endif()
   endif()
 endif()
 
