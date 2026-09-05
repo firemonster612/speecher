@@ -10,6 +10,7 @@ inline constexpr auto DirectInsert = "direct_insert";
 inline constexpr auto Ydotool = "ydotool";
 inline constexpr auto WlCopy = "wl-copy";
 inline constexpr auto MacPaste = "mac-paste";
+inline constexpr auto WinPaste = "win-paste";
 inline constexpr auto QtClipboard = "qt-clipboard";
 
 QStringList all();

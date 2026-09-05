@@ -77,7 +77,7 @@ void SettingsCodecs::setSetupCompleted(bool value)
 
 bool SettingsCodecs::launchAtLogin() const
 {
-#ifdef Q_OS_MACOS
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     constexpr bool defaultValue = true;
 #else
     constexpr bool defaultValue = false;
