@@ -225,7 +225,7 @@ Target WinTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
     target.windowTitle = windowTitle(foreground);
     target.toolkit = QStringLiteral("UI Automation");
 
-    if (m_native->automation) {
+    if (processId != GetCurrentProcessId() && m_native->automation) {
         ComPtr<IUIAutomationElement> focused;
         int focusedProcessId = 0;
         if (SUCCEEDED(m_native->automation->GetFocusedElement(&focused))
@@ -265,7 +265,7 @@ Target WinTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
                         target.selectedText = value.mid(start, end - start);
                     }
                     target.nearbyTextBefore = value.left(start).right(targetContextCharacters);
-                    target.nearbyTextAfter = value.mid(start, targetContextCharacters);
+                    target.nearbyTextAfter = value.mid(end, targetContextCharacters);
                 }
             }
         }
