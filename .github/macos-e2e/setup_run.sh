@@ -72,22 +72,16 @@ wait_for_assistant() {
 }
 
 click_button() {
-  # SwiftUI nests the controls inside accessibility groups.
-  bounded_osascript -e "
-    tell application \"System Events\" to tell process \"speecher\"
-      set candidates to entire contents of window \"$ASSISTANT_WINDOW\"
-      repeat with candidate in candidates
-        set buttonElement to contents of candidate
-        if role of buttonElement is \"AXButton\" then
-          log {name of buttonElement, description of buttonElement}
-          if name of buttonElement is \"$1\" or description of buttonElement is \"$1\" then
-            click buttonElement
-            return
-          end if
-        end if
-      end repeat
-      error \"Setup button not found: $1\"
-    end tell" \
+  # The root SwiftUI group exposes the navigation HStack's buttons in order.
+  # Skip is first; Continue/Finish is last. Step captures and persisted setup
+  # state verify the action, without depending on SwiftUI's empty AX names.
+  local button
+  case "$1" in
+    "Skip Setup") button='first button' ;;
+    Continue|Finish) button='last button' ;;
+    *) return 1 ;;
+  esac
+  assistant_ui "click $button of group 1 of window \"$ASSISTANT_WINDOW\"" \
     >>"$CASE_DIR/clicks.out" 2>&1
 }
 
