@@ -56,7 +56,12 @@ std::unique_ptr<QFile> WindowsInstallerUpdater::createDownload(
         return {};
     }
 
-    const QString path = QDir(folder).filePath(
+    QDir directory(folder);
+    for (const QString &oldInstaller : directory.entryList(
+             {QStringLiteral("Speecher-Setup-*.exe")}, QDir::Files)) {
+        directory.remove(oldInstaller);
+    }
+    const QString path = directory.filePath(
         QStringLiteral("Speecher-Setup-%1.exe").arg(manifest().version));
     auto download = std::make_unique<QFile>(path);
     if (!download->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -86,6 +91,8 @@ void WindowsInstallerUpdater::restartApplication()
         QStringLiteral("/CLOSEAPPLICATIONS"),
         QStringLiteral("/FORCECLOSEAPPLICATIONS"),
         QStringLiteral("/LOG=%1").arg(QDir::toNativeSeparators(logPath)),
+        QStringLiteral("/RESTARTARGS=%1")
+            .arg(QProcess::joinCommand(QCoreApplication::arguments().mid(1))),
     };
     if (!QProcess::startDetached(m_installerPath, arguments)) {
         setState(State::ReadyToRestart,
