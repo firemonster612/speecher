@@ -549,11 +549,25 @@ set(SPEECHER_FRONTEND_MAC_SWIFT_SOURCES
 )
 
 set(SPEECHER_FRONTEND_WIN_SOURCES
+  src/frontend/win/CollectionEditor.cpp
+  src/frontend/win/CustomRows.cpp
+  src/frontend/win/Panes.cpp
+  src/frontend/win/SettingsModel.cpp
+  src/frontend/win/SettingsPage.cpp
+  src/frontend/win/SettingsWindow.cpp
+  src/frontend/win/ShortcutRecorder.cpp
   src/frontend/win/WinFrontEnd.cpp
   src/frontend/win/WinUiHost.cpp
 )
 
 set(SPEECHER_FRONTEND_WIN_HEADERS
+  src/frontend/win/CollectionEditor.h
+  src/frontend/win/CustomRows.h
+  src/frontend/win/Panes.h
+  src/frontend/win/SettingsModel.h
+  src/frontend/win/SettingsPage.h
+  src/frontend/win/SettingsWindow.h
+  src/frontend/win/ShortcutRecorder.h
   src/frontend/win/WinFrontEnd.h
   src/frontend/win/WinUiHost.h
 )
@@ -782,6 +796,11 @@ if(WIN32 AND SPEECHER_WITH_WINUI)
   )
   target_include_directories(speecher_frontend_win PUBLIC src)
   target_link_libraries(speecher_frontend_win PUBLIC speecher_app winappsdk)
+  qt_add_resources(speecher_frontend_win "win_xaml"
+    PREFIX "/win"
+    BASE "src/frontend/win"
+    FILES src/frontend/win/xaml/styles.xaml
+  )
 endif()
 
 qt_add_executable(speecher
@@ -818,6 +837,9 @@ if(TARGET speecher_frontend_win)
       "${SPEECHER_WASDK_BOOTSTRAP_DLL}" "$<TARGET_FILE_DIR:speecher>"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
       ${SPEECHER_WASDK_WINMDS} "$<TARGET_FILE_DIR:speecher>"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/speecher.ico"
+      "$<TARGET_FILE_DIR:speecher>"
     COMMAND_EXPAND_LISTS
     COMMENT "Copying Windows App SDK runtime files"
     VERBATIM
@@ -985,6 +1007,15 @@ if(SPEECHER_WITH_QKEYCHAIN)
     endif()
     target_compile_definitions(speecher_domain PUBLIC SPEECHER_WITH_QKEYCHAIN=1)
     target_link_libraries(speecher_domain PUBLIC qt6keychain)
+    # The FetchContent qtkeychain is a shared library; without this neither
+    # the app nor the tests start from the build directory (0xc0000135).
+    if(WIN32 AND NOT Qt6Keychain_DIR)
+      add_custom_command(TARGET speecher POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+          "$<TARGET_FILE:qt6keychain>" "$<TARGET_FILE_DIR:speecher>"
+        VERBATIM
+      )
+    endif()
   endif()
 endif()
 
