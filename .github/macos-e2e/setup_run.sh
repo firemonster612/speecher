@@ -75,10 +75,13 @@ click_button() {
   # SwiftUI nests the controls inside accessibility groups.
   bounded_osascript -e "
     tell application \"System Events\" to tell process \"speecher\"
-      repeat with candidate in (entire contents of window \"$ASSISTANT_WINDOW\")
-        if role of candidate is \"AXButton\" then
-          if name of candidate is \"$1\" then
-            click candidate
+      set candidates to entire contents of window \"$ASSISTANT_WINDOW\"
+      repeat with candidate in candidates
+        set buttonElement to contents of candidate
+        if role of buttonElement is \"AXButton\" then
+          log {name of buttonElement, description of buttonElement}
+          if name of buttonElement is \"$1\" or description of buttonElement is \"$1\" then
+            click buttonElement
             return
           end if
         end if
@@ -133,17 +136,25 @@ elif ! wait_for_assistant; then
   fail_case "The setup assistant window never appeared on a fresh profile."
 else
   errors=()
-  wait_for_page_capture 1 welcome || errors+=("the welcome step was never captured")
   for index in "${!SETUP_STEP_IDS[@]}"; do
     step=$((index + 1))
     id="${SETUP_STEP_IDS[$index]}"
-    wait_for_page_capture "$step" "$id" || errors+=("step $step ($id) was never captured")
+    log "S1 step $step ($id)"
+    if ! wait_for_page_capture "$step" "$id"; then
+      errors+=("step $step ($id) was never captured")
+      break
+    fi
     if (( step < ${#SETUP_STEP_IDS[@]} )); then
-      click_button Continue || errors+=("Continue did not click on step $step ($id)")
+      if ! click_button Continue; then
+        errors+=("Continue did not click on step $step ($id)")
+        break
+      fi
       sleep 0.5
     fi
   done
-  click_button Finish || errors+=("Finish did not click on the last step")
+  if (( ${#errors[@]} == 0 )); then
+    click_button Finish || errors+=("Finish did not click on the last step")
+  fi
   sleep 2
   setup_completed || errors+=("app.setupCompleted was not written")
   kill -0 "$APP_PID" 2>/dev/null || errors+=("the app quit after Finish")
