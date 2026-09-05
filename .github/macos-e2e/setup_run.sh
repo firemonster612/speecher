@@ -60,19 +60,31 @@ assistant_ui() {
 }
 
 wait_for_assistant() {
-  local count=0
-  while (( count < 100 )); do
-    if assistant_ui "get name of window \"$ASSISTANT_WINDOW\"" >/dev/null 2>&1; then
+  local deadline=$((SECONDS + 30))
+  while (( SECONDS < deadline )); do
+    if assistant_ui "get name of window \"$ASSISTANT_WINDOW\"" \
+        >>"$CASE_DIR/assistant-ax.out" 2>&1; then
       return 0
     fi
     sleep 0.2
-    count=$((count + 1))
   done
   return 1
 }
 
 click_button() {
-  assistant_ui "click button \"$1\" of window \"$ASSISTANT_WINDOW\"" \
+  # SwiftUI nests the controls inside accessibility groups.
+  bounded_osascript -e "
+    tell application \"System Events\" to tell process \"speecher\"
+      repeat with candidate in (entire contents of window \"$ASSISTANT_WINDOW\")
+        if role of candidate is \"AXButton\" then
+          if name of candidate is \"$1\" then
+            click candidate
+            return
+          end if
+        end if
+      end repeat
+      error \"Setup button not found: $1\"
+    end tell" \
     >>"$CASE_DIR/clicks.out" 2>&1
 }
 
@@ -94,14 +106,13 @@ setup_completed() {
 }
 
 settings_window_present() {
-  local count=0
-  while (( count < 50 )); do
+  local deadline=$((SECONDS + 20))
+  while (( SECONDS < deadline )); do
     if assistant_ui 'get name of windows' 2>/dev/null \
         | tr ',' '\n' | grep -qvE "^\s*($ASSISTANT_WINDOW)?\s*$"; then
       return 0
     fi
     sleep 0.2
-    count=$((count + 1))
   done
   return 1
 }

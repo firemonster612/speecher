@@ -109,6 +109,7 @@ jobs:
         run: swiftc .github/macos-e2e/window_probe.swift -o "$RUNNER_TEMP/window-probe"
 
       - name: Run setup assistant E2E
+        timeout-minutes: 5
         env:
           APP_BUNDLE: ${{ runner.temp }}/product/speecher.app
           EVIDENCE_ROOT: ${{ runner.temp }}/setup-e2e

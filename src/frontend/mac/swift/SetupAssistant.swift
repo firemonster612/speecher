@@ -704,8 +704,12 @@ final class SpeecherSetupAssistant: NSObject, NSWindowDelegate {
                           defer: false)
         window.isReleasedWhenClosed = false
         window.title = "Speecher Setup Assistant"
-        window.contentViewController = NSHostingController(
+        let hosting = NSHostingController(
             rootView: SetupAssistantView(flow: flow, model: model))
+        // The assistant owns its fixed size. SwiftUI's flexible content must
+        // not turn its preferred size into a window taller than the screen.
+        hosting.sizingOptions = []
+        window.contentViewController = hosting
         window.setContentSize(NSSize(width: 700, height: 560))
         window.center()
         super.init()
