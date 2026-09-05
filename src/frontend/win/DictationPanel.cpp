@@ -117,7 +117,7 @@ struct DictationPanel::Native : QObject {
         connect(session, &DictationSession::popupMessageRequested, this,
                 [this](const QString &message) {
                     status = message;
-                    preview = message;
+                    completed = true;
                     refresh();
                 });
         connect(session, &DictationSession::popupErrorRequested, this, &Native::showProblem);
@@ -159,7 +159,7 @@ struct DictationPanel::Native : QObject {
         Border chrome;
         chrome.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
         chrome.Padding({20, 0, 20, 0});
-        StackPanel row;
+        row = StackPanel();
         row.Orientation(Orientation::Horizontal);
         row.Spacing(12);
         row.VerticalAlignment(VerticalAlignment::Center);
@@ -217,6 +217,7 @@ struct DictationPanel::Native : QObject {
     void show(quint64 generation)
     {
         problem.clear();
+        completed = false;
         pendingGeneration = generation;
         ensureWindow();
         refresh();
@@ -288,11 +289,17 @@ struct DictationPanel::Native : QObject {
             return;
         }
         const bool hasProblem = !problem.isEmpty();
+        // A finished delivery: the outcome message is the whole story, so the
+        // spent preview words go and the icon and message centre in the pill.
+        const bool finished = completed && !hasProblem;
         glyph.Glyph(hstring((refining && !hasProblem
                                  ? QString::fromUtf16(u"\uE8A9")
                                  : phaseGlyph(status, hasProblem))
                                 .toStdWString()));
-        QString shown = hasProblem ? problem : (preview.isEmpty() ? status : preview);
+        QString shown = hasProblem ? problem
+            : finished                ? status
+            : preview.isEmpty()       ? status
+                                      : preview;
 
         POINT pointer{};
         GetCursorPos(&pointer);
@@ -309,7 +316,13 @@ struct DictationPanel::Native : QObject {
             shown = QString::fromUtf16(u"\u2026") + shown.right(maximumCharacters - 1);
         }
         text.Text(hstring(shown.toStdWString()));
-        text.Width(textWidth);
+        if (finished) {
+            text.ClearValue(FrameworkElement::WidthProperty());
+            row.HorizontalAlignment(HorizontalAlignment::Center);
+        } else {
+            text.Width(textWidth);
+            row.HorizontalAlignment(HorizontalAlignment::Left);
+        }
         level.Visibility(!hasProblem && !refining
                                  && status.compare(QStringLiteral("listening"), Qt::CaseInsensitive) == 0
                              ? Visibility::Visible
@@ -362,7 +375,9 @@ struct DictationPanel::Native : QObject {
     int width = minimumWidth;
     quint64 pendingGeneration = 0;
     quint64 presentedGeneration = 0;
+    StackPanel row{nullptr};
     bool frozen = false;
+    bool completed = false;
     bool refining = false;
     bool loaded = false;
 };
