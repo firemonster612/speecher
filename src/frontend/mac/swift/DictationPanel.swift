@@ -44,31 +44,43 @@ struct DictationPanelView: View {
 
     var body: some View {
         HStack {
-            Image(systemName: symbol)
-                .imageScale(.large)
-                .accessibilityLabel(phaseLabel)
-            // The words are the point of the panel, so they get the only line of
-            // type in it, and a problem takes that line rather than a second one.
-            Text(state.problem.isEmpty ? state.preview : state.problem)
-                .font(.body)
-                .lineLimit(1)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .layoutPriority(1)
-                // A live transcript overflows from the front: the words the
-                // user just said must always be the visible end.
-                .truncationMode(state.problem.isEmpty ? .head : .tail)
-            if !state.problem.isEmpty {
-                Button("Dismiss", action: dismiss)
-            } else if state.refining {
-                // A spinner, because refinement has no measurable end, and no
-                // label because it appeared when the work started.
-                ProgressView().controlSize(.small)
+            if finished {
+                // The delivery outcome takes the whole pill, centred as one
+                // icon-and-text group (and one VoiceOver element); the
+                // transcript and the live level bar left with the live audio.
+                Label(state.status, systemImage: symbol)
+                    .imageScale(.large)
+                    .font(.body)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
             } else {
-                Gauge(value: Double(min(max(state.level, 0), 1))) { EmptyView() }
-                    .gaugeStyle(.linearCapacity)
-                    .frame(width: 96)
-                    .accessibilityLabel("Input level")
+                Image(systemName: symbol)
+                    .imageScale(.large)
+                    .accessibilityLabel(phaseLabel)
+                // The words are the point of the panel, so they get the only line
+                // of type in it, and a problem takes that line rather than a
+                // second one.
+                Text(state.problem.isEmpty ? state.preview : state.problem)
+                    .font(.body)
+                    .lineLimit(1)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
+                    // A live transcript overflows from the front: the words the
+                    // user just said must always be the visible end.
+                    .truncationMode(state.problem.isEmpty ? .head : .tail)
+                if !state.problem.isEmpty {
+                    Button("Dismiss", action: dismiss)
+                } else if state.refining {
+                    // A spinner, because refinement has no measurable end, and no
+                    // label because it appeared when the work started.
+                    ProgressView().controlSize(.small)
+                } else {
+                    Gauge(value: Double(min(max(state.level, 0), 1))) { EmptyView() }
+                        .gaugeStyle(.linearCapacity)
+                        .frame(width: 96)
+                        .accessibilityLabel("Input level")
+                }
             }
         }
         .scenePadding()
@@ -83,21 +95,29 @@ struct DictationPanelView: View {
     /// still empty. The session ends a delivery on a free-form outcome from the
     /// delivery back end ("Copied to clipboard"), so an unrecognised non-empty
     /// status is a finished one.
-    private var phase: (symbol: String, label: String) {
+    private var phase: (symbol: String, label: String, finished: Bool) {
         if !state.problem.isEmpty {
-            return ("exclamationmark.triangle.fill", "Dictation problem")
+            return ("exclamationmark.triangle.fill", "Dictation problem", false)
         }
         switch state.status.lowercased() {
         case "", "preparing", "starting":
-            return ("arrow.triangle.2.circlepath", state.status.isEmpty ? "Dictating" : state.status)
-        case "listening": return ("mic.fill", state.status)
-        case "stopping": return ("waveform", state.status)
-        case "refining": return ("sparkles", state.status)
-        default: return ("paperplane.fill", state.status)
+            return ("arrow.triangle.2.circlepath", state.status.isEmpty ? "Dictating" : state.status, false)
+        case "listening": return ("mic.fill", state.status, false)
+        case "stopping": return ("waveform", state.status, false)
+        case "refining": return ("sparkles", state.status, false)
+        // Set by the OAuth refresh callback in wire(): ongoing work, not an
+        // outcome, so it must not present as a finished delivery.
+        case "refreshing sign-in…":
+            return ("arrow.triangle.2.circlepath", state.status, false)
+        default: return ("paperplane.fill", state.status, true)
         }
     }
 
     private var symbol: String { phase.symbol }
+
+    /// Whether the dictation has ended in an outcome ("Input sent") rather
+    /// than a live phase, so the panel shows the receipt and nothing live.
+    private var finished: Bool { phase.finished }
 
     /// The phase in words, for the screen reader that can't see the symbol.
     private var phaseLabel: String { phase.label }

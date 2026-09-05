@@ -261,7 +261,9 @@ void TranscriberPopup::showListeningIndicator()
 
 void TranscriberPopup::showMessage(const QString &message)
 {
-    setRefreshLayout(false);
+    // The outcome is the whole popup: without this the transcript pill stays
+    // under the receipt with the last preview words in it.
+    hidePreview();
     m_waveform->setMessage(message);
     updateWindowMask();
 }
