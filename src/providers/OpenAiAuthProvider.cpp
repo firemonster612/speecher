@@ -309,6 +309,7 @@ OpenAiAuth OpenAiAuthProvider::readCodexOauth(bool refreshExpired)
         return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("The Codex app is not signed in"), {}, {}, {}, {}, true};
     }
     const QJsonObject tokens = QJsonDocument::fromJson(file.readAll()).object().value(QStringLiteral("tokens")).toObject();
+    file.close();
     const QString accessToken = tokens.value(QStringLiteral("access_token")).toString().trimmed();
     if (accessToken.isEmpty()) {
         return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("The Codex app has no sign-in to reuse"), {}, {}, {}, {}, true};
