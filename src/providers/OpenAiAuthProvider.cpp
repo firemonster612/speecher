@@ -136,15 +136,17 @@ static bool refreshCodexAuth(QString *error)
         return false;
     }
 
-    QFile file(authPath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        if (error) {
-            *error = QStringLiteral("No Codex auth file; sign in with codex login");
+    QJsonObject root;
+    {
+        QFile file(authPath);
+        if (!file.open(QIODevice::ReadOnly)) {
+            if (error) {
+                *error = QStringLiteral("No Codex auth file; sign in with codex login");
+            }
+            return false;
         }
-        return false;
+        root = QJsonDocument::fromJson(file.readAll()).object();
     }
-    QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
-    file.close();
     QJsonObject tokens = root.value(QStringLiteral("tokens")).toObject();
     if (!jwtExpired(tokens.value(QStringLiteral("access_token")).toString().trimmed())) {
         return true;
@@ -185,12 +187,18 @@ static bool refreshCodexAuth(QString *error)
     const QByteArray contents = QJsonDocument(root).toJson();
     QString saveError;
 #ifdef Q_OS_WIN
-    QTemporaryFile saved(QFileInfo(authPath).dir().filePath(
-        QStringLiteral("auth.json.speecher.XXXXXX.tmp")));
-    bool savedOk = saved.open() && saved.write(contents) == contents.size() && saved.flush();
-    const QString temporaryPath = saved.fileName();
-    saveError = saved.errorString();
-    saved.close();
+    QString temporaryPath;
+    bool savedOk = false;
+    {
+        QTemporaryFile saved(QFileInfo(authPath).dir().filePath(
+            QStringLiteral("auth.json.speecher.XXXXXX.tmp")));
+        savedOk = saved.open() && saved.write(contents) == contents.size() && saved.flush();
+        temporaryPath = saved.fileName();
+        saveError = saved.errorString();
+        if (savedOk) {
+            saved.setAutoRemove(false);
+        }
+    }
     // QSaveFile cannot replace auth.json while Codex briefly has it open.
     // MoveFileEx keeps the crash-safe same-directory replacement and permits a retry.
     DWORD moveError = ERROR_SUCCESS;
@@ -213,6 +221,7 @@ static bool refreshCodexAuth(QString *error)
         saveError.clear();
     } else if (moveError != ERROR_SUCCESS) {
         saveError = QStringLiteral("Windows error %1").arg(moveError);
+        QFile::remove(temporaryPath);
     }
 #else
     QSaveFile saved(authPath);
@@ -304,12 +313,14 @@ static QString codexAuthMode()
 
 OpenAiAuth OpenAiAuthProvider::readCodexOauth(bool refreshExpired)
 {
-    QFile file(codexAuthPath());
-    if (!file.open(QIODevice::ReadOnly)) {
-        return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("The Codex app is not signed in"), {}, {}, {}, {}, true};
+    QJsonObject tokens;
+    {
+        QFile file(codexAuthPath());
+        if (!file.open(QIODevice::ReadOnly)) {
+            return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("The Codex app is not signed in"), {}, {}, {}, {}, true};
+        }
+        tokens = QJsonDocument::fromJson(file.readAll()).object().value(QStringLiteral("tokens")).toObject();
     }
-    const QJsonObject tokens = QJsonDocument::fromJson(file.readAll()).object().value(QStringLiteral("tokens")).toObject();
-    file.close();
     const QString accessToken = tokens.value(QStringLiteral("access_token")).toString().trimmed();
     if (accessToken.isEmpty()) {
         return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("The Codex app has no sign-in to reuse"), {}, {}, {}, {}, true};
