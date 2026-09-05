@@ -739,11 +739,14 @@ final class SpeecherSetupAssistant: NSObject, NSWindowDelegate {
         let capture = { [weak self] (step: Int) in
             guard let self else { return }
             let id = flow.steps[step].id
-            // Two turns of the run loop, so SwiftUI has laid the step out.
-            DispatchQueue.main.async {
-                DispatchQueue.main.async {
-                    self.capture(toPath: "\(dir)/step-\(step + 1)-\(id).png")
-                }
+            // @Published fires before SwiftUI renders. Two queued main-thread
+            // blocks can still capture the previous page, especially while
+            // the microphone starts. Give the renderer time to commit first.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                guard self.flow.step == step else { return }
+                self.window.contentView?.layoutSubtreeIfNeeded()
+                self.window.displayIfNeeded()
+                self.capture(toPath: "\(dir)/step-\(step + 1)-\(id).png")
             }
         }
         stepObserver = flow.$step.sink { capture($0) }
@@ -754,6 +757,6 @@ final class SpeecherSetupAssistant: NSObject, NSWindowDelegate {
               let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: bitmap)
         guard let png = bitmap.representation(using: .png, properties: [:]) else { return }
-        try? png.write(to: URL(fileURLWithPath: path))
+        try? png.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 }

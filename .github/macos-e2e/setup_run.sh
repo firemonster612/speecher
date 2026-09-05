@@ -74,7 +74,7 @@ wait_for_assistant() {
 click_button() {
   # The root SwiftUI group exposes the navigation HStack's buttons in order.
   # Skip is first; Continue/Finish is last. Step captures and persisted setup
-  # state verify the action, without depending on SwiftUI's empty AX names.
+  # state verify the action, without depending on SwiftUI's AX names.
   local button
   case "$1" in
     "Skip Setup") button='first button' ;;
@@ -85,8 +85,7 @@ click_button() {
     >>"$CASE_DIR/clicks.out" 2>&1
 }
 
-# The seam writes the PNG two run-loop turns after the step appears; wait for
-# the file rather than sleeping blind.
+# The seam writes the PNG after the step renders; wait for the atomic write.
 wait_for_page_capture() {
   local index="$1" id="$2" count=0
   local file="$CASE_DIR/pages/step-$index-$id.png"
@@ -100,6 +99,47 @@ wait_for_page_capture() {
 
 setup_completed() {
   [[ "$(defaults read "$DOMAIN" app.setupCompleted 2>/dev/null)" == 1 ]]
+}
+
+check_page_captures() {
+  # A nonempty PNG can still be the previous step. Read the actual pixels,
+  # independently of the flow model that picked the capture's filename.
+  swift - "$CASE_DIR/pages" >"$CASE_DIR/page-checks.out" 2>&1 <<'SWIFT'
+import Foundation
+import ImageIO
+import Vision
+
+let pages = [
+    ("welcome", "Welcome to Speecher"), ("transcription", "Transcription"),
+    ("microphone", "Microphone"), ("accessibility", "Accessibility"),
+    ("delivery", "Text delivery"), ("refinement", "Refinement"),
+    ("profiles", "Writing profiles"), ("ready", "Ready to dictate"),
+    ("login", "Start at login"),
+]
+for (index, page) in pages.enumerated() {
+    let filename = "step-\(index + 1)-\(page.0).png"
+    let url = URL(fileURLWithPath: CommandLine.arguments[1]).appendingPathComponent(filename)
+    let data = try Data(contentsOf: url)
+    guard data.count > 8192,
+          let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+          image.width >= 600, image.height >= 500 else {
+        print("FAIL: \(filename) is missing a full-size rendering")
+        exit(1)
+    }
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    try VNImageRequestHandler(cgImage: image).perform([request])
+    let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        .joined(separator: " ")
+    print("\(filename): \(image.width)x\(image.height), \(data.count) bytes\n\(text)")
+    guard text.contains(page.1), text.contains("Step \(index + 1) of 9") else {
+        print("FAIL: \(filename) does not show its expected title and step number")
+        exit(1)
+    }
+}
+print("PASS: all nine captures show the expected title and step number")
+SWIFT
 }
 
 settings_window_present() {
@@ -155,6 +195,7 @@ else
   settings_window_present || errors+=("no settings window followed the assistant")
   shortcut="$(defaults read "$DOMAIN" 2>/dev/null | grep -i shortcut || true)"
   printf '%s\n' "$shortcut" > "$CASE_DIR/shortcut-defaults.txt"
+  check_page_captures || errors+=("page rendering checks failed; see page-checks.out")
   if (( ${#errors[@]} )); then
     fail_case "$(IFS='; '; echo "${errors[*]}")"
   else
