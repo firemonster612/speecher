@@ -35,6 +35,17 @@ inline QString qs(const winrt::hstring &text)
     return QString::fromWCharArray(text.c_str(), static_cast<qsizetype>(text.size()));
 }
 
+inline winrt::Microsoft::UI::Xaml::ElementTheme requestedTheme(const QString &setting)
+{
+    if (setting == QStringLiteral("light")) {
+        return winrt::Microsoft::UI::Xaml::ElementTheme::Light;
+    }
+    if (setting == QStringLiteral("dark")) {
+        return winrt::Microsoft::UI::Xaml::ElementTheme::Dark;
+    }
+    return winrt::Microsoft::UI::Xaml::ElementTheme::Default;
+}
+
 // The services rows need from the window, plus the state that must survive a
 // pane rebuild. One of these lives on the settings window.
 struct PaneHost {

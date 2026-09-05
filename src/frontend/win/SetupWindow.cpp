@@ -5,6 +5,7 @@
 #include "core/OutputFormat.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationPorts.h"
+#include "frontend/win/SettingsPage.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "providers/ProviderRegistry.h"
 
@@ -167,6 +168,7 @@ struct SetupWindow::Native {
         });
 
         Grid root;
+        root.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
         RowDefinition titleRow;
         titleRow.Height({48, GridUnitType::Pixel});
         RowDefinition contentRow;

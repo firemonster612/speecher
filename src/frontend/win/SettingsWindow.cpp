@@ -102,17 +102,6 @@ bool pageMatches(const PageSnapshot &page, const QString &query)
     return false;
 }
 
-ElementTheme themeFor(const QString &setting)
-{
-    if (setting == QStringLiteral("light")) {
-        return ElementTheme::Light;
-    }
-    if (setting == QStringLiteral("dark")) {
-        return ElementTheme::Dark;
-    }
-    return ElementTheme::Default;
-}
-
 // The window's client pixels through PrintWindow, which composes the swap
 // chain content DWM holds — RenderTargetBitmap misses the backdrop.
 bool printWindowTo(HWND handle, const QString &path)
@@ -390,7 +379,7 @@ struct SettingsWindow::Native {
     void applyTheme()
     {
         if (root) {
-            root.RequestedTheme(themeFor(controller->settings()->theme()));
+            root.RequestedTheme(requestedTheme(controller->settings()->theme()));
         }
     }
 

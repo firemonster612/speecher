@@ -1,8 +1,10 @@
 #include "frontend/win/DictationPanel.h"
 
 #include "app/ApplicationController.h"
+#include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "dictation/DictationTypes.h"
+#include "frontend/win/SettingsPage.h"
 
 #include <windows.h>
 #include <dwmapi.h>
@@ -155,6 +157,7 @@ struct DictationPanel::Native : QObject {
         source.Initialize(Microsoft::UI::GetWindowIdFromWindow(window));
 
         Border chrome;
+        chrome.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
         chrome.Padding({20, 0, 20, 0});
         StackPanel row;
         row.Orientation(Orientation::Horizontal);

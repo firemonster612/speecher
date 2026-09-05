@@ -1,6 +1,8 @@
 #include "frontend/win/TrayFlyout.h"
 
 #include "app/ApplicationController.h"
+#include "core/SettingsStore.h"
+#include "frontend/win/SettingsPage.h"
 
 #include <windows.h>
 #include <dwmapi.h>
@@ -78,7 +80,7 @@ struct TrayFlyout::Native {
                                  level.Value(std::clamp(value, 0.0f, 1.0f));
                              }
                          });
-        QObject::connect(controller, &ApplicationController::previewChanged, flyout,
+        QObject::connect(controller, &ApplicationController::transcriptDelivered, flyout,
                          [this](const QString &value) {
                              if (!value.isEmpty()) {
                                  lastTranscript = value;
@@ -123,6 +125,7 @@ struct TrayFlyout::Native {
         source.SiteBridge().MoveAndResize({0, 0, flyoutWidth, flyoutHeight});
 
         StackPanel root;
+        root.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
         root.Padding({20, 20, 20, 20});
         root.Spacing(10);
         root.KeyDown([this](const auto &, const Input::KeyRoutedEventArgs &event) {
