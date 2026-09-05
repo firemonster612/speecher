@@ -8,14 +8,10 @@
 
 class QCheckBox;
 class QComboBox;
-class QHideEvent;
-class QKeySequenceEdit;
 class QLabel;
 class QShowEvent;
 class QProgressBar;
 class QPushButton;
-class QTimer;
-class QVBoxLayout;
 
 namespace speecher {
 
@@ -68,11 +64,6 @@ protected:
 private:
     void refreshDevices();
     void startMeter();
-#ifdef Q_OS_MACOS
-    void addMicrophonePermissionControls(QVBoxLayout *layout);
-    void refreshMicrophonePermission();
-    void refreshInputVolume();
-#endif
 
     SettingsStore &m_settings;
     const PlatformComposition &m_platform;
@@ -80,12 +71,6 @@ private:
     QComboBox *m_device;
     QProgressBar *m_level;
     QLabel *m_status;
-#ifdef Q_OS_MACOS
-    QLabel *m_inputVolumeStatus = nullptr;
-    QLabel *m_permissionStatus = nullptr;
-    QPushButton *m_allowMicrophone = nullptr;
-    QPushButton *m_openMicrophoneSettings = nullptr;
-#endif
     bool m_active = false;
     bool m_devicesLoaded = false;
 };
@@ -94,14 +79,6 @@ class AccessibilitySetupPage final : public QWidget {
 public:
     explicit AccessibilitySetupPage(ApplicationController &controller,
                                     QWidget *parent = nullptr);
-
-    bool accessibilityGrantAppearedDuringSetup() const;
-
-#ifdef Q_OS_MACOS
-protected:
-    void showEvent(QShowEvent *event) override;
-    void hideEvent(QHideEvent *event) override;
-#endif
 
 private:
     void updateState(bool supported, bool enabled, bool persistent);
@@ -113,11 +90,6 @@ private:
     // user acts again, so the poll cannot wipe the reply to their click.
     QString m_lastError;
     QPushButton *m_enable;
-#ifdef Q_OS_MACOS
-    QTimer *m_poll;
-    bool m_initialGrant = false;
-    bool m_initialGrantRecorded = false;
-#endif
 };
 
 class TextDeliverySetupPage final : public QWidget {
@@ -177,27 +149,12 @@ private:
     QList<ProfileControls> m_profiles;
 };
 
-#ifdef Q_OS_MACOS
-class StartAtLoginSetupPage final : public QWidget {
-public:
-    explicit StartAtLoginSetupPage(SettingsStore &settings,
-                                   QWidget *parent = nullptr);
-
-    void apply();
-
-private:
-    SettingsStore &m_settings;
-    QCheckBox *m_launchAtLogin;
-};
-#endif
-
 class FinishSetupPage final : public QWidget {
 public:
     explicit FinishSetupPage(ApplicationController &controller,
                              QWidget *parent = nullptr);
 
     void setSignInRequired(bool required);
-    bool applyShortcut();
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -207,12 +164,6 @@ private:
 #ifdef Q_OS_LINUX
     void updateLinuxShortcutInstruction();
     QLabel *m_manualCommand = nullptr;
-#endif
-#ifdef Q_OS_MACOS
-    QCheckBox *m_createShortcut = nullptr;
-    QKeySequenceEdit *m_shortcut = nullptr;
-    bool m_shortcutFailureAcknowledged = false;
-    bool m_shortcutLoaded = false;
 #endif
     QLabel *m_shortcutStatus;
     QLabel *m_signInNote;

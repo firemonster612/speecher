@@ -8,7 +8,6 @@
 #endif
 
 #include <QAbstractButton>
-#include <QMessageBox>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -36,9 +35,6 @@ QStringList setupPageTitles()
     titles.append(QStringLiteral("Global Shortcut"));
 #endif
     titles.append(QStringLiteral("Ready to dictate"));
-#ifdef Q_OS_MACOS
-    titles.append(QStringLiteral("Start at login"));
-#endif
     return titles;
 }
 
@@ -83,6 +79,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
 #endif
     WelcomeSetupPage *welcome = nullptr;
     SpeechProviderSetupPage *speechProvider = nullptr;
+    AccessibilitySetupPage *accessibility = nullptr;
     RefinementSetupPage *refinement = nullptr;
     if (!m_singlePage) {
         welcome = new WelcomeSetupPage(this);
@@ -92,22 +89,19 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         m_microphonePage = new MicrophoneSetupPage(*controller->settings(),
                                                    *controller->platform(),
                                                    this);
-        m_accessibilityPage = new AccessibilitySetupPage(*controller, this);
+        accessibility = new AccessibilitySetupPage(*controller, this);
         m_deliveryPage = new TextDeliverySetupPage(*controller->settings(), this);
         refinement = new RefinementSetupPage(*controller->settings(),
                                              *controller->providerRegistry(),
                                              this);
         m_profilesPage = new WritingProfilesSetupPage(*controller->settings(), this);
         m_finishPage = new FinishSetupPage(*controller, this);
-#ifdef Q_OS_MACOS
-        m_startAtLoginPage = new StartAtLoginSetupPage(*controller->settings(), this);
-#endif
     }
     QList<QWidget *> pageContents{
         welcome,
         speechProvider,
         m_microphonePage,
-        m_accessibilityPage,
+        accessibility,
         m_deliveryPage,
         refinement,
         m_profilesPage,
@@ -116,9 +110,6 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     pageContents.append(m_globalShortcutPage);
 #endif
     pageContents.append(m_finishPage);
-#ifdef Q_OS_MACOS
-    pageContents.append(m_startAtLoginPage);
-#endif
     if (!m_singlePage) {
         m_lastPage = pageContents.last();
     }
@@ -234,23 +225,8 @@ void SetupAssistant::accept()
     }
     if (!m_skipping) {
         m_finishPage->setSignInRequired(m_deliveryPage->needsSignIn());
-        if (!m_finishPage->applyShortcut()) {
-            return;
-        }
-#ifdef Q_OS_MACOS
-        m_startAtLoginPage->apply();
-#endif
     }
     m_controller->settings()->setSetupCompleted(true);
-    if (m_accessibilityPage->accessibilityGrantAppearedDuringSetup()) {
-        QMessageBox::information(
-            this,
-            QStringLiteral("Accessibility granted"),
-            QStringLiteral("Speecher will now restart to apply the Accessibility grant."),
-            QMessageBox::Ok);
-        m_controller->platform()->relaunch();
-        return;
-    }
 #ifdef SPEECHER_WITH_KASSISTANT
     KAssistantDialog::accept();
 #else

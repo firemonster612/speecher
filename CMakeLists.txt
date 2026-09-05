@@ -513,6 +513,7 @@ set(SPEECHER_FRONTEND_MAC_SWIFT_SOURCES
   src/frontend/mac/swift/Panes.swift
   src/frontend/mac/swift/Rows.swift
   src/frontend/mac/swift/SettingsWindow.swift
+  src/frontend/mac/swift/SetupAssistant.swift
   src/frontend/mac/swift/ShortcutPane.swift
   src/frontend/mac/swift/SpeecherMacUI.swift
 )
@@ -702,9 +703,14 @@ if(APPLE AND SPEECHER_WITH_SWIFT_UI)
   target_compile_options(speecher_frontend_mac PRIVATE
     $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>
   )
-  # Qt, still: macOS reuses the setup assistant from the Qt front end.
+  # Qt, still: the bridge reads the schema context and the theme through the Qt
+  # front end's helpers rather than reassembling them. Every window this front
+  # end shows is AppKit/SwiftUI. AVFoundation is the setup assistant's
+  # microphone permission.
   target_link_libraries(speecher_frontend_mac PUBLIC
-    speecher_frontend_qt speecher_frontend_mac_swift "-framework AppKit"
+    speecher_frontend_qt speecher_frontend_mac_swift
+    "-framework AppKit"
+    "-framework AVFoundation"
   )
   # Ninja cannot see that the .mm files need the generated header, so order the
   # whole Swift target ahead of them.

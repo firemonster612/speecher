@@ -22,6 +22,10 @@
 #include <QKeySequence>
 #include <QObject>
 #include <QRegularExpression>
+#include <QThread>
+
+#include <memory>
+#include <optional>
 
 #import <AppKit/AppKit.h>
 
@@ -238,6 +242,11 @@ struct BridgeState {
     // The transcript survives the dictation that produced it, so the menu bar
     // panel can still offer it once the panel that showed it has gone.
     QString lastTranscript;
+    // The setup assistant's microphone meter, made on first use and kept: the
+    // device it reads follows the settings at every start.
+    speecher::AudioInput *setupMeter = nullptr;
+    // A provider check that outlived the choice it checked answers to nobody.
+    quint64 setupCheckGeneration = 0;
 };
 
 void refreshCredentialWatch(QFileSystemWatcher *watcher, const QString &credentialsPath)
@@ -738,6 +747,13 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 
 @end
 
+// The meter's callbacks live on the bridge rather than in BridgeState so ARC
+// owns the blocks, and a stop can drop them while the meter object stays.
+@interface SpeecherBridge ()
+@property (nonatomic, copy, nullable) void (^setupMeterLevel)(float level);
+@property (nonatomic, copy, nullable) void (^setupMeterFailure)(NSString *message);
+@end
+
 @implementation SpeecherBridge {
     BridgeState *_state;
 }
@@ -1027,6 +1043,136 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
         return nil;
     }
     return error.isEmpty() ? @"Accessibility settings could not be opened." : error.toNSString();
+}
+
+- (NSString *)setupHintForSpeechProvider:(NSString *)providerId
+{
+    const QString id = QString::fromNSString(providerId);
+    const QList<speecher::ProviderDescriptor> providers =
+        _state->controller->providerRegistry()->speechProviders();
+    for (const speecher::ProviderDescriptor &provider : providers) {
+        if (provider.id == id) {
+            return provider.setupHint.toNSString();
+        }
+    }
+    return @"";
+}
+
+- (void)checkSpeechProviderReady:(void (^)(BOOL ok, NSString *message))completion
+{
+    completion = [completion copy];
+    const quint64 generation = ++_state->setupCheckGeneration;
+    const QString providerId = _state->controller->settings()->speechProvider();
+    speecher::SpeechTranscriber *provider =
+        _state->controller->providerRegistry()->speechProvider(providerId);
+    if (!provider) {
+        completion(NO, @"No transcription service is available.");
+        return;
+    }
+    const speecher::SpeechSettings speech = _state->controller->settings()->snapshot().speech;
+    NSString *label = provider->label().toNSString();
+    const auto answer = [completion, label](const speecher::SpeechPrepareResult &result) {
+        completion(result.ok,
+                   result.ok ? [NSString stringWithFormat:@"%@ is ready.", label]
+                             : result.message.toNSString());
+    };
+    std::optional<speecher::SpeechPrepareJob> job = provider->createPrepareJob(speech);
+    if (!job || !job->run) {
+        answer(provider->prepare(speech));
+        return;
+    }
+    auto prepareJob = std::make_shared<speecher::SpeechPrepareJob>(std::move(*job));
+    auto result = std::make_shared<speecher::SpeechPrepareResult>();
+    QThread *thread = QThread::create([prepareJob, result] { *result = prepareJob->run(); });
+    BridgeState *state = _state;
+    QObject::connect(thread,
+                     &QThread::finished,
+                     &_state->lifetime,
+                     [state, generation, prepareJob, result, answer] {
+                         if (generation != state->setupCheckGeneration) {
+                             return;
+                         }
+                         if (prepareJob->apply) {
+                             prepareJob->apply(*result);
+                         }
+                         answer(*result);
+                     });
+    QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start();
+}
+
+- (void)startMicrophoneMeterOnLevel:(void (^)(float level))onLevel
+                            failure:(void (^)(NSString *message))onFailure
+{
+    self.setupMeterLevel = onLevel;
+    self.setupMeterFailure = onFailure;
+    if (!_state->setupMeter) {
+        _state->setupMeter = _state->controller->platform()->createAudioInput(
+            _state->controller->settings(), &_state->lifetime);
+        __weak SpeecherBridge *weakSelf = self;
+        QObject::connect(_state->setupMeter,
+                         &speecher::AudioInput::levelChanged,
+                         &_state->lifetime,
+                         [weakSelf](float level) {
+                             SpeecherBridge *bridge = weakSelf;
+                             if (bridge.setupMeterLevel) {
+                                 bridge.setupMeterLevel(level);
+                             }
+                         });
+        QObject::connect(_state->setupMeter,
+                         &speecher::AudioInput::failed,
+                         &_state->lifetime,
+                         [weakSelf](const QString &message) {
+                             SpeecherBridge *bridge = weakSelf;
+                             if (bridge.setupMeterFailure) {
+                                 bridge.setupMeterFailure(message.toNSString());
+                             }
+                         });
+    } else {
+        _state->setupMeter->stop();
+    }
+    QString error;
+    if (!_state->setupMeter->start(&error) && self.setupMeterFailure) {
+        self.setupMeterFailure(error.toNSString());
+    }
+}
+
+- (void)stopMicrophoneMeter
+{
+    self.setupMeterLevel = nil;
+    self.setupMeterFailure = nil;
+    if (_state->setupMeter) {
+        _state->setupMeter->stop();
+    }
+}
+
+- (float)microphoneInputVolume
+{
+    const std::optional<float> volume = _state->controller->platform()->inputVolume();
+    return volume ? *volume : -1.0f;
+}
+
+- (void)refreshAccessibilityState
+{
+    _state->controller->refreshAccessibilityState();
+}
+
+- (NSString *)requestAccessibilityGrant
+{
+    _state->controller->platform()->requestAccessibility();
+    QString error;
+    _state->controller->enableAccessibility(&error);
+    return error.isEmpty() ? nil : error.toNSString();
+}
+
+- (void)completeSetup
+{
+    _state->controller->settings()->setSetupCompleted(true);
+}
+
+- (void)relaunch
+{
+    _state->controller->platform()->relaunch();
 }
 
 - (BOOL)credentialIsEditable
