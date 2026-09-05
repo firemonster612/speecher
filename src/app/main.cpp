@@ -1,5 +1,5 @@
 #include "app/ApplicationController.h"
-#ifdef Q_OS_UNIX
+#ifdef Q_OS_LINUX
 #include "app/AppImageUpdater.h"
 #endif
 #include "app/UpdateController.h"
@@ -205,10 +205,8 @@ int main(int argc, char **argv)
         applyHostWidgetStyle(startupSettings.theme());
     }
 #endif
-#ifdef Q_OS_UNIX
-    AppImageUpdater::waitForRestartParent();
-#endif
 #ifdef Q_OS_LINUX
+    AppImageUpdater::waitForRestartParent();
     if (!qEnvironmentVariableIsEmpty("APPIMAGE")) {
         QIcon::setFallbackThemeName(QStringLiteral("breeze"));
     }

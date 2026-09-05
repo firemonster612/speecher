@@ -419,6 +419,7 @@ set(SPEECHER_APP_SOURCES
   src/app/ApplicationController.cpp
   src/app/CommandLine.cpp
   src/app/CompositionSockets.cpp
+  src/app/ManifestUpdater.cpp
   src/app/PlatformSelection.cpp
   src/app/SingleInstanceIpc.cpp
 )
@@ -428,17 +429,30 @@ set(SPEECHER_APP_HEADERS
   src/app/ApplicationController.h
   src/app/CommandLine.h
   src/app/CompositionSockets.h
+  src/app/ManifestUpdater.h
   src/app/PlatformComposition.h
   src/app/SingleInstanceIpc.h
   src/app/UpdateController.h
 )
 
 set(SPEECHER_APP_LINUX_SOURCES
+  src/app/AppImageUpdater.cpp
   src/app/LinuxComposition.cpp
 )
 
 set(SPEECHER_APP_LINUX_HEADERS
+  src/app/AppImageUpdater.h
   src/app/LinuxComposition.h
+)
+
+set(SPEECHER_APP_WIN_SOURCES
+  src/app/WindowsComposition.cpp
+  src/app/WindowsInstallerUpdater.cpp
+)
+
+set(SPEECHER_APP_WIN_HEADERS
+  src/app/WindowsComposition.h
+  src/app/WindowsInstallerUpdater.h
 )
 
 set(SPEECHER_APP_MAC_SOURCES
@@ -449,14 +463,6 @@ set(SPEECHER_APP_MAC_SOURCES
 set(SPEECHER_APP_MAC_HEADERS
   src/app/MacComposition.h
   src/app/MacSparkleUpdater.h
-)
-
-set(SPEECHER_APP_WIN_SOURCES
-  src/app/WindowsComposition.cpp
-)
-
-set(SPEECHER_APP_WIN_HEADERS
-  src/app/WindowsComposition.h
 )
 
 set(SPEECHER_FRONTEND_QT_SOURCES
