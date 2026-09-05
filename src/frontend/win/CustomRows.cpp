@@ -107,13 +107,7 @@ QList<RowOption> writingTones()
 
 TextBlock secondaryText(const QString &text)
 {
-    TextBlock block;
-    block.Style(Application::Current()
-                    .Resources()
-                    .Lookup(box_value(L"SettingsCardDescriptionStyle"))
-                    .as<Style>());
-    block.Text(hs(text));
-    return block;
+    return styledTextBlock(text, L"SettingsCardDescriptionStyle", true);
 }
 
 // Free text with a commit on Enter or blur, shared by the two CLI Proxy rows.
@@ -292,12 +286,7 @@ UIElement releaseNotes(const RowSnapshot &row)
                 lines.append(line);
             }
         }
-        TextBlock text;
-        text.Style(Application::Current()
-                       .Resources()
-                       .Lookup(box_value(L"SettingsCardBodyStyle"))
-                       .as<Style>());
-        text.Text(hs(lines.join(QLatin1Char('\n'))));
+        TextBlock text = styledTextBlock(lines.join(QLatin1Char('\n')), L"SettingsCardBodyStyle");
         text.IsTextSelectionEnabled(true);
         if (heading) {
             text.FontWeight(winrt::Windows::UI::Text::FontWeights::Bold());

@@ -88,6 +88,14 @@ winrt::Microsoft::UI::Xaml::Controls::Grid rowGrid(const RowSnapshot &row,
 // cached element can be shown in a rebuilt one.
 void detachFromParent(const winrt::Microsoft::UI::Xaml::UIElement &element);
 
+// A styled TextBlock. Secondary text carries its Foreground as element-level
+// markup ({ThemeResource SettingsCardDescriptionForeground}) because a Style
+// setter's ThemeResource resolves once at application scope and would freeze
+// to the system theme.
+winrt::Microsoft::UI::Xaml::Controls::TextBlock styledTextBlock(const QString &text,
+                                                                const wchar_t *styleKey,
+                                                                bool secondary = false);
+
 // A Choice row's control: options as items, disabled ones kept visible, the
 // write going through setValueAndCommit. Shared with the pickers the custom
 // rows supply options for.

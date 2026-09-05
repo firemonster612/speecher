@@ -65,11 +65,9 @@ Grid columnGrid(const QList<CollectionColumnSnapshot> &columns)
     return grid;
 }
 
-TextBlock cellText(const QString &text, const wchar_t *styleKey)
+TextBlock cellText(const QString &text, const wchar_t *styleKey, bool secondary)
 {
-    TextBlock block;
-    block.Style(Application::Current().Resources().Lookup(box_value(styleKey)).as<Style>());
-    block.Text(hs(text));
+    TextBlock block = styledTextBlock(text, styleKey, secondary);
     block.TextTrimming(TextTrimming::CharacterEllipsis);
     block.TextWrapping(TextWrapping::NoWrap);
     block.VerticalAlignment(VerticalAlignment::Center);
@@ -174,7 +172,8 @@ void CollectionEditor::build()
     header.Padding({12, 0, 12, 0});
     for (qsizetype index = 0; index < m_collection.columns.size(); ++index) {
         TextBlock title = cellText(m_collection.columns.at(index).title,
-                                   L"SettingsCardDescriptionStyle");
+                                   L"SettingsCardDescriptionStyle",
+                                   true);
         Grid::SetColumn(title, static_cast<int32_t>(index));
         header.Children().Append(title);
     }
@@ -234,7 +233,8 @@ UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column, int 
     if (record.locked || column.kind == ColumnKind::ReadOnly) {
         cell = cellText(displayText(column, value),
                         column.kind == ColumnKind::ReadOnly ? L"SettingsCardDescriptionStyle"
-                                                            : L"SettingsCardBodyStyle");
+                                                            : L"SettingsCardBodyStyle",
+                        column.kind == ColumnKind::ReadOnly);
     } else if (column.kind == ColumnKind::Toggle) {
         CheckBox box;
         box.MinWidth(0);

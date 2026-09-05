@@ -42,9 +42,11 @@
          BasedOn="{StaticResource BodyStrongTextBlockStyle}">
     <Setter Property="Margin" Value="1,30,0,6"/>
   </Style>
+  <!-- No Foreground setters here: a Style setter's ThemeResource resolves once
+       at application scope, so a window whose RequestedTheme differs from the
+       system's would keep the wrong brush. Elements set it themselves. -->
   <Style x:Key="SettingsFootnoteStyle" TargetType="TextBlock"
          BasedOn="{StaticResource CaptionTextBlockStyle}">
-    <Setter Property="Foreground" Value="{ThemeResource SettingsCardDescriptionForeground}"/>
     <Setter Property="Margin" Value="1,6,0,0"/>
     <Setter Property="TextWrapping" Value="Wrap"/>
   </Style>
@@ -54,13 +56,11 @@
   </Style>
   <Style x:Key="SettingsCardDescriptionStyle" TargetType="TextBlock"
          BasedOn="{StaticResource CaptionTextBlockStyle}">
-    <Setter Property="Foreground" Value="{ThemeResource SettingsCardDescriptionForeground}"/>
     <Setter Property="TextWrapping" Value="Wrap"/>
   </Style>
   <!-- An Info row's value: body-sized secondary text on the card's right. -->
   <Style x:Key="SettingsInfoTextStyle" TargetType="TextBlock"
          BasedOn="{StaticResource BodyTextBlockStyle}">
-    <Setter Property="Foreground" Value="{ThemeResource SettingsCardDescriptionForeground}"/>
     <Setter Property="TextWrapping" Value="Wrap"/>
   </Style>
 
