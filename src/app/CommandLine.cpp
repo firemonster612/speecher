@@ -138,7 +138,7 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
 
 bool quitOnLastWindowClosed(LaunchMode mode)
 {
-#if defined(Q_OS_LINUX) || defined(Q_OS_MACOS)
+#if defined(Q_OS_LINUX) || defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     Q_UNUSED(mode)
     return false;
 #else

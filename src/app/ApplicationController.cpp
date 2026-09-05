@@ -4,7 +4,7 @@
 #include "app/UpdateController.h"
 #ifdef Q_OS_MACOS
 #include "app/MacSparkleUpdater.h"
-#else
+#elif !defined(Q_OS_WIN)
 #include "app/AppImageUpdater.h"
 #endif
 #include "core/SecretStore.h"
@@ -34,6 +34,29 @@ namespace {
 constexpr qint64 pushToTalkHoldMs = 400;
 #ifdef Q_OS_MACOS
 constexpr int accessibilityPollMs = 5000;
+#endif
+
+#ifdef Q_OS_WIN
+class NullUpdater final : public UpdateController {
+public:
+    using UpdateController::UpdateController;
+
+    void start() override {}
+    State state() const override { return State::Idle; }
+    QString currentVersion() const override { return {}; }
+    QString availableVersion() const override { return {}; }
+    int downloadPercent() const override { return 0; }
+    QString errorMessage() const override { return {}; }
+    bool isAppImage() const override { return false; }
+    bool supportsAutomaticDownloads() const override { return false; }
+    bool bannerVisible() const override { return false; }
+    bool repeatedAutomaticCheckFailure() const override { return false; }
+    bool manualInstallRequired() const override { return false; }
+    bool stableReplacementAvailable() const override { return false; }
+    void checkForUpdates(UpdateChannel) override {}
+    void updateNow() override {}
+    void dismissAvailableVersion() override {}
+};
 #endif
 
 } // namespace
@@ -130,6 +153,8 @@ ApplicationController::ApplicationController(bool popupOnly,
         m_platform->createScreenshotContextProvider(this));
 #ifdef Q_OS_MACOS
     m_updates = new MacSparkleUpdater(m_settings, this);
+#elif defined(Q_OS_WIN)
+    m_updates = new NullUpdater(this);
 #else
     m_updates = new AppImageUpdater(m_settings, m_session, this);
 #endif
