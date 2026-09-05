@@ -600,12 +600,16 @@ private struct RefinementStep: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
+        // Only the selected provider's fast-mode row: the settings window
+        // separates these onto per-provider panes, so the schema does not gate
+        // them on the chosen provider itself.
+        let provider = RowView.text(model.row("refinementProvider")?.value)
+        let rowIds = ["refinementProvider"]
+            + (provider == "openai" ? ["openAiFastMode"] : [])
+            + (provider == "anthropic" ? ["anthropicFastMode"] : [])
         Form {
             Section {
-                ForEach(model.rows(matching: ["refinementProvider",
-                                              "openAiFastMode",
-                                              "anthropicFastMode"]),
-                        id: \.rowId) { row in
+                ForEach(model.rows(matching: rowIds), id: \.rowId) { row in
                     RowView(row: row, model: model)
                 }
             }
