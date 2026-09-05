@@ -398,8 +398,22 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
   src/platform/mac/MacTargetProvider.h
 )
 
-set(SPEECHER_PLATFORM_WIN_SOURCES)
-set(SPEECHER_PLATFORM_WIN_HEADERS)
+set(SPEECHER_PLATFORM_WIN_SOURCES
+  src/output/win/WinPasteDelivery.cpp
+  src/platform/win/WinCorrectionObserver.cpp
+  src/platform/win/WinGlobalShortcutBinder.cpp
+  src/platform/win/WinMediaController.cpp
+  src/platform/win/WinScreenshotContextProvider.cpp
+  src/platform/win/WinTargetProvider.cpp
+)
+set(SPEECHER_PLATFORM_WIN_HEADERS
+  src/output/win/WinPasteDelivery.h
+  src/platform/win/WinCorrectionObserver.h
+  src/platform/win/WinGlobalShortcutBinder.h
+  src/platform/win/WinMediaController.h
+  src/platform/win/WinScreenshotContextProvider.h
+  src/platform/win/WinTargetProvider.h
+)
 
 set(SPEECHER_APP_SOURCES
   src/app/ApplicationController.cpp
@@ -611,6 +625,10 @@ if(WIN32)
     ${SPEECHER_PLATFORM_WIN_HEADERS}
   )
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_WIN=1)
+  target_compile_definitions(speecher_platform PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+  target_link_libraries(speecher_platform PUBLIC
+    uiautomationcore user32 ole32 shell32 gdi32 windowsapp
+  )
 endif()
 if(ATSPI_FOUND)
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_ATSPI=1)
@@ -1051,6 +1069,9 @@ if(SPEECHER_BUILD_TESTS)
   )
   if(UNIX)
     target_sources(speecher_tests PRIVATE tests/test_update_controller.cpp)
+  endif()
+  if(WIN32)
+    target_sources(speecher_tests PRIVATE tests/test_win_platform.cpp)
   endif()
   target_include_directories(speecher_tests PRIVATE src)
   target_compile_definitions(speecher_tests PRIVATE
