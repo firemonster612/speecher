@@ -26,6 +26,7 @@
 #pragma pop_macro("GetCurrentTime")
 
 #include <QKeySequence>
+#include <QThread>
 #include <QTimer>
 
 #include <algorithm>
@@ -273,6 +274,7 @@ struct SetupWindow::Native {
         microphoneStatus = nullptr;
         microphoneProblem = nullptr;
         shortcutStatus = nullptr;
+        ++transcriptionCheckGeneration;
         pageIndex = index;
         content.Children().Clear();
         switch (index) {
@@ -315,6 +317,7 @@ struct SetupWindow::Native {
         Button check;
         check.Content(box_value(L"Check again"));
         const auto runCheck = [this, provider, status, options] {
+            const quint64 generation = ++transcriptionCheckGeneration;
             const int index = provider.SelectedIndex();
             if (index < 0 || index >= options.size()) {
                 status.Text(L"No transcription service is available.");
@@ -329,16 +332,36 @@ struct SetupWindow::Native {
             }
             status.Text(L"Checking...");
             const SpeechSettings settings = controller->settings()->snapshot().speech;
-            SpeechPrepareResult result;
             if (std::optional<SpeechPrepareJob> job = transcriber->createPrepareJob(settings);
                 job && job->run) {
-                result = job->run();
-                if (job->apply) {
-                    job->apply(result);
-                }
-            } else {
-                result = transcriber->prepare(settings);
+                const QString label = transcriber->label();
+                auto result = std::make_shared<SpeechPrepareResult>();
+                auto prepareJob = std::make_shared<SpeechPrepareJob>(std::move(*job));
+                QThread *thread = QThread::create([prepareJob, result] {
+                    *result = prepareJob->run();
+                });
+                QObject::connect(thread, &QThread::finished, setup,
+                                 [this, generation, id, label, provider, status,
+                                  options, prepareJob, result] {
+                    const int selected = provider.SelectedIndex();
+                    if (generation != transcriptionCheckGeneration
+                        || selected < 0 || selected >= options.size()
+                        || options.at(selected).first != id) {
+                        return;
+                    }
+                    if (prepareJob->apply) {
+                        prepareJob->apply(*result);
+                    }
+                    status.Text(hstring((result->ok
+                                             ? QStringLiteral("%1 is ready.").arg(label)
+                                             : result->message)
+                                            .toStdWString()));
+                });
+                QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+                thread->start();
+                return;
             }
+            const SpeechPrepareResult result = transcriber->prepare(settings);
             status.Text(hstring((result.ok
                                      ? QStringLiteral("%1 is ready.").arg(transcriber->label())
                                      : result.message)
@@ -638,6 +661,7 @@ struct SetupWindow::Native {
     TextBlock microphoneStatus{nullptr};
     InfoBar microphoneProblem{nullptr};
     TextBlock shortcutStatus{nullptr};
+    quint64 transcriptionCheckGeneration = 0;
     int pageIndex = 0;
     bool launchAtLogin;
     bool singlePage = false;
