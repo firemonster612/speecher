@@ -122,6 +122,7 @@ private slots:
                  QStringLiteral("user\\name\n"));
     }
 
+#ifndef Q_OS_WIN
     void helperPathPrefersSiblingThenLibexecThenInstalled()
     {
         QTemporaryDir dir;
@@ -162,6 +163,7 @@ private slots:
         QVERIFY(QFile::remove(bundled));
         QCOMPARE(resolvedHelperPath("/usr/libexec/speecher/helper", applicationDir), installed);
     }
+#endif
 
     void outputDeliverySelection()
     {

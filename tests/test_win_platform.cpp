@@ -144,6 +144,11 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(activated.count(), 1, 2000);
         qInfo() << "windows live hotkey fired";
 
+        const HWND notepad = FindWindowW(L"Notepad", nullptr);
+        QVERIFY(notepad);
+        QVERIFY(SetForegroundWindow(notepad));
+        QTRY_VERIFY_WITH_TIMEOUT(GetForegroundWindow() == notepad, 2000);
+
         WinTargetProvider targetProvider;
         const Target target = targetProvider.capture();
         qInfo().noquote() << QStringLiteral("windows live target process=%1 appId=%2 role=%3")
