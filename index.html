@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Speecher · dictation for Linux and macOS on the subscriptions you already have</title>
-<meta name="description" content="Native speech-to-text for Linux and macOS. Press a shortcut, talk, and clean text lands in the app you're using. Runs on your existing Claude Code or ChatGPT login.">
+<title>Speecher · dictation for Windows, macOS, and Linux on the subscriptions you already have</title>
+<meta name="description" content="Native speech-to-text for Windows, macOS, and Linux. Press a shortcut, talk, and clean text lands in the app you're using. Runs on your existing Claude Code or ChatGPT login.">
 <link rel="icon" href="assets/icon.svg?v=12" type="image/svg+xml">
 <style>
 :root{
@@ -167,10 +167,12 @@ h2{font-size:clamp(26px,3.6vw,38px);line-height:1.12;letter-spacing:-.02em;font-
 .download{border-top:1px solid var(--line)}
 .dlhead{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:32px}
 .ver{font-family:var(--mono);font-size:13px;letter-spacing:.08em;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:4px 12px}
-.dlgrid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.dlgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}
+@media (max-width:980px){.dlgrid{grid-template-columns:1fr 1fr}}
 @media (max-width:720px){.dlgrid{grid-template-columns:1fr}}
 .dlcard{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px}
 .dlcard h3{font-size:20px;font-weight:700}
+.dltag{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px;vertical-align:2px;margin-left:8px}
 .dlcard .sub{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:6px 0 18px}
 .dlcard .btn{width:100%;text-align:center}
 .dlnote{margin-top:22px;color:var(--muted);font-size:15px}
@@ -200,7 +202,7 @@ footer a{color:inherit}
 
 <div class="hero">
   <div class="wrap">
-    <p class="eyebrow mono">Native dictation for Linux and macOS</p>
+    <p class="eyebrow mono">Native dictation for Windows, macOS, and Linux</p>
     <h1>Speech-to-text that reuses the subscriptions you already have.</h1>
     <p class="lede">Press a shortcut, say what you mean, and clean text lands in the app
       you're using. Speecher runs on your existing <b>Claude Code</b> or <b>ChatGPT</b> login.
@@ -242,7 +244,7 @@ footer a{color:inherit}
       <p>Press your shortcut and the overlay appears over whatever you're doing: your
         editor, a browser field, a chat box. Toggle it, or hold the key and talk,
         push-to-talk style.</p>
-      <p>On macOS Speecher registers its own global hotkey. On Linux the compositor owns
+      <p>On Windows and macOS Speecher registers its own global hotkey. On Linux the compositor owns
         shortcuts, so you bind one key to <code>speecher toggle</code> and you're done.</p>
     </div>
     <div class="viz vcapture" aria-hidden="true">
@@ -266,7 +268,7 @@ footer a{color:inherit}
       <p class="num">02 · Context</p>
       <h2>It knows where you're typing</h2>
       <p>When a dictation starts, Speecher reads the focused app and control through
-        AT-SPI on Linux and the Accessibility API on macOS: which app, which field,
+        UI Automation on Windows, AT-SPI on Linux, and the Accessibility API on macOS: which app, which field,
         the caret, a little of the surrounding text.</p>
       <p>From the target it infers a writing profile, so a Slack message, a work email,
         and a commit message don't come out sounding the same. <b>Cleanup lands in the
@@ -341,15 +343,20 @@ footer a{color:inherit}
         <a class="btn primary" href="https://github.com/firemonster612/speecher/releases">Download AppImage</a>
       </div>
       <div class="dlcard">
-        <h3>macOS</h3>
+        <h3>macOS <span class="dltag">beta</span></h3>
         <div class="sub">DMG · Apple Silicon · macOS 26+</div>
         <a class="btn primary" href="https://github.com/firemonster612/speecher/releases">Download DMG</a>
+      </div>
+      <div class="dlcard">
+        <h3>Windows <span class="dltag">alpha</span></h3>
+        <div class="sub">Installer · x64 · Windows 11</div>
+        <a class="btn primary" href="https://github.com/firemonster612/speecher/releases">Download Installer</a>
       </div>
     </div>
     <p class="dlnote">Transcription needs a Claude Code or ChatGPT sign-in on the same machine.
       Prefer to build it yourself? <a href="https://github.com/firemonster612/speecher#quick-start">make install</a> works too.</p>
     <ul class="facts">
-      <li>Qt Widgets on Plasma, SwiftUI in the menu bar. Not a web view.</li>
+      <li>Qt Widgets on Plasma, SwiftUI in the menu bar, WinUI 3 on Windows. Not a web view.</li>
       <li>API keys live in your system keyring, not a config file.</li>
       <li>Your clipboard comes back after Speecher pastes.</li>
       <li>Screenshot context is off by default and never stored.</li>
