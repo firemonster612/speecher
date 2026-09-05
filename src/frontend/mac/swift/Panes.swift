@@ -15,7 +15,7 @@ struct PaneGroup: Identifiable {
 
     var id: String { title + rows.joined() }
 
-    init(_ model: PaneGroupModel) {
+    init(_ model: SettingsPaneGroupModel) {
         title = model.title
         help = model.help
         rows = model.rows
@@ -61,7 +61,7 @@ struct Pane: Identifiable {
     let layout: PaneLayout
     let groups: [PaneGroup]
 
-    init(_ model: PaneModel) {
+    init(_ model: SettingsPaneModel) {
         id = model.paneId
         title = model.title
         symbol = model.symbolName

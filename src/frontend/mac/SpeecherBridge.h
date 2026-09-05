@@ -118,21 +118,21 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 
 // One card a pane shows: a heading, a footnote, and the schema rows it names.
 // A row pattern ending in `*` takes every row whose id starts with it.
-@interface PaneGroupModel : NSObject
+@interface SettingsPaneGroupModel : NSObject
 @property (nonatomic, readonly, copy) NSString *title;
 @property (nonatomic, readonly, copy) NSString *help;
 @property (nonatomic, readonly, copy) NSArray<NSString *> *rows;
 @end
 
 // One sidebar entry of the settings window, as the schema arranges them.
-@interface PaneModel : NSObject
+@interface SettingsPaneModel : NSObject
 @property (nonatomic, readonly, copy) NSString *paneId;
 @property (nonatomic, readonly, copy) NSString *title;
 @property (nonatomic, readonly, copy) NSString *symbolName;
 // Schema pages whose otherwise-unmapped rows fall back to this pane.
 @property (nonatomic, readonly, copy) NSArray<NSString *> *schemaPages;
 @property (nonatomic, readonly) SpeecherPaneLayout layout;
-@property (nonatomic, readonly, copy) NSArray<PaneGroupModel *> *groups;
+@property (nonatomic, readonly, copy) NSArray<SettingsPaneGroupModel *> *groups;
 @end
 
 // What a file offered to a collection turned out to hold.
@@ -150,7 +150,7 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 @interface SettingsSchemaModel : NSObject
 @property (nonatomic, readonly, copy) NSArray<SettingsPageModel *> *pages;
 // The sidebar's panes and their runs, which never change while the app runs.
-@property (nonatomic, readonly, copy) NSArray<PaneModel *> *panes;
+@property (nonatomic, readonly, copy) NSArray<SettingsPaneModel *> *panes;
 @property (nonatomic, readonly, copy) NSArray<NSArray<NSString *> *> *sidebarRuns;
 // What an Action row's button does. The schema names the commands; what they do
 // belongs to the front end, as it does on Qt.

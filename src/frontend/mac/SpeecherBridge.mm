@@ -31,6 +31,7 @@ using speecher::Capabilities;
 using speecher::CollectionColumn;
 using speecher::CollectionDescriptor;
 using speecher::ColumnKind;
+using speecher::PaneLayout;
 using speecher::RowKind;
 using speecher::RowOption;
 using speecher::SettingsRow;
@@ -386,25 +387,25 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @implementation SettingsPageModel
 @end
 
-@interface PaneGroupModel ()
+@interface SettingsPaneGroupModel ()
 @property (nonatomic, copy) NSString *title;
 @property (nonatomic, copy) NSString *help;
 @property (nonatomic, copy) NSArray<NSString *> *rows;
 @end
 
-@implementation PaneGroupModel
+@implementation SettingsPaneGroupModel
 @end
 
-@interface PaneModel ()
+@interface SettingsPaneModel ()
 @property (nonatomic, copy) NSString *paneId;
 @property (nonatomic, copy) NSString *title;
 @property (nonatomic, copy) NSString *symbolName;
 @property (nonatomic, copy) NSArray<NSString *> *schemaPages;
 @property (nonatomic) SpeecherPaneLayout layout;
-@property (nonatomic, copy) NSArray<PaneGroupModel *> *groups;
+@property (nonatomic, copy) NSArray<SettingsPaneGroupModel *> *groups;
 @end
 
-@implementation PaneModel
+@implementation SettingsPaneModel
 @end
 
 @interface CollectionImportResult ()
@@ -590,19 +591,19 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     return pages;
 }
 
-- (NSArray<PaneModel *> *)panes
+- (NSArray<SettingsPaneModel *> *)panes
 {
-    NSMutableArray<PaneModel *> *panes = [NSMutableArray array];
+    NSMutableArray<SettingsPaneModel *> *panes = [NSMutableArray array];
     for (const speecher::SettingsPane &pane : _state->schema.panes) {
-        NSMutableArray<PaneGroupModel *> *groups = [NSMutableArray array];
+        NSMutableArray<SettingsPaneGroupModel *> *groups = [NSMutableArray array];
         for (const speecher::SettingsPaneGroup &group : pane.groups) {
-            PaneGroupModel *groupModel = [[PaneGroupModel alloc] init];
+            SettingsPaneGroupModel *groupModel = [[SettingsPaneGroupModel alloc] init];
             groupModel.title = group.title.toNSString();
             groupModel.help = group.help.toNSString();
             groupModel.rows = bridgedStrings(group.rows);
             [groups addObject:groupModel];
         }
-        PaneModel *paneModel = [[PaneModel alloc] init];
+        SettingsPaneModel *paneModel = [[SettingsPaneModel alloc] init];
         paneModel.paneId = pane.id.toNSString();
         paneModel.title = pane.title.toNSString();
         paneModel.symbolName = pane.symbolName.toNSString();
