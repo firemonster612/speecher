@@ -241,7 +241,10 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
 
 void SingleInstanceIpc::writeResponse(QLocalSocket *socket, const IpcResponse &response)
 {
-    if (!socket) {
+    // A client that disconnects right after sending can deliver its command
+    // from inside the socket's own dying state change; writing the response
+    // into that teardown crashes inside QIODevice::write on Windows.
+    if (!socket || socket->state() != QLocalSocket::ConnectedState) {
         return;
     }
     const QJsonObject object{
