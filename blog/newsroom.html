@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Speecher 0.1.0 \ Enzothropic</title>
-<meta name="description" content="Today we're releasing Speecher 0.1.0, the first public version of our dictation app for Linux and macOS. It runs on the Claude Code or ChatGPT subscription you already pay for.">
+<title>Newsroom \ Enzothropic</title>
+<meta name="description" content="Company news from Enzothropic: announcements, alignment memos, and both of our blog posts.">
 <link rel="icon" href="mark.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -162,6 +162,37 @@ figcaption{font-family:var(--sans);font-size:13px;line-height:1.4;color:var(--mu
   .foot-nav{grid-template-columns:1fr}
   .cookies{right:12px;bottom:12px;padding:20px}
 }
+
+/* newsroom */
+.nr-head{padding:56px 0 8px}
+.nr-head h1{font-family:var(--serif);font-weight:400;font-size:64px;line-height:1.05;letter-spacing:-.015em}
+.nr-utility{display:flex;flex-wrap:wrap;gap:8px 28px;margin:18px 0 40px;font-family:var(--sans);font-size:14px;color:var(--ink-2)}
+.nr-utility a{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+.nr-feature{display:grid;grid-template-columns:7fr 5fr;gap:36px;align-items:center;margin:8px 0 56px}
+.nr-feature .art{background:var(--clay);border-radius:12px;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.nr-feature .art svg{width:88%;height:auto}
+.nr-meta{display:flex;gap:14px;font-family:var(--sans);font-size:13px;letter-spacing:.02em;color:var(--ink-2);text-transform:uppercase}
+.nr-feature h2{font-family:var(--serif);font-weight:400;font-size:40px;line-height:1.12;letter-spacing:-.01em;margin:10px 0 12px}
+.nr-feature h2 a:hover{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:4px}
+.nr-feature p{font-size:17px;line-height:1.55;color:var(--ink-2);max-width:52ch}
+.nr-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:28px;margin:0 0 72px}
+.nr-card .nr-meta{margin-bottom:8px}
+.nr-card h4{font-family:var(--serif);font-weight:500;font-size:19px;line-height:1.3;margin-bottom:8px}
+.nr-card p{font-family:var(--sans);font-size:14px;line-height:1.5;color:var(--ink-2)}
+.nr-list{margin:0 0 48px}
+.nr-list .bar{display:flex;justify-content:space-between;align-items:center;gap:24px;margin-bottom:18px}
+.nr-list .bar h3{font-family:var(--serif);font-weight:400;font-size:32px}
+.nr-list input{font-family:var(--sans);font-size:14px;padding:9px 14px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);min-width:220px}
+.nr-table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:15px}
+.nr-table th{text-align:left;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);font-weight:500;border-bottom:1px solid var(--line);padding:0 16px 10px 0}
+.nr-table td{padding:14px 16px 14px 0;border-bottom:1px solid var(--line);vertical-align:top}
+.nr-table td.d{white-space:nowrap;color:var(--ink-2)}
+.nr-table td.c{white-space:nowrap;color:var(--ink-2)}
+.nr-table a{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+.nr-more{display:inline-block;margin-top:20px;font-family:var(--sans);font-size:15px;color:var(--ink-2)}
+.nr-note{margin:0 0 72px;font-family:var(--sans);font-size:13px;color:var(--ink-2)}
+@media (max-width:900px){.nr-feature{grid-template-columns:1fr}.nr-cards{grid-template-columns:1fr 1fr}.nr-head h1{font-size:44px}}
+@media (max-width:560px){.nr-cards{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -190,126 +221,85 @@ figcaption{font-family:var(--sans);font-size:13px;line-height:1.4;color:var(--mu
 </header>
 
 <main id="main-content">
-<article>
-  <div class="wrap">
-    <div class="post-head">
-      <span class="eyebrow">Announcements</span>
-      <h1>Speecher 0.1.0</h1>
-      <div class="date">Sep 3, 2026</div>
-      <div class="hero" role="img" aria-label="Cream shapes on terracotta: a capsule, a circle, a square and a triangle, with a black hand-drawn waveform running through them and ending in a text cursor.">
-        <svg viewBox="0 0 752 367" fill="none" aria-hidden="true">
-          <g fill="#faf9f5">
-            <circle cx="182" cy="150" r="76"/>
-            <rect x="286" y="62" width="150" height="150" rx="10"/>
-            <path d="M462 212 L537 62 L612 212 Z"/>
-            <rect x="120" y="248" width="340" height="66" rx="33"/>
-            <circle cx="611" cy="288" r="26"/>
-          </g>
-          <path d="M96 292 C130 292 128 262 160 262 S186 322 220 322 S246 250 280 250 S300 300 332 300 S356 282 388 282 S414 306 448 306 S476 270 508 270 S526 296 560 296 S588 280 620 280 L662 280" stroke="#141413" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M662 280 L662 252 M662 280 L662 308" stroke="#141413" stroke-width="9" stroke-linecap="round"/>
-          <path d="M256 150 C268 138 286 132 306 136 M356 108 C370 118 376 138 370 158" stroke="#141413" stroke-width="9" stroke-linecap="round"/>
-          <path d="M182 108 C214 128 214 172 182 192" stroke="#d97757" stroke-width="9" stroke-linecap="round"/>
-          <path d="M150 128 C170 142 170 158 150 172" stroke="#d97757" stroke-width="9" stroke-linecap="round"/>
-        </svg>
-      </div>
+<div class="wrap">
+
+  <div class="nr-head">
+    <h1>Newsroom</h1>
+    <div class="nr-utility">
+      <span>Press inquiries: <a href="https://github.com/firemonster612/speecher/issues">open an issue</a></span>
+      <span>Non-press inquiries: also an issue</span>
+      <span><a href="../assets/">Download the press kit (it is one SVG)</a></span>
     </div>
   </div>
 
-  <div class="wrap post-body">
-    <div class="reading">
-      <p>Today we're releasing Speecher 0.1.0, the first public version of Speecher, a dictation app for Linux and macOS that runs on the Claude Code or ChatGPT subscription you already pay for. We plan to release substantially smaller improvements in the coming weeks, mostly to fix the things this release breaks.</p>
-      <p>Speecher 0.1.0 is available now as an <a href="https://github.com/firemonster612/speecher/releases">AppImage for Linux and a DMG for macOS</a>. It's also on GitHub, which is the only place it is. Pricing is the same as before: there isn't any.</p>
-
-      <h2>Speecher 0.1.0</h2>
-      <p>Speecher advances our state-of-the-art in getting words out of your mouth and into whatever app has your cursor. Press a shortcut, talk, and clean text lands where you were typing. It also improves Speecher's handling of spoken edits, especially "scratch that", and it learns your own vocabulary so it stops spelling your project names wrong.</p>
-      <p><strong>Enzo</strong> notes that Speecher 0.1.0 improves across most capabilities relative to Speecher 0.0.0, which did not exist, with particularly notable gains in existing. <strong>Enzo's terminal</strong> reports that Speecher pinpoints the exact text field without pasting into the wrong window, with the team (also Enzo) preferring this precision for everyday dictation. <strong>A Plasma desktop</strong> in the test fleet finds the global shortcut registers itself on first run, showing roughly the same leap as the jump from "not installed" to "installed".</p>
-
-      <figure>
-        <table>
-          <thead>
-            <tr><th scope="col">&nbsp;</th><th scope="col" class="us">Speecher 0.1.0</th><th scope="col">Typing it yourself</th><th scope="col">A $15/month dictation app</th></tr>
-          </thead>
-          <tbody>
-            <tr><th scope="row">New subscriptions required</th><td class="us">0</td><td>0</td><td>1</td></tr>
-            <tr><th scope="row">Monthly cost</th><td class="us">$0</td><td>$0</td><td>$15</td></tr>
-            <tr><th scope="row">Runs in a web view</th><td class="us">No</td><td>No</td><td>Usually</td></tr>
-            <tr><th scope="row">Clipboard restored after paste</th><td class="us">Yes</td><td>N/A</td><td>Sometimes</td></tr>
-            <tr><th scope="row">Screenshots stored</th><td class="us">Never</td><td>N/A</td><td>Ask them</td></tr>
-            <tr><th scope="row">Gatekeeper warning on macOS</th><td class="us">Yes, sorry</td><td>No</td><td>No</td></tr>
-          </tbody>
-        </table>
-        <figcaption>Speecher 0.1.0 compared with the alternatives most people actually use. See the appendix for methodology.</figcaption>
-      </figure>
-
-      <p>Here is what 0.1.0 ships, taken from the <a href="https://github.com/firemonster612/speecher/blob/master/docs/releases/0.1.0.md">release notes</a> rather than from memory:</p>
-      <ul class="bullets">
-        <li>Speecher updates itself. Pick Stable Release or Nightly Build in Settings. By default it only tells you a new version exists and waits for you to press the button.</li>
-        <li>On Linux, first-run setup starts with a Global Shortcut page. Plasma registers the shortcut itself. GNOME, Hyprland and other desktops with the GlobalShortcuts portal get one click into their own binding dialog. Everywhere else gets copy-paste instructions.</li>
-        <li>After an update, the settings window offers "See what's new", with the release notes and the new settings themselves, live.</li>
-        <li>macOS updates go through Sparkle and are verified against the project's own signing key. The app is still unsigned, because there is no Apple Developer account.</li>
-        <li>The app identity moved to <code>io.github.firemonster612.speecher</code>. Existing settings migrate on first launch.</li>
-        <li><code>speecher --version</code> prints the exact build, including the commit a Nightly Build came from.</li>
-        <li>The bundled helper programs now resolve correctly when Speecher runs from an AppImage.</li>
-      </ul>
-
-      <h2>Getting started</h2>
-      <p>We recommend upgrading from nothing to Speecher 0.1.0 for all uses. On Linux, download the AppImage, make it executable and run it. On macOS, open the DMG, drag Speecher to Applications, then tell Gatekeeper you meant it under System Settings, Privacy &amp; Security, Open Anyway. If you're a developer, simply <code>make install</code>. You can also explore our <a href="https://github.com/firemonster612/speecher#readme">README</a>, <a href="https://github.com/firemonster612/speecher/tree/master/docs/releases">release notes</a>, <a href="../">product page</a>, and <a href="https://github.com/firemonster612/speecher">source</a> to learn more.</p>
-      <p>Transcription needs a Claude Code or ChatGPT sign-in on the same machine. Speecher does not ship a model of its own. We think that is the whole point.</p>
-      <p>As always, your <a href="https://github.com/firemonster612/speecher/issues">feedback</a> helps us improve, especially the bug reports. Especially those.</p>
-    </div>
-
-    <div class="appendix">
-      <h4>Appendix</h4>
-      <p><strong>Data sources</strong></p>
-      <ul>
-        <li>Speecher: <a href="https://github.com/firemonster612/speecher/blob/master/docs/releases/0.1.0.md">0.1.0 release notes</a>, <a href="https://github.com/firemonster612/speecher#readme">README</a></li>
-        <li>Typing it yourself: the author's hands</li>
-        <li>The $15/month dictation app: its pricing page, viewed once, in a private window</li>
-      </ul>
-      <p><strong>Benchmark reporting</strong></p>
-      <p>Speecher is not a hybrid reasoning model. The results in this blog post show the highest scores achieved with or without coffee. We've noted below for each result whether coffee was used:</p>
-      <ul>
-        <li>With coffee: all of them</li>
-      </ul>
-      <p><strong>Comparison methodology</strong></p>
-      <p>Scores were achieved by one person dictating into a terminal on a Thursday. To accommodate the additional retries a first release incurs, the maximum number of attempts was increased from 30 to 100 (most dictations completed on the first attempt, with only one reaching above 50, and that one was the microphone's fault). We did not run the comparison apps. We read their pricing pages, which is the only benchmark most people run anyway. n=1.</p>
-
-      <div class="share" id="share">
-        <a href="https://twitter.com/intent/tweet?text=https://firemonster612.github.io/speecher/blog/" target="_blank" rel="noopener" aria-label="Share on X"><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><path d="M28 28L18.6145 14.0124L18.6305 14.0255L27.0929 4H24.265L17.3713 12.16L11.8968 4H4.48021L13.2425 17.0593L13.2414 17.0582L4 28H6.82792L14.4921 18.9215L20.5834 28H28ZM10.7763 6.18182L23.9449 25.8182H21.7039L8.52468 6.18182H10.7763Z" fill="currentColor"/></svg></a>
-        <a href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https://firemonster612.github.io/speecher/blog/" target="_blank" rel="noopener" aria-label="Share on LinkedIn"><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><path d="M25.8182 4H6.18182C4.97636 4 4 4.97636 4 6.18182V25.8182C4 27.0236 4.97636 28 6.18182 28H25.8182C27.0236 28 28 27.0236 28 25.8182V6.18182C28 4.97636 27.0236 4 25.8182 4ZM11.5862 23.6364H8.368V13.2815H11.5862V23.6364ZM9.94436 11.8011C8.90691 11.8011 8.068 10.96 8.068 9.92473C8.068 8.88945 8.908 8.04945 9.94436 8.04945C10.9785 8.04945 11.8196 8.89055 11.8196 9.92473C11.8196 10.96 10.9785 11.8011 9.94436 11.8011ZM23.6407 23.6364H20.4247V18.6007C20.4247 17.3996 20.4029 15.8549 18.7524 15.8549C17.0778 15.8549 16.8204 17.1629 16.8204 18.5135V23.6364H13.6044V13.2815H16.6916V14.6964H16.7353C17.1651 13.8825 18.2145 13.024 19.78 13.024C23.0385 13.024 23.6407 15.1687 23.6407 17.9571V23.6364Z" fill="currentColor"/></svg></a>
-        <button class="like" id="like" type="button" aria-pressed="false" aria-label="Like this post">
-          <svg viewBox="0 0 32 32" aria-hidden="true">
-            <path class="fill" d="M16 27.5 5.6 17.6C3.2 15.3 2.9 11.5 5 8.9c2.6-3.2 7.4-3.3 10.2-.4l.8.8.8-.8c2.8-2.9 7.6-2.8 10.2.4 2.1 2.6 1.8 6.4-.6 8.7L16 27.5Z" fill="currentColor"/>
-            <path class="outline" d="M16 27.5 5.6 17.6C3.2 15.3 2.9 11.5 5 8.9c2.6-3.2 7.4-3.3 10.2-.4l.8.8.8-.8c2.8-2.9 7.6-2.8 10.2.4 2.1 2.6 1.8 6.4-.6 8.7L16 27.5Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
-          </svg>
-          <span class="count" id="like-count">0</span>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <section class="related" aria-labelledby="related-title">
-    <div class="wrap">
-      <h2 id="related-title">Related content</h2>
-      <div class="cards">
-        <div class="card">
-          <h3>Speecher 0.1.1 to 0.1.4: the ones that work on Linux</h3>
-          <a class="more" href="https://github.com/firemonster612/speecher/releases"><span>Read more</span><svg viewBox="0 0 21 21" aria-hidden="true"><path d="M4.14585 9.87492L14.4584 9.87492L9.60419 5.04158L10.5 4.14575L16.8542 10.4999L10.5 16.8541L9.60419 15.9583L14.4584 11.1249L4.14585 11.1249L4.14585 9.87492Z" fill="currentColor"/></svg></a>
-        </div>
-        <div class="card" id="responsible-dictation">
-          <h3>Our Responsible Dictation Policy</h3>
-          <p>Screenshot context is off by default and never stored. API keys live in your system keyring, not a config file. Your clipboard comes back after Speecher pastes. Updates ask before they install. We wrote these down on the product page so we would have to keep doing them.</p>
-          <a class="more" href="../#download"><span>Read more</span><svg viewBox="0 0 21 21" aria-hidden="true"><path d="M4.14585 9.87492L14.4584 9.87492L9.60419 5.04158L10.5 4.14575L16.8542 10.4999L10.5 16.8541L9.60419 15.9583L14.4584 11.1249L4.14585 11.1249L4.14585 9.87492Z" fill="currentColor"/></svg></a>
-        </div>
-        <div class="card">
-          <h3>Building it yourself</h3>
-          <p>Speecher is Qt Widgets on Linux and SwiftUI in the macOS menu bar, not a web view. If you'd rather compile than download, the README lists the packages for Arch, Debian, Fedora and Homebrew, and <code>make install</code> does the rest.</p>
-          <a class="more" href="https://github.com/firemonster612/speecher#quick-start"><span>Read more</span><svg viewBox="0 0 21 21" aria-hidden="true"><path d="M4.14585 9.87492L14.4584 9.87492L9.60419 5.04158L10.5 4.14575L16.8542 10.4999L10.5 16.8541L9.60419 15.9583L14.4584 11.1249L4.14585 11.1249L4.14585 9.87492Z" fill="currentColor"/></svg></a>
-        </div>
-      </div>
+  <section class="nr-feature" aria-label="Featured story">
+    <a class="art" href="./" aria-label="Read: Speecher 0.1.0">
+      <svg viewBox="0 0 752 367" fill="none" aria-hidden="true">
+        <g fill="#faf9f5">
+          <circle cx="182" cy="150" r="76"/>
+          <rect x="286" y="62" width="150" height="150" rx="10"/>
+          <path d="M462 212 L537 62 L612 212 Z"/>
+          <rect x="120" y="248" width="340" height="66" rx="33"/>
+          <circle cx="611" cy="288" r="26"/>
+        </g>
+        <path d="M96 292 C130 292 128 262 160 262 S186 322 220 322 S246 250 280 250 S300 300 332 300 S356 282 388 282 S414 306 448 306 S476 270 508 270 S526 296 560 296 S588 280 620 280 L662 280" stroke="#141413" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </a>
+    <div>
+      <div class="nr-meta"><span>Announcements</span><span>Sep 3, 2026</span></div>
+      <h2><a href="./">Speecher 0.1.0</a></h2>
+      <p>Our most capable release yet, and also our first. Dictation for Windows, macOS, and
+        Linux that runs on the subscription you already pay for, from the company that pays
+        for it.</p>
     </div>
   </section>
-</article>
+
+  <section class="nr-cards" aria-label="Highlights">
+    <div class="nr-card">
+      <div class="nr-meta"><span>Announcements</span><span>Sep 5, 2026</span></div>
+      <h4>Speecher comes to Windows</h4>
+      <p>The pill is smaller, the corners are rounded on any machine with a display driver, and the tray icon follows your taskbar theme. Alpha, in the sense that it is finished but we said alpha.</p>
+    </div>
+    <div class="nr-card">
+      <div class="nr-meta"><span>Alignment</span><span>Sep 4, 2026</span></div>
+      <h4>On the honesty of receipts</h4>
+      <p>Speecher only says "Verified in Target" after reading the text back out of the target. If it merely copied, it says "Copied". We believe this is the first delivery pipeline aligned with its own popup.</p>
+    </div>
+    <div class="nr-card">
+      <div class="nr-meta"><span>Interpretability</span><span>Sep 2026</span></div>
+      <h4>Tracing the thought "The lone speaker"</h4>
+      <p>A case study in what a frontier speech model hears when a Linux server says "Hello Speecher" through a synthesizer from 1995. We found the circuit. The circuit is doing its best.</p>
+    </div>
+    <div class="nr-card">
+      <div class="nr-meta"><span>Societal impacts</span><span>Aug 2026</span></div>
+      <h4>Economic Index, Q3</h4>
+      <p>Our revenue rounds to zero at every precision we tried. Our costs are one gaming PC that has to stay awake. We publish this transparently so others can replicate the business model.</p>
+    </div>
+  </section>
+
+  <section class="nr-list" aria-label="All news">
+    <div class="bar">
+      <h3>News</h3>
+      <input type="search" placeholder="Search both posts" aria-label="Search news">
+    </div>
+    <table class="nr-table">
+      <thead><tr><th scope="col">Date</th><th scope="col">Category</th><th scope="col">Title</th></tr></thead>
+      <tbody>
+        <tr><td class="d">Sep 5, 2026</td><td class="c">Announcements</td><td><a href="./newsroom.html">The Enzothropic Newsroom</a> — you are reading it</td></tr>
+        <tr><td class="d">Sep 3, 2026</td><td class="c">Announcements</td><td><a href="./">Speecher 0.1.0</a></td></tr>
+        <tr><td class="d">Sep 2, 2026</td><td class="c">Product</td><td>The pill is now a capsule; we will not be taking questions (internal memo)</td></tr>
+        <tr><td class="d">Aug 21, 2026</td><td class="c">Research</td><td>Scaling laws for saying "um" (withdrawn)</td></tr>
+        <tr><td class="d">Aug 9, 2026</td><td class="c">Policy</td><td>Responsible Dictation Policy v1: do not dictate into a password field, which we also enforce in code (memo)</td></tr>
+      </tbody>
+    </table>
+    <span class="nr-more">See more — there is no more.</span>
+  </section>
+
+  <p class="nr-note">Enzothropic is a parody of a certain AI research company and is one person
+    with a dictation app. Nothing on this page is affiliated with, endorsed by, or written by
+    anyone whose legal team could afford to read it.</p>
+
+</div>
 </main>
 
 <footer class="site-footer" id="footer" aria-label="Site footer">
@@ -379,7 +369,7 @@ figcaption{font-family:var(--sans);font-size:13px;line-height:1.4;color:var(--mu
           <li><a href="https://github.com/firemonster612">Leadership</a></li>
           <li><a href="https://github.com/firemonster612/speecher#installation--updates">Policy</a></li>
           <li><a href="https://github.com/firemonster612/speecher/tree/master/docs/research">Research</a></li>
-          <li><a href="./newsroom.html">News</a></li>
+          <li><a href="./">News</a></li>
           <li><a href="#responsible-dictation">Speecher's Constitution</a></li>
           <li><a href="../">Keep talking</a></li>
           <li><a href="#responsible-dictation">Responsible Dictation Policy</a></li>
