@@ -22,7 +22,9 @@ int main(int argc, char **argv)
 #endif
     QApplication app(argc, argv);
 #ifdef SPEECHER_WITH_WINUI
-    winUiHost->installNativeEventFilter();
+    if (winUiHost) {
+        winUiHost->installNativeEventFilter();
+    }
     const auto winUiShutdown = qScopeGuard([&winUiHost] {
         if (winUiHost) {
             winUiHost->shutdown();
