@@ -204,9 +204,9 @@ final class SetupFlowModel: ObservableObject {
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
             DispatchQueue.main.async {
                 guard let self else { return }
-                refreshMicrophonePermission()
-                if granted, meterRunning {
-                    startMeter()
+                self.refreshMicrophonePermission()
+                if granted, self.meterRunning {
+                    self.startMeter()
                 }
             }
         }
