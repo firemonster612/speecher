@@ -13,7 +13,12 @@
 #include <QLockFile>
 #include <QProcessEnvironment>
 #include <QSaveFile>
+#include <QTemporaryFile>
 #include <QTimeZone>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 namespace speecher {
 
@@ -178,21 +183,49 @@ static bool refreshCodexAuth(QString *error)
                 QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
 
     const QByteArray contents = QJsonDocument(root).toJson();
+    QString saveError;
 #ifdef Q_OS_WIN
-    QFile saved(authPath);
-    const bool savedOk = saved.open(QIODevice::WriteOnly | QIODevice::Truncate)
-        && saved.write(contents) == contents.size();
+    QTemporaryFile saved(QFileInfo(authPath).dir().filePath(
+        QStringLiteral("auth.json.speecher.XXXXXX.tmp")));
+    bool savedOk = saved.open() && saved.write(contents) == contents.size() && saved.flush();
+    const QString temporaryPath = saved.fileName();
+    saveError = saved.errorString();
+    saved.close();
+    // QSaveFile cannot replace auth.json while Codex briefly has it open.
+    // MoveFileEx keeps the crash-safe same-directory replacement and permits a retry.
+    DWORD moveError = ERROR_SUCCESS;
+    if (savedOk) {
+        savedOk = false;
+        for (int attempt = 0; attempt < 3; ++attempt) {
+            if (MoveFileExW(reinterpret_cast<const wchar_t *>(temporaryPath.utf16()),
+                            reinterpret_cast<const wchar_t *>(authPath.utf16()),
+                            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+                savedOk = true;
+                break;
+            }
+            moveError = GetLastError();
+            if (attempt < 2) {
+                Sleep(50);
+            }
+        }
+    }
+    if (savedOk) {
+        saveError.clear();
+    } else if (moveError != ERROR_SUCCESS) {
+        saveError = QStringLiteral("Windows error %1").arg(moveError);
+    }
 #else
     QSaveFile saved(authPath);
     const bool savedOk = saved.open(QIODevice::WriteOnly)
         && saved.write(contents) == contents.size() && saved.commit();
+    saveError = saved.errorString();
 #endif
     if (savedOk) {
         return true;
     }
     if (error) {
         *error = QStringLiteral("Could not write the refreshed Codex auth file: %1")
-                     .arg(saved.errorString());
+                     .arg(saveError);
     }
     return false;
 }
