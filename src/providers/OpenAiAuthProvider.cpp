@@ -82,6 +82,10 @@ static QString envValue(const QStringList &names)
 
 static QString codexAuthPath()
 {
+    const QString testPath = qEnvironmentVariable("SPEECHER_TEST_CODEX_AUTH_PATH");
+    if (!testPath.isEmpty()) {
+        return testPath;
+    }
     return QDir::homePath() + QStringLiteral("/.codex/auth.json");
 }
 
@@ -173,21 +177,24 @@ static bool refreshCodexAuth(QString *error)
     root.insert(QStringLiteral("last_refresh"),
                 QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
 
+    const QByteArray contents = QJsonDocument(root).toJson();
+#ifdef Q_OS_WIN
+    QFile saved(authPath);
+    const bool savedOk = saved.open(QIODevice::WriteOnly | QIODevice::Truncate)
+        && saved.write(contents) == contents.size();
+#else
     QSaveFile saved(authPath);
-    if (!saved.open(QIODevice::WriteOnly)) {
-        if (error) {
-            *error = QStringLiteral("Could not write the refreshed Codex auth file");
-        }
-        return false;
+    const bool savedOk = saved.open(QIODevice::WriteOnly)
+        && saved.write(contents) == contents.size() && saved.commit();
+#endif
+    if (savedOk) {
+        return true;
     }
-    saved.write(QJsonDocument(root).toJson());
-    if (!saved.commit()) {
-        if (error) {
-            *error = QStringLiteral("Could not write the refreshed Codex auth file");
-        }
-        return false;
+    if (error) {
+        *error = QStringLiteral("Could not write the refreshed Codex auth file: %1")
+                     .arg(saved.errorString());
     }
-    return true;
+    return false;
 }
 
 ApiKeyCandidate readCodexApiKeyCandidate(QString *status)
