@@ -35,19 +35,24 @@ try {
         throw "Installed application has no multimedia plugins"
     }
 
+    # Launch with only system directories on PATH to prove the install is
+    # self-contained. WinUI 3 cannot render into the offscreen QPA platform
+    # (it needs a real HWND), so this opens the settings window on the runner's
+    # interactive desktop and checks the process comes up and stays alive
+    # rather than grabbing an offscreen frame.
     $env:Path = "$env:SystemRoot;$env:SystemRoot\System32;$env:SystemRoot\System32\Wbem;$env:SystemRoot\System32\WindowsPowerShell\v1.0"
-    $env:QT_QPA_PLATFORM = "offscreen"
-    $env:SPEECHER_GRAB_PAGE = "general"
-    $Grab = Join-Path $InstallDir "installer-readiness.png"
-    $App = Start-Process $Exe -ArgumentList "--grab", "`"$Grab`"" -PassThru
-    if (-not $App.WaitForExit(45000)) {
-        $App | Stop-Process -Force
-        throw "Installed application did not become ready within 45 seconds"
+    $env:QT_QPA_PLATFORM = $null
+    $App = Start-Process $Exe -ArgumentList "--show-settings" -PassThru
+    Start-Sleep -Seconds 8
+    $App.Refresh()
+    # A missing runtime dependency (Qt, the WinUI bootstrap, a plugin) makes the
+    # process fault during startup, so surviving several seconds is the
+    # self-containment signal. WinUI windows do not set the Win32
+    # MainWindowHandle, so that is not a reliable readiness check here.
+    if ($App.HasExited) {
+        throw "Installed application exited during startup with code $($App.ExitCode) (missing runtime dependency?)"
     }
-    if ($App.ExitCode -ne 0 -or -not (Test-Path $Grab)) {
-        throw "Installed application readiness check failed with exit code $($App.ExitCode)"
-    }
-    Write-Output "Installed application produced $Grab without Qt on PATH"
+    Write-Output "Installed application launched and stayed alive without Qt on PATH"
 } finally {
     if ($App -and -not $App.HasExited) {
         $App | Stop-Process -Force
