@@ -84,16 +84,21 @@ void WindowsInstallerUpdater::restartApplication()
 {
     const QString logPath = QFileInfo(m_installerPath).dir().filePath(
         QStringLiteral("speecher-update.log"));
-    const QStringList arguments{
+    QStringList arguments{
         QStringLiteral("/VERYSILENT"),
         QStringLiteral("/SUPPRESSMSGBOXES"),
         QStringLiteral("/NORESTART"),
         QStringLiteral("/CLOSEAPPLICATIONS"),
         QStringLiteral("/FORCECLOSEAPPLICATIONS"),
         QStringLiteral("/LOG=%1").arg(QDir::toNativeSeparators(logPath)),
-        QStringLiteral("/RESTARTARGS=%1")
-            .arg(QProcess::joinCommand(QCoreApplication::arguments().mid(1))),
     };
+    const QStringList restartArguments = QCoreApplication::arguments().mid(1);
+    arguments.append(QStringLiteral("/RESTARTARGCOUNT=%1").arg(restartArguments.size()));
+    for (qsizetype index = 0; index < restartArguments.size(); ++index) {
+        arguments.append(QStringLiteral("/RESTARTARG%1=%2")
+                             .arg(index)
+                             .arg(restartArguments.at(index)));
+    }
     if (!QProcess::startDetached(m_installerPath, arguments)) {
         setState(State::ReadyToRestart,
                  QStringLiteral("Could not start the Speecher installer."));

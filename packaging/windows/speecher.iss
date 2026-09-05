@@ -47,6 +47,18 @@ begin
 end;
 
 function RestartArguments(Param: String): String;
+var
+  I: Integer;
+  Count: Integer;
+  Value: String;
 begin
-  Result := ExpandConstant('{param:RESTARTARGS|}');
+  Count := StrToIntDef(ExpandConstant('{param:RESTARTARGCOUNT|0}'), 0);
+  Result := '';
+  for I := 0 to Count - 1 do
+  begin
+    Value := ExpandConstant('{param:RESTARTARG' + IntToStr(I) + '|}');
+    if Result <> '' then
+      Result := Result + ' ';
+    Result := Result + AddQuotes(Value);
+  end;
 end;
