@@ -28,7 +28,7 @@ struct RootView: View {
     }
 
     @ViewBuilder private var detail: some View {
-        if let pane = Pane.with(id: model.pane) {
+        if let pane = model.pane(withId: model.pane) {
             VStack(alignment: .leading, spacing: 0) {
                 if model.whatsNewPending {
                     GroupBox {
@@ -65,18 +65,18 @@ struct SidebarList: View {
     var body: some View {
         List(selection: $model.pane) {
             if query.isEmpty {
-                if model.pane == "whatsNew", let pane = Pane.with(id: model.pane) {
+                if model.pane == "whatsNew", let pane = model.pane(withId: model.pane) {
                     row(pane)
                 }
-                ForEach(Array(Pane.sidebarRuns.enumerated()), id: \.offset) { _, run in
+                ForEach(Array(model.sidebarRuns.enumerated()), id: \.offset) { _, run in
                     Section {
-                        ForEach(run.compactMap(Pane.with(id:))) { row($0) }
+                        ForEach(run.compactMap(model.pane(withId:))) { row($0) }
                     }
                 }
             } else {
                 // A search shows its hits as one flat list, not as the runs they
                 // came from.
-                ForEach(Pane.all.filter { model.pane($0, matches: query) }) { row($0) }
+                ForEach(model.panes.filter { model.pane($0, matches: query) }) { row($0) }
             }
         }
         .listStyle(.sidebar)
@@ -133,10 +133,13 @@ final class SpeecherSettingsWindow {
         // The first SwiftUI version used an oversized default. Keep future
         // resizing persistent without restoring that pre-release frame.
         window.setFrameAutosaveName("SpeecherSettingsV2")
-        // The window title is the pane the user is looking at.
-        window.title = Pane.with(id: model.pane)?.title ?? "Settings"
+        // The window title is the pane the user is looking at. The pane list is
+        // captured by value: a closure the model's own publisher retains must
+        // not capture the model.
+        let panes = model.panes
+        window.title = panes.first { $0.id == model.pane }?.title ?? "Settings"
         titleObserver = model.$pane.sink { [weak window] pane in
-            window?.title = Pane.with(id: pane)?.title ?? "Settings"
+            window?.title = panes.first { $0.id == pane }?.title ?? "Settings"
         }
     }
 

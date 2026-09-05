@@ -78,6 +78,27 @@ SpeecherColumnKind bridgedColumnKind(ColumnKind kind)
     }
 }
 
+SpeecherPaneLayout bridgedPaneLayout(PaneLayout layout)
+{
+    switch (layout) {
+    case PaneLayout::Sections:
+        return SpeecherPaneLayoutSections;
+    case PaneLayout::Alternatives:
+        return SpeecherPaneLayoutAlternatives;
+    case PaneLayout::Shortcut:
+        return SpeecherPaneLayoutShortcut;
+    }
+}
+
+NSArray<NSString *> *bridgedStrings(const QStringList &strings)
+{
+    NSMutableArray<NSString *> *bridged = [NSMutableArray array];
+    for (const QString &string : strings) {
+        [bridged addObject:string.toNSString()];
+    }
+    return bridged;
+}
+
 // A record's values keep their type across the wall, because the keys no column
 // shows are timestamps and confidences that a round trip through a string would
 // quietly round off.
@@ -365,6 +386,27 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @implementation SettingsPageModel
 @end
 
+@interface PaneGroupModel ()
+@property (nonatomic, copy) NSString *title;
+@property (nonatomic, copy) NSString *help;
+@property (nonatomic, copy) NSArray<NSString *> *rows;
+@end
+
+@implementation PaneGroupModel
+@end
+
+@interface PaneModel ()
+@property (nonatomic, copy) NSString *paneId;
+@property (nonatomic, copy) NSString *title;
+@property (nonatomic, copy) NSString *symbolName;
+@property (nonatomic, copy) NSArray<NSString *> *schemaPages;
+@property (nonatomic) SpeecherPaneLayout layout;
+@property (nonatomic, copy) NSArray<PaneGroupModel *> *groups;
+@end
+
+@implementation PaneModel
+@end
+
 @interface CollectionImportResult ()
 @property (nonatomic, copy, nullable) NSArray<SpeecherRecord *> *records;
 @property (nonatomic, copy) NSString *problem;
@@ -546,6 +588,39 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
         [pages addObject:pageModel];
     }
     return pages;
+}
+
+- (NSArray<PaneModel *> *)panes
+{
+    NSMutableArray<PaneModel *> *panes = [NSMutableArray array];
+    for (const speecher::SettingsPane &pane : _state->schema.panes) {
+        NSMutableArray<PaneGroupModel *> *groups = [NSMutableArray array];
+        for (const speecher::SettingsPaneGroup &group : pane.groups) {
+            PaneGroupModel *groupModel = [[PaneGroupModel alloc] init];
+            groupModel.title = group.title.toNSString();
+            groupModel.help = group.help.toNSString();
+            groupModel.rows = bridgedStrings(group.rows);
+            [groups addObject:groupModel];
+        }
+        PaneModel *paneModel = [[PaneModel alloc] init];
+        paneModel.paneId = pane.id.toNSString();
+        paneModel.title = pane.title.toNSString();
+        paneModel.symbolName = pane.symbolName.toNSString();
+        paneModel.schemaPages = bridgedStrings(pane.schemaPages);
+        paneModel.layout = bridgedPaneLayout(pane.layout);
+        paneModel.groups = groups;
+        [panes addObject:paneModel];
+    }
+    return panes;
+}
+
+- (NSArray<NSArray<NSString *> *> *)sidebarRuns
+{
+    NSMutableArray<NSArray<NSString *> *> *runs = [NSMutableArray array];
+    for (const QStringList &run : _state->schema.sidebarRuns) {
+        [runs addObject:bridgedStrings(run)];
+    }
+    return runs;
 }
 
 - (void)setValue:(id)value forRowId:(NSString *)rowId

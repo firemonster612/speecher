@@ -620,6 +620,78 @@ private slots:
                                 "paste, or after a short delay when it cannot."));
     }
 
+    // The pane arrangement names pages and rows by id; a typo or a renamed row
+    // would otherwise fail silently, as a group that never draws.
+    void panesReferenceOnlyPagesAndRowsTheSchemaHas()
+    {
+        // The maximal schema, so capability-gated rows (the virtual keyboard)
+        // exist to be matched.
+        SchemaContext context = fakeContext();
+        context.virtualKeyboardSetup = true;
+        context.lastSeenVersion = QStringLiteral("0.0.0");
+        context.currentVersion = QStringLiteral("0.1.0");
+        const SettingsSchema schema = buildSettingsSchema(context);
+
+        QStringList pageIds;
+        QStringList rowIds;
+        for (const SettingsPage &page : schema.pages) {
+            pageIds.append(page.id);
+            for (const SettingsSection &section : page.sections) {
+                for (const SettingsRow &row : section.rows) {
+                    rowIds.append(row.id);
+                }
+            }
+        }
+
+#ifdef Q_OS_MACOS
+        const QStringList otherPlatformRows;
+#else
+        // Rows generalPage() only compiles in on macOS; keep in sync with its
+        // #ifdefs so the check stays exact everywhere else.
+        const QStringList otherPlatformRows{QStringLiteral("themeControl"),
+                                            QStringLiteral("launchAtLogin")};
+#endif
+
+        QVERIFY(!schema.panes.isEmpty());
+        QStringList paneIds;
+        for (const SettingsPane &pane : schema.panes) {
+            QVERIFY2(!paneIds.contains(pane.id), qPrintable(pane.id));
+            paneIds.append(pane.id);
+            for (const QString &pageId : pane.schemaPages) {
+                QVERIFY2(pageIds.contains(pageId),
+                         qPrintable(pane.id + QStringLiteral(" owns unknown page ") + pageId));
+            }
+            for (const SettingsPaneGroup &group : pane.groups) {
+                for (const QString &pattern : group.rows) {
+                    const bool matched = pattern.endsWith(QLatin1Char('*'))
+                        ? std::any_of(rowIds.cbegin(), rowIds.cend(),
+                                      [&pattern](const QString &id) {
+                                          return id.startsWith(pattern.chopped(1));
+                                      })
+                        : rowIds.contains(pattern) || otherPlatformRows.contains(pattern);
+                    QVERIFY2(matched,
+                             qPrintable(pane.id + QStringLiteral("/") + group.title
+                                        + QStringLiteral(" names unknown row ") + pattern));
+                }
+            }
+        }
+
+        // Every run names real panes, and every pane sits in exactly one run
+        // except What's New, which appears only while selected.
+        QStringList runPaneIds;
+        for (const QStringList &run : schema.sidebarRuns) {
+            runPaneIds += run;
+        }
+        for (const QString &paneId : runPaneIds) {
+            QVERIFY2(paneIds.contains(paneId),
+                     qPrintable(QStringLiteral("run names unknown pane ") + paneId));
+            QCOMPARE(runPaneIds.count(paneId), 1);
+        }
+        QStringList expected = paneIds;
+        expected.removeAll(QStringLiteral("whatsNew"));
+        QCOMPARE(runPaneIds.size(), expected.size());
+    }
+
     void aSavedMicrophoneSurvivesGoingMissing()
     {
         const QList<RowOption> present{{QStringLiteral("mic-1"), QStringLiteral("Desk microphone")}};
