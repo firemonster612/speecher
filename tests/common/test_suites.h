@@ -76,3 +76,6 @@ int runUpdateControllerTests(int argc, char **argv);
 #ifdef SPEECHER_WITH_SWIFT_UI
 int runMacFrontEndTests(int argc, char **argv);
 #endif
+#ifdef Q_OS_WIN
+int runWinPlatformTests(int argc, char **argv);
+#endif

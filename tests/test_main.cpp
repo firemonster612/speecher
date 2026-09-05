@@ -12,6 +12,11 @@ int main(int argc, char **argv)
     if (qEnvironmentVariable("SPEECHER_TEST_ONLY_PLATFORM_LIVE") == QStringLiteral("1")) {
         return runPlatformLiveTests(argc, argv);
     }
+#ifdef Q_OS_WIN
+    if (qEnvironmentVariable("SPEECHER_TEST_ONLY_WIN_PLATFORM") == QStringLiteral("1")) {
+        return runWinPlatformTests(argc, argv);
+    }
+#endif
 
     int result = 0;
     result |= runUiTests(argc, argv);
@@ -41,6 +46,9 @@ int main(int argc, char **argv)
 #endif
 #ifdef SPEECHER_WITH_SWIFT_UI
     result |= runMacFrontEndTests(argc, argv);
+#endif
+#ifdef Q_OS_WIN
+    result |= runWinPlatformTests(argc, argv);
 #endif
     return result;
 }

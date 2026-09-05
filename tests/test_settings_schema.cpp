@@ -160,11 +160,11 @@ private slots:
         QVERIFY(profiles.value(settings) != profiles.value(AppSettings{}));
     }
 
-    void launchAtLoginOnlyAppearsOnMacOS()
+    void launchAtLoginAppearsOnMacOSAndWindows()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
         const SettingsPage &general = schema.page(QStringLiteral("general"));
-#ifdef Q_OS_MACOS
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
         QVERIFY(hasRow(general, QStringLiteral("launchAtLogin")));
         const SettingsRow &row = rowById(general, QStringLiteral("launchAtLogin"));
         QCOMPARE(row.kind, RowKind::Toggle);
