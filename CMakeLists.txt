@@ -657,6 +657,9 @@ if(WIN32)
   target_link_libraries(speecher_platform PUBLIC
     uiautomationcore user32 ole32 shell32 gdi32 windowsapp
   )
+  if(TARGET winappsdk)
+    target_link_libraries(speecher_platform PRIVATE winappsdk)
+  endif()
 endif()
 if(ATSPI_FOUND)
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_ATSPI=1)
