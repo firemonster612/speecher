@@ -49,6 +49,27 @@ if ($LASTEXITCODE -ne 0) {
     throw "windeployqt failed with exit code $LASTEXITCODE"
 }
 
+$QtBin = Split-Path $WinDeployQt
+$QtPlugins = Join-Path (Split-Path $QtBin) "plugins"
+foreach ($Dll in "Qt6WebSockets.dll", "Qt6Multimedia.dll") {
+    $Source = Join-Path $QtBin $Dll
+    if (-not (Test-Path $Source)) {
+        throw "Required Qt DLL not found: $Source"
+    }
+    Copy-Item $Source $AppDir -Force
+}
+$MultimediaPlugins = Join-Path $QtPlugins "multimedia"
+if (-not (Test-Path $MultimediaPlugins)) {
+    throw "Qt multimedia plugins not found: $MultimediaPlugins"
+}
+Copy-Item $MultimediaPlugins (Join-Path $AppDir "multimedia") -Recurse -Force
+$OffscreenPlugin = Join-Path $QtPlugins "platforms\qoffscreen.dll"
+if (-not (Test-Path $OffscreenPlugin)) {
+    throw "Qt offscreen platform plugin not found: $OffscreenPlugin"
+}
+New-Item (Join-Path $AppDir "platforms") -ItemType Directory -Force | Out-Null
+Copy-Item $OffscreenPlugin (Join-Path $AppDir "platforms") -Force
+
 Invoke-WebRequest $RuntimeUrl -OutFile $RuntimeInstaller
 $ActualRuntimeSha256 = (Get-FileHash $RuntimeInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($ActualRuntimeSha256 -ne $RuntimeSha256) {
