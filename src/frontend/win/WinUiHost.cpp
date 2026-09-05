@@ -21,6 +21,7 @@
 #pragma pop_macro("GetCurrentTime")
 
 #include <QCoreApplication>
+#include <QDebug>
 #include <QFile>
 
 // Q_INIT_RESOURCE must sit outside every namespace. Defensive: a resource
@@ -74,6 +75,14 @@ struct WinUiHost::Native {
         winrt::init_apartment(winrt::apartment_type::single_threaded);
         dispatcher = winrt::Microsoft::UI::Dispatching::DispatcherQueueController::CreateOnCurrentThread();
         application = winrt::make<XamlApp>();
+        // A XAML exception nobody catches dies as a stowed exception deep in
+        // CoreMessaging; the log line here is the only place its text appears.
+        application.UnhandledException(
+            [](const winrt::Windows::Foundation::IInspectable &,
+               const UnhandledExceptionEventArgs &args) {
+                qWarning() << "unhandled XAML exception:"
+                           << QString::fromWCharArray(args.Message().c_str());
+            });
         xamlManager = winrt::Microsoft::UI::Xaml::Hosting::WindowsXamlManager::InitializeForCurrentThread();
         application.Resources().MergedDictionaries().Append(Controls::XamlControlsResources());
         // The settings-card styles, merged after XamlControlsResources so

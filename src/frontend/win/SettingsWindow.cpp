@@ -454,7 +454,17 @@ struct SettingsWindow::Native {
         if (auto previous = pageHost.Child().try_as<ScrollViewer>()) {
             offset = previous.VerticalOffset();
         }
-        UIElement page = buildPane(*pane, model.pages(), host);
+        UIElement page{nullptr};
+        try {
+            page = buildPane(*pane, model.pages(), host);
+        } catch (const winrt::hresult_error &error) {
+            // A throw from a dispatcher callback dies as a stowed exception
+            // with no message anywhere; log it and keep the window alive.
+            qWarning() << "settings pane" << currentPane << "failed to build:"
+                       << QString::number(static_cast<quint32>(error.code()), 16)
+                       << QString::fromWCharArray(error.message().c_str());
+            return;
+        }
         pageHost.Child(page);
         if (offset > 0) {
             if (auto scroll = page.try_as<ScrollViewer>()) {
