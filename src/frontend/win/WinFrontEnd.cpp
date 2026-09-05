@@ -1,10 +1,10 @@
 #include "frontend/win/WinFrontEnd.h"
 
 #include "app/ApplicationController.h"
+#include "frontend/win/SettingsWindow.h"
 
 #include <windows.h>
 #include <dwmapi.h>
-#include <microsoft.ui.xaml.window.h>
 
 #pragma push_macro("GetCurrentTime")
 #undef GetCurrentTime
@@ -15,7 +15,6 @@
 #include <winrt/Microsoft.UI.Interop.h>
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
-#include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Hosting.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
 #pragma pop_macro("GetCurrentTime")
@@ -41,16 +40,14 @@ LRESULT CALLBACK pillWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM
     return DefWindowProcW(window, message, wParam, lParam);
 }
 
-NavigationViewItem navigationItem(const wchar_t *label)
-{
-    NavigationViewItem item;
-    item.Content(box_value(label));
-    return item;
-}
-
 } // namespace
 
 struct WinFrontEnd::Native {
+    explicit Native(ApplicationController *controller)
+        : settingsWindow(controller)
+    {
+    }
+
     ~Native()
     {
         if (pillSource) {
@@ -59,74 +56,9 @@ struct WinFrontEnd::Native {
         if (pillWindow) {
             DestroyWindow(pillWindow);
         }
-        if (mainWindow) {
-            mainWindow.Close();
-        }
     }
 
-    void createMainWindow()
-    {
-        mainWindow = Window();
-        mainWindow.Closed([this](const auto &, const auto &) { mainWindow = nullptr; });
-        mainWindow.SystemBackdrop(MicaBackdrop());
-        mainWindow.ExtendsContentIntoTitleBar(true);
-
-        Grid root;
-        TitleBar titleBar;
-        titleBar.VerticalAlignment(VerticalAlignment::Top);
-        titleBar.Title(L"Speecher");
-        titleBar.IsBackButtonVisible(false);
-
-        NavigationView navigation;
-        navigation.Margin({0, 48, 0, 0});
-        navigation.PaneDisplayMode(NavigationViewPaneDisplayMode::Left);
-        navigation.IsBackButtonVisible(NavigationViewBackButtonVisible::Collapsed);
-        navigation.IsPaneToggleButtonVisible(false);
-        AutoSuggestBox search;
-        search.PlaceholderText(L"Search");
-        navigation.AutoSuggestBox(search);
-        navigation.MenuItems().Append(navigationItem(L"General"));
-        navigation.MenuItems().Append(navigationItem(L"Dictation"));
-        navigation.MenuItems().Append(navigationItem(L"About"));
-
-        StackPanel content;
-        content.Spacing(16);
-        content.Margin({36, 28, 36, 36});
-        TextBlock pageTitle;
-        pageTitle.Text(L"Windows hosting spike");
-        pageTitle.Style(Application::Current().Resources()
-                            .Lookup(box_value(L"TitleTextBlockStyle"))
-                            .as<Style>());
-        content.Children().Append(pageTitle);
-
-        ToggleSwitch toggle;
-        toggle.Header(box_value(L"Enable dictation"));
-        content.Children().Append(toggle);
-
-        ComboBox comboBox;
-        comboBox.Header(box_value(L"Microphone"));
-        comboBox.Items().Append(box_value(L"Default microphone"));
-        comboBox.Items().Append(box_value(L"External microphone"));
-        comboBox.SelectedIndex(0);
-        content.Children().Append(comboBox);
-
-        TextBox textBox;
-        textBox.Header(box_value(L"Keyboard input"));
-        textBox.PlaceholderText(L"Type here to test input routing");
-        content.Children().Append(textBox);
-
-        navigation.Content(content);
-        root.Children().Append(navigation);
-        root.Children().Append(titleBar);
-        mainWindow.Content(root);
-        mainWindow.SetTitleBar(titleBar);
-        mainWindow.Activate();
-        HWND handle = nullptr;
-        mainWindow.as<::IWindowNative>()->get_WindowHandle(&handle);
-        SetWindowPos(handle, nullptr, 0, 0, 960, 680,
-                     SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-    }
-
+    // W4 replaces this spike pill with the real DictationPanel.
     void showPill(const QString &message)
     {
         const HWND foregroundWindow = GetForegroundWindow();
@@ -190,7 +122,7 @@ struct WinFrontEnd::Native {
         });
     }
 
-    Window mainWindow{nullptr};
+    win::SettingsWindow settingsWindow;
     HWND pillWindow = nullptr;
     DesktopWindowXamlSource pillSource{nullptr};
     TextBlock pillText{nullptr};
@@ -198,7 +130,7 @@ struct WinFrontEnd::Native {
 
 WinFrontEnd::WinFrontEnd(ApplicationController *controller)
     : m_controller(controller)
-    , m_native(std::make_unique<Native>())
+    , m_native(std::make_unique<Native>(controller))
 {
 }
 
@@ -206,11 +138,7 @@ WinFrontEnd::~WinFrontEnd() = default;
 
 void WinFrontEnd::showMainWindow()
 {
-    if (!m_native->mainWindow) {
-        m_native->createMainWindow();
-    } else {
-        m_native->mainWindow.Activate();
-    }
+    m_native->settingsWindow.show();
     QTimer::singleShot(0, m_controller, &ApplicationController::frontEndReady);
 }
 
@@ -227,8 +155,7 @@ void WinFrontEnd::showSetupAssistant(SetupAssistantPage page)
 
 bool WinFrontEnd::captureMainWindow(const QString &path)
 {
-    Q_UNUSED(path);
-    return false;
+    return m_native->settingsWindow.capture(path);
 }
 
 void WinFrontEnd::showDictationError(const QString &message)

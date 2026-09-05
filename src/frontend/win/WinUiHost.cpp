@@ -21,6 +21,15 @@
 #pragma pop_macro("GetCurrentTime")
 
 #include <QCoreApplication>
+#include <QFile>
+
+// Q_INIT_RESOURCE must sit outside every namespace. Defensive: a resource
+// compiled into a static library can be dropped by the linker when nothing
+// references its initializer.
+static void speecherInitWinXamlResources()
+{
+    Q_INIT_RESOURCE(win_xaml);
+}
 
 namespace speecher {
 namespace {
@@ -67,6 +76,18 @@ struct WinUiHost::Native {
         application = winrt::make<XamlApp>();
         xamlManager = winrt::Microsoft::UI::Xaml::Hosting::WindowsXamlManager::InitializeForCurrentThread();
         application.Resources().MergedDictionaries().Append(Controls::XamlControlsResources());
+        // The settings-card styles, merged after XamlControlsResources so
+        // their StaticResource references resolve against it.
+        speecherInitWinXamlResources();
+        QFile styles(QStringLiteral(":/win/xaml/styles.xaml"));
+        if (!styles.open(QIODevice::ReadOnly)) {
+            qFatal("styles.xaml is missing from the win front end's resources");
+        }
+        const QString xaml = QString::fromUtf8(styles.readAll());
+        application.Resources().MergedDictionaries().Append(
+            XamlReader::Load(winrt::hstring(reinterpret_cast<const wchar_t *>(xaml.utf16()),
+                                            static_cast<uint32_t>(xaml.size())))
+                .as<ResourceDictionary>());
     }
 
     ~Native()
