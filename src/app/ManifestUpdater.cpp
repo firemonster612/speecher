@@ -322,6 +322,12 @@ const UpdateManifest &ManifestUpdater::manifest() const
 
 QUrl ManifestUpdater::manifestUrl(UpdateChannel channel) const
 {
+    // Update end-to-end tests point the check at a local server; the download
+    // URL inside the manifest still has to be https.
+    const QString override = qEnvironmentVariable("SPEECHER_UPDATE_MANIFEST_URL");
+    if (!override.isEmpty()) {
+        return QUrl(override);
+    }
     return channel == UpdateChannel::Nightly ? nightlyManifestUrl : stableManifestUrl;
 }
 
