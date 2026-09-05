@@ -109,15 +109,13 @@ CollectionEditor::CollectionEditor(const RowSnapshot &row, PaneHost &host)
 
 UIElement CollectionEditor::card()
 {
-    if (!m_card) {
-        build();
-    }
-    detachFromParent(m_card);
+    build();
     return m_card;
 }
 
 void CollectionEditor::build()
 {
+    m_actionButtons.clear();
     StackPanel content;
     content.Padding({16, 12, 16, 12});
     content.Spacing(8);
@@ -201,7 +199,8 @@ void CollectionEditor::build()
     m_problems = InfoBar();
     m_problems.Severity(InfoBarSeverity::Error);
     m_problems.IsClosable(false);
-    m_problems.IsOpen(false);
+    m_problems.Message(hs(m_lastProblems.join(QLatin1Char('\n'))));
+    m_problems.IsOpen(!m_lastProblems.isEmpty());
     content.Children().Append(m_problems);
 
     m_card = cardContainer(content);
@@ -364,6 +363,7 @@ void CollectionEditor::save()
 
 void CollectionEditor::showProblems(const QStringList &problems)
 {
+    m_lastProblems = problems;
     m_problems.Message(hs(problems.join(QLatin1Char('\n'))));
     m_problems.IsOpen(!problems.isEmpty());
 }

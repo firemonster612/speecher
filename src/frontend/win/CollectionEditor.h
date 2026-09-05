@@ -18,8 +18,9 @@ public:
     CollectionEditor(const RowSnapshot &row, PaneHost &host);
 
     // The editor as one SettingsCard-shaped element: toolbar, header row, the
-    // list, and the validation InfoBar. Built once; reparented on pane rebuilds
-    // so the undo history survives them.
+    // list, and the validation InfoBar. The visuals are rebuilt on every call
+    // — a XAML element cannot reliably leave a discarded tree — while the
+    // records, the undo history and the problems live here and survive.
     winrt::Microsoft::UI::Xaml::UIElement card();
 
 private:
@@ -51,6 +52,7 @@ private:
     QList<Record> m_records;
     // What Delete took, newest last, so undo can put it back.
     QList<Record> m_deleted;
+    QStringList m_lastProblems;
 
     winrt::Microsoft::UI::Xaml::Controls::Border m_card{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::ListView m_list{nullptr};
