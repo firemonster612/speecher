@@ -1,6 +1,6 @@
 #pragma once
 
-#include "frontend/win/Panes.h"
+#include "frontend/win/SettingsModel.h"
 
 #include <QHash>
 
@@ -55,8 +55,6 @@ struct PaneHost {
     // Collection editors by row id, kept across pane rebuilds so an undo
     // history survives an unrelated setting changing.
     QHash<QString, std::shared_ptr<CollectionEditor>> editors;
-    // SelectorBar selection by pane id.
-    QHash<QString, int> alternative;
     // The OpenAI credential field's state: a keyring read that lands after
     // typing started must not overwrite what was typed.
     QString apiKey;
@@ -68,12 +66,15 @@ struct PaneHost {
     bool shortcutRecording = false;
 };
 
-// One pane as a WinUI page: ScrollViewer over a 1064-wide column with the page
-// title, BodyStrong card headers, SettingsCard-shaped rows spaced 4 and
-// Caption footnotes — the WinUI Gallery settings page, built in code.
-winrt::Microsoft::UI::Xaml::UIElement buildPane(const Pane &pane,
-                                                const QList<PageSnapshot> &pages,
-                                                PaneHost &host);
+// One schema page as a WinUI page: ScrollViewer over a 1064-wide column with
+// the page title, one card per schema section — BodyStrong headers,
+// SettingsCard-shaped rows spaced 4 and Caption footnotes — the WinUI Gallery
+// settings page, built in code.
+winrt::Microsoft::UI::Xaml::UIElement buildPage(const PageSnapshot &page, PaneHost &host);
+
+// The global-shortcut recorder page, the one settings surface with no schema
+// page behind it.
+winrt::Microsoft::UI::Xaml::UIElement buildShortcutPage(PaneHost &host);
 
 // A SettingsCard-shaped container (Card brushes, 1 px stroke, control corner
 // radius) around arbitrary content; shared with the collection editor and the

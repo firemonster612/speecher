@@ -249,26 +249,41 @@ std::shared_ptr<CollectionEditor> editorFor(const RowSnapshot &row, PaneHost &ho
     return editor;
 }
 
-// One PaneCard as the Settings app draws it: a BodyStrong header, one
+// The footnote under a section's cards: the schema section's help, or the help
+// of a collection row filling the card, which has nowhere else to put it.
+QString footnote(const SectionSnapshot &section)
+{
+    if (!section.help.isEmpty()) {
+        return section.help;
+    }
+    for (const RowSnapshot &row : section.rows) {
+        if (row.collection) {
+            return row.help;
+        }
+    }
+    return {};
+}
+
+// One schema section as the Settings app draws it: a BodyStrong header, one
 // SettingsCard per row — rows sharing a groupId in one card — spaced 4, and
 // the footnote underneath.
-void appendCard(const StackPanel &column, const PaneCard &card, PaneHost &host, bool titled)
+void appendSection(const StackPanel &column, const SectionSnapshot &section, PaneHost &host)
 {
-    if (card.rows.isEmpty()) {
+    if (section.rows.isEmpty()) {
         return;
     }
-    if (titled && !card.title.isEmpty()) {
-        column.Children().Append(styledText(card.title, L"SettingsSectionHeaderStyle"));
+    if (!section.title.isEmpty()) {
+        column.Children().Append(styledText(section.title, L"SettingsSectionHeaderStyle"));
     }
     StackPanel cards;
     cards.Spacing(4);
-    if (!titled || card.title.isEmpty()) {
+    if (section.title.isEmpty()) {
         cards.Margin({0, 12, 0, 0});
     }
     // Consecutive rows naming the same group share one card; a collection or
     // full-width custom row is always a card of its own.
     QList<QList<RowSnapshot>> units;
-    for (const RowSnapshot &row : card.rows) {
+    for (const RowSnapshot &row : section.rows) {
         const bool standsAlone = row.kind == RowKind::Collection
             || (row.kind == RowKind::Custom && customRowIsFullWidth(row.id));
         if (!standsAlone && !units.isEmpty() && !row.groupId.isEmpty()
@@ -299,46 +314,23 @@ void appendCard(const StackPanel &column, const PaneCard &card, PaneHost &host, 
         cards.Children().Append(cardContainer(rows));
     }
     column.Children().Append(cards);
-    if (!card.help.isEmpty()) {
-        column.Children().Append(secondaryTextBlock(card.help, L"SettingsFootnoteStyle", host));
+    const QString help = footnote(section);
+    if (!help.isEmpty()) {
+        column.Children().Append(secondaryTextBlock(help, L"SettingsFootnoteStyle", host));
     }
 }
 
-void appendAlternatives(const StackPanel &column,
-                        const Pane &pane,
-                        const QList<PageSnapshot> &pages,
-                        PaneHost &host)
+// The Gallery's settings page scaffold: gutters on the scroller, the column
+// capped at 1064 inside them, the page title on top.
+ScrollViewer pageScaffold(const QString &title, StackPanel &column)
 {
-    if (pane.groups.isEmpty()) {
-        return;
-    }
-    SelectorBar selector;
-    selector.Margin({0, 16, 0, 0});
-    const int selected = std::clamp(host.alternative.value(pane.id, 0),
-                                    0,
-                                    static_cast<int>(pane.groups.size()) - 1);
-    for (const PaneGroup &group : pane.groups) {
-        SelectorBarItem item;
-        item.Text(hs(group.title));
-        selector.Items().Append(item);
-    }
-    selector.SelectedItem(selector.Items().GetAt(selected));
-    selector.SelectionChanged([paneId = pane.id, &host](const SelectorBar &sender, const auto &) {
-        uint32_t index = 0;
-        sender.Items().IndexOf(sender.SelectedItem(), index);
-        if (host.alternative.value(paneId, 0) != static_cast<int>(index)) {
-            host.alternative.insert(paneId, static_cast<int>(index));
-            host.refresh();
-        }
-    });
-    column.Children().Append(selector);
-    const QList<PaneCard> cards = groupCards(pane, pages);
-    if (selected < cards.size()) {
-        appendCard(column, cards.at(selected), host, false);
-    }
-    for (const PaneCard &card : unclaimedCards(pane, pages)) {
-        appendCard(column, card, host, true);
-    }
+    ScrollViewer scroll;
+    scroll.Padding({36, 0, 36, 0});
+    column.MaxWidth(1064);
+    column.Padding({0, 0, 0, 36});
+    column.Children().Append(styledText(title, L"SettingsPageTitleStyle"));
+    scroll.Content(column);
+    return scroll;
 }
 
 } // namespace
@@ -482,33 +474,21 @@ void setValueAndCommit(PaneHost &host, const QString &rowId, const QVariant &val
     }
 }
 
-UIElement buildPane(const Pane &pane, const QList<PageSnapshot> &pages, PaneHost &host)
+UIElement buildPage(const PageSnapshot &page, PaneHost &host)
 {
-    ScrollViewer scroll;
-    // The Gallery's settings page: gutters on the scroller, the column capped
-    // at 1064 inside them.
-    scroll.Padding({36, 0, 36, 0});
     StackPanel column;
-    column.MaxWidth(1064);
-    column.Padding({0, 0, 0, 36});
-    column.Children().Append(styledText(pane.title, L"SettingsPageTitleStyle"));
-    switch (pane.layout) {
-    case PaneLayout::Shortcut:
-        ShortcutRecorder::appendPane(column, host);
-        break;
-    case PaneLayout::Sections:
-        for (const PaneCard &card : groupCards(pane, pages)) {
-            appendCard(column, card, host, true);
-        }
-        for (const PaneCard &card : unclaimedCards(pane, pages)) {
-            appendCard(column, card, host, true);
-        }
-        break;
-    case PaneLayout::Alternatives:
-        appendAlternatives(column, pane, pages, host);
-        break;
+    ScrollViewer scroll = pageScaffold(page.title, column);
+    for (const SectionSnapshot &section : page.sections) {
+        appendSection(column, section, host);
     }
-    scroll.Content(column);
+    return scroll;
+}
+
+UIElement buildShortcutPage(PaneHost &host)
+{
+    StackPanel column;
+    ScrollViewer scroll = pageScaffold(QStringLiteral("Shortcut"), column);
+    ShortcutRecorder::appendPane(column, host);
     return scroll;
 }
 

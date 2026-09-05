@@ -233,7 +233,7 @@ QList<PageSnapshot> SettingsModel::pages() const
 {
     QList<PageSnapshot> pages;
     for (const SettingsPage &page : m_schema.pages) {
-        PageSnapshot pageSnapshot{page.id, page.title, {}};
+        PageSnapshot pageSnapshot{page.id, page.title, page.iconId, {}};
         for (const SettingsSection &section : page.sections) {
             SectionSnapshot sectionSnapshot{section.title, section.help, {}};
             for (const SettingsRow &row : section.rows) {

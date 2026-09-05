@@ -558,7 +558,6 @@ set(SPEECHER_FRONTEND_WIN_SOURCES
   src/frontend/win/CollectionEditor.cpp
   src/frontend/win/CustomRows.cpp
   src/frontend/win/DictationPanel.cpp
-  src/frontend/win/Panes.cpp
   src/frontend/win/SettingsModel.cpp
   src/frontend/win/SettingsPage.cpp
   src/frontend/win/SettingsWindow.cpp
@@ -574,7 +573,6 @@ set(SPEECHER_FRONTEND_WIN_HEADERS
   src/frontend/win/CollectionEditor.h
   src/frontend/win/CustomRows.h
   src/frontend/win/DictationPanel.h
-  src/frontend/win/Panes.h
   src/frontend/win/SettingsModel.h
   src/frontend/win/SettingsPage.h
   src/frontend/win/SettingsWindow.h

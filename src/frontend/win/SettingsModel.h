@@ -73,6 +73,7 @@ struct SectionSnapshot {
 struct PageSnapshot {
     QString id;
     QString title;
+    QString iconId;
     QList<SectionSnapshot> sections;
 };
 

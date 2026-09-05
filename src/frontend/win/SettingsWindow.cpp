@@ -45,6 +45,62 @@ using winrt::Microsoft::UI::Xaml::Media::MicaBackdrop;
 const QString kPaneSetting = QStringLiteral("ui/settingsPane");
 const QString kGeometrySetting = QStringLiteral("ui/settingsWindowGeometry");
 const QString kWhatsNewPane = QStringLiteral("whatsNew");
+// The global-shortcut recorder is the sole capability page with no schema page
+// behind it; everything else in the sidebar comes from the schema.
+const QString kShortcutPane = QStringLiteral("shortcut");
+const QString kShortcutTitle = QStringLiteral("Shortcut");
+
+// Segoe Fluent Icons for the schema's platform-neutral icon ids — the one
+// piece of per-platform icon data this front end keeps.
+wchar_t glyphForIconId(const QString &iconId)
+{
+    static const QHash<QString, wchar_t> glyphs = {
+        {QStringLiteral("settings"), L'\uE713'},
+        {QStringLiteral("whatsNew"), L'\uE7E7'},
+        {QStringLiteral("microphone"), L'\uE720'},
+        {QStringLiteral("text"), L'\uE8D2'},
+        {QStringLiteral("clipboard"), L'\uF0E3'},
+        {QStringLiteral("dictionary"), L'\uE82D'},
+        {QStringLiteral("checkmark"), L'\uE73E'},
+        {QStringLiteral("swap"), L'\uE8AB'},
+        {QStringLiteral("key"), L'\uE192'},
+        {QStringLiteral("shortcut"), L'\uE765'},
+    };
+    return glyphs.value(iconId, L'\uE713');
+}
+
+const PageSnapshot *pageWithId(const QList<PageSnapshot> &pages, const QString &id)
+{
+    for (const PageSnapshot &page : pages) {
+        if (page.id == id) {
+            return &page;
+        }
+    }
+    return nullptr;
+}
+
+// Whether anything on a page — its title, a section heading, a row, or the
+// help under one — answers to the query.
+bool pageMatches(const PageSnapshot &page, const QString &query)
+{
+    const auto hit = [needle = query.toLower()](const QString &text) {
+        return text.toLower().contains(needle);
+    };
+    if (hit(page.title)) {
+        return true;
+    }
+    for (const SectionSnapshot &section : page.sections) {
+        if (hit(section.title) || hit(section.help)) {
+            return true;
+        }
+        for (const RowSnapshot &row : section.rows) {
+            if (hit(row.label) || hit(row.help)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
 ElementTheme themeFor(const QString &setting)
 {
@@ -158,8 +214,8 @@ struct SettingsWindow::Native {
         // Edits left from the last showing are not edits any more.
         model.reloadDraft();
         currentPane = controller->settings()->raw().value(kPaneSetting).toString();
-        if (!paneWithId(currentPane)) {
-            currentPane = allPanes().first().id;
+        if (currentPane != kShortcutPane && !pageWithId(model.pages(), currentPane)) {
+            currentPane = model.pages().first().id;
         }
         // What's New only exists while pending or selected; a remembered
         // selection of it stays honoured.
@@ -336,13 +392,13 @@ struct SettingsWindow::Native {
         }
     }
 
-    NavigationViewItem paneItem(const Pane &pane)
+    NavigationViewItem sidebarItem(const QString &id, const QString &title, wchar_t glyph)
     {
         NavigationViewItem item;
-        item.Content(box_value(hs(pane.title)));
-        item.Tag(box_value(hs(pane.id)));
+        item.Content(box_value(hs(title)));
+        item.Tag(box_value(hs(id)));
         FontIcon icon;
-        icon.Glyph(hstring(std::wstring_view(reinterpret_cast<const wchar_t *>(&pane.glyph), 1)));
+        icon.Glyph(hstring(std::wstring_view(&glyph, 1)));
         item.Icon(icon);
         return item;
     }
@@ -355,41 +411,37 @@ struct SettingsWindow::Native {
         sidebarUpdating = true;
         navigation.MenuItems().Clear();
         IInspectable selected{nullptr};
-        const auto append = [this, &selected](const Pane &pane) {
-            NavigationViewItem item = paneItem(pane);
-            if (pane.id == currentPane) {
+        const auto append = [this, &selected](const QString &id,
+                                              const QString &title,
+                                              wchar_t glyph) {
+            NavigationViewItem item = sidebarItem(id, title, glyph);
+            if (id == currentPane) {
                 selected = item;
             }
             navigation.MenuItems().Append(item);
         };
-        if (query.isEmpty()) {
-            // What's New sits above the runs only while pending or selected.
-            if (const Pane *whatsNew = paneWithId(kWhatsNewPane)) {
-                if (currentPane == kWhatsNewPane
-                    || !controller->pendingWhatsNewVersion().isEmpty()) {
-                    append(*whatsNew);
-                }
+        const QList<PageSnapshot> pages = model.pages();
+        // What's New sits on top only while pending or selected, as before.
+        if (query.isEmpty() && (currentPane == kWhatsNewPane
+                                || !controller->pendingWhatsNewVersion().isEmpty())) {
+            if (const PageSnapshot *whatsNew = pageWithId(pages, kWhatsNewPane)) {
+                append(whatsNew->id, whatsNew->title, glyphForIconId(whatsNew->iconId));
+                navigation.MenuItems().Append(NavigationViewItemSeparator());
             }
-            const QList<QStringList> &runs = sidebarRuns();
-            for (qsizetype runIndex = 0; runIndex < runs.size(); ++runIndex) {
-                if (runIndex > 0 || navigation.MenuItems().Size() > 0) {
-                    navigation.MenuItems().Append(NavigationViewItemSeparator());
-                }
-                for (const QString &paneId : runs.at(runIndex)) {
-                    if (const Pane *pane = paneWithId(paneId)) {
-                        append(*pane);
-                    }
-                }
+        }
+        // One item per schema page, in schema order; a search filters them.
+        for (const PageSnapshot &page : pages) {
+            if (page.id == kWhatsNewPane) {
+                continue;
             }
-        } else {
-            // A search shows its hits as one flat list, not as the runs they
-            // came from.
-            const QList<PageSnapshot> pages = model.pages();
-            for (const Pane &pane : allPanes()) {
-                if (pane.id != kWhatsNewPane && paneMatches(pane, pages, query)) {
-                    append(pane);
-                }
+            if (!query.isEmpty() && !pageMatches(page, query)) {
+                continue;
             }
+            append(page.id, page.title, glyphForIconId(page.iconId));
+        }
+        // The shortcut recorder, the sole non-schema capability page.
+        if (query.isEmpty() || kShortcutTitle.toLower().contains(query.toLower())) {
+            append(kShortcutPane, kShortcutTitle, glyphForIconId(kShortcutPane));
         }
         navigation.SelectedItem(selected);
         sidebarUpdating = false;
@@ -418,7 +470,10 @@ struct SettingsWindow::Native {
 
     void leaveWhatsNew()
     {
-        selectPane(paneWithId(whatsNewReturnPane) ? whatsNewReturnPane : allPanes().first().id);
+        const QList<PageSnapshot> pages = model.pages();
+        const bool returnable = whatsNewReturnPane == kShortcutPane
+            || pageWithId(pages, whatsNewReturnPane);
+        selectPane(returnable ? whatsNewReturnPane : pages.first().id);
     }
 
     void runAction(const QString &id)
@@ -452,8 +507,10 @@ struct SettingsWindow::Native {
         if (!pageHost) {
             return;
         }
-        const Pane *pane = paneWithId(currentPane);
-        if (!pane) {
+        const QList<PageSnapshot> pages = model.pages();
+        const PageSnapshot *schemaPage =
+            currentPane == kShortcutPane ? nullptr : pageWithId(pages, currentPane);
+        if (currentPane != kShortcutPane && !schemaPage) {
             return;
         }
         double offset = 0;
@@ -462,7 +519,7 @@ struct SettingsWindow::Native {
         }
         UIElement page{nullptr};
         try {
-            page = buildPane(*pane, model.pages(), host);
+            page = schemaPage ? buildPage(*schemaPage, host) : buildShortcutPage(host);
         } catch (const winrt::hresult_error &error) {
             // A throw from a dispatcher callback dies as a stowed exception
             // with no message anywhere; log it and keep the window alive.
@@ -491,7 +548,7 @@ struct SettingsWindow::Native {
         host.apiKeyLoaded = true;
         if (edits == host.apiKeyEdits) {
             host.apiKey = key;
-            if (currentPane == QStringLiteral("accounts")) {
+            if (currentPane == QStringLiteral("providers")) {
                 rebuildPage();
             }
         }
@@ -611,17 +668,18 @@ struct SettingsWindow::Native {
         if (!window) {
             return false;
         }
-        const QStringList request =
-            qEnvironmentVariable("SPEECHER_GRAB_PAGE").toLower().split(QLatin1Char(':'));
-        for (const Pane &pane : allPanes()) {
-            if (pane.id.toLower() != request.first()) {
-                continue;
+        const QString request = qEnvironmentVariable("SPEECHER_GRAB_PAGE")
+                                    .toLower()
+                                    .section(QLatin1Char(':'), 0, 0);
+        if (request == kShortcutPane) {
+            selectPane(kShortcutPane);
+        } else {
+            for (const PageSnapshot &page : model.pages()) {
+                if (page.id.toLower() == request) {
+                    selectPane(page.id);
+                    break;
+                }
             }
-            if (request.size() > 1) {
-                host.alternative.insert(pane.id, request.at(1).toInt());
-            }
-            selectPane(pane.id);
-            break;
         }
         // Let composition catch up with the pane switch before printing.
         QEventLoop settle;
