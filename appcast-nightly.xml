@@ -1,11 +1,11 @@
 <?xml version='1.0' encoding='utf-8'?>
-<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher nightly updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher nightly updates</description><item><title>0.1.5-nightly.20260906+g3703717</title><pubDate>Sun, 6 Sep 2026 12:57:04 +0100</pubDate><sparkle:version>358</sparkle:version><sparkle:shortVersionString>0.1.5-nightly.20260906+g3703717</sparkle:shortVersionString><description><![CDATA[<pre>Version: 0.1.5-nightly.20260906+g3703717
-Build number: 358
-Commit: 37037172dbd4823ea3732aedec5cb926f6473784
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher nightly updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher nightly updates</description><item><title>0.1.5-nightly.20260906+gc421e17</title><pubDate>Sun, 6 Sep 2026 13:31:49 +0100</pubDate><sparkle:version>359</sparkle:version><sparkle:shortVersionString>0.1.5-nightly.20260906+gc421e17</sparkle:shortVersionString><description><![CDATA[<pre>Version: 0.1.5-nightly.20260906+gc421e17
+Build number: 359
+Commit: c421e1729c46e713bfae6fd8005f7c34831c5be3
 
 This Nightly Build is untested. Use the Stable Release unless you want the latest master build.
 
 Windows installer: Speecher-Setup-x64.exe
 
 Update channels: https://github.com/firemonster612/speecher#installation--updates
-</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/nightly/speecher.dmg" length="42560219" type="application/x-apple-diskimage" sparkle:edSignature="sWERDDnsCE63r+1x32wT1+OQFfLZ51TcfSahv1zQtGRQ8vTEN90nfAPpgUP63V2/QQExP/rzhANevsMgQFszDA==" /></item></channel></rss>
+</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/nightly/speecher.dmg" length="42560253" type="application/x-apple-diskimage" sparkle:edSignature="nF30R8m+J7/HB/Nc2FS8/dBxLld6Flg/uVGQPVpv83XFe+uZEAAK4w2IOwg6OsNBklMZD08oXrn9jA69vzTbBg==" /></item></channel></rss>
