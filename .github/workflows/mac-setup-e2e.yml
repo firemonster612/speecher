@@ -123,6 +123,10 @@ jobs:
         run: bash .github/macos-e2e/setup_run.sh
 
       - name: Run provider steps E2E
+        id: provider-steps
+        # The panel flow still runs and uploads its evidence when this fails;
+        # the check step below turns the failure into the job's verdict.
+        continue-on-error: true
         timeout-minutes: 8
         env:
           APP_BUNDLE: ${{ runner.temp }}/product/speecher.app
@@ -140,6 +144,12 @@ jobs:
           EVIDENCE_ROOT: ${{ runner.temp }}/panel-flow
           PROBE: ${{ runner.temp }}/window-probe
         run: bash .github/macos-e2e/panel_flow_run.sh
+
+      - name: Check provider steps verdict
+        if: steps.provider-steps.outcome == 'failure'
+        run: |
+          echo "provider_steps_run.sh failed" >&2
+          exit 1
 
       - name: Upload evidence
         if: always()
