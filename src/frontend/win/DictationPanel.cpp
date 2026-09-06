@@ -27,6 +27,8 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 namespace speecher {
 namespace {
@@ -193,6 +195,7 @@ struct DictationPanel::Native : QObject {
         text.MaxLines(1);
         text.Width(panelWidth - previewChromeWidth);
         row.Children().Append(text);
+        probe = TextBlock();
 
         level = ProgressBar();
         level.Width(96);
@@ -243,6 +246,9 @@ struct DictationPanel::Native : QObject {
         phase = Phase::Live;
         pendingGeneration = generation;
         ensureWindow();
+        // Each dictation starts back at the floor, like the mac panel's
+        // empty-preview reset, instead of inheriting the last one's width.
+        resize(panelWidth);
         refresh();
         reposition();
         ShowWindow(window, SW_SHOWNOACTIVATE);
@@ -385,27 +391,27 @@ struct DictationPanel::Native : QObject {
             : preview.isEmpty()       ? status
                                       : preview;
 
-        // The pill keeps one width for the whole dictation: the preview elides
-        // from the front into a fixed line, like the mac and Qt panels, so the
-        // window never resizes or re-centres while words stream in. Only a
-        // problem message may widen it, once, to stay readable.
-        int wantedWidth = panelWidth;
-        if (hasProblem) {
-            POINT pointer{};
-            GetCursorPos(&pointer);
-            MONITORINFO monitor{sizeof(monitor)};
-            GetMonitorInfoW(MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST), &monitor);
-            const int maximumWidth = std::max(
-                panelWidth, int(monitor.rcWork.right - monitor.rcWork.left) - screenEdgeMargin);
-            wantedWidth = std::clamp(
-                panelWidth + std::max(0, int(shown.size()) - 32) * 7,
-                panelWidth, maximumWidth);
-        }
-        const int textWidth = wantedWidth - previewChromeWidth;
-        const int maximumCharacters = std::max(20, textWidth / 7);
+        // The pill hugs the one line of type like the mac panel: the width
+        // follows the measured text between the 420 floor and the screen
+        // edge, word by word, while a status line or the delivered message
+        // leaves the width where the last preview put it.
+        POINT pointer{};
+        GetCursorPos(&pointer);
+        MONITORINFO monitor{sizeof(monitor)};
+        GetMonitorInfoW(MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST), &monitor);
+        const int maximumWidth = std::max(
+            panelWidth, int(monitor.rcWork.right - monitor.rcWork.left) - screenEdgeMargin);
+        const int maximumCharacters = std::max(20, (maximumWidth - previewChromeWidth) / 7);
         if (!hasProblem && shown.size() > maximumCharacters) {
             shown = QString::fromUtf16(u"\u2026") + shown.right(maximumCharacters - 1);
         }
+        const bool sizesToText = hasProblem || (!finished && !waiting && !preview.isEmpty());
+        int wantedWidth = width;
+        if (sizesToText) {
+            wantedWidth = std::clamp(measuredTextWidth(shown) + previewChromeWidth,
+                                     panelWidth, maximumWidth);
+        }
+        const int textWidth = wantedWidth - previewChromeWidth;
         text.Text(hstring(shown.toStdWString()));
         if (finished) {
             text.ClearValue(FrameworkElement::WidthProperty());
@@ -427,6 +433,18 @@ struct DictationPanel::Native : QObject {
                 reposition();
             }
         }
+    }
+
+    // Desired width of the line in the pill's font, the way the mac panel
+    // measures its NSString. A detached TextBlock measures fine; if XAML
+    // ever hands back nothing, the 7px-per-character estimate stands in.
+    int measuredTextWidth(const QString &value)
+    {
+        probe.Text(hstring(value.toStdWString()));
+        constexpr float unbounded = std::numeric_limits<float>::infinity();
+        probe.Measure({unbounded, unbounded});
+        const int measured = int(std::ceil(probe.DesiredSize().Width));
+        return measured > 0 ? measured + 2 : int(value.size()) * 7;
     }
 
     void resize(int newWidth)
@@ -459,6 +477,7 @@ struct DictationPanel::Native : QObject {
     DesktopWindowXamlSource source{nullptr};
     FontIcon glyph{nullptr};
     TextBlock text{nullptr};
+    TextBlock probe{nullptr};
     ProgressBar level{nullptr};
     ProgressRing ring{nullptr};
     Button dismiss{nullptr};
