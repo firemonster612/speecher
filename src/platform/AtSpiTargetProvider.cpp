@@ -63,23 +63,19 @@ bool AtSpiTargetProvider::verifyInsertion(const Target &target, const QString &p
         || plainText.isEmpty()) {
         return false;
     }
-    int insertionOffset = target.selectionStart >= 0 ? target.selectionStart : target.caretOffset;
-    if (insertionOffset < 0) return false;
-
     for (int attempt = 0; attempt < 5; ++attempt) {
         if (attempt > 0) QThread::msleep(40);
-        const QString nearby = m_snapshot->insertionWindow(insertionOffset, plainText.size());
-        const int insertedAt = nearby.indexOf(plainText);
-        if (insertedAt < 0) continue;
-        const QString prefix = nearby.left(insertedAt).right(correctionContextChars);
-        const QString suffix = nearby.mid(insertedAt + plainText.size()).left(correctionContextChars);
+        const auto window = m_snapshot->verifiedInsertion(plainText);
+        if (!window) continue;
+        const QString &prefix = window->prefix;
+        const QString &suffix = window->suffix;
         if (m_correctionObservationEnabled && prefix.size() >= correctionMinContextChars
             && suffix.size() >= correctionMinContextChars) {
             if (!m_correctionObserver) {
                 m_correctionObserver = std::make_unique<atspi::CorrectionObserver>();
             }
             m_correctionObserver->schedule(
-                this, m_snapshot.get(), {target, plainText, prefix, suffix},
+                this, m_snapshot.get(), *window,
                 [this](const QString &original, const QString &corrected,
                        const QString &applicationId, double confidence) {
                     emit correctionObserved(original, corrected, applicationId, confidence);

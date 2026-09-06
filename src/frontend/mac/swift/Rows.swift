@@ -362,7 +362,7 @@ struct WritingProfileRows: View {
                     var edited = records
                     guard edited.indices.contains(index) else { return }
                     edited[index][columnId] = newValue
-                    _ = model.save(records: edited, for: row.rowId)
+                    _ = model.save(records: edited, previous: records, for: row.rowId)
                 })
     }
 }

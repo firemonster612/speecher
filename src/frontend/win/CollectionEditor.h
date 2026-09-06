@@ -50,6 +50,8 @@ private:
     CollectionSnapshot m_collection;
     PaneHost &m_host;
     QList<Record> m_records;
+    // The last successful submission, independent of model/scalar refreshes.
+    QList<QVariantMap> m_savedRecords;
     // What Delete took, newest last, so undo can put it back.
     QList<Record> m_deleted;
     QStringList m_lastProblems;

@@ -236,10 +236,10 @@ final class AppModel: ObservableObject {
     }
 
     /// Empty when the records are consistent, in which case they are also saved.
-    func save(records: [[String: Any]], for rowId: String) -> [String] {
-        let problems = bridge.settingsSchema.problems(with: records, forRowId: rowId)
+    func save(records: [[String: Any]], previous: [[String: Any]], for rowId: String) -> [String] {
+        let problems = bridge.settingsSchema.save(records: records, previousRecords: previous, forRowId: rowId)
         if problems.isEmpty {
-            setValue(records, for: rowId)
+            pages = bridge.settingsSchema.pages
         }
         return problems
     }

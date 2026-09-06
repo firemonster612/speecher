@@ -7,9 +7,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QPointer>
 #include <QRegularExpression>
 #include <QUuid>
 
@@ -83,34 +81,42 @@ QString claudeCodeSystemPrompt(const QString &refinementStyle,
                : dictationRefinementSystemPrompt(refinementStyle, context));
 }
 
+StreamingRefinement::Event anthropicEvent(const QByteArray &name, const QByteArray &data)
+{
+    using Event = StreamingRefinement::Event;
+    const QJsonObject object = QJsonDocument::fromJson(data).object();
+    const QJsonObject delta = object.value(QStringLiteral("delta")).toObject();
+    const QString stopReason = delta.value(QStringLiteral("stop_reason")).toString();
+    if (name == "message_delta" && !stopReason.isEmpty()
+        && stopReason != QStringLiteral("end_turn") && stopReason != QStringLiteral("stop_sequence")) {
+        return {Event::Failed, QStringLiteral("Anthropic refinement stopped: %1").arg(stopReason)};
+    }
+    if (name == "error" || object.value(QStringLiteral("type")).toString() == QStringLiteral("error")) {
+        return {Event::Rejected, anthropicErrorMessage(data, QStringLiteral("Anthropic refinement error"))};
+    }
+    if (name == "content_block_delta" && delta.value(QStringLiteral("type")).toString() == QStringLiteral("text_delta")) {
+        return {Event::Delta, delta.value(QStringLiteral("text")).toString()};
+    }
+    if (name == "message_stop") return {Event::Complete, {}};
+    if (name == "message_start" || name == "content_block_start" || name == "content_block_delta"
+        || name == "content_block_stop" || name == "message_delta") {
+        return {Event::Progress, {}};
+    }
+    return {};
+}
+
 } // namespace
 
 AnthropicApiRefiner::AnthropicApiRefiner(QObject *parent,
                                          int requestTimeoutMs,
                                          int absoluteDeadlineMs)
     : QObject(parent)
-    , m_requestTimeoutMs(requestTimeoutMs)
-    , m_absoluteDeadlineMs(absoluteDeadlineMs)
+    , m_stream(QStringLiteral("Anthropic"), anthropicEvent, anthropicErrorMessage,
+               requestTimeoutMs, absoluteDeadlineMs, this)
 {
-    m_inactivityTimer.setSingleShot(true);
-    m_deadlineTimer.setSingleShot(true);
-    const auto failOnTimeout = [this](bool retryAllowed) {
-        if (!m_reply || m_failed || m_completed) {
-            return;
-        }
-        QNetworkReply *reply = m_reply;
-        m_reply = nullptr;
-        reply->abort();
-        if (retryAllowed && retryWithoutFastMode(QStringLiteral("timed out"), false)) {
-            return;
-        }
-        m_failed = true;
-        emit failed(QStringLiteral("Anthropic refinement timed out waiting for a response"));
-    };
-    connect(&m_inactivityTimer, &QTimer::timeout, this, [failOnTimeout] { failOnTimeout(true); });
-    // The absolute deadline bounds the whole refinement; a retry that re-arms
-    // it would let one dictation wait twice that long.
-    connect(&m_deadlineTimer, &QTimer::timeout, this, [failOnTimeout] { failOnTimeout(false); });
+    connect(&m_stream, &StreamingRefinement::delta, this, &AnthropicApiRefiner::delta);
+    connect(&m_stream, &StreamingRefinement::completed, this, &AnthropicApiRefiner::completed);
+    connect(&m_stream, &StreamingRefinement::failed, this, &AnthropicApiRefiner::failed);
 }
 
 void AnthropicApiRefiner::refine(const QString &rawTranscript,
@@ -124,247 +130,78 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
                                  const QString &refinementStyle,
                                  const RefinementContext &context)
 {
-    const bool retryingFastMode = m_retryingFastMode;
-    m_retryingFastMode = false;
-    cancel();
-    if (!retryingFastMode) {
-        m_operationDeadline = QDeadlineTimer(m_absoluteDeadlineMs);
-    }
-    m_accumulated.clear();
-    m_buffer.clear();
-    m_failed = false;
-    m_completed = false;
-    m_fastModePendingLatch = false;
-    const bool fast = fastMode && modelSupportsFastMode(model) && !m_fastModeUnavailable;
-    m_fastModeFallback = fast
-        ? [=, this] {
-              refine(rawTranscript, vocabulary, bindingVocabulary, bearerToken, endpointBase,
-                     model, effort, false, refinementStyle, context);
-          }
-        : std::function<void()>();
+    m_stream.start([=](bool fast) -> StreamingRefinement::Request {
+        QUrl endpoint(endpointBase.isEmpty() ? QStringLiteral("https://api.anthropic.com/v1") : endpointBase);
+        endpoint.setPath(endpoint.path().replace(QRegularExpression(QStringLiteral("/$")), QString()) + QStringLiteral("/messages"));
 
-    QUrl endpoint(endpointBase.isEmpty() ? QStringLiteral("https://api.anthropic.com/v1") : endpointBase);
-    endpoint.setPath(endpoint.path().replace(QRegularExpression(QStringLiteral("/$")), QString()) + QStringLiteral("/messages"));
+        QNetworkRequest request(endpoint);
+        request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+        request.setRawHeader("Authorization", "Bearer " + bearerToken.toUtf8());
+        request.setRawHeader("anthropic-version", "2023-06-01");
+        request.setRawHeader("anthropic-beta",
+                             fast ? "claude-code-20250219,oauth-2025-04-20,fast-mode-2026-02-01"
+                                  : "claude-code-20250219,oauth-2025-04-20");
+        request.setRawHeader("User-Agent", claudeCodeUserAgent());
+        request.setRawHeader("x-app", "cli");
+        const QByteArray requestId = QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8();
+        request.setRawHeader("x-claude-code-session-id", requestId);
+        request.setRawHeader("x-client-request-id", requestId);
 
-    QNetworkRequest request(endpoint);
-    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
-    request.setRawHeader("Authorization", "Bearer " + bearerToken.toUtf8());
-    request.setRawHeader("anthropic-version", "2023-06-01");
-    request.setRawHeader("anthropic-beta",
-                         fast ? "claude-code-20250219,oauth-2025-04-20,fast-mode-2026-02-01"
-                              : "claude-code-20250219,oauth-2025-04-20");
-    request.setRawHeader("User-Agent", claudeCodeUserAgent());
-    request.setRawHeader("x-app", "cli");
-    const QByteArray requestId = QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8();
-    request.setRawHeader("x-claude-code-session-id", requestId);
-    request.setRawHeader("x-client-request-id", requestId);
-
-    QJsonObject body;
-    body.insert(QStringLiteral("model"), model);
-    body.insert(QStringLiteral("max_tokens"), 4096);
-    body.insert(QStringLiteral("stream"), true);
-    if (fast) {
-        body.insert(QStringLiteral("speed"), QStringLiteral("fast"));
-    }
-    if (modelSupportsAdaptiveEffort(model)) {
-        body.insert(QStringLiteral("thinking"), QJsonObject{
-            {QStringLiteral("type"), QStringLiteral("adaptive")},
-            {QStringLiteral("display"), QStringLiteral("omitted")},
-        });
-        body.insert(QStringLiteral("output_config"), QJsonObject{
-            {QStringLiteral("effort"), apiEffortForModel(model, effort)},
-        });
-    }
-    qInfo().noquote() << "anthropic oauth refinement request model=" + model
-                      << "effort=" + (body.value(QStringLiteral("output_config")).toObject().value(QStringLiteral("effort")).toString(QStringLiteral("default")))
-                      << "endpoint=" + endpoint.toString(QUrl::RemoveUserInfo);
-    body.insert(QStringLiteral("system"), claudeCodeSystemPrompt(refinementStyle, context));
-    const QString userMessage = transcriptRefinementUserMessage(
-        rawTranscript,
-        vocabulary,
-        bindingVocabulary,
-        context);
-    QJsonValue content = userMessage;
-    if (context.hasScreenshot() && !context.editSelection) {
-        content = QJsonArray{
-            QJsonObject{
-                {QStringLiteral("type"), QStringLiteral("text")},
-                {QStringLiteral("text"), userMessage},
-            },
-            QJsonObject{
-                {QStringLiteral("type"), QStringLiteral("image")},
-                {QStringLiteral("source"),
-                 QJsonObject{
-                     {QStringLiteral("type"), QStringLiteral("base64")},
-                     {QStringLiteral("media_type"), context.screenshotMediaType},
-                     {QStringLiteral("data"), QString::fromLatin1(context.screenshotData.toBase64())},
-                 }},
-            },
-        };
-    }
-    body.insert(QStringLiteral("messages"),
-                QJsonArray{QJsonObject{
-                    {QStringLiteral("role"), QStringLiteral("user")},
-                    {QStringLiteral("content"), content},
-                }});
-
-    QNetworkReply *reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
-    m_reply = reply;
-    m_inactivityTimer.start(m_requestTimeoutMs);
-    m_deadlineTimer.start(qMax(1, int(m_operationDeadline.remainingTime())));
-    connect(reply, &QNetworkReply::readyRead, this, [this, reply] {
-        if (reply != m_reply) {
-            return;
+        QJsonObject body;
+        body.insert(QStringLiteral("model"), model);
+        body.insert(QStringLiteral("max_tokens"), 4096);
+        body.insert(QStringLiteral("stream"), true);
+        if (fast) {
+            body.insert(QStringLiteral("speed"), QStringLiteral("fast"));
         }
-        parseSseChunk(reply->readAll());
-    });
-    connect(reply, &QNetworkReply::finished, this, [this, reply] {
-        if (reply != m_reply) {
-            reply->deleteLater();
-            return;
+        if (modelSupportsAdaptiveEffort(model)) {
+            body.insert(QStringLiteral("thinking"), QJsonObject{
+                {QStringLiteral("type"), QStringLiteral("adaptive")},
+                {QStringLiteral("display"), QStringLiteral("omitted")},
+            });
+            body.insert(QStringLiteral("output_config"), QJsonObject{
+                {QStringLiteral("effort"), apiEffortForModel(model, effort)},
+            });
         }
-        m_inactivityTimer.stop();
-        m_deadlineTimer.stop();
-        m_reply = nullptr;
-        if (m_failed || m_completed) {
-            reply->deleteLater();
-            return;
+        qInfo().noquote() << "anthropic oauth refinement request model=" + model
+                          << "effort=" + (body.value(QStringLiteral("output_config")).toObject().value(QStringLiteral("effort")).toString(QStringLiteral("default")))
+                          << "endpoint=" + endpoint.toString(QUrl::RemoveUserInfo);
+        body.insert(QStringLiteral("system"), claudeCodeSystemPrompt(refinementStyle, context));
+        const QString userMessage = transcriptRefinementUserMessage(
+            rawTranscript,
+            vocabulary,
+            bindingVocabulary,
+            context);
+        QJsonValue content = userMessage;
+        if (context.hasScreenshot() && !context.editSelection) {
+            content = QJsonArray{
+                QJsonObject{
+                    {QStringLiteral("type"), QStringLiteral("text")},
+                    {QStringLiteral("text"), userMessage},
+                },
+                QJsonObject{
+                    {QStringLiteral("type"), QStringLiteral("image")},
+                    {QStringLiteral("source"),
+                     QJsonObject{
+                         {QStringLiteral("type"), QStringLiteral("base64")},
+                         {QStringLiteral("media_type"), context.screenshotMediaType},
+                         {QStringLiteral("data"), QString::fromLatin1(context.screenshotData.toBase64())},
+                     }},
+                },
+            };
         }
-        QString message;
-        if (reply->error() != QNetworkReply::NoError) {
-            const QByteArray payload = m_buffer + reply->readAll();
-            message = QStringLiteral("Anthropic refinement failed: %1")
-                          .arg(anthropicErrorMessage(payload, reply->errorString()));
-        } else if (m_accumulated.isEmpty()) {
-            message = QStringLiteral("Anthropic refinement failed: empty response");
-        } else {
-            message = QStringLiteral("Anthropic refinement failed: stream ended before completion");
-        }
-        reply->deleteLater();
-        if (retryWithoutFastMode(message, true)) {
-            return;
-        }
-        emit failed(message);
-    });
+        body.insert(QStringLiteral("messages"),
+                    QJsonArray{QJsonObject{
+                        {QStringLiteral("role"), QStringLiteral("user")},
+                        {QStringLiteral("content"), content},
+                    }});
+        return {request, QJsonDocument(body).toJson(QJsonDocument::Compact)};
+    }, fastMode && modelSupportsFastMode(model));
 }
 
 void AnthropicApiRefiner::cancel()
 {
-    m_fastModeFallback = nullptr;
-    m_inactivityTimer.stop();
-    m_deadlineTimer.stop();
-    if (m_reply) {
-        QNetworkReply *reply = m_reply;
-        m_reply = nullptr;
-        reply->abort();
-    }
-}
-
-void AnthropicApiRefiner::parseSseChunk(const QByteArray &chunk)
-{
-    m_buffer += chunk;
-    while (true) {
-        int boundary = m_buffer.indexOf("\n\n");
-        int separatorBytes = 2;
-        const int crlfBoundary = m_buffer.indexOf("\r\n\r\n");
-        if (crlfBoundary >= 0 && (boundary < 0 || crlfBoundary < boundary)) {
-            boundary = crlfBoundary;
-            separatorBytes = 4;
-        }
-        if (boundary < 0) {
-            break;
-        }
-        const QByteArray frame = m_buffer.left(boundary);
-        m_buffer.remove(0, boundary + separatorBytes);
-
-        QByteArray eventName;
-        QByteArray data;
-        for (const QByteArray &line : frame.split('\n')) {
-            if (line.startsWith("event:")) {
-                eventName = line.mid(6).trimmed();
-            } else if (line.startsWith("data:")) {
-                data += line.mid(5).trimmed();
-            }
-        }
-        const QJsonObject object = QJsonDocument::fromJson(data).object();
-        if (eventName == "error" || object.value(QStringLiteral("type")).toString() == QStringLiteral("error")) {
-            m_inactivityTimer.stop();
-            m_deadlineTimer.stop();
-            QPointer<QNetworkReply> reply = m_reply;
-            m_reply = nullptr;
-            const QString message = anthropicErrorMessage(data, QStringLiteral("Anthropic refinement error"));
-            if (!retryWithoutFastMode(message, true)) {
-                m_failed = true;
-                emit failed(message);
-            }
-            if (reply) {
-                QMetaObject::invokeMethod(reply, &QNetworkReply::abort, Qt::QueuedConnection);
-            }
-            return;
-        }
-        if (eventName == "message_start"
-            || eventName == "content_block_start"
-            || eventName == "content_block_delta"
-            || eventName == "content_block_stop"
-            || eventName == "message_delta") {
-            m_inactivityTimer.start(m_requestTimeoutMs);
-        }
-        if (eventName == "content_block_delta") {
-            const QJsonObject deltaObject = object.value(QStringLiteral("delta")).toObject();
-            if (deltaObject.value(QStringLiteral("type")).toString() == QStringLiteral("text_delta")) {
-                const QString text = deltaObject.value(QStringLiteral("text")).toString();
-                m_accumulated += text;
-                emit delta(text);
-            }
-        } else if (eventName == "message_stop") {
-            completeIfReady();
-            return;
-        }
-    }
-}
-
-bool AnthropicApiRefiner::retryWithoutFastMode(const QString &reason, bool latchWhenStandardSucceeds)
-{
-    const std::function<void()> fallback = std::move(m_fastModeFallback);
-    m_fastModeFallback = nullptr;
-    // Only retry when no deltas were emitted; a retry after streamed output
-    // would replay the transcript into the live preview.
-    if (!fallback || !m_accumulated.isEmpty()) {
-        return false;
-    }
-    qWarning().noquote() << "anthropic fast mode refinement failed, retrying at standard speed:" << reason;
-    m_retryingFastMode = true;
-    fallback();
-    // Set after the fallback's refine() reset it: an error (rather than a
-    // stall) on the fast attempt followed by a standard success reads as the
-    // endpoint rejecting fast mode, so stop paying a probe per request.
-    m_fastModePendingLatch = latchWhenStandardSucceeds;
-    return true;
-}
-
-void AnthropicApiRefiner::completeIfReady()
-{
-    if (m_failed || m_completed || m_accumulated.isEmpty()) {
-        return;
-    }
-    m_inactivityTimer.stop();
-    m_deadlineTimer.stop();
-    m_fastModeFallback = nullptr;
-    if (m_fastModePendingLatch) {
-        m_fastModePendingLatch = false;
-        m_fastModeUnavailable = true;
-        qInfo().noquote() << "anthropic fast mode rejected but standard succeeded; staying at standard speed until restart";
-    }
-    m_completed = true;
-    QPointer<QNetworkReply> reply = m_reply;
-    m_reply = nullptr;
-    const QString result = m_accumulated;
-    QMetaObject::invokeMethod(this, [this, reply, result] {
-        if (reply) {
-            reply->abort();
-        }
-        emit completed(result);
-    }, Qt::QueuedConnection);
+    m_stream.cancel();
 }
 
 } // namespace speecher

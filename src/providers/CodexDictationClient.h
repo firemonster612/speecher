@@ -22,7 +22,6 @@ public:
     void sendAudio(const QByteArray &pcm);
     void stop();
     void cancel();
-    bool isConnected() const;
 
 signals:
     void partialTranscript(const QString &text);

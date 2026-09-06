@@ -62,6 +62,48 @@ private slots:
         settings.raw().clear();
     }
 
+    void retainedCollectionBaseline_data()
+    {
+        QTest::addColumn<bool>("scalarCommit");
+        QTest::newRow("repeated collection saves") << false;
+        QTest::newRow("scalar commit with retained editor") << true;
+    }
+
+    void retainedCollectionBaseline()
+    {
+        QFETCH(bool, scalarCommit);
+        ApplicationController controller(false);
+        SettingsStore *store = controller.settings();
+        store->setLearnedCorrections({{"one", "githab", "GitHub", "editor", 100, 0.8, true, 1, 100}});
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SettingsSchemaModel *schema = bridge.settingsSchema;
+        NSArray<SpeecherRecord *> *previous = settingsRow(schema, @"learnedCorrections").value;
+        QCOMPARE(previous.count, NSUInteger(1));
+        auto fresh = store->learnedCorrections();
+        fresh[0].evidenceCount = 3;
+        fresh.append({"two", "new", "newer", "editor", 300, 0.9, true, 1, 300});
+        store->setLearnedCorrections(fresh);
+        if (scalarCommit) {
+            [schema setValue:@12 forRowId:@"previewWords"];
+            [schema commit];
+        }
+        for (bool enabled : {false, true}) {
+            NSMutableDictionary *record = [previous.firstObject mutableCopy];
+            record[@"enabled"] = @(enabled);
+            NSArray<SpeecherRecord *> *edited = @[record];
+            NSArray<NSString *> *problems = [schema saveRecords:edited
+                                               previousRecords:previous forRowId:@"learnedCorrections"];
+            QCOMPARE(problems.count, NSUInteger(0));
+            previous = edited;
+            const auto saved = store->learnedCorrections();
+            QCOMPARE(saved.size(), 2);
+            QCOMPARE(saved[0].evidenceCount, 3);
+            QCOMPARE(saved[0].enabled, enabled);
+            QCOMPARE(saved[1].id, QStringLiteral("two"));
+        }
+        if (scalarCommit) QCOMPARE(store->previewWords(), 12);
+    }
+
     void constructionDoesNotCreateAQtDictationPopup()
     {
         const int existingPopups = widgetCount<TranscriberPopup>();

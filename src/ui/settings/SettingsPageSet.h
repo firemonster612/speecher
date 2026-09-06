@@ -88,6 +88,7 @@ private:
     bool m_targetAccessibility = false;
     SettingsSchema m_schema;
     AppSettings m_draft;
+    AppSettings m_loaded;
     OutputCustomRows m_outputRows;
     BindingRows m_bindingRows;
     ProviderCustomRows m_providerRows;

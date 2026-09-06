@@ -35,7 +35,6 @@ public:
     OpenAiAuth refreshCodexOauth() const;
 
 private:
-    static QString readCodexApiKey(QString *status);
     static OpenAiAuth readCodexOauth(bool refreshExpired = true);
     SecretStore *m_secretStore = nullptr;
     QString m_mode;

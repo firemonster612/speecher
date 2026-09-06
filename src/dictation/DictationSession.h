@@ -109,7 +109,6 @@ private:
     QVector<QMetaObject::Connection> m_refinerConnections;
     DictationState m_state = DictationState::Idle;
     QString m_lastMessage;
-    QString m_refinedText;
     TranscriptPipelineResult m_transcriptPipeline;
     quint64 m_generation = 0;
     quint64 m_audioGeneration = 0;

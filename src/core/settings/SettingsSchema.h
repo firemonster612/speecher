@@ -69,6 +69,8 @@ struct CollectionImport {
 // this app are this shape, so describing it once is what lets a front end reach
 // for its own table view instead of reimplementing the editor.
 struct CollectionDescriptor {
+    // Stable identity for collections also updated by correction learning.
+    QString identityColumn;
     QList<CollectionColumn> columns;
     std::function<QList<QVariantMap>(const AppSettings &)> records;
     // Receives the editable records only, never the locked ones.
@@ -138,7 +140,7 @@ struct SettingsRow {
     // Rows that name the same group render inside one container and are enabled
     // or disabled together, so they must all declare the same gate.
     QString groupId;
-    // Set on a Collection row, whose value and apply wrap its records.
+    // Collection metadata, also available on Custom rows with native table rendering.
     CollectionDescriptor collection;
     std::function<QVariant(const AppSettings &)> value;
     std::function<void(AppSettings &, const QVariant &)> apply;
@@ -239,6 +241,15 @@ struct SchemaContext {
     QString currentVersion;
     QString lastSeenVersion;
 };
+
+QList<RowOption> cleanupStrengths();
+QList<RowOption> writingTones();
+CollectionDescriptor writingProfileGrid();
+QList<RowOption> authModeOptions(const QString &rowId);
+
+// Apply only edits since the loaded snapshot, keeping newer store values.
+AppSettings mergeSettingsDraft(const SettingsSchema &schema, const AppSettings &loaded,
+                               const AppSettings &draft, AppSettings current);
 
 SettingsSchema buildSettingsSchema(const SchemaContext &context);
 

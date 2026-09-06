@@ -325,7 +325,7 @@ void SettingsPageSet::load()
 void SettingsPageSet::loadBeforeShow()
 {
     const AppSettings snapshot = m_controller->settings()->snapshot();
-    m_draft = snapshot;
+    m_draft = m_loaded = snapshot;
     for (SchemaSettingsPage *page : std::as_const(m_pages)) {
         const QSignalBlocker blocker(page);
         page->load(snapshot);
@@ -337,7 +337,7 @@ void SettingsPageSet::loadBeforeShow()
 void SettingsPageSet::loadAfterShow()
 {
     const AppSettings snapshot = m_controller->settings()->snapshot();
-    m_draft = snapshot;
+    m_draft = m_loaded = snapshot;
     for (SchemaSettingsPage *page : std::as_const(m_pages)) {
         const QSignalBlocker blocker(page);
         page->loadExpensiveRows(snapshot);
@@ -384,11 +384,11 @@ bool SettingsPageSet::save(bool showValidationErrors,
                            pasteRuleProblems);
     }
 
-    settings->applySnapshot(m_draft);
+    settings->applySnapshot(mergeSettingsDraft(m_schema, m_loaded, m_draft, settings->snapshot()));
     Theme::apply(settings->theme());
-    const QString savedTheme = Theme::normalizedSetting(m_draft.ui.theme,
+    const QString savedTheme = Theme::normalizedSetting(settings->theme(),
                                                         Theme::overrideHonored());
-    if (savedTheme != m_draft.ui.theme) {
+    if (savedTheme != settings->theme()) {
         m_draft.ui.theme = savedTheme;
         settings->setTheme(savedTheme);
         Theme::apply(savedTheme);
@@ -397,7 +397,7 @@ bool SettingsPageSet::save(bool showValidationErrors,
     // honours it, which the Theme row's gate depends on.
     applyCapabilities();
     const AppSettings snapshot = settings->snapshot();
-    m_draft = snapshot;
+    m_draft = m_loaded = snapshot;
     for (SchemaSettingsPage *page : std::as_const(m_pages)) {
         const QSignalBlocker blocker(page);
         page->load(snapshot);

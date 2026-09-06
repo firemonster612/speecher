@@ -1,14 +1,8 @@
 #pragma once
 
-#include <QNetworkAccessManager>
-#include <QDeadlineTimer>
-#include <QObject>
+#include "providers/StreamingRefinement.h"
+
 #include <QStringList>
-#include <QTimer>
-
-#include <functional>
-
-class QNetworkReply;
 
 namespace speecher {
 
@@ -40,25 +34,7 @@ signals:
     void failed(const QString &message);
 
 private:
-    void parseSseChunk(const QByteArray &chunk);
-    void completeIfReady();
-    bool retryWithoutFastMode(const QString &reason, bool latchWhenStandardSucceeds);
-
-    QNetworkAccessManager m_network;
-    std::function<void()> m_fastModeFallback;
-    bool m_fastModePendingLatch = false;
-    bool m_fastModeUnavailable = false;
-    bool m_retryingFastMode = false;
-    QTimer m_inactivityTimer;
-    QTimer m_deadlineTimer;
-    QDeadlineTimer m_operationDeadline;
-    QNetworkReply *m_reply = nullptr;
-    int m_requestTimeoutMs;
-    int m_absoluteDeadlineMs;
-    QByteArray m_buffer;
-    QString m_accumulated;
-    bool m_failed = false;
-    bool m_completed = false;
+    StreamingRefinement m_stream;
 };
 
 } // namespace speecher

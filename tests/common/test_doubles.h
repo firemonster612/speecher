@@ -1,6 +1,8 @@
 #pragma once
 
-#include "test_prelude.h"
+#include "dictation/DictationPorts.h"
+#include "providers/ProviderRegistry.h"
+#include <QThread>
 
 #include <functional>
 

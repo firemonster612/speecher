@@ -281,6 +281,7 @@ set(SPEECHER_WORKFLOW_HEADERS
 )
 
 set(SPEECHER_PROVIDER_SOURCES
+  src/providers/StreamingRefinement.cpp
   src/providers/AnthropicApiRefiner.cpp
   src/providers/AnthropicTranscriptRefiner.cpp
   src/providers/ClaudeCredentials.cpp
@@ -297,6 +298,7 @@ set(SPEECHER_PROVIDER_SOURCES
 )
 
 set(SPEECHER_PROVIDER_HEADERS
+  src/providers/StreamingRefinement.h
   src/providers/AnthropicApiRefiner.h
   src/providers/AnthropicTranscriptRefiner.h
   src/providers/ClaudeCredentials.h
@@ -1163,8 +1165,47 @@ if(SPEECHER_BUILD_TESTS)
     target_compile_definitions(speecher_tests PRIVATE SPEECHER_WITH_WINUI=1)
     target_link_libraries(speecher_tests PRIVATE speecher_frontend_win)
   endif()
-  add_test(NAME speecher_tests COMMAND speecher_tests)
-  set_tests_properties(speecher_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+  set(SPEECHER_TEST_SUITES
+    ui
+    app_window
+    transcript_state
+    bindings
+    settings
+    settings_schema
+    provider_registry
+    platform_composition
+    platform_live
+    single_instance_ipc
+    delivery
+    dictation_session_lifecycle
+    dictation_session_refinement
+    refiners
+    vocabulary
+    provider_auth
+    claude_voice
+    codex_dictation
+    audio_pcm_converter
+  )
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    list(APPEND SPEECHER_TEST_SUITES linux_style_choice)
+  endif()
+  if(UNIX)
+    list(APPEND SPEECHER_TEST_SUITES update_controller)
+  endif()
+  if(TARGET speecher_frontend_mac)
+    list(APPEND SPEECHER_TEST_SUITES mac_front_end)
+  endif()
+  if(WIN32)
+    list(APPEND SPEECHER_TEST_SUITES win_platform)
+  endif()
+  if(TARGET speecher_frontend_win)
+    list(APPEND SPEECHER_TEST_SUITES win_front_end)
+  endif()
+  foreach(suite IN LISTS SPEECHER_TEST_SUITES)
+    add_test(NAME speecher_${suite} COMMAND speecher_tests --suite ${suite})
+    set_tests_properties(speecher_${suite} PROPERTIES
+      ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE TIMEOUT 120)
+  endforeach()
 
   qt_add_executable(speecher_atspi_fixture
     tests/atspi_fixture.cpp

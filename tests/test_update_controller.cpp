@@ -1,3 +1,4 @@
+#include "common/test_prelude.h"
 #include "common/test_suites.h"
 #include "common/test_doubles.h"
 

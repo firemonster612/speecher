@@ -1,8 +1,7 @@
-#include "common/test_doubles.h"
-#include "common/test_http.h"
-#include "common/test_auth.h"
+#include "common/test_suites.h"
+#include "core/BindingProcessor.h"
 
-using namespace speecher::test;
+using namespace speecher;
 
 
 class BindingsTests : public QObject {

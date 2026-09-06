@@ -1,4 +1,7 @@
-#include "common/test_prelude.h"
+#include "common/test_suites.h"
+#include "platform/audio/AudioPcmConverter.h"
+
+using namespace speecher;
 
 #include <limits>
 

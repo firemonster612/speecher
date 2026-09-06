@@ -275,11 +275,6 @@ ApiKeyCandidate readCodexApiKeyCandidate(QString *status)
     return {};
 }
 
-QString OpenAiAuthProvider::readCodexApiKey(QString *status)
-{
-    return readCodexApiKeyCandidate(status).key;
-}
-
 static OpenAiAuth authFromCandidate(const ApiKeyCandidate &candidate, const QString &source, const QString &status)
 {
     return {true,

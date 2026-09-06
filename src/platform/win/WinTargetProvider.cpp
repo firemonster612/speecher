@@ -177,6 +177,7 @@ const QSet<QString> &terminalExecutables()
 } // namespace
 
 struct WinTargetProvider::Native {
+    HWND window = nullptr;
     ComPtr<IUIAutomation> automation;
     ComPtr<IUIAutomationElement> focused;
 };
@@ -201,6 +202,7 @@ void WinTargetProvider::clearCapture()
     if (m_correctionObserver) {
         m_correctionObserver->cancel();
     }
+    m_native->window = nullptr;
     m_native->focused.Reset();
     m_valueBeforeInsertion.reset();
     m_insertionOffset.reset();
@@ -211,6 +213,7 @@ Target WinTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
     clearCapture();
     Target target;
     const HWND foreground = GetForegroundWindow();
+    m_native->window = foreground;
     if (!foreground) {
         return target;
     }
@@ -281,12 +284,19 @@ Target WinTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
 
 bool WinTargetProvider::stillFocused(const Target &target)
 {
-    if (target.processId <= 0) {
+    if (target.processId <= 0 || !m_native->window || GetForegroundWindow() != m_native->window) {
         return false;
     }
     DWORD processId = 0;
     GetWindowThreadProcessId(GetForegroundWindow(), &processId);
-    return processId == DWORD(target.processId);
+    if (processId != DWORD(target.processId)) return false;
+    if (!m_native->focused) return true;
+    ComPtr<IUIAutomationElement> focused;
+    BOOL same = FALSE;
+    return m_native->automation
+        && SUCCEEDED(m_native->automation->GetFocusedElement(&focused)) && focused
+        && SUCCEEDED(m_native->automation->CompareElements(
+            focused.Get(), m_native->focused.Get(), &same)) && same;
 }
 
 bool WinTargetProvider::canInsertText(const Target &target)
@@ -295,17 +305,10 @@ bool WinTargetProvider::canInsertText(const Target &target)
         || !stillFocused(target)) {
         return false;
     }
-    ComPtr<IUIAutomationElement> focused;
-    BOOL same = FALSE;
     BOOL enabled = FALSE;
     ComPtr<IUIAutomationValuePattern> valuePattern;
     BOOL readOnly = TRUE;
-    return SUCCEEDED(m_native->automation->GetFocusedElement(&focused))
-        && focused
-        && SUCCEEDED(m_native->automation->CompareElements(
-            focused.Get(), m_native->focused.Get(), &same))
-        && same
-        && SUCCEEDED(m_native->focused->get_CurrentIsEnabled(&enabled))
+    return SUCCEEDED(m_native->focused->get_CurrentIsEnabled(&enabled))
         && enabled
         && SUCCEEDED(m_native->focused->GetCurrentPatternAs(
             UIA_ValuePatternId, IID_PPV_ARGS(&valuePattern)))

@@ -108,6 +108,7 @@ CollectionEditor::CollectionEditor(const RowSnapshot &row, PaneHost &host)
     for (qsizetype index = 0; index < stored.size(); ++index) {
         m_records.append({stored.at(index), index < m_collection.lockedRecordCount});
     }
+    m_savedRecords = editableRecords();
 }
 
 UIElement CollectionEditor::card()
@@ -356,7 +357,10 @@ QList<QVariantMap> CollectionEditor::editableRecords() const
 
 void CollectionEditor::save()
 {
-    showProblems(m_host.model->save(editableRecords(), m_rowId));
+    const auto records = editableRecords();
+    const auto problems = m_host.model->save(records, m_rowId, m_savedRecords);
+    if (problems.isEmpty()) m_savedRecords = records;
+    showProblems(problems);
     // Rows elsewhere derive from these records — the vocabulary limit — so the
     // pane re-derives; this editor survives it by being cached on the host.
     if (m_host.refresh) {

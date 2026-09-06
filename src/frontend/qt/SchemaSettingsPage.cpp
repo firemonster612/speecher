@@ -609,19 +609,13 @@ QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget 
         };
         return combo;
     }
-    case RowKind::Action: {
-        auto *button = new QPushButton(descriptor.actionLabel, card);
-        connect(button, &QPushButton::clicked, this, [this, id = descriptor.id] {
-            emit actionTriggered(id);
-        });
-        return button;
-    }
     case RowKind::Info: {
         auto *label = new QLabel(card);
         label->setForegroundRole(QPalette::WindowText);
         row.setValue = [label](const QVariant &value) { label->setText(value.toString()); };
         return label;
     }
+    case RowKind::Action:
     case RowKind::Collection:
     case RowKind::Custom:
         break;

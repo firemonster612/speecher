@@ -736,6 +736,13 @@ void populateText(Target *target, AtspiAccessible *object)
     g_object_unref(text);
 }
 
+// Qt's AT-SPI adapter exposes its QAccessible UTF-16 offsets directly.
+// Other AT-SPI toolkits count Unicode characters.
+int textOffsetLength(const Target &target, const QString &text)
+{
+    return target.toolkit == QStringLiteral("Qt") ? text.size() : text.toUcs4().size();
+}
+
 QString fingerprint(const Target &target)
 {
     const QByteArray material = target.applicationId.toUtf8()
@@ -803,6 +810,25 @@ TargetSnapshot TargetSnapshot::capture()
         target.category = classifyTarget(target);
         target.fingerprint = fingerprint(target);
         snapshot.m_accessible = AccessibleHandle(focused);
+        const int start = target.selectionStart >= 0 ? target.selectionStart : target.caretOffset;
+        const int end = target.selectionEnd >= start ? target.selectionEnd : start;
+        if (!target.secure && start >= 0 && atspi_accessible_is_text(focused)) {
+            AtspiText *text = atspi_accessible_get_text(focused);
+            if (text) {
+                const int count = atspi_text_get_character_count(text, &error);
+                if (!error && end <= count) {
+                    snapshot.m_insertionPrefix = takeString(atspi_text_get_text(
+                        text, qMax(0, start - correctionContextChars), start, &error));
+                    if (!error) {
+                        snapshot.m_insertionSuffix = takeString(atspi_text_get_text(
+                            text, end, qMin(count, end + correctionContextChars), &error));
+                        if (!error) snapshot.m_characterCount = count;
+                    }
+                }
+                clearError(&error);
+                g_object_unref(text);
+            }
+        }
     } else if (focused) {
         g_object_unref(focused);
     }
@@ -868,7 +894,10 @@ bool TargetSnapshot::insert(const Target &target, const QString &plainText, QStr
     const int position = target.selectionStart >= 0 ? target.selectionStart : target.caretOffset;
     const QByteArray utf8 = plainText.toUtf8();
     GError *atspiError = nullptr;
-    const bool inserted = atspi_editable_text_insert_text(editable, position, utf8.constData(), utf8.size(), &atspiError);
+    // Qt resizes the decoded QString to this length; the protocol itself asks
+    // for a UTF-8 byte length. Avoid padding Qt insertions with null characters.
+    const int length = target.toolkit == QStringLiteral("Qt") ? plainText.size() : utf8.size();
+    const bool inserted = atspi_editable_text_insert_text(editable, position, utf8.constData(), length, &atspiError);
     if (!inserted && error) {
         *error = atspiError && atspiError->message ? QString::fromUtf8(atspiError->message)
                                                    : QStringLiteral("The target rejected direct text insertion");
@@ -884,29 +913,36 @@ bool TargetSnapshot::insert(const Target &target, const QString &plainText, QStr
 #endif
 }
 
-QString TargetSnapshot::insertionWindow(int insertionOffset, int textLength) const
+std::optional<CorrectionWindow> TargetSnapshot::verifiedInsertion(const QString &plainText) const
 {
 #ifdef SPEECHER_WITH_ATSPI
-    if (!m_accessible || !atspi_accessible_is_text(m_accessible.get())) return {};
+    if (m_characterCount < 0 || plainText.isEmpty() || plainText == m_target.selectedText) {
+        return std::nullopt;
+    }
+    const int start = m_target.selectionStart >= 0 ? m_target.selectionStart : m_target.caretOffset;
+    const int end = m_target.selectionEnd >= start ? m_target.selectionEnd : start;
+    const int insertedCharacters = textOffsetLength(m_target, plainText);
     AtspiText *text = atspi_accessible_get_text(m_accessible.get());
-    if (!text) return {};
+    if (!text) return std::nullopt;
     GError *error = nullptr;
     const int count = atspi_text_get_character_count(text, &error);
+    bool matches = !error && count == m_characterCount + insertedCharacters - (end - start);
     clearError(&error);
-    if (count < 0) {
-        g_object_unref(text);
-        return {};
+    if (matches) {
+        const QString value = takeString(atspi_text_get_text(
+            text, qMax(0, start - correctionContextChars),
+            qMin(count, start + insertedCharacters + correctionContextChars), &error));
+        matches = !error && value == m_insertionPrefix + plainText + m_insertionSuffix;
+        clearError(&error);
     }
-    const QString value = takeString(atspi_text_get_text(text, qMax(0, insertionOffset - 32),
-                                                         qMin(count, insertionOffset + textLength + 32), &error));
-    clearError(&error);
     g_object_unref(text);
-    return value;
+    if (matches) {
+        return CorrectionWindow{m_target, plainText, m_insertionPrefix, m_insertionSuffix};
+    }
 #else
-    Q_UNUSED(insertionOffset)
-    Q_UNUSED(textLength)
-    return {};
+    Q_UNUSED(plainText)
 #endif
+    return std::nullopt;
 }
 
 QString TargetSnapshot::correctionWindow(const CorrectionWindow &window) const
@@ -925,8 +961,8 @@ QString TargetSnapshot::correctionWindow(const CorrectionWindow &window) const
         return {};
     }
     const QString value = takeString(atspi_text_get_text(
-        text, qMax(0, insertionOffset - prefix.size() - 16),
-        qMin(count, insertionOffset + original.size() + 560 + suffix.size()), &error));
+        text, qMax(0, insertionOffset - textOffsetLength(target, prefix) - 16),
+        qMin(count, insertionOffset + textOffsetLength(target, original) + 560 + textOffsetLength(target, suffix)), &error));
     clearError(&error);
     g_object_unref(text);
     return value;

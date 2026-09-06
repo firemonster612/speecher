@@ -1,7 +1,8 @@
+#include "common/test_suites.h"
+#include "providers/ProviderRegistry.h"
 #include "common/test_doubles.h"
-#include "common/test_http.h"
-#include "common/test_auth.h"
 
+using namespace speecher;
 using namespace speecher::test;
 
 

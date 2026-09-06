@@ -1,6 +1,7 @@
 #include "frontend/qt/WritingProfileGrid.h"
 
 #include "ui/settings/SettingsPageSupport.h"
+#include "core/settings/SettingsSchema.h"
 
 #include <QAbstractItemView>
 #include <QComboBox>
@@ -12,24 +13,6 @@
 namespace speecher {
 
 namespace {
-
-void addCleanupStrengths(QComboBox *combo)
-{
-    combo->addItem(QStringLiteral("None"), QStringLiteral("none"));
-    combo->addItem(QStringLiteral("Light"), QStringLiteral("light_cleanup"));
-    combo->addItem(QStringLiteral("Medium"), QStringLiteral("balanced"));
-    combo->addItem(QStringLiteral("High"), QStringLiteral("strong_polish"));
-}
-
-void addWritingTones(QComboBox *combo)
-{
-    combo->addItem(QStringLiteral("No tone override"), QStringLiteral("none"));
-    combo->addItem(QStringLiteral("Formal"), QStringLiteral("formal"));
-    combo->addItem(QStringLiteral("Casual"), QStringLiteral("casual"));
-    combo->addItem(QStringLiteral("Very casual"), QStringLiteral("very_casual"));
-    combo->addItem(QStringLiteral("Excited"), QStringLiteral("excited"));
-    combo->addItem(QStringLiteral("Gen Z"), QStringLiteral("gen_z"));
-}
 
 QList<WritingProfileSettings> gridSettings(const QTableWidget *grid)
 {
@@ -65,10 +48,10 @@ void setGridSettings(QTableWidget *grid,
         profile->setFlags(Qt::ItemIsEnabled);
         profile->setData(Qt::UserRole, writingProfileName(fallback.profile));
         auto *strength = new QComboBox(grid);
-        addCleanupStrengths(strength);
+        for (const RowOption &option : cleanupStrengths()) strength->addItem(option.label, option.id);
         settings::selectData(strength, profileSettings.cleanupStrength);
         auto *tone = new QComboBox(grid);
-        addWritingTones(tone);
+        for (const RowOption &option : writingTones()) tone->addItem(option.label, option.id);
         settings::selectData(tone, profileSettings.tone);
         QObject::connect(strength, &QComboBox::currentIndexChanged, grid, notifyChanged);
         QObject::connect(tone, &QComboBox::currentIndexChanged, grid, notifyChanged);

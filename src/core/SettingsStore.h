@@ -131,17 +131,11 @@ public:
     QString audioInputDeviceId() const;
     void setAudioInputDeviceId(const QString &value);
     QString audioCaptureMode() const;
-    void setAudioCaptureMode(const QString &value);
     bool audioVadEnabled() const;
-    void setAudioVadEnabled(bool value);
     int audioPreRollMs() const;
-    void setAudioPreRollMs(int value);
     int audioPostRollMs() const;
-    void setAudioPostRollMs(int value);
     int audioReadinessTimeoutMs() const;
-    void setAudioReadinessTimeoutMs(int value);
     int audioVadThresholdPercent() const;
-    void setAudioVadThresholdPercent(int value);
     void setAudioCaptureSettings(const AudioCaptureSettings &value);
     void setUpdateChannel(UpdateChannel value);
     void setAutoCheckUpdates(bool value);

@@ -233,7 +233,6 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
                       << "credentialsPath=" + settings.speech.claudeCredentialsPath
                       << "voiceBase=" + settings.speech.claudeEndpointBase;
     m_transcript->clear();
-    m_refinedText.clear();
     m_transcriptPipeline = {};
     // Unfreeze before clearing: a front end whose preview honours the frozen
     // flag (macOS, Windows) would otherwise drop this clear and keep showing the
@@ -556,7 +555,6 @@ void DictationSession::beginRefinement(quint64 generation)
     setState(DictationState::Refining, m_lastMessage);
     m_refinementGeneration = generation;
     emit popupRefiningChanged(true);
-    m_refinedText.clear();
     TranscriptPipeline::includeScreenshotContext(pipeline,
                                                  m_refiner->supportsScreenshotContext(refinement),
                                                  m_screenshotData,
@@ -770,12 +768,6 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
     }
     m_refinerConnections.clear();
     m_refiner = refiner;
-    m_refinerConnections << connect(m_refiner, &TranscriptRefiner::delta, this, [this](const QString &delta) {
-        if (m_state != DictationState::Refining || m_refinementGeneration != m_generation) {
-            return;
-        }
-        m_refinedText += delta;
-    });
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::completed, this, [this](const QString &text) {
         if (m_state != DictationState::Refining || m_refinementGeneration != m_generation) {
             return;

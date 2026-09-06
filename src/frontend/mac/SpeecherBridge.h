@@ -165,6 +165,11 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 - (void)loadExpensiveRows;
 // Empty when these records are consistent; otherwise one message per problem.
 - (NSArray<NSString *> *)problemsWith:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId;
+// Save against the records this editor last submitted, not a later model refresh.
+- (NSArray<NSString *> *)saveRecords:(NSArray<SpeecherRecord *> *)records
+                    previousRecords:(NSArray<SpeecherRecord *> *)previous
+                           forRowId:(NSString *)rowId
+    NS_SWIFT_NAME(save(records:previousRecords:forRowId:));
 - (CollectionImportResult *)recordsImportedFrom:(NSData *)data
                                            into:(NSArray<SpeecherRecord *> *)records
                                        forRowId:(NSString *)rowId;

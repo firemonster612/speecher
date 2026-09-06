@@ -1,6 +1,9 @@
 #pragma once
 
-#include "test_prelude.h"
+#include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QEventLoop>
+#include <QTcpSocket>
 
 namespace speecher::test {
 

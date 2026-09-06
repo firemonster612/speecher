@@ -44,7 +44,6 @@ using speecher::SettingsStore;
 
 namespace {
 
-const QString kWritingProfileGrid = QStringLiteral("writingProfileBehavior");
 const QString kAppSettingsKeyAuthMode = QStringLiteral("settings");
 
 SpeecherRowKind bridgedKind(RowKind kind)
@@ -225,10 +224,8 @@ struct SchemaState {
     SettingsStore *store = nullptr;
     SettingsSchema schema;
     AppSettings draft;
+    AppSettings loaded;
     Capabilities capabilities;
-    // The one Custom row this front end draws as a table, kept here because its
-    // records are the mac front end's shape rather than the schema's.
-    CollectionDescriptor profileGrid = speecher::mac::writingProfileGrid();
     // Choices that cost a device enumeration stay out of a snapshot until the
     // front end has painted and asked for them.
     bool expensiveReady = false;
@@ -451,7 +448,7 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
         _state = new SchemaState;
         _state->store = store;
         _state->schema = schema;
-        _state->draft = store->snapshot();
+        _state->draft = _state->loaded = store->snapshot();
         _state->capabilities = capabilities;
     }
     return self;
@@ -462,17 +459,9 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     delete _state;
 }
 
-// The descriptor behind a row's table, which is the row's own for a Collection
-// row and this front end's for the writing profile grid.
 - (const CollectionDescriptor *)collectionForRow:(const SettingsRow &)row
 {
-    if (row.kind == RowKind::Collection) {
-        return &row.collection;
-    }
-    if (row.id == kWritingProfileGrid) {
-        return &_state->profileGrid;
-    }
-    return nullptr;
+    return row.collection.records ? &row.collection : nullptr;
 }
 
 - (const SettingsRow *)rowWithId:(NSString *)rowId
@@ -654,16 +643,17 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 
 - (void)commit
 {
-    _state->store->applySnapshot(_state->draft);
+    _state->store->applySnapshot(mergeSettingsDraft(
+        _state->schema, _state->loaded, _state->draft, _state->store->snapshot()));
     // What the Qt front end does after a save, and the reason a theme change
     // reaches NSApp.appearance as well as Qt's own palette.
     speecher::Theme::apply(_state->store->theme());
-    _state->draft = _state->store->snapshot();
+    _state->draft = _state->loaded = _state->store->snapshot();
 }
 
 - (void)reloadDraft
 {
-    _state->draft = _state->store->snapshot();
+    _state->draft = _state->loaded = _state->store->snapshot();
 }
 
 - (void)loadExpensiveRows
@@ -688,6 +678,20 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
         [problems addObject:problem.toNSString()];
     }
     return problems;
+}
+
+- (NSArray<NSString *> *)saveRecords:(NSArray<SpeecherRecord *> *)records
+                    previousRecords:(NSArray<SpeecherRecord *> *)previous
+                           forRowId:(NSString *)rowId
+{
+    NSArray<NSString *> *problems = [self problemsWith:records forRowId:rowId];
+    if (problems.count > 0) return problems;
+    const SettingsRow *row = [self rowWithId:rowId];
+    const CollectionDescriptor *collection = row ? [self collectionForRow:*row] : nullptr;
+    if (collection) collection->apply(_state->loaded, coreRecords(previous));
+    [self setValue:records forRowId:rowId];
+    [self commit];
+    return @[];
 }
 
 - (CollectionImportResult *)recordsImportedFrom:(NSData *)data

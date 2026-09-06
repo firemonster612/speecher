@@ -214,7 +214,6 @@ BindingRestoreResult BindingMatcher::restorePlaceholders(const QString &refinedT
     QString restored;
     QString residue;
     qsizetype cursor = 0;
-    qsizetype residueCursor = 0;
     while (iterator.hasNext()) {
         const QRegularExpressionMatch match = iterator.next();
         const QString placeholder = match.captured(0);
@@ -224,12 +223,11 @@ BindingRestoreResult BindingMatcher::restorePlaceholders(const QString &refinedT
         const qsizetype end = match.capturedEnd(0);
         restored += refinedText.mid(cursor, start - cursor);
         restored += replacement.value();
+        residue += refinedText.mid(cursor, start - cursor);
         cursor = end;
-        residue += refinedText.mid(residueCursor, start - residueCursor);
-        residueCursor = end;
     }
     restored += refinedText.mid(cursor);
-    residue += refinedText.mid(residueCursor);
+    residue += refinedText.mid(cursor);
     if (residue.contains(QStringLiteral("SPEECHER_BINDING"), Qt::CaseSensitive)) return {false, {}};
     const QStringList residueTokens = normalizedTokens(residue);
     for (int index = 0; index + 2 < residueTokens.size(); ++index) {

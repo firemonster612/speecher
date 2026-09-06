@@ -1,6 +1,11 @@
 #pragma once
 
-#include "test_prelude.h"
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QTextStream>
 
 namespace speecher::test {
 

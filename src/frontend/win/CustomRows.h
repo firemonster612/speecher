@@ -17,8 +17,7 @@ struct PaneHost;
 struct RowSnapshot;
 
 // The parts of a Custom row the schema leaves to the front end. The mac
-// renderer answers the same questions in MacCustomRows; the option logic is
-// shared verbatim so the two native front ends stay in step.
+// renderer answers the same questions in MacCustomRows; shared options come from the settings schema and credential providers.
 //
 // Empty for a Custom row that is not a picker, such as the credential field.
 QList<RowOption> customRowOptions(const QString &rowId,
@@ -28,10 +27,7 @@ QList<RowOption> customRowOptions(const QString &rowId,
 QString anthropicCredentialStatus(const AppSettings &draft,
                                   const SettingsStore &store);
 
-// The writing profile grid as a table of records: one row per profile, holding
-// the cleanup strength and the optional tone. Its records replace the row's own
-// QList<WritingProfileSettings> value, which the snapshot cannot carry typed.
-CollectionDescriptor writingProfileGrid();
+
 
 // The control for a Custom row, by id: pickers over customRowOptions, the
 // credential field, the CLI Proxy text rows, the profile grid and the release

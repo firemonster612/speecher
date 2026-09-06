@@ -1,6 +1,5 @@
+#include "common/test_prelude.h"
 #include "common/test_doubles.h"
-#include "common/test_http.h"
-#include "common/test_auth.h"
 #include "output/HelperPath.h"
 #include "setup/YdotoolSetupState.h"
 #include "setup/YdotoolSetupTransaction.h"
@@ -1114,22 +1113,6 @@ private slots:
                               QStringLiteral("29:1"),
                               QStringLiteral("47:1"),
                               QStringLiteral("47:0"),
-                              QStringLiteral("29:0")}));
-        QCOMPARE(YdotoolDelivery::copyShortcutArguments(PasteMethod::StandardPaste),
-                 QStringList({QStringLiteral("key"),
-                              QStringLiteral("--key-delay=2"),
-                              QStringLiteral("29:1"),
-                              QStringLiteral("46:1"),
-                              QStringLiteral("46:0"),
-                              QStringLiteral("29:0")}));
-        QCOMPARE(YdotoolDelivery::copyShortcutArguments(PasteMethod::TerminalPaste),
-                 QStringList({QStringLiteral("key"),
-                              QStringLiteral("--key-delay=2"),
-                              QStringLiteral("29:1"),
-                              QStringLiteral("42:1"),
-                              QStringLiteral("46:1"),
-                              QStringLiteral("46:0"),
-                              QStringLiteral("42:0"),
                               QStringLiteral("29:0")}));
     }
 

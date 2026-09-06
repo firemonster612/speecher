@@ -100,7 +100,8 @@ public:
     // problem, ready to show to a person.
     QStringList problemsWith(const QList<QVariantMap> &records, const QString &rowId) const;
     // Empty when the records were consistent, in which case they are saved.
-    QStringList save(const QList<QVariantMap> &records, const QString &rowId);
+    QStringList save(const QList<QVariantMap> &records, const QString &rowId,
+                     const QList<QVariantMap> &previous);
 
     struct ImportResult {
         // The records already there with the file's merged in, or nothing when
@@ -148,10 +149,8 @@ private:
     SettingsStore *m_store;
     SettingsSchema m_schema;
     AppSettings m_draft;
+    AppSettings m_loaded;
     Capabilities m_capabilities;
-    // The one Custom row this front end draws as a table, kept here because its
-    // records are this front end's shape rather than the schema's.
-    CollectionDescriptor m_profileGrid;
     // Choices that cost a device enumeration stay out of a snapshot until the
     // front end has painted and asked for them.
     bool m_expensiveReady = false;

@@ -17,7 +17,12 @@ int main(int argc, char **argv)
         target->setEchoMode(QLineEdit::Password);
         target->setText(QStringLiteral("not-a-real-secret"));
     }
-    target->setCursorPosition(12);
+    if (app.arguments().contains(QStringLiteral("--unicode"))) {
+        target->setText(QString::fromUtf8("🌍 prefix text suffix text"));
+        target->setCursorPosition(15);
+    } else {
+        target->setCursorPosition(12);
+    }
     layout->addWidget(target);
 
     window.resize(480, 100);

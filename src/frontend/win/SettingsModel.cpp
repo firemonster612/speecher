@@ -20,7 +20,6 @@ namespace speecher::win {
 
 namespace {
 
-const QString kWritingProfileGrid = QStringLiteral("writingProfileBehavior");
 const QString kAppSettingsKeyAuthMode = QStringLiteral("settings");
 
 // "CSV files (*.csv);;All files (*)" names the types a file picker may accept;
@@ -91,16 +90,6 @@ void refreshCredentialWatch(QFileSystemWatcher *watcher, const QString &credenti
     watcher->addPath(directory);
 }
 
-QString recordIdentityColumn(const QString &rowId)
-{
-    if (rowId == QStringLiteral("learnedCorrections")) {
-        return QStringLiteral("id");
-    }
-    if (rowId == QStringLiteral("vocabularyEntries")) {
-        return QStringLiteral("term");
-    }
-    return {};
-}
 
 } // namespace
 
@@ -111,9 +100,9 @@ SettingsModel::SettingsModel(ApplicationController *controller)
                                                     *controller->providerRegistry(),
                                                     controller->pendingWhatsNewVersion())))
     , m_draft(m_store->snapshot())
+    , m_loaded(m_draft)
     , m_capabilities{controller->accessibilitySupported() && controller->accessibilityEnabled(),
                      controller->updates()->supportsAutomaticDownloads()}
-    , m_profileGrid(writingProfileGrid())
 {
     const QString credentialsPath = m_store->claudeCredentialsPath();
     refreshCredentialWatch(&m_credentialWatcher, credentialsPath);
@@ -158,17 +147,9 @@ const SettingsRow *SettingsModel::rowWithId(const QString &rowId) const
     return nullptr;
 }
 
-// The descriptor behind a row's table, which is the row's own for a Collection
-// row and this front end's for the writing profile grid.
 const CollectionDescriptor *SettingsModel::collectionForRow(const SettingsRow &row) const
 {
-    if (row.kind == RowKind::Collection) {
-        return &row.collection;
-    }
-    if (row.id == kWritingProfileGrid) {
-        return &m_profileGrid;
-    }
-    return nullptr;
+    return row.collection.records ? &row.collection : nullptr;
 }
 
 QList<RowOption> SettingsModel::optionsForRow(const SettingsRow &row) const
@@ -282,18 +263,18 @@ void SettingsModel::setValue(const QString &rowId, const QVariant &value)
 
 void SettingsModel::commit()
 {
-    m_store->applySnapshot(m_draft);
+    m_store->applySnapshot(mergeSettingsDraft(m_schema, m_loaded, m_draft, m_store->snapshot()));
     // Where the other front ends call Theme::apply: the WinUI root's
     // RequestedTheme is the Windows equivalent, and the window owns the root.
     if (themeChanged) {
         themeChanged();
     }
-    m_draft = m_store->snapshot();
+    m_draft = m_loaded = m_store->snapshot();
 }
 
 void SettingsModel::reloadDraft()
 {
-    m_draft = m_store->snapshot();
+    m_draft = m_loaded = m_store->snapshot();
 }
 
 void SettingsModel::loadExpensiveRows()
@@ -312,44 +293,15 @@ QStringList SettingsModel::problemsWith(const QList<QVariantMap> &records,
     return collection->validate(records);
 }
 
-QStringList SettingsModel::save(const QList<QVariantMap> &records, const QString &rowId)
+QStringList SettingsModel::save(const QList<QVariantMap> &records, const QString &rowId,
+                                 const QList<QVariantMap> &previous)
 {
-    QList<QVariantMap> merged = records;
-    const SettingsRow *row = rowWithId(rowId);
-    const CollectionDescriptor *collection = row ? collectionForRow(*row) : nullptr;
-    const QString identityColumn = recordIdentityColumn(rowId);
-    const AppSettings stored = m_store->snapshot();
-    if (collection && !identityColumn.isEmpty()) {
-        const QList<QVariantMap> previous = collection->records(m_draft);
-        const QList<QVariantMap> current = collection->records(stored);
-        for (const QVariantMap &currentRecord : current) {
-            const QVariant identity = currentRecord.value(identityColumn);
-            const auto sameIdentity = [&identity, &identityColumn](const QVariantMap &record) {
-                return record.value(identityColumn) == identity;
-            };
-            const auto previousRecord = std::find_if(previous.cbegin(), previous.cend(), sameIdentity);
-            auto editedRecord = std::find_if(merged.begin(), merged.end(), sameIdentity);
-            if (previousRecord == previous.cend()) {
-                if (editedRecord == merged.end()) {
-                    merged.append(currentRecord);
-                }
-                continue;
-            }
-            if (editedRecord == merged.end()) {
-                continue;
-            }
-            for (auto value = currentRecord.cbegin(); value != currentRecord.cend(); ++value) {
-                if (editedRecord->value(value.key()) == previousRecord->value(value.key())) {
-                    editedRecord->insert(value.key(), value.value());
-                }
-            }
-        }
-    }
-
-    const QStringList problems = problemsWith(merged, rowId);
+    const QStringList problems = problemsWith(records, rowId);
     if (problems.isEmpty()) {
-        m_draft = stored;
-        setValue(rowId, QVariant::fromValue(merged));
+        const SettingsRow *row = rowWithId(rowId);
+        const CollectionDescriptor *collection = row ? collectionForRow(*row) : nullptr;
+        if (collection) collection->apply(m_loaded, previous);
+        setValue(rowId, QVariant::fromValue(records));
         commit();
     }
     return problems;

@@ -240,10 +240,6 @@ void CodexDictationClient::cancel()
 #endif
 }
 
-bool CodexDictationClient::isConnected() const
-{
-    return m_sessionStarted && !m_sessionClosed;
-}
 
 void CodexDictationClient::handleTextMessage(const QString &message)
 {

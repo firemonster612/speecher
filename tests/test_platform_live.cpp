@@ -1,8 +1,6 @@
-#include "common/test_doubles.h"
-#include "common/test_http.h"
-#include "common/test_auth.h"
+#include "common/test_prelude.h"
 
-using namespace speecher::test;
+using namespace speecher;
 
 
 class PlatformLiveTests : public QObject {
@@ -91,6 +89,27 @@ private slots:
     }
 
 #ifdef SPEECHER_WITH_WAYLAND
+    void liveAtSpiVerificationRequiresActualInsertion()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI_VERIFY") != QStringLiteral("1")) {
+            QSKIP("Live AT-SPI verification fixture is opt-in");
+        }
+        AtSpiTargetProvider provider;
+        provider.setCorrectionObservationEnabled(false);
+        const Target target = provider.capture();
+        QVERIFY(target.hasIdentity());
+        QVERIFY(provider.canInsertText(target));
+        QVERIFY(!provider.verifyInsertion(target, QStringLiteral("text")));
+        const QString inserted = QString::fromUtf8("🌍 text ");
+        QString error;
+        QVERIFY2(provider.insertText(target, inserted, &error), qPrintable(error));
+        QVERIFY(provider.verifyInsertion(target, inserted));
+        // Another matching occurrence and a different value at the anchor
+        // cannot stand in for the requested insertion.
+        QVERIFY(!provider.verifyInsertion(target, QStringLiteral("suffix text")));
+        QVERIFY(!provider.verifyInsertion(target, QStringLiteral("text")));
+    }
+
     void liveAtSpiDirectInsertionIntoSavedUnfocusedControl()
     {
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_ATSPI_EDIT") != QStringLiteral("1")) {

@@ -1,6 +1,7 @@
 #include "common/test_suites.h"
 
 #include "core/BindingProcessor.h"
+#include "core/SettingsStore.h"
 #include "core/VocabularyLimit.h"
 #include "core/settings/SettingsSchema.h"
 #include "ui/settings/SettingsPageSet.h"
@@ -52,6 +53,63 @@ class SettingsSchemaTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void writingProfileCollectionIsDescribedBySchema()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsRow &row = rowById(schema.page("refinement"), "writingProfileBehavior");
+        QCOMPARE(row.kind, RowKind::Custom);
+        QCOMPARE(row.collection.identityColumn, QStringLiteral("profileId"));
+        QCOMPARE(row.collection.records(AppSettings{}).size(), 5);
+    }
+
+    void staleDraftPreservesLearnedRecords()
+    {
+        SettingsStore store;
+        store.raw().clear();
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const AppSettings loaded = store.snapshot();
+        AppSettings edited = loaded;
+        edited.ui.previewWords = 12;
+        QVERIFY(store.recordCorrectionEvidence({"githab", "GitHub", 0.95}, "editor"));
+        const AppSettings learned = store.snapshot();
+        QVERIFY(!learned.learnedCorrections.isEmpty());
+        store.applySnapshot(mergeSettingsDraft(schema, loaded, edited, store.snapshot()));
+        QCOMPARE(store.previewWords(), 12);
+        QCOMPARE(store.snapshot().learnedCorrections, learned.learnedCorrections);
+        QCOMPARE(store.snapshot().vocabulary, learned.vocabulary);
+    }
+
+    void collectionEditPreservesConcurrentEvidenceAndDeletions()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        AppSettings loaded;
+        loaded.learnedCorrections = {{"one", "githab", "GitHub", "editor", 100, 0.8, true, 1, 100},
+                                     {"two", "cut", "deleted", "editor", 100, 0.8, true, 1, 100}};
+        loaded.vocabulary = {{"GitHub", "learned", false, 1, 100}};
+        AppSettings edited = loaded;
+        edited.learnedCorrections[0].enabled = false;
+        edited.learnedCorrections.removeAt(1);
+        edited.vocabulary[0].starred = true;
+        AppSettings current = loaded;
+        current.learnedCorrections[0].evidenceCount = 3;
+        current.learnedCorrections[0].lastObservedAtMs = 300;
+        current.learnedCorrections.append({"three", "new", "newer", "editor", 300, 0.9, true, 1, 300});
+        current.vocabulary[0].frequency = 5;
+        current.vocabulary[0].lastUsedMs = 300;
+        current.ui.previewWords = 15;
+        const AppSettings merged = mergeSettingsDraft(schema, loaded, edited, current);
+        QCOMPARE(merged.learnedCorrections.size(), 2);
+        QCOMPARE(merged.learnedCorrections[0].id, QStringLiteral("one"));
+        QVERIFY(!merged.learnedCorrections[0].enabled);
+        QCOMPARE(merged.learnedCorrections[0].evidenceCount, 3);
+        QCOMPARE(merged.learnedCorrections[0].lastObservedAtMs, 300);
+        QCOMPARE(merged.learnedCorrections[1].id, QStringLiteral("three"));
+        QVERIFY(merged.vocabulary[0].starred);
+        QCOMPARE(merged.vocabulary[0].frequency, 5);
+        QCOMPARE(merged.vocabulary[0].lastUsedMs, 300);
+        QCOMPARE(merged.ui.previewWords, 15);
+    }
+
     void baseVersionsCompareNumericallyWithoutNightlySuffixes()
     {
         QCOMPARE(compareBaseVersions(QStringLiteral("0.2.0-nightly.20260901+gabc1234"),

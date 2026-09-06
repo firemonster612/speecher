@@ -1,3 +1,4 @@
+#include "common/test_prelude.h"
 #include "common/test_auth.h"
 #include "providers/ClaudeSpeechTranscriber.h"
 #include "providers/CodexDictationClient.h"

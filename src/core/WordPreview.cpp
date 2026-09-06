@@ -1,25 +1,17 @@
 #include "core/WordPreview.h"
 
-#include <QRegularExpression>
-
 namespace speecher {
 
 QString WordPreview::lastWords(const QString &text, int count)
 {
-    if (count <= 0) {
-        return {};
+    if (count <= 0) return {};
+    qsizetype start = text.size();
+    while (start > 0 && count > 0) {
+        while (start > 0 && text.at(start - 1).isSpace()) --start;
+        while (start > 0 && !text.at(start - 1).isSpace()) --start;
+        --count;
     }
-
-    const QString simplified = text.simplified();
-    if (simplified.isEmpty()) {
-        return {};
-    }
-
-    const QStringList words = simplified.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
-    if (words.size() <= count) {
-        return words.join(' ');
-    }
-    return words.mid(words.size() - count).join(' ');
+    return text.mid(start).simplified();
 }
 
 } // namespace speecher

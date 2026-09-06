@@ -1,8 +1,17 @@
-#include "common/test_doubles.h"
-#include "common/test_http.h"
-#include "common/test_auth.h"
+#include "common/test_suites.h"
+#include "app/SingleInstanceIpc.h"
+#include "platform/PopupPositioner.h"
+#include "platform/PopupSurface.h"
+#include <QCoreApplication>
+#include <QFile>
+#include <QFileInfo>
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QSignalSpy>
+#include <QTemporaryDir>
+#include <QUuid>
 
-using namespace speecher::test;
+using namespace speecher;
 
 class FakeSingleInstancePlatform final : public SingleInstancePlatform {
 public:

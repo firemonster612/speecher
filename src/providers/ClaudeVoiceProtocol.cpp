@@ -71,9 +71,8 @@ ClaudeVoiceEvent parseClaudeVoiceEvent(const QString &message)
     return {};
 }
 
-QUrlQuery claudeVoiceStreamQuery(const QStringList &vocabulary)
+QUrlQuery claudeVoiceStreamQuery()
 {
-    Q_UNUSED(vocabulary)
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("encoding"), QStringLiteral("linear16"));
     query.addQueryItem(QStringLiteral("sample_rate"), QStringLiteral("16000"));

@@ -1,4 +1,4 @@
-#include "common/test_doubles.h"
+#include "common/test_prelude.h"
 #include "common/test_http.h"
 #include "common/test_auth.h"
 #include "providers/OpenAiTranscriptRefiner.h"
@@ -10,6 +10,235 @@ class RefinersTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void timeoutDuringDeltaStopsBufferedEvents_data()
+    {
+        QTest::addColumn<bool>("anthropic");
+        QTest::newRow("openai") << false;
+        QTest::newRow("anthropic") << true;
+    }
+
+    void timeoutDuringDeltaStopsBufferedEvents()
+    {
+        QFETCH(bool, anthropic);
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        OpenAiRefiner openAi(nullptr, 500, 5000);
+        AnthropicApiRefiner claude(nullptr, 500, 5000);
+        QObject *refiner = anthropic ? static_cast<QObject *>(&claude) : &openAi;
+        QSignalSpy completed(refiner, SIGNAL(completed(QString)));
+        QSignalSpy failed(refiner, SIGNAL(failed(QString)));
+        QSignalSpy deltas(refiner, SIGNAL(delta(QString)));
+        const auto waitForFailure = [&] {
+            if (deltas.size() == 1) QVERIFY(failed.wait(1500));
+        };
+        connect(&openAi, &OpenAiRefiner::delta, this, waitForFailure);
+        connect(&claude, &AnthropicApiRefiner::delta, this, waitForFailure);
+        const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
+        if (anthropic) claude.refine("hello", {}, {}, "token", endpoint, "claude-test", "low", false, "balanced", {});
+        else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", false, "balanced", {});
+        QTRY_VERIFY(server.hasPendingConnections());
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
+        const QByteArray delta = anthropic
+            ? QByteArrayLiteral("event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n")
+            : QByteArrayLiteral("event: response.output_text.delta\ndata: {\"delta\":\"partial\"}\n\n");
+        const QByteArray terminal = anthropic
+            ? QByteArrayLiteral("event: message_stop\ndata: {}\n\n")
+            : QByteArrayLiteral("event: response.completed\ndata: {}\n\n");
+        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n" + delta + delta + terminal);
+        QVERIFY(socket->waitForBytesWritten(1000));
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1500);
+        QCoreApplication::processEvents();
+        QCOMPARE(completed.size(), 0);
+        QCOMPARE(deltas.size(), 1);
+        QCOMPARE(failed.size(), 1);
+        QVERIFY(failed.first().first().toString().contains(QStringLiteral("timed out")));
+    }
+
+    void nonTextProgressKeepsStreamAlive_data()
+    {
+        QTest::addColumn<bool>("anthropic");
+        QTest::newRow("openai") << false;
+        QTest::newRow("anthropic") << true;
+    }
+
+    void nonTextProgressKeepsStreamAlive()
+    {
+        QFETCH(bool, anthropic);
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        OpenAiRefiner openAi(nullptr, 500, 5000);
+        AnthropicApiRefiner claude(nullptr, 500, 5000);
+        QObject *refiner = anthropic ? static_cast<QObject *>(&claude) : &openAi;
+        QSignalSpy failed(refiner, SIGNAL(failed(QString)));
+        QSignalSpy deltas(refiner, SIGNAL(delta(QString)));
+        const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
+        if (anthropic) claude.refine("hello", {}, {}, "token", endpoint, "claude-test", "low", false, "balanced", {});
+        else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", false, "balanced", {});
+        QTRY_VERIFY(server.hasPendingConnections());
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
+        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n");
+        const QByteArray progress = anthropic
+            ? QByteArrayLiteral("event: content_block_delta\ndata: {\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"working\"}}\n\n")
+            : QByteArrayLiteral("event: response.in_progress\ndata: {}\n\n");
+        QTimer activity;
+        connect(&activity, &QTimer::timeout, socket, [socket, progress] { socket->write(progress); });
+        activity.start(50);
+        QTest::qWait(900);
+        QCOMPARE(failed.size(), 0);
+        QCOMPARE(deltas.size(), 0);
+        activity.stop();
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1500);
+        QVERIFY(failed.first().first().toString().contains(QStringLiteral("timed out")));
+    }
+
+    void stallFallbackDoesNotDisableFastMode_data()
+    {
+        QTest::addColumn<bool>("anthropic");
+        QTest::newRow("openai") << false;
+        QTest::newRow("anthropic") << true;
+    }
+
+    void stallFallbackDoesNotDisableFastMode()
+    {
+        QFETCH(bool, anthropic);
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        OpenAiRefiner openAi(nullptr, 500, 5000);
+        AnthropicApiRefiner claude(nullptr, 500, 5000);
+        QObject *refiner = anthropic ? static_cast<QObject *>(&claude) : &openAi;
+        QSignalSpy completed(refiner, SIGNAL(completed(QString)));
+        QSignalSpy failed(refiner, SIGNAL(failed(QString)));
+        const auto start = [&] {
+            const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
+            if (anthropic) claude.refine("hello", {}, {}, "token", endpoint, "claude-opus-4-8", "low", true, "balanced", {});
+            else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", true, "balanced", {});
+        };
+        start();
+        for (int attempt = 0; attempt < 3; ++attempt) {
+            QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1500);
+            QTcpSocket *socket = server.nextPendingConnection();
+            const QByteArray request = readHttpRequest(socket, 1000);
+            const int headerEnd = request.indexOf("\r\n\r\n");
+            QVERIFY(headerEnd >= 0);
+            const QJsonObject body = QJsonDocument::fromJson(request.mid(headerEnd + 4)).object();
+            QCOMPARE(body.contains(anthropic ? QStringLiteral("speed") : QStringLiteral("service_tier")), attempt != 1);
+            if (attempt != 1) continue;
+            const QByteArray frames = anthropic
+                ? QByteArrayLiteral("event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\nevent: message_stop\ndata: {}\n\n")
+                : QByteArrayLiteral("event: response.output_text.delta\ndata: {\"delta\":\"ok\"}\n\nevent: response.completed\ndata: {}\n\n");
+            socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n" + frames);
+            QVERIFY(socket->waitForBytesWritten(1000));
+            QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 1000);
+            QCOMPARE(completed.first().first().toString(), QStringLiteral("ok"));
+            start();
+        }
+        if (anthropic) claude.cancel();
+        else openAi.cancel();
+        QCOMPARE(failed.size(), 0);
+    }
+
+    void cancellationInvalidatesStream_data()
+    {
+        QTest::addColumn<bool>("anthropic");
+        QTest::addColumn<int>("action");
+        for (bool anthropic : {false, true}) {
+            for (int action : {0, 1, 2}) {
+                QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(anthropic).arg(action)))
+                    << anthropic << action;
+            }
+        }
+    }
+
+    void cancellationInvalidatesStream()
+    {
+        QFETCH(bool, anthropic);
+        QFETCH(int, action);
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        OpenAiRefiner openAi;
+        AnthropicApiRefiner claude;
+        QObject *refiner = anthropic ? static_cast<QObject *>(&claude) : &openAi;
+        QSignalSpy completed(refiner, SIGNAL(completed(QString)));
+        QSignalSpy failed(refiner, SIGNAL(failed(QString)));
+        QSignalSpy deltas(refiner, SIGNAL(delta(QString)));
+        const auto start = [&] {
+            const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
+            if (anthropic) claude.refine("hello", {}, {}, "token", endpoint, "claude-test", "low", false, "balanced", {});
+            else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", false, "balanced", {});
+        };
+        const auto cancel = [&] {
+            if (anthropic) claude.cancel();
+            else openAi.cancel();
+        };
+        const auto onDelta = [&] {
+            if (action == 0) cancel();
+            else if (action == 1) QMetaObject::invokeMethod(refiner, cancel, Qt::QueuedConnection);
+            else start();
+        };
+        connect(&openAi, &OpenAiRefiner::delta, this, onDelta);
+        connect(&claude, &AnthropicApiRefiner::delta, this, onDelta);
+        start();
+        QTRY_VERIFY(server.hasPendingConnections());
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
+        const QByteArray frames = anthropic
+            ? QByteArrayLiteral("event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"old\"}}\n\nevent: message_stop\ndata: {}\n\n")
+            : QByteArrayLiteral("event: response.output_text.delta\ndata: {\"delta\":\"old\"}\n\nevent: response.completed\ndata: {}\n\n");
+        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n" + frames);
+        QVERIFY(socket->waitForBytesWritten(1000));
+        QTRY_COMPARE(deltas.size(), 1);
+        QCoreApplication::processEvents();
+        QCOMPARE(completed.size(), 0);
+        QCOMPARE(failed.size(), 0);
+        cancel();
+    }
+
+    void unsuccessfulTerminalEvent_data()
+    {
+        QTest::addColumn<bool>("anthropic");
+        QTest::addColumn<QByteArray>("terminal");
+        QTest::addColumn<QString>("detail");
+        for (const QByteArray reason : {QByteArray("max_tokens"), QByteArray("refusal"), QByteArray("tool_use")}) {
+            QTest::newRow(reason.constData()) << true
+                << QByteArray("event: message_delta\ndata: {\"delta\":{\"stop_reason\":\"") + reason + "\"}}\n\nevent: message_stop\ndata: {}\n\n"
+                << QString::fromLatin1(reason);
+        }
+        QTest::newRow("failed") << false << QByteArray("event: response.failed\ndata: {\"response\":{\"error\":{\"code\":\"server_error\",\"message\":\"provider unavailable\"}}}\n\n") << QStringLiteral("provider unavailable");
+        QTest::newRow("incomplete") << false << QByteArray("event: response.incomplete\ndata: {\"response\":{\"incomplete_details\":{\"reason\":\"max_output_tokens\"}}}\n\n") << QStringLiteral("max_output_tokens");
+    }
+
+    void unsuccessfulTerminalEvent()
+    {
+        QFETCH(bool, anthropic);
+        QFETCH(QByteArray, terminal);
+        QFETCH(QString, detail);
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        OpenAiRefiner openAi;
+        AnthropicApiRefiner claude;
+        QObject *refiner = anthropic ? static_cast<QObject *>(&claude) : &openAi;
+        QSignalSpy completed(refiner, SIGNAL(completed(QString)));
+        QSignalSpy failed(refiner, SIGNAL(failed(QString)));
+        const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
+        RefinementContext context;
+        context.editSelection = true;
+        if (anthropic) claude.refine("edit", {}, {}, "token", endpoint, "claude-test", "low", false, "balanced", context);
+        else openAi.refine("edit", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", false, "balanced", context);
+        QTRY_VERIFY(server.hasPendingConnections());
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
+        const QByteArray delta = anthropic
+            ? QByteArrayLiteral("event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n")
+            : QByteArrayLiteral("event: response.output_text.delta\ndata: {\"delta\":\"partial\"}\n\n");
+        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n" + delta + terminal);
+        QVERIFY(socket->waitForBytesWritten(1000));
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
+        QVERIFY(failed.first().first().toString().contains(detail));
+        QCOMPARE(completed.size(), 0);
+    }
+
     void refinementInstructionsCompose()
     {
         const QString light = dictationRefinementSystemPrompt(QStringLiteral("light_cleanup"));
@@ -121,7 +350,6 @@ private slots:
                        QStringLiteral("project-id"),
                        QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()),
                        QStringLiteral("acct-id"),
-                       true,
                        QStringLiteral("gpt-test"),
                        QStringLiteral("high"),
                        false,
@@ -233,7 +461,6 @@ private slots:
                        {},
                        QStringLiteral("http://127.0.0.1:%1/v1/").arg(server.serverPort()),
                        {},
-                       false,
                        QStringLiteral("gpt-test"),
                        QStringLiteral("low"),
                        false,
@@ -417,7 +644,7 @@ private slots:
         });
         openAi.refine(QStringLiteral("test"), {}, {}, QStringLiteral("token"), {}, {},
                       QStringLiteral("http://127.0.0.1:%1/v1").arg(openAiServer.serverPort()),
-                      {}, false, QStringLiteral("gpt-test"), QStringLiteral("low"), false,
+                      {}, QStringLiteral("gpt-test"), QStringLiteral("low"), false,
                       QStringLiteral("balanced"), {});
         QTRY_VERIFY_WITH_TIMEOUT(openAiServer.hasPendingConnections(), 1000);
         QTcpSocket *openAiSocket = openAiServer.nextPendingConnection();
@@ -491,7 +718,7 @@ private slots:
         QSignalSpy openAiFailed(&openAi, &OpenAiRefiner::failed);
         openAi.refine(QStringLiteral("test"), {}, {}, QStringLiteral("token"), {}, {},
                       QStringLiteral("http://127.0.0.1:%1/v1").arg(openAiServer.serverPort()),
-                      {}, false, QStringLiteral("gpt-test"), QStringLiteral("low"), false,
+                      {}, QStringLiteral("gpt-test"), QStringLiteral("low"), false,
                       QStringLiteral("balanced"), {});
         QTRY_VERIFY_WITH_TIMEOUT(openAiServer.hasPendingConnections(), 1000);
         QTcpSocket *openAiSocket = openAiServer.nextPendingConnection();
@@ -606,7 +833,7 @@ private slots:
 
         refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
-                       {}, false, QStringLiteral("gpt-test"), QStringLiteral("low"), true,
+                       {}, QStringLiteral("gpt-test"), QStringLiteral("low"), true,
                        QStringLiteral("balanced"), {});
 
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
@@ -658,21 +885,26 @@ private slots:
     {
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
-        OpenAiRefiner refiner(nullptr, 60, 100);
+        OpenAiRefiner refiner(nullptr, 1500, 2000);
         QSignalSpy failed(&refiner, &OpenAiRefiner::failed);
 
+        QElapsedTimer elapsed;
+        elapsed.start();
         refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
-                       {}, false, QStringLiteral("gpt-test"), QStringLiteral("low"), true,
+                       {}, QStringLiteral("gpt-test"), QStringLiteral("low"), true,
                        QStringLiteral("balanced"), {});
 
         for (int attempt = 0; attempt < 2; ++attempt) {
-            QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 100);
+            QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 2500);
             QTcpSocket *socket = server.nextPendingConnection();
             QVERIFY(socket);
-            QVERIFY(!readHttpRequest(socket, 100).isEmpty());
+            QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
         }
-        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 55);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 4000);
+        // A reset deadline would leave the second attempt running until its
+        // inactivity timeout at 3000 ms. Leave 750 ms of scheduling headroom.
+        QVERIFY2(elapsed.elapsed() < 2750, qPrintable(QString::number(elapsed.elapsed())));
     }
 
     void anthropicApiRefinerSendsFastModeForOpusAndRetriesWithout()
@@ -759,21 +991,26 @@ private slots:
     {
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
-        AnthropicApiRefiner refiner(nullptr, 60, 100);
+        AnthropicApiRefiner refiner(nullptr, 1500, 2000);
         QSignalSpy failed(&refiner, &AnthropicApiRefiner::failed);
 
+        QElapsedTimer elapsed;
+        elapsed.start();
         refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"),
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
                        QStringLiteral("claude-opus-4-8"), QStringLiteral("low"), true,
                        QStringLiteral("balanced"), {});
 
         for (int attempt = 0; attempt < 2; ++attempt) {
-            QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 100);
+            QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 2500);
             QTcpSocket *socket = server.nextPendingConnection();
             QVERIFY(socket);
-            QVERIFY(!readHttpRequest(socket, 100).isEmpty());
+            QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
         }
-        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 55);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 4000);
+        // A reset deadline would leave the second attempt running until its
+        // inactivity timeout at 3000 ms. Leave 750 ms of scheduling headroom.
+        QVERIFY2(elapsed.elapsed() < 2750, qPrintable(QString::number(elapsed.elapsed())));
     }
 
     void openAiRefinerFailsOnceWhenBothSpeedsFail()
@@ -787,7 +1024,7 @@ private slots:
 
         refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
-                       {}, false, QStringLiteral("gpt-test"), QStringLiteral("low"), true,
+                       {}, QStringLiteral("gpt-test"), QStringLiteral("low"), true,
                        QStringLiteral("balanced"), {});
 
         const QByteArray error = QByteArrayLiteral(R"({"error":{"message":"nope"}})");

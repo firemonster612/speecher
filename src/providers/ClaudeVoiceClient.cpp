@@ -106,7 +106,7 @@ void ClaudeVoiceClient::start(const QUrl &url, const QString &accessToken, const
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     QUrl streamUrl(url);
-    streamUrl.setQuery(claudeVoiceStreamQuery(vocabulary));
+    streamUrl.setQuery(claudeVoiceStreamQuery());
 
     m_lastInterim.clear();
     m_finishRequested = false;
@@ -142,14 +142,6 @@ void ClaudeVoiceClient::start(const QUrl &url, const QString &accessToken, const
 #endif
 }
 
-void ClaudeVoiceClient::sendInit(const QStringList &vocabulary)
-{
-#ifdef SPEECHER_WITH_QT_WEBSOCKETS
-    Q_UNUSED(vocabulary)
-#else
-    Q_UNUSED(vocabulary)
-#endif
-}
 
 void ClaudeVoiceClient::sendAudio(const QByteArray &pcm)
 {
@@ -210,10 +202,6 @@ void ClaudeVoiceClient::cancel()
 #endif
 }
 
-bool ClaudeVoiceClient::isConnected() const
-{
-    return m_connected;
-}
 
 void ClaudeVoiceClient::queueAudio(const QByteArray &pcm)
 {

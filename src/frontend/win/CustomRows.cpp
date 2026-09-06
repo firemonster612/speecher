@@ -6,7 +6,7 @@
 #include "frontend/win/SettingsModel.h"
 #include "frontend/win/SettingsPage.h"
 #include "providers/ClaudeCredentials.h"
-#include "providers/CliProxyCredentials.h"
+#include "frontend/ProviderOptions.h"
 
 #pragma push_macro("GetCurrentTime")
 #undef GetCurrentTime
@@ -31,8 +31,6 @@ using namespace winrt::Microsoft::UI::Xaml::Controls;
 const QString kCliProxyAuthMode = QStringLiteral("cliproxy");
 const QString kProfileColumn = QStringLiteral("profile");
 const QString kProfileIdKey = QStringLiteral("profileId");
-const QString kCleanupColumn = QStringLiteral("cleanup");
-const QString kToneColumn = QStringLiteral("tone");
 
 QList<RowOption> outputMethods()
 {
@@ -46,58 +44,6 @@ QList<RowOption> outputMethods()
         methods.append({method, OutputMethod::label(method)});
     }
     return methods;
-}
-
-QList<RowOption> cliproxyAccounts(const QString &type,
-                                  const QString &selected,
-                                  const SettingsStore &store)
-{
-    const QString directory = store.cliproxyOauthDir();
-    const QList<CliProxyAccount> accounts = CliProxyCredentials::listAccounts(directory, type);
-    QList<RowOption> options;
-    // With several accounts and none chosen yet, force an explicit choice
-    // instead of silently pinning whichever file sorts first.
-    if (selected.isEmpty() && accounts.size() > 1) {
-        options.append({QString(), QStringLiteral("Choose an account…")});
-    }
-    bool selectedFound = selected.isEmpty();
-    for (const CliProxyAccount &account : accounts) {
-        options.append({account.fileName,
-                        account.expired ? account.label + QStringLiteral(" (expired)") : account.label,
-                        account.disabled ? QStringLiteral("Disabled in CLI Proxy API") : QString(),
-                        !account.disabled});
-        selectedFound = selectedFound || account.fileName == selected;
-    }
-    // Keep a stored selection visible even if its file is currently missing.
-    if (!selectedFound) {
-        options.append({selected, selected + QStringLiteral(" (missing)")});
-    }
-    if (options.isEmpty()) {
-        options.append({QString(), QStringLiteral("No accounts found"), directory, false});
-    }
-    return options;
-}
-
-QList<RowOption> cleanupStrengths()
-{
-    return {
-        {QStringLiteral("none"), QStringLiteral("None")},
-        {QStringLiteral("light_cleanup"), QStringLiteral("Light")},
-        {QStringLiteral("balanced"), QStringLiteral("Medium")},
-        {QStringLiteral("strong_polish"), QStringLiteral("High")},
-    };
-}
-
-QList<RowOption> writingTones()
-{
-    return {
-        {QStringLiteral("none"), QStringLiteral("No tone override")},
-        {QStringLiteral("formal"), QStringLiteral("Formal")},
-        {QStringLiteral("casual"), QStringLiteral("Casual")},
-        {QStringLiteral("very_casual"), QStringLiteral("Very casual")},
-        {QStringLiteral("excited"), QStringLiteral("Excited")},
-        {QStringLiteral("gen_z"), QStringLiteral("Gen Z")},
-    };
 }
 
 TextBlock secondaryText(const QString &text, const PaneHost &host)
@@ -235,7 +181,7 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
                 QList<QVariantMap> edited = records;
                 edited[index].insert(columnId,
                                      qs(unbox_value<hstring>(item.as<ComboBoxItem>().Tag())));
-                host.model->save(edited, rowId);
+                host.model->save(edited, rowId, records);
                 host.refresh();
             });
             pickers.Children().Append(combo);
@@ -300,29 +246,13 @@ QList<RowOption> customRowOptions(const QString &rowId,
     if (rowId == QStringLiteral("outputMethod")) {
         return outputMethods();
     }
-    if (rowId == QStringLiteral("openAiAuthMode")) {
-        return {
-            {QStringLiteral("auto"), QStringLiteral("Automatic")},
-            {QStringLiteral("codex_api_key"), QStringLiteral("API key from the Codex app")},
-            {QStringLiteral("codex_oauth"), QStringLiteral("ChatGPT sign-in from the Codex app")},
-            {QStringLiteral("env"), QStringLiteral("API key from the environment")},
-            {QStringLiteral("settings"), QStringLiteral("API key saved in Speecher")},
-            {kCliProxyAuthMode, QStringLiteral("CLI Proxy API account")},
-        };
-    }
-    if (rowId == QStringLiteral("anthropicAuthMode")) {
-        return {
-            {QStringLiteral("oauth"), QStringLiteral("Claude Code sign-in")},
-            {kCliProxyAuthMode, QStringLiteral("CLI Proxy API account")},
-        };
-    }
     if (rowId == QStringLiteral("openAiCliproxyAccount")) {
-        return cliproxyAccounts(QStringLiteral("codex"), draft.refinement.openAiCliproxyAccount, store);
+        return cliproxyAccountOptions(QStringLiteral("codex"), draft.refinement.openAiCliproxyAccount, store.cliproxyOauthDir());
     }
     if (rowId == QStringLiteral("anthropicCliproxyAccount")) {
-        return cliproxyAccounts(QStringLiteral("claude"), draft.refinement.anthropicCliproxyAccount, store);
+        return cliproxyAccountOptions(QStringLiteral("claude"), draft.refinement.anthropicCliproxyAccount, store.cliproxyOauthDir());
     }
-    return {};
+    return authModeOptions(rowId);
 }
 
 QString anthropicCredentialStatus(const AppSettings &draft, const SettingsStore &store)
@@ -333,40 +263,6 @@ QString anthropicCredentialStatus(const AppSettings &draft, const SettingsStore 
     const ClaudeCredentialResult credentials =
         ClaudeCredentials::load(store.claudeCredentialsPath(), false);
     return credentials.ok ? QStringLiteral("Signed in with Claude Code") : credentials.error;
-}
-
-CollectionDescriptor writingProfileGrid()
-{
-    CollectionDescriptor grid;
-    grid.columns = {
-        {kProfileColumn, QStringLiteral("Profile"), ColumnKind::ReadOnly},
-        {kCleanupColumn, QStringLiteral("Cleanup"), ColumnKind::Choice, cleanupStrengths},
-        {kToneColumn, QStringLiteral("Tone"), ColumnKind::Choice, writingTones, true},
-    };
-    // The profiles are the ones that exist, so the stored list only says what
-    // each of them was set to.
-    grid.records = [](const AppSettings &settings) {
-        QList<QVariantMap> records;
-        for (const WritingProfileSettings &fallback : defaultWritingProfileSettings()) {
-            const WritingProfileSettings chosen =
-                writingProfileSettingsFor(settings.refinement.writingProfiles, fallback.profile);
-            records.append({{kProfileColumn, writingProfileLabel(fallback.profile)},
-                            {kProfileIdKey, writingProfileName(fallback.profile)},
-                            {kCleanupColumn, chosen.cleanupStrength},
-                            {kToneColumn, chosen.tone}});
-        }
-        return records;
-    };
-    grid.apply = [](AppSettings &settings, const QList<QVariantMap> &records) {
-        QList<WritingProfileSettings> profiles;
-        for (const QVariantMap &record : records) {
-            profiles.append({writingProfileFromName(record.value(kProfileIdKey).toString()),
-                             record.value(kCleanupColumn).toString(),
-                             record.value(kToneColumn).toString()});
-        }
-        settings.refinement.writingProfiles = profiles;
-    };
-    return grid;
 }
 
 bool customRowIsFullWidth(const QString &rowId)

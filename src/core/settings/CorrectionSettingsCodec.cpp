@@ -106,7 +106,7 @@ QList<LearnedCorrection> load(const QSettings &settings)
     return corrections;
 }
 
-static void storeLearnedCorrections(QSettings *settings, const QList<LearnedCorrection> &corrections)
+void store(QSettings &settings, const QList<LearnedCorrection> &corrections)
 {
     QJsonArray array;
     for (const LearnedCorrection &correction : corrections) {
@@ -122,7 +122,7 @@ static void storeLearnedCorrections(QSettings *settings, const QList<LearnedCorr
             {QStringLiteral("lastObservedAtMs"), double(correction.lastObservedAtMs)},
         });
     }
-    settings->setValue(
+    settings.setValue(
         SettingsKeys::LearnedCorrections,
         QJsonDocument(array).toJson(QJsonDocument::Compact));
 }
@@ -155,7 +155,7 @@ bool recordEvidence(QSettings &settings,
         ++correction.evidenceCount;
         correction.lastObservedAtMs = now;
         correction.confidence = std::max(correction.confidence, evidence.confidence);
-        storeLearnedCorrections(&settings, corrections);
+        store(settings, corrections);
         return true;
     }
 
@@ -167,7 +167,7 @@ bool recordEvidence(QSettings &settings,
             ++correction.evidenceCount;
             correction.lastObservedAtMs = now;
             correction.confidence = std::max(correction.confidence, evidence.confidence);
-            storeLearnedCorrections(&settings, corrections);
+            store(settings, corrections);
             return true;
         }
     }
@@ -215,13 +215,8 @@ bool recordEvidence(QSettings &settings,
         activated.lastObservedAtMs,
     });
     storePending(settings, pending);
-    storeLearnedCorrections(&settings, corrections);
+    store(settings, corrections);
     return true;
-}
-
-void store(QSettings &settings, const QList<LearnedCorrection> &corrections)
-{
-    storeLearnedCorrections(&settings, corrections);
 }
 
 void setEnabled(QSettings &settings, const QString &id, bool enabled)
@@ -230,7 +225,7 @@ void setEnabled(QSettings &settings, const QString &id, bool enabled)
     for (LearnedCorrection &correction : corrections) {
         if (correction.id == id) {
             correction.enabled = enabled;
-            storeLearnedCorrections(&settings, corrections);
+            store(settings, corrections);
             return;
         }
     }
@@ -242,7 +237,7 @@ void remove(QSettings &settings, const QString &id)
     corrections.removeIf([&id](const LearnedCorrection &correction) {
         return correction.id == id;
     });
-    storeLearnedCorrections(&settings, corrections);
+    store(settings, corrections);
 }
 
 } // namespace speecher::CorrectionSettingsCodec

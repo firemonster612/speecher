@@ -40,6 +40,7 @@ private:
 
     // AXUIElementRef, kept opaque so this header stays plain C++ for moc.
     void *m_focusedElement = nullptr;
+    quint32 m_windowId = 0;
     // The control's value just before insertText wrote to it. Empty optional on
     // the paste path, where there is no baseline to compare against.
     std::optional<QString> m_valueBeforeInsertion;

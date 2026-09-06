@@ -26,7 +26,6 @@ public:
     void sendAudio(const QByteArray &pcm);
     void stop();
     void cancel();
-    bool isConnected() const;
 
 signals:
     void partialTranscript(const QString &text);
@@ -38,7 +37,6 @@ signals:
     void debugSchema(const QString &message);
 
 private:
-    void sendInit(const QStringList &vocabulary);
     void queueAudio(const QByteArray &pcm);
     void flushPendingAudio();
     void clearPendingAudio();

@@ -1,12 +1,8 @@
 #pragma once
 
-#include <QObject>
-#include <QDeadlineTimer>
-#include <QNetworkAccessManager>
-#include <QStringList>
-#include <QTimer>
+#include "providers/StreamingRefinement.h"
 
-#include <functional>
+#include <QStringList>
 
 namespace speecher {
 
@@ -28,7 +24,6 @@ public:
                 const QString &project,
                 const QString &endpointBase,
                 const QString &accountId,
-                bool chatgptBackend,
                 const QString &model,
                 const QString &effort,
                 bool fastMode,
@@ -42,25 +37,7 @@ signals:
     void failed(const QString &message);
 
 private:
-    void parseSseChunk(const QByteArray &chunk);
-    void completeIfReady();
-    bool retryWithoutFastMode(const QString &reason, bool latchWhenStandardSucceeds);
-
-    QNetworkAccessManager m_network;
-    std::function<void()> m_fastModeFallback;
-    bool m_fastModePendingLatch = false;
-    bool m_fastModeUnavailable = false;
-    bool m_retryingFastMode = false;
-    QTimer m_inactivityTimer;
-    QTimer m_deadlineTimer;
-    QDeadlineTimer m_operationDeadline;
-    QNetworkReply *m_reply = nullptr;
-    int m_requestTimeoutMs = 20000;
-    int m_absoluteDeadlineMs = 120000;
-    QByteArray m_buffer;
-    QString m_accumulated;
-    bool m_failed = false;
-    bool m_completed = false;
+    StreamingRefinement m_stream;
 };
 
 } // namespace speecher

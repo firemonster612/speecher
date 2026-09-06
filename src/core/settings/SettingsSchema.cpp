@@ -775,6 +775,7 @@ SettingsPage refinementPage(const SchemaContext &context)
     profileBehavior.help = QStringLiteral(
         "Choose cleanup strength and an optional explicit tone for each automatically detected profile.");
     profileBehavior.kind = RowKind::Custom;
+    profileBehavior.collection = writingProfileGrid();
     profileBehavior.value = [](const AppSettings &settings) {
         return QVariant::fromValue(settings.refinement.writingProfiles);
     };
@@ -1146,6 +1147,7 @@ QStringList vocabularyTerms(const QList<VocabularyEntry> &entries)
 SettingsPage vocabularyPage()
 {
     CollectionDescriptor terms;
+    terms.identityColumn = kTermColumn;
     terms.columns = {
         {kStarColumn, QStringLiteral("Star"), ColumnKind::Toggle},
         {kTermColumn, QStringLiteral("Term"), ColumnKind::Text, {}, true},
@@ -1246,6 +1248,7 @@ SettingsPage correctionsPage()
         learn, accessibilityGateHelp(QStringLiteral("learn corrections after insertion")));
 
     CollectionDescriptor corrections;
+    corrections.identityColumn = kCorrectionIdKey;
     corrections.columns = {
         {kEnabledColumn, QStringLiteral("Enabled"), ColumnKind::Toggle},
         {kHeardColumn, QStringLiteral("Heard"), ColumnKind::Text, {}, true},
@@ -1850,6 +1853,130 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context)
                               providersPage()};
     pages.append(whatsNewPage(pages, context));
     return {std::move(pages), settingsPanes(), settingsSidebarRuns()};
+}
+
+QList<RowOption> cleanupStrengths()
+{
+    return {
+        {QStringLiteral("none"), QStringLiteral("None")},
+        {QStringLiteral("light_cleanup"), QStringLiteral("Light")},
+        {QStringLiteral("balanced"), QStringLiteral("Medium")},
+        {QStringLiteral("strong_polish"), QStringLiteral("High")},
+    };
+}
+
+QList<RowOption> writingTones()
+{
+    return {
+        {QStringLiteral("none"), QStringLiteral("No tone override")},
+        {QStringLiteral("formal"), QStringLiteral("Formal")},
+        {QStringLiteral("casual"), QStringLiteral("Casual")},
+        {QStringLiteral("very_casual"), QStringLiteral("Very casual")},
+        {QStringLiteral("excited"), QStringLiteral("Excited")},
+        {QStringLiteral("gen_z"), QStringLiteral("Gen Z")},
+    };
+}
+
+CollectionDescriptor writingProfileGrid()
+{
+    const QString kProfileIdKey = QStringLiteral("profileId");
+    const QString kCleanupColumn = QStringLiteral("cleanup");
+    const QString kToneColumn = QStringLiteral("tone");
+    CollectionDescriptor grid;
+    grid.identityColumn = kProfileIdKey;
+    grid.columns = {
+        {kProfileColumn, QStringLiteral("Profile"), ColumnKind::ReadOnly},
+        {kCleanupColumn, QStringLiteral("Cleanup"), ColumnKind::Choice, cleanupStrengths},
+        {kToneColumn, QStringLiteral("Tone"), ColumnKind::Choice, writingTones, true},
+    };
+    // The profiles are the ones that exist, so the stored list only says what
+    // each of them was set to.
+    grid.records = [=](const AppSettings &settings) {
+        QList<QVariantMap> records;
+        for (const WritingProfileSettings &fallback : defaultWritingProfileSettings()) {
+            const WritingProfileSettings chosen =
+                writingProfileSettingsFor(settings.refinement.writingProfiles, fallback.profile);
+            records.append({{kProfileColumn, writingProfileLabel(fallback.profile)},
+                            {kProfileIdKey, writingProfileName(fallback.profile)},
+                            {kCleanupColumn, chosen.cleanupStrength},
+                            {kToneColumn, chosen.tone}});
+        }
+        return records;
+    };
+    grid.apply = [=](AppSettings &settings, const QList<QVariantMap> &records) {
+        QList<WritingProfileSettings> profiles;
+        for (const QVariantMap &record : records) {
+            profiles.append({writingProfileFromName(record.value(kProfileIdKey).toString()),
+                             record.value(kCleanupColumn).toString(),
+                             record.value(kToneColumn).toString()});
+        }
+        settings.refinement.writingProfiles = profiles;
+    };
+    return grid;
+}
+
+QList<RowOption> authModeOptions(const QString &rowId)
+{
+    if (rowId == QStringLiteral("openAiAuthMode")) {
+        return {
+            {QStringLiteral("auto"), QStringLiteral("Automatic")},
+            {QStringLiteral("codex_api_key"), QStringLiteral("API key from the Codex app")},
+            {QStringLiteral("codex_oauth"), QStringLiteral("ChatGPT sign-in from the Codex app")},
+            {QStringLiteral("env"), QStringLiteral("API key from the environment")},
+            {QStringLiteral("settings"), QStringLiteral("API key saved in Speecher")},
+            {QStringLiteral("cliproxy"), QStringLiteral("CLI Proxy API account")},
+        };
+    }
+    if (rowId == QStringLiteral("anthropicAuthMode")) {
+        return {
+            {QStringLiteral("oauth"), QStringLiteral("Claude Code sign-in")},
+            {QStringLiteral("cliproxy"), QStringLiteral("CLI Proxy API account")},
+        };
+    }
+    return {};
+}
+
+AppSettings mergeSettingsDraft(const SettingsSchema &schema, const AppSettings &loaded,
+                               const AppSettings &draft, AppSettings current)
+{
+    for (const SettingsPage &page : schema.pages) {
+        for (const SettingsSection &section : page.sections) {
+            for (const SettingsRow &row : section.rows) {
+                if (!row.value || !row.apply || row.value(loaded) == row.value(draft)) continue;
+                const CollectionDescriptor &collection = row.collection;
+                if (collection.identityColumn.isEmpty()) {
+                    row.apply(current, row.value(draft));
+                    continue;
+                }
+                const auto previous = collection.records(loaded);
+                const auto latest = collection.records(current);
+                auto edited = collection.records(draft);
+                const QString &key = collection.identityColumn;
+                for (const QVariantMap &old : previous) {
+                    const auto same = [&](const QVariantMap &record) { return record.value(key) == old.value(key); };
+                    auto change = std::find_if(edited.begin(), edited.end(), same);
+                    if (change == edited.end()) continue; // The user deleted it.
+                    const auto fresh = std::find_if(latest.cbegin(), latest.cend(), same);
+                    if (fresh == latest.cend()) {
+                        if (*change == old) edited.erase(change);
+                        continue;
+                    }
+                    for (auto field = fresh->cbegin(); field != fresh->cend(); ++field) {
+                        if (change->value(field.key()) == old.value(field.key())) {
+                            change->insert(field.key(), field.value());
+                        }
+                    }
+                }
+                for (const QVariantMap &fresh : latest) {
+                    const auto same = [&](const QVariantMap &record) { return record.value(key) == fresh.value(key); };
+                    if (std::none_of(previous.cbegin(), previous.cend(), same)
+                        && std::none_of(edited.cbegin(), edited.cend(), same)) edited.append(fresh);
+                }
+                collection.apply(current, edited);
+            }
+        }
+    }
+    return current;
 }
 
 } // namespace speecher

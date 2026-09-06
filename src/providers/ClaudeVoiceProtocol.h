@@ -7,7 +7,7 @@
 
 namespace speecher {
 
-QUrlQuery claudeVoiceStreamQuery(const QStringList &vocabulary);
+QUrlQuery claudeVoiceStreamQuery();
 QByteArray claudeVoiceKeytermsHeader(const QStringList &vocabulary);
 
 enum class ClaudeVoiceEventKind {

@@ -1,8 +1,9 @@
-#include "common/test_doubles.h"
-#include "common/test_http.h"
-#include "common/test_auth.h"
+#include "common/test_suites.h"
+#include "core/Vocabulary.h"
+#include "core/VocabularyLimit.h"
+#include "core/SettingsStore.h"
 
-using namespace speecher::test;
+using namespace speecher;
 
 
 class VocabularyTests : public QObject {

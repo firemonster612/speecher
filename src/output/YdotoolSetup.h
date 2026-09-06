@@ -35,7 +35,6 @@ struct YdotoolSetupStatus {
     bool speecherManagedSetupInstalled = false;
 
     bool ready() const;
-    bool canEnable() const;
 };
 
 class YdotoolSetup {
@@ -47,7 +46,6 @@ public:
 
     static YdotoolSetupStatus evaluate(const YdotoolProbeFacts &facts);
     static YdotoolSetupStatus probe(bool enabledInSpeecher);
-    static QString stateId(YdotoolSetupState state);
     static QString serviceName();
     static QString helperPath(QString *error = nullptr);
     static bool runHelper(HelperAction action, QString *error = nullptr);

@@ -21,10 +21,7 @@ QList<RowOption> customRowOptions(const QString &rowId,
 QString anthropicCredentialStatus(const AppSettings &draft,
                                   const SettingsStore &store);
 
-// The writing profile grid as a table of records: one row per profile, holding
-// the cleanup strength and the optional tone. Its records replace the row's own
-// QList<WritingProfileSettings> value, which no Objective-C object can carry.
-CollectionDescriptor writingProfileGrid();
+
 
 } // namespace mac
 } // namespace speecher

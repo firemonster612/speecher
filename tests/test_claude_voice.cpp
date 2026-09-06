@@ -1,8 +1,24 @@
-#include "common/test_doubles.h"
-#include "common/test_http.h"
-#include "common/test_auth.h"
+#include "common/test_suites.h"
 
-using namespace speecher::test;
+#include "core/AppSettings.h"
+#include "core/SettingsStore.h"
+#include "providers/ClaudeCredentials.h"
+#include "providers/ClaudeVoiceClient.h"
+#include "providers/ClaudeVoiceProtocol.h"
+
+#include <QFile>
+#include <QSignalSpy>
+#include <QTcpServer>
+#include <QTimer>
+#include <QtTest>
+#ifdef SPEECHER_WITH_QT_WEBSOCKETS
+#include <QWebSocket>
+#include <QWebSocketServer>
+#endif
+
+#include <memory>
+
+using namespace speecher;
 
 
 class ClaudeVoiceTests : public QObject {
@@ -11,10 +27,7 @@ class ClaudeVoiceTests : public QObject {
 private slots:
     void claudeVoiceStreamQueryMatchesClaudeCode()
     {
-        const QUrlQuery query = claudeVoiceStreamQuery(QStringList{
-            QStringLiteral("Deepgram Nova 3"),
-            QStringLiteral("Speecher"),
-        });
+        const QUrlQuery query = claudeVoiceStreamQuery();
 
         QCOMPARE(query.queryItemValue(QStringLiteral("encoding")), QStringLiteral("linear16"));
         QCOMPARE(query.queryItemValue(QStringLiteral("sample_rate")), QStringLiteral("16000"));

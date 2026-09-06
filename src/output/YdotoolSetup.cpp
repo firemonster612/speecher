@@ -224,11 +224,6 @@ bool YdotoolSetupStatus::ready() const
     return state == YdotoolSetupState::Ready || state == YdotoolSetupState::ReadyLayoutCaveat;
 }
 
-bool YdotoolSetupStatus::canEnable() const
-{
-    return ready() || state == YdotoolSetupState::Disabled;
-}
-
 YdotoolSetupStatus YdotoolSetup::evaluate(const YdotoolProbeFacts &facts)
 {
     if (!facts.enabledInSpeecher
@@ -295,27 +290,6 @@ YdotoolSetupStatus YdotoolSetup::probe(bool enabledInSpeecher)
     facts.socketExists = socket.exists();
     facts.socketWritable = socket.isWritable();
     return evaluate(facts);
-}
-
-QString YdotoolSetup::stateId(YdotoolSetupState state)
-{
-    switch (state) {
-    case YdotoolSetupState::Disabled:
-        return QStringLiteral("disabled");
-    case YdotoolSetupState::NotInstalled:
-        return QStringLiteral("not_installed");
-    case YdotoolSetupState::DaemonNotRunning:
-        return QStringLiteral("daemon_not_running");
-    case YdotoolSetupState::NeedsUinputPermission:
-        return QStringLiteral("needs_uinput_permission");
-    case YdotoolSetupState::NeedsSignOut:
-        return QStringLiteral("needs_sign_out");
-    case YdotoolSetupState::Ready:
-        return QStringLiteral("ready");
-    case YdotoolSetupState::ReadyLayoutCaveat:
-        return QStringLiteral("ready_layout_caveat");
-    }
-    return QStringLiteral("unknown");
 }
 
 QString YdotoolSetup::serviceName()

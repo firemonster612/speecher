@@ -1,11 +1,9 @@
-#include "common/test_doubles.h"
-#include "common/test_http.h"
-#include "common/test_auth.h"
+#include "common/test_prelude.h"
 #ifdef SPEECHER_WITH_QKEYCHAIN
 #include "core/KeyringResult.h"
 #endif
 
-using namespace speecher::test;
+using namespace speecher;
 
 
 class SettingsTests : public QObject {

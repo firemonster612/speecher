@@ -1,6 +1,5 @@
+#include "common/test_prelude.h"
 #include "common/test_doubles.h"
-#include "common/test_http.h"
-#include "common/test_auth.h"
 
 using namespace speecher::test;
 

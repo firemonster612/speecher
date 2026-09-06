@@ -1,5 +1,5 @@
+#include "common/test_prelude.h"
 #include "common/test_doubles.h"
-#include "common/test_http.h"
 #include "common/test_auth.h"
 #include "core/VocabularyLimit.h"
 #include "ui/AccessibilityNotice.h"
@@ -133,6 +133,9 @@ private slots:
         QCOMPARE(WordPreview::lastWords(QString(), 8), QString());
         QCOMPARE(WordPreview::lastWords(QStringLiteral("alpha beta gamma"), 1), QStringLiteral("gamma"));
         QCOMPARE(WordPreview::lastWords(QStringLiteral("alpha beta gamma"), 0), QString());
+        QCOMPARE(WordPreview::lastWords(QStringLiteral("earlier ").repeated(100000)
+                                       + QString::fromUtf8("one\u00a0café\u2003🌍\n"), 2),
+                 QString::fromUtf8("café 🌍"));
     }
 
     void themeUsesThePlatformColorSchemeHint()

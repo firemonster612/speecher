@@ -35,6 +35,7 @@ final class CollectionEditor: ObservableObject {
     /// What Delete took, newest last, so undo can put it back.
     private var deleted: [CollectionRecord] = []
     private var seeded = false
+    private var savedRecords: [[String: Any]] = []
 
     let row: SettingsRowModel
     let model: AppModel
@@ -59,6 +60,7 @@ final class CollectionEditor: ObservableObject {
         records = stored.enumerated().map {
             CollectionRecord(values: $0.element, locked: $0.offset < locked)
         }
+        savedRecords = editableRecords
         draft = collection.blankRecord
     }
 
@@ -144,7 +146,9 @@ final class CollectionEditor: ObservableObject {
     }
 
     private func save() {
-        problems = model.save(records: editableRecords, for: row.rowId)
+        let submitted = editableRecords
+        problems = model.save(records: submitted, previous: savedRecords, for: row.rowId)
+        if problems.isEmpty { savedRecords = submitted }
     }
 }
 

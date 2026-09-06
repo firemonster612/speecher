@@ -118,6 +118,27 @@ std::optional<int> selectedTextOffset(AXUIElementRef element)
     return static_cast<int>(range->location);
 }
 
+// Window numbers remain available without Accessibility permission, but their
+// stacking order cannot identify keyboard focus when the app owns several.
+CGWindowID singleOwnedWindow(pid_t processId)
+{
+    CFArrayRef windows = CGWindowListCopyWindowInfo(
+        kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements, kCGNullWindowID);
+    if (!windows) return kCGNullWindowID;
+    CGWindowID result = kCGNullWindowID;
+    for (NSDictionary *window in (__bridge NSArray *)windows) {
+        if ([window[(__bridge NSString *)kCGWindowOwnerPID] intValue] == processId) {
+            if (result != kCGNullWindowID) {
+                result = kCGNullWindowID;
+                break;
+            }
+            result = [window[(__bridge NSString *)kCGWindowNumber] unsignedIntValue];
+        }
+    }
+    CFRelease(windows);
+    return result;
+}
+
 QString focusedWindowTitle(pid_t processId)
 {
     if (!AXIsProcessTrusted()) {
@@ -181,6 +202,7 @@ void MacTargetProvider::releaseFocusedElement()
     if (m_correctionObserver) {
         m_correctionObserver->cancel();
     }
+    m_windowId = 0;
     m_valueBeforeInsertion.reset();
     m_insertionOffset.reset();
     if (m_focusedElement) {
@@ -209,6 +231,7 @@ Target MacTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
         target.processName = QString::fromNSString(executable);
     }
     target.processId = frontmost.processIdentifier;
+    m_windowId = singleOwnedWindow(frontmost.processIdentifier);
     target.windowTitle = focusedWindowTitle(frontmost.processIdentifier);
     // A password field grabs secure event input, which also blocks the CGEvent
     // paste, so delivery has to fall back to the clipboard.
@@ -263,14 +286,16 @@ bool MacTargetProvider::stillFocused(const Target &target)
         return false;
     }
     NSRunningApplication *frontmost = [NSWorkspace sharedWorkspace].frontmostApplication;
-    return frontmost && frontmost.processIdentifier == target.processId;
+    if (!frontmost || frontmost.processIdentifier != target.processId) return false;
+    // AX identifies editable panels and popovers as well as normal windows.
+    if (m_focusedElement) return isFocusedElement(static_cast<AXUIElementRef>(m_focusedElement));
+    return m_windowId != kCGNullWindowID && singleOwnedWindow(target.processId) == m_windowId;
 }
 
 bool MacTargetProvider::canInsertText(const Target &target)
 {
     return !target.secure
         && stillFocused(target)
-        && isFocusedElement(static_cast<AXUIElementRef>(m_focusedElement))
         && selectedTextOffset(static_cast<AXUIElementRef>(m_focusedElement)).has_value()
         && selectedTextIsSettable(static_cast<AXUIElementRef>(m_focusedElement));
 }
@@ -313,8 +338,7 @@ bool MacTargetProvider::insertText(const Target &target, const QString &plainTex
 
 bool MacTargetProvider::verifyInsertion(const Target &target, const QString &plainText)
 {
-    if (!m_focusedElement || plainText.isEmpty() || target.secure || !stillFocused(target)
-        || !isFocusedElement(static_cast<AXUIElementRef>(m_focusedElement))) {
+    if (!m_focusedElement || plainText.isEmpty() || target.secure || !stillFocused(target)) {
         return false;
     }
     for (int attempt = 0; attempt < insertionVerificationAttempts; ++attempt) {

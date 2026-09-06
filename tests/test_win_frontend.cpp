@@ -7,6 +7,7 @@
 #include "frontend/win/CustomRows.h"
 #include "frontend/win/DictationPanel.h"
 #include "frontend/win/SettingsWindow.h"
+#include "frontend/win/SettingsModel.h"
 #include "frontend/win/SetupWindow.h"
 #include "frontend/win/WinFrontEnd.h"
 #include "frontend/win/WinUiHost.h"
@@ -16,6 +17,7 @@
 
 #include <QApplication>
 #include <QTest>
+#include <QScopeGuard>
 
 #include <memory>
 
@@ -65,6 +67,54 @@ private slots:
         setup.reset();
         frontEnd.reset();
         controller.reset();
+    }
+
+    void retainedCollectionBaseline_data()
+    {
+        QTest::addColumn<bool>("scalarCommit");
+        QTest::newRow("repeated collection saves") << false;
+        QTest::newRow("scalar commit with retained editor") << true;
+    }
+
+    void retainedCollectionBaseline()
+    {
+        QFETCH(bool, scalarCommit);
+        SettingsStore *store = controller->settings();
+        const AppSettings original = store->snapshot();
+        const auto restore = qScopeGuard([&] { store->applySnapshot(original); });
+        store->setLearnedCorrections({{"one", "githab", "GitHub", "editor", 100, 0.8, true, 1, 100}});
+        win::SettingsModel model(controller.get());
+        QList<QVariantMap> editorRecords;
+        for (const auto &page : model.pages()) {
+            for (const auto &section : page.sections) {
+                for (const auto &row : section.rows) {
+                    if (row.id == QStringLiteral("learnedCorrections")) {
+                        editorRecords = row.value.value<QList<QVariantMap>>();
+                    }
+                }
+            }
+        }
+        QCOMPARE(editorRecords.size(), 1);
+        auto previous = editorRecords;
+        auto fresh = store->learnedCorrections();
+        fresh[0].evidenceCount = 3;
+        fresh.append({"two", "new", "newer", "editor", 300, 0.9, true, 1, 300});
+        store->setLearnedCorrections(fresh);
+        if (scalarCommit) {
+            model.setValue("previewWords", 12);
+            model.commit();
+        }
+        for (bool enabled : {false, true}) {
+            editorRecords[0].insert("enabled", enabled);
+            QVERIFY(model.save(editorRecords, "learnedCorrections", previous).isEmpty());
+            previous = editorRecords;
+            const auto saved = store->learnedCorrections();
+            QCOMPARE(saved.size(), 2);
+            QCOMPARE(saved[0].evidenceCount, 3);
+            QCOMPARE(saved[0].enabled, enabled);
+            QCOMPARE(saved[1].id, QStringLiteral("two"));
+        }
+        if (scalarCommit) QCOMPARE(store->previewWords(), 12);
     }
 
     void constructionDoesNotCreateAQtDictationPopup()
