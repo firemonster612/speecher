@@ -4,12 +4,101 @@
 #include "common/test_auth.h"
 #include "frontend/ProviderOptions.h"
 
+#ifdef Q_OS_MACOS
+#include <Security/Security.h>
+#include <QUuid>
+#endif
+
 using namespace speecher::test;
+
+#ifdef Q_OS_MACOS
+// A unique account ensures these tests never query a user's Claude login.
+class DummyClaudeKeychain {
+public:
+    DummyClaudeKeychain(QByteArray config = {}, QByteArray serviceName = "Claude Code-credentials")
+        : previousUser(qgetenv("USER")), previousConfig(qgetenv("CLAUDE_CONFIG_DIR")),
+          account("speecher-test-" + QUuid::createUuid().toByteArray(QUuid::WithoutBraces)),
+          service(std::move(serviceName))
+    {
+        qputenv("USER", account);
+        config.isEmpty() ? qunsetenv("CLAUDE_CONFIG_DIR") : qputenv("CLAUDE_CONFIG_DIR", config);
+    }
+    ~DummyClaudeKeychain()
+    {
+        SecKeychainItemRef item = nullptr;
+        if (SecKeychainFindGenericPassword(nullptr, service.size(), service.constData(),
+                                          account.size(), account.constData(), nullptr, nullptr, &item) == errSecSuccess) {
+            SecKeychainItemDelete(item);
+            CFRelease(item);
+        }
+        previousUser.isNull() ? qunsetenv("USER") : qputenv("USER", previousUser);
+        previousConfig.isNull() ? qunsetenv("CLAUDE_CONFIG_DIR") : qputenv("CLAUDE_CONFIG_DIR", previousConfig);
+    }
+    bool write(const QByteArray &bytes)
+    {
+        SecKeychainItemRef item = nullptr;
+        const OSStatus found = SecKeychainFindGenericPassword(nullptr, service.size(), service.constData(),
+                                                              account.size(), account.constData(), nullptr, nullptr, &item);
+        if (found == errSecSuccess) {
+            const OSStatus status = SecKeychainItemModifyAttributesAndData(item, nullptr, bytes.size(), bytes.constData());
+            CFRelease(item);
+            return status == errSecSuccess;
+        }
+        return SecKeychainAddGenericPassword(nullptr, service.size(), service.constData(),
+                                            account.size(), account.constData(), bytes.size(), bytes.constData(), nullptr) == errSecSuccess;
+    }
+    QByteArray read() const
+    {
+        UInt32 size = 0;
+        void *data = nullptr;
+        if (SecKeychainFindGenericPassword(nullptr, service.size(), service.constData(),
+                                          account.size(), account.constData(), &size, &data, nullptr) != errSecSuccess) return {};
+        const QByteArray bytes(static_cast<const char *>(data), size);
+        SecKeychainItemFreeContent(nullptr, data);
+        return bytes;
+    }
+    QString path() const { return QDir::homePath() + QStringLiteral("/.claude/.credentials.json"); }
+    QByteArray previousUser, previousConfig, account;
+    const QByteArray service;
+};
+#endif
 
 class ProviderAuthTests : public QObject {
     Q_OBJECT
 
 private slots:
+#ifdef Q_OS_MACOS
+    void claudeCredentialsReadNativeKeychain_data()
+    {
+        QTest::addColumn<QByteArray>("config");
+        QTest::addColumn<QByteArray>("service");
+        QTest::newRow("default") << QByteArray{} << QByteArray("Claude Code-credentials");
+        QTest::newRow("custom config") << QByteArray("/tmp/speecher-claude-test-config")
+                                     << QByteArray("Claude Code-credentials-d27569d7");
+    }
+
+    void claudeCredentialsReadNativeKeychain()
+    {
+        QFETCH(QByteArray, config);
+        QFETCH(QByteArray, service);
+        DummyClaudeKeychain keychain(config, service);
+        QVERIFY(keychain.write(QJsonDocument(QJsonObject{
+            {QStringLiteral("claudeAiOauth"), QJsonObject{
+                {QStringLiteral("accessToken"), QStringLiteral("dummy-keychain-token")},
+                {QStringLiteral("expiresAt"), double(QDateTime::currentMSecsSinceEpoch() + 3600000)}
+            }}
+        }).toJson()));
+        const auto result = ClaudeCredentials::load(keychain.path());
+        QVERIFY2(result.ok, qPrintable(result.error));
+        QCOMPARE(result.accessToken, QStringLiteral("dummy-keychain-token"));
+        QTemporaryDir directory;
+        const QString explicitPath = directory.filePath(QStringLiteral("credentials.json"));
+        QVERIFY(writeJsonCredentials(explicitPath, QStringLiteral("explicit-file-token"),
+                                     QDateTime::currentDateTimeUtc().addSecs(3600)));
+        QCOMPARE(ClaudeCredentials::load(explicitPath).accessToken, QStringLiteral("explicit-file-token"));
+    }
+#endif
+
     void claudeCredentialsParse()
     {
         QTemporaryDir dir;
@@ -45,8 +134,24 @@ private slots:
         QVERIFY(result.error.contains(QStringLiteral("claude")));
     }
 
+    void claudeCredentialsOauthRefresh_data()
+    {
+        QTest::addColumn<bool>("nativeKeychain");
+        QTest::newRow("file") << false;
+#ifdef Q_OS_MACOS
+        QTest::newRow("keychain") << true;
+#endif
+    }
+
     void claudeCredentialsOauthRefresh()
     {
+        QFETCH(bool, nativeKeychain);
+#ifdef Q_OS_MACOS
+        std::unique_ptr<DummyClaudeKeychain> keychain;
+        if (nativeKeychain) keychain = std::make_unique<DummyClaudeKeychain>();
+#else
+        Q_UNUSED(nativeKeychain);
+#endif
         QTemporaryDir dir;
         const QString credentialsPath = dir.filePath(QStringLiteral("credentials.json"));
         QFile credentialsFile(credentialsPath);
@@ -70,6 +175,17 @@ private slots:
                                   .toJson());
         credentialsFile.close();
 
+        QString loadPath = credentialsPath;
+#ifdef Q_OS_MACOS
+        if (keychain) {
+            QFile initial(credentialsPath);
+            QVERIFY(initial.open(QIODevice::ReadOnly));
+            QVERIFY(keychain->write(initial.readAll()));
+            loadPath = keychain->path();
+        }
+#endif
+        QVERIFY(ClaudeCredentials::requiresRefresh(loadPath));
+
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         qputenv("SPEECHER_TEST_CLAUDE_TOKEN_URL",
@@ -79,7 +195,7 @@ private slots:
         });
 
         auto refresh = std::async(std::launch::async, [&] {
-            return ClaudeCredentials::load(credentialsPath, true);
+            return ClaudeCredentials::load(loadPath, true);
         });
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         QTcpSocket *socket = server.nextPendingConnection();
@@ -99,6 +215,14 @@ private slots:
         QCOMPARE(body.value(QStringLiteral("scope")).toString(),
                  QStringLiteral("user:profile user:inference"));
 
+#ifdef Q_OS_MACOS
+        // A changed environment during the HTTP round trip must not redirect
+        // refreshed credentials into another account or service.
+        if (keychain) {
+            qputenv("USER", keychain->account + "-changed");
+            qputenv("CLAUDE_CONFIG_DIR", "/dummy/changed-during-refresh");
+        }
+#endif
         const QByteArray responseBody = QJsonDocument(QJsonObject{
                                                           {QStringLiteral("access_token"), QStringLiteral("refreshed-token")},
                                                           {QStringLiteral("refresh_token"), QStringLiteral("rotated-refresh-token")},
@@ -121,7 +245,11 @@ private slots:
         QVERIFY(result.expiresAt > QDateTime::currentDateTimeUtc().addSecs(3500));
 
         QVERIFY(credentialsFile.open(QIODevice::ReadOnly));
-        const QJsonObject saved = QJsonDocument::fromJson(credentialsFile.readAll()).object();
+        QByteArray savedBytes = credentialsFile.readAll();
+#ifdef Q_OS_MACOS
+        if (keychain) savedBytes = keychain->read();
+#endif
+        const QJsonObject saved = QJsonDocument::fromJson(savedBytes).object();
         QVERIFY(saved.value(QStringLiteral("unrelated")).toBool());
         const QJsonObject savedOauth = saved.value(QStringLiteral("claudeAiOauth")).toObject();
         QCOMPARE(savedOauth.value(QStringLiteral("accessToken")).toString(), QStringLiteral("refreshed-token"));
@@ -177,14 +305,41 @@ private slots:
         QVERIFY(!result.error.contains(QStringLiteral("secret-refresh-token")));
     }
 
+    void claudeCredentialsRefreshDoesNotOverwriteNewerLogin_data()
+    {
+        QTest::addColumn<bool>("nativeKeychain");
+        QTest::newRow("file") << false;
+#ifdef Q_OS_MACOS
+        QTest::newRow("keychain") << true;
+#endif
+    }
+
     void claudeCredentialsRefreshDoesNotOverwriteNewerLogin()
     {
+        QFETCH(bool, nativeKeychain);
+#ifdef Q_OS_MACOS
+        std::unique_ptr<DummyClaudeKeychain> keychain;
+        if (nativeKeychain) keychain = std::make_unique<DummyClaudeKeychain>();
+#else
+        Q_UNUSED(nativeKeychain);
+#endif
         QTemporaryDir dir;
         const QString credentialsPath = dir.filePath(QStringLiteral("credentials.json"));
         QVERIFY(writeJsonCredentials(credentialsPath,
                                      QStringLiteral("expired-token"),
                                      QDateTime::currentDateTimeUtc().addSecs(-60),
                                      QStringLiteral("old-refresh-token")));
+
+        QString loadPath = credentialsPath;
+#ifdef Q_OS_MACOS
+        if (keychain) {
+            QFile initial(credentialsPath);
+            QVERIFY(initial.open(QIODevice::ReadOnly));
+            QVERIFY(keychain->write(initial.readAll()));
+            loadPath = keychain->path();
+        }
+#endif
+        QVERIFY(ClaudeCredentials::requiresRefresh(loadPath));
 
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
@@ -195,7 +350,7 @@ private slots:
         });
 
         auto refresh = std::async(std::launch::async, [&] {
-            return ClaudeCredentials::load(credentialsPath, true);
+            return ClaudeCredentials::load(loadPath, true);
         });
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         QTcpSocket *socket = server.nextPendingConnection();
@@ -207,6 +362,13 @@ private slots:
                                      QStringLiteral("newer-token"),
                                      QDateTime::currentDateTimeUtc().addSecs(3600),
                                      QStringLiteral("newer-refresh-token")));
+#ifdef Q_OS_MACOS
+        if (keychain) {
+            QFile newer(credentialsPath);
+            QVERIFY(newer.open(QIODevice::ReadOnly));
+            QVERIFY(keychain->write(newer.readAll()));
+        }
+#endif
         const QByteArray responseBody = QByteArrayLiteral(
             R"({"access_token":"stale-refreshed-token","refresh_token":"stale-rotated-token","expires_in":3600})");
         socket->write(QByteArrayLiteral(
@@ -218,11 +380,11 @@ private slots:
         socket->disconnectFromHost();
 
         const ClaudeCredentialResult result = refresh.get();
-        QVERIFY(lockWasHeld);
+        if (!nativeKeychain) QVERIFY(lockWasHeld);
         QVERIFY(!result.ok);
         QVERIFY(result.error.contains(QStringLiteral("changed during refresh")));
 
-        const ClaudeCredentialResult saved = ClaudeCredentials::load(credentialsPath);
+        const ClaudeCredentialResult saved = ClaudeCredentials::load(loadPath);
         QVERIFY(saved.ok);
         QCOMPARE(saved.accessToken, QStringLiteral("newer-token"));
         QCOMPARE(saved.refreshToken, QStringLiteral("newer-refresh-token"));

@@ -125,6 +125,13 @@ public:
         }
         return false;
     }
+    // Called immediately before synthetic paste so verification can distinguish
+    // that edit from changes made while dictation was in progress.
+    virtual bool preparePaste(const Target &target)
+    {
+        Q_UNUSED(target);
+        return true;
+    }
     virtual bool verifyInsertion(const Target &target, const QString &plainText)
     {
         Q_UNUSED(target);

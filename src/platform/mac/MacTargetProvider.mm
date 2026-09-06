@@ -31,7 +31,7 @@ const QSet<QString> &terminalBundleIdentifiers()
     return identifiers;
 }
 
-QString stringAttribute(AXUIElementRef element, CFStringRef attribute)
+std::optional<QString> readStringAttribute(AXUIElementRef element, CFStringRef attribute)
 {
     if (!element) {
         return {};
@@ -40,12 +40,17 @@ QString stringAttribute(AXUIElementRef element, CFStringRef attribute)
     if (AXUIElementCopyAttributeValue(element, attribute, &value) != kAXErrorSuccess || !value) {
         return {};
     }
-    QString text;
+    std::optional<QString> text;
     if (CFGetTypeID(value) == CFStringGetTypeID()) {
         text = QString::fromCFString(static_cast<CFStringRef>(value));
     }
     CFRelease(value);
     return text;
+}
+
+QString stringAttribute(AXUIElementRef element, CFStringRef attribute)
+{
+    return readStringAttribute(element, attribute).value_or(QString{});
 }
 
 AXUIElementRef copyElementAttribute(AXUIElementRef element, CFStringRef attribute)
@@ -253,9 +258,6 @@ Target MacTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
                 const int start = static_cast<int>(selectedRange->location);
                 const int length = static_cast<int>(selectedRange->length);
                 target.caretOffset = start;
-                // Cmd+V does not pass through insertText(), so capture the
-                // same verification anchor and before-value for that path.
-                m_insertionOffset = start;
                 if (length > 0) {
                     target.selectionStart = start;
                     target.selectionEnd = start + length;
@@ -263,7 +265,6 @@ Target MacTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
                 }
 
                 const QString value = stringAttribute(focused, kAXValueAttribute);
-                m_valueBeforeInsertion = value;
                 if (start <= value.size() && length <= value.size() - start) {
                     target.nearbyTextBefore = value.left(start).right(targetContextCharacters);
                     target.nearbyTextAfter = value.mid(start, targetContextCharacters);
@@ -311,7 +312,7 @@ bool MacTargetProvider::insertText(const Target &target, const QString &plainTex
 
     // Captured before the write so verifyInsertion can tell a real insertion
     // from a control that already happened to contain the text.
-    m_valueBeforeInsertion = stringAttribute(static_cast<AXUIElementRef>(m_focusedElement),
+    m_valueBeforeInsertion = readStringAttribute(static_cast<AXUIElementRef>(m_focusedElement),
                                              kAXValueAttribute);
     m_insertionOffset = selectedTextOffset(static_cast<AXUIElementRef>(m_focusedElement));
     if (!m_insertionOffset) {
@@ -336,6 +337,21 @@ bool MacTargetProvider::insertText(const Target &target, const QString &plainTex
     return true;
 }
 
+bool MacTargetProvider::preparePaste(const Target &target)
+{
+    m_valueBeforeInsertion.reset();
+    m_insertionOffset.reset();
+    if (target.secure || IsSecureEventInputEnabled()) return false;
+    // Shared delivery permits a global paste rule without an identified target.
+    // Keep that fallback, but never claim verification without a baseline.
+    if (!target.hasIdentity()) return true;
+    if (!stillFocused(target)) return false;
+    const auto element = static_cast<AXUIElementRef>(m_focusedElement);
+    m_valueBeforeInsertion = readStringAttribute(element, kAXValueAttribute);
+    m_insertionOffset = selectedTextOffset(element);
+    return true;
+}
+
 bool MacTargetProvider::verifyInsertion(const Target &target, const QString &plainText)
 {
     if (!m_focusedElement || plainText.isEmpty() || target.secure || !stillFocused(target)) {
@@ -347,7 +363,7 @@ bool MacTargetProvider::verifyInsertion(const Target &target, const QString &pla
         }
         const QString value = stringAttribute(static_cast<AXUIElementRef>(m_focusedElement),
                                               kAXValueAttribute);
-        const bool changed = !m_valueBeforeInsertion || value != *m_valueBeforeInsertion;
+        const bool changed = m_valueBeforeInsertion && value != *m_valueBeforeInsertion;
         if (!changed || !m_insertionOffset
             || value.mid(*m_insertionOffset, plainText.size()) != plainText) {
             continue;

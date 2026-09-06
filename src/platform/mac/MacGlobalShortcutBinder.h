@@ -24,11 +24,14 @@ public:
 private:
     bool registerHotKey(const QKeySequence &shortcut, QString *error);
     void unregisterHotKey();
+    void refreshKeyboardLayout();
 
     QKeySequence m_shortcut;
     // EventHotKeyRef, EventHandlerRef and EventHandlerUPP, kept opaque so this
     // header stays plain C++ for moc.
     void *m_hotKey = nullptr;
+    quint32 m_registeredKeyCode = 0;
+    quint32 m_registeredModifiers = 0;
     void *m_eventHandler = nullptr;
     void *m_eventHandlerUpp = nullptr;
 };

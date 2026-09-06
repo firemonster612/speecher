@@ -19,6 +19,7 @@
 #include <QDebug>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QGuiApplication>
 #include <QKeySequence>
 #include <QObject>
 #include <QRegularExpression>
@@ -794,6 +795,11 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
             bridge.anthropicCredentialsChanged();
         }
     };
+    // Claude Code updates Keychain without touching the credentials file.
+    QObject::connect(qGuiApp, &QGuiApplication::applicationStateChanged,
+                     &state->lifetime, [credentialsChanged](Qt::ApplicationState state) {
+                         if (state == Qt::ApplicationActive) credentialsChanged();
+                     });
     QObject::connect(&state->credentialWatcher,
                      &QFileSystemWatcher::fileChanged,
                      &state->lifetime,

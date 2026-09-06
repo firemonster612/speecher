@@ -114,7 +114,6 @@ void CorrectionObserver::observe(void *element,
 
 void CorrectionObserver::valueChanged()
 {
-    sample();
     if (m_tracker.active()) {
         m_settle.start(correctionSettleMs);
     }
@@ -131,7 +130,12 @@ void CorrectionObserver::sample()
     if (!m_tracker.active()) {
         return;
     }
-    m_tracker.sample(elementValue(static_cast<AXUIElementRef>(m_element)));
+    const QString value = elementValue(static_cast<AXUIElementRef>(m_element));
+    // No value-change notification arrived for the entire settle interval.
+    // The tracker normally proves stability with two polling samples; here
+    // that interval has already been established by the notification timer.
+    m_tracker.sample(value);
+    m_tracker.sample(value);
 }
 
 void CorrectionObserver::stop()

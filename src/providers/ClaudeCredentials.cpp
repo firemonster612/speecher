@@ -1,9 +1,9 @@
 #include "providers/ClaudeCredentials.h"
+#include "providers/ClaudeCredentialStorage.h"
 
 #include "core/CliToolDiscovery.h"
 
 #include <QEventLoop>
-#include <QFile>
 #include <QFileInfo>
 #include <QHash>
 #include <QJsonArray>
@@ -17,7 +17,6 @@
 #include <QNetworkRequest>
 #include <QProcess>
 #include <QRegularExpression>
-#include <QSaveFile>
 #include <QTimer>
 #include <QTimeZone>
 #include <QUrl>
@@ -30,19 +29,16 @@ constexpr auto claudeOauthClientId = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 constexpr auto claudeOauthTokenUrl = "https://platform.claude.com/v1/oauth/token";
 constexpr int refreshTimeoutMs = 30000;
 
-ClaudeCredentialResult readCredentials(const QString &path)
+ClaudeCredentialResult readCredentials(const ClaudeCredentialStorage &storage)
 {
     ClaudeCredentialResult result;
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        result.error = QStringLiteral("Claude credentials not found at %1; run claude in a terminal and use the /login command").arg(path);
-        return result;
-    }
+    const QByteArray bytes = storage.read(&result.error);
+    if (!result.error.isEmpty()) return result;
 
     QJsonParseError parseError;
-    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &parseError);
+    const QJsonDocument doc = QJsonDocument::fromJson(bytes, &parseError);
     if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
-        result.error = QStringLiteral("Claude credentials file is not valid JSON");
+        result.error = QStringLiteral("Claude credentials are not valid JSON");
         return result;
     }
 
@@ -96,7 +92,7 @@ QString tokenUrl()
     return QString::fromLatin1(claudeOauthTokenUrl);
 }
 
-bool saveRefreshedCredentials(const QString &path,
+bool saveRefreshedCredentials(const ClaudeCredentialStorage &storage,
                               const QString &sourceRefreshToken,
                               const QString &accessToken,
                               const QString &refreshToken,
@@ -104,16 +100,10 @@ bool saveRefreshedCredentials(const QString &path,
                               const QStringList &scopes,
                               QString *error)
 {
-    QFile source(path);
-    if (!source.open(QIODevice::ReadOnly)) {
-        if (error) {
-            *error = QStringLiteral("Could not reopen Claude credentials after refresh");
-        }
-        return false;
-    }
+    const QByteArray bytes = storage.read(error);
+    if (!error->isEmpty()) return false;
     QJsonParseError parseError;
-    QJsonDocument document = QJsonDocument::fromJson(source.readAll(), &parseError);
-    source.close();
+    QJsonDocument document = QJsonDocument::fromJson(bytes, &parseError);
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
         if (error) {
             *error = QStringLiteral("Claude credentials changed during refresh and are no longer valid JSON");
@@ -139,26 +129,10 @@ bool saveRefreshedCredentials(const QString &path,
     oauth.insert(QStringLiteral("scopes"), scopeArray);
     root.insert(QStringLiteral("claudeAiOauth"), oauth);
 
-    QSaveFile destination(path);
-    destination.setDirectWriteFallback(false);
-    if (!destination.open(QIODevice::WriteOnly)) {
-        if (error) {
-            *error = QStringLiteral("Could not safely save refreshed Claude credentials");
-        }
-        return false;
-    }
-    destination.setPermissions(QFileInfo(path).permissions());
-    if (destination.write(QJsonDocument(root).toJson()) < 0
-        || !destination.commit()) {
-        if (error) {
-            *error = QStringLiteral("Could not safely save refreshed Claude credentials");
-        }
-        return false;
-    }
-    return true;
+    return storage.write(QJsonDocument(root).toJson(), error);
 }
 
-bool refreshClaudeAuth(const QString &path, const ClaudeCredentialResult &credentials, QString *error)
+bool refreshClaudeAuth(const ClaudeCredentialStorage &storage, const ClaudeCredentialResult &credentials, QString *error)
 {
     if (credentials.refreshToken.isEmpty()) {
         if (error) {
@@ -237,7 +211,7 @@ bool refreshClaudeAuth(const QString &path, const ClaudeCredentialResult &creden
     if (refreshedScopes.isEmpty()) {
         refreshedScopes = requestedScopes;
     }
-    return saveRefreshedCredentials(path,
+    return saveRefreshedCredentials(storage,
                                     credentials.refreshToken,
                                     accessToken,
                                     refreshToken,
@@ -304,31 +278,32 @@ QString ClaudeCredentials::installedVersion()
 
 ClaudeCredentialResult ClaudeCredentials::load(const QString &path, bool refreshExpired)
 {
-    ClaudeCredentialResult result = readCredentials(path);
+    const ClaudeCredentialStorage storage(path);
+    ClaudeCredentialResult result = readCredentials(storage);
     if (result.ok || !refreshExpired || !result.expiresAt.isValid()
         || result.expiresAt > QDateTime::currentDateTimeUtc()) {
         return result;
     }
 
-    QLockFile lock(path + QStringLiteral(".lock"));
+    QLockFile lock(storage.lockPath());
     if (!lock.tryLock(1000)) {
         result.error = QStringLiteral("Could not lock Claude credentials for refresh");
         return result;
     }
 
-    result = readCredentials(path);
+    result = readCredentials(storage);
     if (result.ok || !result.expiresAt.isValid()
         || result.expiresAt > QDateTime::currentDateTimeUtc()) {
         return result;
     }
 
     QString refreshError;
-    if (!refreshClaudeAuth(path, result, &refreshError)) {
+    if (!refreshClaudeAuth(storage, result, &refreshError)) {
         result.error = refreshError;
         return result;
     }
 
-    ClaudeCredentialResult refreshed = readCredentials(path);
+    ClaudeCredentialResult refreshed = readCredentials(storage);
     if (!refreshed.ok) {
         refreshed.error = QStringLiteral("Claude login refresh did not produce valid credentials; %1").arg(refreshed.error);
     }
@@ -337,7 +312,8 @@ ClaudeCredentialResult ClaudeCredentials::load(const QString &path, bool refresh
 
 bool ClaudeCredentials::requiresRefresh(const QString &path)
 {
-    const ClaudeCredentialResult result = readCredentials(path);
+    const ClaudeCredentialStorage storage(path);
+    const ClaudeCredentialResult result = readCredentials(storage);
     return !result.ok && result.expiresAt.isValid()
         && result.expiresAt <= QDateTime::currentDateTimeUtc();
 }

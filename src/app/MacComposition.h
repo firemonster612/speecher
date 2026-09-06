@@ -17,6 +17,7 @@ public:
 
     QList<AudioInputDeviceInfo> availableAudioInputDevices() const override;
     AudioInput *createAudioInput(SettingsStore *settings, QObject *parent) const override;
+    void requestMicrophoneAccess(QObject *context, std::function<void(bool)> completed) const override;
     MediaController *createMediaController(QObject *parent) const override;
     TargetProvider *createTargetProvider(QObject *parent) const override;
     ScreenshotContextProvider *createScreenshotContextProvider(QObject *parent) const override;

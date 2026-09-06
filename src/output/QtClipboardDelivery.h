@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QByteArray>
 #include <QString>
 
 namespace speecher {
@@ -12,7 +13,10 @@ class QtClipboardDelivery : public QObject {
 
 public:
     explicit QtClipboardDelivery(QObject *parent = nullptr);
+    bool ownsClipboardContent() const;
     bool copy(const DeliveryContent &content, QString *error = nullptr);
+private:
+    QByteArray m_copyId;
 };
 
 } // namespace speecher

@@ -287,6 +287,7 @@ set(SPEECHER_PROVIDER_SOURCES
   src/providers/StreamingRefinement.cpp
   src/providers/AnthropicApiRefiner.cpp
   src/providers/AnthropicTranscriptRefiner.cpp
+  src/providers/ClaudeCredentialStorage.cpp
   src/providers/ClaudeCredentials.cpp
   src/providers/ClaudeSpeechTranscriber.cpp
   src/providers/ClaudeVoiceClient.cpp
@@ -308,6 +309,7 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/StreamingRefinement.h
   src/providers/AnthropicApiRefiner.h
   src/providers/AnthropicTranscriptRefiner.h
+  src/providers/ClaudeCredentialStorage.h
   src/providers/ClaudeCredentials.h
   src/providers/ClaudeSpeechTranscriber.h
   src/providers/ClaudeVoiceClient.h
@@ -393,6 +395,8 @@ set(SPEECHER_PLATFORM_MAC_SOURCES
   src/output/mac/MacPasteDelivery.mm
   src/platform/mac/MacCorrectionObserver.mm
   src/platform/mac/MacGlobalShortcutBinder.mm
+  src/platform/mac/MacKeyCode.mm
+  src/platform/mac/MacMediaController.cpp
   src/platform/mac/MacMediaController.mm
   src/platform/mac/MacPopupPositioner.mm
   src/platform/mac/MacScreenshotContextProvider.mm
@@ -403,6 +407,7 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
   src/output/mac/MacPasteDelivery.h
   src/platform/mac/MacCorrectionObserver.h
   src/platform/mac/MacGlobalShortcutBinder.h
+  src/platform/mac/MacKeyCode.h
   src/platform/mac/MacMediaController.h
   src/platform/mac/MacPopupPositioner.h
   src/platform/mac/MacScreenshotContextProvider.h
@@ -622,6 +627,9 @@ add_library(speecher_providers STATIC
 )
 target_include_directories(speecher_providers PUBLIC src)
 target_link_libraries(speecher_providers PUBLIC speecher_workflow Qt6::Network)
+if(APPLE)
+  target_link_libraries(speecher_providers PRIVATE "-framework Security")
+endif()
 
 add_library(speecher_platform STATIC
   ${SPEECHER_PLATFORM_SOURCES}
@@ -1026,7 +1034,7 @@ if(SPEECHER_WITH_QKEYCHAIN)
   else()
     find_package(Qt6Keychain QUIET)
   endif()
-  if(WIN32 AND NOT Qt6Keychain_FOUND)
+  if((WIN32 OR APPLE) AND NOT Qt6Keychain_FOUND)
     include(FetchContent)
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     set(BUILD_WITH_QT6 ON CACHE BOOL "" FORCE)
@@ -1140,6 +1148,12 @@ if(SPEECHER_BUILD_TESTS)
   endif()
   if(APPLE)
     qt_import_plugins(speecher_tests INCLUDE Qt6::QDarwinMicrophonePermissionPlugin)
+  endif()
+  if(NOT APPLE)
+    target_sources(speecher_tests PRIVATE
+      src/platform/mac/MacMediaController.cpp
+      src/platform/mac/MacMediaController.h
+    )
   endif()
   target_include_directories(speecher_tests PRIVATE src)
   target_compile_definitions(speecher_tests PRIVATE

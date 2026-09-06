@@ -30,7 +30,8 @@ public:
     // and HTML through QClipboard.
     bool canSnapshot() const;
     bool capture(ClipboardSnapshot *snapshot, QString *error = nullptr) const;
-    bool restore(const ClipboardSnapshot &snapshot, QString *error = nullptr) const;
+    bool restore(const ClipboardSnapshot &snapshot, QString *error = nullptr,
+                 bool preserveNewCopy = false) const;
 
 private:
     QtClipboardDelivery m_qtClipboard;

@@ -8,6 +8,7 @@ RUN apt-get update \
         breeze \
         breeze-icon-theme \
         ca-certificates \
+        ccache \
         cmake \
         curl \
         at-spi2-core \
@@ -73,7 +74,14 @@ RUN apt-get update \
     && groupadd --gid "$USER_ID" builder \
     && useradd --create-home --uid "$USER_ID" --gid "$USER_ID" builder
 
+# The workspace mount keeps compiler results across the separate CI containers
+# and shares them with the AppImage build. Compiler contents detect compiler updates.
 ENV APPIMAGE_EXTRACT_AND_RUN=1 \
+    CCACHE_DIR=/workspace/.ccache \
+    CCACHE_MAXSIZE=500M \
+    CCACHE_COMPILERCHECK=content \
+    CMAKE_C_COMPILER_LAUNCHER=ccache \
+    CMAKE_CXX_COMPILER_LAUNCHER=ccache \
     LANG=C.UTF-8
 USER builder
 WORKDIR /workspace

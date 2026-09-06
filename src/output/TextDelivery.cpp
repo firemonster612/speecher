@@ -271,7 +271,7 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
                                &QEventLoop::quit);
             waitForClipboardConsumer.exec(QEventLoop::ExcludeUserInputEvents);
         }
-        return m_clipboardDelivery.restore(previousClipboard, error);
+        return m_clipboardDelivery.restore(previousClipboard, error, true);
     };
     bool initiallyHtmlAvailable = false;
     QString initialCopyError;
@@ -347,10 +347,14 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
 
         QString error;
         bool htmlAvailable = false;
+        const bool virtualKeyboardInput = method == QString::fromLatin1(OutputMethod::Ydotool)
+            || method == QString::fromLatin1(OutputMethod::MacPaste)
+            || method == QString::fromLatin1(OutputMethod::WinPaste);
+        if (virtualKeyboardInput && m_targetProvider && !m_targetProvider->preparePaste(target)) {
+            firstError = QStringLiteral("The target is no longer available for paste");
+            break;
+        }
         if (backend->deliver(content, &htmlAvailable, &error)) {
-            const bool virtualKeyboardInput = method == QString::fromLatin1(OutputMethod::Ydotool)
-                || method == QString::fromLatin1(OutputMethod::MacPaste)
-                || method == QString::fromLatin1(OutputMethod::WinPaste);
             const bool copied = method == QString::fromLatin1(OutputMethod::WlCopy)
                 || method == QString::fromLatin1(OutputMethod::QtClipboard);
             const bool downgraded = content.html.has_value() && !htmlAvailable;

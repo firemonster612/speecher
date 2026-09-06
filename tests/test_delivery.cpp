@@ -608,6 +608,37 @@ private slots:
         QVERIFY(!rich.html->contains(QStringLiteral("<b>Hello</b>")));
     }
 
+    void keyboardPastePreparesTargetBeforeSendingInput()
+    {
+        class TargetWithBaseline final : public TargetProvider {
+        public:
+            Target capture(const QList<AppRecognitionRule> &) override { return {}; }
+            bool stillFocused(const Target &) override { return true; }
+            bool preparePaste(const Target &) override { prepared = true; return true; }
+            bool prepared = false;
+        } targetProvider;
+        class PasteBackend final : public DeliveryBackend {
+        public:
+            explicit PasteBackend(bool &prepared) : prepared(prepared) {}
+            bool deliver(const DeliveryContent &, bool *, QString *) override
+            {
+                return prepared;
+            }
+            bool &prepared;
+        };
+        TextDelivery delivery([&](const QString &, const OutputSettings &, PasteMethod) {
+            return std::make_unique<PasteBackend>(targetProvider.prepared);
+        }, &targetProvider);
+        OutputSettings settings;
+        settings.method = virtualKeyboardMethod();
+        settings.ydotoolEnabled = true;
+        Target target;
+        target.applicationId = QStringLiteral("editor");
+        const auto result = delivery.deliver(
+            settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+        QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
+    }
+
     void outputAutomaticFallbackOrder()
     {
         QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
@@ -983,6 +1014,31 @@ private slots:
         QCOMPARE(restored->data(QStringLiteral("application/x-speecher-test")),
                  QByteArrayLiteral("custom-data"));
         QVERIFY(attempts.isEmpty());
+    }
+
+    void clipboardRestorePreservesNewCopyDuringDelivery()
+    {
+        QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
+        FakeTargetProvider targetProvider;
+        targetProvider.directInsertionAvailable = true;
+        targetProvider.inserted = true;
+        TextDelivery delivery(&targetProvider);
+        OutputSettings settings;
+        settings.method = QString::fromLatin1(OutputMethod::DirectInsert);
+        settings.restoreClipboardAfterTyping = true;
+        Target target;
+        target.applicationId = QStringLiteral("test.editor");
+
+        QTimer::singleShot(0, &delivery, [] {
+            QApplication::clipboard()->setText(QStringLiteral("new user copy"));
+        });
+        const DeliveryResult result = delivery.deliver(
+            settings, makeDeliveryContent(QStringLiteral("dictated text"), OutputFormat::PlainText), target);
+
+        QVERIFY(result.ok);
+        QCOMPARE(result.receipt, DeliveryReceipt::AcceptedByTarget);
+        QCOMPARE(result.message, QStringLiteral("Accepted by Target"));
+        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("new user copy"));
     }
 
     void outputRestoresClipboardAfterDelayWhenVirtualKeyboardInputCannotBeVerified()

@@ -1,12 +1,15 @@
 #include "platform/mac/MacGlobalShortcutBinder.h"
 
 #include "core/settings/SettingsKeys.h"
+#include "platform/mac/MacKeyCode.h"
 
 #include <QDebug>
 #include <QHash>
 #include <QSettings>
 
 #import <Carbon/Carbon.h>
+
+#include <optional>
 
 namespace speecher {
 namespace {
@@ -19,47 +22,24 @@ QKeySequence defaultShortcut()
     return QKeySequence(Qt::META | Qt::ALT | Qt::Key_D);
 }
 
-// Carbon wants raw virtual key codes, which are neither contiguous nor ordered
-// like Qt's key enum, so the supported keys are spelled out. Anything outside
-// this table is rejected rather than silently bound to the wrong key.
-const QHash<int, UInt32> &carbonKeyCodes()
+// Function and control keys have fixed positions. Printable keys must follow
+// the current input source because QKeySequence stores logical characters.
+std::optional<UInt32> carbonKeyCode(Qt::Key key, Qt::KeyboardModifiers modifiers)
 {
-    static const QHash<int, UInt32> codes{
-        {Qt::Key_A, kVK_ANSI_A}, {Qt::Key_B, kVK_ANSI_B}, {Qt::Key_C, kVK_ANSI_C},
-        {Qt::Key_D, kVK_ANSI_D}, {Qt::Key_E, kVK_ANSI_E}, {Qt::Key_F, kVK_ANSI_F},
-        {Qt::Key_G, kVK_ANSI_G}, {Qt::Key_H, kVK_ANSI_H}, {Qt::Key_I, kVK_ANSI_I},
-        {Qt::Key_J, kVK_ANSI_J}, {Qt::Key_K, kVK_ANSI_K}, {Qt::Key_L, kVK_ANSI_L},
-        {Qt::Key_M, kVK_ANSI_M}, {Qt::Key_N, kVK_ANSI_N}, {Qt::Key_O, kVK_ANSI_O},
-        {Qt::Key_P, kVK_ANSI_P}, {Qt::Key_Q, kVK_ANSI_Q}, {Qt::Key_R, kVK_ANSI_R},
-        {Qt::Key_S, kVK_ANSI_S}, {Qt::Key_T, kVK_ANSI_T}, {Qt::Key_U, kVK_ANSI_U},
-        {Qt::Key_V, kVK_ANSI_V}, {Qt::Key_W, kVK_ANSI_W}, {Qt::Key_X, kVK_ANSI_X},
-        {Qt::Key_Y, kVK_ANSI_Y}, {Qt::Key_Z, kVK_ANSI_Z},
-        {Qt::Key_0, kVK_ANSI_0}, {Qt::Key_1, kVK_ANSI_1}, {Qt::Key_2, kVK_ANSI_2},
-        {Qt::Key_3, kVK_ANSI_3}, {Qt::Key_4, kVK_ANSI_4}, {Qt::Key_5, kVK_ANSI_5},
-        {Qt::Key_6, kVK_ANSI_6}, {Qt::Key_7, kVK_ANSI_7}, {Qt::Key_8, kVK_ANSI_8},
-        {Qt::Key_9, kVK_ANSI_9},
+    static const QHash<int, UInt32> fixedKeys{
         {Qt::Key_F1, kVK_F1}, {Qt::Key_F2, kVK_F2}, {Qt::Key_F3, kVK_F3},
         {Qt::Key_F4, kVK_F4}, {Qt::Key_F5, kVK_F5}, {Qt::Key_F6, kVK_F6},
         {Qt::Key_F7, kVK_F7}, {Qt::Key_F8, kVK_F8}, {Qt::Key_F9, kVK_F9},
         {Qt::Key_F10, kVK_F10}, {Qt::Key_F11, kVK_F11}, {Qt::Key_F12, kVK_F12},
+        {Qt::Key_Return, kVK_Return}, {Qt::Key_Enter, kVK_ANSI_KeypadEnter},
+        {Qt::Key_Escape, kVK_Escape}, {Qt::Key_Tab, kVK_Tab},
         {Qt::Key_Space, kVK_Space},
-        {Qt::Key_Return, kVK_Return},
-        {Qt::Key_Enter, kVK_ANSI_KeypadEnter},
-        {Qt::Key_Escape, kVK_Escape},
-        {Qt::Key_Tab, kVK_Tab},
-        {Qt::Key_Minus, kVK_ANSI_Minus},
-        {Qt::Key_Equal, kVK_ANSI_Equal},
-        {Qt::Key_BracketLeft, kVK_ANSI_LeftBracket},
-        {Qt::Key_BracketRight, kVK_ANSI_RightBracket},
-        {Qt::Key_Backslash, kVK_ANSI_Backslash},
-        {Qt::Key_Semicolon, kVK_ANSI_Semicolon},
-        {Qt::Key_Apostrophe, kVK_ANSI_Quote},
-        {Qt::Key_Comma, kVK_ANSI_Comma},
-        {Qt::Key_Period, kVK_ANSI_Period},
-        {Qt::Key_Slash, kVK_ANSI_Slash},
-        {Qt::Key_QuoteLeft, kVK_ANSI_Grave},
     };
-    return codes;
+    const auto fixed = fixedKeys.constFind(key);
+    if (fixed != fixedKeys.cend()) return *fixed;
+    if (key < Qt::Key_Exclam || key > 0xffff) return std::nullopt;
+
+    return mac::keyCodeForCharacter(QChar(static_cast<ushort>(key)), modifiers);
 }
 
 bool carbonHotKeyFor(const QKeySequence &shortcut, UInt32 *keyCode, UInt32 *modifiers, QString *error)
@@ -80,8 +60,8 @@ bool carbonHotKeyFor(const QKeySequence &shortcut, UInt32 *keyCode, UInt32 *modi
         }
         return false;
     }
-    const auto found = carbonKeyCodes().constFind(combination.key());
-    if (found == carbonKeyCodes().cend()) {
+    const auto found = carbonKeyCode(combination.key(), qtModifiers);
+    if (!found) {
         if (error) {
             *error = QStringLiteral("%1 is not a key macOS can register as a global shortcut")
                          .arg(QKeySequence(combination).toString(QKeySequence::NativeText));
@@ -154,10 +134,21 @@ MacGlobalShortcutBinder::MacGlobalShortcutBinder(QObject *parent)
     : GlobalShortcutBinder(parent)
     , m_shortcut(savedShortcut())
 {
+    CFNotificationCenterAddObserver(
+        CFNotificationCenterGetDistributedCenter(), this,
+        [](CFNotificationCenterRef, void *observer, CFStringRef, const void *, CFDictionaryRef) {
+            auto *binder = static_cast<MacGlobalShortcutBinder *>(observer);
+            QMetaObject::invokeMethod(binder, &MacGlobalShortcutBinder::refreshKeyboardLayout,
+                                      Qt::QueuedConnection);
+        },
+        kTISNotifySelectedKeyboardInputSourceChanged, nullptr,
+        CFNotificationSuspensionBehaviorDeliverImmediately);
 }
 
 MacGlobalShortcutBinder::~MacGlobalShortcutBinder()
 {
+    CFNotificationCenterRemoveObserver(CFNotificationCenterGetDistributedCenter(), this,
+                                        kTISNotifySelectedKeyboardInputSourceChanged, nullptr);
     unregisterHotKey();
     if (m_eventHandler) {
         RemoveEventHandler(static_cast<EventHandlerRef>(m_eventHandler));
@@ -202,12 +193,19 @@ bool MacGlobalShortcutBinder::setShortcut(const QKeySequence &shortcut, QString 
     return true;
 }
 
+void MacGlobalShortcutBinder::refreshKeyboardLayout()
+{
+    bind();
+}
+
 void MacGlobalShortcutBinder::unregisterHotKey()
 {
     if (m_hotKey) {
         UnregisterEventHotKey(static_cast<EventHotKeyRef>(m_hotKey));
         m_hotKey = nullptr;
     }
+    m_registeredKeyCode = 0;
+    m_registeredModifiers = 0;
 }
 
 bool MacGlobalShortcutBinder::registerHotKey(const QKeySequence &shortcut, QString *error)
@@ -247,9 +245,9 @@ bool MacGlobalShortcutBinder::registerHotKey(const QKeySequence &shortcut, QStri
         m_eventHandlerUpp = reinterpret_cast<void *>(upp);
     }
 
-    // Carbon refuses a second registration of the same combination, and the
-    // registration already in place is that one.
-    if (m_hotKey && shortcut == m_shortcut) {
+    // Layout changes can move an unchanged logical shortcut to another key.
+    // Carbon only rejects duplicate hardware key/modifier registrations.
+    if (m_hotKey && keyCode == m_registeredKeyCode && modifiers == m_registeredModifiers) {
         return true;
     }
 
@@ -267,6 +265,8 @@ bool MacGlobalShortcutBinder::registerHotKey(const QKeySequence &shortcut, QStri
     // user with no working shortcut whenever the new combination was taken.
     unregisterHotKey();
     m_hotKey = hotKey;
+    m_registeredKeyCode = keyCode;
+    m_registeredModifiers = modifiers;
     return true;
 }
 

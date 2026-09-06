@@ -15,6 +15,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QProcess>
+#include <QPermissions>
 #include <QTimer>
 #include <QUrl>
 
@@ -182,6 +183,19 @@ AudioInput *MacComposition::createAudioInput(SettingsStore *settings, QObject *p
                      input,
                      &QtAudioInput::applySettings);
     return input;
+}
+
+void MacComposition::requestMicrophoneAccess(QObject *context, std::function<void(bool)> completed) const
+{
+    const auto status = qApp->checkPermission(QMicrophonePermission{});
+    if (status != Qt::PermissionStatus::Undetermined) {
+        completed(status == Qt::PermissionStatus::Granted);
+        return;
+    }
+    qApp->requestPermission(QMicrophonePermission{}, context,
+                            [completed = std::move(completed)](const QPermission &permission) {
+                                completed(permission.status() == Qt::PermissionStatus::Granted);
+                            });
 }
 
 MediaController *MacComposition::createMediaController(QObject *parent) const

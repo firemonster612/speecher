@@ -137,6 +137,8 @@ private:
     // stopped one must not restart it.
     QElapsedTimer m_shortcutPress;
     bool m_shortcutStartedSession = false;
+    quint64 m_microphoneStartGeneration = 0;
+    bool m_microphoneStartPending = false;
 };
 
 } // namespace speecher

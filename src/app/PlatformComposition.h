@@ -28,6 +28,12 @@ public:
 
     virtual QList<AudioInputDeviceInfo> availableAudioInputDevices() const = 0;
     virtual AudioInput *createAudioInput(SettingsStore *settings, QObject *parent) const = 0;
+    // Complete on the caller's thread, and never after context is destroyed.
+    virtual void requestMicrophoneAccess(QObject *context, std::function<void(bool)> completed) const
+    {
+        Q_UNUSED(context);
+        completed(true);
+    }
     virtual MediaController *createMediaController(QObject *parent) const = 0;
     virtual TargetProvider *createTargetProvider(QObject *parent) const = 0;
     virtual ScreenshotContextProvider *createScreenshotContextProvider(QObject *parent) const = 0;

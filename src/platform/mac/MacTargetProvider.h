@@ -28,6 +28,7 @@ public:
     bool stillFocused(const Target &target) override;
     bool canInsertText(const Target &target) override;
     bool insertText(const Target &target, const QString &plainText, QString *error = nullptr) override;
+    bool preparePaste(const Target &target) override;
     bool verifyInsertion(const Target &target, const QString &plainText) override;
     void setCorrectionObservationEnabled(bool enabled) override;
 
@@ -41,8 +42,8 @@ private:
     // AXUIElementRef, kept opaque so this header stays plain C++ for moc.
     void *m_focusedElement = nullptr;
     quint32 m_windowId = 0;
-    // The control's value just before insertText wrote to it. Empty optional on
-    // the paste path, where there is no baseline to compare against.
+    // The control's value immediately before direct insertion or keyboard paste.
+    // An absent baseline cannot prove that delivery changed the control.
     std::optional<QString> m_valueBeforeInsertion;
     // The AX selection location immediately before the write, so repeated text
     // cannot make verification attach correction learning to an older copy.

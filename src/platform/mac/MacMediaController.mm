@@ -64,12 +64,14 @@ QString pauseScript(const QStringList &players)
     for (const QString &player : players) {
         source += QStringLiteral(
                       "try\n"
+                      "if application id \"%1\" is running then\n"
                       "tell application id \"%1\"\n"
                       "if (player state as string) is \"playing\" then\n"
                       "pause\n"
                       "set end of my pausedPlayers to \"%1\"\n"
                       "end if\n"
                       "end tell\n"
+                      "end if\n"
                       "on error\n"
                       "set pauseFailed to true\n"
                       "end try\n")
@@ -82,69 +84,44 @@ QString pauseScript(const QStringList &players)
 
 QString resumeScript(const QStringList &players)
 {
-    QString source;
+    QString source = QStringLiteral("set pausedPlayers to {}\n");
     for (const QString &player : players) {
         source += QStringLiteral(
                       "try\n"
-                      "tell application id \"%1\" to play\n"
+                      "if application id \"%1\" is running then\n"
+                      "tell application id \"%1\"\n"
+                      "if (player state as string) is \"paused\" then play\n"
+                      "end tell\n"
+                      "end if\n"
                       "on error\n"
-                      "set resumeFailed to true\n"
+                      "set end of my pausedPlayers to \"%1\"\n"
                       "end try\n")
                       .arg(player);
     }
+    source += QStringLiteral(
+        "set AppleScript's text item delimiters to linefeed\nreturn my pausedPlayers as text");
     return source;
 }
 
 } // namespace
 
 MacMediaController::MacMediaController(QObject *parent)
-    : MediaController(parent)
+    : MacMediaController(
+          [] {
+              QStringList players;
+              for (const QString &player : mediaPlayerBundleIdentifiers()) {
+                  if (isRunning(player)) players << player;
+              }
+              return players;
+          },
+          [this](Action action, const QStringList &players, Completion completion) {
+              runAppleScript(this, action == Action::Pause ? pauseScript(players) : resumeScript(players),
+                             [action, players, completion = std::move(completion)](bool ok, const QString &output) {
+                  completion(ok ? output.split(QLatin1Char('\n'), Qt::SkipEmptyParts)
+                                : action == Action::Resume ? players : QStringList{});
+              });
+          }, parent)
 {
-}
-
-void MacMediaController::pausePlaying()
-{
-    const quint64 generation = ++m_generation;
-    m_pausedPlayers.clear();
-    QStringList runningPlayers;
-    for (const QString &player : mediaPlayerBundleIdentifiers()) {
-        // Scripting a player that is not running would launch it.
-        if (isRunning(player)) {
-            runningPlayers << player;
-        }
-    }
-    if (runningPlayers.isEmpty()) {
-        return;
-    }
-    runAppleScript(this, pauseScript(runningPlayers), [this, generation](bool ok, const QString &output) {
-        const QStringList paused = ok ? output.split(QLatin1Char('\n'), Qt::SkipEmptyParts) : QStringList{};
-        if (generation != m_generation) {
-            // A short dictation can end before the pause script does; whatever
-            // it paused still has to come back.
-            if (!paused.isEmpty()) {
-                runAppleScript(this, resumeScript(paused), [](bool, const QString &) {});
-            }
-            return;
-        }
-        m_pausedPlayers = paused;
-        qInfo() << "media paused players=" << m_pausedPlayers.size();
-    });
-}
-
-void MacMediaController::resumePaused()
-{
-    const quint64 generation = ++m_generation;
-    const QStringList players = m_pausedPlayers;
-    if (players.isEmpty()) {
-        return;
-    }
-    runAppleScript(this, resumeScript(players), [this, generation, players](bool, const QString &) {
-        if (generation != m_generation) {
-            return;
-        }
-        m_pausedPlayers.clear();
-        qInfo() << "media resumed players=" << players.size();
-    });
 }
 
 } // namespace speecher

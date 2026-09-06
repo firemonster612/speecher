@@ -1,4 +1,5 @@
 #include "output/mac/MacPasteDelivery.h"
+#include "platform/mac/MacKeyCode.h"
 
 #import <ApplicationServices/ApplicationServices.h>
 #import <Carbon/Carbon.h>
@@ -65,7 +66,12 @@ bool MacPasteDelivery::paste(QString *error)
     }
     // macOS has one paste chord: Terminal.app and every other terminal take
     // Cmd+V, so PasteMethod::TerminalPaste needs no keystroke of its own here.
-    return postKeyStroke(kVK_ANSI_V, kCGEventFlagMaskCommand, error);
+    const auto keyCode = mac::keyCodeForCharacter(QLatin1Char('V'), Qt::ControlModifier);
+    if (!keyCode) {
+        if (error) *error = QStringLiteral("Could not find the paste key in the current keyboard layout");
+        return false;
+    }
+    return postKeyStroke(*keyCode, kCGEventFlagMaskCommand, error);
 }
 
 } // namespace speecher
