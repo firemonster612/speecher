@@ -795,6 +795,9 @@ final class SpeecherSetupAssistant: NSObject, NSWindowDelegate {
                 self.capture(toPath: "\(dir)/step-\(step + 1)-\(id).png")
             }
         }
+        // The first step rendered before this seam installed, so its onAppear
+        // has already fired; capture it now. Later duplicates just overwrite.
+        flow.stepRendered?(flow.step)
     }
 
     private func capture(toPath path: String) {
