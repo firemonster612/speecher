@@ -337,6 +337,12 @@ QString SettingsCodecs::refinementProvider() const
     if (provider == QStringLiteral("none") || provider == QStringLiteral("anthropic")) {
         return provider;
     }
+    // Scratch-branch-only E2E hook: the stub refiner is not a real choice, so
+    // the whitelist would otherwise coerce it back to openai.
+    if (provider == QStringLiteral("e2e-stub")
+        && qEnvironmentVariableIntValue("SPEECHER_E2E_STUB") == 1) {
+        return provider;
+    }
     return QStringLiteral("openai");
 }
 
