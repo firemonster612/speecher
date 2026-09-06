@@ -947,6 +947,15 @@ private slots:
         QVERIFY(root.isValid());
         const QDir home(root.filePath(QStringLiteral("home")));
         QVERIFY(QDir().mkpath(home.filePath(QStringLiteral("AppImages"))));
+
+        // A stray file named ~/Applications must not win over a real folder.
+        QFile stray(home.filePath(QStringLiteral("Applications")));
+        QVERIFY(stray.open(QIODevice::WriteOnly));
+        stray.close();
+        QCOMPARE(appImageInstallDirectory(home.path()),
+                 home.filePath(QStringLiteral("AppImages")));
+        QVERIFY(QFile::remove(home.filePath(QStringLiteral("Applications"))));
+
         const auto makeImage = [](const QString &path) {
             QFile file(path);
             if (!file.open(QIODevice::WriteOnly)) {

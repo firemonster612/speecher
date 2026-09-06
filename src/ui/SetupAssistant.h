@@ -53,6 +53,7 @@ private:
     WritingProfilesSetupPage *m_profilesPage = nullptr;
     FinishSetupPage *m_finishPage = nullptr;
     QWidget *m_lastPage = nullptr;
+    QWidget *m_activePage = nullptr;
     QAbstractButton *m_skipButton = nullptr;
     bool m_singlePage = false;
 #ifdef Q_OS_LINUX

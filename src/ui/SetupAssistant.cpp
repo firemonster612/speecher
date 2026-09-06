@@ -250,8 +250,10 @@ int SetupAssistant::pageIndex(SetupAssistantPage page)
 }
 
 #ifdef Q_OS_LINUX
-// Next stays off on the Global Shortcut page until Install Speecher has run;
-// installing the AppImage is a required step of an AppImage setup.
+// Next stays off on the Global Shortcut page until Install Speecher has run,
+// and Skip setup disappears for the whole run: installing the AppImage is a
+// required step of an AppImage setup, and skipping would record the setup as
+// completed without it. Cancel stays available and completes nothing.
 void SetupAssistant::applyInstallGate()
 {
     const bool installed = !m_globalShortcutPage->installRequired();
@@ -265,6 +267,7 @@ void SetupAssistant::applyInstallGate()
         static_cast<GatedWizardPage *>(m_globalShortcutWizardPage)->refreshGate();
     }
 #endif
+    updateActivePage(m_activePage);
 }
 #endif
 
@@ -300,11 +303,18 @@ void SetupAssistant::accept()
 
 void SetupAssistant::updateActivePage(QWidget *page)
 {
+    m_activePage = page;
     if (m_microphonePage) {
         m_microphonePage->setActive(page == m_microphonePage);
     }
     if (m_skipButton) {
-        m_skipButton->setVisible(page != m_lastPage);
+        bool allowed = page != m_lastPage;
+#ifdef Q_OS_LINUX
+        if (m_globalShortcutPage && m_globalShortcutPage->installRequired()) {
+            allowed = false;
+        }
+#endif
+        m_skipButton->setVisible(allowed);
     }
     if (page == m_finishPage && m_finishPage) {
         m_finishPage->setSignInRequired(m_deliveryPage->needsSignIn());

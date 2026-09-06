@@ -24,6 +24,9 @@ bool appImageIntegrationInstalled(const QString &homePath,
 // that already exists.
 QString appImageInstallDirectory(const QString &homePath);
 
+// Whether the image already sits in one of the recognized install folders.
+bool appImageInInstallFolder(const QString &homePath, const QString &appImagePath);
+
 // Moves the AppImage into appImageInstallDirectory() and writes the resulting
 // path to *installedPath. Leaves an image already in either recognized folder
 // where it is. The running process keeps working after the move: the mounted

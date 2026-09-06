@@ -173,6 +173,9 @@ def main() -> None:
     app_command("setup")
     require("Welcome to Speecher", 20)
     ok("setup assistant opens on a fresh profile")
+    if find_containing("Skip setup", 2) is not None:
+        fail("Skip setup is offered while the install is still pending")
+    ok("Skip setup is hidden until Speecher is installed")
 
     go_next("Transcription")
     require("Score", 10)
@@ -220,6 +223,8 @@ def main() -> None:
     if not state(next_button(), Atspi.StateType.ENABLED):
         fail("Next did not come on after installing")
     ok("installing opens the gate to the next page")
+    require("Skip setup", 10)
+    ok("Skip setup returns once Speecher is installed")
     save_grab("after-install")
 
     go_next("Ready to dictate")

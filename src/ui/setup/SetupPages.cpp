@@ -512,7 +512,7 @@ void TextDeliverySetupPage::refreshStatus()
     const YdotoolSetupStatus status = YdotoolSetup::probe(m_settings.ydotoolEnabled());
     const bool needsSignIn = status.state == YdotoolSetupState::NeedsSignOut;
     m_status->setText(needsSignIn
-                          ? QStringLiteral("Set up — activates after your next sign-in.")
+                          ? QStringLiteral("Set up — sign out and back in, then enable the virtual keyboard in the Output settings.")
                           : status.label + QStringLiteral(". ") + status.detail);
     m_setup->setEnabled(!status.ready() && !needsSignIn);
     m_setup->setText(status.ready() ? QStringLiteral("Virtual keyboard ready")
@@ -545,7 +545,7 @@ void TextDeliverySetupPage::runSetup()
             if (!result.serviceError.isEmpty()) {
                 if (result.status.state == YdotoolSetupState::NeedsSignOut) {
                     m_status->setText(
-                        QStringLiteral("Set up — activates after your next sign-in. The service could not start: %1")
+                        QStringLiteral("Set up — sign out and back in, then enable the virtual keyboard in the Output settings. The service could not start: %1")
                             .arg(result.serviceError));
                 } else {
                     m_status->setText(
@@ -785,7 +785,7 @@ void FinishSetupPage::setSignInRequired(bool required)
 {
     m_signInNote->setVisible(required);
     m_signInNote->setText(required
-                              ? QStringLiteral("Sign out and back in before using virtual-keyboard paste so the new group membership takes effect.")
+                              ? QStringLiteral("Sign out and back in so the new group membership takes effect, then enable the virtual keyboard in the Output settings.")
                               : QString());
 }
 

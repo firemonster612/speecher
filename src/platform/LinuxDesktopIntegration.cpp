@@ -203,10 +203,22 @@ QString appImageInstallDirectory(const QString &homePath)
     const QDir home(homePath);
     const QString applications = home.filePath(QStringLiteral("Applications"));
     const QString appImages = home.filePath(QStringLiteral("AppImages"));
-    if (!QFileInfo::exists(applications) && QFileInfo(appImages).isDir()) {
+    if (!QFileInfo(applications).isDir() && QFileInfo(appImages).isDir()) {
         return appImages;
     }
     return applications;
+}
+
+bool appImageInInstallFolder(const QString &homePath, const QString &appImagePath)
+{
+    const QDir home(homePath);
+    const QString directory = QFileInfo(resolvedPath(appImagePath)).absolutePath();
+    for (const QString &folder : {QStringLiteral("Applications"), QStringLiteral("AppImages")}) {
+        if (directory == resolvedPath(home.filePath(folder))) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool relocateAppImage(const QString &homePath,
@@ -217,12 +229,8 @@ bool relocateAppImage(const QString &homePath,
     const QString image = resolvedPath(appImagePath);
     *installedPath = image;
 
-    const QDir home(homePath);
-    const QString currentDirectory = QFileInfo(image).absolutePath();
-    for (const QString &folder : {QStringLiteral("Applications"), QStringLiteral("AppImages")}) {
-        if (currentDirectory == resolvedPath(home.filePath(folder))) {
-            return true;
-        }
+    if (appImageInInstallFolder(homePath, image)) {
+        return true;
     }
 
     const QString directory = appImageInstallDirectory(homePath);
@@ -247,20 +255,16 @@ bool relocateAppImage(const QString &homePath,
             }
             return false;
         }
-        // Another filesystem: copy, carry the executable bit over, then delete
-        // the original.
-        QFile::remove(target);
+        // Another filesystem: copy (QSaveFile replaces any leftover copy
+        // atomically), carry the executable bit over, then delete the
+        // original. An undeletable original is not a failed install — the
+        // copy in the application folder is complete; the stray file is the
+        // user's to remove.
         if (!copyFile(image, target, error)) {
             return false;
         }
         QFile::setPermissions(target, QFile::permissions(image) | QFileDevice::ExeOwner);
-        if (!QFile::remove(image)) {
-            if (error) {
-                *error = QStringLiteral("Copied the AppImage to %1, but could not remove the original at %2.")
-                             .arg(target, image);
-            }
-            return false;
-        }
+        QFile::remove(image);
     }
     *installedPath = resolvedPath(target);
     return true;

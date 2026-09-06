@@ -149,12 +149,12 @@ bool startYdotoolSetup(SettingsStore &settings,
             if (options.applyAutomaticOutputMethod) {
                 settings.setOutputMethod(QString::fromLatin1(OutputMethod::Automatic));
             }
-            // Enabling is the user's explicit step: no dialog, no enable. The
-            // sign-out case is the one exception, since the test cannot run
-            // until the new group membership takes effect.
-            if (result->status.state == YdotoolSetupState::NeedsSignOut
-                || (result->status.ready()
-                    && parentGuard && confirmYdotoolEnable(parentGuard))) {
+            // Enabling is the user's explicit step: no Enable click, no
+            // enable. In the sign-out case the test cannot run yet, so the
+            // enable step waits until after the next sign-in (the settings
+            // row then offers Enable).
+            if (result->status.ready()
+                && parentGuard && confirmYdotoolEnable(parentGuard)) {
                 settings.setYdotoolEnabled(true);
             }
         }

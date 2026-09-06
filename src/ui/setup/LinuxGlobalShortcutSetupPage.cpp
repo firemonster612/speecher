@@ -198,8 +198,11 @@ void LinuxGlobalShortcutSetupPage::hideAppMenuIntegration()
 
 bool LinuxGlobalShortcutSetupPage::installRequired() const
 {
+    // A command link from an earlier version can point at an image still in
+    // Downloads; that is not installed either — the move is part of the deal.
     return !m_integrationHidden && !m_appImagePath.isEmpty()
-        && !appImageIntegrationInstalled(m_homePath, m_appImagePath);
+        && (!appImageIntegrationInstalled(m_homePath, m_appImagePath)
+            || !appImageInInstallFolder(m_homePath, m_appImagePath));
 }
 
 void LinuxGlobalShortcutSetupPage::installIntegration()
@@ -250,13 +253,19 @@ void LinuxGlobalShortcutSetupPage::chooseShortcut()
 
 void LinuxGlobalShortcutSetupPage::refresh()
 {
+    // Another instance (the wizard's, next to this settings-embedded one) may
+    // have moved the image and updated APPIMAGE since construction.
+    const QString appImage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
+    if (!appImage.isEmpty()) {
+        m_appImagePath = resolvedPath(appImage);
+    }
     // Let the long path wrap at its separators inside a narrow card; the
     // zero-width spaces are stripped again when the command is copied.
     m_command->setWordWrap(true);
     m_command->setText(QString(globalShortcutInstructionCommand(
         m_homePath, m_appImagePath, m_binaryPath)).replace(QLatin1Char('/'), QStringLiteral("/\u200B")));
     if (!m_appImagePath.isEmpty()) {
-        const bool installed = appImageIntegrationInstalled(m_homePath, m_appImagePath);
+        const bool installed = !installRequired() && !m_integrationHidden;
         m_integrationButton->setText(
             installed ? QStringLiteral("Installed")
                       : QStringLiteral("Install Speecher"));
