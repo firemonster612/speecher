@@ -112,8 +112,17 @@ private slots:
         // Enabling is the user's explicit step, locked until a test passes.
         QVERIFY(!enable->isEnabled());
 
+        // Screenshot seam for UI evidence, on the pattern of the E2E rigs.
+        const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
+        if (!grabDir.isEmpty()) {
+            dialog->grab().save(grabDir + QStringLiteral("/ydotool-enable-locked.png"));
+        }
+
         run->click();
         QTRY_VERIFY_WITH_TIMEOUT(enable->isEnabled(), 5000);
+        if (!grabDir.isEmpty()) {
+            dialog->grab().save(grabDir + QStringLiteral("/ydotool-enable-unlocked.png"));
+        }
         QCOMPARE(dialog->result(), static_cast<int>(QDialog::Rejected));
 
         enable->click();

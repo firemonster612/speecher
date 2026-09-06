@@ -131,7 +131,7 @@ def click(node) -> None:
 
 
 def next_button():
-    return require("Next", 10, role="push button")
+    return require("Next >", 10, role="button")
 
 
 def go_next(expected_title: str) -> None:
@@ -190,7 +190,7 @@ def main() -> None:
     go_next("Writing profiles")
     go_next("Global Shortcut")
 
-    install = require("Install Speecher", 10, role="push button")
+    install = require("Install Speecher", 10, role="button")
     if state(next_button(), Atspi.StateType.ENABLED):
         fail("Next is enabled on the Global Shortcut page before installing")
     ok("Next stays off until Speecher is installed")
@@ -223,7 +223,7 @@ def main() -> None:
     save_grab("after-install")
 
     go_next("Ready to dictate")
-    click(require("Finish", 10, role="push button"))
+    click(require("Finish", 10, role="button"))
     time.sleep(2)
 
     config_path = os.path.join(
