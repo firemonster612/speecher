@@ -894,6 +894,15 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                          }
                      });
     QObject::connect(session,
+                     &DictationSession::popupRefinementPreviewChanged,
+                     &_state->lifetime,
+                     [weakSelf](const QString &preview) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.popupRefinementPreviewChanged) {
+                             bridge.popupRefinementPreviewChanged(preview.toNSString());
+                         }
+                     });
+    QObject::connect(session,
                      &DictationSession::popupRefiningChanged,
                      &_state->lifetime,
                      [weakSelf](bool refining) {
@@ -1057,6 +1066,32 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
         return nil;
     }
     return error.isEmpty() ? @"Accessibility settings could not be opened." : error.toNSString();
+}
+
+static NSArray<NSArray<NSString *> *> *
+bridgedStats(const QList<speecher::ProviderDescriptor> &providers, NSString *providerId)
+{
+    const QString id = QString::fromNSString(providerId);
+    NSMutableArray<NSArray<NSString *> *> *stats = [NSMutableArray array];
+    for (const speecher::ProviderDescriptor &provider : providers) {
+        if (provider.id != id) {
+            continue;
+        }
+        for (const speecher::ProviderStat &stat : provider.stats) {
+            [stats addObject:@[ stat.label.toNSString(), stat.value.toNSString() ]];
+        }
+    }
+    return stats;
+}
+
+- (NSArray<NSArray<NSString *> *> *)statsForSpeechProvider:(NSString *)providerId
+{
+    return bridgedStats(_state->controller->providerRegistry()->speechProviders(), providerId);
+}
+
+- (NSArray<NSArray<NSString *> *> *)statsForRefinementProvider:(NSString *)providerId
+{
+    return bridgedStats(_state->controller->providerRegistry()->refinementProviders(), providerId);
 }
 
 - (NSString *)setupHintForSpeechProvider:(NSString *)providerId

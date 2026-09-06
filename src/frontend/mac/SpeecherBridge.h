@@ -200,6 +200,8 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 @property (nonatomic, copy, nullable) void (^popupPreviewChanged)(NSString *preview);
 @property (nonatomic, copy, nullable) void (^popupFrozenChanged)(BOOL frozen);
 @property (nonatomic, copy, nullable) void (^popupRefiningChanged)(BOOL refining);
+// The last words of the refinement stream, emitted only while refining.
+@property (nonatomic, copy, nullable) void (^popupRefinementPreviewChanged)(NSString *preview);
 @property (nonatomic, copy, nullable) void (^popupOAuthRefreshRequested)(void);
 @property (nonatomic, copy, nullable) void (^popupListeningIndicatorRequested)(void);
 @property (nonatomic, copy, nullable) void (^popupErrorRequested)(NSString *message);
@@ -236,6 +238,10 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 // What a transcription service asks a person to do before it works, or empty
 // when it needs nothing.
 - (NSString *)setupHintForSpeechProvider:(NSString *)providerId;
+// Ordered label/value pairs from the registry descriptor, which the assistant
+// shows under the provider picker. Empty for an unknown id.
+- (NSArray<NSArray<NSString *> *> *)statsForSpeechProvider:(NSString *)providerId;
+- (NSArray<NSArray<NSString *> *> *)statsForRefinementProvider:(NSString *)providerId;
 // Prepares the transcription service the settings currently name, off the main
 // thread when the provider offers that, and answers on the main thread. A newer
 // check supersedes an older one, whose reply is dropped.

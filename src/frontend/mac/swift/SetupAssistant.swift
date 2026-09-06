@@ -463,6 +463,20 @@ private struct WelcomeStep: View {
     }
 }
 
+/// The registry's facts about a provider, as small secondary label/value rows
+/// under the picker that chooses it.
+private struct ProviderStatsRows: View {
+    let stats: [[String]]
+
+    var body: some View {
+        ForEach(stats, id: \.first) { stat in
+            LabeledContent(stat[0]) { Text(stat[1]) }
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
 private struct TranscriptionStep: View {
     @ObservedObject var flow: SetupFlowModel
     @ObservedObject var model: AppModel
@@ -473,6 +487,7 @@ private struct TranscriptionStep: View {
                 if let row = model.row("speechProvider") {
                     RowView(row: row, model: model)
                 }
+                ProviderStatsRows(stats: model.bridge.stats(forSpeechProvider: flow.providerId))
                 if !flow.providerStatus.isEmpty {
                     Text(flow.providerStatus)
                         .foregroundStyle(flow.providerReady ? AnyShapeStyle(.green)
@@ -608,12 +623,16 @@ private struct RefinementStep: View {
         // separates these onto per-provider panes, so the schema does not gate
         // them on the chosen provider itself.
         let provider = RowView.text(model.row("refinementProvider")?.value)
-        let rowIds = ["refinementProvider"]
-            + (provider == "openai" ? ["openAiFastMode"] : [])
+        let fastModeIds = (provider == "openai" ? ["openAiFastMode"] : [])
             + (provider == "anthropic" ? ["anthropicFastMode"] : [])
         Form {
             Section {
-                ForEach(model.rows(matching: rowIds), id: \.rowId) { row in
+                if let row = model.row("refinementProvider") {
+                    RowView(row: row, model: model)
+                }
+                // None has no facts worth a block, so choosing it hides them.
+                ProviderStatsRows(stats: model.bridge.stats(forRefinementProvider: provider))
+                ForEach(model.rows(matching: fastModeIds), id: \.rowId) { row in
                     RowView(row: row, model: model)
                 }
             }

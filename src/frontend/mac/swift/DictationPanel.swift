@@ -28,10 +28,14 @@ private struct DictationPanelGlass: ViewModifier {
 
 @MainActor
 final class DictationPanelState: ObservableObject {
+    /// After the mic stops the panel walks Transcribing then Refining; the live
+    /// speech preview only belongs to `live`, exactly as on the Qt popup.
+    enum Phase { case live, transcribing, refining }
+
     @Published var status = ""
     @Published var preview = ""
     @Published var level: Float = 0
-    @Published var refining = false
+    @Published var phase = Phase.live
     @Published var problem = ""
 }
 
@@ -53,6 +57,16 @@ struct DictationPanelView: View {
                     .font(.body)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
+            } else if state.problem.isEmpty, let waiting = waitingLabel {
+                // The provider is finalising or the refiner has not streamed a
+                // word yet: a shimmering label where the preview was, and no
+                // trailing control — the sweep already says work is under way,
+                // and the mic-level Gauge would be a meter over a closed mic.
+                Image(systemName: symbol)
+                    .imageScale(.large)
+                    .accessibilityLabel(phaseLabel)
+                ShimmerText(text: waiting)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 Image(systemName: symbol)
                     .imageScale(.large)
@@ -71,9 +85,10 @@ struct DictationPanelView: View {
                     .truncationMode(state.problem.isEmpty ? .head : .tail)
                 if !state.problem.isEmpty {
                     Button("Dismiss", action: dismiss)
-                } else if state.refining {
-                    // A spinner, because refinement has no measurable end, and no
-                    // label because it appeared when the work started.
+                } else if state.phase == .refining {
+                    // A spinner beside the streamed text, because refinement has
+                    // no measurable end, and no label because it appeared when
+                    // the work started.
                     ProgressView().controlSize(.small)
                 } else {
                     Gauge(value: Double(min(max(state.level, 0), 1))) { EmptyView() }
@@ -121,6 +136,55 @@ struct DictationPanelView: View {
 
     /// The phase in words, for the screen reader that can't see the symbol.
     private var phaseLabel: String { phase.label }
+
+    /// The shimmer's label while there is nothing to show where the preview
+    /// goes: the provider is still turning audio into words, or the refiner
+    /// has not streamed any yet.
+    private var waitingLabel: String? {
+        switch state.phase {
+        case .transcribing: return "Transcribing…"
+        case .refining: return state.preview.isEmpty ? "Refining…" : nil
+        case .live: return nil
+        }
+    }
+}
+
+/// Dimmed text with a looping highlight sweep, this panel's version of the Qt
+/// popup's status shimmer. Driven by TimelineView rather than a repeating
+/// SwiftUI animation so every rendered frame carries the sweep's position.
+private struct ShimmerText: View {
+    let text: String
+    private let loop: TimeInterval = 1.5
+
+    var body: some View {
+        TimelineView(.animation) { context in
+            let progress = context.date.timeIntervalSinceReferenceDate
+                .truncatingRemainder(dividingBy: loop) / loop
+            Text(text)
+                .font(.body)
+                .lineLimit(1)
+                .foregroundStyle(.secondary)
+                .overlay(
+                    Text(text)
+                        .font(.body)
+                        .lineLimit(1)
+                        .mask(alignment: .leading) {
+                            GeometryReader { geometry in
+                                let width = geometry.size.width
+                                LinearGradient(stops: [.init(color: .clear, location: 0),
+                                                       .init(color: .white, location: 0.5),
+                                                       .init(color: .clear, location: 1)],
+                                               startPoint: .leading,
+                                               endPoint: .trailing)
+                                    .frame(width: width / 2)
+                                    // From fully off the leading edge to fully
+                                    // off the trailing one, then around again.
+                                    .offset(x: width * 1.5 * progress - width / 2)
+                            }
+                        }
+                )
+        }
+    }
 }
 
 @MainActor
@@ -172,10 +236,35 @@ final class SpeecherDictationPanel {
     }
 
     private func wire() {
-        bridge.popupStatusChanged = { [weak self] status in self?.state.status = status }
+        bridge.popupStatusChanged = { [weak self] status in
+            guard let self else { return }
+            state.status = status
+            // The mic is closed but the provider is still finalising, so the
+            // shimmer takes the line and the stale speech preview goes away.
+            if status == "Stopping" {
+                state.phase = .transcribing
+                state.preview = ""
+            }
+        }
         bridge.popupPreviewChanged = { [weak self] preview in self?.setPreview(preview) }
-        bridge.popupFrozenChanged = { [weak self] frozen in self?.frozen = frozen }
-        bridge.popupRefiningChanged = { [weak self] refining in self?.state.refining = refining }
+        bridge.popupFrozenChanged = { [weak self] frozen in
+            guard let self else { return }
+            self.frozen = frozen
+            if !frozen { state.phase = .live }
+        }
+        bridge.popupRefiningChanged = { [weak self] refining in
+            guard let self else { return }
+            if refining {
+                state.phase = .refining
+                state.preview = ""
+            } else {
+                state.phase = .live
+            }
+        }
+        bridge.popupRefinementPreviewChanged = { [weak self] preview in
+            guard let self, state.phase == .refining else { return }
+            applyPreview(preview)
+        }
         bridge.popupOAuthRefreshRequested = { [weak self] in
             self?.state.status = "Refreshing sign-in…"
             self?.state.preview = "Refreshing sign-in…"
@@ -210,6 +299,7 @@ final class SpeecherDictationPanel {
         // state for the next show to flash.
         state.preview = ""
         state.problem = problem
+        state.phase = .live
         present()
     }
 
@@ -223,7 +313,13 @@ final class SpeecherDictationPanel {
     var level: NSWindow.Level { panel.level }
 
     private func setPreview(_ preview: String) {
-        guard !frozen else { return }
+        guard !frozen, state.phase == .live else { return }
+        applyPreview(preview)
+    }
+
+    /// The one line of type and the pill's width around it, shared by the live
+    /// speech preview and the streamed refinement text.
+    private func applyPreview(_ preview: String) {
         state.preview = preview
         let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
         let textWidth = (preview as NSString).size(withAttributes: [.font: font]).width
