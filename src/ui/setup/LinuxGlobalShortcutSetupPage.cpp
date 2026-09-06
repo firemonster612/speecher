@@ -6,6 +6,7 @@
 #include <QClipboard>
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -128,12 +129,19 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     m_integration->setObjectName(QStringLiteral("appMenuIntegration"));
     auto *integrationLayout = new QVBoxLayout(m_integration);
     integrationLayout->setContentsMargins(0, 0, 0, 0);
+    QString installFolder = appImageInstallDirectory(m_homePath);
+    if (installFolder.startsWith(m_homePath)) {
+        installFolder = QStringLiteral("~") + installFolder.mid(m_homePath.size());
+    }
     integrationLayout->addWidget(guidanceLabel(
-        QStringLiteral("This also makes the speecher command available for desktop shortcuts."),
+        QStringLiteral("Installing moves the Speecher AppImage to %1, adds it to your app "
+                       "menu, and makes the speecher command available for desktop "
+                       "shortcuts. Setup continues once Speecher is installed.")
+            .arg(installFolder),
         m_integration));
     auto *integrationRow = new QHBoxLayout;
     m_integrationButton = new QPushButton(
-        QStringLiteral("Add Speecher to your app menu"), m_integration);
+        QStringLiteral("Install Speecher"), m_integration);
     m_integrationStatus = new QLabel(m_integration);
     integrationRow->addWidget(m_integrationButton);
     integrationRow->addWidget(m_integrationStatus, 1);
@@ -185,20 +193,40 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
 void LinuxGlobalShortcutSetupPage::hideAppMenuIntegration()
 {
     m_integration->hide();
+    m_integrationHidden = true;
+}
+
+bool LinuxGlobalShortcutSetupPage::installRequired() const
+{
+    return !m_integrationHidden && !m_appImagePath.isEmpty()
+        && !appImageIntegrationInstalled(m_homePath, m_appImagePath);
 }
 
 void LinuxGlobalShortcutSetupPage::installIntegration()
 {
     QString error;
+    QString installedPath;
+    if (!relocateAppImage(m_homePath, m_appImagePath, &installedPath, &error)) {
+        m_integrationStatus->setText(error);
+        return;
+    }
+    if (installedPath != m_appImagePath) {
+        // Everything that resolves the image path later (updates, restart,
+        // shortcut commands) reads APPIMAGE, so the move has to land there.
+        m_appImagePath = installedPath;
+        qputenv("APPIMAGE", QFile::encodeName(installedPath));
+    }
     if (!installAppImageIntegration(m_homePath,
                                     m_appImagePath,
                                     QCoreApplication::applicationDirPath(),
                                     &error)) {
         m_integrationStatus->setText(error);
+        emit installStateChanged();
         return;
     }
     m_integrationStatus->clear();
     refresh();
+    emit installStateChanged();
 }
 
 void LinuxGlobalShortcutSetupPage::setShortcut()
@@ -231,7 +259,7 @@ void LinuxGlobalShortcutSetupPage::refresh()
         const bool installed = appImageIntegrationInstalled(m_homePath, m_appImagePath);
         m_integrationButton->setText(
             installed ? QStringLiteral("Installed")
-                      : QStringLiteral("Add Speecher to your app menu"));
+                      : QStringLiteral("Install Speecher"));
         m_integrationButton->setEnabled(!installed);
     }
 

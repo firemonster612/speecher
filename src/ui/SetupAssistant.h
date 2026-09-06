@@ -11,6 +11,11 @@
 #include <QStringList>
 
 class QAbstractButton;
+#ifdef SPEECHER_WITH_KASSISTANT
+class KPageWidgetItem;
+#else
+class QWizardPage;
+#endif
 
 namespace speecher {
 
@@ -51,7 +56,14 @@ private:
     QAbstractButton *m_skipButton = nullptr;
     bool m_singlePage = false;
 #ifdef Q_OS_LINUX
+    void applyInstallGate();
+
     LinuxGlobalShortcutSetupPage *m_globalShortcutPage = nullptr;
+#ifdef SPEECHER_WITH_KASSISTANT
+    KPageWidgetItem *m_globalShortcutItem = nullptr;
+#else
+    QWizardPage *m_globalShortcutWizardPage = nullptr;
+#endif
 #endif
 #ifndef SPEECHER_WITH_KASSISTANT
     QHash<int, QWidget *> m_pageContents;

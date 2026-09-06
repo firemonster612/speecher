@@ -11,6 +11,8 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
+#include <functional>
+
 #ifdef SPEECHER_WITH_KASSISTANT
 #include <KPageWidgetItem>
 #else
@@ -39,9 +41,24 @@ QStringList setupPageTitles()
 }
 
 #ifndef SPEECHER_WITH_KASSISTANT
-QWizardPage *wizardPage(QWidget *content, const QString &title)
+#ifdef Q_OS_LINUX
+// Holds the wizard's Next button until the gate opens: QWizard re-reads
+// isComplete() whenever completeChanged() fires.
+class GatedWizardPage final : public QWizardPage {
+public:
+    std::function<bool()> gate;
+
+    bool isComplete() const override
+    {
+        return (!gate || gate()) && QWizardPage::isComplete();
+    }
+
+    void refreshGate() { emit completeChanged(); }
+};
+#endif
+
+QWizardPage *wizardPage(QWizardPage *page, QWidget *content, const QString &title)
 {
-    auto *page = new QWizardPage;
     page->setTitle(title);
     auto *layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -118,7 +135,14 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     for (int index = 0; index < pageContents.size(); ++index) {
         QWidget *content = pageContents.at(index);
         if (content && (requestedPageIndex < 0 || requestedPageIndex == index)) {
-            addPage(content, titles.at(index));
+            KPageWidgetItem *item = addPage(content, titles.at(index));
+#ifdef Q_OS_LINUX
+            if (content == m_globalShortcutPage) {
+                m_globalShortcutItem = item;
+            }
+#else
+            Q_UNUSED(item);
+#endif
         }
     }
     if (!m_singlePage) {
@@ -144,7 +168,19 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     for (int index = 0; index < pageContents.size(); ++index) {
         QWidget *content = pageContents.at(index);
         if (content && (requestedPageIndex < 0 || requestedPageIndex == index)) {
-            const int id = addPage(wizardPage(content, titles.at(index)));
+            QWizardPage *page = nullptr;
+#ifdef Q_OS_LINUX
+            if (content == m_globalShortcutPage) {
+                auto *gated = new GatedWizardPage;
+                gated->gate = [this] { return !m_globalShortcutPage->installRequired(); };
+                m_globalShortcutWizardPage = gated;
+                page = gated;
+            }
+#endif
+            if (!page) {
+                page = new QWizardPage;
+            }
+            const int id = addPage(wizardPage(page, content, titles.at(index)));
             m_pageContents.insert(id, content);
         }
     }
@@ -164,6 +200,15 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
                 m_finishPage,
                 &FinishSetupPage::setSignInRequired);
     }
+#ifdef Q_OS_LINUX
+    if (m_globalShortcutPage) {
+        connect(m_globalShortcutPage,
+                &LinuxGlobalShortcutSetupPage::installStateChanged,
+                this,
+                [this] { applyInstallGate(); });
+        applyInstallGate();
+    }
+#endif
 #ifdef Q_OS_LINUX
     if (m_singlePage) {
         updateActivePage(m_globalShortcutPage);
@@ -203,6 +248,25 @@ int SetupAssistant::pageIndex(SetupAssistantPage page)
 #endif
     return -1;
 }
+
+#ifdef Q_OS_LINUX
+// Next stays off on the Global Shortcut page until Install Speecher has run;
+// installing the AppImage is a required step of an AppImage setup.
+void SetupAssistant::applyInstallGate()
+{
+    const bool installed = !m_globalShortcutPage->installRequired();
+#ifdef SPEECHER_WITH_KASSISTANT
+    if (m_globalShortcutItem) {
+        setValid(m_globalShortcutItem, installed);
+    }
+#else
+    Q_UNUSED(installed);
+    if (m_globalShortcutWizardPage) {
+        static_cast<GatedWizardPage *>(m_globalShortcutWizardPage)->refreshGate();
+    }
+#endif
+}
+#endif
 
 void SetupAssistant::skipSetup()
 {

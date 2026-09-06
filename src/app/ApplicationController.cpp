@@ -601,17 +601,21 @@ bool ApplicationController::ensureSetupCompleted()
 
 // Model names and speeds here follow the September 2026 defaults; the speed
 // and quality lines come from measured runs of the real refinement request
-// (see .scratch/provider-stats/FINDINGS.md for the method and numbers).
+// (see .scratch/provider-stats/FINDINGS.md for the method and numbers). The
+// score is the maintainers' overall ranking, folding those lines into one
+// number out of 10.
 static QVector<ProviderStat> refinementProviderStats(const QString &id)
 {
     if (id == QStringLiteral("openai")) {
-        return {{QStringLiteral("Default model"), QStringLiteral("gpt-5.6-luna")},
+        return {{QStringLiteral("Score"), QStringLiteral("9 / 10")},
+                {QStringLiteral("Default model"), QStringLiteral("gpt-5.6-luna")},
                 {QStringLiteral("Speed"), QStringLiteral("About 3 seconds per dictation")},
                 {QStringLiteral("Efficiency"), QStringLiteral("No reasoning pass; time varies run to run")},
                 {QStringLiteral("Quality"), QStringLiteral("Excellent cleanup; applies spoken corrections reliably")}};
     }
     if (id == QStringLiteral("anthropic")) {
-        return {{QStringLiteral("Default model"), QStringLiteral("Claude Sonnet 4.6")},
+        return {{QStringLiteral("Score"), QStringLiteral("8 / 10")},
+                {QStringLiteral("Default model"), QStringLiteral("Claude Sonnet 4.6")},
                 {QStringLiteral("Speed"), QStringLiteral("About 2 seconds per dictation")},
                 {QStringLiteral("Efficiency"), QStringLiteral("Light reasoning; very consistent finish times")},
                 {QStringLiteral("Quality"), QStringLiteral("Excellent cleanup; can leave a spoken correction in")}};
@@ -640,7 +644,8 @@ void ApplicationController::registerProviders()
          false,
          QStringLiteral("Deepgram Nova 3: words appear live as you speak. "
                         "About 60 languages, automatic punctuation and numerals."),
-         {{QStringLiteral("Engine"), QStringLiteral("Deepgram Nova 3")},
+         {{QStringLiteral("Score"), QStringLiteral("8 / 10")},
+          {QStringLiteral("Engine"), QStringLiteral("Deepgram Nova 3")},
           {QStringLiteral("Languages"), QStringLiteral("About 60")},
           {QStringLiteral("Speed"), QStringLiteral("Live stream; words appear as you speak")},
           {QStringLiteral("Accuracy"), QStringLiteral("Strong, holds up in noisy rooms")},
@@ -655,7 +660,8 @@ void ApplicationController::registerProviders()
          false,
          QStringLiteral("GPT Live Transcribe: very accurate; text arrives a phrase "
                         "at a time after short pauses. Around 100 languages."),
-         {{QStringLiteral("Engine"), QStringLiteral("GPT Live Transcribe")},
+         {{QStringLiteral("Score"), QStringLiteral("9 / 10")},
+          {QStringLiteral("Engine"), QStringLiteral("GPT Live Transcribe")},
           {QStringLiteral("Languages"), QStringLiteral("Around 100")},
           {QStringLiteral("Speed"), QStringLiteral("A phrase at a time, after a short pause")},
           {QStringLiteral("Accuracy"), QStringLiteral("Excellent, even with accents and noise")},

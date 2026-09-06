@@ -14,10 +14,19 @@ QString linuxGlobalShortcutManualInstruction();
 QString linuxGlobalShortcutCommand();
 
 class LinuxGlobalShortcutSetupPage final : public QWidget {
+    Q_OBJECT
+
 public:
     explicit LinuxGlobalShortcutSetupPage(ApplicationController &controller,
                                           QWidget *parent = nullptr);
     void hideAppMenuIntegration();
+
+    // True while this AppImage run still needs the user to click Install
+    // Speecher; the setup assistant holds Next until it clears.
+    bool installRequired() const;
+
+signals:
+    void installStateChanged();
 
 private:
     void installIntegration();
@@ -42,6 +51,7 @@ private:
     QWidget *m_integration = nullptr;
     QPushButton *m_integrationButton = nullptr;
     QLabel *m_integrationStatus = nullptr;
+    bool m_integrationHidden = false;
 };
 
 } // namespace speecher

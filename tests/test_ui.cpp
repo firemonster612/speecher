@@ -5,15 +5,20 @@
 #include "ui/AccessibilityNotice.h"
 #include "core/SecretStore.h"
 #include "frontend/qt/OutputCustomRows.h"
+#ifdef SPEECHER_WITH_YDOTOOL
+#include "output/YdotoolSetupFlow.h"
+#endif
 #include "frontend/qt/ProviderCustomRows.h"
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/settings/SettingsPageSupport.h"
 #include "ui/setup/SetupPages.h"
 
 #include <QApplication>
+#include <QDialog>
 #include <QGroupBox>
 
 #include <algorithm>
+#include <memory>
 #include <QLabel>
 #include <QCheckBox>
 #include <QComboBox>
@@ -83,6 +88,38 @@ private slots:
     {
         QStandardPaths::setTestModeEnabled(true);
     }
+
+#ifdef SPEECHER_WITH_YDOTOOL
+    void ydotoolEnableStepUnlocksOnlyAfterAPassedTest()
+    {
+        // The fake stands in for the ydotoold daemon: it types into the
+        // dialog's focused test field.
+        QDialog *dialog = nullptr;
+        const auto fakeType = [&dialog](const QString &text, QString *) {
+            auto *field = dialog->findChild<QLineEdit *>();
+            if (field) {
+                field->setText(text);
+            }
+            return true;
+        };
+        const std::unique_ptr<QDialog> owned(createYdotoolEnableDialog(nullptr, fakeType));
+        dialog = owned.get();
+        dialog->show();
+        auto *run = dialog->findChild<QPushButton *>(QStringLiteral("ydotoolRunTest"));
+        auto *enable = dialog->findChild<QPushButton *>(QStringLiteral("ydotoolEnable"));
+        QVERIFY(run);
+        QVERIFY(enable);
+        // Enabling is the user's explicit step, locked until a test passes.
+        QVERIFY(!enable->isEnabled());
+
+        run->click();
+        QTRY_VERIFY_WITH_TIMEOUT(enable->isEnabled(), 5000);
+        QCOMPARE(dialog->result(), static_cast<int>(QDialog::Rejected));
+
+        enable->click();
+        QCOMPARE(dialog->result(), static_cast<int>(QDialog::Accepted));
+    }
+#endif
 
     void popupCanBeSizedDuringPlatformConfiguration()
     {

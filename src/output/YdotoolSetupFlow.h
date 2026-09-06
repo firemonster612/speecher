@@ -4,6 +4,7 @@
 
 #include <functional>
 
+class QDialog;
 class QObject;
 class QWidget;
 
@@ -22,6 +23,13 @@ struct YdotoolSetupFlowOptions {
     bool confirmInstall;
     bool applyAutomaticOutputMethod;
 };
+
+// The explicit enable step after setup: Run test types into the dialog's field
+// through typeText, and the accepting Enable button unlocks only once a test
+// has passed. Exposed so tests can drive the gating without a ydotool daemon.
+QDialog *createYdotoolEnableDialog(
+    QWidget *parent,
+    std::function<bool(const QString &text, QString *error)> typeText);
 
 bool startYdotoolSetup(SettingsStore &settings,
                        QWidget *dialogParent,

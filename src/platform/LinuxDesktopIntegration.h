@@ -20,6 +20,19 @@ bool writeAppImageDesktopFile(const QString &sourcePath,
 bool appImageIntegrationInstalled(const QString &homePath,
                                   const QString &appImagePath);
 
+// Where installed AppImages live: ~/Applications, or ~/AppImages when only
+// that already exists.
+QString appImageInstallDirectory(const QString &homePath);
+
+// Moves the AppImage into appImageInstallDirectory() and writes the resulting
+// path to *installedPath. Leaves an image already in either recognized folder
+// where it is. The running process keeps working after the move: the mounted
+// filesystem holds the old file open, only the path changes.
+bool relocateAppImage(const QString &homePath,
+                      const QString &appImagePath,
+                      QString *installedPath,
+                      QString *error = nullptr);
+
 bool installAppImageIntegration(const QString &homePath,
                                 const QString &appImagePath,
                                 const QString &applicationDirPath,

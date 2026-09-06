@@ -68,15 +68,21 @@ AppImageUpdater::AppImageUpdater(SettingsStore *settings,
                       QStringLiteral("AppImage"),
                       parent)
 {
-    const QString appImage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
-    if (QFileInfo(appImage).isFile()) {
-        m_appImagePath = QFileInfo(appImage).absoluteFilePath();
-    }
+    m_appImagePath = currentAppImagePath();
+}
+
+// Read fresh rather than kept from construction: the setup assistant can move
+// the image into the user's application folder and update APPIMAGE while
+// Speecher runs.
+QString AppImageUpdater::currentAppImagePath()
+{
+    const QFileInfo appImage(QString::fromLocal8Bit(qgetenv("APPIMAGE")));
+    return appImage.isFile() ? appImage.absoluteFilePath() : QString();
 }
 
 bool AppImageUpdater::isAppImage() const
 {
-    return !m_appImagePath.isEmpty();
+    return !currentAppImagePath().isEmpty();
 }
 
 bool AppImageUpdater::supportsAutomaticDownloads() const
@@ -172,6 +178,7 @@ bool AppImageUpdater::swapAppImage(const QString &downloadedPath,
 std::unique_ptr<QFile> AppImageUpdater::createDownload(QString *error,
                                                         bool *manualInstallRequired)
 {
+    m_appImagePath = currentAppImagePath();
     const QString folder = QFileInfo(m_appImagePath).absolutePath();
     if (!QFileInfo(folder).isWritable()) {
         *manualInstallRequired = true;
@@ -238,6 +245,7 @@ void AppImageUpdater::restartApplication()
         QCoreApplication::quit();
     });
 
+    m_appImagePath = currentAppImagePath();
     QProcess process;
     process.setProgram(m_appImagePath);
     process.setArguments(QCoreApplication::arguments().mid(1));

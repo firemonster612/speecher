@@ -911,6 +911,74 @@ private slots:
         QVERIFY(QFileInfo::exists(QDir(home).filePath(
             QStringLiteral(".local/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg"))));
     }
+
+    void relocateAppImageMovesTheImageIntoTheApplicationsFolder()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QDir home(root.filePath(QStringLiteral("home")));
+        QVERIFY(QDir().mkpath(home.path()));
+        const QString image = root.filePath(QStringLiteral("Downloads/Speecher.AppImage"));
+        QVERIFY(QDir().mkpath(QFileInfo(image).path()));
+        QFile file(image);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QVERIFY(file.write("image") == 5);
+        file.close();
+        QVERIFY(file.setPermissions(file.permissions() | QFileDevice::ExeOwner));
+
+        QString installed;
+        QString error;
+        QVERIFY2(relocateAppImage(home.path(), image, &installed, &error), qPrintable(error));
+        QCOMPARE(installed, resolvedPath(home.filePath(QStringLiteral("Applications/Speecher.AppImage"))));
+        QVERIFY(QFileInfo(installed).isFile());
+        QVERIFY(QFileInfo(installed).isExecutable());
+        QVERIFY(!QFile::exists(image));
+
+        // A second run from the new location is a no-op.
+        QString unchanged;
+        QVERIFY2(relocateAppImage(home.path(), installed, &unchanged, &error), qPrintable(error));
+        QCOMPARE(unchanged, installed);
+        QVERIFY(QFileInfo(installed).isFile());
+    }
+
+    void relocateAppImagePrefersAnExistingAppImagesFolder()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QDir home(root.filePath(QStringLiteral("home")));
+        QVERIFY(QDir().mkpath(home.filePath(QStringLiteral("AppImages"))));
+        const auto makeImage = [](const QString &path) {
+            QFile file(path);
+            if (!file.open(QIODevice::WriteOnly)) {
+                return false;
+            }
+            return file.write("image") == 5;
+        };
+
+        // No ~/Applications: the existing ~/AppImages folder is the home.
+        const QString image = root.filePath(QStringLiteral("Speecher.AppImage"));
+        QVERIFY(makeImage(image));
+        QString installed;
+        QString error;
+        QVERIFY2(relocateAppImage(home.path(), image, &installed, &error), qPrintable(error));
+        const QString kept = resolvedPath(home.filePath(QStringLiteral("AppImages/Speecher.AppImage")));
+        QCOMPARE(installed, kept);
+
+        // An image the user already keeps in ~/AppImages stays there even
+        // once ~/Applications exists.
+        QVERIFY(QDir().mkpath(home.filePath(QStringLiteral("Applications"))));
+        QVERIFY2(relocateAppImage(home.path(), installed, &installed, &error), qPrintable(error));
+        QCOMPARE(installed, kept);
+
+        // With both folders present ~/Applications wins, and a leftover copy
+        // of the same name there is replaced.
+        const QString elsewhere = root.filePath(QStringLiteral("Other.AppImage"));
+        QVERIFY(makeImage(elsewhere));
+        QVERIFY(makeImage(home.filePath(QStringLiteral("Applications/Other.AppImage"))));
+        QVERIFY2(relocateAppImage(home.path(), elsewhere, &installed, &error), qPrintable(error));
+        QCOMPARE(installed, resolvedPath(home.filePath(QStringLiteral("Applications/Other.AppImage"))));
+        QVERIFY(!QFile::exists(elsewhere));
+    }
 #endif
 
     void failedMediaResumeRetainsOwnershipForRetry()

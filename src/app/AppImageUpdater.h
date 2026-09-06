@@ -51,6 +51,7 @@ private:
 
     static QProcessEnvironment restartEnvironment(const QStringList &arguments,
                                                    QProcessEnvironment environment);
+    static QString currentAppImagePath();
 
     std::optional<AppImageFileIdentity> m_appImageIdentity;
     QString m_appImagePath;

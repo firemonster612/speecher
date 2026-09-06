@@ -22,55 +22,78 @@ namespace {
 
 bool setupInProgress = false;
 
-bool verifyYdotoolTyping(QWidget *parent)
+bool confirmYdotoolEnable(QWidget *parent)
 {
-    QDialog dialog(parent);
-    dialog.setWindowTitle(QStringLiteral("Verify ydotool"));
-    auto *layout = new QVBoxLayout(&dialog);
-    auto *label = new QLabel(
-        QStringLiteral("Keep this field focused while Speecher tests virtual keyboard input."),
-        &dialog);
-    label->setWordWrap(true);
-    auto *field = new QLineEdit(&dialog);
-    field->setClearButtonEnabled(true);
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
-    auto *run = buttons->addButton(QStringLiteral("Run test"), QDialogButtonBox::AcceptRole);
-    layout->addWidget(label);
-    layout->addWidget(field);
-    layout->addWidget(buttons);
-    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    QObject::connect(run, &QPushButton::clicked, &dialog, [field, &dialog] {
-        field->clear();
-        field->setFocus(Qt::OtherFocusReason);
-        QTimer::singleShot(150, field, [field, &dialog] {
-            QString error;
+    const std::unique_ptr<QDialog> dialog(createYdotoolEnableDialog(
+        parent,
+        [](const QString &text, QString *error) {
             YdotoolDelivery ydotool;
-            const QString expected = QStringLiteral("speecher test");
-            if (!ydotool.type(expected, &error)) {
-                QMessageBox::warning(
-                    &dialog,
-                    QStringLiteral("ydotool verification failed"),
-                    error);
-                return;
-            }
-            QTimer::singleShot(350, field, [field, expected, &dialog] {
-                if (field->text() == expected) {
-                    dialog.accept();
-                } else {
-                    QMessageBox::warning(
-                        &dialog,
-                        QStringLiteral("ydotool verification failed"),
-                        QStringLiteral("The test field did not receive the expected text."));
-                }
-            });
-        });
-    });
-    dialog.resize(420, dialog.sizeHint().height());
-    field->setFocus(Qt::OtherFocusReason);
-    return dialog.exec() == QDialog::Accepted;
+            return ydotool.type(text, error);
+        }));
+    return dialog->exec() == QDialog::Accepted;
 }
 
 } // namespace
+
+QDialog *createYdotoolEnableDialog(
+    QWidget *parent,
+    std::function<bool(const QString &text, QString *error)> typeText)
+{
+    auto *dialog = new QDialog(parent);
+    dialog->setWindowTitle(QStringLiteral("Enable virtual keyboard"));
+    auto *layout = new QVBoxLayout(dialog);
+    auto *label = new QLabel(
+        QStringLiteral("Run the typing test with the field below focused. Once the test "
+                       "passes, choose Enable to turn on virtual keyboard paste."),
+        dialog);
+    label->setWordWrap(true);
+    auto *field = new QLineEdit(dialog);
+    field->setClearButtonEnabled(true);
+    auto *status = new QLabel(dialog);
+    status->setWordWrap(true);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, dialog);
+    auto *run = buttons->addButton(QStringLiteral("Run test"), QDialogButtonBox::ActionRole);
+    run->setObjectName(QStringLiteral("ydotoolRunTest"));
+    auto *enable = buttons->addButton(QStringLiteral("Enable"), QDialogButtonBox::AcceptRole);
+    enable->setObjectName(QStringLiteral("ydotoolEnable"));
+    enable->setEnabled(false);
+    layout->addWidget(label);
+    layout->addWidget(field);
+    layout->addWidget(status);
+    layout->addWidget(buttons);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, &QDialog::accept);
+    QObject::connect(run, &QPushButton::clicked, dialog, [field, status, enable, dialog, typeText] {
+        field->clear();
+        field->setFocus(Qt::OtherFocusReason);
+        QTimer::singleShot(150, field, [field, status, enable, dialog, typeText] {
+            QString error;
+            const QString expected = QStringLiteral("speecher test");
+            if (!typeText(expected, &error)) {
+                QMessageBox::warning(
+                    dialog,
+                    QStringLiteral("Virtual keyboard test failed"),
+                    error);
+                return;
+            }
+            QTimer::singleShot(350, field, [field, status, enable, dialog, expected] {
+                if (field->text() != expected) {
+                    QMessageBox::warning(
+                        dialog,
+                        QStringLiteral("Virtual keyboard test failed"),
+                        QStringLiteral("The test field did not receive the expected text."));
+                    return;
+                }
+                status->setText(QStringLiteral("Test passed. Choose Enable to finish."));
+                enable->setEnabled(true);
+                enable->setDefault(true);
+            });
+        });
+    });
+    dialog->resize(420, dialog->sizeHint().height());
+    field->setFocus(Qt::OtherFocusReason);
+    return dialog;
+}
 
 bool startYdotoolSetup(SettingsStore &settings,
                        QWidget *dialogParent,
@@ -89,7 +112,7 @@ bool startYdotoolSetup(SettingsStore &settings,
         YdotoolSetupFlowResult result;
         result.helperOk = true;
         result.status = current;
-        if (verifyYdotoolTyping(dialogParent)) {
+        if (confirmYdotoolEnable(dialogParent)) {
             settings.setYdotoolEnabled(true);
         }
         setupInProgress = false;
@@ -126,9 +149,12 @@ bool startYdotoolSetup(SettingsStore &settings,
             if (options.applyAutomaticOutputMethod) {
                 settings.setOutputMethod(QString::fromLatin1(OutputMethod::Automatic));
             }
+            // Enabling is the user's explicit step: no dialog, no enable. The
+            // sign-out case is the one exception, since the test cannot run
+            // until the new group membership takes effect.
             if (result->status.state == YdotoolSetupState::NeedsSignOut
                 || (result->status.ready()
-                    && (!parentGuard || verifyYdotoolTyping(parentGuard)))) {
+                    && parentGuard && confirmYdotoolEnable(parentGuard))) {
                 settings.setYdotoolEnabled(true);
             }
         }
