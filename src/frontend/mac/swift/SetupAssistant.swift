@@ -103,6 +103,9 @@ final class SetupFlowModel: ObservableObject {
     /// settings window here.
     var onFinished: () -> Void = {}
     var closeWindow: () -> Void = {}
+    /// E2E capture seam only: called from the step content's onAppear, so a
+    /// snapshot can never precede the destination step's view existing.
+    var stepRendered: ((Int) -> Void)?
 
     @Published var step = 0
 
@@ -407,6 +410,8 @@ struct SetupAssistantView: View {
             .padding(.bottom, 4)
             content(step)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .id(flow.step)
+                .onAppear { flow.stepRendered?(flow.step) }
             Divider()
             controls
         }
@@ -718,7 +723,6 @@ final class SpeecherSetupAssistant: NSObject, NSWindowDelegate {
     private let flow: SetupFlowModel
     private let window: NSWindow
     private let onClosed: () -> Void
-    private var stepObserver: AnyCancellable?
 
     init(model: AppModel, onFinished: @escaping () -> Void, onClosed: @escaping () -> Void) {
         flow = SetupFlowModel(model: model)
@@ -772,23 +776,25 @@ final class SpeecherSetupAssistant: NSObject, NSWindowDelegate {
     /// as a PNG there, named by its position and id. The window's backing store
     /// needs no screen-recording grant, which a CI runner does not have.
     private func installCaptureSeam() {
-        guard stepObserver == nil,
+        guard flow.stepRendered == nil,
               let dir = ProcessInfo.processInfo.environment["SPEECHER_E2E_SETUP_CAPTURE_DIR"],
               !dir.isEmpty else { return }
-        let capture = { [weak self] (step: Int) in
+        // Driven by the step content's onAppear rather than $step: the model
+        // publishes before SwiftUI renders, and a slow main-thread check (for
+        // example the transcription step's Keychain read) can hold the commit
+        // past any fixed delay, snapshotting the previous page under the new
+        // step's name. onAppear cannot fire before the view exists; the short
+        // settle lets the window finish drawing it.
+        flow.stepRendered = { [weak self] (step: Int) in
             guard let self else { return }
             let id = flow.steps[step].id
-            // @Published fires before SwiftUI renders. Two queued main-thread
-            // blocks can still capture the previous page, especially while
-            // the microphone starts. Give the renderer time to commit first.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 guard self.flow.step == step else { return }
                 self.window.contentView?.layoutSubtreeIfNeeded()
                 self.window.displayIfNeeded()
                 self.capture(toPath: "\(dir)/step-\(step + 1)-\(id).png")
             }
         }
-        stepObserver = flow.$step.sink { capture($0) }
     }
 
     private func capture(toPath path: String) {
