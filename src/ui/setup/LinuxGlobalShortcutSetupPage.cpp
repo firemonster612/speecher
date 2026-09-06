@@ -190,6 +190,15 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     refresh();
 }
 
+// The settings-embedded instance has no other trigger after the wizard's
+// install moves the image: coming back to the page must not keep showing a
+// manual command for the deleted path.
+void LinuxGlobalShortcutSetupPage::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    refresh();
+}
+
 void LinuxGlobalShortcutSetupPage::hideAppMenuIntegration()
 {
     m_integration->hide();
@@ -265,7 +274,8 @@ void LinuxGlobalShortcutSetupPage::refresh()
     m_command->setText(QString(globalShortcutInstructionCommand(
         m_homePath, m_appImagePath, m_binaryPath)).replace(QLatin1Char('/'), QStringLiteral("/\u200B")));
     if (!m_appImagePath.isEmpty()) {
-        const bool installed = !installRequired() && !m_integrationHidden;
+        const bool installed = appImageIntegrationInstalled(m_homePath, m_appImagePath)
+            && appImageInInstallFolder(m_homePath, m_appImagePath);
         m_integrationButton->setText(
             installed ? QStringLiteral("Installed")
                       : QStringLiteral("Install Speecher"));

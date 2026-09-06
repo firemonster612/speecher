@@ -5,6 +5,7 @@
 class QLabel;
 class QKeySequenceEdit;
 class QPushButton;
+class QShowEvent;
 
 namespace speecher {
 
@@ -27,6 +28,9 @@ public:
 
 signals:
     void installStateChanged();
+
+protected:
+    void showEvent(QShowEvent *event) override;
 
 private:
     void installIntegration();
