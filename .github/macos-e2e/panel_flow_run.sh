@@ -41,14 +41,31 @@ if not 0 <= stopping < refining < streamed < delivered:
 PY
 }
 
-if ! launch_app; then
+# Listening from launch: sending "start" over IPC right after the spawn races
+# the daemon's socket setup, and the CLI then start-detaches a second daemon
+# that dies on the taken socket while the command is lost.
+launch_listening() {
+  if pgrep -x speecher >"$CASE_DIR/prelaunch-processes.txt" 2>&1; then
+    return 1
+  fi
+  SPEECHER_E2E_STUB="${SPEECHER_E2E_STUB:-}" \
+    SPEECHER_E2E_SKIP_MIC_GATE="${SPEECHER_E2E_SKIP_MIC_GATE:-}" \
+    SPEECHER_E2E_EVIDENCE_DIR="$CASE_DIR" \
+    SPEECHER_E2E_PANEL_CAPTURE_DIR="$CASE_DIR/frames" \
+    DYLD_FRAMEWORK_PATH="${QT_ROOT_DIR:-}/lib" \
+    "$APP_BIN" --daemon --start-listening >"$CASE_DIR/process.out" 2>&1 &
+  APP_PID=$!
+  poll_process 15
+}
+
+if ! launch_listening; then
   fail_case "The app did not launch."
 else
   errors=()
-  cli start >"$CASE_DIR/start.out" 2>&1 || errors+=("the start command failed")
   poll_status listening 10 >"$CASE_DIR/listening.out" \
     || errors+=("the session never reached listening")
-  # Long enough for the stub's partials to fill the live preview on film.
+  # Long enough for the stub's partials to fill the live preview on film. By
+  # now the daemon's IPC socket has long been up, so the CLI verbs are safe.
   sleep 2.5
   cli stop >"$CASE_DIR/stop.out" 2>&1 || errors+=("the stop command failed")
   poll_status idle 25 >"$CASE_DIR/idle.out" || errors+=("the session never returned to idle")

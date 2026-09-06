@@ -103,18 +103,27 @@ drive_picker() {
 on run argv
   set targetValue to item 1 of argv
   tell application "System Events" to tell process "speecher"
-    set found to {}
-    repeat with e in entire contents of window "Speecher Setup Assistant"
+    set allElements to entire contents of window "Speecher Setup Assistant"
+    set thePopup to missing value
+    repeat with e in allElements
       try
-        if class of e is pop up button then set end of found to e
+        if class of e is pop up button or class of e is menu button then
+          set thePopup to e
+          exit repeat
+        end if
       end try
     end repeat
-    if (count of found) is 0 then error "no pop up buttons in the window"
-    set thePopup to item 1 of found
-    log "pop up buttons: " & (count of found)
-    try
-      log "value: " & (value of thePopup as text)
-    end try
+    if thePopup is missing value then
+      set classNames to {}
+      repeat with e in allElements
+        try
+          set end of classNames to (class of e as text)
+        end try
+      end repeat
+      set AppleScript's text item delimiters to ", "
+      error "no pop up buttons among " & (count of allElements) & " elements: " & (classNames as text)
+    end if
+    log "picker class: " & (class of thePopup as text)
     click thePopup
     delay 0.5
     click menu item targetValue of menu 1 of thePopup
