@@ -6,6 +6,7 @@
 #include "providers/ProviderRegistry.h"
 
 #include <QDebug>
+#include <QRegularExpression>
 #include <QTimer>
 
 #include <utility>
@@ -779,8 +780,28 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
             return;
         }
         m_refinementStream += text;
+        // The stream carries SPEECHER_BINDING_n placeholders the final restore
+        // pass maps back to their bound values; the preview must not show that
+        // internal syntax. Complete tokens are restored here, and a token still
+        // streaming in at the tail (possibly with more digits coming) is hidden
+        // until it is finished.
+        QString preview = m_refinementStream;
+        static const QRegularExpression placeholderToken(
+            QStringLiteral("SPEECHER_BINDING_[0-9]+"));
+        const qsizetype tail = preview.lastIndexOf(QStringLiteral("SPEECHER"));
+        if (tail >= 0) {
+            const QRegularExpressionMatch match = placeholderToken.match(
+                preview, tail, QRegularExpression::NormalMatch,
+                QRegularExpression::AnchorAtOffsetMatchOption);
+            if (!match.hasMatch() || match.capturedEnd() == preview.size()) {
+                preview.truncate(tail);
+            }
+        }
+        for (const BindingPlaceholder &placeholder : m_transcriptPipeline.bindingResult.placeholders) {
+            preview.replace(placeholder.placeholder, placeholder.replacement);
+        }
         const int words = m_settings ? m_settings->previewWords() : 7;
-        emit popupRefinementPreviewChanged(WordPreview::lastWords(m_refinementStream, words));
+        emit popupRefinementPreviewChanged(WordPreview::lastWords(preview, words));
     });
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::completed, this, [this](const QString &text) {
         if (m_state != DictationState::Refining || m_refinementGeneration != m_generation) {

@@ -54,6 +54,9 @@ endif()
 option(SPEECHER_WITH_LAYER_SHELL "Use layer-shell-qt when available" ON)
 option(SPEECHER_WITH_QKEYCHAIN "Use QKeychain when available" ON)
 option(SPEECHER_BUILD_TESTS "Build tests" ON)
+# End-to-end hooks (stub providers, mic-gate skip) exist only for CI/E2E
+# builds; distributed builds must not carry env-activated fake providers.
+option(SPEECHER_E2E_HOOKS "Compile end-to-end test hooks" OFF)
 option(SPEECHER_RELEASE_BUILD "Require every Linux release integration" OFF)
 set(SPEECHER_WINUI_DEFAULT OFF)
 if(WIN32)
@@ -281,7 +284,6 @@ set(SPEECHER_WORKFLOW_HEADERS
 )
 
 set(SPEECHER_PROVIDER_SOURCES
-  src/providers/E2EProviders.cpp
   src/providers/StreamingRefinement.cpp
   src/providers/AnthropicApiRefiner.cpp
   src/providers/AnthropicTranscriptRefiner.cpp
@@ -297,6 +299,10 @@ set(SPEECHER_PROVIDER_SOURCES
   src/providers/OpenAiTranscriptRefiner.cpp
   src/providers/TranscriptRefinementPrompt.cpp
 )
+if(SPEECHER_E2E_HOOKS)
+  list(APPEND SPEECHER_PROVIDER_SOURCES src/providers/E2EProviders.cpp)
+  add_compile_definitions(SPEECHER_E2E_HOOKS=1)
+endif()
 
 set(SPEECHER_PROVIDER_HEADERS
   src/providers/StreamingRefinement.h
@@ -341,6 +347,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/platform/ScreenshotImage.h
   src/platform/audio/AudioPcmConverter.h
   src/platform/audio/QtAudioInput.h
+  src/platform/audio/WavFileAudioInput.h
 )
 
 set(SPEECHER_PLATFORM_LINUX_SOURCES

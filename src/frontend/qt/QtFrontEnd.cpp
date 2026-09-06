@@ -118,11 +118,24 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
     // advanced to the first page whose title matches (e.g. "setup:refinement").
     if (request.first() == QStringLiteral("setup")) {
         auto *assistant = new SetupAssistant(m_controller);
-        assistant->show();
         const QStringList titles = assistant->pageTitles();
         const QString wanted = request.value(1);
-        for (int i = 0; i < titles.size() && !wanted.isEmpty()
-             && titles.at(i).toLower() != wanted; ++i) {
+        int target = 0;
+        if (!wanted.isEmpty()) {
+            // Resolve the page before walking: stepping past a typoed title
+            // would fire every page's side effects and grab the last page.
+            for (target = 0; target < titles.size(); ++target) {
+                if (titles.at(target).toLower() == wanted) {
+                    break;
+                }
+            }
+            if (target == titles.size()) {
+                assistant->deleteLater();
+                return false;
+            }
+        }
+        assistant->show();
+        for (int i = 0; i < target; ++i) {
             assistant->next();
         }
         QCoreApplication::processEvents();

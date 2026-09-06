@@ -23,7 +23,12 @@ QByteArray wavDataChunk(const QByteArray &file)
     qsizetype cursor = 12;
     while (cursor + 8 <= file.size()) {
         const QByteArray id = file.mid(cursor, 4);
-        const quint32 size = qFromLittleEndian<quint32>(file.constData() + cursor + 4);
+        // Wide arithmetic and a bounds check: a hostile or truncated chunk
+        // size would otherwise wrap the cursor and loop forever.
+        const qsizetype size = qsizetype(qFromLittleEndian<quint32>(file.constData() + cursor + 4));
+        if (size > file.size() - cursor - 8) {
+            return {};
+        }
         if (id == QByteArrayLiteral("data")) {
             return file.mid(cursor + 8, size);
         }

@@ -15,7 +15,9 @@
 #include "dictation/DictationSession.h"
 #include "providers/AnthropicTranscriptRefiner.h"
 #include "providers/ClaudeSpeechTranscriber.h"
+#ifdef SPEECHER_E2E_HOOKS
 #include "providers/E2EProviders.h"
+#endif
 #include "providers/CodexSpeechTranscriber.h"
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
@@ -397,11 +399,13 @@ void ApplicationController::showSetupAssistant(SetupAssistantPage page)
 void ApplicationController::startWithMicrophone(std::function<void()> start)
 {
 #ifdef Q_OS_MACOS
-    // Scratch-branch-only E2E hook: stub runs have no microphone to ask about.
+#ifdef SPEECHER_E2E_HOOKS
+    // E2E-build-only hook: stub runs have no microphone to ask about.
     if (qEnvironmentVariableIntValue("SPEECHER_E2E_SKIP_MIC_GATE") == 1) {
         start();
         return;
     }
+#endif
     const auto refuse = [this] {
         if (m_frontEnd) {
             m_frontEnd->showDictationError(QStringLiteral(
@@ -580,16 +584,20 @@ static QVector<ProviderStat> refinementProviderStats(const QString &id)
                 {QStringLiteral("Efficiency"), QStringLiteral("No reasoning pass; time varies run to run")},
                 {QStringLiteral("Quality"), QStringLiteral("Excellent cleanup; applies spoken corrections reliably")}};
     }
-    return {{QStringLiteral("Default model"), QStringLiteral("Claude Sonnet 4.6")},
-            {QStringLiteral("Speed"), QStringLiteral("About 2 seconds per dictation")},
-            {QStringLiteral("Efficiency"), QStringLiteral("Light reasoning; very consistent finish times")},
-            {QStringLiteral("Quality"), QStringLiteral("Excellent cleanup; can leave a spoken correction in")}};
+    if (id == QStringLiteral("anthropic")) {
+        return {{QStringLiteral("Default model"), QStringLiteral("Claude Sonnet 4.6")},
+                {QStringLiteral("Speed"), QStringLiteral("About 2 seconds per dictation")},
+                {QStringLiteral("Efficiency"), QStringLiteral("Light reasoning; very consistent finish times")},
+                {QStringLiteral("Quality"), QStringLiteral("Excellent cleanup; can leave a spoken correction in")}};
+    }
+    return {};
 }
 
 void ApplicationController::registerProviders()
 {
-    // Scratch-branch-only E2E hook: deterministic stub providers for the
-    // headless dictation-panel flow runs.
+#ifdef SPEECHER_E2E_HOOKS
+    // E2E-build-only hook: deterministic stub providers for the headless
+    // dictation-panel flow runs. Never compiled into distributed builds.
     if (qEnvironmentVariableIntValue("SPEECHER_E2E_STUB") == 1) {
         m_providers->registerSpeechProvider(
             {QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), QString()},
@@ -598,6 +606,7 @@ void ApplicationController::registerProviders()
             {QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), QString()},
             createE2ETranscriptRefiner);
     }
+#endif
     m_providers->registerSpeechProvider(
         {QStringLiteral("claude"),
          QStringLiteral("Claude Voice"),

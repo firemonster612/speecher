@@ -31,7 +31,8 @@
 namespace speecher {
 namespace {
 
-// Scratch-branch-only E2E stub: alternating levels so the waveform moves, and
+#ifdef SPEECHER_E2E_HOOKS
+// E2E-build-only stub: alternating levels so the waveform moves, and
 // silent chunks so the session believes audio is flowing.
 class E2EAudioInput final : public AudioInput {
 public:
@@ -66,6 +67,7 @@ private:
     bool m_active = false;
     bool m_highLevel = false;
 };
+#endif
 
 constexpr auto accessibilityPaneUrl =
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
@@ -168,10 +170,12 @@ QList<AudioInputDeviceInfo> MacComposition::availableAudioInputDevices() const
 
 AudioInput *MacComposition::createAudioInput(SettingsStore *settings, QObject *parent) const
 {
+#ifdef SPEECHER_E2E_HOOKS
     if (qEnvironmentVariableIntValue("SPEECHER_E2E_STUB") == 1
         && qEnvironmentVariableIntValue("SPEECHER_E2E_REAL_AUDIO") != 1) {
         return new E2EAudioInput(parent);
     }
+#endif
     auto *input = new QtAudioInput(settings->audioCaptureSettings(), parent);
     QObject::connect(settings,
                      &SettingsStore::audioCaptureSettingsChanged,

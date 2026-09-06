@@ -80,6 +80,47 @@ private slots:
         QCOMPARE(refinementPreviewSpy.count(), 2);
     }
 
+    void dictationSessionHidesBindingPlaceholdersInRefinementPreview()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.setRefinementStyle(QStringLiteral("light_cleanup"));
+        QVERIFY(settings.setBindingRules(
+            {{QStringLiteral("my email"), QStringLiteral("efox@example.com")}}));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy refinementPreviewSpy(&session,
+                                        &DictationSession::popupRefinementPreviewChanged);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("please send my email to Alex"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
+
+        // A placeholder still streaming in stays hidden...
+        refiner->emitDeltaText(QStringLiteral("Please send SPEECHER_BIN"));
+        QCOMPARE(refinementPreviewSpy.last().at(0).toString(),
+                 QStringLiteral("Please send"));
+        // ...even once it parses, because more digits could follow...
+        refiner->emitDeltaText(QStringLiteral("DING_0"));
+        QCOMPARE(refinementPreviewSpy.last().at(0).toString(),
+                 QStringLiteral("Please send"));
+        // ...and is shown restored once the stream moves past it.
+        refiner->emitDeltaText(QStringLiteral(" to Alex."));
+        QCOMPARE(refinementPreviewSpy.last().at(0).toString(),
+                 QStringLiteral("Please send efox@example.com to Alex."));
+    }
+
     void dictationSessionEditsSelectedTextFromSpokenInstructions()
     {
         SettingsStore settings;

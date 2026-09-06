@@ -13,8 +13,6 @@ namespace speecher {
 // no usable input device can still drive the real speech providers. After the
 // file ends it keeps producing silence until stop(), like an idle microphone.
 class WavFileAudioInput final : public AudioInput {
-    Q_OBJECT
-
 public:
     explicit WavFileAudioInput(const QString &path, QObject *parent = nullptr);
 

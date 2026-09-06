@@ -114,7 +114,15 @@ struct DictationPanel::Native : QObject {
                 [this](quint64 value) { show(value); });
         connect(session, &DictationSession::popupHideRequested, this, &Native::hide);
         connect(session, &DictationSession::popupFrozenChanged, this,
-                [this](bool value) { frozen = value; });
+                [this](bool value) {
+                    frozen = value;
+                    // Unfreezing at session start returns to the live phase,
+                    // like the Qt and mac panels, so a preview clear emitted
+                    // before show() is never dropped by a stale phase.
+                    if (!value) {
+                        phase = Phase::Live;
+                    }
+                });
         connect(session, &DictationSession::popupRefiningChanged, this,
                 [this](bool value) { setRefining(value); });
         connect(session, &DictationSession::popupOAuthRefreshRequested, this, [this] {
@@ -320,7 +328,10 @@ struct DictationPanel::Native : QObject {
         }
         using namespace Microsoft::UI::Xaml::Media::Animation;
         normalForeground = text.Foreground();
-        const auto color = normalForeground.as<SolidColorBrush>().Color();
+        // High-contrast themes can hand out a non-solid foreground brush.
+        const auto solid = normalForeground.try_as<SolidColorBrush>();
+        const auto color = solid ? solid.Color()
+                                 : winrt::Windows::UI::Color{255, 128, 128, 128};
         LinearGradientBrush brush;
         brush.StartPoint({0, 0});
         brush.EndPoint({1, 0});
