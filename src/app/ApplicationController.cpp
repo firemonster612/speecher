@@ -15,6 +15,7 @@
 #include "dictation/DictationSession.h"
 #include "providers/AnthropicTranscriptRefiner.h"
 #include "providers/ClaudeSpeechTranscriber.h"
+#include "providers/E2EProviders.h"
 #include "providers/CodexSpeechTranscriber.h"
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
@@ -396,6 +397,11 @@ void ApplicationController::showSetupAssistant(SetupAssistantPage page)
 void ApplicationController::startWithMicrophone(std::function<void()> start)
 {
 #ifdef Q_OS_MACOS
+    // Scratch-branch-only E2E hook: stub runs have no microphone to ask about.
+    if (qEnvironmentVariableIntValue("SPEECHER_E2E_SKIP_MIC_GATE") == 1) {
+        start();
+        return;
+    }
     const auto refuse = [this] {
         if (m_frontEnd) {
             m_frontEnd->showDictationError(QStringLiteral(
@@ -582,6 +588,16 @@ static QVector<ProviderStat> refinementProviderStats(const QString &id)
 
 void ApplicationController::registerProviders()
 {
+    // Scratch-branch-only E2E hook: deterministic stub providers for the
+    // headless dictation-panel flow runs.
+    if (qEnvironmentVariableIntValue("SPEECHER_E2E_STUB") == 1) {
+        m_providers->registerSpeechProvider(
+            {QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), QString()},
+            createE2ESpeechTranscriber);
+        m_providers->registerRefinementProvider(
+            {QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), QString()},
+            createE2ETranscriptRefiner);
+    }
     m_providers->registerSpeechProvider(
         {QStringLiteral("claude"),
          QStringLiteral("Claude Voice"),

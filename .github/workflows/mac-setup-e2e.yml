@@ -8,6 +8,7 @@ on:
   push:
     branches:
       - feat/mac-swift-setup-assistant
+      - e2e/provider-ui-mac
   pull_request:
     paths:
       - src/frontend/mac/**
@@ -26,7 +27,7 @@ permissions:
 jobs:
   setup-e2e:
     runs-on: macos-26
-    timeout-minutes: 40
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v7
         with:
@@ -121,10 +122,45 @@ jobs:
           PROBE: ${{ runner.temp }}/window-probe
         run: bash .github/macos-e2e/setup_run.sh
 
+      - name: Run provider steps E2E
+        timeout-minutes: 8
+        env:
+          APP_BUNDLE: ${{ runner.temp }}/product/speecher.app
+          EVIDENCE_ROOT: ${{ runner.temp }}/provider-steps
+          PROBE: ${{ runner.temp }}/window-probe
+        run: bash .github/macos-e2e/provider_steps_run.sh
+
+      - name: Ensure ffmpeg
+        run: ffmpeg -version >/dev/null 2>&1 || brew install ffmpeg
+
+      - name: Run dictation panel flow E2E
+        timeout-minutes: 8
+        env:
+          APP_BUNDLE: ${{ runner.temp }}/product/speecher.app
+          EVIDENCE_ROOT: ${{ runner.temp }}/panel-flow
+          PROBE: ${{ runner.temp }}/window-probe
+        run: bash .github/macos-e2e/panel_flow_run.sh
+
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: setup-e2e-evidence
           path: ${{ runner.temp }}/setup-e2e
+          if-no-files-found: warn
+
+      - name: Upload provider steps evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: provider-steps-evidence
+          path: ${{ runner.temp }}/provider-steps
+          if-no-files-found: warn
+
+      - name: Upload panel flow evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: panel-flow-evidence
+          path: ${{ runner.temp }}/panel-flow
           if-no-files-found: warn

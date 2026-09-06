@@ -281,6 +281,7 @@ set(SPEECHER_WORKFLOW_HEADERS
 )
 
 set(SPEECHER_PROVIDER_SOURCES
+  src/providers/E2EProviders.cpp
   src/providers/StreamingRefinement.cpp
   src/providers/AnthropicApiRefiner.cpp
   src/providers/AnthropicTranscriptRefiner.cpp

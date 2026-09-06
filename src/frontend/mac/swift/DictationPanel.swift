@@ -15,6 +15,33 @@ private let minimumPillWidth: CGFloat = 420
 private let previewChromeWidth: CGFloat = 190
 private let screenEdgeMargin: CGFloat = 80
 
+/// Scratch-branch-only E2E seam: every panel callback lands as a JSON line in
+/// SPEECHER_E2E_EVIDENCE_DIR/panel-events.jsonl for the harness to assert on.
+private enum E2EPanelEvidence {
+    static func record(_ event: String, _ value: String = "") {
+        guard let path = ProcessInfo.processInfo.environment["SPEECHER_E2E_EVIDENCE_DIR"],
+              !path.isEmpty else { return }
+        let directory = URL(fileURLWithPath: path, isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory,
+                                                 withIntermediateDirectories: true)
+        let object: [String: Any] = [
+            "ts": Int64(Date().timeIntervalSince1970 * 1000),
+            "event": event,
+            "value": value,
+        ]
+        guard var data = try? JSONSerialization.data(withJSONObject: object) else { return }
+        data.append(0x0a)
+        let url = directory.appendingPathComponent("panel-events.jsonl")
+        if !FileManager.default.fileExists(atPath: url.path) {
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+        }
+        guard let file = try? FileHandle(forWritingTo: url) else { return }
+        defer { try? file.close() }
+        try? file.seekToEnd()
+        try? file.write(contentsOf: data)
+    }
+}
+
 private struct DictationPanelGlass: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -193,6 +220,7 @@ final class SpeecherDictationPanel {
     private let bridge: SpeecherBridge
     private let panel: NSPanel
     private var frozen = false
+    private var e2eFrameIndex = 0
     private(set) var presentedGeneration: UInt64 = 0
     private var levelObserver: AnyCancellable?
     private var screenObserver: AnyCancellable?
@@ -223,6 +251,7 @@ final class SpeecherDictationPanel {
             self?.dismiss()
         })
         wire()
+        installE2ECaptureSeam()
         // The level arrives through the model, which is the one reader of the
         // bridge's audio callback: two readers of one block would mean the
         // second one silently replaced the first.
@@ -238,6 +267,7 @@ final class SpeecherDictationPanel {
     private func wire() {
         bridge.popupStatusChanged = { [weak self] status in
             guard let self else { return }
+            E2EPanelEvidence.record("status", status)
             state.status = status
             // The mic is closed but the provider is still finalising, so the
             // shimmer takes the line and the stale speech preview goes away.
@@ -254,6 +284,7 @@ final class SpeecherDictationPanel {
         }
         bridge.popupRefiningChanged = { [weak self] refining in
             guard let self else { return }
+            E2EPanelEvidence.record("refining", refining ? "true" : "false")
             if refining {
                 state.phase = .refining
                 state.preview = ""
@@ -263,6 +294,7 @@ final class SpeecherDictationPanel {
         }
         bridge.popupRefinementPreviewChanged = { [weak self] preview in
             guard let self, state.phase == .refining else { return }
+            E2EPanelEvidence.record("refinement-preview", preview)
             applyPreview(preview)
         }
         bridge.popupOAuthRefreshRequested = { [weak self] in
@@ -333,6 +365,29 @@ final class SpeecherDictationPanel {
         frame.origin.x -= (width - frame.width) / 2
         frame.size.width = width
         panel.setFrame(frame, display: true)
+    }
+
+    /// Scratch-branch-only E2E seam: with SPEECHER_E2E_PANEL_CAPTURE_DIR set,
+    /// the visible panel's backing store lands there ten times a second as
+    /// numbered PNGs, which needs no screen-recording grant on a CI runner.
+    private func installE2ECaptureSeam() {
+        guard let dir = ProcessInfo.processInfo.environment["SPEECHER_E2E_PANEL_CAPTURE_DIR"],
+              !dir.isEmpty else { return }
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async { self?.captureE2EFrame(into: dir) }
+        }
+    }
+
+    private func captureE2EFrame(into dir: String) {
+        guard panel.isVisible,
+              let view = panel.contentView,
+              let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        guard let png = bitmap.representation(using: .png, properties: [:]) else { return }
+        e2eFrameIndex += 1
+        let path = String(format: "%@/frame-%06d.png", dir, e2eFrameIndex)
+        try? png.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 
     /// The panel belongs on the display the user is working on, which on a
