@@ -178,16 +178,41 @@ QSize TranscriberPopup::sizeHint() const
 
 void TranscriberPopup::setStatus(const QString &status)
 {
-    Q_UNUSED(status);
+    // "Stopping" is the one state whose label drives this popup: the mic is
+    // closed but the provider is still finalising, so the waveform gives way
+    // to a shimmering "Transcribing…" and the stale speech preview goes away.
+    if (status == QStringLiteral("Stopping")) {
+        m_phase = Phase::Transcribing;
+        restoreStandardLayout();
+        setRefreshLayout(false);
+        hidePreview();
+        m_waveform->setStatusText(QStringLiteral("Transcribing…"));
+    }
     adjustSize();
     updateWindowMask();
 }
 
 void TranscriberPopup::setPreview(const QString &preview)
 {
+    if (m_phase != Phase::Live) {
+        return;
+    }
     restoreStandardLayout();
     setRefreshLayout(false);
     m_waveform->setMode(WaveformWidget::Mode::Waveform);
+    applyPreviewText(preview);
+}
+
+void TranscriberPopup::setRefinementPreview(const QString &preview)
+{
+    if (m_phase != Phase::Refining) {
+        return;
+    }
+    applyPreviewText(preview);
+}
+
+void TranscriberPopup::applyPreviewText(const QString &preview)
+{
     QString visible = preview.simplified();
     if (!visible.isEmpty()) {
         const QFontMetrics metrics(m_preview->font());
@@ -227,17 +252,35 @@ void TranscriberPopup::setLevel(float level)
 void TranscriberPopup::setRefining(bool refining)
 {
     setRefreshLayout(false);
-    m_waveform->setMode(refining ? WaveformWidget::Mode::Dots : WaveformWidget::Mode::Waveform);
+    if (refining) {
+        m_phase = Phase::Refining;
+        restoreStandardLayout();
+        hidePreview();
+        m_waveform->setStatusText(QStringLiteral("Refining…"));
+        return;
+    }
+    m_phase = Phase::Live;
+    m_waveform->setMode(WaveformWidget::Mode::Waveform);
 }
 
 void TranscriberPopup::setFrozen(bool frozen)
 {
     setRefreshLayout(false);
-    m_waveform->setMode(frozen ? WaveformWidget::Mode::Frozen : WaveformWidget::Mode::Waveform);
+    if (frozen) {
+        // Between "Transcribing…" and "Refining…" the session freezes the
+        // popup; keep the shimmer rather than flashing a stilled waveform.
+        if (m_phase == Phase::Live) {
+            m_waveform->setMode(WaveformWidget::Mode::Frozen);
+        }
+        return;
+    }
+    m_phase = Phase::Live;
+    m_waveform->setMode(WaveformWidget::Mode::Waveform);
 }
 
 void TranscriberPopup::showOAuthRefreshIndicator()
 {
+    m_phase = Phase::Live;
     restoreStandardLayout();
     setRefreshLayout(true);
     m_preview->setText(QStringLiteral("Renewing sign-in…"));
@@ -252,6 +295,7 @@ void TranscriberPopup::showOAuthRefreshIndicator()
 
 void TranscriberPopup::showListeningIndicator()
 {
+    m_phase = Phase::Live;
     restoreStandardLayout();
     setRefreshLayout(false);
     m_waveform->setMode(WaveformWidget::Mode::Waveform);
@@ -261,6 +305,7 @@ void TranscriberPopup::showListeningIndicator()
 
 void TranscriberPopup::showMessage(const QString &message)
 {
+    m_phase = Phase::Live;
     // The outcome is the whole popup: without this the transcript pill stays
     // under the receipt with the last preview words in it.
     hidePreview();
@@ -270,6 +315,7 @@ void TranscriberPopup::showMessage(const QString &message)
 
 void TranscriberPopup::showErrorMessage(const QString &message)
 {
+    m_phase = Phase::Live;
     setRefreshLayout(false);
     m_errorDismissAnimation->stop();
     m_waveform->hide();

@@ -43,6 +43,43 @@ private slots:
         QCOMPARE(rawPreviewSpy.last().at(0).toString(), QStringLiteral("rough text"));
     }
 
+    void dictationSessionStreamsRefinementPreviewWhileRefining()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.setRefinementStyle(QStringLiteral("light_cleanup"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy refinementPreviewSpy(&session,
+                                        &DictationSession::popupRefinementPreviewChanged);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("rough text"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
+
+        refiner->emitDeltaText(QStringLiteral("Polished "));
+        refiner->emitDeltaText(QStringLiteral("text arriving now."));
+        QCOMPARE(refinementPreviewSpy.count(), 2);
+        QCOMPARE(refinementPreviewSpy.last().at(0).toString(),
+                 QStringLiteral("Polished text arriving now."));
+
+        refiner->emitCompletedText(QStringLiteral("Polished text arriving now."));
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        refiner->emitDeltaText(QStringLiteral("late"));
+        QCOMPARE(refinementPreviewSpy.count(), 2);
+    }
+
     void dictationSessionEditsSelectedTextFromSpokenInstructions()
     {
         SettingsStore settings;

@@ -884,7 +884,45 @@ private slots:
         popup.setPreview(longRaw);
         QVERIFY(!rawTranscript->text().contains(QLatin1Char('\n')));
         popup.setRefining(true);
-        QVERIFY(!rawTranscript->isHidden());
+        QVERIFY(rawTranscript->isHidden());
+    }
+
+    void transcriberPopupStreamsRefinementInsteadOfSpeechPreview()
+    {
+        TranscriberPopup popup(new FakePopupPositioner);
+        auto *previewPill = popup.findChild<QFrame *>(QStringLiteral("previewPill"));
+        auto *rawTranscript = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
+        QVERIFY(previewPill);
+        QVERIFY(rawTranscript);
+
+        popup.setPreview(QStringLiteral("hello world"));
+        QVERIFY(!previewPill->isHidden());
+
+        // Mic toggled off: the speech preview disappears for the whole
+        // transcribe-then-refine stretch, even when late partials arrive.
+        popup.setStatus(QStringLiteral("Stopping"));
+        QVERIFY(previewPill->isHidden());
+        popup.setPreview(QStringLiteral("late speech words"));
+        QVERIFY(previewPill->isHidden());
+
+        popup.setFrozen(true);
+        popup.setRefining(true);
+        QVERIFY(previewPill->isHidden());
+
+        popup.setRefinementPreview(QStringLiteral("Polished words"));
+        QVERIFY(!previewPill->isHidden());
+        QCOMPARE(rawTranscript->text(), QStringLiteral("Polished words"));
+        popup.setPreview(QStringLiteral("speech again"));
+        QCOMPARE(rawTranscript->text(), QStringLiteral("Polished words"));
+
+        popup.setRefining(false);
+        popup.showMessage(QStringLiteral("Input sent"));
+        QVERIFY(previewPill->isHidden());
+
+        // The next dictation session starts clean.
+        popup.showListeningIndicator();
+        popup.setPreview(QStringLiteral("fresh"));
+        QCOMPARE(rawTranscript->text(), QStringLiteral("fresh"));
     }
 
     void transcriberPopupShowsLongErrorsInOneReadablePill()

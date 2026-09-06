@@ -29,6 +29,7 @@ public:
 public slots:
     void setStatus(const QString &status);
     void setPreview(const QString &preview);
+    void setRefinementPreview(const QString &preview);
     void hidePreview();
     void setLevel(float level);
     void setRefining(bool refining);
@@ -51,7 +52,12 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
 
 private:
+    // After the mic stops the popup walks Transcribing then Refining; the live
+    // speech preview is suppressed for both so only refinement text streams in.
+    enum class Phase { Live, Transcribing, Refining };
+
     void applyTheme();
+    void applyPreviewText(const QString &preview);
     void restoreStandardLayout();
     void setRefreshLayout(bool refreshLayout);
     void updateWindowMask();
@@ -67,6 +73,7 @@ private:
     QtPopupSurface m_surface{this};
     quint64 m_pendingPresentationGeneration = 0;
     bool m_applyingTheme = false;
+    Phase m_phase = Phase::Live;
 };
 
 } // namespace speecher

@@ -3,10 +3,17 @@
 #include "dictation/DictationPorts.h"
 
 #include <QHash>
+#include <QVector>
 
 #include <functional>
 
 namespace speecher {
+
+// One user-facing fact about a provider ("Languages" / "About 60").
+struct ProviderStat {
+    QString label;
+    QString value;
+};
 
 struct ProviderDescriptor {
     QString id;
@@ -15,6 +22,10 @@ struct ProviderDescriptor {
     // Refinement providers only: this one can read a screenshot of the target
     // as context, which is what the setting offering that is gated on.
     bool supportsScreenshotContext = false;
+    // One-or-two-line digest of the stats, for settings rows and tooltips.
+    QString summary;
+    // Shown as a label/value block on the setup assistant's provider steps.
+    QVector<ProviderStat> stats;
 };
 
 class ProviderRegistry : public QObject {

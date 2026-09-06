@@ -43,7 +43,7 @@ SchemaContext winSchemaContext(const PlatformComposition &platform,
 {
     QList<RowOption> speech;
     for (const ProviderDescriptor &provider : providers.speechProviders()) {
-        speech.append({provider.id, provider.label});
+        speech.append({provider.id, provider.label, provider.summary});
     }
     QList<RefinementProvider> refiners;
     for (const ProviderDescriptor &provider : providers.refinementProviders()) {

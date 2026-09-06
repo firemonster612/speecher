@@ -643,6 +643,17 @@ SettingsPage audioPage(const SchemaContext &context)
         [](const AppSettings &settings) { return settings.speech.providerId; },
         [](AppSettings &settings, const QString &value) { settings.speech.providerId = value; });
     speechProvider.contentWidthHint = 24;
+    // The subtitle explains the engine behind the selected service; the
+    // per-provider text rides in on RowOption::help from the registry.
+    const QList<RowOption> speechChoices = context.speechProviders;
+    speechProvider.helpValue = [speechChoices](const AppSettings &settings) {
+        for (const RowOption &option : speechChoices) {
+            if (option.id == settings.speech.providerId && !option.help.isEmpty()) {
+                return option.help;
+            }
+        }
+        return QStringLiteral("Service used to turn speech into a Raw Transcript.");
+    };
 
     SettingsRow device = choiceRow(
         QStringLiteral("audioDevice"),

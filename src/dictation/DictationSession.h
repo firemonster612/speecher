@@ -67,6 +67,9 @@ signals:
     void popupHideRequested();
     void popupFrozenChanged(bool frozen);
     void popupRefiningChanged(bool refining);
+    // Last words of the refinement stream so far, for the popup preview while
+    // Refining; the speech preview keeps flowing through previewDisplayChanged.
+    void popupRefinementPreviewChanged(const QString &preview);
     void popupOAuthRefreshRequested();
     void popupListeningIndicatorRequested();
     void popupMessageRequested(const QString &message);
@@ -120,6 +123,7 @@ private:
     QString m_screenshotMediaType;
     quint64 m_screenshotCaptureGeneration = 0;
     quint64 m_refinementGeneration = 0;
+    QString m_refinementStream;
     bool m_heardSpeech = false;
     int m_speechReconnectsLeft = 0;
 };

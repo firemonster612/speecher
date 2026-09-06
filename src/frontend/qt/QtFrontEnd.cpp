@@ -95,6 +95,22 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
         QStringLiteral("general"), QStringLiteral("audio"), QStringLiteral("output"),
         QStringLiteral("auth"), QStringLiteral("refinement"), QStringLiteral("vocabulary")};
     const QStringList request = qEnvironmentVariable("SPEECHER_GRAB_PAGE").toLower().split(u':');
+    // "setup" or "setup:<page title>" grabs the setup assistant instead,
+    // advanced to the first page whose title matches (e.g. "setup:refinement").
+    if (request.first() == QStringLiteral("setup")) {
+        auto *assistant = new SetupAssistant(m_controller);
+        assistant->show();
+        const QStringList titles = assistant->pageTitles();
+        const QString wanted = request.value(1);
+        for (int i = 0; i < titles.size() && !wanted.isEmpty()
+             && titles.at(i).toLower() != wanted; ++i) {
+            assistant->next();
+        }
+        QCoreApplication::processEvents();
+        const bool saved = assistant->grab().save(path);
+        assistant->deleteLater();
+        return saved;
+    }
     const int page = pageNames.indexOf(request.first());
     // SPEECHER_GRAB_SIZE=WxH resizes the window first.
     const QStringList size = qEnvironmentVariable("SPEECHER_GRAB_SIZE").split(u'x');
@@ -183,6 +199,7 @@ void QtFrontEnd::wireSessionToPopup()
     connect(session, &DictationSession::popupHideRequested, m_popup, &TranscriberPopup::hide);
     connect(session, &DictationSession::popupFrozenChanged, m_popup, &TranscriberPopup::setFrozen);
     connect(session, &DictationSession::popupRefiningChanged, m_popup, &TranscriberPopup::setRefining);
+    connect(session, &DictationSession::popupRefinementPreviewChanged, m_popup, &TranscriberPopup::setRefinementPreview);
     connect(session, &DictationSession::popupOAuthRefreshRequested, m_popup, &TranscriberPopup::showOAuthRefreshIndicator);
     connect(session, &DictationSession::popupListeningIndicatorRequested, m_popup, &TranscriberPopup::showListeningIndicator);
     connect(session, &DictationSession::popupMessageRequested, m_popup, &TranscriberPopup::showMessage);

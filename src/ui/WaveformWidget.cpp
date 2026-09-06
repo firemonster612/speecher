@@ -76,11 +76,22 @@ void WaveformWidget::setMode(Mode mode)
         return;
     }
     m_mode = mode;
-    if (mode != Mode::Message) {
+    if (mode != Mode::Message && mode != Mode::Status) {
         m_message.clear();
         setFixedWidth(pillWidth);
     }
     m_targetLevel = 0.0f;
+    update();
+}
+
+void WaveformWidget::setStatusText(const QString &text)
+{
+    m_message = text.simplified();
+    m_mode = m_message.isEmpty() ? Mode::Waveform : Mode::Status;
+    m_targetLevel = 0.0f;
+    setFixedWidth(m_mode == Mode::Status
+        ? std::max(pillWidth, fontMetrics().horizontalAdvance(m_message) + 32)
+        : pillWidth);
     update();
 }
 
@@ -118,6 +129,8 @@ void WaveformWidget::paintEvent(QPaintEvent *)
 
     if (m_mode == Mode::Message) {
         paintMessage(painter, bar);
+    } else if (m_mode == Mode::Status) {
+        paintStatus(painter, bar);
     } else if (m_mode == Mode::Dots) {
         paintDots(painter, bar);
     } else {
@@ -159,6 +172,34 @@ void WaveformWidget::paintDots(QPainter &painter, const QColor &bar)
         painter.setBrush(dot);
         painter.drawEllipse(QPointF(startX + i * (radius * 2 + gap), centerY), radius, radius);
     }
+}
+
+void WaveformWidget::paintStatus(QPainter &painter, const QColor &bar)
+{
+    QFont font = this->font();
+    font.setWeight(QFont::Normal);
+    painter.setFont(font);
+    const QRect textRect = rect().adjusted(12, 0, -12, 0);
+
+    QColor dim = bar;
+    dim.setAlphaF(0.38f);
+    painter.setPen(dim);
+    painter.drawText(textRect, Qt::AlignCenter, m_message);
+
+    // A soft highlight band sweeps the text left to right and loops, so the
+    // word reads as "in progress" without a spinner. The band travels one
+    // widget width plus its own width per loop; m_idlePhase advances ~14/s.
+    const qreal band = width() * 0.55;
+    const qreal travel = width() + band * 2.0;
+    const qreal pos = std::fmod(qreal(m_idlePhase) * 11.0, travel) - band;
+    QLinearGradient sweep(pos, 0, pos + band, 0);
+    QColor clear = bar;
+    clear.setAlphaF(0.0f);
+    sweep.setColorAt(0.0, clear);
+    sweep.setColorAt(0.5, bar);
+    sweep.setColorAt(1.0, clear);
+    painter.setPen(QPen(QBrush(sweep), 0));
+    painter.drawText(textRect, Qt::AlignCenter, m_message);
 }
 
 void WaveformWidget::paintMessage(QPainter &painter, const QColor &bar)

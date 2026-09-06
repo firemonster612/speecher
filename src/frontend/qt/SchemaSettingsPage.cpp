@@ -66,7 +66,7 @@ QList<RowOption> providerOptions(const QList<ProviderDescriptor> &providers)
     QList<RowOption> options;
     options.reserve(providers.size());
     for (const ProviderDescriptor &provider : providers) {
-        options.append({provider.id, provider.label});
+        options.append({provider.id, provider.label, provider.summary});
     }
     return options;
 }

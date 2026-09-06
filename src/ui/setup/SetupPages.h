@@ -4,10 +4,12 @@
 
 #include <QList>
 #include <QString>
+#include <QVector>
 #include <QWidget>
 
 class QCheckBox;
 class QComboBox;
+class QFormLayout;
 class QLabel;
 class QShowEvent;
 class QProgressBar;
@@ -20,10 +22,22 @@ class AudioInput;
 class PlatformComposition;
 class ProviderRegistry;
 class SettingsStore;
+struct ProviderStat;
 
 // The margin every assistant page keeps around its content, so a page built
 // elsewhere can match when it is shown as one.
 int setupPageMargin();
+
+// The label/value facts describing a provider, shown under the provider picker
+// so the choice is explained in place.
+class ProviderStatsBlock final : public QWidget {
+public:
+    explicit ProviderStatsBlock(QWidget *parent = nullptr);
+    void setStats(const QVector<ProviderStat> &stats);
+
+private:
+    QFormLayout *m_rows;
+};
 
 class WelcomeSetupPage final : public QWidget {
 public:
@@ -43,6 +57,7 @@ private:
     SettingsStore &m_settings;
     ProviderRegistry &m_providers;
     QComboBox *m_provider;
+    ProviderStatsBlock *m_stats;
     QLabel *m_hint;
     QLabel *m_status;
     QPushButton *m_checkAgain;
@@ -122,10 +137,13 @@ public:
                         QWidget *parent = nullptr);
 
 private:
+    void updateProviderStats();
     void updateFastModeControl();
 
     SettingsStore &m_settings;
+    ProviderRegistry &m_providers;
     QComboBox *m_provider;
+    ProviderStatsBlock *m_stats;
     QCheckBox *m_fastMode;
     QLabel *m_fastModeHint;
 };

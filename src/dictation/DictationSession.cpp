@@ -554,6 +554,7 @@ void DictationSession::beginRefinement(quint64 generation)
 
     setState(DictationState::Refining, m_lastMessage);
     m_refinementGeneration = generation;
+    m_refinementStream.clear();
     emit popupRefiningChanged(true);
     TranscriptPipeline::includeScreenshotContext(pipeline,
                                                  m_refiner->supportsScreenshotContext(refinement),
@@ -768,6 +769,19 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
     }
     m_refinerConnections.clear();
     m_refiner = refiner;
+    m_refinerConnections << connect(m_refiner, &TranscriptRefiner::delta, this, [this](const QString &text) {
+        if (m_state != DictationState::Refining || m_refinementGeneration != m_generation) {
+            return;
+        }
+        // Selection edits stream a structured reply, not prose; previewing it
+        // would show the wrapper instead of text.
+        if (m_transcriptPipeline.editsSelection) {
+            return;
+        }
+        m_refinementStream += text;
+        const int words = m_settings ? m_settings->previewWords() : 7;
+        emit popupRefinementPreviewChanged(WordPreview::lastWords(m_refinementStream, words));
+    });
     m_refinerConnections << connect(m_refiner, &TranscriptRefiner::completed, this, [this](const QString &text) {
         if (m_state != DictationState::Refining || m_refinementGeneration != m_generation) {
             return;

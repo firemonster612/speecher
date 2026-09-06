@@ -19,6 +19,7 @@
 #include <QColor>
 #include <QComboBox>
 #include <QFontDatabase>
+#include <QFormLayout>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -36,6 +37,33 @@ namespace speecher {
 int setupPageMargin()
 {
     return 24;
+}
+
+ProviderStatsBlock::ProviderStatsBlock(QWidget *parent)
+    : QWidget(parent)
+    , m_rows(new QFormLayout(this))
+{
+    m_rows->setContentsMargins(0, 0, 0, 0);
+    m_rows->setHorizontalSpacing(settings::largeSpacing());
+    m_rows->setVerticalSpacing(settings::smallSpacing());
+    m_rows->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+}
+
+void ProviderStatsBlock::setStats(const QVector<ProviderStat> &stats)
+{
+    while (m_rows->rowCount() > 0) {
+        m_rows->removeRow(0);
+    }
+    for (const ProviderStat &stat : stats) {
+        auto *name = new QLabel(stat.label, this);
+        name->setFont(settings::smallFont(name->font()));
+        name->setForegroundRole(QPalette::PlaceholderText);
+        auto *value = new QLabel(stat.value, this);
+        value->setFont(settings::smallFont(value->font()));
+        value->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        m_rows->addRow(name, value);
+    }
+    setVisible(m_rows->rowCount() > 0);
 }
 
 namespace {
@@ -132,6 +160,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     , m_settings(settings)
     , m_providers(providers)
     , m_provider(new QComboBox(this))
+    , m_stats(new ProviderStatsBlock(this))
     , m_hint(new QLabel(this))
     , m_status(new QLabel(this))
     , m_checkAgain(new QPushButton(QStringLiteral("Check again"), this))
@@ -155,6 +184,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     providerRow->addWidget(new QLabel(QStringLiteral("Transcription service"), this));
     providerRow->addWidget(m_provider, 1);
     layout->addLayout(providerRow);
+    layout->addWidget(m_stats);
     layout->addWidget(m_status);
     layout->addWidget(m_hint);
     layout->addWidget(m_checkAgain, 0, Qt::AlignLeft);
@@ -176,6 +206,7 @@ void SpeechProviderSetupPage::updateProvider()
                                      return provider.id == providerId;
                                  });
     m_hint->setText(it == providers.cend() ? QString() : it->setupHint);
+    m_stats->setStats(it == providers.cend() ? QVector<ProviderStat>{} : it->stats);
     checkProvider();
 }
 
@@ -554,7 +585,9 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
                                          QWidget *parent)
     : QWidget(parent)
     , m_settings(settings)
+    , m_providers(providers)
     , m_provider(new QComboBox(this))
+    , m_stats(new ProviderStatsBlock(this))
     , m_fastMode(new QCheckBox(QStringLiteral("Fast mode"), this))
     , m_fastModeHint(new QLabel(this))
 {
@@ -571,14 +604,17 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
     row->addWidget(new QLabel(QStringLiteral("Provider"), this));
     row->addWidget(m_provider, 1);
     layout->addLayout(row);
+    layout->addWidget(m_stats);
     m_fastMode->setObjectName(QStringLiteral("refinementFastMode"));
     m_fastModeHint->setWordWrap(true);
     layout->addWidget(m_fastMode);
     layout->addWidget(m_fastModeHint);
     layout->addStretch();
+    updateProviderStats();
     updateFastModeControl();
     connect(m_provider, &QComboBox::currentIndexChanged, this, [this] {
         m_settings.setRefinementProvider(m_provider->currentData().toString());
+        updateProviderStats();
         updateFastModeControl();
     });
     connect(m_fastMode, &QCheckBox::toggled, this, [this](bool checked) {
@@ -589,6 +625,17 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
             m_settings.setAnthropicFastMode(checked);
         }
     });
+}
+
+void RefinementSetupPage::updateProviderStats()
+{
+    const QString providerId = m_provider->currentData().toString();
+    const QList<ProviderDescriptor> providers = m_providers.refinementProviders();
+    const auto it = std::find_if(providers.cbegin(), providers.cend(),
+                                 [&providerId](const ProviderDescriptor &provider) {
+                                     return provider.id == providerId;
+                                 });
+    m_stats->setStats(it == providers.cend() ? QVector<ProviderStat>{} : it->stats);
 }
 
 void RefinementSetupPage::updateFastModeControl()
