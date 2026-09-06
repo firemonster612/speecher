@@ -21,6 +21,7 @@
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Hosting.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
+#include <winrt/Microsoft.UI.Xaml.Media.Animation.h>
 #pragma pop_macro("GetCurrentTime")
 
 #include <QTimer>
@@ -87,6 +88,8 @@ QString phaseGlyph(const QString &status, bool problem)
 } // namespace
 
 struct DictationPanel::Native : QObject {
+    enum class Phase { Live, Transcribing, Refining };
+
     Native(ApplicationController *owner, DictationPanel *q)
         : QObject(q)
         , controller(owner)
@@ -95,6 +98,14 @@ struct DictationPanel::Native : QObject {
         DictationSession *session = controller->session();
         connect(session, &DictationSession::previewDisplayChanged, this,
                 [this](const QString &text) { setPreview(text); });
+        connect(session, &DictationSession::popupRefinementPreviewChanged, this,
+                [this](const QString &value) {
+                    if (phase != Phase::Refining) {
+                        return;
+                    }
+                    preview = value.simplified();
+                    refresh();
+                });
         connect(session, &DictationSession::audioLevelChanged, this,
                 [this](float value) { setLevel(value); });
         connect(session, &DictationSession::popupStatusChanged, this,
@@ -221,6 +232,7 @@ struct DictationPanel::Native : QObject {
         // preview can be dropped by the frozen guard, so clear here too.
         preview.clear();
         completed = false;
+        phase = Phase::Live;
         pendingGeneration = generation;
         ensureWindow();
         refresh();
@@ -247,6 +259,7 @@ struct DictationPanel::Native : QObject {
 
     void hide()
     {
+        setShimmer(false);
         if (window) {
             ShowWindow(window, SW_HIDE);
         }
@@ -262,12 +275,16 @@ struct DictationPanel::Native : QObject {
     void setStatus(const QString &value)
     {
         status = value;
+        if (value.compare(QStringLiteral("stopping"), Qt::CaseInsensitive) == 0) {
+            phase = Phase::Transcribing;
+            preview.clear();
+        }
         refresh();
     }
 
     void setPreview(const QString &value)
     {
-        if (frozen) {
+        if (phase != Phase::Live || frozen) {
             return;
         }
         preview = value.simplified();
@@ -283,7 +300,54 @@ struct DictationPanel::Native : QObject {
     void setRefining(bool value)
     {
         refining = value;
+        if (value) {
+            phase = Phase::Refining;
+            preview.clear();
+        }
         refresh();
+    }
+
+    void setShimmer(bool active)
+    {
+        if (active == shimmering) {
+            return;
+        }
+        shimmering = active;
+        if (!active) {
+            shimmer.Stop();
+            text.Foreground(normalForeground);
+            return;
+        }
+        using namespace Microsoft::UI::Xaml::Media::Animation;
+        normalForeground = text.Foreground();
+        const auto color = normalForeground.as<SolidColorBrush>().Color();
+        LinearGradientBrush brush;
+        brush.StartPoint({0, 0});
+        brush.EndPoint({1, 0});
+        shimmer = Storyboard();
+        shimmer.RepeatBehavior(RepeatBehaviorHelper::Forever());
+        for (int index = 0; index < 3; ++index) {
+            GradientStop stop;
+            auto shade = color;
+            if (index != 1) {
+                shade.A = static_cast<uint8_t>(color.A * 0.45);
+            }
+            stop.Color(shade);
+            const double start = -0.5 + index * 0.25;
+            stop.Offset(start);
+            brush.GradientStops().Append(stop);
+            DoubleAnimation sweep;
+            sweep.From(start);
+            sweep.To(start + 1.5);
+            sweep.Duration(DurationHelper::FromTimeSpan(std::chrono::milliseconds(1500)));
+            // Gradient stops require dependent animation in WinUI's XAML renderer.
+            sweep.EnableDependentAnimation(true);
+            Storyboard::SetTarget(sweep, stop);
+            Storyboard::SetTargetProperty(sweep, L"Offset");
+            shimmer.Children().Append(sweep);
+        }
+        text.Foreground(brush);
+        shimmer.Begin();
     }
 
     void refresh()
@@ -299,8 +363,14 @@ struct DictationPanel::Native : QObject {
                                  ? QString::fromUtf16(u"\uE8A9")
                                  : phaseGlyph(status, hasProblem))
                                 .toStdWString()));
+        const bool waiting = !hasProblem && !finished
+            && (phase == Phase::Transcribing || (refining && preview.isEmpty()));
+        setShimmer(waiting);
         QString shown = hasProblem ? problem
             : finished                ? status
+            : waiting                 ? (phase == Phase::Transcribing
+                                             ? QStringLiteral("Transcribing…")
+                                             : QStringLiteral("Refining…"))
             : preview.isEmpty()       ? status
                                       : preview;
 
@@ -326,11 +396,11 @@ struct DictationPanel::Native : QObject {
             text.Width(textWidth);
             row.HorizontalAlignment(HorizontalAlignment::Left);
         }
-        level.Visibility(!hasProblem && !refining
+        level.Visibility(!hasProblem && !finished && phase == Phase::Live
                                  && status.compare(QStringLiteral("listening"), Qt::CaseInsensitive) == 0
                              ? Visibility::Visible
                              : Visibility::Collapsed);
-        ring.Visibility(!hasProblem && refining ? Visibility::Visible
+        ring.Visibility(!hasProblem && !finished && refining ? Visibility::Visible
                                                  : Visibility::Collapsed);
         dismiss.Visibility(hasProblem ? Visibility::Visible : Visibility::Collapsed);
         resize(wantedWidth);
@@ -379,6 +449,10 @@ struct DictationPanel::Native : QObject {
     quint64 pendingGeneration = 0;
     quint64 presentedGeneration = 0;
     StackPanel row{nullptr};
+    Phase phase = Phase::Live;
+    Brush normalForeground{nullptr};
+    Microsoft::UI::Xaml::Media::Animation::Storyboard shimmer{nullptr};
+    bool shimmering = false;
     bool frozen = false;
     bool completed = false;
     bool refining = false;
