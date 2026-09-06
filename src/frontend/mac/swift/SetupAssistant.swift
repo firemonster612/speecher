@@ -410,8 +410,10 @@ struct SetupAssistantView: View {
             .padding(.bottom, 4)
             content(step)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .id(flow.step)
+                // onAppear must sit inside the .id boundary or it keeps the
+                // outer wrapper's identity and only ever fires once.
                 .onAppear { flow.stepRendered?(flow.step) }
+                .id(flow.step)
             Divider()
             controls
         }
