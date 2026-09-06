@@ -11,6 +11,7 @@
 
 #include <QApplication>
 #include <QTabWidget>
+#include <QTimer>
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QEvent>
@@ -41,6 +42,24 @@ QtFrontEnd::QtFrontEnd(ApplicationController *controller, QObject *parent)
             this,
             &QtFrontEnd::refreshUpdateChip);
     refreshUpdateChip();
+
+    // SPEECHER_POPUP_CAPTURE_DIR: capture seam mirroring the mac setup
+    // assistant's; saves numbered frames of the dictation popup while it is
+    // visible so a headless end-to-end run can be assembled into a video.
+    const QString captureDir = qEnvironmentVariable("SPEECHER_POPUP_CAPTURE_DIR");
+    if (!captureDir.isEmpty()) {
+        auto *capture = new QTimer(this);
+        capture->setInterval(66);
+        connect(capture, &QTimer::timeout, this, [this, captureDir] {
+            static int frame = 0;
+            if (m_popup->isVisible()) {
+                m_popup->grab().save(QStringLiteral("%1/frame-%2.png")
+                                         .arg(captureDir)
+                                         .arg(++frame, 6, 10, QLatin1Char('0')));
+            }
+        });
+        capture->start();
+    }
 }
 
 QtFrontEnd::~QtFrontEnd()

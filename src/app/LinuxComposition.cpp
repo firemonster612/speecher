@@ -12,6 +12,7 @@
 #include "platform/WaylandLayerShell.h"
 #include "platform/atspi/AtSpiAccess.h"
 #include "platform/audio/QtAudioInput.h"
+#include "platform/audio/WavFileAudioInput.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -83,6 +84,10 @@ QList<AudioInputDeviceInfo> LinuxComposition::availableAudioInputDevices() const
 
 AudioInput *LinuxComposition::createAudioInput(SettingsStore *settings, QObject *parent) const
 {
+    const QString wavSeam = qEnvironmentVariable("SPEECHER_AUDIO_WAV");
+    if (!wavSeam.isEmpty()) {
+        return new WavFileAudioInput(wavSeam, parent);
+    }
     auto *input = new QtAudioInput(settings->audioCaptureSettings(), parent);
     QObject::connect(settings,
                      &SettingsStore::audioCaptureSettingsChanged,

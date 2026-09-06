@@ -322,6 +322,7 @@ set(SPEECHER_PLATFORM_SOURCES
   src/platform/ScreenshotImage.cpp
   src/platform/audio/AudioPcmConverter.cpp
   src/platform/audio/QtAudioInput.cpp
+  src/platform/audio/WavFileAudioInput.cpp
   src/platform/FallbackPopupPositioner.cpp
 )
 
