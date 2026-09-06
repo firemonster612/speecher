@@ -37,7 +37,7 @@ using namespace Microsoft::UI::Xaml::Controls;
 using namespace Microsoft::UI::Xaml::Hosting;
 using namespace Microsoft::UI::Xaml::Media;
 
-constexpr int minimumWidth = 300;
+constexpr int panelWidth = 420;
 constexpr int panelHeight = 52;
 constexpr int previewChromeWidth = 190;
 constexpr int screenEdgeMargin = 80;
@@ -165,7 +165,7 @@ struct DictationPanel::Native : QObject {
         window = CreateWindowExW(
             WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
             windowClassName, L"Speecher dictation", WS_POPUP,
-            0, 0, minimumWidth, panelHeight, nullptr, nullptr,
+            0, 0, panelWidth, panelHeight, nullptr, nullptr,
             windowClass.hInstance, nullptr);
 
         const DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
@@ -191,7 +191,7 @@ struct DictationPanel::Native : QObject {
         text.VerticalAlignment(VerticalAlignment::Center);
         text.TextTrimming(TextTrimming::CharacterEllipsis);
         text.MaxLines(1);
-        text.Width(240);
+        text.Width(panelWidth - previewChromeWidth);
         row.Children().Append(text);
 
         level = ProgressBar();
@@ -230,7 +230,7 @@ struct DictationPanel::Native : QObject {
         });
         source.Content(chrome);
         source.SystemBackdrop(DesktopAcrylicBackdrop());
-        resize(minimumWidth);
+        resize(panelWidth);
     }
 
     void show(quint64 generation)
@@ -385,15 +385,22 @@ struct DictationPanel::Native : QObject {
             : preview.isEmpty()       ? status
                                       : preview;
 
-        POINT pointer{};
-        GetCursorPos(&pointer);
-        MONITORINFO monitor{sizeof(monitor)};
-        GetMonitorInfoW(MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST), &monitor);
-        const int maximumWidth = std::max(
-            minimumWidth, int(monitor.rcWork.right - monitor.rcWork.left) - screenEdgeMargin);
-        const int wantedWidth = std::clamp(
-            minimumWidth + std::max(0, int(shown.size()) - 32) * 7,
-            minimumWidth, maximumWidth);
+        // The pill keeps one width for the whole dictation: the preview elides
+        // from the front into a fixed line, like the mac and Qt panels, so the
+        // window never resizes or re-centres while words stream in. Only a
+        // problem message may widen it, once, to stay readable.
+        int wantedWidth = panelWidth;
+        if (hasProblem) {
+            POINT pointer{};
+            GetCursorPos(&pointer);
+            MONITORINFO monitor{sizeof(monitor)};
+            GetMonitorInfoW(MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST), &monitor);
+            const int maximumWidth = std::max(
+                panelWidth, int(monitor.rcWork.right - monitor.rcWork.left) - screenEdgeMargin);
+            wantedWidth = std::clamp(
+                panelWidth + std::max(0, int(shown.size()) - 32) * 7,
+                panelWidth, maximumWidth);
+        }
         const int textWidth = wantedWidth - previewChromeWidth;
         const int maximumCharacters = std::max(20, textWidth / 7);
         if (!hasProblem && shown.size() > maximumCharacters) {
@@ -414,9 +421,11 @@ struct DictationPanel::Native : QObject {
         ring.Visibility(!hasProblem && !finished && refining ? Visibility::Visible
                                                  : Visibility::Collapsed);
         dismiss.Visibility(hasProblem ? Visibility::Visible : Visibility::Collapsed);
-        resize(wantedWidth);
-        if (IsWindowVisible(window)) {
-            reposition();
+        if (wantedWidth != width) {
+            resize(wantedWidth);
+            if (IsWindowVisible(window)) {
+                reposition();
+            }
         }
     }
 
@@ -456,7 +465,7 @@ struct DictationPanel::Native : QObject {
     QString status;
     QString preview;
     QString problem;
-    int width = minimumWidth;
+    int width = panelWidth;
     quint64 pendingGeneration = 0;
     quint64 presentedGeneration = 0;
     StackPanel row{nullptr};
