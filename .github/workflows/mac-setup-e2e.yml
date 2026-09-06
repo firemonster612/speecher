@@ -27,6 +27,10 @@ jobs:
   setup-e2e:
     runs-on: macos-26
     timeout-minutes: 40
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CMAKE_OBJCXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v7
         with:
@@ -39,6 +43,12 @@ jobs:
           version: 6.8.3
           arch: clang_64
           modules: qtmultimedia qtwebsockets
+          cache: true
+
+      - name: Cache macOS compiler outputs
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: macos-26-release
 
       - name: Remove obsolete AGL references
         run: |
