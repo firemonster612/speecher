@@ -95,25 +95,26 @@ walk_to_step() {
   wait_for_page_capture "$target" "${STEP_IDS[$((target - 1))]}"
 }
 
-# Drives the pop-up button currently showing $1 to the menu item $2. SwiftUI
-# nests its controls in AX groups, so the search walks the window's entire
-# contents rather than guessing a path.
+# Drives the step's pop-up button to the menu item $1. Each provider step has
+# exactly one pop-up, and SwiftUI nests it in AX groups, so the search walks
+# the window's entire contents for the first one rather than guessing a path.
 drive_picker() {
-  osascript - "$1" "$2" >>"$CASE_DIR/picker.out" 2>&1 <<'OSA' &
+  osascript - "$1" >>"$CASE_DIR/picker.out" 2>&1 <<'OSA' &
 on run argv
-  set currentValue to item 1 of argv
-  set targetValue to item 2 of argv
+  set targetValue to item 1 of argv
   tell application "System Events" to tell process "speecher"
-    set thePopup to missing value
+    set found to {}
     repeat with e in entire contents of window "Speecher Setup Assistant"
       try
-        if class of e is pop up button and value of e is currentValue then
-          set thePopup to e
-          exit repeat
-        end if
+        if class of e is pop up button then set end of found to e
       end try
     end repeat
-    if thePopup is missing value then error "no pop up button showing " & currentValue
+    if (count of found) is 0 then error "no pop up buttons in the window"
+    set thePopup to item 1 of found
+    log "pop up buttons: " & (count of found)
+    try
+      log "value: " & (value of thePopup as text)
+    end try
     click thePopup
     delay 0.5
     click menu item targetValue of menu 1 of thePopup
@@ -253,7 +254,7 @@ else
   errors=()
   walk_to_step 2 || errors+=("could not reach the transcription step")
   if (( ${#errors[@]} == 0 )); then
-    drive_picker "Claude Voice" "ChatGPT Codex" \
+    drive_picker "ChatGPT Codex" \
       || errors+=("could not drive the transcription picker to ChatGPT Codex")
     sleep 0.5
     recapture_step 2 transcription || errors+=("the transcription step was not recaptured")
@@ -269,7 +270,7 @@ else
     wait_for_page_capture 6 refinement || errors+=("could not reach the refinement step")
   fi
   if (( ${#errors[@]} == 0 )); then
-    drive_picker "OpenAI" "None" \
+    drive_picker "None" \
       || errors+=("could not drive the refinement picker to None")
     sleep 0.5
     recapture_step 6 refinement || errors+=("the refinement step was not recaptured")
