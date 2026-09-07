@@ -197,6 +197,10 @@ def main() -> None:
     if state(next_button(), Atspi.StateType.ENABLED):
         fail("Next is enabled on the Global Shortcut page before installing")
     ok("Next stays off until Speecher is installed")
+    # A shortcut bound before the move would break the moment the image moves.
+    if find_containing("add a shortcut that runs", 2) is not None:
+        fail("shortcut instructions are shown before the install")
+    ok("shortcut controls wait for the install")
     if not os.path.isfile(source_image):
         fail(f"the AppImage is not at its starting place {source_image}")
     save_grab("before-install")
@@ -225,6 +229,10 @@ def main() -> None:
     ok("installing opens the gate to the next page")
     require("Skip setup", 10)
     ok("Skip setup returns once Speecher is installed")
+    command = require("toggle", 10)
+    if ".local" not in (command.get_name() or "").replace("​", ""):
+        fail("the manual shortcut command does not go through ~/.local/bin")
+    ok("the shortcut controls appear after the install with the installed path")
     save_grab("after-install")
 
     go_next("Ready to dictate")

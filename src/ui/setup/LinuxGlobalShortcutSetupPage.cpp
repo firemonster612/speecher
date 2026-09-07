@@ -73,6 +73,33 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(10);
 
+    // Installing comes first, and the shortcut controls stay hidden until it
+    // has happened: a shortcut bound to the pre-install path would break the
+    // moment the install moves the image.
+    m_integration = new QWidget(this);
+    m_integration->setObjectName(QStringLiteral("appMenuIntegration"));
+    auto *integrationLayout = new QVBoxLayout(m_integration);
+    integrationLayout->setContentsMargins(0, 0, 0, 0);
+    QString installFolder = appImageInstallDirectory(m_homePath);
+    if (installFolder.startsWith(m_homePath)) {
+        installFolder = QStringLiteral("~") + installFolder.mid(m_homePath.size());
+    }
+    integrationLayout->addWidget(guidanceLabel(
+        QStringLiteral("Installing moves the Speecher AppImage to %1, adds it to your app "
+                       "menu, and makes the speecher command available for desktop "
+                       "shortcuts. Setup continues once Speecher is installed.")
+            .arg(installFolder),
+        m_integration));
+    auto *integrationRow = new QHBoxLayout;
+    m_integrationButton = new QPushButton(
+        QStringLiteral("Install Speecher"), m_integration);
+    m_integrationStatus = new QLabel(m_integration);
+    integrationRow->addWidget(m_integrationButton);
+    integrationRow->addWidget(m_integrationStatus, 1);
+    integrationLayout->addLayout(integrationRow);
+    m_integration->setVisible(!m_appImagePath.isEmpty());
+    layout->addWidget(m_integration);
+
     m_keySequenceControls = new QWidget(this);
     m_keySequenceControls->setObjectName(QStringLiteral("keySequenceShortcut"));
     auto *keyLayout = new QVBoxLayout(m_keySequenceControls);
@@ -125,29 +152,6 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     manualLayout->addLayout(commandRow);
     layout->addWidget(m_manualControls);
 
-    m_integration = new QWidget(this);
-    m_integration->setObjectName(QStringLiteral("appMenuIntegration"));
-    auto *integrationLayout = new QVBoxLayout(m_integration);
-    integrationLayout->setContentsMargins(0, 0, 0, 0);
-    QString installFolder = appImageInstallDirectory(m_homePath);
-    if (installFolder.startsWith(m_homePath)) {
-        installFolder = QStringLiteral("~") + installFolder.mid(m_homePath.size());
-    }
-    integrationLayout->addWidget(guidanceLabel(
-        QStringLiteral("Installing moves the Speecher AppImage to %1, adds it to your app "
-                       "menu, and makes the speecher command available for desktop "
-                       "shortcuts. Setup continues once Speecher is installed.")
-            .arg(installFolder),
-        m_integration));
-    auto *integrationRow = new QHBoxLayout;
-    m_integrationButton = new QPushButton(
-        QStringLiteral("Install Speecher"), m_integration);
-    m_integrationStatus = new QLabel(m_integration);
-    integrationRow->addWidget(m_integrationButton);
-    integrationRow->addWidget(m_integrationStatus, 1);
-    integrationLayout->addLayout(integrationRow);
-    m_integration->setVisible(!m_appImagePath.isEmpty());
-    layout->addWidget(m_integration);
     layout->addStretch();
 
     connect(m_sequence,
@@ -285,10 +289,17 @@ void LinuxGlobalShortcutSetupPage::refresh()
     const bool known = m_controller.globalShortcutSupportKnown();
     const bool supported = m_controller.globalShortcutsSupported();
     const bool desktopChooser = m_controller.globalShortcutUsesDesktopChooser();
-    m_keySequenceControls->setVisible(known && supported && !desktopChooser);
-    m_portalControls->setVisible(!known || (supported && desktopChooser));
-    m_manualControls->setVisible(known && !supported);
-    m_status->setVisible(!known || supported);
+    // Until the install has moved the image, every shortcut control is
+    // premature: the manual command would quote a path the install is about
+    // to remove.
+    const bool ready = !installRequired();
+    m_keySequenceControls->setVisible(ready && known && supported && !desktopChooser);
+    m_portalControls->setVisible(ready && (!known || (supported && desktopChooser)));
+    m_manualControls->setVisible(ready && known && !supported);
+    m_status->setVisible(ready && (!known || supported));
+    if (!ready) {
+        return;
+    }
 
     if (!known) {
         m_chooseShortcut->setEnabled(false);
