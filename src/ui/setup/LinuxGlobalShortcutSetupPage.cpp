@@ -218,6 +218,20 @@ bool LinuxGlobalShortcutSetupPage::installRequired() const
             || !appImageInInstallFolder(m_homePath, m_appImagePath));
 }
 
+bool LinuxGlobalShortcutSetupPage::stepComplete() const
+{
+    if (installRequired()) {
+        return false;
+    }
+    if (!m_controller.globalShortcutSupportKnown()) {
+        return false;
+    }
+    if (!m_controller.globalShortcutsSupported()) {
+        return true;
+    }
+    return !m_controller.globalShortcutDisplay().isEmpty();
+}
+
 void LinuxGlobalShortcutSetupPage::installIntegration()
 {
     QString error;
@@ -237,12 +251,10 @@ void LinuxGlobalShortcutSetupPage::installIntegration()
                                     QCoreApplication::applicationDirPath(),
                                     &error)) {
         m_integrationStatus->setText(error);
-        emit installStateChanged();
         return;
     }
     m_integrationStatus->clear();
     refresh();
-    emit installStateChanged();
 }
 
 void LinuxGlobalShortcutSetupPage::setShortcut()
@@ -265,6 +277,19 @@ void LinuxGlobalShortcutSetupPage::chooseShortcut()
 }
 
 void LinuxGlobalShortcutSetupPage::refresh()
+{
+    refreshControls();
+    // Only a real change may leave this widget: refresh() runs from
+    // showEvent(), and an unconditional emit loops through the assistant's
+    // gate update, whose button changes deliver new show events.
+    const bool complete = stepComplete();
+    if (m_notifiedStepComplete != complete) {
+        m_notifiedStepComplete = complete;
+        emit stepCompleteChanged();
+    }
+}
+
+void LinuxGlobalShortcutSetupPage::refreshControls()
 {
     // Another instance (the wizard's, next to this settings-embedded one) may
     // have moved the image and updated APPIMAGE since construction.
@@ -336,9 +361,14 @@ void LinuxGlobalShortcutSetupPage::showRegistrationResult(bool bound,
     if (bound && !display.isEmpty()) {
         m_displayedShortcut = display;
         m_status->setText(shortcutSetStatus(display));
-        return;
+    } else {
+        m_status->setText(detail);
     }
-    m_status->setText(detail);
+    const bool complete = stepComplete();
+    if (m_notifiedStepComplete != complete) {
+        m_notifiedStepComplete = complete;
+        emit stepCompleteChanged();
+    }
 }
 
 } // namespace speecher

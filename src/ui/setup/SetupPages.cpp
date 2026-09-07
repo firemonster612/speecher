@@ -26,6 +26,7 @@
 #include <QPalette>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QThread>
 #include <QVBoxLayout>
 
@@ -67,6 +68,22 @@ void ProviderStatsBlock::setStats(const QVector<ProviderStat> &stats)
 }
 
 namespace {
+
+// A word-wrapped QLabel that needs more lines than its width-blind size hint
+// paints its last line clipped; keeping minimumHeight at heightForWidth makes
+// the layout give it the real height (same fix as the settings rows').
+class WrappingLabel final : public QLabel {
+public:
+    using QLabel::QLabel;
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QLabel::resizeEvent(event);
+        setMinimumHeight(0);
+        setMinimumHeight(heightForWidth(event->size().width()));
+    }
+};
 
 QVBoxLayout *makePage(QWidget *page, const QString &description)
 {
@@ -161,8 +178,8 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     , m_providers(providers)
     , m_provider(new QComboBox(this))
     , m_stats(new ProviderStatsBlock(this))
-    , m_hint(new QLabel(this))
-    , m_status(new QLabel(this))
+    , m_hint(new WrappingLabel(this))
+    , m_status(new WrappingLabel(this))
     , m_checkAgain(new QPushButton(QStringLiteral("Check again"), this))
 {
     QVBoxLayout *layout = makePage(
@@ -196,6 +213,15 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     updateProvider();
 }
 
+void SpeechProviderSetupPage::setReady(bool ready)
+{
+    if (m_ready == ready) {
+        return;
+    }
+    m_ready = ready;
+    emit readyChanged();
+}
+
 void SpeechProviderSetupPage::updateProvider()
 {
     const QString providerId = m_provider->currentData().toString();
@@ -214,6 +240,7 @@ void SpeechProviderSetupPage::checkProvider()
 {
     m_hint->show();
     m_checkAgain->show();
+    setReady(false);
     const quint64 generation = ++m_checkGeneration;
     const QString providerId = m_provider->currentData().toString();
     SpeechTranscriber *provider = m_providers.speechProvider(
@@ -234,6 +261,7 @@ void SpeechProviderSetupPage::checkProvider()
                               : result.message);
         m_hint->setVisible(!result.ok);
         m_checkAgain->setVisible(!result.ok);
+        setReady(result.ok);
         return;
     }
 
@@ -259,6 +287,7 @@ void SpeechProviderSetupPage::checkProvider()
                               : result->message);
         m_hint->setVisible(!result->ok);
         m_checkAgain->setVisible(!result->ok);
+        setReady(result->ok);
     });
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);
     thread->start();
@@ -276,7 +305,7 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
 {
     QVBoxLayout *layout = makePage(
         this,
-        QStringLiteral("Choose the input Speecher should record. Speak normally and check that the level moves."));
+        QStringLiteral("Choose the input Speecher should record. Speak normally; setup continues once the level moves."));
     m_device->setMinimumContentsLength(28);
     m_level->setRange(0, 100);
     m_level->setValue(0);
@@ -297,6 +326,10 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
         m_level->setValue(qBound(0, qRound(level * 100.0f), 100));
         if (level > 0.01f) {
             m_status->setText(QStringLiteral("Microphone input detected."));
+            if (!m_inputDetected) {
+                m_inputDetected = true;
+                emit inputDetectedChanged();
+            }
         }
     });
     connect(m_input, &AudioInput::failed, this, [this](const QString &message) {
@@ -420,12 +453,22 @@ void AccessibilitySetupPage::refreshFromController()
                 m_controller.accessibilityPersistent());
 }
 
+bool AccessibilitySetupPage::stepComplete() const
+{
+#ifdef Q_OS_WIN
+    return true;
+#else
+    return !m_supported || m_enabled;
+#endif
+}
+
 void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool persistent)
 {
+    const bool wasComplete = stepComplete();
+    m_supported = supported;
+    m_enabled = enabled;
     QString status;
 #ifdef Q_OS_WIN
-    Q_UNUSED(supported);
-    Q_UNUSED(enabled);
     Q_UNUSED(persistent);
     status = QStringLiteral("UI Automation is available. No permission grant is needed.");
     m_enable->hide();
@@ -443,20 +486,26 @@ void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool pers
         m_enable->setEnabled(true);
         m_enable->setText(QStringLiteral("Enable permanently"));
     } else {
-        status = QStringLiteral("Desktop accessibility is currently off.");
+        status = QStringLiteral("Desktop accessibility is currently off. Enable it to continue setup.");
         m_enable->setEnabled(true);
         m_enable->setText(QStringLiteral("Enable permanently"));
     }
 #endif
     m_status->setText(m_lastError.isEmpty() ? status : m_lastError);
+    if (wasComplete != stepComplete()) {
+        emit stepCompleteChanged();
+    }
 }
 
 TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *parent)
     : QWidget(parent)
     , m_settings(settings)
-    , m_status(new QLabel(this))
+    , m_status(new WrappingLabel(this))
     , m_setup(new QPushButton(QStringLiteral("Set up virtual keyboard"), this))
     , m_progress(new QProgressBar(this))
+    , m_clipboardOnly(new QCheckBox(
+          QStringLiteral("Continue without the virtual keyboard and paste from the clipboard only"),
+          this))
     , m_restoreClipboard(new QCheckBox(restoreClipboardDescription(), this))
     , m_format(new QComboBox(this))
 {
@@ -481,12 +530,20 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
     layout->addWidget(m_status);
     layout->addWidget(m_progress);
     layout->addWidget(m_setup, 0, Qt::AlignLeft);
+    layout->addWidget(m_clipboardOnly);
     layout->addSpacing(8);
     layout->addLayout(formatRow);
     layout->addWidget(m_restoreClipboard);
     layout->addStretch();
+#ifndef SPEECHER_WITH_YDOTOOL
+    // Nothing to install and nothing to opt out of.
+    m_clipboardOnly->hide();
+#endif
 
     connect(m_setup, &QPushButton::clicked, this, &TextDeliverySetupPage::runSetup);
+    connect(m_clipboardOnly, &QCheckBox::toggled, this, [this] {
+        emit stepCompleteChanged();
+    });
     connect(m_restoreClipboard, &QCheckBox::toggled, this, [this](bool checked) {
         m_settings.setRestoreClipboardAfterTyping(checked);
     });
@@ -503,6 +560,22 @@ bool TextDeliverySetupPage::needsSignIn() const
         == YdotoolSetupState::NeedsSignOut;
 #else
     return false;
+#endif
+}
+
+bool TextDeliverySetupPage::stepComplete() const
+{
+#ifdef SPEECHER_WITH_YDOTOOL
+    if (m_clipboardOnly->isChecked()) {
+        return true;
+    }
+    const YdotoolSetupStatus status = YdotoolSetup::probe(m_settings.ydotoolEnabled());
+    // NeedsSignOut is as far as this session can get; the enable step waits
+    // in the Output settings after the next sign-in.
+    return (status.ready() && m_settings.ydotoolEnabled())
+        || status.state == YdotoolSetupState::NeedsSignOut;
+#else
+    return true;
 #endif
 }
 
@@ -557,9 +630,11 @@ void TextDeliverySetupPage::runSetup()
                 }
             }
             emit signInRequirementChanged(needsSignIn());
+            emit stepCompleteChanged();
         })) {
         m_progress->setVisible(false);
         refreshStatus();
+        emit stepCompleteChanged();
     }
 }
 #else

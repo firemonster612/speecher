@@ -41,7 +41,6 @@ QStringList setupPageTitles()
 }
 
 #ifndef SPEECHER_WITH_KASSISTANT
-#ifdef Q_OS_LINUX
 // Holds the wizard's Next button until the gate opens: QWizard re-reads
 // isComplete() whenever completeChanged() fires.
 class GatedWizardPage final : public QWizardPage {
@@ -55,7 +54,6 @@ public:
 
     void refreshGate() { emit completeChanged(); }
 };
-#endif
 
 QWizardPage *wizardPage(QWizardPage *page, QWidget *content, const QString &title)
 {
@@ -114,6 +112,44 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         m_profilesPage = new WritingProfilesSetupPage(*controller->settings(), this);
         m_finishPage = new FinishSetupPage(*controller, this);
     }
+    // Every step with something checkable holds Next until it is done, and
+    // Skip setup only exists once all of them are: skipping through an unset
+    // microphone or provider produced installs that never worked. Welcome,
+    // refinement, and writing profiles stay open, since their defaults are
+    // valid answers.
+    if (speechProvider) {
+        m_gates.insert(speechProvider,
+                       [speechProvider] { return speechProvider->ready(); });
+        connect(speechProvider, &SpeechProviderSetupPage::readyChanged,
+                this, [this] { applyGates(); });
+    }
+    if (m_microphonePage) {
+        m_gates.insert(m_microphonePage,
+                       [this] { return m_microphonePage->inputDetected(); });
+        connect(m_microphonePage, &MicrophoneSetupPage::inputDetectedChanged,
+                this, [this] { applyGates(); });
+    }
+    if (accessibility) {
+        m_gates.insert(accessibility,
+                       [accessibility] { return accessibility->stepComplete(); });
+        connect(accessibility, &AccessibilitySetupPage::stepCompleteChanged,
+                this, [this] { applyGates(); });
+    }
+    if (m_deliveryPage) {
+        m_gates.insert(m_deliveryPage,
+                       [this] { return m_deliveryPage->stepComplete(); });
+        connect(m_deliveryPage, &TextDeliverySetupPage::stepCompleteChanged,
+                this, [this] { applyGates(); });
+    }
+#ifdef Q_OS_LINUX
+    if (m_globalShortcutPage) {
+        m_gates.insert(m_globalShortcutPage,
+                       [this] { return m_globalShortcutPage->stepComplete(); });
+        connect(m_globalShortcutPage, &LinuxGlobalShortcutSetupPage::stepCompleteChanged,
+                this, [this] { applyGates(); });
+    }
+#endif
+
     QList<QWidget *> pageContents{
         welcome,
         speechProvider,
@@ -136,13 +172,9 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         QWidget *content = pageContents.at(index);
         if (content && (requestedPageIndex < 0 || requestedPageIndex == index)) {
             KPageWidgetItem *item = addPage(content, titles.at(index));
-#ifdef Q_OS_LINUX
-            if (content == m_globalShortcutPage) {
-                m_globalShortcutItem = item;
+            if (m_gates.contains(content)) {
+                m_gateItems.insert(content, item);
             }
-#else
-            Q_UNUSED(item);
-#endif
         }
     }
     if (!m_singlePage) {
@@ -169,15 +201,12 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         QWidget *content = pageContents.at(index);
         if (content && (requestedPageIndex < 0 || requestedPageIndex == index)) {
             QWizardPage *page = nullptr;
-#ifdef Q_OS_LINUX
-            if (content == m_globalShortcutPage) {
+            if (m_gates.contains(content)) {
                 auto *gated = new GatedWizardPage;
-                gated->gate = [this] { return !m_globalShortcutPage->installRequired(); };
-                m_globalShortcutWizardPage = gated;
+                gated->gate = m_gates.value(content);
+                m_gatePages.insert(content, gated);
                 page = gated;
-            }
-#endif
-            if (!page) {
+            } else {
                 page = new QWizardPage;
             }
             const int id = addPage(wizardPage(page, content, titles.at(index)));
@@ -200,15 +229,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
                 m_finishPage,
                 &FinishSetupPage::setSignInRequired);
     }
-#ifdef Q_OS_LINUX
-    if (m_globalShortcutPage) {
-        connect(m_globalShortcutPage,
-                &LinuxGlobalShortcutSetupPage::installStateChanged,
-                this,
-                [this] { applyInstallGate(); });
-        applyInstallGate();
-    }
-#endif
+    applyGates();
 #ifdef Q_OS_LINUX
     if (m_singlePage) {
         updateActivePage(m_globalShortcutPage);
@@ -249,27 +270,31 @@ int SetupAssistant::pageIndex(SetupAssistantPage page)
     return -1;
 }
 
-#ifdef Q_OS_LINUX
-// Next stays off on the Global Shortcut page until Install Speecher has run,
-// and Skip setup disappears for the whole run: installing the AppImage is a
-// required step of an AppImage setup, and skipping would record the setup as
-// completed without it. Cancel stays available and completes nothing.
-void SetupAssistant::applyInstallGate()
+void SetupAssistant::applyGates()
 {
-    const bool installed = !m_globalShortcutPage->installRequired();
+    for (auto it = m_gates.cbegin(); it != m_gates.cend(); ++it) {
 #ifdef SPEECHER_WITH_KASSISTANT
-    if (m_globalShortcutItem) {
-        setValid(m_globalShortcutItem, installed);
-    }
+        if (KPageWidgetItem *item = m_gateItems.value(it.key())) {
+            setValid(item, it.value()());
+        }
 #else
-    Q_UNUSED(installed);
-    if (m_globalShortcutWizardPage) {
-        static_cast<GatedWizardPage *>(m_globalShortcutWizardPage)->refreshGate();
-    }
+        if (QWizardPage *page = m_gatePages.value(it.key())) {
+            static_cast<GatedWizardPage *>(page)->refreshGate();
+        }
 #endif
+    }
     updateActivePage(m_activePage);
 }
-#endif
+
+bool SetupAssistant::gatesComplete() const
+{
+    for (const auto &gate : m_gates) {
+        if (!gate()) {
+            return false;
+        }
+    }
+    return true;
+}
 
 void SetupAssistant::skipSetup()
 {
@@ -308,13 +333,9 @@ void SetupAssistant::updateActivePage(QWidget *page)
         m_microphonePage->setActive(page == m_microphonePage);
     }
     if (m_skipButton) {
-        bool allowed = page != m_lastPage;
-#ifdef Q_OS_LINUX
-        if (m_globalShortcutPage && m_globalShortcutPage->installRequired()) {
-            allowed = false;
-        }
-#endif
-        m_skipButton->setVisible(allowed);
+        // Skip is only a shortcut past pages whose steps are already done,
+        // never a way around them.
+        m_skipButton->setVisible(page != m_lastPage && gatesComplete());
     }
     if (page == m_finishPage && m_finishPage) {
         m_finishPage->setSignInRequired(m_deliveryPage->needsSignIn());

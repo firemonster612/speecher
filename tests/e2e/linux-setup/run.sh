@@ -35,7 +35,7 @@ if [[ "${1:-}" != "--reuse-build" || ! -x "$WORK/Speecher.AppImage" ]]; then
   SPEECHER_APPDIR="$WORK/appdir" \
   SPEECHER_OUTPUT_DIR="$WORK/dist" \
   SPEECHER_BUILD_TYPE=Release \
-  SPEECHER_APPIMAGE_CMAKE_EXTRA="${SPEECHER_APPIMAGE_CMAKE_EXTRA:--DSPEECHER_WITH_KDE=OFF -DSPEECHER_RELEASE_BUILD=OFF}" \
+  SPEECHER_APPIMAGE_CMAKE_EXTRA="${SPEECHER_APPIMAGE_CMAKE_EXTRA:--DSPEECHER_E2E_HOOKS=ON -DSPEECHER_WITH_KDE=OFF -DSPEECHER_RELEASE_BUILD=OFF}" \
     bash "$ROOT_DIR/packaging/build-appimage.sh" > "$WORK/build.log" 2>&1
   mv "$WORK"/dist/Speecher*x86_64.AppImage "$WORK/Speecher.AppImage"
   chmod +x "$WORK/Speecher.AppImage"

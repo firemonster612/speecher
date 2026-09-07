@@ -5,10 +5,12 @@
 #ifdef SPEECHER_WITH_KASSISTANT
 #include <KAssistantDialog>
 #else
-#include <QHash>
 #include <QWizard>
 #endif
+#include <QHash>
 #include <QStringList>
+
+#include <functional>
 
 class QAbstractButton;
 #ifdef SPEECHER_WITH_KASSISTANT
@@ -46,6 +48,17 @@ private:
     static int pageIndex(SetupAssistantPage page);
     void skipSetup();
     void updateActivePage(QWidget *page);
+    void applyGates();
+    bool gatesComplete() const;
+
+    // Pages whose step must be completed before Next (and, while any is
+    // incomplete, before Skip setup is offered at all).
+    QHash<QWidget *, std::function<bool()>> m_gates;
+#ifdef SPEECHER_WITH_KASSISTANT
+    QHash<QWidget *, KPageWidgetItem *> m_gateItems;
+#else
+    QHash<QWidget *, QWizardPage *> m_gatePages;
+#endif
 
     ApplicationController *m_controller;
     MicrophoneSetupPage *m_microphonePage = nullptr;
@@ -57,14 +70,7 @@ private:
     QAbstractButton *m_skipButton = nullptr;
     bool m_singlePage = false;
 #ifdef Q_OS_LINUX
-    void applyInstallGate();
-
     LinuxGlobalShortcutSetupPage *m_globalShortcutPage = nullptr;
-#ifdef SPEECHER_WITH_KASSISTANT
-    KPageWidgetItem *m_globalShortcutItem = nullptr;
-#else
-    QWizardPage *m_globalShortcutWizardPage = nullptr;
-#endif
 #endif
 #ifndef SPEECHER_WITH_KASSISTANT
     QHash<int, QWidget *> m_pageContents;

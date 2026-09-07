@@ -629,11 +629,17 @@ void ApplicationController::registerProviders()
     // E2E-build-only hook: deterministic stub providers for the headless
     // dictation-panel flow runs. Never compiled into distributed builds.
     if (qEnvironmentVariableIntValue("SPEECHER_E2E_STUB") == 1) {
+        // The stub stats mirror the real providers' shape (a Score line first)
+        // so the setup-flow E2E can assert the rendering.
         m_providers->registerSpeechProvider(
-            {QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), QString()},
+            {QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), QString(), false, QString(),
+             {{QStringLiteral("Score"), QStringLiteral("8 / 10")},
+              {QStringLiteral("Engine"), QStringLiteral("Deterministic test stub")}}},
             createE2ESpeechTranscriber);
         m_providers->registerRefinementProvider(
-            {QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), QString()},
+            {QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), QString(), false, QString(),
+             {{QStringLiteral("Score"), QStringLiteral("8 / 10")},
+              {QStringLiteral("Engine"), QStringLiteral("Deterministic test stub")}}},
             createE2ETranscriptRefiner);
     }
 #endif

@@ -45,14 +45,23 @@ public:
 };
 
 class SpeechProviderSetupPage final : public QWidget {
+    Q_OBJECT
+
 public:
     SpeechProviderSetupPage(SettingsStore &settings,
                             ProviderRegistry &providers,
                             QWidget *parent = nullptr);
 
+    // The setup assistant holds Next until the chosen service checked out.
+    bool ready() const { return m_ready; }
+
+signals:
+    void readyChanged();
+
 private:
     void updateProvider();
     void checkProvider();
+    void setReady(bool ready);
 
     SettingsStore &m_settings;
     ProviderRegistry &m_providers;
@@ -62,9 +71,12 @@ private:
     QLabel *m_status;
     QPushButton *m_checkAgain;
     quint64 m_checkGeneration = 0;
+    bool m_ready = false;
 };
 
 class MicrophoneSetupPage final : public QWidget {
+    Q_OBJECT
+
 public:
     MicrophoneSetupPage(SettingsStore &settings,
                         const PlatformComposition &platform,
@@ -72,6 +84,12 @@ public:
     ~MicrophoneSetupPage() override;
 
     void setActive(bool active);
+
+    // The setup assistant holds Next until the meter has heard something.
+    bool inputDetected() const { return m_inputDetected; }
+
+signals:
+    void inputDetectedChanged();
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -88,12 +106,22 @@ private:
     QLabel *m_status;
     bool m_active = false;
     bool m_devicesLoaded = false;
+    bool m_inputDetected = false;
 };
 
 class AccessibilitySetupPage final : public QWidget {
+    Q_OBJECT
+
 public:
     explicit AccessibilitySetupPage(ApplicationController &controller,
                                     QWidget *parent = nullptr);
+
+    // Complete once accessibility is on, or when there is nothing this build
+    // or platform lets the user do about it.
+    bool stepComplete() const;
+
+signals:
+    void stepCompleteChanged();
 
 private:
     void updateState(bool supported, bool enabled, bool persistent);
@@ -105,6 +133,8 @@ private:
     // user acts again, so the poll cannot wipe the reply to their click.
     QString m_lastError;
     QPushButton *m_enable;
+    bool m_supported = false;
+    bool m_enabled = false;
 };
 
 class TextDeliverySetupPage final : public QWidget {
@@ -115,8 +145,14 @@ public:
 
     bool needsSignIn() const;
 
+    // Complete when the virtual keyboard works (or waits on a sign-out), or
+    // the user explicitly chose clipboard-only paste. Platforms without a
+    // virtual keyboard to install are always complete.
+    bool stepComplete() const;
+
 signals:
     void signInRequirementChanged(bool required);
+    void stepCompleteChanged();
 
 private:
     void refreshStatus();
@@ -126,6 +162,7 @@ private:
     QLabel *m_status;
     QPushButton *m_setup;
     QProgressBar *m_progress;
+    QCheckBox *m_clipboardOnly;
     QCheckBox *m_restoreClipboard;
     QComboBox *m_format;
 };

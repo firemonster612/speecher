@@ -10,27 +10,28 @@ APP="$FAKE_HOME/Downloads/Speecher.AppImage"
 APP_TMPDIR="$E2E_APP_TMPDIR"
 mkdir -p "$APP_TMPDIR"
 
-# Seed only the providers, so the assistant's provider pages show the real
-# stat blocks; setup itself has not run.
+# Seed the stub providers so the Transcription gate can pass without vendor
+# credentials; setup itself has not run.
 mkdir -p "$FLOW_DIR/config/${SPEECHER_ORG:-io.github.firemonster612}"
 cat > "$FLOW_DIR/config/${SPEECHER_ORG:-io.github.firemonster612}/speecher.conf" <<INI
 [stt]
-provider=claude
+provider=e2e-stub
 
 [refinement]
-provider=anthropic
+provider=e2e-stub
 
 [audio]
 vadEnabled=false
 INI
 
-# A short silent WAV so the assistant's microphone page has a working input
-# without an audio stack.
+# A short WAV with an audible tone: the microphone page holds Next until the
+# level meter has heard something.
 python3 - "$FLOW_DIR/mic.wav" <<'PY'
-import struct, sys, wave
+import math, struct, sys, wave
 with wave.open(sys.argv[1], "wb") as w:
     w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
-    w.writeframes(struct.pack("<" + "h" * 16000, *([0] * 16000)))
+    tone = [int(12000 * math.sin(2 * math.pi * 440 * i / 16000)) for i in range(16000)]
+    w.writeframes(struct.pack("<" + "h" * len(tone), *tone))
 PY
 
 COMMON_ENV=(
@@ -41,6 +42,7 @@ COMMON_ENV=(
   QT_ACCESSIBILITY=1
   QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
   LIBGL_ALWAYS_SOFTWARE=1
+  SPEECHER_E2E_STUB=1
   SPEECHER_AUDIO_WAV="$FLOW_DIR/mic.wav"
   SPEECHER_GRAB_DIR="$FLOW_DIR/grabs"
   SPEECHER_GRAB_PAGE="setup:global shortcut"

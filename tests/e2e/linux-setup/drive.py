@@ -134,7 +134,20 @@ def next_button():
     return require("Next >", 10, role="button")
 
 
+def wait_next_enabled(timeout: float = 10) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if state(next_button(), Atspi.StateType.ENABLED):
+            return True
+        time.sleep(0.2)
+    return False
+
+
 def go_next(expected_title: str) -> None:
+    # Every gated page must open its gate before Next works; waiting for the
+    # button is itself the assertion that the step completed.
+    if not wait_next_enabled():
+        fail(f"Next never became enabled on the way to {expected_title!r}")
     click(next_button())
     require(expected_title, 15)
     log(f"page {expected_title!r} reached")
@@ -181,10 +194,23 @@ def main() -> None:
     require("Score", 10)
     require("8 / 10", 10)
     ok("the transcription provider stats include a score out of 10")
+    require("is ready", 15)
+    ok("the transcription gate opens once the provider checks out")
 
     go_next("Microphone")
+    require("Microphone input detected.", 15)
+    ok("the microphone gate opens once input is detected")
+
     go_next("Desktop accessibility")
     go_next("Text delivery")
+    if wait_next_enabled(2):
+        fail("Next is enabled on Text delivery with no virtual keyboard and no opt-out")
+    ok("the text delivery gate holds without a virtual keyboard")
+    click(require("clipboard only", 5, role="check box"))
+    if not wait_next_enabled(5):
+        fail("choosing clipboard-only paste did not open the text delivery gate")
+    ok("choosing clipboard-only paste opens the text delivery gate")
+
     go_next("Refinement")
     require("Score", 10)
     require("8 / 10", 10)

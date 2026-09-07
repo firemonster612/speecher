@@ -2,6 +2,8 @@
 
 #include <QWidget>
 
+#include <optional>
+
 class QLabel;
 class QKeySequenceEdit;
 class QPushButton;
@@ -23,11 +25,16 @@ public:
     void hideAppMenuIntegration();
 
     // True while this AppImage run still needs the user to click Install
-    // Speecher; the setup assistant holds Next until it clears.
+    // Speecher.
     bool installRequired() const;
 
+    // The setup assistant holds Next until the install has run and, where the
+    // desktop can register one, a Global Shortcut is set. Manual-command
+    // desktops cannot be verified, so the install is their whole step.
+    bool stepComplete() const;
+
 signals:
-    void installStateChanged();
+    void stepCompleteChanged();
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -37,6 +44,7 @@ private:
     void setShortcut();
     void chooseShortcut();
     void refresh();
+    void refreshControls();
     void showRegistrationResult(bool bound, const QString &detail);
 
     ApplicationController &m_controller;
@@ -56,6 +64,7 @@ private:
     QPushButton *m_integrationButton = nullptr;
     QLabel *m_integrationStatus = nullptr;
     bool m_integrationHidden = false;
+    std::optional<bool> m_notifiedStepComplete;
 };
 
 } // namespace speecher

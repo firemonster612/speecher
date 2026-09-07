@@ -422,7 +422,7 @@ private slots:
                  QApplication::palette().color(QPalette::Mid));
     }
 
-    void setupAssistantHidesSkipOnTheLastPage()
+    void setupAssistantHidesSkipWhileStepsAreIncomplete()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
@@ -438,7 +438,10 @@ private slots:
             }
         }
         QVERIFY(skip);
-        QVERIFY(skip->isVisible());
+        // On this fake platform the steps are incomplete (no provider signed
+        // in, no microphone input yet), so skipping is not offered on any
+        // page, the last one included.
+        QVERIFY(!skip->isVisible());
         const int lastPage = assistant.pageTitles().indexOf(QStringLiteral("Ready to dictate"));
         QCOMPARE(lastPage, assistant.pageTitles().size() - 1);
 #ifdef SPEECHER_WITH_KASSISTANT
