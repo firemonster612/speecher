@@ -338,6 +338,12 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
     });
     connect(m_device, &QComboBox::currentIndexChanged, this, [this] {
         m_settings.setAudioInputDeviceId(m_device->currentData().toString());
+        // The gate is about the input that will actually record, so a switch
+        // has to prove itself again.
+        if (m_inputDetected) {
+            m_inputDetected = false;
+            emit inputDetectedChanged();
+        }
         if (m_active) {
             startMeter();
         }
@@ -504,7 +510,7 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
     , m_setup(new QPushButton(QStringLiteral("Set up virtual keyboard"), this))
     , m_progress(new QProgressBar(this))
     , m_clipboardOnly(new QCheckBox(
-          QStringLiteral("Continue without the virtual keyboard and paste from the clipboard only"),
+          QStringLiteral("Continue without the virtual keyboard; Speecher pastes from the clipboard instead"),
           this))
     , m_restoreClipboard(new QCheckBox(restoreClipboardDescription(), this))
     , m_format(new QComboBox(this))
@@ -569,11 +575,11 @@ bool TextDeliverySetupPage::stepComplete() const
     if (m_clipboardOnly->isChecked()) {
         return true;
     }
+    // ready() already implies enabled in Speecher; NeedsSignOut is as far as
+    // this session can get, the enable step waits in the Output settings
+    // after the next sign-in.
     const YdotoolSetupStatus status = YdotoolSetup::probe(m_settings.ydotoolEnabled());
-    // NeedsSignOut is as far as this session can get; the enable step waits
-    // in the Output settings after the next sign-in.
-    return (status.ready() && m_settings.ydotoolEnabled())
-        || status.state == YdotoolSetupState::NeedsSignOut;
+    return status.ready() || status.state == YdotoolSetupState::NeedsSignOut;
 #else
     return true;
 #endif
@@ -590,6 +596,8 @@ void TextDeliverySetupPage::refreshStatus()
     m_setup->setEnabled(!status.ready() && !needsSignIn);
     m_setup->setText(status.ready() ? QStringLiteral("Virtual keyboard ready")
                                     : QStringLiteral("Set up virtual keyboard"));
+    // With a working virtual keyboard there is nothing to opt out of.
+    m_clipboardOnly->setVisible(!status.ready());
 }
 
 void TextDeliverySetupPage::runSetup()

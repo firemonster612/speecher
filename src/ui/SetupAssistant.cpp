@@ -187,6 +187,10 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
             this,
             [this](KPageWidgetItem *current, KPageWidgetItem *) {
                 updateActivePage(current ? current->widget() : nullptr);
+                // setValid keeps a snapshot; a step completed outside this
+                // dialog (the Output settings row, say) must reopen Next when
+                // the user navigates.
+                applyGates();
             });
 #else
     // The platform's default wizard look, palette untouched: the separator it
@@ -220,6 +224,9 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     });
     connect(this, &QWizard::currentIdChanged, this, [this](int id) {
         updateActivePage(m_pageContents.value(id, nullptr));
+        // Steps can complete outside this dialog (the Output settings row,
+        // say); navigating re-reads every gate.
+        applyGates();
     });
 #endif
 
