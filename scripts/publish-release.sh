@@ -16,11 +16,13 @@ dmg_name="$(bash scripts/release-asset-name.sh "$channel" "$build_number" speech
 installer_name="$(bash scripts/release-asset-name.sh "$channel" "$build_number" Speecher-Setup-x64.exe)"
 if [ "$channel" = nightly ]; then
   release_exists=false
-  asset_pages='[]'
+  asset_pages="$(mktemp)"
+  echo '[]' > "$asset_pages"
   if gh release view "$tag" >/dev/null 2>&1; then
     release_exists=true
     release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/$tag" --jq '.id')"
-    asset_pages="$(gh api "repos/${GITHUB_REPOSITORY}/releases/$release_id/assets" --paginate --slurp)"
+    # A file, not an argument: the full listing runs to tens of kilobytes.
+    gh api "repos/${GITHUB_REPOSITORY}/releases/$release_id/assets" --paginate --slurp > "$asset_pages"
   fi
   # Check every immutable asset before changing the tag, release, or manifest.
   asset_plan="$(python3 - "$asset_pages" "$build_number" \
@@ -33,7 +35,7 @@ from pathlib import Path
 import re
 import sys
 
-assets = {asset["name"]: asset.get("digest") for page in json.loads(sys.argv[1]) for asset in page}
+assets = {asset["name"]: asset for page in json.loads(Path(sys.argv[1]).read_text()) for asset in page}
 build_number = int(sys.argv[2])
 binaries = list(zip(sys.argv[3::2], sys.argv[4::2]))
 base_names = {Path(path).name for path, _ in binaries}
@@ -51,10 +53,18 @@ for path, name in binaries:
         for chunk in iter(lambda: binary.read(1024 * 1024), b""):
             sha256.update(chunk)
     digest = "sha256:" + sha256.hexdigest()
-    if name not in assets:
+    remote = assets.get(name)
+    if remote is None:
         print(f"upload\t{Path(path).with_name(name)}")
-    elif assets[name] != digest:
-        sys.exit(f"Refusing to replace nightly asset {name}: remote digest {assets[name]!r} differs from local {digest}")
+    elif remote.get("state") != "uploaded" or not remote.get("digest"):
+        # A failed upload leaves an empty stub behind; it was never advertised
+        # (the manifest goes up last), so replace it.
+        print(f"stub\t{name}")
+        print(f"upload\t{Path(path).with_name(name)}")
+    elif remote["digest"] != digest:
+        sys.exit(f"Refusing to replace nightly asset {name}: remote digest {remote['digest']!r} differs from "
+                 f"local {digest}. A rebuilt nightly must not reuse a published build number; if this asset is "
+                 f"unwanted, run `gh release delete-asset nightly {name}` and re-run.")
 # Include the build about to be uploaded when retaining the newest ten builds.
 keep = set(sorted({build_number} | {build for build, _ in build_assets}, reverse=True)[:10])
 for build, name in build_assets:
@@ -63,10 +73,12 @@ for build, name in build_assets:
 PYTHON
   )"
   missing_assets=()
+  stub_assets=()
   stale_assets=()
   while IFS=$'\t' read -r action asset; do
     case "$action" in
       upload) missing_assets+=("$asset") ;;
+      stub) stub_assets+=("$asset") ;;
       delete) stale_assets+=("$asset") ;;
     esac
   done <<< "$asset_plan"
@@ -111,6 +123,9 @@ EOF
   cp artifacts/linux-release/Speecher-x86_64.AppImage "artifacts/linux-release/$appimage_name"
   cp artifacts/macos-release/speecher.dmg "artifacts/macos-release/$dmg_name"
   cp artifacts/windows-release/Speecher-Setup-x64.exe "artifacts/windows-release/$installer_name"
+  for asset in "${stub_assets[@]}"; do
+    gh release delete-asset "$tag" "$asset" --yes
+  done
   if [ "${#missing_assets[@]}" -gt 0 ]; then
     gh release upload "$tag" "${missing_assets[@]}"
   fi

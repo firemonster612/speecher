@@ -73,7 +73,7 @@ def asset_name(build, base):
 immutable = [asset_name(402, name) for name in rolling]
 sidecars = ["Speecher-x86_64.AppImage.zsync", "Speecher-Setup-x64.exe.sha256"]
 
-for scenario in ("nightly", "identical", "changed", "stale", "create", "stable"):
+for scenario in ("nightly", "identical", "changed", "stale", "stub", "create", "stable"):
     channel = "stable" if scenario == "stable" else "nightly"
     ref = "v9.9.9" if channel == "stable" else "master"
     build_number = 390 if scenario == "stale" else 402
@@ -104,11 +104,14 @@ for scenario in ("nightly", "identical", "changed", "stale", "create", "stable")
     builds = range(393, 403) if scenario == "stale" else range(390, 403)
     for build in builds:
         for base in rolling:
-            if build == 402 and scenario == "nightly":
+            if build == 402 and scenario in ("nightly", "stub"):
                 continue
             digest = hashlib.sha256(f"fixture {base}\n".encode()).hexdigest()
-            assets.append({"name": asset_name(build, base), "digest": f"sha256:{digest}"})
-    assets += [{"name": name, "digest": None}
+            assets.append({"name": asset_name(build, base), "digest": f"sha256:{digest}", "state": "uploaded"})
+    if scenario == "stub":
+        # An interrupted first upload of 402 left an empty DMG asset behind.
+        assets.append({"name": immutable[1], "digest": None, "state": "open"})
+    assets += [{"name": name, "digest": f"sha256:{hashlib.sha256(name.encode()).hexdigest()}", "state": "uploaded"}
         for name in rolling + sidecars + ["update-manifest.json", "unrelated-build999.txt"]]
     asset_list = case / "assets.json"
     asset_list.write_text(json.dumps(list(reversed(assets))))
@@ -189,8 +192,12 @@ for scenario in ("nightly", "identical", "changed", "stale", "create", "stable")
     deletes = [command for command in commands if command[:3] == ["gh", "release", "delete-asset"]]
     if channel == "nightly":
         expected_deletes = {asset_name(build, base) for build in (390, 391, 392) for base in rolling} if scenario != "create" else set()
+        stub_deletes = [command for command in deletes if command[4] == immutable[1]] if scenario == "stub" else []
+        if scenario == "stub":
+            assert len(stub_deletes) == 1 and commands.index(stub_deletes[0]) < commands.index(uploads[0]), "Stub must be deleted before the first upload"
+            deletes = [command for command in deletes if command not in stub_deletes]
         assert len(deletes) == len(expected_deletes) and {command[4] for command in deletes} == expected_deletes, deletes
-        assert all(command[3] == "nightly" and command[5:] == ["--yes"] for command in deletes), deletes
+        assert all(command[3] == "nightly" and command[5:] == ["--yes"] for command in deletes + stub_deletes), deletes
         if deletes:
             assert commands.index(deletes[0]) > commands.index(uploads[-1])
         if scenario != "nightly":

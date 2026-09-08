@@ -64,6 +64,9 @@ correctly rejected it. Every nightly binary is therefore also uploaded under a
 build-specific name (`speecher-build<N>.dmg` and so on, via
 `scripts/release-asset-name.sh`), and the appcast and update manifest point at
 those names. The rolling names stay for humans and for the zsync metadata.
-`scripts/publish-release.sh` prunes build-specific assets beyond the newest ten
+Because those URLs must never change meaning, the publisher refuses to overwrite
+a build-specific asset whose contents differ (a rebuild of the same commit keeps
+the same build number) and refuses to publish a build older than the newest one
+on the release. `scripts/publish-release.sh` prunes build-specific assets beyond the newest ten
 builds; an offer older than that fails to download and a fresh check replaces
 it, which is still a clean failure rather than a signature mismatch.
