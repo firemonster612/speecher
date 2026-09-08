@@ -1231,6 +1231,14 @@ if(SPEECHER_BUILD_TESTS)
       ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE TIMEOUT 120)
   endforeach()
 
+  if(ATSPI_FOUND AND UNIX AND NOT APPLE)
+    qt_add_executable(speecher_atspi_peer_test tests/atspi_peer_test.cpp)
+    target_link_libraries(speecher_atspi_peer_test PRIVATE speecher_platform)
+    add_test(NAME speecher_atspi_unavailable_peer
+      COMMAND dbus-run-session -- $<TARGET_FILE:speecher_atspi_peer_test>)
+    set_tests_properties(speecher_atspi_unavailable_peer PROPERTIES TIMEOUT 10)
+  endif()
+
   qt_add_executable(speecher_atspi_fixture
     tests/atspi_fixture.cpp
   )

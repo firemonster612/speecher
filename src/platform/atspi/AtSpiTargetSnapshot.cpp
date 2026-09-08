@@ -77,6 +77,9 @@ bool initializeAtSpiClient()
     if (atspi_is_initialized()) {
         return initializedWithEventFilter;
     }
+    // Failed peer connections can dereference a missing application root in
+    // libatspi's pending reply handler. Keep target access on the shared bus.
+    qputenv("ATSPI_DISABLE_P2P", "1");
     // Speecher uses synchronous snapshots, not libatspi's process-global event cache.
     // Install first so cache events cannot materialize Speecher's own Qt bridge.
     DBusConnection *bus = atspi_get_a11y_bus();
