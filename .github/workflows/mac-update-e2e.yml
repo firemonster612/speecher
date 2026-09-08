@@ -63,6 +63,22 @@ jobs:
           public_key="$("$generate_keys" --account speecher-e2e -p)"
           "$generate_keys" --account speecher-e2e -x "$RUNNER_TEMP/sparkle-private-key"
           mkdir -p "$RUNNER_TEMP/fixtures" "$RUNNER_TEMP/update-server"
+          # The release packager requires a stable designated requirement. These fixtures
+          # use ad-hoc bundle signatures and EdDSA for update authentication. Keep its
+          # deep/strict codesign verification, but collect the diagnostic without imposing
+          # the release identity's output format on ad-hoc signatures.
+          cp -R packaging/macos "$RUNNER_TEMP/macos-packaging"
+          python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+
+          script = Path(os.environ['RUNNER_TEMP']) / 'macos-packaging/build-dmg.sh'
+          source = script.read_text()
+          start = source.index('DESIGNATED_REQUIREMENT=')
+          end = source.index('step "Creating the disk image"', start)
+          source = source[:start] + 'codesign -d -r- "$STAGING_DIR/speecher.app" > "$BUILD_DIR/designated-requirement.txt" 2>&1\n\n' + source[end:]
+          script.write_text(source)
+          PYTHON
           for fixture in old offered replacement; do
             if [[ "$fixture" != old ]]; then
               git -c user.name='Sparkle E2E' -c user.email='sparkle-e2e@localhost' \
@@ -75,8 +91,12 @@ jobs:
             mkdir -p "evidence/fixtures/$fixture"
             cp build/speecher.app/Contents/Info.plist "evidence/fixtures/$fixture/Info.plist"
             test "$(plutil -extract SUPublicEDKey raw build/speecher.app/Contents/Info.plist)" = "$public_key"
-            bash packaging/macos/build-dmg.sh build
+            if ! bash "$RUNNER_TEMP/macos-packaging/build-dmg.sh" build; then
+              cp build/speecher-dmg.log "evidence/fixtures/$fixture/packaging.log"
+              exit 1
+            fi
             cp build/speecher-dmg.log "evidence/fixtures/$fixture/packaging.log"
+            cp build/designated-requirement.txt "evidence/fixtures/$fixture/"
             mv build/speecher.dmg "$RUNNER_TEMP/fixtures/$fixture.dmg"
             build/_deps/sparkle-src/bin/sign_update \
               --ed-key-file "$RUNNER_TEMP/sparkle-private-key" "$RUNNER_TEMP/fixtures/$fixture.dmg" \
