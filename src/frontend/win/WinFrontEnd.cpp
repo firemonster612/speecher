@@ -140,6 +140,11 @@ void WinFrontEnd::alert()
     MessageBeep(MB_OK);
 }
 
+DictationPanel *WinFrontEnd::dictationPanelForTest()
+{
+    return m_native->panel.get();
+}
+
 void WinFrontEnd::showPanelForTest(quint64 generation)
 {
     m_native->panel->showForTest(generation);

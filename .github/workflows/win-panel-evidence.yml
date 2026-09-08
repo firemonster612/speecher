@@ -1,0 +1,98 @@
+name: Windows panel evidence
+
+# Films the WinUI dictation panel for UI evidence: builds the tests, runs the
+# WinFrontEnd suite on the runner's real desktop (no offscreen platform, so
+# the XAML islands are live), and uploads the SPEECHER_TEST_GRAB_DIR PNGs.
+# Push an evidence/** branch (or touch the panel in a PR) to collect that
+# code's panel pictures; workflow_dispatch works once this file is on master.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'evidence/**'
+  pull_request:
+    paths:
+      - src/frontend/win/DictationPanel.*
+      - .github/workflows/win-panel-evidence.yml
+
+permissions:
+  contents: read
+
+jobs:
+  evidence:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: win64_msvc2022_64
+          modules: qtmultimedia qtwebsockets
+          cache: true
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Cache Windows compiler outputs
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          variant: sccache
+          key: windows-2025-release
+
+      - name: Cache Windows SDK packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/nupkg
+            !build/nupkg/*.nupkg
+          key: windows-sdk-v1-${{ hashFiles('cmake/WindowsAppSdk.cmake') }}
+
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --parallel
+
+      - name: Install Windows App Runtime
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "WindowsAppRuntimeInstall-x64.exe"
+          Invoke-WebRequest "https://aka.ms/windowsappsdk/2.4/2.4.0/windowsappruntimeinstall-x64.exe" -OutFile $installer
+          $sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha256 -ne "851c35b0b0a59ce4c55f9171f601193322fc3413143b0dc3390ea11e14cfa7fc") {
+            throw "Windows App Runtime installer checksum mismatch: $sha256"
+          }
+          $process = Start-Process $installer -ArgumentList "--quiet" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Windows App Runtime installer exited with code $($process.ExitCode)"
+          }
+
+      - name: Film the dictation panel
+        shell: pwsh
+        env:
+          SPEECHER_TEST_ONLY_WIN_FRONTEND: "1"
+        run: |
+          New-Item -ItemType Directory -Force -Path evidence | Out-Null
+          $env:SPEECHER_TEST_GRAB_DIR = (Resolve-Path evidence).Path
+          build/speecher_tests.exe
+
+      - name: Upload panel pictures
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: win-panel-evidence
+          path: evidence/
+          if-no-files-found: error

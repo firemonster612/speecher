@@ -25,6 +25,7 @@
 #include <winrt/Microsoft.UI.Xaml.Media.Animation.h>
 #pragma pop_macro("GetCurrentTime")
 
+#include <QImage>
 #include <QTimer>
 
 #include <algorithm>
@@ -783,6 +784,62 @@ quint64 DictationPanel::presentedGenerationForTest() const
 qintptr DictationPanel::windowStyleForTest() const
 {
     return m_native->window ? GetWindowLongPtrW(m_native->window, GWL_EXSTYLE) : 0;
+}
+
+void DictationPanel::driveStatusForTest(const QString &status)
+{
+    m_native->ensureWindow();
+    m_native->setStatus(status);
+}
+
+void DictationPanel::drivePreviewForTest(const QString &preview)
+{
+    m_native->ensureWindow();
+    m_native->setPreview(preview);
+}
+
+void DictationPanel::driveLevelForTest(float level)
+{
+    m_native->setLevel(level);
+}
+
+// Copies the panel's screen rectangle, DWM-composed, so the picture carries
+// the acrylic backdrop and rounded corners the user actually sees. The panel
+// is topmost, so nothing can sit in front of it.
+bool DictationPanel::saveGrabForTest(const QString &path) const
+{
+    HWND window = m_native->window;
+    if (!window || !IsWindowVisible(window)) {
+        return false;
+    }
+    RECT rect{};
+    GetWindowRect(window, &rect);
+    const int width = rect.right - rect.left;
+    const int height = rect.bottom - rect.top;
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+    HDC screen = GetDC(nullptr);
+    HDC memory = CreateCompatibleDC(screen);
+    HBITMAP bitmap = CreateCompatibleBitmap(screen, width, height);
+    HGDIOBJ previous = SelectObject(memory, bitmap);
+    BitBlt(memory, 0, 0, width, height, screen, rect.left, rect.top,
+           SRCCOPY | CAPTUREBLT);
+    QImage image(width, height, QImage::Format_RGB32);
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = width;
+    info.bmiHeader.biHeight = -height;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    const bool copied = GetDIBits(memory, bitmap, 0, height, image.bits(),
+                                  &info, DIB_RGB_COLORS) == height;
+    SelectObject(memory, previous);
+    DeleteObject(bitmap);
+    DeleteDC(memory);
+    ReleaseDC(nullptr, screen);
+    return copied && image.save(path);
 }
 
 } // namespace speecher

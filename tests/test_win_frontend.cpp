@@ -186,6 +186,38 @@ private slots:
         QVERIFY(!frontEnd->panelVisibleForTest());
     }
 
+    void panelEvidenceGrabsForDocumentation()
+    {
+        // Screenshot seam for UI evidence, on the pattern of the E2E rigs.
+        const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
+        if (grabDir.isEmpty()) {
+            QSKIP("SPEECHER_TEST_GRAB_DIR is not set");
+        }
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI islands require an interactive desktop");
+        }
+        DictationPanel *panel = frontEnd->dictationPanelForTest();
+        panel->showForTest(12);
+        panel->driveStatusForTest(QStringLiteral("Listening"));
+        for (int i = 0; i < 40; ++i) {
+            panel->driveLevelForTest(0.7f);
+            QTest::qWait(24);
+        }
+        QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-listening.png")));
+        panel->drivePreviewForTest(QStringLiteral(
+            "and then we should probably move the meeting to Thursday afternoon"));
+        QTest::qWait(150);
+        QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-preview.png")));
+        panel->dismissForTest();
+
+        frontEnd->showDictationError(QStringLiteral(
+            "The transcription service rejected the request: the API key is "
+            "invalid or has expired."));
+        QTest::qWait(300);
+        QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-error.png")));
+        panel->dismissForTest();
+    }
+
     void nativeDictationPanelUsesNonActivatingTopmostToolWindowStyles()
     {
         if (!nativeUiAvailable()) {

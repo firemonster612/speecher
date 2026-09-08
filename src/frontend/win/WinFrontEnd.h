@@ -9,6 +9,7 @@
 namespace speecher {
 
 class ApplicationController;
+class DictationPanel;
 class WinFrontEndTests;
 class WinUiHost;
 class WinFrontEnd final : public QObject, public AppFrontEnd {
@@ -25,6 +26,7 @@ public:
 
 private:
     friend class WinFrontEndTests;
+    DictationPanel *dictationPanelForTest();
     void showPanelForTest(quint64 generation);
     void dismissPanelForTest();
     bool panelVisibleForTest() const;

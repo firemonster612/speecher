@@ -47,6 +47,12 @@ private:
     bool visibleForTest() const;
     quint64 presentedGenerationForTest() const;
     qintptr windowStyleForTest() const;
+    // Drive the panel's states without a live dictation session, and film the
+    // result, for the UI-evidence grabs on the pattern of the E2E rigs.
+    void driveStatusForTest(const QString &status);
+    void drivePreviewForTest(const QString &preview);
+    void driveLevelForTest(float level);
+    bool saveGrabForTest(const QString &path) const;
     struct Native;
     std::unique_ptr<Native> m_native;
 };

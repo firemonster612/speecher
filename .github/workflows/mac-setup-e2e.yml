@@ -9,6 +9,7 @@ on:
     branches:
       - feat/mac-swift-setup-assistant
       - e2e/provider-ui-mac
+      - 'evidence/**'
   pull_request:
     paths:
       - src/frontend/mac/**
