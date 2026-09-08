@@ -25,6 +25,9 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
+#ifdef SPEECHER_E2E_HOOKS
+#include <QMetaEnum>
+#endif
 #include <QTimer>
 #ifdef Q_OS_MACOS
 #include <QPermissions>
@@ -569,6 +572,25 @@ void ApplicationController::handleIpcCommand(const QString &command,
                                   .arg(grabDir)
                                   .arg(QDateTime::currentMSecsSinceEpoch()));
         SingleInstanceIpc::writeResponse(socket, response(saved));
+#ifdef SPEECHER_E2E_HOOKS
+    } else if (command == QStringLiteral("e2eUpdateCheck")) {
+        m_updates->checkForUpdates(m_settings->updateChannel());
+        SingleInstanceIpc::writeResponse(socket, response());
+    } else if (command == QStringLiteral("e2eUpdateStatus")) {
+        SingleInstanceIpc::writeResponse(socket, {
+            true,
+            QString::fromLatin1(QMetaEnum::fromType<UpdateController::State>().valueToKey(int(m_updates->state()))),
+            QStringLiteral("currentVersion=%1\ncurrentBuild=%2\navailableVersion=%3\nerror=%4\nbannerVisible=%5\npid=%6")
+                .arg(m_updates->currentVersion())
+                .arg(SPEECHER_BUILD_NUMBER)
+                .arg(m_updates->availableVersion(), m_updates->errorMessage(),
+                     m_updates->bannerVisible() ? QStringLiteral("true") : QStringLiteral("false"))
+                .arg(QCoreApplication::applicationPid()),
+        });
+    } else if (command == QStringLiteral("e2eUpdateAccept")) {
+        SingleInstanceIpc::writeResponse(socket, response());
+        m_updates->installAndRestart();
+#endif
     } else if (command == QStringLiteral("status")) {
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("quit")) {

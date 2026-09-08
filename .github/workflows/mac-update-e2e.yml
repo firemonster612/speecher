@@ -1,0 +1,496 @@
+name: macOS Sparkle update E2E
+
+on:
+  push:
+    branches:
+      - 'e2e/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: macos-26
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Prepare evidence
+        run: |
+          mkdir -p evidence
+          : > evidence/summary.txt
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: clang_64
+          modules: qtmultimedia qtwebsockets
+
+      - name: Remove obsolete AGL references
+        run: |
+          # The macOS 26 SDK removed AGL, but the runner still has a runtime
+          # /System/Library/Frameworks/AGL.framework, so Qt's FindWrapOpenGL
+          # find_library succeeds and CMake emits "-framework AGL", which the
+          # SDK-based linker then cannot resolve. Neutralize both the probe and
+          # the fallback so WrapOpenGL never links AGL at all.
+          wrap="$QT_ROOT_DIR/lib/cmake/Qt6/FindWrapOpenGL.cmake"
+          sed -i '' \
+            -e 's/find_library(WrapOpenGL_AGL NAMES AGL)/set(WrapOpenGL_AGL "")/' \
+            -e 's/set(__opengl_agl_fw_path "-framework AGL")//' \
+            "$wrap"
+          if grep -n 'framework AGL' "$wrap"; then
+            echo "AGL reference survived in FindWrapOpenGL.cmake" >&2
+            exit 1
+          fi
+          # Belt and braces for any remaining textual references.
+          find "$QT_ROOT_DIR" -type f \( -name '*.prl' -o -name '*.cmake' \) -exec \
+            sed -i '' -e 's/-framework[[:space:]]*AGL//g' -e 's/AGL;//g' -e 's/AGL\.framework//g' {} +
+
+      - name: Build three signed update fixtures
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'status=$?; if (( status != 0 )); then printf "fixture_build=FAIL (line %s, exit %s)\n" "$LINENO" "$status" >> evidence/summary.txt; fi' EXIT
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DSPEECHER_BUILD_TESTS=OFF -DSPEECHER_E2E_HOOKS=ON
+          generate_keys="$PWD/build/_deps/sparkle-src/bin/generate_keys"
+          "$generate_keys" --account speecher-e2e
+          public_key="$("$generate_keys" --account speecher-e2e -p)"
+          "$generate_keys" --account speecher-e2e -x "$RUNNER_TEMP/sparkle-private-key"
+          mkdir -p "$RUNNER_TEMP/fixtures" "$RUNNER_TEMP/update-server"
+          for fixture in old offered replacement; do
+            if [[ "$fixture" != old ]]; then
+              git -c user.name='Sparkle E2E' -c user.email='sparkle-e2e@localhost' \
+                commit --allow-empty -m "test: create $fixture Sparkle fixture"
+            fi
+            cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+              -DSPEECHER_BUILD_TESTS=OFF -DSPEECHER_E2E_HOOKS=ON \
+              -DSPEECHER_SPARKLE_ED_PUBLIC_KEY="$public_key"
+            cmake --build build --parallel
+            mkdir -p "evidence/fixtures/$fixture"
+            cp build/speecher.app/Contents/Info.plist "evidence/fixtures/$fixture/Info.plist"
+            test "$(plutil -extract SUPublicEDKey raw build/speecher.app/Contents/Info.plist)" = "$public_key"
+            bash packaging/macos/build-dmg.sh build
+            cp build/speecher-dmg.log "evidence/fixtures/$fixture/packaging.log"
+            mv build/speecher.dmg "$RUNNER_TEMP/fixtures/$fixture.dmg"
+            build/_deps/sparkle-src/bin/sign_update \
+              --ed-key-file "$RUNNER_TEMP/sparkle-private-key" "$RUNNER_TEMP/fixtures/$fixture.dmg" \
+              > "evidence/fixtures/$fixture/signature.txt"
+          done
+          # Install the fully deployed OLD bundle, just as a user copies it from the DMG.
+          hdiutil attach "$RUNNER_TEMP/fixtures/old.dmg" -readonly -nobrowse \
+            -mountpoint "$RUNNER_TEMP/old-mount"
+          ditto "$RUNNER_TEMP/old-mount/speecher.app" "$RUNNER_TEMP/old-speecher.app"
+          hdiutil detach "$RUNNER_TEMP/old-mount" -quiet
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import plistlib
+          import re
+
+          fixtures = {}
+          for name in ('old', 'offered', 'replacement'):
+              folder = Path('evidence/fixtures') / name
+              info = plistlib.loads((folder / 'Info.plist').read_bytes())
+              signature = (folder / 'signature.txt').read_text()
+              dmg = Path(os.environ['RUNNER_TEMP']) / 'fixtures' / f'{name}.dmg'
+              fixtures[name] = {
+                  'version': info['CFBundleShortVersionString'],
+                  'build': int(info['CFBundleVersion']),
+                  'signature': re.search(r'sparkle:edSignature="([^"]+)"', signature)[1],
+                  'length': int(re.search(r'length="(\d+)"', signature)[1]),
+                  'sha256': hashlib.file_digest(dmg.open('rb'), 'sha256').hexdigest(),
+              }
+          assert fixtures['offered']['build'] == fixtures['old']['build'] + 1
+          assert fixtures['replacement']['build'] == fixtures['old']['build'] + 2
+          assert len({f['version'] for f in fixtures.values()}) == 3
+          assert len({f['sha256'] for f in fixtures.values()}) == 3
+          Path('evidence/fixtures.json').write_text(json.dumps(fixtures, indent=2))
+          with Path('evidence/summary.txt').open('a') as output:
+              output.write(f"fixture_build=PASS {json.dumps(fixtures)}\n")
+          PY
+
+      - name: Prepare HTTPS server and drivers
+        id: setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          evidence="$GITHUB_WORKSPACE/evidence"
+          cat > "$RUNNER_TEMP/seed-settings.cpp" <<'CPP'
+          #include <arm_acle.h>
+          #include <QtCore/QSettings>
+          #include <QtCore/QTextStream>
+
+          int main(int argc, char **argv)
+          {
+              if (argc != 1) {
+                  return 2;
+              }
+              const bool autoInstall = false;
+              QSettings settings(QStringLiteral("io.github.firemonster612"), QStringLiteral("speecher"));
+              settings.setFallbacksEnabled(false);
+              settings.clear();
+              settings.setValue(QStringLiteral("app/setupCompleted"), true);
+              settings.setValue(QStringLiteral("updates/channel"), QStringLiteral("nightly"));
+              settings.setValue(QStringLiteral("updates/autoCheck"), false);
+              settings.setValue(QStringLiteral("updates/autoInstall"), autoInstall);
+              settings.sync();
+
+              QTextStream output(stdout);
+              output << "fileName=" << settings.fileName() << '\n';
+              for (const QString &key : settings.allKeys()) {
+                  output << key << '=' << settings.value(key).toString() << '\n';
+              }
+              return settings.status() == QSettings::NoError
+                         && settings.value(QStringLiteral("app/setupCompleted")).toBool()
+                         && settings.value(QStringLiteral("updates/channel")).toString() == QStringLiteral("nightly")
+                         && !settings.value(QStringLiteral("updates/autoCheck")).toBool()
+                         && settings.value(QStringLiteral("updates/autoInstall")).toBool() == autoInstall
+                     ? 0
+                     : 1;
+          }
+          CPP
+          c++ -std=c++20 "$RUNNER_TEMP/seed-settings.cpp" \
+            -F"$QT_ROOT_DIR/lib" -framework QtCore \
+            -Wl,-rpath,"$QT_ROOT_DIR/lib" -o "$RUNNER_TEMP/seed-settings"
+
+          cert_dir="$RUNNER_TEMP/certs"
+          mkdir -p "$cert_dir"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -keyout "$cert_dir/ca-key.pem" -out "$cert_dir/ca.pem" \
+            -subj '/CN=Speecher Sparkle E2E CA'
+          openssl req -newkey rsa:2048 -nodes \
+            -keyout "$cert_dir/server-key.pem" -out "$cert_dir/server.csr" \
+            -subj '/CN=localhost'
+          printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' > "$cert_dir/server.ext"
+          openssl x509 -req -days 1 -sha256 \
+            -in "$cert_dir/server.csr" -CA "$cert_dir/ca.pem" -CAkey "$cert_dir/ca-key.pem" \
+            -CAcreateserial -out "$cert_dir/server.pem" -extfile "$cert_dir/server.ext"
+          sudo security add-trusted-cert -d -r trustRoot \
+            -k /Library/Keychains/System.keychain "$cert_dir/ca.pem"
+
+          cat > "$RUNNER_TEMP/https-server.py" <<'PY'
+          import http.server
+          import os
+          import ssl
+
+          os.chdir(os.environ["SPEECHER_E2E_SERVER_ROOT"])
+          server = http.server.ThreadingHTTPServer(("127.0.0.1", 8443), http.server.SimpleHTTPRequestHandler)
+          context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+          context.load_cert_chain(os.environ["SPEECHER_E2E_SERVER_CERT"], os.environ["SPEECHER_E2E_SERVER_KEY"])
+          server.socket = context.wrap_socket(server.socket, server_side=True)
+          server.serve_forever()
+          PY
+          SPEECHER_E2E_SERVER_ROOT="$RUNNER_TEMP/update-server" \
+          SPEECHER_E2E_SERVER_CERT="$cert_dir/server.pem" \
+          SPEECHER_E2E_SERVER_KEY="$cert_dir/server-key.pem" \
+            python3 "$RUNNER_TEMP/https-server.py" > "$evidence/https-server.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/https-server.pid"
+          for _ in {1..20}; do
+            if curl --fail --silent --cacert "$cert_dir/ca.pem" https://localhost:8443/ >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent --cacert "$cert_dir/ca.pem" https://localhost:8443/ >/dev/null
+          printf 'https_server=PASS trusted local HTTPS server reachable\n' >> evidence/summary.txt
+          cat > "$RUNNER_TEMP/read-image.swift" <<'SWIFT'
+          import Foundation
+          import Vision
+
+          let request = VNRecognizeTextRequest()
+          request.recognitionLevel = .accurate
+          try VNImageRequestHandler(url: URL(fileURLWithPath: CommandLine.arguments[1])).perform([request])
+          for observation in request.results ?? [] {
+              if let text = observation.topCandidates(1).first?.string { print(text) }
+          }
+          SWIFT
+          xcrun swiftc "$RUNNER_TEMP/read-image.swift" -o "$RUNNER_TEMP/read-image"
+          cat > "$RUNNER_TEMP/drive.py" <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+          import plistlib
+          import re
+          import shutil
+          import socket
+          import subprocess
+          import sys
+          import time
+          import traceback
+          import urllib.request
+          import ssl
+          import xml.etree.ElementTree as ET
+
+          scenario = sys.argv[1]
+          fixed = scenario == 'race-fixed'
+          root = Path(os.environ['RUNNER_TEMP'])
+          evidence = Path(os.environ['GITHUB_WORKSPACE']) / 'evidence'
+          out = evidence / scenario
+          out.mkdir(parents=True, exist_ok=True)
+          (out / 'grabs').mkdir(exist_ok=True)
+          server = root / 'update-server'
+          installed = root / 'installed' / 'speecher.app'
+          fixtures = json.loads((evidence / 'fixtures.json').read_text())
+          old, offered, replacement = (fixtures[k] for k in ('old', 'offered', 'replacement'))
+          base_url = 'https://localhost:8443/'
+          feed = 'appcast-nightly.xml'
+          app_domain = 'com.io-github-firemonster612.speecher'
+          sparkle_domain = 'io.github.firemonster612.speecher'
+          context = ssl.create_default_context(cafile=str(root / 'certs/ca.pem'))
+          checks = {}
+
+
+          def require(name, condition, detail):
+              checks[name] = bool(condition)
+              line = f'{scenario}.{name}={"PASS" if condition else "FAIL"} {detail}'
+              print(line, flush=True)
+              with (evidence / 'summary.txt').open('a') as summary:
+                  summary.write(line + '\n')
+              if not condition:
+                  raise AssertionError(line)
+
+
+          def run(*args, check=True):
+              return subprocess.run(args, check=check, capture_output=True, text=True, timeout=40)
+
+
+          def stop():
+              run('pkill', '-9', '-x', 'speecher', check=False)
+              for _ in range(20):
+                  if run('pgrep', '-x', 'speecher', check=False).returncode != 0:
+                      return
+                  time.sleep(1)
+              raise RuntimeError('speecher survived pkill and 20-second wait')
+
+
+          def ipc(command):
+              # QLocalServer uses QDir::tempPath(); Sparkle may relaunch with /tmp instead.
+              candidates = {Path(os.environ.get('TMPDIR', '/tmp')), Path('/tmp')}
+              last_error = None
+              for directory in candidates:
+                  try:
+                      with socket.socket(socket.AF_UNIX) as client:
+                          client.settimeout(3)
+                          client.connect(str(directory / f'speecher-{os.getuid()}'))
+                          client.sendall(json.dumps({'command': command}).encode() + b'\n')
+                          data = b''
+                          while b'\n' not in data:
+                              chunk = client.recv(65536)
+                              if not chunk:
+                                  raise ConnectionError('IPC closed before response')
+                              data += chunk
+                          response = json.loads(data.split(b'\n')[0])
+                          if not response['ok']:
+                              raise RuntimeError(f'{command}: {response}')
+                          return response
+                  except (OSError, ConnectionError) as error:
+                      last_error = error
+              raise ConnectionError(f'{command}: {last_error}')
+
+
+          def status():
+              result = ipc('e2eUpdateStatus')
+              result.update(dict(line.split('=', 1) for line in result['message'].splitlines()))
+              with (out / 'states.jsonl').open('a') as log:
+                  log.write(json.dumps({'time': time.time(), **result}) + '\n')
+              return result
+
+
+          def wait_for(predicate, timeout=90):
+              deadline = time.monotonic() + timeout
+              last = None
+              while time.monotonic() < deadline:
+                  try:
+                      last = status()
+                      if predicate(last):
+                          return last
+                  except (OSError, ConnectionError) as error:
+                      last = str(error)
+                  time.sleep(1)
+              raise TimeoutError(f'Updater did not reach expected state: {last}')
+
+
+          def asset(fixture):
+              # TODO: use scripts/release-asset-name.sh
+              return f'speecher-build{fixture["build"]}.dmg' if fixed else 'speecher.dmg'
+
+
+          def publish(name):
+              fixture = fixtures[name]
+              source = root / 'fixtures' / f'{name}.dmg'
+              for filename in {asset(fixture), 'speecher.dmg'}:
+                  temporary = server / (filename + '.tmp')
+                  shutil.copyfile(source, temporary)
+                  temporary.replace(server / filename)
+              signature = out / f'{name}-signature.txt'
+              signature.write_text(f'sparkle:edSignature={fixture["signature"]}\nlength={fixture["length"]}\n')
+              run('python3', 'scripts/make-appcast.py', '--channel', 'nightly',
+                  '--version', fixture['version'], '--build-number', str(fixture['build']),
+                  '--dmg-url', base_url + asset(fixture), '--signature', str(signature),
+                  '--output', str(server / (feed + '.tmp')))
+              (server / (feed + '.tmp')).replace(server / feed)
+              with urllib.request.urlopen(base_url + feed, context=context) as response:
+                  appcast = response.read()
+              (out / f'{name}-appcast.xml').write_bytes(appcast)
+              item = ET.fromstring(appcast).find('channel/item')
+              assert int(item.find('{http://www.andymatuschak.org/xml-namespaces/sparkle}version').text) == fixture['build']
+              assert item.find('enclosure').get('url') == base_url + asset(fixture)
+
+
+          def requests():
+              lines = (evidence / 'https-server.log').read_text().splitlines()[server_start:]
+              return [line for line in lines if re.search(r'"GET /[^ ]+\.dmg HTTP/[^ ]+" 200', line)]
+
+
+          def screenshot(stage, expected_text):
+              ipc('showSettings')
+              time.sleep(2)  # AppKit/SwiftUI renders asynchronously after the IPC response.
+              before = set((out / 'grabs').glob('*.png'))
+              ipc('grab')
+              captures = set((out / 'grabs').glob('*.png')) - before
+              require(stage + '_capture', len(captures) == 1, 'native settings window saved by grab IPC')
+              image = out / f'{stage}.png'
+              shutil.copyfile(captures.pop(), image)
+              run('screencapture', '-x', str(out / f'{stage}-screen.png'))
+              text = run(str(root / 'read-image'), str(image)).stdout
+              (out / f'{stage}-ocr.txt').write_text(text)
+              require(stage + '_banner', expected_text in ' '.join(text.lower().split()), text.strip())
+
+
+          success = False
+          server_start = len((evidence / 'https-server.log').read_text().splitlines())
+          started = time.strftime('%Y-%m-%d %H:%M:%S')
+          try:
+              stop()
+              for domain in (app_domain, sparkle_domain):
+                  run('defaults', 'delete', domain, check=False)
+              for base in ('Caches', 'Application Support'):
+                  for relative in (app_domain, sparkle_domain, 'io.github.firemonster612/speecher', 'speecher'):
+                      shutil.rmtree(Path.home() / 'Library' / base / relative, ignore_errors=True)
+              shutil.rmtree(installed, ignore_errors=True)
+              installed.parent.mkdir(exist_ok=True)
+              run('ditto', str(root / 'old-speecher.app'), str(installed))
+              seeded = run(str(root / 'seed-settings'))
+              (out / 'qsettings.txt').write_text(seeded.stdout)
+              run('defaults', 'write', sparkle_domain, 'SUEnableAutomaticChecks', '-bool', 'true')
+              for domain in (app_domain, sparkle_domain):
+                  run('defaults', 'export', domain, str(out / f'{domain}.plist'))
+              require('fresh_old_install', plistlib.loads((installed / 'Contents/Info.plist').read_bytes())['CFBundleVersion'] == str(old['build']),
+                      f'fresh build {old["build"]}; both defaults domains and Sparkle cache/application support cleared')
+              require('prompt_first_settings', 'updates/autoInstall=false' in seeded.stdout
+                      and 'app/setupCompleted=true' in seeded.stdout and 'updates/channel=nightly' in seeded.stdout,
+                      seeded.stdout.strip())
+              publish('offered')
+              env = dict(os.environ, SPEECHER_APPCAST_URL=base_url + feed,
+                         SPEECHER_GRAB_DIR=str(out / 'grabs'))
+              # LaunchServices relaunches must retain the test feed and screenshot directory.
+              for key in ('SPEECHER_APPCAST_URL', 'SPEECHER_GRAB_DIR'):
+                  run('launchctl', 'setenv', key, env[key])
+              with (out / 'stderr.log').open('w') as log:
+                  process = subprocess.Popen([str(installed / 'Contents/MacOS/speecher'), '--daemon'],
+                                             env=env, stdout=log, stderr=subprocess.STDOUT)
+              initial = wait_for(lambda s: s['currentVersion'] == old['version'])
+              require('running_old', initial['currentBuild'] == str(old['build']), json.dumps(initial))
+              ipc('showSettings')
+              ipc('e2eUpdateCheck')
+              offer = wait_for(lambda s: s['state'] in ('UpdateAvailable', 'Error', 'CheckFailed'))
+              require('offer_n_plus_1', offer['state'] == 'UpdateAvailable' and offer['availableVersion'] == offered['version']
+                      and offer['bannerVisible'] == 'true', json.dumps(offer))
+              screenshot('available', 'is available')
+              require('no_download_before_swap', not requests(), json.dumps(requests()))
+              publish('replacement')
+              require('published_n_plus_2', (server / 'speecher.dmg').read_bytes() == (root / 'fixtures/replacement.dmg').read_bytes(),
+                      f'rolling DMG replaced; appcast now offers build {replacement["build"]} at {asset(replacement)}')
+              retained = status()
+              require('retained_n_plus_1', retained['state'] == 'UpdateAvailable'
+                      and retained['availableVersion'] == offered['version'], json.dumps(retained))
+              require('no_download_before_accept', not requests(), json.dumps(requests()))
+              (out / 'accept-time.txt').write_text(str(time.time()))
+              ipc('e2eUpdateAccept')
+              if fixed:
+                  final = wait_for(lambda s: s['currentVersion'] == offered['version'] or s['state'] == 'Error', 180)
+                  info = plistlib.loads((installed / 'Contents/Info.plist').read_bytes())
+                  require('installed_n_plus_1', info['CFBundleVersion'] == str(offered['build']),
+                          f'CFBundleVersion={info["CFBundleVersion"]}; expected {offered["build"]}')
+                  require('relaunched_n_plus_1', final['currentVersion'] == offered['version']
+                          and final['currentBuild'] == str(offered['build']) and final['pid'] != initial['pid'], json.dumps(final))
+                  screenshot('installed', 'is installed')
+              else:
+                  final = wait_for(lambda s: s['state'] == 'Error', 180)
+                  require('signing_error', 'improperly signed' in final['error'].lower()
+                          and 'could not be validated' in final['error'].lower() and final['bannerVisible'] == 'true', json.dumps(final))
+                  screenshot('error', 'improperly signed')
+                  info = plistlib.loads((installed / 'Contents/Info.plist').read_bytes())
+                  require('old_bundle_preserved', info['CFBundleVersion'] == str(old['build'])
+                          and final['currentBuild'] == str(old['build']), f'CFBundleVersion={info["CFBundleVersion"]}')
+              downloads = requests()
+              require('retained_enclosure_downloaded', bool(downloads)
+                      and all(f'GET /{asset(offered)} HTTP/' in line for line in downloads), json.dumps(downloads))
+              success = True
+          except Exception:
+              (out / 'failure.txt').write_text(traceback.format_exc())
+              traceback.print_exc()
+          finally:
+              if installed.exists():
+                  shutil.copyfile(installed / 'Contents/Info.plist', out / 'final-Info.plist')
+              unified = run('log', 'show', '--start', started, '--style', 'compact',
+                            '--predicate', 'process CONTAINS[c] "speecher" OR process CONTAINS[c] "sparkle" OR subsystem CONTAINS[c] "sparkle"', check=False)
+              (out / 'unified.log').write_text(unified.stdout + unified.stderr)
+              logs = unified.stdout + '\n' + (out / 'stderr.log').read_text() if (out / 'stderr.log').exists() else unified.stdout
+              excerpts = '\n'.join(line for line in logs.splitlines()
+                                   if re.search(r'SUUpdater|Sparkle|EdDSA|signature|improperly signed|mismatch|CFBundleVersion|length', line, re.I))
+              (out / 'sparkle-excerpts.log').write_text(excerpts + '\n')
+              (out / 'https-requests.log').write_text('\n'.join((evidence / 'https-server.log').read_text().splitlines()[server_start:]) + '\n')
+              if not fixed and success:
+                  try:
+                      require('sparkle_diagnostics', bool(re.search(r'EdDSA|CFBundleVersion|length.*(?:match|differ)|signature.*(?:match|valid)', excerpts, re.I)),
+                              'Sparkle validation diagnostics captured in sparkle-excerpts.log')
+                  except AssertionError:
+                      success = False
+              stop()
+              require('scenario', success, 'all assertions passed' if success else 'see failure.txt and logs')
+          PYTHON
+
+      - name: race-fixed
+        if: ${{ always() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: |
+          python3 "$RUNNER_TEMP/drive.py" race-fixed
+
+      - name: race-unfixed
+        if: ${{ always() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: |
+          python3 "$RUNNER_TEMP/drive.py" race-unfixed
+
+      - name: Summarize and stop test processes
+        if: always()
+        shell: bash
+        run: |
+          pkill -9 -x speecher 2>/dev/null || true
+          if [[ -f "$RUNNER_TEMP/https-server.pid" ]]; then
+            kill "$(cat "$RUNNER_TEMP/https-server.pid")" 2>/dev/null || true
+          fi
+          for scenario in race-fixed race-unfixed; do
+            if ! grep -q "^$scenario.scenario=PASS" evidence/summary.txt; then
+              printf '%s.required_outcome=FAIL scenario did not complete successfully\n' "$scenario" >> evidence/summary.txt
+            fi
+          done
+          cat evidence/summary.txt >> "$GITHUB_STEP_SUMMARY"
+          if grep -q '=FAIL' evidence/summary.txt; then exit 1; fi
+
+      - name: Upload E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mac-update-e2e-evidence
+          path: evidence
+          if-no-files-found: error
