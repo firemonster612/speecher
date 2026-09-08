@@ -339,8 +339,12 @@ jobs:
 
 
           def asset(fixture):
-              # TODO: use scripts/release-asset-name.sh
-              return f'speecher-build{fixture["build"]}.dmg' if fixed else 'speecher.dmg'
+              # The fixed layout names the DMG exactly as scripts/publish-release.sh does.
+              if not fixed:
+                  return 'speecher.dmg'
+              return subprocess.run(
+                  ['bash', 'scripts/release-asset-name.sh', 'nightly', str(fixture['build']), 'speecher.dmg'],
+                  check=True, capture_output=True, text=True).stdout.strip()
 
 
           def publish(name):
