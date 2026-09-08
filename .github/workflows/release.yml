@@ -29,6 +29,9 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Test release publishing
+        run: bash tests/release/test-publish-release.sh
+
       - name: Validate stable tag identity
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -149,29 +152,24 @@ jobs:
           test -n "$build_number"
           if [ "${GITHUB_REF_NAME}" = "master" ]; then
             version="$binary_version"
-            release_tag=nightly
           else
             version="${GITHUB_REF_NAME#v}"
-            release_tag="${GITHUB_REF_NAME}"
             if [ "$binary_version" != "$version" ]; then
               echo "Tag version $version does not match binary version $binary_version." >&2
               exit 1
             fi
           fi
           sha256="$(sha256sum dist/Speecher-x86_64.AppImage | awk '{print $1}')"
-          python3 - "$version" "$build_number" "$release_tag" "$sha256" > dist/update-manifest.json <<'PY'
+          # The publisher fills both platform URLs from the release asset names.
+          python3 - "$version" "$build_number" "$sha256" > dist/update-manifest.json <<'PY'
           import json
           import sys
 
-          version, build_number, release_tag, sha256 = sys.argv[1:]
-          asset_url = (
-              "https://github.com/firemonster612/speecher/releases/download/"
-              f"{release_tag}/Speecher-x86_64.AppImage"
-          )
+          version, build_number, sha256 = sys.argv[1:]
           json.dump({
               "version": version,
               "buildNumber": int(build_number),
-              "linux-x86_64": {"appimage": asset_url, "sha256": sha256},
+              "linux-x86_64": {"sha256": sha256},
           }, sys.stdout, indent=2)
           print()
           PY

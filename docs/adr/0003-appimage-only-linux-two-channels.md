@@ -27,8 +27,9 @@ comparison.
 
 ## Consequences
 
-- Nightly history is not kept; the commit SHA in every version string
-  is the way back to any given build.
+- The nightly release keeps only the newest ten builds (see the
+  2026-09-08 amendment); the commit SHA in every version string is the
+  way back to any older build.
 - Flatpak remains possible later behind the same release assets, but
   would ship with its core text-injection feature degraded until the
   portal story covers it.
@@ -52,3 +53,17 @@ Rather than paint around the style, the AppImage now builds on `debian:forky`
 generation as current Fedora and Arch desktops. The compatibility floor moves
 to glibc 2.43. Reproducibility relies on the release tag's build number and
 the `apt` state at build time; pin a snapshot if a rebuild must be byte-exact.
+
+## Amendment 2026-09-08
+
+The rolling `nightly` asset names (`speecher.dmg`, `Speecher-x86_64.AppImage`,
+`Speecher-Setup-x64.exe`) are overwritten by every master push, but an updater
+holds its offer until the user acts on it. A user who accepted a day-old offer
+downloaded a newer build than the one the appcast had signed, and Sparkle
+correctly rejected it. Every nightly binary is therefore also uploaded under a
+build-specific name (`speecher-build<N>.dmg` and so on, via
+`scripts/release-asset-name.sh`), and the appcast and update manifest point at
+those names. The rolling names stay for humans and for the zsync metadata.
+`scripts/publish-release.sh` prunes build-specific assets beyond the newest ten
+builds; an offer older than that fails to download and a fresh check replaces
+it, which is still a clean failure rather than a signature mismatch.

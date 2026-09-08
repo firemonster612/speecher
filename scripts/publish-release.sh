@@ -11,20 +11,79 @@ else
   channel=stable
   test "$GITHUB_REF_NAME" = "$tag"
 fi
+appimage_name="$(bash scripts/release-asset-name.sh "$channel" "$build_number" Speecher-x86_64.AppImage)"
+dmg_name="$(bash scripts/release-asset-name.sh "$channel" "$build_number" speecher.dmg)"
+installer_name="$(bash scripts/release-asset-name.sh "$channel" "$build_number" Speecher-Setup-x64.exe)"
+if [ "$channel" = nightly ]; then
+  release_exists=false
+  asset_pages='[]'
+  if gh release view "$tag" >/dev/null 2>&1; then
+    release_exists=true
+    release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/$tag" --jq '.id')"
+    asset_pages="$(gh api "repos/${GITHUB_REPOSITORY}/releases/$release_id/assets" --paginate --slurp)"
+  fi
+  # Check every immutable asset before changing the tag, release, or manifest.
+  asset_plan="$(python3 - "$asset_pages" "$build_number" \
+    artifacts/linux-release/Speecher-x86_64.AppImage "$appimage_name" \
+    artifacts/macos-release/speecher.dmg "$dmg_name" \
+    artifacts/windows-release/Speecher-Setup-x64.exe "$installer_name" <<'PYTHON'
+import hashlib
+import json
+from pathlib import Path
+import re
+import sys
+
+assets = {asset["name"]: asset.get("digest") for page in json.loads(sys.argv[1]) for asset in page}
+build_number = int(sys.argv[2])
+binaries = list(zip(sys.argv[3::2], sys.argv[4::2]))
+base_names = {Path(path).name for path, _ in binaries}
+build_assets = []
+for name in assets:
+    match = re.fullmatch(r"(.+)-build([0-9]+)(\.[^.]+)", name)
+    if match and match[1] + match[3] in base_names:
+        build_assets.append((int(match[2]), name))
+newest_build = max((build for build, _ in build_assets), default=build_number)
+if build_number < newest_build:
+    sys.exit(f"Refusing to regress the nightly release from build {newest_build} to {build_number}")
+for path, name in binaries:
+    sha256 = hashlib.sha256()
+    with open(path, "rb") as binary:
+        for chunk in iter(lambda: binary.read(1024 * 1024), b""):
+            sha256.update(chunk)
+    digest = "sha256:" + sha256.hexdigest()
+    if name not in assets:
+        print(f"upload\t{Path(path).with_name(name)}")
+    elif assets[name] != digest:
+        sys.exit(f"Refusing to replace nightly asset {name}: remote digest {assets[name]!r} differs from local {digest}")
+# Include the build about to be uploaded when retaining the newest ten builds.
+keep = set(sorted({build_number} | {build for build, _ in build_assets}, reverse=True)[:10])
+for build, name in build_assets:
+    if build not in keep:
+        print(f"delete\t{name}")
+PYTHON
+  )"
+  missing_assets=()
+  stale_assets=()
+  while IFS=$'\t' read -r action asset; do
+    case "$action" in
+      upload) missing_assets+=("$asset") ;;
+      delete) stale_assets+=("$asset") ;;
+    esac
+  done <<< "$asset_plan"
+fi
 windows_sha256="$(awk '{print $1}' artifacts/windows-release/Speecher-Setup-x64.exe.sha256)"
-python3 - "$tag" "$windows_sha256" <<'PY'
+python3 - "$tag" "$windows_sha256" "$appimage_name" "$installer_name" <<'PY'
 import json
 import pathlib
 import sys
 
-tag, sha256 = sys.argv[1:]
+tag, sha256, appimage_name, installer_name = sys.argv[1:]
 path = pathlib.Path("artifacts/linux-release/update-manifest.json")
 manifest = json.loads(path.read_text())
+asset_url = f"https://github.com/firemonster612/speecher/releases/download/{tag}/"
+manifest["linux-x86_64"]["appimage"] = asset_url + appimage_name
 manifest["windows-x86_64"] = {
-    "installer": (
-        "https://github.com/firemonster612/speecher/releases/download/"
-        f"{tag}/Speecher-Setup-x64.exe"
-    ),
+    "installer": asset_url + installer_name,
     "sha256": sha256,
 }
 path.write_text(json.dumps(manifest, indent=2) + "\n")
@@ -44,18 +103,28 @@ Windows installer: Speecher-Setup-x64.exe
 Update channels: https://github.com/${GITHUB_REPOSITORY}#installation--updates
 EOF
   release_notes=release-notes.md
-  if gh release view "$tag" >/dev/null 2>&1; then
+  if [ "$release_exists" = true ]; then
     gh release edit "$tag" --prerelease --title "Nightly Build $version" --notes-file release-notes.md
   else
     gh release create "$tag" --prerelease --title "Nightly Build $version" --notes-file release-notes.md
   fi
+  cp artifacts/linux-release/Speecher-x86_64.AppImage "artifacts/linux-release/$appimage_name"
+  cp artifacts/macos-release/speecher.dmg "artifacts/macos-release/$dmg_name"
+  cp artifacts/windows-release/Speecher-Setup-x64.exe "artifacts/windows-release/$installer_name"
+  if [ "${#missing_assets[@]}" -gt 0 ]; then
+    gh release upload "$tag" "${missing_assets[@]}"
+  fi
   gh release upload "$tag" \
     artifacts/linux-release/Speecher-x86_64.AppImage \
-    artifacts/linux-release/Speecher-x86_64.AppImage.zsync \
     artifacts/macos-release/speecher.dmg \
     artifacts/windows-release/Speecher-Setup-x64.exe \
-    artifacts/windows-release/Speecher-Setup-x64.exe.sha256 \
-    artifacts/linux-release/update-manifest.json --clobber
+    artifacts/linux-release/Speecher-x86_64.AppImage.zsync \
+    artifacts/windows-release/Speecher-Setup-x64.exe.sha256 --clobber
+  gh release upload "$tag" artifacts/linux-release/update-manifest.json --clobber
+
+  for asset in "${stale_assets[@]}"; do
+    gh release delete-asset "$tag" "$asset" --yes
+  done
 else
   if [ -f "docs/releases/$version.md" ]; then
     release_notes="docs/releases/$version.md"
@@ -73,10 +142,10 @@ else
     gh release create "$tag" --title "Speecher $version" --notes-file "$release_notes"
   fi
   gh release upload "$tag" \
-    artifacts/linux-release/Speecher-x86_64.AppImage \
+    "artifacts/linux-release/$appimage_name" \
     artifacts/linux-release/Speecher-x86_64.AppImage.zsync \
-    artifacts/macos-release/speecher.dmg \
-    artifacts/windows-release/Speecher-Setup-x64.exe \
+    "artifacts/macos-release/$dmg_name" \
+    "artifacts/windows-release/$installer_name" \
     artifacts/windows-release/Speecher-Setup-x64.exe.sha256 \
     artifacts/linux-release/update-manifest.json --clobber
 fi
@@ -86,7 +155,7 @@ python3 scripts/make-appcast.py \
   --version "$version" \
   --build-number "$build_number" \
   --pub-date "$published_at" \
-  --dmg-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/speecher.dmg" \
+  --dmg-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${dmg_name}" \
   --signature artifacts/macos-release/sparkle-signature.txt \
   --notes-file "$release_notes" \
   --output "appcast-${channel}.xml"
