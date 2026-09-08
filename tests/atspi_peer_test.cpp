@@ -58,6 +58,7 @@ int main(int argc, char **argv)
     // Exercise Speecher's real client initialization, then the libatspi pending
     // reply that crashed during QtAudioInput's nested event loop on Fedora.
     speecher::atspi::TargetSnapshot::capture();
+    const bool p2pDisabled = qgetenv("ATSPI_DISABLE_P2P") == "1";
     AtspiAccessible *child = _atspi_ref_accessible(
         name.constData(), "/org/a11y/atspi/accessible/child");
     GError *roleError = nullptr;
@@ -65,18 +66,23 @@ int main(int argc, char **argv)
     QElapsedTimer timer;
     timer.start();
     while (timer.elapsed() < 500) {
-        QCoreApplication::processEvents();
+        g_main_context_iteration(nullptr, false);
         QThread::msleep(1);
     }
-    const bool passed = !roleError && role == ATSPI_ROLE_ENTRY;
+    const bool targetRoleRead = !roleError && role == ATSPI_ROLE_ENTRY;
     if (roleError) g_error_free(roleError);
     g_object_unref(child);
     running = false;
     server.join();
     dbus_connection_close(service);
     dbus_connection_unref(service);
-    if (!passed) {
+    if (!p2pDisabled) {
+        qCritical("Did not set ATSPI_DISABLE_P2P before accessibility access");
+    }
+    if (!targetRoleRead) {
         qCritical("Could not read the target role over the accessibility bus");
+    }
+    if (!p2pDisabled || !targetRoleRead) {
         return 1;
     }
     qInfo("Survived unavailable peer; target role read over accessibility bus");
