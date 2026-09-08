@@ -93,6 +93,33 @@ stop_app
 launchctl unsetenv SPEECHER_E2E_PANEL_CAPTURE_DIR >/dev/null 2>&1 || true
 unset SPEECHER_E2E_PANEL_CAPTURE_DIR
 
+# BANNER-STACK: both notices pinned on, to film the order they stack above the
+# pill. A CI install has no update pending, so the stack never appears on its
+# own in the flow above.
+case_begin BANNER-STACK
+export SPEECHER_E2E_PANEL_BANNERS=1
+launchctl setenv SPEECHER_E2E_PANEL_BANNERS 1 >/dev/null 2>&1 || true
+export SPEECHER_E2E_PANEL_CAPTURE_DIR="$CASE_DIR/frames"
+launchctl setenv SPEECHER_E2E_PANEL_CAPTURE_DIR "$CASE_DIR/frames" >/dev/null 2>&1 || true
+if ! launch_listening; then
+  fail_case "The app did not launch."
+else
+  poll_status listening 10 >"$CASE_DIR/listening.out" \
+    || log "BANNER-STACK never reached listening; filming whatever showed"
+  sleep 1.5
+  banner_frames=$(find "$CASE_DIR/frames" -name 'frame-*.png' 2>/dev/null | wc -l | tr -d ' ')
+  printf 'frames: %s\n' "$banner_frames" >"$CASE_DIR/frame-count.txt"
+  if (( banner_frames >= 5 )); then
+    pass_case "Filmed the what's-new and update notices stacked above the pill."
+  else
+    fail_case "only $banner_frames banner-stack frames were captured"
+  fi
+fi
+stop_app
+launchctl unsetenv SPEECHER_E2E_PANEL_BANNERS >/dev/null 2>&1 || true
+launchctl unsetenv SPEECHER_E2E_PANEL_CAPTURE_DIR >/dev/null 2>&1 || true
+unset SPEECHER_E2E_PANEL_BANNERS SPEECHER_E2E_PANEL_CAPTURE_DIR
+
 # DICTATION-PANE: the Transcription row's dynamic subtitle (the schema's
 # helpValue) renders in the settings window's Dictation pane.
 defaults write "$DOMAIN" stt.provider claude

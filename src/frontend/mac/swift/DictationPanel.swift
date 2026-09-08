@@ -296,6 +296,11 @@ final class SpeecherDictationPanel {
     private var updateObserver: AnyCancellable?
     private var whatsNewObserver: AnyCancellable?
     private var whatsNewAutoHide: Timer?
+    /// Scratch-branch-only E2E seam: pins both notices on so the capture rig
+    /// can film how they stack above the pill. A CI run has no update pending,
+    /// so the stack is otherwise never on screen to photograph.
+    private let e2eBanners = ProcessInfo.processInfo
+        .environment["SPEECHER_E2E_PANEL_BANNERS"] == "1"
     /// Opens the settings window on the What's New pane. Set by SpeecherMacUI,
     /// which owns that window.
     var openWhatsNew: (() -> Void)?
@@ -492,6 +497,10 @@ final class SpeecherDictationPanel {
     /// The update banner's message and button for the state, exactly as the Qt
     /// popup words them.
     private func refreshUpdateBanner(_ update: AppModel.UpdateStatus) {
+        guard !e2eBanners else {
+            setUpdateBanner("Speecher 9.9.9 available", action: "Install and restart")
+            return
+        }
         switch update.state {
         case .updateAvailable:
             // The bare number only: a nightly identifier's "-nightly…" suffix
@@ -526,6 +535,10 @@ final class SpeecherDictationPanel {
     /// The offer returns with every showing of the panel and tidies itself away
     /// six seconds later; only the dismiss button clears the pending state.
     private func refreshWhatsNewBanner() {
+        guard !e2eBanners else {
+            setWhatsNewMessage("Speecher \(model.installedVersionNumber) installed")
+            return
+        }
         setWhatsNewMessage(model.whatsNewPending
             ? "Speecher \(model.installedVersionNumber) installed"
             : "")
