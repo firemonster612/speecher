@@ -65,8 +65,10 @@ public:
     using SettingsCodecs::pauseMediaDuringTranscription;
     using SettingsCodecs::previewWords;
     using SettingsCodecs::recordVocabularyUsage;
+    using SettingsCodecs::refinementPreviewEnabled;
     using SettingsCodecs::refinementProvider;
     using SettingsCodecs::refinementStyle;
+    using SettingsCodecs::transcriptionPreviewEnabled;
     using SettingsCodecs::removeLearnedCorrection;
     using SettingsCodecs::restoreClipboardAfterTyping;
     using SettingsCodecs::setAnthropicAuthMode;
@@ -92,6 +94,7 @@ public:
     using SettingsCodecs::setPasteRules;
     using SettingsCodecs::setPauseMediaDuringTranscription;
     using SettingsCodecs::setPreviewWords;
+    using SettingsCodecs::setRefinementPreviewEnabled;
     using SettingsCodecs::setRefinementProvider;
     using SettingsCodecs::setRefinementStyle;
     using SettingsCodecs::setRestoreClipboardAfterTyping;
@@ -100,6 +103,7 @@ public:
     using SettingsCodecs::setSetupCompleted;
     using SettingsCodecs::setStoredApiKeyFallback;
     using SettingsCodecs::setTheme;
+    using SettingsCodecs::setTranscriptionPreviewEnabled;
     using SettingsCodecs::setUseTargetContext;
     using SettingsCodecs::setVocabularyEntries;
     using SettingsCodecs::setWritingProfileOverrides;

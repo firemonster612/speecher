@@ -13,6 +13,8 @@ public:
     bool setupCompleted() const; void setSetupCompleted(bool value);
     bool launchAtLogin() const; void setLaunchAtLogin(bool value);
     int previewWords() const; void setPreviewWords(int value);
+    bool transcriptionPreviewEnabled() const; void setTranscriptionPreviewEnabled(bool value);
+    bool refinementPreviewEnabled() const; void setRefinementPreviewEnabled(bool value);
     QString theme() const; void setTheme(const QString &value);
     bool pauseMediaDuringTranscription() const; void setPauseMediaDuringTranscription(bool value);
     bool soundsEnabled() const; void setSoundsEnabled(bool value);

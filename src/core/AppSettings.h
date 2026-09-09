@@ -46,6 +46,8 @@ struct VocabularyEntry {
 
 struct UiSettings {
     int previewWords = 7;
+    bool transcriptionPreviewEnabled = true;
+    bool refinementPreviewEnabled = true;
     QString theme = QStringLiteral("system");
     bool pauseMediaDuringTranscription = true;
     bool soundsEnabled = false;

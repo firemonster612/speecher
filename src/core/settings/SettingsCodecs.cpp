@@ -92,6 +92,26 @@ void SettingsCodecs::setLaunchAtLogin(bool value)
     m_settings.setValue(SettingsKeys::LaunchAtLogin, value);
 }
 
+bool SettingsCodecs::transcriptionPreviewEnabled() const
+{
+    return value(SettingsKeys::UiTranscriptionPreviewEnabled, true).toBool();
+}
+
+void SettingsCodecs::setTranscriptionPreviewEnabled(bool value)
+{
+    m_settings.setValue(SettingsKeys::UiTranscriptionPreviewEnabled, value);
+}
+
+bool SettingsCodecs::refinementPreviewEnabled() const
+{
+    return value(SettingsKeys::UiRefinementPreviewEnabled, true).toBool();
+}
+
+void SettingsCodecs::setRefinementPreviewEnabled(bool value)
+{
+    m_settings.setValue(SettingsKeys::UiRefinementPreviewEnabled, value);
+}
+
 int SettingsCodecs::previewWords() const
 {
     return std::clamp(value(SettingsKeys::UiPreviewWords, 7).toInt(), 1, 40);
@@ -976,6 +996,8 @@ AppSettings SettingsCodecs::snapshot() const
     AppSettings settings;
     settings.setupCompleted = setupCompleted();
     settings.launchAtLogin = launchAtLogin();
+    settings.ui.transcriptionPreviewEnabled = transcriptionPreviewEnabled();
+    settings.ui.refinementPreviewEnabled = refinementPreviewEnabled();
     settings.ui.previewWords = previewWords();
     settings.ui.theme = theme();
     settings.ui.pauseMediaDuringTranscription = pauseMediaDuringTranscription();

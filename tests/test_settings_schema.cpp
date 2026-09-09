@@ -62,6 +62,26 @@ private slots:
         QCOMPARE(row.collection.records(AppSettings{}).size(), 5);
     }
 
+    void previewTogglesPersistThroughSchemaDraft()
+    {
+        SettingsStore store;
+        store.raw().clear();
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const auto &page = schema.page(QStringLiteral("general"));
+        const auto &transcription = rowById(page, QStringLiteral("transcriptionPreviewEnabled"));
+        const auto &refinement = rowById(page, QStringLiteral("refinementPreviewEnabled"));
+        const AppSettings loaded = store.snapshot();
+        QVERIFY(transcription.value(loaded).toBool());
+        QVERIFY(refinement.value(loaded).toBool());
+        AppSettings edited = loaded;
+        transcription.apply(edited, false);
+        refinement.apply(edited, false);
+        store.applySnapshot(mergeSettingsDraft(schema, loaded, edited, store.snapshot()));
+        const AppSettings saved = SettingsStore().snapshot();
+        QVERIFY(!transcription.value(saved).toBool());
+        QVERIFY(!refinement.value(saved).toBool());
+    }
+
     void staleDraftPreservesLearnedRecords()
     {
         SettingsStore store;

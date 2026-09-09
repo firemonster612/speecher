@@ -43,10 +43,24 @@ private slots:
         QCOMPARE(rawPreviewSpy.last().at(0).toString(), QStringLiteral("rough text"));
     }
 
+    void dictationSessionStreamsRefinementPreviewWhileRefining_data()
+    {
+        QTest::addColumn<bool>("transcriptionPreview");
+        QTest::addColumn<bool>("refinementPreview");
+        QTest::newRow("both") << true << true;
+        QTest::newRow("transcription only") << true << false;
+        QTest::newRow("refinement only") << false << true;
+        QTest::newRow("neither") << false << false;
+    }
+
     void dictationSessionStreamsRefinementPreviewWhileRefining()
     {
+        QFETCH(bool, transcriptionPreview);
+        QFETCH(bool, refinementPreview);
         SettingsStore settings;
         settings.raw().clear();
+        settings.raw().setValue("ui/transcriptionPreviewEnabled", transcriptionPreview);
+        settings.raw().setValue("ui/refinementPreviewEnabled", refinementPreview);
         settings.setRefinementProvider(QStringLiteral("openai"));
         settings.setRefinementStyle(QStringLiteral("light_cleanup"));
 
@@ -59,12 +73,17 @@ private slots:
         registerFakeSpeechProvider(registry, &speech);
         registerFakeRefiner(registry, &refiner);
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy rawPreviewSpy(&session, &DictationSession::previewDisplayChanged);
+        QSignalSpy transcriptSpy(&session, &DictationSession::previewChanged);
         QSignalSpy refinementPreviewSpy(&session,
                                         &DictationSession::popupRefinementPreviewChanged);
 
         session.startListening();
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("rough text"));
+        QCOMPARE(rawPreviewSpy.last().at(0).toString(),
+                 transcriptionPreview ? QStringLiteral("rough text") : QString());
+        QCOMPARE(transcriptSpy.last().at(0).toString(), QStringLiteral("rough text"));
         session.stopListening();
         QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 1000);
 
@@ -72,10 +91,11 @@ private slots:
         refiner->emitDeltaText(QStringLiteral("text arriving now."));
         QCOMPARE(refinementPreviewSpy.count(), 2);
         QCOMPARE(refinementPreviewSpy.last().at(0).toString(),
-                 QStringLiteral("Polished text arriving now."));
+                 refinementPreview ? QStringLiteral("Polished text arriving now.") : QString());
 
         refiner->emitCompletedText(QStringLiteral("Polished text arriving now."));
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QCOMPARE(delivery->lastText, QStringLiteral("Polished text arriving now."));
         refiner->emitDeltaText(QStringLiteral("late"));
         QCOMPARE(refinementPreviewSpy.count(), 2);
     }

@@ -58,6 +58,8 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setTheme(draft.ui.theme);
     setPauseMediaDuringTranscription(draft.ui.pauseMediaDuringTranscription);
     setSoundsEnabled(draft.ui.soundsEnabled);
+    setTranscriptionPreviewEnabled(draft.ui.transcriptionPreviewEnabled);
+    setRefinementPreviewEnabled(draft.ui.refinementPreviewEnabled);
     setPreviewWords(draft.ui.previewWords);
     setSpeechProvider(draft.speech.providerId);
     setAudioCaptureSettings(draft.audio);

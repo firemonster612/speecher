@@ -60,7 +60,8 @@ DictationSession::DictationSession(SettingsStore *settings,
             &DictationSession::finishStartupPreparation);
     connect(m_transcript, &TranscriptState::changed, this, [this](const QString &text) {
         const int words = m_settings ? m_settings->previewWords() : 7;
-        emit previewDisplayChanged(WordPreview::lastWords(text, words));
+        const bool showPreview = !m_settings || m_settings->transcriptionPreviewEnabled();
+        emit previewDisplayChanged(showPreview ? WordPreview::lastWords(text, words) : QString());
         qInfo() << "transcript changed length=" << text.size() << "previewWords=" << words;
         emit previewChanged(text);
     });
@@ -780,6 +781,10 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
             return;
         }
         m_refinementStream += text;
+        if (m_settings && !m_settings->refinementPreviewEnabled()) {
+            emit popupRefinementPreviewChanged({});
+            return;
+        }
         // The stream carries SPEECHER_BINDING_n placeholders the final restore
         // pass maps back to their bound values; the preview must not show that
         // internal syntax. Complete tokens are restored here, and a token still
