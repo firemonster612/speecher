@@ -595,6 +595,17 @@ SettingsPage generalPage(const SchemaContext &context)
         return capabilities.automaticUpdateDownloads;
     };
 
+    SettingsRow previewWords = numberRow(
+        QStringLiteral("previewWords"),
+        QStringLiteral("Preview words"),
+        QStringLiteral("How many of the latest words each preview shows."),
+        {1, 40, 1, QString()},
+        [](const AppSettings &settings) { return settings.ui.previewWords; },
+        [](AppSettings &settings, int value) { settings.ui.previewWords = value; });
+    previewWords.enabled = [](const AppSettings &settings, const Capabilities &) {
+        return settings.ui.transcriptionPreviewEnabled || settings.ui.refinementPreviewEnabled;
+    };
+
     SettingsPage page{
         QStringLiteral("general"),
         QStringLiteral("General"),
@@ -633,12 +644,7 @@ SettingsPage generalPage(const SchemaContext &context)
                            QStringLiteral("Show live text in the popup during refinement"),
                            [](const AppSettings &settings) { return settings.ui.refinementPreviewEnabled; },
                            [](AppSettings &settings, bool value) { settings.ui.refinementPreviewEnabled = value; }),
-                 numberRow(QStringLiteral("previewWords"),
-                           QStringLiteral("Preview words"),
-                           QStringLiteral("How many of the latest words each preview shows."),
-                           {1, 40, 1, QString()},
-                           [](const AppSettings &settings) { return settings.ui.previewWords; },
-                           [](AppSettings &settings, int value) { settings.ui.previewWords = value; }),
+                 std::move(previewWords),
              }},
             {
 #ifdef Q_OS_LINUX
