@@ -139,7 +139,15 @@ PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(QObject *parent)
         QStringLiteral("Activated"),
         this,
         SLOT(handleActivated(QDBusObjectPath,QString,qulonglong,QVariantMap)));
-    // Press/release via the portal is a future cross-binder decision.
+    // Deactivated arrives on key release from backends that report it (Plasma,
+    // GNOME); a backend that never sends it leaves the binding a plain toggle.
+    QDBusConnection::sessionBus().connect(
+        QString::fromLatin1(portalService),
+        QString::fromLatin1(portalPath),
+        QString::fromLatin1(shortcutInterface),
+        QStringLiteral("Deactivated"),
+        this,
+        SLOT(handleDeactivated(QDBusObjectPath,QString,qulonglong,QVariantMap)));
 }
 
 bool PortalGlobalShortcutBinder::supported() const
@@ -430,6 +438,17 @@ void PortalGlobalShortcutBinder::handleActivated(const QDBusObjectPath &sessionH
     if (sessionHandle.path() == m_sessionPath.path()
         && id == QString::fromLatin1(shortcutId)) {
         emit activated();
+    }
+}
+
+void PortalGlobalShortcutBinder::handleDeactivated(const QDBusObjectPath &sessionHandle,
+                                                    const QString &id,
+                                                    qulonglong,
+                                                    const QVariantMap &)
+{
+    if (sessionHandle.path() == m_sessionPath.path()
+        && id == QString::fromLatin1(shortcutId)) {
+        emit deactivated();
     }
 }
 

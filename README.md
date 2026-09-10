@@ -92,7 +92,7 @@ The default Update Channel is Stable Release. Nightly Builds are republished fro
 
 On macOS, Speecher registers its own global hotkey — set it in the setup assistant or Settings, including press-and-hold push-to-talk. Nothing to configure outside the app.
 
-On KDE Plasma and desktops with a Global Shortcuts portal, Speecher registers the shortcut automatically. Set it in the setup assistant or Settings.
+On KDE Plasma and desktops with a Global Shortcuts portal, Speecher registers the shortcut automatically. Set it in the setup assistant or Settings. Holding the shortcut dictates and releasing it stops, the same press-and-hold push-to-talk as macOS, on any backend that reports key release (Plasma and GNOME 48+ do). A backend that reports only the press keeps the shortcut a plain tap-to-toggle.
 
 If your desktop does not support either method, bind a key to the CLI manually:
 
@@ -120,7 +120,7 @@ On Plasma, the manual fallback is:
 4. Click `Add`.
 5. Assign your preferred shortcut under `Custom Shortcuts`.
 
-Speecher also has separate `start` and `stop` commands for press-and-hold setups. Bind the key-press action to `speecher start` and the matching key-release action to `speecher stop` in whichever Plasma shortcut tool or input remapper you use.
+Speecher also has separate `start` and `stop` commands, for press-and-hold on desktops the portal and KGlobalAccel don't cover. Bind the key-press action to `speecher start` and the matching key-release action to `speecher stop` in whichever Plasma shortcut tool or input remapper you use.
 
 Add `--format html` or `--format plain` to `toggle` or `start` when you want a shortcut that overrides the saved output format for one dictation.
 

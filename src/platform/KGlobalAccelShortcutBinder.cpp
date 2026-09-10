@@ -19,6 +19,16 @@ constexpr auto shortcutAction = "toggle-dictation";
 KGlobalAccelShortcutBinder::KGlobalAccelShortcutBinder(QObject *parent)
     : GlobalShortcutBinder(parent)
 {
+#ifdef SPEECHER_WITH_KGLOBALACCEL
+    // Press arrives through QAction::triggered; the daemon reports release
+    // only through this signal, with no trigger of its own.
+    connect(KGlobalAccel::self(), &KGlobalAccel::globalShortcutActiveChanged,
+            this, [this](QAction *action, bool active) {
+                if (action == m_action && !active) {
+                    emit deactivated();
+                }
+            });
+#endif
 }
 
 bool KGlobalAccelShortcutBinder::supported() const
@@ -43,6 +53,9 @@ QAction *KGlobalAccelShortcutBinder::makeShortcutAction()
 {
     delete m_action;
     m_action = new QAction(QStringLiteral("Toggle dictation"), this);
+    // Holding the keys must not re-trigger: kglobalaccel drops its Repeated
+    // states when the action opts out of auto-repeat.
+    m_action->setAutoRepeat(false);
     m_action->setObjectName(QString::fromLatin1(shortcutAction));
     m_action->setProperty("componentName", QString::fromLatin1(shortcutComponent));
     m_action->setProperty("componentDisplayName", QStringLiteral("Speecher"));

@@ -448,6 +448,13 @@ bool ApplicationController::sessionActive() const
 // the press toggles, and a long enough hold ends the session it started.
 void ApplicationController::handleShortcutPressed()
 {
+    // Key auto-repeat while held must not toggle again. Only a platform that
+    // has delivered a release can tell a repeat from a second tap; elsewhere
+    // a swallowed press could never be unstuck.
+    if (m_shortcutDown && m_shortcutReleaseSeen) {
+        return;
+    }
+    m_shortcutDown = true;
     m_shortcutPress.start();
     m_shortcutStartedSession = !sessionActive() && !m_microphoneStartPending;
     toggle();
@@ -455,6 +462,8 @@ void ApplicationController::handleShortcutPressed()
 
 void ApplicationController::handleShortcutReleased()
 {
+    m_shortcutDown = false;
+    m_shortcutReleaseSeen = true;
     if (!m_shortcutStartedSession) {
         return;
     }

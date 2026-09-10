@@ -41,6 +41,10 @@ private slots:
                          const QString &shortcutId,
                          qulonglong timestamp,
                          const QVariantMap &options);
+    void handleDeactivated(const QDBusObjectPath &sessionHandle,
+                           const QString &shortcutId,
+                           qulonglong timestamp,
+                           const QVariantMap &options);
 
 private:
     enum class RequestKind {

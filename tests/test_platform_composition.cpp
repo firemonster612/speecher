@@ -330,6 +330,54 @@ private slots:
         QVERIFY(hidden.isEmpty());
     }
 
+    // A held key's auto-repeat presses arrive as extra activated() signals on
+    // some Linux desktops. Once the platform has proven it reports releases,
+    // repeats between a press and its release must not toggle the session off.
+    void shortcutAutoRepeatDoesNotToggle()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        const bool setupCompleted = controller.settings()->setupCompleted();
+        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(setupCompleted); });
+        controller.settings()->setSetupCompleted(true);
+
+        // A completed tap teaches the controller that releases arrive here.
+        emit platform->binder->activated();
+        QVERIFY(platform->microphoneAnswer);
+        platform->microphoneAnswer(true);
+        emit platform->binder->deactivated();
+        controller.stopListening();
+        QCOMPARE(controller.session()->state(), DictationState::Idle);
+
+        platform->microphoneAnswer = nullptr;
+        emit platform->binder->activated();
+        QVERIFY(platform->microphoneAnswer);
+        platform->microphoneAnswer(true);
+        QCOMPARE(controller.session()->state(), DictationState::Starting);
+        emit platform->binder->activated();
+        QCOMPARE(controller.session()->state(), DictationState::Starting);
+        QTest::qSleep(410);
+        emit platform->binder->deactivated();
+        QCOMPARE(controller.session()->state(), DictationState::Idle);
+    }
+
+    // A desktop that never reports releases keeps plain toggling: the second
+    // press cannot be told apart from auto-repeat, and stopping must win.
+    void secondPressWithoutReleaseStillToggles()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        const bool setupCompleted = controller.settings()->setupCompleted();
+        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(setupCompleted); });
+        controller.settings()->setSetupCompleted(true);
+        emit platform->binder->activated();
+        QVERIFY(platform->microphoneAnswer);
+        platform->microphoneAnswer(true);
+        QCOMPARE(controller.session()->state(), DictationState::Starting);
+        emit platform->binder->activated();
+        QCOMPARE(controller.session()->state(), DictationState::Idle);
+    }
+
     void stopCancelsPendingMicrophoneStart()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());

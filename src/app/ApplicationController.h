@@ -140,6 +140,8 @@ private:
     // stopped one must not restart it.
     QElapsedTimer m_shortcutPress;
     bool m_shortcutStartedSession = false;
+    bool m_shortcutDown = false;
+    bool m_shortcutReleaseSeen = false;
     quint64 m_microphoneStartGeneration = 0;
     bool m_microphoneStartPending = false;
 };

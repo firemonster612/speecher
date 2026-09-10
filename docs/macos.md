@@ -67,8 +67,10 @@ user-consented APIs for all of it:
 1. **In-app global hotkeys with push-to-talk.** Carbon `RegisterEventHotKey`
    delivers both press and release, so tap-to-toggle and hold-to-talk work
    without binding anything in a desktop settings app. On Wayland the
-   shortcut lives in the compositor and release events are only available
-   through the GlobalShortcuts portal where implemented.
+   shortcut lives in the compositor: Speecher gets hold-to-talk on Plasma and
+   GNOME 48+, which forward key release through the GlobalShortcuts portal and
+   KGlobalAccel, and falls back to tap-to-toggle on backends that report only
+   the press.
 2. **Target identification.** `NSWorkspace.frontmostApplication` plus the
    Accessibility focused element give Speecher the app, window title, and
    focused control every time. Wayland has no foreign-window API.
