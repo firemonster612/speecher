@@ -448,9 +448,16 @@ bool ApplicationController::sessionActive() const
 // the press toggles, and a long enough hold ends the session it started.
 void ApplicationController::handleShortcutPressed()
 {
-    // Key auto-repeat while held must not toggle again. Only a platform that
-    // has delivered a release can tell a repeat from a second tap; elsewhere
-    // a swallowed press could never be unstuck.
+    // Key auto-repeat while held must not toggle again. A second press with no
+    // release between it and the first is ambiguous: auto-repeat of a held key
+    // (ignore) or a deliberate re-press on a desktop that never reports release
+    // (toggle). The signals are identical, so the first gesture after launch
+    // cannot satisfy both. We bias toward toggle until a release proves the
+    // platform reports them: a wrongly swallowed press on a no-release desktop
+    // could never be unstuck, whereas the mis-bias only costs the very first
+    // hold, and only on a backend that streams auto-repeat as extra presses
+    // (KGlobalAccel suppresses those at the binder; today's portal backends
+    // fire once). handleShortcutReleased latches the guard on for good.
     if (m_shortcutDown && m_shortcutReleaseSeen) {
         return;
     }

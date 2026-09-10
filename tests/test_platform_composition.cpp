@@ -361,8 +361,14 @@ private slots:
         QCOMPARE(controller.session()->state(), DictationState::Idle);
     }
 
-    // A desktop that never reports releases keeps plain toggling: the second
-    // press cannot be told apart from auto-repeat, and stopping must win.
+    // Before any release is seen the guard is intentionally inert, so this same
+    // input (two presses, no release) also stands in for the first-ever hold on
+    // a backend that streams auto-repeat: it toggles off, the irreducible cost
+    // of the toggle bias. Every hold after the first release is covered by
+    // shortcutAutoRepeatDoesNotToggle. The assertion here guards the
+    // m_shortcutReleaseSeen condition against being broadened away: a bare
+    // m_shortcutDown guard would swallow this press forever on a no-release
+    // desktop, stranding the session.
     void secondPressWithoutReleaseStillToggles()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
