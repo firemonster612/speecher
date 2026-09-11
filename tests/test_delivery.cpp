@@ -848,6 +848,48 @@ private slots:
         QVERIFY(attempts.isEmpty());
     }
 
+    // A GPU terminal that never reached the a11y bus is identified by the
+    // compositor instead. Accessibility cannot confirm focus, but the
+    // compositor already said the window is active, so delivery must still send
+    // the terminal chord rather than falling back to the global standard paste.
+    void compositorActiveTerminalPastesTerminalChordWithoutAtspiFocus()
+    {
+        QList<QString> attempts;
+        QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
+        PasteMethod usedMethod = PasteMethod::ClipboardOnly;
+        FakeTargetProvider targetProvider;
+        targetProvider.focused = false;
+        TextDelivery delivery([&attempts, &results, &usedMethod](
+                                  const QString &method,
+                                  const OutputSettings &,
+                                  PasteMethod pasteMethod) {
+            usedMethod = pasteMethod;
+            return std::make_unique<FakeBackend>(method, &attempts, &results);
+        }, &targetProvider);
+
+        OutputSettings settings;
+        settings.method = QString::fromLatin1(OutputMethod::Automatic);
+        settings.ydotoolEnabled = true;
+        settings.pasteRules = {
+            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
+            {PasteRuleScope::Global, QString(), PasteMethod::StandardPaste, true},
+        };
+        Target target;
+        target.applicationId = QStringLiteral("com.mitchellh.ghostty");
+        target.category = AppCategory::Terminal;
+        target.terminalHost = true;
+        target.compositorActive = true;
+
+        const DeliveryResult result = delivery.deliver(
+            settings,
+            makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
+            target);
+
+        QCOMPARE(attempts, QList<QString>({virtualKeyboardMethod()}));
+        QCOMPARE(usedMethod, PasteMethod::TerminalPaste);
+        QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
+    }
+
     void outputUsesSavedAccessibleTargetAfterFocusChanges()
     {
         QList<QString> attempts;

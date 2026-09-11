@@ -11,6 +11,8 @@ class CorrectionObserver;
 class TargetSnapshot;
 }
 
+class KWinActiveWindow;
+
 class AtSpiTargetProvider final : public TargetProvider {
     Q_OBJECT
 
@@ -26,8 +28,11 @@ public:
 
 private:
     void clearAccessible();
+    Target compositorFallbackTarget(const QList<AppRecognitionRule> &recognitionRules);
+
     std::unique_ptr<atspi::TargetSnapshot> m_snapshot;
     std::unique_ptr<atspi::CorrectionObserver> m_correctionObserver;
+    std::unique_ptr<KWinActiveWindow> m_activeWindow;
     bool m_correctionObservationEnabled = true;
 };
 

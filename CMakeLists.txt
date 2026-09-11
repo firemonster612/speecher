@@ -374,6 +374,7 @@ set(SPEECHER_PLATFORM_LINUX_SOURCES
   src/output/YdotoolSetup.cpp
   src/platform/AtSpiTargetProvider.cpp
   src/platform/KGlobalAccelShortcutBinder.cpp
+  src/platform/KWinActiveWindow.cpp
   src/platform/KeywatchSetup.cpp
   src/platform/KeywatchShortcutBinder.cpp
   src/platform/LinuxDesktopIntegration.cpp
@@ -398,6 +399,7 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
   src/output/YdotoolSetup.h
   src/platform/AtSpiTargetProvider.h
   src/platform/KGlobalAccelShortcutBinder.h
+  src/platform/KWinActiveWindow.h
   src/platform/KeywatchSetup.h
   src/platform/KeywatchShortcutBinder.h
   src/platform/LinuxDesktopIntegration.h

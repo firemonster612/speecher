@@ -85,6 +85,10 @@ struct Target {
     bool secure = false;
     bool terminalHost = false;
     bool aiCodingToolActive = false;
+    // The compositor named this the active window when accessibility could not
+    // identify it. Delivery trusts it as the focus target without an AT-SPI
+    // match, so a terminal that never reaches the a11y bus still pastes.
+    bool compositorActive = false;
 
     bool hasIdentity() const;
     bool hasSelection() const;

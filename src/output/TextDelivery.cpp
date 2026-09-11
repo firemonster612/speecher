@@ -236,6 +236,7 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
     const bool directInsertOnly = ruleDirectInsert || outputDirectInsert;
     const bool targetFocused = pasteMethod != PasteMethod::ClipboardOnly
         && (currentFocusFallback
+            || target.compositorActive
             || (m_targetProvider && m_targetProvider->stillFocused(target)));
 
     QString clipboardWarning;
