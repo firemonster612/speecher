@@ -61,7 +61,7 @@ with sync_playwright() as driver:
         editor.fill('')
         editor.click()
         frontmost = subprocess.run(['osascript', '-e', 'tell application "System Events" to get name of first application process whose frontmost is true'], check=True, capture_output=True, text=True, timeout=10).stdout.strip()
-        assert frontmost == 'T3 Code', f'Wrong foreground app: {frontmost!r}'
+        assert frontmost == 'T3 Code (Alpha)', f'Wrong foreground app: {frontmost!r}'
         if attempt == 0:
             subprocess.run([app, 'start'], check=True, timeout=15)
         else:
