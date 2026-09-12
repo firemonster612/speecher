@@ -74,13 +74,15 @@ private slots:
         QCOMPARE(KeywatchSetup::evaluate(installed).state,
                  KeywatchSetupState::DaemonNotRunning);
 
-        KeywatchProbeFacts running = installed;
-        running.socketExists = true;
-        running.userInGroup = true;
-        QCOMPARE(KeywatchSetup::evaluate(running).state, KeywatchSetupState::NeedsSignOut);
+        // The socket is up but not yet reachable: still not ready.
+        KeywatchProbeFacts listening = installed;
+        listening.socketExists = true;
+        QCOMPARE(KeywatchSetup::evaluate(listening).state,
+                 KeywatchSetupState::DaemonNotRunning);
 
-        KeywatchProbeFacts ready = running;
-        ready.currentSessionInGroup = true;
+        // A world-connectable socket needs no group or sign-out: once it exists
+        // and is writable the helper is ready straight away.
+        KeywatchProbeFacts ready = listening;
         ready.socketWritable = true;
         const KeywatchSetupStatus status = KeywatchSetup::evaluate(ready);
         QCOMPARE(status.state, KeywatchSetupState::Ready);

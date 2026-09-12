@@ -9,7 +9,6 @@ namespace speecher {
 enum class KeywatchSetupState {
     NotInstalled,
     DaemonNotRunning,
-    NeedsSignOut,
     Ready,
 };
 
@@ -17,8 +16,6 @@ struct KeywatchProbeFacts {
     bool socketUnitInstalled = false;
     bool socketExists = false;
     bool socketWritable = false;
-    bool userInGroup = false;
-    bool currentSessionInGroup = false;
 };
 
 struct KeywatchSetupStatus {

@@ -22,7 +22,6 @@ using namespace speecher::helpers;
 
 namespace {
 
-constexpr std::string_view groupName = "speecher-keywatch";
 constexpr std::string_view userName = "speecher-keywatch";
 constexpr std::string_view daemonInstallPath = "/usr/local/lib/speecher/speecher-keywatchd";
 constexpr std::string_view socketUnitPath = "/etc/systemd/system/speecher-keywatchd.socket";
@@ -33,11 +32,14 @@ constexpr std::string_view socketText =
     "[Unit]\n"
     "Description=Speecher key-watch helper socket\n"
     "\n"
+    // World-connectable: the daemon authorizes each peer by its live login
+    // session (SO_PEERCRED + sd_uid_get_state), so no login-group membership
+    // and no sign-out are needed to reach it. A connecting process with no
+    // active session is refused by the daemon before it can watch anything.
     "[Socket]\n"
     "ListenStream=/run/speecher-keywatchd/socket\n"
-    "SocketMode=0660\n"
+    "SocketMode=0666\n"
     "SocketUser=root\n"
-    "SocketGroup=speecher-keywatch\n"
     "\n"
     "[Install]\n"
     "WantedBy=sockets.target\n";
@@ -150,19 +152,15 @@ bool install(const std::string &user, std::string &error)
         transaction.appendToError(error);
         return false;
     };
+    // user is validated by main() and kept for the CLI contract, but the login
+    // user no longer joins any group: the daemon gates the socket by session.
+    (void)user;
     bool userCreated = false;
     if (!ensureSystemUser(userCreated, error)) {
         return failed();
     }
     if (userCreated) {
         transaction.record("created system user " + std::string(userName));
-    }
-    bool userAdded = false;
-    if (!addUserToGroup(groupName, user, userAdded, error)) {
-        return failed();
-    }
-    if (userAdded) {
-        transaction.record("added " + user + " to " + std::string(groupName));
     }
     if (!copyDaemon(error)) {
         return failed();
@@ -185,8 +183,8 @@ bool install(const std::string &user, std::string &error)
 
 bool remove(const std::string &user, std::string &error)
 {
+    (void)user; // No login-user group membership to undo anymore.
     run("systemctl", {"disable", "--now", std::string(socketName)}, error, true, true);
-    run("gpasswd", {"-d", user, std::string(groupName)}, error, true, true);
     if (!removeFileIfPresent(std::string(socketUnitPath), error)
         || !removeFileIfPresent(std::string(serviceUnitPath), error)
         || !removeFileIfPresent(std::string(daemonInstallPath), error)) {

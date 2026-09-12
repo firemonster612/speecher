@@ -27,6 +27,7 @@ enum class Refusal : std::uint8_t {
     KeyNotPermitted = 2,
     AlreadyWatching = 3,
     TooManyRequests = 4,
+    NoSession = 5,
 };
 
 struct WatchReply {
