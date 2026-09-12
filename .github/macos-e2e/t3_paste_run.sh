@@ -2,6 +2,7 @@
 source "$(dirname "$0")/common.sh"
 TCC_SEED="$(dirname "$0")/tcc_seed.py"
 baseline_reset
+defaults write "$DOMAIN" shortcuts.toggleDictation -string "Meta+Alt+D"
 seed_common_tcc || exit 1
 case_begin T3-PASTE
 export APP_BIN

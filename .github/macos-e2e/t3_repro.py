@@ -52,18 +52,35 @@ with sync_playwright() as driver:
         page.wait_for_timeout(2000)
     capture('composer')
     editor = page.get_by_test_id('composer-editor')
-    editor.click()
     app = os.environ['APP_BIN']
-    subprocess.run([app, 'start'], check=True, timeout=15)
-    page.wait_for_timeout(2500)
-    subprocess.run([app, 'stop'], check=True, timeout=15)
-    for attempt in range(100):
+    def shortcut():
+        subprocess.run(['osascript', '-e', 'tell application "System Events" to keystroke "d" using {control down, option down}'], check=True, timeout=10)
+    results = []
+    for attempt in range(5):
+        page.bring_to_front()
+        editor.fill('')
+        editor.click()
+        frontmost = subprocess.run(['osascript', '-e', 'tell application "System Events" to get name of first application process whose frontmost is true'], check=True, capture_output=True, text=True, timeout=10).stdout.strip()
+        assert frontmost == 'T3 Code', f'Wrong foreground app: {frontmost!r}'
+        if attempt == 0:
+            subprocess.run([app, 'start'], check=True, timeout=15)
+        else:
+            shortcut()
+        page.wait_for_timeout(2500)
         status = subprocess.run([app, 'status'], capture_output=True, text=True, timeout=5)
-        if status.stdout.strip().endswith('idle'):
-            break
-        page.wait_for_timeout(200)
-    capture('after-dictation')
-    actual = editor.inner_text().strip()
-    copied = subprocess.run(['pbpaste'], capture_output=True, text=True, check=True).stdout
-    (out / 'delivery.json').write_text(json.dumps({'editor': actual, 'clipboard': copied}, indent=2))
-    assert actual == 'The quick brown fox.', f'Text did not reach T3 Code: {actual!r}; clipboard: {copied!r}'
+        assert status.stdout.strip().endswith('listening'), status.stdout
+        if attempt == 0:
+            subprocess.run([app, 'stop'], check=True, timeout=15)
+        else:
+            shortcut()
+        for poll in range(100):
+            status = subprocess.run([app, 'status'], capture_output=True, text=True, timeout=5)
+            if status.stdout.strip().endswith('idle'):
+                break
+            page.wait_for_timeout(200)
+        capture(f'after-dictation-{attempt}')
+        actual = editor.inner_text().strip()
+        copied = subprocess.run(['pbpaste'], capture_output=True, text=True, check=True).stdout
+        results.append({'attempt': attempt, 'trigger': 'cli' if attempt == 0 else 'shortcut', 'frontmost': frontmost, 'editor': actual, 'clipboard': copied})
+        (out / 'delivery.json').write_text(json.dumps(results, indent=2))
+    assert all(result['editor'] == 'The quick brown fox jumps over the lazy dog and keeps going.' for result in results), results
