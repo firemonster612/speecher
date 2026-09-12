@@ -211,6 +211,7 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
     if (!click.isEmpty()) {
         auto *button = m_appWindow->findChild<QPushButton *>(click);
         if (!button) {
+            qWarning("SPEECHER_GRAB_CLICK names no button: %s", qPrintable(click));
             return false;
         }
         button->click();
