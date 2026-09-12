@@ -4,6 +4,7 @@
 
 #include <QKeySequence>
 #include <QPushButton>
+#include <QSet>
 #include <QWidget>
 
 #include <optional>
@@ -17,61 +18,53 @@ namespace speecher {
 
 class ApplicationController;
 
-// Records one physical key, a bare modifier included, which QKeySequenceEdit
-// cannot capture. While armed it takes focus and reports the first key pressed
-// as a KeyboardEvent.code, resolved from the key's evdev scan code.
-class SingleKeyCaptureButton final : public QPushButton {
+// Records the dictation shortcut as one button: click to arm, press a key
+// combination or a single key, and it applies immediately. A combination
+// commits as soon as its non-modifier arrives; a bare modifier — which
+// QKeySequenceEdit cannot capture — commits on release, once it is clear no
+// other key is joining it, resolved to a KeyboardEvent.code from its evdev
+// scan code. One control replaces the earlier key-combination and single-key
+// button pair, which presented one shortcut as two different settings.
+class ShortcutCaptureButton final : public QPushButton {
     Q_OBJECT
 
 public:
-    explicit SingleKeyCaptureButton(QWidget *parent = nullptr);
+    explicit ShortcutCaptureButton(QWidget *parent = nullptr);
+    // The currently bound shortcut, shown while idle; empty shows
+    // "Set shortcut".
+    void setShortcutDisplay(const QString &display);
+    // Where the desktop registers combinations, a bare non-modifier such as
+    // F13 binds as a plain QKeySequence through that service; without one it
+    // can only bind as a watched single key.
+    void setCombinationsAvailable(bool available);
 
 signals:
-    void keyCaptured(const ShortcutBinding &binding);
-    // While armed the bound key must not fire dictation; the page suspends
-    // the binder for the duration, as the mac and Windows recorders do.
+    void bindingCaptured(const ShortcutBinding &binding);
+    // While armed the bound shortcut must not fire dictation; the page
+    // suspends the binder for the duration, as the mac and Windows recorders
+    // do.
     void armedChanged(bool armed);
     // A key with no vocabulary row (a media key): the page says so inline.
     void unknownKeyPressed();
 
 protected:
     void keyPressEvent(QKeyEvent *event) override;
-    void focusOutEvent(QFocusEvent *event) override;
-
-private:
-    void setArmed(bool armed);
-
-    bool m_armed = false;
-};
-
-// Records a key combination as one button: click to arm, press the shortcut,
-// and it applies immediately. Replaces the QKeySequenceEdit-plus-apply-button
-// pair, whose separate "Set shortcut" step users missed.
-class ShortcutCaptureButton final : public QPushButton {
-    Q_OBJECT
-
-public:
-    explicit ShortcutCaptureButton(QWidget *parent = nullptr);
-    // The currently bound combination, shown while idle; empty shows
-    // "Set shortcut".
-    void setShortcutDisplay(const QString &display);
-
-signals:
-    void sequenceCaptured(const QKeySequence &sequence);
-    // While armed the bound shortcut must not fire dictation; the page
-    // suspends the binder for the duration, as the single-key recorder does.
-    void armedChanged(bool armed);
-
-protected:
-    void keyPressEvent(QKeyEvent *event) override;
+    void keyReleaseEvent(QKeyEvent *event) override;
     void focusOutEvent(QFocusEvent *event) override;
 
 private:
     void setArmed(bool armed);
     QString idleText() const;
+    void commitSingleKey(quint32 nativeScanCode);
 
     bool m_armed = false;
+    bool m_combinationsAvailable = true;
     QString m_display;
+    // Modifiers currently held while armed, by native scan code. A lone entry
+    // is the commit-on-release candidate; a second one voids the candidate (a
+    // modifier-only chord is not a shortcut) until all are released again.
+    QSet<quint32> m_heldModifiers;
+    quint32 m_pendingModifier = 0;
 };
 
 QString linuxGlobalShortcutManualInstruction();
@@ -111,8 +104,7 @@ protected:
 
 private:
     void installIntegration();
-    void applyShortcut(const QKeySequence &sequence);
-    void saveSingleKey(const ShortcutBinding &binding);
+    void applyBinding(const ShortcutBinding &binding);
     void chooseShortcut();
     void installKeyHelper();
     void refresh();
@@ -125,16 +117,14 @@ private:
     QString m_appImagePath;
     QString m_binaryPath;
     bool m_waylandSession = false;
-    QWidget *m_keySequenceControls = nullptr;
+    QWidget *m_captureControls = nullptr;
     QWidget *m_portalControls = nullptr;
     QWidget *m_manualControls = nullptr;
-    QWidget *m_singleKeyControls = nullptr;
     QWidget *m_keyHelperControls = nullptr;
     ShortcutCaptureButton *m_setShortcut = nullptr;
     QPushButton *m_chooseShortcut = nullptr;
-    SingleKeyCaptureButton *m_captureKey = nullptr;
-    QLabel *m_singleKeyLead = nullptr;
-    QLabel *m_singleKeyWarning = nullptr;
+    QLabel *m_captureLead = nullptr;
+    QLabel *m_captureFeedback = nullptr;
     QWidget *m_activationModeRow = nullptr;
     QComboBox *m_activationMode = nullptr;
     QPushButton *m_keyHelperButton = nullptr;

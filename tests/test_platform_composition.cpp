@@ -612,13 +612,13 @@ private slots:
         for (const QLabel *label : page.findChildren<QLabel *>()) {
             hasGuidance = hasGuidance
                 || label->text() == QStringLiteral(
-                    "Choose a key combination to use for dictation.");
+                    "Press a key combination, or a single key such as Right Alt or F13.");
         }
         QVERIFY(hasGuidance);
 
         page.show();
         capture->click();
-        QCOMPARE(capture->text(), QStringLiteral("Press shortcut…"));
+        QCOMPARE(capture->text(), QStringLiteral("Press a key or key combination…"));
         // Recording must not fire the bound shortcut.
         QCOMPARE(platform->binder->suspendCount, 1);
         const QKeySequence chosen(Qt::CTRL | Qt::ALT | Qt::Key_Space);
@@ -643,7 +643,7 @@ private slots:
         platform->binder->setShortcutError = QStringLiteral("That shortcut is already in use.");
         capture->click();
         QTest::keyClick(capture, Qt::Key_D, Qt::ControlModifier);
-        QCOMPARE(page.findChild<QLabel *>(QStringLiteral("globalShortcutStatus"))->text(),
+        QCOMPARE(page.findChild<QLabel *>(QStringLiteral("shortcutCaptureFeedback"))->text(),
                  QStringLiteral("That shortcut is already in use."));
         // The failed capture leaves the button naming what is still bound.
         QCOMPARE(capture->text(), QStringLiteral("Ctrl+Alt+Space"));
@@ -778,8 +778,18 @@ private slots:
         auto *manual = page.findChild<QWidget *>(QStringLiteral("manualShortcut"));
         QVERIFY(manual);
         QVERIFY(!manual->isHidden());
-        QVERIFY(page.findChild<QWidget *>(QStringLiteral("keySequenceShortcut"))->isHidden());
         QVERIFY(page.findChild<QWidget *>(QStringLiteral("portalShortcut"))->isHidden());
+        // The capture stays on offer: a single key needs no desktop service.
+        auto *captureBlock = page.findChild<QWidget *>(QStringLiteral("shortcutCapture"));
+        QVERIFY(captureBlock);
+        QVERIFY(!captureBlock->isHidden());
+        bool hasSingleKeyLead = false;
+        for (const QLabel *label : captureBlock->findChildren<QLabel *>()) {
+            hasSingleKeyLead = hasSingleKeyLead
+                || label->text() == QStringLiteral(
+                    "Press a single key, such as Right Alt or F13, to use on its own.");
+        }
+        QVERIFY(hasSingleKeyLead);
         QCOMPARE(page.findChildren<QGroupBox *>().size(), 0);
 
         bool hasInstruction = false;

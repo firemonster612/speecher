@@ -26,26 +26,6 @@ using namespace winrt::Microsoft::UI::Xaml;
 using namespace winrt::Microsoft::UI::Xaml::Controls;
 using winrt::Windows::System::VirtualKey;
 
-bool isModifierKey(VirtualKey key)
-{
-    switch (key) {
-    case VirtualKey::Control:
-    case VirtualKey::LeftControl:
-    case VirtualKey::RightControl:
-    case VirtualKey::Menu:
-    case VirtualKey::LeftMenu:
-    case VirtualKey::RightMenu:
-    case VirtualKey::Shift:
-    case VirtualKey::LeftShift:
-    case VirtualKey::RightShift:
-    case VirtualKey::LeftWindows:
-    case VirtualKey::RightWindows:
-        return true;
-    default:
-        return false;
-    }
-}
-
 void bind(PaneHost &host, const VirtualKey key)
 {
     const int qtKey = ShortcutRecorder::qtKeyForVirtualKey(static_cast<int>(key));
@@ -76,10 +56,9 @@ void bind(PaneHost &host, const VirtualKey key)
 // extended byte is the vocabulary's win column, so bare modifiers record and
 // left is told from right. Saving is not gated on the typing warning; the
 // warning shows inline afterwards.
-void bindSingleKey(PaneHost &host, const winrt::Windows::UI::Core::CorePhysicalKeyStatus &keyStatus)
+void bindSingleKey(PaneHost &host, int scanCode)
 {
-    const PhysicalKey *key = physicalKeyForWin(
-        int(keyStatus.ScanCode) | (keyStatus.IsExtendedKey ? 0xE000 : 0));
+    const PhysicalKey *key = physicalKeyForWin(scanCode);
     if (!key) {
         host.shortcutProblem = QStringLiteral("That key cannot be a dictation key.");
         return;
@@ -127,6 +106,26 @@ int ShortcutRecorder::qtKeyForVirtualKey(int virtualKey)
     return QChar(static_cast<char16_t>(character & 0xFFFF)).toUpper().unicode();
 }
 
+bool ShortcutRecorder::isModifierKey(int virtualKey)
+{
+    switch (virtualKey) {
+    case VK_CONTROL:
+    case VK_LCONTROL:
+    case VK_RCONTROL:
+    case VK_MENU:
+    case VK_LMENU:
+    case VK_RMENU:
+    case VK_SHIFT:
+    case VK_LSHIFT:
+    case VK_RSHIFT:
+    case VK_LWIN:
+    case VK_RWIN:
+        return true;
+    default:
+        return false;
+    }
+}
+
 Qt::KeyboardModifiers ShortcutRecorder::heldModifiers()
 {
     Qt::KeyboardModifiers modifiers;
@@ -151,11 +150,11 @@ void ShortcutRecorder::setRecording(PaneHost &host, bool recording)
         return;
     }
     host.shortcutRecording = recording;
+    host.shortcutPendingModifier = 0;
     if (recording) {
         host.controller->suspendGlobalShortcut();
         return;
     }
-    host.shortcutRecordingSingleKey = false;
     const QString error = host.controller->resumeGlobalShortcut();
     if (!error.isEmpty()) {
         host.shortcutProblem = error;
@@ -174,50 +173,24 @@ void ShortcutRecorder::appendPane(const StackPanel &column, PaneHost &host)
         return header;
     }());
 
-    const bool recordingCombo = host.shortcutRecording && !host.shortcutRecordingSingleKey;
-    const bool recordingSingleKey = host.shortcutRecording && host.shortcutRecordingSingleKey;
     const QString display = host.controller->globalShortcut().displayText();
     Button recorder;
-    recorder.Content(box_value(recordingCombo
-                                   ? hstring(L"Type a shortcut…")
-                                   : hs(display.isEmpty() ? QStringLiteral("Record shortcut")
+    recorder.Content(box_value(host.shortcutRecording
+                                   ? hstring(L"Press a key or key combination…")
+                                   : hs(display.isEmpty() ? QStringLiteral("Set shortcut")
                                                           : display)));
     recorder.MinWidth(120);
     recorder.IsEnabled(host.controller->globalShortcutsSupported());
     recorder.Click([&host](const auto &, const auto &) {
         host.shortcutProblem.clear();
         host.shortcutNotice.clear();
-        const bool start = !host.shortcutRecording || host.shortcutRecordingSingleKey;
-        setRecording(host, false);
-        setRecording(host, start);
+        setRecording(host, !host.shortcutRecording);
         host.refresh();
     });
     // The pane is rebuilt to arm the recorder; without focus in the rebuilt
     // subtree the PreviewKeyDown below would never see a key.
-    if (recordingCombo) {
+    if (host.shortcutRecording) {
         recorder.Loaded([](const IInspectable &sender, const auto &) {
-            sender.as<Button>().Focus(FocusState::Programmatic);
-        });
-    }
-
-    Button singleKey;
-    singleKey.Content(box_value(recordingSingleKey ? hstring(L"Press a key…")
-                                                   : hstring(L"Record single key")));
-    singleKey.MinWidth(120);
-    singleKey.IsEnabled(host.controller->globalShortcutsSupported());
-    singleKey.Click([&host](const auto &, const auto &) {
-        host.shortcutProblem.clear();
-        host.shortcutNotice.clear();
-        const bool start = !host.shortcutRecordingSingleKey;
-        setRecording(host, false);
-        if (start) {
-            host.shortcutRecordingSingleKey = true;
-            setRecording(host, true);
-        }
-        host.refresh();
-    });
-    if (recordingSingleKey) {
-        singleKey.Loaded([](const IInspectable &sender, const auto &) {
             sender.as<Button>().Focus(FocusState::Programmatic);
         });
     }
@@ -242,12 +215,8 @@ void ShortcutRecorder::appendPane(const StackPanel &column, PaneHost &host)
     RowSnapshot recorderRow;
     recorderRow.id = QStringLiteral("shortcutRecorder");
     recorderRow.label = QStringLiteral("Dictation shortcut");
-    recorderRow.help = QStringLiteral("Hold it to dictate while it is down, or press and "
-                                      "release to start and press again to stop.");
-    RowSnapshot singleKeyRow;
-    singleKeyRow.id = QStringLiteral("shortcutSingleKey");
-    singleKeyRow.label = QStringLiteral("Single key");
-    singleKeyRow.help = QStringLiteral("Use one key on its own, such as Right Alt or F13.");
+    recorderRow.help = QStringLiteral(
+        "Press a key combination, or a single key such as Right Alt or F13.");
     RowSnapshot resetRow;
     resetRow.id = QStringLiteral("shortcutReset");
     resetRow.label = QStringLiteral("Reset");
@@ -255,7 +224,6 @@ void ShortcutRecorder::appendPane(const StackPanel &column, PaneHost &host)
 
     StackPanel rows;
     rows.Children().Append(rowGrid(recorderRow, recorder, host, false));
-    rows.Children().Append(rowGrid(singleKeyRow, singleKey, host, true));
     rows.Children().Append(rowGrid(resetRow, reset, host, true));
     StackPanel cards;
     cards.Spacing(4);
@@ -276,11 +244,8 @@ void ShortcutRecorder::appendPane(const StackPanel &column, PaneHost &host)
             note.Message(hs(host.shortcutProblem));
         } else if (host.shortcutRecording) {
             note.Severity(InfoBarSeverity::Informational);
-            note.Message(host.shortcutRecordingSingleKey
-                             ? hstring(L"Press any key, including a bare modifier such as "
-                                       L"Right Alt, or Escape to keep the current one.")
-                             : hstring(L"Press the keys you want, or Escape to keep the "
-                                       L"current one."));
+            note.Message(hstring(L"Press a key combination, a bare modifier such as "
+                                 L"Right Alt, or Escape to keep the current one."));
         } else {
             note.Severity(InfoBarSeverity::Informational);
             note.Message(hs(host.shortcutNotice));
@@ -288,7 +253,7 @@ void ShortcutRecorder::appendPane(const StackPanel &column, PaneHost &host)
         column.Children().Append(note);
     }
 
-    // The chord arrives on the pane rather than the button, so moving focus
+    // The keys arrive on the pane rather than the button, so moving focus
     // cannot end the recording early. Escape abandons it rather than becoming
     // the shortcut — so Escape itself is not recordable as a single key, like
     // the mac recorder.
@@ -296,25 +261,65 @@ void ShortcutRecorder::appendPane(const StackPanel &column, PaneHost &host)
         if (!host.shortcutRecording) {
             return;
         }
-        if (host.shortcutRecordingSingleKey) {
-            args.Handled(true);
-            const auto keyStatus = args.KeyStatus();
+        args.Handled(true);
+        if (args.Key() == VirtualKey::Escape) {
             setRecording(host, false);
-            if (args.Key() != VirtualKey::Escape) {
-                bindSingleKey(host, keyStatus);
-            }
             host.refresh();
             return;
         }
-        if (isModifierKey(args.Key())) {
+        const auto keyStatus = args.KeyStatus();
+        if (keyStatus.WasKeyDown) {
+            // A held key auto-repeats; only the first press counts.
+            return;
+        }
+        const int scanCode = int(keyStatus.ScanCode) | (keyStatus.IsExtendedKey ? 0xE000 : 0);
+        if (isModifierKey(static_cast<int>(args.Key()))) {
+            // A lone modifier commits on its release below; a second one makes
+            // a modifier-only chord, which is not a valid combination. The
+            // exception is AltGr, which Windows delivers as a synthetic Left
+            // Ctrl press followed by Right Alt: that pair is one physical key,
+            // so Right Alt stays capturable on AltGr layouts.
+            const bool altGr = host.shortcutPendingModifier == 0x1D && scanCode == 0xE038;
+            host.shortcutPendingModifier =
+                host.shortcutPendingModifier == 0 || altGr ? scanCode : -1;
+            return;
+        }
+        if (heldModifiers() != Qt::NoModifier) {
+            setRecording(host, false);
+            bind(host, args.Key());
+            host.refresh();
+            return;
+        }
+        // A bare key with no vocabulary row cannot be a dictation key; stay
+        // armed so another key can be tried.
+        if (!physicalKeyForWin(scanCode)) {
+            host.shortcutProblem = QStringLiteral("That key cannot be a dictation key.");
+            host.refresh();
+            return;
+        }
+        setRecording(host, false);
+        bindSingleKey(host, scanCode);
+        host.refresh();
+    });
+
+    column.PreviewKeyUp([&host](const IInspectable &, const Input::KeyRoutedEventArgs &args) {
+        if (!host.shortcutRecording) {
             return;
         }
         args.Handled(true);
-        setRecording(host, false);
-        if (args.Key() != VirtualKey::Escape) {
-            bind(host, args.Key());
+        const auto keyStatus = args.KeyStatus();
+        const int scanCode = int(keyStatus.ScanCode) | (keyStatus.IsExtendedKey ? 0xE000 : 0);
+        if (host.shortcutPendingModifier == scanCode) {
+            setRecording(host, false);
+            bindSingleKey(host, scanCode);
+            host.refresh();
+            return;
         }
-        host.refresh();
+        // Once every modifier is up an abandoned or chorded press is over; the
+        // next lone modifier can record again.
+        if (heldModifiers() == Qt::NoModifier) {
+            host.shortcutPendingModifier = 0;
+        }
     });
 }
 

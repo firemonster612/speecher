@@ -727,33 +727,33 @@ private struct ShortcutStep: View {
     @ObservedObject var flow: SetupFlowModel
     @ObservedObject var model: AppModel
     @StateObject private var recorder = ShortcutRecorder()
+    /// A key the recorder caught but could not bind (a media key); shown in
+    /// the footer while the recorder stays armed.
+    @State private var captureProblem = ""
 
     var body: some View {
         Form {
             Section {
                 Toggle("Set up a dictation shortcut", isOn: $flow.createShortcut)
-                LabeledContent("Key combination") {
-                    Button(comboCaption) {
-                        recorder.record(suspending: model) { characters, flags in
-                            flow.recordShortcut(characters: characters, flags: flags)
-                        }
-                    }
-                    .disabled(!flow.createShortcut)
-                }
                 LabeledContent {
-                    Button(singleKeyCaption) {
-                        recorder.recordSingleKey(suspending: model) { keyCode in
+                    Button(caption) {
+                        captureProblem = ""
+                        recorder.record(suspending: model, combination: { characters, flags in
+                            flow.recordShortcut(characters: characters, flags: flags)
+                        }, singleKey: { keyCode in
                             guard let code = model.keyCodeName(forMacKeyCode: keyCode) else {
+                                captureProblem = "That key cannot be a dictation key."
                                 return false
                             }
                             flow.recordSingleKey(code: code)
                             return true
-                        }
+                        })
                     }
                     .disabled(!flow.createShortcut)
                 } label: {
-                    Text("Single key")
-                    Text("One key on its own, such as Right Option or F13.")
+                    Text("Dictation shortcut")
+                    Text("Press a key combination, or a single key such as "
+                         + "Right Option or F13.")
                 }
                 if flow.pendingSingleKeyRefused, !model.accessibilityEnabled {
                     Button("Grant Accessibility Access") { flow.requestAccessibility() }
@@ -771,24 +771,17 @@ private struct ShortcutStep: View {
         .onDisappear { recorder.stop() }
     }
 
-    private var comboCaption: String {
-        if recorder.mode == .combination { return "Type a shortcut…" }
-        return flow.pendingShortcut.keyCode == nil ? flow.pendingShortcut.display
-                                                   : "Record Shortcut"
-    }
-
-    private var singleKeyCaption: String {
-        if recorder.mode == .singleKey { return "Press a key…" }
-        return flow.pendingShortcut.keyCode == nil ? "Record a Single Key"
-                                                   : flow.pendingShortcut.display
+    private var caption: String {
+        if recorder.recording { return "Press a key or key combination…" }
+        return flow.pendingShortcut.display
     }
 
     private var footnote: String {
-        if recorder.mode == .combination {
-            return "Press the keys you want, or Escape to keep the current one."
-        }
-        if recorder.mode == .singleKey {
-            return "Press any single key — a bare modifier like Right Option works — "
+        if recorder.recording {
+            if !captureProblem.isEmpty {
+                return captureProblem + " Try another, or press Escape to keep the current one."
+            }
+            return "Press the keys you want — a bare modifier like Right Option works — "
                 + "or Escape to keep the current one."
         }
         // A registration failure explains how to continue, so it outranks the
