@@ -26,9 +26,9 @@ with sync_playwright() as driver:
         (out / f'{name}.txt').write_text(page.locator('body').inner_text())
         (out / f'{name}.html').write_text(page.content())
     capture('initial')
-    for label in ['Skip for now', 'Continue', 'Get started', 'New thread', 'New project']:
+    for index, label in enumerate(['Continue', 'Continue', 'Do not import projects', 'Start coding', 'Add project']):
         button = page.get_by_role('button', name=label, exact=True)
-        if button.count() == 1 and button.is_visible() and button.is_enabled():
-            button.click()
+        if button.count() and button.first.is_visible() and button.first.is_enabled():
+            button.first.click()
             page.wait_for_timeout(1500)
-            capture(label.replace(' ', '-').lower())
+            capture(f'{index}-' + label.replace(' ', '-').lower())
