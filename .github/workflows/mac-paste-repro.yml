@@ -1,5 +1,7 @@
 name: macOS paste reproduction
 on:
+  push:
+    branches: [fix/macos-t3-paste]
   workflow_dispatch:
 permissions:
   contents: read
