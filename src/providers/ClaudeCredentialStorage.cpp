@@ -1,4 +1,5 @@
 #include "providers/ClaudeCredentialStorage.h"
+#include "providers/NativeCredentialStorage.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -52,18 +53,7 @@ QByteArray ClaudeCredentialStorage::read(QString *error) const
 {
 #ifdef Q_OS_MACOS
     if (!m_service.isEmpty()) {
-        UInt32 length = 0;
-        void *data = nullptr;
-        const OSStatus status = SecKeychainFindGenericPassword(nullptr, m_service.size(), m_service.constData(),
-                                                              m_account.size(), m_account.constData(),
-                                                              &length, &data, nullptr);
-        if (status != errSecSuccess) {
-            *error = QStringLiteral("Could not read Claude login from macOS Keychain (%1); run claude and use /login").arg(status);
-            return {};
-        }
-        const QByteArray bytes(static_cast<const char *>(data), length);
-        SecKeychainItemFreeContent(nullptr, data);
-        return bytes;
+        return readNativeCredential(m_service, m_account, error);
     }
 #endif
     QFile file(m_path);
@@ -74,23 +64,16 @@ QByteArray ClaudeCredentialStorage::read(QString *error) const
     return file.readAll();
 }
 
+bool ClaudeCredentialStorage::canWrite(const QByteArray &bytes, QString *error) const
+{
+    return m_service.isEmpty() || canWriteNativeCredential(m_service, m_account, bytes, error);
+}
+
 bool ClaudeCredentialStorage::write(const QByteArray &bytes, QString *error) const
 {
 #ifdef Q_OS_MACOS
     if (!m_service.isEmpty()) {
-        SecKeychainItemRef item = nullptr;
-        OSStatus status = SecKeychainFindGenericPassword(nullptr, m_service.size(), m_service.constData(),
-                                                        m_account.size(), m_account.constData(),
-                                                        nullptr, nullptr, &item);
-        if (status == errSecSuccess) {
-            status = SecKeychainItemModifyAttributesAndData(item, nullptr, bytes.size(), bytes.constData());
-            CFRelease(item);
-        }
-        if (status != errSecSuccess) {
-            *error = QStringLiteral("Could not save refreshed Claude login to macOS Keychain (%1)").arg(status);
-            return false;
-        }
-        return true;
+        return writeNativeCredential(m_service, m_account, bytes, error);
     }
 #endif
     QSaveFile destination(m_path);

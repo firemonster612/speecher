@@ -92,6 +92,18 @@ QString tokenUrl()
     return QString::fromLatin1(claudeOauthTokenUrl);
 }
 
+QJsonObject withClaudeOauth(QJsonObject root, const QString &accessToken, const QString &refreshToken,
+                            qint64 expiresAtMs, const QStringList &scopes)
+{
+    QJsonObject oauth = root.value(QStringLiteral("claudeAiOauth")).toObject();
+    oauth.insert(QStringLiteral("accessToken"), accessToken);
+    oauth.insert(QStringLiteral("refreshToken"), refreshToken);
+    oauth.insert(QStringLiteral("expiresAt"), double(expiresAtMs));
+    oauth.insert(QStringLiteral("scopes"), QJsonArray::fromStringList(scopes));
+    root.insert(QStringLiteral("claudeAiOauth"), oauth);
+    return root;
+}
+
 bool saveRefreshedCredentials(const ClaudeCredentialStorage &storage,
                               const QString &sourceRefreshToken,
                               const QString &accessToken,
@@ -119,17 +131,8 @@ bool saveRefreshedCredentials(const ClaudeCredentialStorage &storage,
         }
         return false;
     }
-    oauth.insert(QStringLiteral("accessToken"), accessToken);
-    oauth.insert(QStringLiteral("refreshToken"), refreshToken);
-    oauth.insert(QStringLiteral("expiresAt"), double(expiresAtMs));
-    QJsonArray scopeArray;
-    for (const QString &scope : scopes) {
-        scopeArray.append(scope);
-    }
-    oauth.insert(QStringLiteral("scopes"), scopeArray);
-    root.insert(QStringLiteral("claudeAiOauth"), oauth);
-
-    return storage.write(QJsonDocument(root).toJson(), error);
+    return storage.write(QJsonDocument(withClaudeOauth(root, accessToken, refreshToken, expiresAtMs, scopes))
+                             .toJson(QJsonDocument::Compact), error);
 }
 
 bool refreshClaudeAuth(const ClaudeCredentialStorage &storage, const ClaudeCredentialResult &credentials, QString *error)
@@ -144,6 +147,11 @@ bool refreshClaudeAuth(const ClaudeCredentialStorage &storage, const ClaudeCrede
     const QStringList requestedScopes = credentials.scopes.isEmpty()
         ? defaultOauthScopes()
         : credentials.scopes;
+    const QByteArray current = storage.read(error);
+    if (!error->isEmpty()) return false;
+    const QJsonObject preflight = withClaudeOauth(QJsonDocument::fromJson(current).object(),
+        credentials.accessToken, credentials.refreshToken, QDateTime::currentMSecsSinceEpoch(), requestedScopes);
+    if (!storage.canWrite(QJsonDocument(preflight).toJson(QJsonDocument::Compact), error)) return false;
     const QJsonObject body{
         {QStringLiteral("grant_type"), QStringLiteral("refresh_token")},
         {QStringLiteral("refresh_token"), credentials.refreshToken},

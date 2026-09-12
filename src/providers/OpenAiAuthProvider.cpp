@@ -4,21 +4,14 @@
 
 #include "core/SecretStore.h"
 #include "providers/CliProxyCredentials.h"
+#include "providers/CodexCredentialStorage.h"
 
-#include <QDir>
 #include <QDateTime>
-#include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLockFile>
 #include <QProcessEnvironment>
-#include <QSaveFile>
-#include <QTemporaryFile>
 #include <QTimeZone>
-
-#ifdef Q_OS_WIN
-#include <windows.h>
-#endif
 
 namespace speecher {
 
@@ -85,15 +78,6 @@ static QString envValue(const QStringList &names)
     return {};
 }
 
-static QString codexAuthPath()
-{
-    const QString testPath = qEnvironmentVariable("SPEECHER_TEST_CODEX_AUTH_PATH");
-    if (!testPath.isEmpty()) {
-        return testPath;
-    }
-    return QDir::homePath() + QStringLiteral("/.codex/auth.json");
-}
-
 static qint64 jwtExpirySecs(const QString &jwt)
 {
     const QStringList parts = jwt.split(QLatin1Char('.'));
@@ -122,31 +106,33 @@ static int codexRefreshTimeoutMs()
     return ok && timeoutMs > 0 ? timeoutMs : 15000;
 }
 
-static bool refreshCodexAuth(QString *error)
+static bool sameCodexLogin(const QJsonObject &before, const QJsonObject &current)
+{
+    if (before.value(QStringLiteral("auth_mode")) != current.value(QStringLiteral("auth_mode"))) return false;
+    const QJsonObject previousTokens = before.value(QStringLiteral("tokens")).toObject();
+    const QJsonObject currentTokens = current.value(QStringLiteral("tokens")).toObject();
+    for (const auto *field : {"access_token", "refresh_token", "id_token", "account_id"}) {
+        if (previousTokens.value(QLatin1String(field)) != currentTokens.value(QLatin1String(field))) return false;
+    }
+    return true;
+}
+
+static bool refreshCodexAuth(const CodexCredentialStorage &storage, QString *error)
 {
     // Refresh straight against the OAuth token endpoint instead of spawning
     // the Codex CLI: `codex exec` pays CLI startup plus a full model request
     // just to trigger the same refresh_token grant.
-    const QString authPath = codexAuthPath();
-    QLockFile lock(authPath + QStringLiteral(".lock"));
+    QLockFile lock(storage.lockPath());
     if (!lock.tryLock(1000)) {
         if (error) {
-            *error = QStringLiteral("Could not lock the Codex auth file for refresh");
+            *error = QStringLiteral("Could not lock Codex credentials for refresh");
         }
         return false;
     }
 
-    QJsonObject root;
-    {
-        QFile file(authPath);
-        if (!file.open(QIODevice::ReadOnly)) {
-            if (error) {
-                *error = QStringLiteral("No Codex auth file; sign in with codex login");
-            }
-            return false;
-        }
-        root = QJsonDocument::fromJson(file.readAll()).object();
-    }
+    const QByteArray original = storage.read(error);
+    if (!error->isEmpty()) return false;
+    QJsonObject root = QJsonDocument::fromJson(original).object();
     QJsonObject tokens = root.value(QStringLiteral("tokens")).toObject();
     if (!jwtExpired(tokens.value(QStringLiteral("access_token")).toString().trimmed())) {
         return true;
@@ -158,6 +144,9 @@ static bool refreshCodexAuth(QString *error)
         }
         return false;
     }
+
+    root.insert(QStringLiteral("last_refresh"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+    if (!storage.canWrite(QJsonDocument(root).toJson(QJsonDocument::Compact), error)) return false;
 
     const QString overrideUrl = qEnvironmentVariable("SPEECHER_CODEX_TOKEN_URL");
     const OauthRefreshResult refreshed = CliProxyCredentials::oauthRefresh(
@@ -173,6 +162,16 @@ static bool refreshCodexAuth(QString *error)
         return false;
     }
 
+    // A CLI login or logout can occur while the token request is in flight.
+    // Leave its document intact and let the caller read the current login.
+    const QByteArray current = storage.read(error);
+    if (!error->isEmpty()) return false;
+    const QJsonObject currentRoot = QJsonDocument::fromJson(current).object();
+    if (!sameCodexLogin(root, currentRoot)) return true;
+    // Metadata and formatting edits do not supersede a rotated OAuth token.
+    root = currentRoot;
+    tokens = root.value(QStringLiteral("tokens")).toObject();
+
     tokens.insert(QStringLiteral("access_token"), refreshed.accessToken);
     if (!refreshed.refreshToken.isEmpty()) {
         tokens.insert(QStringLiteral("refresh_token"), refreshed.refreshToken);
@@ -184,72 +183,14 @@ static bool refreshCodexAuth(QString *error)
     root.insert(QStringLiteral("last_refresh"),
                 QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
 
-    const QByteArray contents = QJsonDocument(root).toJson();
-    QString saveError;
-#ifdef Q_OS_WIN
-    QString temporaryPath;
-    bool savedOk = false;
-    {
-        QTemporaryFile saved(QFileInfo(authPath).dir().filePath(
-            QStringLiteral("auth.json.speecher.XXXXXX.tmp")));
-        savedOk = saved.open() && saved.write(contents) == contents.size() && saved.flush();
-        temporaryPath = saved.fileName();
-        saveError = saved.errorString();
-        if (savedOk) {
-            saved.setAutoRemove(false);
-        }
-    }
-    // QSaveFile cannot replace auth.json while Codex briefly has it open.
-    // MoveFileEx keeps the crash-safe same-directory replacement and permits a retry.
-    DWORD moveError = ERROR_SUCCESS;
-    if (savedOk) {
-        savedOk = false;
-        for (int attempt = 0; attempt < 3; ++attempt) {
-            if (MoveFileExW(reinterpret_cast<const wchar_t *>(temporaryPath.utf16()),
-                            reinterpret_cast<const wchar_t *>(authPath.utf16()),
-                            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-                savedOk = true;
-                break;
-            }
-            moveError = GetLastError();
-            if (attempt < 2) {
-                Sleep(50);
-            }
-        }
-    }
-    if (savedOk) {
-        saveError.clear();
-    } else if (moveError != ERROR_SUCCESS) {
-        saveError = QStringLiteral("Windows error %1").arg(moveError);
-        QFile::remove(temporaryPath);
-    }
-#else
-    QSaveFile saved(authPath);
-    const bool savedOk = saved.open(QIODevice::WriteOnly)
-        && saved.write(contents) == contents.size() && saved.commit();
-    saveError = saved.errorString();
-#endif
-    if (savedOk) {
-        return true;
-    }
-    if (error) {
-        *error = QStringLiteral("Could not write the refreshed Codex auth file: %1")
-                     .arg(saveError);
-    }
-    return false;
+    return storage.write(QJsonDocument(root).toJson(QJsonDocument::Compact), error);
 }
 
-ApiKeyCandidate readCodexApiKeyCandidate(QString *status)
+static ApiKeyCandidate readCodexApiKeyCandidate(const CodexCredentialStorage &storage, QString *status)
 {
-    QFile file(codexAuthPath());
-    if (!file.open(QIODevice::ReadOnly)) {
-        if (status) {
-            *status = QStringLiteral("The Codex app is not signed in");
-        }
-        return {};
-    }
-    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
-    const QJsonObject root = doc.object();
+    const QByteArray bytes = storage.read(status);
+    if (!status->isEmpty()) return {};
+    const QJsonObject root = QJsonDocument::fromJson(bytes).object();
     const QJsonValue apiKey = root.value(QStringLiteral("OPENAI_API_KEY"));
     ApiKeyCandidate candidate;
     if (apiKey.isString()) {
@@ -297,25 +238,20 @@ static ApiKeyCandidate readEnvApiKey()
     return candidate;
 }
 
-static QString codexAuthMode()
+static QString codexAuthMode(const CodexCredentialStorage &storage)
 {
-    QFile file(codexAuthPath());
-    if (!file.open(QIODevice::ReadOnly)) {
-        return {};
-    }
-    return QJsonDocument::fromJson(file.readAll()).object().value(QStringLiteral("auth_mode")).toString();
+    QString error;
+    return QJsonDocument::fromJson(storage.read(&error)).object().value(QStringLiteral("auth_mode")).toString();
 }
 
-OpenAiAuth OpenAiAuthProvider::readCodexOauth(bool refreshExpired)
+static OpenAiAuth readCodexOauth(const CodexCredentialStorage &storage, bool refreshExpired)
 {
-    QJsonObject tokens;
-    {
-        QFile file(codexAuthPath());
-        if (!file.open(QIODevice::ReadOnly)) {
-            return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("The Codex app is not signed in"), {}, {}, {}, {}, true};
-        }
-        tokens = QJsonDocument::fromJson(file.readAll()).object().value(QStringLiteral("tokens")).toObject();
+    QString error;
+    const QByteArray bytes = storage.read(&error);
+    if (!error.isEmpty()) {
+        return {false, {}, QStringLiteral("codex_oauth"), error, {}, {}, {}, {}, true};
     }
+    const QJsonObject tokens = QJsonDocument::fromJson(bytes).object().value(QStringLiteral("tokens")).toObject();
     const QString accessToken = tokens.value(QStringLiteral("access_token")).toString().trimmed();
     if (accessToken.isEmpty()) {
         return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("The Codex app has no sign-in to reuse"), {}, {}, {}, {}, true};
@@ -326,10 +262,10 @@ OpenAiAuth OpenAiAuthProvider::readCodexOauth(bool refreshExpired)
         }
 
         QString refreshError;
-        if (!refreshCodexAuth(&refreshError)) {
+        if (!refreshCodexAuth(storage, &refreshError)) {
             return {false, {}, QStringLiteral("codex_oauth"), refreshError, {}, {}, {}, {}, true};
         }
-        return readCodexOauth(false);
+        return readCodexOauth(storage, false);
     }
     const QString accountId = tokens.value(QStringLiteral("account_id")).toString().trimmed();
     return {true,
@@ -348,14 +284,15 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
     QString status;
     const QString mode = m_mode.isEmpty() ? QStringLiteral("auto") : m_mode;
     if (mode == QStringLiteral("codex_api_key")) {
-        const ApiKeyCandidate codexKey = readCodexApiKeyCandidate(&status);
+        const CodexCredentialStorage storage;
+        const ApiKeyCandidate codexKey = readCodexApiKeyCandidate(storage, &status);
         if (!codexKey.key.isEmpty()) {
             return authFromCandidate(codexKey, QStringLiteral("codex_api_key"), status);
         }
         return {false, {}, QStringLiteral("codex_api_key"), status, {}, {}, {}, {}, false};
     }
     if (mode == QStringLiteral("codex_oauth")) {
-        return readCodexOauth(refreshExpired);
+        return readCodexOauth(CodexCredentialStorage{}, refreshExpired);
     }
     if (mode == QStringLiteral("env")) {
         const ApiKeyCandidate envKey = readEnvApiKey();
@@ -415,22 +352,23 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
         return {false, {}, QStringLiteral("settings"), QStringLiteral("Settings API key not found"), {}, {}, {}, {}, false};
     }
 
-    const bool codexUsesChatGpt = codexAuthMode() == QStringLiteral("chatgpt");
+    const CodexCredentialStorage storage;
+    const bool codexUsesChatGpt = codexAuthMode(storage) == QStringLiteral("chatgpt");
     if (codexUsesChatGpt) {
-        OpenAiAuth oauth = readCodexOauth(refreshExpired);
+        OpenAiAuth oauth = readCodexOauth(storage, refreshExpired);
         if (oauth.ok) {
             return oauth;
         }
     }
 
-    const ApiKeyCandidate codexKey = readCodexApiKeyCandidate(&status);
+    const ApiKeyCandidate codexKey = readCodexApiKeyCandidate(storage, &status);
     if (!codexKey.key.isEmpty()) {
         OpenAiAuth auth = authFromCandidate(codexKey, QStringLiteral("codex_api_key"), status);
         auth.endpointBase = QStringLiteral("https://api.openai.com/v1");
         return auth;
     }
     if (!codexUsesChatGpt) {
-        OpenAiAuth oauth = readCodexOauth(refreshExpired);
+        OpenAiAuth oauth = readCodexOauth(storage, refreshExpired);
         if (oauth.ok) {
             return oauth;
         }
@@ -461,7 +399,7 @@ bool OpenAiAuthProvider::requiresCodexOauthRefresh() const
     QString status;
     const QString mode = m_mode.isEmpty() ? QStringLiteral("auto") : m_mode;
     if (mode == QStringLiteral("codex_oauth")) {
-        return readCodexOauth(false).status == QStringLiteral("Codex OAuth token expired");
+        return readCodexOauth(CodexCredentialStorage{}, false).status == QStringLiteral("Codex OAuth token expired");
     }
     if (mode == QStringLiteral("cliproxy")) {
         if (!m_cliproxyBaseUrl.isEmpty()) {
@@ -473,14 +411,15 @@ bool OpenAiAuthProvider::requiresCodexOauthRefresh() const
         return false;
     }
 
-    if (codexAuthMode() == QStringLiteral("chatgpt")) {
-        return readCodexOauth(false).status == QStringLiteral("Codex OAuth token expired");
+    const CodexCredentialStorage storage;
+    if (codexAuthMode(storage) == QStringLiteral("chatgpt")) {
+        return readCodexOauth(storage, false).status == QStringLiteral("Codex OAuth token expired");
     }
 
-    if (!readCodexApiKeyCandidate(&status).key.isEmpty()) {
+    if (!readCodexApiKeyCandidate(storage, &status).key.isEmpty()) {
         return false;
     }
-    return readCodexOauth(false).status == QStringLiteral("Codex OAuth token expired");
+    return readCodexOauth(storage, false).status == QStringLiteral("Codex OAuth token expired");
 }
 
 OpenAiAuth OpenAiAuthProvider::refreshCodexOauth() const
@@ -503,7 +442,7 @@ OpenAiAuth OpenAiAuthProvider::refreshCodexOauth() const
                 credentials.accountId,
                 true};
     }
-    return readCodexOauth(true);
+    return readCodexOauth(CodexCredentialStorage{}, true);
 }
 
 QString OpenAiAuthProvider::status() const

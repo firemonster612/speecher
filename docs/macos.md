@@ -58,6 +58,47 @@ speecher.app never resets them. Rerun the assistant from Settings > General >
 "Run setup assistant…", and wipe everything with
 `defaults delete com.io-github-firemonster612.speecher`.
 
+### CLI login Keychain prompts
+
+For a self-signed app, Keychain checks a per-build `cdhash` partition in
+addition to the stable certificate requirement. "Always Allow" on a direct
+Speecher read therefore only approves that build; the next update prompts
+again. This is separate from the Accessibility grant described above.
+
+Speecher reads Claude Code and Codex Keychain entries through
+`/usr/bin/security`, whose `apple-tool:` partition survives Speecher updates.
+An entry that does not trust that tool can still ask for access. Keychain
+operations time out after a few seconds.
+
+Claude Code's entry is updated through the same `security` tool. Credentials
+travel over stdin, and Speecher does not change the access list. The tool's
+input buffer limits automatic refresh to documents whose hex-encoded update
+command fits under 4096 bytes, roughly 2 KiB of credential data minus the
+service and account names. Larger entries remain readable. Speecher checks the
+compact JSON, including known output fields, before contacting OAuth and asks
+you to run `claude` and `/login` if it cannot fit. It checks the final size too.
+A provider response can contain larger tokens or scopes; if these no longer fit
+after rotation, the write fails without truncation and you may need to sign in
+again with the CLI.
+
+Codex writes its Keychain entry through its native Rust keyring. Writing that
+entry from another process can change its Keychain partition and disrupt
+Codex's access. Speecher therefore only reads macOS Codex Keychain entries and
+rejects automatic refresh before contacting OAuth. Run `codex login` to refresh
+that entry. Codex file-based refresh and Windows Credential Manager refresh
+remain supported.
+
+For supported refreshes, Speecher checks that the entry still exists before
+writing and rechecks the login after the OAuth request. These checks cannot
+prevent every race with a CLI changing the entry at the same instant. Access
+denial never selects a plaintext login. Codex uses the file first and Keychain
+only when the file is absent, as described in the README.
+
+Apple's [securityd partition selection](https://github.com/apple-oss-distributions/Security/blob/main/securityd/src/clientid.cpp)
+distinguishes Apple tools, Apple-issued developer identities, and other
+signed code; a stable self-signed certificate alone does not stabilize the
+last category's partition.
+
 ## What works on macOS that Wayland cannot offer
 
 Linux/Wayland deliberately restricts global input and cross-window APIs

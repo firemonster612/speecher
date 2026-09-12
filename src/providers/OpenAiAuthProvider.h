@@ -35,7 +35,6 @@ public:
     OpenAiAuth refreshCodexOauth() const;
 
 private:
-    static OpenAiAuth readCodexOauth(bool refreshExpired = true);
     SecretStore *m_secretStore = nullptr;
     QString m_mode;
     QString m_cliproxyAccount;

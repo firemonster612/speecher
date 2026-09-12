@@ -5,11 +5,11 @@
 
 namespace speecher {
 
-// Selected once for a load/refresh. A missing or changed item during refresh
-// must not redirect rotated tokens into a different credential store.
-class ClaudeCredentialStorage {
+// File first, native fallback only if auth.json is absent. Keep this selection
+// through an entire resolution/refresh, even if another login changes stores.
+class CodexCredentialStorage {
 public:
-    explicit ClaudeCredentialStorage(const QString &path);
+    CodexCredentialStorage();
     QByteArray read(QString *error) const;
     bool canWrite(const QByteArray &bytes, QString *error) const;
     bool write(const QByteArray &bytes, QString *error) const;
@@ -17,7 +17,6 @@ public:
 
 private:
     QString m_path;
-    QByteArray m_service;
     QByteArray m_account;
 };
 
