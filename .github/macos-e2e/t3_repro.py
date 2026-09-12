@@ -18,7 +18,8 @@ else:
 
 with sync_playwright() as driver:
     browser = driver.chromium.connect_over_cdp('http://127.0.0.1:9222')
-    page = browser.contexts[0].pages[0]
+    context = browser.contexts[0]
+    page = context.pages[0] if context.pages else context.wait_for_event('page', timeout=60000)
     page.wait_for_timeout(10000)
     def capture(name):
         page.screenshot(path=str(out / f'{name}.png'))
