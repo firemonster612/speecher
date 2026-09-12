@@ -284,7 +284,9 @@ struct AddRecordSheet: View {
                 Section {
                     ForEach(columns, id: \.columnId) { column in
                         LabeledContent(column.title) {
-                            RecordField(column: column, value: draft(column.columnId))
+                            RecordField(column: column,
+                                        value: draft(column.columnId),
+                                        commitsImmediately: true)
                         }
                     }
                 } header: {
@@ -350,6 +352,12 @@ struct RecordCell: View {
 struct RecordField: View {
     let column: CollectionColumnModel
     @Binding var value: Any?
+    /// The add sheet's fields write through on every keystroke: clicking the
+    /// sheet's Add button does not move focus on macOS, so a field that only
+    /// commits on focus-out would hand commitDraft() a draft missing the text
+    /// still sitting in the field. Table cells keep committing on focus-out,
+    /// which is what lets a term momentarily duplicate another while typed.
+    var commitsImmediately = false
 
     var body: some View {
         switch column.kind {
@@ -366,7 +374,7 @@ struct RecordField: View {
             }
             .labelsHidden()
         default:
-            CellField(text: text) { value = $0 }
+            CellField(text: text, commitsImmediately: commitsImmediately) { value = $0 }
         }
     }
 
@@ -399,6 +407,7 @@ struct RecordField: View {
 /// duplicates another one has to survive long enough to be finished.
 struct CellField: View {
     let text: String
+    var commitsImmediately = false
     let commit: (String) -> Void
     @State private var edited = ""
     @FocusState private var editing: Bool
@@ -409,7 +418,16 @@ struct CellField: View {
             .focused($editing)
             .onSubmit { commit(edited) }
             .onAppear { edited = text }
-            .onChange(of: editing) { if !editing { commit(edited) } }
+            .onChange(of: edited) {
+                if commitsImmediately { commit(edited) }
+            }
+            // No focus-out commit in immediate mode: every keystroke has
+            // already landed, and the focus resigning on the add sheet's way
+            // out would write the old term back into the draft commitDraft()
+            // has just reset for the next record.
+            .onChange(of: editing) {
+                if !editing && !commitsImmediately { commit(edited) }
+            }
             .onChange(of: text) { _, stored in
                 if !editing { edited = stored }
             }

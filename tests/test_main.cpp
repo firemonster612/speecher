@@ -133,6 +133,7 @@ int main(int argc, char **argv)
     if (selected("linux_style_choice")) result |= runLinuxStyleChoiceTests(argc, argv);
     if (selected("linux_tray")) result |= runLinuxTrayTests(argc, argv);
     if (selected("keywatch")) result |= runKeywatchTests(argc, argv);
+    if (selected("helper_install")) result |= runHelperInstallTests(argc, argv);
 #endif
     if (selected("platform_live")) result |= runPlatformLiveTests(argc, argv);
     if (selected("single_instance_ipc")) result |= runSingleInstanceIpcTests(argc, argv);

@@ -10,10 +10,12 @@
 #include "ui/TranscriberPopup.h"
 
 #ifdef Q_OS_LINUX
+#include "frontend/qt/LinuxAuthPrompt.h"
 #include "frontend/qt/LinuxTrayIcon.h"
 #endif
 
 #include <QApplication>
+#include <QPushButton>
 #include <QTabWidget>
 #include <QTimer>
 #include <QCoreApplication>
@@ -35,6 +37,7 @@ QtFrontEnd::QtFrontEnd(ApplicationController *controller, QObject *parent)
     // daemon mode it is the only sign the process is running and the global
     // shortcut has something to reach.
     new LinuxTrayIcon(controller, this);
+    installLinuxAuthPrompt();
 #endif
     wireSessionToPopup();
     connect(controller->updates(),
@@ -202,6 +205,18 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
                 }
             }
         }
+        QCoreApplication::processEvents();
+    }
+    // SPEECHER_GRAB_CLICK names a button (by objectName) to click once the
+    // page is up, so a grab can show what an interaction leaves behind.
+    const QString click = qEnvironmentVariable("SPEECHER_GRAB_CLICK");
+    if (!click.isEmpty()) {
+        auto *button = m_appWindow->findChild<QPushButton *>(click);
+        if (!button) {
+            qWarning("SPEECHER_GRAB_CLICK names no button: %s", qPrintable(click));
+            return false;
+        }
+        button->click();
         QCoreApplication::processEvents();
     }
     return m_appWindow->grab().save(path);

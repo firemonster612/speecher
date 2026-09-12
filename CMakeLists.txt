@@ -557,12 +557,14 @@ set(SPEECHER_FRONTEND_QT_HEADERS
 )
 
 set(SPEECHER_FRONTEND_QT_LINUX_SOURCES
+  src/frontend/qt/LinuxAuthPrompt.cpp
   src/frontend/qt/LinuxTrayIcon.cpp
   src/output/YdotoolSetupFlow.cpp
   src/ui/setup/LinuxGlobalShortcutSetupPage.cpp
 )
 
 set(SPEECHER_FRONTEND_QT_LINUX_HEADERS
+  src/frontend/qt/LinuxAuthPrompt.h
   src/frontend/qt/LinuxTrayIcon.h
   src/output/YdotoolSetupFlow.h
   src/ui/setup/LinuxGlobalShortcutSetupPage.h
@@ -687,7 +689,9 @@ if(UNIX AND NOT APPLE)
   # with the Wayland and ydotool backends compiled in.
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_WAYLAND=1)
   # Network: the Wayland key-watch binder talks to the daemon over QLocalSocket.
-  target_link_libraries(speecher_platform PUBLIC Qt6::DBus Qt6::Network)
+  # util: forkpty for the pkexec authentication conversation (in libc since
+  # glibc 2.34; the stub keeps older links working).
+  target_link_libraries(speecher_platform PUBLIC Qt6::DBus Qt6::Network util)
   # X11/Xi: the XInput2 single-key watcher, only where the dev files exist.
   if(X11_FOUND AND XI_FOUND)
     target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_X11=1)
@@ -1232,6 +1236,7 @@ if(SPEECHER_BUILD_TESTS)
       tests/test_linux_style_choice.cpp
       tests/test_linux_tray.cpp
       tests/test_keywatch.cpp
+      tests/test_helper_install.cpp
     )
   endif()
   if(TARGET speecher_frontend_mac)
@@ -1278,7 +1283,7 @@ if(SPEECHER_BUILD_TESTS)
     audio_pcm_converter
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    list(APPEND SPEECHER_TEST_SUITES linux_style_choice linux_tray keywatch)
+    list(APPEND SPEECHER_TEST_SUITES linux_style_choice linux_tray keywatch helper_install)
   endif()
   if(UNIX)
     list(APPEND SPEECHER_TEST_SUITES update_controller)
