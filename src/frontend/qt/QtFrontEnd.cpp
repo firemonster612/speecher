@@ -10,6 +10,7 @@
 #include "ui/TranscriberPopup.h"
 
 #ifdef Q_OS_LINUX
+#include "frontend/qt/LinuxAuthPrompt.h"
 #include "frontend/qt/LinuxTrayIcon.h"
 #endif
 
@@ -35,6 +36,7 @@ QtFrontEnd::QtFrontEnd(ApplicationController *controller, QObject *parent)
     // daemon mode it is the only sign the process is running and the global
     // shortcut has something to reach.
     new LinuxTrayIcon(controller, this);
+    installLinuxAuthPrompt();
 #endif
     wireSessionToPopup();
     connect(controller->updates(),
