@@ -33,6 +33,9 @@ REQUIRED_FILES=(
   usr/bin/speecher
   usr/bin/wl-copy
   usr/libexec/speecher/speecher-ydotool-setup
+  usr/libexec/speecher/speecher-keywatch-setup
+  usr/libexec/speecher/speecher-keywatchd
+  usr/libexec/speecher/speecher_keywatchd.cil
   usr/libexec/speecher/speecher-wayland-clipboard
   usr/plugins/platforms/libqxcb.so
   usr/plugins/platformthemes/KDEPlasmaPlatformTheme6.so

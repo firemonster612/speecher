@@ -986,6 +986,9 @@ if(UNIX AND NOT APPLE)
     src/setup/KeywatchDaemon.cpp
   )
   target_include_directories(speecher-keywatchd PRIVATE src/setup)
+  # The installer looks for the daemon's SELinux module beside itself, so a
+  # build-tree helper needs it there too.
+  configure_file(src/setup/speecher_keywatchd.cil speecher_keywatchd.cil COPYONLY)
   pkg_check_modules(SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
   target_link_libraries(speecher-keywatchd PRIVATE PkgConfig::SYSTEMD)
   set_target_properties(
@@ -1171,6 +1174,8 @@ endif()
 if(TARGET speecher-keywatch-setup)
   install(TARGETS speecher-keywatch-setup speecher-keywatchd
     RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/speecher)
+  # The daemon's SELinux module rides beside the installer, which loads it.
+  install(FILES src/setup/speecher_keywatchd.cil DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/speecher)
 endif()
 if(TARGET speecher-wayland-clipboard)
   install(TARGETS speecher-wayland-clipboard

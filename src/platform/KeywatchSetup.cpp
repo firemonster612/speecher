@@ -12,6 +12,7 @@ namespace {
 
 constexpr auto socketUnitPath = "/etc/systemd/system/speecher-keywatchd.socket";
 constexpr auto daemonFileName = "speecher-keywatchd";
+constexpr auto policyFileName = "speecher_keywatchd.cil";
 #ifndef SPEECHER_KEYWATCH_HELPER_PATH
 #define SPEECHER_KEYWATCH_HELPER_PATH "/usr/libexec/speecher/speecher-keywatch-setup"
 #endif
@@ -55,7 +56,8 @@ KeywatchSetupStatus KeywatchSetup::probe()
 bool KeywatchSetup::install(QString *error)
 {
     return helpers::runSetupHelper(SPEECHER_KEYWATCH_HELPER_PATH,
-                                   {QLatin1StringView(daemonFileName)},
+                                   {QLatin1StringView(daemonFileName),
+                                    QLatin1StringView(policyFileName)},
                                    helpers::HelperAction::Install,
                                    error);
 }
@@ -63,7 +65,8 @@ bool KeywatchSetup::install(QString *error)
 bool KeywatchSetup::remove(QString *error)
 {
     return helpers::runSetupHelper(SPEECHER_KEYWATCH_HELPER_PATH,
-                                   {QLatin1StringView(daemonFileName)},
+                                   {QLatin1StringView(daemonFileName),
+                                    QLatin1StringView(policyFileName)},
                                    helpers::HelperAction::Remove,
                                    error);
 }
