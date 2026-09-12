@@ -68,6 +68,13 @@ bool isModifierKey(int key)
     }
 }
 
+QString singleKeyLead(bool followsKeySequence)
+{
+    return followsKeySequence
+        ? QStringLiteral("Or press a single key, such as Right Alt or F13, to use on its own.")
+        : QStringLiteral("Press a single key, such as Right Alt or F13, to use on its own.");
+}
+
 } // namespace
 
 ShortcutCaptureButton::ShortcutCaptureButton(QWidget *parent)
@@ -282,7 +289,7 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     // below would paint over it on first show before the text-set relayout
     // catches up.
     m_singleKeyLead = guidanceLabel(
-        QStringLiteral("Or press a single key, such as Right Alt or F13, to use on its own."),
+        singleKeyLead(true),
         m_singleKeyControls);
     singleKeyLayout->addWidget(m_singleKeyLead);
 
@@ -635,10 +642,7 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
     // desktop's combination service; it shows whenever the step is ready.
     // "Or press…" only reads right beneath the key-sequence controls; where
     // those are hidden this text comes first and has to stand alone.
-    m_singleKeyLead->setText(
-        keySequenceVisible
-            ? QStringLiteral("Or press a single key, such as Right Alt or F13, to use on its own.")
-            : QStringLiteral("Press a single key, such as Right Alt or F13, to use on its own."));
+    m_singleKeyLead->setText(singleKeyLead(keySequenceVisible));
     m_singleKeyControls->setVisible(ready && known);
     m_keyHelperControls->setVisible(ready && known && m_waylandSession);
     if (m_waylandSession) {
