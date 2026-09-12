@@ -1,0 +1,29 @@
+name: macOS paste reproduction
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reproduce:
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install T3 Code and test driver
+        run: |
+          curl -fL https://github.com/pingdotgg/t3code/releases/download/v0.0.40/T3-Code-0.0.40-arm64.zip -o "$RUNNER_TEMP/t3.zip"
+          ditto -xk "$RUNNER_TEMP/t3.zip" "$RUNNER_TEMP/t3"
+          python3 -m venv "$RUNNER_TEMP/driver"
+          "$RUNNER_TEMP/driver/bin/pip" install playwright
+      - name: Inspect fresh T3 Code session
+        run: |
+          mkdir -p "$RUNNER_TEMP/evidence"
+          app=$(find "$RUNNER_TEMP/t3" -maxdepth 2 -name '*.app' -print -quit)
+          xattr -dr com.apple.quarantine "$app" || true
+          open -na "$app" --args --remote-debugging-port=9222
+          "$RUNNER_TEMP/driver/bin/python" .github/macos-e2e/t3_repro.py "$RUNNER_TEMP/evidence"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: paste-repro-evidence
+          path: ${{ runner.temp }}/evidence
