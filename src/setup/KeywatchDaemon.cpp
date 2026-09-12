@@ -13,7 +13,6 @@
 #include <array>
 #include <cerrno>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -29,24 +28,8 @@
 #include <unistd.h>
 
 #include <systemd/sd-daemon.h>
-#include <systemd/sd-login.h>
 
 namespace {
-
-// The socket is world-connectable, so the login-group membership that once
-// gated it is gone (it needed a sign-out to take effect). The daemon is the
-// gate now: only a uid with a live login session may connect, which is what
-// the group stood in for. sd_uid_get_state reads /run/systemd/users/<uid>,
-// world-readable and inside the unit's @system-service syscall allowance.
-bool hasActiveLoginSession(uid_t uid)
-{
-    char *state = nullptr;
-    const int rc = sd_uid_get_state(uid, &state);
-    const bool active = rc >= 0 && state != nullptr
-        && (std::strcmp(state, "active") == 0 || std::strcmp(state, "online") == 0);
-    free(state);
-    return active;
-}
 
 using speecher::keywatch::KeyEvent;
 using speecher::keywatch::permittedKeyById;
@@ -329,14 +312,6 @@ private:
         ucred credentials{};
         socklen_t length = sizeof(credentials);
         if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &credentials, &length) != 0) {
-            close(fd);
-            return;
-        }
-        if (!hasActiveLoginSession(credentials.uid)) {
-            const WatchReply reply{speecher::keywatch::protocolVersion,
-                                   std::uint8_t(Refusal::NoSession)};
-            (void)!write(fd, &reply, sizeof(reply));
-            logLine("refused uid " + std::to_string(credentials.uid) + ": no active login session");
             close(fd);
             return;
         }

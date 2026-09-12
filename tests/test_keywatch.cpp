@@ -80,8 +80,8 @@ private slots:
         QCOMPARE(KeywatchSetup::evaluate(listening).state,
                  KeywatchSetupState::DaemonNotRunning);
 
-        // A world-connectable socket needs no group or sign-out: once it exists
-        // and is writable the helper is ready straight away.
+        // The owner-only socket needs no group or sign-out: once it exists and
+        // is writable for the login user, the helper is ready straight away.
         KeywatchProbeFacts ready = listening;
         ready.socketWritable = true;
         const KeywatchSetupStatus status = KeywatchSetup::evaluate(ready);

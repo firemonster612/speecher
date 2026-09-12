@@ -979,9 +979,6 @@ if(UNIX AND NOT APPLE)
   )
   # The privileged key-watch helpers: the pkexec'd installer and the daemon.
   # Plain C++, no Qt; the daemon needs libsystemd for its activated socket.
-  add_executable(speecher-keywatch-setup
-    src/setup/KeywatchSetupHelper.cpp
-  )
   add_executable(speecher-keywatchd
     src/setup/KeywatchDaemon.cpp
   )
@@ -989,8 +986,34 @@ if(UNIX AND NOT APPLE)
   # The installer looks for the daemon's SELinux module beside itself, so a
   # build-tree helper needs it there too.
   configure_file(src/setup/speecher_keywatchd.cil speecher_keywatchd.cil COPYONLY)
+  set(SPEECHER_KEYWATCH_DIGESTS_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/KeywatchPayloadDigests.h")
+  add_custom_command(
+    OUTPUT "${SPEECHER_KEYWATCH_DIGESTS_HEADER}"
+    COMMAND "${CMAKE_COMMAND}"
+      "-DDAEMON=$<TARGET_FILE:speecher-keywatchd>"
+      "-DPOLICY=${CMAKE_CURRENT_BINARY_DIR}/speecher_keywatchd.cil"
+      "-DOUTPUT=${SPEECHER_KEYWATCH_DIGESTS_HEADER}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateKeywatchDigests.cmake"
+    DEPENDS speecher-keywatchd src/setup/speecher_keywatchd.cil
+      cmake/GenerateKeywatchDigests.cmake
+    VERBATIM
+  )
+  add_executable(speecher-keywatch-setup
+    src/setup/KeywatchSetupHelper.cpp
+    "${SPEECHER_KEYWATCH_DIGESTS_HEADER}"
+  )
+  target_include_directories(speecher-keywatch-setup PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}/generated")
   pkg_check_modules(SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
   target_link_libraries(speecher-keywatchd PRIVATE PkgConfig::SYSTEMD)
+  # AppImage assembly applies this RUNPATH to libexec files. Link the daemon
+  # with it now so that packaging cannot change the payload after its digest
+  # has been compiled into the installer.
+  set_target_properties(speecher-keywatchd PROPERTIES
+    BUILD_WITH_INSTALL_RPATH TRUE
+    INSTALL_RPATH "$ORIGIN/../../lib"
+  )
   set_target_properties(
     speecher-ydotool-setup speecher-keywatch-setup speecher-keywatchd
     PROPERTIES

@@ -1,17 +1,15 @@
 // speecher-keywatch-setup: the pkexec'd installer for speecher-keywatchd. It
-// creates the speecher-keywatch system user and group, adds the login user to
-// that group (which grants access to the daemon's socket and nothing else),
-// installs the socket and service units, and copies the daemon to a system
-// path. Only the daemon's own service account gets the input group, through
-// the unit's SupplementaryGroups=. The installer deliberately does NOT write
-// a udev rule and does NOT touch the login user's input membership: the whole
-// point of the design is that no process the user runs gains the ability to
-// read input devices. See keywatch-security-design.md.
+// creates the speecher-keywatch system account, installs an owner-only socket
+// for the login user, installs the service unit, and copies the daemon to a
+// system path. Only the daemon's service account gets the input group, through
+// the unit's SupplementaryGroups=. The login user can reach the socket but no
+// process they run gains access to input devices. See keywatch-security-design.md.
 //
 // Modelled on YdotoolSetupHelper.cpp, including its rollback transaction and
 // --user validation against the passwd database.
 
 #include "HelperCommands.h"
+#include "KeywatchPayloadDigests.h"
 #include "YdotoolSetupTransaction.h"
 
 #include <iostream>
@@ -31,21 +29,20 @@ constexpr std::string_view serviceName = "speecher-keywatchd.service";
 constexpr std::string_view policyFileName = "speecher_keywatchd.cil";
 constexpr std::string_view policyModuleName = "speecher_keywatchd";
 
-constexpr std::string_view socketText =
-    "[Unit]\n"
-    "Description=Speecher key-watch helper socket\n"
-    "\n"
-    // World-connectable: the daemon authorizes each peer by its live login
-    // session (SO_PEERCRED + sd_uid_get_state), so no login-group membership
-    // and no sign-out are needed to reach it. A connecting process with no
-    // active session is refused by the daemon before it can watch anything.
-    "[Socket]\n"
-    "ListenStream=/run/speecher-keywatchd/socket\n"
-    "SocketMode=0666\n"
-    "SocketUser=root\n"
-    "\n"
-    "[Install]\n"
-    "WantedBy=sockets.target\n";
+std::string socketUnitText(const std::string &user)
+{
+    return
+        "[Unit]\n"
+        "Description=Speecher key-watch helper socket\n"
+        "\n"
+        "[Socket]\n"
+        "ListenStream=/run/speecher-keywatchd/socket\n"
+        "SocketMode=0600\n"
+        "SocketUser=" + user + "\n"
+        "\n"
+        "[Install]\n"
+        "WantedBy=sockets.target\n";
+}
 
 // The whole sandbox is declared here: the daemon never runs as root. Its
 // locked-down service account joins the input group (the login user never
@@ -85,9 +82,9 @@ constexpr std::string_view serviceText =
     "DeviceAllow=char-input r\n"
     "UMask=0077\n";
 
-// The daemon and its SELinux module ship beside this installer, so their
-// source is our own directory, never a path taken from the caller: nothing
-// user-controlled crosses pkexec.
+// The daemon and its SELinux module ship beside this installer. The app stages
+// them as root, then this root-owned binary verifies their build-time digests
+// before either payload is installed.
 std::string bundledPath(std::string_view name)
 {
     char buffer[4096];
@@ -110,14 +107,78 @@ bool selinuxEnabled()
     return access("/sys/fs/selinux/enforce", F_OK) == 0;
 }
 
-// Under SELinux the copied daemon is plain lib_t, so systemd would run it as
-// init_t, which may not open the input devices. The module gives it a
-// confined domain of its own; restorecon labels the installed binary so the
-// exec from systemd transitions into that domain.
-bool loadSelinuxPolicy(std::string &error)
+std::string sha256(const std::string &path, std::string &error)
 {
-    return run("semodule", {"-i", bundledPath(policyFileName)}, error)
-        && run("restorecon", {std::string(daemonInstallPath)}, error);
+    int output[2];
+    if (pipe2(output, O_CLOEXEC) != 0) {
+        error = "Could not hash " + path;
+        return {};
+    }
+    const pid_t child = fork();
+    if (child == 0) {
+        close(output[0]);
+        if (dup2(output[1], STDOUT_FILENO) < 0) {
+            _exit(127);
+        }
+        close(output[1]);
+        execl("/usr/bin/sha256sum", "sha256sum", "--", path.c_str(), nullptr);
+        _exit(127);
+    }
+    close(output[1]);
+    if (child < 0) {
+        close(output[0]);
+        error = "Could not hash " + path;
+        return {};
+    }
+    std::string text;
+    char buffer[256];
+    ssize_t count = 0;
+    while ((count = read(output[0], buffer, sizeof(buffer))) > 0) {
+        text.append(buffer, static_cast<std::size_t>(count));
+    }
+    close(output[0]);
+    int status = 0;
+    if (count < 0 || waitpid(child, &status, 0) != child
+        || !WIFEXITED(status) || WEXITSTATUS(status) != 0
+        || text.size() < 65 || text[64] != ' ') {
+        error = "Could not hash " + path;
+        return {};
+    }
+    const std::string digest = text.substr(0, 64);
+    if (digest.find_first_not_of("0123456789abcdef") != std::string::npos) {
+        error = "Could not hash " + path;
+        return {};
+    }
+    return digest;
+}
+
+bool verifyPayload(std::string_view name, std::string_view expected, std::string &error)
+{
+    const std::string path = bundledPath(name);
+    if (!path.empty() && sha256(path, error) == expected) {
+        return true;
+    }
+    if (error.empty()) {
+        error = "Bundled " + std::string(name) + " failed its integrity check";
+    }
+    return false;
+}
+
+bool removeSelinuxPolicy(std::string &error)
+{
+    if (!findExecutable("semodule")) {
+        return true;
+    }
+    std::string removeError;
+    if (run("semodule", {"-r", std::string(policyModuleName)}, removeError)) {
+        return true;
+    }
+    if (removeError.find(policyModuleName) != std::string::npos
+        && removeError.find("No such file or directory") != std::string::npos) {
+        return true;
+    }
+    error = removeError;
+    return false;
 }
 
 bool ensureSystemUser(bool &created, std::string &error)
@@ -172,9 +233,10 @@ bool install(const std::string &user, std::string &error)
         transaction.appendToError(error);
         return false;
     };
-    // user is validated by main() and kept for the CLI contract, but the login
-    // user no longer joins any group: the daemon gates the socket by session.
-    (void)user;
+    if (!verifyPayload("speecher-keywatchd", speecher::keywatch::daemonSha256, error)
+        || !verifyPayload(policyFileName, speecher::keywatch::policySha256, error)) {
+        return failed();
+    }
     bool userCreated = false;
     if (!ensureSystemUser(userCreated, error)) {
         return failed();
@@ -187,12 +249,15 @@ bool install(const std::string &user, std::string &error)
     }
     transaction.record("installed " + std::string(daemonInstallPath));
     if (selinuxEnabled()) {
-        if (!loadSelinuxPolicy(error)) {
+        if (!run("semodule", {"-i", bundledPath(policyFileName)}, error)) {
             return failed();
         }
         transaction.record("loaded SELinux module " + std::string(policyModuleName));
+        if (!run("restorecon", {std::string(daemonInstallPath)}, error)) {
+            return failed();
+        }
     }
-    if (!writeFile(std::string(socketUnitPath), socketText, error)) {
+    if (!writeFile(std::string(socketUnitPath), socketUnitText(user), error)) {
         return failed();
     }
     transaction.record("wrote " + std::string(socketUnitPath));
@@ -218,16 +283,18 @@ bool install(const std::string &user, std::string &error)
 
 bool remove(const std::string &user, std::string &error)
 {
-    (void)user; // No login-user group membership to undo anymore.
     run("systemctl", {"disable", "--now", std::string(socketName)}, error, true, true);
     if (!removeFileIfPresent(std::string(socketUnitPath), error)
         || !removeFileIfPresent(std::string(serviceUnitPath), error)
         || !removeFileIfPresent(std::string(daemonInstallPath), error)) {
         return false;
     }
-    if (selinuxEnabled()) {
-        run("semodule", {"-r", std::string(policyModuleName)}, error, true, true);
+    if (!removeSelinuxPolicy(error)) {
+        return false;
     }
+    // One-release cleanup for users added to the old socket-access group.
+    std::string ignored;
+    run("gpasswd", {"-d", user, std::string(userName)}, ignored, true, true);
     run("systemctl", {"daemon-reload"}, error, true, true);
     return true;
 }
