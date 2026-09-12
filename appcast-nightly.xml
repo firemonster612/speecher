@@ -1,11 +1,11 @@
 <?xml version='1.0' encoding='utf-8'?>
-<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher nightly updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher nightly updates</description><item><title>0.1.6-nightly.20260911+g7655703</title><pubDate>Fri, 11 Sep 2026 22:14:37 +0100</pubDate><sparkle:version>510</sparkle:version><sparkle:shortVersionString>0.1.6-nightly.20260911+g7655703</sparkle:shortVersionString><description><![CDATA[<pre>Version: 0.1.6-nightly.20260911+g7655703
-Build number: 510
-Commit: 765570373d8f3dd76a8654dcbdb46ee723634f3f
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher nightly updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher nightly updates</description><item><title>0.1.6-nightly.20260912+gc9ed29c</title><pubDate>Sat, 12 Sep 2026 11:30:46 +0100</pubDate><sparkle:version>511</sparkle:version><sparkle:shortVersionString>0.1.6-nightly.20260912+gc9ed29c</sparkle:shortVersionString><description><![CDATA[<pre>Version: 0.1.6-nightly.20260912+gc9ed29c
+Build number: 511
+Commit: c9ed29cd595246e6f32b9278ce4ec15bd95ea35d
 
 This Nightly Build is untested. Use the Stable Release unless you want the latest master build.
 
 Windows installer: Speecher-Setup-x64.exe
 
 Update channels: https://github.com/firemonster612/speecher#installation--updates
-</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/nightly/speecher-build510.dmg" length="42670752" type="application/x-apple-diskimage" sparkle:edSignature="bCmSBRkTfXYmkOhyO0bReoglcAIEA53EGfee8w66SFY0eFCja4Q++yMR7TZukckFUH8FhYRCBUkQKqfmhbLnBg==" /></item></channel></rss>
+</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/nightly/speecher-build511.dmg" length="42672157" type="application/x-apple-diskimage" sparkle:edSignature="jGiaKuMwo0xo/mLE+e8xQwP7r14YXmzgxIJuHfgDxgWwvmelXR39d1eCSsadUVxhherfH9hcNVCkmkeFmsoCAw==" /></item></channel></rss>
