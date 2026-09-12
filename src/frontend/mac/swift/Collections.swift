@@ -421,7 +421,13 @@ struct CellField: View {
             .onChange(of: edited) {
                 if commitsImmediately { commit(edited) }
             }
-            .onChange(of: editing) { if !editing { commit(edited) } }
+            // No focus-out commit in immediate mode: every keystroke has
+            // already landed, and the focus resigning on the add sheet's way
+            // out would write the old term back into the draft commitDraft()
+            // has just reset for the next record.
+            .onChange(of: editing) {
+                if !editing && !commitsImmediately { commit(edited) }
+            }
             .onChange(of: text) { _, stored in
                 if !editing { edited = stored }
             }
