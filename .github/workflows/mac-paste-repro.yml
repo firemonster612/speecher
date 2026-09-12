@@ -20,6 +20,11 @@ jobs:
       - name: Inspect fresh T3 Code session
         run: |
           mkdir -p "$RUNNER_TEMP/evidence"
+          mkdir -p /tmp/speecher-paste-project
+          git -C /tmp/speecher-paste-project init
+          sudo python3 .github/macos-e2e/tcc_seed.py '/Library/Application Support/com.apple.TCC/TCC.db' kTCCServiceAccessibility /usr/bin/osascript 2 UNUSED 1
+          python3 .github/macos-e2e/tcc_seed.py "$HOME/Library/Application Support/com.apple.TCC/TCC.db" kTCCServiceAppleEvents /usr/bin/osascript 2 com.apple.systemevents 1
+          sudo killall tccd || true
           app=$(find "$RUNNER_TEMP/t3" -maxdepth 2 -name '*.app' -print -quit)
           xattr -dr com.apple.quarantine "$app" || true
           open -na "$app" --args --remote-debugging-port=9222

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import sys
+import subprocess
 import time
 from urllib.request import urlopen
 from playwright.sync_api import sync_playwright
@@ -32,3 +33,20 @@ with sync_playwright() as driver:
             button.first.click()
             page.wait_for_timeout(1500)
             capture(f'{index}-' + label.replace(' ', '-').lower())
+    page.get_by_text('Local folder', exact=True).click()
+    time.sleep(2)
+    subprocess.run(['osascript', '-e', '''tell application "System Events"
+        keystroke "g" using {command down, shift down}
+        delay 1
+        keystroke "/tmp/speecher-paste-project"
+        key code 36
+        delay 1
+        key code 36
+    end tell'''], check=True, timeout=15)
+    page.wait_for_timeout(3000)
+    capture('project-added')
+    button = page.get_by_role('button', name='New thread', exact=True)
+    if button.count() and button.first.is_visible():
+        button.first.click()
+        page.wait_for_timeout(2000)
+    capture('composer')
