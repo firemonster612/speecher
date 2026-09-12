@@ -1,0 +1,77 @@
+;; SELinux policy module for speecher-keywatchd, the Speecher key-watch daemon.
+;;
+;; Without it the installed binary is plain lib_t, systemd runs it as init_t,
+;; and SELinux denies init_t open on /dev/input/event* (event_device_t), so the
+;; daemon exits 1 on every enforcing machine. This module gives the daemon a
+;; confined domain of its own, entered when systemd execs the labelled binary,
+;; and allows exactly what KeywatchDaemon.cpp does. Every rule below comes from
+;; an AVC observed with the domain permissive and dontaudit disabled on
+;; Fedora 44, or from the standard domain-transition pattern. Nothing widens
+;; any other domain beyond what systemd needs to start this one service.
+;;
+;; CIL, so speecher-keywatch-setup loads it with `semodule -i` and no
+;; policy-devel toolchain, then restorecons the binary.
+
+(type speecher_keywatchd_t)
+(type speecher_keywatchd_exec_t)
+(roletype system_r speecher_keywatchd_t)
+(roletype object_r speecher_keywatchd_exec_t)
+;; domain carries the base policy's per-process defaults (its own /proc
+;; entry, sigchld to init, shared libraries, its own sockets, listing /dev).
+;; The file attributes let restorecon, rpm and unconfined manage the binary
+;; like any other executable.
+(typeattributeset domain (speecher_keywatchd_t))
+(typeattributeset file_type (speecher_keywatchd_exec_t))
+(typeattributeset non_security_file_type (speecher_keywatchd_exec_t))
+(typeattributeset non_auth_file_type (speecher_keywatchd_exec_t))
+(typeattributeset exec_type (speecher_keywatchd_exec_t))
+(typeattributeset entry_type (speecher_keywatchd_exec_t))
+
+;; Where speecher-keywatch-setup installs the binary; restorecon applies it.
+(filecon "/usr/local/lib/speecher/speecher-keywatchd" file
+  (system_u object_r speecher_keywatchd_exec_t ((s0) (s0))))
+
+;; Entering the domain: systemd (init_t) execs the binary and lands here. The
+;; unit sets NoNewPrivileges=yes, and the kernel only lets a transition
+;; through under no_new_privs with nnp_transition. siginh stays denied, as in
+;; refpolicy's transition pattern: pending signals are not inherited, and the
+;; dontaudit keeps that expected refusal out of the audit log.
+(typetransition init_t speecher_keywatchd_exec_t process speecher_keywatchd_t)
+(allow init_t speecher_keywatchd_exec_t (file (getattr open read execute map)))
+(allow init_t speecher_keywatchd_t (process (transition)))
+(allow init_t speecher_keywatchd_t (process2 (nnp_transition)))
+(dontaudit init_t speecher_keywatchd_t (process (siginh)))
+(allow speecher_keywatchd_t speecher_keywatchd_exec_t (file (entrypoint read execute map)))
+
+;; Socket activation: systemd labels the listening socket with the service's
+;; domain, so init_t creates, configures, binds and listens on a
+;; speecher_keywatchd_t socket. The daemon's own accept, SO_PEERCRED and
+;; read/write on it are self permissions the domain attribute already grants.
+(allow init_t speecher_keywatchd_t (unix_stream_socket (create setopt bind listen)))
+
+;; stderr is the journal stream socket systemd opened, so it is init_t. The
+;; kernel checks the fd's open mode (read and write) when it is inherited
+;; across the exec; short of that it swaps in /dev/null and the daemon's
+;; journal lines vanish.
+(allow speecher_keywatchd_t init_t (unix_stream_socket (read write)))
+
+;; sd_uid_get_state reads /run/systemd/users/<uid>, logind's world-readable
+;; per-user state, to check the peer has a live login session.
+(allow speecher_keywatchd_t init_var_run_t (dir (search)))
+(allow speecher_keywatchd_t systemd_logind_var_run_t (dir (search)))
+(allow speecher_keywatchd_t systemd_logind_var_run_t (file (getattr open read)))
+
+;; sd_listen_fds checks that its own pidfd sits on pidfs (fstatfs, filesystem
+;; metadata only) before trusting LISTEN_PID. Optional so the module still
+;; loads on policies without pidfs_t.
+(optional speecher_keywatchd_pidfs
+  (allow speecher_keywatchd_t pidfs_t (filesystem (getattr))))
+
+;; The point of the daemon: read the keyboards. /dev/input (device_t) is
+;; watched with inotify for hot-plug; the event nodes are opened read-only.
+;; ioctl is limited to the three queries openKeyboard() makes, EVIOCGID
+;; (0x4502) and EVIOCGBIT for the event types and the key bits (0x4520,
+;; 0x4521); EVIOCGRAB and every write ioctl stay out of reach.
+(allow speecher_keywatchd_t device_t (dir (watch)))
+(allow speecher_keywatchd_t event_device_t (chr_file (open read ioctl)))
+(allowx speecher_keywatchd_t event_device_t (ioctl chr_file (0x4502 0x4520 0x4521)))

@@ -27,6 +27,9 @@ constexpr std::string_view daemonInstallPath = "/usr/local/lib/speecher/speecher
 constexpr std::string_view socketUnitPath = "/etc/systemd/system/speecher-keywatchd.socket";
 constexpr std::string_view serviceUnitPath = "/etc/systemd/system/speecher-keywatchd.service";
 constexpr std::string_view socketName = "speecher-keywatchd.socket";
+constexpr std::string_view serviceName = "speecher-keywatchd.service";
+constexpr std::string_view policyFileName = "speecher_keywatchd.cil";
+constexpr std::string_view policyModuleName = "speecher_keywatchd";
 
 constexpr std::string_view socketText =
     "[Unit]\n"
@@ -82,9 +85,10 @@ constexpr std::string_view serviceText =
     "DeviceAllow=char-input r\n"
     "UMask=0077\n";
 
-// The daemon ships beside this installer, so its source is our own directory,
-// never a path taken from the caller: nothing user-controlled crosses pkexec.
-std::string daemonSourcePath()
+// The daemon and its SELinux module ship beside this installer, so their
+// source is our own directory, never a path taken from the caller: nothing
+// user-controlled crosses pkexec.
+std::string bundledPath(std::string_view name)
 {
     char buffer[4096];
     const ssize_t length = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
@@ -97,7 +101,23 @@ std::string daemonSourcePath()
     if (slash == std::string::npos) {
         return {};
     }
-    return self.substr(0, slash + 1) + "speecher-keywatchd";
+    return self.substr(0, slash + 1) + std::string(name);
+}
+
+// selinuxfs is mounted only when the running kernel has SELinux enabled.
+bool selinuxEnabled()
+{
+    return access("/sys/fs/selinux/enforce", F_OK) == 0;
+}
+
+// Under SELinux the copied daemon is plain lib_t, so systemd would run it as
+// init_t, which may not open the input devices. The module gives it a
+// confined domain of its own; restorecon labels the installed binary so the
+// exec from systemd transitions into that domain.
+bool loadSelinuxPolicy(std::string &error)
+{
+    return run("semodule", {"-i", bundledPath(policyFileName)}, error)
+        && run("restorecon", {std::string(daemonInstallPath)}, error);
 }
 
 bool ensureSystemUser(bool &created, std::string &error)
@@ -117,7 +137,7 @@ bool ensureSystemUser(bool &created, std::string &error)
 
 bool copyDaemon(std::string &error)
 {
-    const std::string source = daemonSourcePath();
+    const std::string source = bundledPath("speecher-keywatchd");
     if (source.empty()) {
         error = "Could not locate the bundled speecher-keywatchd";
         return false;
@@ -166,6 +186,12 @@ bool install(const std::string &user, std::string &error)
         return failed();
     }
     transaction.record("installed " + std::string(daemonInstallPath));
+    if (selinuxEnabled()) {
+        if (!loadSelinuxPolicy(error)) {
+            return failed();
+        }
+        transaction.record("loaded SELinux module " + std::string(policyModuleName));
+    }
     if (!writeFile(std::string(socketUnitPath), socketText, error)) {
         return failed();
     }
@@ -175,7 +201,16 @@ bool install(const std::string &user, std::string &error)
     }
     transaction.record("wrote " + std::string(serviceUnitPath));
     run("systemctl", {"daemon-reload"}, error, true, true);
-    if (!run("systemctl", {"enable", "--now", std::string(socketName)}, error)) {
+    // An earlier broken install leaves the service in a crash loop that trips
+    // systemd's start-rate limit; clear it, or the first connection after this
+    // install is refused for up to ten seconds. Then restart rather than
+    // start: systemd labels the socket from the daemon binary when the socket
+    // starts, so a socket left listening before the binary carried its domain
+    // must be recreated.
+    run("systemctl", {"reset-failed", std::string(socketName), std::string(serviceName)},
+        error, true, true);
+    if (!run("systemctl", {"enable", std::string(socketName)}, error)
+        || !run("systemctl", {"restart", std::string(socketName)}, error)) {
         return failed();
     }
     return true;
@@ -189,6 +224,9 @@ bool remove(const std::string &user, std::string &error)
         || !removeFileIfPresent(std::string(serviceUnitPath), error)
         || !removeFileIfPresent(std::string(daemonInstallPath), error)) {
         return false;
+    }
+    if (selinuxEnabled()) {
+        run("semodule", {"-r", std::string(policyModuleName)}, error, true, true);
     }
     run("systemctl", {"daemon-reload"}, error, true, true);
     return true;
