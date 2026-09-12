@@ -14,6 +14,7 @@
 #endif
 
 #include <QApplication>
+#include <QPushButton>
 #include <QTabWidget>
 #include <QTimer>
 #include <QCoreApplication>
@@ -202,6 +203,17 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
                 }
             }
         }
+        QCoreApplication::processEvents();
+    }
+    // SPEECHER_GRAB_CLICK names a button (by objectName) to click once the
+    // page is up, so a grab can show what an interaction leaves behind.
+    const QString click = qEnvironmentVariable("SPEECHER_GRAB_CLICK");
+    if (!click.isEmpty()) {
+        auto *button = m_appWindow->findChild<QPushButton *>(click);
+        if (!button) {
+            return false;
+        }
+        button->click();
         QCoreApplication::processEvents();
     }
     return m_appWindow->grab().save(path);

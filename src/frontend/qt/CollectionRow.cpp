@@ -165,7 +165,15 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     connect(m_table, &QTableWidget::itemSelectionChanged, this, [this] { updateButtons(); });
     if (m_add) {
         connect(m_add, &QPushButton::clicked, this, [this] {
-            appendRecord(m_collection.blankRecord, false);
+            {
+                // Building the row fires itemChanged per cell, and announcing
+                // the change reloads every settings page from the round-tripped
+                // draft — which drops a still-blank record and takes the new
+                // row back before it can be typed into. Stay quiet until the
+                // first real cell edit announces it.
+                const QSignalBlocker blocker(m_table);
+                appendRecord(m_collection.blankRecord, false);
+            }
             const int row = m_table->rowCount() - 1;
             m_table->selectRow(row);
             for (int column = 0; column < m_collection.columns.size(); ++column) {
@@ -176,7 +184,6 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
                 }
             }
             updateButtons();
-            m_notifyChanged();
         });
     }
     connect(m_delete, &QPushButton::clicked, this, [this] {

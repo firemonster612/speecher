@@ -757,6 +757,41 @@ private slots:
                                            QStringLiteral("Speecher")}));
     }
 
+    void addingAVocabularyTermSurvivesTheSettingsRoundTrip()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("vocabulary"), *platform, providers);
+        AppSettings settings;
+        settings.vocabulary = {{QStringLiteral("Speecher")}};
+        page->load(settings);
+        // SettingsPageSet reloads every page from the round-tripped draft on
+        // each change; a blank vocabulary record does not survive that trip,
+        // so a reload straight after Add would take the new row back.
+        AppSettings draft = settings;
+        connect(page.get(), &SchemaSettingsPage::changed, page.get(), [&draft, &page] {
+            page->appendToDraft(draft);
+            const QSignalBlocker blocker(page.get());
+            page->load(draft);
+        });
+
+        auto *table = page->findChild<QTableWidget *>(QStringLiteral("vocabularyEntries"));
+        auto *add = page->findChild<QPushButton *>(QStringLiteral("addVocabularyEntries"));
+        QVERIFY(table && add);
+        QCOMPARE(table->rowCount(), 1);
+
+        add->click();
+        QCOMPARE(table->rowCount(), 2);
+        QCOMPARE(table->currentColumn(), 1);
+
+        // Typing the term is the change that reaches the settings.
+        table->item(table->currentRow(), 1)->setText(QStringLiteral("Deepgram"));
+        AppSettings applied;
+        page->appendToDraft(applied);
+        QCOMPARE(applied.vocabulary.size(), 2);
+    }
+
     void undoingADeletedCorrectionPutsBackEverythingItKnew()
     {
         ProviderRegistry providers;
