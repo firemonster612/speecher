@@ -10,11 +10,13 @@ import SwiftUI
 /// menu, and a monitor sees it before the menu does.
 @MainActor
 final class ShortcutRecorder: ObservableObject {
-    enum Mode { case combination, singleKey }
-
-    @Published private(set) var mode: Mode?
-    var recording: Bool { mode != nil }
+    @Published private(set) var recording = false
     private var monitor: Any?
+    /// Modifiers seen going down since the unified capture armed (or since the
+    /// last non-modifier key), by keyCode so left and right stay distinct. A
+    /// lone one commits on its release; a second joining spoils the release.
+    private var heldModifiers: Set<UInt16> = []
+    private var modifierChordSpoiled = false
     /// Restores the hotkey registration recording suspended. The bound
     /// combination is consumed system-wide while registered, so the monitor
     /// would never see it — pressing it would start dictation instead.
@@ -22,48 +24,73 @@ final class ShortcutRecorder: ObservableObject {
     /// Escape abandons the recording rather than becoming the shortcut.
     private let escapeKeyCode: UInt16 = 53
 
+    /// Catches the next shortcut of either kind: a non-modifier key pressed
+    /// with ⌘, ⌥, ⌃ or ⇧ held goes to `combination`; one pressed bare goes to
+    /// `singleKey`, as does a lone modifier — committed when its flag clears,
+    /// so long as no other key was pressed while it was down (a modifier-only
+    /// chord is not a valid shortcut). `singleKey` says whether it took the
+    /// key; one it does not know (a media key) leaves the recorder armed.
+    /// Escape abandons.
     func record(suspending model: AppModel,
-                _ bind: @escaping (String, NSEvent.ModifierFlags) -> Void) {
-        begin(.combination, suspending: model)
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                combination: @escaping (String, NSEvent.ModifierFlags) -> Void,
+                singleKey: @escaping (UInt16) -> Bool) {
+        begin(suspending: model)
+        heldModifiers = []
+        modifierChordSpoiled = false
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) {
+            [weak self] event in
             guard let self else { return event }
-            stop()
-            if event.keyCode != escapeKeyCode {
-                bind(event.charactersIgnoringModifiers ?? "", event.modifierFlags)
+            if event.type == .flagsChanged {
+                return handleModifier(event, singleKey)
             }
+            // A non-modifier key ends any pending lone-modifier capture: the
+            // modifiers' releases from here on pass by unrecorded.
+            heldModifiers = []
+            modifierChordSpoiled = false
+            if event.keyCode == escapeKeyCode {
+                stop()
+                return nil
+            }
+            if !event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
+                stop()
+                combination(event.charactersIgnoringModifiers ?? "", event.modifierFlags)
+                return nil
+            }
+            if singleKey(event.keyCode) { stop() }
             // Swallowed: the keys being recorded are the ones that would
             // otherwise do something.
             return nil
         }
     }
 
-    /// Catches the next key of any kind — a bare modifier included, which
-    /// keyDown never reports, so the mask adds flagsChanged. Escape still
-    /// abandons. The callback says whether it took the key; one it does not
-    /// know (a media key) leaves the recorder armed, as the Qt capture
-    /// button does.
-    func recordSingleKey(suspending model: AppModel,
-                         _ bind: @escaping (UInt16) -> Bool) {
-        begin(.singleKey, suspending: model)
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) {
-            [weak self] event in
-            guard let self else { return event }
-            if event.type == .flagsChanged {
-                // Only a press records; the release of a modifier that was
-                // already down when recording started passes by. Modifier
-                // flag changes are not swallowed — hiding one from AppKit
-                // would desync its idea of what is held.
-                guard Self.modifierIsDown(event) else { return event }
-                if bind(event.keyCode) { stop() }
-                return event
+    /// Modifier flag changes are never swallowed — hiding one from AppKit
+    /// would desync its idea of what is held.
+    private func handleModifier(_ event: NSEvent, _ singleKey: (UInt16) -> Bool) -> NSEvent? {
+        // Caps Lock's flag reports the lock state, not the key, so its release
+        // edge is unreadable; commit it on either toggle edge instead — but
+        // only alone. Pressed with another modifier held, it joins a chord
+        // like any other key: no commit, and the held modifier's release must
+        // not commit either.
+        if event.keyCode == 57 {
+            if heldModifiers.isEmpty && !modifierChordSpoiled {
+                if singleKey(event.keyCode) { stop() }
+            } else {
+                modifierChordSpoiled = true
             }
-            if event.keyCode == escapeKeyCode {
-                stop()
-                return nil
-            }
-            if bind(event.keyCode) { stop() }
-            return nil
+            return event
         }
+        if Self.modifierIsDown(event) {
+            if !heldModifiers.isEmpty { modifierChordSpoiled = true }
+            heldModifiers.insert(event.keyCode)
+            return event
+        }
+        // A release. Only a modifier we saw go down counts; one already held
+        // when recording started passes by.
+        guard heldModifiers.remove(event.keyCode) != nil else { return event }
+        let lone = heldModifiers.isEmpty && !modifierChordSpoiled
+        if heldModifiers.isEmpty { modifierChordSpoiled = false }
+        if lone, singleKey(event.keyCode) { stop() }
+        return event
     }
 
     /// Whether this flagsChanged event is the press edge of the modifier its
@@ -89,11 +116,11 @@ final class ShortcutRecorder: ObservableObject {
         return event.modifierFlags.rawValue & bit != 0
     }
 
-    private func begin(_ newMode: Mode, suspending model: AppModel) {
+    private func begin(suspending model: AppModel) {
         stop()
         model.beginShortcutRecording()
         restoreShortcut = { model.endShortcutRecording() }
-        mode = newMode
+        recording = true
     }
 
     func stop() {
@@ -101,7 +128,7 @@ final class ShortcutRecorder: ObservableObject {
             NSEvent.removeMonitor(monitor)
         }
         monitor = nil
-        mode = nil
+        recording = false
         restoreShortcut?()
         restoreShortcut = nil
     }
@@ -121,32 +148,29 @@ final class ShortcutRecorder: ObservableObject {
 struct ShortcutPane: View {
     @ObservedObject var model: AppModel
     @StateObject private var recorder = ShortcutRecorder()
+    /// A key the recorder caught but could not bind (a media key); shown in
+    /// the footer while the recorder stays armed.
+    @State private var captureProblem = ""
 
     var body: some View {
         Form {
             Section {
                 LabeledContent {
                     Button(caption) {
-                        recorder.record(suspending: model) { characters, flags in
+                        captureProblem = ""
+                        recorder.record(suspending: model, combination: { characters, flags in
                             model.bindShortcut(characters: characters, modifierFlags: flags)
-                        }
+                        }, singleKey: { keyCode in
+                            if model.bindSingleKey(macKeyCode: keyCode) { return true }
+                            captureProblem = "That key cannot be a dictation key."
+                            return false
+                        })
                     }
                     .disabled(!model.shortcutSupported)
                 } label: {
                     Text("Dictation shortcut")
-                    Text("Hold it to dictate while it is down, or press and release to "
-                         + "start and press again to stop.")
-                }
-                LabeledContent {
-                    Button(singleKeyCaption) {
-                        recorder.recordSingleKey(suspending: model) { keyCode in
-                            model.bindSingleKey(macKeyCode: keyCode)
-                        }
-                    }
-                    .disabled(!model.shortcutSupported)
-                } label: {
-                    Text("Single key")
-                    Text("One key on its own, such as Right Option or F13.")
+                    Text("Press a key combination, or a single key such as "
+                         + "Right Option or F13.")
                 }
                 if model.shortcutNeedsAccessibility, !model.accessibilityEnabled {
                     Button("Grant Accessibility Access") { model.requestAccessibility() }
@@ -162,20 +186,16 @@ struct ShortcutPane: View {
     }
 
     private var caption: String {
-        if recorder.mode == .combination { return "Type a shortcut…" }
-        return model.shortcut.isEmpty ? "Record Shortcut" : model.shortcut
-    }
-
-    private var singleKeyCaption: String {
-        recorder.mode == .singleKey ? "Press a key…" : "Record a Single Key"
+        if recorder.recording { return "Press a key or key combination…" }
+        return model.shortcut.isEmpty ? "Set shortcut" : model.shortcut
     }
 
     private var footnote: String {
-        if recorder.mode == .combination {
-            return "Press the keys you want, or Escape to keep the current one."
-        }
-        if recorder.mode == .singleKey {
-            return "Press any single key — a bare modifier like Right Option works — "
+        if recorder.recording {
+            if !captureProblem.isEmpty {
+                return captureProblem + " Try another, or press Escape to keep the current one."
+            }
+            return "Press the keys you want — a bare modifier like Right Option works — "
                 + "or Escape to keep the current one."
         }
         if !model.shortcutProblem.isEmpty { return model.shortcutProblem }

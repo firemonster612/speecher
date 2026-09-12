@@ -77,9 +77,11 @@ struct PaneHost {
     // The single-key typing cost, shown inline after a save; not an error.
     QString shortcutNotice;
     bool shortcutRecording = false;
-    // While recording: the next key, bare modifiers included, becomes the
-    // binding, instead of waiting for a chord.
-    bool shortcutRecordingSingleKey = false;
+    // While recording: the scancode (with the extended byte) of the one
+    // modifier currently held, which its release will commit as a single key.
+    // 0 when no modifier is pending; -1 once a second key joined it — a
+    // modifier-only chord is not a valid combination and must not commit.
+    int shortcutPendingModifier = 0;
 };
 
 // One schema page as a WinUI page: ScrollViewer over a 1064-wide column with

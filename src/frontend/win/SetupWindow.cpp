@@ -613,66 +613,24 @@ struct SetupWindow::Native {
             QStringLiteral("Tap the shortcut to start dictation and tap it again to stop, or hold it and talk. Dictation ends when you let go."));
         TextBox recorder;
         recorder.IsReadOnly(true);
-        recorder.PlaceholderText(L"Press a shortcut");
-        TextBox singleKey;
-        singleKey.IsReadOnly(true);
-        singleKey.PlaceholderText(L"Press one key");
+        recorder.PlaceholderText(L"Press a key or key combination…");
         const ShortcutBinding current = controller->globalShortcut();
-        if (current.isSingleKey()) {
-            singleKey.Text(hstring(current.displayText().toStdWString()));
-        } else {
-            recorder.Text(hstring(
-                (current.isEmpty() ? ShortcutBinding(WinGlobalShortcutBinder::defaultShortcut())
-                                   : current)
-                    .displayText()
-                    .toStdWString()));
-        }
-        shortcutStatus = textBlock(QStringLiteral("The default is Ctrl+Alt+D."));
-        recorder.KeyDown([this, recorder, singleKey](const auto &,
-                                                     const Input::KeyRoutedEventArgs &event) {
-            const int virtualKey = static_cast<int>(event.Key());
-            if (virtualKey == VK_ESCAPE) {
-                event.Handled(true);
-                return;
-            }
-            // The settings recorder's mapping, so both accept the same keys —
-            // F-keys, Space, and the active layout's punctuation included.
-            const int qtKey = win::ShortcutRecorder::qtKeyForVirtualKey(virtualKey);
-            if (qtKey == 0) {
-                return;
-            }
-            const Qt::KeyboardModifiers modifiers = win::ShortcutRecorder::heldModifiers();
-            if (modifiers == Qt::NoModifier) {
-                shortcutStatus.Text(L"Add Ctrl, Alt, Shift, or the Windows key.");
-                event.Handled(true);
-                return;
-            }
-            const QKeySequence sequence(QKeyCombination(modifiers, static_cast<Qt::Key>(qtKey)));
-            QString error;
-            if (!controller->setGlobalShortcut(sequence, &error)) {
-                shortcutStatus.Text(hstring(QStringLiteral("Could not register the shortcut: %1")
-                                                .arg(error).toStdWString()));
-            } else {
-                recorder.Text(hstring(sequence.toString(QKeySequence::NativeText).toStdWString()));
-                singleKey.Text(L"");
-                shortcutStatus.Text(L"Shortcut registered.");
-            }
-            event.Handled(true);
-        });
-        panel.Children().Append(settingRow(QStringLiteral("Dictation shortcut"), recorder));
+        recorder.Text(hstring(
+            (current.isEmpty() ? ShortcutBinding(WinGlobalShortcutBinder::defaultShortcut())
+                               : current)
+                .displayText()
+                .toStdWString()));
+        shortcutStatus = textBlock(QStringLiteral(
+            "Press a key combination, or a single key such as Right Alt or F13. "
+            "The default is Ctrl+Alt+D."));
+        shortcutPendingModifier = 0;
 
-        // The single-key capture takes the next key — bare modifiers included,
-        // which is why it cannot share the chord box above. A key that also
-        // types still saves; the status line carries the warning.
-        singleKey.KeyDown([this, recorder, singleKey](const auto &,
-                                                      const Input::KeyRoutedEventArgs &event) {
-            event.Handled(true);
-            if (static_cast<int>(event.Key()) == VK_ESCAPE) {
-                return;
-            }
-            const auto keyStatus = event.KeyStatus();
-            const PhysicalKey *key = physicalKeyForWin(
-                int(keyStatus.ScanCode) | (keyStatus.IsExtendedKey ? 0xE000 : 0));
+        // The physical key, not the layout's meaning of it: the scancode plus
+        // the extended byte is the vocabulary's win column, so bare modifiers
+        // record and left is told from right. A key that also types still
+        // saves; the status line carries the warning.
+        const auto commitSingleKey = [this, recorder](int scanCode) {
+            const PhysicalKey *key = physicalKeyForWin(scanCode);
             if (!key) {
                 shortcutStatus.Text(L"That key cannot be a dictation key.");
                 return;
@@ -690,14 +648,94 @@ struct SetupWindow::Native {
                                                 .arg(error).toStdWString()));
                 return;
             }
-            singleKey.Text(hstring(binding.displayText().toStdWString()));
-            recorder.Text(L"");
+            recorder.Text(hstring(binding.displayText().toStdWString()));
             const QString warning = singleKeyTypingWarning(binding);
             shortcutStatus.Text(warning.isEmpty() ? hstring(L"Single key set.")
                                                   : hstring(warning.toStdWString()));
+        };
+        recorder.KeyDown([this, recorder, commitSingleKey](const auto &,
+                                                           const Input::KeyRoutedEventArgs &event) {
+            const int virtualKey = static_cast<int>(event.Key());
+            // This box records whenever focused, so bare Tab and Enter must
+            // keep navigating the wizard rather than silently becoming the
+            // shortcut; with a modifier held they are recordable as part of a
+            // combination below.
+            if ((virtualKey == VK_TAB || virtualKey == VK_RETURN)
+                && win::ShortcutRecorder::heldModifiers() == Qt::NoModifier) {
+                shortcutPendingModifier = 0;
+                return;
+            }
+            event.Handled(true);
+            if (virtualKey == VK_ESCAPE) {
+                shortcutPendingModifier = 0;
+                return;
+            }
+            const auto keyStatus = event.KeyStatus();
+            if (keyStatus.WasKeyDown) {
+                // A held key auto-repeats; only the first press counts.
+                return;
+            }
+            const int scanCode = int(keyStatus.ScanCode)
+                | (keyStatus.IsExtendedKey ? 0xE000 : 0);
+            if (win::ShortcutRecorder::isModifierKey(virtualKey)) {
+                // A lone modifier commits on its release below; a second one
+                // makes a modifier-only chord, which is not a valid
+                // combination. The exception is AltGr, which Windows delivers
+                // as a synthetic Left Ctrl press followed by Right Alt: that
+                // pair is one physical key, so Right Alt stays capturable on
+                // AltGr layouts.
+                const bool altGr = shortcutPendingModifier == 0x1D && scanCode == 0xE038;
+                shortcutPendingModifier =
+                    shortcutPendingModifier == 0 || altGr ? scanCode : -1;
+                return;
+            }
+            shortcutPendingModifier = -1;
+            const Qt::KeyboardModifiers modifiers = win::ShortcutRecorder::heldModifiers();
+            if (modifiers == Qt::NoModifier) {
+                commitSingleKey(scanCode);
+                return;
+            }
+            // The settings recorder's mapping, so both accept the same keys —
+            // F-keys, Space, and the active layout's punctuation included.
+            const int qtKey = win::ShortcutRecorder::qtKeyForVirtualKey(virtualKey);
+            if (qtKey == 0) {
+                shortcutStatus.Text(L"That key cannot be part of a shortcut.");
+                return;
+            }
+            const QKeySequence sequence(QKeyCombination(modifiers, static_cast<Qt::Key>(qtKey)));
+            QString error;
+            if (!controller->setGlobalShortcut(sequence, &error)) {
+                shortcutStatus.Text(hstring(QStringLiteral("Could not register the shortcut: %1")
+                                                .arg(error).toStdWString()));
+            } else {
+                recorder.Text(hstring(sequence.toString(QKeySequence::NativeText).toStdWString()));
+                shortcutStatus.Text(L"Shortcut registered.");
+            }
         });
-        panel.Children().Append(settingRow(
-            QStringLiteral("Or a single key, such as Right Alt or F13"), singleKey));
+        recorder.KeyUp([this, commitSingleKey](const auto &,
+                                               const Input::KeyRoutedEventArgs &event) {
+            const int virtualKey = static_cast<int>(event.Key());
+            // Bare Tab and Enter passed through on the way down; their release
+            // must pass through as well.
+            if (virtualKey == VK_TAB || virtualKey == VK_RETURN) {
+                return;
+            }
+            event.Handled(true);
+            const auto keyStatus = event.KeyStatus();
+            const int scanCode = int(keyStatus.ScanCode)
+                | (keyStatus.IsExtendedKey ? 0xE000 : 0);
+            if (shortcutPendingModifier == scanCode) {
+                shortcutPendingModifier = 0;
+                commitSingleKey(scanCode);
+                return;
+            }
+            // Once every modifier is up an abandoned or chorded press is
+            // over; the next lone modifier can record again.
+            if (win::ShortcutRecorder::heldModifiers() == Qt::NoModifier) {
+                shortcutPendingModifier = 0;
+            }
+        });
+        panel.Children().Append(settingRow(QStringLiteral("Dictation shortcut"), recorder));
 
         // The shortcut and its behaviour are set together; the combo shares
         // the shortcuts/activationMode setting the General page's schema row
@@ -822,6 +860,10 @@ struct SetupWindow::Native {
     bool launchAtLogin;
     bool singlePage = false;
     bool shortcutSuspended = false;
+    // The recorder's pending lone modifier: its scancode (with the extended
+    // byte) while it alone is down, 0 when none, -1 once another key joined
+    // it — a modifier-only chord must not commit on release.
+    int shortcutPendingModifier = 0;
 };
 
 SetupWindow::SetupWindow(ApplicationController *controller,

@@ -4,11 +4,11 @@
 
 namespace speecher::win {
 
-// The Shortcut pane: a recorder that captures the next chord, refuses chords
-// without a modifier, a single-key recorder that takes the next key — bare
-// modifiers included — and warns inline when that key also types, shows the
-// current binding as the system writes it, a reset to the default, and the
-// binder's own error when it refuses a binding.
+// The Shortcut pane: one recorder that captures the next input — a key
+// combination, a bare key, or a lone modifier committed on its release — and
+// warns inline when a single key also types, shows the current binding as the
+// system writes it, a reset to the default, and the binder's own error when it
+// refuses a binding.
 class ShortcutRecorder {
 public:
     // Appends the pane's cards to an already-titled settings column.
@@ -27,6 +27,11 @@ public:
     // setup assistant's recorder so both accept the same keys.
     static int qtKeyForVirtualKey(int virtualKey);
     static Qt::KeyboardModifiers heldModifiers();
+
+    // Whether a Windows virtual key is a modifier: part of a combination when
+    // another key joins it, a single-key binding when pressed and released on
+    // its own. Shared with the setup assistant's recorder.
+    static bool isModifierKey(int virtualKey);
 };
 
 } // namespace speecher::win
