@@ -231,6 +231,18 @@ private slots:
         QVERIFY(panel.frame.size.width <= 488);
         QCOMPARE(panel.frame.origin.y, initial.origin.y);
         QVERIFY(capture("long-preview"));
+        // Streaming text repeatedly changes the width; the palette must keep
+        // its original center rather than accumulate rounding or layout drift.
+        for (int update = 0; update < 20; ++update) {
+            bridge.popupPreviewChanged(update % 2 == 0
+                ? @"Please move the meeting to Thursday."
+                : @"short preview");
+            settle();
+            QVERIFY(capture("streaming-preview"));
+            QVERIFY2(qAbs(NSMidX(panel.frame) - NSMidX(initial)) <= 1,
+                     qPrintable(QStringLiteral("Palette center moved from %1 to %2 after update %3")
+                         .arg(NSMidX(initial)).arg(NSMidX(panel.frame)).arg(update)));
+        }
         bridge.popupFrozenChanged(true);
         settle();
         QVERIFY(capture("frozen-preview"));
