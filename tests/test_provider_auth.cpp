@@ -3,10 +3,12 @@
 #include "common/test_http.h"
 #include "common/test_auth.h"
 #include "frontend/ProviderOptions.h"
+#include "providers/ClaudeCredentialStorage.h"
 
 #ifdef Q_OS_MACOS
 #include <Security/Security.h>
 #include <QUuid>
+#include <QProcess>
 #endif
 
 using namespace speecher::test;
@@ -44,17 +46,26 @@ public:
             CFRelease(item);
             return status == errSecSuccess;
         }
-        return SecKeychainAddGenericPassword(nullptr, service.size(), service.constData(),
-                                            account.size(), account.constData(), bytes.size(), bytes.constData(), nullptr) == errSecSuccess;
+        // Match Claude Code: only the Apple security tool is trusted to decrypt,
+        // and its apple-tool partition owns the item. A native Speecher read
+        // would prompt here even with an unchanged designated requirement.
+        return QProcess::execute(QStringLiteral("/usr/bin/security"),
+                                 {QStringLiteral("add-generic-password"), QStringLiteral("-s"),
+                                  QString::fromUtf8(service), QStringLiteral("-a"), QString::fromUtf8(account),
+                                  QStringLiteral("-w"), QString::fromUtf8(bytes), QStringLiteral("-T"),
+                                  QStringLiteral("/usr/bin/security")}) == 0;
     }
     QByteArray read() const
     {
-        UInt32 size = 0;
-        void *data = nullptr;
-        if (SecKeychainFindGenericPassword(nullptr, service.size(), service.constData(),
-                                          account.size(), account.constData(), &size, &data, nullptr) != errSecSuccess) return {};
-        const QByteArray bytes(static_cast<const char *>(data), size);
-        SecKeychainItemFreeContent(nullptr, data);
+        QProcess process;
+        process.start(QStringLiteral("/usr/bin/security"),
+                      {QStringLiteral("find-generic-password"), QStringLiteral("-s"), QString::fromUtf8(service),
+                       QStringLiteral("-a"), QString::fromUtf8(account), QStringLiteral("-w")});
+        if (!process.waitForFinished(5000) || process.exitCode() != 0) return {};
+        QByteArray bytes = process.readAllStandardOutput();
+        if (bytes.endsWith('\n')) bytes.chop(1);
+        const QByteArray decoded = QByteArray::fromHex(bytes);
+        if (!bytes.isEmpty() && decoded.toHex() == bytes.toLower()) bytes = decoded;
         return bytes;
     }
     QString path() const { return QDir::homePath() + QStringLiteral("/.claude/.credentials.json"); }
@@ -68,7 +79,52 @@ class ProviderAuthTests : public QObject {
 
 private slots:
 #ifdef Q_OS_MACOS
-    void claudeCredentialsReadNativeKeychain_data()
+    void claudeKeychainReadAndRefreshPreserveBytes()
+    {
+        Boolean interactionAllowed = true;
+        QCOMPARE(SecKeychainGetUserInteractionAllowed(&interactionAllowed), errSecSuccess);
+        QCOMPARE(SecKeychainSetUserInteractionAllowed(false), errSecSuccess);
+        const auto restoreInteraction = qScopeGuard([&] {
+            SecKeychainSetUserInteractionAllowed(interactionAllowed);
+        });
+        DummyClaudeKeychain keychain;
+        const QByteArray initial = " {\"token\":\"dummy quoted \\\" token\"} \n\n";
+        QVERIFY(keychain.write(initial));
+        const auto nativeReadStatus = [&] {
+            UInt32 length = 0;
+            void *data = nullptr;
+            const OSStatus status = SecKeychainFindGenericPassword(nullptr,
+                keychain.service.size(), keychain.service.constData(),
+                keychain.account.size(), keychain.account.constData(), &length, &data, nullptr);
+            if (data) SecKeychainItemFreeContent(nullptr, data);
+            return status;
+        };
+        const OSStatus denied = nativeReadStatus();
+        QVERIFY(denied == errSecAuthFailed || denied == errSecInteractionNotAllowed);
+        ClaudeCredentialStorage storage(keychain.path());
+        QString error;
+        QCOMPARE(storage.read(&error), initial);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        const QByteArray rotated = "{\"token\":\"dummy rotated token\"}";
+        QVERIFY2(storage.write(rotated, &error), qPrintable(error));
+        QCOMPARE(storage.read(&error), rotated);
+        QCOMPARE(keychain.read(), rotated);
+        // Refresh must not grant the calling build access or replace the item.
+        QCOMPARE(nativeReadStatus(), denied);
+
+        SecKeychainItemRef item = nullptr;
+        QCOMPARE(SecKeychainFindGenericPassword(nullptr, keychain.service.size(), keychain.service.constData(),
+                                                keychain.account.size(), keychain.account.constData(),
+                                                nullptr, nullptr, &item), errSecSuccess);
+        QCOMPARE(SecKeychainItemDelete(item), errSecSuccess);
+        CFRelease(item);
+        QVERIFY(storage.read(&error).isEmpty());
+        QVERIFY(!error.isEmpty());
+        QVERIFY(!error.contains(QStringLiteral("dummy")));
+        QVERIFY(!storage.write(rotated, &error));
+    }
+
+    void claudeCredentialsReadKeychainThroughSecurity_data()
     {
         QTest::addColumn<QByteArray>("config");
         QTest::addColumn<QByteArray>("service");
@@ -77,7 +133,7 @@ private slots:
                                      << QByteArray("Claude Code-credentials-d27569d7");
     }
 
-    void claudeCredentialsReadNativeKeychain()
+    void claudeCredentialsReadKeychainThroughSecurity()
     {
         QFETCH(QByteArray, config);
         QFETCH(QByteArray, service);

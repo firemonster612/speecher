@@ -8,6 +8,7 @@
 #include <QStandardPaths>
 
 #ifdef Q_OS_MACOS
+#include <QProcess>
 #include <Security/Security.h>
 #include <pwd.h>
 #include <unistd.h>
@@ -52,17 +53,36 @@ QByteArray ClaudeCredentialStorage::read(QString *error) const
 {
 #ifdef Q_OS_MACOS
     if (!m_service.isEmpty()) {
-        UInt32 length = 0;
-        void *data = nullptr;
-        const OSStatus status = SecKeychainFindGenericPassword(nullptr, m_service.size(), m_service.constData(),
-                                                              m_account.size(), m_account.constData(),
-                                                              &length, &data, nullptr);
-        if (status != errSecSuccess) {
-            *error = QStringLiteral("Could not read Claude login from macOS Keychain (%1); run claude and use /login").arg(status);
+        // Self-signed releases have a per-build cdhash Keychain partition even
+        // with a stable designated requirement. "Always Allow" therefore does
+        // not survive updates. Use the same stable Apple tool as Claude Code;
+        // never modify the shared item's ACL or pass credentials in arguments.
+        QProcess process;
+        process.start(QStringLiteral("/usr/bin/security"),
+                      {QStringLiteral("find-generic-password"), QStringLiteral("-s"),
+                       QString::fromUtf8(m_service), QStringLiteral("-a"),
+                       QString::fromUtf8(m_account), QStringLiteral("-w")});
+        process.closeWriteChannel();
+        if (!process.waitForStarted(5000) || !process.waitForFinished(60000)) {
+            process.kill();
+            process.waitForFinished(1000);
+            *error = QStringLiteral("Could not read Claude login from macOS Keychain: security tool did not finish");
             return {};
         }
-        const QByteArray bytes(static_cast<const char *>(data), length);
-        SecKeychainItemFreeContent(nullptr, data);
+        if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+            // Do not expose subprocess output, which may contain credentials.
+            *error = QStringLiteral("Could not read Claude login from macOS Keychain (security exit %1); check Keychain access or run claude and use /login")
+                         .arg(process.exitCode());
+            return {};
+        }
+        QByteArray bytes = process.readAllStandardOutput();
+        // security appends one newline; preserve whitespace in the stored data.
+        if (bytes.endsWith('\n')) bytes.chop(1);
+        // security prints a hex dump for non-printable bytes, including the
+        // newlines in indented JSON. Credential documents are JSON objects, so
+        // an entirely hexadecimal result cannot be a literal document.
+        const QByteArray decoded = QByteArray::fromHex(bytes);
+        if (!bytes.isEmpty() && decoded.toHex() == bytes.toLower()) bytes = decoded;
         return bytes;
     }
 #endif
