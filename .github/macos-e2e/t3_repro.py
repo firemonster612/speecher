@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import sys
 import subprocess
@@ -50,3 +51,19 @@ with sync_playwright() as driver:
         button.first.click()
         page.wait_for_timeout(2000)
     capture('composer')
+    editor = page.get_by_test_id('composer-editor')
+    editor.click()
+    app = os.environ['APP_BIN']
+    subprocess.run([app, 'start'], check=True, timeout=15)
+    page.wait_for_timeout(2500)
+    subprocess.run([app, 'stop'], check=True, timeout=15)
+    for attempt in range(100):
+        status = subprocess.run([app, 'status'], capture_output=True, text=True, timeout=5)
+        if status.stdout.strip().endswith('idle'):
+            break
+        page.wait_for_timeout(200)
+    capture('after-dictation')
+    actual = editor.inner_text().strip()
+    copied = subprocess.run(['pbpaste'], capture_output=True, text=True, check=True).stdout
+    (out / 'delivery.json').write_text(json.dumps({'editor': actual, 'clipboard': copied}, indent=2))
+    assert actual == 'The quick brown fox.', f'Text did not reach T3 Code: {actual!r}; clipboard: {copied!r}'

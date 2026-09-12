@@ -8,9 +8,76 @@ permissions:
 jobs:
   reproduce:
     runs-on: macos-26
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: clang_64
+          modules: qtmultimedia qtwebsockets
+          cache: true
+
+      - name: Cache macOS compiler outputs
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: macos-26-release
+
+      - name: Remove obsolete AGL references
+        run: |
+          # The macOS 26 SDK removed AGL, but the runner still has a runtime
+          # /System/Library/Frameworks/AGL.framework, so Qt's FindWrapOpenGL
+          # find_library succeeds and CMake emits "-framework AGL", which the
+          # SDK-based linker then cannot resolve. Neutralize both the probe and
+          # the fallback so WrapOpenGL never links AGL at all.
+          wrap="$QT_ROOT_DIR/lib/cmake/Qt6/FindWrapOpenGL.cmake"
+          sed -i '' \
+            -e 's/find_library(WrapOpenGL_AGL NAMES AGL)/set(WrapOpenGL_AGL "")/' \
+            -e 's/set(__opengl_agl_fw_path "-framework AGL")//' \
+            "$wrap"
+          if grep -n 'framework AGL' "$wrap"; then
+            echo "AGL reference survived in FindWrapOpenGL.cmake" >&2
+            exit 1
+          fi
+          find "$QT_ROOT_DIR" -type f \( -name '*.prl' -o -name '*.cmake' \) -exec \
+            sed -i '' -e 's/-framework[[:space:]]*AGL//g' -e 's/AGL;//g' -e 's/AGL\.framework//g' {} +
+
+      - name: Create stable code-signing identity
+        run: |
+          keychain="$RUNNER_TEMP/e2e-signing.keychain-db"
+          openssl req -newkey rsa:2048 -nodes -x509 -days 2 \
+            -subj '/CN=Speecher E2E/' \
+            -addext 'keyUsage=digitalSignature' \
+            -addext 'extendedKeyUsage=codeSigning' \
+            -keyout "$RUNNER_TEMP/e2e-key.pem" \
+            -out "$RUNNER_TEMP/e2e-cert.pem"
+          openssl pkcs12 -export -legacy \
+            -inkey "$RUNNER_TEMP/e2e-key.pem" \
+            -in "$RUNNER_TEMP/e2e-cert.pem" \
+            -out "$RUNNER_TEMP/e2e-signing.p12" \
+            -passout pass:e2e
+          security create-keychain -p e2e "$keychain"
+          security unlock-keychain -p e2e "$keychain"
+          security set-keychain-settings -lut 7200 "$keychain"
+          security import "$RUNNER_TEMP/e2e-signing.p12" -k "$keychain" -P e2e -T /usr/bin/codesign
+          sudo security add-trusted-cert -d -r trustRoot \
+            -k /Library/Keychains/System.keychain "$RUNNER_TEMP/e2e-cert.pem"
+          security set-key-partition-list -S apple-tool:,apple: -s -k e2e "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security find-identity -v -p codesigning "$keychain"
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_E2E_HOOKS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Sign test app
+        run: codesign --force --deep --sign "Speecher E2E" build/speecher.app
       - name: Install T3 Code and test driver
         run: |
           curl -fL https://github.com/pingdotgg/t3code/releases/download/v0.0.40/T3-Code-0.0.40-arm64.zip -o "$RUNNER_TEMP/t3.zip"
@@ -28,7 +95,11 @@ jobs:
           app=$(find "$RUNNER_TEMP/t3" -maxdepth 2 -name '*.app' -print -quit)
           xattr -dr com.apple.quarantine "$app" || true
           open -na "$app" --args --remote-debugging-port=9222
-          "$RUNNER_TEMP/driver/bin/python" .github/macos-e2e/t3_repro.py "$RUNNER_TEMP/evidence"
+          export APP_BUNDLE="$PWD/build/speecher.app"
+          export EVIDENCE_ROOT="$RUNNER_TEMP/evidence"
+          export PROBE=/usr/bin/true
+          export DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib"
+          bash .github/macos-e2e/t3_paste_run.sh
       - uses: actions/upload-artifact@v7
         if: always()
         with:
