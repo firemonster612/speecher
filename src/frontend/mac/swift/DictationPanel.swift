@@ -727,8 +727,8 @@ final class SpeecherDictationPanel {
         let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
         let message = !state.problem.isEmpty ? state.problem : state.finished ? state.status : state.showsPreview ? state.preview : state.waitingLabel ?? ""
         let textWidth = (message as NSString).size(withAttributes: [.font: font]).width
-        let availableWidth = (panel.screen ?? NSScreen.main)?.visibleFrame.width
-            ?? maximumPreviewWidth + screenEdgeMargin
+        let screenArea = (panel.screen ?? NSScreen.main)?.visibleFrame
+        let availableWidth = screenArea?.width ?? maximumPreviewWidth + screenEdgeMargin
         let widthLimit: CGFloat = state.problem.isEmpty && state.showsPreview ? maximumPreviewWidth : 568
         let maximumWidth = max(minimumPillWidth, min(widthLimit, availableWidth - screenEdgeMargin))
         let chrome = !state.problem.isEmpty ? 150 : state.finished ? 78
@@ -739,7 +739,9 @@ final class SpeecherDictationPanel {
         let width = max(contentWidth, banners > 0 ? 420 : minimumPillWidth)
         var frame = panel.frame
         guard abs(frame.width - width) >= 1 || abs(frame.height - height) >= 1 else { return }
-        frame.origin.x -= (width - frame.width) / 2
+        // AppKit rounds window frames. Reusing the previous frame's center
+        // accumulates that rounding on every streamed preview update.
+        frame.origin.x = (screenArea?.midX ?? frame.midX) - width / 2
         frame.size = NSSize(width: width, height: height)
         panel.setFrame(frame, display: true)
     }

@@ -256,6 +256,7 @@ private slots:
         QVERIFY(panel.frame.size.height > initial.size.height);
         QCOMPARE(panel.frame.origin.y, initial.origin.y);
         QVERIFY(capture("refining"));
+        QVERIFY(qAbs(NSMidX(panel.frame) - NSMidX(initial)) <= 1);
         bridge.popupFrozenChanged(false);
         bridge.popupOAuthRefreshRequested();
         settle();
