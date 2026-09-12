@@ -27,7 +27,6 @@
 #include <QFileInfo>
 #include <QGroupBox>
 #include <QPalette>
-#include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLayout>
 #include <QList>
@@ -604,40 +603,29 @@ private slots:
         platform->binder->publishShortcut(initial);
         LinuxGlobalShortcutSetupPage page(controller);
 
-        auto *sequence = page.findChild<QKeySequenceEdit *>();
-        QVERIFY(sequence);
-        QCOMPARE(sequence->keySequence(), initial);
+        auto *capture = page.findChild<QPushButton *>(QStringLiteral("globalShortcutCapture"));
+        QVERIFY(capture);
+        // Idle, the button names the bound combination rather than a generic
+        // label.
+        QCOMPARE(capture->text(), initial.toString(QKeySequence::NativeText));
         bool hasGuidance = false;
         for (const QLabel *label : page.findChildren<QLabel *>()) {
             hasGuidance = hasGuidance
                 || label->text() == QStringLiteral(
-                    "Press the keys you want to use for dictation.");
+                    "Choose a key combination to use for dictation.");
         }
         QVERIFY(hasGuidance);
 
-        QPushButton *setShortcut = nullptr;
-        for (QPushButton *button : page.findChildren<QPushButton *>()) {
-            if (button->text() == QStringLiteral("Set shortcut")) {
-                setShortcut = button;
-                break;
-            }
-        }
-        QVERIFY(setShortcut);
-        QVERIFY(!setShortcut->isEnabled());
-        sequence->clear();
-        QVERIFY(!setShortcut->isEnabled());
-
         page.show();
-        sequence->setFocus();
-        QTRY_VERIFY(sequence->hasFocus());
+        capture->click();
+        QCOMPARE(capture->text(), QStringLiteral("Press shortcut…"));
+        // Recording must not fire the bound shortcut.
+        QCOMPARE(platform->binder->suspendCount, 1);
         const QKeySequence chosen(Qt::CTRL | Qt::ALT | Qt::Key_Space);
-        sequence->setKeySequence(chosen);
-        QVERIFY(setShortcut->isEnabled());
-        platform->binder->publishShortcut(QKeySequence(Qt::CTRL | Qt::Key_D));
-        QCOMPARE(sequence->keySequence(), chosen);
-        setShortcut->click();
+        QTest::keyClick(capture, Qt::Key_Space, Qt::ControlModifier | Qt::AltModifier);
         QCOMPARE(controller.globalShortcut().combination(), chosen);
-        QVERIFY(!setShortcut->isEnabled());
+        QCOMPARE(platform->binder->resumeCount, 1);
+        QCOMPARE(capture->text(), QStringLiteral("Ctrl+Alt+Space"));
 
         bool hasStatus = false;
         for (QLabel *label : page.findChildren<QLabel *>()) {
@@ -646,11 +634,19 @@ private slots:
         }
         QVERIFY(hasStatus);
 
+        // Escape abandons the capture and keeps the bound combination.
+        capture->click();
+        QTest::keyClick(capture, Qt::Key_Escape);
+        QCOMPARE(controller.globalShortcut().combination(), chosen);
+        QCOMPARE(capture->text(), QStringLiteral("Ctrl+Alt+Space"));
+
         platform->binder->setShortcutError = QStringLiteral("That shortcut is already in use.");
-        sequence->setKeySequence(QKeySequence(Qt::CTRL | Qt::Key_D));
-        setShortcut->click();
+        capture->click();
+        QTest::keyClick(capture, Qt::Key_D, Qt::ControlModifier);
         QCOMPARE(page.findChild<QLabel *>(QStringLiteral("globalShortcutStatus"))->text(),
                  QStringLiteral("That shortcut is already in use."));
+        // The failed capture leaves the button naming what is still bound.
+        QCOMPARE(capture->text(), QStringLiteral("Ctrl+Alt+Space"));
     }
 
     void globalShortcutPageWaitsForPortalSupportAndShowsItsResult()

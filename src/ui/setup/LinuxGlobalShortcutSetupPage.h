@@ -2,6 +2,7 @@
 
 #include "core/ShortcutBinding.h"
 
+#include <QKeySequence>
 #include <QPushButton>
 #include <QWidget>
 
@@ -9,7 +10,6 @@
 
 class QLabel;
 class QComboBox;
-class QKeySequenceEdit;
 class QProgressBar;
 class QShowEvent;
 
@@ -42,6 +42,36 @@ private:
     void setArmed(bool armed);
 
     bool m_armed = false;
+};
+
+// Records a key combination as one button: click to arm, press the shortcut,
+// and it applies immediately. Replaces the QKeySequenceEdit-plus-apply-button
+// pair, whose separate "Set shortcut" step users missed.
+class ShortcutCaptureButton final : public QPushButton {
+    Q_OBJECT
+
+public:
+    explicit ShortcutCaptureButton(QWidget *parent = nullptr);
+    // The currently bound combination, shown while idle; empty shows
+    // "Set shortcut".
+    void setShortcutDisplay(const QString &display);
+
+signals:
+    void sequenceCaptured(const QKeySequence &sequence);
+    // While armed the bound shortcut must not fire dictation; the page
+    // suspends the binder for the duration, as the single-key recorder does.
+    void armedChanged(bool armed);
+
+protected:
+    void keyPressEvent(QKeyEvent *event) override;
+    void focusOutEvent(QFocusEvent *event) override;
+
+private:
+    void setArmed(bool armed);
+    QString idleText() const;
+
+    bool m_armed = false;
+    QString m_display;
 };
 
 QString linuxGlobalShortcutManualInstruction();
@@ -81,7 +111,7 @@ protected:
 
 private:
     void installIntegration();
-    void setShortcut();
+    void applyShortcut(const QKeySequence &sequence);
     void saveSingleKey(const ShortcutBinding &binding);
     void chooseShortcut();
     void installKeyHelper();
@@ -100,8 +130,7 @@ private:
     QWidget *m_manualControls = nullptr;
     QWidget *m_singleKeyControls = nullptr;
     QWidget *m_keyHelperControls = nullptr;
-    QKeySequenceEdit *m_sequence = nullptr;
-    QPushButton *m_setShortcut = nullptr;
+    ShortcutCaptureButton *m_setShortcut = nullptr;
     QPushButton *m_chooseShortcut = nullptr;
     SingleKeyCaptureButton *m_captureKey = nullptr;
     QLabel *m_singleKeyLead = nullptr;

@@ -16,12 +16,10 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QKeyEvent>
-#include <QKeySequenceEdit>
 #include <QLabel>
 #include <QPointer>
 #include <QProgressBar>
 #include <QPushButton>
-#include <QSignalBlocker>
 #include <QSystemTrayIcon>
 #include <QThread>
 #include <QTimer>
@@ -48,7 +46,93 @@ QString shortcutSetStatus(const QString &display)
     return QStringLiteral("Shortcut set to %1. Try it now.").arg(display);
 }
 
+// The keys QKeySequenceEdit also waits through: a chord is only complete once
+// a non-modifier arrives.
+bool isModifierKey(int key)
+{
+    switch (key) {
+    case Qt::Key_Control:
+    case Qt::Key_Shift:
+    case Qt::Key_Alt:
+    case Qt::Key_Meta:
+    case Qt::Key_AltGr:
+    case Qt::Key_Super_L:
+    case Qt::Key_Super_R:
+    case Qt::Key_Hyper_L:
+    case Qt::Key_Hyper_R:
+    case Qt::Key_Mode_switch:
+    case Qt::Key_unknown:
+        return true;
+    default:
+        return false;
+    }
+}
+
 } // namespace
+
+ShortcutCaptureButton::ShortcutCaptureButton(QWidget *parent)
+    : QPushButton(QStringLiteral("Set shortcut"), parent)
+{
+    setCheckable(true);
+    connect(this, &QPushButton::clicked, this, [this](bool checked) { setArmed(checked); });
+}
+
+QString ShortcutCaptureButton::idleText() const
+{
+    return m_display.isEmpty() ? QStringLiteral("Set shortcut") : m_display;
+}
+
+void ShortcutCaptureButton::setShortcutDisplay(const QString &display)
+{
+    m_display = display;
+    if (!m_armed) {
+        setText(idleText());
+    }
+}
+
+void ShortcutCaptureButton::setArmed(bool armed)
+{
+    if (m_armed == armed) {
+        setChecked(armed);
+        return;
+    }
+    m_armed = armed;
+    setChecked(armed);
+    setText(armed ? QStringLiteral("Press shortcut…") : idleText());
+    if (armed) {
+        setFocus(Qt::OtherFocusReason);
+    }
+    emit armedChanged(armed);
+}
+
+void ShortcutCaptureButton::keyPressEvent(QKeyEvent *event)
+{
+    if (!m_armed || event->isAutoRepeat()) {
+        QPushButton::keyPressEvent(event);
+        return;
+    }
+    // Escape abandons the capture rather than becoming the shortcut, like the
+    // mac and Windows recorders.
+    if (event->key() == Qt::Key_Escape) {
+        setArmed(false);
+        return;
+    }
+    if (isModifierKey(event->key())) {
+        event->accept();
+        return;
+    }
+    const QKeySequence sequence(QKeyCombination(event->modifiers(), Qt::Key(event->key())));
+    setArmed(false);
+    emit sequenceCaptured(sequence);
+}
+
+void ShortcutCaptureButton::focusOutEvent(QFocusEvent *event)
+{
+    if (m_armed) {
+        setArmed(false);
+    }
+    QPushButton::focusOutEvent(event);
+}
 
 SingleKeyCaptureButton::SingleKeyCaptureButton(QWidget *parent)
     : QPushButton(QStringLiteral("Record a single key"), parent)
@@ -177,15 +261,11 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     auto *keyLayout = new QVBoxLayout(m_keySequenceControls);
     keyLayout->setContentsMargins(0, 0, 0, 0);
     keyLayout->addWidget(guidanceLabel(
-        QStringLiteral("Press the keys you want to use for dictation."),
+        QStringLiteral("Choose a key combination to use for dictation."),
         m_keySequenceControls));
-    auto *keyRow = new QHBoxLayout;
-    m_sequence = new QKeySequenceEdit(m_keySequenceControls);
-    m_sequence->setObjectName(QStringLiteral("globalShortcutSequence"));
-    m_setShortcut = new QPushButton(QStringLiteral("Set shortcut"), m_keySequenceControls);
-    keyRow->addWidget(m_sequence, 1);
-    keyRow->addWidget(m_setShortcut);
-    keyLayout->addLayout(keyRow);
+    m_setShortcut = new ShortcutCaptureButton(m_keySequenceControls);
+    m_setShortcut->setObjectName(QStringLiteral("globalShortcutCapture"));
+    keyLayout->addWidget(m_setShortcut, 0, Qt::AlignLeft);
     layout->addWidget(m_keySequenceControls);
 
     // Single-key recording: its own capture widget, since QKeySequenceEdit
@@ -326,14 +406,14 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     });
     connect(m_keyHelperButton, &QPushButton::clicked, this, [this] { installKeyHelper(); });
 
-    connect(m_sequence,
-            &QKeySequenceEdit::keySequenceChanged,
-            m_setShortcut,
-            [this](const QKeySequence &sequence) {
-                m_setShortcut->setEnabled(
-                    !sequence.isEmpty() && sequence != m_controller.globalShortcut().combination());
-            });
-    connect(m_setShortcut, &QPushButton::clicked, this, [this] { setShortcut(); });
+    connect(m_setShortcut, &ShortcutCaptureButton::sequenceCaptured, this,
+            [this](const QKeySequence &sequence) { applyShortcut(sequence); });
+    // While the capture is armed, the currently bound combination must record,
+    // not fire dictation; the single-key recorder suspends the same way.
+    connect(m_setShortcut, &ShortcutCaptureButton::armedChanged, this, [this](bool armed) {
+        armed ? m_controller.suspendGlobalShortcut()
+              : (void)m_controller.resumeGlobalShortcut();
+    });
     connect(m_chooseShortcut, &QPushButton::clicked, this, [this] { chooseShortcut(); });
     connect(copy, &QToolButton::clicked, this, [this, copy] {
         QGuiApplication::clipboard()->setText(m_command->text().remove(QChar(0x200B)));
@@ -434,15 +514,16 @@ void LinuxGlobalShortcutSetupPage::installIntegration()
     refresh();
 }
 
-void LinuxGlobalShortcutSetupPage::setShortcut()
+void LinuxGlobalShortcutSetupPage::applyShortcut(const QKeySequence &sequence)
 {
     QString error;
-    if (!m_controller.setGlobalShortcut(m_sequence->keySequence(), &error)) {
+    if (!m_controller.setGlobalShortcut(sequence, &error)) {
         m_status->setText(error.isEmpty() ? QStringLiteral("Couldn't set the shortcut.")
                                           : error);
         return;
     }
-    m_setShortcut->setEnabled(false);
+    m_setShortcut->setShortcutDisplay(
+        m_controller.globalShortcut().combination().toString(QKeySequence::NativeText));
     m_status->setText(shortcutSetStatus(m_controller.globalShortcutDisplay()));
 }
 
@@ -589,13 +670,8 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
         return;
     }
 
-    if (!m_sequence->hasFocus()) {
-        const QSignalBlocker blocker(m_sequence);
-        m_sequence->setKeySequence(m_controller.globalShortcut().combination());
-    }
-    m_setShortcut->setEnabled(
-        !m_sequence->keySequence().isEmpty()
-        && m_sequence->keySequence() != m_controller.globalShortcut().combination());
+    m_setShortcut->setShortcutDisplay(
+        m_controller.globalShortcut().combination().toString(QKeySequence::NativeText));
 }
 
 void LinuxGlobalShortcutSetupPage::refreshKeyHelper()
