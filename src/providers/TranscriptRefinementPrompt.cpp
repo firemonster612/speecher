@@ -47,7 +47,9 @@ static QStringList dictationAlwaysRules()
         QStringLiteral("Rule: spoken_unordered_list_cues.\n"
                        "Treat list-introducing phrases such as \"the ingredients are\", \"the ingredients needed are\", \"you need\", \"the materials are\", \"the supplies are\", \"the items are\", and \"the options are\" as explicit unordered-list structure when they introduce multiple distinct items. If that list is the main content of the transcript or has four or more items, render it as a short lead-in followed by hyphen bullets. Keep incidental two- or three-item lists inline when they read naturally."),
         QStringLiteral("Rule: spoken_order_cues.\n"
-                       "Treat spoken ordinal and sequence cues such as \"first\", \"second\", \"third\", \"step one\", \"first step\", \"number three\", and \"fourth step\" as explicit ordered-list structure when they introduce multiple steps or items. For procedures, recipes, instructions, checklists, rankings, or ordered sequences with two or more such cues, render a vertical Markdown numbered list by default. Normalize the spoken cues into `1.`, `2.`, `3.`, etc.; do not leave phrases like \"number three is\" in the final text unless they are part of the user's intended wording."),
+                       "Treat spoken ordinal and sequence cues such as \"first\", \"second\", \"third\", \"step one\", \"first step\", \"number three\", and \"fourth step\" as explicit ordered-list structure when they introduce multiple steps or items. For procedures, recipes, instructions, checklists, rankings, or ordered sequences with two or more such cues, render a vertical Markdown numbered list by default. Normalize the spoken cues into Markdown list numbers such as `1.`, `2.`, `3.`, keeping the starting number the user dictated per preserve_dictated_list_numbers; do not leave phrases like \"number three is\" in the final text unless they are part of the user's intended wording."),
+        QStringLiteral("Rule: preserve_dictated_list_numbers.\n"
+                       "A numbered list does not have to start at 1. When the user dictates explicit numbers, keep exactly the numbers they said: a sequence dictated as \"five\", \"six\", \"seven\", \"eight\" is rendered as `5.`, `6.`, `7.`, `8.`, for example when the user resumes an earlier list. When text_before_caret ends inside an existing numbered list, continue from the next number in that list. Never renumber a dictated or existing sequence to start at 1. Only start at 1 when the user dictated numbers starting at one or dictated no numbers at all."),
         QStringLiteral("Rule: do_not_guess_missing_context.\n"
                        "If the transcript is ambiguous, use the least invasive interpretation. Do not invent missing targets, nouns, recipients, context, or conclusions."),
         QStringLiteral("Rule: preserve_sensitive_literals.\n"
@@ -249,7 +251,13 @@ static QStringList formattingExamples()
                        "1. Gather your ingredients: apples, butter, cinnamon, caramel sauce, and pie crust.\n"
                        "2. Assemble the ingredients.\n"
                        "3. Bake the apple pie for 50 minutes.\n"
-                       "4. Take it out and enjoy."),
+                       "4. Take it out and enjoy.\n\n"
+                       "Raw transcript (resuming an earlier list): \"number five is let the pie rest for ten minutes. Number six, slice it. Seven, add a scoop of ice cream. And number eight is serve.\"\n"
+                       "Refined text:\n"
+                       "5. Let the pie rest for ten minutes.\n"
+                       "6. Slice it.\n"
+                       "7. Add a scoop of ice cream.\n"
+                       "8. Serve."),
     };
 }
 
