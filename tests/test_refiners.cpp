@@ -1180,6 +1180,7 @@ private slots:
         settings.claudeCredentialsPath = QDir::homePath() + QStringLiteral("/.claude/.credentials.json");
         RefinementContext context;
         AnthropicTranscriptRefiner refiner;
+        refiner.refresh(settings);
         QSignalSpy completed(&refiner, &TranscriptRefiner::completed);
         QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
         refiner.refine(QStringLiteral("number five is water the tomatoes number six weed the flower "
