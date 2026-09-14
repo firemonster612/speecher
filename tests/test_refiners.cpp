@@ -5,17 +5,23 @@
 
 using namespace speecher::test;
 
-// Runs one transcript through the real default refiner (OpenAI via Codex
-// credentials, balanced style), the way the opt-in live robustness checks
-// do. Returns the refined text, or an empty string with the reason in
-// *error.
+// Runs one transcript through the real Anthropic refiner using CLI Proxy
+// API account files (balanced style), the way the opt-in live robustness
+// checks do. Mirrors the settings codec's oauth-dir default so the checks
+// run on a machine whose logins live in CLI Proxy API's auth directory.
+// Returns the refined text, or an empty string with the reason in *error.
 static QString liveRefine(const QString &rawTranscript,
                           const QStringList &vocabulary,
                           QString *error)
 {
     RefinementSettings settings;
+    settings.anthropicAuthMode = QStringLiteral("cliproxy");
+    const QString stockDir = QDir::homePath() + QStringLiteral("/.cli-proxy-api");
+    settings.cliproxyOauthDir = QDir(stockDir).exists()
+        ? stockDir
+        : QDir::homePath() + QStringLiteral("/.local/share/cliproxy-api/oauth");
     RefinementContext context;
-    OpenAiTranscriptRefiner refiner(nullptr);
+    AnthropicTranscriptRefiner refiner;
     refiner.refresh(settings);
     QSignalSpy completed(&refiner, &TranscriptRefiner::completed);
     QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
