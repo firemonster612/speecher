@@ -265,6 +265,9 @@ private slots:
         QVERIFY(light.contains(QStringLiteral("Rule: spoken_order_cues.")));
         QVERIFY(light.contains(QStringLiteral("For procedures, recipes, instructions, checklists, rankings, or ordered sequences")));
         QVERIFY(light.contains(QStringLiteral("render a vertical Markdown numbered list by default")));
+        QVERIFY(light.contains(QStringLiteral("Rule: preserve_dictated_list_numbers.")));
+        QVERIFY(light.contains(QStringLiteral("Never renumber a dictated or existing sequence to start at 1.")));
+        QVERIFY(light.contains(QStringLiteral("5. Let the pie rest for ten minutes.")));
         QVERIFY(light.contains(QStringLiteral("Rule: no_inferred_structure.")));
         QVERIFY(light.contains(QStringLiteral("Output style: adaptive_markdown.")));
         QVERIFY(light.contains(QStringLiteral("Keep short simple lists inside a sentence with commas or semicolons")));
@@ -400,8 +403,10 @@ private slots:
         QVERIFY(instructions.contains(QStringLiteral("If that list is the main content of the transcript or has four or more items")));
         QVERIFY(instructions.contains(QStringLiteral("Ingredients needed for an apple pie:\n- Apples\n- Cinnamon")));
         QVERIFY(instructions.contains(QStringLiteral("Rule: spoken_order_cues.")));
+        QVERIFY(instructions.contains(QStringLiteral("Rule: preserve_dictated_list_numbers.")));
         QVERIFY(instructions.contains(QStringLiteral("render a vertical Markdown numbered list by default")));
         QVERIFY(instructions.contains(QStringLiteral("1. Gather your ingredients: apples, butter, cinnamon, caramel sauce, and pie crust.")));
+        QVERIFY(instructions.contains(QStringLiteral("5. Let the pie rest for ten minutes.")));
         QVERIFY(!instructions.contains(QStringLiteral("plain_sentences")));
 
         const QJsonArray input = body.value(QStringLiteral("input")).toArray();
@@ -1163,6 +1168,30 @@ private slots:
         QVERIFY2(openAiFailed.isEmpty(),
                  qPrintable(openAiFailed.isEmpty() ? QString() : openAiFailed.first().first().toString()));
         QVERIFY(!openAiCompleted.first().first().toString().trimmed().isEmpty());
+    }
+
+    void liveDictatedListNumbersSurviveRefinement()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_LISTS") != QStringLiteral("1")) {
+            QSKIP("Live numbered-list refinement check is opt-in");
+        }
+
+        RefinementSettings settings;
+        RefinementContext context;
+        AnthropicTranscriptRefiner refiner;
+        QSignalSpy completed(&refiner, &TranscriptRefiner::completed);
+        QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
+        refiner.refine(QStringLiteral("number five is water the tomatoes number six weed the flower "
+                                      "bed seven mow the lawn and number eight is sweep the patio"),
+                       {}, context, settings);
+        QTRY_VERIFY_WITH_TIMEOUT(!completed.isEmpty() || !failed.isEmpty(), 60000);
+        QVERIFY2(failed.isEmpty(),
+                 qPrintable(failed.isEmpty() ? QString() : failed.first().first().toString()));
+        const QString text = completed.first().first().toString();
+        QVERIFY2(text.contains(QStringLiteral("5.")) && text.contains(QStringLiteral("6."))
+                     && text.contains(QStringLiteral("7.")) && text.contains(QStringLiteral("8.")),
+                 qPrintable(text));
+        QVERIFY2(!text.contains(QStringLiteral("1.")), qPrintable(text));
     }
 
     void refinersUseRemoteCliproxyServerWhenBaseUrlSet_data()
