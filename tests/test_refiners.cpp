@@ -1177,6 +1177,7 @@ private slots:
         }
 
         RefinementSettings settings;
+        settings.claudeCredentialsPath = QDir::homePath() + QStringLiteral("/.claude/.credentials.json");
         RefinementContext context;
         AnthropicTranscriptRefiner refiner;
         QSignalSpy completed(&refiner, &TranscriptRefiner::completed);
