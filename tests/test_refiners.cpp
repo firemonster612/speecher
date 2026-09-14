@@ -1183,8 +1183,8 @@ private slots:
         refiner.refresh(settings);
         QSignalSpy completed(&refiner, &TranscriptRefiner::completed);
         QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
-        refiner.refine(QStringLiteral("number five is water the tomatoes number six weed the flower "
-                                      "bed seven mow the lawn and number eight is sweep the patio"),
+        refiner.refine(QStringLiteral("five water the tomatoes six weed the flower "
+                                      "bed seven mow the lawn and eight sweep the patio"),
                        {}, context, settings);
         QTRY_VERIFY_WITH_TIMEOUT(!completed.isEmpty() || !failed.isEmpty(), 60000);
         QVERIFY2(failed.isEmpty(),
