@@ -1289,6 +1289,23 @@ private slots:
         QVERIFY2(!text.contains(QStringLiteral("orange"), Qt::CaseInsensitive), qPrintable(text));
     }
 
+    void livePlainOrKeepsBothAlternatives()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
+            QSKIP("Live refinement robustness checks are opt-in");
+        }
+        QString error;
+        const QString text = liveRefine(
+            QStringLiteral("the accent color can be orange or yellow, pick "
+                           "whichever fits the theme better"),
+            {},
+            &error);
+        QVERIFY2(!text.isEmpty(), qPrintable(error));
+        QVERIFY2(text.contains(QStringLiteral("orange"), Qt::CaseInsensitive)
+                     && text.contains(QStringLiteral("yellow"), Qt::CaseInsensitive),
+                 qPrintable(text));
+    }
+
     void liveNegationsSurviveRefinement()
     {
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
