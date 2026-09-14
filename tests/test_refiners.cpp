@@ -315,6 +315,9 @@ private slots:
         const QString balanced = dictationRefinementSystemPrompt(QStringLiteral("balanced"));
         QVERIFY(balanced.contains(QStringLiteral("Rule: no_inferred_structure.")));
         QVERIFY(balanced.contains(QStringLiteral("Rule: infer_simple_structure.")));
+        QVERIFY(balanced.contains(QStringLiteral("Rule: hesitation_self_corrections.")));
+        QVERIFY(balanced.contains(QStringLiteral("keep only the corrected wording and drop both the marker and the corrected-away words")));
+        QVERIFY(!light.contains(QStringLiteral("Rule: hesitation_self_corrections.")));
         QVERIFY(balanced.contains(QStringLiteral("Rule: adaptive_markdown.")));
         QVERIFY(balanced.contains(QStringLiteral("Use hyphen bullets for unordered multi-item lists.")));
         QVERIFY(!balanced.contains(QStringLiteral("Rule: useful_organization.")));
@@ -438,6 +441,7 @@ private slots:
         QVERIFY(instructions.contains(QStringLiteral("Ingredients needed for an apple pie:\n- Apples\n- Cinnamon")));
         QVERIFY(instructions.contains(QStringLiteral("Rule: spoken_order_cues.")));
         QVERIFY(instructions.contains(QStringLiteral("Rule: preserve_dictated_list_numbers.")));
+        QVERIFY(instructions.contains(QStringLiteral("Rule: hesitation_self_corrections.")));
         QVERIFY(instructions.contains(QStringLiteral("render a vertical Markdown numbered list by default")));
         QVERIFY(instructions.contains(QStringLiteral("1. Gather your ingredients: apples, butter, cinnamon, caramel sauce, and pie crust.")));
         QVERIFY(instructions.contains(QStringLiteral("5. Let the pie rest for ten minutes.")));
