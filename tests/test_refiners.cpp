@@ -5,17 +5,17 @@
 
 using namespace speecher::test;
 
-// Runs one transcript through the real Anthropic refiner with default
-// settings (balanced style), the way the opt-in live robustness checks do.
-// Returns the refined text, or an empty string with the reason in *error.
+// Runs one transcript through the real default refiner (OpenAI via Codex
+// credentials, balanced style), the way the opt-in live robustness checks
+// do. Returns the refined text, or an empty string with the reason in
+// *error.
 static QString liveRefine(const QString &rawTranscript,
                           const QStringList &vocabulary,
                           QString *error)
 {
     RefinementSettings settings;
-    settings.claudeCredentialsPath = QDir::homePath() + QStringLiteral("/.claude/.credentials.json");
     RefinementContext context;
-    AnthropicTranscriptRefiner refiner;
+    OpenAiTranscriptRefiner refiner(nullptr);
     refiner.refresh(settings);
     QSignalSpy completed(&refiner, &TranscriptRefiner::completed);
     QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
@@ -1227,6 +1227,24 @@ private slots:
     // Live robustness checks for common dictation failure modes: misheard
     // vocabulary, spoken self-corrections, dropped negations, dropped short
     // answers, deliberate discourse words, and censored profanity.
+    void liveDictatedListNumbersSurviveDefaultRefiner()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
+            QSKIP("Live refinement robustness checks are opt-in");
+        }
+        QString error;
+        const QString text = liveRefine(
+            QStringLiteral("five water the tomatoes six weed the flower bed "
+                           "seven mow the lawn and eight sweep the patio"),
+            {},
+            &error);
+        QVERIFY2(!text.isEmpty(), qPrintable(error));
+        QVERIFY2(text.contains(QStringLiteral("5.")) && text.contains(QStringLiteral("6."))
+                     && text.contains(QStringLiteral("7.")) && text.contains(QStringLiteral("8.")),
+                 qPrintable(text));
+        QVERIFY2(!text.contains(QStringLiteral("1.")), qPrintable(text));
+    }
+
     void liveVocabularyCorrectsMisheardHomophone()
     {
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
