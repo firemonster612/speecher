@@ -7,8 +7,11 @@ using namespace speecher::test;
 
 // Runs one transcript through the real Anthropic refiner using CLI Proxy
 // API account files (balanced style), the way the opt-in live robustness
-// checks do. Mirrors the settings codec's oauth-dir default so the checks
-// run on a machine whose logins live in CLI Proxy API's auth directory.
+// checks do. Mirrors the settings codec's oauth-dir default (prefer the
+// candidate that holds account files) so the checks run on a machine whose
+// logins live in CLI Proxy API's auth directory. Only the Anthropic path
+// is verified live; the default OpenAI refiner shares this prompt but its
+// Codex account cannot currently be exercised from the test machines.
 // Returns the refined text, or an empty string with the reason in *error.
 static QString liveRefine(const QString &rawTranscript,
                           const QStringList &vocabulary,
@@ -16,10 +19,17 @@ static QString liveRefine(const QString &rawTranscript,
 {
     RefinementSettings settings;
     settings.anthropicAuthMode = QStringLiteral("cliproxy");
-    const QString stockDir = QDir::homePath() + QStringLiteral("/.cli-proxy-api");
-    settings.cliproxyOauthDir = QDir(stockDir).exists()
-        ? stockDir
-        : QDir::homePath() + QStringLiteral("/.local/share/cliproxy-api/oauth");
+    const QStringList oauthDirCandidates{
+        QDir::homePath() + QStringLiteral("/.cli-proxy-api"),
+        QDir::homePath() + QStringLiteral("/.local/share/cliproxy-api/oauth"),
+    };
+    settings.cliproxyOauthDir = oauthDirCandidates.first();
+    for (const QString &candidate : oauthDirCandidates) {
+        if (!QDir(candidate).entryList({QStringLiteral("claude-*.json")}, QDir::Files).isEmpty()) {
+            settings.cliproxyOauthDir = candidate;
+            break;
+        }
+    }
     RefinementContext context;
     AnthropicTranscriptRefiner refiner;
     refiner.refresh(settings);
@@ -1208,36 +1218,10 @@ private slots:
         QVERIFY(!openAiCompleted.first().first().toString().trimmed().isEmpty());
     }
 
-    void liveDictatedListNumbersSurviveRefinement()
-    {
-        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_LISTS") != QStringLiteral("1")) {
-            QSKIP("Live numbered-list refinement check is opt-in");
-        }
-
-        RefinementSettings settings;
-        settings.claudeCredentialsPath = QDir::homePath() + QStringLiteral("/.claude/.credentials.json");
-        RefinementContext context;
-        AnthropicTranscriptRefiner refiner;
-        refiner.refresh(settings);
-        QSignalSpy completed(&refiner, &TranscriptRefiner::completed);
-        QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
-        refiner.refine(QStringLiteral("five water the tomatoes six weed the flower "
-                                      "bed seven mow the lawn and eight sweep the patio"),
-                       {}, context, settings);
-        QTRY_VERIFY_WITH_TIMEOUT(!completed.isEmpty() || !failed.isEmpty(), 60000);
-        QVERIFY2(failed.isEmpty(),
-                 qPrintable(failed.isEmpty() ? QString() : failed.first().first().toString()));
-        const QString text = completed.first().first().toString();
-        QVERIFY2(text.contains(QStringLiteral("5.")) && text.contains(QStringLiteral("6."))
-                     && text.contains(QStringLiteral("7.")) && text.contains(QStringLiteral("8.")),
-                 qPrintable(text));
-        QVERIFY2(!text.contains(QStringLiteral("1.")), qPrintable(text));
-    }
-
     // Live robustness checks for common dictation failure modes: misheard
     // vocabulary, spoken self-corrections, dropped negations, dropped short
     // answers, deliberate discourse words, and censored profanity.
-    void liveDictatedListNumbersSurviveDefaultRefiner()
+    void liveDictatedListNumbersSurviveRefinement()
     {
         if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
             QSKIP("Live refinement robustness checks are opt-in");
@@ -1364,7 +1348,9 @@ private slots:
             {},
             &error);
         QVERIFY2(!text.isEmpty(), qPrintable(error));
-        QVERIFY2(text.toLower().count(QStringLiteral("like")) >= 2, qPrintable(text));
+        static const QRegularExpression likeWord(QStringLiteral("\\blike\\b"),
+                                                 QRegularExpression::CaseInsensitiveOption);
+        QVERIFY2(text.count(likeWord) >= 2, qPrintable(text));
     }
 
     void liveProfanityIsNotCensored()
