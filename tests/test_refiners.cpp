@@ -5,6 +5,50 @@
 
 using namespace speecher::test;
 
+// Runs one transcript through the real Anthropic refiner using CLI Proxy
+// API account files (balanced style), the way the opt-in live robustness
+// checks do. Mirrors the settings codec's oauth-dir default (prefer the
+// candidate that holds account files) so the checks run on a machine whose
+// logins live in CLI Proxy API's auth directory. Only the Anthropic path
+// is verified live; the default OpenAI refiner shares this prompt but its
+// Codex account cannot currently be exercised from the test machines.
+// Returns the refined text, or an empty string with the reason in *error.
+static QString liveRefine(const QString &rawTranscript,
+                          const QStringList &vocabulary,
+                          QString *error)
+{
+    RefinementSettings settings;
+    settings.anthropicAuthMode = QStringLiteral("cliproxy");
+    const QStringList oauthDirCandidates{
+        QDir::homePath() + QStringLiteral("/.cli-proxy-api"),
+        QDir::homePath() + QStringLiteral("/.local/share/cliproxy-api/oauth"),
+    };
+    settings.cliproxyOauthDir = oauthDirCandidates.first();
+    for (const QString &candidate : oauthDirCandidates) {
+        if (!QDir(candidate).entryList({QStringLiteral("claude-*.json")}, QDir::Files).isEmpty()) {
+            settings.cliproxyOauthDir = candidate;
+            break;
+        }
+    }
+    RefinementContext context;
+    AnthropicTranscriptRefiner refiner;
+    refiner.refresh(settings);
+    QSignalSpy completed(&refiner, &TranscriptRefiner::completed);
+    QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
+    refiner.refine(rawTranscript, vocabulary, context, settings);
+    const bool finished = QTest::qWaitFor(
+        [&] { return !completed.isEmpty() || !failed.isEmpty(); }, 60000);
+    if (!finished) {
+        *error = QStringLiteral("live refinement timed out");
+        return {};
+    }
+    if (!failed.isEmpty()) {
+        *error = failed.first().first().toString();
+        return {};
+    }
+    return completed.first().first().toString();
+}
+
 
 class RefinersTests : public QObject {
     Q_OBJECT
@@ -281,6 +325,9 @@ private slots:
         const QString balanced = dictationRefinementSystemPrompt(QStringLiteral("balanced"));
         QVERIFY(balanced.contains(QStringLiteral("Rule: no_inferred_structure.")));
         QVERIFY(balanced.contains(QStringLiteral("Rule: infer_simple_structure.")));
+        QVERIFY(balanced.contains(QStringLiteral("Rule: hesitation_self_corrections.")));
+        QVERIFY(balanced.contains(QStringLiteral("keep only the corrected wording and drop both the marker and the corrected-away words")));
+        QVERIFY(!light.contains(QStringLiteral("Rule: hesitation_self_corrections.")));
         QVERIFY(balanced.contains(QStringLiteral("Rule: adaptive_markdown.")));
         QVERIFY(balanced.contains(QStringLiteral("Use hyphen bullets for unordered multi-item lists.")));
         QVERIFY(!balanced.contains(QStringLiteral("Rule: useful_organization.")));
@@ -404,6 +451,7 @@ private slots:
         QVERIFY(instructions.contains(QStringLiteral("Ingredients needed for an apple pie:\n- Apples\n- Cinnamon")));
         QVERIFY(instructions.contains(QStringLiteral("Rule: spoken_order_cues.")));
         QVERIFY(instructions.contains(QStringLiteral("Rule: preserve_dictated_list_numbers.")));
+        QVERIFY(instructions.contains(QStringLiteral("Rule: hesitation_self_corrections.")));
         QVERIFY(instructions.contains(QStringLiteral("render a vertical Markdown numbered list by default")));
         QVERIFY(instructions.contains(QStringLiteral("1. Gather your ingredients: apples, butter, cinnamon, caramel sauce, and pie crust.")));
         QVERIFY(instructions.contains(QStringLiteral("5. Let the pie rest for ten minutes.")));
@@ -1170,30 +1218,154 @@ private slots:
         QVERIFY(!openAiCompleted.first().first().toString().trimmed().isEmpty());
     }
 
+    // Live robustness checks for common dictation failure modes: misheard
+    // vocabulary, spoken self-corrections, dropped negations, dropped short
+    // answers, deliberate discourse words, and censored profanity.
     void liveDictatedListNumbersSurviveRefinement()
     {
-        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_LISTS") != QStringLiteral("1")) {
-            QSKIP("Live numbered-list refinement check is opt-in");
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
+            QSKIP("Live refinement robustness checks are opt-in");
         }
-
-        RefinementSettings settings;
-        settings.claudeCredentialsPath = QDir::homePath() + QStringLiteral("/.claude/.credentials.json");
-        RefinementContext context;
-        AnthropicTranscriptRefiner refiner;
-        refiner.refresh(settings);
-        QSignalSpy completed(&refiner, &TranscriptRefiner::completed);
-        QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
-        refiner.refine(QStringLiteral("five water the tomatoes six weed the flower "
-                                      "bed seven mow the lawn and eight sweep the patio"),
-                       {}, context, settings);
-        QTRY_VERIFY_WITH_TIMEOUT(!completed.isEmpty() || !failed.isEmpty(), 60000);
-        QVERIFY2(failed.isEmpty(),
-                 qPrintable(failed.isEmpty() ? QString() : failed.first().first().toString()));
-        const QString text = completed.first().first().toString();
+        QString error;
+        const QString text = liveRefine(
+            QStringLiteral("five water the tomatoes six weed the flower bed "
+                           "seven mow the lawn and eight sweep the patio"),
+            {},
+            &error);
+        QVERIFY2(!text.isEmpty(), qPrintable(error));
         QVERIFY2(text.contains(QStringLiteral("5.")) && text.contains(QStringLiteral("6."))
                      && text.contains(QStringLiteral("7.")) && text.contains(QStringLiteral("8.")),
                  qPrintable(text));
         QVERIFY2(!text.contains(QStringLiteral("1.")), qPrintable(text));
+    }
+
+    void liveVocabularyCorrectsMisheardHomophone()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
+            QSKIP("Live refinement robustness checks are opt-in");
+        }
+        QString error;
+        const QString text = liveRefine(
+            QStringLiteral("we still need to wire up the off token check before "
+                           "the login flow can talk to the off service"),
+            {QStringLiteral("auth")},
+            &error);
+        QVERIFY2(!text.isEmpty(), qPrintable(error));
+        QVERIFY2(text.contains(QStringLiteral("auth"), Qt::CaseInsensitive), qPrintable(text));
+        QVERIFY2(!text.contains(QStringLiteral("off token"), Qt::CaseInsensitive)
+                     && !text.contains(QStringLiteral("off service"), Qt::CaseInsensitive),
+                 qPrintable(text));
+    }
+
+    void liveSpokenSelfCorrectionReplacesEarlierWord()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
+            QSKIP("Live refinement robustness checks are opt-in");
+        }
+        QString error;
+        const QString text = liveRefine(
+            QStringLiteral("I want the background to be orange er yellow and "
+                           "then increase the padding a bit"),
+            {},
+            &error);
+        QVERIFY2(!text.isEmpty(), qPrintable(error));
+        QVERIFY2(text.contains(QStringLiteral("yellow"), Qt::CaseInsensitive), qPrintable(text));
+        QVERIFY2(!text.contains(QStringLiteral("orange"), Qt::CaseInsensitive), qPrintable(text));
+    }
+
+    void livePlainOrKeepsBothAlternatives()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
+            QSKIP("Live refinement robustness checks are opt-in");
+        }
+        QString error;
+        const QString text = liveRefine(
+            QStringLiteral("the accent color can be orange or yellow, pick "
+                           "whichever fits the theme better"),
+            {},
+            &error);
+        QVERIFY2(!text.isEmpty(), qPrintable(error));
+        QVERIFY2(text.contains(QStringLiteral("orange"), Qt::CaseInsensitive)
+                     && text.contains(QStringLiteral("yellow"), Qt::CaseInsensitive),
+                 qPrintable(text));
+    }
+
+    void liveNegationsSurviveRefinement()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
+            QSKIP("Live refinement robustness checks are opt-in");
+        }
+        QString error;
+        const QString text = liveRefine(
+            QStringLiteral("so I looked at the branch again and honestly I would "
+                           "prefer to never merge this pull request, we haven't "
+                           "tested the migration and I do not trust the rollback "
+                           "path yet"),
+            {},
+            &error);
+        QVERIFY2(!text.isEmpty(), qPrintable(error));
+        QVERIFY2(text.contains(QStringLiteral("never"), Qt::CaseInsensitive), qPrintable(text));
+        QVERIFY2(text.contains(QStringLiteral("haven't"), Qt::CaseInsensitive)
+                     || text.contains(QStringLiteral("have not"), Qt::CaseInsensitive),
+                 qPrintable(text));
+        QVERIFY2(text.contains(QStringLiteral("not trust"), Qt::CaseInsensitive)
+                     || text.contains(QStringLiteral("don't trust"), Qt::CaseInsensitive),
+                 qPrintable(text));
+    }
+
+    void liveShortAnswersSurviveRefinement()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
+            QSKIP("Live refinement robustness checks are opt-in");
+        }
+        QString error;
+        const QString text = liveRefine(
+            QStringLiteral("going through the review questions in order. question "
+                           "one, agreed. question two, the answer is a. question "
+                           "three, yes ship it. question four, no, because the "
+                           "cache is shared between sessions. question five, "
+                           "agreed."),
+            {},
+            &error);
+        QVERIFY2(!text.isEmpty(), qPrintable(error));
+        QVERIFY2(text.toLower().count(QStringLiteral("agreed")) >= 2, qPrintable(text));
+        QVERIFY2(text.contains(QStringLiteral("ship"), Qt::CaseInsensitive), qPrintable(text));
+        QVERIFY2(text.contains(QStringLiteral("shared"), Qt::CaseInsensitive), qPrintable(text));
+        QVERIFY2(text.contains(QStringLiteral("five"), Qt::CaseInsensitive)
+                     || text.contains(QStringLiteral("5")),
+                 qPrintable(text));
+    }
+
+    void liveDeliberateLikeSurvivesBalancedCleanup()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
+            QSKIP("Live refinement robustness checks are opt-in");
+        }
+        QString error;
+        const QString text = liveRefine(
+            QStringLiteral("there were like fifty errors in the log and I was "
+                           "like we should just roll back"),
+            {},
+            &error);
+        QVERIFY2(!text.isEmpty(), qPrintable(error));
+        static const QRegularExpression likeWord(QStringLiteral("\\blike\\b"),
+                                                 QRegularExpression::CaseInsensitiveOption);
+        QVERIFY2(text.count(likeWord) >= 2, qPrintable(text));
+    }
+
+    void liveProfanityIsNotCensored()
+    {
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_REFINE_ROBUSTNESS") != QStringLiteral("1")) {
+            QSKIP("Live refinement robustness checks are opt-in");
+        }
+        QString error;
+        const QString text = liveRefine(
+            QStringLiteral("this flaky test is pissing me off and I want it "
+                           "fixed this week"),
+            {},
+            &error);
+        QVERIFY2(!text.isEmpty(), qPrintable(error));
+        QVERIFY2(text.contains(QStringLiteral("pissing"), Qt::CaseInsensitive), qPrintable(text));
     }
 
     void refinersUseRemoteCliproxyServerWhenBaseUrlSet_data()

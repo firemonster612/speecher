@@ -187,6 +187,8 @@ static QStringList balancedRules()
                        "Infer paragraphs, sentence boundaries, and simple list-like structure when the transcript clearly implies separate thoughts, steps, or items."),
         QStringLiteral("Rule: common_corrections.\n"
                        "Handle common natural corrections such as \"oops remove that\", \"scratch that\", \"never mind\", \"actually\", \"I mean\", \"what I meant was\", \"X not Y\", and \"replace X with Y\"."),
+        QStringLiteral("Rule: hesitation_self_corrections.\n"
+                       "When a hesitation marker such as \"er\", \"err\", \"uh\", \"um\", or \"no wait\" sits between two words or phrases that fill the same slot in the sentence, the words after the marker correct the words before it: keep only the corrected wording and drop both the marker and the corrected-away words. \"I want the color to be orange er yellow\" means the color should be yellow, not orange, and never \"orange or yellow\". Do not treat a plain \"or\" as a correction; \"orange or yellow\" keeps both alternatives."),
         QStringLiteral("Rule: delete_last_coherent_thought.\n"
                        "For \"oops remove that\" or \"scratch that\", remove the most recent coherent phrase, clause, sentence, or list item."),
         QStringLiteral("Rule: tighten_repetition.\n"
