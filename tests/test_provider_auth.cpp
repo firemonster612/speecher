@@ -473,6 +473,8 @@ private slots:
         // native CLI's HTTP client.
         QVERIFY2(request.left(headerEnd).toLower().contains(QByteArrayLiteral("user-agent: axios/1.15.2")),
                  request.left(headerEnd).constData());
+        QVERIFY2(request.left(headerEnd).toLower().contains(QByteArrayLiteral("accept: application/json, text/plain, */*")),
+                 request.left(headerEnd).constData());
 
         const int contentLength = httpContentLength(request.left(headerEnd));
         const QJsonObject body = QJsonDocument::fromJson(request.mid(headerEnd + 4, contentLength)).object();
@@ -1073,6 +1075,8 @@ private slots:
         QCOMPARE(result.accessToken, QStringLiteral("fresh-token"));
         QVERIFY(requestBody.contains(QByteArrayLiteral("\"grant_type\":\"refresh_token\"")));
         QVERIFY2(requestHeaders.toLower().contains(QByteArrayLiteral("user-agent: axios/1.15.2")),
+                 requestHeaders.constData());
+        QVERIFY2(requestHeaders.toLower().contains(QByteArrayLiteral("accept: application/json, text/plain, */*")),
                  requestHeaders.constData());
 
         // Rotated tokens must be written back: refresh tokens rotate, and a

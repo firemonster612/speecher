@@ -1,5 +1,7 @@
 #include "providers/CliProxyCredentials.h"
 
+#include "providers/OauthTokenRequest.h"
+
 #include <QDateTime>
 #include <QDir>
 #include <QEventLoop>
@@ -166,16 +168,6 @@ QString CliProxyCredentials::claudeClientId()
 QString CliProxyCredentials::codexClientId()
 {
     return QString::fromLatin1(codexOauthClientId);
-}
-
-void CliProxyCredentials::applyTokenRequestHeaders(QNetworkRequest &request)
-{
-    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
-    // Claude Code's own refresh_token grant goes through axios; Cloudflare's
-    // bot rules on the token endpoint reject generic browser-like agents
-    // (Qt's unset-UA default "Mozilla/5.0" gets a 429 rate_limit_error).
-    request.setRawHeader("Accept", "application/json, text/plain, */*");
-    request.setRawHeader("User-Agent", "axios/1.15.2");
 }
 
 OauthRefreshResult CliProxyCredentials::oauthRefresh(const QString &tokenUrl,
