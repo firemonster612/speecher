@@ -468,6 +468,13 @@ private slots:
         QVERIFY2(headerEnd >= 0, request.constData());
         QCOMPARE(request.left(request.indexOf('\n')).trimmed(), QByteArrayLiteral("POST /token HTTP/1.1"));
         QVERIFY(request.left(headerEnd).toLower().contains(QByteArrayLiteral("content-type: application/json")));
+        // Qt's unset-UA default ("Mozilla/5.0") is rejected by the token
+        // endpoint's bot rules with a 429; the request must identify as the
+        // native CLI's HTTP client.
+        QVERIFY2(request.left(headerEnd).toLower().contains(QByteArrayLiteral("user-agent: axios/1.15.2")),
+                 request.left(headerEnd).constData());
+        QVERIFY2(request.left(headerEnd).toLower().contains(QByteArrayLiteral("accept: application/json, text/plain, */*")),
+                 request.left(headerEnd).constData());
 
         const int contentLength = httpContentLength(request.left(headerEnd));
         const QJsonObject body = QJsonDocument::fromJson(request.mid(headerEnd + 4, contentLength)).object();
@@ -1036,10 +1043,12 @@ private slots:
     {
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
+        QByteArray requestHeaders;
         QByteArray requestBody;
         connect(&server, &QTcpServer::newConnection, this, [&] {
             QTcpSocket *socket = server.nextPendingConnection();
             const QByteArray request = readHttpRequest(socket, 1000);
+            requestHeaders = request.left(request.indexOf("\r\n\r\n"));
             requestBody = request.mid(request.indexOf("\r\n\r\n") + 4);
             const QByteArray payload = QJsonDocument(QJsonObject{
                 {QStringLiteral("access_token"), QStringLiteral("fresh-token")},
@@ -1065,6 +1074,10 @@ private slots:
         QVERIFY2(result.ok, qPrintable(result.error));
         QCOMPARE(result.accessToken, QStringLiteral("fresh-token"));
         QVERIFY(requestBody.contains(QByteArrayLiteral("\"grant_type\":\"refresh_token\"")));
+        QVERIFY2(requestHeaders.toLower().contains(QByteArrayLiteral("user-agent: axios/1.15.2")),
+                 requestHeaders.constData());
+        QVERIFY2(requestHeaders.toLower().contains(QByteArrayLiteral("accept: application/json, text/plain, */*")),
+                 requestHeaders.constData());
 
         // Rotated tokens must be written back: refresh tokens rotate, and a
         // stale file would strand CLI Proxy API's copy of the account.

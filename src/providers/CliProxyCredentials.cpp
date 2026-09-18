@@ -1,5 +1,7 @@
 #include "providers/CliProxyCredentials.h"
 
+#include "providers/OauthTokenRequest.h"
+
 #include <QDateTime>
 #include <QDir>
 #include <QEventLoop>
@@ -186,7 +188,7 @@ OauthRefreshResult CliProxyCredentials::oauthRefresh(const QString &tokenUrl,
 
     QNetworkAccessManager manager;
     QNetworkRequest request{QUrl(tokenUrl)};
-    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    applyTokenRequestHeaders(request);
     QNetworkReply *reply = manager.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
     QEventLoop loop;
     QTimer watchdog;
