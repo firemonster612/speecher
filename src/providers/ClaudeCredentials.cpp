@@ -1,5 +1,6 @@
 #include "providers/ClaudeCredentials.h"
 #include "providers/ClaudeCredentialStorage.h"
+#include "providers/CliProxyCredentials.h"
 
 #include "core/CliToolDiscovery.h"
 
@@ -161,7 +162,7 @@ bool refreshClaudeAuth(const ClaudeCredentialStorage &storage, const ClaudeCrede
 
     QNetworkAccessManager manager;
     QNetworkRequest request{QUrl(tokenUrl())};
-    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    CliProxyCredentials::applyTokenRequestHeaders(request);
     QNetworkReply *reply = manager.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
 
     QEventLoop loop;

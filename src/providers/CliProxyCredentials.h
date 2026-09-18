@@ -3,6 +3,8 @@
 #include <QList>
 #include <QString>
 
+class QNetworkRequest;
+
 namespace speecher {
 
 struct CliProxyAccount {
@@ -37,6 +39,11 @@ public:
                                            const QString &refreshToken,
                                            const QString &scope = {},
                                            int timeoutMs = 10000);
+    // Headers every token-endpoint request must carry. platform.claude.com
+    // answers Qt's default "Mozilla/5.0" User-Agent with 429 rate_limit_error
+    // before the grant is even looked at, so requests identify as the native
+    // CLI's HTTP client instead.
+    static void applyTokenRequestHeaders(QNetworkRequest &request);
     static QString claudeClientId();
     static QString codexClientId();
     // Fast, file-only check: does the selected account's token need a refresh?
