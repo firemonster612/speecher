@@ -1,8 +1,8 @@
 #include "common/test_prelude.h"
+#include "core/settings/SettingsKeys.h"
 #ifdef SPEECHER_WITH_QKEYCHAIN
 #include "core/KeyringResult.h"
 #include "core/ShortcutBinding.h"
-#include "core/settings/SettingsKeys.h"
 
 #include <QSet>
 #endif
