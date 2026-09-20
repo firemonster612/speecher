@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher setup — Microphone</title>
+<link rel="stylesheet" href="wizard.css">
+</head>
+<body data-states="listening detected silent nomic" data-default-state="listening">
+
+<div class="dialog" role="dialog" aria-labelledby="page-title">
+
+  <header class="dialog-header">
+    <h1 id="page-title">Microphone</h1>
+    <span class="step-count">Step 3 of 9</span>
+  </header>
+
+  <main class="dialog-body">
+    <p class="lead">Choose the input Speecher should record. Speak normally;
+      setup continues once the level moves.</p>
+
+    <div class="field" style="margin-top:16px">
+      <label for="device">Input device</label>
+      <svg class="icon" aria-hidden="true" style="color:var(--text-muted)"><use href="#icon-mic"/></svg>
+      <select id="device" style="flex:1 1 320px" data-hide="nomic">
+        <option>Default — Yeti Stereo Microphone (Analogue Stereo)</option>
+        <option>Yeti Stereo Microphone (Analogue Stereo)</option>
+        <option>Built-in Audio (Internal Microphone)</option>
+      </select>
+      <select style="flex:1 1 320px" data-show="nomic" disabled aria-label="Input device">
+        <option>No input devices available</option>
+      </select>
+    </div>
+
+    <p class="section-title" style="margin-top:22px">Live level</p>
+    <div class="meter-row" data-meter>
+      <div class="meter" role="img" aria-label="Input level">
+        <div class="meter-fill"></div>
+        <div class="meter-ticks"><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span><span></span></div>
+      </div>
+      <span class="meter-value">0%</span>
+    </div>
+
+    <p style="margin-top:14px">
+      <span class="status" data-show="listening">
+        <svg class="icon sm" aria-hidden="true"><use href="#icon-spinner"/></svg>
+        <span>Listening for microphone input…</span></span>
+      <span class="status ok" data-show="detected">
+        <svg class="icon sm" aria-hidden="true"><use href="#icon-check"/></svg>
+        <span>Microphone input detected.</span></span>
+      <span class="status warn" data-show="silent">
+        <svg class="icon sm" aria-hidden="true"><use href="#icon-warning"/></svg>
+        <span>No input yet</span></span>
+      <span class="status bad" data-show="nomic">
+        <svg class="icon sm" aria-hidden="true"><use href="#icon-warning"/></svg>
+        <span>No microphone found</span></span>
+    </p>
+
+    <p class="hint" data-show="silent" style="max-width:62ch">No input yet —
+      check that the microphone isn't muted, or pick another device.</p>
+    <p class="hint" data-show="nomic" style="max-width:62ch">No microphone was
+      found. Connect or enable an input device.</p>
+    <p class="hint" data-show="detected">Speecher will record from this device.
+      You can change it later in Settings.</p>
+
+    <div class="button-row" data-show="silent nomic">
+      <button type="button">Check again</button>
+    </div>
+  </main>
+
+  <footer class="dialog-footer">
+    <button type="button" class="link">Skip setup</button>
+    <div class="footer-right">
+      <button type="button" data-nav="back">Back</button>
+      <button type="button" class="primary" data-nav="next"
+              data-disabled-in="listening silent nomic">Next</button>
+      <button type="button">Cancel</button>
+    </div>
+  </footer>
+
+</div>
+
+<script src="wizard.js"></script>
+</body>
+</html>

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher setup — Ready to dictate</title>
+<link rel="stylesheet" href="wizard.css">
+</head>
+<body data-states="complete blocked" data-default-state="complete">
+
+<div class="dialog" role="dialog" aria-labelledby="page-title">
+
+  <header class="dialog-header">
+    <h1 id="page-title">Ready to dictate</h1>
+    <span class="step-count">Step 9 of 9</span>
+  </header>
+
+  <main class="dialog-body">
+
+    <!-- complete -->
+    <div data-show="complete">
+      <p class="status ok" style="font-size:13.5px">
+        <svg class="icon sm" aria-hidden="true"><use href="#icon-check"/></svg>
+        <span>Setup is complete.</span>
+      </p>
+
+      <div class="card" style="margin-top:16px">
+        <h2 class="card-title">How to dictate</h2>
+        <p style="margin-bottom:0">Tap <span class="kbd">F13</span> to start
+          dictating, tap it again to stop and insert the text.</p>
+        <p class="hint">Speecher stays out of the way until you press it. Its
+          tray icon shows when it is listening.</p>
+      </div>
+
+      <ul class="status-list">
+        <li>
+          <div class="status-row">
+            <svg class="icon" aria-hidden="true"><use href="#icon-openai"/></svg>
+            <span class="row-label" style="font-weight:400">Transcription — ChatGPT Codex</span>
+            <span class="status ok">
+              <svg class="icon sm" aria-hidden="true"><use href="#icon-check"/></svg>
+              <span>Ready</span></span>
+          </div>
+        </li>
+        <li>
+          <div class="status-row">
+            <svg class="icon" aria-hidden="true"><use href="#icon-anthropic"/></svg>
+            <span class="row-label" style="font-weight:400">Refinement — Anthropic</span>
+            <span class="status ok">
+              <svg class="icon sm" aria-hidden="true"><use href="#icon-check"/></svg>
+              <span>Ready</span></span>
+          </div>
+        </li>
+        <li>
+          <div class="status-row">
+            <svg class="icon" aria-hidden="true"><use href="#icon-mic"/></svg>
+            <span class="row-label" style="font-weight:400">Microphone — Yeti Stereo Microphone</span>
+            <span class="status ok">
+              <svg class="icon sm" aria-hidden="true"><use href="#icon-check"/></svg>
+              <span>Ready</span></span>
+          </div>
+        </li>
+        <li>
+          <div class="status-row">
+            <svg class="icon" aria-hidden="true"><use href="#icon-keyboard"/></svg>
+            <span class="row-label" style="font-weight:400">Text delivery — virtual keyboard</span>
+            <span class="status ok">
+              <svg class="icon sm" aria-hidden="true"><use href="#icon-check"/></svg>
+              <span>Ready</span></span>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <!-- blocked -->
+    <div data-show="blocked">
+      <p class="lead">Speecher can't dictate yet. Finish the steps below, or
+        go back and change your choices.</p>
+
+      <h2 class="section-title" style="margin-top:16px">A few steps still need attention:</h2>
+      <ul class="todo">
+        <li>
+          <svg class="icon sm" aria-hidden="true"><use href="#icon-warning"/></svg>
+          <span class="todo-text">
+            <span class="todo-name">Transcription</span>
+            <span class="todo-why">ChatGPT Codex is no longer signed in.</span>
+          </span>
+          <button type="button" class="small" data-goto="transcription.html?state=notready">Go to step</button>
+        </li>
+        <li>
+          <svg class="icon sm" aria-hidden="true"><use href="#icon-warning"/></svg>
+          <span class="todo-text">
+            <span class="todo-name">Microphone</span>
+            <span class="todo-why">No input has been detected.</span>
+          </span>
+          <button type="button" class="small" data-goto="microphone.html?state=silent">Go to step</button>
+        </li>
+        <li>
+          <svg class="icon sm" aria-hidden="true"><use href="#icon-warning"/></svg>
+          <span class="todo-text">
+            <span class="todo-name">Desktop accessibility</span>
+            <span class="todo-why">Accessibility is off, so Speecher cannot paste or read context.</span>
+          </span>
+          <button type="button" class="small" data-goto="accessibility.html?state=off">Go to step</button>
+        </li>
+        <li>
+          <svg class="icon sm" aria-hidden="true"><use href="#icon-warning"/></svg>
+          <span class="todo-text">
+            <span class="todo-name">Global Shortcut</span>
+            <span class="todo-why">No shortcut is set, so there is no way to start dictating.</span>
+          </span>
+          <button type="button" class="small" data-goto="shortcut.html?state=manual">Go to step</button>
+        </li>
+      </ul>
+
+      <p class="hint" style="max-width:62ch">Finish becomes available once
+        every step above is resolved.</p>
+    </div>
+  </main>
+
+  <footer class="dialog-footer">
+    <!-- No "Skip setup" here: this is the last step, there is nothing left to skip. -->
+    <div class="footer-right">
+      <button type="button" data-nav="back">Back</button>
+      <button type="button" class="primary" data-disabled-in="blocked">Finish</button>
+      <button type="button">Cancel</button>
+    </div>
+  </footer>
+
+</div>
+
+<script src="wizard.js"></script>
+</body>
+</html>

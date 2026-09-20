@@ -22,14 +22,16 @@
 #include <QFontDatabase>
 #include <QFormLayout>
 #include <QGridLayout>
-#include <QGroupBox>
 #include <QHBoxLayout>
+#include <QHash>
+#include <QIcon>
 #include <QLabel>
 #include <QPalette>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QResizeEvent>
+#include <QStyle>
 #include <QSystemTrayIcon>
 #include <QThread>
 #include <QTimer>
@@ -43,6 +45,62 @@ namespace speecher {
 int setupPageMargin()
 {
     return 24;
+}
+
+QPixmap providerMark(const QString &providerId, int size, qreal devicePixelRatio)
+{
+    // The transcription and refinement pages name the same two companies under
+    // different ids, and both rows carry the company's mark.
+    static const QHash<QString, QString> marks{
+        {QStringLiteral("codex"), QStringLiteral(":/brand/chatgpt.svg")},
+        {QStringLiteral("openai"), QStringLiteral(":/brand/chatgpt.svg")},
+        {QStringLiteral("claude"), QStringLiteral(":/brand/claude.svg")},
+        {QStringLiteral("anthropic"), QStringLiteral(":/brand/claude.svg")},
+    };
+    const QString resource = marks.value(providerId);
+    if (resource.isEmpty()) {
+        return {};
+    }
+    // The marks keep their own colours, which is what makes them recognisable
+    // at this size; a palette-coloured silhouette of either one does not read.
+    // QIcon renders the SVG at the ratio asked for, so the mark stays sharp on
+    // a scaled display.
+    return QIcon(resource).pixmap(QSize(size, size), devicePixelRatio);
+}
+
+void setCardRowVisible(QWidget *row, bool visible)
+{
+    row->setVisible(visible);
+    QWidget *host = row->parentWidget();
+    auto *form = host ? qobject_cast<QFormLayout *>(host->layout()) : nullptr;
+    if (!form) {
+        return;
+    }
+    for (int index = 1; index < form->rowCount(); ++index) {
+        QLayoutItem *item = form->itemAt(index, QFormLayout::SpanningRole);
+        if (!item || item->widget() != row) {
+            continue;
+        }
+        QLayoutItem *above = form->itemAt(index - 1, QFormLayout::SpanningRole);
+        if (above && above->widget()
+            && above->widget()->objectName() == QLatin1String("rowSeparator")) {
+            above->widget()->setVisible(visible);
+        }
+        return;
+    }
+}
+
+void setSetupStepCounter(QWidget *page, int step, int total)
+{
+    auto *layout = qobject_cast<QVBoxLayout *>(page->layout());
+    if (!layout) {
+        return;
+    }
+    auto *counter = new QLabel(QStringLiteral("Step %1 of %2").arg(step).arg(total), page);
+    counter->setObjectName(QStringLiteral("setupStepCounter"));
+    counter->setFont(settings::smallFont(counter->font()));
+    counter->setForegroundRole(QPalette::PlaceholderText);
+    layout->insertWidget(0, counter, 0, Qt::AlignRight);
 }
 
 ProviderStatsBlock::ProviderStatsBlock(QWidget *parent)
@@ -90,17 +148,141 @@ protected:
     }
 };
 
-QVBoxLayout *makePage(QWidget *page, const QString &description)
+QVBoxLayout *makePage(QWidget *page, const QString &description, QLabel **introOut = nullptr)
 {
     auto *layout = new QVBoxLayout(page);
     const int margin = setupPageMargin();
     layout->setContentsMargins(margin, margin, margin, margin);
-    layout->setSpacing(16);
+    layout->setSpacing(settings::largeSpacing());
 
-    auto *intro = new QLabel(description, page);
+    auto *intro = new WrappingLabel(description, page);
+    intro->setObjectName(QStringLiteral("setupPageIntro"));
     intro->setWordWrap(true);
     layout->addWidget(intro);
+    if (introOut) {
+        *introOut = intro;
+    }
     return layout;
+}
+
+// The provider marks read at the height of one line of text, so they stay in
+// proportion to the name beside them at any font size.
+int markSize()
+{
+    return settings::gridUnit();
+}
+
+// The provider's own mark, or nothing for a provider that has none.
+QLabel *makeProviderMark(const QString &providerId, QWidget *parent)
+{
+    const QPixmap mark = providerMark(providerId, markSize(), parent->devicePixelRatioF());
+    if (mark.isNull()) {
+        return nullptr;
+    }
+    auto *label = new QLabel(parent);
+    label->setObjectName(QStringLiteral("providerMark_") + providerId);
+    label->setPixmap(mark);
+    label->setFixedSize(markSize(), markSize());
+    return label;
+}
+
+// A themed glyph at mark size, for the rows that carry a verdict rather than a
+// brand. The style's own standard icon is the fallback, so the row is never
+// left with a hole where an icon theme is missing.
+QLabel *makeGlyph(QWidget *parent, const QString &themeName, QStyle::StandardPixmap fallback)
+{
+    const QIcon icon = QIcon::fromTheme(themeName, parent->style()->standardIcon(fallback));
+    auto *label = new QLabel(parent);
+    label->setPixmap(icon.pixmap(markSize(), markSize()));
+    label->setFixedSize(markSize(), markSize());
+    return label;
+}
+
+// One card row shaped like the mockup's: an optional mark, a name that wraps,
+// a right-aligned status, and a small grey line under the name for a hint or a
+// reason. The trailing widget, where one is given, sits where the status would.
+struct StatusRow {
+    QWidget *widget = nullptr;
+    QLabel *name = nullptr;
+    QLabel *status = nullptr;
+    QLabel *hint = nullptr;
+};
+
+StatusRow makeStatusRow(QWidget *parent,
+                        QWidget *mark,
+                        const QString &name,
+                        bool boldName,
+                        QWidget *trailing = nullptr)
+{
+    StatusRow row;
+    row.widget = new QWidget(parent);
+    auto *layout = new QVBoxLayout(row.widget);
+    layout->setContentsMargins(settings::rowPadding());
+    layout->setSpacing(settings::smallSpacing());
+
+    auto *top = new QHBoxLayout;
+    top->setSpacing(settings::largeSpacing());
+    int indent = 0;
+    if (mark) {
+        mark->setParent(row.widget);
+        top->addWidget(mark, 0, Qt::AlignVCenter);
+        indent = markSize() + settings::largeSpacing();
+    }
+    row.name = new WrappingLabel(name, row.widget);
+    row.name->setWordWrap(true);
+    if (boldName) {
+        QFont font = row.name->font();
+        font.setBold(true);
+        row.name->setFont(font);
+    }
+    top->addWidget(row.name, 1, Qt::AlignVCenter);
+    row.status = new QLabel(row.widget);
+    top->addWidget(row.status, 0, Qt::AlignRight | Qt::AlignVCenter);
+    if (trailing) {
+        trailing->setParent(row.widget);
+        top->addWidget(trailing, 0, Qt::AlignRight | Qt::AlignVCenter);
+    }
+    layout->addLayout(top);
+
+    // Reads under the name rather than under the mark, as the mockup's hint
+    // lines do.
+    row.hint = new WrappingLabel(row.widget);
+    row.hint->setWordWrap(true);
+    row.hint->setFont(settings::smallFont(row.hint->font()));
+    row.hint->setForegroundRole(QPalette::PlaceholderText);
+    row.hint->setContentsMargins(indent, 0, 0, 0);
+    row.hint->hide();
+    layout->addWidget(row.hint);
+    return row;
+}
+
+// A card built into a container that is already on screen has to be shown
+// explicitly: a widget only inherits its parent's visibility at the moment the
+// parent is shown, and these lists are rebuilt long after that.
+void showRebuiltList(QWidget *list)
+{
+    for (QWidget *child : list->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly)) {
+        child->show();
+    }
+}
+
+// A titled card: the bold header above, the FormCard container below. Returns
+// the card's row layout, which addCardRow() fills.
+QFormLayout *addCard(QVBoxLayout *layout, QWidget *parent, const QString &title)
+{
+    // Header and card travel together, tight against each other, whatever the
+    // page's own spacing is.
+    auto *section = new QWidget(parent);
+    auto *sectionLayout = new QVBoxLayout(section);
+    sectionLayout->setContentsMargins(0, 0, 0, 0);
+    sectionLayout->setSpacing(0);
+    if (!title.isEmpty()) {
+        sectionLayout->addWidget(settings::makeSectionLabel(title, section));
+    }
+    QFrame *card = settings::makeSettingsCard(section);
+    sectionLayout->addWidget(card);
+    layout->addWidget(section);
+    return settings::cardFormLayout(card);
 }
 
 void setStatusColor(QLabel *label, bool positive)
@@ -153,41 +335,63 @@ void runOffThread(QObject *context,
     thread->start();
 }
 
-// One selectable provider: the name on the left, what the probe found on the
-// right. Both pages' option lists are built from these.
-ProviderOptionRow addOptionRow(QVBoxLayout *layout,
+// One selectable provider as a card row: the company's mark, the name in bold
+// on the radio, and what the probe found on the right. An optional note reads
+// under the name, indented past the mark. Both pages' option lists use this.
+ProviderOptionRow addOptionRow(QFormLayout *card,
                                QButtonGroup *group,
-                               QWidget *parent,
                                const QString &id,
                                const QString &label,
+                               const QString &note,
                                const QString &objectNamePrefix)
 {
-    auto *button = new QRadioButton(label, parent);
+    QWidget *host = card->parentWidget();
+    auto *row = new QWidget(host);
+    auto *layout = new QVBoxLayout(row);
+    layout->setContentsMargins(settings::rowPadding());
+    layout->setSpacing(settings::smallSpacing());
+
+    auto *top = new QHBoxLayout;
+    top->setSpacing(settings::largeSpacing());
+    int indent = 0;
+    if (QLabel *mark = makeProviderMark(id, row)) {
+        top->addWidget(mark, 0, Qt::AlignVCenter);
+        indent = markSize() + settings::largeSpacing();
+    }
+    auto *button = new QRadioButton(label, row);
     button->setObjectName(objectNamePrefix + QStringLiteral("Option_") + id);
     QFont font = button->font();
     font.setBold(true);
     button->setFont(font);
-    auto *status = new QLabel(parent);
+    top->addWidget(button, 1, Qt::AlignVCenter);
+    auto *status = new QLabel(row);
     status->setObjectName(objectNamePrefix + QStringLiteral("Status_") + id);
-    auto *row = new QHBoxLayout;
-    row->addWidget(button);
-    row->addStretch();
-    row->addWidget(status);
-    layout->addLayout(row);
+    top->addWidget(status, 0, Qt::AlignRight | Qt::AlignVCenter);
+    layout->addLayout(top);
+
+    if (!note.isEmpty()) {
+        auto *noteLabel = new WrappingLabel(note, row);
+        noteLabel->setWordWrap(true);
+        noteLabel->setFont(settings::smallFont(noteLabel->font()));
+        noteLabel->setForegroundRole(QPalette::PlaceholderText);
+        noteLabel->setContentsMargins(indent, 0, 0, 0);
+        layout->addWidget(noteLabel);
+    }
+    settings::addCardRow(card, row, host);
     group->addButton(button);
     return {id, label, button, status};
 }
 
-void addOptionNote(QVBoxLayout *layout, QWidget *parent, const QString &text)
+// The short line naming which sign-in a refinement provider uses. The
+// registry's setup hint explains how to install the CLI, which is more than
+// this row needs; a provider without a line of its own falls back to it.
+QString credentialNote(const ProviderDescriptor &provider)
 {
-    if (text.isEmpty()) {
-        return;
-    }
-    auto *note = new QLabel(text, parent);
-    note->setWordWrap(true);
-    note->setFont(settings::smallFont(note->font()));
-    note->setForegroundRole(QPalette::PlaceholderText);
-    layout->addWidget(note);
+    static const QHash<QString, QString> notes{
+        {QStringLiteral("anthropic"), QStringLiteral("Uses your Claude Code sign-in.")},
+        {QStringLiteral("openai"), QStringLiteral("Uses your ChatGPT or Codex sign-in.")},
+    };
+    return notes.value(provider.id, provider.setupHint);
 }
 
 // What the shortcut actually does depends on the activation mode chosen a
@@ -245,42 +449,38 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
 
     // Nothing later in the assistant can succeed without one of these
     // sign-ins, so the one real prerequisite is stated on the first page.
-    auto *prerequisites = new QGroupBox(QStringLiteral("Before you start"), this);
-    auto *box = new QVBoxLayout(prerequisites);
-    box->setSpacing(settings::smallSpacing());
+    QFormLayout *card = addCard(layout, this, QStringLiteral("Before you start"));
+    QWidget *host = card->parentWidget();
+
+    auto *leadRow = new QWidget(host);
+    auto *leadLayout = new QVBoxLayout(leadRow);
+    leadLayout->setContentsMargins(settings::rowPadding());
     auto *lead = new WrappingLabel(
         QStringLiteral("Speecher uses your existing ChatGPT or Claude sign-in. Install and sign in to one of these, then choose Check again:"),
-        prerequisites);
+        leadRow);
     lead->setWordWrap(true);
-    box->addWidget(lead);
+    leadLayout->addWidget(lead);
+    settings::addCardRow(card, leadRow, host);
 
     for (const ProviderDescriptor &provider : m_providers.speechProviders()) {
-        auto *row = new QHBoxLayout;
-        row->addWidget(new QLabel(credentialSourceLabel(provider.id, provider.label),
-                                  prerequisites));
-        row->addStretch();
-        auto *status = new QLabel(QStringLiteral("Checking…"), prerequisites);
-        status->setObjectName(QStringLiteral("welcomeCredentialStatus_") + provider.id);
-        row->addWidget(status);
-        box->addLayout(row);
-
-        auto *hint = new WrappingLabel(provider.setupHint, prerequisites);
-        hint->setObjectName(QStringLiteral("welcomeCredentialHint_") + provider.id);
-        hint->setWordWrap(true);
-        hint->setFont(settings::smallFont(hint->font()));
-        hint->setForegroundRole(QPalette::PlaceholderText);
-        hint->hide();
-        box->addWidget(hint);
-        m_rows.append({provider.id, status, hint, false});
+        const StatusRow row = makeStatusRow(host,
+                                            makeProviderMark(provider.id, host),
+                                            credentialSourceLabel(provider.id, provider.label),
+                                            false);
+        row.status->setObjectName(QStringLiteral("welcomeCredentialStatus_") + provider.id);
+        row.status->setText(QStringLiteral("Checking…"));
+        row.hint->setObjectName(QStringLiteral("welcomeCredentialHint_") + provider.id);
+        row.hint->setText(provider.setupHint);
+        settings::addCardRow(card, row.widget, host);
+        m_rows.append({provider.id, row.status, row.hint, false});
     }
 
-    auto *checkAgain = new QPushButton(QStringLiteral("Check again"), prerequisites);
+    auto *checkAgain = new QPushButton(QStringLiteral("Check again"), this);
     checkAgain->setObjectName(QStringLiteral("welcomeCheckAgain"));
     checkAgain->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     connect(checkAgain, &QPushButton::clicked, this, &WelcomeSetupPage::checkCredentials);
-    box->addWidget(checkAgain, 0, Qt::AlignLeft);
+    layout->addWidget(checkAgain, 0, Qt::AlignLeft);
 
-    layout->addWidget(prerequisites);
     layout->addStretch();
     // The first showEvent runs the first probe. Probing from here as well
     // aimed two rounds at the same providers before the page was even visible.
@@ -360,6 +560,11 @@ void WelcomeSetupPage::showCredential(int index, bool found)
     setReady(m_rows.isEmpty() || anyFound);
 }
 
+QString WelcomeSetupPage::blockedReason() const
+{
+    return QStringLiteral("No ChatGPT or Claude sign-in was found.");
+}
+
 void WelcomeSetupPage::setReady(bool ready)
 {
     if (m_ready == ready) {
@@ -386,14 +591,12 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
 
     // Every service is on the page with its own readiness, so the choice does
     // not hide behind a dropdown the user has to open to find it.
-    auto *choices = new QGroupBox(QStringLiteral("Transcription service"), this);
-    auto *choiceLayout = new QVBoxLayout(choices);
-    choiceLayout->setSpacing(settings::smallSpacing());
+    QFormLayout *choices = addCard(layout, this, QStringLiteral("Transcription service"));
     auto *group = new QButtonGroup(this);
     const QString savedProvider = m_settings.speechProvider();
     for (const ProviderDescriptor &provider : m_providers.speechProviders()) {
-        m_options.append(addOptionRow(choiceLayout, group, choices, provider.id,
-                                      provider.label, QStringLiteral("speechProvider")));
+        m_options.append(addOptionRow(choices, group, provider.id, provider.label,
+                                      QString(), QStringLiteral("speechProvider")));
         m_options.last().button->setChecked(provider.id == savedProvider);
     }
     if (!m_options.isEmpty() && selectedIndex() < 0) {
@@ -406,7 +609,6 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     m_status->setWordWrap(true);
     m_checkAgain->setObjectName(QStringLiteral("speechProviderCheckAgain"));
     m_checkAgain->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
-    layout->addWidget(choices);
     layout->addWidget(m_stats);
     layout->addWidget(m_status);
     layout->addWidget(m_hint);
@@ -450,6 +652,24 @@ int SpeechProviderSetupPage::selectedIndex() const
         }
     }
     return -1;
+}
+
+QString SpeechProviderSetupPage::blockedReason() const
+{
+    const int index = selectedIndex();
+    if (index < 0) {
+        return QStringLiteral("No transcription service is available.");
+    }
+    return QStringLiteral("%1 is no longer signed in.").arg(m_options.at(index).label);
+}
+
+QString SpeechProviderSetupPage::readySummary() const
+{
+    const int index = selectedIndex();
+    if (index < 0) {
+        return QString();
+    }
+    return QStringLiteral("Transcription — %1").arg(m_options.at(index).label);
 }
 
 void SpeechProviderSetupPage::setReady(bool ready)
@@ -648,6 +868,19 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
     });
 }
 
+QString MicrophoneSetupPage::blockedReason() const
+{
+    return m_device->count() == 0 ? QStringLiteral("No microphone was found.")
+                                  : QStringLiteral("No input has been detected.");
+}
+
+QString MicrophoneSetupPage::readySummary() const
+{
+    const QString device = m_device->currentText();
+    return device.isEmpty() ? QString()
+                            : QStringLiteral("Microphone — %1").arg(device);
+}
+
 void MicrophoneSetupPage::setInputDetected(bool detected)
 {
     if (m_inputDetected == detected) {
@@ -753,14 +986,25 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
 #ifdef Q_OS_WIN
         QStringLiteral("Windows UI Automation lets Speecher identify the target app, read nearby text, and learn corrections. It does not require a permission grant."));
 #else
-        QStringLiteral("Speecher pastes your dictation into the app you are using. On Linux that works through the desktop accessibility service (AT-SPI), which also lets Speecher see where your cursor is and learn your corrections."));
+        QStringLiteral("Speecher pastes your dictation into the app you are using, and reads the text around your cursor so cleanup understands the context. On Linux both work through the desktop accessibility service (AT-SPI); it also lets Speecher learn your corrections."));
 #endif
     m_status->setWordWrap(true);
     m_enable->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
-    layout->addWidget(m_status);
 #ifdef Q_OS_WIN
+    layout->addWidget(m_status);
     m_enable->hide();
 #else
+    // The permission buys exactly two things, so each is named with its own
+    // verdict rather than left inside one sentence about "accessibility".
+    QFormLayout *card = addCard(layout, this, QString());
+    QWidget *host = card->parentWidget();
+    for (const QString &capability : {QStringLiteral("Paste into the app you are using"),
+                                      QStringLiteral("Read the text around your cursor for context")}) {
+        const StatusRow row = makeStatusRow(host, nullptr, capability, false);
+        settings::addCardRow(card, row.widget, host);
+        m_capabilities.append(row.status);
+    }
+    layout->addWidget(m_status);
     layout->addWidget(m_enable, 0, Qt::AlignLeft);
     auto *reassurance = new QLabel(
         QStringLiteral("This only affects this app's ability to type for you. You can turn it off any time in Settings."),
@@ -828,15 +1072,30 @@ void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool pers
         m_enable->setEnabled(true);
         m_enable->setText(QStringLiteral("Enable permanently"));
     } else {
-        status = QStringLiteral("Accessibility is off, so Speecher can copy your dictation but not paste it. Turn it on to continue.");
+        status = QStringLiteral("Accessibility is off, so Speecher can copy your dictation but not paste it or see context. Turn it on to continue.");
         m_enable->setEnabled(true);
         m_enable->setText(QStringLiteral("Enable permanently"));
     }
+    showCapabilities(enabled);
 #endif
     m_status->setText(m_lastError.isEmpty() ? status : m_lastError);
     if (wasComplete != stepComplete()) {
         emit stepCompleteChanged();
     }
+}
+
+void AccessibilitySetupPage::showCapabilities(bool allowed)
+{
+    for (QLabel *capability : m_capabilities) {
+        setStatusColor(capability, allowed);
+        capability->setText(allowed ? QStringLiteral("Allowed")
+                                    : QStringLiteral("Blocked"));
+    }
+}
+
+QString AccessibilitySetupPage::blockedReason() const
+{
+    return QStringLiteral("Accessibility is off, so Speecher cannot paste or read context.");
 }
 
 TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *parent)
@@ -866,20 +1125,44 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
     m_restoreClipboard->setChecked(m_settings.restoreClipboardAfterTyping());
     settings::selectData(m_format, outputFormatName(m_settings.outputFormat()));
 
-    auto *formatRow = new QHBoxLayout;
-    formatRow->addWidget(new QLabel(QStringLiteral("Clipboard format"), this));
-    formatRow->addWidget(m_format, 1);
-    layout->addWidget(m_status);
-    layout->addWidget(m_progress);
-    layout->addWidget(m_setup, 0, Qt::AlignLeft);
-    layout->addWidget(m_clipboardOnly);
-    layout->addSpacing(8);
-    layout->addLayout(formatRow);
-    layout->addWidget(m_restoreClipboard);
+    // The state and the button that changes it read as one block, with the
+    // choices that follow from it under the same frame.
+    QFormLayout *card = addCard(layout, this, QString());
+    QWidget *host = card->parentWidget();
+
+    auto *keyboardRow = new QWidget(host);
+    auto *keyboardLayout = new QVBoxLayout(keyboardRow);
+    keyboardLayout->setContentsMargins(settings::rowPadding());
+    keyboardLayout->setSpacing(settings::smallSpacing());
+    m_status->setParent(keyboardRow);
+    keyboardLayout->addWidget(m_status);
+    m_progress->setParent(keyboardRow);
+    keyboardLayout->addWidget(m_progress);
+    m_setup->setParent(keyboardRow);
+    m_setup->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    keyboardLayout->addWidget(m_setup, 0, Qt::AlignLeft);
+    settings::addCardRow(card, keyboardRow, host);
+
+    // QCheckBox does not wrap its own label, and both of these are sentences:
+    // the settings row pairs a wrapping caption with an unlabelled box.
+    m_clipboardOnlyRow = settings::makeRow(
+        QStringLiteral("Continue without the virtual keyboard; Speecher pastes from the clipboard instead"),
+        QString(),
+        m_clipboardOnly,
+        host);
+    settings::addCardRow(card, m_clipboardOnlyRow, host);
+    settings::addCardRow(
+        card,
+        settings::makeRow(QStringLiteral("Clipboard format"), QString(), m_format, host),
+        host);
+    settings::addCardRow(
+        card,
+        settings::makeRow(restoreClipboardDescription(), QString(), m_restoreClipboard, host),
+        host);
     layout->addStretch();
 #ifndef SPEECHER_WITH_YDOTOOL
     // Nothing to install and nothing to opt out of.
-    m_clipboardOnly->hide();
+    setCardRowVisible(m_clipboardOnlyRow, false);
 #endif
 
     connect(m_setup, &QPushButton::clicked, this, &TextDeliverySetupPage::runSetup);
@@ -903,6 +1186,22 @@ bool TextDeliverySetupPage::needsSignIn() const
 #else
     return false;
 #endif
+}
+
+QString TextDeliverySetupPage::blockedReason() const
+{
+    return QStringLiteral(
+        "The virtual keyboard is not set up, so Speecher cannot type into other apps.");
+}
+
+QString TextDeliverySetupPage::readySummary() const
+{
+#ifdef SPEECHER_WITH_YDOTOOL
+    if (!m_clipboardOnly->isChecked()) {
+        return QStringLiteral("Text delivery — virtual keyboard");
+    }
+#endif
+    return QStringLiteral("Text delivery — clipboard");
 }
 
 bool TextDeliverySetupPage::stepComplete() const
@@ -933,7 +1232,7 @@ void TextDeliverySetupPage::refreshStatus()
     m_setup->setText(status.ready() ? QStringLiteral("Virtual keyboard ready")
                                     : QStringLiteral("Set up virtual keyboard"));
     // With a working virtual keyboard there is nothing to opt out of.
-    m_clipboardOnly->setVisible(!status.ready());
+    setCardRowVisible(m_clipboardOnlyRow, !status.ready());
 }
 
 void TextDeliverySetupPage::runSetup()
@@ -1005,7 +1304,7 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
     : QWidget(parent)
     , m_settings(settings)
     , m_providers(providers)
-    , m_none(new QRadioButton(QStringLiteral("None"), this))
+    , m_none(nullptr)
     , m_stats(new ProviderStatsBlock(this))
     , m_warning(new WrappingLabel(this))
     , m_fastMode(new QCheckBox(QStringLiteral("Fast mode"), this))
@@ -1015,40 +1314,35 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
         this,
         QStringLiteral("Refinement can clean up a raw transcript after dictation. Choose a provider, or None to skip cleanup."));
 
-    auto *choices = new QGroupBox(QStringLiteral("Cleanup provider"), this);
-    auto *choiceLayout = new QVBoxLayout(choices);
-    choiceLayout->setSpacing(settings::smallSpacing());
+    QFormLayout *choices = addCard(layout, this, QStringLiteral("Cleanup provider"));
+    QWidget *host = choices->parentWidget();
     auto *group = new QButtonGroup(this);
     const QString savedProvider = m_settings.refinementProvider();
     for (const ProviderDescriptor &provider : providers.refinementProviders()) {
-        m_options.append(addOptionRow(choiceLayout, group, choices, provider.id,
-                                      provider.label, QStringLiteral("refinementProvider")));
-        m_options.last().button->setChecked(provider.id == savedProvider);
         // The brands differ from the transcription page's, so say which
         // sign-in each one actually uses.
-        addOptionNote(choiceLayout, choices, provider.setupHint);
+        m_options.append(addOptionRow(choices, group, provider.id, provider.label,
+                                      credentialNote(provider),
+                                      QStringLiteral("refinementProvider")));
+        m_options.last().button->setChecked(provider.id == savedProvider);
     }
 
-    m_none->setObjectName(QStringLiteral("refinementProviderOption_none"));
-    QFont noneFont = m_none->font();
-    noneFont.setBold(true);
-    m_none->setFont(noneFont);
-    auto *noneStatus = new QLabel(QStringLiteral("No cleanup"), choices);
-    noneStatus->setObjectName(QStringLiteral("refinementProviderStatus_none"));
-    auto *noneRow = new QHBoxLayout;
-    noneRow->addWidget(m_none);
-    noneRow->addStretch();
-    noneRow->addWidget(noneStatus);
-    choiceLayout->addLayout(noneRow);
-    group->addButton(m_none);
+    const ProviderOptionRow none = addOptionRow(choices, group,
+                                                QStringLiteral("none"),
+                                                QStringLiteral("None"),
+                                                QStringLiteral("Skip cleanup entirely."),
+                                                QStringLiteral("refinementProvider"));
+    m_none = none.button;
+    none.status->setText(QStringLiteral("No cleanup"));
     m_none->setChecked(selectedIndex() < 0);
 
-    layout->addWidget(choices);
-    layout->addWidget(m_stats);
     m_warning->setObjectName(QStringLiteral("refinementProviderWarning"));
     m_warning->setWordWrap(true);
     m_warning->hide();
+    // Directly under the cards, so it reads as attached to the selection above
+    // it rather than to the facts below.
     layout->addWidget(m_warning);
+    layout->addWidget(m_stats);
     m_fastMode->setObjectName(QStringLiteral("refinementFastMode"));
     m_fastModeHint->setWordWrap(true);
     layout->addWidget(m_fastMode);
@@ -1098,6 +1392,13 @@ int RefinementSetupPage::selectedIndex() const
         }
     }
     return -1;
+}
+
+QString RefinementSetupPage::readySummary() const
+{
+    const int index = selectedIndex();
+    return QStringLiteral("Refinement — %1")
+        .arg(index < 0 ? QStringLiteral("None") : m_options.at(index).label);
 }
 
 QString RefinementSetupPage::selectedProviderId() const
@@ -1292,6 +1593,13 @@ WritingProfilesSetupPage::WritingProfilesSetupPage(SettingsStore &settings, QWid
         ++row;
     }
     layout->addLayout(grid);
+    auto *note = new WrappingLabel(
+        QStringLiteral("The default profile is used when Speecher does not recognise the app you are dictating into. Every profile can be changed later in Settings."),
+        this);
+    note->setWordWrap(true);
+    note->setFont(settings::smallFont(note->font()));
+    note->setForegroundRole(QPalette::PlaceholderText);
+    layout->addWidget(note);
     layout->addStretch();
     connect(m_defaultProfile, &QComboBox::currentIndexChanged, this, [this] {
         m_settings.setDefaultWritingProfile(m_defaultProfile->currentData().toString());
@@ -1314,12 +1622,14 @@ void WritingProfilesSetupPage::saveProfiles()
 FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *parent)
     : QWidget(parent)
     , m_controller(controller)
+    , m_intro(nullptr)
     , m_shortcutStatus(new QLabel(this))
     , m_signInNote(new QLabel(this))
+    , m_completed(new QWidget(this))
+    , m_blocked(new QWidget(this))
 {
-    QVBoxLayout *layout = makePage(
-        this,
-        QStringLiteral("Setup is complete."));
+    QVBoxLayout *layout = makePage(this, QStringLiteral("Setup is complete."), &m_intro);
+    setStatusColor(m_intro, true);
     m_shortcutStatus->setWordWrap(true);
     m_shortcutStatus->setObjectName(QStringLiteral("finishGlobalShortcutStatus"));
     m_signInNote->setWordWrap(true);
@@ -1342,13 +1652,131 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
     m_shortcutStatus->setText(
         QStringLiteral("Use your Global Shortcut to start and stop dictation."));
 #endif
-    layout->addWidget(m_shortcutStatus);
+
+    // What the user got, once every step is done.
+    auto *completedLayout = new QVBoxLayout(m_completed);
+    completedLayout->setContentsMargins(0, 0, 0, 0);
+    completedLayout->setSpacing(settings::largeSpacing());
+    QFormLayout *howTo = addCard(completedLayout, m_completed,
+                                 QStringLiteral("How to dictate"));
+    QWidget *howToHost = howTo->parentWidget();
+    auto *instruction = new QWidget(howToHost);
+    auto *instructionLayout = new QVBoxLayout(instruction);
+    instructionLayout->setContentsMargins(settings::rowPadding());
+    instructionLayout->setSpacing(settings::smallSpacing());
+    m_shortcutStatus->setParent(instruction);
+    instructionLayout->addWidget(m_shortcutStatus);
 #ifdef Q_OS_LINUX
-    layout->addWidget(m_manualCommand);
-    layout->addWidget(m_trayNote);
+    m_manualCommand->setParent(instruction);
+    m_manualCommand->setWordWrap(true);
+    instructionLayout->addWidget(m_manualCommand);
+    m_trayNote->setParent(instruction);
+    m_trayNote->setFont(settings::smallFont(m_trayNote->font()));
+    m_trayNote->setForegroundRole(QPalette::PlaceholderText);
+    instructionLayout->addWidget(m_trayNote);
 #endif
-    layout->addWidget(m_signInNote);
+    settings::addCardRow(howTo, instruction, howToHost);
+    m_completedList = new QWidget(m_completed);
+    auto *completedListLayout = new QVBoxLayout(m_completedList);
+    completedListLayout->setContentsMargins(0, 0, 0, 0);
+    completedListLayout->setSpacing(0);
+    completedLayout->addWidget(m_completedList);
+    m_signInNote->setParent(m_completed);
+    completedLayout->addWidget(m_signInNote);
+    layout->addWidget(m_completed);
+
+    // What is left, when a step broke or was never finished. Finish stays
+    // disabled either way; this says which step to go back to and why.
+    auto *blockedLayout = new QVBoxLayout(m_blocked);
+    blockedLayout->setContentsMargins(0, 0, 0, 0);
+    blockedLayout->setSpacing(settings::largeSpacing());
+    blockedLayout->addWidget(settings::makeSectionLabel(
+        QStringLiteral("A few steps still need attention:"), m_blocked));
+    m_blockedList = new QWidget(m_blocked);
+    auto *blockedListLayout = new QVBoxLayout(m_blockedList);
+    blockedListLayout->setContentsMargins(0, 0, 0, 0);
+    blockedListLayout->setSpacing(0);
+    blockedLayout->addWidget(m_blockedList);
+    auto *blockedFoot = new WrappingLabel(
+        QStringLiteral("Finish becomes available once every step above is resolved."),
+        m_blocked);
+    blockedFoot->setWordWrap(true);
+    blockedFoot->setFont(settings::smallFont(blockedFoot->font()));
+    blockedFoot->setForegroundRole(QPalette::PlaceholderText);
+    blockedLayout->addWidget(blockedFoot);
+    m_blocked->hide();
+    layout->addWidget(m_blocked);
+
     layout->addStretch();
+}
+
+void FinishSetupPage::setSteps(const QList<SetupStepStatus> &steps)
+{
+    const bool blocked = std::any_of(steps.cbegin(), steps.cend(),
+                                     [](const SetupStepStatus &step) { return !step.ok; });
+    m_intro->setText(blocked
+        ? QStringLiteral("Speecher can't dictate yet. Finish the steps below, or go back and change your choices.")
+        : QStringLiteral("Setup is complete."));
+    setStatusColor(m_intro, !blocked);
+    m_completed->setVisible(!blocked);
+    m_blocked->setVisible(blocked);
+    if (blocked) {
+        showBlockedSteps(steps);
+    } else {
+        showCompletedSteps(steps);
+    }
+}
+
+void FinishSetupPage::showBlockedSteps(const QList<SetupStepStatus> &steps)
+{
+    // The list is rebuilt rather than patched: which steps appear, and in what
+    // order, changes every time a gate opens or closes.
+    qDeleteAll(m_blockedList->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly));
+    auto *layout = qobject_cast<QVBoxLayout *>(m_blockedList->layout());
+    QFormLayout *card = addCard(layout, m_blockedList, QString());
+    QWidget *host = card->parentWidget();
+    for (int index = 0; index < steps.size(); ++index) {
+        const SetupStepStatus &step = steps.at(index);
+        if (step.ok) {
+            continue;
+        }
+        auto *goToStep = new QPushButton(QStringLiteral("Go to step"), host);
+        connect(goToStep, &QPushButton::clicked, this, [this, index] {
+            emit stepSelected(index);
+        });
+        const StatusRow row = makeStatusRow(
+            host,
+            makeGlyph(host, QStringLiteral("dialog-warning"), QStyle::SP_MessageBoxWarning),
+            step.name,
+            true,
+            goToStep);
+        row.hint->setText(step.detail);
+        row.hint->setVisible(!step.detail.isEmpty());
+        settings::addCardRow(card, row.widget, host);
+    }
+    showRebuiltList(m_blockedList);
+}
+
+void FinishSetupPage::showCompletedSteps(const QList<SetupStepStatus> &steps)
+{
+    qDeleteAll(m_completedList->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly));
+    auto *layout = qobject_cast<QVBoxLayout *>(m_completedList->layout());
+    QFormLayout *card = nullptr;
+    for (const SetupStepStatus &step : steps) {
+        // Only the steps where something was chosen have anything to report.
+        if (step.detail.isEmpty()) {
+            continue;
+        }
+        if (!card) {
+            card = addCard(layout, m_completedList, QString());
+        }
+        QWidget *host = card->parentWidget();
+        const StatusRow row = makeStatusRow(host, nullptr, step.detail, false);
+        setStatusColor(row.status, true);
+        row.status->setText(QStringLiteral("Ready"));
+        settings::addCardRow(card, row.widget, host);
+    }
+    showRebuiltList(m_completedList);
 }
 
 void FinishSetupPage::showEvent(QShowEvent *event)

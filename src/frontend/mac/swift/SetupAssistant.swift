@@ -24,7 +24,7 @@ struct SetupStep: Identifiable {
         SetupStep(id: "microphone",
                   title: "Microphone",
                   intro: "Choose the input Speecher should record. "
-                      + "Speak normally and check that the level moves."),
+                      + "Speak normally; setup continues once the level moves."),
         SetupStep(id: "accessibility",
                   title: "Accessibility",
                   intro: "Speecher pastes your dictation into the frontmost app with a synthetic "
@@ -42,15 +42,18 @@ struct SetupStep: Identifiable {
                       + "Choose a provider, or None to skip cleanup."),
         SetupStep(id: "profiles",
                   title: "Writing profiles",
-                  intro: "Choose the fallback Writing Profile and how much cleanup and tone "
-                      + "adjustment each profile receives."),
+                  intro: "Speecher picks a writing profile from the app you dictate into. "
+                      + "Choose the fallback profile and how much cleanup and tone "
+                      + "adjustment each one gets."),
         SetupStep(id: "shortcut",
                   title: "Dictation shortcut",
                   intro: "Choose what starts dictation: a key combination, or one key on "
                       + "its own, such as Right Option. Then choose what pressing it does."),
+        // The ready step's lead depends on whether anything is still unfinished,
+        // so the flow supplies it; see SetupFlowModel.intro(for:).
         SetupStep(id: "ready",
                   title: "Ready to dictate",
-                  intro: "Almost done."),
+                  intro: ""),
         SetupStep(id: "login",
                   title: "Start at login",
                   intro: "Dictation only works while Speecher is running."),
@@ -85,11 +88,42 @@ struct ProviderRow: Identifiable {
         return ready ? "Sign-in found" : "Not found"
     }
 
+    /// The sign-in instruction the welcome step prints under a row it could
+    /// not find. The registry's hint is written for the provider steps and
+    /// every front end shares it; the Claude one names only the CLI, so the
+    /// welcome step states the fuller instruction that covers the app too.
+    var credentialHint: String {
+        guard id == "claude" else { return setupHint }
+        return "Install Claude Code from claude.com/code and sign in — the desktop app "
+            + "or the claude CLI (/login) both work."
+    }
+
     /// The verdict the transcription and refinement rows carry.
     var readinessStatus: String {
         guard probed else { return "Checking…" }
         return ready ? "Ready" : "Not set up"
     }
+}
+
+/// One unfinished gate, as the ready step lists it: the step it belongs to,
+/// and the one line saying what is missing.
+struct BlockedStep: Identifiable {
+    let id: String
+    let index: Int
+    let title: String
+    let reason: String
+}
+
+/// One line of the ready step's checklist: what was set up, and to what.
+struct ReadyItem: Identifiable {
+    let id: String
+    /// The provider whose mark belongs on the row; empty for a plain glyph.
+    let providerId: String
+    /// The glyph an item with no brand behind it wears.
+    let symbol: String
+    let label: String
+    let status: String
+    let ready: Bool
 }
 
 /// The keys the finish step will hand the shortcut binder. Held rather than
@@ -242,11 +276,112 @@ final class SetupFlowModel: ObservableObject {
         case "microphone":
             return microphonePermission == .authorized && microphoneInputDetected
         case "accessibility": return model.accessibilityEnabled
+        // The ready step's own gate is every other gate: a Finish that could
+        // not work is held here, next to the list of what is holding it.
+        case "ready": return blockedSteps.isEmpty
         default: return true
         }
     }
 
     var canAdvance: Bool { isSatisfied(steps[step].id) }
+
+    var isReadyStep: Bool { steps[step].id == "ready" }
+
+    /// The lead under the title. Only the ready step's changes with the flow.
+    func intro(for step: SetupStep) -> String {
+        guard step.id == "ready", !blockedSteps.isEmpty else { return step.intro }
+        return "Speecher can't dictate yet. Finish the steps below, or go back "
+            + "and change your choices."
+    }
+
+    /// Every gate still unmet, in flow order. Never includes the ready step,
+    /// whose own gate is exactly this list being empty.
+    var blockedSteps: [BlockedStep] {
+        steps.enumerated().compactMap { index, step -> BlockedStep? in
+            guard step.id != "ready", !isSatisfied(step.id) else { return nil }
+            return BlockedStep(id: step.id,
+                               index: index,
+                               title: step.title,
+                               reason: blockedReason(step.id))
+        }
+    }
+
+    /// Why one gate is shut, in the step's own words where it has them.
+    private func blockedReason(_ stepId: String) -> String {
+        switch stepId {
+        case "welcome":
+            return "No ChatGPT or Claude sign-in was found."
+        case "transcription":
+            let line = providerStatus
+            return line.isEmpty ? "The transcription service is not signed in." : line
+        case "microphone":
+            return microphonePermission == .authorized
+                ? "No microphone input has been detected."
+                : "Microphone access is off."
+        case "accessibility":
+            return "Accessibility is off, so Speecher cannot paste your dictation."
+        default:
+            return ""
+        }
+    }
+
+    /// What the ready step confirms once every gate passes: one line per step
+    /// that chose something, naming the choice rather than repeating the step.
+    var readyChecklist: [ReadyItem] {
+        var items: [ReadyItem] = []
+        if let speech = selectedSpeechProvider {
+            items.append(ReadyItem(id: "transcription",
+                                   providerId: speech.id,
+                                   symbol: "waveform",
+                                   label: "Transcription — \(speech.label)",
+                                   status: "Ready",
+                                   ready: true))
+        }
+        items.append(ReadyItem(id: "microphone",
+                               providerId: "",
+                               symbol: "mic",
+                               label: "Microphone — \(microphoneDeviceLabel)",
+                               status: "Ready",
+                               ready: true))
+        items.append(ReadyItem(id: "delivery",
+                               providerId: "",
+                               symbol: "keyboard",
+                               label: "Text delivery — paste with Cmd+V",
+                               status: "Ready",
+                               ready: true))
+        // Refinement is the one line that can say something other than Ready:
+        // it is never gated, so this step is reachable with None chosen or
+        // with a provider that is not signed in.
+        if let refinement = selectedRefinementProvider {
+            items.append(ReadyItem(id: "refinement",
+                                   providerId: refinement.id,
+                                   symbol: "wand.and.stars",
+                                   label: "Refinement — \(refinement.label)",
+                                   status: refinement.ready ? "Ready" : "Not signed in",
+                                   ready: refinement.ready))
+        } else {
+            items.append(ReadyItem(id: "refinement",
+                                   providerId: "none",
+                                   symbol: "minus.circle",
+                                   label: "Refinement — None",
+                                   status: "No cleanup",
+                                   ready: false))
+        }
+        return items
+    }
+
+    /// What the audio device row currently names, for the ready checklist.
+    private var microphoneDeviceLabel: String {
+        guard let row = model.row("audioDevice") else { return "system default" }
+        let selected = RowView.text(row.value)
+        return row.options.first { $0.rowOptionId == selected }?.label ?? "system default"
+    }
+
+    /// The ready step's "Go to step", which has to put the step being left
+    /// away exactly as Back and Continue do.
+    func goTo(step index: Int) {
+        jump(to: index)
+    }
 
     /// Skipping is only offered once it would leave a working app, which means
     /// every gate in the flow, not only the ones walked so far.
@@ -301,6 +436,9 @@ final class SetupFlowModel: ObservableObject {
 
     var providerHint: String { selectedSpeechProvider?.setupHint ?? "" }
     var providerReady: Bool { selectedSpeechProvider?.ready ?? false }
+    /// Whether a probe has answered about the selected service at all, which
+    /// is what separates "not set up" from "not asked yet".
+    var providerProbed: Bool { selectedSpeechProvider?.probed ?? false }
 
     /// The line under the transcription rows, which describes the selected
     /// service: the probe's own words when it refused, ours when it did not.
@@ -680,6 +818,290 @@ final class SetupFlowModel: ObservableObject {
     }
 }
 
+// MARK: - Marks and statuses
+
+/// The path data behind the two brand marks, copied from assets/brand.
+///
+/// Drawn rather than bundled: the app bundle's Resources are listed in the
+/// CMakeLists.txt every front end shares, and these are a few hundred bytes of
+/// geometry that no build step needs to carry. Each string is the `d`
+/// attribute of its `<path>` verbatim, wrapped between tokens, where SVG
+/// treats a newline as whitespace.
+private enum BrandArt {
+    static let claudeExtent: CGFloat = 24
+    /// Both marks keep their own colours. A flat silhouette in the label
+    /// colour is what carries no recognition at 20 points.
+    static let claudeColour = Color(red: 217 / 255, green: 119 / 255, blue: 87 / 255)
+    static let claude = """
+        m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971
+        -2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255
+        h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918
+        -.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457
+        -.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032
+        -.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255
+        h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686
+        -.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286
+        -.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7
+        -.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075
+        -1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376
+        -.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768
+        -.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807
+        -.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552
+        -.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17
+        -.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667
+        -.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457
+        -.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z
+        """
+
+    static let openAIExtent: CGFloat = 2406
+    static let openAIColour = Color(red: 116 / 255, green: 170 / 255, blue: 156 / 255)
+    /// The rounded tile the knot sits on.
+    static let openAITile = """
+        M1 578.4C1 259.5 259.5 1 578.4 1h1249.1c319 0 577.5 258.5 577.5 577.4V2406H578.4C259.5 2406 1 2147.5 1 1828.6
+        V578.4z
+        """
+    /// One cell of the knot, which chatgpt.svg stamps six times with `<use>`
+    /// at 60-degree turns about the centre of the viewBox.
+    static let openAICell = """
+        M1107.3 299.1c-197.999 0-373.9 127.3-435.2 315.3L650 743.5v427.9c0 21.4 11 40.4 29.4 51.4l344.5 198.515
+        V833.3h.1v-27.9L1372.7 604c33.715-19.52 70.44-32.857 108.47-39.828L1447.6 450.3C1361 353.5 1237.1 298.5 1107.3 299.1
+        zm0 117.5-.6.6c79.699 0 156.3 27.5 217.6 78.4-2.5 1.2-7.4 4.3-11 6.1L952.8 709.3c-18.4 10.4-29.4 30
+        -29.4 51.4V1248l-155.1-89.4V755.8c-.1-187.099 151.601-338.9 339-339.2z
+        """
+
+    /// The transform of the nth stamp of the knot cell.
+    static func openAITurn(_ turn: Int) -> CGAffineTransform {
+        guard turn > 0 else { return .identity }
+        let centre = openAIExtent / 2
+        return CGAffineTransform(translationX: centre, y: centre)
+            .rotated(by: .pi / 3 * CGFloat(turn))
+            .translatedBy(x: -centre, y: -centre)
+    }
+}
+
+/// A shape from SVG path data, fitted to the rect it is drawn in.
+///
+/// Only what the two brand marks use: M, L, H, V, C, Z and their relative
+/// forms, with implicit repeats. No arcs, no quadratics, no exponents — read
+/// off the two files rather than assumed.
+private struct BrandShape: Shape {
+    let commands: String
+    /// The viewBox edge. Both marks are square, so one number does.
+    let extent: CGFloat
+    /// Applied in viewBox coordinates, which is where the knot's turns are.
+    var turn: CGAffineTransform = .identity
+
+    func path(in rect: CGRect) -> Path {
+        let scale = min(rect.width, rect.height) / extent
+        let fit = CGAffineTransform(translationX: rect.minX, y: rect.minY)
+            .scaledBy(x: scale, y: scale)
+        return Self.parse(commands).applying(turn).applying(fit)
+    }
+
+    private static func parse(_ commands: String) -> Path {
+        var path = Path()
+        var reader = Reader(commands)
+        var current = CGPoint.zero
+        var subpathStart = CGPoint.zero
+        var command: Character?
+
+        while true {
+            if let letter = reader.letter() { command = letter }
+            guard let active = command else { return path }
+            let relative = active.isLowercase
+            // Every point of a relative run is measured from where the run
+            // started, so `current` only moves once the command is finished.
+            func place(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+                relative ? CGPoint(x: current.x + x, y: current.y + y) : CGPoint(x: x, y: y)
+            }
+            switch active.uppercased() {
+            case "Z":
+                path.closeSubpath()
+                current = subpathStart
+                // Z takes no numbers, so it cannot repeat: whatever comes next
+                // is a command letter or the data has ended.
+                command = nil
+            case "M":
+                guard let x = reader.number(), let y = reader.number() else { return path }
+                let point = place(x, y)
+                path.move(to: point)
+                current = point
+                subpathStart = point
+                // Every further pair of a moveto run is a lineto.
+                command = relative ? "l" : "L"
+            case "L":
+                guard let x = reader.number(), let y = reader.number() else { return path }
+                let point = place(x, y)
+                path.addLine(to: point)
+                current = point
+            case "H":
+                guard let x = reader.number() else { return path }
+                let point = CGPoint(x: relative ? current.x + x : x, y: current.y)
+                path.addLine(to: point)
+                current = point
+            case "V":
+                guard let y = reader.number() else { return path }
+                let point = CGPoint(x: current.x, y: relative ? current.y + y : y)
+                path.addLine(to: point)
+                current = point
+            case "C":
+                guard let x1 = reader.number(), let y1 = reader.number(),
+                      let x2 = reader.number(), let y2 = reader.number(),
+                      let x = reader.number(), let y = reader.number() else { return path }
+                let end = place(x, y)
+                path.addCurve(to: end, control1: place(x1, y1), control2: place(x2, y2))
+                current = end
+            default:
+                return path
+            }
+        }
+    }
+
+    /// A reader over path data, where numbers run together, a sign doubles as
+    /// a separator and a leading dot is a number of its own.
+    private struct Reader {
+        private let characters: [Character]
+        private var index = 0
+
+        init(_ text: String) { characters = Array(text) }
+
+        mutating func letter() -> Character? {
+            skipSeparators()
+            guard index < characters.count, characters[index].isLetter else { return nil }
+            defer { index += 1 }
+            return characters[index]
+        }
+
+        mutating func number() -> CGFloat? {
+            skipSeparators()
+            var text = ""
+            if index < characters.count, characters[index] == "-" || characters[index] == "+" {
+                text.append(characters[index])
+                index += 1
+            }
+            var sawPoint = false
+            while index < characters.count {
+                let character = characters[index]
+                if character.isNumber {
+                    text.append(character)
+                } else if character == ".", !sawPoint {
+                    sawPoint = true
+                    text.append(character)
+                } else {
+                    break
+                }
+                index += 1
+            }
+            // ".079" and "-.2307" are how these files write a number below one.
+            // Spell the zero rather than trust a parser to infer it.
+            if text.hasPrefix(".") {
+                text = "0" + text
+            } else if text.hasPrefix("-.") {
+                text = "-0" + String(text.dropFirst())
+            }
+            return Double(text).map { CGFloat($0) }
+        }
+
+        private mutating func skipSeparators() {
+            while index < characters.count,
+                  characters[index] == "," || characters[index].isWhitespace {
+                index += 1
+            }
+        }
+    }
+}
+
+/// The Claude starburst, in the brand colour.
+private struct ClaudeMark: View {
+    var body: some View {
+        BrandShape(commands: BrandArt.claude, extent: BrandArt.claudeExtent)
+            .fill(BrandArt.claudeColour)
+    }
+}
+
+/// The ChatGPT knot on its tile, as chatgpt.svg draws it.
+private struct OpenAIMark: View {
+    var body: some View {
+        ZStack {
+            BrandShape(commands: BrandArt.openAITile, extent: BrandArt.openAIExtent)
+                .fill(BrandArt.openAIColour)
+            ForEach(0 ..< 6) { turn in
+                BrandShape(commands: BrandArt.openAICell,
+                           extent: BrandArt.openAIExtent,
+                           turn: BrandArt.openAITurn(turn))
+                    .fill(Color.white)
+            }
+        }
+    }
+}
+
+/// The mark a provider id wears. The registry's ids name the sign-in rather
+/// than the brand: codex and openai are the same ChatGPT credential, claude
+/// and anthropic the same Claude one.
+private struct ProviderMark: View {
+    let providerId: String
+    /// What an id with no brand behind it draws instead.
+    var fallback = "minus.circle"
+
+    var body: some View {
+        Group {
+            switch providerId {
+            case "codex", "openai":
+                OpenAIMark()
+            case "claude", "anthropic":
+                ClaudeMark()
+            default:
+                Image(systemName: fallback)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 20, height: 20)
+        .accessibilityHidden(true)
+    }
+}
+
+/// A verdict with the glyph that carries it, which is how every status in the
+/// mockup is written.
+private struct StatusLabel: View {
+    enum Tone { case positive, pending, warning }
+
+    let text: String
+    let tone: Tone
+
+    var body: some View {
+        Label {
+            Text(text).fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: symbol)
+        }
+        .foregroundStyle(colour)
+    }
+
+    private var symbol: String {
+        switch tone {
+        case .positive: return "checkmark"
+        case .pending: return "minus.circle"
+        case .warning: return "exclamationmark.triangle"
+        }
+    }
+
+    private var colour: AnyShapeStyle {
+        switch tone {
+        case .positive: return AnyShapeStyle(.green)
+        case .pending: return AnyShapeStyle(.secondary)
+        case .warning: return AnyShapeStyle(.orange)
+        }
+    }
+
+    /// The tone a provider row earns: nothing heard yet, ready, or not set up.
+    static func tone(for provider: ProviderRow) -> Tone {
+        guard provider.probed else { return .pending }
+        return provider.ready ? .positive : .warning
+    }
+}
+
 // MARK: - Views
 
 struct SetupAssistantView: View {
@@ -692,9 +1114,11 @@ struct SetupAssistantView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(step.title)
                     .font(.title2.weight(.semibold))
-                Text(step.intro)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if !flow.intro(for: step).isEmpty {
+                    Text(flow.intro(for: step))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .scenePadding([.top, .horizontal])
             .padding(.bottom, 4)
@@ -729,8 +1153,10 @@ struct SetupAssistantView: View {
             // The last step carries Finish, at which point leaving is what the
             // big button does. Skipping is hidden until every gate passes:
             // a skipped setup never comes back, so it must not be the way out
-            // of a step the person could not complete.
-            if !flow.isLastStep, flow.canSkip {
+            // of a step the person could not complete. The ready step drops it
+            // in both its states: it is where the flow accounts for itself, and
+            // skipping past that account is not a thing to offer there.
+            if !flow.isLastStep, !flow.isReadyStep, flow.canSkip {
                 Button("Skip Setup") { flow.skip() }
             }
             Spacer()
@@ -771,17 +1197,29 @@ private struct WelcomeStep: View {
             Section("Before you start") {
                 Text("Speecher uses your existing ChatGPT or Claude sign-in. Install and sign "
                     + "in to one of these, then choose Check again:")
+                    .fixedSize(horizontal: false, vertical: true)
                 ForEach(flow.speechProviders) { provider in
-                    VStack(alignment: .leading, spacing: 2) {
-                        LabeledContent(provider.credentialSource) {
-                            Text(provider.credentialStatus)
-                                .foregroundStyle(provider.ready ? AnyShapeStyle(.green)
-                                                                : AnyShapeStyle(.secondary))
-                        }
-                        if provider.probed, !provider.ready, !provider.setupHint.isEmpty {
-                            Text(provider.setupHint)
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
+                    // The mark, then the sign-in's name with its verdict on the
+                    // trailing edge, and the hint indented under the name: the
+                    // stack starts past the mark, so nothing measures an inset.
+                    HStack(alignment: .top, spacing: 8) {
+                        ProviderMark(providerId: provider.id)
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(provider.credentialSource)
+                                    .fontWeight(.semibold)
+                                Spacer(minLength: 12)
+                                // Not found is a fact here, not a fault: the
+                                // step exists to say which sign-ins are there.
+                                StatusLabel(text: provider.credentialStatus,
+                                            tone: provider.ready ? .positive : .pending)
+                            }
+                            if provider.probed, !provider.ready, !provider.credentialHint.isEmpty {
+                                Text(provider.credentialHint)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     }
                 }
@@ -796,27 +1234,34 @@ private struct WelcomeStep: View {
     }
 }
 
-/// One selectable provider: its label, the probe's verdict under it, and for
-/// refinement the sign-in the provider borrows.
+/// One selectable provider: its mark, its name, for refinement the sign-in it
+/// borrows, and the probe's verdict on the trailing edge.
 private struct ProviderOptionLabel: View {
+    let providerId: String
     let title: String
     let status: String
-    let positive: Bool
+    let tone: StatusLabel.Tone
     var note = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .fontWeight(.semibold)
-            Text(status)
-                .font(.callout)
-                .foregroundStyle(positive ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
-            if !note.isEmpty {
-                Text(note)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 8) {
+            ProviderMark(providerId: providerId)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .fontWeight(.semibold)
+                if !note.isEmpty {
+                    Text(note)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+            Spacer(minLength: 12)
+            StatusLabel(text: status, tone: tone)
         }
+        // A radio's label is offered the row, not only what it needs, which is
+        // what puts the status against the trailing edge.
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -846,9 +1291,10 @@ private struct TranscriptionStep: View {
                 // find out what is there.
                 Picker(selection: selection) {
                     ForEach(flow.speechProviders) { provider in
-                        ProviderOptionLabel(title: provider.label,
+                        ProviderOptionLabel(providerId: provider.id,
+                                            title: provider.label,
                                             status: provider.readinessStatus,
-                                            positive: provider.ready)
+                                            tone: StatusLabel.tone(for: provider))
                             .tag(provider.id)
                     }
                 } label: {
@@ -856,19 +1302,20 @@ private struct TranscriptionStep: View {
                 }
                 .pickerStyle(.radioGroup)
                 ProviderStatsRows(stats: model.bridge.stats(forSpeechProvider: flow.providerId))
+                // The verdict and the way to ask again sit on one row, so a
+                // held Continue and its remedy are read together.
                 if !flow.providerStatus.isEmpty {
-                    Text(flow.providerStatus)
-                        .foregroundStyle(flow.providerReady ? AnyShapeStyle(.green)
-                                                            : AnyShapeStyle(.secondary))
+                    HStack(alignment: .firstTextBaseline) {
+                        StatusLabel(text: flow.providerStatus, tone: statusTone)
+                        Spacer(minLength: 12)
+                        if !flow.providerReady {
+                            Button("Check Again") { flow.checkSpeechProviders() }
+                        }
+                    }
                 }
             } footer: {
                 if !flow.providerReady, !flow.providerHint.isEmpty {
                     Text(flow.providerHint)
-                }
-            }
-            if !flow.providerReady {
-                Section {
-                    Button("Check Again") { flow.checkSpeechProviders() }
                 }
             }
         }
@@ -882,6 +1329,11 @@ private struct TranscriptionStep: View {
     /// auto-selection from moving them afterwards.
     private var selection: Binding<String> {
         Binding(get: { flow.providerId }, set: { flow.chooseSpeechProvider($0) })
+    }
+
+    private var statusTone: StatusLabel.Tone {
+        if flow.providerReady { return .positive }
+        return flow.providerProbed ? .warning : .pending
     }
 }
 
@@ -978,11 +1430,16 @@ private struct DeliveryStep: View {
             Section {
                 Text("Nothing to install — Speecher uses the keyboard paste built into macOS.")
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Section {
+                // Both of these carry a sentence rather than a name, and the
+                // dialog is a fixed width: they wrap here rather than run out
+                // of the card.
                 ForEach(model.rows(matching: ["outputFormat", "restoreClipboardAfterTyping"]),
                         id: \.rowId) { row in
                     RowView(row: row, model: model)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -1007,23 +1464,30 @@ private struct RefinementStep: View {
                     ForEach(flow.refinementProviders) { row in
                         // The brands differ from the transcription step's, so
                         // each row says which sign-in it actually uses.
-                        ProviderOptionLabel(title: row.label,
+                        ProviderOptionLabel(providerId: row.id,
+                                            title: row.label,
                                             status: row.readinessStatus,
-                                            positive: row.ready,
+                                            tone: StatusLabel.tone(for: row),
                                             note: row.setupHint)
                             .tag(row.id)
                     }
-                    ProviderOptionLabel(title: "None", status: "No cleanup", positive: false)
+                    ProviderOptionLabel(providerId: "none",
+                                        title: "None",
+                                        status: "No cleanup",
+                                        tone: .pending,
+                                        note: "Skip cleanup entirely.")
                         .tag("none")
                 } label: {
                     Text("Cleanup provider")
                 }
                 .pickerStyle(.radioGroup)
+                // Directly under the rows, above the facts, so it reads as
+                // attached to the selection it is about.
+                if !flow.refinementWarning.isEmpty {
+                    StatusLabel(text: flow.refinementWarning, tone: .warning)
+                }
                 // None has no facts worth a block, so choosing it hides them.
                 ProviderStatsRows(stats: model.bridge.stats(forRefinementProvider: provider))
-                if !flow.refinementWarning.isEmpty {
-                    Text(flow.refinementWarning)
-                }
                 ForEach(model.rows(matching: fastModeIds), id: \.rowId) { row in
                     RowView(row: row, model: model)
                 }
@@ -1047,6 +1511,10 @@ private struct ProfilesStep: View {
                 if let row = model.row("defaultWritingProfile") {
                     RowView(row: row, model: model)
                 }
+            } footer: {
+                Text("The default profile is used when Speecher does not recognise the "
+                    + "app you are dictating into. Every profile can be changed later "
+                    + "in Settings.")
             }
             Section("Profile behavior") {
                 if let row = model.row("writingProfileBehavior") {
@@ -1074,25 +1542,24 @@ private struct ShortcutStep: View {
         Form {
             Section {
                 Toggle("Set up a dictation shortcut", isOn: $flow.createShortcut)
+                // The key itself reads as a fact on its own row; the button
+                // below is what changes it.
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "keyboard")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Text("Dictation key")
+                    Spacer(minLength: 12)
+                    Text(flow.pendingShortcut.display)
+                        .fontWeight(.semibold)
+                }
                 LabeledContent {
-                    Button(caption) {
-                        captureProblem = ""
-                        recorder.record(suspending: model, combination: { characters, flags in
-                            flow.recordShortcut(characters: characters, flags: flags)
-                        }, singleKey: { keyCode in
-                            guard let code = model.keyCodeName(forMacKeyCode: keyCode) else {
-                                captureProblem = "That key cannot be a dictation key."
-                                return false
-                            }
-                            flow.recordSingleKey(code: code)
-                            return true
-                        })
-                    }
-                    .disabled(!flow.createShortcut)
+                    Button(caption) { record() }
+                        .disabled(!flow.createShortcut)
                 } label: {
-                    Text("Dictation shortcut")
                     Text("Press a key combination, or a single key such as "
                          + "Right Option or F13.")
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if flow.pendingSingleKeyRefused, !model.accessibilityEnabled {
                     Button("Grant Accessibility Access") { flow.requestAccessibility() }
@@ -1110,9 +1577,22 @@ private struct ShortcutStep: View {
         .onDisappear { recorder.stop() }
     }
 
+    private func record() {
+        captureProblem = ""
+        recorder.record(suspending: model, combination: { characters, flags in
+            flow.recordShortcut(characters: characters, flags: flags)
+        }, singleKey: { keyCode in
+            guard let code = model.keyCodeName(forMacKeyCode: keyCode) else {
+                captureProblem = "That key cannot be a dictation key."
+                return false
+            }
+            flow.recordSingleKey(code: code)
+            return true
+        })
+    }
+
     private var caption: String {
-        if recorder.recording { return "Press a key or key combination…" }
-        return flow.pendingShortcut.display
+        recorder.recording ? "Press a Key…" : "Set Shortcut"
     }
 
     private var footnote: String {
@@ -1136,14 +1616,10 @@ private struct ReadyStep: View {
 
     var body: some View {
         Form {
-            Section {
-                Text(flow.createShortcut
-                    ? "Finishing registers \(flow.pendingShortcut.display) as the "
-                        + "dictation shortcut. To dictate, \(flow.activationInstruction)."
-                    : "Finishing completes setup without a dictation shortcut.")
-                    .foregroundStyle(.secondary)
-            } footer: {
-                Text(flow.readyStatus)
+            if flow.blockedSteps.isEmpty {
+                complete
+            } else {
+                blocked
             }
         }
         .formStyle(.grouped)
@@ -1151,6 +1627,67 @@ private struct ReadyStep: View {
         // re-probed here rather than trusted: one that expired while the
         // assistant sat open shuts the gate again before Finish is offered.
         .onAppear { flow.checkSpeechProviders() }
+    }
+
+    @ViewBuilder private var complete: some View {
+        Section {
+            StatusLabel(text: "Setup is complete.", tone: .positive)
+        }
+        Section("How to dictate") {
+            Text(flow.createShortcut
+                ? "Finishing registers \(flow.pendingShortcut.display) as the "
+                    + "dictation shortcut. To dictate, \(flow.activationInstruction)."
+                : "Finishing completes setup without a dictation shortcut.")
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Speecher stays out of the way until you press it. Its menu bar "
+                + "icon shows when it is listening.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        Section {
+            ForEach(flow.readyChecklist) { item in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    ProviderMark(providerId: item.providerId, fallback: item.symbol)
+                    Text(item.label)
+                    Spacer(minLength: 12)
+                    StatusLabel(text: item.status, tone: item.ready ? .positive : .pending)
+                }
+            }
+        } footer: {
+            Text(flow.readyStatus)
+        }
+    }
+
+    /// Never a silently disabled Finish: every gate still shut is named here,
+    /// with what is missing and the way back to the step that fixes it.
+    @ViewBuilder private var blocked: some View {
+        Section {
+            ForEach(flow.blockedSteps) { step in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(step.title)
+                            .fontWeight(.semibold)
+                        Text(step.reason)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 12)
+                    Button("Go to Step") { flow.goTo(step: step.index) }
+                }
+            }
+        } header: {
+            Text("A few steps still need attention:")
+        } footer: {
+            // The mockup writes "Finish" here because its ready page is the
+            // last one. macOS keeps Start at login after this step, so the
+            // button being held is Continue, and naming Finish would be a lie.
+            Text("Continue becomes available once every step above is resolved.")
+        }
     }
 }
 

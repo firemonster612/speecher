@@ -8,7 +8,9 @@
 #endif
 
 #include <QAbstractButton>
+#include <QPalette>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QVBoxLayout>
 
 #include <functional>
@@ -38,6 +40,27 @@ QStringList setupPageTitles()
 #endif
     titles.append(QStringLiteral("Ready to dictate"));
     return titles;
+}
+
+// The assistant's frame is fixed, so a page with more rows than fit scrolls
+// rather than squeezing them into overlapping slivers.
+QScrollArea *scrollingPage(QWidget *content)
+{
+    auto *scroll = new QScrollArea;
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setBackgroundRole(QPalette::Window);
+    scroll->viewport()->setBackgroundRole(QPalette::Window);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setWidget(content);
+    return scroll;
+}
+
+// The page content behind whatever the wizard handed back.
+QWidget *pageContent(QWidget *widget)
+{
+    auto *scroll = qobject_cast<QScrollArea *>(widget);
+    return scroll ? scroll->widget() : widget;
 }
 
 #ifndef SPEECHER_WITH_KASSISTANT
@@ -176,10 +199,11 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     for (int index = 0; index < pageContents.size(); ++index) {
         QWidget *content = pageContents.at(index);
         if (content && (requestedPageIndex < 0 || requestedPageIndex == index)) {
-            KPageWidgetItem *item = addPage(content, titles.at(index));
+            KPageWidgetItem *item = addPage(scrollingPage(content), titles.at(index));
             if (m_gates.contains(content)) {
                 m_gateItems.insert(content, item);
             }
+            m_steps.append({titles.at(index), content});
         }
     }
     if (!m_singlePage) {
@@ -191,7 +215,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
             &KAssistantDialog::currentPageChanged,
             this,
             [this](KPageWidgetItem *current, KPageWidgetItem *) {
-                QWidget *content = current ? current->widget() : nullptr;
+                QWidget *content = current ? pageContent(current->widget()) : nullptr;
                 updateActivePage(content);
                 // setValid keeps a snapshot; a step completed outside this
                 // dialog (the Output settings row, say) must reopen Next when
@@ -222,8 +246,9 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
             } else {
                 page = new QWizardPage;
             }
-            const int id = addPage(wizardPage(page, content, titles.at(index)));
+            const int id = addPage(wizardPage(page, scrollingPage(content), titles.at(index)));
             m_pageContents.insert(id, content);
+            m_steps.append({titles.at(index), content});
         }
     }
     connect(this, &QWizard::customButtonClicked, this, [this](int button) {
@@ -248,6 +273,20 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
                 &TextDeliverySetupPage::signInRequirementChanged,
                 m_finishPage,
                 &FinishSetupPage::setSignInRequired);
+    }
+    if (m_finishPage) {
+        connect(m_finishPage, &FinishSetupPage::stepSelected, this, [this](int index) {
+            if (index >= 0 && index < m_finishStepPages.size()) {
+                showPage(m_finishStepPages.at(index));
+            }
+        });
+    }
+    // Each page says where it sits in the run, which the wizard is the only
+    // thing that knows. A single-page run has no run to count.
+    if (!m_singlePage) {
+        for (int index = 0; index < m_steps.size(); ++index) {
+            setSetupStepCounter(m_steps.at(index).content, index + 1, m_steps.size());
+        }
     }
     applyGates();
 #ifdef Q_OS_LINUX
@@ -309,7 +348,32 @@ void SetupAssistant::applyGates()
         }
 #endif
     }
+    updateFinishSteps();
     updateActivePage(m_activePage);
+}
+
+void SetupAssistant::updateFinishSteps()
+{
+    if (!m_finishPage) {
+        return;
+    }
+    QList<SetupStepStatus> steps;
+    m_finishStepPages.clear();
+    for (const Step &step : m_steps) {
+        // The Ready page is not one of the steps it reports on.
+        if (step.content == m_finishPage) {
+            continue;
+        }
+        const auto gate = m_gates.value(step.content);
+        const bool ok = !gate || gate();
+        QString detail;
+        if (const auto *reporter = dynamic_cast<const SetupStep *>(step.content)) {
+            detail = ok ? reporter->readySummary() : reporter->blockedReason();
+        }
+        steps.append({step.title, ok, detail});
+        m_finishStepPages.append(step.content);
+    }
+    m_finishPage->setSteps(steps);
 }
 
 bool SetupAssistant::gatesComplete() const

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher setup — Desktop accessibility</title>
+<link rel="stylesheet" href="wizard.css">
+</head>
+<body data-states="off on" data-default-state="off">
+
+<div class="dialog" role="dialog" aria-labelledby="page-title">
+
+  <header class="dialog-header">
+    <h1 id="page-title">Desktop accessibility</h1>
+    <span class="step-count">Step 4 of 9</span>
+  </header>
+
+  <main class="dialog-body">
+    <p class="lead">Speecher pastes your dictation into the app you are using,
+      and reads the text around your cursor so cleanup understands the context.
+      On Linux both work through the desktop accessibility service (AT-SPI); it
+      also lets Speecher learn your corrections.</p>
+
+    <ul class="status-list" style="margin-top:16px">
+      <li>
+        <div class="status-row">
+          <svg class="icon" aria-hidden="true"><use href="#icon-cursor"/></svg>
+          <span class="row-label">Paste into the app you are using</span>
+          <span class="status ok" data-show="on">
+            <svg class="icon sm" aria-hidden="true"><use href="#icon-check"/></svg>
+            <span>Allowed</span></span>
+          <span class="status warn" data-show="off">
+            <svg class="icon sm" aria-hidden="true"><use href="#icon-pending"/></svg>
+            <span>Blocked</span></span>
+        </div>
+      </li>
+      <li>
+        <div class="status-row">
+          <svg class="icon" aria-hidden="true"><use href="#icon-keyboard"/></svg>
+          <span class="row-label">Read the text around your cursor for context</span>
+          <span class="status ok" data-show="on">
+            <svg class="icon sm" aria-hidden="true"><use href="#icon-check"/></svg>
+            <span>Allowed</span></span>
+          <span class="status warn" data-show="off">
+            <svg class="icon sm" aria-hidden="true"><use href="#icon-pending"/></svg>
+            <span>Blocked</span></span>
+        </div>
+      </li>
+    </ul>
+
+    <div class="notice warn" data-show="off" style="margin-top:16px">
+      <svg class="icon sm" aria-hidden="true"><use href="#icon-warning"/></svg>
+      <p>Accessibility is off, so Speecher can copy your dictation but not
+        paste it or see context. Turn it on to continue.</p>
+    </div>
+
+    <div class="notice ok" data-show="on" style="margin-top:16px">
+      <svg class="icon sm" aria-hidden="true"><use href="#icon-check"/></svg>
+      <p>Desktop accessibility is enabled permanently.</p>
+    </div>
+
+    <div class="button-row" data-show="off">
+      <button type="button">Enable permanently</button>
+    </div>
+
+    <p class="fine" style="margin-top:14px;max-width:62ch">This only affects
+      what this app can do. You can turn it off any time in Settings.</p>
+  </main>
+
+  <footer class="dialog-footer">
+    <button type="button" class="link">Skip setup</button>
+    <div class="footer-right">
+      <button type="button" data-nav="back">Back</button>
+      <button type="button" class="primary" data-nav="next"
+              data-disabled-in="off">Next</button>
+      <button type="button">Cancel</button>
+    </div>
+  </footer>
+
+</div>
+
+<script src="wizard.js"></script>
+</body>
+</html>

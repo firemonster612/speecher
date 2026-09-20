@@ -820,6 +820,78 @@ private slots:
         QVERIFY(note->isHidden());
     }
 
+    void finishPageListsWhatWasSetUpWhenEveryStepIsDone()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        FinishSetupPage page(controller);
+        page.setSteps({
+            {QStringLiteral("Transcription"), true, QStringLiteral("Transcription — ChatGPT Codex")},
+            {QStringLiteral("Desktop accessibility"), true, QString()},
+            {QStringLiteral("Microphone"), true, QStringLiteral("Microphone — Yeti Stereo Microphone")},
+        });
+        page.show();
+        QCoreApplication::processEvents();
+
+        QStringList shown;
+        for (const QLabel *label : page.findChildren<QLabel *>()) {
+            if (label->isVisible()) {
+                shown << label->text();
+            }
+        }
+        QVERIFY(shown.contains(QStringLiteral("Setup is complete.")));
+        QVERIFY(shown.contains(QStringLiteral("Transcription — ChatGPT Codex")));
+        QVERIFY(shown.contains(QStringLiteral("Microphone — Yeti Stereo Microphone")));
+        // A step with nothing chosen has nothing to report back.
+        QVERIFY(!shown.contains(QStringLiteral("Desktop accessibility")));
+        QVERIFY(!shown.contains(QStringLiteral("A few steps still need attention:")));
+    }
+
+    void finishPageListsUnfinishedStepsAndGoesBackToThem()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        FinishSetupPage page(controller);
+        page.setSteps({
+            {QStringLiteral("Transcription"), false,
+             QStringLiteral("ChatGPT Codex is no longer signed in.")},
+            {QStringLiteral("Microphone"), true,
+             QStringLiteral("Microphone — Yeti Stereo Microphone")},
+        });
+        page.show();
+        QCoreApplication::processEvents();
+
+        QStringList shown;
+        for (const QLabel *label : page.findChildren<QLabel *>()) {
+            if (label->isVisible()) {
+                shown << label->text();
+            }
+        }
+        QVERIFY(shown.contains(QStringLiteral("A few steps still need attention:")));
+        QVERIFY(shown.contains(QStringLiteral("Transcription")));
+        QVERIFY(shown.contains(QStringLiteral("ChatGPT Codex is no longer signed in.")));
+        QVERIFY(shown.contains(
+            QStringLiteral("Finish becomes available once every step above is resolved.")));
+        // A blocked page reports what is left, not what already worked.
+        QVERIFY(!shown.contains(QStringLiteral("Setup is complete.")));
+        QVERIFY(!shown.contains(QStringLiteral("Microphone — Yeti Stereo Microphone")));
+
+        QPushButton *goToStep = nullptr;
+        for (QPushButton *button : page.findChildren<QPushButton *>()) {
+            if (button->text() == QStringLiteral("Go to step")) {
+                goToStep = button;
+                break;
+            }
+        }
+        QVERIFY(goToStep);
+        QSignalSpy selected(&page, &FinishSetupPage::stepSelected);
+        goToStep->click();
+        QCOMPARE(selected.count(), 1);
+        // The index is into the list the page was given, so the wizard can
+        // resolve it back to the page that step belongs to.
+        QCOMPARE(selected.first().first().toInt(), 0);
+    }
+
     void finishPageExplainsTheTrayIcon()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());

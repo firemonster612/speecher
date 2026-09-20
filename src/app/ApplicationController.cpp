@@ -791,7 +791,7 @@ void ApplicationController::registerProviders()
     m_providers->registerSpeechProvider(
         {QStringLiteral("claude"),
          QStringLiteral("Claude Voice"),
-         QStringLiteral("Install Claude Code from claude.com/code, run claude in a terminal, and use /login."),
+         QStringLiteral("Install Claude Code from claude.com/code and sign in — the desktop app or the claude CLI (/login) both work."),
          false,
          QStringLiteral("Deepgram Nova 3: words appear live as you speak. "
                         "About 60 languages, automatic punctuation and numerals."),

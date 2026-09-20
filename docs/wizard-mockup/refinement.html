@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher setup — Refinement</title>
+<link rel="stylesheet" href="wizard.css">
+</head>
+<body data-states="ready notready none" data-default-state="ready">
+
+<div class="dialog" role="dialog" aria-labelledby="page-title">
+
+  <header class="dialog-header">
+    <h1 id="page-title">Refinement</h1>
+    <span class="step-count">Step 6 of 9</span>
+  </header>
+
+  <main class="dialog-body">
+    <p class="lead">Refinement can clean up a raw transcript after dictation.
+      Choose a provider, or None to skip cleanup.</p>
+
+    <div class="choices" role="radiogroup" aria-label="Cleanup provider"
+         data-choicegroup data-gate="false" data-panel="#detail">
+
+      <label class="choice"
+             data-name="Anthropic"
+             data-hint="Install Claude Code from claude.com/code, run claude in a terminal, and use /login."
+             data-stats='[["Score","8 / 10"],["Default model","Claude Sonnet 5"],["Speed","About 2 seconds per dictation"],["Efficiency","Light reasoning; very consistent finish times"],["Quality","Excellent cleanup; can leave a spoken correction in"]]'
+             data-states='{"ready":{"status":"Ready","tone":"ok","line":"Anthropic is ready."},
+                           "notready":{"status":"Ready","tone":"ok","line":"Anthropic is ready."},
+                           "none":{"status":"Ready","tone":"ok","line":"Anthropic is ready."}}'>
+        <input type="radio" name="refine" value="anthropic">
+        <svg class="icon lg" aria-hidden="true"><use href="#icon-anthropic"/></svg>
+        <span class="choice-text">
+          <span class="choice-name">Anthropic</span>
+          <span class="choice-note">Uses your Claude Code sign-in.</span>
+        </span>
+        <span class="choice-status"></span>
+      </label>
+
+      <label class="choice"
+             data-name="OpenAI"
+             data-hint="Sign in with ChatGPT in the ChatGPT app, or install the Codex CLI and run codex login."
+             data-stats='[["Score","9 / 10"],["Default model","gpt-5.6-luna"],["Speed","About 3 seconds per dictation"],["Efficiency","No reasoning pass; time varies run to run"],["Quality","Excellent cleanup; applies spoken corrections reliably"]]'
+             data-states='{"ready":{"status":"Ready","tone":"ok","line":"OpenAI is ready."},
+                           "notready":{"status":"Not signed in","tone":"warn","line":"OpenAI is not signed in.","warning":"OpenAI is not signed in. Dictation will deliver the raw transcript."},
+                           "none":{"status":"Ready","tone":"ok","line":"OpenAI is ready."}}'>
+        <input type="radio" name="refine" value="openai" data-checked-in="ready notready">
+        <svg class="icon lg" aria-hidden="true"><use href="#icon-openai"/></svg>
+        <span class="choice-text">
+          <span class="choice-name">OpenAI</span>
+          <span class="choice-note">Uses your ChatGPT or Codex sign-in.</span>
+        </span>
+        <span class="choice-status"></span>
+      </label>
+
+      <label class="choice"
+             data-name="None"
+             data-stats='[]'
+             data-states='{"*":{"status":"No cleanup","line":"Dictation delivers the raw transcript, exactly as heard."}}'>
+        <input type="radio" name="refine" value="none" data-checked-in="none">
+        <svg class="icon lg" aria-hidden="true" style="color:var(--text-faint)"><use href="#icon-pending"/></svg>
+        <span class="choice-text">
+          <span class="choice-name">None</span>
+          <span class="choice-note">Skip cleanup entirely.</span>
+        </span>
+        <span class="choice-status"></span>
+      </label>
+    </div>
+
+    <section id="detail">
+      <!-- Sits above the stats table so it reads as attached to the card
+           selection directly above it. -->
+      <div class="notice warn js-warning" style="margin-bottom:12px" hidden>
+        <svg class="icon sm" aria-hidden="true"><use href="#icon-warning"/></svg>
+        <p></p>
+      </div>
+
+      <table class="stats">
+        <tbody></tbody>
+      </table>
+
+      <div data-show="ready notready" style="margin-top:6px">
+        <label class="check" style="margin-bottom:4px">
+          <input type="checkbox" checked>
+          <span>Fast mode</span>
+        </label>
+        <p class="hint" style="margin-left:24px">1.5x speed and increased usage
+          (negligible).</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="dialog-footer">
+    <button type="button" class="link">Skip setup</button>
+    <div class="footer-right">
+      <button type="button" data-nav="back">Back</button>
+      <button type="button" class="primary" data-nav="next">Next</button>
+      <button type="button">Cancel</button>
+    </div>
+  </footer>
+
+</div>
+
+<script src="wizard.js"></script>
+</body>
+</html>

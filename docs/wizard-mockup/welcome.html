@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher setup — Welcome</title>
+<link rel="stylesheet" href="wizard.css">
+</head>
+<body data-states="nocreds checking found" data-default-state="nocreds">
+
+<div class="dialog" role="dialog" aria-labelledby="page-title">
+
+  <header class="dialog-header">
+    <h1 id="page-title">Welcome to Speecher</h1>
+    <span class="step-count">Step 1 of 9</span>
+  </header>
+
+  <main class="dialog-body">
+    <p class="lead">Speecher records a short dictation, turns it into text, and
+      sends it to the app you were using.</p>
+    <p class="lead">This assistant checks everything dictation needs: your
+      speech service, microphone, and how text reaches your apps.</p>
+
+    <section class="card" style="margin-top:16px">
+      <h2 class="card-title">Before you start</h2>
+      <p class="muted" style="margin-bottom:0">Speecher uses your existing
+        ChatGPT or Claude sign-in. Install and sign in to one of these, then
+        choose Check again:</p>
+
+      <ul class="status-list">
+        <li>
+          <div class="status-row">
+            <svg class="icon" aria-hidden="true"><use href="#icon-openai"/></svg>
+            <span class="row-label">Codex CLI or the ChatGPT app</span>
+            <span class="status ok" data-show="found">
+              <svg class="icon sm" aria-hidden="true"><use href="#icon-check"/></svg>
+              <span>Sign-in found</span></span>
+            <span class="status" data-show="nocreds">
+              <svg class="icon sm" aria-hidden="true"><use href="#icon-pending"/></svg>
+              <span>Not found</span></span>
+            <span class="status" data-show="checking">
+              <svg class="icon sm" aria-hidden="true"><use href="#icon-spinner"/></svg>
+              <span>Checking…</span></span>
+          </div>
+          <p class="hint" data-show="nocreds">Sign in with ChatGPT in the ChatGPT
+            app, or install the Codex CLI and run <code>codex login</code>.</p>
+        </li>
+        <li>
+          <div class="status-row">
+            <svg class="icon" aria-hidden="true"><use href="#icon-anthropic"/></svg>
+            <span class="row-label">Claude Code</span>
+            <span class="status" data-show="nocreds found">
+              <svg class="icon sm" aria-hidden="true"><use href="#icon-pending"/></svg>
+              <span>Not found</span></span>
+            <span class="status" data-show="checking">
+              <svg class="icon sm" aria-hidden="true"><use href="#icon-spinner"/></svg>
+              <span>Checking…</span></span>
+          </div>
+          <p class="hint" data-show="nocreds found">Install Claude Code from
+            claude.com/code and sign in — the desktop app or the
+            <code>claude</code> CLI (<code>/login</code>) both work.</p>
+        </li>
+      </ul>
+
+      <div class="button-row">
+        <button type="button" data-disabled-in="checking">Check again</button>
+        <span class="fine" data-show="checking">Looking for a signed-in
+          ChatGPT or Claude install…</span>
+      </div>
+    </section>
+  </main>
+
+  <footer class="dialog-footer">
+    <button type="button" class="link">Skip setup</button>
+    <div class="footer-right">
+      <button type="button" class="primary" data-nav="next"
+              data-disabled-in="nocreds checking">Next</button>
+      <button type="button">Cancel</button>
+    </div>
+  </footer>
+
+</div>
+
+<script src="wizard.js"></script>
+</body>
+</html>

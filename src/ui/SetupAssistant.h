@@ -59,6 +59,19 @@ private:
     QWidget *firstIncompletePage() const;
     void showPage(QWidget *content);
     void recheckCredentialsInBackground();
+    // Hands the Ready page every step's verdict, so it can either list what is
+    // left or confirm what was set up.
+    void updateFinishSteps();
+
+    // The pages in wizard order, with the title each was added under.
+    struct Step {
+        QString title;
+        QWidget *content = nullptr;
+    };
+    QList<Step> m_steps;
+    // The pages behind the Ready page's checklist, in the order it was given
+    // them, so a "Go to step" press resolves to the page it names.
+    QList<QWidget *> m_finishStepPages;
 
     // Pages whose step must be completed before Next (and, while any is
     // incomplete, before Skip setup is offered at all).

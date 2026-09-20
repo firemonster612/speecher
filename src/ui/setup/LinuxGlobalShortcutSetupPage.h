@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/ShortcutBinding.h"
+#include "ui/setup/SetupPages.h"
 
 #include <QKeySequence>
 #include <QPushButton>
@@ -79,7 +80,7 @@ QString linuxTrayShortcutNote(bool trayAvailable);
 // leaving "dictate only while the key is held" on offer as though it worked.
 QString linuxHoldToTalkUnavailableNote();
 
-class LinuxGlobalShortcutSetupPage final : public QWidget {
+class LinuxGlobalShortcutSetupPage final : public QWidget, public SetupStep {
     Q_OBJECT
 
 public:
@@ -100,6 +101,8 @@ public:
     // desktops cannot be verified, so the install is their whole step.
     bool stepComplete() const;
 
+    QString blockedReason() const override;
+
 signals:
     void stepCompleteChanged();
 
@@ -114,6 +117,8 @@ private:
     void refresh();
     void refreshControls();
     void refreshKeyHelper();
+    // The feedback line only occupies the card while it has something to say.
+    void showCaptureFeedback(const QString &text);
     void showRegistrationResult(bool bound, const QString &detail);
 
     ApplicationController &m_controller;
