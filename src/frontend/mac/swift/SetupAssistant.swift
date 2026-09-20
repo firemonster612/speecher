@@ -265,6 +265,13 @@ final class SetupFlowModel: ObservableObject {
     /// itself already displays, so a disabled Continue always has a visible
     /// reason next to it.
     private func isSatisfied(_ stepId: String) -> Bool {
+        // The E2E seam: provider_steps_run.sh walks the assistant to verify
+        // stats rendering, not gating (setup_run.sh covers the gates), and the
+        // runner has no sign-ins, microphone, or accessibility grant to
+        // satisfy them for real.
+        if ProcessInfo.processInfo.environment["SPEECHER_E2E_SKIP_SETUP_GATES"] == "1" {
+            return true
+        }
         switch stepId {
         // Nothing later in the assistant can succeed without one of the
         // provider sign-ins, so the first step holds until a probe finds one.

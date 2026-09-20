@@ -36,7 +36,11 @@ launch_setup() {
     return 1
   fi
   mkdir -p "$CASE_DIR/pages"
+  # These cases verify the provider steps' stats rendering; the wizard's gates
+  # are covered by setup_run.sh and cannot be satisfied on a runner with no
+  # sign-ins, so the gate seam holds them open for the walk.
   SPEECHER_E2E_SETUP_CAPTURE_DIR="$CASE_DIR/pages" \
+    SPEECHER_E2E_SKIP_SETUP_GATES=1 \
     DYLD_FRAMEWORK_PATH="${QT_ROOT_DIR:-}/lib" \
     "$APP_BIN" >"$CASE_DIR/process.out" 2>&1 &
   APP_PID=$!
