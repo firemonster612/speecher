@@ -129,6 +129,9 @@ public:
     {
         QStyleOptionViewItem whole(option);
         whole.viewItemPosition = QStyleOptionViewItem::OnlyOne;
+        // The selected row names the visible page, so it keeps the active
+        // highlight when the window loses focus instead of dimming.
+        whole.state |= QStyle::State_Active;
         QStyledItemDelegate::paint(painter, whole, index);
     }
 };
