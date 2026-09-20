@@ -8,6 +8,7 @@
 #include <QWizard>
 #endif
 #include <QHash>
+#include <QList>
 #include <QStringList>
 
 #include <functional>
@@ -24,6 +25,8 @@ namespace speecher {
 class ApplicationController;
 class FinishSetupPage;
 class MicrophoneSetupPage;
+class SpeechProviderSetupPage;
+class WelcomeSetupPage;
 #ifdef Q_OS_LINUX
 class LinuxGlobalShortcutSetupPage;
 #endif
@@ -48,12 +51,21 @@ private:
     static int pageIndex(SetupAssistantPage page);
     void skipSetup();
     void updateActivePage(QWidget *page);
+    void addGate(QWidget *content, std::function<bool()> gate);
     void applyGates();
     bool gatesComplete() const;
+    // Whether every gate ahead of `content` in wizard order is satisfied.
+    bool earlierGatesComplete(QWidget *content) const;
+    QWidget *firstIncompletePage() const;
+    void showPage(QWidget *content);
+    void recheckCredentialsInBackground();
 
     // Pages whose step must be completed before Next (and, while any is
     // incomplete, before Skip setup is offered at all).
     QHash<QWidget *, std::function<bool()>> m_gates;
+    // The same pages in wizard order, so a failed finish can return to the
+    // first step that broke rather than an arbitrary one.
+    QList<QWidget *> m_gateOrder;
 #ifdef SPEECHER_WITH_KASSISTANT
     QHash<QWidget *, KPageWidgetItem *> m_gateItems;
 #else
@@ -61,6 +73,8 @@ private:
 #endif
 
     ApplicationController *m_controller;
+    WelcomeSetupPage *m_welcomePage = nullptr;
+    SpeechProviderSetupPage *m_speechProviderPage = nullptr;
     MicrophoneSetupPage *m_microphonePage = nullptr;
     TextDeliverySetupPage *m_deliveryPage = nullptr;
     WritingProfilesSetupPage *m_profilesPage = nullptr;

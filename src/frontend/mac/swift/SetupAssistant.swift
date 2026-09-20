@@ -20,7 +20,7 @@ struct SetupStep: Identifiable {
                       + "and sends it to the app you were using."),
         SetupStep(id: "transcription",
                   title: "Transcription",
-                  intro: "Choose the service Speecher uses to turn speech into a Raw Transcript."),
+                  intro: "Choose the service Speecher uses to turn speech into a raw transcript."),
         SetupStep(id: "microphone",
                   title: "Microphone",
                   intro: "Choose the input Speecher should record. "
@@ -50,11 +50,46 @@ struct SetupStep: Identifiable {
                       + "its own, such as Right Option. Then choose what pressing it does."),
         SetupStep(id: "ready",
                   title: "Ready to dictate",
-                  intro: "Setup is complete."),
+                  intro: "Almost done."),
         SetupStep(id: "login",
                   title: "Start at login",
                   intro: "Dictation only works while Speecher is running."),
     ]
+}
+
+/// A provider as the assistant lists it: the registry's strings, plus what the
+/// readiness probe last said about it.
+struct ProviderRow: Identifiable {
+    let id: String
+    let label: String
+    let credentialSource: String
+    let setupHint: String
+    /// Whether a probe has answered at all. A row that has never been probed
+    /// says so rather than claiming the provider is not set up.
+    var probed = false
+    var ready = false
+    /// Why the provider is not ready; empty while it is.
+    var message = ""
+
+    init(_ provider: SpeecherProviderModel) {
+        id = provider.providerId
+        label = provider.label
+        credentialSource = provider.credentialSource
+        setupHint = provider.setupHint
+    }
+
+    /// The welcome step's verdict, which is about the sign-in behind the
+    /// provider rather than the provider itself.
+    var credentialStatus: String {
+        guard probed else { return "Checking…" }
+        return ready ? "Sign-in found" : "Not found"
+    }
+
+    /// The verdict the transcription and refinement rows carry.
+    var readinessStatus: String {
+        guard probed else { return "Checking…" }
+        return ready ? "Ready" : "Not set up"
+    }
 }
 
 /// The keys the finish step will hand the shortcut binder. Held rather than
@@ -128,17 +163,32 @@ final class SetupFlowModel: ObservableObject {
 
     @Published var step = 0
 
-    // Transcription.
-    @Published var providerStatus = ""
-    @Published var providerReady = false
+    // Transcription and refinement. Every registered provider carries its own
+    // probe verdict, which the welcome step reads as a credential check and the
+    // two provider steps read as a readiness one.
+    @Published var speechProviders: [ProviderRow]
+    @Published var refinementProviders: [ProviderRow]
+    /// Auto-selecting a ready provider is a one-time courtesy per wizard run,
+    /// and never overrules a choice the person made in the wizard.
+    private var speechAutoSelected = false
+    private var refinementAutoSelected = false
+    private var speechChosenByUser = false
+    private var refinementChosenByUser = false
 
     // Microphone.
     @Published var meterLevel: Float = 0
     @Published var meterStatus = ""
     @Published var microphonePermission = AVCaptureDevice.authorizationStatus(for: .audio)
     @Published var inputVolumeNote = ""
+    /// Whether the meter has seen the level move since it last started. The
+    /// gate cannot read the current sample: a person who spoke is silent again
+    /// by the time they reach for Continue.
+    @Published private var microphoneInputDetected = false
     private var meterRunning = false
     private var lastVolumeRefresh = Date.distantPast
+    /// macOS grants microphone access in System Settings and tells this process
+    /// nothing, so the only way to notice is to keep asking while the page is up.
+    private var microphonePermissionPoll: Timer?
 
     // Accessibility. The grant recorded on first sight of the page decides
     // whether finishing must relaunch: a grant that pre-dated this run does not.
@@ -163,6 +213,8 @@ final class SetupFlowModel: ObservableObject {
 
     init(model: AppModel) {
         self.model = model
+        speechProviders = model.bridge.speechProviders.map(ProviderRow.init)
+        refinementProviders = model.bridge.refinementProviders.map(ProviderRow.init)
         launchAtLogin = RowView.flag(model.row("launchAtLogin")?.value)
         if !model.shortcut.isEmpty {
             // The binder already holds a shortcut; finishing keeps it unless a
@@ -175,7 +227,39 @@ final class SetupFlowModel: ObservableObject {
         }
     }
 
+    /// Whether the step showing may be left. Every gate is the state the step
+    /// itself already displays, so a disabled Continue always has a visible
+    /// reason next to it.
+    private func isSatisfied(_ stepId: String) -> Bool {
+        switch stepId {
+        // Nothing later in the assistant can succeed without one of the
+        // provider sign-ins, so the first step holds until a probe finds one.
+        // With no speech provider registered at all there is nothing to sign in
+        // to, and holding here would strand the person on step one.
+        case "welcome":
+            return speechProviders.isEmpty || speechProviders.contains(where: \.ready)
+        case "transcription": return providerReady
+        case "microphone":
+            return microphonePermission == .authorized && microphoneInputDetected
+        case "accessibility": return model.accessibilityEnabled
+        default: return true
+        }
+    }
+
+    var canAdvance: Bool { isSatisfied(steps[step].id) }
+
+    /// Skipping is only offered once it would leave a working app, which means
+    /// every gate in the flow, not only the ones walked so far.
+    var canSkip: Bool { steps.allSatisfy { isSatisfied($0.id) } }
+
+    /// The first step whose gate is unmet, which is where a finish that cannot
+    /// complete sends the person.
+    private var firstUnsatisfiedStep: Int? {
+        steps.firstIndex { !isSatisfied($0.id) }
+    }
+
     func advance() {
+        guard canAdvance else { return }
         if isLastStep {
             finish()
             return
@@ -193,33 +277,135 @@ final class SetupFlowModel: ObservableObject {
     private func leave(_ stepId: String) {
         if stepId == "microphone" {
             stopMeter()
+            stopMicrophonePermissionPoll()
         }
         if stepId == "accessibility" {
             stopAccessibilityPoll()
         }
     }
 
-    // MARK: Transcription
+    // MARK: Providers
 
     var providerId: String { RowView.text(model.row("speechProvider")?.value) }
-    var providerHint: String { model.bridge.setupHint(forSpeechProvider: providerId) }
+    var refinementProviderId: String { RowView.text(model.row("refinementProvider")?.value) }
 
-    func checkProvider() {
-        providerReady = false
-        providerStatus = "Checking…"
-        let checked = providerId
-        model.bridge.checkSpeechProviderReady { [weak self] ok, message in
-            guard let self, checked == providerId else { return }
-            providerReady = ok
-            providerStatus = message
+    private var selectedSpeechProvider: ProviderRow? {
+        speechProviders.first { $0.id == providerId }
+    }
+
+    /// nil while None is selected, which is a real answer rather than a
+    /// missing one: None is not a registered provider.
+    private var selectedRefinementProvider: ProviderRow? {
+        refinementProviders.first { $0.id == refinementProviderId }
+    }
+
+    var providerHint: String { selectedSpeechProvider?.setupHint ?? "" }
+    var providerReady: Bool { selectedSpeechProvider?.ready ?? false }
+
+    /// The line under the transcription rows, which describes the selected
+    /// service: the probe's own words when it refused, ours when it did not.
+    var providerStatus: String {
+        guard let provider = selectedSpeechProvider else {
+            return "No transcription service is available."
         }
+        guard provider.probed else { return "Checking…" }
+        return provider.ready ? "\(provider.label) is ready." : provider.message
+    }
+
+    /// Refinement stays optional, so an unready provider is a warning rather
+    /// than a gate: dictation still delivers, just without the cleanup.
+    var refinementWarning: String {
+        guard let provider = selectedRefinementProvider, provider.probed, !provider.ready else {
+            return ""
+        }
+        return "\(provider.label) is not signed in. Dictation will deliver the raw transcript."
+    }
+
+    func checkSpeechProviders() {
+        model.bridge.checkSpeechProviders { [weak self] id, ready, message in
+            guard let self else { return }
+            record(&speechProviders, id: id, ready: ready, message: message)
+            autoSelectReadySpeechProvider()
+        }
+    }
+
+    func checkRefinementProviders() {
+        model.bridge.checkRefinementProviders { [weak self] id, ready, message in
+            guard let self else { return }
+            record(&refinementProviders, id: id, ready: ready, message: message)
+            autoSelectReadyRefinementProvider()
+        }
+    }
+
+    /// A re-probe leaves the last verdict on screen until the new one lands:
+    /// clearing it first would shut the gate every time a step is revisited.
+    private func record(_ rows: inout [ProviderRow], id: String, ready: Bool, message: String) {
+        guard let index = rows.firstIndex(where: { $0.id == id }) else { return }
+        rows[index].probed = true
+        rows[index].ready = ready
+        rows[index].message = message
+    }
+
+    func chooseSpeechProvider(_ id: String) {
+        guard id != providerId else { return }
+        speechChosenByUser = true
+        model.setValue(id, for: "speechProvider")
+    }
+
+    func chooseRefinementProvider(_ id: String) {
+        guard id != refinementProviderId else { return }
+        refinementChosenByUser = true
+        model.setValue(id, for: "refinementProvider")
+    }
+
+    /// The saved service cannot transcribe but another one can: start the
+    /// person on the one that works rather than on a dead end.
+    private func autoSelectReadySpeechProvider() {
+        guard !speechAutoSelected, !speechChosenByUser,
+              speechProviders.allSatisfy(\.probed) else { return }
+        speechAutoSelected = true
+        guard selectedSpeechProvider?.ready != true,
+              let ready = speechProviders.first(where: \.ready) else { return }
+        model.setValue(ready.id, for: "speechProvider")
+    }
+
+    /// The same courtesy on the refinement step, except that None is a choice
+    /// in its own right: someone who wants no cleanup is left on it.
+    private func autoSelectReadyRefinementProvider() {
+        guard !refinementAutoSelected, !refinementChosenByUser,
+              refinementProviders.allSatisfy(\.probed) else { return }
+        refinementAutoSelected = true
+        guard let selected = selectedRefinementProvider, !selected.ready,
+              let ready = refinementProviders.first(where: \.ready) else { return }
+        model.setValue(ready.id, for: "refinementProvider")
     }
 
     // MARK: Microphone
 
     func enterMicrophoneStep() {
         refreshMicrophonePermission()
+        // SwiftUI can re-attach a view and call onAppear again, so the previous
+        // timer must not be orphaned.
+        microphonePermissionPoll?.invalidate()
+        microphonePermissionPoll = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) {
+            [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let previous = microphonePermission
+                refreshMicrophonePermission()
+                // Access just granted in System Settings: the meter could not
+                // have started before, so start it now that it can.
+                if previous != .authorized, microphonePermission == .authorized, meterRunning {
+                    startMeter()
+                }
+            }
+        }
         startMeter()
+    }
+
+    func stopMicrophonePermissionPoll() {
+        microphonePermissionPoll?.invalidate()
+        microphonePermissionPoll = nil
     }
 
     func refreshMicrophonePermission() {
@@ -246,6 +432,9 @@ final class SetupFlowModel: ObservableObject {
     func startMeter() {
         meterRunning = true
         meterLevel = 0
+        // Deliberately does not clear microphoneInputDetected: re-entering the
+        // step must not make the user speak again. The failure callback and a
+        // device change clear it, matching the Qt page.
         refreshInputVolume()
         meterStatus = "Listening for microphone input…"
         model.bridge.startMicrophoneMeter(onLevel: { [weak self] level in
@@ -257,11 +446,13 @@ final class SetupFlowModel: ObservableObject {
             }
             if level > 0.01 {
                 meterStatus = "Microphone input detected."
+                microphoneInputDetected = true
             }
         }, failure: { [weak self] message in
             guard let self else { return }
             meterStatus = message
             meterLevel = 0
+            microphoneInputDetected = false
         })
     }
 
@@ -271,8 +462,11 @@ final class SetupFlowModel: ObservableObject {
         meterLevel = 0
     }
 
-    /// The meter follows the settings, so a device change is a restart.
+    /// The meter follows the settings, so a device change is a restart. The
+    /// gate is about the input that will actually record, so a switch has to
+    /// prove itself again.
     func microphoneDeviceChanged() {
+        microphoneInputDetected = false
         if meterRunning {
             startMeter()
         }
@@ -369,6 +563,26 @@ final class SetupFlowModel: ObservableObject {
         return model.bridge.unsupportedReason(forSingleKeyCode: code) != nil
     }
 
+    /// How the Ready page describes dictating, which has to match the
+    /// activation mode chosen on the shortcut step.
+    var activationInstruction: String {
+        let key = pendingShortcut.display
+        switch RowView.text(model.row("activationMode")?.value) {
+        case "toggle": return "press \(key) to start, press it again to stop"
+        case "push_to_talk": return "hold \(key) while you speak"
+        default: return "tap \(key) to toggle, or hold it to dictate until release"
+        }
+    }
+
+    /// The Ready page's footer. A refused registration is let through on the
+    /// second finish, so the page says the app will have no shortcut rather
+    /// than repeating the offer to try again.
+    var readyStatus: String {
+        shortcutFailureAcknowledged
+            ? "No dictation shortcut is set. You can set one in Settings > Shortcut."
+            : shortcutStatus
+    }
+
     private func resetShortcutFailure() {
         shortcutFailureAcknowledged = false
         shortcutStatus = Self.shortcutHint
@@ -400,9 +614,30 @@ final class SetupFlowModel: ObservableObject {
         return false
     }
 
+    /// Jumps to another step the way next() and back() do, so the step being
+    /// left puts its hardware away. Assigning `step` on its own left the
+    /// microphone meter capturing behind whatever page came up.
+    private func jump(to target: Int) {
+        guard target != step else { return }
+        leave(steps[step].id)
+        step = target
+    }
+
     private func finish() {
+        // Gates can lapse behind the flow — a permission revoked in System
+        // Settings while the assistant sat on a later step — so finishing
+        // checks them all again rather than trusting the walk here. The
+        // microphone grant is read back first: the permission poll only runs
+        // while its own step is on screen, and the read is a local, synchronous
+        // one. The provider probes are not, so those answer from the re-check
+        // the ready step kicked off.
+        refreshMicrophonePermission()
+        if let blocked = firstUnsatisfiedStep {
+            jump(to: blocked)
+            return
+        }
         if !applyShortcut() {
-            step = steps.firstIndex { $0.id == "shortcut" } ?? step
+            jump(to: steps.firstIndex { $0.id == "shortcut" } ?? step)
             return
         }
         model.setValue(launchAtLogin as NSNumber, for: "launchAtLogin")
@@ -413,6 +648,7 @@ final class SetupFlowModel: ObservableObject {
     /// launch, and a grant given while it was open restarts the app.
     func complete() {
         stopMeter()
+        stopMicrophonePermissionPoll()
         stopAccessibilityPoll()
         model.bridge.completeSetup()
         if accessibilityGrantAppearedDuringSetup {
@@ -428,14 +664,18 @@ final class SetupFlowModel: ObservableObject {
         onFinished()
     }
 
+    /// Skip is Finish minus the pages in between: it is only offered when every
+    /// gate passes, and it must leave the same shortcut and login setting
+    /// behind, or the app it completes has no way to start dictation.
     func skip() {
-        complete()
+        finish()
     }
 
     /// A window closed mid-flow leaves setup incomplete, so only the hardware
     /// listeners need putting away.
     func abandon() {
         stopMeter()
+        stopMicrophonePermissionPoll()
         stopAccessibilityPoll()
     }
 }
@@ -471,12 +711,12 @@ struct SetupAssistantView: View {
 
     @ViewBuilder private func content(_ step: SetupStep) -> some View {
         switch step.id {
-        case "welcome": WelcomeStep()
+        case "welcome": WelcomeStep(flow: flow)
         case "transcription": TranscriptionStep(flow: flow, model: model)
         case "microphone": MicrophoneStep(flow: flow, model: model)
         case "accessibility": AccessibilityStep(flow: flow, model: model)
         case "delivery": DeliveryStep(model: model)
-        case "refinement": RefinementStep(model: model)
+        case "refinement": RefinementStep(flow: flow, model: model)
         case "profiles": ProfilesStep(model: model)
         case "shortcut": ShortcutStep(flow: flow, model: model)
         case "ready": ReadyStep(flow: flow)
@@ -487,8 +727,10 @@ struct SetupAssistantView: View {
     private var controls: some View {
         HStack {
             // The last step carries Finish, at which point leaving is what the
-            // big button does.
-            if !flow.isLastStep {
+            // big button does. Skipping is hidden until every gate passes:
+            // a skipped setup never comes back, so it must not be the way out
+            // of a step the person could not complete.
+            if !flow.isLastStep, flow.canSkip {
                 Button("Skip Setup") { flow.skip() }
             }
             Spacer()
@@ -500,24 +742,81 @@ struct SetupAssistantView: View {
                 .disabled(flow.step == 0)
             Button(flow.isLastStep ? "Finish" : "Continue") { flow.advance() }
                 .keyboardShortcut(.defaultAction)
+                .disabled(!flow.canAdvance)
         }
         .padding(12)
     }
 }
 
 private struct WelcomeStep: View {
+    @ObservedObject var flow: SetupFlowModel
+
     var body: some View {
-        VStack(spacing: 16) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .frame(width: 96, height: 96)
-            Text("This assistant checks your transcription provider, microphone, "
-                + "accessibility, text delivery, refinement, and writing profiles.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: 420)
+        Form {
+            Section {
+                VStack(spacing: 16) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .frame(width: 96, height: 96)
+                    Text("This assistant checks everything dictation needs: your speech "
+                        + "service, microphone, and how text reaches your apps.")
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: 420)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            // Nothing later in the assistant can succeed without one of these
+            // sign-ins, so the one real prerequisite is stated on the first step.
+            Section("Before you start") {
+                Text("Speecher uses your existing ChatGPT or Claude sign-in. Install and sign "
+                    + "in to one of these, then choose Check again:")
+                ForEach(flow.speechProviders) { provider in
+                    VStack(alignment: .leading, spacing: 2) {
+                        LabeledContent(provider.credentialSource) {
+                            Text(provider.credentialStatus)
+                                .foregroundStyle(provider.ready ? AnyShapeStyle(.green)
+                                                                : AnyShapeStyle(.secondary))
+                        }
+                        if provider.probed, !provider.ready, !provider.setupHint.isEmpty {
+                            Text(provider.setupHint)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                Button("Check Again") { flow.checkSpeechProviders() }
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .formStyle(.grouped)
+        // Probed on appearance rather than at construction: a sign-in made in a
+        // terminal while the assistant sat open counts as soon as the person
+        // comes back to this step.
+        .onAppear { flow.checkSpeechProviders() }
+    }
+}
+
+/// One selectable provider: its label, the probe's verdict under it, and for
+/// refinement the sign-in the provider borrows.
+private struct ProviderOptionLabel: View {
+    let title: String
+    let status: String
+    let positive: Bool
+    var note = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .fontWeight(.semibold)
+            Text(status)
+                .font(.callout)
+                .foregroundStyle(positive ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
+            if !note.isEmpty {
+                Text(note)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 }
 
@@ -542,9 +841,20 @@ private struct TranscriptionStep: View {
     var body: some View {
         Form {
             Section {
-                if let row = model.row("speechProvider") {
-                    RowView(row: row, model: model)
+                // Every service is on the step with its own readiness, rather
+                // than hidden behind a pop-up button that has to be opened to
+                // find out what is there.
+                Picker(selection: selection) {
+                    ForEach(flow.speechProviders) { provider in
+                        ProviderOptionLabel(title: provider.label,
+                                            status: provider.readinessStatus,
+                                            positive: provider.ready)
+                            .tag(provider.id)
+                    }
+                } label: {
+                    Text("Transcription service")
                 }
+                .pickerStyle(.radioGroup)
                 ProviderStatsRows(stats: model.bridge.stats(forSpeechProvider: flow.providerId))
                 if !flow.providerStatus.isEmpty {
                     Text(flow.providerStatus)
@@ -558,13 +868,20 @@ private struct TranscriptionStep: View {
             }
             if !flow.providerReady {
                 Section {
-                    Button("Check Again") { flow.checkProvider() }
+                    Button("Check Again") { flow.checkSpeechProviders() }
                 }
             }
         }
         .formStyle(.grouped)
-        .onAppear { flow.checkProvider() }
-        .onChange(of: flow.providerId) { flow.checkProvider() }
+        // One round covers every row, so selecting a different service shows a
+        // verdict this step already holds rather than starting a new probe.
+        .onAppear { flow.checkSpeechProviders() }
+    }
+
+    /// Writing this binding is the person choosing, which is what stops the
+    /// auto-selection from moving them afterwards.
+    private var selection: Binding<String> {
+        Binding(get: { flow.providerId }, set: { flow.chooseSpeechProvider($0) })
     }
 }
 
@@ -674,28 +991,50 @@ private struct DeliveryStep: View {
 }
 
 private struct RefinementStep: View {
+    @ObservedObject var flow: SetupFlowModel
     @ObservedObject var model: AppModel
 
     var body: some View {
         // Only the selected provider's fast-mode row: the settings window
         // separates these onto per-provider panes, so the schema does not gate
         // them on the chosen provider itself.
-        let provider = RowView.text(model.row("refinementProvider")?.value)
+        let provider = flow.refinementProviderId
         let fastModeIds = (provider == "openai" ? ["openAiFastMode"] : [])
             + (provider == "anthropic" ? ["anthropicFastMode"] : [])
         Form {
             Section {
-                if let row = model.row("refinementProvider") {
-                    RowView(row: row, model: model)
+                Picker(selection: selection) {
+                    ForEach(flow.refinementProviders) { row in
+                        // The brands differ from the transcription step's, so
+                        // each row says which sign-in it actually uses.
+                        ProviderOptionLabel(title: row.label,
+                                            status: row.readinessStatus,
+                                            positive: row.ready,
+                                            note: row.setupHint)
+                            .tag(row.id)
+                    }
+                    ProviderOptionLabel(title: "None", status: "No cleanup", positive: false)
+                        .tag("none")
+                } label: {
+                    Text("Cleanup provider")
                 }
+                .pickerStyle(.radioGroup)
                 // None has no facts worth a block, so choosing it hides them.
                 ProviderStatsRows(stats: model.bridge.stats(forRefinementProvider: provider))
+                if !flow.refinementWarning.isEmpty {
+                    Text(flow.refinementWarning)
+                }
                 ForEach(model.rows(matching: fastModeIds), id: \.rowId) { row in
                     RowView(row: row, model: model)
                 }
             }
         }
         .formStyle(.grouped)
+        .onAppear { flow.checkRefinementProviders() }
+    }
+
+    private var selection: Binding<String> {
+        Binding(get: { flow.refinementProviderId }, set: { flow.chooseRefinementProvider($0) })
     }
 }
 
@@ -800,14 +1139,18 @@ private struct ReadyStep: View {
             Section {
                 Text(flow.createShortcut
                     ? "Finishing registers \(flow.pendingShortcut.display) as the "
-                        + "dictation shortcut."
+                        + "dictation shortcut. To dictate, \(flow.activationInstruction)."
                     : "Finishing completes setup without a dictation shortcut.")
                     .foregroundStyle(.secondary)
             } footer: {
-                Text(flow.shortcutStatus)
+                Text(flow.readyStatus)
             }
         }
         .formStyle(.grouped)
+        // Finishing is two steps away, so the sign-in the welcome step found is
+        // re-probed here rather than trusted: one that expired while the
+        // assistant sat open shuts the gate again before Finish is offered.
+        .onAppear { flow.checkSpeechProviders() }
     }
 }
 

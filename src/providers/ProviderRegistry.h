@@ -15,6 +15,11 @@ struct ProviderStat {
     QString value;
 };
 
+// Which sign-in a speech provider reads, named the way the user would go
+// looking for it: setup needs the CLI's login, not the transcription brand.
+// Every frontend's welcome step names it the same way.
+QString credentialSourceLabel(const QString &providerId, const QString &fallback);
+
 struct ProviderDescriptor {
     QString id;
     QString label;

@@ -89,9 +89,19 @@ ApplicationController::ApplicationController(bool popupOnly,
     }
     m_pendingWhatsNewVersion = m_settings->updatesPendingWhatsNewVersion();
     m_settings->setLaunchAtLoginReconciler(
-        [platform = m_platform](bool enabled, QString *error) {
-            return platform->setLaunchAtLogin(enabled, error);
+        [this](bool enabled, QString *error) {
+            const bool accepted = m_platform->setLaunchAtLogin(enabled, error);
+            if (accepted) {
+                setLaunchAtLoginAccepted(true);
+            }
+            return accepted;
         });
+    // The refusal has no window of its own: it becomes the caution the settings
+    // surface draws beside the toggle, whenever that surface is next built.
+    connect(m_settings,
+            &SettingsStore::launchAtLoginReconciliationFailed,
+            this,
+            [this](const QString &) { setLaunchAtLoginAccepted(false); });
     m_settings->reconcileLaunchAtLogin();
     connect(m_shortcutBinder,
             &GlobalShortcutBinder::activated,
@@ -104,10 +114,10 @@ ApplicationController::ApplicationController(bool popupOnly,
     m_pushToTalkStart->setSingleShot(true);
     m_pushToTalkStart->setInterval(pushToTalkMisfireMs);
     connect(m_pushToTalkStart, &QTimer::timeout, this, &ApplicationController::startListening);
-    connect(m_shortcutBinder,
-            &GlobalShortcutBinder::bindingChanged,
-            this,
-            &ApplicationController::globalShortcutChanged);
+    connect(m_shortcutBinder, &GlobalShortcutBinder::bindingChanged, this, [this] {
+        forgetShortcutGesture();
+        emit globalShortcutChanged();
+    });
     connect(m_shortcutBinder,
             &GlobalShortcutBinder::supportChanged,
             this,
@@ -480,27 +490,77 @@ void ApplicationController::handleShortcutPressed()
     if (m_shortcutDown && m_shortcutReleaseSeen) {
         return;
     }
+    // That same unreleased second press is what proves the backend reports no
+    // release, and with no release there is no "while held" to honour. From here
+    // on push-to-talk takes the toggle path outright, which is the degradation
+    // hybrid already gets by never reaching its release branch.
+    if (m_shortcutDown && !m_shortcutPressedWhileDown) {
+        m_shortcutPressedWhileDown = true;
+        emit globalShortcutReleaseSupportChanged();
+    }
     m_shortcutDown = true;
     m_shortcutPress.start();
     m_shortcutStartedSession = !sessionActive() && !m_microphoneStartPending;
-    if (m_shortcutStartedSession
+    if (m_shortcutStartedSession && globalShortcutReportsRelease()
         && m_settings->shortcutActivationMode() == ShortcutActivationMode::PushToTalk) {
         // Deferred rather than started and cancelled: cancelling a Starting
         // session still opens the microphone and shows the popup for an
-        // instant, which is a trace. On a desktop that never reports release
-        // the timer still fires, and the next press ends the session as in
-        // every mode, so push-to-talk degrades to toggle there instead of
-        // wedging.
+        // instant, which is a trace. The very first gesture on a desktop that
+        // never reports release still lands here; its timer fires and the next
+        // press ends the session as in every mode, so nothing wedges.
         m_pushToTalkStart->start();
         return;
     }
     toggle();
 }
 
+// Everything handleShortcutPressed learned applies to the binding and backend
+// it learned it on. A new one may report releases where the old one did not,
+// or the reverse, and a stale "held, release seen" latch would discard every
+// press the new binding makes. No gesture can be in flight across a rebind, so
+// the whole gesture state goes back to what it was at launch.
+void ApplicationController::forgetShortcutGesture()
+{
+    m_pushToTalkStart->stop();
+    m_shortcutDown = false;
+    m_shortcutStartedSession = false;
+    const bool reportedRelease = globalShortcutReportsRelease();
+    m_shortcutReleaseSeen = false;
+    m_shortcutPressedWhileDown = false;
+    if (!reportedRelease) {
+        emit globalShortcutReleaseSupportChanged();
+    }
+}
+
+bool ApplicationController::globalShortcutReportsRelease() const
+{
+    return m_shortcutReleaseSeen || !m_shortcutPressedWhileDown;
+}
+
+bool ApplicationController::launchAtLoginAccepted() const
+{
+    return m_launchAtLoginAccepted;
+}
+
+void ApplicationController::setLaunchAtLoginAccepted(bool accepted)
+{
+    if (m_launchAtLoginAccepted == accepted) {
+        return;
+    }
+    m_launchAtLoginAccepted = accepted;
+    emit launchAtLoginAcceptedChanged();
+}
+
 void ApplicationController::handleShortcutReleased()
 {
     m_shortcutDown = false;
+    const bool firstRelease = !m_shortcutReleaseSeen;
     m_shortcutReleaseSeen = true;
+    // A release settles the question for good, including against an auto-repeat
+    // backend whose extra press looked like a missing one.
+    if (firstRelease && m_shortcutPressedWhileDown) {
+        emit globalShortcutReleaseSupportChanged();
+    }
     if (!m_shortcutStartedSession) {
         return;
     }
@@ -731,7 +791,7 @@ void ApplicationController::registerProviders()
     m_providers->registerSpeechProvider(
         {QStringLiteral("claude"),
          QStringLiteral("Claude Voice"),
-         QStringLiteral("Sign in with Claude Code. If needed, run claude and use /login, then check again."),
+         QStringLiteral("Install Claude Code from claude.com/code, run claude in a terminal, and use /login."),
          false,
          QStringLiteral("Deepgram Nova 3: words appear live as you speak. "
                         "About 60 languages, automatic punctuation and numerals."),
@@ -747,7 +807,7 @@ void ApplicationController::registerProviders()
     m_providers->registerSpeechProvider(
         {QStringLiteral("codex"),
          QStringLiteral("ChatGPT Codex"),
-         QStringLiteral("Sign in with ChatGPT using the ChatGPT app or Codex CLI, then check again."),
+         QStringLiteral("Sign in with ChatGPT in the ChatGPT app, or install the Codex CLI and run codex login."),
          false,
          QStringLiteral("GPT Live Transcribe: very accurate; text arrives a phrase "
                         "at a time after short pauses. Around 100 languages."),
@@ -761,11 +821,13 @@ void ApplicationController::registerProviders()
             return new CodexSpeechTranscriber(parent);
         });
     m_providers->registerRefinementProvider(
-        {QStringLiteral("openai"), QStringLiteral("OpenAI"), QString(), true,
+        {QStringLiteral("openai"), QStringLiteral("OpenAI"),
+         QStringLiteral("Uses your ChatGPT or Codex sign-in."), true,
          QString(), refinementProviderStats(QStringLiteral("openai"))},
         [this](QObject *parent) { return new OpenAiTranscriptRefiner(m_secrets, parent); });
     m_providers->registerRefinementProvider(
-        {QStringLiteral("anthropic"), QStringLiteral("Anthropic"), QString(), true,
+        {QStringLiteral("anthropic"), QStringLiteral("Anthropic"),
+         QStringLiteral("Uses your Claude Code sign-in."), true,
          QString(), refinementProviderStats(QStringLiteral("anthropic"))},
         [](QObject *parent) { return new AnthropicTranscriptRefiner(parent); });
 }

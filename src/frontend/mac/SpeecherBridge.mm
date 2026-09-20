@@ -29,6 +29,8 @@
 
 #include <memory>
 #include <optional>
+#include <type_traits>
+#include <utility>
 
 #import <AppKit/AppKit.h>
 
@@ -246,9 +248,40 @@ struct BridgeState {
     // stop: an input object kept past the assistant can hold the capture
     // source open alongside dictation's own.
     speecher::AudioInput *setupMeter = nullptr;
-    // A provider check that outlived the choice it checked answers to nobody.
-    quint64 setupCheckGeneration = 0;
+    // A round of provider checks that a newer round replaced answers to
+    // nobody. The two kinds count separately, so a refinement round does not
+    // cancel the speech round a different step started.
+    quint64 speechCheckGeneration = 0;
+    quint64 refinementCheckGeneration = 0;
 };
+
+// Runs a provider's prepare or refresh job off the main thread and answers on
+// it, dropping the verdict of a round that a newer one has replaced.
+template <typename Job, typename Report>
+void probeInBackground(BridgeState *state,
+                       quint64 BridgeState::*generationCounter,
+                       quint64 generation,
+                       Job &&job,
+                       Report report)
+{
+    auto probeJob = std::make_shared<std::decay_t<Job>>(std::forward<Job>(job));
+    auto result = std::make_shared<decltype(probeJob->run())>();
+    QThread *thread = QThread::create([probeJob, result] { *result = probeJob->run(); });
+    QObject::connect(thread,
+                     &QThread::finished,
+                     &state->lifetime,
+                     [state, generationCounter, generation, probeJob, result, report] {
+                         if (generation != state->*generationCounter) {
+                             return;
+                         }
+                         if (probeJob->apply) {
+                             probeJob->apply(*result);
+                         }
+                         report(result->ok, result->message);
+                     });
+    QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start();
+}
 
 void refreshCredentialWatch(QFileSystemWatcher *watcher, const QString &credentialsPath)
 {
@@ -329,6 +362,16 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @end
 
 @implementation RowOptionModel
+@end
+
+@interface SpeecherProviderModel ()
+@property (nonatomic, copy) NSString *providerId;
+@property (nonatomic, copy) NSString *label;
+@property (nonatomic, copy) NSString *credentialSource;
+@property (nonatomic, copy) NSString *setupHint;
+@end
+
+@implementation SpeecherProviderModel
 @end
 
 @interface CollectionColumnModel ()
@@ -433,6 +476,7 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                        schema:(const SettingsSchema &)schema
                  capabilities:(const Capabilities &)capabilities;
 - (void)setTargetAccessibility:(BOOL)available;
+- (void)setLaunchAtLoginAccepted:(BOOL)accepted;
 // The settings as they stand, including edits not yet committed, which is what
 // the credential row has to read the chosen auth mode from.
 - (const AppSettings &)draft;
@@ -669,6 +713,11 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     _state->capabilities.targetAccessibility = available;
 }
 
+- (void)setLaunchAtLoginAccepted:(BOOL)accepted
+{
+    _state->capabilities.launchAtLoginAccepted = accepted;
+}
+
 - (NSArray<NSString *> *)problemsWith:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
 {
     const SettingsRow *row = [self rowWithId:rowId];
@@ -776,9 +825,13 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     // default-initialised rather than copy-initialised from {}.
     _state = new BridgeState;
     _state->controller = controller;
-    const Capabilities capabilities{controller->accessibilitySupported()
-                                        && controller->accessibilityEnabled(),
-                                    controller->updates()->supportsAutomaticDownloads()};
+    Capabilities capabilities{controller->accessibilitySupported()
+                                  && controller->accessibilityEnabled(),
+                              controller->updates()->supportsAutomaticDownloads()};
+    // Assigned rather than listed: the caution beside the launch-at-login
+    // toggle is the fourth member, and naming it is clearer than spelling out
+    // the colour-scheme default in between.
+    capabilities.launchAtLoginAccepted = controller->launchAtLoginAccepted();
     _settingsSchema = [[SettingsSchemaModel alloc]
         initWithStore:controller->settings()
                schema:speecher::buildSettingsSchema(
@@ -834,6 +887,20 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                      [weakSelf](bool supported, bool enabled, bool) {
                          SpeecherBridge *bridge = weakSelf;
                          [bridge.settingsSchema setTargetAccessibility:supported && enabled];
+                         if (bridge.accessibilityChanged) {
+                             bridge.accessibilityChanged();
+                         }
+                     });
+    // The same schema-state refresh the Accessibility grant gets: a launch-at-
+    // login change this computer refused is what puts the caution beside the
+    // toggle, and the row only shows it once the pages are re-read.
+    QObject::connect(controller,
+                     &ApplicationController::launchAtLoginAcceptedChanged,
+                     &_state->lifetime,
+                     [weakSelf, controller] {
+                         SpeecherBridge *bridge = weakSelf;
+                         [bridge.settingsSchema
+                             setLaunchAtLoginAccepted:controller->launchAtLoginAccepted()];
                          if (bridge.accessibilityChanged) {
                              bridge.accessibilityChanged();
                          }
@@ -1245,60 +1312,87 @@ bridgedStats(const QList<speecher::ProviderDescriptor> &providers, NSString *pro
     return bridgedStats(_state->controller->providerRegistry()->refinementProviders(), providerId);
 }
 
-- (NSString *)setupHintForSpeechProvider:(NSString *)providerId
+static NSArray<SpeecherProviderModel *> *
+bridgedProviders(const QList<speecher::ProviderDescriptor> &providers)
 {
-    const QString id = QString::fromNSString(providerId);
-    const QList<speecher::ProviderDescriptor> providers =
-        _state->controller->providerRegistry()->speechProviders();
+    NSMutableArray<SpeecherProviderModel *> *bridged = [NSMutableArray array];
     for (const speecher::ProviderDescriptor &provider : providers) {
-        if (provider.id == id) {
-            return provider.setupHint.toNSString();
-        }
+        SpeecherProviderModel *model = [[SpeecherProviderModel alloc] init];
+        model.providerId = provider.id.toNSString();
+        model.label = provider.label.toNSString();
+        model.credentialSource =
+            speecher::credentialSourceLabel(provider.id, provider.label).toNSString();
+        model.setupHint = provider.setupHint.toNSString();
+        [bridged addObject:model];
     }
-    return @"";
+    return bridged;
 }
 
-- (void)checkSpeechProviderReady:(void (^)(BOOL ok, NSString *message))completion
+- (NSArray<SpeecherProviderModel *> *)speechProviders
 {
-    completion = [completion copy];
-    const quint64 generation = ++_state->setupCheckGeneration;
-    const QString providerId = _state->controller->settings()->speechProvider();
-    speecher::SpeechTranscriber *provider =
-        _state->controller->providerRegistry()->speechProvider(providerId);
-    if (!provider) {
-        completion(NO, @"No transcription service is available.");
-        return;
-    }
-    const speecher::SpeechSettings speech = _state->controller->settings()->snapshot().speech;
-    NSString *label = provider->label().toNSString();
-    const auto answer = [completion, label](const speecher::SpeechPrepareResult &result) {
-        completion(result.ok,
-                   result.ok ? [NSString stringWithFormat:@"%@ is ready.", label]
-                             : result.message.toNSString());
-    };
-    std::optional<speecher::SpeechPrepareJob> job = provider->createPrepareJob(speech);
-    if (!job || !job->run) {
-        answer(provider->prepare(speech));
-        return;
-    }
-    auto prepareJob = std::make_shared<speecher::SpeechPrepareJob>(std::move(*job));
-    auto result = std::make_shared<speecher::SpeechPrepareResult>();
-    QThread *thread = QThread::create([prepareJob, result] { *result = prepareJob->run(); });
+    return bridgedProviders(_state->controller->providerRegistry()->speechProviders());
+}
+
+- (NSArray<SpeecherProviderModel *> *)refinementProviders
+{
+    return bridgedProviders(_state->controller->providerRegistry()->refinementProviders());
+}
+
+- (void)checkSpeechProviders:(void (^)(NSString *providerId, BOOL ready, NSString *message))report
+{
+    report = [report copy];
+    const quint64 generation = ++_state->speechCheckGeneration;
     BridgeState *state = _state;
-    QObject::connect(thread,
-                     &QThread::finished,
-                     &_state->lifetime,
-                     [state, generation, prepareJob, result, answer] {
-                         if (generation != state->setupCheckGeneration) {
-                             return;
-                         }
-                         if (prepareJob->apply) {
-                             prepareJob->apply(*result);
-                         }
-                         answer(*result);
-                     });
-    QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    thread->start();
+    speecher::ProviderRegistry *registry = _state->controller->providerRegistry();
+    const speecher::SpeechSettings speech = _state->controller->settings()->snapshot().speech;
+    for (const speecher::ProviderDescriptor &descriptor : registry->speechProviders()) {
+        NSString *providerId = descriptor.id.toNSString();
+        const auto answer = [report, providerId](bool ready, const QString &message) {
+            report(providerId, ready, message.toNSString());
+        };
+        speecher::SpeechTranscriber *provider = registry->speechProvider(descriptor.id);
+        if (!provider) {
+            answer(false, QStringLiteral("No transcription service is available."));
+            continue;
+        }
+        std::optional<speecher::SpeechPrepareJob> job = provider->createPrepareJob(speech);
+        if (!job || !job->run) {
+            const speecher::SpeechPrepareResult result = provider->prepare(speech);
+            answer(result.ok, result.message);
+            continue;
+        }
+        probeInBackground(state, &BridgeState::speechCheckGeneration, generation,
+                          std::move(*job), answer);
+    }
+}
+
+- (void)checkRefinementProviders:(void (^)(NSString *providerId, BOOL ready, NSString *message))report
+{
+    report = [report copy];
+    const quint64 generation = ++_state->refinementCheckGeneration;
+    BridgeState *state = _state;
+    speecher::ProviderRegistry *registry = _state->controller->providerRegistry();
+    const speecher::RefinementSettings refinement =
+        _state->controller->settings()->snapshot().refinement;
+    for (const speecher::ProviderDescriptor &descriptor : registry->refinementProviders()) {
+        NSString *providerId = descriptor.id.toNSString();
+        const auto answer = [report, providerId](bool ready, const QString &message) {
+            report(providerId, ready, message.toNSString());
+        };
+        speecher::TranscriptRefiner *refiner = registry->refinementProvider(descriptor.id);
+        if (!refiner) {
+            answer(false, QStringLiteral("Not available."));
+            continue;
+        }
+        std::optional<speecher::RefinementRefreshJob> job = refiner->createRefreshJob(refinement);
+        if (!job || !job->run) {
+            const speecher::RefinementPrepareResult result = refiner->prepare(refinement);
+            answer(result.ok, result.message);
+            continue;
+        }
+        probeInBackground(state, &BridgeState::refinementCheckGeneration, generation,
+                          std::move(*job), answer);
+    }
 }
 
 - (void)startMicrophoneMeterOnLevel:(void (^)(float level))onLevel

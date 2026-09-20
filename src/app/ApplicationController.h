@@ -73,6 +73,14 @@ public:
     ShortcutBinding globalShortcut() const;
     QString globalShortcutDisplay() const;
     bool setGlobalShortcut(const ShortcutBinding &shortcut, QString *error = nullptr);
+    // False once a press has proved that the bound backend never reports key
+    // release, which is what makes push-to-talk behave as toggle. Answered from
+    // what the shortcut has already done, never probed; it starts out true.
+    bool globalShortcutReportsRelease() const;
+    // False once this computer has refused a launch-at-login change, which is
+    // what puts the caution beside the toggle. A later change it accepts clears
+    // it again.
+    bool launchAtLoginAccepted() const;
     // Lets a shortcut recorder see the bound combination as a key event.
     void suspendGlobalShortcut();
     QString resumeGlobalShortcut();
@@ -107,6 +115,8 @@ signals:
     void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
     void globalShortcutChanged();
     void globalShortcutSupportChanged();
+    void globalShortcutReleaseSupportChanged();
+    void launchAtLoginAcceptedChanged();
     void globalShortcutRegistrationFinished(bool bound, const QString &detail);
     void whatsNewChanged();
     void quitRequested();
@@ -119,6 +129,8 @@ private:
     bool sessionActive() const;
     void handleShortcutPressed();
     void handleShortcutReleased();
+    void forgetShortcutGesture();
+    void setLaunchAtLoginAccepted(bool accepted);
 
     bool m_popupOnly = false;
     std::shared_ptr<const PlatformComposition> m_platform;
@@ -134,6 +146,7 @@ private:
     bool m_accessibilitySupported = false;
     bool m_accessibilityEnabled = false;
     bool m_accessibilityPersistent = false;
+    bool m_launchAtLoginAccepted = true;
     QString m_pendingWhatsNewVersion;
 #ifdef Q_OS_MACOS
     QTimer *m_accessibilityPoll = nullptr;
@@ -146,6 +159,7 @@ private:
     bool m_shortcutStartedSession = false;
     bool m_shortcutDown = false;
     bool m_shortcutReleaseSeen = false;
+    bool m_shortcutPressedWhileDown = false;
     QTimer *m_pushToTalkStart = nullptr;
     quint64 m_microphoneStartGeneration = 0;
     bool m_microphoneStartPending = false;

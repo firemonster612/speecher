@@ -74,6 +74,10 @@ QString linuxGlobalShortcutCommand();
 // StatusNotifier host are independent (stock GNOME has the former, not the
 // latter).
 QString linuxTrayShortcutNote(bool trayAvailable);
+// Shown where push-to-talk cannot be honoured: a manual desktop shortcut runs
+// the toggle command, and some backends report only the press. Saying so beats
+// leaving "dictate only while the key is held" on offer as though it worked.
+QString linuxHoldToTalkUnavailableNote();
 
 class LinuxGlobalShortcutSetupPage final : public QWidget {
     Q_OBJECT
@@ -133,6 +137,7 @@ private:
     QLabel *m_status = nullptr;
     QLabel *m_command = nullptr;
     QLabel *m_trayNote = nullptr;
+    QLabel *m_holdUnavailableNote = nullptr;
     QString m_displayedShortcut;
     QWidget *m_integration = nullptr;
     QPushButton *m_integrationButton = nullptr;

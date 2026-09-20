@@ -215,6 +215,13 @@ QString linuxTrayShortcutNote(bool trayAvailable)
     return QStringLiteral("The shortcut works while Speecher is running.");
 }
 
+QString linuxHoldToTalkUnavailableNote()
+{
+    return QStringLiteral(
+        "With this shortcut, a tap starts and a second tap stops — hold-to-talk "
+        "isn't available.");
+}
+
 QString linuxGlobalShortcutCommand()
 {
     const QString homePath = QDir::homePath();
@@ -391,6 +398,11 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     addMode(ShortcutActivationMode::Hybrid,
             QStringLiteral("Hybrid — a tap toggles; holding dictates until release"));
     modeLayout->addWidget(m_activationMode, 0, Qt::AlignLeft);
+    // Reads under the mode picker, where push-to-talk is on offer, because that
+    // is the promise it corrects.
+    m_holdUnavailableNote = guidanceLabel(linuxHoldToTalkUnavailableNote(), modeRow);
+    m_holdUnavailableNote->setObjectName(QStringLiteral("holdToTalkUnavailable"));
+    modeLayout->addWidget(m_holdUnavailableNote);
     layout->addWidget(modeRow);
 
     layout->addStretch();
@@ -403,6 +415,12 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
             shortcutActivationModeFromName(m_activationMode->currentData().toString()));
     });
     connect(m_keyHelperButton, &QPushButton::clicked, this, [this] { installKeyHelper(); });
+    // The daemon's answer arrives after the probe that asked for it.
+    connect(KeywatchSetup::daemonAnswer(), &KeywatchDaemonAnswer::changed, this, [this] {
+        if (!m_keyHelperProgress->isVisible()) {
+            refreshKeyHelper();
+        }
+    });
 
     connect(m_setShortcut, &ShortcutCaptureButton::bindingCaptured, this,
             [this](const ShortcutBinding &binding) { applyBinding(binding); });
@@ -443,6 +461,10 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
             [this] { refresh(); });
     connect(&m_controller,
             &ApplicationController::globalShortcutSupportChanged,
+            this,
+            [this] { refresh(); });
+    connect(&m_controller,
+            &ApplicationController::globalShortcutReleaseSupportChanged,
             this,
             [this] { refresh(); });
     connect(&m_controller,
@@ -622,8 +644,9 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
     const bool ready = !installRequired();
     const bool portalVisible = ready && (!known || (supported && desktopChooser));
     const bool combinationsAvailable = ready && known && supported && !desktopChooser;
+    const bool manualCommand = ready && known && !supported;
     m_portalControls->setVisible(portalVisible);
-    m_manualControls->setVisible(ready && known && !supported);
+    m_manualControls->setVisible(manualCommand);
     // The capture handles combinations only where the desktop registers them;
     // a single key is watched by Speecher itself, so it records whenever the
     // step is ready. The lead names what is on offer.
@@ -637,6 +660,11 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
     m_status->setVisible(ready && (!known || supported));
     m_trayNote->setText(linuxTrayShortcutNote(QSystemTrayIcon::isSystemTrayAvailable()));
     m_trayNote->setVisible(ready && known && supported);
+    // A manual desktop shortcut can only run the toggle command, and a backend
+    // that has already shown it reports no release cannot hold either. Both are
+    // states we know; neither is probed for.
+    m_holdUnavailableNote->setVisible(manualCommand
+                                      || !m_controller.globalShortcutReportsRelease());
     if (!ready) {
         return;
     }

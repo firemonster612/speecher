@@ -65,6 +65,17 @@ SpeechTranscriber *ProviderRegistry::speechProvider(const QString &id)
     return it->instance;
 }
 
+QString credentialSourceLabel(const QString &providerId, const QString &fallback)
+{
+    if (providerId == QStringLiteral("claude")) {
+        return QStringLiteral("Claude Code");
+    }
+    if (providerId == QStringLiteral("codex")) {
+        return QStringLiteral("Codex CLI or the ChatGPT app");
+    }
+    return fallback;
+}
+
 TranscriptRefiner *ProviderRegistry::refinementProvider(const QString &id)
 {
     auto it = m_refinement.find(id);

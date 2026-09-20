@@ -14,6 +14,8 @@ class QLabel;
 class QShowEvent;
 class QProgressBar;
 class QPushButton;
+class QRadioButton;
+class QTimer;
 
 namespace speecher {
 
@@ -23,6 +25,8 @@ class PlatformComposition;
 class ProviderRegistry;
 class SettingsStore;
 struct ProviderStat;
+struct RefinementPrepareResult;
+struct SpeechPrepareResult;
 
 // The margin every assistant page keeps around its content, so a page built
 // elsewhere can match when it is shown as one.
@@ -39,9 +43,60 @@ private:
     QFormLayout *m_rows;
 };
 
+// A speech or refinement provider the user can pick, with the readiness probe's
+// verdict shown next to it.
+struct ProviderOptionRow {
+    QString id;
+    QString label;
+    QRadioButton *button = nullptr;
+    QLabel *status = nullptr;
+    bool probed = false;
+    bool ok = false;
+    QString message;
+};
+
 class WelcomeSetupPage final : public QWidget {
+    Q_OBJECT
+
 public:
-    explicit WelcomeSetupPage(QWidget *parent = nullptr);
+    WelcomeSetupPage(SettingsStore &settings,
+                     ProviderRegistry &providers,
+                     QWidget *parent = nullptr);
+
+    // Setup cannot succeed without one of the provider CLIs signed in, so the
+    // assistant holds Next until the probe finds one.
+    bool ready() const { return m_ready; }
+    // Re-run the probe while the page is off screen, so a sign-in that lapsed
+    // mid-wizard closes the gate before Finish commits.
+    void recheck();
+
+signals:
+    void readyChanged();
+    // Every provider in this round has answered. The assistant waits for it
+    // before probing the same providers again from another page.
+    void checkFinished();
+
+protected:
+    void showEvent(QShowEvent *event) override;
+
+private:
+    struct CredentialRow {
+        QString providerId;
+        QLabel *status = nullptr;
+        QLabel *hint = nullptr;
+        bool found = false;
+    };
+
+    void checkCredentials();
+    void showCredential(int index, bool found);
+    void setReady(bool ready);
+
+    SettingsStore &m_settings;
+    ProviderRegistry &m_providers;
+    QList<CredentialRow> m_rows;
+    quint64 m_checkGeneration = 0;
+    int m_checksOutstanding = 0;
+    bool m_ready = false;
 };
 
 class SpeechProviderSetupPage final : public QWidget {
@@ -54,23 +109,38 @@ public:
 
     // The setup assistant holds Next until the chosen service checked out.
     bool ready() const { return m_ready; }
+    // Re-run the probes while the page is off screen; see WelcomeSetupPage.
+    void recheck();
 
 signals:
     void readyChanged();
 
+protected:
+    void showEvent(QShowEvent *event) override;
+
 private:
-    void updateProvider();
-    void checkProvider();
+    void selectProvider(const QString &providerId);
+    void checkProviders();
+    void probeProvider(int index, quint64 generation);
+    void finishProbe(int index, quint64 generation, const SpeechPrepareResult &result);
+    void showSelectedProvider();
+    void autoSelectReadyProvider();
+    int selectedIndex() const;
     void setReady(bool ready);
 
     SettingsStore &m_settings;
     ProviderRegistry &m_providers;
-    QComboBox *m_provider;
+    QList<ProviderOptionRow> m_options;
     ProviderStatsBlock *m_stats;
     QLabel *m_hint;
     QLabel *m_status;
     QPushButton *m_checkAgain;
     quint64 m_checkGeneration = 0;
+    int m_pendingProbes = 0;
+    // Auto-selecting a ready provider is a one-time courtesy on the first
+    // round of probes, and never overrules a choice the user just made.
+    bool m_autoSelectDone = false;
+    bool m_userSelected = false;
     bool m_ready = false;
 };
 
@@ -97,6 +167,7 @@ protected:
 private:
     void refreshDevices();
     void startMeter();
+    void setInputDetected(bool detected);
 
     SettingsStore &m_settings;
     const PlatformComposition &m_platform;
@@ -104,6 +175,11 @@ private:
     QComboBox *m_device;
     QProgressBar *m_level;
     QLabel *m_status;
+    QTimer *m_noInputTimer;
+    QMetaObject::Connection m_levelConnection;
+    // Levels from the device the meter just left arrive for another moment;
+    // only the run that started them may satisfy the gate.
+    quint64 m_meterGeneration = 0;
     bool m_active = false;
     bool m_devicesLoaded = false;
     bool m_inputDetected = false;
@@ -173,16 +249,34 @@ public:
                         ProviderRegistry &providers,
                         QWidget *parent = nullptr);
 
+protected:
+    void showEvent(QShowEvent *event) override;
+
 private:
+    void selectProvider(const QString &providerId);
+    void checkProviders();
+    void probeProvider(int index, quint64 generation);
+    void finishProbe(int index, quint64 generation, const RefinementPrepareResult &result);
+    void showSelectedProvider();
+    void autoSelectReadyProvider();
     void updateProviderStats();
     void updateFastModeControl();
+    int selectedIndex() const;
+    QString selectedProviderId() const;
 
     SettingsStore &m_settings;
     ProviderRegistry &m_providers;
-    QComboBox *m_provider;
+    // The provider rows, then the None row, which needs no readiness probe.
+    QList<ProviderOptionRow> m_options;
+    QRadioButton *m_none;
     ProviderStatsBlock *m_stats;
+    QLabel *m_warning;
     QCheckBox *m_fastMode;
     QLabel *m_fastModeHint;
+    quint64 m_checkGeneration = 0;
+    int m_pendingProbes = 0;
+    bool m_autoSelectDone = false;
+    bool m_userSelected = false;
 };
 
 class WritingProfilesSetupPage final : public QWidget {
