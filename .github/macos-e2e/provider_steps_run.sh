@@ -99,37 +99,34 @@ walk_to_step() {
   wait_for_page_capture "$target" "${STEP_IDS[$((target - 1))]}"
 }
 
-# Clicks the provider row carrying the given static text. AX exposes each
-# radio-row group as ONE aggregated radio button named after its Picker label
-# (the evidence run's click landed on "radio button Cleanup provider" and
-# selected the first row), so rows are only addressable by the position of
-# their own label text: find the static text and click its centre.
+# Clicks row $2 of $3 inside the aggregated radio element named $1. The rows'
+# labels exist nowhere in the AX tree (the evidence dump shows only the page's
+# other texts), and AX folds the whole row stack into one radio button named
+# after its Picker label whose plain click selects row 1 — so rows beyond the
+# first are reachable only by geometry: the element's bounds divided evenly
+# by the row count.
 drive_provider_row() {
-  osascript - "$1" >>"$CASE_DIR/picker.out" 2>&1 <<'OSA' &
+  osascript - "$1" "$2" "$3" >>"$CASE_DIR/picker.out" 2>&1 <<'OSA' &
 on run argv
-  set marker to item 1 of argv
+  set groupLabel to item 1 of argv
+  set targetRow to (item 2 of argv) as integer
+  set rowCount to (item 3 of argv) as integer
   tell application "System Events" to tell process "speecher"
     set allElements to entire contents of window "Speecher Setup Assistant"
     set target to missing value
-    set seen to {}
     repeat with e in allElements
       try
-        if class of e is static text then
-          set v to (value of e) as text
-          set end of seen to v
-          if target is missing value and v contains marker then
-            set target to e
-          end if
+        if class of e is radio button and name of e is groupLabel then
+          set target to e
         end if
       end try
     end repeat
     if target is missing value then
-      set AppleScript's text item delimiters to " | "
-      error "no static text containing '" & marker & "'; texts: " & (seen as text)
+      error "no radio element named '" & groupLabel & "' on this step"
     end if
     set {x, y} to position of target
     set {w, h} to size of target
-    click at {x + (w div 2), y + (h div 2)}
+    click at {x + 24, y + ((h * (2 * targetRow - 1)) div (2 * rowCount))}
   end tell
 end run
 OSA
@@ -266,8 +263,8 @@ else
   errors=()
   walk_to_step 2 || errors+=("could not reach the transcription step")
   if (( ${#errors[@]} == 0 )); then
-    # The row label is the click target; rows are not AX-addressable.
-    drive_provider_row "ChatGPT Codex" \
+    # Row 1 of 2: ChatGPT Codex (labels sort first).
+    drive_provider_row "Transcription service" 1 2 \
       || errors+=("could not select the ChatGPT Codex row on the transcription step")
     sleep 0.5
     recapture_step 2 transcription || errors+=("the transcription step was not recaptured")
@@ -283,8 +280,8 @@ else
     wait_for_page_capture 6 refinement || errors+=("could not reach the refinement step")
   fi
   if (( ${#errors[@]} == 0 )); then
-    # "Skip cleanup entirely." is unique to the None row on this step.
-    drive_provider_row "Skip cleanup entirely." \
+    # Row 3 of 3: None, after Anthropic and OpenAI.
+    drive_provider_row "Cleanup provider" 3 3 \
       || errors+=("could not select the None row on the refinement step")
     sleep 0.5
     recapture_step 6 refinement || errors+=("the refinement step was not recaptured")
