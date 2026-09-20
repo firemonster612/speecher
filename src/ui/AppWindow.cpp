@@ -19,7 +19,10 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
+#include <QMessageBox>
 #include <QMouseEvent>
+#include <QSettings>
+#include <QSystemTrayIcon>
 #include <QWindow>
 #include <QLineEdit>
 #include <QListWidget>
@@ -282,8 +285,50 @@ void AppWindow::closeEvent(QCloseEvent *event)
     if (!m_settingsDeletionStarted) {
         flushPendingAutoSave();
         rememberGeometry();
+        warnThatClosingDoesNotQuitOnce();
     }
     QMainWindow::closeEvent(event);
+}
+
+// Closing the window never quits Speecher. A desktop with a tray shows the
+// icon that says so; one without leaves a running process with an armed
+// shortcut and nothing on screen, so say it once in words instead.
+void AppWindow::warnThatClosingDoesNotQuitOnce()
+{
+    if (QApplication::quitOnLastWindowClosed() || QSystemTrayIcon::isSystemTrayAvailable()) {
+        return;
+    }
+    QSettings &settings = m_controller->settings()->raw();
+    const QString shownKey = QStringLiteral("ui/backgroundRunNoticeShown");
+    if (settings.value(shownKey, false).toBool()) {
+        return;
+    }
+    settings.setValue(shownKey, true);
+
+    // Queued so the notice arrives after the window is off screen, which is
+    // what it is talking about. A quit in flight ends the loop first and the
+    // notice never appears, which is also what should happen.
+    QTimer::singleShot(0, this, [this] {
+        // Parented so the notice belongs to the window it is about, and lands
+        // on that window's screen rather than wherever an ownerless dialog
+        // goes.
+        QMessageBox notice(this);
+        notice.setIcon(QMessageBox::Information);
+        notice.setWindowTitle(QStringLiteral("Speecher is still running"));
+        notice.setText(QStringLiteral("Speecher keeps running in the background."));
+        // The command and the app menu entry exist only where AppImage desktop
+        // integration was installed, so neither is named here.
+        notice.setInformativeText(QStringLiteral(
+            "Your dictation shortcut still works. This desktop has no system tray, so start "
+            "Speecher again to show this window."));
+        QPushButton *quit = notice.addButton(QStringLiteral("Quit Speecher"),
+                                             QMessageBox::DestructiveRole);
+        notice.addButton(QStringLiteral("Keep running"), QMessageBox::AcceptRole);
+        notice.exec();
+        if (notice.clickedButton() == quit) {
+            m_controller->quitApplication();
+        }
+    });
 }
 
 void AppWindow::showEvent(QShowEvent *event)

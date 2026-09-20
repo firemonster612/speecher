@@ -35,6 +35,13 @@ Source: "{#SourceDir}\redist\WindowsAppRuntimeInstall-x64.exe"; DestDir: "{tmp}"
 [Icons]
 Name: "{group}\Speecher"; Filename: "{app}\speecher.exe"
 
+; Speecher writes its own Run value when the person turns Launch at login on.
+; ValueType none leaves it alone on install, so an upgrade keeps the setting;
+; uninsdeletevalue takes it off on uninstall instead of leaving a startup
+; entry pointing at a removed executable.
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "Speecher"; Flags: uninsdeletevalue
+
 [Run]
 Filename: "{tmp}\WindowsAppRuntimeInstall-x64.exe"; Parameters: "--quiet"; StatusMsg: "Installing Windows App Runtime..."; Flags: runhidden waituntilterminated
 Filename: "{app}\speecher.exe"; Description: "Launch Speecher"; Flags: nowait postinstall skipifsilent; Check: ShouldLaunchSpeecher

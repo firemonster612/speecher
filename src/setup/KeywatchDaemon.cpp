@@ -10,6 +10,7 @@
 
 #include "KeywatchProtocol.h"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cstdint>
@@ -69,7 +70,11 @@ struct Client {
     uid_t uid = 0;
     pid_t pid = 0;
     std::uint16_t evdev = 0; // 0 until a WATCH is accepted.
-    bool down = false;
+    // Every keyboard currently holding the watched key. The client hears the
+    // transitions of this set, not of one keyboard: a person holding the key
+    // on one keyboard and pressing it on another is still holding one key, and
+    // the removal of a keyboard releases only its own hold.
+    std::vector<int> holdingKeyboardFds;
     // A WATCH may arrive fragmented; parse only a whole request.
     std::uint8_t pending[sizeof(WatchRequest)] = {};
     std::size_t pendingFill = 0;
@@ -262,6 +267,10 @@ private:
     void dropKeyboard(Keyboard &keyboard)
     {
         logLine("keyboard " + keyboard.name + " went away");
+        // A keyboard unplugged mid-hold never sends its key-up. Without one
+        // here, a client holding push-to-talk would keep recording with no key
+        // left to release.
+        releaseHeldKeys(keyboard.fd);
         epoll_ctl(m_epoll, EPOLL_CTL_DEL, keyboard.fd, nullptr);
         close(keyboard.fd);
         for (auto it = m_keyboards.begin(); it != m_keyboards.end(); ++it) {
@@ -409,7 +418,7 @@ private:
             if (event.type != EV_KEY || event.value == 2) {
                 continue; // value 2 is auto-repeat, which is not a transition.
             }
-            report(event.code, event.value == 1);
+            report(keyboard.fd, event.code, event.value == 1);
         }
         // An unplugged keyboard reports EOF or ENODEV forever; leaving its fd
         // in the epoll set would spin the loop.
@@ -420,18 +429,58 @@ private:
 
     // The only thing that ever leaves the daemon: down/up for a key a client
     // already asked for, with a monotonic timestamp and no key identity.
-    void report(std::uint16_t evdev, bool down)
+    void send(Client &client, bool down)
+    {
+        KeyEvent message{};
+        message.down = down ? 1 : 0;
+        message.monotonicUsec = monotonicUsec();
+        if (write(client.fd, &message, sizeof(message)) != sizeof(message)) {
+            dropClient(client);
+        }
+    }
+
+    // Key-up when the last keyboard holding the key lets go, and only then.
+    void releaseHold(Client &client, int keyboardFd)
+    {
+        std::vector<int> &holders = client.holdingKeyboardFds;
+        const auto held = std::find(holders.begin(), holders.end(), keyboardFd);
+        if (held == holders.end()) {
+            return;
+        }
+        holders.erase(held);
+        if (holders.empty()) {
+            send(client, false);
+        }
+    }
+
+    void report(int keyboardFd, std::uint16_t evdev, bool down)
     {
         for (Client &client : m_clients) {
-            if (client.fd == -1 || client.evdev != evdev || client.down == down) {
+            if (client.fd == -1 || client.evdev != evdev) {
                 continue;
             }
-            client.down = down;
-            KeyEvent message{};
-            message.down = down ? 1 : 0;
-            message.monotonicUsec = monotonicUsec();
-            if (write(client.fd, &message, sizeof(message)) != sizeof(message)) {
-                dropClient(client);
+            if (!down) {
+                releaseHold(client, keyboardFd);
+                continue;
+            }
+            std::vector<int> &holders = client.holdingKeyboardFds;
+            if (std::find(holders.begin(), holders.end(), keyboardFd) != holders.end()) {
+                continue;
+            }
+            const bool firstHolder = holders.empty();
+            holders.push_back(keyboardFd);
+            if (firstHolder) {
+                send(client, true);
+            }
+        }
+    }
+
+    // The key-up a vanished keyboard owes every client still holding its key.
+    void releaseHeldKeys(int keyboardFd)
+    {
+        for (Client &client : m_clients) {
+            if (client.fd != -1) {
+                releaseHold(client, keyboardFd);
             }
         }
     }

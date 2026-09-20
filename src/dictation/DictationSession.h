@@ -41,6 +41,7 @@ public:
     DictationState state() const;
     QString stateName() const;
     QString lastMessage() const;
+    QString lastTranscript() const;
     SessionResponse response(bool ok = true, const QString &message = {}) const;
     void toggleWithFormat(OutputFormat format);
     void startListeningWithFormat(OutputFormat format);
@@ -112,6 +113,8 @@ private:
     QVector<QMetaObject::Connection> m_refinerConnections;
     DictationState m_state = DictationState::Idle;
     QString m_lastMessage;
+    QString m_speechWarning;
+    QString m_lastTranscript;
     TranscriptPipelineResult m_transcriptPipeline;
     quint64 m_generation = 0;
     quint64 m_audioGeneration = 0;

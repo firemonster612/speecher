@@ -130,8 +130,8 @@ public:
     // Empty when the keyring took it, otherwise why it refused.
     QString saveApiKey(const QString &apiKey);
 
-    // The Claude credentials file changed, so the Anthropic status line is
-    // worth re-reading.
+    // A watched credential file changed — Claude Code's, or the Codex CLI's —
+    // so both providers' status lines are worth re-reading.
     std::function<void()> anthropicCredentialsChanged;
     // A commit went through, taking the theme with it — the Windows stand-in
     // for the Theme::apply call the other front ends make.

@@ -1,5 +1,7 @@
 #include "app/AppImageUpdater.h"
 
+#include "app/CommandLine.h"
+
 #include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
@@ -248,7 +250,7 @@ void AppImageUpdater::restartApplication()
     m_appImagePath = currentAppImagePath();
     QProcess process;
     process.setProgram(m_appImagePath);
-    process.setArguments(QCoreApplication::arguments().mid(1));
+    process.setArguments(argumentsWithoutStartupActions(QCoreApplication::arguments().mid(1)));
     process.setWorkingDirectory(QFileInfo(m_appImagePath).absolutePath());
     QProcessEnvironment environment = restartEnvironment(
         QCoreApplication::arguments(), QProcessEnvironment::systemEnvironment());

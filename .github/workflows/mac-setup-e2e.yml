@@ -110,6 +110,16 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: ctest --test-dir build --output-on-failure
 
+      - name: Backtrace on crash
+        if: failure()
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          # The crash is order-dependent: the named test passes alone, so run
+          # the whole suite to catch the corrupting sequence.
+          lldb --batch -o run -o 'bt all' -o quit -- \
+            ./build/speecher_tests --suite mac_front_end || true
+
       - name: Render update UI previews
         env:
           QT_QPA_PLATFORM: offscreen

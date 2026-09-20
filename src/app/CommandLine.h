@@ -39,6 +39,12 @@ struct CommandLineDecision {
 // rejected option itself, because both are the whole of what those runs do.
 CommandLineDecision parseCommandLine(const QStringList &arguments, const QString &logPath);
 
+// Drops the flags that make a launch *do* something — start dictation, open
+// settings, open setup — and keeps everything else. An update relaunches the
+// app with the argv it was started with, and resuming a recording or reopening
+// a window without a fresh gesture is not what the user asked for.
+QStringList argumentsWithoutStartupActions(const QStringList &arguments);
+
 // Linux and macOS keep handling shortcuts and IPC after their last window closes.
 bool quitOnLastWindowClosed(LaunchMode mode);
 

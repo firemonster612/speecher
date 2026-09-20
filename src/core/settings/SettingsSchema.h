@@ -108,6 +108,9 @@ struct Capabilities {
     // The platform theme honours a Light or Dark request. Assumed until a
     // request is seen to be ignored.
     bool colorSchemeOverride = true;
+    // This computer took the last launch-at-login change. Assumed until one is
+    // refused, which is the only thing the caution beside the toggle reports.
+    bool launchAtLoginAccepted = true;
 };
 
 struct SettingsRow {
@@ -269,6 +272,11 @@ QString nightlyChangesMarkdown(const QString &history, const QString &lastVersio
 // The one sentence that describes the restore-clipboard setting, wherever it
 // is offered (Output page, setup assistant).
 QString restoreClipboardDescription();
+
+// What the OpenAI sign-in row says. The split between what an API key buys and
+// what dictation needs decides whether dictation works at all, so it is visible
+// help on every platform rather than something only a hover reveals.
+QString openAiSignInHelp();
 
 // The microphone choice as it is offered: a system-default entry ahead of the
 // devices that exist, and a disabled placeholder standing in for a saved device

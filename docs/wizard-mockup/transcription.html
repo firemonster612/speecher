@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher setup — Transcription</title>
+<link rel="stylesheet" href="wizard.css">
+</head>
+<body data-states="ready notready" data-default-state="ready">
+
+<div class="dialog" role="dialog" aria-labelledby="page-title">
+
+  <header class="dialog-header">
+    <h1 id="page-title">Transcription</h1>
+    <span class="step-count">Step 2 of 9</span>
+  </header>
+
+  <main class="dialog-body">
+    <p class="lead">Choose the service Speecher uses to turn speech into a raw
+      transcript.</p>
+
+    <div class="choices" role="radiogroup" aria-label="Transcription service"
+         data-choicegroup data-gate="true" data-panel="#detail">
+
+      <label class="choice"
+             data-name="ChatGPT Codex"
+             data-hint="Sign in with ChatGPT in the ChatGPT app, or install the Codex CLI and run codex login."
+             data-stats='[["Score","9 / 10"],["Engine","GPT Live Transcribe"],["Languages","Around 100"],["Speed","A phrase at a time, after a short pause"],["Accuracy","Excellent, even with accents and noise"],["Formatting","Natural punctuation and phrasing"]]'
+             data-states='{"ready":{"status":"Ready","tone":"ok","line":"ChatGPT Codex is ready."},
+                           "notready":{"status":"Not set up","tone":"warn","line":"ChatGPT Codex is not signed in."}}'>
+        <input type="radio" name="speech" value="codex" data-checked-in="ready notready">
+        <svg class="icon lg" aria-hidden="true"><use href="#icon-openai"/></svg>
+        <span class="choice-text">
+          <span class="choice-name">ChatGPT Codex</span>
+        </span>
+        <span class="choice-status"></span>
+      </label>
+
+      <label class="choice"
+             data-name="Claude Voice"
+             data-hint="Install Claude Code from claude.com/code, run claude in a terminal, and use /login."
+             data-stats='[["Score","8 / 10"],["Engine","Deepgram Nova 3"],["Languages","About 60"],["Speed","Live stream; words appear as you speak"],["Accuracy","Strong, holds up in noisy rooms"],["Formatting","Automatic punctuation, capitals, numerals"]]'
+             data-states='{"ready":{"status":"Not set up","tone":"warn","line":"Claude Voice is not signed in."},
+                           "notready":{"status":"Not set up","tone":"warn","line":"Claude Voice is not signed in."}}'>
+        <input type="radio" name="speech" value="claude">
+        <svg class="icon lg" aria-hidden="true"><use href="#icon-anthropic"/></svg>
+        <span class="choice-text">
+          <span class="choice-name">Claude Voice</span>
+        </span>
+        <span class="choice-status"></span>
+      </label>
+    </div>
+
+    <section id="detail">
+      <table class="stats">
+        <tbody></tbody>
+      </table>
+
+      <div class="detail-foot">
+        <span class="status js-status"></span>
+        <button type="button" class="small js-recheck">Check again</button>
+      </div>
+      <p class="hint js-hint" style="max-width:62ch"></p>
+    </section>
+  </main>
+
+  <footer class="dialog-footer">
+    <button type="button" class="link">Skip setup</button>
+    <div class="footer-right">
+      <button type="button" data-nav="back">Back</button>
+      <button type="button" class="primary" data-nav="next">Next</button>
+      <button type="button">Cancel</button>
+    </div>
+  </footer>
+
+</div>
+
+<script src="wizard.js"></script>
+</body>
+</html>

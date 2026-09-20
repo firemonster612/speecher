@@ -5,6 +5,7 @@
 #include "core/SettingsStore.h"
 #include "platform/KeywatchSetup.h"
 #include "platform/LinuxDesktopIntegration.h"
+#include "ui/settings/SettingsPageSupport.h"
 
 #include <QClipboard>
 #include <QComboBox>
@@ -12,6 +13,8 @@
 #include <QDir>
 #include <QFile>
 #include <QFontDatabase>
+#include <QFormLayout>
+#include <QFrame>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -215,6 +218,13 @@ QString linuxTrayShortcutNote(bool trayAvailable)
     return QStringLiteral("The shortcut works while Speecher is running.");
 }
 
+QString linuxHoldToTalkUnavailableNote()
+{
+    return QStringLiteral(
+        "With this shortcut, a tap starts and a second tap stops — hold-to-talk "
+        "isn't available.");
+}
+
 QString linuxGlobalShortcutCommand()
 {
     const QString homePath = QDir::homePath();
@@ -293,31 +303,48 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     // typing key rather than a modal blocking it.
     m_captureControls = new QWidget(this);
     m_captureControls->setObjectName(QStringLiteral("shortcutCapture"));
-    auto *captureLayout = new QVBoxLayout(m_captureControls);
-    captureLayout->setContentsMargins(0, 0, 0, 0);
+    // Header and card, so the key and the helper that watches it read as one
+    // named thing rather than as loose controls on the page.
+    auto *captureOuter = new QVBoxLayout(m_captureControls);
+    captureOuter->setContentsMargins(0, 0, 0, 0);
+    captureOuter->setSpacing(0);
+    captureOuter->addWidget(settings::makeSectionLabel(QStringLiteral("Dictation key"),
+                                                       m_captureControls));
+    QFrame *captureCard = settings::makeSettingsCard(m_captureControls);
+    captureOuter->addWidget(captureCard);
+    QFormLayout *captureRows = settings::cardFormLayout(captureCard);
+    QWidget *captureHost = captureRows->parentWidget();
+
+    auto *captureBody = new QWidget(captureHost);
+    auto *captureLayout = new QVBoxLayout(captureBody);
+    captureLayout->setContentsMargins(settings::rowPadding());
+    captureLayout->setSpacing(settings::smallSpacing());
     // Reworded by refreshControls() for portal and manual desktops. Give it
     // the full wording now rather than starting empty: an empty word-wrap
     // label is allocated a collapsed height, and the button directly below
     // would paint over it on first show before the text-set relayout catches
     // up.
-    m_captureLead = guidanceLabel(captureLead(true, false), m_captureControls);
+    m_captureLead = guidanceLabel(captureLead(true, false), captureBody);
     captureLayout->addWidget(m_captureLead);
-    m_setShortcut = new ShortcutCaptureButton(m_captureControls);
+    m_setShortcut = new ShortcutCaptureButton(captureBody);
     m_setShortcut->setObjectName(QStringLiteral("globalShortcutCapture"));
     captureLayout->addWidget(m_setShortcut, 0, Qt::AlignLeft);
-    m_captureFeedback = guidanceLabel(QString(), m_captureControls);
+    m_captureFeedback = guidanceLabel(QString(), captureBody);
     m_captureFeedback->setObjectName(QStringLiteral("shortcutCaptureFeedback"));
+    m_captureFeedback->hide();
     captureLayout->addWidget(m_captureFeedback);
+    settings::addCardRow(captureRows, captureBody, captureHost);
 
     // Wayland's only route to a single key is the privileged key-watch
     // helper. Recording stays enabled without it — combinations need no
     // helper — and a single key recorded too early is refused with the
     // helper's own status, which reads directly above this block's install
     // button.
-    m_keyHelperControls = new QWidget(m_captureControls);
+    m_keyHelperControls = new QWidget(captureHost);
     m_keyHelperControls->setObjectName(QStringLiteral("keyHelperInstall"));
     auto *keyHelperLayout = new QVBoxLayout(m_keyHelperControls);
-    keyHelperLayout->setContentsMargins(0, 0, 0, 0);
+    keyHelperLayout->setContentsMargins(settings::rowPadding());
+    keyHelperLayout->setSpacing(settings::smallSpacing());
     keyHelperLayout->addWidget(guidanceLabel(
         QStringLiteral("On Wayland, a single-key shortcut needs a small helper that watches for "
                        "that one key. Setting it up asks for administrator permission once; "
@@ -333,7 +360,7 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     m_keyHelperProgress->setRange(0, 0);
     m_keyHelperProgress->setVisible(false);
     keyHelperLayout->addWidget(m_keyHelperProgress);
-    captureLayout->addWidget(m_keyHelperControls);
+    settings::addCardRow(captureRows, m_keyHelperControls, captureHost);
     layout->addWidget(m_captureControls);
 
     m_status = guidanceLabel(QString(), this);
@@ -391,6 +418,11 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     addMode(ShortcutActivationMode::Hybrid,
             QStringLiteral("Hybrid — a tap toggles; holding dictates until release"));
     modeLayout->addWidget(m_activationMode, 0, Qt::AlignLeft);
+    // Reads under the mode picker, where push-to-talk is on offer, because that
+    // is the promise it corrects.
+    m_holdUnavailableNote = guidanceLabel(linuxHoldToTalkUnavailableNote(), modeRow);
+    m_holdUnavailableNote->setObjectName(QStringLiteral("holdToTalkUnavailable"));
+    modeLayout->addWidget(m_holdUnavailableNote);
     layout->addWidget(modeRow);
 
     layout->addStretch();
@@ -403,6 +435,12 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
             shortcutActivationModeFromName(m_activationMode->currentData().toString()));
     });
     connect(m_keyHelperButton, &QPushButton::clicked, this, [this] { installKeyHelper(); });
+    // The daemon's answer arrives after the probe that asked for it.
+    connect(KeywatchSetup::daemonAnswer(), &KeywatchDaemonAnswer::changed, this, [this] {
+        if (!m_keyHelperProgress->isVisible()) {
+            refreshKeyHelper();
+        }
+    });
 
     connect(m_setShortcut, &ShortcutCaptureButton::bindingCaptured, this,
             [this](const ShortcutBinding &binding) { applyBinding(binding); });
@@ -412,7 +450,7 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
         if (armed) {
             // A stale refusal from the last attempt would read as a verdict on
             // the capture that is only just starting.
-            m_captureFeedback->clear();
+            showCaptureFeedback(QString());
             m_controller.suspendGlobalShortcut();
         } else {
             m_controller.resumeGlobalShortcut();
@@ -421,7 +459,7 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     // The feedback label, not m_status: the status line is hidden on desktops
     // with no shortcut service, where a single key can still be recorded.
     connect(m_setShortcut, &ShortcutCaptureButton::unknownKeyPressed, this, [this] {
-        m_captureFeedback->setText(QStringLiteral("That key cannot be a dictation key."));
+        showCaptureFeedback(QStringLiteral("That key cannot be a dictation key."));
     });
     connect(m_chooseShortcut, &QPushButton::clicked, this, [this] { chooseShortcut(); });
     connect(copy, &QToolButton::clicked, this, [this, copy] {
@@ -443,6 +481,10 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
             [this] { refresh(); });
     connect(&m_controller,
             &ApplicationController::globalShortcutSupportChanged,
+            this,
+            [this] { refresh(); });
+    connect(&m_controller,
+            &ApplicationController::globalShortcutReleaseSupportChanged,
             this,
             [this] { refresh(); });
     connect(&m_controller,
@@ -498,6 +540,24 @@ bool LinuxGlobalShortcutSetupPage::stepComplete() const
     return !m_controller.globalShortcutDisplay().isEmpty();
 }
 
+QString LinuxGlobalShortcutSetupPage::blockedReason() const
+{
+    if (installRequired()) {
+        return QStringLiteral(
+            "Speecher is not installed yet, so a shortcut would point at the wrong file.");
+    }
+    if (!m_controller.globalShortcutSupportKnown()) {
+        return QStringLiteral("Speecher is still checking what your desktop supports.");
+    }
+    return QStringLiteral("No shortcut is set, so there is no way to start dictating.");
+}
+
+void LinuxGlobalShortcutSetupPage::showCaptureFeedback(const QString &text)
+{
+    m_captureFeedback->setText(text);
+    m_captureFeedback->setVisible(!text.isEmpty());
+}
+
 void LinuxGlobalShortcutSetupPage::installIntegration()
 {
     QString error;
@@ -531,17 +591,16 @@ void LinuxGlobalShortcutSetupPage::applyBinding(const ShortcutBinding &binding)
     // shortcut service, where a single key can still be recorded.
     const QString reason = m_controller.globalShortcutUnsupportedBindingReason(binding);
     if (!reason.isEmpty()) {
-        m_captureFeedback->setText(reason);
+        showCaptureFeedback(reason);
         return;
     }
     QString error;
     if (!m_controller.setGlobalShortcut(binding, &error)) {
-        m_captureFeedback->setText(
+        showCaptureFeedback(
             error.isEmpty() ? QStringLiteral("Couldn't set the shortcut.") : error);
         return;
     }
-    m_captureFeedback->setText(binding.isSingleKey() ? singleKeyTypingWarning(binding)
-                                                     : QString());
+    showCaptureFeedback(binding.isSingleKey() ? singleKeyTypingWarning(binding) : QString());
     m_setShortcut->setShortcutDisplay(m_controller.globalShortcut().displayText());
     m_status->setText(shortcutSetStatus(m_controller.globalShortcutDisplay()));
 }
@@ -622,21 +681,27 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
     const bool ready = !installRequired();
     const bool portalVisible = ready && (!known || (supported && desktopChooser));
     const bool combinationsAvailable = ready && known && supported && !desktopChooser;
+    const bool manualCommand = ready && known && !supported;
     m_portalControls->setVisible(portalVisible);
-    m_manualControls->setVisible(ready && known && !supported);
+    m_manualControls->setVisible(manualCommand);
     // The capture handles combinations only where the desktop registers them;
     // a single key is watched by Speecher itself, so it records whenever the
     // step is ready. The lead names what is on offer.
     m_setShortcut->setCombinationsAvailable(combinationsAvailable);
     m_captureLead->setText(captureLead(combinationsAvailable, portalVisible));
     m_captureControls->setVisible(ready && known);
-    m_keyHelperControls->setVisible(ready && known && m_waylandSession);
+    setCardRowVisible(m_keyHelperControls, ready && known && m_waylandSession);
     if (m_waylandSession && ready && known) {
         refreshKeyHelper();
     }
     m_status->setVisible(ready && (!known || supported));
     m_trayNote->setText(linuxTrayShortcutNote(QSystemTrayIcon::isSystemTrayAvailable()));
     m_trayNote->setVisible(ready && known && supported);
+    // A manual desktop shortcut can only run the toggle command, and a backend
+    // that has already shown it reports no release cannot hold either. Both are
+    // states we know; neither is probed for.
+    m_holdUnavailableNote->setVisible(manualCommand
+                                      || !m_controller.globalShortcutReportsRelease());
     if (!ready) {
         return;
     }

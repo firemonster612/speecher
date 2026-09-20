@@ -45,16 +45,15 @@ MacFrontEnd::MacFrontEnd(ApplicationController *controller)
     // rather than waiting for someone to ask for a window.
     m_native->ui = [[SpeecherMacUI alloc] initWithBridge:m_native->bridge];
     // What a Sparkle relaunch should put back on screen, captured right before
-    // the process goes away. The tokens are main.cpp's.
+    // the process goes away. The tokens are main.cpp's. On-screen windows only,
+    // never the microphone: the restart already waits for the session to
+    // finish, and resuming what it waited out would record with no dictation
+    // gesture behind it.
     // The provider outlives this front end on the controller's updater, so it
     // retains the UI object rather than reaching through the Native struct.
     SpeecherMacUI *ui = m_native->ui;
-    controller->updates()->setRestoreStateProvider([controller, ui] {
+    controller->updates()->setRestoreStateProvider([ui] {
         QStringList state;
-        const DictationState sessionState = controller->session()->state();
-        if (sessionState != DictationState::Idle && sessionState != DictationState::Error) {
-            state.append(QStringLiteral("listening"));
-        }
         if (ui.settingsWindowVisible) {
             state.append(QStringLiteral("settings"));
         }

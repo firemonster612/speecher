@@ -43,8 +43,15 @@ QStringList limited(const QStringList &terms)
 
 QString summary(const QStringList &terms)
 {
-    // The service caps both the number of terms and their total size; say so
-    // as a sentence rather than as two fractions.
+    // `terms` is the whole stored list. Saying how many of them a request
+    // actually carries is the point of the row, so the over-cap sentence names
+    // the sent count rather than pretending the rest are gone.
+    const QStringList sent = limited(terms);
+    if (sent.size() < terms.size()) {
+        return QStringLiteral("%1 terms, the %2 highest priority are sent")
+            .arg(terms.size())
+            .arg(sent.size());
+    }
     return QStringLiteral("%1 of %2 terms, using %3 of %4 tokens")
         .arg(terms.size())
         .arg(maxKeyterms)

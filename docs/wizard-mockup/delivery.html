@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher setup — Text delivery</title>
+<link rel="stylesheet" href="wizard.css">
+</head>
+<body data-states="notinstalled ready signout" data-default-state="notinstalled">
+
+<div class="dialog" role="dialog" aria-labelledby="page-title">
+
+  <header class="dialog-header">
+    <h1 id="page-title">Text delivery</h1>
+    <span class="step-count">Step 5 of 9</span>
+  </header>
+
+  <main class="dialog-body">
+    <p class="lead">To type for you, Speecher installs a small virtual
+      keyboard. Your computer will ask for your administrator password once;
+      Speecher itself never runs privileged.</p>
+
+    <div class="sunken" style="margin-top:16px">
+      <div class="status-row">
+        <svg class="icon" aria-hidden="true"><use href="#icon-keyboard"/></svg>
+        <span class="row-label" style="font-weight:400">
+          <span class="status warn" data-show="notinstalled">
+            <svg class="icon sm" aria-hidden="true"><use href="#icon-pending"/></svg>
+            <span>Not installed. ydotool or ydotoold is missing.</span></span>
+          <span class="status ok" data-show="ready">
+            <svg class="icon sm" aria-hidden="true"><use href="#icon-check"/></svg>
+            <span>Virtual keyboard ready.</span></span>
+          <span class="status warn" data-show="signout" style="white-space:normal;align-items:flex-start">
+            <svg class="icon sm" aria-hidden="true" style="margin-top:2px"><use href="#icon-warning"/></svg>
+            <span>Almost done — log out of your computer and back in, then turn
+              on the virtual keyboard in Settings &gt; Output.</span></span>
+        </span>
+      </div>
+      <div class="button-row" data-show="notinstalled signout">
+        <button type="button">Set up virtual keyboard</button>
+      </div>
+    </div>
+
+    <label class="check" style="margin-top:18px">
+      <input type="checkbox" data-gates-next data-also-ready="ready signout">
+      <span>Continue without the virtual keyboard; Speecher pastes from the
+        clipboard instead</span>
+    </label>
+
+    <div class="field" style="margin-top:14px">
+      <label for="clipformat">Clipboard format</label>
+      <select id="clipformat" style="flex:1 1 300px">
+        <option>Plain text</option>
+        <option>HTML and plain text</option>
+      </select>
+    </div>
+
+    <label class="check">
+      <input type="checkbox" checked>
+      <span>Restore the previous clipboard once Speecher confirms the paste.
+        If it cannot confirm, your dictation stays on the clipboard.</span>
+    </label>
+  </main>
+
+  <footer class="dialog-footer">
+    <button type="button" class="link">Skip setup</button>
+    <div class="footer-right">
+      <button type="button" data-nav="back">Back</button>
+      <button type="button" class="primary" data-nav="next">Next</button>
+      <button type="button">Cancel</button>
+    </div>
+  </footer>
+
+</div>
+
+<script src="wizard.js"></script>
+</body>
+</html>

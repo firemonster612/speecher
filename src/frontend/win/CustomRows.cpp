@@ -189,7 +189,17 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
                 host.model->save(edited, rowId, records);
                 host.refresh();
             });
-            pickers.Children().Append(combo);
+            if (index == 0) {
+                // The grid's column titles, once, directly above the first
+                // row's pickers so each header sits over its own column.
+                StackPanel titled;
+                titled.Spacing(2);
+                titled.Children().Append(secondaryText(column.title, host));
+                titled.Children().Append(combo);
+                pickers.Children().Append(titled);
+            } else {
+                pickers.Children().Append(combo);
+            }
         }
         RowSnapshot profileRow;
         profileRow.id = row.id + QLatin1Char('.') + records.at(index).value(kProfileIdKey).toString();

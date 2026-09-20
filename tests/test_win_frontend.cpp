@@ -419,6 +419,9 @@ private slots:
 
         QTRY_VERIFY_WITH_TIMEOUT(FindWindowW(nullptr, L"Speecher") != nullptr, 2000);
         QVERIFY(controller->settings()->setupCompleted());
+        // Skip is Finish minus the pages in between: it has to leave a working
+        // shortcut behind, or the app it completes cannot start dictation.
+        QVERIFY(!controller->globalShortcut().isEmpty());
     }
 
     void capabilitiesFollowWindowsAccessibility()
@@ -489,7 +492,9 @@ private slots:
                               QStringLiteral("Ready to dictate")}));
         QCOMPARE(SetupWindow::welcomeCopyForTest(),
                  QStringList({QStringLiteral("Speecher records a short dictation, turns it into text, and sends it to the app you were using."),
-                              QStringLiteral("This assistant checks your transcription provider, microphone, desktop accessibility, text delivery, refinement, and writing profiles.")}));
+                              // No mention of desktop accessibility: this
+                              // wizard has no such page.
+                              QStringLiteral("This assistant checks everything dictation needs: your speech service, microphone, and how text reaches your apps.")}));
         if (nativeUiAvailable()) {
             setup->show(SetupAssistantPage::GlobalShortcut);
             QCOMPARE(setup->currentPageTitleForTest(), QStringLiteral("Global Shortcut"));

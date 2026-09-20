@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/ShortcutBinding.h"
+#include "ui/setup/SetupPages.h"
 
 #include <QKeySequence>
 #include <QPushButton>
@@ -74,8 +75,12 @@ QString linuxGlobalShortcutCommand();
 // StatusNotifier host are independent (stock GNOME has the former, not the
 // latter).
 QString linuxTrayShortcutNote(bool trayAvailable);
+// Shown where push-to-talk cannot be honoured: a manual desktop shortcut runs
+// the toggle command, and some backends report only the press. Saying so beats
+// leaving "dictate only while the key is held" on offer as though it worked.
+QString linuxHoldToTalkUnavailableNote();
 
-class LinuxGlobalShortcutSetupPage final : public QWidget {
+class LinuxGlobalShortcutSetupPage final : public QWidget, public SetupStep {
     Q_OBJECT
 
 public:
@@ -96,6 +101,8 @@ public:
     // desktops cannot be verified, so the install is their whole step.
     bool stepComplete() const;
 
+    QString blockedReason() const override;
+
 signals:
     void stepCompleteChanged();
 
@@ -110,6 +117,8 @@ private:
     void refresh();
     void refreshControls();
     void refreshKeyHelper();
+    // The feedback line only occupies the card while it has something to say.
+    void showCaptureFeedback(const QString &text);
     void showRegistrationResult(bool bound, const QString &detail);
 
     ApplicationController &m_controller;
@@ -133,6 +142,7 @@ private:
     QLabel *m_status = nullptr;
     QLabel *m_command = nullptr;
     QLabel *m_trayNote = nullptr;
+    QLabel *m_holdUnavailableNote = nullptr;
     QString m_displayedShortcut;
     QWidget *m_integration = nullptr;
     QPushButton *m_integrationButton = nullptr;

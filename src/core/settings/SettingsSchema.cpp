@@ -72,10 +72,12 @@ QList<RowOption> pasteMethodOptions(bool includeDirectInsert, bool includeGlobal
         options.append({inheritGlobalPasteRule(), QStringLiteral("Use global fallback")});
     }
 #ifdef Q_OS_MACOS
-    // Terminals on macOS take the same Cmd+V as every other app, so the two
-    // paste chords name the same keystroke here.
+    // Terminals on macOS take the same Cmd+V as every other app
+    // (MacPasteDelivery::paste sends one chord), so the terminal option is only
+    // worth choosing to keep a rule that means something on Linux and Windows.
     options.append({pasteMethodName(PasteMethod::StandardPaste), QStringLiteral("Standard paste (Cmd+V)")});
-    options.append({pasteMethodName(PasteMethod::TerminalPaste), QStringLiteral("Terminal paste (Cmd+V)")});
+    options.append({pasteMethodName(PasteMethod::TerminalPaste),
+                    QStringLiteral("Terminal paste (also Cmd+V on macOS)")});
     if (includeDirectInsert) {
         options.append({pasteMethodName(PasteMethod::DirectInsert),
                         QStringLiteral("Direct insertion (Accessibility)")});
@@ -160,6 +162,24 @@ void gateOnTargetAccessibility(SettingsRow &row, const QString &help)
 #else
     row.disabledActionLabel = QStringLiteral("Enable desktop accessibility");
 #endif
+}
+
+// Refinement provider "None" means no refiner runs, so every setting that only
+// shapes a refinement request does nothing. Grey those rows out rather than
+// letting them read as live choices. A row that already carries a gate keeps
+// its own note, because a static string cannot name whichever gate applies.
+void gateOnRefinementProvider(SettingsRow &row)
+{
+    row.enabled = [existing = row.enabled](const AppSettings &settings,
+                                           const Capabilities &capabilities) {
+        if (settings.refinement.providerId == QStringLiteral("none")) {
+            return false;
+        }
+        return existing ? existing(settings, capabilities) : true;
+    };
+    if (row.disabledHelp.isEmpty()) {
+        row.disabledHelp = QStringLiteral("Refinement is off.");
+    }
 }
 
 // The categories the Output page offers a paste rule for. A rule stored for any
@@ -506,6 +526,19 @@ SettingsPage generalPage(const SchemaContext &context)
         QStringLiteral("Dictation only works while Speecher is running."),
         [](const AppSettings &settings) { return settings.launchAtLogin; },
         [](AppSettings &settings, bool value) { settings.launchAtLogin = value; }));
+    // The store writes the setting whether or not the computer honours it, so
+    // without this the toggle would sit there saying yes to something that
+    // never happens.
+    SettingsRow launchAtLoginRefused =
+        infoRow(QStringLiteral("launchAtLoginProblem"),
+                QStringLiteral("Caution"),
+                QString(),
+                QStringLiteral("This computer did not accept the change, so Speecher may "
+                               "not start at login. Turn it off and on again to retry."));
+    launchAtLoginRefused.visible = [](const AppSettings &, const Capabilities &capabilities) {
+        return !capabilities.launchAtLoginAccepted;
+    };
+    systemRows.append(std::move(launchAtLoginRefused));
 #endif
 #ifdef Q_OS_LINUX
     systemRows.append(customRow(
@@ -516,7 +549,12 @@ SettingsPage generalPage(const SchemaContext &context)
     SettingsRow activationMode = choiceRow(
         QStringLiteral("activationMode"),
         QStringLiteral("Shortcut behaviour"),
-        QStringLiteral("What pressing the Global Shortcut does."),
+        // Holding needs the shortcut backend to report the key going up, and
+        // some do not: a desktop-registered combination and a manual desktop
+        // shortcut both only ever say "pressed".
+        QStringLiteral("What pressing the Global Shortcut does. Holding needs a shortcut "
+                       "backend that reports key release; where it does not, Push to talk "
+                       "and Hybrid behave as Toggle."),
         fixedOptions({
             {shortcutActivationModeName(ShortcutActivationMode::PushToTalk),
              QStringLiteral("Push to talk"),
@@ -628,6 +666,8 @@ SettingsPage generalPage(const SchemaContext &context)
     previewWords.enabled = [](const AppSettings &settings, const Capabilities &) {
         return settings.ui.transcriptionPreviewEnabled || settings.ui.refinementPreviewEnabled;
     };
+    previewWords.disabledHelp =
+        QStringLiteral("Turn on the transcription or refinement preview to set this.");
 
     SettingsPage page{
         QStringLiteral("general"),
@@ -648,7 +688,7 @@ SettingsPage generalPage(const SchemaContext &context)
                  std::move(theme),
 #endif
                  toggleRow(QStringLiteral("pauseMedia"),
-                           QStringLiteral("Media"),
+                           QStringLiteral("Pause media"),
                            QStringLiteral("Pause playing media while dictating"),
                            [](const AppSettings &settings) { return settings.ui.pauseMediaDuringTranscription; },
                            [](AppSettings &settings, bool value) { settings.ui.pauseMediaDuringTranscription = value; }),
@@ -746,7 +786,7 @@ SettingsPage audioPage(const SchemaContext &context)
     SettingsRow speechProvider = choiceRow(
         QStringLiteral("speechProvider"),
         QStringLiteral("Transcription"),
-        QStringLiteral("Service used to turn speech into a Raw Transcript."),
+        QStringLiteral("Service used to turn speech into a raw transcript."),
         fixedOptions(context.speechProviders),
         [](const AppSettings &settings) { return settings.speech.providerId; },
         [](AppSettings &settings, const QString &value) { settings.speech.providerId = value; });
@@ -760,7 +800,7 @@ SettingsPage audioPage(const SchemaContext &context)
                 return option.help;
             }
         }
-        return QStringLiteral("Service used to turn speech into a Raw Transcript.");
+        return QStringLiteral("Service used to turn speech into a raw transcript.");
     };
 
     SettingsRow finalRetranscribe = toggleRow(
@@ -806,7 +846,7 @@ SettingsPage audioPage(const SchemaContext &context)
 
     SettingsRow vadEnabled = toggleRow(
         QStringLiteral("vadEnabled"),
-        QStringLiteral("Silence"),
+        QStringLiteral("Silence detection"),
         QStringLiteral("Skip the quiet parts before, after and between sentences"),
         [](const AppSettings &settings) { return settings.audio.vadEnabled; },
         [](AppSettings &settings, bool value) { settings.audio.vadEnabled = value; });
@@ -824,6 +864,7 @@ SettingsPage audioPage(const SchemaContext &context)
     vadThreshold.enabled = [](const AppSettings &settings, const Capabilities &) {
         return settings.audio.vadEnabled;
     };
+    vadThreshold.disabledHelp = QStringLiteral("Turn on silence detection to set this.");
 
     return {
         QStringLiteral("audio"),
@@ -885,15 +926,22 @@ SettingsPage refinementPage(const SchemaContext &context)
     gateOnTargetAccessibility(
         targetContext,
         accessibilityGateHelp(QStringLiteral("send the target app's context")));
+    gateOnRefinementProvider(targetContext);
+    // Two gates hold this row, and the note each one would write is wrong
+    // whenever the other is the one that closed it. State both requirements,
+    // naming the platform's accessibility feature the way the other gate
+    // notes do.
+    targetContext.disabledHelp =
+        QStringLiteral("Needs a refinement provider. ")
+        + accessibilityGateHelp(QStringLiteral("send the target app's context"));
 
     SettingsRow screenshots = toggleRow(
         QStringLiteral("includeScreenshotContext"),
         QStringLiteral("Screenshots"),
-        QStringLiteral("Allow screenshots as refinement context"),
+        QStringLiteral("Allow screenshots as refinement context. Captured through the desktop "
+                       "portal and kept only for the current dictation."),
         [](const AppSettings &settings) { return settings.refinement.includeScreenshotContext; },
         [](AppSettings &settings, bool value) { settings.refinement.includeScreenshotContext = value; });
-    screenshots.tooltip = QStringLiteral(
-        "Captured through the desktop portal and kept only for the current dictation.");
     screenshots.disabledHelp = QStringLiteral(
         "Choose an image-capable OpenAI or Anthropic refiner to send screenshot context.");
     screenshots.enabled = [providers = context.refinementProviders](const AppSettings &settings,
@@ -905,6 +953,24 @@ SettingsPage refinementPage(const SchemaContext &context)
         }
         return false;
     };
+    gateOnRefinementProvider(screenshots);
+
+    SettingsRow fallbackProfile = choiceRow(
+        QStringLiteral("defaultWritingProfile"),
+        QStringLiteral("Fallback profile"),
+        QStringLiteral("Writing profile used when the target app does not imply one."),
+        fixedOptions({
+            {QStringLiteral("work"), QStringLiteral("Work")},
+            {QStringLiteral("email"), QStringLiteral("Email")},
+            {QStringLiteral("personal"), QStringLiteral("Personal")},
+            {QStringLiteral("ai_coding"), QStringLiteral("AI coding")},
+            {QStringLiteral("other"), QStringLiteral("Other")},
+        }),
+        [](const AppSettings &settings) { return settings.refinement.defaultWritingProfile; },
+        [](AppSettings &settings, const QString &value) {
+            settings.refinement.defaultWritingProfile = value;
+        });
+    gateOnRefinementProvider(fallbackProfile);
 
     SettingsRow profileBehavior;
     profileBehavior.id = QStringLiteral("writingProfileBehavior");
@@ -919,6 +985,7 @@ SettingsPage refinementPage(const SchemaContext &context)
     profileBehavior.apply = [](AppSettings &settings, const QVariant &value) {
         settings.refinement.writingProfiles = value.value<QList<WritingProfileSettings>>();
     };
+    gateOnRefinementProvider(profileBehavior);
 
     return {
         QStringLiteral("refinement"),
@@ -936,18 +1003,7 @@ SettingsPage refinementPage(const SchemaContext &context)
                            fixedOptions(refiners),
                            [](const AppSettings &settings) { return settings.refinement.providerId; },
                            [](AppSettings &settings, const QString &value) { settings.refinement.providerId = value; }),
-                 choiceRow(QStringLiteral("defaultWritingProfile"),
-                           QStringLiteral("Fallback profile"),
-                           QStringLiteral("Writing profile used when the target app does not imply one."),
-                           fixedOptions({
-                               {QStringLiteral("work"), QStringLiteral("Work")},
-                               {QStringLiteral("email"), QStringLiteral("Email")},
-                               {QStringLiteral("personal"), QStringLiteral("Personal")},
-                               {QStringLiteral("ai_coding"), QStringLiteral("AI coding")},
-                               {QStringLiteral("other"), QStringLiteral("Other")},
-                           }),
-                           [](const AppSettings &settings) { return settings.refinement.defaultWritingProfile; },
-                           [](AppSettings &settings, const QString &value) { settings.refinement.defaultWritingProfile = value; }),
+                 std::move(fallbackProfile),
                  std::move(targetContext),
                  std::move(screenshots),
              }},
@@ -1144,7 +1200,7 @@ SettingsPage outputPage(const SchemaContext &context)
 
     SettingsRow restoreClipboard = toggleRow(
         QStringLiteral("restoreClipboardAfterTyping"),
-        QStringLiteral("Clipboard"),
+        QStringLiteral("Restore clipboard"),
         restoreClipboardDescription(),
         [](const AppSettings &settings) { return settings.output.restoreClipboardAfterTyping; },
         [](AppSettings &settings, bool value) { settings.output.restoreClipboardAfterTyping = value; });
@@ -1339,9 +1395,10 @@ SettingsPage vocabularyPage()
           {
               collectionRow(QStringLiteral("vocabularyEntries"),
                             QStringLiteral("Extra vocabulary"),
-                            QStringLiteral("Names and words Speecher should recognize. When the list "
-                                           "is longer than the transcription service accepts, starred "
-                                           "terms are sent first."),
+                            QStringLiteral("Names and words Speecher should recognize. Every term is "
+                                           "kept. When the list is longer than the transcription "
+                                           "service accepts, starred terms are sent first, then the "
+                                           "most used."),
                             std::move(terms)),
               std::move(limit),
           }}},
@@ -1376,7 +1433,8 @@ SettingsPage correctionsPage()
     SettingsRow learn = toggleRow(
         QStringLiteral("correctionLearningControl"),
         QStringLiteral("Learn corrections"),
-        QString(),
+        QStringLiteral("After inserting text, briefly watch for your edits to it and learn "
+                       "repeated corrections."),
         [](const AppSettings &settings) { return settings.correctionLearningEnabled; },
         [](AppSettings &settings, bool value) { settings.correctionLearningEnabled = value; });
     learn.tooltip = QStringLiteral("Observe a verified inserted span briefly and automatically "
@@ -1569,6 +1627,10 @@ QList<ProviderAccount> providerAccounts()
 {
     ProviderAccount openAi;
     openAi.sectionTitle = QStringLiteral("OpenAI account");
+    // Footnote of the card whose Sign-in row it explains.
+    openAi.note = QStringLiteral(
+        "Automatic uses the first OpenAI sign-in it finds: the Codex app, then an API key from "
+        "the environment or saved in Speecher.");
     openAi.modelRowId = QStringLiteral("openAiModel");
     openAi.modelLabel = QStringLiteral("OpenAI model");
     openAi.modelHelp = QStringLiteral("Model used for refinement.");
@@ -1587,7 +1649,11 @@ QList<ProviderAccount> providerAccounts()
     openAi.model = &RefinementSettings::openAiModel;
     openAi.effortRowId = QStringLiteral("openAiEffort");
     openAi.effortLabel = QStringLiteral("OpenAI effort");
-    openAi.effortHelp = QStringLiteral("Reasoning effort used for refinement.");
+    // OpenAiRefiner sends the chosen effort verbatim, so an unsupported value
+    // comes back as a request error rather than being adjusted for us.
+    openAi.effortHelp = QStringLiteral("Reasoning effort used for refinement. Supported values "
+                                       "vary by model, and one this model does not support may be "
+                                       "rejected by the model.");
     openAi.effortTooltip =
         QStringLiteral("OpenAI Responses reasoning.effort. Supported values vary by model.");
     openAi.efforts = {
@@ -1606,7 +1672,7 @@ QList<ProviderAccount> providerAccounts()
     openAi.authRows = {
         customRow(QStringLiteral("openAiAuthMode"),
                   QStringLiteral("Sign-in"),
-                  QStringLiteral("How Speecher signs in to OpenAI for dictation and text cleanup.")),
+                  openAiSignInHelp()),
         customRow(QStringLiteral("openAiCliproxyAccount"),
                   QStringLiteral("Account"),
                   QStringLiteral("The CLI Proxy API account to use.")),
@@ -1634,10 +1700,6 @@ QList<ProviderAccount> providerAccounts()
 
     ProviderAccount anthropic;
     anthropic.sectionTitle = QStringLiteral("Anthropic account");
-    // The page's closing note, which belongs under the last card there is.
-    anthropic.note = QStringLiteral(
-        "Automatic uses the first OpenAI sign-in it finds: the Codex app, then an API key from "
-        "the environment or saved in Speecher.");
     anthropic.modelRowId = QStringLiteral("anthropicModel");
     anthropic.modelLabel = QStringLiteral("Claude model");
     anthropic.modelHelp = QStringLiteral("Model used for Anthropic refinement.");
@@ -1654,8 +1716,12 @@ QList<ProviderAccount> providerAccounts()
     anthropic.caution = QStringLiteral("Haiku may treat transcript as instructions.");
     anthropic.effortRowId = QStringLiteral("anthropicEffort");
     anthropic.effortLabel = QStringLiteral("Claude effort");
-    anthropic.effortHelp =
-        QStringLiteral("Token spend and reasoning depth for Anthropic refinement.");
+    // AnthropicApiRefiner::apiEffortForModel rewrites an effort the model does
+    // not support before the request goes out.
+    anthropic.effortHelp = QStringLiteral("Token spend and reasoning depth for Anthropic "
+                                          "refinement. Supported values vary by model, and one "
+                                          "this model does not support falls back at request "
+                                          "time.");
     anthropic.effortTooltip =
         QStringLiteral("Claude effort. Anthropic API support depends on the selected model.");
     anthropic.efforts = {
@@ -1724,7 +1790,8 @@ SettingsSection cliproxyServerSection()
     SettingsRow apiKey = customRow(
         QStringLiteral("cliproxyApiKey"),
         QStringLiteral("Server API key"),
-        QStringLiteral("One of the keys the server accepts. Needed when a server URL is set."));
+        QStringLiteral("One of the keys the server accepts. Needed when a server URL is set. "
+                       "Stored unencrypted in Speecher's settings file."));
     apiKey.tooltip = QStringLiteral("Stored unencrypted in Speecher's settings file.");
     apiKey.value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.cliproxyApiKey);
@@ -1809,10 +1876,16 @@ SettingsPage providersPage()
 
 } // namespace
 
+QString openAiSignInHelp()
+{
+    return QStringLiteral("How Speecher signs in to OpenAI. API keys only cover text cleanup; "
+                          "dictation needs the ChatGPT sign-in or a CLI Proxy account.");
+}
+
 QString restoreClipboardDescription()
 {
-    return QStringLiteral("Restore the previous clipboard after Speecher confirms the paste, or "
-                          "after a short delay when it cannot.");
+    return QStringLiteral("Restore the previous clipboard once Speecher confirms the paste. "
+                          "If it cannot confirm, your dictation stays on the clipboard.");
 }
 
 const SettingsPage &SettingsSchema::page(const QString &id) const
@@ -1943,6 +2016,7 @@ static QList<SettingsPane> settingsPanes()
                                    QStringLiteral("refinementPreviewEnabled"),
                                    QStringLiteral("previewWords")}),
               group("System", {QStringLiteral("launchAtLogin"),
+                               QStringLiteral("launchAtLoginProblem"),
                                QStringLiteral("activationMode")}),
               group("Maintenance", {QStringLiteral("runSetup")}),
               group("Updates", {QStringLiteral("updateChannel"),

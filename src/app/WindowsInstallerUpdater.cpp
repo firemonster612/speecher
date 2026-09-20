@@ -1,5 +1,7 @@
 #include "app/WindowsInstallerUpdater.h"
 
+#include "app/CommandLine.h"
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -92,7 +94,8 @@ void WindowsInstallerUpdater::restartApplication()
         QStringLiteral("/FORCECLOSEAPPLICATIONS"),
         QStringLiteral("/LOG=%1").arg(QDir::toNativeSeparators(logPath)),
     };
-    const QStringList restartArguments = QCoreApplication::arguments().mid(1);
+    const QStringList restartArguments =
+        argumentsWithoutStartupActions(QCoreApplication::arguments().mid(1));
     arguments.append(QStringLiteral("/RESTARTARGCOUNT=%1").arg(restartArguments.size()));
     for (qsizetype index = 0; index < restartArguments.size(); ++index) {
         arguments.append(QStringLiteral("/RESTARTARG%1=%2")

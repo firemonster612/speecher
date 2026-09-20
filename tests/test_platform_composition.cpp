@@ -235,6 +235,21 @@ public:
         return true;
     }
 
+    // Empty accepts the change, as every computer that has a login item does;
+    // anything else is what that computer refused with.
+    bool setLaunchAtLogin(bool, QString *error) const override
+    {
+        if (launchAtLoginError.isEmpty()) {
+            return true;
+        }
+        if (error) {
+            *error = launchAtLoginError;
+        }
+        return false;
+    }
+
+    mutable QString launchAtLoginError;
+
     mutable std::function<void(bool)> microphoneAnswer;
     mutable FakeGlobalShortcutBinder *binder = nullptr;
     mutable AccessibilityState accessibility{true, true, false};
@@ -465,11 +480,40 @@ private slots:
         QCOMPARE(controller.session()->state(), DictationState::Idle);
     }
 
+    // A refused login item has no window of its own to complain in: the
+    // controller remembers it so the settings surface can draw the caution.
+    void aRefusedLaunchAtLoginIsRememberedUntilOneIsAccepted()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->launchAtLoginError = QStringLiteral("This computer said no.");
+        ApplicationController controller(true, platform);
+        QVERIFY(!controller.launchAtLoginAccepted());
+
+        QSignalSpy accepted(&controller, &ApplicationController::launchAtLoginAcceptedChanged);
+        platform->launchAtLoginError.clear();
+        controller.settings()->setLaunchAtLogin(controller.settings()->launchAtLogin());
+        QVERIFY(controller.launchAtLoginAccepted());
+        QCOMPARE(accepted.count(), 1);
+    }
+
 #if defined(Q_OS_LINUX) || defined(Q_OS_WIN)
     void guiLaunchKeepsRunningAfterLastWindowCloses()
     {
         QVERIFY(!quitOnLastWindowClosed(LaunchMode::RunGui));
         QVERIFY(!quitOnLastWindowClosed(LaunchMode::RunDaemon));
+    }
+
+    void anUpdateRelaunchDropsStartupActions()
+    {
+        QCOMPARE(argumentsWithoutStartupActions({QStringLiteral("--daemon"),
+                                                 QStringLiteral("--start-listening"),
+                                                 QStringLiteral("--format"),
+                                                 QStringLiteral("plain"),
+                                                 QStringLiteral("--show-settings"),
+                                                 QStringLiteral("--show-setup")}),
+                 QStringList({QStringLiteral("--daemon"),
+                              QStringLiteral("--format"),
+                              QStringLiteral("plain")}));
     }
 
     void quitIsAClientCommand()
@@ -533,6 +577,15 @@ private slots:
                 break;
             }
         }
+        if (!shortcut) {
+            // CI-only failure diagnostics: show what the assistant's widget
+            // tree actually holds when the page cannot be found.
+            for (const QWidget *widget : assistant.findChildren<QWidget *>()) {
+                qWarning("child: %s objectName=%s",
+                         widget->metaObject()->className(),
+                         qPrintable(widget->objectName()));
+            }
+        }
         QVERIFY(shortcut);
         QCOMPARE(shortcut->layout()->contentsMargins(), welcome->layout()->contentsMargins());
         QCOMPARE(shortcut->layout()->contentsMargins().left(), setupPageMargin());
@@ -575,6 +628,44 @@ private slots:
 #endif
         QCoreApplication::processEvents();
         QVERIFY(!skip->isVisible());
+    }
+
+    void setupAssistantReturnsToTheFirstFailedStepInsteadOfFinishing()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        controller.settings()->setSetupCompleted(false);
+        SetupAssistant assistant(&controller);
+        assistant.show();
+        QCoreApplication::processEvents();
+
+        const int lastPage = assistant.pageTitles().size() - 1;
+#ifdef SPEECHER_WITH_KASSISTANT
+        for (int step = 0; step < lastPage; ++step) {
+            assistant.next();
+        }
+#else
+        assistant.setCurrentId(assistant.pageIds().at(lastPage));
+#endif
+        QCoreApplication::processEvents();
+
+        // No provider is signed in on this fake platform, so the very first
+        // gate is shut. Pressing Finish must land the user back on that step
+        // rather than marking setup complete.
+        QVERIFY(QMetaObject::invokeMethod(&assistant, "accept"));
+        QCoreApplication::processEvents();
+
+        QVERIFY(!controller.settings()->setupCompleted());
+        QVERIFY(assistant.isVisible());
+        WelcomeSetupPage *welcome = nullptr;
+        for (QWidget *widget : assistant.findChildren<QWidget *>()) {
+            if (auto *page = dynamic_cast<WelcomeSetupPage *>(widget)) {
+                welcome = page;
+                break;
+            }
+        }
+        QVERIFY(welcome);
+        QVERIFY(welcome->isVisible());
     }
 
     void globalShortcutSinglePageOnlyShowsTheShortcutPage()
@@ -738,6 +829,78 @@ private slots:
         QVERIFY(note->isHidden());
     }
 
+    void finishPageListsWhatWasSetUpWhenEveryStepIsDone()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        FinishSetupPage page(controller);
+        page.setSteps({
+            {QStringLiteral("Transcription"), true, QStringLiteral("Transcription — ChatGPT Codex")},
+            {QStringLiteral("Desktop accessibility"), true, QString()},
+            {QStringLiteral("Microphone"), true, QStringLiteral("Microphone — Yeti Stereo Microphone")},
+        });
+        page.show();
+        QCoreApplication::processEvents();
+
+        QStringList shown;
+        for (const QLabel *label : page.findChildren<QLabel *>()) {
+            if (label->isVisible()) {
+                shown << label->text();
+            }
+        }
+        QVERIFY(shown.contains(QStringLiteral("Setup is complete.")));
+        QVERIFY(shown.contains(QStringLiteral("Transcription — ChatGPT Codex")));
+        QVERIFY(shown.contains(QStringLiteral("Microphone — Yeti Stereo Microphone")));
+        // A step with nothing chosen has nothing to report back.
+        QVERIFY(!shown.contains(QStringLiteral("Desktop accessibility")));
+        QVERIFY(!shown.contains(QStringLiteral("A few steps still need attention:")));
+    }
+
+    void finishPageListsUnfinishedStepsAndGoesBackToThem()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        FinishSetupPage page(controller);
+        page.setSteps({
+            {QStringLiteral("Transcription"), false,
+             QStringLiteral("ChatGPT Codex is no longer signed in.")},
+            {QStringLiteral("Microphone"), true,
+             QStringLiteral("Microphone — Yeti Stereo Microphone")},
+        });
+        page.show();
+        QCoreApplication::processEvents();
+
+        QStringList shown;
+        for (const QLabel *label : page.findChildren<QLabel *>()) {
+            if (label->isVisible()) {
+                shown << label->text();
+            }
+        }
+        QVERIFY(shown.contains(QStringLiteral("A few steps still need attention:")));
+        QVERIFY(shown.contains(QStringLiteral("Transcription")));
+        QVERIFY(shown.contains(QStringLiteral("ChatGPT Codex is no longer signed in.")));
+        QVERIFY(shown.contains(
+            QStringLiteral("Finish becomes available once every step above is resolved.")));
+        // A blocked page reports what is left, not what already worked.
+        QVERIFY(!shown.contains(QStringLiteral("Setup is complete.")));
+        QVERIFY(!shown.contains(QStringLiteral("Microphone — Yeti Stereo Microphone")));
+
+        QPushButton *goToStep = nullptr;
+        for (QPushButton *button : page.findChildren<QPushButton *>()) {
+            if (button->text() == QStringLiteral("Go to step")) {
+                goToStep = button;
+                break;
+            }
+        }
+        QVERIFY(goToStep);
+        QSignalSpy selected(&page, &FinishSetupPage::stepSelected);
+        goToStep->click();
+        QCOMPARE(selected.count(), 1);
+        // The index is into the list the page was given, so the wizard can
+        // resolve it back to the page that step belongs to.
+        QCOMPARE(selected.first().first().toInt(), 0);
+    }
+
     void finishPageExplainsTheTrayIcon()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
@@ -812,6 +975,8 @@ private slots:
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
+        // The closing instruction follows the activation mode.
+        controller.settings()->setShortcutActivationMode(ShortcutActivationMode::Hybrid);
         platform->binder->publishShortcut(
             QKeySequence(Qt::META | Qt::ALT | Qt::Key_D));
         FinishSetupPage page(controller);
@@ -822,9 +987,26 @@ private slots:
         for (const QLabel *label : page.findChildren<QLabel *>()) {
             hasInstruction = hasInstruction
                 || label->text() == QStringLiteral(
-                    "Press Meta+Alt+D to start dictating, speak, then press it again to stop and insert the text.");
+                    "To dictate, tap Meta+Alt+D to toggle, or hold it to dictate until release.");
         }
         QVERIFY(hasInstruction);
+    }
+
+    void finishPageInstructionFollowsThePushToTalkActivationMode()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        controller.settings()->setShortcutActivationMode(ShortcutActivationMode::PushToTalk);
+        platform->binder->publishShortcut(
+            QKeySequence(Qt::META | Qt::ALT | Qt::Key_D));
+        FinishSetupPage page(controller);
+        page.show();
+        QCoreApplication::processEvents();
+
+        auto *status = page.findChild<QLabel *>(QStringLiteral("finishGlobalShortcutStatus"));
+        QVERIFY(status);
+        QCOMPARE(status->text(),
+                 QStringLiteral("To dictate, hold Meta+Alt+D while you speak."));
     }
 
     void finishPageShowsTheManualGlobalShortcutCommand()
@@ -870,6 +1052,8 @@ private slots:
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
+        // The closing instruction follows the activation mode.
+        controller.settings()->setShortcutActivationMode(ShortcutActivationMode::Hybrid);
         FinishSetupPage page(controller);
         auto *status = page.findChild<QLabel *>(QStringLiteral("finishGlobalShortcutStatus"));
         auto *command = page.findChild<QLabel *>(
@@ -880,7 +1064,7 @@ private slots:
         platform->binder->publishShortcut(QKeySequence(Qt::META | Qt::ALT | Qt::Key_D));
 
         QCOMPARE(status->text(), QStringLiteral(
-            "Press Meta+Alt+D to start dictating, speak, then press it again to stop and insert the text."));
+            "To dictate, tap Meta+Alt+D to toggle, or hold it to dictate until release."));
         QVERIFY(command->isHidden());
     }
 
@@ -1022,6 +1206,64 @@ private slots:
         QVERIFY(removal.failed.contains(QStringLiteral(
             "speecher command: the link does not point to a Speecher AppImage")));
         QVERIFY(QFileInfo(link).isSymLink());
+    }
+
+    // A custom XDG_DATA_HOME is where this desktop looks for user-installed
+    // launchers, and the launcher runs the command link so that moving the
+    // AppImage does not break the menu entry.
+    void appImageIntegrationFollowsXdgDataHomeAndLaunchesTheCommandLink()
+    {
+        const QByteArray oldDataHome = qgetenv("XDG_DATA_HOME");
+        const bool hadDataHome = qEnvironmentVariableIsSet("XDG_DATA_HOME");
+        const auto restore = qScopeGuard([&] {
+            hadDataHome ? qputenv("XDG_DATA_HOME", oldDataHome) : qunsetenv("XDG_DATA_HOME");
+        });
+
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QString home = root.filePath(QStringLiteral("home"));
+        const QString dataHome = root.filePath(QStringLiteral("elsewhere/data"));
+        QVERIFY(QDir().mkpath(home));
+        qputenv("XDG_DATA_HOME", QFile::encodeName(dataHome));
+
+        const QString appDir = root.filePath(QStringLiteral("mount"));
+        const QString binDir = appDir + QStringLiteral("/usr/bin");
+        QVERIFY(QDir().mkpath(binDir));
+        const auto writeFile = [](const QString &path, const QByteArray &contents) {
+            QFile file(path);
+            return file.open(QIODevice::WriteOnly) && file.write(contents) == contents.size();
+        };
+        QVERIFY(writeFile(appDir + QStringLiteral("/io.github.firemonster612.speecher.desktop"),
+                          "[Desktop Entry]\nExec=speecher\n"
+                          "[Desktop Action ToggleDictation]\nExec=speecher toggle\n"));
+        QVERIFY(writeFile(appDir + QStringLiteral("/io.github.firemonster612.speecher.svg"), "<svg/>"));
+        const QString appImage = root.filePath(QStringLiteral("Speecher.AppImage"));
+        QVERIFY(writeFile(appImage, "image"));
+
+        QString error;
+        QVERIFY2(installAppImageIntegration(home, appImage, binDir, &error), qPrintable(error));
+
+        const QString desktopFile = QDir(dataHome).filePath(
+            QStringLiteral("applications/io.github.firemonster612.speecher.desktop"));
+        QVERIFY(QFile::exists(desktopFile));
+        QVERIFY(QFile::exists(QDir(dataHome).filePath(QStringLiteral(
+            "icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg"))));
+        QVERIFY(!QFile::exists(QDir(home).filePath(QStringLiteral(".local/share/applications"))));
+
+        const QString link = QDir(home).filePath(QStringLiteral(".local/bin/speecher"));
+        QFile installed(desktopFile);
+        QVERIFY(installed.open(QIODevice::ReadOnly));
+        QCOMPARE(installed.readAll(),
+                 QByteArray("[Desktop Entry]\nExec=\"") + QFile::encodeName(link)
+                     + "\"\n[Desktop Action ToggleDictation]\nExec=\"" + QFile::encodeName(link)
+                     + "\" toggle\n");
+
+        // Removal looks in the same place it installed to.
+        const DesktopIntegrationRemoval removal = removeAppImageIntegration(home);
+        QVERIFY(removal.removed.contains(QStringLiteral("app menu entry")));
+        QVERIFY(removal.removed.contains(QStringLiteral("app icon")));
+        QVERIFY(removal.failed.isEmpty());
+        QVERIFY(!QFile::exists(desktopFile));
     }
 
     void appImageDesktopFileExecLinesUseTheRealImagePath()

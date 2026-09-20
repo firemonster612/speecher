@@ -5,6 +5,18 @@
 
 using namespace speecher;
 
+namespace {
+
+QStringList vocabularyTermsOf(const QList<VocabularyEntry> &entries)
+{
+    QStringList terms;
+    for (const VocabularyEntry &entry : entries) {
+        terms.append(entry.term);
+    }
+    return terms;
+}
+
+} // namespace
 
 class VocabularyTests : public QObject {
     Q_OBJECT
@@ -40,6 +52,45 @@ private slots:
         settings.raw().clear();
         settings.setCustomVocabulary(tooManyTerms);
         QCOMPARE(settings.customVocabulary().size(), VocabularyLimit::maxKeyterms);
+    }
+
+    void everyTermIsKeptWhileOnlyTheSentSubsetIsCapped()
+    {
+        QList<VocabularyEntry> many;
+        for (int index = 0; index < 182; ++index) {
+            many.append({QStringLiteral("term%1").arg(index), QStringLiteral("manual"), false, 0, 0});
+        }
+        // One late, starred term proves priority decides the sent subset.
+        many.append({QStringLiteral("zzz starred"), QStringLiteral("manual"), true, 0, 0});
+
+        const QList<VocabularyEntry> normalized = normalizeVocabularyEntries(many);
+        QCOMPARE(normalized.size(), 183);
+        QCOMPARE(normalized.first().term, QStringLiteral("zzz starred"));
+
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setVocabularyEntries(many);
+        QCOMPARE(settings.vocabularyEntries().size(), 183);
+        const QStringList sent = settings.customVocabulary();
+        QCOMPARE(sent.size(), VocabularyLimit::maxKeyterms);
+        QCOMPARE(sent.first(), QStringLiteral("zzz starred"));
+
+        QCOMPARE(VocabularyLimit::summary(vocabularyTermsOf(settings.vocabularyEntries())),
+                 QStringLiteral("183 terms, the 100 highest priority are sent"));
+        QCOMPARE(VocabularyLimit::summary({QStringLiteral("Speecher"), QStringLiteral("KWin")}),
+                 QStringLiteral("2 of 100 terms, using 2 of 500 tokens"));
+    }
+
+    void importKeepsEveryRowInTheFile()
+    {
+        QByteArray csv = QByteArrayLiteral("term\n");
+        for (int index = 0; index < 150; ++index) {
+            csv += QStringLiteral("imported%1\n").arg(index).toUtf8();
+        }
+        QString error;
+        const QList<VocabularyEntry> imported = parseVocabularyCsv(csv, &error);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QCOMPARE(imported.size(), 150);
     }
 
     void vocabularyMetadataPersistsImportsDeduplicatesAndTracksUsage()

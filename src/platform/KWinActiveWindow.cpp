@@ -24,19 +24,21 @@ constexpr auto kProbeInterface = "org.speecher.WindowProbe";
 // One script, both KWin generations: Plasma 6 exposes workspace.activeWindow,
 // Plasma 5 workspace.activeClient. Everything is stringified so D-Bus never has
 // to guess a number's width, and the pid lets the caller confirm the window is
-// not Speecher's own surface.
+// not Speecher's own surface. internalId is KWin's per-window handle; a
+// compositor that does not have it reports an empty string rather than failing.
 QString scriptSource(const QString &service, const QString &path)
 {
     return QStringLiteral(
                "var w = workspace.activeWindow || workspace.activeClient;\n"
-               "var cls = '', name = '', cap = '', pid = '0';\n"
+               "var cls = '', name = '', cap = '', pid = '0', id = '';\n"
                "if (w) {\n"
                "  cls = w.resourceClass ? '' + w.resourceClass : '';\n"
                "  name = w.resourceName ? '' + w.resourceName : '';\n"
                "  cap = w.caption ? '' + w.caption : '';\n"
                "  pid = w.pid ? '' + w.pid : '0';\n"
+               "  id = w.internalId ? '' + w.internalId : '';\n"
                "}\n"
-               "callDBus('%1', '%2', '%3', 'reportWindow', cls, name, cap, pid);\n")
+               "callDBus('%1', '%2', '%3', 'reportWindow', cls, name, cap, pid, id);\n")
         .arg(service, path, QString::fromLatin1(kProbeInterface));
 }
 
@@ -128,10 +130,11 @@ bool KWinActiveWindow::ensureRegistered()
 void KWinActiveWindow::reportWindow(const QString &resourceClass,
                                     const QString &resourceName,
                                     const QString &caption,
-                                    const QString &processId)
+                                    const QString &processId,
+                                    const QString &internalId)
 {
     m_pending = {resourceClass.trimmed(), resourceName.trimmed(), caption.trimmed(),
-                 processId.toLongLong()};
+                 internalId.trimmed(), processId.toLongLong()};
     m_reported = true;
 }
 

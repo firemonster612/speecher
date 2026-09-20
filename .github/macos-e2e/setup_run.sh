@@ -10,11 +10,6 @@ ASSISTANT_WINDOW='Speecher Setup Assistant'
 USER_TCC_DB="$HOME/Library/Application Support/com.apple.TCC/TCC.db"
 SYSTEM_TCC_DB='/Library/Application Support/com.apple.TCC/TCC.db'
 
-# The steps as SetupStep.all orders them; the capture seam names its PNGs after
-# these ids.
-SETUP_STEP_IDS=(welcome transcription microphone accessibility delivery
-                refinement profiles shortcut ready login)
-
 seed_setup_tcc() {
   # osascript drives the assistant: AppleEvents to System Events and to the
   # app, and the system-db Accessibility right that synthetic clicks need.
@@ -85,6 +80,18 @@ click_button() {
     >>"$CASE_DIR/clicks.out" 2>&1
 }
 
+# How many buttons the navigation HStack carries. SwiftUI exposes these
+# buttons without AX names here (asking for button "Continue" finds nothing
+# even while clicking 'last button' presses it), so counting group 1 is the
+# check that works: content buttons like Check Again live outside group 1 —
+# S1's positional Continue click would otherwise hit them — leaving Back and
+# Continue always present and Skip Setup as the only button that comes and
+# goes. Two buttons means Skip is absent; three means it is offered.
+assistant_nav_button_count() {
+  assistant_ui "count buttons of group 1 of window \"$ASSISTANT_WINDOW\"" 2>/dev/null \
+    | tr -d '[:space:]'
+}
+
 # The seam writes the PNG after the step renders; wait for the atomic write.
 wait_for_page_capture() {
   local index="$1" id="$2" count=0
@@ -103,8 +110,10 @@ setup_completed() {
 
 check_page_captures() {
   # A nonempty PNG can still be the previous step. Read the actual pixels,
-  # independently of the flow model that picked the capture's filename.
-  swift - "$CASE_DIR/pages" >"$CASE_DIR/page-checks.out" 2>&1 <<'SWIFT'
+  # independently of the flow model that picked the capture's filename. Only
+  # the steps the run actually reached are checked: gated Continue stops the
+  # walk at the first prerequisite this machine cannot satisfy.
+  swift - "$CASE_DIR/pages" "$1" >"$CASE_DIR/page-checks.out" 2>&1 <<'SWIFT'
 import Foundation
 import ImageIO
 import Vision
@@ -116,7 +125,8 @@ let pages = [
     ("profiles", "Writing profiles"), ("shortcut", "Dictation shortcut"),
     ("ready", "Ready to dictate"), ("login", "Start at login"),
 ]
-for (index, page) in pages.enumerated() {
+let reached = min(Int(CommandLine.arguments[2]) ?? pages.count, pages.count)
+for (index, page) in pages.prefix(reached).enumerated() {
     let filename = "step-\(index + 1)-\(page.0).png"
     let url = URL(fileURLWithPath: CommandLine.arguments[1]).appendingPathComponent(filename)
     let data = try Data(contentsOf: url)
@@ -138,7 +148,7 @@ for (index, page) in pages.enumerated() {
         exit(1)
     }
 }
-print("PASS: all ten captures show the expected title and step number")
+print("PASS: all \(reached) captures show the expected title and step number")
 SWIFT
 }
 
@@ -181,8 +191,12 @@ if ! seed_setup_tcc; then
   exit 1
 fi
 
-# S1: a fresh profile walks every step to Finish. Setup completes, the default
-# shortcut binds, and the settings window follows the assistant out.
+# S1: Continue is disabled while the current step's gate is unsatisfied. This
+# runner has no provider sign-in, so the walk must stop on the welcome step
+# rather than clicking through to a Finish that could never work.
+# That is the whole of the coverage here: walking the rest of the wizard — the
+# later steps, Skip Setup, and what Finish writes — needs a runner signed in to
+# ChatGPT or Claude, which CI has not got. Until it does, this is a gate check.
 fresh_reset
 case_begin S1
 if ! launch_setup; then
@@ -191,45 +205,31 @@ elif ! wait_for_assistant; then
   fail_case "The setup assistant window never appeared on a fresh profile."
 else
   errors=()
-  for index in "${!SETUP_STEP_IDS[@]}"; do
-    step=$((index + 1))
-    id="${SETUP_STEP_IDS[$index]}"
-    log "S1 step $step ($id)"
-    if ! wait_for_page_capture "$step" "$id"; then
-      errors+=("step $step ($id) was never captured")
-      break
-    fi
-    if (( step < ${#SETUP_STEP_IDS[@]} )); then
-      if ! click_button Continue; then
-        errors+=("Continue did not click on step $step ($id)")
-        break
-      fi
-      sleep 0.5
-    fi
-  done
-  if (( ${#errors[@]} == 0 )); then
-    click_button Finish || errors+=("Finish did not click on the last step")
-  fi
+  wait_for_page_capture 1 welcome || errors+=("the welcome step was never captured")
+  # The click is allowed to land on a disabled control; what matters is that
+  # the assistant does not move on.
+  click_button Continue >/dev/null 2>&1 || true
   sleep 2
-  setup_completed || errors+=("app.setupCompleted was not written")
-  kill -0 "$APP_PID" 2>/dev/null || errors+=("the app quit after Finish")
-  assistant_gone || errors+=("the assistant window stayed open after Finish")
-  settings_window_present || errors+=("no settings window followed the assistant")
-  # Finish registers and stores the default shortcut on a fresh profile;
-  # Qt writes META|ALT as its portable Meta+Alt spelling.
-  stored_shortcut > "$CASE_DIR/shortcut-defaults.txt"
-  [[ "$(stored_shortcut)" == "Meta+Alt+D" ]] \
-    || errors+=("Finish did not store the default shortcut (got '$(stored_shortcut)')")
-  check_page_captures || errors+=("page rendering checks failed; see page-checks.out")
+  if wait_for_page_capture 2 transcription; then
+    errors+=("Continue advanced past the welcome step with no provider signed in")
+  fi
+  setup_completed && errors+=("app.setupCompleted was written without finishing")
+  kill -0 "$APP_PID" 2>/dev/null || errors+=("the app quit while the gate held")
+  assistant_ui "get name of window \"$ASSISTANT_WINDOW\"" >/dev/null 2>&1 \
+    || errors+=("the assistant window closed while the gate held")
+  [[ -z "$(stored_shortcut)" ]] \
+    || errors+=("a shortcut was stored without finishing ('$(stored_shortcut)')")
+  check_page_captures 1 || errors+=("page rendering checks failed; see page-checks.out")
   if (( ${#errors[@]} )); then
     fail_case "$(IFS='; '; echo "${errors[*]}")"
   else
-    pass_case "All ten steps rendered and clicked through; Finish completed setup and opened the settings window."
+    pass_case "The welcome step rendered and held Continue with no provider signed in."
   fi
 fi
 
-# S2: Skip Setup from the first step completes setup without touching the
-# settings the later steps would have written.
+# S2: Skip Setup is hidden until every gate passes, so an unsatisfied welcome
+# step must not offer it. When it is offered, skipping registers the shortcut
+# exactly as Finish would — that half needs a signed-in runner to observe.
 fresh_reset
 case_begin S2
 if ! launch_setup; then
@@ -239,24 +239,26 @@ elif ! wait_for_assistant; then
 else
   errors=()
   wait_for_page_capture 1 welcome || errors+=("the welcome step was never captured")
-  click_button "Skip Setup" || errors+=("Skip Setup did not click")
-  sleep 2
-  setup_completed || errors+=("app.setupCompleted was not written after skipping")
-  kill -0 "$APP_PID" 2>/dev/null || errors+=("the app quit after skipping")
-  assistant_gone || errors+=("the assistant window stayed open after skipping")
-  settings_window_present || errors+=("no settings window followed skipping")
-  # Skipping must not bind or store what the later steps would have.
-  [[ -z "$(stored_shortcut)" ]] \
-    || errors+=("skipping still stored a shortcut ('$(stored_shortcut)')")
+  nav_buttons="$(assistant_nav_button_count)"
+  echo "nav buttons=$nav_buttons" > "$CASE_DIR/welcome-buttons.txt"
+  # Back and Continue are always in group 1; Skip Setup is the third when
+  # offered. Anything but exactly two is a failure: three means Skip leaked
+  # past a shut gate, and any other value means the probe read the wrong group.
+  [[ "$nav_buttons" == "2" ]] \
+    || errors+=("expected 2 navigation buttons (Back, Continue) on a gated welcome step, found ${nav_buttons:-none}")
+  setup_completed && errors+=("app.setupCompleted was written without skipping or finishing")
   if (( ${#errors[@]} )); then
     fail_case "$(IFS='; '; echo "${errors[*]}")"
   else
-    pass_case "Skip Setup completed setup from the first step."
+    pass_case "Skip Setup stayed hidden on a welcome step whose gate is unsatisfied."
   fi
 fi
 
-# S3: a completed profile launches without the assistant.
-stop_app
+# S3: a completed profile launches without the assistant. S2 left setup
+# incomplete, so the completed profile is seeded here rather than inherited —
+# without the seed this case only repeated S2's fresh profile.
+fresh_reset
+defaults write "$DOMAIN" app.setupCompleted -bool true
 case_begin S3
 if ! launch_setup; then
   fail_case "The app did not relaunch on the completed profile."

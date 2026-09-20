@@ -95,6 +95,11 @@ if(WIN32 AND SPEECHER_WITH_WINUI)
 endif()
 
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network Multimedia)
+# The provider marks are SVGs, which QIcon renders through Qt's SVG image
+# plugin. Linking Qt6::Svg pulls that plugin into a deployed build; where the
+# module's development files are absent, the plugin installed beside Qt is
+# enough and the marks still render.
+find_package(Qt6 6.5 QUIET COMPONENTS Svg)
 
 function(speecher_assert_single_qt_prefix context)
   get_filename_component(qt6_dir_real "${Qt6_DIR}" REALPATH)
@@ -793,6 +798,17 @@ add_library(speecher_frontend_qt STATIC
 )
 target_include_directories(speecher_frontend_qt PUBLIC src)
 target_link_libraries(speecher_frontend_qt PUBLIC speecher_app Qt6::Widgets)
+if(Qt6Svg_FOUND)
+  target_link_libraries(speecher_frontend_qt PUBLIC Qt6::Svg)
+endif()
+# The setup assistant renders these at the screen's device pixel ratio.
+qt_add_resources(speecher_frontend_qt brand_marks
+  PREFIX "/brand"
+  BASE "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand"
+  FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/chatgpt.svg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/brand/claude.svg"
+)
 if(UNIX AND NOT APPLE)
   target_sources(speecher_frontend_qt PRIVATE
     ${SPEECHER_FRONTEND_QT_LINUX_SOURCES}

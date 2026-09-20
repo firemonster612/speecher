@@ -121,7 +121,11 @@ void AnthropicTranscriptRefiner::refresh(const RefinementSettings &settings)
 
 RefinementPrepareResult AnthropicTranscriptRefiner::prepare(const RefinementSettings &settings)
 {
-    return loadClaudeOauthToken(settings, &m_accessToken, false);
+    // Refresh an expired token here rather than reporting it expired: a token
+    // valid when the user started speaking can lapse before refinement, and
+    // refusing then would drop the refinement the user asked for. The refresh
+    // helpers take the same one-second account lock the speech path uses.
+    return loadClaudeOauthToken(settings, &m_accessToken, true);
 }
 
 void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,

@@ -7,10 +7,12 @@
 #include "core/SettingsStore.h"
 #include "dictation/DictationPorts.h"
 #include "frontend/win/CustomRows.h"
+#include "providers/CodexCredentialStorage.h"
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/ProviderRegistry.h"
 
 #include <QDebug>
+#include <QDir>
 #include <QFileInfo>
 #include <QRegularExpression>
 
@@ -68,7 +70,36 @@ SchemaContext winSchemaContext(const PlatformComposition &platform,
     };
 }
 
-void refreshCredentialWatch(QFileSystemWatcher *watcher, const QString &credentialsPath)
+// A sign-in that lands in the Windows credential manager instead cannot be
+// watched, but the file appearing is what the directory watch is for.
+QString codexCredentialsPath()
+{
+    return CodexCredentialStorage().authFilePath();
+}
+
+// The nearest directory at or above the one that would hold this file that
+// exists, never above the user profile root. Empty when the path lies outside
+// the profile, or when not even the profile root is there.
+QString nearestExistingDirectory(const QString &credentialsPath)
+{
+    const QString home = QDir::cleanPath(QDir::homePath());
+    QString directory = QDir::cleanPath(QFileInfo(credentialsPath).absolutePath());
+    while (!QFileInfo::exists(directory)) {
+        if (directory == home) {
+            return {};
+        }
+        const QString parent = QDir::cleanPath(QFileInfo(directory).absolutePath());
+        const bool withinProfile =
+            parent == home || parent.startsWith(home + QLatin1Char('/'));
+        if (parent == directory || !withinProfile) {
+            return {};
+        }
+        directory = parent;
+    }
+    return directory;
+}
+
+void refreshCredentialWatch(QFileSystemWatcher *watcher, const QStringList &credentialPaths)
 {
     if (!watcher->files().isEmpty()) {
         watcher->removePaths(watcher->files());
@@ -76,18 +107,26 @@ void refreshCredentialWatch(QFileSystemWatcher *watcher, const QString &credenti
     if (!watcher->directories().isEmpty()) {
         watcher->removePaths(watcher->directories());
     }
-    if (QFileInfo::exists(credentialsPath)) {
-        watcher->addPath(credentialsPath);
-    }
-    QString directory = QFileInfo(credentialsPath).absolutePath();
-    while (!QFileInfo::exists(directory)) {
-        const QString parent = QFileInfo(directory).absolutePath();
-        if (parent == directory) {
-            return;
+    for (const QString &credentialsPath : credentialPaths) {
+        if (QFileInfo::exists(credentialsPath)) {
+            watcher->addPath(credentialsPath);
         }
-        directory = parent;
+        // On a fresh machine neither the file nor its directory exists — the
+        // Codex CLI creates ~/.codex at the first `codex login` — so the watch
+        // falls back to the nearest existing ancestor, at worst the user
+        // profile root. Every change there re-runs this function, so the watch
+        // tightens onto the directory and then the file as they appear, and
+        // the broad profile-root watch is dropped again.
+        const QString directory = nearestExistingDirectory(credentialsPath);
+        if (directory.isEmpty()) {
+            continue;
+        }
+        // Two providers can share a directory; watching it twice is a warning
+        // and a duplicate signal.
+        if (!watcher->directories().contains(directory)) {
+            watcher->addPath(directory);
+        }
     }
-    watcher->addPath(directory);
 }
 
 
@@ -104,10 +143,11 @@ SettingsModel::SettingsModel(ApplicationController *controller)
     , m_capabilities{controller->accessibilitySupported() && controller->accessibilityEnabled(),
                      controller->updates()->supportsAutomaticDownloads()}
 {
-    const QString credentialsPath = m_store->claudeCredentialsPath();
-    refreshCredentialWatch(&m_credentialWatcher, credentialsPath);
-    const auto credentialsChanged = [this, credentialsPath] {
-        refreshCredentialWatch(&m_credentialWatcher, credentialsPath);
+    m_capabilities.launchAtLoginAccepted = controller->launchAtLoginAccepted();
+    const QStringList credentialPaths{m_store->claudeCredentialsPath(), codexCredentialsPath()};
+    refreshCredentialWatch(&m_credentialWatcher, credentialPaths);
+    const auto credentialsChanged = [this, credentialPaths] {
+        refreshCredentialWatch(&m_credentialWatcher, credentialPaths);
         if (anthropicCredentialsChanged) {
             anthropicCredentialsChanged();
         }
@@ -125,6 +165,16 @@ SettingsModel::SettingsModel(ApplicationController *controller)
                      &m_lifetime,
                      [this](bool supported, bool enabled, bool) {
                          m_capabilities.targetAccessibility = supported && enabled;
+                         if (capabilitiesChanged) {
+                             capabilitiesChanged();
+                         }
+                     });
+    QObject::connect(controller,
+                     &ApplicationController::launchAtLoginAcceptedChanged,
+                     &m_lifetime,
+                     [this, controller] {
+                         m_capabilities.launchAtLoginAccepted =
+                             controller->launchAtLoginAccepted();
                          if (capabilitiesChanged) {
                              capabilitiesChanged();
                          }

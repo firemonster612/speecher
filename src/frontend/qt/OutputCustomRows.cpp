@@ -299,7 +299,9 @@ void OutputCustomRows::removeSetup()
         QStringLiteral("Remove virtual keyboard setup"),
         QStringLiteral("Speecher will ask for administrator permission to remove the service, the "
                        "device rule, the module-load file and the group membership it set up. The "
-                       "ydotool package your distribution installed stays."),
+                       "ydotool package your distribution installed stays.\n\n"
+                       "The service belongs to the whole computer, not to your account: removing "
+                       "it also removes it for anyone else signed in here who uses it."),
         QMessageBox::Cancel | QMessageBox::Ok,
         QMessageBox::Cancel);
     if (answer != QMessageBox::Ok) {
@@ -322,19 +324,33 @@ void OutputCustomRows::removeSetup()
             result->status = YdotoolSetup::probe(false);
         },
         [this, result] {
+            // Everything that did not come off is named. A daemon still
+            // running, or a group membership that outlived the state file,
+            // is access the person asked to revoke.
+            QStringList problems;
+            if (!result->stopError.isEmpty()) {
+                problems.append(QStringLiteral("The virtual keyboard service could not be stopped: %1")
+                                    .arg(result->stopError));
+            }
             if (!result->helperOk) {
-                QMessageBox::warning(
-                    m_status, QStringLiteral("Virtual keyboard removal failed"), result->helperError);
+                problems.append(result->helperError.isEmpty()
+                                    ? QStringLiteral("The virtual keyboard setup could not be removed.")
+                                    : result->helperError);
             } else if (result->status.speecherManagedSetupInstalled) {
-                QMessageBox::warning(
-                    m_status,
-                    QStringLiteral("Virtual keyboard removal incomplete"),
-                    QStringLiteral("The removal finished, but some of the files Speecher set up are still there."));
+                problems.append(QStringLiteral(
+                    "The removal finished, but some of the files Speecher set up are still there."));
             } else {
                 m_settings.setYdotoolEnabled(false);
                 const QSignalBlocker blocker(m_method);
                 settings::selectData(m_method, m_settings.outputMethod());
                 m_notifyChanged();
+            }
+            if (!problems.isEmpty()) {
+                QMessageBox::warning(m_status,
+                                     result->helperOk
+                                         ? QStringLiteral("Virtual keyboard removal incomplete")
+                                         : QStringLiteral("Virtual keyboard removal failed"),
+                                     problems.join(QStringLiteral("\n\n")));
             }
             refresh();
         });

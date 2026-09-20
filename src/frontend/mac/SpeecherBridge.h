@@ -193,11 +193,27 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
     SpeecherUpdateStateError,
 };
 
+// One provider the setup assistant lists, as the registry descriptor names it.
+// The assistant renders these strings rather than keeping copies of its own.
+@interface SpeecherProviderModel : NSObject
+@property (nonatomic, readonly, copy) NSString *providerId;
+@property (nonatomic, readonly, copy) NSString *label;
+// The sign-in this provider reads, named the way a person would go looking for
+// it ("Claude Code"), which is not the transcription brand.
+@property (nonatomic, readonly, copy) NSString *credentialSource;
+// What a person must do before this provider works, or empty when it needs
+// nothing.
+@property (nonatomic, readonly, copy) NSString *setupHint;
+@end
+
 @interface SpeecherBridge : NSObject
 @property (nonatomic, readonly, strong) SettingsSchemaModel *settingsSchema;
 @property (nonatomic, readonly, copy) NSString *stateName;
 @property (nonatomic, copy, nullable) void (^statusChanged)(NSString *status);
 @property (nonatomic, copy, nullable) void (^audioLevelChanged)(float level);
+// A capability the schema gates rows on moved — the Accessibility grant, or
+// whether this computer took the last launch-at-login change — so the settings
+// pages are worth re-reading.
 @property (nonatomic, copy, nullable) void (^accessibilityChanged)(void);
 @property (nonatomic, readonly) BOOL whatsNewPending;
 @property (nonatomic, copy, nullable) void (^whatsNewChanged)(void);
@@ -303,17 +319,19 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
 // The setup assistant's seams into the core, which the Qt assistant reached
 // through C++ and the SwiftUI one reaches here.
 
-// What a transcription service asks a person to do before it works, or empty
-// when it needs nothing.
-- (NSString *)setupHintForSpeechProvider:(NSString *)providerId;
+// Every provider the registry offers, in the order it offers them.
+@property (nonatomic, readonly, copy) NSArray<SpeecherProviderModel *> *speechProviders;
+@property (nonatomic, readonly, copy) NSArray<SpeecherProviderModel *> *refinementProviders;
 // Ordered label/value pairs from the registry descriptor, which the assistant
 // shows under the provider picker. Empty for an unknown id.
 - (NSArray<NSArray<NSString *> *> *)statsForSpeechProvider:(NSString *)providerId;
 - (NSArray<NSArray<NSString *> *> *)statsForRefinementProvider:(NSString *)providerId;
-// Prepares the transcription service the settings currently name, off the main
-// thread when the provider offers that, and answers on the main thread. A newer
-// check supersedes an older one, whose reply is dropped.
-- (void)checkSpeechProviderReady:(void (^)(BOOL ok, NSString *message))completion;
+// Prepares every provider of the kind, off the main thread where the provider
+// offers that, and reports each verdict on the main thread as it lands.
+// `message` says why a provider is not ready and is empty when it is. A newer
+// round supersedes an older one of the same kind, whose replies are dropped.
+- (void)checkSpeechProviders:(void (^)(NSString *providerId, BOOL ready, NSString *message))report;
+- (void)checkRefinementProviders:(void (^)(NSString *providerId, BOOL ready, NSString *message))report;
 
 // A live microphone meter over the input device the settings name. Levels and
 // failures arrive on the main thread until the meter is stopped.

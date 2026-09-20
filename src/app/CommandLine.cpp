@@ -137,6 +137,21 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     return decision;
 }
 
+QStringList argumentsWithoutStartupActions(const QStringList &arguments)
+{
+    static const QStringList startupActions{QStringLiteral("--start-listening"),
+                                            QStringLiteral("--show-settings"),
+                                            QStringLiteral("--show-setup")};
+    QStringList kept;
+    kept.reserve(arguments.size());
+    for (const QString &argument : arguments) {
+        if (!startupActions.contains(argument)) {
+            kept << argument;
+        }
+    }
+    return kept;
+}
+
 bool quitOnLastWindowClosed(LaunchMode mode)
 {
 #if defined(Q_OS_LINUX) || defined(Q_OS_MACOS) || defined(Q_OS_WIN)

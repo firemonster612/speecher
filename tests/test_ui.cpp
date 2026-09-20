@@ -27,6 +27,7 @@
 #include <QLineEdit>
 #include <QPropertyAnimation>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QScopeGuard>
 #include <QScreen>
 #include <QScrollBar>
@@ -522,6 +523,11 @@ private slots:
     {
         SettingsStore settings;
         ProviderRegistry providers;
+        // A refiner has to exist for the refinement rows to be live at all, so
+        // accessibility is the only gate this test is measuring.
+        providers.registerRefinementProvider(
+            {QStringLiteral("openai"), QStringLiteral("Fake Refiner")},
+            [](QObject *) -> TranscriptRefiner * { return nullptr; });
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
         OutputCustomRows outputRows(settings);
         const std::unique_ptr<SchemaSettingsPage> outputPage =
@@ -536,7 +542,9 @@ private slots:
         auto *correctionLearning = corrections.findChild<QCheckBox *>(
             QStringLiteral("correctionLearningControl"));
         QVERIFY(correctionLearning);
-        refinement.load(settings.snapshot());
+        AppSettings refining = settings.snapshot();
+        refining.refinement.providerId = QStringLiteral("openai");
+        refinement.load(refining);
         auto *profileSettings = refinement.findChild<QTableWidget *>(QStringLiteral("vocabInput"));
         QVERIFY(profileSettings);
         QCOMPARE(profileSettings->rowCount(), 5);
@@ -551,23 +559,33 @@ private slots:
         QVERIFY(!corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
 
         // The reason is on the page, not only in a tooltip, with the fix beside it.
-        for (SchemaSettingsPage *page : {&output, &refinement, &corrections}) {
-            auto *note = page->findChild<QWidget *>(QStringLiteral("gateNote"));
-            QVERIFY(note);
-            QVERIFY(note->isVisibleTo(page));
-            auto *text = note->findChild<QLabel *>(QStringLiteral("gateNoteText"));
-            auto *action = note->findChild<QPushButton *>(QStringLiteral("gateAction"));
-            QVERIFY(text && action);
+        // A page can carry several gate notes, so pick the one this test is
+        // about rather than whichever row happens to come first.
 #ifdef Q_OS_MACOS
-            QVERIFY(text->text().contains(QStringLiteral("Accessibility permission")));
-            QCOMPARE(action->text(), QStringLiteral("Open Accessibility settings"));
+        const QString gateWords = QStringLiteral("Accessibility permission");
+        const QString gateAction = QStringLiteral("Open Accessibility settings");
 #elif defined(Q_OS_WIN)
-            QVERIFY(text->text().contains(QStringLiteral("UI Automation")));
-            QCOMPARE(action->text(), QStringLiteral("UI Automation unavailable"));
+        const QString gateWords = QStringLiteral("UI Automation");
+        const QString gateAction = QStringLiteral("UI Automation unavailable");
 #else
-            QVERIFY(text->text().contains(QStringLiteral("desktop accessibility")));
-            QCOMPARE(action->text(), QStringLiteral("Enable desktop accessibility"));
+        const QString gateWords = QStringLiteral("desktop accessibility");
+        const QString gateAction = QStringLiteral("Enable desktop accessibility");
 #endif
+        const auto accessibilityNote = [&gateWords](SchemaSettingsPage *page) -> QWidget * {
+            for (QWidget *note : page->findChildren<QWidget *>(QStringLiteral("gateNote"))) {
+                auto *text = note->findChild<QLabel *>(QStringLiteral("gateNoteText"));
+                if (note->isVisibleTo(page) && text && text->text().contains(gateWords)) {
+                    return note;
+                }
+            }
+            return nullptr;
+        };
+        for (SchemaSettingsPage *page : {&output, &refinement, &corrections}) {
+            QWidget *note = accessibilityNote(page);
+            QVERIFY(note);
+            auto *action = note->findChild<QPushButton *>(QStringLiteral("gateAction"));
+            QVERIFY(action);
+            QCOMPARE(action->text(), gateAction);
         }
         // One note per gated group: the paste rules and the app recognition rules.
         QCOMPARE(output.findChildren<QWidget *>(QStringLiteral("gateNote")).size(), 2);
@@ -587,7 +605,7 @@ private slots:
         QVERIFY(refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
         for (SchemaSettingsPage *page : {&output, &refinement, &corrections}) {
-            QVERIFY(!page->findChild<QWidget *>(QStringLiteral("gateNote"))->isVisibleTo(page));
+            QVERIFY(!accessibilityNote(page));
         }
     }
 
@@ -853,6 +871,108 @@ private slots:
         QVERIFY(caution->text().contains(QStringLiteral("instructions")));
     }
 
+    void setupStartsOnAServiceThatIsActuallySignedIn()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setSpeechProvider(QStringLiteral("codex"));
+
+        ProviderRegistry providers;
+        providers.registerSpeechProvider(
+            {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex"), QString()},
+            [](QObject *parent) {
+                auto *provider = new FakeSpeechTranscriber(parent);
+                provider->prepareResult = {false, QStringLiteral("Sign-in required")};
+                return provider;
+            });
+        providers.registerSpeechProvider(
+            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+
+        SpeechProviderSetupPage setup(settings, providers);
+        // The page probes when it is shown, not while the wizard builds it.
+        setup.show();
+        auto *claude = setup.findChild<QRadioButton *>(
+            QStringLiteral("speechProviderOption_claude"));
+        QVERIFY(claude);
+        QVERIFY(claude->isChecked());
+        QCOMPARE(settings.speechProvider(), QStringLiteral("claude"));
+        QVERIFY(setup.ready());
+    }
+
+    void theWelcomePageHoldsNextUntilOneSignInIsFound()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+
+        ProviderRegistry providers;
+        providers.registerSpeechProvider(
+            {QStringLiteral("claude"), QStringLiteral("Claude Voice"),
+             QStringLiteral("Install Claude Code from claude.com/code, run claude in a terminal, and use /login.")},
+            [](QObject *parent) {
+                auto *provider = new FakeSpeechTranscriber(parent);
+                provider->prepareResult = {false, QStringLiteral("Sign-in required")};
+                return provider;
+            });
+
+        WelcomeSetupPage welcome(settings, providers);
+        welcome.show();
+        auto *status = welcome.findChild<QLabel *>(
+            QStringLiteral("welcomeCredentialStatus_claude"));
+        auto *hint = welcome.findChild<QLabel *>(
+            QStringLiteral("welcomeCredentialHint_claude"));
+        QVERIFY(status && hint);
+        QCOMPARE(status->text(), QStringLiteral("Not found"));
+        QVERIFY(hint->text().contains(QStringLiteral("claude.com/code")));
+        QVERIFY(!welcome.ready());
+
+        ProviderRegistry signedIn;
+        signedIn.registerSpeechProvider(
+            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        WelcomeSetupPage found(settings, signedIn);
+        found.show();
+        auto *foundStatus = found.findChild<QLabel *>(
+            QStringLiteral("welcomeCredentialStatus_claude"));
+        QVERIFY(foundStatus);
+        QCOMPARE(foundStatus->text(), QStringLiteral("Sign-in found"));
+        QVERIFY(found.ready());
+    }
+
+    void theWelcomePageReprobesWhenItIsShownAgain()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+
+        ProviderRegistry providers;
+        providers.registerSpeechProvider(
+            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
+            [](QObject *parent) {
+                auto *provider = new FakeSpeechTranscriber(parent);
+                provider->prepareResult = {false, QStringLiteral("Sign-in required")};
+                return provider;
+            });
+
+        WelcomeSetupPage welcome(settings, providers);
+        welcome.show();
+        auto *status = welcome.findChild<QLabel *>(
+            QStringLiteral("welcomeCredentialStatus_claude"));
+        QVERIFY(status);
+        QCOMPARE(status->text(), QStringLiteral("Not found"));
+        QVERIFY(!welcome.ready());
+
+        // The user signs in from a terminal while the assistant sits open.
+        auto *provider = static_cast<FakeSpeechTranscriber *>(
+            providers.speechProvider(QStringLiteral("claude")));
+        QVERIFY(provider);
+        provider->prepareResult = {true, QString()};
+
+        welcome.hide();
+        welcome.show();
+        QCOMPARE(status->text(), QStringLiteral("Sign-in found"));
+        QVERIFY(welcome.ready());
+    }
+
     void speechProviderChoicesComeFromTheRegistry()
     {
         SettingsStore settings;
@@ -876,17 +996,32 @@ private slots:
             });
 
         SpeechProviderSetupPage setup(settings, providers);
-        auto *setupChoice = setup.findChild<QComboBox *>(QStringLiteral("speechProvider"));
+        setup.show();
+        auto *claude = setup.findChild<QRadioButton *>(
+            QStringLiteral("speechProviderOption_claude"));
+        auto *codex = setup.findChild<QRadioButton *>(
+            QStringLiteral("speechProviderOption_codex"));
+        auto *claudeStatus = setup.findChild<QLabel *>(
+            QStringLiteral("speechProviderStatus_claude"));
+        auto *codexStatus = setup.findChild<QLabel *>(
+            QStringLiteral("speechProviderStatus_codex"));
         auto *setupHint = setup.findChild<QLabel *>(QStringLiteral("speechProviderHint"));
         auto *checkAgain = setup.findChild<QPushButton *>(QStringLiteral("speechProviderCheckAgain"));
-        QVERIFY(setupChoice);
+        QVERIFY(claude && codex && claudeStatus && codexStatus);
         QVERIFY(setupHint);
         QVERIFY(checkAgain);
-        QCOMPARE(setupChoice->count(), 2);
+
+        // Both services are on the page, each with what its probe found.
+        QVERIFY(claude->isChecked());
+        QCOMPARE(claudeStatus->text(), QStringLiteral("Ready"));
+        QCOMPARE(codexStatus->text(), QStringLiteral("Not set up"));
+        QVERIFY(setup.ready());
         QVERIFY(setupHint->isHidden());
         QVERIFY(checkAgain->isHidden());
-        setupChoice->setCurrentIndex(setupChoice->findData(QStringLiteral("codex")));
+
+        codex->click();
         QCOMPARE(settings.speechProvider(), QStringLiteral("codex"));
+        QVERIFY(!setup.ready());
         QVERIFY(setupHint->text().contains(QStringLiteral("ChatGPT app")));
         QVERIFY(!setupHint->isHidden());
         QVERIFY(!checkAgain->isHidden());

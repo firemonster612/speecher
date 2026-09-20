@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher setup — Writing profiles</title>
+<link rel="stylesheet" href="wizard.css">
+</head>
+<body data-states="default" data-default-state="default">
+
+<div class="dialog" role="dialog" aria-labelledby="page-title">
+
+  <header class="dialog-header">
+    <h1 id="page-title">Writing profiles</h1>
+    <span class="step-count">Step 7 of 9</span>
+  </header>
+
+  <main class="dialog-body">
+    <p class="lead">Speecher picks a writing profile from the app you dictate
+      into. Choose the fallback profile and how much cleanup and tone
+      adjustment each one gets.</p>
+
+    <div class="field" style="margin-top:16px">
+      <label for="default-profile">Default profile</label>
+      <select id="default-profile" style="flex:0 1 260px">
+        <option>Work</option>
+        <option>Email</option>
+        <option selected>Personal</option>
+        <option>AI coding</option>
+        <option>Other</option>
+      </select>
+    </div>
+
+    <table class="profiles" style="margin-top:14px">
+      <thead>
+        <tr>
+          <th scope="col">Profile</th>
+          <th scope="col">Cleanup</th>
+          <th scope="col">Tone</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row">Work</th>
+          <td><select aria-label="Work cleanup">
+            <option>None</option><option>Light</option>
+            <option selected>Medium</option><option>High</option></select></td>
+          <td><select aria-label="Work tone">
+            <option>No tone override</option><option selected>Formal</option>
+            <option>Casual</option><option>Very casual</option>
+            <option>Excited</option><option>Gen Z</option></select></td>
+        </tr>
+        <tr>
+          <th scope="row">Email</th>
+          <td><select aria-label="Email cleanup">
+            <option>None</option><option>Light</option>
+            <option selected>Medium</option><option>High</option></select></td>
+          <td><select aria-label="Email tone">
+            <option>No tone override</option><option selected>Formal</option>
+            <option>Casual</option><option>Very casual</option>
+            <option>Excited</option><option>Gen Z</option></select></td>
+        </tr>
+        <tr>
+          <th scope="row">Personal</th>
+          <td><select aria-label="Personal cleanup">
+            <option>None</option><option selected>Light</option>
+            <option>Medium</option><option>High</option></select></td>
+          <td><select aria-label="Personal tone">
+            <option>No tone override</option><option>Formal</option>
+            <option selected>Casual</option><option>Very casual</option>
+            <option>Excited</option><option>Gen Z</option></select></td>
+        </tr>
+        <tr>
+          <th scope="row">AI coding</th>
+          <td><select aria-label="AI coding cleanup">
+            <option selected>None</option><option>Light</option>
+            <option>Medium</option><option>High</option></select></td>
+          <td><select aria-label="AI coding tone">
+            <option selected>No tone override</option><option>Formal</option>
+            <option>Casual</option><option>Very casual</option>
+            <option>Excited</option><option>Gen Z</option></select></td>
+        </tr>
+        <tr>
+          <th scope="row">Other</th>
+          <td><select aria-label="Other cleanup">
+            <option>None</option><option selected>Light</option>
+            <option>Medium</option><option>High</option></select></td>
+          <td><select aria-label="Other tone">
+            <option selected>No tone override</option><option>Formal</option>
+            <option>Casual</option><option>Very casual</option>
+            <option>Excited</option><option>Gen Z</option></select></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="fine" style="margin-top:12px;max-width:62ch">The default profile
+      is used when Speecher does not recognise the app you are dictating into.
+      Every profile can be changed later in Settings.</p>
+  </main>
+
+  <footer class="dialog-footer">
+    <button type="button" class="link">Skip setup</button>
+    <div class="footer-right">
+      <button type="button" data-nav="back">Back</button>
+      <button type="button" class="primary" data-nav="next">Next</button>
+      <button type="button">Cancel</button>
+    </div>
+  </footer>
+
+</div>
+
+<script src="wizard.js"></script>
+</body>
+</html>

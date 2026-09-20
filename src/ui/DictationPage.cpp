@@ -330,7 +330,14 @@ DictationPage::DictationPage(ApplicationController *controller, QWidget *parent)
         m_accessibilityNotice->hide();
     }
     setStatus(controller->stateName());
+    m_transcript->setPlainText(controller->session()->lastTranscript());
     updateSummary(false);
+}
+
+void DictationPage::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    m_transcript->setPlainText(m_controller->session()->lastTranscript());
 }
 
 QPushButton *DictationPage::toggleButton() const

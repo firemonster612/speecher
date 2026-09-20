@@ -12,17 +12,12 @@
 #include "output/win/WinPasteDelivery.h"
 #endif
 
-#include <QEventLoop>
-#include <QTimer>
-
 #include <memory>
 #include <utility>
 
 namespace speecher {
 
 namespace {
-
-constexpr int clipboardRestoreDelayMs = 750;
 
 #ifdef SPEECHER_WITH_WAYLAND
 class YdotoolBackend final : public DeliveryBackend {
@@ -234,10 +229,11 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         || outputDirectInsert
         || automaticDirectInsert;
     const bool directInsertOnly = ruleDirectInsert || outputDirectInsert;
+    const TargetProvider::FocusMatch focus = m_targetProvider
+        ? m_targetProvider->focusMatch(target)
+        : TargetProvider::FocusMatch::Different;
     const bool targetFocused = pasteMethod != PasteMethod::ClipboardOnly
-        && (currentFocusFallback
-            || target.compositorActive
-            || (m_targetProvider && m_targetProvider->stillFocused(target)));
+        && (currentFocusFallback || focus == TargetProvider::FocusMatch::Same);
 
     QString clipboardWarning;
     ClipboardSnapshot previousClipboard;
@@ -255,36 +251,30 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
             }
         }
     }
-    const auto withClipboardWarning = [&clipboardWarning](QString message) {
+    QString clipboardNote;
+    const auto withClipboardWarning = [&clipboardWarning, &clipboardNote](QString message) {
         if (!clipboardWarning.isEmpty()) {
             message += QStringLiteral("; ") + clipboardWarning;
+        }
+        if (!clipboardNote.isEmpty()) {
+            message += QStringLiteral(" ") + clipboardNote;
         }
         return message;
     };
     const auto restorePreviousClipboard = [&](bool verified, QString *error) {
-        if (!canRestoreClipboard) {
+        if (!canRestoreClipboard || !verified) {
             return false;
         }
-        if (!verified) {
-            QEventLoop waitForClipboardConsumer;
-            QTimer::singleShot(clipboardRestoreDelayMs,
-                               &waitForClipboardConsumer,
-                               &QEventLoop::quit);
-            waitForClipboardConsumer.exec(QEventLoop::ExcludeUserInputEvents);
+        bool keptNewerCopy = false;
+        const bool ok = m_clipboardDelivery.restore(previousClipboard, error, true, &keptNewerCopy);
+        if (ok && keptNewerCopy) {
+            clipboardNote = QStringLiteral("Previous clipboard kept as-is.");
         }
-        return m_clipboardDelivery.restore(previousClipboard, error, true);
+        return ok;
     };
     bool initiallyHtmlAvailable = false;
     QString initialCopyError;
-    if (!m_clipboardDelivery.copy(content, &initiallyHtmlAvailable, &initialCopyError)) {
-        return {
-            false,
-            DeliveryReceipt::None,
-            false,
-            initialCopyError.isEmpty() ? QStringLiteral("Could not copy the transcription")
-                                       : initialCopyError,
-        };
-    }
+    const bool copiedInitially = m_clipboardDelivery.copy(content, &initiallyHtmlAvailable, &initialCopyError);
 
     QString insertionError;
     if (directInsertRequested
@@ -293,11 +283,13 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         && m_targetProvider->insertText(target, content.plainText, &insertionError)) {
         const bool verified = m_targetProvider->verifyInsertion(target, content.plainText);
         QString restoreError;
-        const bool restored = restorePreviousClipboard(verified, &restoreError);
+        const bool restored = copiedInitially && restorePreviousClipboard(verified, &restoreError);
         QString message = verified
             ? QStringLiteral("Verified in Target")
-            : QStringLiteral("Accepted by Target");
-        if (canRestoreClipboard && !restored) {
+            : copiedInitially
+                ? QStringLiteral("Could not confirm insertion. Your dictation is on the clipboard.")
+                : QStringLiteral("Accepted by Target; clipboard copy failed: %1").arg(initialCopyError);
+        if (copiedInitially && verified && canRestoreClipboard && !restored) {
             clipboardWarning = restoreError.isEmpty()
                 ? QStringLiteral("Previous clipboard could not be restored")
                 : QStringLiteral("Previous clipboard could not be restored: %1").arg(restoreError);
@@ -311,6 +303,12 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
                 downgraded ? message + QStringLiteral(" as plain text") : message),
         };
     }
+    if (!copiedInitially) {
+        return {false, DeliveryReceipt::None, false,
+                withClipboardWarning(initialCopyError.isEmpty()
+                    ? QStringLiteral("Could not copy or insert the transcription")
+                    : QStringLiteral("Could not copy or insert the transcription: %1").arg(initialCopyError))};
+    }
     if (directInsertOnly) {
         if (!insertionError.isEmpty()) {
             return {
@@ -322,7 +320,16 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         }
         pasteMethod = PasteMethod::ClipboardOnly;
     }
+    QString focusWarning;
     if (pasteMethod != PasteMethod::ClipboardOnly && !targetFocused) {
+        if (target.compositorActive) {
+            // A retitled window and a second window of the same program look
+            // alike from here, and one of them is not a window change at all,
+            // so that reading is kept out of the message.
+            focusWarning = focus == TargetProvider::FocusMatch::TitleChanged
+                ? QStringLiteral("The window title changed. Your dictation is on the clipboard.")
+                : QStringLiteral("The active window changed or could not be verified. Your dictation is on the clipboard.");
+        }
         pasteMethod = PasteMethod::ClipboardOnly;
     }
 
@@ -333,7 +340,8 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
             DeliveryReceipt::Copied,
             downgraded,
             withClipboardWarning(
-                downgraded ? QStringLiteral("Copied as plain text") : QStringLiteral("Copied")),
+                !focusWarning.isEmpty() ? focusWarning
+                    : downgraded ? QStringLiteral("Copied as plain text") : QStringLiteral("Copied")),
         };
     }
 
@@ -351,9 +359,25 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
         const bool virtualKeyboardInput = method == QString::fromLatin1(OutputMethod::Ydotool)
             || method == QString::fromLatin1(OutputMethod::MacPaste)
             || method == QString::fromLatin1(OutputMethod::WinPaste);
-        if (virtualKeyboardInput && m_targetProvider && !m_targetProvider->preparePaste(target)) {
-            firstError = QStringLiteral("The target is no longer available for paste");
-            break;
+        // The focus gate belongs here, immediately before the keystrokes go
+        // out: preparePaste marks the edit for verification, it does not
+        // decide whether to paste.
+        // currentFocusFallback is the blind paste into whatever is in front:
+        // there is no target to still be focused on.
+        if (virtualKeyboardInput && m_targetProvider && !currentFocusFallback) {
+            const TargetProvider::FocusMatch atPasteTime = m_targetProvider->focusMatch(target);
+            if (atPasteTime != TargetProvider::FocusMatch::Same) {
+                firstError = !target.compositorActive
+                    ? QStringLiteral("The target is no longer available for paste")
+                    : atPasteTime == TargetProvider::FocusMatch::TitleChanged
+                        ? QStringLiteral("The window title changed")
+                        : QStringLiteral("The active window changed or could not be verified");
+                break;
+            }
+            if (!m_targetProvider->preparePaste(target)) {
+                firstError = QStringLiteral("The target is no longer available for paste");
+                break;
+            }
         }
         if (backend->deliver(content, &htmlAvailable, &error)) {
             const bool copied = method == QString::fromLatin1(OutputMethod::WlCopy)
@@ -363,7 +387,7 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
                 && m_targetProvider
                 && m_targetProvider->verifyInsertion(target, content.plainText);
             bool restoredClipboard = false;
-            if (virtualKeyboardInput && canRestoreClipboard) {
+            if (virtualKeyboardInput && verified && canRestoreClipboard) {
                 QString restoreError;
                 restoredClipboard = restorePreviousClipboard(verified, &restoreError);
                 if (!restoredClipboard) {
@@ -372,9 +396,18 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
                         : QStringLiteral("Previous clipboard could not be restored: %1").arg(restoreError);
                 }
             }
+            // A compositor-fallback target has no accessible node, so there is
+            // nothing to read back: the paste can never be confirmed. Saying
+            // "could not confirm" on every such dictation reads like a failure
+            // when nothing went wrong.
+            const bool verifiable = !target.compositorActive;
             const QString message = copied
                 ? QStringLiteral("Copied")
-                : virtualKeyboardInput
+                : !verified
+                    ? verifiable
+                        ? QStringLiteral("Could not confirm the paste. Your dictation is on the clipboard.")
+                        : QStringLiteral("Sent. Your dictation is also on the clipboard.")
+                    : virtualKeyboardInput
                     ? restoredClipboard
                         ? QStringLiteral("Input sent")
                         : QStringLiteral("Copied • Input sent")

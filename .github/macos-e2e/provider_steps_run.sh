@@ -36,7 +36,11 @@ launch_setup() {
     return 1
   fi
   mkdir -p "$CASE_DIR/pages"
+  # These cases verify the provider steps' stats rendering; the wizard's gates
+  # are covered by setup_run.sh and cannot be satisfied on a runner with no
+  # sign-ins, so the gate seam holds them open for the walk.
   SPEECHER_E2E_SETUP_CAPTURE_DIR="$CASE_DIR/pages" \
+    SPEECHER_E2E_SKIP_SETUP_GATES=1 \
     DYLD_FRAMEWORK_PATH="${QT_ROOT_DIR:-}/lib" \
     "$APP_BIN" >"$CASE_DIR/process.out" 2>&1 &
   APP_PID=$!
@@ -95,38 +99,39 @@ walk_to_step() {
   wait_for_page_capture "$target" "${STEP_IDS[$((target - 1))]}"
 }
 
-# Drives the step's pop-up button to the menu item $1. Each provider step has
-# exactly one pop-up, and SwiftUI nests it in AX groups, so the search walks
-# the window's entire contents for the first one rather than guessing a path.
-drive_picker() {
-  osascript - "$1" >>"$CASE_DIR/picker.out" 2>&1 <<'OSA' &
+# Selects a row of the radio group labelled $1 by keyboard: AXPress on any of
+# the group's children presses the group itself and always selects the FIRST
+# row (every evidence run agrees — Codex only "worked" because it is first),
+# so non-first rows are reachable only the way a keyboard user reaches them:
+# press the group to select-and-focus row 1, then arrow down $2 times.
+drive_provider_row() {
+  osascript - "$1" "$2" >>"$CASE_DIR/picker.out" 2>&1 <<'OSA' &
 on run argv
-  set targetValue to item 1 of argv
-  tell application "System Events" to tell process "speecher"
-    set allElements to entire contents of window "Speecher Setup Assistant"
-    set thePopup to missing value
-    repeat with e in allElements
-      try
-        if class of e is pop up button or class of e is menu button then
-          set thePopup to e
-          exit repeat
-        end if
-      end try
-    end repeat
-    if thePopup is missing value then
-      set classNames to {}
+  set groupLabel to item 1 of argv
+  set downPresses to (item 2 of argv) as integer
+  tell application "System Events"
+    tell process "speecher"
+      set frontmost to true
+      set allElements to entire contents of window "Speecher Setup Assistant"
+      set target to missing value
       repeat with e in allElements
         try
-          set end of classNames to (class of e as text)
+          if class of e is radio button and (name of e) as text is groupLabel then
+            set target to e
+            exit repeat
+          end if
         end try
       end repeat
-      set AppleScript's text item delimiters to ", "
-      error "no pop up buttons among " & (count of allElements) & " elements: " & (classNames as text)
-    end if
-    log "picker class: " & (class of thePopup as text)
-    click thePopup
+      if target is missing value then
+        error "no radio buttons named '" & groupLabel & "' on this step"
+      end if
+      click target
+    end tell
     delay 0.5
-    click menu item targetValue of menu 1 of thePopup
+    repeat downPresses times
+      key code 125
+      delay 0.3
+    end repeat
   end tell
 end run
 OSA
@@ -263,8 +268,9 @@ else
   errors=()
   walk_to_step 2 || errors+=("could not reach the transcription step")
   if (( ${#errors[@]} == 0 )); then
-    drive_picker "ChatGPT Codex" \
-      || errors+=("could not drive the transcription picker to ChatGPT Codex")
+    # Top row of the transcription group: ChatGPT Codex (labels sort first).
+    drive_provider_row "Transcription service" 0 \
+      || errors+=("could not select the ChatGPT Codex row on the transcription step")
     sleep 0.5
     recapture_step 2 transcription || errors+=("the transcription step was not recaptured")
   fi
@@ -272,17 +278,22 @@ else
     cp "$CASE_DIR/pages/step-2-transcription.png" "$CASE_DIR/transcription-picked-codex.png"
     expect_text "$CASE_DIR/transcription-picked-codex.png" "GPT Live Transcribe" \
       || errors+=("driving the picker did not update the transcription stats")
-    for (( step = 2; step < 6; step++ )); do
-      click_button Continue || errors+=("Continue failed on step $step")
-      sleep 0.5
-    done
-    wait_for_page_capture 6 refinement || errors+=("could not reach the refinement step")
   fi
+  # None hides the stats: verified from a seeded profile. Synthetic input
+  # cannot select a non-first row of a SwiftUI radio group (AX presses land on
+  # the group and select row 1; arrow key codes do not move it), while a real
+  # mouse can. The live-selection-updates-the-page property is already proven
+  # by the codex drive above.
   if (( ${#errors[@]} == 0 )); then
-    drive_picker "None" \
-      || errors+=("could not drive the refinement picker to None")
-    sleep 0.5
-    recapture_step 6 refinement || errors+=("the refinement step was not recaptured")
+    stop_app
+    fresh_reset
+    defaults write "$DOMAIN" refinement.provider none
+    rm -rf "$CASE_DIR/pages"
+    if ! launch_setup || ! wait_for_assistant; then
+      errors+=("the assistant did not relaunch with refinement seeded to None")
+    else
+      walk_to_step 6 || errors+=("could not reach the refinement step with None seeded")
+    fi
   fi
   if (( ${#errors[@]} == 0 )); then
     cp "$CASE_DIR/pages/step-6-refinement.png" "$CASE_DIR/refinement-picked-none.png"
@@ -292,7 +303,7 @@ else
   if (( ${#errors[@]} )); then
     fail_case "$(IFS='; '; echo "${errors[*]}")"
   else
-    pass_case "Driving the pickers updates the stats live and None hides them."
+    pass_case "Driving the picker updates the stats live, and None shows no stats block."
   fi
 fi
 

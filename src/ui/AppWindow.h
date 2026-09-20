@@ -54,6 +54,7 @@ private:
     void runAutoSave();
     void filterSidebarPages(const QString &query);
     void refreshUpdateBanner();
+    void warnThatClosingDoesNotQuitOnce();
     void leaveWhatsNew();
 
     ApplicationController *m_controller;

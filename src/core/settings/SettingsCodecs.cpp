@@ -6,6 +6,7 @@
 #include "core/BindingProcessor.h"
 #include "core/CliToolDiscovery.h"
 #include "core/OutputMethod.h"
+#include "core/VocabularyLimit.h"
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/VocabularySettingsCodec.h"
 
@@ -181,13 +182,16 @@ void SettingsCodecs::setCodexFinalRetranscribe(bool value)
     m_settings.setValue(SettingsKeys::CodexFinalRetranscribe, value);
 }
 
+// The terms a transcription request carries. Everything a person typed is
+// stored; only this list is capped, taking entries in the priority order
+// normalizeVocabularyEntries already put them in.
 QStringList SettingsCodecs::customVocabulary() const
 {
     QStringList terms;
     for (const VocabularyEntry &entry : vocabularyEntries()) {
         terms.append(entry.term);
     }
-    return terms;
+    return VocabularyLimit::limited(terms);
 }
 
 void SettingsCodecs::setCustomVocabulary(const QStringList &value)
