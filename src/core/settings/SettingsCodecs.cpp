@@ -172,6 +172,16 @@ void SettingsCodecs::setSpeechProvider(const QString &value)
     m_settings.setValue(SettingsKeys::SpeechProvider, value.isEmpty() ? QStringLiteral("claude") : value);
 }
 
+bool SettingsCodecs::codexFinalRetranscribe() const
+{
+    return value(SettingsKeys::CodexFinalRetranscribe, false).toBool();
+}
+
+void SettingsCodecs::setCodexFinalRetranscribe(bool value)
+{
+    m_settings.setValue(SettingsKeys::CodexFinalRetranscribe, value);
+}
+
 // The terms a transcription request carries. Everything a person typed is
 // stored; only this list is capped, taking entries in the priority order
 // normalizeVocabularyEntries already put them in.
@@ -1019,6 +1029,7 @@ AppSettings SettingsCodecs::snapshot() const
     settings.ui.soundsEnabled = soundsEnabled();
 
     settings.speech.providerId = speechProvider();
+    settings.speech.codexFinalRetranscribe = codexFinalRetranscribe();
     settings.speech.claudeAuthMode = anthropicAuthMode();
     settings.speech.codexAuthMode = openAiAuthMode();
     settings.speech.vocabulary = customVocabulary();

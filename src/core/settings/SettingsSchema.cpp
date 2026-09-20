@@ -803,6 +803,22 @@ SettingsPage audioPage(const SchemaContext &context)
         return QStringLiteral("Service used to turn speech into a raw transcript.");
     };
 
+    SettingsRow finalRetranscribe = toggleRow(
+        QStringLiteral("codexFinalRetranscribe"),
+        QStringLiteral("Accuracy"),
+        QStringLiteral("Extra transcription accuracy (will increase transcription time)"),
+        [](const AppSettings &settings) { return settings.speech.codexFinalRetranscribe; },
+        [](AppSettings &settings, bool value) { settings.speech.codexFinalRetranscribe = value; });
+    finalRetranscribe.tooltip = QStringLiteral(
+        "The live preview is unchanged; a second, whole-recording transcription fixes words "
+        "the live pass misheard. Adds about one to five seconds after you stop and uses one "
+        "extra ChatGPT request. Dictations longer than about a minute and a half keep the "
+        "live transcript.");
+    finalRetranscribe.sinceVersion = QStringLiteral("0.1.6");
+    finalRetranscribe.visible = [](const AppSettings &settings, const Capabilities &) {
+        return settings.speech.providerId == QStringLiteral("codex");
+    };
+
     SettingsRow device = choiceRow(
         QStringLiteral("audioDevice"),
         QStringLiteral("Microphone"),
@@ -857,7 +873,9 @@ SettingsPage audioPage(const SchemaContext &context)
         QStringLiteral("waveform"),
         QStringLiteral("microphone"),
         {
-            {QStringLiteral("Transcription"), QString(), {std::move(speechProvider)}},
+            {QStringLiteral("Transcription"),
+             QString(),
+             {std::move(speechProvider), std::move(finalRetranscribe)}},
             {QStringLiteral("Capture"), QString(), {std::move(device)}},
             {QStringLiteral("Silence trimming"),
              QString(),
@@ -2009,7 +2027,8 @@ static QList<SettingsPane> settingsPanes()
              PaneLayout::Sections, {}),
         pane("dictation", "Dictation", "mic", {QStringLiteral("audio")},
              PaneLayout::Sections,
-             {group("Transcription", {QStringLiteral("speechProvider")}),
+             {group("Transcription", {QStringLiteral("speechProvider"),
+                                      QStringLiteral("codexFinalRetranscribe")}),
               group("Microphone", {QStringLiteral("audioDevice"),
                                    QStringLiteral("captureMode")}),
               group("Timing", {QStringLiteral("preRollMs"),

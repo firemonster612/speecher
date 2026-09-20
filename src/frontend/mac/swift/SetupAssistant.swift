@@ -1302,6 +1302,12 @@ private struct TranscriptionStep: View {
                 }
                 .pickerStyle(.radioGroup)
                 ProviderStatsRows(stats: model.bridge.stats(forSpeechProvider: flow.providerId))
+                // Under the facts about the chosen service, matching the Qt and
+                // Windows steps. The bridge already drops rows whose schema
+                // visibility fails, so this only appears for the codex provider.
+                if let row = model.row("codexFinalRetranscribe") {
+                    RowView(row: row, model: model)
+                }
                 // The verdict and the way to ask again sit on one row, so a
                 // held Continue and its remedy are read together.
                 if !flow.providerStatus.isEmpty {

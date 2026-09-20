@@ -129,6 +129,9 @@ private:
     QString m_refinementStream;
     bool m_heardSpeech = false;
     int m_speechReconnectsLeft = 0;
+    // Committed text carried over from before the current speech attempt; a
+    // whole-attempt transcript replaces only what followed it.
+    QString m_attemptBaseText;
 };
 
 } // namespace speecher

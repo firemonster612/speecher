@@ -949,6 +949,14 @@ struct SetupWindow::Native {
         reselectOnLoad(choices, options, programmaticSpeechIndex,
                        [this] { return controller->settings()->speechProvider(); });
 
+        // Codex only; describeSelected() below decides when it is on screen.
+        CheckBox accuracy = wrappingCheckBox(
+            QStringLiteral("Extra transcription accuracy (will increase transcription time)"));
+        accuracy.IsChecked(controller->settings()->codexFinalRetranscribe());
+        // Settled here too: the probes are async, so describeSelected() first
+        // runs a beat later and the row would flash on for a non-Codex choice.
+        accuracy.Visibility(controller->settings()->speechProvider() == QStringLiteral("codex")
+                                ? Visibility::Visible : Visibility::Collapsed);
         StackPanel stats;
         const StatusCell status = statusCell(QString(), StatusTone::Neutral);
         status.root.VerticalAlignment(VerticalAlignment::Top);
@@ -959,7 +967,8 @@ struct SetupWindow::Native {
 
         // The credential hint and Check again belong to a service that is not
         // signed in; a ready one needs neither.
-        const auto describeSelected = [this, choices, options, stats, status, hint, check] {
+        const auto describeSelected = [this, choices, options, stats, status, hint, check,
+                                       accuracy] {
             const int index = choices.SelectedIndex();
             if (index < 0 || index >= options.size()) {
                 status.set(QStringLiteral("No transcription service is available."),
@@ -968,6 +977,8 @@ struct SetupWindow::Native {
             }
             const QString id = options.at(index).first;
             showProviderStats(stats, controller->providerRegistry()->speechProviders(), id);
+            accuracy.Visibility(id == QStringLiteral("codex")
+                                    ? Visibility::Visible : Visibility::Collapsed);
             const bool ready = speechReady.value(id, false);
             const bool checked = speechReady.contains(id);
             status.set(speechMessage.value(id, QStringLiteral("Checking…")),
@@ -1025,8 +1036,14 @@ struct SetupWindow::Native {
             }
         };
         check.Click([runChecks](const auto &, const auto &) { runChecks(); });
+        accuracy.Click([this, accuracy](const auto &, const auto &) {
+            controller->settings()->setCodexFinalRetranscribe(accuracy.IsChecked().Value());
+        });
         panel.Children().Append(choices);
         panel.Children().Append(stats);
+        // Under the facts about the chosen service, matching the Qt page and
+        // where the refinement step puts Fast mode.
+        panel.Children().Append(accuracy);
         StackPanel message;
         message.Spacing(4);
         message.Children().Append(status.root);

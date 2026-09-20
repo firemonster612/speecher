@@ -580,6 +580,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     : QWidget(parent)
     , m_settings(settings)
     , m_providers(providers)
+    , m_accuracyPass(new QCheckBox(QStringLiteral("Extra transcription accuracy (will increase transcription time)"), this))
     , m_stats(new ProviderStatsBlock(this))
     , m_hint(new WrappingLabel(this))
     , m_status(new WrappingLabel(this))
@@ -609,7 +610,13 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     m_status->setWordWrap(true);
     m_checkAgain->setObjectName(QStringLiteral("speechProviderCheckAgain"));
     m_checkAgain->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    m_accuracyPass->setObjectName(QStringLiteral("codexFinalRetranscribe"));
+    m_accuracyPass->setChecked(m_settings.codexFinalRetranscribe());
     layout->addWidget(m_stats);
+    // Under the facts about the chosen service, where the refinement page puts
+    // Fast mode: it is a setting for that service, not part of the sign-in
+    // verdict below it. Codex only; see selectProvider().
+    layout->addWidget(m_accuracyPass);
     layout->addWidget(m_status);
     layout->addWidget(m_hint);
     layout->addWidget(m_checkAgain, 0, Qt::AlignLeft);
@@ -626,6 +633,9 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     }
     connect(m_checkAgain, &QPushButton::clicked,
             this, &SpeechProviderSetupPage::checkProviders);
+    connect(m_accuracyPass, &QCheckBox::toggled, this, [this](bool checked) {
+        m_settings.setCodexFinalRetranscribe(checked);
+    });
     selectProvider(m_options.isEmpty() ? QString()
                                        : m_options.at(std::max(0, selectedIndex())).id);
 }
@@ -691,6 +701,7 @@ void SpeechProviderSetupPage::selectProvider(const QString &providerId)
                                  });
     m_hint->setText(it == providers.cend() ? QString() : it->setupHint);
     m_stats->setStats(it == providers.cend() ? QVector<ProviderStat>{} : it->stats);
+    m_accuracyPass->setVisible(providerId == QStringLiteral("codex"));
     showSelectedProvider();
 }
 

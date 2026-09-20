@@ -479,6 +479,38 @@ private slots:
         QCOMPARE(delivery->lastText, QStringLiteral("hello world"));
     }
 
+    void attemptTranscriptReplacesOnlyTextFromTheCurrentAttempt()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("sentence a"));
+        // A mid-dictation stream drop reconnects on a fresh attempt; the
+        // accuracy pass of that attempt covers only the audio that follows.
+        speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+        QTRY_COMPARE_WITH_TIMEOUT(speech->startCalls, 2, 250);
+        speech->emitFinalText(QStringLiteral("sentence bee"));
+
+        speech->autoCompleteOnFinish = false;
+        session.stopListening();
+        speech->emitAttemptText(QStringLiteral("sentence b"));
+        speech->emitCompletion();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(delivery->lastText, QStringLiteral("sentence a sentence b"));
+    }
+
     void dictationSessionUsesPerSessionOutputFormatWithoutChangingDefault()
     {
         SettingsStore settings;

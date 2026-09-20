@@ -12,6 +12,13 @@
 
 namespace speecher {
 
+// The chatgpt.com backend is guarded as a browser client. Match the Linux
+// Codex client's Chromium user agent so requests reach the dictation and
+// transcription services instead of Cloudflare's HTML browser challenge.
+inline constexpr auto codexBrowserUserAgent =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36";
+
 class CodexDictationClient final : public QObject {
     Q_OBJECT
 

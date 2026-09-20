@@ -199,6 +199,10 @@ public:
 signals:
     void partialTranscript(quint64 attemptId, const QString &text);
     void finalTranscript(quint64 attemptId, const QString &text);
+    // Optional: a whole-attempt transcript that supersedes the accumulated
+    // finals, emitted before attemptCompleted by providers that retranscribe
+    // the buffered audio in one pass at the end.
+    void attemptTranscript(quint64 attemptId, const QString &text);
     void attemptCompleted(quint64 attemptId);
     void failed(const speecher::SpeechFailure &failure);
 };
