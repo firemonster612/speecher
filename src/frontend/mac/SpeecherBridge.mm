@@ -282,6 +282,15 @@ void probeInBackground(BridgeState *state,
     QThread *thread = QThread::create([probeJob, result] { *result = probeJob->run(); });
     state->probeThreads.removeAll(nullptr);
     state->probeThreads.append(thread);
+    // The job reads provider objects the controller owns, and the bridge's own
+    // teardown cannot be relied on to come first (a probe callback can keep
+    // the bridge alive through the Swift flow model). Joining on the
+    // controller's destruction is the guarantee; the connection dies with the
+    // thread, so an already-finished probe costs nothing.
+    if (state->controller) {
+        QObject::connect(state->controller, &QObject::destroyed, thread,
+                         [thread] { thread->wait(); }, Qt::DirectConnection);
+    }
     QObject::connect(thread,
                      &QThread::finished,
                      &state->lifetime,

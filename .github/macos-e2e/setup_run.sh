@@ -80,11 +80,15 @@ click_button() {
     >>"$CASE_DIR/clicks.out" 2>&1
 }
 
-# Whether a named button is on the current step. The controls HStack always
-# carries Back and Continue and the welcome step adds Check Again, so counting
-# buttons cannot say whether Skip Setup is among them.
-assistant_button_exists() {
-  assistant_ui "exists button \"$1\" of group 1 of window \"$ASSISTANT_WINDOW\"" 2>/dev/null \
+# How many buttons the navigation HStack carries. SwiftUI exposes these
+# buttons without AX names here (asking for button "Continue" finds nothing
+# even while clicking 'last button' presses it), so counting group 1 is the
+# check that works: content buttons like Check Again live outside group 1 —
+# S1's positional Continue click would otherwise hit them — leaving Back and
+# Continue always present and Skip Setup as the only button that comes and
+# goes. Two buttons means Skip is absent; three means it is offered.
+assistant_nav_button_count() {
+  assistant_ui "count buttons of group 1 of window \"$ASSISTANT_WINDOW\"" 2>/dev/null \
     | tr -d '[:space:]'
 }
 
@@ -235,15 +239,13 @@ elif ! wait_for_assistant; then
 else
   errors=()
   wait_for_page_capture 1 welcome || errors+=("the welcome step was never captured")
-  skip_present="$(assistant_button_exists 'Skip Setup')"
-  continue_present="$(assistant_button_exists Continue)"
-  echo "Skip Setup=$skip_present Continue=$continue_present" > "$CASE_DIR/welcome-buttons.txt"
-  # Continue is always there, so finding it by name is what proves a missing
-  # Skip Setup is really absent rather than merely unnamed in the AX tree.
-  [[ "$continue_present" == "true" ]] \
-    || errors+=("Continue was not exposed by name; the Skip Setup check proves nothing")
-  [[ "$skip_present" == "false" ]] \
-    || errors+=("the welcome step offered Skip Setup while its gate is shut")
+  nav_buttons="$(assistant_nav_button_count)"
+  echo "nav buttons=$nav_buttons" > "$CASE_DIR/welcome-buttons.txt"
+  # Back and Continue are always in group 1; Skip Setup is the third when
+  # offered. Anything but exactly two is a failure: three means Skip leaked
+  # past a shut gate, and any other value means the probe read the wrong group.
+  [[ "$nav_buttons" == "2" ]] \
+    || errors+=("expected 2 navigation buttons (Back, Continue) on a gated welcome step, found ${nav_buttons:-none}")
   setup_completed && errors+=("app.setupCompleted was written without skipping or finishing")
   if (( ${#errors[@]} )); then
     fail_case "$(IFS='; '; echo "${errors[*]}")"
