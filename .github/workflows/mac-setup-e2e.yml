@@ -110,6 +110,14 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: ctest --test-dir build --output-on-failure
 
+      - name: Backtrace on crash
+        if: failure()
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          lldb --batch -o run -o 'bt all' -o quit \
+            ./build/speecher_mac_front_end anthropicCredentialStatusFollowsTheAuthMode || true
+
       - name: Render update UI previews
         env:
           QT_QPA_PLATFORM: offscreen
