@@ -11,6 +11,10 @@ struct KWinWindowInfo {
     QString resourceClass;
     QString resourceName;
     QString caption;
+    // KWin's own handle for this window (internalId), stable for the window's
+    // whole life and unique across windows of the same program. Empty when the
+    // compositor does not expose it, which is what the caller falls back from.
+    QString internalId;
     qint64 processId = 0;
 };
 
@@ -38,7 +42,8 @@ public slots:
     Q_SCRIPTABLE void reportWindow(const QString &resourceClass,
                                    const QString &resourceName,
                                    const QString &caption,
-                                   const QString &processId);
+                                   const QString &processId,
+                                   const QString &internalId);
 
 private:
     bool ensureRegistered();

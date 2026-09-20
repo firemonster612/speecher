@@ -6,6 +6,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 using namespace speecher::helpers;
 
@@ -26,18 +27,42 @@ std::string serviceFilePath()
     return "/lib/systemd/user/" + std::string(serviceName);
 }
 
-constexpr std::string_view serviceText =
-    "[Unit]\n"
-    "Description=Speecher virtual keyboard daemon\n"
-    "\n"
-    "[Service]\n"
-    "Type=simple\n"
-    "ExecStart=/usr/bin/ydotoold --socket-path=%t/.ydotool_socket --socket-perm=0600\n"
-    "Restart=on-failure\n"
-    "RestartSec=1\n"
-    "\n"
-    "[Install]\n"
-    "WantedBy=default.target\n";
+// Installation accepts any ydotoold on PATH, so the unit has to start the one
+// that was found. A distribution that puts it outside /usr/bin would otherwise
+// pass setup and then fail to start.
+std::string serviceText(const std::string &daemonPath)
+{
+    return
+        "[Unit]\n"
+        "Description=Speecher virtual keyboard daemon\n"
+        "\n"
+        "[Service]\n"
+        "Type=simple\n"
+        "ExecStart=" + daemonPath + " --socket-path=%t/.ydotool_socket --socket-perm=0600\n"
+        "Restart=on-failure\n"
+        "RestartSec=1\n"
+        "\n"
+        "[Install]\n"
+        "WantedBy=default.target\n";
+}
+
+// Everything below installs a systemd user service. Ask before touching the
+// machine: on a system systemd does not manage, every package, permission and
+// file written here would be wasted and the service would never start.
+bool systemdManagesServices(std::string &error)
+{
+    std::error_code code;
+    if (!std::filesystem::is_directory("/run/systemd/system", code)) {
+        error = "systemd is not managing this machine's services, so Speecher cannot install "
+                "the virtual keyboard service";
+        return false;
+    }
+    if (!findExecutable("systemctl")) {
+        error = "systemctl is not installed, so Speecher cannot install the virtual keyboard service";
+        return false;
+    }
+    return true;
+}
 
 bool ydotoolInstalled()
 {
@@ -75,10 +100,57 @@ bool writeState(bool packageWasInstalled, const std::string &user, std::string &
                      error);
 }
 
+bool fileExists(const std::string &path)
+{
+    std::error_code ignored;
+    return std::filesystem::exists(path, ignored);
+}
+
+// A file this run created can be taken back; one that was already there is a
+// file this run replaced, and deleting it would take away whatever configured
+// the machine before Speecher did. The stat has to happen before the write, so
+// writing and recording belong together.
+bool writeSetupFile(const std::string &path,
+                    std::string_view text,
+                    speecher::YdotoolSetupTransaction &transaction,
+                    std::string &error)
+{
+    const bool existedBefore = fileExists(path);
+    if (!writeFile(path, text, error)) {
+        return false;
+    }
+    if (existedBefore) {
+        transaction.record("replaced " + path);
+        return true;
+    }
+    transaction.record("wrote " + path, [path] {
+        std::string ignored;
+        return removeFileIfPresent(path, ignored);
+    });
+    return true;
+}
+
+bool serviceEnabledForEveryAccount()
+{
+    std::string ignored;
+    return run("systemctl", {"--global", "is-enabled", std::string(serviceName)}, ignored);
+}
+
 bool install(const std::string &user, std::string &error)
 {
+    if (!systemdManagesServices(error)) {
+        return false;
+    }
     speecher::YdotoolSetupTransaction transaction;
+    // A repair or a reinstall runs over an installation that already works.
+    // Undoing this run's steps there would dismantle that working setup rather
+    // than the failed attempt, so a failure reports what it changed and leaves
+    // the machine alone.
+    const bool setupAlreadyPresent = fileExists(std::string(stateFilePath));
     const auto failed = [&] {
+        if (!setupAlreadyPresent) {
+            transaction.rollBack();
+        }
         transaction.appendToError(error);
         return false;
     };
@@ -93,57 +165,112 @@ bool install(const std::string &user, std::string &error)
         return failed();
     }
     transaction.record("loaded the uinput kernel module");
-    if (!writeFile(std::string(modulesLoadPath), "uinput\n", error)) {
+    if (!writeSetupFile(std::string(modulesLoadPath), "uinput\n", transaction, error)) {
         return failed();
     }
-    transaction.record("wrote " + std::string(modulesLoadPath));
     bool groupCreated = false;
     if (!ensureGroup(groupName, groupCreated, error)) {
         return failed();
     }
     if (groupCreated) {
-        transaction.record("created group " + std::string(groupName));
+        transaction.record("created group " + std::string(groupName), [] {
+            std::string ignored;
+            return run("groupdel", {std::string(groupName)}, ignored);
+        });
     }
     bool userAdded = false;
     if (!addUserToGroup(groupName, user, userAdded, error)) {
         return failed();
     }
     if (userAdded) {
-        transaction.record("added " + user + " to " + std::string(groupName));
+        transaction.record("added " + user + " to " + std::string(groupName), [user] {
+            std::string ignored;
+            return run("gpasswd", {"-d", user, std::string(groupName)}, ignored);
+        });
     }
-    if (!writeFile(std::string(udevRulePath),
-                   "KERNEL==\"uinput\", SUBSYSTEM==\"misc\", OPTIONS+=\"static_node=uinput\", GROUP=\"speecher-uinput\", MODE=\"0660\", TAG+=\"uaccess\"\n",
-                   error)) {
+    if (!writeSetupFile(std::string(udevRulePath),
+                        "KERNEL==\"uinput\", SUBSYSTEM==\"misc\", OPTIONS+=\"static_node=uinput\", GROUP=\"speecher-uinput\", MODE=\"0660\", TAG+=\"uaccess\"\n",
+                        transaction,
+                        error)) {
         return failed();
     }
-    transaction.record("wrote " + std::string(udevRulePath));
     run("udevadm", {"control", "--reload-rules"}, error, true, true);
     run("udevadm", {"trigger", "--subsystem-match=misc", "--attr-match=name=uinput"}, error, true, true);
     const std::string servicePath = serviceFilePath();
-    if (!writeFile(servicePath, serviceText, error)) {
+    if (!writeSetupFile(servicePath,
+                        serviceText(findExecutable("ydotoold").value_or("/usr/bin/ydotoold")),
+                        transaction,
+                        error)) {
         return failed();
     }
-    transaction.record("wrote " + servicePath);
-    run("systemctl", {"--global", "enable", std::string(serviceName)}, error, true, true);
+    const bool alreadyEnabled = serviceEnabledForEveryAccount();
+    if (!run("systemctl", {"--global", "enable", std::string(serviceName)}, error)) {
+        return failed();
+    }
+    if (!alreadyEnabled) {
+        transaction.record("enabled " + std::string(serviceName) + " for every account", [] {
+            std::string ignored;
+            return run("systemctl", {"--global", "disable", std::string(serviceName)}, ignored);
+        });
+    }
     if (!writeState(packageMissingBeforeInstall, user, error)) {
         return failed();
     }
     return true;
 }
 
+// Every step is attempted and every failure is reported. Removing the state
+// file while the service still runs or the group membership survives would
+// leave the app showing the feature as gone while the access it granted is
+// still there, so what did not come off has to reach the person.
 bool remove(const std::string &user, std::string &error)
 {
-    run("systemctl", {"--global", "disable", std::string(serviceName)}, error, true, true);
-    run("gpasswd", {"-d", user, std::string(groupName)}, error, true, true);
-    if (!removeFileIfPresent(serviceFilePath(), error)
-        || !removeFileIfPresent(std::string(udevRulePath), error)
-        || !removeFileIfPresent(std::string(modulesLoadPath), error)
-        || !removeFileIfPresent(std::string(stateFilePath), error)) {
-        return false;
+    std::vector<std::string> problems;
+    const auto attempt = [&problems](const std::string &what, bool succeeded, const std::string &why) {
+        if (!succeeded) {
+            problems.push_back(what + (why.empty() ? "" : ": " + why));
+        }
+    };
+
+    std::string stepError;
+    // Without systemctl the global enablement link stays, and new sessions
+    // keep starting the daemon; that is a leftover, not a step to skip.
+    attempt("could not stop starting the service for new sessions",
+            run("systemctl", {"--global", "disable", std::string(serviceName)}, stepError),
+            stepError);
+    if (userInGroup(groupName, user)) {
+        stepError.clear();
+        attempt("could not remove " + user + " from the " + std::string(groupName) + " group",
+                run("gpasswd", {"-d", user, std::string(groupName)}, stepError),
+                stepError);
     }
-    run("udevadm", {"control", "--reload-rules"}, error, true, true);
-    run("udevadm", {"trigger", "--subsystem-match=misc", "--attr-match=name=uinput"}, error, true, true);
-    return true;
+    for (const std::string &path :
+         {serviceFilePath(), std::string(udevRulePath), std::string(modulesLoadPath),
+          std::string(stateFilePath)}) {
+        stepError.clear();
+        attempt("could not remove a file", removeFileIfPresent(path, stepError), stepError);
+    }
+    // The rule file is gone, but udev keeps applying the loaded copy until it
+    // reloads, so a silent failure here leaves the group's write access live.
+    stepError.clear();
+    attempt("could not reload the udev rules",
+            run("udevadm", {"control", "--reload-rules"}, stepError),
+            stepError);
+    stepError.clear();
+    attempt("could not re-apply the uinput device permissions",
+            run("udevadm",
+                {"trigger", "--subsystem-match=misc", "--attr-match=name=uinput"},
+                stepError),
+            stepError);
+
+    if (problems.empty()) {
+        return true;
+    }
+    error = "Some of the virtual keyboard setup could not be removed:";
+    for (const std::string &problem : problems) {
+        error += "\n- " + problem;
+    }
+    return false;
 }
 
 void printHelp(const char *program)

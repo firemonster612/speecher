@@ -1507,6 +1507,38 @@ private slots:
         QVERIFY(readHttpRequest(second, 1000).toLower().contains(QByteArrayLiteral("authorization: bearer token-two")));
         refiner.cancel();
     }
+
+    // A token that lapses while the user is still speaking must be refreshed
+    // before refinement, not reported as expired: the dictation would otherwise
+    // fall back to the raw transcript with a sign-in that is still good.
+    // The account here carries no refresh token, so the attempt fails without a
+    // network call and its message names the missing token rather than expiry.
+    void refinementPreparationRefreshesAnExpiredToken()
+    {
+        QTemporaryDir dir;
+        const QString fileName = QStringLiteral("claude-a@example.com.json");
+        QFile account(QDir(dir.path()).filePath(fileName));
+        QVERIFY(account.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        account.write(QJsonDocument(QJsonObject{
+                                       {QStringLiteral("type"), QStringLiteral("claude")},
+                                       {QStringLiteral("access_token"), QStringLiteral("token-stale")},
+                                       {QStringLiteral("account_id"), QStringLiteral("acct")},
+                                       {QStringLiteral("expired"),
+                                        QDateTime::currentDateTimeUtc().addSecs(-60).toString(Qt::ISODate)},
+                                   })
+                          .toJson());
+        account.close();
+
+        RefinementSettings settings;
+        settings.anthropicAuthMode = QStringLiteral("cliproxy");
+        settings.cliproxyOauthDir = dir.path();
+
+        AnthropicTranscriptRefiner refiner;
+        const RefinementPrepareResult prepared = refiner.prepare(settings);
+        QVERIFY(!prepared.ok);
+        QVERIFY2(prepared.message.contains(QStringLiteral("no refresh token")),
+                 qPrintable(prepared.message));
+    }
 };
 
 int runRefinersTests(int argc, char **argv)

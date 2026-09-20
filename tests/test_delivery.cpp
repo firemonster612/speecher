@@ -62,6 +62,100 @@ class DeliveryTests : public QObject {
 
 private slots:
 #ifdef SPEECHER_WITH_WAYLAND
+    void waylandClipboardFailures_data()
+    {
+        QTest::addColumn<QString>("scenario");
+        for (const char *scenario : {"new copy", "snapshot failure", "copy failure", "both fail"}) {
+            QTest::newRow(scenario) << QString::fromLatin1(scenario);
+        }
+    }
+
+    void waylandClipboardFailures()
+    {
+        QFETCH(QString, scenario);
+        if (QCoreApplication::instance()) {
+            QProcess child;
+            child.setProcessChannelMode(QProcess::MergedChannels);
+            child.start(QCoreApplication::applicationFilePath(),
+                        {QStringLiteral("--t4-wayland"),
+                         QStringLiteral("waylandClipboardFailures:") + scenario});
+            QVERIFY(child.waitForFinished(10000));
+            QVERIFY2(child.exitStatus() == QProcess::NormalExit && child.exitCode() == 0,
+                     child.readAll().constData());
+            return;
+        }
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QList<QByteArray> names{"PATH", "XDG_SESSION_TYPE", "WAYLAND_DISPLAY", "T4_CLIPBOARD", "T4_SCENARIO"};
+        QList<QByteArray> values;
+        for (const auto &name : names) values.append(qgetenv(name));
+        const auto restoreEnvironment = qScopeGuard([&] {
+            for (qsizetype i = 0; i < names.size(); ++i) {
+                if (values[i].isNull()) qunsetenv(names[i]);
+                else qputenv(names[i], values[i]);
+            }
+        });
+        qputenv("PATH", QFile::encodeName(dir.path()));
+        qputenv("XDG_SESSION_TYPE", "wayland");
+        qputenv("WAYLAND_DISPLAY", "/nonexistent/speecher-t4-wayland");
+        qputenv("T4_CLIPBOARD", QFile::encodeName(dir.filePath("clipboard")));
+        qputenv("T4_SCENARIO", scenario.toUtf8());
+        const auto script = [&](const QString &name, const QByteArray &body) {
+            QFile file(dir.filePath(name));
+            if (!file.open(QIODevice::WriteOnly)) return false;
+            file.write("#!/bin/sh\n" + body);
+            file.close();
+            return file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+        };
+        QVERIFY(script("wl-copy", R"(
+case "$T4_SCENARIO" in "copy failure"|"both fail") exit 1;; esac
+/bin/cat > "$T4_CLIPBOARD"
+)"));
+        QVERIFY(script("wl-paste", R"(
+if [ "$T4_SCENARIO" = "snapshot failure" ]; then
+    echo 'snapshot read failed' >&2
+    exit 1
+fi
+if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD"; fi
+)"));
+        const auto writeClipboard = [&](const QByteArray &text) {
+            QFile file(dir.filePath("clipboard"));
+            if (!file.open(QIODevice::WriteOnly)) return false;
+            return file.write(text) == text.size();
+        };
+        QVERIFY(writeClipboard("previous"));
+        if (scenario == "new copy") {
+            ClipboardDelivery clipboard;
+            ClipboardSnapshot previous;
+            QVERIFY(clipboard.capture(&previous));
+            QVERIFY(clipboard.copy(makeDeliveryContent("dictation", OutputFormat::PlainText)));
+            QVERIFY(writeClipboard("someone else's copy"));
+            QVERIFY(clipboard.restore(previous, nullptr, true));
+        } else {
+            FakeTargetProvider provider;
+            provider.directInsertionAvailable = true;
+            provider.inserted = scenario != "both fail";
+            provider.verified = true;
+            TextDelivery delivery(&provider);
+            OutputSettings settings;
+            settings.method = QString::fromLatin1(OutputMethod::DirectInsert);
+            settings.restoreClipboardAfterTyping = true;
+            Target target;
+            target.applicationId = "test.editor";
+            const auto result = delivery.deliver(settings, makeDeliveryContent("dictation", OutputFormat::PlainText), target);
+            QCOMPARE(provider.insertCalls, 1);
+            QCOMPARE(result.ok, scenario != "both fail");
+            if (scenario == "snapshot failure") {
+                QVERIFY(result.message.contains("Previous clipboard could not be saved"));
+                QVERIFY(!result.message.contains("could not be restored"));
+            }
+        }
+        QFile clipboard(dir.filePath("clipboard"));
+        QVERIFY(clipboard.open(QIODevice::ReadOnly));
+        QCOMPARE(clipboard.readAll(), scenario == "new copy" ? QByteArray("someone else's copy")
+                 : scenario == "snapshot failure" ? QByteArray("dictation") : QByteArray("previous"));
+    }
+
     void portalResponseTrackerKeepsResponseUntilActualHandleArrives()
     {
         PortalResponseTracker tracker;
@@ -744,7 +838,7 @@ private slots:
 
         QCOMPARE(attempts, QList<QString>({virtualKeyboardMethod()}));
         QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
-        QCOMPARE(result.message, QStringLiteral("Copied • Input sent"));
+        QCOMPARE(result.message, QStringLiteral("Could not confirm the paste. Your dictation is on the clipboard."));
     }
 
     void outputExplicitMethodDoesNotFallback()
@@ -848,22 +942,81 @@ private slots:
         QVERIFY(attempts.isEmpty());
     }
 
-    // A GPU terminal that never reached the a11y bus is identified by the
-    // compositor instead. Accessibility cannot confirm focus, but the
-    // compositor already said the window is active, so delivery must still send
-    // the terminal chord rather than falling back to the global standard paste.
-    void compositorActiveTerminalPastesTerminalChordWithoutAtspiFocus()
+    void compositorFocusPrefersTheCompositorWindowId()
     {
+        using FocusMatch = TargetProvider::FocusMatch;
+        Target saved;
+        saved.applicationId = QStringLiteral("com.mitchellh.ghostty");
+        saved.processId = 4242;
+        saved.applicationName = QStringLiteral("nvim — speecher");
+        saved.processName = QStringLiteral("ghostty");
+        saved.compositorWindowId = QStringLiteral("{9c6f-1}");
+
+        // The terminal retitled itself while we were transcribing; KWin's
+        // window handle did not move, so the paste must still go through.
+        Target retitled = saved;
+        retitled.applicationName = QStringLiteral("zsh — ~/code");
+        QCOMPARE(AtSpiTargetProvider::compositorWindowMatch(retitled, saved), FocusMatch::Same);
+
+        // A second window of the same terminal: same process, same class, and
+        // only the handle tells it apart.
+        Target secondWindow = saved;
+        secondWindow.compositorWindowId = QStringLiteral("{9c6f-2}");
+        QCOMPARE(AtSpiTargetProvider::compositorWindowMatch(secondWindow, saved),
+                 FocusMatch::Different);
+
+    }
+
+    void compositorFocusWithoutAWindowIdReportsATitleChange()
+    {
+        using FocusMatch = TargetProvider::FocusMatch;
+        Target saved;
+        saved.applicationId = QStringLiteral("com.mitchellh.ghostty");
+        saved.processId = 4242;
+        saved.applicationName = QStringLiteral("nvim — speecher");
+        saved.processName = QStringLiteral("ghostty");
+
+        QCOMPARE(AtSpiTargetProvider::compositorWindowMatch(saved, saved), FocusMatch::Same);
+
+        // A compositor with no per-window handle cannot say whether this is the
+        // retitled window or its sibling, so it says neither.
+        Target retitled = saved;
+        retitled.applicationName = QStringLiteral("zsh — ~/code");
+        QCOMPARE(AtSpiTargetProvider::compositorWindowMatch(retitled, saved),
+                 FocusMatch::TitleChanged);
+
+        Target otherWindow = saved;
+        otherWindow.applicationId = QStringLiteral("org.kde.konsole");
+        QCOMPARE(AtSpiTargetProvider::compositorWindowMatch(otherWindow, saved),
+                 FocusMatch::Different);
+
+        Target otherProcess = saved;
+        otherProcess.processId = 99;
+        QCOMPARE(AtSpiTargetProvider::compositorWindowMatch(otherProcess, saved),
+                 FocusMatch::Different);
+    }
+
+    void compositorActiveTargetChangedKeepsTranscript_data()
+    {
+        QTest::addColumn<bool>("focused");
+        QTest::addColumn<bool>("focusedAtPasteTime");
+        QTest::newRow("changed before delivery") << false << false;
+        QTest::newRow("changed while copying") << true << false;
+    }
+
+    void compositorActiveTargetChangedKeepsTranscript()
+    {
+        QFETCH(bool, focused);
+        QFETCH(bool, focusedAtPasteTime);
         QList<QString> attempts;
         QHash<QString, bool> results{{virtualKeyboardMethod(), true}};
-        PasteMethod usedMethod = PasteMethod::ClipboardOnly;
         FakeTargetProvider targetProvider;
-        targetProvider.focused = false;
-        TextDelivery delivery([&attempts, &results, &usedMethod](
+        targetProvider.focused = focused;
+        targetProvider.focusedAtPasteTime = focusedAtPasteTime;
+        TextDelivery delivery([&attempts, &results](
                                   const QString &method,
                                   const OutputSettings &,
-                                  PasteMethod pasteMethod) {
-            usedMethod = pasteMethod;
+                                  PasteMethod) {
             return std::make_unique<FakeBackend>(method, &attempts, &results);
         }, &targetProvider);
 
@@ -885,9 +1038,9 @@ private slots:
             makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText),
             target);
 
-        QCOMPARE(attempts, QList<QString>({virtualKeyboardMethod()}));
-        QCOMPARE(usedMethod, PasteMethod::TerminalPaste);
-        QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
+        QVERIFY(attempts.isEmpty());
+        QCOMPARE(result.receipt, DeliveryReceipt::Copied);
+        QVERIFY(result.message.contains(QStringLiteral("active window")));
     }
 
     void outputUsesSavedAccessibleTargetAfterFocusChanges()
@@ -1004,7 +1157,7 @@ private slots:
         QCOMPARE(restored->data(QStringLiteral("image/png")), QByteArrayLiteral("fake-image"));
     }
 
-    void directInsertionRestoresClipboardAfterDelayWhenItCannotBeVerified()
+    void directInsertionKeepsTranscriptWhenItCannotBeVerified()
     {
         auto *previous = new QMimeData;
         previous->setText(QStringLiteral("previous clipboard"));
@@ -1048,42 +1201,25 @@ private slots:
         QCoreApplication::processEvents();
 
         QCOMPARE(result.receipt, DeliveryReceipt::AcceptedByTarget);
-        QCOMPARE(result.message, QStringLiteral("Accepted by Target"));
+        QVERIFY(result.message.contains(QStringLiteral("Your dictation is on the clipboard")));
         QCOMPARE(clipboardDuringDelay, QStringLiteral("new text"));
-        const QMimeData *restored = QApplication::clipboard()->mimeData();
-        QCOMPARE(restored->text(), QStringLiteral("previous clipboard"));
-        QCOMPARE(restored->html(), QStringLiteral("<b>previous clipboard</b>"));
-        QCOMPARE(restored->data(QStringLiteral("application/x-speecher-test")),
-                 QByteArrayLiteral("custom-data"));
+        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("new text"));
         QVERIFY(attempts.isEmpty());
     }
 
     void clipboardRestorePreservesNewCopyDuringDelivery()
     {
+        ClipboardDelivery clipboard;
         QApplication::clipboard()->setText(QStringLiteral("previous clipboard"));
-        FakeTargetProvider targetProvider;
-        targetProvider.directInsertionAvailable = true;
-        targetProvider.inserted = true;
-        TextDelivery delivery(&targetProvider);
-        OutputSettings settings;
-        settings.method = QString::fromLatin1(OutputMethod::DirectInsert);
-        settings.restoreClipboardAfterTyping = true;
-        Target target;
-        target.applicationId = QStringLiteral("test.editor");
-
-        QTimer::singleShot(0, &delivery, [] {
-            QApplication::clipboard()->setText(QStringLiteral("new user copy"));
-        });
-        const DeliveryResult result = delivery.deliver(
-            settings, makeDeliveryContent(QStringLiteral("dictated text"), OutputFormat::PlainText), target);
-
-        QVERIFY(result.ok);
-        QCOMPARE(result.receipt, DeliveryReceipt::AcceptedByTarget);
-        QCOMPARE(result.message, QStringLiteral("Accepted by Target"));
+        ClipboardSnapshot previous;
+        QVERIFY(clipboard.capture(&previous));
+        QVERIFY(clipboard.copy(makeDeliveryContent(QStringLiteral("dictated text"), OutputFormat::PlainText)));
+        QApplication::clipboard()->setText(QStringLiteral("new user copy"));
+        QVERIFY(clipboard.restore(previous, nullptr, true));
         QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("new user copy"));
     }
 
-    void outputRestoresClipboardAfterDelayWhenVirtualKeyboardInputCannotBeVerified()
+    void outputKeepsTranscriptWhenVirtualKeyboardInputCannotBeVerified()
     {
         auto *previous = new QMimeData;
         previous->setText(QStringLiteral("previous clipboard"));
@@ -1119,13 +1255,9 @@ private slots:
             target);
         QCoreApplication::processEvents();
         QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
-        QCOMPARE(result.message, QStringLiteral("Input sent"));
+        QVERIFY(result.message.contains(QStringLiteral("Could not confirm the paste")));
         QCOMPARE(consumedText, QStringLiteral("new text"));
-        const QMimeData *clipboard = QApplication::clipboard()->mimeData();
-        QCOMPARE(clipboard->text(), QStringLiteral("previous clipboard"));
-        QCOMPARE(clipboard->html(), QStringLiteral("<b>previous clipboard</b>"));
-        QCOMPARE(clipboard->data(QStringLiteral("application/x-speecher-test")),
-                 QByteArrayLiteral("custom-data"));
+        QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("new text"));
     }
 
 #ifdef SPEECHER_WITH_WAYLAND
@@ -1160,6 +1292,45 @@ private slots:
         QCOMPARE(restored->text(), QStringLiteral("old clipboard"));
         QCOMPARE(restored->html(), QStringLiteral("<i>old clipboard</i>"));
         QCOMPARE(restored->data(QStringLiteral("image/png")), QByteArrayLiteral("png-bytes"));
+    }
+
+    void wlClipboardRecognisesItsOwnCopyUnderADifferentOfferSet()
+    {
+        const QByteArray marker = QByteArrayLiteral("{copy-id}");
+        // What the owner helper publishes.
+        const QList<ClipboardMimePart> copied{
+            {QStringLiteral("text/plain;charset=utf-8"), QByteArrayLiteral("dictated text")},
+            {QStringLiteral("text/plain"), QByteArrayLiteral("dictated text")},
+            {QStringLiteral("UTF8_STRING"), QByteArrayLiteral("dictated text")},
+            {QStringLiteral("application/x-speecher-copy-id"), marker},
+        };
+
+        // A clipboard manager re-offers the same selection with its own formats
+        // and drops our marker; restore must still recognise it as ours.
+        const QList<ClipboardMimePart> viaManager{
+            {QStringLiteral("text/plain"), QByteArrayLiteral("dictated text")},
+            {QStringLiteral("SAVE_TARGETS"), QByteArray()},
+        };
+        QVERIFY(WlClipboardDelivery::copyStillOnClipboard(copied, viaManager));
+
+        // The marker alone is enough when the manager rewrites the text formats.
+        const QList<ClipboardMimePart> markerOnly{
+            {QStringLiteral("application/x-speecher-copy-id"), marker},
+        };
+        QVERIFY(WlClipboardDelivery::copyStillOnClipboard(copied, markerOnly));
+
+        // Someone else copied since: leave their selection alone.
+        const QList<ClipboardMimePart> otherCopy{
+            {QStringLiteral("text/plain"), QByteArrayLiteral("something else")},
+        };
+        QVERIFY(!WlClipboardDelivery::copyStillOnClipboard(copied, otherCopy));
+
+        // The wl-copy fallback publishes text/plain only; it is still ours.
+        const QList<ClipboardMimePart> fallbackCopy{
+            {QStringLiteral("text/plain"), QByteArrayLiteral("dictated text")},
+        };
+        QVERIFY(WlClipboardDelivery::copyStillOnClipboard(fallbackCopy, viaManager));
+        QVERIFY(!WlClipboardDelivery::copyStillOnClipboard(fallbackCopy, otherCopy));
     }
 
     void wlClipboardSnapshotRestoresEmptyClipboard()

@@ -30,8 +30,12 @@ public:
     // and HTML through QClipboard.
     bool canSnapshot() const;
     bool capture(ClipboardSnapshot *snapshot, QString *error = nullptr) const;
+    // With preserveNewCopy, a clipboard that someone else has since claimed is
+    // left alone and keptNewerCopy is set; the call still reports success.
+    // Not const: preserveNewCopy consumes the record of what this object last
+    // copied, so the question cannot be asked twice for one copy.
     bool restore(const ClipboardSnapshot &snapshot, QString *error = nullptr,
-                 bool preserveNewCopy = false) const;
+                 bool preserveNewCopy = false, bool *keptNewerCopy = nullptr);
 
 private:
     QtClipboardDelivery m_qtClipboard;

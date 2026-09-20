@@ -98,10 +98,16 @@ public:
         return target;
     }
 
+    // Delivery asks twice: once before it copies, and again immediately
+    // before the keystrokes go out. focusedAtPasteTime is the window that
+    // moved in between.
     bool stillFocused(const Target &) override
     {
-        return focused;
+        ++focusChecks;
+        return focusChecks == 1 ? focused : focusedAtPasteTime;
     }
+
+    bool preparePaste(const Target &) override { return pasteReady; }
 
     bool verifyInsertion(const Target &, const QString &) override
     {
@@ -125,6 +131,9 @@ public:
     int captureCalls = 0;
     int insertCalls = 0;
     bool focused = true;
+    bool focusedAtPasteTime = true;
+    int focusChecks = 0;
+    bool pasteReady = true;
     bool verified = false;
     bool directInsertionAvailable = false;
     bool inserted = false;

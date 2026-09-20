@@ -89,6 +89,9 @@ struct Target {
     // identify it. Delivery trusts it as the focus target without an AT-SPI
     // match, so a terminal that never reaches the a11y bus still pastes.
     bool compositorActive = false;
+    // The compositor's own handle for that window, when it has one. It is what
+    // tells one window of a program from another, and survives a retitle.
+    QString compositorWindowId;
 
     bool hasIdentity() const;
     bool hasSelection() const;

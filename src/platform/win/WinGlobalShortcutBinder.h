@@ -42,6 +42,10 @@ public:
                                                      QString *error = nullptr);
     static QKeySequence keySequenceForHotKey(quint32 modifiers, quint32 virtualKey);
     static QKeySequence defaultShortcut();
+    // Whether a setShortcut error means another application already owns the
+    // combination. Setup tells the user to record a different one only then;
+    // a key Windows cannot register at all will not yield to a retry.
+    static bool describesConflict(const QString &error);
 
 private:
     friend class ::WinPlatformTests;

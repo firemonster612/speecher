@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QObject>
 #include <QString>
 
 namespace speecher {
@@ -16,6 +17,10 @@ struct KeywatchProbeFacts {
     bool socketUnitInstalled = false;
     bool socketExists = false;
     bool socketWritable = false;
+    // systemd's socket unit accepts a connection before the daemon has
+    // started, so the files above prove only that the installation exists.
+    // This is the daemon's own answer on that socket.
+    bool daemonAnswers = false;
 };
 
 struct KeywatchSetupStatus {
@@ -26,10 +31,26 @@ struct KeywatchSetupStatus {
     bool ready() const { return state == KeywatchSetupState::Ready; }
 };
 
+// Announces that a background liveness exchange finished, so a view that
+// showed the previous answer can probe again. Lives on the thread that first
+// asked, which is the GUI thread.
+class KeywatchDaemonAnswer : public QObject {
+    Q_OBJECT
+signals:
+    void changed();
+};
+
 class KeywatchSetup {
 public:
     static KeywatchSetupStatus evaluate(const KeywatchProbeFacts &facts);
+    // Never blocks: the daemon's liveness comes from the cached answer of the
+    // last background exchange, and a stale one starts the next exchange.
     static KeywatchSetupStatus probe();
+    static KeywatchDaemonAnswer *daemonAnswer();
+    // Drops the cached daemon answer so the next probe asks the daemon again.
+    // Install and remove call this themselves; a caller that changed the
+    // helper some other way calls it to see the result without waiting.
+    static void forgetDaemonAnswer();
     static bool install(QString *error = nullptr);
     static bool remove(QString *error = nullptr);
 };

@@ -14,6 +14,13 @@ constexpr int firstHotKeyId = 0x5350;
 constexpr int secondHotKeyId = 0x5351;
 constexpr auto messageWindowClass = L"SpeecherShortcutRawInput";
 
+// The one sentence opener that marks a conflict with another application, so
+// describesConflict and the message that reports it agree by construction.
+QString conflictErrorPrefix()
+{
+    return QStringLiteral("Another application already owns ");
+}
+
 const QHash<int, quint32> &fixedVirtualKeys()
 {
     static const QHash<int, quint32> keys{
@@ -256,6 +263,11 @@ WinGlobalShortcutBinder::nativeHotKey(const QKeySequence &shortcut, QString *err
     return NativeHotKey{modifiers, key};
 }
 
+bool WinGlobalShortcutBinder::describesConflict(const QString &error)
+{
+    return error.startsWith(conflictErrorPrefix());
+}
+
 QKeySequence WinGlobalShortcutBinder::keySequenceForHotKey(quint32 modifiers,
                                                             quint32 virtualKey)
 {
@@ -308,8 +320,8 @@ bool WinGlobalShortcutBinder::registerShortcut(const QKeySequence &shortcut, QSt
     const int newId = m_hotKeyId == firstHotKeyId ? secondHotKeyId : firstHotKeyId;
     if (!RegisterHotKey(nullptr, newId, hotKey->modifiers, hotKey->virtualKey)) {
         if (error) {
-            *error = QStringLiteral("Another application already owns %1")
-                         .arg(shortcut.toString(QKeySequence::NativeText));
+            *error = conflictErrorPrefix()
+                + shortcut.toString(QKeySequence::NativeText);
         }
         return false;
     }

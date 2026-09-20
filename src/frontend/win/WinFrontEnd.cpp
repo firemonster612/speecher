@@ -77,12 +77,12 @@ WinFrontEnd::WinFrontEnd(ApplicationController *controller,
         showSettingsWindow();
         m_native->settingsWindow()->showWhatsNew();
     });
-    controller->updates()->setRestoreStateProvider([this, controller] {
+    // On-screen windows only, never the microphone: an update restart must not
+    // reopen a recording the new process was never asked for. The restart
+    // already waits for the session to finish; resuming what it waited out
+    // would record with no dictation gesture behind it.
+    controller->updates()->setRestoreStateProvider([this] {
         QStringList state;
-        const DictationState sessionState = controller->session()->state();
-        if (sessionState != DictationState::Idle && sessionState != DictationState::Error) {
-            state.append(QStringLiteral("listening"));
-        }
         if (m_native->settings && m_native->settings->isVisible()) {
             state.append(QStringLiteral("settings"));
         }

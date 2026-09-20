@@ -14,6 +14,9 @@ public:
     bool canWrite(const QByteArray &bytes, QString *error) const;
     bool write(const QByteArray &bytes, QString *error) const;
     QString lockPath() const;
+    // The auth file this storage reads, so a watcher does not have to re-derive
+    // it and miss the test override or the CODEX_HOME rules.
+    QString authFilePath() const { return m_path; }
 
 private:
     QString m_path;

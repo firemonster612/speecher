@@ -308,22 +308,18 @@ int main(int argc, char **argv)
         if (decision.showSettings) {
             QTimer::singleShot(0, &controller, &ApplicationController::showSettings);
         }
-        // An update restart records what was on screen; the relaunched process
-        // puts it back. Read-and-clear so a normal launch never replays it, and
-        // only honor a token young enough to be from an actual relaunch: a
-        // failed restart that leaves the app running must not seed a dictation
-        // into some later ordinary launch.
+        // An update restart records which windows were on screen; the relaunched
+        // process puts them back. Never the microphone: a new process has no
+        // dictation gesture behind it, so nothing here starts listening.
+        // Read-and-clear so a normal launch never replays it, and only honor a
+        // token young enough to be from an actual relaunch.
         const QString restore = controller.settings()->updatesRestoreState();
         const qint64 restoreAge = QDateTime::currentMSecsSinceEpoch()
             - controller.settings()->updatesRestoreStateTime();
         controller.settings()->setUpdatesRestoreState({});
-        if (!restore.isEmpty() && restoreAge >= 0 && restoreAge < 120000) {
-            if (restore.contains(QStringLiteral("settings"))) {
-                QTimer::singleShot(0, &controller, &ApplicationController::showSettings);
-            }
-            if (restore.contains(QStringLiteral("listening"))) {
-                QTimer::singleShot(0, &controller, &ApplicationController::startListening);
-            }
+        if (!restore.isEmpty() && restoreAge >= 0 && restoreAge < 120000
+            && restore.contains(QStringLiteral("settings"))) {
+            QTimer::singleShot(0, &controller, &ApplicationController::showSettings);
         }
         if (!daemon || !decision.grabPath.isEmpty()) {
             controller.showMainWindow();

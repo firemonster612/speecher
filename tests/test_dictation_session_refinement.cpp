@@ -8,6 +8,61 @@ class DictationSessionRefinementTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void speechLossWarningSurvivesRefinement_data()
+    {
+        QTest::addColumn<bool>("exhaustRecovery");
+        QTest::addColumn<bool>("deliverySucceeds");
+        QTest::newRow("reconnected") << false << true;
+        QTest::newRow("exhausted") << true << true;
+        QTest::newRow("delivery failed") << false << false;
+    }
+
+    void speechLossWarningSurvivesRefinement()
+    {
+        QFETCH(bool, exhaustRecovery);
+        QFETCH(bool, deliverySucceeds);
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.setRefinementStyle(QStringLiteral("light_cleanup"));
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        delivery.result.ok = deliverySucceeds;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        QSignalSpy status(&session, &DictationSession::statusChanged);
+        session.startListening();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        speech->emitPartialText(QStringLiteral("surviving words"));
+        speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+        if (exhaustRecovery) {
+            speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+            speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+        } else {
+            session.stopListening();
+        }
+        QTRY_COMPARE(refiner->refineCalls, 1);
+        refiner->emitCompletedText(QStringLiteral("Surviving words."));
+        QCOMPARE(delivery.calls, 1);
+        QCOMPARE(session.lastTranscript(), QStringLiteral("Surviving words."));
+        QVERIFY(session.lastMessage().contains(QStringLiteral("Part of the dictation may be missing")));
+        QVERIFY(status.last().first().toString().contains(QStringLiteral("Part of the dictation may be missing")));
+        if (deliverySucceeds) QTRY_COMPARE(session.state(), DictationState::Idle);
+        session.startListening();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        QVERIFY(session.lastTranscript().isEmpty());
+        speech->emitFinalText(QStringLiteral("a complete new session"));
+        session.stopListening();
+        QTRY_COMPARE(refiner->refineCalls, 2);
+        refiner->emitCompletedText(QStringLiteral("A complete new session."));
+        QVERIFY(!session.lastMessage().contains(QStringLiteral("may be missing")));
+    }
+
     void dictationSessionRefinesTranscript()
     {
         SettingsStore settings;
@@ -671,11 +726,12 @@ private slots:
 
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
         QCOMPARE(delivery->lastText, QStringLiteral("keep this transcript"));
+        QVERIFY(session.lastMessage().contains(QStringLiteral("Part of the dictation may be missing")));
         QCOMPARE(audio->isActive(), false);
         QCOMPARE(media->resumeCalls, 1);
         QCOMPARE(message.count(), 1);
         QCOMPARE(message.first().first().toString(),
-                 QStringLiteral("Used raw transcript • Input sent"));
+                 QStringLiteral("Used raw transcript • Input sent • Part of the dictation may be missing. The connection dropped."));
     }
 
     void dictationSessionReconnectsSpeechStreamAfterRetryableFailureWhileListening()
@@ -717,6 +773,7 @@ private slots:
         session.stopListening();
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
         QCOMPARE(delivery->lastText, QStringLiteral("keep this and these words after reconnect"));
+        QVERIFY(session.lastMessage().contains(QStringLiteral("Part of the dictation may be missing")));
     }
 
     void dictationSessionDeliversTranscriptWhenSpeechReconnectsAreExhausted()
@@ -747,6 +804,7 @@ private slots:
 
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
         QCOMPARE(delivery->lastText, QStringLiteral("keep this transcript"));
+        QVERIFY(session.lastMessage().contains(QStringLiteral("Part of the dictation may be missing")));
         QCOMPARE(speech->startCalls, 3);
         QCOMPARE(audio->isActive(), false);
         QCOMPARE(media->resumeCalls, 1);
@@ -821,7 +879,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
         QCOMPARE(delivery->lastText, QStringLiteral("Keep this transcript."));
         QCOMPARE(message.count(), 1);
-        QCOMPARE(message.first().first().toString(), QStringLiteral("Input sent"));
+        QCOMPARE(message.first().first().toString(), QStringLiteral("Input sent • Part of the dictation may be missing. The connection dropped."));
     }
 
     void dictationSessionIgnoresRefinerSignalsAfterFailureFallback()

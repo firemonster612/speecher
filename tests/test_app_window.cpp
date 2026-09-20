@@ -4,6 +4,7 @@
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
+#include "core/TranscriptState.h"
 #include "frontend/qt/QtFrontEnd.h"
 #include "ui/AppPage.h"
 #include "ui/AppWindow.h"
@@ -70,6 +71,29 @@ private slots:
                                    .arg(page)
                                    .arg(window.pageTitles().at(page).toLower()));
         }
+    }
+
+    void dictationPageRecoversBackgroundTranscript()
+    {
+        ApplicationController controller(true);
+        auto *transcript = controller.session()->findChild<TranscriptState *>();
+        QVERIFY(transcript);
+        transcript->commitFinal(QStringLiteral("Words from the background session."));
+        DictationPage page(&controller);
+        auto *editor = page.findChild<QPlainTextEdit *>(QStringLiteral("dictationTranscript"));
+        QVERIFY(editor);
+        QCOMPARE(editor->toPlainText(), QStringLiteral("Words from the background session."));
+        editor->clear();
+        page.show();
+        QCOMPARE(editor->toPlainText(), QStringLiteral("Words from the background session."));
+        const QString screenshot = qEnvironmentVariable("SPEECHER_T4_SCREENSHOT");
+        if (!screenshot.isEmpty()) {
+            page.resize(760, 700);
+            QCoreApplication::processEvents();
+            QVERIFY(page.grab().save(screenshot));
+        }
+        controller.session()->stateChanged(QStringLiteral("starting"));
+        QVERIFY(editor->toPlainText().isEmpty());
     }
 
     void sidebarShellConstructsWithSharedPageTitles()

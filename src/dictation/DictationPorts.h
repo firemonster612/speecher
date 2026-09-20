@@ -111,6 +111,20 @@ public:
         Q_UNUSED(target);
         return false;
     }
+    // How the window in front now relates to the one dictation started in.
+    // TitleChanged is its own answer because it is the ambiguous one: the same
+    // window after a retitle, or a second window of the same program. Either
+    // way it is not safe to paste into, and neither is a lost window, so
+    // telling the person their window "changed" would be a guess.
+    enum class FocusMatch {
+        Same,
+        TitleChanged,
+        Different,
+    };
+    virtual FocusMatch focusMatch(const Target &target)
+    {
+        return stillFocused(target) ? FocusMatch::Same : FocusMatch::Different;
+    }
     virtual bool canInsertText(const Target &target)
     {
         Q_UNUSED(target);

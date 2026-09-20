@@ -581,11 +581,13 @@ private slots:
         TestManifestUpdater pendingUpdater(&pending.settings, pending.session.get());
         pending.session->startListening();
         QCOMPARE(pending.session->state(), DictationState::Starting);
+        // Restoring the microphone is deliberately not on offer, so the state
+        // that must survive the wait is the settings window the user had open.
         pendingUpdater.setRestoreStateProvider([&pending] {
             const DictationState state = pending.session->state();
             return state == DictationState::Idle || state == DictationState::Error
                 ? QString()
-                : QStringLiteral("listening");
+                : QStringLiteral("settings");
         });
         ManifestUpdaterTestAccess::setState(pendingUpdater,
                                             UpdateController::State::ReadyToRestart);
@@ -593,7 +595,7 @@ private slots:
         QCOMPARE(pendingUpdater.state(), UpdateController::State::RestartPending);
         pending.session->stopListening();
         QCOMPARE(pendingUpdater.restartCount, 1);
-        QCOMPARE(pending.settings.updatesRestoreState(), QStringLiteral("listening"));
+        QCOMPARE(pending.settings.updatesRestoreState(), QStringLiteral("settings"));
     }
 
     void installAndRestartInErrorStateOnlyRetriesTheCheck()

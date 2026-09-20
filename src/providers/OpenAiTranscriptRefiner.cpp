@@ -87,9 +87,13 @@ void OpenAiTranscriptRefiner::refresh(const RefinementSettings &settings)
 
 RefinementPrepareResult OpenAiTranscriptRefiner::prepare(const RefinementSettings &settings)
 {
+    // Refresh an expired token here rather than reporting it expired: a token
+    // valid when the user started speaking can lapse before refinement, and
+    // refusing then would drop the refinement the user asked for. resolve()
+    // takes the same one-second credential lock the speech path uses.
     m_auth = OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode, settings.openAiCliproxyAccount, settings.cliproxyOauthDir,
                              {}, {}, settings.cliproxyBaseUrl, settings.cliproxyApiKey)
-                 .resolve(false);
+                 .resolve();
     return {m_auth.ok, m_auth.status};
 }
 

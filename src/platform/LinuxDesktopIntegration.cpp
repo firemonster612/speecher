@@ -290,11 +290,11 @@ bool installAppImageIntegration(const QString &homePath,
         QStringLiteral("../../%1.svg").arg(QString::fromLatin1(appId)));
 
     const QDir home(homePath);
+    const QDir dataHome(localDataPath(homePath));
     const QString binaryDir = home.filePath(QStringLiteral(".local/bin"));
-    const QString applicationsDir = home.filePath(
-        QStringLiteral(".local/share/applications"));
-    const QString iconsDir = home.filePath(
-        QStringLiteral(".local/share/icons/hicolor/scalable/apps"));
+    const QString applicationsDir = dataHome.filePath(QStringLiteral("applications"));
+    const QString iconsDir = dataHome.filePath(
+        QStringLiteral("icons/hicolor/scalable/apps"));
     const QString binary = localBinaryPath(homePath);
     const QFileInfo existing(binary);
     if (existing.exists() && !existing.isSymLink()) {
@@ -340,8 +340,20 @@ bool installAppImageIntegration(const QString &homePath,
         return false;
     }
 
+    // The launcher runs the command link, not the image: the link is the one
+    // path that survives the person moving or renaming the AppImage, and
+    // reinstalling from the new location repoints it. That is also why the
+    // link is made first — a menu entry written before it would point at
+    // nothing if the link could not be created.
     QString artifactError;
-    if (!writeAppImageDesktopFile(sourceDesktop, targetDesktop, image, &artifactError)) {
+    if ((!existing.isSymLink() || resolvedPath(existing.symLinkTarget()) != image)
+        && !replaceCommandLink(image, binary, &artifactError)) {
+        if (error) {
+            *error = QStringLiteral("Command link installation failed: %1").arg(artifactError);
+        }
+        return false;
+    }
+    if (!writeAppImageDesktopFile(sourceDesktop, targetDesktop, binary, &artifactError)) {
         if (error) {
             *error = QStringLiteral("Desktop file installation failed: %1").arg(artifactError);
         }
@@ -350,14 +362,6 @@ bool installAppImageIntegration(const QString &homePath,
     if (!copyFile(sourceIcon, targetIcon, &artifactError)) {
         if (error) {
             *error = QStringLiteral("Icon installation failed: %1").arg(artifactError);
-        }
-        return false;
-    }
-
-    if ((!existing.isSymLink() || resolvedPath(existing.symLinkTarget()) != image)
-        && !replaceCommandLink(image, binary, &artifactError)) {
-        if (error) {
-            *error = QStringLiteral("Command link installation failed: %1").arg(artifactError);
         }
         return false;
     }
@@ -373,15 +377,15 @@ bool installAppImageIntegration(const QString &homePath,
 DesktopIntegrationRemoval removeAppImageIntegration(const QString &homePath)
 {
     DesktopIntegrationRemoval result;
-    const QDir home(homePath);
-    const QString applicationsDir = home.filePath(QStringLiteral(".local/share/applications"));
+    const QDir dataHome(localDataPath(homePath));
+    const QString applicationsDir = dataHome.filePath(QStringLiteral("applications"));
     const QString desktopFile = QDir(applicationsDir).filePath(
         QStringLiteral("%1.desktop").arg(QString::fromLatin1(appId)));
-    const QString icon = home.filePath(
-        QStringLiteral(".local/share/icons/hicolor/scalable/apps/%1.svg")
+    const QString icon = dataHome.filePath(
+        QStringLiteral("icons/hicolor/scalable/apps/%1.svg")
             .arg(QString::fromLatin1(appId)));
     const QString link = localBinaryPath(homePath);
-    const QString helper = QDir(localDataPath(homePath)).filePath(
+    const QString helper = dataHome.filePath(
         QStringLiteral("speecher/libexec/speecher-ydotool-setup"));
     const QString runningAppImage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
 

@@ -78,15 +78,51 @@ Target AtSpiTargetProvider::compositorFallbackTarget(
         ? window->resourceName
         : processNameForPid(window->processId);
     target.processId = window->processId;
+    target.compositorWindowId = window->internalId;
     target.compositorActive = true;
     target.category = classifyTarget(target, recognitionRules);
     target.terminalHost = isTerminalTarget(target);
     return target;
 }
 
+// KWin's window handle answers this outright where it exists: it survives the
+// retitles that terminals and browsers do mid-dictation, and it tells two
+// windows of one program apart, which the process and class cannot.
+//
+// Without it, the process and class alone would accept the second window of
+// the same program, and the caption alone would reject a retitled one. Both
+// have to match, and a caption-only mismatch is reported as its own answer so
+// delivery can stay quiet about which of the two it was.
+TargetProvider::FocusMatch AtSpiTargetProvider::compositorWindowMatch(const Target &a,
+                                                                      const Target &b)
+{
+    if (!a.compositorWindowId.isEmpty() && !b.compositorWindowId.isEmpty()) {
+        return a.compositorWindowId == b.compositorWindowId ? FocusMatch::Same
+                                                            : FocusMatch::Different;
+    }
+    if (a.applicationId != b.applicationId || a.processId != b.processId) {
+        return FocusMatch::Different;
+    }
+    // applicationName carries the caption for a compositor-fallback target.
+    return a.applicationName == b.applicationName ? FocusMatch::Same : FocusMatch::TitleChanged;
+}
+
+TargetProvider::FocusMatch AtSpiTargetProvider::focusMatch(const Target &target)
+{
+    if (!target.compositorActive) {
+        return m_snapshot && m_snapshot->matches(target, true) ? FocusMatch::Same
+                                                               : FocusMatch::Different;
+    }
+    const Target active = compositorFallbackTarget({});
+    if (!active.compositorActive) {
+        return FocusMatch::Different;
+    }
+    return compositorWindowMatch(active, target);
+}
+
 bool AtSpiTargetProvider::stillFocused(const Target &target)
 {
-    return m_snapshot && m_snapshot->matches(target, true);
+    return focusMatch(target) == FocusMatch::Same;
 }
 
 bool AtSpiTargetProvider::canInsertText(const Target &target)

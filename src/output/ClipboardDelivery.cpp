@@ -160,15 +160,23 @@ bool ClipboardDelivery::capture(ClipboardSnapshot *snapshot, QString *error) con
 }
 
 bool ClipboardDelivery::restore(const ClipboardSnapshot &snapshot, QString *error,
-                                bool preserveNewCopy) const
+                                bool preserveNewCopy, bool *keptNewerCopy)
 {
+    if (keptNewerCopy) {
+        *keptNewerCopy = false;
+    }
 #ifdef SPEECHER_WITH_WAYLAND
     if (WlClipboardDelivery::isWaylandSession()) {
-        return WlClipboardDelivery::restore(snapshot, error);
+        return preserveNewCopy
+            ? m_waylandClipboard.restorePreservingNewCopy(snapshot, error, keptNewerCopy)
+            : WlClipboardDelivery::restore(snapshot, error);
     }
 #endif
     if (preserveNewCopy && !m_qtClipboard.ownsClipboardContent()) {
         // Keeping another application's newer copy satisfies automatic restore.
+        if (keptNewerCopy) {
+            *keptNewerCopy = true;
+        }
         return true;
     }
     return restoreQtClipboard(snapshot, error);

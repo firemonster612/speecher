@@ -9,6 +9,9 @@
 #include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QMimeData>
+#include <QUuid>
+
+#include <utility>
 
 namespace speecher {
 
@@ -17,6 +20,29 @@ namespace {
 constexpr int snapshotDeadlineMs = 1500;
 constexpr qsizetype maximumFormatBytes = 4 * 1024 * 1024;
 constexpr qsizetype maximumSnapshotBytes = 8 * 1024 * 1024;
+
+// A private format carrying a per-copy UUID. When the offer survives intact we
+// know the clipboard still holds our dictation and not someone else's newer copy.
+QString copyMarkerMimeType()
+{
+    return QStringLiteral("application/x-speecher-copy-id");
+}
+
+QByteArray partData(const QList<ClipboardMimePart> &parts, const QString &mimeType)
+{
+    for (const ClipboardMimePart &part : parts) {
+        if (part.mimeType.compare(mimeType, Qt::CaseInsensitive) == 0) {
+            return part.data;
+        }
+    }
+    return {};
+}
+
+QByteArray plainTextData(const QList<ClipboardMimePart> &parts)
+{
+    const QByteArray utf8 = partData(parts, QStringLiteral("text/plain;charset=utf-8"));
+    return utf8.isEmpty() ? partData(parts, QStringLiteral("text/plain")) : utf8;
+}
 
 const QStringList &restorableMimeTypes()
 {
@@ -156,7 +182,10 @@ bool WlClipboardDelivery::copy(const DeliveryContent &content, bool *htmlAvailab
         parts.append({QStringLiteral("text/html"), content.html->toUtf8()});
     }
 
+    m_copiedParts.clear();
+    parts.append({copyMarkerMimeType(), QUuid::createUuid().toByteArray()});
     if (m_owner->start(parts, error)) {
+        m_copiedParts = parts;
         if (htmlAvailable) {
             *htmlAvailable = content.html.has_value();
         }
@@ -164,6 +193,7 @@ bool WlClipboardDelivery::copy(const DeliveryContent &content, bool *htmlAvailab
     }
     QString plainError;
     if (copyBytes(content.plainText.toUtf8(), QStringLiteral("text/plain"), &plainError)) {
+        m_copiedParts = {{QStringLiteral("text/plain"), content.plainText.toUtf8()}};
         return true;
     }
     if (error && error->isEmpty()) {
@@ -291,6 +321,49 @@ bool WlClipboardDelivery::capture(ClipboardSnapshot *snapshot, QString *error)
         }
     }
     return true;
+}
+
+// Clipboard managers re-offer our copy under their own format set, and the
+// wl-copy fallback offers text/plain alone, so comparing the whole set made
+// restore a silent no-op. Our dictation is still the selection if its marker
+// survived or the plain text still matches; anything else is somebody's newer
+// copy, which we must never overwrite.
+bool WlClipboardDelivery::copyStillOnClipboard(const QList<ClipboardMimePart> &copied,
+                                               const QList<ClipboardMimePart> &current)
+{
+    const QByteArray marker = partData(copied, copyMarkerMimeType());
+    if (!marker.isEmpty() && partData(current, copyMarkerMimeType()) == marker) {
+        return true;
+    }
+    const QByteArray copiedText = plainTextData(copied);
+    return !copiedText.isEmpty() && plainTextData(current) == copiedText;
+}
+
+bool WlClipboardDelivery::restorePreservingNewCopy(const ClipboardSnapshot &snapshot,
+                                                   QString *error,
+                                                   bool *keptNewerCopy)
+{
+    if (keptNewerCopy) {
+        *keptNewerCopy = false;
+    }
+    if (m_copiedParts.isEmpty()) {
+        return true;
+    }
+    ClipboardSnapshot current;
+    if (!capture(&current, error)) {
+        return false;
+    }
+    // The decision has been made for this copy. Keeping the parts would let a
+    // later delivery that never copied anything restore over somebody else's
+    // clipboard on the strength of this one.
+    const QList<ClipboardMimePart> copied = std::exchange(m_copiedParts, {});
+    if (!copyStillOnClipboard(copied, current.parts)) {
+        if (keptNewerCopy) {
+            *keptNewerCopy = true;
+        }
+        return true;
+    }
+    return restore(snapshot, error);
 }
 
 bool WlClipboardDelivery::restore(const ClipboardSnapshot &snapshot, QString *error)

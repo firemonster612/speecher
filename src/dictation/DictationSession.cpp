@@ -162,6 +162,11 @@ QString DictationSession::stateName() const
     return dictationStateName(m_state);
 }
 
+QString DictationSession::lastTranscript() const
+{
+    return m_lastTranscript.isEmpty() ? m_transcript->text() : m_lastTranscript;
+}
+
 QString DictationSession::lastMessage() const
 {
     return m_lastMessage;
@@ -234,6 +239,8 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
     qInfo().noquote() << "startListening speechProvider=" + settings.speech.providerId
                       << "credentialsPath=" + settings.speech.claudeCredentialsPath
                       << "voiceBase=" + settings.speech.claudeEndpointBase;
+    m_speechWarning.clear();
+    m_lastTranscript.clear();
     m_transcript->clear();
     m_transcriptPipeline = {};
     // Unfreeze before clearing: a front end whose preview honours the frozen
@@ -600,6 +607,7 @@ void DictationSession::deliverFinal(const QString &text)
     const AppSettings settings = *m_sessionSettings;
     const quint64 generation = m_generation;
     m_refinementGeneration = 0;
+    m_lastTranscript = text;
     const bool usedFallback = !m_lastMessage.isEmpty();
     emit popupRefiningChanged(false);
     setState(DictationState::Delivering);
@@ -620,16 +628,21 @@ void DictationSession::deliverFinal(const QString &text)
     m_target = {};
     if (result.ok) {
         emit transcriptDelivered(text);
-        const QString outcome = usedFallback
+        QString outcome = usedFallback
             ? QStringLiteral("Used raw transcript • %1").arg(result.message)
             : result.message;
+        if (!m_speechWarning.isEmpty()) {
+            outcome += QStringLiteral(" • ") + m_speechWarning;
+        }
+        m_lastMessage = outcome;
         emit popupMessageRequested(outcome);
         emit statusChanged(outcome);
         m_completionTimer->start(settings.output.completionStatusDurationMs);
     } else {
         emit popupFrozenChanged(false);
         qWarning().noquote() << "text delivery failed message=" + result.message;
-        setState(DictationState::Error, result.message);
+        setState(DictationState::Error, m_speechWarning.isEmpty()
+            ? result.message : result.message + QStringLiteral(" • ") + m_speechWarning);
     }
 }
 
@@ -666,6 +679,7 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
         // end of the Dictation Session: keep the audio running and open a fresh
         // attempt on the same transcriber. The partial for the current utterance
         // will never be finalised by the dead stream, so commit it now.
+        m_speechWarning = QStringLiteral("Part of the dictation may be missing. The connection dropped.");
         --m_speechReconnectsLeft;
         ++m_attemptId;
         qInfo().noquote() << "speech stream reconnecting attempt=" << m_attemptId
@@ -681,6 +695,7 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
                          << "message=" + failure.message;
     if (!m_transcript->isEmpty()
         && (m_state == DictationState::Listening || m_state == DictationState::Stopping)) {
+        m_speechWarning = QStringLiteral("Part of the dictation may be missing. The connection dropped.");
         if (m_state == DictationState::Listening) {
             m_audio->stop();
             m_audioGeneration = 0;

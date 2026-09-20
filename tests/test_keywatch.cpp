@@ -80,10 +80,19 @@ private slots:
         QCOMPARE(KeywatchSetup::evaluate(listening).state,
                  KeywatchSetupState::DaemonNotRunning);
 
-        // The owner-only socket needs no group or sign-out: once it exists and
-        // is writable for the login user, the helper is ready straight away.
-        KeywatchProbeFacts ready = listening;
-        ready.socketWritable = true;
+        // A writable socket is systemd's, not the daemon's: a daemon that
+        // cannot read keyboards leaves exactly this state behind, so it is not
+        // ready, and the setup button it re-enables is the repair.
+        KeywatchProbeFacts writable = listening;
+        writable.socketWritable = true;
+        const KeywatchSetupStatus silent = KeywatchSetup::evaluate(writable);
+        QCOMPARE(silent.state, KeywatchSetupState::DaemonNotRunning);
+        QVERIFY(!silent.ready());
+
+        // The owner-only socket needs no group or sign-out: once the daemon
+        // answers on it, the helper is ready straight away.
+        KeywatchProbeFacts ready = writable;
+        ready.daemonAnswers = true;
         const KeywatchSetupStatus status = KeywatchSetup::evaluate(ready);
         QCOMPARE(status.state, KeywatchSetupState::Ready);
         QVERIFY(status.ready());

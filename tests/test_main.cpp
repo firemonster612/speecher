@@ -22,6 +22,14 @@
 
 int main(int argc, char **argv)
 {
+#ifdef SPEECHER_WITH_WAYLAND
+    // Exercise the background Wayland clipboard path without Qt's offscreen
+    // clipboard taking precedence over the command-line clipboard helpers.
+    if (argc > 1 && QByteArray(argv[1]) == "--t4-wayland") {
+        setTestArguments(argc - 1, argv + 1);
+        return runDeliveryTests(argc - 1, argv + 1);
+    }
+#endif
 #ifdef Q_OS_MACOS
     // Test mode alone does not redirect macOS CFPreferences. Keep every test
     // QSettings instance away from the user's native preferences.

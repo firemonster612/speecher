@@ -21,10 +21,16 @@ public:
     ~AtSpiTargetProvider() override;
     Target capture(const QList<AppRecognitionRule> &recognitionRules = {}) override;
     bool stillFocused(const Target &target) override;
+    FocusMatch focusMatch(const Target &target) override;
     bool canInsertText(const Target &target) override;
     bool insertText(const Target &target, const QString &plainText, QString *error = nullptr) override;
     bool verifyInsertion(const Target &target, const QString &plainText) override;
     void setCorrectionObservationEnabled(bool enabled) override;
+
+    // Identity of a compositor-fallback window: the compositor's own window
+    // handle where there is one, otherwise the process, its window class and
+    // its caption.
+    static FocusMatch compositorWindowMatch(const Target &a, const Target &b);
 
 private:
     void clearAccessible();

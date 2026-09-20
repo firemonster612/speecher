@@ -12,6 +12,7 @@
 #include "KeywatchPayloadDigests.h"
 #include "YdotoolSetupTransaction.h"
 
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -99,6 +100,35 @@ std::string bundledPath(std::string_view name)
         return {};
     }
     return self.substr(0, slash + 1) + std::string(name);
+}
+
+// The socket unit names exactly one account in SocketUser= and its mode is
+// 0600, so installing for a second account would rewrite that line and lock
+// the first account out of a helper it is still using. Read who owns it.
+std::string socketUnitOwner()
+{
+    std::ifstream unit{std::string(socketUnitPath)};
+    std::string line;
+    const std::string key = "SocketUser=";
+    while (std::getline(unit, line)) {
+        if (line.rfind(key, 0) != 0) {
+            continue;
+        }
+        std::string owner = line.substr(key.size());
+        while (!owner.empty() && (owner.back() == '\r' || owner.back() == ' ')) {
+            owner.pop_back();
+        }
+        return owner;
+    }
+    return {};
+}
+
+// The account the installed unit hands the socket to, when that is somebody
+// else. Empty when the helper is this user's, or is not installed at all.
+std::string otherAccountOwner(const std::string &user)
+{
+    const std::string owner = socketUnitOwner();
+    return owner == user ? std::string() : owner;
 }
 
 // selinuxfs is mounted only when the running kernel has SELinux enabled.
@@ -228,6 +258,12 @@ bool copyDaemon(std::string &error)
 
 bool install(const std::string &user, std::string &error)
 {
+    if (const std::string owner = otherAccountOwner(user); !owner.empty()) {
+        error = "The key helper on this computer is already set up for the account \"" + owner
+            + "\". Sign in as " + owner + " and remove the key helper there first; setting it up for "
+            + user + " now would take it away from " + owner + ".";
+        return false;
+    }
     speecher::YdotoolSetupTransaction transaction;
     const auto failed = [&] {
         transaction.appendToError(error);
@@ -283,6 +319,13 @@ bool install(const std::string &user, std::string &error)
 
 bool remove(const std::string &user, std::string &error)
 {
+    // Removing somebody else's helper is as much of a theft as replacing it.
+    if (const std::string owner = otherAccountOwner(user); !owner.empty()) {
+        error = "The key helper on this computer belongs to the account \"" + owner
+            + "\". Sign in as " + owner + " and remove it there; removing it for " + user
+            + " would take it away from " + owner + ".";
+        return false;
+    }
     run("systemctl", {"disable", "--now", std::string(socketName)}, error, true, true);
     if (!removeFileIfPresent(std::string(socketUnitPath), error)
         || !removeFileIfPresent(std::string(serviceUnitPath), error)
