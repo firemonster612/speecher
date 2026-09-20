@@ -7,6 +7,8 @@
 #include "core/SettingsStore.h"
 #include "frontend/qt/SchemaSettingsPage.h"
 #ifdef Q_OS_LINUX
+#include "output/YdotoolSetup.h"
+#include "platform/KeywatchSetup.h"
 #include "platform/LinuxDesktopIntegration.h"
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
 #endif
@@ -496,13 +498,29 @@ void SettingsPageSet::refreshUpdateRows()
 void SettingsPageSet::removeSpeecher()
 {
     QWidget *window = qobject_cast<QWidget *>(parent());
+    // The privileged helpers are separate root installations. Removing only
+    // this user's files would leave a system service, a device rule and a
+    // group membership behind while the report claimed a clean removal.
+    const bool ydotoolInstalled = YdotoolSetup::probe(false).speecherManagedSetupInstalled;
+    const bool keywatchInstalled =
+        KeywatchSetup::probe().state != KeywatchSetupState::NotInstalled;
+    const bool anyHelperInstalled = ydotoolInstalled || keywatchInstalled;
+
     QMessageBox confirm(window);
     confirm.setIcon(QMessageBox::Question);
     confirm.setWindowTitle(QStringLiteral("Remove Speecher"));
     confirm.setText(QStringLiteral("Remove Speecher from this computer?"));
-    confirm.setInformativeText(QStringLiteral(
-        "This removes the app menu entry, the speecher command, the app icon and the Global "
-        "Shortcut registration. The Speecher program file stays where you put it."));
+    confirm.setInformativeText(
+        QStringLiteral("This removes the app menu entry, the speecher command, the app icon and "
+                       "the Global Shortcut registration. The Speecher program file stays where "
+                       "you put it.")
+        // Each helper is its own pkexec'd program, so an install with both of
+        // them asks twice. Promising one prompt makes the second look wrong.
+        + (anyHelperInstalled
+               ? QStringLiteral("\n\nIt also removes the system helpers Speecher installed, which "
+                                "asks for administrator permission for each helper. They are "
+                                "shared by every account on this computer.")
+               : QString()));
     auto *deleteSettings = new QCheckBox(
         QStringLiteral("Also delete my settings, vocabulary and learned corrections"), &confirm);
     confirm.setCheckBox(deleteSettings);
@@ -534,6 +552,31 @@ void SettingsPageSet::removeSpeecher()
         notDone.append(shortcutError.isEmpty()
                            ? QStringLiteral("The Global Shortcut registration could not be removed.")
                            : QStringLiteral("Global Shortcut: %1").arg(shortcutError));
+    }
+
+    if (ydotoolInstalled) {
+        QString stopError;
+        if (!YdotoolSetup::stopUserService(&stopError) && !stopError.isEmpty()) {
+            notDone.append(QStringLiteral("Virtual keyboard service: %1").arg(stopError));
+        }
+        QString helperError;
+        if (YdotoolSetup::runHelper(YdotoolSetup::HelperAction::Remove, &helperError)) {
+            done.append(QStringLiteral("Removed the virtual keyboard setup."));
+        } else {
+            notDone.append(helperError.isEmpty()
+                               ? QStringLiteral("The virtual keyboard setup could not be removed.")
+                               : QStringLiteral("Virtual keyboard: %1").arg(helperError));
+        }
+    }
+    if (keywatchInstalled) {
+        QString helperError;
+        if (KeywatchSetup::remove(&helperError)) {
+            done.append(QStringLiteral("Removed the single-key helper."));
+        } else {
+            notDone.append(helperError.isEmpty()
+                               ? QStringLiteral("The single-key helper could not be removed.")
+                               : QStringLiteral("Key helper: %1").arg(helperError));
+        }
     }
 
     const bool deleteUserSettings = deleteSettings->isChecked();

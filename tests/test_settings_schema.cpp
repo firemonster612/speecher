@@ -62,6 +62,30 @@ private slots:
         QCOMPARE(row.collection.records(AppSettings{}).size(), 5);
     }
 
+    void refinementRowsGoDeadWhenTheProviderIsNone()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsPage &page = schema.page(QStringLiteral("refinement"));
+        AppSettings off;
+        off.refinement.providerId = QStringLiteral("none");
+        AppSettings on;
+        on.refinement.providerId = QStringLiteral("openai");
+        const Capabilities capable{true, false, true};
+
+        for (const QString &id : {QStringLiteral("defaultWritingProfile"),
+                                  QStringLiteral("targetContextControl"),
+                                  QStringLiteral("includeScreenshotContext"),
+                                  QStringLiteral("writingProfileBehavior")}) {
+            const SettingsRow &row = rowById(page, id);
+            QVERIFY2(row.enabled, qPrintable(id));
+            QVERIFY2(!row.enabled(off, capable), qPrintable(id));
+            QVERIFY2(row.enabled(on, capable), qPrintable(id));
+            QVERIFY2(!row.disabledHelp.isEmpty(), qPrintable(id));
+        }
+        QCOMPARE(rowById(page, QStringLiteral("defaultWritingProfile")).disabledHelp,
+                 QStringLiteral("Refinement is off."));
+    }
+
     void previewTogglesPersistThroughSchemaDraft()
     {
         SettingsStore store;
@@ -364,6 +388,12 @@ private slots:
         AppSettings settings;
         row.apply(settings, QStringLiteral("toggle"));
         QCOMPARE(settings.shortcutActivationMode, ShortcutActivationMode::Toggle);
+
+        // Both held modes need the backend to report the key going up, and
+        // some backends never do; the row says so rather than offering a mode
+        // that quietly behaves as another one.
+        QVERIFY(row.help.contains(QStringLiteral("reports key release")));
+        QVERIFY(row.help.contains(QStringLiteral("behave as Toggle")));
     }
 
     void launchAtLoginAppearsOnMacOSAndWindows()
@@ -379,6 +409,26 @@ private slots:
                  QStringLiteral("Dictation only works while Speecher is running."));
 #else
         QVERIFY(!hasRow(general, QStringLiteral("launchAtLogin")));
+#endif
+    }
+
+    // The toggle saves whether or not the computer honours it, so a refusal
+    // has nowhere else to appear.
+    void launchAtLoginCautionAppearsOnlyAfterARefusal()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsPage &general = schema.page(QStringLiteral("general"));
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
+        const SettingsRow &row = rowById(general, QStringLiteral("launchAtLoginProblem"));
+        QCOMPARE(row.kind, RowKind::Info);
+        QVERIFY(row.visible);
+        QVERIFY(!row.visible(AppSettings{}, Capabilities{}));
+        Capabilities refused;
+        refused.launchAtLoginAccepted = false;
+        QVERIFY(row.visible(AppSettings{}, refused));
+        QVERIFY(row.value(AppSettings{}).toString().contains(QStringLiteral("start at login")));
+#else
+        QVERIFY(!hasRow(general, QStringLiteral("launchAtLoginProblem")));
 #endif
     }
 
@@ -821,9 +871,12 @@ private slots:
                                          QStringLiteral("restoreClipboardAfterTyping"));
         QCOMPARE(row.help, restoreClipboardDescription());
         QVERIFY(row.tooltip.isEmpty());
+        // Restore now happens only after a confirmed paste; there is no longer
+        // a timed restore to describe.
         QCOMPARE(restoreClipboardDescription(),
-                 QStringLiteral("Restore the previous clipboard after Speecher confirms the "
-                                "paste, or after a short delay when it cannot."));
+                 QStringLiteral("Restore the previous clipboard once Speecher confirms the "
+                                "paste. If it cannot confirm, your dictation stays on the "
+                                "clipboard."));
     }
 
     // The pane arrangement names pages and rows by id; a typo or a renamed row
@@ -849,13 +902,14 @@ private slots:
             }
         }
 
-#ifdef Q_OS_MACOS
-        const QStringList otherPlatformRows;
-#else
-        // Rows generalPage() only compiles in on macOS; keep in sync with its
-        // #ifdefs so the check stays exact everywhere else.
+#ifdef Q_OS_LINUX
+        // Rows generalPage() compiles in on macOS and Windows but not Linux;
+        // keep in sync with its #ifdefs so the check stays exact elsewhere.
         const QStringList otherPlatformRows{QStringLiteral("themeControl"),
-                                            QStringLiteral("launchAtLogin")};
+                                            QStringLiteral("launchAtLogin"),
+                                            QStringLiteral("launchAtLoginProblem")};
+#else
+        const QStringList otherPlatformRows;
 #endif
 
         QVERIFY(!schema.panes.isEmpty());

@@ -1,7 +1,5 @@
 #include "core/Vocabulary.h"
 
-#include "core/VocabularyLimit.h"
-
 #include <QRegularExpression>
 #include <QStringList>
 #include <QTextBoundaryFinder>
@@ -142,18 +140,10 @@ QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &
         return left.term.toCaseFolded() < right.term.toCaseFolded();
     });
 
-    QList<VocabularyEntry> limited;
-    QStringList terms;
-    for (const VocabularyEntry &entry : normalized) {
-        const QStringList candidate = terms + QStringList{entry.term};
-        if (candidate.size() > VocabularyLimit::maxKeyterms
-            || VocabularyLimit::tokenCount(candidate) > VocabularyLimit::maxTokens) {
-            continue;
-        }
-        terms.append(entry.term);
-        limited.append(entry);
-    }
-    return limited;
+    // Every entry is kept. The service cap applies to the subset sent with a
+    // request (SettingsCodecs::customVocabulary), not to what we store, so a
+    // term that does not fit today is still here when the list gets shorter.
+    return normalized;
 }
 
 QList<VocabularyEntry> parseVocabularyCsv(const QByteArray &csv, QString *error)

@@ -2,6 +2,7 @@
 
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsSchema.h"
 #include "providers/ClaudeCredentials.h"
 #include "providers/CliProxyCredentials.h"
 #include "providers/OpenAiAuthProvider.h"
@@ -85,9 +86,7 @@ SchemaCustomRow ProviderCustomRows::makeAuthModeRow(QWidget *parent,
     m_authMode->addItem(QStringLiteral("API key from the environment"), QStringLiteral("env"));
     m_authMode->addItem(QStringLiteral("API key saved in Speecher"), kSettingsKeyAuthMode);
     m_authMode->addItem(QStringLiteral("CLI Proxy API account"), kCliProxyAuthMode);
-    m_authMode->setToolTip(QStringLiteral(
-        "API keys only cover text cleanup. Dictation needs the ChatGPT sign-in or a CLI Proxy "
-        "API account."));
+    m_authMode->setToolTip(openAiSignInHelp());
     QObject::connect(m_authMode,
                      &QComboBox::currentIndexChanged,
                      m_authMode,

@@ -158,6 +158,10 @@ signals:
     void audioCaptureSettingsChanged(const AudioCaptureSettings &settings);
     void correctionLearningEnabledChanged(bool enabled);
     void updateSettingsChanged();
+    // The preference is saved whatever the operating system does with it, so
+    // a refused or pending registration has to leave this way: the setting
+    // reads as on while Speecher will not actually start at login.
+    void launchAtLoginReconciliationFailed(const QString &error);
 
 private:
     void emitAudioCaptureSettingsChangedIfNeeded(const AudioCaptureSettings &previous);

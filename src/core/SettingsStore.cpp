@@ -127,6 +127,8 @@ void SettingsStore::reconcileLaunchAtLogin()
     QString error;
     if (!m_reconcileLaunchAtLogin(launchAtLogin(), &error)) {
         qWarning().noquote() << "launch at login reconciliation failed message=" + error;
+        emit launchAtLoginReconciliationFailed(
+            error.isEmpty() ? QStringLiteral("This computer did not accept the change.") : error);
     }
 }
 
