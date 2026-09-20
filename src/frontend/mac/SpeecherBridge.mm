@@ -253,6 +253,19 @@ struct BridgeState {
     // cancel the speech round a different step started.
     quint64 speechCheckGeneration = 0;
     quint64 refinementCheckGeneration = 0;
+    // Every live probe thread. A prepare job reads provider objects the
+    // controller owns, so a thread left running past the bridge would race
+    // the controller's destruction (observed as heap corruption in tests).
+    QList<QPointer<QThread>> probeThreads;
+
+    ~BridgeState()
+    {
+        for (const QPointer<QThread> &thread : probeThreads) {
+            if (thread) {
+                thread->wait();
+            }
+        }
+    }
 };
 
 // Runs a provider's prepare or refresh job off the main thread and answers on
@@ -267,6 +280,8 @@ void probeInBackground(BridgeState *state,
     auto probeJob = std::make_shared<std::decay_t<Job>>(std::forward<Job>(job));
     auto result = std::make_shared<decltype(probeJob->run())>();
     QThread *thread = QThread::create([probeJob, result] { *result = probeJob->run(); });
+    state->probeThreads.removeAll(nullptr);
+    state->probeThreads.append(thread);
     QObject::connect(thread,
                      &QThread::finished,
                      &state->lifetime,
