@@ -108,7 +108,7 @@ walk_to_step() {
 drive_provider_row() {
   osascript - "$1" >>"$CASE_DIR/picker.out" 2>&1 <<'OSA' &
 on run argv
-  set targetIndex to (item 1 of argv) as integer
+  set which to item 1 of argv
   tell application "System Events" to tell process "speecher"
     set allElements to entire contents of window "Speecher Setup Assistant"
     set radioButtons to {}
@@ -119,10 +119,17 @@ on run argv
         end if
       end try
     end repeat
-    if (count of radioButtons) < targetIndex then
-      error "only " & (count of radioButtons) & " radio buttons on this step"
+    if (count of radioButtons) is 0 then
+      error "no radio buttons on this step"
     end if
-    click item targetIndex of radioButtons
+    -- Earlier steps' rows can linger in the window's AX tree, so absolute
+    -- indexes drift; the current step's rows come last, making the ends the
+    -- only stable addresses.
+    if which is "first" then
+      click item 1 of radioButtons
+    else
+      click item (count of radioButtons) of radioButtons
+    end if
   end tell
 end run
 OSA
@@ -260,7 +267,7 @@ else
   walk_to_step 2 || errors+=("could not reach the transcription step")
   if (( ${#errors[@]} == 0 )); then
     # Row 1 of the transcription step: ChatGPT Codex (labels sort first).
-    drive_provider_row 1 \
+    drive_provider_row first \
       || errors+=("could not select the ChatGPT Codex row on the transcription step")
     sleep 0.5
     recapture_step 2 transcription || errors+=("the transcription step was not recaptured")
@@ -277,7 +284,7 @@ else
   fi
   if (( ${#errors[@]} == 0 )); then
     # Row 3 of the refinement step: None (after Anthropic and OpenAI).
-    drive_provider_row 3 \
+    drive_provider_row last \
       || errors+=("could not select the None row on the refinement step")
     sleep 0.5
     recapture_step 6 refinement || errors+=("the refinement step was not recaptured")
