@@ -62,6 +62,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setRefinementPreviewEnabled(draft.ui.refinementPreviewEnabled);
     setPreviewWords(draft.ui.previewWords);
     setSpeechProvider(draft.speech.providerId);
+    setCodexFinalRetranscribe(draft.speech.codexFinalRetranscribe);
     setAudioCaptureSettings(draft.audio);
     setAppRecognitionRules(draft.appRecognitionRules);
     setRefinementProvider(draft.refinement.providerId);

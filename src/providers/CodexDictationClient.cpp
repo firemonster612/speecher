@@ -96,13 +96,8 @@ void CodexDictationClient::start(const QUrl &url,
     options.setSubprotocols({QStringLiteral("chatgpt-dictation"),
                              QStringLiteral("openai-bearer.%1").arg(accessToken)});
     QNetworkRequest request(url);
-    // The production endpoint is guarded as a browser WebSocket. Match the
-    // Linux Codex client's Chromium user agent so the upgrade reaches the
-    // dictation service instead of Cloudflare's HTML browser challenge.
-    request.setHeader(
-        QNetworkRequest::UserAgentHeader,
-        QStringLiteral("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                       "(KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"));
+    request.setHeader(QNetworkRequest::UserAgentHeader,
+                      QString::fromLatin1(codexBrowserUserAgent));
     m_socket.open(request, options);
 
     const quint64 sessionId = m_sessionId;

@@ -52,4 +52,15 @@ void TranscriptState::commitFinal(const QString &finalText)
     emit changed(text());
 }
 
+void TranscriptState::replaceFinals(const QString &text)
+{
+    const QString cleaned = text.simplified();
+    if (cleaned.isEmpty()) {
+        return;
+    }
+    m_finals = {cleaned};
+    m_partial.clear();
+    emit changed(this->text());
+}
+
 } // namespace speecher

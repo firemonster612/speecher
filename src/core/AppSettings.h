@@ -90,6 +90,7 @@ struct SpeechSettings {
     QString providerId = QStringLiteral("claude");
     QString claudeAuthMode = QStringLiteral("oauth");
     QString codexAuthMode = QStringLiteral("auto");
+    bool codexFinalRetranscribe = false;
     QString language = QStringLiteral("en");
     QStringList vocabulary;
     QString claudeCredentialsPath;

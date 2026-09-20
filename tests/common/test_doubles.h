@@ -241,6 +241,11 @@ public:
         emit finalTranscript(currentAttemptId, text);
     }
 
+    void emitAttemptText(const QString &text)
+    {
+        emit attemptTranscript(currentAttemptId, text);
+    }
+
     void emitFailure(const QString &message, bool retryable = false, const QString &phase = {})
     {
         emit failed({currentAttemptId, message, retryable, phase});
