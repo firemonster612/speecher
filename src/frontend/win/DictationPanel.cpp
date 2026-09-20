@@ -306,10 +306,11 @@ struct DictationPanel::Native : QObject {
         windowClass.lpszClassName = windowClassName;
         RegisterClassW(&windowClass);
         window = CreateWindowExW(
-            WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP,
+            WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP | WS_EX_LAYERED,
             windowClassName, L"Speecher dictation", WS_POPUP,
             0, 0, panelWidth, panelHeight, nullptr, nullptr,
             windowClass.hInstance, this);
+        SetLayeredWindowAttributes(window, 0, 255, LWA_ALPHA);
 
         const DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
         DwmSetWindowAttribute(window, DWMWA_WINDOW_CORNER_PREFERENCE,
@@ -323,8 +324,9 @@ struct DictationPanel::Native : QObject {
             .as<Border>();
         chrome.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
         outline = Microsoft::UI::Xaml::Markup::XamlReader::Load(
-            LR"(<Path xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Fill="{ThemeResource AcrylicBackgroundFillColorDefaultBrush}"/>)")
+            LR"(<Path xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Fill="{ThemeResource AcrylicBackgroundFillColorDefaultBrush}" Stroke="{ThemeResource ControlStrongStrokeColorDefaultBrush}" StrokeThickness="1"/>)")
             .as<Microsoft::UI::Xaml::Shapes::Path>();
+        outline.Margin({0.5, 0.5, 0.5, 0.5});
         outline.HorizontalAlignment(HorizontalAlignment::Left);
         outline.VerticalAlignment(VerticalAlignment::Top);
         content = StackPanel();
@@ -402,7 +404,11 @@ struct DictationPanel::Native : QObject {
                 controller->session()->popupPresented(generation);
             });
         });
-        source.Content(chrome);
+        chrome.HorizontalAlignment(HorizontalAlignment::Center);
+        chrome.VerticalAlignment(VerticalAlignment::Bottom);
+        Grid surface;
+        surface.Children().Append(chrome);
+        source.Content(surface);
         resize(panelWidth);
     }
 
@@ -526,7 +532,7 @@ struct DictationPanel::Native : QObject {
         RECT pill{};
         GetWindowRect(window, &pill);
         const int x = pill.left + (pill.right - pill.left - bannerWidth) / 2;
-        const int y = pill.top - bannerHeight - px(bannerGap);
+        const int y = pill.bottom - px(height) - bannerHeight - px(bannerGap);
         SetWindowPos(banner, HWND_TOPMOST, x, y, bannerWidth, bannerHeight,
                      SWP_NOACTIVATE);
         bannerSource.SiteBridge().MoveAndResize({0, 0, bannerWidth, bannerHeight});
@@ -755,6 +761,13 @@ struct DictationPanel::Native : QObject {
             return;
         }
         const bool hasProblem = !problem.isEmpty();
+        // Only errors have controls. The transparent space around a live
+        // capsule must not intercept clicks in the target application.
+        const LONG_PTR style = GetWindowLongPtrW(window, GWL_EXSTYLE);
+        const LONG_PTR wantedStyle = hasProblem ? style & ~WS_EX_TRANSPARENT : style | WS_EX_TRANSPARENT;
+        if (style != wantedStyle) {
+            SetWindowLongPtrW(window, GWL_EXSTYLE, wantedStyle);
+        }
         // A finished delivery: the outcome message is the whole story, so the
         // spent preview words go and the icon and message centre in the pill.
         const bool finished = completed && !hasProblem;
@@ -784,8 +797,11 @@ struct DictationPanel::Native : QObject {
         if (showPreview) {
             const int transcriptMaximum = std::min(maximumPreviewWidth, maximumWidth);
             const QString visible = fitPreview(preview, transcriptMaximum - previewChromeWidth);
-            wantedWidth = std::max(panelWidth + previewChromeWidth,
-                                   measuredTextWidth(visible) + previewChromeWidth);
+            // Match macOS: hug the transcript until it reaches the width cap.
+            // Measuring the elided tail would make the width twitch at overflow.
+            wantedWidth = std::min(transcriptMaximum,
+                std::max(panelWidth + previewChromeWidth,
+                         measuredTextWidth(preview) + previewChromeWidth));
             previewText.Text(hstring(visible.toStdWString()));
             previewText.Width(wantedWidth - previewChromeWidth);
         }
@@ -818,9 +834,16 @@ struct DictationPanel::Native : QObject {
         const int wantedHeight = showPreview
             ? previewTopPadding + lineHeight + previewStripSpacing + stripHeight + previewBottomPadding
             : panelHeight;
+        // Keep the native host stable while XAML resizes the visible capsule.
+        // Resizing the HWND first can clip the previous composition frame.
+        surfaceWidth = hasProblem ? wantedWidth : std::max(wantedWidth, std::min(maximumPreviewWidth, maximumWidth));
+        surfaceHeight = hasProblem ? wantedHeight
+            : previewTopPadding + lineHeight + previewStripSpacing
+                + std::max(compactStripHeight, lineHeight + 6) + previewBottomPadding;
         resize(wantedWidth, wantedHeight);
         updateOutline(showPreview ? previewTopPadding + lineHeight + previewShoulderDrop : 0,
                       waiting ? measuredTextWidth(shown) : 92.8);
+        chrome.UpdateLayout();
         if (IsWindowVisible(window)) {
             reposition();
         }
@@ -877,6 +900,9 @@ struct DictationPanel::Native : QObject {
     // Same circular end caps and concave joins as the accepted Qt preview.
     void updateOutline(double shoulder, double inkWidth)
     {
+        // Keep the whole stroke inside the HWND rather than clipping its edges.
+        const double width = this->width - 1;
+        const double height = this->height - 1;
         const double cap = shoulder / 2;
         const double half = inkWidth / 2 + 10;
         const double left = width / 2.0 - half;
@@ -938,8 +964,10 @@ struct DictationPanel::Native : QObject {
     {
         width = newWidth;
         height = newHeight;
+        chrome.Width(width);
+        chrome.Height(height);
         if (source) {
-            source.SiteBridge().MoveAndResize({0, 0, px(width), px(height)});
+            source.SiteBridge().MoveAndResize({0, 0, px(surfaceWidth), px(surfaceHeight)});
         }
     }
 
@@ -952,13 +980,19 @@ struct DictationPanel::Native : QObject {
         GetCursorPos(&pointer);
         MONITORINFO monitor{sizeof(monitor)};
         GetMonitorInfoW(MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST), &monitor);
-        const int physicalWidth = px(width);
-        const int physicalHeight = px(height);
+        const int physicalWidth = px(surfaceWidth);
+        const int physicalHeight = px(surfaceHeight);
         const int x = monitor.rcWork.left
             + (monitor.rcWork.right - monitor.rcWork.left - physicalWidth) / 2;
         const int y = monitor.rcWork.bottom - physicalHeight - px(bottomMargin);
-        SetWindowPos(window, HWND_TOPMOST, x, y, physicalWidth, physicalHeight,
-                     SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        RECT current{};
+        GetWindowRect(window, &current);
+        if (!IsWindowVisible(window) || current.left != x || current.top != y
+            || current.right - current.left != physicalWidth
+            || current.bottom - current.top != physicalHeight) {
+            SetWindowPos(window, HWND_TOPMOST, x, y, physicalWidth, physicalHeight,
+                         SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        }
         if (banner && IsWindowVisible(banner)) {
             positionBanner();
         }
@@ -971,7 +1005,7 @@ struct DictationPanel::Native : QObject {
         }
         RECT bounds{};
         GetWindowRect(window, &bounds);
-        const auto point = control.TransformToVisual(chrome).TransformPoint({0, 0});
+        const auto point = control.TransformToVisual(nullptr).TransformPoint({0, 0});
         return QRect(bounds.left + qRound(point.X * scale()),
                      bounds.top + qRound(point.Y * scale()),
                      qRound(control.ActualWidth() * scale()),
@@ -1020,6 +1054,8 @@ struct DictationPanel::Native : QObject {
     QString problem;
     int width = panelWidth;
     int height = panelHeight;
+    int surfaceWidth = maximumPreviewWidth;
+    int surfaceHeight = panelHeight;
     quint64 pendingGeneration = 0;
     quint64 presentedGeneration = 0;
     StackPanel row{nullptr};
@@ -1095,9 +1131,7 @@ int DictationPanel::levelBarCountForTest() const
 
 QRect DictationPanel::capsuleGeometryForTest() const
 {
-    RECT rect{};
-    GetWindowRect(m_native->window, &rect);
-    return QRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+    return m_native->controlGeometry(m_native->chrome);
 }
 
 QRect DictationPanel::waveformGeometryForTest() const
@@ -1129,8 +1163,8 @@ bool DictationPanel::saveGrabForTest(const QString &path) const
     if (!window || !IsWindowVisible(window)) {
         return false;
     }
-    RECT rect{};
-    GetWindowRect(window, &rect);
+    const QRect capsule = capsuleGeometryForTest();
+    RECT rect{capsule.left(), capsule.top(), capsule.x() + capsule.width(), capsule.y() + capsule.height()};
     if (qEnvironmentVariableIsSet("SPEECHER_TEST_PANEL_BANNERS")
         && m_native->banner && IsWindowVisible(m_native->banner)) {
         RECT notices{};
