@@ -393,13 +393,7 @@ jobs:
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
-        run: |
-          # Temporary diagnostic: the codex suite fails on Windows and its
-          # stdout is not captured; write the QtTest log to a file instead.
-          & build/speecher_tests.exe --suite codex_dictation -o codex-log.txt,txt
-          Write-Host "codex suite exit code: $LASTEXITCODE"
-          Get-Content codex-log.txt
-          ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure
 
       - name: Package installer
         if: github.event_name != 'pull_request'

@@ -368,7 +368,9 @@ private slots:
         peer->sendTextMessage(QStringLiteral(
             R"({"type":"session.updated","sequence_no":2,"session":{"session_id":"s1","status":"closed","config":{}}})"));
 
-        QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 3000);
+        // Windows retries a refused loopback connect for several seconds
+        // before QNetworkReply reports the failure.
+        QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 10000);
         QCOMPARE(attemptText.count(), 0);
         QCOMPARE(failed.count(), 0);
     }
