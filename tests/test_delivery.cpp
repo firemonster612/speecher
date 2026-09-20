@@ -942,6 +942,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QVERIFY(attempts.isEmpty());
     }
 
+#ifdef SPEECHER_WITH_WAYLAND
     void compositorFocusPrefersTheCompositorWindowId()
     {
         using FocusMatch = TargetProvider::FocusMatch;
@@ -995,6 +996,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(AtSpiTargetProvider::compositorWindowMatch(otherProcess, saved),
                  FocusMatch::Different);
     }
+#endif
 
     void compositorActiveTargetChangedKeepsTranscript_data()
     {

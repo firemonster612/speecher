@@ -577,6 +577,15 @@ private slots:
                 break;
             }
         }
+        if (!shortcut) {
+            // CI-only failure diagnostics: show what the assistant's widget
+            // tree actually holds when the page cannot be found.
+            for (const QWidget *widget : assistant.findChildren<QWidget *>()) {
+                qWarning("child: %s objectName=%s",
+                         widget->metaObject()->className(),
+                         qPrintable(widget->objectName()));
+            }
+        }
         QVERIFY(shortcut);
         QCOMPARE(shortcut->layout()->contentsMargins(), welcome->layout()->contentsMargins());
         QCOMPARE(shortcut->layout()->contentsMargins().left(), setupPageMargin());
