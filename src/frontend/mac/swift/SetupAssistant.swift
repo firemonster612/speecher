@@ -1271,6 +1271,12 @@ private struct ProviderOptionLabel: View {
         // A radio's label is offered the row, not only what it needs, which is
         // what puts the status against the trailing edge.
         .frame(maxWidth: .infinity, alignment: .leading)
+        // The composed row otherwise reaches accessibility as an unnamed
+        // element: VoiceOver users (and the E2E driver) need the provider's
+        // name on the radio itself, with the status readable alongside.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(Text(status))
     }
 }
 
