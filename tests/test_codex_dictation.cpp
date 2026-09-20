@@ -215,7 +215,9 @@ private slots:
         std::unique_ptr<QTcpSocket> request(http.nextPendingConnection());
         const QByteArray received = readHttpRequest(request.get(), 2000);
         QVERIFY(received.startsWith("POST /transcribe"));
-        QVERIFY(received.contains("Authorization: Bearer"));
+        // Qt 6.7+ QHttpHeaders lowercases outgoing header names; older Qt
+        // sends them as written.
+        QVERIFY(received.toLower().contains("authorization: bearer"));
         QVERIFY(received.contains("filename=\"dictation.wav\""));
         QVERIFY(received.contains("RIFF"));
         QVERIFY(received.contains(pcm));
