@@ -178,8 +178,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     , m_settings(settings)
     , m_providers(providers)
     , m_provider(new QComboBox(this))
-    , m_accuracyPass(new QCheckBox(QStringLiteral("Accuracy pass: retranscribe the whole recording when you stop"), this))
-    , m_accuracyPassHelp(new WrappingLabel(this))
+    , m_accuracyPass(new QCheckBox(QStringLiteral("Extra transcription accuracy (will increase transcription time)"), this))
     , m_stats(new ProviderStatsBlock(this))
     , m_hint(new WrappingLabel(this))
     , m_status(new WrappingLabel(this))
@@ -206,13 +205,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     layout->addLayout(providerRow);
     m_accuracyPass->setObjectName(QStringLiteral("codexFinalRetranscribe"));
     m_accuracyPass->setChecked(m_settings.codexFinalRetranscribe());
-    m_accuracyPassHelp->setWordWrap(true);
-    m_accuracyPassHelp->setText(QStringLiteral(
-        "The live preview is unchanged; a second, whole-recording transcription fixes words "
-        "the live pass misheard. Adds about one to five seconds after you stop. Dictations "
-        "longer than about a minute and a half keep the live transcript."));
     layout->addWidget(m_accuracyPass);
-    layout->addWidget(m_accuracyPassHelp);
     connect(m_accuracyPass, &QCheckBox::toggled, this, [this](bool checked) {
         m_settings.setCodexFinalRetranscribe(checked);
     });
@@ -248,9 +241,7 @@ void SpeechProviderSetupPage::updateProvider()
                                  });
     m_hint->setText(it == providers.cend() ? QString() : it->setupHint);
     m_stats->setStats(it == providers.cend() ? QVector<ProviderStat>{} : it->stats);
-    const bool codex = providerId == QStringLiteral("codex");
-    m_accuracyPass->setVisible(codex);
-    m_accuracyPassHelp->setVisible(codex);
+    m_accuracyPass->setVisible(providerId == QStringLiteral("codex"));
     checkProvider();
 }
 

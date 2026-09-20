@@ -765,8 +765,8 @@ SettingsPage audioPage(const SchemaContext &context)
 
     SettingsRow finalRetranscribe = toggleRow(
         QStringLiteral("codexFinalRetranscribe"),
-        QStringLiteral("Accuracy pass"),
-        QStringLiteral("Retranscribe the whole recording once you stop, for a more accurate result"),
+        QStringLiteral("Accuracy"),
+        QStringLiteral("Extra transcription accuracy (will increase transcription time)"),
         [](const AppSettings &settings) { return settings.speech.codexFinalRetranscribe; },
         [](AppSettings &settings, bool value) { settings.speech.codexFinalRetranscribe = value; });
     finalRetranscribe.tooltip = QStringLiteral(
