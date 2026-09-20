@@ -115,8 +115,9 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          lldb --batch -o run -o 'bt all' -o quit \
-            ./build/speecher_mac_front_end anthropicCredentialStatusFollowsTheAuthMode || true
+          lldb --batch -o run -o 'bt all' -o quit -- \
+            ./build/speecher_tests --suite mac_front_end \
+            anthropicCredentialStatusFollowsTheAuthMode || true
 
       - name: Render update UI previews
         env:
