@@ -99,32 +99,39 @@ walk_to_step() {
   wait_for_page_capture "$target" "${STEP_IDS[$((target - 1))]}"
 }
 
-# Clicks the $2th radio of the group labelled $1. Every row is its own radio
-# button, but SwiftUI names each after the Picker's label and reports the
-# group origin as every radio's position (the evidence run showed all three
-# "Cleanup provider" radios at y=208), so enumeration order is the only
-# distinguishing address — and clicking #1 selected the visually-first row,
-# proving enumeration order matches visual order.
+# Selects a row of the radio group labelled $1 by keyboard: AXPress on any of
+# the group's children presses the group itself and always selects the FIRST
+# row (every evidence run agrees — Codex only "worked" because it is first),
+# so non-first rows are reachable only the way a keyboard user reaches them:
+# press the group to select-and-focus row 1, then arrow down $2 times.
 drive_provider_row() {
   osascript - "$1" "$2" >>"$CASE_DIR/picker.out" 2>&1 <<'OSA' &
 on run argv
   set groupLabel to item 1 of argv
-  set targetIndex to (item 2 of argv) as integer
-  tell application "System Events" to tell process "speecher"
-    set allElements to entire contents of window "Speecher Setup Assistant"
-    set found to 0
-    repeat with e in allElements
-      try
-        if class of e is radio button and (name of e) as text is groupLabel then
-          set found to found + 1
-          if found is targetIndex then
-            click e
-            return
+  set downPresses to (item 2 of argv) as integer
+  tell application "System Events"
+    tell process "speecher"
+      set frontmost to true
+      set allElements to entire contents of window "Speecher Setup Assistant"
+      set target to missing value
+      repeat with e in allElements
+        try
+          if class of e is radio button and (name of e) as text is groupLabel then
+            set target to e
+            exit repeat
           end if
-        end if
-      end try
+        end try
+      end repeat
+      if target is missing value then
+        error "no radio buttons named '" & groupLabel & "' on this step"
+      end if
+      click target
+    end tell
+    delay 0.5
+    repeat downPresses times
+      key code 125
+      delay 0.3
     end repeat
-    error "only " & found & " radios named '" & groupLabel & "'; wanted #" & targetIndex
   end tell
 end run
 OSA
@@ -262,7 +269,7 @@ else
   walk_to_step 2 || errors+=("could not reach the transcription step")
   if (( ${#errors[@]} == 0 )); then
     # Top row of the transcription group: ChatGPT Codex (labels sort first).
-    drive_provider_row "Transcription service" 1 \
+    drive_provider_row "Transcription service" 0 \
       || errors+=("could not select the ChatGPT Codex row on the transcription step")
     sleep 0.5
     recapture_step 2 transcription || errors+=("the transcription step was not recaptured")
@@ -279,7 +286,7 @@ else
   fi
   if (( ${#errors[@]} == 0 )); then
     # Bottom row of the cleanup group: None sits under the providers.
-    drive_provider_row "Cleanup provider" 3 \
+    drive_provider_row "Cleanup provider" 2 \
       || errors+=("could not select the None row on the refinement step")
     sleep 0.5
     recapture_step 6 refinement || errors+=("the refinement step was not recaptured")
