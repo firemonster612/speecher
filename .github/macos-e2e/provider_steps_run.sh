@@ -113,20 +113,35 @@ on run argv
   set rowCount to (item 3 of argv) as integer
   tell application "System Events" to tell process "speecher"
     set allElements to entire contents of window "Speecher Setup Assistant"
-    set target to missing value
+    set theGroup to missing value
     repeat with e in allElements
       try
-        if class of e is radio button and name of e is groupLabel then
-          set target to e
+        if class of e is radio group then
+          repeat with b in (radio buttons of e)
+            if name of b is groupLabel then
+              set theGroup to e
+              exit repeat
+            end if
+          end repeat
         end if
       end try
+      if theGroup is not missing value then exit repeat
     end repeat
-    if target is missing value then
-      error "no radio element named '" & groupLabel & "' on this step"
+    if theGroup is missing value then
+      error "no radio group holding '" & groupLabel & "' on this step"
     end if
-    set {x, y} to position of target
-    set {w, h} to size of target
-    click at {x + 24, y + ((h * (2 * targetRow - 1)) div (2 * rowCount))}
+    -- Inventory first: the window-wide walk showed one aggregated button, but
+    -- the group itself may expose every row. Either way the log says so.
+    set buttons to radio buttons of theGroup
+    log "group '" & groupLabel & "' has " & (count of buttons) & " radio buttons"
+    repeat with b in buttons
+      log "  button name=" & (name of b) & " pos=" & ((position of b) as text) & " size=" & ((size of b) as text)
+    end repeat
+    if (count of buttons) >= targetRow then
+      click item targetRow of buttons
+    else
+      error "group exposes " & (count of buttons) & " buttons; cannot reach row " & targetRow & " of " & rowCount
+    end if
   end tell
 end run
 OSA
