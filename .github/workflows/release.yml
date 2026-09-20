@@ -393,7 +393,12 @@ jobs:
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
-        run: ctest --test-dir build --output-on-failure
+        run: |
+          # Temporary diagnostic: the codex suite fails on Windows with no
+          # captured output; run it directly so the crash/exit code is visible.
+          & build/speecher_tests.exe --suite codex_dictation
+          Write-Host "codex suite exit code: $LASTEXITCODE"
+          ctest --test-dir build --output-on-failure
 
       - name: Package installer
         if: github.event_name != 'pull_request'
