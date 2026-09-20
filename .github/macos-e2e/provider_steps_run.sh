@@ -111,16 +111,21 @@ on run argv
   tell application "System Events" to tell process "speecher"
     set allElements to entire contents of window "Speecher Setup Assistant"
     set target to missing value
+    set seen to {}
     repeat with e in allElements
       try
-        if class of e is static text and value of e is marker then
-          set target to e
-          exit repeat
+        if class of e is static text then
+          set v to (value of e) as text
+          set end of seen to v
+          if target is missing value and v contains marker then
+            set target to e
+          end if
         end if
       end try
     end repeat
     if target is missing value then
-      error "no static text reading '" & marker & "' on this step"
+      set AppleScript's text item delimiters to " | "
+      error "no static text containing '" & marker & "'; texts: " & (seen as text)
     end if
     set {x, y} to position of target
     set {w, h} to size of target
