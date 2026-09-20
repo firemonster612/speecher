@@ -207,6 +207,7 @@ private slots:
         }
         auto *panel = frontEnd->dictationPanelForTest();
         panel->showForTest(13);
+        QTRY_VERIFY(!panel->capsuleGeometryForTest().isEmpty());
         QVERIFY(panel->previewGeometryForTest().isEmpty());
         const QRect compact = panel->capsuleGeometryForTest();
         panel->drivePreviewForTest(QStringLiteral("The meeting is on Thursday afternoon"));
@@ -251,6 +252,42 @@ private slots:
         QVERIFY(!panel->previewGeometryForTest().isEmpty());
         panel->dismissForTest();
         QVERIFY(panel->previewGeometryForTest().isEmpty());
+    }
+
+    void nativePreviewFitsTextAroundTheScreenCenter()
+    {
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI islands require an interactive desktop");
+        }
+        auto *panel = frontEnd->dictationPanelForTest();
+        panel->showForTest(16);
+        panel->drivePreviewForTest(QStringLiteral("Hello"));
+        QTest::qWait(100);
+        const QRect shortPreview = panel->capsuleGeometryForTest();
+        panel->drivePreviewForTest(QStringLiteral("The meeting is on Thursday afternoon"));
+        QTest::qWait(100);
+        const QRect longerPreview = panel->capsuleGeometryForTest();
+        QVERIFY(longerPreview.width() > shortPreview.width());
+        QVERIFY(std::abs(longerPreview.center().x() - shortPreview.center().x()) <= 1);
+        QCOMPARE(longerPreview.bottom(), shortPreview.bottom());
+        panel->drivePreviewForTest(QString(100, QLatin1Char('W')));
+        QTest::qWait(100);
+        const QRect fullPreview = panel->capsuleGeometryForTest();
+        QVERIFY(fullPreview.width() > longerPreview.width());
+        for (const QString &ending : {QStringLiteral("i"), QStringLiteral("WW"), QStringLiteral(" thin words")}) {
+            panel->drivePreviewForTest(QString(100, QLatin1Char('W')) + ending);
+            QTest::qWait(50);
+            QCOMPARE(panel->capsuleGeometryForTest(), fullPreview);
+        }
+        panel->driveStatusForTest(QStringLiteral("Stopping"));
+        controller->session()->popupRefiningChanged(true);
+        controller->session()->popupRefinementPreviewChanged(QStringLiteral("Hello"));
+        QTest::qWait(100);
+        QCOMPARE(panel->capsuleGeometryForTest().width(), shortPreview.width());
+        QVERIFY(std::abs(panel->capsuleGeometryForTest().center().x() - shortPreview.center().x()) <= 1);
+        controller->session()->popupRefinementPreviewChanged(QString());
+        QVERIFY(panel->previewGeometryForTest().isEmpty());
+        panel->dismissForTest();
     }
 
     void nativePreviewKeepsNewestWordsWithinItsWidth_data()
