@@ -99,37 +99,32 @@ walk_to_step() {
   wait_for_page_capture "$target" "${STEP_IDS[$((target - 1))]}"
 }
 
-# Clicks the numbered provider row. The steps show radio rows now, not a
-# pop-up, and SwiftUI gives their custom labels no reliable AX names, so the
-# search collects every radio button in the window in order and clicks by
-# position. The registry sorts providers by label, so the order is stable:
-# transcription is ChatGPT Codex, Claude Voice; refinement is Anthropic,
-# OpenAI, None.
+# Clicks the provider row carrying the given static text. AX exposes each
+# radio-row group as ONE aggregated radio button named after its Picker label
+# (the evidence run's click landed on "radio button Cleanup provider" and
+# selected the first row), so rows are only addressable by the position of
+# their own label text: find the static text and click its centre.
 drive_provider_row() {
   osascript - "$1" >>"$CASE_DIR/picker.out" 2>&1 <<'OSA' &
 on run argv
-  set which to item 1 of argv
+  set marker to item 1 of argv
   tell application "System Events" to tell process "speecher"
     set allElements to entire contents of window "Speecher Setup Assistant"
-    set radioButtons to {}
+    set target to missing value
     repeat with e in allElements
       try
-        if class of e is radio button then
-          set end of radioButtons to e
+        if class of e is static text and value of e is marker then
+          set target to e
+          exit repeat
         end if
       end try
     end repeat
-    if (count of radioButtons) is 0 then
-      error "no radio buttons on this step"
+    if target is missing value then
+      error "no static text reading '" & marker & "' on this step"
     end if
-    -- Earlier steps' rows can linger in the window's AX tree, so absolute
-    -- indexes drift; the current step's rows come last, making the ends the
-    -- only stable addresses.
-    if which is "first" then
-      click item 1 of radioButtons
-    else
-      click item (count of radioButtons) of radioButtons
-    end if
+    set {x, y} to position of target
+    set {w, h} to size of target
+    click at {x + (w div 2), y + (h div 2)}
   end tell
 end run
 OSA
@@ -266,8 +261,8 @@ else
   errors=()
   walk_to_step 2 || errors+=("could not reach the transcription step")
   if (( ${#errors[@]} == 0 )); then
-    # Row 1 of the transcription step: ChatGPT Codex (labels sort first).
-    drive_provider_row first \
+    # The row label is the click target; rows are not AX-addressable.
+    drive_provider_row "ChatGPT Codex" \
       || errors+=("could not select the ChatGPT Codex row on the transcription step")
     sleep 0.5
     recapture_step 2 transcription || errors+=("the transcription step was not recaptured")
@@ -283,8 +278,8 @@ else
     wait_for_page_capture 6 refinement || errors+=("could not reach the refinement step")
   fi
   if (( ${#errors[@]} == 0 )); then
-    # Row 3 of the refinement step: None (after Anthropic and OpenAI).
-    drive_provider_row last \
+    # "Skip cleanup entirely." is unique to the None row on this step.
+    drive_provider_row "Skip cleanup entirely." \
       || errors+=("could not select the None row on the refinement step")
     sleep 0.5
     recapture_step 6 refinement || errors+=("the refinement step was not recaptured")
