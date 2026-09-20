@@ -133,6 +133,28 @@ public:
     }
 };
 
+// Breeze paints its own splitter line over any palette fill, darker than
+// every other hairline in the window. An empty paintEvent leaves only the
+// autofilled palette colour, so the handle can match the other separators.
+class HairlineSplitterHandle final : public QSplitterHandle {
+public:
+    using QSplitterHandle::QSplitterHandle;
+
+protected:
+    void paintEvent(QPaintEvent *) override {}
+};
+
+class HairlineSplitter final : public QSplitter {
+public:
+    using QSplitter::QSplitter;
+
+protected:
+    QSplitterHandle *createHandle() override
+    {
+        return new HairlineSplitterHandle(orientation(), this);
+    }
+};
+
 QIcon pageIcon(const PageDefinition &page)
 {
     return QIcon::fromTheme(page.iconName, QIcon::fromTheme(page.fallbackIconName));
@@ -221,11 +243,14 @@ void AppWindow::refreshHeaderStripColor()
             hairline->setPalette(linePalette);
         }
     }
-    // Fill the 1px splitter handle: Breeze paints handles in plain window
-    // colour, which shows as a see-through seam between sidebar and content.
+    // Fill the 1px splitter handle with a translucent hairline at the card
+    // frame's contrast (a fifth of the text colour), not the opaque header
+    // separator colour, which reads far brighter than every other separator.
     if (QWidget *handle = m_sidebarSplitter ? m_sidebarSplitter->handle(1) : nullptr) {
+        QColor hairline = palette().color(QPalette::WindowText);
+        hairline.setAlphaF(0.2F);
         QPalette handlePalette(handle->palette());
-        handlePalette.setColor(QPalette::Window, line);
+        handlePalette.setColor(QPalette::Window, hairline);
         handle->setPalette(handlePalette);
         handle->setAutoFillBackground(true);
     }
@@ -489,7 +514,7 @@ void AppWindow::buildSidebarShell()
     headerUnderline->setAutoFillBackground(true);
     root->addWidget(headerUnderline);
 
-    m_sidebarSplitter = new QSplitter(Qt::Horizontal, central);
+    m_sidebarSplitter = new HairlineSplitter(Qt::Horizontal, central);
     m_sidebarSplitter->setObjectName(QStringLiteral("sidebarSplitter"));
     m_sidebarSplitter->setHandleWidth(1);
     m_sidebarSplitter->setChildrenCollapsible(false);
