@@ -99,38 +99,30 @@ walk_to_step() {
   wait_for_page_capture "$target" "${STEP_IDS[$((target - 1))]}"
 }
 
-# Drives the step's pop-up button to the menu item $1. Each provider step has
-# exactly one pop-up, and SwiftUI nests it in AX groups, so the search walks
-# the window's entire contents for the first one rather than guessing a path.
-drive_picker() {
+# Clicks the numbered provider row. The steps show radio rows now, not a
+# pop-up, and SwiftUI gives their custom labels no reliable AX names, so the
+# search collects every radio button in the window in order and clicks by
+# position. The registry sorts providers by label, so the order is stable:
+# transcription is ChatGPT Codex, Claude Voice; refinement is Anthropic,
+# OpenAI, None.
+drive_provider_row() {
   osascript - "$1" >>"$CASE_DIR/picker.out" 2>&1 <<'OSA' &
 on run argv
-  set targetValue to item 1 of argv
+  set targetIndex to (item 1 of argv) as integer
   tell application "System Events" to tell process "speecher"
     set allElements to entire contents of window "Speecher Setup Assistant"
-    set thePopup to missing value
+    set radioButtons to {}
     repeat with e in allElements
       try
-        if class of e is pop up button or class of e is menu button then
-          set thePopup to e
-          exit repeat
+        if class of e is radio button then
+          set end of radioButtons to e
         end if
       end try
     end repeat
-    if thePopup is missing value then
-      set classNames to {}
-      repeat with e in allElements
-        try
-          set end of classNames to (class of e as text)
-        end try
-      end repeat
-      set AppleScript's text item delimiters to ", "
-      error "no pop up buttons among " & (count of allElements) & " elements: " & (classNames as text)
+    if (count of radioButtons) < targetIndex then
+      error "only " & (count of radioButtons) & " radio buttons on this step"
     end if
-    log "picker class: " & (class of thePopup as text)
-    click thePopup
-    delay 0.5
-    click menu item targetValue of menu 1 of thePopup
+    click item targetIndex of radioButtons
   end tell
 end run
 OSA
@@ -267,8 +259,9 @@ else
   errors=()
   walk_to_step 2 || errors+=("could not reach the transcription step")
   if (( ${#errors[@]} == 0 )); then
-    drive_picker "ChatGPT Codex" \
-      || errors+=("could not drive the transcription picker to ChatGPT Codex")
+    # Row 1 of the transcription step: ChatGPT Codex (labels sort first).
+    drive_provider_row 1 \
+      || errors+=("could not select the ChatGPT Codex row on the transcription step")
     sleep 0.5
     recapture_step 2 transcription || errors+=("the transcription step was not recaptured")
   fi
@@ -283,8 +276,9 @@ else
     wait_for_page_capture 6 refinement || errors+=("could not reach the refinement step")
   fi
   if (( ${#errors[@]} == 0 )); then
-    drive_picker "None" \
-      || errors+=("could not drive the refinement picker to None")
+    # Row 3 of the refinement step: None (after Anthropic and OpenAI).
+    drive_provider_row 3 \
+      || errors+=("could not select the None row on the refinement step")
     sleep 0.5
     recapture_step 6 refinement || errors+=("the refinement step was not recaptured")
   fi
