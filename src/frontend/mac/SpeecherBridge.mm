@@ -298,6 +298,13 @@ void probeInBackground(BridgeState *state,
                          if (generation != state->*generationCounter) {
                              return;
                          }
+                         // The job's apply closure belongs to a provider the
+                         // controller owns; a bridge kept alive past its
+                         // controller (a probe callback can retain it through
+                         // the Swift flow model) must not run it.
+                         if (!state->controller) {
+                             return;
+                         }
                          if (probeJob->apply) {
                              probeJob->apply(*result);
                          }
