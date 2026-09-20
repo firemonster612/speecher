@@ -433,6 +433,7 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation, const
         return;
     }
 
+    m_attemptBaseText.clear();
     m_transcriber->startAttempt(m_attemptId, settings.speech);
 
     QString audioError;
@@ -674,6 +675,9 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
         if (!partial.isEmpty()) {
             m_transcript->commitFinal(partial);
         }
+        // A whole-attempt transcript from the new attempt covers only the
+        // audio after this reconnect; the text committed so far must survive.
+        m_attemptBaseText = m_transcript->text();
         m_transcriber->startAttempt(m_attemptId, m_sessionSettings->speech);
         return;
     }
@@ -753,6 +757,16 @@ void DictationSession::connectSpeechTranscriber(SpeechTranscriber *transcriber)
                 || m_state == DictationState::Listening
                 || m_state == DictationState::Stopping)) {
             m_transcript->commitFinal(text);
+        }
+    });
+    m_transcriberConnections << connect(m_transcriber, &SpeechTranscriber::attemptTranscript, this, [this](quint64 attemptId, const QString &text) {
+        if (attemptId == m_attemptId
+            && (m_state == DictationState::Starting
+                || m_state == DictationState::Listening
+                || m_state == DictationState::Stopping)) {
+            m_transcript->replaceFinals(m_attemptBaseText.isEmpty()
+                                            ? text
+                                            : m_attemptBaseText + QLatin1Char(' ') + text);
         }
     });
     m_transcriberConnections << connect(m_transcriber, &SpeechTranscriber::attemptCompleted, this, [this](quint64 attemptId) {

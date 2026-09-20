@@ -100,6 +100,7 @@ public:
     using SettingsCodecs::setRestoreClipboardAfterTyping;
     using SettingsCodecs::setSoundsEnabled;
     using SettingsCodecs::setSpeechProvider;
+    using SettingsCodecs::setCodexFinalRetranscribe;
     using SettingsCodecs::setSetupCompleted;
     using SettingsCodecs::setStoredApiKeyFallback;
     using SettingsCodecs::setTheme;
@@ -117,6 +118,7 @@ public:
     using SettingsCodecs::snapshot;
     using SettingsCodecs::soundsEnabled;
     using SettingsCodecs::speechProvider;
+    using SettingsCodecs::codexFinalRetranscribe;
     using SettingsCodecs::setShortcutActivationMode;
     using SettingsCodecs::setupCompleted;
     using SettingsCodecs::shortcutActivationMode;

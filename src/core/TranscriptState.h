@@ -20,6 +20,7 @@ public slots:
     void clear();
     void setPartial(const QString &partial);
     void commitFinal(const QString &finalText);
+    void replaceFinals(const QString &text);
 
 signals:
     void changed(const QString &text);

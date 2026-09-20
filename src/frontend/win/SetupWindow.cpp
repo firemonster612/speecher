@@ -356,12 +356,18 @@ struct SetupWindow::Native {
             options.append({provider.id, provider.label});
         }
         ComboBox provider = combo(options, controller->settings()->speechProvider());
+        CheckBox accuracy;
+        accuracy.Content(box_value(L"Extra transcription accuracy (will increase transcription time)"));
+        accuracy.IsChecked(controller->settings()->codexFinalRetranscribe());
+        accuracy.Click([this, accuracy](const auto &, const auto &) {
+            controller->settings()->setCodexFinalRetranscribe(accuracy.IsChecked().Value());
+        });
         StackPanel stats;
         stats.Spacing(4);
         TextBlock status = textBlock(QString(), true);
         Button check;
         check.Content(box_value(L"Check again"));
-        const auto runCheck = [this, provider, status, options, stats] {
+        const auto runCheck = [this, provider, status, options, stats, accuracy] {
             const quint64 generation = ++transcriptionCheckGeneration;
             const int index = provider.SelectedIndex();
             if (index < 0 || index >= options.size()) {
@@ -371,6 +377,8 @@ struct SetupWindow::Native {
             const QString id = options.at(index).first;
             showProviderStats(stats, controller->providerRegistry()->speechProviders(), id);
             controller->settings()->setSpeechProvider(id);
+            accuracy.Visibility(id == QStringLiteral("codex")
+                                    ? Visibility::Visible : Visibility::Collapsed);
             SpeechTranscriber *transcriber = controller->providerRegistry()->speechProvider(id);
             if (!transcriber) {
                 status.Text(L"No transcription service is available.");
@@ -416,6 +424,7 @@ struct SetupWindow::Native {
         provider.SelectionChanged([runCheck](const auto &, const auto &) { runCheck(); });
         check.Click([runCheck](const auto &, const auto &) { runCheck(); });
         panel.Children().Append(settingRow(QStringLiteral("Transcription service"), provider));
+        panel.Children().Append(accuracy);
         panel.Children().Append(stats);
         panel.Children().Append(status);
         panel.Children().Append(check);

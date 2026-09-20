@@ -2,6 +2,11 @@
 
 #include "dictation/DictationPorts.h"
 
+#include <QNetworkAccessManager>
+#include <QPointer>
+
+class QNetworkReply;
+
 namespace speecher {
 
 class CodexDictationClient;
@@ -23,9 +28,16 @@ public:
     void cancelAttempt(quint64 attemptId) override;
 
 private:
+    void startFinalRetranscribe(quint64 attemptId);
+
     CodexDictationClient *m_client = nullptr;
     quint64 m_attemptId = 0;
     QString m_accessToken;
+    bool m_finalRetranscribe = false;
+    QByteArray m_bufferedPcm;
+    qsizetype m_streamedFinalChars = 0;
+    QNetworkAccessManager m_network;
+    QPointer<QNetworkReply> m_retranscribeReply;
 };
 
 } // namespace speecher

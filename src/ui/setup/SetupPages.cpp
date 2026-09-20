@@ -178,6 +178,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     , m_settings(settings)
     , m_providers(providers)
     , m_provider(new QComboBox(this))
+    , m_accuracyPass(new QCheckBox(QStringLiteral("Extra transcription accuracy (will increase transcription time)"), this))
     , m_stats(new ProviderStatsBlock(this))
     , m_hint(new WrappingLabel(this))
     , m_status(new WrappingLabel(this))
@@ -202,6 +203,12 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     providerRow->addWidget(new QLabel(QStringLiteral("Transcription service"), this));
     providerRow->addWidget(m_provider, 1);
     layout->addLayout(providerRow);
+    m_accuracyPass->setObjectName(QStringLiteral("codexFinalRetranscribe"));
+    m_accuracyPass->setChecked(m_settings.codexFinalRetranscribe());
+    layout->addWidget(m_accuracyPass);
+    connect(m_accuracyPass, &QCheckBox::toggled, this, [this](bool checked) {
+        m_settings.setCodexFinalRetranscribe(checked);
+    });
     layout->addWidget(m_stats);
     layout->addWidget(m_status);
     layout->addWidget(m_hint);
@@ -234,6 +241,7 @@ void SpeechProviderSetupPage::updateProvider()
                                  });
     m_hint->setText(it == providers.cend() ? QString() : it->setupHint);
     m_stats->setStats(it == providers.cend() ? QVector<ProviderStat>{} : it->stats);
+    m_accuracyPass->setVisible(providerId == QStringLiteral("codex"));
     checkProvider();
 }
 

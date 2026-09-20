@@ -4,12 +4,51 @@
 #include "providers/CodexDictationClient.h"
 #include "providers/OpenAiAuthProvider.h"
 
+#include <QDataStream>
+#include <QHttpMultiPart>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QTimer>
+
 #include <memory>
 
 namespace speecher {
 namespace {
 
-constexpr auto dictationEndpoint = "wss://chatgpt.com/backend-api/dictation/stream";
+constexpr int sampleRateHz = 16000;
+
+QString dictationEndpoint()
+{
+    const QString override = qEnvironmentVariable("SPEECHER_CODEX_DICTATION_URL");
+    return override.isEmpty()
+        ? QStringLiteral("wss://chatgpt.com/backend-api/dictation/stream")
+        : override;
+}
+
+QString transcribeEndpoint()
+{
+    const QString override = qEnvironmentVariable("SPEECHER_CODEX_TRANSCRIBE_URL");
+    return override.isEmpty() ? QStringLiteral("https://chatgpt.com/backend-api/transcribe")
+                              : override;
+}
+
+QByteArray wavFromPcm16Mono(const QByteArray &pcm, int rateHz)
+{
+    QByteArray wav;
+    QDataStream stream(&wav, QIODevice::WriteOnly);
+    stream.setByteOrder(QDataStream::LittleEndian);
+    stream.writeRawData("RIFF", 4);
+    stream << quint32(36 + pcm.size());
+    stream.writeRawData("WAVEfmt ", 8);
+    stream << quint32(16) << quint16(1) << quint16(1)
+           << quint32(rateHz) << quint32(rateHz * 2) << quint16(2) << quint16(16);
+    stream.writeRawData("data", 4);
+    stream << quint32(pcm.size());
+    stream.writeRawData(pcm.constData(), pcm.size());
+    return wav;
+}
 
 SpeechPrepareResult prepareCodex(const SpeechSettings &settings, QString *accessToken)
 {
@@ -79,12 +118,19 @@ SpeechPrepareResult CodexSpeechTranscriber::prepare(const SpeechSettings &settin
 }
 
 void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
-                                          const SpeechSettings &)
+                                          const SpeechSettings &settings)
 {
     if (m_client) {
         m_client->cancel();
         m_client->deleteLater();
     }
+    if (QNetworkReply *reply = m_retranscribeReply) {
+        m_retranscribeReply.clear();
+        reply->abort();
+    }
+    m_finalRetranscribe = settings.codexFinalRetranscribe;
+    m_bufferedPcm.clear();
+    m_streamedFinalChars = 0;
     m_attemptId = attemptId;
     m_client = new CodexDictationClient(this);
     CodexDictationClient *client = m_client;
@@ -97,12 +143,18 @@ void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
     connect(client, &CodexDictationClient::finalTranscript,
             this, [this, client, attemptId](const QString &text) {
                 if (m_client == client && m_attemptId == attemptId) {
+                    m_streamedFinalChars += text.size();
                     emit finalTranscript(attemptId, text);
                 }
             });
     connect(client, &CodexDictationClient::completed,
             this, [this, client, attemptId] {
-                if (m_client == client && m_attemptId == attemptId) {
+                if (m_client != client || m_attemptId != attemptId) {
+                    return;
+                }
+                if (m_finalRetranscribe && !m_bufferedPcm.isEmpty()) {
+                    startFinalRetranscribe(attemptId);
+                } else {
                     emit attemptCompleted(attemptId);
                 }
             });
@@ -114,14 +166,76 @@ void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
                     emit failed({attemptId, message, retryable, phase});
                 }
             });
-    client->start(QUrl(QString::fromLatin1(dictationEndpoint)), m_accessToken, 16000);
+    client->start(QUrl(dictationEndpoint()), m_accessToken, sampleRateHz);
 }
 
 void CodexSpeechTranscriber::sendAudio(quint64 attemptId, const QByteArray &pcm)
 {
     if (m_client && attemptId == m_attemptId) {
+        if (m_finalRetranscribe) {
+            m_bufferedPcm.append(pcm);
+        }
         m_client->sendAudio(pcm);
     }
+}
+
+void CodexSpeechTranscriber::startFinalRetranscribe(quint64 attemptId)
+{
+    QNetworkRequest request{QUrl(transcribeEndpoint())};
+    request.setRawHeader("Authorization", "Bearer " + m_accessToken.toUtf8());
+    request.setHeader(QNetworkRequest::UserAgentHeader,
+                      QString::fromLatin1(codexBrowserUserAgent));
+    request.setTransferTimeout(10000);
+
+    auto *multiPart = new QHttpMultiPart(QHttpMultiPart::FormDataType);
+    QHttpPart filePart;
+    filePart.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("audio/wav"));
+    filePart.setHeader(QNetworkRequest::ContentDispositionHeader,
+                       QStringLiteral("form-data; name=\"file\"; filename=\"dictation.wav\""));
+    filePart.setBody(wavFromPcm16Mono(m_bufferedPcm, sampleRateHz));
+    m_bufferedPcm.clear();
+    multiPart->append(filePart);
+
+    QNetworkReply *reply = m_network.post(request, multiPart);
+    multiPart->setParent(reply);
+    m_retranscribeReply = reply;
+    // The transfer timeout only fires on inactivity; a response that trickles
+    // in without finishing would stall dictation. This deadline aborts the
+    // reply with m_retranscribeReply still set, which the finished handler
+    // treats as a failure and falls back to the streamed transcript.
+    QTimer::singleShot(15000, reply, [reply] { reply->abort(); });
+    connect(reply, &QNetworkReply::finished, this, [this, reply, attemptId] {
+        reply->deleteLater();
+        // A cleared pointer means the attempt was cancelled or superseded and
+        // this reply was aborted deliberately; a timeout leaves it in place.
+        if (m_attemptId != attemptId || m_retranscribeReply != reply) {
+            return;
+        }
+        m_retranscribeReply.clear();
+        // The streamed finals are already committed; a failed accuracy pass
+        // falls back to them instead of failing the dictation.
+        if (reply->error() != QNetworkReply::NoError) {
+            qWarning("Codex final retranscribe failed, keeping the streamed transcript: %s",
+                     qPrintable(reply->errorString()));
+        } else {
+            const QString text = QJsonDocument::fromJson(reply->readAll())
+                                     .object().value(QStringLiteral("text")).toString().trimmed();
+            // The batch endpoint transcribes only the first ~90 s of a long
+            // recording and returns the truncated text as a success. A batch
+            // transcript far shorter than the streamed finals means text was
+            // dropped, not re-decoded; keep the streamed transcript then.
+            const bool truncated = text.size() * 10 < m_streamedFinalChars * 6;
+            if (truncated) {
+                qWarning("Codex final retranscribe looks truncated (%lld of %lld streamed chars), "
+                         "keeping the streamed transcript",
+                         static_cast<long long>(text.size()),
+                         static_cast<long long>(m_streamedFinalChars));
+            } else if (!text.isEmpty()) {
+                emit attemptTranscript(attemptId, text);
+            }
+        }
+        emit attemptCompleted(attemptId);
+    });
 }
 
 void CodexSpeechTranscriber::finishInput(quint64 attemptId)
@@ -133,8 +247,15 @@ void CodexSpeechTranscriber::finishInput(quint64 attemptId)
 
 void CodexSpeechTranscriber::cancelAttempt(quint64 attemptId)
 {
-    if (m_client && attemptId == m_attemptId) {
+    if (attemptId != m_attemptId) {
+        return;
+    }
+    if (m_client) {
         m_client->cancel();
+    }
+    if (QNetworkReply *reply = m_retranscribeReply) {
+        m_retranscribeReply.clear();
+        reply->abort();
     }
 }
 

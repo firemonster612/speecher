@@ -171,6 +171,16 @@ void SettingsCodecs::setSpeechProvider(const QString &value)
     m_settings.setValue(SettingsKeys::SpeechProvider, value.isEmpty() ? QStringLiteral("claude") : value);
 }
 
+bool SettingsCodecs::codexFinalRetranscribe() const
+{
+    return value(SettingsKeys::CodexFinalRetranscribe, false).toBool();
+}
+
+void SettingsCodecs::setCodexFinalRetranscribe(bool value)
+{
+    m_settings.setValue(SettingsKeys::CodexFinalRetranscribe, value);
+}
+
 QStringList SettingsCodecs::customVocabulary() const
 {
     QStringList terms;
@@ -1015,6 +1025,7 @@ AppSettings SettingsCodecs::snapshot() const
     settings.ui.soundsEnabled = soundsEnabled();
 
     settings.speech.providerId = speechProvider();
+    settings.speech.codexFinalRetranscribe = codexFinalRetranscribe();
     settings.speech.claudeAuthMode = anthropicAuthMode();
     settings.speech.codexAuthMode = openAiAuthMode();
     settings.speech.vocabulary = customVocabulary();
