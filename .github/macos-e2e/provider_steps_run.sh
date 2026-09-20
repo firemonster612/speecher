@@ -278,18 +278,22 @@ else
     cp "$CASE_DIR/pages/step-2-transcription.png" "$CASE_DIR/transcription-picked-codex.png"
     expect_text "$CASE_DIR/transcription-picked-codex.png" "GPT Live Transcribe" \
       || errors+=("driving the picker did not update the transcription stats")
-    for (( step = 2; step < 6; step++ )); do
-      click_button Continue || errors+=("Continue failed on step $step")
-      sleep 0.5
-    done
-    wait_for_page_capture 6 refinement || errors+=("could not reach the refinement step")
   fi
+  # None hides the stats: verified from a seeded profile. Synthetic input
+  # cannot select a non-first row of a SwiftUI radio group (AX presses land on
+  # the group and select row 1; arrow key codes do not move it), while a real
+  # mouse can. The live-selection-updates-the-page property is already proven
+  # by the codex drive above.
   if (( ${#errors[@]} == 0 )); then
-    # Bottom row of the cleanup group: None sits under the providers.
-    drive_provider_row "Cleanup provider" 2 \
-      || errors+=("could not select the None row on the refinement step")
-    sleep 0.5
-    recapture_step 6 refinement || errors+=("the refinement step was not recaptured")
+    stop_app
+    fresh_reset
+    defaults write "$DOMAIN" refinement.provider none
+    rm -rf "$CASE_DIR/pages"
+    if ! launch_setup || ! wait_for_assistant; then
+      errors+=("the assistant did not relaunch with refinement seeded to None")
+    else
+      walk_to_step 6 || errors+=("could not reach the refinement step with None seeded")
+    fi
   fi
   if (( ${#errors[@]} == 0 )); then
     cp "$CASE_DIR/pages/step-6-refinement.png" "$CASE_DIR/refinement-picked-none.png"
@@ -299,7 +303,7 @@ else
   if (( ${#errors[@]} )); then
     fail_case "$(IFS='; '; echo "${errors[*]}")"
   else
-    pass_case "Driving the pickers updates the stats live and None hides them."
+    pass_case "Driving the picker updates the stats live, and None shows no stats block."
   fi
 fi
 
