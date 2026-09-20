@@ -63,6 +63,12 @@ refinement stage). The public Realtime API's `prompt` field for
   socket (it fixed a tense error the streaming pass made on the same audio).
   Latency: single POST after the audio exists, so it fits a
   "live preview via socket, authoritative retranscribe at flush" design.
+- The batch endpoint truncates long recordings: a 292 s WAV came back with only
+  the first ~86 s worth of text (1322 of ~4500 chars), returned as a normal 200
+  success. Any consumer replacing a streamed transcript with the batch text
+  must length-check it first. Latency scales with recording length but stays
+  moderate (measured stop→result: 3 s audio ≈ +0.8 s, 73 s ≈ +3.9 s, 292 s
+  (9.3 MB upload) ≈ +4.0 s over the streaming baseline of ~0.7-0.9 s).
 - That batch endpoint ignores extra form fields rather than rejecting them:
   `prompt`, `context`, `language`, and a deliberately bogus field all return
   200 with output identical to baseline across repeated runs (decoding is

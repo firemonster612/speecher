@@ -130,6 +130,7 @@ void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
     }
     m_finalRetranscribe = settings.codexFinalRetranscribe;
     m_bufferedPcm.clear();
+    m_streamedFinalChars = 0;
     m_attemptId = attemptId;
     m_client = new CodexDictationClient(this);
     CodexDictationClient *client = m_client;
@@ -142,6 +143,7 @@ void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
     connect(client, &CodexDictationClient::finalTranscript,
             this, [this, client, attemptId](const QString &text) {
                 if (m_client == client && m_attemptId == attemptId) {
+                    m_streamedFinalChars += text.size();
                     emit finalTranscript(attemptId, text);
                 }
             });
@@ -218,7 +220,17 @@ void CodexSpeechTranscriber::startFinalRetranscribe(quint64 attemptId)
         } else {
             const QString text = QJsonDocument::fromJson(reply->readAll())
                                      .object().value(QStringLiteral("text")).toString().trimmed();
-            if (!text.isEmpty()) {
+            // The batch endpoint transcribes only the first ~90 s of a long
+            // recording and returns the truncated text as a success. A batch
+            // transcript far shorter than the streamed finals means text was
+            // dropped, not re-decoded; keep the streamed transcript then.
+            const bool truncated = text.size() * 10 < m_streamedFinalChars * 6;
+            if (truncated) {
+                qWarning("Codex final retranscribe looks truncated (%lld of %lld streamed chars), "
+                         "keeping the streamed transcript",
+                         static_cast<long long>(text.size()),
+                         static_cast<long long>(m_streamedFinalChars));
+            } else if (!text.isEmpty()) {
                 emit attemptTranscript(attemptId, text);
             }
         }

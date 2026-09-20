@@ -356,12 +356,24 @@ struct SetupWindow::Native {
             options.append({provider.id, provider.label});
         }
         ComboBox provider = combo(options, controller->settings()->speechProvider());
+        CheckBox accuracy;
+        accuracy.Content(box_value(L"Accuracy pass: retranscribe the whole recording when you stop"));
+        accuracy.IsChecked(controller->settings()->codexFinalRetranscribe());
+        accuracy.Click([this, accuracy](const auto &, const auto &) {
+            controller->settings()->setCodexFinalRetranscribe(accuracy.IsChecked().Value());
+        });
+        TextBlock accuracyHelp = textBlock(
+            QStringLiteral("The live preview is unchanged; a second, whole-recording transcription "
+                           "fixes words the live pass misheard. Adds about one to five seconds after "
+                           "you stop. Dictations longer than about a minute and a half keep the live "
+                           "transcript."),
+            true);
         StackPanel stats;
         stats.Spacing(4);
         TextBlock status = textBlock(QString(), true);
         Button check;
         check.Content(box_value(L"Check again"));
-        const auto runCheck = [this, provider, status, options, stats] {
+        const auto runCheck = [this, provider, status, options, stats, accuracy, accuracyHelp] {
             const quint64 generation = ++transcriptionCheckGeneration;
             const int index = provider.SelectedIndex();
             if (index < 0 || index >= options.size()) {
@@ -371,6 +383,10 @@ struct SetupWindow::Native {
             const QString id = options.at(index).first;
             showProviderStats(stats, controller->providerRegistry()->speechProviders(), id);
             controller->settings()->setSpeechProvider(id);
+            const auto accuracyVisibility = id == QStringLiteral("codex")
+                ? Visibility::Visible : Visibility::Collapsed;
+            accuracy.Visibility(accuracyVisibility);
+            accuracyHelp.Visibility(accuracyVisibility);
             SpeechTranscriber *transcriber = controller->providerRegistry()->speechProvider(id);
             if (!transcriber) {
                 status.Text(L"No transcription service is available.");
@@ -416,6 +432,8 @@ struct SetupWindow::Native {
         provider.SelectionChanged([runCheck](const auto &, const auto &) { runCheck(); });
         check.Click([runCheck](const auto &, const auto &) { runCheck(); });
         panel.Children().Append(settingRow(QStringLiteral("Transcription service"), provider));
+        panel.Children().Append(accuracy);
+        panel.Children().Append(accuracyHelp);
         panel.Children().Append(stats);
         panel.Children().Append(status);
         panel.Children().Append(check);

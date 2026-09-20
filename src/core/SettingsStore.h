@@ -118,6 +118,7 @@ public:
     using SettingsCodecs::snapshot;
     using SettingsCodecs::soundsEnabled;
     using SettingsCodecs::speechProvider;
+    using SettingsCodecs::codexFinalRetranscribe;
     using SettingsCodecs::setShortcutActivationMode;
     using SettingsCodecs::setupCompleted;
     using SettingsCodecs::shortcutActivationMode;

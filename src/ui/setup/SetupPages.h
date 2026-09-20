@@ -66,6 +66,8 @@ private:
     SettingsStore &m_settings;
     ProviderRegistry &m_providers;
     QComboBox *m_provider;
+    QCheckBox *m_accuracyPass;
+    QLabel *m_accuracyPassHelp;
     ProviderStatsBlock *m_stats;
     QLabel *m_hint;
     QLabel *m_status;

@@ -230,6 +230,57 @@ private slots:
         peer->deleteLater();
     }
 
+    void finalRetranscribeIgnoresTruncatedBatchTranscript()
+    {
+        QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
+        server.setSupportedSubprotocols({QStringLiteral("chatgpt-dictation")});
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        QTcpServer http;
+        QVERIFY(http.listen(QHostAddress::LocalHost));
+        qputenv("SPEECHER_CODEX_DICTATION_URL",
+                QStringLiteral("ws://127.0.0.1:%1/dictation/stream")
+                    .arg(server.serverPort()).toUtf8());
+        qputenv("SPEECHER_CODEX_TRANSCRIBE_URL",
+                QStringLiteral("http://127.0.0.1:%1/transcribe")
+                    .arg(http.serverPort()).toUtf8());
+        const auto unsetEnv = qScopeGuard([] {
+            qunsetenv("SPEECHER_CODEX_DICTATION_URL");
+            qunsetenv("SPEECHER_CODEX_TRANSCRIBE_URL");
+        });
+
+        CodexSpeechTranscriber transcriber;
+        QSignalSpy attemptText(&transcriber, &SpeechTranscriber::attemptTranscript);
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        SpeechSettings settings;
+        settings.codexFinalRetranscribe = true;
+        transcriber.startAttempt(9, settings);
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        std::unique_ptr<QWebSocket> peer(server.nextPendingConnection());
+        peer->sendTextMessage(QStringLiteral(
+            R"({"type":"session.started","sequence_no":1,"session":{"session_id":"s1","status":"active","config":{}}})"));
+        transcriber.sendAudio(9, QByteArray::fromHex("0102ff00"));
+        transcriber.finishInput(9);
+        const QString longFinal(200, QLatin1Char('x'));
+        peer->sendTextMessage(QStringLiteral(
+            R"({"type":"transcript.final","sequence_no":2,"utterance_id":"u1","revision":1,"text":"%1"})")
+                .arg(longFinal));
+        peer->sendTextMessage(QStringLiteral(
+            R"({"type":"session.updated","sequence_no":3,"session":{"session_id":"s1","status":"closed","config":{}}})"));
+
+        QTRY_VERIFY_WITH_TIMEOUT(http.hasPendingConnections(), 2000);
+        std::unique_ptr<QTcpSocket> request(http.nextPendingConnection());
+        readHttpRequest(request.get(), 2000);
+        const QByteArray body = QByteArrayLiteral(R"({"text":"only the start"})");
+        request->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                       + QByteArray::number(body.size()) + "\r\n\r\n" + body);
+        request->flush();
+
+        QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 2000);
+        QCOMPARE(attemptText.count(), 0);
+        peer->deleteLater();
+    }
+
     void cancelDuringFinalRetranscribeEmitsNothing()
     {
         QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);

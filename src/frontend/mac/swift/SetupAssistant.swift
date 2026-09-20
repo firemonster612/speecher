@@ -545,6 +545,11 @@ private struct TranscriptionStep: View {
                 if let row = model.row("speechProvider") {
                     RowView(row: row, model: model)
                 }
+                // The bridge already drops rows whose schema visibility fails,
+                // so this only appears for the codex provider.
+                if let row = model.row("codexFinalRetranscribe") {
+                    RowView(row: row, model: model)
+                }
                 ProviderStatsRows(stats: model.bridge.stats(forSpeechProvider: flow.providerId))
                 if !flow.providerStatus.isEmpty {
                     Text(flow.providerStatus)

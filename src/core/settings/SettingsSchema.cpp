@@ -770,8 +770,10 @@ SettingsPage audioPage(const SchemaContext &context)
         [](const AppSettings &settings) { return settings.speech.codexFinalRetranscribe; },
         [](AppSettings &settings, bool value) { settings.speech.codexFinalRetranscribe = value; });
     finalRetranscribe.tooltip = QStringLiteral(
-        "The live preview is unchanged; the final text comes from a second, whole-recording "
-        "transcription. Adds a moment after you stop and uses one extra ChatGPT request.");
+        "The live preview is unchanged; a second, whole-recording transcription fixes words "
+        "the live pass misheard. Adds about one to five seconds after you stop and uses one "
+        "extra ChatGPT request. Dictations longer than about a minute and a half keep the "
+        "live transcript.");
     finalRetranscribe.sinceVersion = QStringLiteral("0.1.6");
     finalRetranscribe.visible = [](const AppSettings &settings, const Capabilities &) {
         return settings.speech.providerId == QStringLiteral("codex");

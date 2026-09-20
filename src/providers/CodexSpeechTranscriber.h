@@ -35,6 +35,7 @@ private:
     QString m_accessToken;
     bool m_finalRetranscribe = false;
     QByteArray m_bufferedPcm;
+    qsizetype m_streamedFinalChars = 0;
     QNetworkAccessManager m_network;
     QPointer<QNetworkReply> m_retranscribeReply;
 };
