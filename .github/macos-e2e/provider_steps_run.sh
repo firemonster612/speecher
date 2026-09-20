@@ -99,31 +99,42 @@ walk_to_step() {
   wait_for_page_capture "$target" "${STEP_IDS[$((target - 1))]}"
 }
 
-# Clicks the radio button named $1. The provider rows carry accessibility
-# labels (their titles) on the radios themselves, so the rows are addressed
-# the way VoiceOver would; a miss lists every radio name the window exposes.
+# Clicks the top or bottom radio of the group labelled $1. Every row is its
+# own radio button, but SwiftUI names each after the Picker's label (the
+# evidence run listed two radios both called "Transcription service"), so the
+# unambiguous address inside a group is vertical position: ChatGPT Codex is
+# the top row of its group, None the bottom row of its.
 drive_provider_row() {
-  osascript - "$1" >>"$CASE_DIR/picker.out" 2>&1 <<'OSA' &
+  osascript - "$1" "$2" >>"$CASE_DIR/picker.out" 2>&1 <<'OSA' &
 on run argv
-  set rowTitle to item 1 of argv
+  set groupLabel to item 1 of argv
+  set which to item 2 of argv
   tell application "System Events" to tell process "speecher"
     set allElements to entire contents of window "Speecher Setup Assistant"
     set target to missing value
-    set seen to {}
+    set targetY to 0
+    set found to 0
     repeat with e in allElements
       try
-        if class of e is radio button then
-          set n to (name of e) as text
-          set end of seen to n
-          if target is missing value and n is rowTitle then
+        if class of e is radio button and (name of e) as text is groupLabel then
+          set found to found + 1
+          set {ex, ey} to position of e
+          log "radio '" & groupLabel & "' #" & found & " at y=" & ey
+          if target is missing value then
             set target to e
+            set targetY to ey
+          else if which is "top" and ey < targetY then
+            set target to e
+            set targetY to ey
+          else if which is "bottom" and ey > targetY then
+            set target to e
+            set targetY to ey
           end if
         end if
       end try
     end repeat
     if target is missing value then
-      set AppleScript's text item delimiters to " | "
-      error "no radio button named '" & rowTitle & "'; radios: " & (seen as text)
+      error "no radio buttons named '" & groupLabel & "' on this step"
     end if
     click target
   end tell
@@ -262,8 +273,8 @@ else
   errors=()
   walk_to_step 2 || errors+=("could not reach the transcription step")
   if (( ${#errors[@]} == 0 )); then
-    # Rows are addressed by their accessibility labels.
-    drive_provider_row "ChatGPT Codex" \
+    # Top row of the transcription group: ChatGPT Codex (labels sort first).
+    drive_provider_row "Transcription service" top \
       || errors+=("could not select the ChatGPT Codex row on the transcription step")
     sleep 0.5
     recapture_step 2 transcription || errors+=("the transcription step was not recaptured")
@@ -279,8 +290,8 @@ else
     wait_for_page_capture 6 refinement || errors+=("could not reach the refinement step")
   fi
   if (( ${#errors[@]} == 0 )); then
-    # The None row carries its own accessibility label.
-    drive_provider_row "None" \
+    # Bottom row of the cleanup group: None sits under the providers.
+    drive_provider_row "Cleanup provider" bottom \
       || errors+=("could not select the None row on the refinement step")
     sleep 0.5
     recapture_step 6 refinement || errors+=("the refinement step was not recaptured")
