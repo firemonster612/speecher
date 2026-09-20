@@ -43,10 +43,13 @@ QStringList setupPageTitles()
 }
 
 // The assistant's frame is fixed, so a page with more rows than fit scrolls
-// rather than squeezing them into overlapping slivers.
-QScrollArea *scrollingPage(QWidget *content)
+// rather than squeezing them into overlapping slivers. The wrapper is
+// parented to the assistant immediately: KPageStackedWidget only adopts a
+// page when it is shown, and until then a parentless wrapper would leave the
+// page outside the assistant's object tree and without an owner.
+QScrollArea *scrollingPage(QWidget *content, QWidget *parent)
 {
-    auto *scroll = new QScrollArea;
+    auto *scroll = new QScrollArea(parent);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setBackgroundRole(QPalette::Window);
@@ -199,7 +202,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     for (int index = 0; index < pageContents.size(); ++index) {
         QWidget *content = pageContents.at(index);
         if (content && (requestedPageIndex < 0 || requestedPageIndex == index)) {
-            KPageWidgetItem *item = addPage(scrollingPage(content), titles.at(index));
+            KPageWidgetItem *item = addPage(scrollingPage(content, this), titles.at(index));
             if (m_gates.contains(content)) {
                 m_gateItems.insert(content, item);
             }
@@ -246,7 +249,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
             } else {
                 page = new QWizardPage;
             }
-            const int id = addPage(wizardPage(page, scrollingPage(content), titles.at(index)));
+            const int id = addPage(wizardPage(page, scrollingPage(content, this), titles.at(index)));
             m_pageContents.insert(id, content);
             m_steps.append({titles.at(index), content});
         }

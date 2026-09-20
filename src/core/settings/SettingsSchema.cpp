@@ -928,9 +928,12 @@ SettingsPage refinementPage(const SchemaContext &context)
         accessibilityGateHelp(QStringLiteral("send the target app's context")));
     gateOnRefinementProvider(targetContext);
     // Two gates hold this row, and the note each one would write is wrong
-    // whenever the other is the one that closed it. One sentence covers both.
+    // whenever the other is the one that closed it. State both requirements,
+    // naming the platform's accessibility feature the way the other gate
+    // notes do.
     targetContext.disabledHelp =
-        QStringLiteral("Needs a refinement provider and desktop accessibility.");
+        QStringLiteral("Needs a refinement provider. ")
+        + accessibilityGateHelp(QStringLiteral("send the target app's context"));
 
     SettingsRow screenshots = toggleRow(
         QStringLiteral("includeScreenshotContext"),
