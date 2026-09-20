@@ -394,10 +394,11 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          # Temporary diagnostic: the codex suite fails on Windows with no
-          # captured output; run it directly so the crash/exit code is visible.
-          & build/speecher_tests.exe --suite codex_dictation
+          # Temporary diagnostic: the codex suite fails on Windows and its
+          # stdout is not captured; write the QtTest log to a file instead.
+          & build/speecher_tests.exe --suite codex_dictation -o codex-log.txt,txt
           Write-Host "codex suite exit code: $LASTEXITCODE"
+          Get-Content codex-log.txt
           ctest --test-dir build --output-on-failure
 
       - name: Package installer
