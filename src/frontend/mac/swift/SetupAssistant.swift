@@ -528,13 +528,15 @@ final class SetupFlowModel: ObservableObject {
         microphonePermissionPoll = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) {
             [weak self] _ in
             DispatchQueue.main.async {
+                // The weak capture belongs to the timer closure, so this inner
+                // async closure still needs explicit self after the guard.
                 guard let self else { return }
-                let previous = microphonePermission
-                refreshMicrophonePermission()
+                let previous = self.microphonePermission
+                self.refreshMicrophonePermission()
                 // Access just granted in System Settings: the meter could not
                 // have started before, so start it now that it can.
-                if previous != .authorized, microphonePermission == .authorized, meterRunning {
-                    startMeter()
+                if previous != .authorized, self.microphonePermission == .authorized, self.meterRunning {
+                    self.startMeter()
                 }
             }
         }
