@@ -4,7 +4,6 @@
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
 #include "providers/ClaudeCredentials.h"
-#include "providers/CliProxyCredentials.h"
 #include "providers/OpenAiAuthProvider.h"
 #include "ui/settings/SettingsPageSupport.h"
 
@@ -48,6 +47,9 @@ SchemaCustomRowFactory ProviderCustomRows::factory()
         }
         if (descriptor.id == QStringLiteral("anthropicAuthMode")) {
             return makeAnthropicAuthModeRow(parent, std::move(notifyChanged));
+        }
+        if (descriptor.id == QStringLiteral("cliproxyOauthDir")) {
+            return makeCliproxyOauthDirRow(parent, std::move(notifyChanged));
         }
         if (descriptor.id == QStringLiteral("cliproxyBaseUrl")) {
             return makeCliproxyBaseUrlRow(parent, std::move(notifyChanged));
@@ -191,6 +193,32 @@ SchemaCustomRow ProviderCustomRows::makeAnthropicAuthModeRow(QWidget *parent,
     };
 }
 
+SchemaCustomRow ProviderCustomRows::makeCliproxyOauthDirRow(
+    QWidget *parent,
+    std::function<void()> notifyChanged)
+{
+    m_cliproxyOauthDir = new QLineEdit(parent);
+    m_cliproxyOauthDir->setObjectName(QStringLiteral("cliproxyOauthDir"));
+    m_cliproxyOauthDir->setPlaceholderText(
+        QStringLiteral("Leave empty to detect it automatically"));
+    m_cliproxyOauthDir->setClearButtonEnabled(true);
+    QObject::connect(m_cliproxyOauthDir,
+                     &QLineEdit::textEdited,
+                     m_cliproxyOauthDir,
+                     [this, notifyChanged = std::move(notifyChanged)] {
+                         // The account lists come from this directory, so they
+                         // follow the edit rather than waiting for a save.
+                         repopulateAccounts();
+                         updateCredentialControl();
+                         notifyChanged();
+                     });
+    return {
+        m_cliproxyOauthDir,
+        [this] { return QVariant(m_cliproxyOauthDir->text().trimmed()); },
+        [this](const QVariant &value) { m_cliproxyOauthDir->setText(value.toString()); },
+    };
+}
+
 SchemaCustomRow ProviderCustomRows::makeCliproxyBaseUrlRow(
     QWidget *parent,
     std::function<void()> notifyChanged)
@@ -274,8 +302,6 @@ void ProviderCustomRows::populateCliproxyAccounts(QComboBox *account,
                                                   const QString &type,
                                                   const QString &selected)
 {
-    const QSignalBlocker blocker(account);
-    account->clear();
     const bool serverRouted = !editedCliproxyBaseUrl().isEmpty();
     account->setToolTip(type == QStringLiteral("codex")
                             ? serverRouted
@@ -284,36 +310,33 @@ void ProviderCustomRows::populateCliproxyAccounts(QComboBox *account,
                             : serverRouted
                                 ? QStringLiteral("Claude account used for dictation. Anthropic refinement is routed through the configured CLI Proxy API server.")
                                 : QStringLiteral("CLI Proxy API Claude account used for dictation and refinement."));
-    const QString directory = m_settings.cliproxyOauthDir();
-    const QList<CliProxyAccount> accounts = CliProxyCredentials::listAccounts(directory, type);
-    // With several accounts and none chosen yet, force an explicit choice
-    // instead of silently pinning whichever file sorts first.
-    if (selected.isEmpty() && accounts.size() > 1) {
-        account->addItem(QStringLiteral("Choose an account…"), QString());
+    settings::populateCliproxyAccounts(account, resolvedCliproxyOauthDir(), type, selected);
+}
+
+void ProviderCustomRows::repopulateAccounts()
+{
+    if (m_openAiCliproxyAccount) {
+        populateCliproxyAccounts(m_openAiCliproxyAccount,
+                                 QStringLiteral("codex"),
+                                 comboSelection(m_openAiCliproxyAccount, m_openAiStoredAccount));
     }
-    for (const CliProxyAccount &candidate : accounts) {
-        account->addItem(candidate.expired ? candidate.label + QStringLiteral(" (expired)")
-                                           : candidate.label,
-                         candidate.fileName);
-        if (candidate.disabled) {
-            settings::setComboItemEnabled(account,
-                                          account->count() - 1,
-                                          false,
-                                          QStringLiteral("Disabled in CLI Proxy API"));
-        }
+    if (m_anthropicCliproxyAccount) {
+        populateCliproxyAccounts(
+            m_anthropicCliproxyAccount,
+            QStringLiteral("claude"),
+            comboSelection(m_anthropicCliproxyAccount, m_anthropicStoredAccount));
     }
-    // Keep a stored selection visible even if its file is currently missing.
-    if (!selected.isEmpty() && account->findData(selected) < 0) {
-        account->addItem(selected + QStringLiteral(" (missing)"), selected);
+}
+
+// The directory being edited, or the store's resolved one before the row is
+// built. An empty edit means automatic detection.
+QString ProviderCustomRows::resolvedCliproxyOauthDir() const
+{
+    if (!m_cliproxyOauthDir) {
+        return m_settings.cliproxyOauthDir();
     }
-    if (account->count() == 0) {
-        account->addItem(QStringLiteral("No accounts found"), QString());
-        settings::setComboItemEnabled(
-            account, 0, false,
-            QStringLiteral("Sign in with CLI Proxy API first; Speecher looks for its accounts in %1.")
-                .arg(directory));
-    }
-    settings::selectData(account, selected);
+    const QString edited = m_cliproxyOauthDir->text().trimmed();
+    return edited.isEmpty() ? m_settings.cliproxyOauthDir() : edited;
 }
 
 QString ProviderCustomRows::comboSelection(const QComboBox *account, const QString &stored)
@@ -409,7 +432,7 @@ void ProviderCustomRows::updateCredentialControl()
     const QString account = m_openAiCliproxyAccount
         ? comboSelection(m_openAiCliproxyAccount, m_openAiStoredAccount)
         : m_settings.openAiCliproxyAccount();
-    const QString cliproxyDir = m_settings.cliproxyOauthDir();
+    const QString cliproxyDir = resolvedCliproxyOauthDir();
     const QString settingsApiKey = m_loadedApiKey;
     const QString settingsStatus = m_secrets.status();
     const QString cliproxyBaseUrl = editedCliproxyBaseUrl();

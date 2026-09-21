@@ -630,10 +630,6 @@ private slots:
         QCOMPARE(server.rows.at(2).id, QStringLiteral("cliproxyApiKey"));
 
         AppSettings oauthDirDraft;
-        oauthDirDraft.refinement.cliproxyOauthDir = QStringLiteral("/detected/dir");
-        QVERIFY(rowById(page, QStringLiteral("cliproxyOauthDir"))
-                    .helpValue(oauthDirDraft)
-                    .contains(QStringLiteral("/detected/dir")));
         rowById(page, QStringLiteral("cliproxyOauthDir"))
             .apply(oauthDirDraft, QStringLiteral(" /custom/dir "));
         QCOMPARE(oauthDirDraft.refinement.cliproxyOauthDirConfigured, QStringLiteral("/custom/dir"));

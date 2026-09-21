@@ -105,7 +105,9 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     , m_singlePage(pageIndex(page) >= 0)
 {
     setWindowTitle(QStringLiteral("Speecher Setup Assistant"));
-    resize(720, 520);
+    // Tall enough for the largest page (Transcription with its sign-in rows)
+    // without a scrollbar, which narrows the cards and clips their statuses.
+    resize(720, 600);
     setMinimumSize(620, 460);
 
     const int requestedPageIndex = pageIndex(page);

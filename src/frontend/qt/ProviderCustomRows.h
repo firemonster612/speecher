@@ -29,6 +29,8 @@ private:
     SchemaCustomRow makeAuthModeRow(QWidget *parent, std::function<void()> notifyChanged);
     SchemaCustomRow makeCredentialRow(QWidget *parent, std::function<void()> notifyChanged);
     SchemaCustomRow makeAnthropicAuthModeRow(QWidget *parent, std::function<void()> notifyChanged);
+    SchemaCustomRow makeCliproxyOauthDirRow(QWidget *parent,
+                                            std::function<void()> notifyChanged);
     SchemaCustomRow makeCliproxyBaseUrlRow(QWidget *parent,
                                            std::function<void()> notifyChanged);
     SchemaCustomRow makeCliproxyApiKeyRow(QWidget *parent,
@@ -41,7 +43,9 @@ private:
                                            QString *stored,
                                            std::function<void()> notifyChanged);
     void populateCliproxyAccounts(QComboBox *account, const QString &type, const QString &selected);
+    void repopulateAccounts();
     static QString comboSelection(const QComboBox *account, const QString &stored);
+    QString resolvedCliproxyOauthDir() const;
     QString editedCliproxyBaseUrl() const;
     QString editedCliproxyApiKey() const;
     void updateAccountTooltips();
@@ -54,6 +58,7 @@ private:
     QComboBox *m_anthropicAuthMode = nullptr;
     QComboBox *m_openAiCliproxyAccount = nullptr;
     QComboBox *m_anthropicCliproxyAccount = nullptr;
+    QLineEdit *m_cliproxyOauthDir = nullptr;
     QLineEdit *m_cliproxyBaseUrl = nullptr;
     QLineEdit *m_cliproxyApiKey = nullptr;
     QStackedWidget *m_credential = nullptr;

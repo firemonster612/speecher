@@ -65,6 +65,14 @@ QList<RowOption> audioInputDeviceOptions(const QList<AudioInputDeviceInfo> &devi
 void populateAudioInputDevices(QComboBox *combo,
                                const QList<AudioInputDeviceInfo> &devices,
                                const QString &selectedDeviceId);
+// Fills a CLI Proxy API account picker from the account files in directory.
+// The Providers settings page and the setup assistant share the rules: an
+// explicit choice when several accounts exist, expired/missing markers, and a
+// disabled placeholder when the directory holds nothing.
+void populateCliproxyAccounts(QComboBox *combo,
+                              const QString &directory,
+                              const QString &type,
+                              const QString &selected);
 QColor positiveTextColor(const QPalette &palette);
 QLabel *makeSectionLabel(const QString &text, QWidget *parent);
 QFrame *makeSettingsCard(QWidget *parent);

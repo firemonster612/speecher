@@ -1036,7 +1036,14 @@ private slots:
         QVERIFY(!account->isVisibleTo(&setup));
         QVERIFY(!directory->isVisibleTo(&setup));
 
-        source->setCurrentIndex(source->findData(QStringLiteral("cliproxy")));
+        // The page only reacts to user selections (activated), never its own
+        // repopulation, so the test emits what a click would.
+        const auto choose = [](QComboBox *combo, const QString &data) {
+            const int index = combo->findData(data);
+            combo->setCurrentIndex(index);
+            QMetaObject::invokeMethod(combo, "activated", Q_ARG(int, index));
+        };
+        choose(source, QStringLiteral("cliproxy"));
         QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("cliproxy"));
         QVERIFY(account->isVisibleTo(&setup));
         QVERIFY(directory->isVisibleTo(&setup));
@@ -1045,11 +1052,11 @@ private slots:
         QCOMPARE(account->currentData().toString(), QString());
         QCOMPARE(account->count(), 3);
 
-        account->setCurrentIndex(account->findData(QStringLiteral("claude-b@example.com.json")));
+        choose(account, QStringLiteral("claude-b@example.com.json"));
         QCOMPARE(settings.anthropicCliproxyAccount(), QStringLiteral("claude-b@example.com.json"));
 
         // Switching back restores the CLI sign-in and hides the account rows.
-        source->setCurrentIndex(source->findData(QStringLiteral("oauth")));
+        choose(source, QStringLiteral("oauth"));
         QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
         QVERIFY(!account->isVisibleTo(&setup));
     }

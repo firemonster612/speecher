@@ -1774,19 +1774,14 @@ bool cliproxyServerRowVisible(const AppSettings &settings, const Capabilities &)
 
 SettingsSection cliproxyServerSection()
 {
-    SettingsRow oauthDir;
-    oauthDir.id = QStringLiteral("cliproxyOauthDir");
+    // Custom on the Qt frontend so editing it refreshes the account pickers
+    // live; the other frontends fall back to their plain text field.
+    SettingsRow oauthDir = customRow(
+        QStringLiteral("cliproxyOauthDir"),
+        QStringLiteral("Account directory"),
+        QStringLiteral("Directory holding CLI Proxy API's saved account files. Leave empty to "
+                       "detect it automatically."));
     oauthDir.sinceVersion = QStringLiteral("0.2.0");
-    oauthDir.label = QStringLiteral("Account directory");
-    oauthDir.kind = RowKind::Text;
-    oauthDir.help = QStringLiteral(
-        "Directory holding CLI Proxy API's saved account files. Leave empty to detect it "
-        "automatically.");
-    oauthDir.helpValue = [help = oauthDir.help](const AppSettings &settings) {
-        return settings.refinement.cliproxyOauthDirConfigured.isEmpty()
-            ? help + QStringLiteral(" Currently using %1.").arg(settings.refinement.cliproxyOauthDir)
-            : help;
-    };
     oauthDir.value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.cliproxyOauthDirConfigured);
     };
