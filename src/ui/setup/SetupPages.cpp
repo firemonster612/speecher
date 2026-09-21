@@ -790,9 +790,11 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     connect(m_accuracyPass, &QCheckBox::toggled, this, [this](bool checked) {
         m_settings.setCodexFinalRetranscribe(checked);
     });
-    // clicked/activated rather than toggled/currentIndexChanged: only a choice
-    // the user made writes settings and probes, never this page's own updates.
-    connect(m_useCliproxy, &QCheckBox::clicked, this, [this](bool checked) {
+    // toggled rather than clicked: the row caption toggles the box through
+    // QCheckBox::toggle(), which never emits clicked. This page's own updates
+    // stay silent because updateSignInControls() blocks signals around
+    // setChecked(); the account combo keeps activated for the same reason.
+    connect(m_useCliproxy, &QCheckBox::toggled, this, [this](bool checked) {
         const int index = selectedIndex();
         if (index < 0) {
             return;
