@@ -21,6 +21,8 @@
 #include <QPushButton>
 #include <QNetworkReply>
 #include <QScopeGuard>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTimer>
 
@@ -45,10 +47,18 @@ public:
 
     static void setAvailableVersion(ManifestUpdater &updater,
                                     const QString &version,
-                                    UpdateChannel channel = UpdateChannel::Stable)
+                                    UpdateChannel channel = UpdateChannel::Stable,
+                                    qint64 buildNumber = 0)
     {
         updater.m_manifest.version = version;
         updater.m_manifest.channel = channel;
+        updater.m_manifest.buildNumber = buildNumber;
+    }
+
+    static std::optional<UpdateManifest> bestCandidate(std::optional<UpdateManifest> primary,
+                                                       std::optional<UpdateManifest> stable)
+    {
+        return ManifestUpdater::bestCandidate(std::move(primary), std::move(stable));
     }
 
     static void restartNow(ManifestUpdater &updater)
@@ -236,6 +246,54 @@ QByteArray validManifestJson()
     })json";
 }
 
+QByteArray manifestJson(const QString &version, qint64 buildNumber)
+{
+    QByteArray json = validManifestJson();
+    json.replace("0.1.1-nightly.20260901+gabc1234", version.toUtf8());
+    json.replace("\"buildNumber\": 123", "\"buildNumber\": " + QByteArray::number(buildNumber));
+    return json;
+}
+
+// Serves one JSON body to every request, for driving a real check. The
+// request is drained before the response and the socket closes after it, so
+// the kernel never answers with a reset that would flake the check.
+QTcpServer *manifestServer(QObject *parent, const QByteArray &body, int *requestCount = nullptr)
+{
+    auto *server = new QTcpServer(parent);
+    const bool listening = server->listen(QHostAddress::LocalHost);
+    Q_ASSERT(listening);
+    QObject::connect(server, &QTcpServer::newConnection, server,
+                     [server, body, requestCount] {
+        QTcpSocket *socket = server->nextPendingConnection();
+        QObject::connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+        auto answered = std::make_shared<bool>(false);
+        QObject::connect(socket, &QTcpSocket::readyRead, socket,
+                         [socket, body, requestCount, answered] {
+            socket->readAll();
+            if (*answered) {
+                return;
+            }
+            *answered = true;
+            if (requestCount) {
+                ++*requestCount;
+            }
+            socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                          + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n"
+                          + body);
+            socket->flush();
+            socket->disconnectFromHost();
+        });
+    });
+    return server;
+}
+
+QByteArray serverUrl(const QTcpServer *server)
+{
+    return QStringLiteral("http://127.0.0.1:%1/update-manifest.json")
+        .arg(server->serverPort())
+        .toUtf8();
+}
+
 void writeFile(const QString &path, const QByteArray &contents)
 {
     QFile file(path);
@@ -322,6 +380,180 @@ private slots:
             true));
         QVERIFY(!ManifestUpdaterTestAccess::shouldOfferManifest(
             stable, 150, QStringLiteral("0.1.1"), UpdateChannel::Stable, false));
+    }
+
+    void manualNightlyCheckCrossesToAStableAtLeastAsNew()
+    {
+        const QString nightlyVersion = QStringLiteral("0.2.1-nightly.20260921+gabc1234");
+        UpdateManifest stable;
+        stable.version = QStringLiteral("0.2.0");
+        stable.buildNumber = 150;
+        stable.channel = UpdateChannel::Stable;
+
+        // A manual check on the Nightly channel crosses to a stable cut from
+        // the same commit, but never to an older one, and never automatically.
+        QVERIFY(ManifestUpdaterTestAccess::shouldOfferManifest(
+            stable, 150, nightlyVersion, UpdateChannel::Nightly, false));
+        QVERIFY(!ManifestUpdaterTestAccess::shouldOfferManifest(
+            stable, 151, nightlyVersion, UpdateChannel::Nightly, false));
+        QVERIFY(!ManifestUpdaterTestAccess::shouldOfferManifest(
+            stable, 150, nightlyVersion, UpdateChannel::Nightly, true));
+
+        UpdateManifest nightly = stable;
+        nightly.channel = UpdateChannel::Nightly;
+        QVERIFY(!ManifestUpdaterTestAccess::shouldOfferManifest(
+            nightly, 150, nightlyVersion, UpdateChannel::Nightly, false));
+    }
+
+    void bestCandidatePrefersTheNewestBuildAndStableOnTies()
+    {
+        UpdateManifest nightly;
+        nightly.version = QStringLiteral("0.2.1-nightly.20260921+gabc1234");
+        nightly.buildNumber = 150;
+        nightly.channel = UpdateChannel::Nightly;
+        UpdateManifest stable;
+        stable.version = QStringLiteral("0.2.0");
+        stable.buildNumber = 149;
+        stable.channel = UpdateChannel::Stable;
+
+        QCOMPARE(ManifestUpdaterTestAccess::bestCandidate(nightly, stable)->version,
+                 nightly.version);
+        stable.buildNumber = 151;
+        QCOMPARE(ManifestUpdaterTestAccess::bestCandidate(nightly, stable)->version,
+                 stable.version);
+        // A tie goes to the Stable Release, whose artifact the nightly built
+        // from the same commit duplicates.
+        stable.buildNumber = 150;
+        QCOMPARE(ManifestUpdaterTestAccess::bestCandidate(nightly, stable)->version,
+                 stable.version);
+        QCOMPARE(ManifestUpdaterTestAccess::bestCandidate(std::nullopt, stable)->version,
+                 stable.version);
+        QCOMPARE(ManifestUpdaterTestAccess::bestCandidate(nightly, std::nullopt)->version,
+                 nightly.version);
+        QVERIFY(!ManifestUpdaterTestAccess::bestCandidate(std::nullopt, std::nullopt));
+    }
+
+    void nightlyChannelChecksOfferTheNewestStableRelease()
+    {
+        UpdateTestContext context(true);
+        context.settings.setUpdateChannel(UpdateChannel::Nightly);
+        TestManifestUpdater updater(&context.settings, context.session.get());
+        const qint64 current = updater.currentBuildNumber();
+
+        // The stable release is the newest build, so the Nightly channel's
+        // check offers it, carrying the stable channel for the banner wording.
+        QTcpServer *nightlyServer = manifestServer(
+            &updater,
+            manifestJson(QStringLiteral("0.2.2-nightly.20260921+gabc1234"), current + 1));
+        QTcpServer *stableServer =
+            manifestServer(&updater, manifestJson(QStringLiteral("0.2.1"), current + 2));
+        qputenv("SPEECHER_UPDATE_MANIFEST_URL", serverUrl(nightlyServer));
+        qputenv("SPEECHER_UPDATE_STABLE_MANIFEST_URL", serverUrl(stableServer));
+        const auto restoreEnv = qScopeGuard([] {
+            qunsetenv("SPEECHER_UPDATE_MANIFEST_URL");
+            qunsetenv("SPEECHER_UPDATE_STABLE_MANIFEST_URL");
+        });
+
+        updater.checkForUpdates(UpdateChannel::Nightly);
+        QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
+                                  UpdateController::State::UpdateAvailable, 10000);
+        QCOMPARE(updater.availableVersion(), QStringLiteral("0.2.1"));
+        // The winner is an ordinary offer on the Nightly channel: it names the
+        // stable version but never demands the Stable channel's consent step.
+        QCOMPARE(updater.availableVersionDisplay(), QStringLiteral("0.2.1"));
+        QVERIFY(!updater.stableReplacementAvailable());
+
+        // With the nightly ahead, the check offers the nightly as before.
+        context.settings.setUpdateChannel(UpdateChannel::Stable);
+        context.settings.setUpdateChannel(UpdateChannel::Nightly);
+        QTcpServer *newerNightly = manifestServer(
+            &updater,
+            manifestJson(QStringLiteral("0.2.2-nightly.20260922+gdef5678"), current + 3));
+        qputenv("SPEECHER_UPDATE_MANIFEST_URL", serverUrl(newerNightly));
+        updater.checkForUpdates(UpdateChannel::Nightly);
+        QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
+                                  UpdateController::State::UpdateAvailable, 10000);
+        QCOMPARE(updater.availableVersion(),
+                 QStringLiteral("0.2.2-nightly.20260922+gdef5678"));
+        QCOMPARE(updater.availableVersionDisplay(),
+                 QStringLiteral("nightly build %1 (gdef5678)").arg(current + 3));
+    }
+
+    void nightlyChecksSurviveTheirOwnFeedFailing()
+    {
+        UpdateTestContext context(true);
+        context.settings.setUpdateChannel(UpdateChannel::Nightly);
+        TestManifestUpdater updater(&context.settings, context.session.get());
+        const qint64 current = updater.currentBuildNumber();
+
+        // The nightly feed is down, but the stable one holds the newest build:
+        // exactly the release a broken feed must not hide.
+        QTcpServer *deadNightly = manifestServer(&updater, QByteArrayLiteral("not json"));
+        QTcpServer *stableServer =
+            manifestServer(&updater, manifestJson(QStringLiteral("0.2.1"), current + 2));
+        qputenv("SPEECHER_UPDATE_MANIFEST_URL", serverUrl(deadNightly));
+        qputenv("SPEECHER_UPDATE_STABLE_MANIFEST_URL", serverUrl(stableServer));
+        const auto restoreEnv = qScopeGuard([] {
+            qunsetenv("SPEECHER_UPDATE_MANIFEST_URL");
+            qunsetenv("SPEECHER_UPDATE_STABLE_MANIFEST_URL");
+        });
+        updater.checkForUpdates(UpdateChannel::Nightly);
+        QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
+                                  UpdateController::State::UpdateAvailable, 10000);
+        QCOMPARE(updater.availableVersion(), QStringLiteral("0.2.1"));
+
+        // With nothing to offer from either leg, the failure is reported
+        // rather than papered over as "up to date".
+        context.settings.setUpdateChannel(UpdateChannel::Stable);
+        context.settings.setUpdateChannel(UpdateChannel::Nightly);
+        QTcpServer *oldStable =
+            manifestServer(&updater, manifestJson(QStringLiteral("0.1.0"), 1));
+        qputenv("SPEECHER_UPDATE_STABLE_MANIFEST_URL", serverUrl(oldStable));
+        updater.checkForUpdates(UpdateChannel::Nightly);
+        QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
+                                  UpdateController::State::CheckFailed, 10000);
+    }
+
+    void singleManifestOverrideFetchesExactlyOnce()
+    {
+        UpdateTestContext context(true);
+        context.settings.setUpdateChannel(UpdateChannel::Nightly);
+        TestManifestUpdater updater(&context.settings, context.session.get());
+
+        // The e2e rigs set only SPEECHER_UPDATE_MANIFEST_URL, which points both
+        // channels at one file; the secondary fetch must not run against it.
+        int requests = 0;
+        QTcpServer *server = manifestServer(
+            &updater,
+            manifestJson(QStringLiteral("0.2.2-nightly.20260921+gabc1234"),
+                         updater.currentBuildNumber() + 1),
+            &requests);
+        qputenv("SPEECHER_UPDATE_MANIFEST_URL", serverUrl(server));
+        const auto restoreEnv =
+            qScopeGuard([] { qunsetenv("SPEECHER_UPDATE_MANIFEST_URL"); });
+        updater.checkForUpdates(UpdateChannel::Nightly);
+        QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
+                                  UpdateController::State::UpdateAvailable, 10000);
+        QCOMPARE(requests, 1);
+    }
+
+    void updateBannersNameNightlyBuildsPrecisely()
+    {
+        UpdateTestContext context(true);
+        TestManifestUpdater updater(&context.settings, context.session.get());
+        ManifestUpdaterTestAccess::setAvailableVersion(
+            updater, QStringLiteral("0.2.1-nightly.20260921+gabc1234"),
+            UpdateChannel::Nightly, 481);
+        QCOMPARE(updater.availableVersionDisplay(),
+                 QStringLiteral("nightly build 481 (gabc1234)"));
+
+        ManifestUpdaterTestAccess::setAvailableVersion(
+            updater, QStringLiteral("0.2.0"), UpdateChannel::Stable, 480);
+        QCOMPARE(updater.availableVersionDisplay(), QStringLiteral("0.2.0"));
+
+        // Without a build number the date stands in — the Sparkle appcast path.
+        QCOMPARE(nightlyVersionDisplay(QStringLiteral("0.2.1-nightly.20260921+gabc1234")),
+                 QStringLiteral("nightly 20260921 (gabc1234)"));
     }
 
     void changingChannelInvalidatesAnAvailableUpdate()
@@ -868,6 +1100,24 @@ private slots:
         ManifestUpdaterTestAccess::setState(*controllerUpdater,
                                             UpdateController::State::Restarting);
         QCOMPARE(message->text(), QStringLiteral("Restarting…"));
+
+        // A nightly offer names its build and commit in the pill. The banner
+        // has no elide, so the popup grows for it; grab evidence when asked.
+        ManifestUpdaterTestAccess::setAvailableVersion(
+            *controllerUpdater, QStringLiteral("0.2.1-nightly.20260921+gabc1234"),
+            UpdateChannel::Nightly, 481);
+        ManifestUpdaterTestAccess::setState(*controllerUpdater,
+                                            UpdateController::State::UpdateAvailable);
+        QCOMPARE(message->text(),
+                 QStringLiteral("Speecher nightly build 481 (gabc1234) available"));
+        const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
+        if (!grabDir.isEmpty()) {
+            TranscriberPopup *popup = QtFrontEndTestAccess::popup(frontEnd);
+            popup->show();
+            QCoreApplication::processEvents();
+            popup->grab().save(grabDir + QStringLiteral("/popup-nightly-banner.png"));
+            popup->hide();
+        }
 #endif
     }
 

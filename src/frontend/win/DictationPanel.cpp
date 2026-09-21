@@ -144,9 +144,9 @@ win::UpdateChipState win::updateChipState(UpdateController::State state, const Q
     using State = UpdateController::State;
     switch (state) {
     case State::UpdateAvailable:
-        // The banner carries the base version; a nightly's -suffix is noise here.
-        return {QStringLiteral("Speecher %1 available")
-                    .arg(version.section(QLatin1Char('-'), 0, 0)),
+        // The caller hands the display form: a stable version number, or a
+        // nightly's build and commit, which is what changes between nightlies.
+        return {QStringLiteral("Speecher %1 available").arg(version),
                 QStringLiteral("Install and restart"), true, true};
     case State::Downloading:
         return {QStringLiteral("Downloading %1%").arg(percent), {}, true, false};
@@ -491,7 +491,7 @@ struct DictationPanel::Native : QObject {
     {
         auto *updates = controller->updates();
         const auto notice = win::updateChipState(
-            updates->state(), updates->availableVersion(), updates->downloadPercent(),
+            updates->state(), updates->availableVersionDisplay(), updates->downloadPercent(),
             updates->errorMessage(), updates->repeatedAutomaticCheckFailure(),
             updates->manualInstallRequired(), controller->session()->state());
         const bool showWhatsNew = !whatsNewHidden

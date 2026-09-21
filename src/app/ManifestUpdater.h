@@ -44,6 +44,7 @@ public:
     QString currentVersion() const override;
     qint64 currentBuildNumber() const;
     QString availableVersion() const override;
+    QString availableVersionDisplay() const override;
     int downloadPercent() const override;
     QString errorMessage() const override;
     bool bannerVisible() const override;
@@ -85,7 +86,14 @@ private:
                                     const QString &currentVersion,
                                     UpdateChannel channel,
                                     bool automaticCheck);
+    // Which of a check's fetched manifests to offer: the newest build wins,
+    // and a tie goes to the Stable Release, whose artifact the nightly built
+    // from the same commit duplicates.
+    static std::optional<UpdateManifest> bestCandidate(
+        std::optional<UpdateManifest> primary,
+        std::optional<UpdateManifest> stable);
     void beginCheck(UpdateChannel channel, bool automaticCheck);
+    void decideCheck(const std::optional<UpdateManifest> &candidate);
     void updateSettingsChanged();
     int baseCheckIntervalMs() const;
     QUrl manifestUrl(UpdateChannel channel) const;
@@ -111,6 +119,14 @@ private:
     QString m_downloadError;
     QString m_dismissedVersion;
     QString m_pendingRestoreState;
+    // The Nightly channel's check reads both manifests, so a stable release
+    // that is the newest build reaches nightly installs too. The nightly
+    // manifest lands first and waits here while the stable one is fetched; a
+    // failed nightly leg leaves its error here so the stable leg can still
+    // offer, and only a check with nothing to offer reports the failure.
+    std::optional<UpdateManifest> m_primaryCandidate;
+    QString m_primaryCheckError;
+    bool m_fetchingStable = false;
     UpdateChannel m_checkChannel;
     UpdateChannel m_selectedChannel;
     bool m_automaticCheck = false;

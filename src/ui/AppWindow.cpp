@@ -789,15 +789,15 @@ void AppWindow::refreshUpdateBanner()
         m_updateBannerText->setText(updates->stableReplacementAvailable()
                                         ? QStringLiteral("Switch to Stable Release %1 (replaces "
                                                          "this Nightly Build)")
-                                              .arg(updates->availableVersion())
+                                              .arg(updates->availableVersionDisplay())
                                         : QStringLiteral("Speecher %1 is available")
-                                              .arg(updates->availableVersion()));
+                                              .arg(updates->availableVersionDisplay()));
         m_updateAction->setText(QStringLiteral("Install and restart"));
         m_updateDismiss->show();
         break;
     case UpdateController::State::Downloading:
         m_updateBannerText->setText(
-            QStringLiteral("Downloading Speecher %1").arg(updates->availableVersion()));
+            QStringLiteral("Downloading Speecher %1").arg(updates->availableVersionDisplay()));
         m_updateProgress->setValue(updates->downloadPercent());
         m_updateProgress->show();
         m_updateAction->hide();

@@ -25,6 +25,7 @@ public:
     State state() const override;
     QString currentVersion() const override;
     QString availableVersion() const override;
+    QString availableVersionDisplay() const override;
     int downloadPercent() const override;
     QString errorMessage() const override;
     bool isAppImage() const override;
@@ -45,7 +46,7 @@ public:
     // Sparkle call the check callbacks, so Checking/UpToDate/CheckFailed always
     // mean a manual check the settings banner should report.
     void driverCheckStarted(std::function<void()> cancel = {});
-    void driverUpdateFound(const QString &version, ReplyHandler reply);
+    void driverUpdateFound(const QString &version, qint64 buildNumber, ReplyHandler reply);
     void driverUpToDate();
     void driverDownloadStarted(std::function<void()> cancel = {});
     void driverDownloadExpects(qint64 totalBytes);
@@ -83,6 +84,7 @@ private:
     QTimer *m_transientTimer = nullptr;
     State m_state = State::Idle;
     QString m_availableVersion;
+    qint64 m_availableBuildNumber = -1;
     QString m_error;
     QString m_dismissedVersion;
     // Captured at the moment of the restart request: a restart deferred to the

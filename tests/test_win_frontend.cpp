@@ -85,11 +85,13 @@ private slots:
         QCOMPARE(available.text, QStringLiteral("Speecher 0.2.0 available"));
         QCOMPARE(available.action, QStringLiteral("Install and restart"));
         QVERIFY(available.visible && available.enabled);
+        // The caller passes availableVersionDisplay(), so a nightly offer names
+        // its build and commit verbatim.
         QCOMPARE(win::updateChipState(State::UpdateAvailable,
-                                      QStringLiteral("0.2.0-nightly.20260906"), 0, {}, false,
-                                      false, DictationState::Idle)
+                                      QStringLiteral("nightly build 481 (gabc1234)"), 0, {},
+                                      false, false, DictationState::Idle)
                      .text,
-                 QStringLiteral("Speecher 0.2.0 available"));
+                 QStringLiteral("Speecher nightly build 481 (gabc1234) available"));
         const auto downloading = chip(State::Downloading);
         QCOMPARE(downloading.text, QStringLiteral("Downloading 42%"));
         QVERIFY(downloading.visible && downloading.action.isEmpty() && !downloading.enabled);

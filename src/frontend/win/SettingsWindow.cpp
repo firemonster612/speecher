@@ -639,8 +639,9 @@ struct SettingsWindow::Native {
             banner.Message(hs(
                 updates->stableReplacementAvailable()
                     ? QStringLiteral("Switch to Stable Release %1 (replaces this Nightly Build)")
-                          .arg(updates->availableVersion())
-                    : QStringLiteral("Speecher %1 is available").arg(updates->availableVersion())));
+                          .arg(updates->availableVersionDisplay())
+                    : QStringLiteral("Speecher %1 is available")
+                          .arg(updates->availableVersionDisplay())));
             action(QStringLiteral("Install and restart"),
                    [updates] { updates->installAndRestart(); });
             banner.IsClosable(true);
@@ -648,7 +649,7 @@ struct SettingsWindow::Native {
             break;
         case UpdateController::State::Downloading: {
             banner.Message(hs(QStringLiteral("Downloading Speecher %1")
-                                  .arg(updates->availableVersion())));
+                                  .arg(updates->availableVersionDisplay())));
             ProgressBar progress;
             progress.Minimum(0);
             progress.Maximum(100);
