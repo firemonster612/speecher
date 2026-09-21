@@ -1028,22 +1028,25 @@ private slots:
 
         SpeechProviderSetupPage setup(settings, providers);
         setup.show();
-        auto *source = setup.findChild<QComboBox *>(QStringLiteral("speechSignInSource"));
+        auto *useCliproxy = setup.findChild<QCheckBox *>(QStringLiteral("speechUseCliproxy"));
         auto *account = setup.findChild<QComboBox *>(QStringLiteral("speechCliproxyAccount"));
         auto *directory = setup.findChild<QLineEdit *>(QStringLiteral("speechCliproxyDir"));
-        QVERIFY(source && account && directory);
-        QCOMPARE(source->currentData().toString(), QStringLiteral("oauth"));
+        QVERIFY(useCliproxy && account && directory);
+        QVERIFY(!useCliproxy->isChecked());
         QVERIFY(!account->isVisibleTo(&setup));
         QVERIFY(!directory->isVisibleTo(&setup));
 
-        // The page only reacts to user selections (activated), never its own
-        // repopulation, so the test emits what a click would.
-        const auto choose = [](QComboBox *combo, const QString &data) {
-            const int index = combo->findData(data);
-            combo->setCurrentIndex(index);
-            QMetaObject::invokeMethod(combo, "activated", Q_ARG(int, index));
-        };
-        choose(source, QStringLiteral("cliproxy"));
+        // Opt in through the row caption, which toggles the box without ever
+        // emitting clicked; the page must react to that path too.
+        QLabel *caption = nullptr;
+        for (QLabel *label : setup.findChildren<QLabel *>(QStringLiteral("rowTitle"))) {
+            if (label->buddy() == useCliproxy) {
+                caption = label;
+            }
+        }
+        QVERIFY(caption);
+        QTest::mouseClick(caption, Qt::LeftButton);
+        QVERIFY(useCliproxy->isChecked());
         QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("cliproxy"));
         QVERIFY(account->isVisibleTo(&setup));
         QVERIFY(directory->isVisibleTo(&setup));
@@ -1052,13 +1055,59 @@ private slots:
         QCOMPARE(account->currentData().toString(), QString());
         QCOMPARE(account->count(), 3);
 
-        choose(account, QStringLiteral("claude-b@example.com.json"));
+        // The page only reacts to user selections (activated), never its own
+        // repopulation, so the test emits what a click would.
+        const int chosen = account->findData(QStringLiteral("claude-b@example.com.json"));
+        account->setCurrentIndex(chosen);
+        QMetaObject::invokeMethod(account, "activated", Q_ARG(int, chosen));
         QCOMPARE(settings.anthropicCliproxyAccount(), QStringLiteral("claude-b@example.com.json"));
 
-        // Switching back restores the CLI sign-in and hides the account rows.
-        choose(source, QStringLiteral("oauth"));
+        // Unchecking restores the CLI sign-in and hides the account rows.
+        useCliproxy->click();
         QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
         QVERIFY(!account->isVisibleTo(&setup));
+    }
+
+    void signInOptOutRestoresTheFirstSeenMode()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        QTemporaryDir dir;
+        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), dir.path());
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.setOpenAiAuthMode(QStringLiteral("env"));
+        settings.setAnthropicAuthMode(QStringLiteral("cliproxy"));
+
+        ProviderRegistry providers;
+        providers.registerSpeechProvider(
+            {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex"), QString()},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        providers.registerSpeechProvider(
+            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+
+        SpeechProviderSetupPage setup(settings, providers);
+        setup.show();
+        auto *useCliproxy = setup.findChild<QCheckBox *>(QStringLiteral("speechUseCliproxy"));
+        QVERIFY(useCliproxy);
+
+        // Codex opened on an environment API key; a round trip through CLI
+        // Proxy API returns to it rather than to the default.
+        QVERIFY(!useCliproxy->isChecked());
+        useCliproxy->click();
+        QCOMPARE(settings.openAiAuthMode(), QStringLiteral("cliproxy"));
+        useCliproxy->click();
+        QCOMPARE(settings.openAiAuthMode(), QStringLiteral("env"));
+
+        // Claude opened already on CLI Proxy API; opting out falls back to the
+        // Claude Code sign-in.
+        auto *claude = setup.findChild<QRadioButton *>(
+            QStringLiteral("speechProviderOption_claude"));
+        QVERIFY(claude);
+        claude->click();
+        QVERIFY(useCliproxy->isChecked());
+        useCliproxy->click();
+        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
     }
 
     void speechProviderChoicesComeFromTheRegistry()

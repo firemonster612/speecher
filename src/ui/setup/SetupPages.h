@@ -186,15 +186,18 @@ private:
     // Where the selected service's sign-in comes from, so someone whose only
     // account lives in CLI Proxy API can finish setup without visiting
     // Settings first.
-    QComboBox *m_signInSource = nullptr;
+    QCheckBox *m_useCliproxy = nullptr;
     QComboBox *m_cliproxyAccount = nullptr;
     QLineEdit *m_cliproxyDir = nullptr;
+    // The titled Sign-in section, hidden whole for a provider without these
+    // controls; hiding only rows would leave the bold header floating.
+    QWidget *m_signInSection = nullptr;
     QWidget *m_signInSourceRow = nullptr;
     QWidget *m_cliproxyAccountRow = nullptr;
     QWidget *m_cliproxyDirRow = nullptr;
-    // Each provider's sign-in mode when this page first saw it, kept in the
-    // combo so leaving and returning to a mode the short list lacks is lossless.
-    QHash<QString, QString> m_initialSignInModes;
+    // What unchecking the box returns each provider to, so a sign-in mode
+    // chosen in Settings survives a round trip through CLI Proxy API.
+    QHash<QString, QString> m_fallbackSignInModes;
     QCheckBox *m_accuracyPass;
     ProviderStatsBlock *m_stats;
     QLabel *m_hint;
