@@ -136,7 +136,8 @@ QString ManifestUpdater::availableVersion() const
 QString ManifestUpdater::availableVersionDisplay() const
 {
     return m_manifest.channel == UpdateChannel::Nightly
-        ? nightlyVersionDisplay(m_manifest.version, m_manifest.buildNumber)
+        ? nightlyVersionDisplay(m_manifest.version,
+                                m_manifest.buildNumber > 0 ? m_manifest.buildNumber : -1)
         : m_manifest.version;
 }
 
@@ -174,7 +175,12 @@ bool ManifestUpdater::manualInstallRequired() const
 
 bool ManifestUpdater::stableReplacementAvailable() const
 {
+    // Only an explicit switch to the Stable channel reads as "replaces this
+    // Nightly Build" and waits for consent before downloading. The Nightly
+    // channel surfacing a stable that happens to be the newest build is an
+    // ordinary offer: it names the stable version and auto-installs normally.
     return m_manifest.channel == UpdateChannel::Stable
+        && m_checkChannel == UpdateChannel::Stable
         && currentVersion().contains(QStringLiteral("-nightly"));
 }
 
@@ -289,6 +295,7 @@ void ManifestUpdater::beginCheck(UpdateChannel channel, bool automaticCheck)
     m_checkChannel = channel;
     m_automaticCheck = automaticCheck;
     m_primaryCandidate.reset();
+    m_primaryCheckError.clear();
     m_fetchingStable = false;
     setState(State::Checking);
     QNetworkRequest request(manifestUrl(channel));
@@ -418,31 +425,29 @@ void ManifestUpdater::finishCheck(QNetworkReply *reply)
     }
 
     if (m_fetchingStable) {
-        // The stable manifest is the Nightly check's extra look, so its failure
-        // is not the check's failure: the nightly verdict already in hand
-        // stands on its own.
+        // The stable manifest is the Nightly check's extra look, so its
+        // failure is not the check's failure: a nightly verdict already in
+        // hand stands on its own, and a stable one can stand in for a nightly
+        // feed that is down — the very release a broken feed must not hide.
         decideCheck(bestCandidate(m_primaryCandidate, parsed));
         return;
     }
 
-    if (!parsed) {
-        recordAutomaticCheckFailure();
-        setState(State::CheckFailed,
-                 networkError.isEmpty()
-                     ? error
-                     : QStringLiteral("Could not check for updates: %1").arg(networkError));
-        return;
-    }
+    const QString checkError = networkError.isEmpty()
+        ? error
+        : QStringLiteral("Could not check for updates: %1").arg(networkError);
 
     // The Nightly channel also reads the stable manifest: the newest release
     // is sometimes a Stable Release, and a nightly install should get it too.
     // With one overridden URL both channels would read the same file, so the
     // extra fetch only happens while the two URLs actually differ.
+    const QUrl stableUrl = manifestUrl(UpdateChannel::Stable);
     if (m_checkChannel == UpdateChannel::Nightly
-        && manifestUrl(UpdateChannel::Stable) != manifestUrl(UpdateChannel::Nightly)) {
+        && stableUrl != manifestUrl(UpdateChannel::Nightly)) {
         m_primaryCandidate = parsed;
+        m_primaryCheckError = parsed ? QString() : checkError;
         m_fetchingStable = true;
-        QNetworkRequest request(manifestUrl(UpdateChannel::Stable));
+        QNetworkRequest request(stableUrl);
         request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                              QNetworkRequest::NoLessSafeRedirectPolicy);
         m_reply = m_network->get(request);
@@ -452,16 +457,21 @@ void ManifestUpdater::finishCheck(QNetworkReply *reply)
         return;
     }
 
+    if (!parsed) {
+        recordAutomaticCheckFailure();
+        setState(State::CheckFailed, checkError);
+        return;
+    }
+
     decideCheck(parsed);
 }
 
 void ManifestUpdater::decideCheck(const std::optional<UpdateManifest> &candidate)
 {
+    const QString primaryError = m_primaryCheckError;
     m_primaryCandidate.reset();
+    m_primaryCheckError.clear();
     m_fetchingStable = false;
-    m_settings->setUpdatesLastCheckTime(QDateTime::currentMSecsSinceEpoch());
-    m_automaticCheckFailures = 0;
-    m_dailyTimer->setInterval(baseCheckIntervalMs());
     if (!candidate
         || !shouldOfferManifest(*candidate,
                                 currentBuildNumber(),
@@ -469,9 +479,22 @@ void ManifestUpdater::decideCheck(const std::optional<UpdateManifest> &candidate
                                 m_checkChannel,
                                 m_automaticCheck)) {
         m_manifest = {};
+        // A check whose own feed failed only counts as a check when the other
+        // leg produced an offer; "up to date" must not paper over a dead feed.
+        if (!primaryError.isEmpty()) {
+            recordAutomaticCheckFailure();
+            setState(State::CheckFailed, primaryError);
+            return;
+        }
+        m_settings->setUpdatesLastCheckTime(QDateTime::currentMSecsSinceEpoch());
+        m_automaticCheckFailures = 0;
+        m_dailyTimer->setInterval(baseCheckIntervalMs());
         setState(State::UpToDate);
         return;
     }
+    m_settings->setUpdatesLastCheckTime(QDateTime::currentMSecsSinceEpoch());
+    m_automaticCheckFailures = 0;
+    m_dailyTimer->setInterval(baseCheckIntervalMs());
 
     m_manifest = *candidate;
     setState(State::UpdateAvailable);
@@ -517,6 +540,7 @@ void ManifestUpdater::updateSettingsChanged()
     clearDownload();
     m_manifest = {};
     m_primaryCandidate.reset();
+    m_primaryCheckError.clear();
     m_fetchingStable = false;
     m_downloadError.clear();
     m_downloadPercent = 0;

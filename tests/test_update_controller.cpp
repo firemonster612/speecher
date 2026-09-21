@@ -254,14 +254,29 @@ QByteArray manifestJson(const QString &version, qint64 buildNumber)
     return json;
 }
 
-// Serves one JSON body to every request, for driving a real check.
-QTcpServer *manifestServer(QObject *parent, const QByteArray &body)
+// Serves one JSON body to every request, for driving a real check. The
+// request is drained before the response and the socket closes after it, so
+// the kernel never answers with a reset that would flake the check.
+QTcpServer *manifestServer(QObject *parent, const QByteArray &body, int *requestCount = nullptr)
 {
     auto *server = new QTcpServer(parent);
-    server->listen(QHostAddress::LocalHost);
-    QObject::connect(server, &QTcpServer::newConnection, server, [server, body] {
+    const bool listening = server->listen(QHostAddress::LocalHost);
+    Q_ASSERT(listening);
+    QObject::connect(server, &QTcpServer::newConnection, server,
+                     [server, body, requestCount] {
         QTcpSocket *socket = server->nextPendingConnection();
-        QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket, body] {
+        QObject::connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+        auto answered = std::make_shared<bool>(false);
+        QObject::connect(socket, &QTcpSocket::readyRead, socket,
+                         [socket, body, requestCount, answered] {
+            socket->readAll();
+            if (*answered) {
+                return;
+            }
+            *answered = true;
+            if (requestCount) {
+                ++*requestCount;
+            }
             socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
                           + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n"
                           + body);
@@ -443,9 +458,10 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
                                   UpdateController::State::UpdateAvailable, 10000);
         QCOMPARE(updater.availableVersion(), QStringLiteral("0.2.1"));
-        if (updater.currentVersion().contains(QStringLiteral("-nightly"))) {
-            QVERIFY(updater.stableReplacementAvailable());
-        }
+        // The winner is an ordinary offer on the Nightly channel: it names the
+        // stable version but never demands the Stable channel's consent step.
+        QCOMPARE(updater.availableVersionDisplay(), QStringLiteral("0.2.1"));
+        QVERIFY(!updater.stableReplacementAvailable());
 
         // With the nightly ahead, the check offers the nightly as before.
         context.settings.setUpdateChannel(UpdateChannel::Stable);
@@ -461,6 +477,64 @@ private slots:
                  QStringLiteral("0.2.2-nightly.20260922+gdef5678"));
         QCOMPARE(updater.availableVersionDisplay(),
                  QStringLiteral("nightly build %1 (gdef5678)").arg(current + 3));
+    }
+
+    void nightlyChecksSurviveTheirOwnFeedFailing()
+    {
+        UpdateTestContext context(true);
+        context.settings.setUpdateChannel(UpdateChannel::Nightly);
+        TestManifestUpdater updater(&context.settings, context.session.get());
+        const qint64 current = updater.currentBuildNumber();
+
+        // The nightly feed is down, but the stable one holds the newest build:
+        // exactly the release a broken feed must not hide.
+        QTcpServer *deadNightly = manifestServer(&updater, QByteArrayLiteral("not json"));
+        QTcpServer *stableServer =
+            manifestServer(&updater, manifestJson(QStringLiteral("0.2.1"), current + 2));
+        qputenv("SPEECHER_UPDATE_MANIFEST_URL", serverUrl(deadNightly));
+        qputenv("SPEECHER_UPDATE_STABLE_MANIFEST_URL", serverUrl(stableServer));
+        const auto restoreEnv = qScopeGuard([] {
+            qunsetenv("SPEECHER_UPDATE_MANIFEST_URL");
+            qunsetenv("SPEECHER_UPDATE_STABLE_MANIFEST_URL");
+        });
+        updater.checkForUpdates(UpdateChannel::Nightly);
+        QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
+                                  UpdateController::State::UpdateAvailable, 10000);
+        QCOMPARE(updater.availableVersion(), QStringLiteral("0.2.1"));
+
+        // With nothing to offer from either leg, the failure is reported
+        // rather than papered over as "up to date".
+        context.settings.setUpdateChannel(UpdateChannel::Stable);
+        context.settings.setUpdateChannel(UpdateChannel::Nightly);
+        QTcpServer *oldStable =
+            manifestServer(&updater, manifestJson(QStringLiteral("0.1.0"), 1));
+        qputenv("SPEECHER_UPDATE_STABLE_MANIFEST_URL", serverUrl(oldStable));
+        updater.checkForUpdates(UpdateChannel::Nightly);
+        QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
+                                  UpdateController::State::CheckFailed, 10000);
+    }
+
+    void singleManifestOverrideFetchesExactlyOnce()
+    {
+        UpdateTestContext context(true);
+        context.settings.setUpdateChannel(UpdateChannel::Nightly);
+        TestManifestUpdater updater(&context.settings, context.session.get());
+
+        // The e2e rigs set only SPEECHER_UPDATE_MANIFEST_URL, which points both
+        // channels at one file; the secondary fetch must not run against it.
+        int requests = 0;
+        QTcpServer *server = manifestServer(
+            &updater,
+            manifestJson(QStringLiteral("0.2.2-nightly.20260921+gabc1234"),
+                         updater.currentBuildNumber() + 1),
+            &requests);
+        qputenv("SPEECHER_UPDATE_MANIFEST_URL", serverUrl(server));
+        const auto restoreEnv =
+            qScopeGuard([] { qunsetenv("SPEECHER_UPDATE_MANIFEST_URL"); });
+        updater.checkForUpdates(UpdateChannel::Nightly);
+        QTRY_COMPARE_WITH_TIMEOUT(updater.state(),
+                                  UpdateController::State::UpdateAvailable, 10000);
+        QCOMPARE(requests, 1);
     }
 
     void updateBannersNameNightlyBuildsPrecisely()
@@ -1026,6 +1100,24 @@ private slots:
         ManifestUpdaterTestAccess::setState(*controllerUpdater,
                                             UpdateController::State::Restarting);
         QCOMPARE(message->text(), QStringLiteral("Restarting…"));
+
+        // A nightly offer names its build and commit in the pill. The banner
+        // has no elide, so the popup grows for it; grab evidence when asked.
+        ManifestUpdaterTestAccess::setAvailableVersion(
+            *controllerUpdater, QStringLiteral("0.2.1-nightly.20260921+gabc1234"),
+            UpdateChannel::Nightly, 481);
+        ManifestUpdaterTestAccess::setState(*controllerUpdater,
+                                            UpdateController::State::UpdateAvailable);
+        QCOMPARE(message->text(),
+                 QStringLiteral("Speecher nightly build 481 (gabc1234) available"));
+        const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
+        if (!grabDir.isEmpty()) {
+            TranscriberPopup *popup = QtFrontEndTestAccess::popup(frontEnd);
+            popup->show();
+            QCoreApplication::processEvents();
+            popup->grab().save(grabDir + QStringLiteral("/popup-nightly-banner.png"));
+            popup->hide();
+        }
 #endif
     }
 

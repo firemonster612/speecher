@@ -121,8 +121,11 @@ private:
     QString m_pendingRestoreState;
     // The Nightly channel's check reads both manifests, so a stable release
     // that is the newest build reaches nightly installs too. The nightly
-    // manifest lands first and waits here while the stable one is fetched.
+    // manifest lands first and waits here while the stable one is fetched; a
+    // failed nightly leg leaves its error here so the stable leg can still
+    // offer, and only a check with nothing to offer reports the failure.
     std::optional<UpdateManifest> m_primaryCandidate;
+    QString m_primaryCheckError;
     bool m_fetchingStable = false;
     UpdateChannel m_checkChannel;
     UpdateChannel m_selectedChannel;

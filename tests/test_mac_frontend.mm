@@ -529,12 +529,23 @@ private slots:
         QVERIFY(updates->bannerVisible());
 
         bool installRequested = false;
-        updates->driverUpdateFound(QStringLiteral("9.9.9"),
+        updates->driverUpdateFound(QStringLiteral("9.9.9"), 9900,
                                    [&installRequested](MacSparkleUpdater::Reply reply) {
                                        installRequested = reply == MacSparkleUpdater::Reply::Install;
                                    });
         QCOMPARE(updates->state(), UpdateController::State::UpdateAvailable);
         QCOMPARE(updates->availableVersion(), QStringLiteral("9.9.9"));
+        // A stable offer displays as its number; a nightly names its build and
+        // commit from the appcast, or the date when no build number rides along.
+        QCOMPARE(updates->availableVersionDisplay(), QStringLiteral("9.9.9"));
+        updates->driverUpdateFound(QStringLiteral("9.9.10-nightly.20260921+gabc1234"), 9901,
+                                   [](MacSparkleUpdater::Reply) {});
+        QCOMPARE(updates->availableVersionDisplay(),
+                 QStringLiteral("nightly build 9901 (gabc1234)"));
+        updates->driverUpdateFound(QStringLiteral("9.9.9"), 9900,
+                                   [&installRequested](MacSparkleUpdater::Reply reply) {
+                                       installRequested = reply == MacSparkleUpdater::Reply::Install;
+                                   });
         QVERIFY(updates->bannerVisible());
 
         updates->updateNow();
@@ -570,7 +581,7 @@ private slots:
         QVERIFY(updates);
 
         bool dismissed = false;
-        updates->driverUpdateFound(QStringLiteral("9.9.9"),
+        updates->driverUpdateFound(QStringLiteral("9.9.9"), 9900,
                                    [&dismissed](MacSparkleUpdater::Reply reply) {
                                        dismissed = reply == MacSparkleUpdater::Reply::Dismiss;
                                    });
@@ -586,7 +597,7 @@ private slots:
         // unanswered reply would keep Sparkle in a session and block every later
         // check. It stays silent and does not hold the session open.
         bool reDismissed = false;
-        updates->driverUpdateFound(QStringLiteral("9.9.9"),
+        updates->driverUpdateFound(QStringLiteral("9.9.9"), 9900,
                                    [&reDismissed](MacSparkleUpdater::Reply reply) {
                                        reDismissed = reply == MacSparkleUpdater::Reply::Dismiss;
                                    });
@@ -596,7 +607,7 @@ private slots:
 
         // A newer version still surfaces.
         updates->driverSessionEnded();
-        updates->driverUpdateFound(QStringLiteral("10.0.0"), [](MacSparkleUpdater::Reply) {});
+        updates->driverUpdateFound(QStringLiteral("10.0.0"), 10000, [](MacSparkleUpdater::Reply) {});
         QCOMPARE(updates->state(), UpdateController::State::UpdateAvailable);
         QVERIFY(updates->bannerVisible());
     }
@@ -610,7 +621,7 @@ private slots:
         auto *updates = qobject_cast<MacSparkleUpdater *>(controller.updates());
         QVERIFY(updates);
 
-        updates->driverUpdateFound(QStringLiteral("9.9.9"), [](MacSparkleUpdater::Reply) {});
+        updates->driverUpdateFound(QStringLiteral("9.9.9"), 9900, [](MacSparkleUpdater::Reply) {});
         updates->installAndRestart();
         bool downloadCancelled = false;
         updates->driverDownloadStarted([&downloadCancelled] { downloadCancelled = true; });
@@ -663,7 +674,7 @@ private slots:
 
         frontEnd.showSettingsWindow();
 
-        updates->driverUpdateFound(QStringLiteral("9.9.9"), [](MacSparkleUpdater::Reply) {});
+        updates->driverUpdateFound(QStringLiteral("9.9.9"), 9900, [](MacSparkleUpdater::Reply) {});
         updates->installAndRestart();
         bool installRequested = false;
         updates->driverReadyToRestart(
