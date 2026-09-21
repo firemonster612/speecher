@@ -1774,6 +1774,27 @@ bool cliproxyServerRowVisible(const AppSettings &settings, const Capabilities &)
 
 SettingsSection cliproxyServerSection()
 {
+    SettingsRow oauthDir;
+    oauthDir.id = QStringLiteral("cliproxyOauthDir");
+    oauthDir.sinceVersion = QStringLiteral("0.2.0");
+    oauthDir.label = QStringLiteral("Account directory");
+    oauthDir.kind = RowKind::Text;
+    oauthDir.help = QStringLiteral(
+        "Directory holding CLI Proxy API's saved account files. Leave empty to detect it "
+        "automatically.");
+    oauthDir.helpValue = [help = oauthDir.help](const AppSettings &settings) {
+        return settings.refinement.cliproxyOauthDirConfigured.isEmpty()
+            ? help + QStringLiteral(" Currently using %1.").arg(settings.refinement.cliproxyOauthDir)
+            : help;
+    };
+    oauthDir.value = [](const AppSettings &settings) {
+        return QVariant(settings.refinement.cliproxyOauthDirConfigured);
+    };
+    oauthDir.apply = [](AppSettings &settings, const QVariant &value) {
+        settings.refinement.cliproxyOauthDirConfigured = value.toString().trimmed();
+    };
+    oauthDir.visible = cliproxyServerRowVisible;
+
     SettingsRow baseUrl = customRow(
         QStringLiteral("cliproxyBaseUrl"),
         QStringLiteral("Server URL"),
@@ -1801,7 +1822,9 @@ SettingsSection cliproxyServerSection()
     };
     apiKey.visible = cliproxyServerRowVisible;
 
-    return {QStringLiteral("CLI Proxy API"), QString(), {std::move(baseUrl), std::move(apiKey)}};
+    return {QStringLiteral("CLI Proxy API"),
+            QString(),
+            {std::move(oauthDir), std::move(baseUrl), std::move(apiKey)}};
 }
 
 SettingsSection providerSection(const ProviderAccount &account)

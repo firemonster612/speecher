@@ -966,6 +966,16 @@ QString SettingsCodecs::cliproxyOauthDir() const
     return candidates.first();
 }
 
+QString SettingsCodecs::configuredCliproxyOauthDir() const
+{
+    return value(SettingsKeys::CliproxyOauthDir, QString()).toString().trimmed();
+}
+
+void SettingsCodecs::setCliproxyOauthDir(const QString &value)
+{
+    m_settings.setValue(SettingsKeys::CliproxyOauthDir, value.trimmed());
+}
+
 QString SettingsCodecs::cliproxyBaseUrl() const
 {
     return cliproxyServerBase(value(SettingsKeys::CliproxyBaseUrl, QString()).toString());
@@ -1067,6 +1077,7 @@ AppSettings SettingsCodecs::snapshot() const
     settings.refinement.anthropicFastMode = anthropicFastMode();
     settings.refinement.anthropicCliproxyAccount = anthropicCliproxyAccount();
     settings.refinement.cliproxyOauthDir = cliproxyOauthDir();
+    settings.refinement.cliproxyOauthDirConfigured = configuredCliproxyOauthDir();
     settings.refinement.cliproxyBaseUrl = cliproxyBaseUrl();
     settings.refinement.cliproxyApiKey = cliproxyApiKey();
     settings.refinement.anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");

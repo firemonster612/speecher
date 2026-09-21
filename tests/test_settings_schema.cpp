@@ -624,9 +624,19 @@ private slots:
 
         const SettingsSection &server = page.sections.last();
         QCOMPARE(server.title, QStringLiteral("CLI Proxy API"));
-        QCOMPARE(server.rows.size(), 2);
-        QCOMPARE(server.rows.at(0).id, QStringLiteral("cliproxyBaseUrl"));
-        QCOMPARE(server.rows.at(1).id, QStringLiteral("cliproxyApiKey"));
+        QCOMPARE(server.rows.size(), 3);
+        QCOMPARE(server.rows.at(0).id, QStringLiteral("cliproxyOauthDir"));
+        QCOMPARE(server.rows.at(1).id, QStringLiteral("cliproxyBaseUrl"));
+        QCOMPARE(server.rows.at(2).id, QStringLiteral("cliproxyApiKey"));
+
+        AppSettings oauthDirDraft;
+        oauthDirDraft.refinement.cliproxyOauthDir = QStringLiteral("/detected/dir");
+        QVERIFY(rowById(page, QStringLiteral("cliproxyOauthDir"))
+                    .helpValue(oauthDirDraft)
+                    .contains(QStringLiteral("/detected/dir")));
+        rowById(page, QStringLiteral("cliproxyOauthDir"))
+            .apply(oauthDirDraft, QStringLiteral(" /custom/dir "));
+        QCOMPARE(oauthDirDraft.refinement.cliproxyOauthDirConfigured, QStringLiteral("/custom/dir"));
     }
 
     void accountRowsSpeakOfSignInNotCredentialSources()

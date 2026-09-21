@@ -904,6 +904,10 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
+        // The machine running the tests may have real CLI Proxy API accounts,
+        // which would open the gate this test holds shut.
+        QTemporaryDir emptyCliproxyDir;
+        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), emptyCliproxyDir.path());
 
         ProviderRegistry providers;
         providers.registerSpeechProvider(
@@ -943,6 +947,8 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
+        QTemporaryDir emptyCliproxyDir;
+        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), emptyCliproxyDir.path());
 
         ProviderRegistry providers;
         providers.registerSpeechProvider(
@@ -971,6 +977,81 @@ private slots:
         welcome.show();
         QCOMPARE(status->text(), QStringLiteral("Sign-in found"));
         QVERIFY(welcome.ready());
+    }
+
+    void theWelcomePageAcceptsACliProxyAccountAlone()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        QTemporaryDir dir;
+        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), dir.path());
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"),
+                                     QStringLiteral("claude"), QStringLiteral("token"),
+                                     QDateTime::currentDateTimeUtc().addSecs(3600)));
+
+        // The provider CLI itself is not signed in; only CLI Proxy API is.
+        ProviderRegistry providers;
+        providers.registerSpeechProvider(
+            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
+            [](QObject *parent) {
+                auto *provider = new FakeSpeechTranscriber(parent);
+                provider->prepareResult = {false, QStringLiteral("Sign-in required")};
+                return provider;
+            });
+
+        WelcomeSetupPage welcome(settings, providers);
+        welcome.show();
+        auto *status = welcome.findChild<QLabel *>(
+            QStringLiteral("welcomeCredentialStatus_cliproxy"));
+        QVERIFY(status);
+        QCOMPARE(status->text(), QStringLiteral("Accounts found"));
+        QVERIFY(welcome.ready());
+    }
+
+    void setupSignInSourceSwitchesToCliProxy()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setSpeechProvider(QStringLiteral("claude"));
+        QTemporaryDir dir;
+        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), dir.path());
+        const QDateTime valid = QDateTime::currentDateTimeUtc().addSecs(3600);
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"),
+                                     QStringLiteral("claude"), QStringLiteral("token-a"), valid));
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-b@example.com.json"),
+                                     QStringLiteral("claude"), QStringLiteral("token-b"), valid));
+
+        ProviderRegistry providers;
+        providers.registerSpeechProvider(
+            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+
+        SpeechProviderSetupPage setup(settings, providers);
+        setup.show();
+        auto *source = setup.findChild<QComboBox *>(QStringLiteral("speechSignInSource"));
+        auto *account = setup.findChild<QComboBox *>(QStringLiteral("speechCliproxyAccount"));
+        auto *directory = setup.findChild<QLineEdit *>(QStringLiteral("speechCliproxyDir"));
+        QVERIFY(source && account && directory);
+        QCOMPARE(source->currentData().toString(), QStringLiteral("oauth"));
+        QVERIFY(!account->isVisibleTo(&setup));
+        QVERIFY(!directory->isVisibleTo(&setup));
+
+        source->setCurrentIndex(source->findData(QStringLiteral("cliproxy")));
+        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("cliproxy"));
+        QVERIFY(account->isVisibleTo(&setup));
+        QVERIFY(directory->isVisibleTo(&setup));
+        QCOMPARE(directory->text(), dir.path());
+        // Two accounts and none stored force an explicit choice.
+        QCOMPARE(account->currentData().toString(), QString());
+        QCOMPARE(account->count(), 3);
+
+        account->setCurrentIndex(account->findData(QStringLiteral("claude-b@example.com.json")));
+        QCOMPARE(settings.anthropicCliproxyAccount(), QStringLiteral("claude-b@example.com.json"));
+
+        // Switching back restores the CLI sign-in and hides the account rows.
+        source->setCurrentIndex(source->findData(QStringLiteral("oauth")));
+        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
+        QVERIFY(!account->isVisibleTo(&setup));
     }
 
     void speechProviderChoicesComeFromTheRegistry()

@@ -37,6 +37,8 @@ public:
     using SettingsCodecs::anthropicFastMode;
     using SettingsCodecs::anthropicModel;
     using SettingsCodecs::cliproxyOauthDir;
+    using SettingsCodecs::configuredCliproxyOauthDir;
+    using SettingsCodecs::setCliproxyOauthDir;
     using SettingsCodecs::cliproxyBaseUrl;
     using SettingsCodecs::setCliproxyBaseUrl;
     using SettingsCodecs::cliproxyApiKey;
