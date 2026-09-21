@@ -105,6 +105,13 @@ struct ProviderRow: Identifiable {
     }
 }
 
+/// One CLI Proxy API account the transcription step's picker offers.
+struct CliproxyAccountChoice: Identifiable {
+    let id: String
+    let label: String
+    let enabled: Bool
+}
+
 /// One unfinished gate, as the ready step lists it: the step it belongs to,
 /// and the one line saying what is missing.
 struct BlockedStep: Identifiable {
@@ -209,6 +216,16 @@ final class SetupFlowModel: ObservableObject {
     private var speechChosenByUser = false
     private var refinementChosenByUser = false
 
+    // The CLI Proxy API sign-in, mirrored from the bridge's ProviderSignIn
+    // seams so this assistant behaves exactly like the Qt and WinUI ones.
+    @Published var cliproxyAvailable = false
+    @Published var signInSupported = false
+    @Published var usingCliproxy = false
+    @Published var cliproxyAccounts: [CliproxyAccountChoice] = []
+    @Published var cliproxyAccount = ""
+    @Published var cliproxyDirectory = ""
+    @Published var cliproxyDirectoryPlaceholder = ""
+
     // Microphone.
     @Published var meterLevel: Float = 0
     @Published var meterStatus = ""
@@ -279,6 +296,7 @@ final class SetupFlowModel: ObservableObject {
         // to, and holding here would strand the person on step one.
         case "welcome":
             return speechProviders.isEmpty || speechProviders.contains(where: \.ready)
+                || cliproxyAvailable
         case "transcription": return providerReady
         case "microphone":
             return microphonePermission == .authorized && microphoneInputDetected
@@ -317,7 +335,7 @@ final class SetupFlowModel: ObservableObject {
     private func blockedReason(_ stepId: String) -> String {
         switch stepId {
         case "welcome":
-            return "No ChatGPT or Claude sign-in was found."
+            return "No ChatGPT, Claude, or CLI Proxy API sign-in was found."
         case "transcription":
             let line = providerStatus
             return line.isEmpty ? "The transcription service is not signed in." : line
@@ -467,6 +485,7 @@ final class SetupFlowModel: ObservableObject {
     }
 
     func checkSpeechProviders() {
+        refreshCliproxy()
         model.bridge.checkSpeechProviders { [weak self] id, ready, message in
             guard let self else { return }
             record(&speechProviders, id: id, ready: ready, message: message)
@@ -495,6 +514,56 @@ final class SetupFlowModel: ObservableObject {
         guard id != providerId else { return }
         speechChosenByUser = true
         model.setValue(id, for: "speechProvider")
+        refreshCliproxy()
+    }
+
+    // MARK: CLI Proxy API sign-in
+
+    /// Re-reads everything the sign-in section shows for the selected service.
+    func refreshCliproxy() {
+        cliproxyAvailable = model.bridge.setupCliproxyAccountsAvailable
+        cliproxyDirectory = model.bridge.setupCliproxyDirectory
+        cliproxyDirectoryPlaceholder = model.bridge.setupCliproxyDirectoryPlaceholder
+        let id = providerId
+        signInSupported = model.bridge.setupSupportsCliproxy(provider: id)
+        usingCliproxy = signInSupported && model.bridge.setupUsesCliproxy(provider: id)
+        guard usingCliproxy else {
+            cliproxyAccounts = []
+            cliproxyAccount = ""
+            return
+        }
+        cliproxyAccount = model.bridge.setupCliproxyAccount(provider: id)
+        cliproxyAccounts = model.bridge.setupCliproxyAccountOptions(provider: id).map {
+            CliproxyAccountChoice(id: $0.rowOptionId, label: $0.label, enabled: $0.enabled)
+        }
+    }
+
+    func setUseCliproxy(_ use: Bool) {
+        model.bridge.setSetupUseCliproxy(use, provider: providerId)
+        refreshCliproxy()
+        reprobeSelectedSpeechProvider()
+    }
+
+    func chooseCliproxyAccount(_ accountId: String) {
+        model.bridge.setSetupCliproxyAccount(accountId, provider: providerId)
+        refreshCliproxy()
+        reprobeSelectedSpeechProvider()
+    }
+
+    func commitCliproxyDirectory() {
+        guard cliproxyDirectory != model.bridge.setupCliproxyDirectory else { return }
+        model.bridge.setSetupCliproxyDirectory(cliproxyDirectory)
+        refreshCliproxy()
+        reprobeSelectedSpeechProvider()
+    }
+
+    /// A sign-in change invalidates the selected service's verdict; showing
+    /// "Checking…" holds the gate until the new probe answers.
+    private func reprobeSelectedSpeechProvider() {
+        if let index = speechProviders.firstIndex(where: { $0.id == providerId }) {
+            speechProviders[index].probed = false
+        }
+        checkSpeechProviders()
     }
 
     func chooseRefinementProvider(_ id: String) {
@@ -1204,8 +1273,8 @@ private struct WelcomeStep: View {
             // Nothing later in the assistant can succeed without one of these
             // sign-ins, so the one real prerequisite is stated on the first step.
             Section("Before you start") {
-                Text("Speecher uses your existing ChatGPT or Claude sign-in. Install and sign "
-                    + "in to one of these, then choose Check again:")
+                Text("Speecher uses your existing ChatGPT or Claude sign-in, or an account "
+                    + "saved by CLI Proxy API. Sign in to one of these, then choose Check again:")
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(flow.speechProviders) { provider in
                     // The mark, then the sign-in's name with its verdict on the
@@ -1230,6 +1299,36 @@ private struct WelcomeStep: View {
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
+                    }
+                }
+                // Accounts saved by CLI Proxy API count as a sign-in of their
+                // own: someone whose only login lives there opts in on the
+                // Transcription step. The directory is enterable right here,
+                // because a custom-directory user would otherwise be held on
+                // this step with the field that could free them gated behind
+                // Continue.
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("CLI Proxy API")
+                            .fontWeight(.semibold)
+                        Spacer(minLength: 12)
+                        StatusLabel(text: flow.cliproxyAvailable ? "Accounts found" : "Not found",
+                                    tone: flow.cliproxyAvailable ? .positive : .pending)
+                    }
+                    Text(flow.cliproxyAvailable
+                        ? "To use one of these accounts, turn on \"Use a CLI Proxy API "
+                            + "account\" on the Transcription step."
+                        : "Optional: Claude and Codex accounts saved by CLI Proxy API also "
+                            + "work. If yours live in a custom directory, enter it below.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !flow.cliproxyAvailable {
+                        TextField("CLI Proxy API directory",
+                                  text: $flow.cliproxyDirectory,
+                                  prompt: Text(flow.cliproxyDirectoryPlaceholder))
+                            .labelsHidden()
+                            .onSubmit { flow.commitCliproxyDirectory() }
                     }
                 }
                 Button("Check Again") { flow.checkSpeechProviders() }
@@ -1337,6 +1436,29 @@ private struct TranscriptionStep: View {
             } footer: {
                 if !flow.providerReady, !flow.providerHint.isEmpty {
                     Text(flow.providerHint)
+                }
+            }
+            // The service's own sign-in stays the silent default; CLI Proxy API
+            // is the exception this toggle opts into, matching the Qt and
+            // Windows assistants.
+            if flow.signInSupported {
+                Section("Sign-in") {
+                    Toggle("Use a CLI Proxy API account instead of the service's own sign-in",
+                           isOn: Binding(get: { flow.usingCliproxy },
+                                         set: { flow.setUseCliproxy($0) }))
+                    if flow.usingCliproxy {
+                        Picker("CLI Proxy API account",
+                               selection: Binding(get: { flow.cliproxyAccount },
+                                                  set: { flow.chooseCliproxyAccount($0) })) {
+                            ForEach(flow.cliproxyAccounts) { choice in
+                                Text(choice.label).tag(choice.id)
+                            }
+                        }
+                        TextField("Account directory",
+                                  text: $flow.cliproxyDirectory,
+                                  prompt: Text(flow.cliproxyDirectoryPlaceholder))
+                            .onSubmit { flow.commitCliproxyDirectory() }
+                    }
                 }
             }
         }

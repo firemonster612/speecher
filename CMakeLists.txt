@@ -309,6 +309,7 @@ set(SPEECHER_PROVIDER_SOURCES
   src/providers/ClaudeVoiceClient.cpp
   src/providers/ClaudeVoiceProtocol.cpp
   src/providers/CliProxyCredentials.cpp
+  src/providers/ProviderSignIn.cpp
   src/providers/CodexDictationClient.cpp
   src/providers/CodexSpeechTranscriber.cpp
   src/providers/OpenAiAuthProvider.cpp

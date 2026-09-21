@@ -9,7 +9,6 @@
 #include "output/YdotoolSetup.h"
 #include "output/YdotoolSetupFlow.h"
 #endif
-#include "providers/CliProxyCredentials.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/settings/SettingsPageSupport.h"
 #ifdef Q_OS_LINUX
@@ -401,49 +400,6 @@ QString credentialNote(const ProviderDescriptor &provider)
     return notes.value(provider.id, provider.setupHint);
 }
 
-const QString kCliproxySignInMode = QStringLiteral("cliproxy");
-
-// Which CLI Proxy API account type backs a speech provider.
-QString cliproxyAccountType(const QString &providerId)
-{
-    return providerId == QStringLiteral("codex") ? QStringLiteral("codex")
-                                                 : QStringLiteral("claude");
-}
-
-// The transcription providers share one sign-in setting per company with
-// refinement, kept under the refinement names.
-QString speechSignInMode(const SettingsStore &settings, const QString &providerId)
-{
-    return providerId == QStringLiteral("codex") ? settings.openAiAuthMode()
-                                                 : settings.anthropicAuthMode();
-}
-
-void setSpeechSignInMode(SettingsStore &settings, const QString &providerId, const QString &mode)
-{
-    if (providerId == QStringLiteral("codex")) {
-        settings.setOpenAiAuthMode(mode);
-    } else {
-        settings.setAnthropicAuthMode(mode);
-    }
-}
-
-QString cliproxyAccountSetting(const SettingsStore &settings, const QString &providerId)
-{
-    return providerId == QStringLiteral("codex") ? settings.openAiCliproxyAccount()
-                                                 : settings.anthropicCliproxyAccount();
-}
-
-void setCliproxyAccountSetting(SettingsStore &settings,
-                               const QString &providerId,
-                               const QString &account)
-{
-    if (providerId == QStringLiteral("codex")) {
-        settings.setOpenAiCliproxyAccount(account);
-    } else {
-        settings.setAnthropicCliproxyAccount(account);
-    }
-}
-
 // What the shortcut actually does depends on the activation mode chosen a
 // page earlier, so the closing instruction has to follow it.
 QString activationInstruction(ShortcutActivationMode mode, const QString &shortcut)
@@ -484,6 +440,7 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
     : QWidget(parent)
     , m_settings(settings)
     , m_providers(providers)
+    , m_signIn(settings)
 {
     QVBoxLayout *layout = makePage(
         this,
@@ -539,15 +496,15 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
     m_cliproxyDir = new QLineEdit(cliproxyRow.widget);
     m_cliproxyDir->setObjectName(QStringLiteral("welcomeCliproxyDir"));
     m_cliproxyDir->setClearButtonEnabled(true);
-    m_cliproxyDir->setText(m_settings.configuredCliproxyOauthDir());
+    m_cliproxyDir->setText(m_signIn.configuredAccountDirectory());
     m_cliproxyDir->hide();
     cliproxyRow.widget->layout()->addWidget(m_cliproxyDir);
     connect(m_cliproxyDir, &QLineEdit::editingFinished, this, [this] {
         const QString directory = m_cliproxyDir->text().trimmed();
-        if (directory == m_settings.configuredCliproxyOauthDir()) {
+        if (directory == m_signIn.configuredAccountDirectory()) {
             return;
         }
-        m_settings.setCliproxyOauthDir(directory);
+        m_signIn.setAccountDirectory(directory);
         checkCredentials();
     });
     settings::addCardRow(card, cliproxyRow.widget, host);
@@ -618,20 +575,13 @@ void WelcomeSetupPage::checkCredentials()
             });
     }
     // Accounts saved by CLI Proxy API count as a sign-in of their own: someone
-    // whose only login lives there picks it on the Transcription step. Only
-    // enabled accounts of a registered provider's type open the gate; a
-    // disabled account or one for a service this build lacks cannot dictate.
-    const QString directory = m_settings.cliproxyOauthDir();
-    m_cliproxyDir->setPlaceholderText(directory);
-    bool cliproxyFound = false;
+    // whose only login lives there opts in on the Transcription step.
+    m_cliproxyDir->setPlaceholderText(m_signIn.resolvedAccountDirectory());
+    QStringList providerIds;
     for (const CredentialRow &row : m_rows) {
-        const QList<CliProxyAccount> accounts =
-            CliProxyCredentials::listAccounts(directory, cliproxyAccountType(row.providerId));
-        cliproxyFound = cliproxyFound
-            || std::any_of(accounts.cbegin(), accounts.cend(),
-                           [](const CliProxyAccount &account) { return !account.disabled; });
+        providerIds.append(row.providerId);
     }
-    showCliproxyCredential(cliproxyFound);
+    showCliproxyCredential(m_signIn.anyUsableAccount(providerIds));
 
     if (m_checksOutstanding == 0) {
         emit checkFinished();
@@ -697,6 +647,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     : QWidget(parent)
     , m_settings(settings)
     , m_providers(providers)
+    , m_signIn(settings)
     , m_accuracyPass(new QCheckBox(QStringLiteral("Extra transcription accuracy (will increase transcription time)"), this))
     , m_stats(new ProviderStatsBlock(this))
     , m_hint(new WrappingLabel(this))
@@ -799,10 +750,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
         if (index < 0) {
             return;
         }
-        const QString providerId = m_options.at(index).id;
-        setSpeechSignInMode(m_settings, providerId,
-                            checked ? kCliproxySignInMode
-                                    : m_fallbackSignInModes.value(providerId));
+        m_signIn.setUseCliproxy(m_options.at(index).id, checked);
         updateSignInControls();
         reprobeSelectedProvider();
     });
@@ -811,16 +759,16 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
         if (index < 0) {
             return;
         }
-        setCliproxyAccountSetting(m_settings, m_options.at(index).id,
-                                  m_cliproxyAccount->currentData().toString());
+        m_signIn.setCliproxyAccount(m_options.at(index).id,
+                                    m_cliproxyAccount->currentData().toString());
         reprobeSelectedProvider();
     });
     connect(m_cliproxyDir, &QLineEdit::editingFinished, this, [this] {
         const QString directory = m_cliproxyDir->text().trimmed();
-        if (directory == m_settings.configuredCliproxyOauthDir()) {
+        if (directory == m_signIn.configuredAccountDirectory()) {
             return;
         }
-        m_settings.setCliproxyOauthDir(directory);
+        m_signIn.setAccountDirectory(directory);
         updateSignInControls();
         reprobeSelectedProvider();
     });
@@ -869,7 +817,7 @@ QString SpeechProviderSetupPage::readySummary() const
     }
     const ProviderOptionRow &option = m_options.at(index);
     QString summary = QStringLiteral("Transcription — %1").arg(option.label);
-    if (speechSignInMode(m_settings, option.id) == kCliproxySignInMode) {
+    if (m_signIn.usingCliproxy(option.id)) {
         summary += QStringLiteral(" (CLI Proxy API)");
     }
     return summary;
@@ -903,25 +851,12 @@ void SpeechProviderSetupPage::updateSignInControls()
 {
     const int index = selectedIndex();
     const QString providerId = index < 0 ? QString() : m_options.at(index).id;
-    const bool known = providerId == QStringLiteral("claude")
-        || providerId == QStringLiteral("codex");
+    const bool known = ProviderSignIn::supportsCliproxy(providerId);
     m_signInSection->setVisible(known);
     if (!known) {
         return;
     }
-    const QString mode = speechSignInMode(m_settings, providerId);
-    // What unchecking the box returns to: the mode this page first saw, so a
-    // sign-in chosen in Settings (an OpenAI API key, say) survives a round
-    // trip through CLI Proxy API instead of being rewritten to the default.
-    if (!m_fallbackSignInModes.contains(providerId)) {
-        m_fallbackSignInModes.insert(providerId,
-                                     mode == kCliproxySignInMode
-                                         ? providerId == QStringLiteral("codex")
-                                               ? QStringLiteral("auto")
-                                               : QStringLiteral("oauth")
-                                         : mode);
-    }
-    const bool cliproxy = mode == kCliproxySignInMode;
+    const bool cliproxy = m_signIn.usingCliproxy(providerId);
     {
         const QSignalBlocker blocker(m_useCliproxy);
         m_useCliproxy->setChecked(cliproxy);
@@ -933,10 +868,10 @@ void SpeechProviderSetupPage::updateSignInControls()
     }
     {
         const QSignalBlocker blocker(m_cliproxyDir);
-        m_cliproxyDir->setText(m_settings.configuredCliproxyOauthDir());
+        m_cliproxyDir->setText(m_signIn.configuredAccountDirectory());
         // The resolved directory only differs from the text while the text is
         // empty, which is exactly when the placeholder shows.
-        m_cliproxyDir->setPlaceholderText(m_settings.cliproxyOauthDir());
+        m_cliproxyDir->setPlaceholderText(m_signIn.resolvedAccountDirectory());
     }
     populateCliproxyAccounts();
 }
@@ -949,9 +884,9 @@ void SpeechProviderSetupPage::populateCliproxyAccounts()
     }
     const QString providerId = m_options.at(index).id;
     settings::populateCliproxyAccounts(m_cliproxyAccount,
-                                       m_settings.cliproxyOauthDir(),
-                                       cliproxyAccountType(providerId),
-                                       cliproxyAccountSetting(m_settings, providerId));
+                                       m_signIn.resolvedAccountDirectory(),
+                                       ProviderSignIn::cliproxyAccountType(providerId),
+                                       m_signIn.cliproxyAccount(providerId));
 }
 
 void SpeechProviderSetupPage::reprobeSelectedProvider()

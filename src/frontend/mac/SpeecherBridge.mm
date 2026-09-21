@@ -15,6 +15,7 @@
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/ProviderRegistry.h"
+#include "providers/ProviderSignIn.h"
 #include "ui/Theme.h"
 
 #include <QDebug>
@@ -253,6 +254,9 @@ struct BridgeState {
     // cancel the speech round a different step started.
     quint64 speechCheckGeneration = 0;
     quint64 refinementCheckGeneration = 0;
+    // The CLI Proxy API opt-in shared with the other assistants, created on
+    // first use so its opt-out memory spans the assistant's lifetime.
+    std::unique_ptr<speecher::ProviderSignIn> setupSignIn;
     // Every live probe thread. A prepare job reads provider objects the
     // controller owns, so a thread left running past the bridge would race
     // the controller's destruction (observed as heap corruption in tests).
@@ -1424,6 +1428,76 @@ bridgedProviders(const QList<speecher::ProviderDescriptor> &providers)
         probeInBackground(state, &BridgeState::refinementCheckGeneration, generation,
                           std::move(*job), answer);
     }
+}
+
+static speecher::ProviderSignIn &setupSignIn(BridgeState *state)
+{
+    if (!state->setupSignIn) {
+        state->setupSignIn =
+            std::make_unique<speecher::ProviderSignIn>(*state->controller->settings());
+    }
+    return *state->setupSignIn;
+}
+
+- (BOOL)setupCliproxyAccountsAvailable
+{
+    QStringList providerIds;
+    for (const speecher::ProviderDescriptor &provider :
+         _state->controller->providerRegistry()->speechProviders()) {
+        providerIds.append(provider.id);
+    }
+    return setupSignIn(_state).anyUsableAccount(providerIds);
+}
+
+- (BOOL)setupSupportsCliproxyForProvider:(NSString *)providerId
+{
+    return speecher::ProviderSignIn::supportsCliproxy(QString::fromNSString(providerId));
+}
+
+- (BOOL)setupUsesCliproxyForProvider:(NSString *)providerId
+{
+    return setupSignIn(_state).usingCliproxy(QString::fromNSString(providerId));
+}
+
+- (void)setSetupUseCliproxy:(BOOL)use forProvider:(NSString *)providerId
+{
+    setupSignIn(_state).setUseCliproxy(QString::fromNSString(providerId), use);
+}
+
+- (NSArray<RowOptionModel *> *)setupCliproxyAccountOptionsForProvider:(NSString *)providerId
+{
+    const QString provider = QString::fromNSString(providerId);
+    speecher::ProviderSignIn &signIn = setupSignIn(_state);
+    return [self bridgedOptions:speecher::cliproxyAccountOptions(
+                                    speecher::ProviderSignIn::cliproxyAccountType(provider),
+                                    signIn.cliproxyAccount(provider),
+                                    signIn.resolvedAccountDirectory())];
+}
+
+- (NSString *)setupCliproxyAccountForProvider:(NSString *)providerId
+{
+    return setupSignIn(_state).cliproxyAccount(QString::fromNSString(providerId)).toNSString();
+}
+
+- (void)setSetupCliproxyAccount:(NSString *)account forProvider:(NSString *)providerId
+{
+    setupSignIn(_state).setCliproxyAccount(QString::fromNSString(providerId),
+                                           QString::fromNSString(account));
+}
+
+- (NSString *)setupCliproxyDirectory
+{
+    return setupSignIn(_state).configuredAccountDirectory().toNSString();
+}
+
+- (NSString *)setupCliproxyDirectoryPlaceholder
+{
+    return setupSignIn(_state).resolvedAccountDirectory().toNSString();
+}
+
+- (void)setSetupCliproxyDirectory:(NSString *)directory
+{
+    setupSignIn(_state).setAccountDirectory(QString::fromNSString(directory).trimmed());
 }
 
 - (void)startMicrophoneMeterOnLevel:(void (^)(float level))onLevel

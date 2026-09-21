@@ -2,7 +2,8 @@
 #include <QScopeGuard>
 #include "common/test_http.h"
 #include "common/test_auth.h"
-#include "frontend/ProviderOptions.h"
+#include "core/SettingsStore.h"
+#include "providers/ProviderSignIn.h"
 #include "providers/ClaudeCredentialStorage.h"
 #include "providers/NativeCredentialStorage.h"
 #include "providers/CodexCredentialStorage.h"
@@ -1215,6 +1216,64 @@ private slots:
         QVERIFY(!refiner.requiresRefresh(settings));
         const RefinementPrepareResult prepared = refiner.prepare(settings);
         QVERIFY2(prepared.ok, qPrintable(prepared.message));
+    }
+
+    // ProviderSignIn is the sign-in logic all three setup assistants share, so
+    // these two tests are the cross-platform guarantee: each front end only
+    // renders what this model decides.
+    void providerSignInGatesOnUsableAccountsOnly()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        QTemporaryDir dir;
+        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), dir.path());
+        ProviderSignIn signIn(settings);
+        const QDateTime valid = QDateTime::currentDateTimeUtc().addSecs(3600);
+        const QStringList both{QStringLiteral("claude"), QStringLiteral("codex")};
+
+        QVERIFY(!signIn.anyUsableAccount(both));
+
+        // A disabled account cannot dictate, so it does not open the gate.
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"),
+                                     QStringLiteral("claude"), QStringLiteral("token"), valid,
+                                     true));
+        QVERIFY(!signIn.anyUsableAccount(both));
+
+        // An account only counts for a provider that is actually registered.
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-a@example.com.json"),
+                                     QStringLiteral("codex"), QStringLiteral("token"), valid));
+        QVERIFY(!signIn.anyUsableAccount({QStringLiteral("claude")}));
+        QVERIFY(signIn.anyUsableAccount(both));
+    }
+
+    void providerSignInRoundTripsTheFallbackMode()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setOpenAiAuthMode(QStringLiteral("env"));
+        ProviderSignIn signIn(settings);
+
+        // Opting out returns to the mode the model first saw, not the default.
+        QVERIFY(!signIn.usingCliproxy(QStringLiteral("codex")));
+        signIn.setUseCliproxy(QStringLiteral("codex"), true);
+        QCOMPARE(settings.openAiAuthMode(), QStringLiteral("cliproxy"));
+        QVERIFY(signIn.usingCliproxy(QStringLiteral("codex")));
+        signIn.setUseCliproxy(QStringLiteral("codex"), false);
+        QCOMPARE(settings.openAiAuthMode(), QStringLiteral("env"));
+
+        // A provider that starts on CLI Proxy API falls back to its default.
+        settings.setAnthropicAuthMode(QStringLiteral("cliproxy"));
+        QVERIFY(signIn.usingCliproxy(QStringLiteral("claude")));
+        signIn.setUseCliproxy(QStringLiteral("claude"), false);
+        QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
+
+        // The account choice follows the provider's company setting.
+        signIn.setCliproxyAccount(QStringLiteral("claude"),
+                                  QStringLiteral("claude-a@example.com.json"));
+        QCOMPARE(settings.anthropicCliproxyAccount(),
+                 QStringLiteral("claude-a@example.com.json"));
+        QCOMPARE(signIn.cliproxyAccount(QStringLiteral("claude")),
+                 QStringLiteral("claude-a@example.com.json"));
     }
 };
 
