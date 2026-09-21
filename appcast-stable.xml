@@ -1,49 +1,52 @@
 <?xml version='1.0' encoding='utf-8'?>
-<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher stable updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher stable updates</description><item><title>0.1.5</title><pubDate>Sun, 6 Sep 2026 18:39:26 +0100</pubDate><sparkle:version>401</sparkle:version><sparkle:shortVersionString>0.1.5</sparkle:shortVersionString><description><![CDATA[<pre>## Added
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher stable updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher stable updates</description><item><title>0.2.0</title><pubDate>Mon, 21 Sep 2026 20:37:34 +0100</pubDate><sparkle:version>527</sparkle:version><sparkle:shortVersionString>0.2.0</sparkle:shortVersionString><description><![CDATA[<pre>## Added
 
-- Speecher now runs on Windows. The installer sets up a native app with the
-  same dictation pill, tray icon, settings window and update channels as the
-  other platforms; delivery types into whatever window is focused, and the
-  pill grows with the preview text as you speak.
-- Speecher checks for updates every 30 minutes. A new Check frequency setting
-  under Updates changes the schedule (up to once a day), and the check timer
-  backs off politely when the network is down.
-- When an update is waiting, a banner appears above the dictation popup with
-  an Install and restart button. One click downloads the update in the
-  background, installs it, and restarts Speecher — and if you were mid
-  dictation, the restart waits until you finish and then puts you right back
-  where you were, microphone open. The settings window's update banner is the
-  same single click now.
-- After an update, a banner above the popup offers See what's new and opens
-  the release notes. It slips away after a few seconds and returns with the
-  next dictation until you follow it or dismiss it.
-- The setup assistant on macOS is a native window, matching the rest of the
-  mac app.
-- Setting up a provider now shows its live status, and the popup streams the
-  refined text into the preview as it arrives instead of waiting for the
-  whole result.
+- CLI Proxy API accounts now work end to end. The setup assistant's first page
+  recognises them as a sign-in, the Transcription step lets you pick the
+  sign-in source and account without leaving setup, and a new Account
+  directory setting points Speecher at a custom CLI Proxy API folder when the
+  automatic detection doesn't find yours.
+- The setup assistant was rebuilt around honest checks on every platform: each
+  step verifies what it set up, holds Next until it actually works, and the
+  final page lists exactly what is left when something isn't.
+- An opt-in accuracy pass for ChatGPT Codex dictation retranscribes the whole
+  recording when you stop, catching mistakes the live stream made. Off by
+  default; find it on the Transcription step or the Audio settings.
+- Dictation now applies hesitation self-corrections: "meet at five — no, six"
+  delivers six.
+- Push-to-talk on Linux: hold your Global Shortcut to dictate, release to
+  stop, on desktops whose portal reports key release (Plasma and GNOME 48+).
+- Speecher lives in the Linux system tray with quick access to dictation and
+  settings.
+- Transcription and refinement previews have separate toggles, so you can
+  watch the raw words land but skip the cleanup shimmer, or the other way
+  around.
+- Sign-ins from the native Codex app now work, alongside the Codex CLI.
 
 ## Changed
 
-- Once a dictation is delivered, the popup shows just the outcome — the icon
-  and what happened — instead of the waveform and transcript machinery.
-- Updates on macOS are driven by Speecher's own banners and buttons rather
-  than Sparkle's dialog boxes. Checking, downloading, and restarting look the
-  same on every platform now, and a manual Check now always answers, even
-  when the news is "you're up to date" or the check failed.
+- Setting a shortcut is one control now: click, press your combination or
+  single key, done. No more edit-then-apply, and single keys work everywhere
+  combinations do.
+- The Linux dictation popup is drawn in your desktop's own style, with the
+  waveform pill matching the transcript pill.
+- The sidebar draws its splitter as a translucent hairline and keeps your
+  selection highlighted while the window is unfocused.
 
 ## Fixed
 
-- macOS: the microphone permission prompt no longer cancels the first
-  dictation, Claude sign-in reads and refreshes the native login from the
-  Keychain, and copying something new while Speecher restores the clipboard
-  no longer loses your copy (also fixed on Windows).
-- A speech stream that drops mid-sentence reconnects and carries on instead
-  of delivering half a sentence.
-- Starting a new dictation no longer flashes the previous dictation's words
-  in the popup.
-
-## Requirements
-
-- Windows: 64-bit Windows 10 (version 1809) or later.
-</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/v0.1.5/speecher.dmg" length="42599246" type="application/x-apple-diskimage" sparkle:edSignature="sre0O8dY+oReb2eAyqsXd6GAQf2yecqEsuE5HASenzPLXUPHqu91Yc7+9+EqxnBXfID7DMll7b6APKSAsgYsCQ==" /></item></channel></rss>
+- Dictations no longer lose text when a speech stream drops or delivery races
+  a restart; interrupted sessions carry their words through.
+- Dictated lists keep the numbers you spoke instead of renumbering from 1.
+- Windows: dictation no longer trips a 429 at start, and the preview sizes to
+  match macOS and Linux.
+- macOS: the dictation preview no longer drifts left, and Claude sign-in reads
+  the Keychain reliably.
+- Linux: setup works without a polkit agent, the key-watch helper installs
+  cleanly, terminal paste reaches GPU terminals that aren't on the
+  accessibility bus, and a missing AT-SPI peer no longer crashes dictation.
+- Adding a key term works again: the Add button on Linux, term-less records on
+  macOS.
+- Nightly updates download the exact build the update offer was signed for, so
+  an accepted offer can't be rejected after a newer nightly lands.
+</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/v0.2.0/speecher.dmg" length="42794877" type="application/x-apple-diskimage" sparkle:edSignature="WLjY2NrUdNVlI9gEDTKwZi/EWpY1/Nx0jMhYipV3Qsq0oi3R5gsnTONfCES1KAUDdsvbHWQHd65JHAkhRJT/BQ==" /></item></channel></rss>
