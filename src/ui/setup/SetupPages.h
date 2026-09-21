@@ -189,6 +189,9 @@ private:
     QComboBox *m_signInSource = nullptr;
     QComboBox *m_cliproxyAccount = nullptr;
     QLineEdit *m_cliproxyDir = nullptr;
+    // The titled Sign-in section, hidden whole for a provider without these
+    // controls; hiding only rows would leave the bold header floating.
+    QWidget *m_signInSection = nullptr;
     QWidget *m_signInSourceRow = nullptr;
     QWidget *m_cliproxyAccountRow = nullptr;
     QWidget *m_cliproxyDirRow = nullptr;

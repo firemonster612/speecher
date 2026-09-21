@@ -738,10 +738,16 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
         m_options.first().button->setChecked(true);
     }
 
-    // Where the chosen service's sign-in comes from, in the same card as the
-    // choice it belongs to. Someone whose only login lives in CLI Proxy API
-    // switches here instead of failing the probe and hunting through Settings.
-    QWidget *host = choices->parentWidget();
+    // Where the chosen service's sign-in comes from, in a card of its own:
+    // inside the service card the dropdown read as a second service picker.
+    // Someone whose only login lives in CLI Proxy API switches here instead of
+    // failing the probe and hunting through Settings.
+    QFormLayout *signIn = addCard(layout, this, QStringLiteral("Sign-in"));
+    QWidget *host = signIn->parentWidget();
+    // settingsCardForm -> card frame -> the titled section, which is what has
+    // to disappear for a provider without these controls; hiding only the card
+    // would leave the bold header floating.
+    m_signInSection = host->parentWidget()->parentWidget();
     m_signInSource = new QComboBox(host);
     m_signInSource->setObjectName(QStringLiteral("speechSignInSource"));
     // The items are swapped per provider after the first show; without this
@@ -752,14 +758,14 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
         QStringLiteral("Refinement by the same company uses this sign-in too."),
         m_signInSource,
         host);
-    settings::addCardRow(choices, m_signInSourceRow, host);
+    settings::addCardRow(signIn, m_signInSourceRow, host);
     m_cliproxyAccount = new QComboBox(host);
     m_cliproxyAccount->setObjectName(QStringLiteral("speechCliproxyAccount"));
     m_cliproxyAccountRow = settings::makeRow(QStringLiteral("CLI Proxy API account"),
                                              QString(),
                                              m_cliproxyAccount,
                                              host);
-    settings::addCardRow(choices, m_cliproxyAccountRow, host);
+    settings::addCardRow(signIn, m_cliproxyAccountRow, host);
     m_cliproxyDir = new QLineEdit(host);
     m_cliproxyDir->setObjectName(QStringLiteral("speechCliproxyDir"));
     m_cliproxyDir->setClearButtonEnabled(true);
@@ -768,7 +774,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
         QStringLiteral("Where CLI Proxy API keeps its account files. Leave empty to detect it automatically."),
         m_cliproxyDir,
         host);
-    settings::addCardRow(choices, m_cliproxyDirRow, host);
+    settings::addCardRow(signIn, m_cliproxyDirRow, host);
 
     m_hint->setObjectName(QStringLiteral("speechProviderHint"));
     m_hint->setWordWrap(true);
@@ -913,10 +919,8 @@ void SpeechProviderSetupPage::updateSignInControls()
     const QString providerId = index < 0 ? QString() : m_options.at(index).id;
     const bool known = providerId == QStringLiteral("claude")
         || providerId == QStringLiteral("codex");
-    setCardRowVisible(m_signInSourceRow, known);
+    m_signInSection->setVisible(known);
     if (!known) {
-        setCardRowVisible(m_cliproxyAccountRow, false);
-        setCardRowVisible(m_cliproxyDirRow, false);
         return;
     }
     const QString mode = speechSignInMode(m_settings, providerId);
