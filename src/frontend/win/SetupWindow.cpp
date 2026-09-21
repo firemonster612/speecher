@@ -649,6 +649,9 @@ struct SetupWindow::Native {
                              quint64 generation,
                              std::function<void(const SpeechPrepareResult &)> report)
     {
+        // Superseded per provider, not per wizard: re-probing one provider's
+        // changed sign-in must not strand the others' in-flight verdicts.
+        speechProbeGeneration.insert(id, generation);
         SpeechTranscriber *transcriber = controller->providerRegistry()->speechProvider(id);
         if (!transcriber) {
             report({false, QStringLiteral("No transcription service is available.")});
@@ -666,8 +669,8 @@ struct SetupWindow::Native {
             *result = prepareJob->run();
         });
         QObject::connect(thread, &QThread::finished, setup,
-                         [this, generation, prepareJob, result, report] {
-            if (generation != checkGeneration) {
+                         [this, id, generation, prepareJob, result, report] {
+            if (generation != speechProbeGeneration.value(id)) {
                 return;
             }
             if (prepareJob->apply) {
@@ -685,6 +688,7 @@ struct SetupWindow::Native {
                                  quint64 generation,
                                  std::function<void(bool)> report)
     {
+        refinementProbeGeneration.insert(id, generation);
         TranscriptRefiner *refiner = controller->providerRegistry()->refinementProvider(id);
         if (!refiner) {
             report(false);
@@ -702,8 +706,8 @@ struct SetupWindow::Native {
             *result = refreshJob->run();
         });
         QObject::connect(thread, &QThread::finished, setup,
-                         [this, generation, refreshJob, result, report] {
-            if (generation != checkGeneration) {
+                         [this, id, generation, refreshJob, result, report] {
+            if (generation != refinementProbeGeneration.value(id)) {
                 return;
             }
             if (refreshJob->apply) {
@@ -2002,6 +2006,9 @@ struct SetupWindow::Native {
     // transcription gates read these rather than probing again.
     QHash<QString, bool> speechReady;
     QHash<QString, QString> speechMessage;
+    // The newest probe round asked about each provider; see probeSpeechProvider.
+    QHash<QString, quint64> speechProbeGeneration;
+    QHash<QString, quint64> refinementProbeGeneration;
     // The sign-in decisions shared with the Qt and SwiftUI assistants.
     ProviderSignIn signIn{*controller->settings()};
     // Whether a usable CLI Proxy API account exists, per the last welcome check.

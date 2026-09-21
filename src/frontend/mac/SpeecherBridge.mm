@@ -1468,10 +1468,19 @@ static speecher::ProviderSignIn &setupSignIn(BridgeState *state)
 {
     const QString provider = QString::fromNSString(providerId);
     speecher::ProviderSignIn &signIn = setupSignIn(_state);
-    return [self bridgedOptions:speecher::cliproxyAccountOptions(
-                                    speecher::ProviderSignIn::cliproxyAccountType(provider),
-                                    signIn.cliproxyAccount(provider),
-                                    signIn.resolvedAccountDirectory())];
+    NSMutableArray<RowOptionModel *> *bridged = [NSMutableArray array];
+    for (const RowOption &option : speecher::cliproxyAccountOptions(
+             speecher::ProviderSignIn::cliproxyAccountType(provider),
+             signIn.cliproxyAccount(provider),
+             signIn.resolvedAccountDirectory())) {
+        RowOptionModel *model = [[RowOptionModel alloc] init];
+        model.rowOptionId = option.id.toNSString();
+        model.label = option.label.toNSString();
+        model.help = option.help.toNSString();
+        model.enabled = option.enabled;
+        [bridged addObject:model];
+    }
+    return bridged;
 }
 
 - (NSString *)setupCliproxyAccountForProvider:(NSString *)providerId

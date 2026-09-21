@@ -485,6 +485,11 @@ final class SetupFlowModel: ObservableObject {
     }
 
     func checkSpeechProviders() {
+        // A directory typed but not yet submitted still counts: Check Again
+        // must check what the person sees, not the last committed value.
+        if cliproxyDirectory != model.bridge.setupCliproxyDirectory {
+            model.bridge.setSetupCliproxyDirectory(cliproxyDirectory)
+        }
         refreshCliproxy()
         model.bridge.checkSpeechProviders { [weak self] id, ready, message in
             guard let self else { return }
@@ -1451,7 +1456,11 @@ private struct TranscriptionStep: View {
                                selection: Binding(get: { flow.cliproxyAccount },
                                                   set: { flow.chooseCliproxyAccount($0) })) {
                             ForEach(flow.cliproxyAccounts) { choice in
-                                Text(choice.label).tag(choice.id)
+                                Text(choice.label)
+                                    .tag(choice.id)
+                                    // A disabled account is kept visible but not
+                                    // selectable, matching the Qt and Windows rows.
+                                    .selectionDisabled(!choice.enabled)
                             }
                         }
                         TextField("Account directory",

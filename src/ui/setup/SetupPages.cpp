@@ -900,9 +900,8 @@ void SpeechProviderSetupPage::reprobeSelectedProvider()
     // sign-in changed, so only it is probed — in CLI Proxy API mode a probe
     // can be an OAuth refresh over the network.
     m_options[index].probed = false;
-    const quint64 generation = ++m_checkGeneration;
-    m_pendingProbes = 1;
-    probeProvider(index, generation);
+    m_options[index].generation = ++m_checkGeneration;
+    probeProvider(index, m_options.at(index).generation);
     showSelectedProvider();
 }
 
@@ -911,6 +910,7 @@ void SpeechProviderSetupPage::checkProviders()
     const quint64 generation = ++m_checkGeneration;
     m_pendingProbes = m_options.size();
     for (int index = 0; index < m_options.size(); ++index) {
+        m_options[index].generation = generation;
         probeProvider(index, generation);
     }
     showSelectedProvider();
@@ -944,7 +944,7 @@ void SpeechProviderSetupPage::probeProvider(int index, quint64 generation)
         this,
         [prepareJob] { return prepareJob->run(); },
         [this, index, generation, prepareJob](const SpeechPrepareResult &result) {
-            if (generation != m_checkGeneration) {
+            if (generation != m_options.at(index).generation) {
                 return;
             }
             if (prepareJob->apply) {
@@ -958,7 +958,9 @@ void SpeechProviderSetupPage::finishProbe(int index,
                                           quint64 generation,
                                           const SpeechPrepareResult &result)
 {
-    if (generation != m_checkGeneration) {
+    // Superseded per row, not per page: a single-provider re-probe must not
+    // discard the other rows' in-flight verdicts.
+    if (generation != m_options.at(index).generation) {
         return;
     }
     ProviderOptionRow &option = m_options[index];
@@ -969,7 +971,9 @@ void SpeechProviderSetupPage::finishProbe(int index,
     option.status->setText(result.ok ? QStringLiteral("Ready")
                                      : QStringLiteral("Not set up"));
     showSelectedProvider();
-    if (--m_pendingProbes == 0) {
+    // A single-provider re-probe runs outside the counted rounds; it must not
+    // drive the one-time auto-selection or push the count negative.
+    if (m_pendingProbes > 0 && --m_pendingProbes == 0) {
         autoSelectReadyProvider();
     }
 }
@@ -1632,6 +1636,7 @@ void RefinementSetupPage::checkProviders()
     const quint64 generation = ++m_checkGeneration;
     m_pendingProbes = m_options.size();
     for (int index = 0; index < m_options.size(); ++index) {
+        m_options[index].generation = generation;
         probeProvider(index, generation);
     }
     showSelectedProvider();
@@ -1692,7 +1697,9 @@ void RefinementSetupPage::finishProbe(int index,
     option.status->setText(result.ok ? QStringLiteral("Ready")
                                      : QStringLiteral("Not set up"));
     showSelectedProvider();
-    if (--m_pendingProbes == 0) {
+    // A single-provider re-probe runs outside the counted rounds; it must not
+    // drive the one-time auto-selection or push the count negative.
+    if (m_pendingProbes > 0 && --m_pendingProbes == 0) {
         autoSelectReadyProvider();
     }
 }

@@ -89,6 +89,10 @@ struct ProviderOptionRow {
     bool probed = false;
     bool ok = false;
     QString message;
+    // The newest probe round asked about this row. Per row rather than per
+    // page, so re-probing one provider's changed sign-in does not strand the
+    // others' in-flight verdicts on "Checking…".
+    quint64 generation = 0;
 };
 
 class WelcomeSetupPage final : public QWidget, public SetupStep {
