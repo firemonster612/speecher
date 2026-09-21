@@ -169,6 +169,7 @@ bool restartSafe(DictationState state)
         _owner->driverReadyToRestart(answer);
     } else {
         _owner->driverUpdateFound(QString::fromNSString(appcastItem.displayVersionString),
+                                  QString::fromNSString(appcastItem.versionString).toLongLong(),
                                   answer);
     }
 }
@@ -343,6 +344,13 @@ QString MacSparkleUpdater::currentVersion() const
 QString MacSparkleUpdater::availableVersion() const
 {
     return m_availableVersion;
+}
+
+QString MacSparkleUpdater::availableVersionDisplay() const
+{
+    return m_availableVersion.contains(QStringLiteral("-nightly"))
+        ? nightlyVersionDisplay(m_availableVersion, m_availableBuildNumber)
+        : m_availableVersion;
 }
 
 int MacSparkleUpdater::downloadPercent() const
@@ -532,7 +540,9 @@ void MacSparkleUpdater::driverCheckStarted(std::function<void()> cancel)
     setState(State::Checking);
 }
 
-void MacSparkleUpdater::driverUpdateFound(const QString &version, ReplyHandler reply)
+void MacSparkleUpdater::driverUpdateFound(const QString &version,
+                                          qint64 buildNumber,
+                                          ReplyHandler reply)
 {
     m_cancelCheck = nullptr;
     // A version the user already dismissed must not hold Sparkle open: an
@@ -544,6 +554,7 @@ void MacSparkleUpdater::driverUpdateFound(const QString &version, ReplyHandler r
         return;
     }
     m_availableVersion = version;
+    m_availableBuildNumber = buildNumber > 0 ? buildNumber : -1;
     m_updateReply = std::move(reply);
     setState(State::UpdateAvailable);
 }

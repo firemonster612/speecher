@@ -1255,7 +1255,7 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 
 - (NSString *)updateVersion
 {
-    return _state->controller->updates()->availableVersion().toNSString();
+    return _state->controller->updates()->availableVersionDisplay().toNSString();
 }
 
 - (NSString *)installedVersion

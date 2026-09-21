@@ -491,7 +491,7 @@ struct DictationPanel::Native : QObject {
     {
         auto *updates = controller->updates();
         const auto notice = win::updateChipState(
-            updates->state(), updates->availableVersion(), updates->downloadPercent(),
+            updates->state(), updates->availableVersionDisplay(), updates->downloadPercent(),
             updates->errorMessage(), updates->repeatedAutomaticCheckFailure(),
             updates->manualInstallRequired(), controller->session()->state());
         const bool showWhatsNew = !whatsNewHidden

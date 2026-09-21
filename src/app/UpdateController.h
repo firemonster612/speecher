@@ -9,6 +9,27 @@ namespace speecher {
 
 enum class UpdateChannel;
 
+// The banner's words for a nightly version string such as
+// "0.2.1-nightly.20260921+gabc1234": the build number and commit are what
+// actually change between nightlies. Without a build number the date stands in.
+inline QString nightlyVersionDisplay(const QString &version, qint64 buildNumber = -1)
+{
+    const QString commit = version.section(QLatin1Char('+'), 1, 1);
+    QString display;
+    if (buildNumber >= 0) {
+        display = QStringLiteral("nightly build %1").arg(buildNumber);
+    } else {
+        const QString date = version.section(QStringLiteral("-nightly."), 1, 1)
+                                 .section(QLatin1Char('+'), 0, 0);
+        display = date.isEmpty() ? QStringLiteral("nightly")
+                                 : QStringLiteral("nightly %1").arg(date);
+    }
+    if (!commit.isEmpty()) {
+        display += QStringLiteral(" (%1)").arg(commit);
+    }
+    return display;
+}
+
 class UpdateController : public QObject {
     Q_OBJECT
 
@@ -34,6 +55,10 @@ public:
     virtual State state() const = 0;
     virtual QString currentVersion() const = 0;
     virtual QString availableVersion() const = 0;
+    // What an update banner calls the offered version. A stable release is its
+    // number; a nightly names its build and commit, because its bare version
+    // number repeats across builds and reads as "the same update again".
+    virtual QString availableVersionDisplay() const { return availableVersion(); }
     virtual int downloadPercent() const = 0;
     virtual QString errorMessage() const = 0;
     virtual bool isAppImage() const = 0;

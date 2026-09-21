@@ -101,10 +101,11 @@ SettingsSchema settingsSchema(ApplicationController *controller)
             case UpdateController::State::UpToDate:
                 return QStringLiteral("Speecher is up to date.");
             case UpdateController::State::UpdateAvailable:
-                return QStringLiteral("Speecher %1 is available.").arg(updates->availableVersion());
+                return QStringLiteral("Speecher %1 is available.")
+                    .arg(updates->availableVersionDisplay());
             case UpdateController::State::Downloading:
                 return QStringLiteral("Downloading Speecher %1 (%2%)")
-                    .arg(updates->availableVersion())
+                    .arg(updates->availableVersionDisplay())
                     .arg(updates->downloadPercent());
             case UpdateController::State::ReadyToRestart:
                 return updates->errorMessage().isEmpty()
@@ -153,7 +154,7 @@ SettingsSchema settingsSchema(ApplicationController *controller)
         version->value = [updates](const AppSettings &) {
             QString text = updates->currentVersion();
             if (!updates->availableVersion().isEmpty()) {
-                text += QStringLiteral(" — %1 available").arg(updates->availableVersion());
+                text += QStringLiteral(" — %1 available").arg(updates->availableVersionDisplay());
             }
             return QVariant(text);
         };

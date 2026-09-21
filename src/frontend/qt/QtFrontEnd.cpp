@@ -318,13 +318,14 @@ void QtFrontEnd::refreshUpdateChip()
     UpdateController *updates = m_controller->updates();
     switch (updates->state()) {
     case UpdateController::State::UpdateAvailable:
-        // Base version only: a full nightly identifier would stretch the
-        // banner across the screen. Clicking during a dictation is safe: the
-        // restart parks until the session is idle and the relaunch restores
-        // what was on screen.
+        // The display form: a stable version number, or a nightly's build and
+        // commit — the bare version number repeats across nightlies and read
+        // as the same offer over and over. Clicking during a dictation is
+        // safe: the restart parks until the session is idle and the relaunch
+        // restores what was on screen.
         m_popup->setUpdateBanner(
             QStringLiteral("Speecher %1 available")
-                .arg(updates->availableVersion().section(QLatin1Char('-'), 0, 0)),
+                .arg(updates->availableVersionDisplay()),
             QStringLiteral("Install and restart"),
             true);
         break;

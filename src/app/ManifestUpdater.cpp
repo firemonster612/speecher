@@ -133,6 +133,13 @@ QString ManifestUpdater::availableVersion() const
     return m_manifest.version;
 }
 
+QString ManifestUpdater::availableVersionDisplay() const
+{
+    return m_manifest.channel == UpdateChannel::Nightly
+        ? nightlyVersionDisplay(m_manifest.version, m_manifest.buildNumber)
+        : m_manifest.version;
+}
+
 int ManifestUpdater::downloadPercent() const
 {
     return m_downloadPercent;
@@ -235,10 +242,32 @@ bool ManifestUpdater::shouldOfferManifest(const UpdateManifest &manifest,
                                           UpdateChannel channel,
                                           bool automaticCheck)
 {
-    return isNewerBuild(manifest, currentBuildNumber)
-        || (!automaticCheck
-            && channel == UpdateChannel::Stable
-            && currentVersion.contains(QStringLiteral("-nightly")));
+    if (isNewerBuild(manifest, currentBuildNumber)) {
+        return true;
+    }
+    if (automaticCheck || manifest.channel != UpdateChannel::Stable
+        || !currentVersion.contains(QStringLiteral("-nightly"))) {
+        return false;
+    }
+    // A manual check lets a nightly install cross to the Stable Release: an
+    // explicit switch to the Stable channel accepts even a downgrade, while
+    // the Nightly channel only crosses to a stable at least as new as the
+    // build already running.
+    return channel == UpdateChannel::Stable
+        || manifest.buildNumber >= currentBuildNumber;
+}
+
+std::optional<UpdateManifest> ManifestUpdater::bestCandidate(
+    std::optional<UpdateManifest> primary,
+    std::optional<UpdateManifest> stable)
+{
+    if (!primary) {
+        return stable;
+    }
+    if (!stable) {
+        return primary;
+    }
+    return stable->buildNumber >= primary->buildNumber ? stable : primary;
 }
 
 void ManifestUpdater::checkForUpdates(UpdateChannel channel)
@@ -259,6 +288,8 @@ void ManifestUpdater::beginCheck(UpdateChannel channel, bool automaticCheck)
     m_restartWhenReady = false;
     m_checkChannel = channel;
     m_automaticCheck = automaticCheck;
+    m_primaryCandidate.reset();
+    m_fetchingStable = false;
     setState(State::Checking);
     QNetworkRequest request(manifestUrl(channel));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
@@ -351,7 +382,13 @@ const UpdateManifest &ManifestUpdater::manifest() const
 QUrl ManifestUpdater::manifestUrl(UpdateChannel channel) const
 {
     // Update end-to-end tests point the check at a local server; the download
-    // URL inside the manifest still has to be https.
+    // URL inside the manifest still has to be https. The stable override lets
+    // a test serve two different manifests to one Nightly-channel check.
+    const QString stableOverride =
+        qEnvironmentVariable("SPEECHER_UPDATE_STABLE_MANIFEST_URL");
+    if (channel == UpdateChannel::Stable && !stableOverride.isEmpty()) {
+        return QUrl(stableOverride);
+    }
     const QString override = qEnvironmentVariable("SPEECHER_UPDATE_MANIFEST_URL");
     if (!override.isEmpty()) {
         return QUrl(override);
@@ -370,42 +407,77 @@ void ManifestUpdater::finishCheck(QNetworkReply *reply)
         ? QString()
         : reply->errorString();
     reply->deleteLater();
-    if (!networkError.isEmpty()) {
-        recordAutomaticCheckFailure();
-        setState(State::CheckFailed,
-                 QStringLiteral("Could not check for updates: %1").arg(networkError));
+
+    QString error;
+    std::optional<UpdateManifest> parsed;
+    if (networkError.isEmpty()) {
+        parsed = parseManifest(body, m_platformKey, m_downloadKey, &error);
+    }
+    if (parsed) {
+        parsed->channel = m_fetchingStable ? UpdateChannel::Stable : m_checkChannel;
+    }
+
+    if (m_fetchingStable) {
+        // The stable manifest is the Nightly check's extra look, so its failure
+        // is not the check's failure: the nightly verdict already in hand
+        // stands on its own.
+        decideCheck(bestCandidate(m_primaryCandidate, parsed));
         return;
     }
 
-    QString error;
-    const std::optional<UpdateManifest> parsed =
-        parseManifest(body, m_platformKey, m_downloadKey, &error);
     if (!parsed) {
         recordAutomaticCheckFailure();
-        setState(State::CheckFailed, error);
+        setState(State::CheckFailed,
+                 networkError.isEmpty()
+                     ? error
+                     : QStringLiteral("Could not check for updates: %1").arg(networkError));
         return;
     }
+
+    // The Nightly channel also reads the stable manifest: the newest release
+    // is sometimes a Stable Release, and a nightly install should get it too.
+    // With one overridden URL both channels would read the same file, so the
+    // extra fetch only happens while the two URLs actually differ.
+    if (m_checkChannel == UpdateChannel::Nightly
+        && manifestUrl(UpdateChannel::Stable) != manifestUrl(UpdateChannel::Nightly)) {
+        m_primaryCandidate = parsed;
+        m_fetchingStable = true;
+        QNetworkRequest request(manifestUrl(UpdateChannel::Stable));
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                             QNetworkRequest::NoLessSafeRedirectPolicy);
+        m_reply = m_network->get(request);
+        connect(m_reply, &QNetworkReply::finished, this, [this, stableReply = m_reply] {
+            finishCheck(stableReply);
+        });
+        return;
+    }
+
+    decideCheck(parsed);
+}
+
+void ManifestUpdater::decideCheck(const std::optional<UpdateManifest> &candidate)
+{
+    m_primaryCandidate.reset();
+    m_fetchingStable = false;
     m_settings->setUpdatesLastCheckTime(QDateTime::currentMSecsSinceEpoch());
     m_automaticCheckFailures = 0;
     m_dailyTimer->setInterval(baseCheckIntervalMs());
-    if (!shouldOfferManifest(*parsed,
-                             currentBuildNumber(),
-                             currentVersion(),
-                             m_checkChannel,
-                             m_automaticCheck)) {
+    if (!candidate
+        || !shouldOfferManifest(*candidate,
+                                currentBuildNumber(),
+                                currentVersion(),
+                                m_checkChannel,
+                                m_automaticCheck)) {
         m_manifest = {};
         setState(State::UpToDate);
         return;
     }
 
-    m_manifest = *parsed;
-    m_manifest.channel = m_checkChannel;
+    m_manifest = *candidate;
     setState(State::UpdateAvailable);
-    const bool stableReplacement = m_checkChannel == UpdateChannel::Stable
-        && currentVersion().contains(QStringLiteral("-nightly"));
     if (m_settings->autoInstallUpdates()
         && supportsAutomaticDownloads()
-        && !stableReplacement) {
+        && !stableReplacementAvailable()) {
         beginDownload(false);
     }
 }
@@ -444,6 +516,8 @@ void ManifestUpdater::updateSettingsChanged()
     }
     clearDownload();
     m_manifest = {};
+    m_primaryCandidate.reset();
+    m_fetchingStable = false;
     m_downloadError.clear();
     m_downloadPercent = 0;
     m_manualInstallRequired = false;
