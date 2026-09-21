@@ -6,7 +6,7 @@
 #include "frontend/win/SettingsModel.h"
 #include "frontend/win/SettingsPage.h"
 #include "providers/ClaudeCredentials.h"
-#include "frontend/ProviderOptions.h"
+#include "providers/ProviderSignIn.h"
 
 #pragma push_macro("GetCurrentTime")
 #undef GetCurrentTime

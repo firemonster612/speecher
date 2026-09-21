@@ -294,6 +294,47 @@ private slots:
         QVERIFY(!controller.settings()->setupCompleted());
     }
 
+    // The assistant renders what the bridge's ProviderSignIn seams decide, so
+    // driving the seams is driving the SwiftUI sign-in card's whole behavior.
+    void setupSignInSeamsDriveTheCliProxyOptIn()
+    {
+        ApplicationController controller(false);
+        controller.settings()->raw().clear();
+        QTemporaryDir dir;
+        controller.settings()->raw().setValue(QStringLiteral("cliproxy/oauthDir"), dir.path());
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+
+        QVERIFY(![bridge setupCliproxyAccountsAvailable]);
+        QFile account(QDir(dir.path()).filePath(QStringLiteral("claude-a@example.com.json")));
+        QVERIFY(account.open(QIODevice::WriteOnly));
+        account.write(QByteArray("{\"type\":\"claude\",\"access_token\":\"token\","
+                                 "\"refresh_token\":\"refresh\",\"expired\":\"2099-01-01T00:00:00Z\"}"));
+        account.close();
+        QVERIFY([bridge setupCliproxyAccountsAvailable]);
+
+        QVERIFY([bridge setupSupportsCliproxyForProvider:@"claude"]);
+        QVERIFY(![bridge setupUsesCliproxyForProvider:@"claude"]);
+        [bridge setSetupUseCliproxy:YES forProvider:@"claude"];
+        QVERIFY([bridge setupUsesCliproxyForProvider:@"claude"]);
+        QCOMPARE(controller.settings()->anthropicAuthMode(), QStringLiteral("cliproxy"));
+
+        NSArray<RowOptionModel *> *options =
+            [bridge setupCliproxyAccountOptionsForProvider:@"claude"];
+        QCOMPARE(int(options.count), 1);
+        [bridge setSetupCliproxyAccount:options.firstObject.rowOptionId forProvider:@"claude"];
+        QCOMPARE(controller.settings()->anthropicCliproxyAccount(),
+                 QStringLiteral("claude-a@example.com.json"));
+
+        // Opting out restores the sign-in the bridge first saw.
+        [bridge setSetupUseCliproxy:NO forProvider:@"claude"];
+        QCOMPARE(controller.settings()->anthropicAuthMode(), QStringLiteral("oauth"));
+
+        QCOMPARE(QString::fromNSString([bridge setupCliproxyDirectory]), dir.path());
+        [bridge setSetupCliproxyDirectory:@"/custom/cliproxy"];
+        QCOMPARE(controller.settings()->configuredCliproxyOauthDir(),
+                 QStringLiteral("/custom/cliproxy"));
+    }
+
     void settingsCapabilitiesFollowAccessibilityChanges()
     {
         ApplicationController controller(false);

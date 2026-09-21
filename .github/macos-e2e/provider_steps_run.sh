@@ -26,6 +26,9 @@ fresh_reset() {
   stop_app
   defaults delete "$DOMAIN" >/dev/null 2>&1 || true
   defaults write "$BUNDLE_ID" SUEnableAutomaticChecks -bool false
+  # The Welcome gate also opens on CLI Proxy API accounts; point the lookup at
+  # an empty directory so a runner's real accounts cannot satisfy the gate.
+  defaults write "$DOMAIN" cliproxy.oauthDir "$(mktemp -d)"
   unset SPEECHER_E2E_STUB SPEECHER_E2E_SKIP_MIC_GATE SPEECHER_E2E_REAL_AUDIO
   launchctl unsetenv SPEECHER_E2E_STUB >/dev/null 2>&1 || true
   launchctl unsetenv SPEECHER_E2E_SKIP_MIC_GATE >/dev/null 2>&1 || true

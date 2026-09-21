@@ -4,7 +4,7 @@
 #include "core/SettingsStore.h"
 #include "core/Target.h"
 #include "providers/ClaudeCredentials.h"
-#include "frontend/ProviderOptions.h"
+#include "providers/ProviderSignIn.h"
 
 namespace speecher::mac {
 

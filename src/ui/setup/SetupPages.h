@@ -1,8 +1,8 @@
 #pragma once
 
 #include "core/AppSettings.h"
+#include "providers/ProviderSignIn.h"
 
-#include <QHash>
 #include <QList>
 #include <QPixmap>
 #include <QString>
@@ -89,6 +89,10 @@ struct ProviderOptionRow {
     bool probed = false;
     bool ok = false;
     QString message;
+    // The newest probe round asked about this row. Per row rather than per
+    // page, so re-probing one provider's changed sign-in does not strand the
+    // others' in-flight verdicts on "Checking…".
+    quint64 generation = 0;
 };
 
 class WelcomeSetupPage final : public QWidget, public SetupStep {
@@ -133,6 +137,7 @@ private:
 
     SettingsStore &m_settings;
     ProviderRegistry &m_providers;
+    ProviderSignIn m_signIn;
     QList<CredentialRow> m_rows;
     // Accounts saved by CLI Proxy API can power dictation too, so they open
     // the gate like a provider CLI sign-in does.
@@ -182,6 +187,7 @@ private:
 
     SettingsStore &m_settings;
     ProviderRegistry &m_providers;
+    ProviderSignIn m_signIn;
     QList<ProviderOptionRow> m_options;
     // Where the selected service's sign-in comes from, so someone whose only
     // account lives in CLI Proxy API can finish setup without visiting
@@ -195,9 +201,6 @@ private:
     QWidget *m_signInSourceRow = nullptr;
     QWidget *m_cliproxyAccountRow = nullptr;
     QWidget *m_cliproxyDirRow = nullptr;
-    // What unchecking the box returns each provider to, so a sign-in mode
-    // chosen in Settings survives a round trip through CLI Proxy API.
-    QHash<QString, QString> m_fallbackSignInModes;
     QCheckBox *m_accuracyPass;
     ProviderStatsBlock *m_stats;
     QLabel *m_hint;

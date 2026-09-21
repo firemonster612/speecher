@@ -333,6 +333,33 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
 - (void)checkSpeechProviders:(void (^)(NSString *providerId, BOOL ready, NSString *message))report;
 - (void)checkRefinementProviders:(void (^)(NSString *providerId, BOOL ready, NSString *message))report;
 
+// The CLI Proxy API sign-in a service can be opted into during setup. The
+// decisions live in core (ProviderSignIn); these are its seams, so this
+// assistant behaves exactly like the Qt and WinUI ones.
+// Whether any enabled CLI Proxy API account exists for a registered speech
+// provider: the Welcome step's reason to open its gate.
+@property (nonatomic, readonly) BOOL setupCliproxyAccountsAvailable;
+- (BOOL)setupSupportsCliproxyForProvider:(NSString *)providerId
+    NS_SWIFT_NAME(setupSupportsCliproxy(provider:));
+- (BOOL)setupUsesCliproxyForProvider:(NSString *)providerId
+    NS_SWIFT_NAME(setupUsesCliproxy(provider:));
+// Opting out returns to the sign-in mode the assistant first saw, so a mode
+// chosen in Settings survives a round trip through CLI Proxy API.
+- (void)setSetupUseCliproxy:(BOOL)use forProvider:(NSString *)providerId
+    NS_SWIFT_NAME(setSetupUseCliproxy(_:provider:));
+- (NSArray<RowOptionModel *> *)setupCliproxyAccountOptionsForProvider:(NSString *)providerId
+    NS_SWIFT_NAME(setupCliproxyAccountOptions(provider:));
+- (NSString *)setupCliproxyAccountForProvider:(NSString *)providerId
+    NS_SWIFT_NAME(setupCliproxyAccount(provider:));
+- (void)setSetupCliproxyAccount:(NSString *)account forProvider:(NSString *)providerId
+    NS_SWIFT_NAME(setSetupCliproxyAccount(_:provider:));
+// The configured account directory; empty means automatic detection.
+@property (nonatomic, readonly, copy) NSString *setupCliproxyDirectory;
+// Where detection currently lands, for the directory field's placeholder.
+@property (nonatomic, readonly, copy) NSString *setupCliproxyDirectoryPlaceholder;
+- (void)setSetupCliproxyDirectory:(NSString *)directory
+    NS_SWIFT_NAME(setSetupCliproxyDirectory(_:));
+
 // A live microphone meter over the input device the settings name. Levels and
 // failures arrive on the main thread until the meter is stopped.
 - (void)startMicrophoneMeterOnLevel:(void (^)(float level))onLevel
