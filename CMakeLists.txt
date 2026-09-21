@@ -334,6 +334,7 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/ClaudeVoiceClient.h
   src/providers/ClaudeVoiceProtocol.h
   src/providers/CliProxyCredentials.h
+  src/providers/ProviderSignIn.h
   src/providers/CodexDictationClient.h
   src/providers/CodexSpeechTranscriber.h
   src/providers/OpenAiAuthProvider.h

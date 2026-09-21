@@ -1430,7 +1430,7 @@ bridgedProviders(const QList<speecher::ProviderDescriptor> &providers)
     }
 }
 
-static speecher::ProviderSignIn &setupSignIn(BridgeState *state)
+static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
 {
     if (!state->setupSignIn) {
         state->setupSignIn =
@@ -1446,7 +1446,7 @@ static speecher::ProviderSignIn &setupSignIn(BridgeState *state)
          _state->controller->providerRegistry()->speechProviders()) {
         providerIds.append(provider.id);
     }
-    return setupSignIn(_state).anyUsableAccount(providerIds);
+    return ensureSetupSignIn(_state).anyUsableAccount(providerIds);
 }
 
 - (BOOL)setupSupportsCliproxyForProvider:(NSString *)providerId
@@ -1456,18 +1456,18 @@ static speecher::ProviderSignIn &setupSignIn(BridgeState *state)
 
 - (BOOL)setupUsesCliproxyForProvider:(NSString *)providerId
 {
-    return setupSignIn(_state).usingCliproxy(QString::fromNSString(providerId));
+    return ensureSetupSignIn(_state).usingCliproxy(QString::fromNSString(providerId));
 }
 
 - (void)setSetupUseCliproxy:(BOOL)use forProvider:(NSString *)providerId
 {
-    setupSignIn(_state).setUseCliproxy(QString::fromNSString(providerId), use);
+    ensureSetupSignIn(_state).setUseCliproxy(QString::fromNSString(providerId), use);
 }
 
 - (NSArray<RowOptionModel *> *)setupCliproxyAccountOptionsForProvider:(NSString *)providerId
 {
     const QString provider = QString::fromNSString(providerId);
-    speecher::ProviderSignIn &signIn = setupSignIn(_state);
+    speecher::ProviderSignIn &signIn = ensureSetupSignIn(_state);
     NSMutableArray<RowOptionModel *> *bridged = [NSMutableArray array];
     for (const RowOption &option : speecher::cliproxyAccountOptions(
              speecher::ProviderSignIn::cliproxyAccountType(provider),
@@ -1485,28 +1485,28 @@ static speecher::ProviderSignIn &setupSignIn(BridgeState *state)
 
 - (NSString *)setupCliproxyAccountForProvider:(NSString *)providerId
 {
-    return setupSignIn(_state).cliproxyAccount(QString::fromNSString(providerId)).toNSString();
+    return ensureSetupSignIn(_state).cliproxyAccount(QString::fromNSString(providerId)).toNSString();
 }
 
 - (void)setSetupCliproxyAccount:(NSString *)account forProvider:(NSString *)providerId
 {
-    setupSignIn(_state).setCliproxyAccount(QString::fromNSString(providerId),
+    ensureSetupSignIn(_state).setCliproxyAccount(QString::fromNSString(providerId),
                                            QString::fromNSString(account));
 }
 
 - (NSString *)setupCliproxyDirectory
 {
-    return setupSignIn(_state).configuredAccountDirectory().toNSString();
+    return ensureSetupSignIn(_state).configuredAccountDirectory().toNSString();
 }
 
 - (NSString *)setupCliproxyDirectoryPlaceholder
 {
-    return setupSignIn(_state).resolvedAccountDirectory().toNSString();
+    return ensureSetupSignIn(_state).resolvedAccountDirectory().toNSString();
 }
 
 - (void)setSetupCliproxyDirectory:(NSString *)directory
 {
-    setupSignIn(_state).setAccountDirectory(QString::fromNSString(directory).trimmed());
+    ensureSetupSignIn(_state).setAccountDirectory(QString::fromNSString(directory).trimmed());
 }
 
 - (void)startMicrophoneMeterOnLevel:(void (^)(float level))onLevel

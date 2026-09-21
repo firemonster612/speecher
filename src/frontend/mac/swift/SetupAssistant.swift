@@ -267,6 +267,7 @@ final class SetupFlowModel: ObservableObject {
         speechProviders = model.bridge.speechProviders.map(ProviderRow.init)
         refinementProviders = model.bridge.refinementProviders.map(ProviderRow.init)
         launchAtLogin = RowView.flag(model.row("launchAtLogin")?.value)
+        cliproxyDirectory = model.bridge.setupCliproxyDirectory
         if !model.shortcut.isEmpty {
             // The binder already holds a shortcut; finishing keeps it unless a
             // new one is recorded over it. A bound single key carries its code
@@ -355,10 +356,12 @@ final class SetupFlowModel: ObservableObject {
     var readyChecklist: [ReadyItem] {
         var items: [ReadyItem] = []
         if let speech = selectedSpeechProvider {
+            let signIn = model.bridge.setupUsesCliproxy(provider: speech.id)
+                ? " (CLI Proxy API)" : ""
             items.append(ReadyItem(id: "transcription",
                                    providerId: speech.id,
                                    symbol: "waveform",
-                                   label: "Transcription — \(speech.label)",
+                                   label: "Transcription — \(speech.label)\(signIn)",
                                    status: "Ready",
                                    ready: true))
         }
@@ -487,9 +490,7 @@ final class SetupFlowModel: ObservableObject {
     func checkSpeechProviders() {
         // A directory typed but not yet submitted still counts: Check Again
         // must check what the person sees, not the last committed value.
-        if cliproxyDirectory != model.bridge.setupCliproxyDirectory {
-            model.bridge.setSetupCliproxyDirectory(cliproxyDirectory)
-        }
+        commitTypedDirectory()
         refreshCliproxy()
         model.bridge.checkSpeechProviders { [weak self] id, ready, message in
             guard let self else { return }
@@ -518,6 +519,7 @@ final class SetupFlowModel: ObservableObject {
     func chooseSpeechProvider(_ id: String) {
         guard id != providerId else { return }
         speechChosenByUser = true
+        commitTypedDirectory()
         model.setValue(id, for: "speechProvider")
         refreshCliproxy()
     }
@@ -525,9 +527,11 @@ final class SetupFlowModel: ObservableObject {
     // MARK: CLI Proxy API sign-in
 
     /// Re-reads everything the sign-in section shows for the selected service.
+    /// It never writes `cliproxyDirectory`: a refresh can land mid-typing, and
+    /// resetting the field would erase what the person is entering. The field
+    /// is seeded at init and re-read only after an explicit commit.
     func refreshCliproxy() {
         cliproxyAvailable = model.bridge.setupCliproxyAccountsAvailable
-        cliproxyDirectory = model.bridge.setupCliproxyDirectory
         cliproxyDirectoryPlaceholder = model.bridge.setupCliproxyDirectoryPlaceholder
         let id = providerId
         signInSupported = model.bridge.setupSupportsCliproxy(provider: id)
@@ -558,8 +562,18 @@ final class SetupFlowModel: ObservableObject {
     func commitCliproxyDirectory() {
         guard cliproxyDirectory != model.bridge.setupCliproxyDirectory else { return }
         model.bridge.setSetupCliproxyDirectory(cliproxyDirectory)
+        cliproxyDirectory = model.bridge.setupCliproxyDirectory
         refreshCliproxy()
         reprobeSelectedSpeechProvider()
+    }
+
+    /// The commit every other path shares: a directory typed but not submitted
+    /// still counts when a check or a provider switch happens.
+    private func commitTypedDirectory() {
+        if cliproxyDirectory != model.bridge.setupCliproxyDirectory {
+            model.bridge.setSetupCliproxyDirectory(cliproxyDirectory)
+            cliproxyDirectory = model.bridge.setupCliproxyDirectory
+        }
     }
 
     /// A sign-in change invalidates the selected service's verdict; showing

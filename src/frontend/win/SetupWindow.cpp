@@ -856,7 +856,10 @@ struct SetupWindow::Native {
             cliproxyHint.Text(win::hs(cliproxyReady
                 ? QStringLiteral("To use one of these accounts, turn on \"Use a CLI Proxy API account\" on the Transcription step.")
                 : QStringLiteral("Optional: Claude and Codex accounts saved by CLI Proxy API also work. If yours live in a custom directory, enter it below.")));
-            cliproxyDir.Visibility(cliproxyReady ? Visibility::Collapsed : Visibility::Visible);
+            cliproxyDir.Visibility(!cliproxyReady
+                                           || cliproxyDir.FocusState() != FocusState::Unfocused
+                                       ? Visibility::Visible
+                                       : Visibility::Collapsed);
             refreshGates();
         };
         const auto commitCliproxyDir = [this, cliproxyDir, checkCliproxy] {
@@ -1029,49 +1032,59 @@ struct SetupWindow::Native {
                                            cliproxyAccount);
         signInBody.Children().Append(accountRow);
         TextBox cliproxyDir;
-        StackPanel dirRow = settingRow(QStringLiteral("Account directory"), cliproxyDir);
+        StackPanel dirRow;
+        dirRow.Spacing(6);
+        dirRow.Children().Append(strongTextBlock(QStringLiteral("Account directory")));
         dirRow.Children().Append(secondaryTextBlock(QStringLiteral(
             "Where CLI Proxy API keeps its account files. Leave empty to detect it automatically.")));
+        dirRow.Children().Append(cliproxyDir);
         signInBody.Children().Append(dirRow);
         Border signInCard = win::cardContainer(signInBody);
 
-        // Rebuilding the account list must not read as the user choosing.
+        // Rebuilding the account list must not read as the user choosing. The
+        // guard latches the written index, exactly like programmaticSpeechIndex:
+        // WinUI can defer SelectionChanged past a bool that was already cleared.
         auto accountOptions = std::make_shared<QList<RowOption>>();
-        auto populatingAccounts = std::make_shared<bool>(false);
-        const auto populateAccounts = [this, cliproxyAccount, accountOptions,
-                                       populatingAccounts](const QString &id) {
-            *populatingAccounts = true;
+        const auto populateAccounts = [this, cliproxyAccount, accountOptions](const QString &id) {
             const QString selected = signIn.cliproxyAccount(id);
             *accountOptions = cliproxyAccountOptions(ProviderSignIn::cliproxyAccountType(id),
                                                      selected,
                                                      signIn.resolvedAccountDirectory());
-            cliproxyAccount.Items().Clear();
             int selectedIndex = 0;
             for (int index = 0; index < accountOptions->size(); ++index) {
-                const RowOption &option = accountOptions->at(index);
+                if (accountOptions->at(index).id == selected) {
+                    selectedIndex = index;
+                }
+            }
+            programmaticAccountIndex = selectedIndex;
+            cliproxyAccount.Items().Clear();
+            for (const RowOption &option : *accountOptions) {
                 ComboBoxItem item;
                 item.Content(box_value(win::hs(option.label)));
                 item.IsEnabled(option.enabled);
                 cliproxyAccount.Items().Append(item);
-                if (option.id == selected) {
-                    selectedIndex = index;
-                }
             }
             cliproxyAccount.SelectedIndex(selectedIndex);
-            *populatingAccounts = false;
         };
-        const auto refreshSignInCard = [this, signInCard, useCliproxy, accountRow, dirRow,
-                                        cliproxyDir, populateAccounts](const QString &id) {
+        // What a probe verdict may touch: the card's shape for the selected
+        // provider, never the account list or the directory text — a probe can
+        // land seconds later, mid-typing, and must not erase the edit.
+        const auto updateSignInVisibility = [this, signInCard, useCliproxy, accountRow,
+                                             dirRow](const QString &id) {
             const bool supported = ProviderSignIn::supportsCliproxy(id);
             signInCard.Visibility(supported ? Visibility::Visible : Visibility::Collapsed);
             if (!supported) {
-                return;
+                return false;
             }
             const bool cliproxy = signIn.usingCliproxy(id);
             useCliproxy.IsChecked(cliproxy);
             accountRow.Visibility(cliproxy ? Visibility::Visible : Visibility::Collapsed);
             dirRow.Visibility(cliproxy ? Visibility::Visible : Visibility::Collapsed);
-            if (!cliproxy) {
+            return cliproxy;
+        };
+        const auto refreshSignInCard = [this, updateSignInVisibility, cliproxyDir,
+                                        populateAccounts](const QString &id) {
+            if (!updateSignInVisibility(id)) {
                 return;
             }
             cliproxyDir.Text(win::hs(signIn.configuredAccountDirectory()));
@@ -1090,7 +1103,7 @@ struct SetupWindow::Native {
         // The credential hint and Check again belong to a service that is not
         // signed in; a ready one needs neither.
         const auto describeSelected = [this, choices, options, stats, status, hint, check,
-                                       accuracy, refreshSignInCard] {
+                                       accuracy, updateSignInVisibility] {
             const int index = choices.SelectedIndex();
             if (index < 0 || index >= options.size()) {
                 status.set(QStringLiteral("No transcription service is available."),
@@ -1099,7 +1112,7 @@ struct SetupWindow::Native {
             }
             const QString id = options.at(index).first;
             showProviderStats(stats, controller->providerRegistry()->speechProviders(), id);
-            refreshSignInCard(id);
+            updateSignInVisibility(id);
             accuracy.Visibility(id == QStringLiteral("codex")
                                     ? Visibility::Visible : Visibility::Collapsed);
             const bool ready = speechReady.value(id, false);
@@ -1121,8 +1134,8 @@ struct SetupWindow::Native {
             hint.Visibility(unready);
             check.Visibility(unready);
         };
-        choices.SelectionChanged([this, choices, options, describeSelected](const auto &,
-                                                                           const auto &) {
+        choices.SelectionChanged([this, choices, options, describeSelected,
+                                  refreshSignInCard](const auto &, const auto &) {
             const int index = choices.SelectedIndex();
             if (index < 0 || index >= options.size()) {
                 return;
@@ -1132,6 +1145,7 @@ struct SetupWindow::Native {
             }
             controller->settings()->setSpeechProvider(options.at(index).first);
             describeSelected();
+            refreshSignInCard(options.at(index).first);
             refreshGates();
         });
 
@@ -1204,15 +1218,13 @@ struct SetupWindow::Native {
             reprobeSelected();
         });
         cliproxyAccount.SelectionChanged([this, cliproxyAccount, accountOptions,
-                                          populatingAccounts, choices, options,
+                                          choices, options,
                                           reprobeSelected](const auto &, const auto &) {
-            if (*populatingAccounts) {
-                return;
-            }
             const int selected = cliproxyAccount.SelectedIndex();
             const int index = choices.SelectedIndex();
             if (selected < 0 || selected >= accountOptions->size()
-                || index < 0 || index >= options.size()) {
+                || index < 0 || index >= options.size()
+                || wasProgrammatic(programmaticAccountIndex, selected)) {
                 return;
             }
             signIn.setCliproxyAccount(options.at(index).first, accountOptions->at(selected).id);
@@ -1225,6 +1237,13 @@ struct SetupWindow::Native {
                 return;
             }
             signIn.setAccountDirectory(directory);
+            // The Welcome gate reads this too, and its own check will not run
+            // again until that page is shown.
+            QStringList providerIds;
+            for (const auto &option : options) {
+                providerIds.append(option.first);
+            }
+            cliproxyReady = signIn.anyUsableAccount(providerIds);
             const int index = choices.SelectedIndex();
             if (index >= 0 && index < options.size()) {
                 refreshSignInCard(options.at(index).first);
@@ -1847,10 +1866,13 @@ struct SetupWindow::Native {
         StackPanel rows = rowList(card(readyBody, QString()));
         const QString speechId = controller->settings()->speechProvider();
         appendRow(rows, readyRow(brandMark(speechId),
-                                 QStringLiteral("Transcription — %1")
+                                 QStringLiteral("Transcription — %1%2")
                                      .arg(providerLabel(
-                                         controller->providerRegistry()->speechProviders(),
-                                         speechId)),
+                                              controller->providerRegistry()->speechProviders(),
+                                              speechId),
+                                          signIn.usingCliproxy(speechId)
+                                              ? QStringLiteral(" (CLI Proxy API)")
+                                              : QString()),
                                  QStringLiteral("Ready"), StatusTone::Positive));
 
         // Refinement is never gated, so this row reports what the refinement
@@ -2025,6 +2047,7 @@ struct SetupWindow::Native {
     // lands — and the wizard would read its own write as the user's choice.
     int programmaticSpeechIndex = -1;
     int programmaticRefinementIndex = -1;
+    int programmaticAccountIndex = -1;
     // Latched by the level meter: the microphone gate asks whether this
     // device has ever been heard, and starting a meter clears it again.
     bool microphoneDetected = false;
