@@ -20,7 +20,9 @@
 #include <QTimer>
 #include <QCoreApplication>
 #include <QDesktopServices>
+#include <QElapsedTimer>
 #include <QEvent>
+#include <QThread>
 #include <QWidget>
 #include <QWindow>
 #include <QUrl>
@@ -181,7 +183,16 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
         for (int i = 0; i < target; ++i) {
             assistant->next();
         }
-        QCoreApplication::processEvents();
+        // The credential probes run off-thread and answer through queued
+        // signals; each answer changes a label and posts a relayout. One
+        // processEvents pass grabs mid-update, with statuses painted at the
+        // previous text's width. Let the page settle first.
+        QElapsedTimer settle;
+        settle.start();
+        while (settle.elapsed() < 3000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            QThread::msleep(25);
+        }
         const bool saved = assistant->grab().save(path);
         assistant->deleteLater();
         return saved;

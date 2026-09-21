@@ -1,5 +1,7 @@
 #include "ui/settings/SettingsPageSupport.h"
 
+#include "providers/CliProxyCredentials.h"
+
 #include <QApplication>
 #include <QCheckBox>
 #include "dictation/DictationPorts.h"
@@ -564,6 +566,44 @@ void populateAudioInputDevices(QComboBox *combo,
         }
     }
     selectData(combo, selectedDeviceId);
+}
+
+void populateCliproxyAccounts(QComboBox *combo,
+                              const QString &directory,
+                              const QString &type,
+                              const QString &selected)
+{
+    const QSignalBlocker blocker(combo);
+    combo->clear();
+    const QList<CliProxyAccount> accounts = CliProxyCredentials::listAccounts(directory, type);
+    // With several accounts and none chosen yet, force an explicit choice
+    // instead of silently pinning whichever file sorts first.
+    if (selected.isEmpty() && accounts.size() > 1) {
+        combo->addItem(QStringLiteral("Choose an account…"), QString());
+    }
+    for (const CliProxyAccount &account : accounts) {
+        combo->addItem(account.expired ? account.label + QStringLiteral(" (expired)")
+                                       : account.label,
+                       account.fileName);
+        if (account.disabled) {
+            setComboItemEnabled(combo,
+                                combo->count() - 1,
+                                false,
+                                QStringLiteral("Disabled in CLI Proxy API"));
+        }
+    }
+    // Keep a stored selection visible even if its file is currently missing.
+    if (!selected.isEmpty() && combo->findData(selected) < 0) {
+        combo->addItem(selected + QStringLiteral(" (missing)"), selected);
+    }
+    if (combo->count() == 0) {
+        combo->addItem(QStringLiteral("No accounts found"), QString());
+        setComboItemEnabled(
+            combo, 0, false,
+            QStringLiteral("Sign in with CLI Proxy API first; Speecher looks for its accounts in %1.")
+                .arg(directory));
+    }
+    selectData(combo, selected);
 }
 
 QColor positiveTextColor(const QPalette &palette)

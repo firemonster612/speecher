@@ -2,6 +2,7 @@
 
 #include "core/AppSettings.h"
 
+#include <QHash>
 #include <QList>
 #include <QPixmap>
 #include <QString>
@@ -12,6 +13,7 @@ class QCheckBox;
 class QComboBox;
 class QFormLayout;
 class QLabel;
+class QLineEdit;
 class QShowEvent;
 class QProgressBar;
 class QPushButton;
@@ -125,11 +127,19 @@ private:
 
     void checkCredentials();
     void showCredential(int index, bool found);
+    void showCliproxyCredential(bool found);
+    void updateReady();
     void setReady(bool ready);
 
     SettingsStore &m_settings;
     ProviderRegistry &m_providers;
     QList<CredentialRow> m_rows;
+    // Accounts saved by CLI Proxy API can power dictation too, so they open
+    // the gate like a provider CLI sign-in does.
+    QLabel *m_cliproxyStatus = nullptr;
+    QLabel *m_cliproxyHint = nullptr;
+    QLineEdit *m_cliproxyDir = nullptr;
+    bool m_cliproxyFound = false;
     quint64 m_checkGeneration = 0;
     int m_checksOutstanding = 0;
     bool m_ready = false;
@@ -164,12 +174,27 @@ private:
     void finishProbe(int index, quint64 generation, const SpeechPrepareResult &result);
     void showSelectedProvider();
     void autoSelectReadyProvider();
+    void updateSignInControls();
+    void populateCliproxyAccounts();
+    void reprobeSelectedProvider();
     int selectedIndex() const;
     void setReady(bool ready);
 
     SettingsStore &m_settings;
     ProviderRegistry &m_providers;
     QList<ProviderOptionRow> m_options;
+    // Where the selected service's sign-in comes from, so someone whose only
+    // account lives in CLI Proxy API can finish setup without visiting
+    // Settings first.
+    QComboBox *m_signInSource = nullptr;
+    QComboBox *m_cliproxyAccount = nullptr;
+    QLineEdit *m_cliproxyDir = nullptr;
+    QWidget *m_signInSourceRow = nullptr;
+    QWidget *m_cliproxyAccountRow = nullptr;
+    QWidget *m_cliproxyDirRow = nullptr;
+    // Each provider's sign-in mode when this page first saw it, kept in the
+    // combo so leaving and returning to a mode the short list lacks is lossless.
+    QHash<QString, QString> m_initialSignInModes;
     QCheckBox *m_accuracyPass;
     ProviderStatsBlock *m_stats;
     QLabel *m_hint;

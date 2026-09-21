@@ -280,6 +280,7 @@ QStringList SettingsPageSet::providerAuthRowIds()
             QStringLiteral("openAiAuth"),
             QStringLiteral("anthropicAuthMode"),
             QStringLiteral("anthropicCliproxyAccount"),
+            QStringLiteral("cliproxyOauthDir"),
             QStringLiteral("cliproxyBaseUrl"),
             QStringLiteral("cliproxyApiKey")};
 }

@@ -81,6 +81,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setAnthropicFastMode(draft.refinement.anthropicFastMode);
     setAnthropicAuthMode(draft.refinement.anthropicAuthMode);
     setAnthropicCliproxyAccount(draft.refinement.anthropicCliproxyAccount);
+    setCliproxyOauthDir(draft.refinement.cliproxyOauthDirConfigured);
     setCliproxyBaseUrl(draft.refinement.cliproxyBaseUrl);
     setCliproxyApiKey(draft.refinement.cliproxyApiKey);
     setOutputMethod(draft.output.method);

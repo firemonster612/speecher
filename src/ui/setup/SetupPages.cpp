@@ -9,6 +9,7 @@
 #include "output/YdotoolSetup.h"
 #include "output/YdotoolSetupFlow.h"
 #endif
+#include "providers/CliProxyCredentials.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/settings/SettingsPageSupport.h"
 #ifdef Q_OS_LINUX
@@ -26,11 +27,13 @@
 #include <QHash>
 #include <QIcon>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPalette>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QResizeEvent>
+#include <QSignalBlocker>
 #include <QStyle>
 #include <QSystemTrayIcon>
 #include <QThread>
@@ -230,6 +233,10 @@ StatusRow makeStatusRow(QWidget *parent,
     }
     row.name = new WrappingLabel(name, row.widget);
     row.name->setWordWrap(true);
+    // A wrapped label still reports a wide minimum, and on a row with a mark
+    // that minimum pushes the status past the card edge, clipping it. The name
+    // is the one column that can give way: let it compress and wrap instead.
+    row.name->setMinimumWidth(1);
     if (boldName) {
         QFont font = row.name->font();
         font.setBold(true);
@@ -394,6 +401,66 @@ QString credentialNote(const ProviderDescriptor &provider)
     return notes.value(provider.id, provider.setupHint);
 }
 
+const QString kCliproxySignInMode = QStringLiteral("cliproxy");
+
+// Which CLI Proxy API account type backs a speech provider.
+QString cliproxyAccountType(const QString &providerId)
+{
+    return providerId == QStringLiteral("codex") ? QStringLiteral("codex")
+                                                 : QStringLiteral("claude");
+}
+
+// The transcription providers share one sign-in setting per company with
+// refinement, kept under the refinement names.
+QString speechSignInMode(const SettingsStore &settings, const QString &providerId)
+{
+    return providerId == QStringLiteral("codex") ? settings.openAiAuthMode()
+                                                 : settings.anthropicAuthMode();
+}
+
+void setSpeechSignInMode(SettingsStore &settings, const QString &providerId, const QString &mode)
+{
+    if (providerId == QStringLiteral("codex")) {
+        settings.setOpenAiAuthMode(mode);
+    } else {
+        settings.setAnthropicAuthMode(mode);
+    }
+}
+
+QString cliproxyAccountSetting(const SettingsStore &settings, const QString &providerId)
+{
+    return providerId == QStringLiteral("codex") ? settings.openAiCliproxyAccount()
+                                                 : settings.anthropicCliproxyAccount();
+}
+
+void setCliproxyAccountSetting(SettingsStore &settings,
+                               const QString &providerId,
+                               const QString &account)
+{
+    if (providerId == QStringLiteral("codex")) {
+        settings.setOpenAiCliproxyAccount(account);
+    } else {
+        settings.setAnthropicCliproxyAccount(account);
+    }
+}
+
+// The words the Providers settings page uses for the same mode, for a stored
+// mode this page's short list does not offer (an OpenAI API key, say), which is
+// kept rather than clobbered. The schema's option table is the one source of
+// those words.
+QString signInModeLabel(const QString &providerId, const QString &mode)
+{
+    const QString rowId = providerId == QStringLiteral("codex")
+        ? QStringLiteral("openAiAuthMode")
+        : QStringLiteral("anthropicAuthMode");
+    for (const RowOption &option : authModeOptions(rowId)) {
+        if (option.id == mode) {
+            return option.label;
+        }
+    }
+    return mode;
+}
+
 // What the shortcut actually does depends on the activation mode chosen a
 // page earlier, so the closing instruction has to follow it.
 QString activationInstruction(ShortcutActivationMode mode, const QString &shortcut)
@@ -456,7 +523,7 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
     auto *leadLayout = new QVBoxLayout(leadRow);
     leadLayout->setContentsMargins(settings::rowPadding());
     auto *lead = new WrappingLabel(
-        QStringLiteral("Speecher uses your existing ChatGPT or Claude sign-in. Install and sign in to one of these, then choose Check again:"),
+        QStringLiteral("Speecher uses your existing ChatGPT or Claude sign-in, or an account saved by CLI Proxy API. Sign in to one of these, then choose Check again:"),
         leadRow);
     lead->setWordWrap(true);
     leadLayout->addWidget(lead);
@@ -474,6 +541,33 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
         settings::addCardRow(card, row.widget, host);
         m_rows.append({provider.id, row.status, row.hint, false});
     }
+
+    const StatusRow cliproxyRow = makeStatusRow(host, nullptr, QStringLiteral("CLI Proxy API"), false);
+    m_cliproxyStatus = cliproxyRow.status;
+    m_cliproxyStatus->setObjectName(QStringLiteral("welcomeCredentialStatus_cliproxy"));
+    m_cliproxyStatus->setText(QStringLiteral("Checking…"));
+    m_cliproxyHint = cliproxyRow.hint;
+    m_cliproxyHint->setObjectName(QStringLiteral("welcomeCredentialHint_cliproxy"));
+    m_cliproxyHint->setText(QStringLiteral(
+        "Optional: Claude and Codex accounts saved by CLI Proxy API also work. If yours live in a custom directory, enter it below."));
+    // The directory has to be enterable here: a user whose accounts live in a
+    // custom directory would otherwise be held on this page, with the field
+    // that could free them gated behind Next.
+    m_cliproxyDir = new QLineEdit(cliproxyRow.widget);
+    m_cliproxyDir->setObjectName(QStringLiteral("welcomeCliproxyDir"));
+    m_cliproxyDir->setClearButtonEnabled(true);
+    m_cliproxyDir->setText(m_settings.configuredCliproxyOauthDir());
+    m_cliproxyDir->hide();
+    cliproxyRow.widget->layout()->addWidget(m_cliproxyDir);
+    connect(m_cliproxyDir, &QLineEdit::editingFinished, this, [this] {
+        const QString directory = m_cliproxyDir->text().trimmed();
+        if (directory == m_settings.configuredCliproxyOauthDir()) {
+            return;
+        }
+        m_settings.setCliproxyOauthDir(directory);
+        checkCredentials();
+    });
+    settings::addCardRow(card, cliproxyRow.widget, host);
 
     auto *checkAgain = new QPushButton(QStringLiteral("Check again"), this);
     checkAgain->setObjectName(QStringLiteral("welcomeCheckAgain"));
@@ -540,6 +634,22 @@ void WelcomeSetupPage::checkCredentials()
                 }
             });
     }
+    // Accounts saved by CLI Proxy API count as a sign-in of their own: someone
+    // whose only login lives there picks it on the Transcription step. Only
+    // enabled accounts of a registered provider's type open the gate; a
+    // disabled account or one for a service this build lacks cannot dictate.
+    const QString directory = m_settings.cliproxyOauthDir();
+    m_cliproxyDir->setPlaceholderText(directory);
+    bool cliproxyFound = false;
+    for (const CredentialRow &row : m_rows) {
+        const QList<CliProxyAccount> accounts =
+            CliProxyCredentials::listAccounts(directory, cliproxyAccountType(row.providerId));
+        cliproxyFound = cliproxyFound
+            || std::any_of(accounts.cbegin(), accounts.cend(),
+                           [](const CliProxyAccount &account) { return !account.disabled; });
+    }
+    showCliproxyCredential(cliproxyFound);
+
     if (m_checksOutstanding == 0) {
         emit checkFinished();
     }
@@ -553,16 +663,40 @@ void WelcomeSetupPage::showCredential(int index, bool found)
     row.status->setText(found ? QStringLiteral("Sign-in found")
                               : QStringLiteral("Not found"));
     row.hint->setVisible(!found && !row.hint->text().isEmpty());
+    updateReady();
+}
+
+void WelcomeSetupPage::showCliproxyCredential(bool found)
+{
+    m_cliproxyFound = found;
+    setStatusColor(m_cliproxyStatus, found);
+    m_cliproxyStatus->setText(found ? QStringLiteral("Accounts found")
+                                    : QStringLiteral("Not found"));
+    // Unlike the provider rows, the found state is the one that needs a next
+    // step: the user this row exists for must switch the sign-in source on the
+    // Transcription step, or its probes will fail against the CLI sign-ins.
+    m_cliproxyHint->setText(found
+        ? QStringLiteral("To use one of these accounts, set the sign-in source to CLI Proxy API on the Transcription step.")
+        : QStringLiteral("Optional: Claude and Codex accounts saved by CLI Proxy API also work. If yours live in a custom directory, enter it below."));
+    m_cliproxyHint->show();
+    // Keep the field while it has focus: this very check can be the one its
+    // editingFinished just triggered.
+    m_cliproxyDir->setVisible(!found || m_cliproxyDir->hasFocus());
+    updateReady();
+}
+
+void WelcomeSetupPage::updateReady()
+{
     const bool anyFound = std::any_of(m_rows.cbegin(), m_rows.cend(),
                                       [](const CredentialRow &row) { return row.found; });
     // With no speech providers registered at all there is nothing to sign in
     // to, and holding Next would strand the user on page one.
-    setReady(m_rows.isEmpty() || anyFound);
+    setReady(m_rows.isEmpty() || anyFound || m_cliproxyFound);
 }
 
 QString WelcomeSetupPage::blockedReason() const
 {
-    return QStringLiteral("No ChatGPT or Claude sign-in was found.");
+    return QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found.");
 }
 
 void WelcomeSetupPage::setReady(bool ready)
@@ -604,6 +738,38 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
         m_options.first().button->setChecked(true);
     }
 
+    // Where the chosen service's sign-in comes from, in the same card as the
+    // choice it belongs to. Someone whose only login lives in CLI Proxy API
+    // switches here instead of failing the probe and hunting through Settings.
+    QWidget *host = choices->parentWidget();
+    m_signInSource = new QComboBox(host);
+    m_signInSource->setObjectName(QStringLiteral("speechSignInSource"));
+    // The items are swapped per provider after the first show; without this
+    // the combo keeps the first list's width and elides the longer labels.
+    m_signInSource->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    m_signInSourceRow = settings::makeRow(
+        QStringLiteral("Sign-in source"),
+        QStringLiteral("Refinement by the same company uses this sign-in too."),
+        m_signInSource,
+        host);
+    settings::addCardRow(choices, m_signInSourceRow, host);
+    m_cliproxyAccount = new QComboBox(host);
+    m_cliproxyAccount->setObjectName(QStringLiteral("speechCliproxyAccount"));
+    m_cliproxyAccountRow = settings::makeRow(QStringLiteral("CLI Proxy API account"),
+                                             QString(),
+                                             m_cliproxyAccount,
+                                             host);
+    settings::addCardRow(choices, m_cliproxyAccountRow, host);
+    m_cliproxyDir = new QLineEdit(host);
+    m_cliproxyDir->setObjectName(QStringLiteral("speechCliproxyDir"));
+    m_cliproxyDir->setClearButtonEnabled(true);
+    m_cliproxyDirRow = settings::makeRow(
+        QStringLiteral("Account directory"),
+        QStringLiteral("Where CLI Proxy API keeps its account files. Leave empty to detect it automatically."),
+        m_cliproxyDir,
+        host);
+    settings::addCardRow(choices, m_cliproxyDirRow, host);
+
     m_hint->setObjectName(QStringLiteral("speechProviderHint"));
     m_hint->setWordWrap(true);
     m_status->setObjectName(QStringLiteral("speechProviderStatus"));
@@ -635,6 +801,36 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
             this, &SpeechProviderSetupPage::checkProviders);
     connect(m_accuracyPass, &QCheckBox::toggled, this, [this](bool checked) {
         m_settings.setCodexFinalRetranscribe(checked);
+    });
+    // activated rather than currentIndexChanged: only a choice the user made
+    // writes settings and probes, never this page's own repopulation.
+    connect(m_signInSource, &QComboBox::activated, this, [this] {
+        const int index = selectedIndex();
+        if (index < 0) {
+            return;
+        }
+        setSpeechSignInMode(m_settings, m_options.at(index).id,
+                            m_signInSource->currentData().toString());
+        updateSignInControls();
+        reprobeSelectedProvider();
+    });
+    connect(m_cliproxyAccount, &QComboBox::activated, this, [this] {
+        const int index = selectedIndex();
+        if (index < 0) {
+            return;
+        }
+        setCliproxyAccountSetting(m_settings, m_options.at(index).id,
+                                  m_cliproxyAccount->currentData().toString());
+        reprobeSelectedProvider();
+    });
+    connect(m_cliproxyDir, &QLineEdit::editingFinished, this, [this] {
+        const QString directory = m_cliproxyDir->text().trimmed();
+        if (directory == m_settings.configuredCliproxyOauthDir()) {
+            return;
+        }
+        m_settings.setCliproxyOauthDir(directory);
+        updateSignInControls();
+        reprobeSelectedProvider();
     });
     selectProvider(m_options.isEmpty() ? QString()
                                        : m_options.at(std::max(0, selectedIndex())).id);
@@ -679,7 +875,12 @@ QString SpeechProviderSetupPage::readySummary() const
     if (index < 0) {
         return QString();
     }
-    return QStringLiteral("Transcription — %1").arg(m_options.at(index).label);
+    const ProviderOptionRow &option = m_options.at(index);
+    QString summary = QStringLiteral("Transcription — %1").arg(option.label);
+    if (speechSignInMode(m_settings, option.id) == kCliproxySignInMode) {
+        summary += QStringLiteral(" (CLI Proxy API)");
+    }
+    return summary;
 }
 
 void SpeechProviderSetupPage::setReady(bool ready)
@@ -702,6 +903,87 @@ void SpeechProviderSetupPage::selectProvider(const QString &providerId)
     m_hint->setText(it == providers.cend() ? QString() : it->setupHint);
     m_stats->setStats(it == providers.cend() ? QVector<ProviderStat>{} : it->stats);
     m_accuracyPass->setVisible(providerId == QStringLiteral("codex"));
+    updateSignInControls();
+    showSelectedProvider();
+}
+
+void SpeechProviderSetupPage::updateSignInControls()
+{
+    const int index = selectedIndex();
+    const QString providerId = index < 0 ? QString() : m_options.at(index).id;
+    const bool known = providerId == QStringLiteral("claude")
+        || providerId == QStringLiteral("codex");
+    setCardRowVisible(m_signInSourceRow, known);
+    if (!known) {
+        setCardRowVisible(m_cliproxyAccountRow, false);
+        setCardRowVisible(m_cliproxyDirRow, false);
+        return;
+    }
+    const QString mode = speechSignInMode(m_settings, providerId);
+    // A mode chosen in Settings that this page's short list does not offer
+    // must stay selectable for the life of the page, so trying CLI Proxy API
+    // and changing your mind cannot silently rewrite it.
+    if (!m_initialSignInModes.contains(providerId)) {
+        m_initialSignInModes.insert(providerId, mode);
+    }
+    {
+        const QSignalBlocker blocker(m_signInSource);
+        m_signInSource->clear();
+        if (providerId == QStringLiteral("claude")) {
+            m_signInSource->addItem(QStringLiteral("Claude Code sign-in"), QStringLiteral("oauth"));
+        } else {
+            m_signInSource->addItem(QStringLiteral("ChatGPT or Codex sign-in"), QStringLiteral("auto"));
+        }
+        m_signInSource->addItem(QStringLiteral("CLI Proxy API account"), kCliproxySignInMode);
+        const QString initialMode = m_initialSignInModes.value(providerId);
+        if (m_signInSource->findData(initialMode) < 0) {
+            m_signInSource->insertItem(0, signInModeLabel(providerId, initialMode), initialMode);
+        }
+        settings::selectData(m_signInSource, mode);
+    }
+    const bool cliproxy = mode == kCliproxySignInMode;
+    setCardRowVisible(m_cliproxyAccountRow, cliproxy);
+    setCardRowVisible(m_cliproxyDirRow, cliproxy);
+    if (!cliproxy) {
+        return;
+    }
+    {
+        const QSignalBlocker blocker(m_cliproxyDir);
+        m_cliproxyDir->setText(m_settings.configuredCliproxyOauthDir());
+        // The resolved directory only differs from the text while the text is
+        // empty, which is exactly when the placeholder shows.
+        m_cliproxyDir->setPlaceholderText(m_settings.cliproxyOauthDir());
+    }
+    populateCliproxyAccounts();
+}
+
+void SpeechProviderSetupPage::populateCliproxyAccounts()
+{
+    const int index = selectedIndex();
+    if (index < 0) {
+        return;
+    }
+    const QString providerId = m_options.at(index).id;
+    settings::populateCliproxyAccounts(m_cliproxyAccount,
+                                       m_settings.cliproxyOauthDir(),
+                                       cliproxyAccountType(providerId),
+                                       cliproxyAccountSetting(m_settings, providerId));
+}
+
+void SpeechProviderSetupPage::reprobeSelectedProvider()
+{
+    const int index = selectedIndex();
+    if (index < 0) {
+        return;
+    }
+    // The old verdict was about the old sign-in; show "Checking…" and hold
+    // Next until the probe answers for the new one. Only this provider's
+    // sign-in changed, so only it is probed — in CLI Proxy API mode a probe
+    // can be an OAuth refresh over the network.
+    m_options[index].probed = false;
+    const quint64 generation = ++m_checkGeneration;
+    m_pendingProbes = 1;
+    probeProvider(index, generation);
     showSelectedProvider();
 }
 

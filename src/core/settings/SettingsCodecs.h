@@ -47,6 +47,7 @@ public:
     bool anthropicFastMode() const; void setAnthropicFastMode(bool value);
     QString anthropicCliproxyAccount() const; void setAnthropicCliproxyAccount(const QString &value);
     QString cliproxyOauthDir() const;
+    QString configuredCliproxyOauthDir() const; void setCliproxyOauthDir(const QString &value);
     QString cliproxyBaseUrl() const; void setCliproxyBaseUrl(const QString &value);
     QString cliproxyApiKey() const; void setCliproxyApiKey(const QString &value);
     QString outputMethod() const; void setOutputMethod(const QString &value);

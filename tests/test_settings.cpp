@@ -444,6 +444,30 @@ private slots:
         QCOMPARE(settings.anthropicCliproxyAccount(), QStringLiteral("claude-user@example.com.json"));
     }
 
+    void snapshotApplyNeverPinsADetectedCliProxyDirectory()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+
+        // An untouched snapshot round-trip must not write the auto-detected
+        // directory into settings: cliproxyOauthDir() resolves a real path,
+        // but only the configured value may persist.
+        settings.applySnapshot(settings.snapshot());
+        QCOMPARE(settings.configuredCliproxyOauthDir(), QString());
+
+        AppSettings draft = settings.snapshot();
+        draft.refinement.cliproxyOauthDirConfigured = QStringLiteral("/custom/cliproxy");
+        settings.applySnapshot(draft);
+        QCOMPARE(settings.configuredCliproxyOauthDir(), QStringLiteral("/custom/cliproxy"));
+        QCOMPARE(settings.cliproxyOauthDir(), QStringLiteral("/custom/cliproxy"));
+
+        // Clearing the field returns to automatic detection.
+        draft = settings.snapshot();
+        draft.refinement.cliproxyOauthDirConfigured.clear();
+        settings.applySnapshot(draft);
+        QCOMPARE(settings.configuredCliproxyOauthDir(), QString());
+    }
+
     void launchAtLoginRoundTripsThroughSnapshotApply()
     {
         SettingsStore settings;

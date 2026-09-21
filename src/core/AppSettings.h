@@ -127,6 +127,10 @@ struct RefinementSettings {
     bool anthropicFastMode = true;
     QString anthropicCliproxyAccount;
     QString cliproxyOauthDir;
+    // What the user typed, or empty for automatic detection. cliproxyOauthDir
+    // above carries the resolved directory; saving that back would pin a
+    // detected path forever, so the settings surface edits this one.
+    QString cliproxyOauthDirConfigured;
     QString cliproxyBaseUrl;
     QString cliproxyApiKey;
     QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
