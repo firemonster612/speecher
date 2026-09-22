@@ -569,15 +569,15 @@ void SettingsCodecs::setIncludeScreenshotContext(bool value)
 
 QString SettingsCodecs::openAiModel() const
 {
-    const QString model = value(SettingsKeys::OpenAiModel, QStringLiteral("gpt-5.6-luna")).toString().trimmed();
-    return model.isEmpty() ? QStringLiteral("gpt-5.6-luna") : model;
+    const QString model = value(SettingsKeys::OpenAiModel, QStringLiteral("gpt-6-luna")).toString().trimmed();
+    return model.isEmpty() ? QStringLiteral("gpt-6-luna") : model;
 }
 
 void SettingsCodecs::setOpenAiModel(const QString &value)
 {
     const QString model = value.trimmed();
     m_settings.setValue(SettingsKeys::OpenAiModel,
-                        model.isEmpty() ? QStringLiteral("gpt-5.6-luna") : model);
+                        model.isEmpty() ? QStringLiteral("gpt-6-luna") : model);
 }
 
 QString SettingsCodecs::openAiAuthMode() const
@@ -641,9 +641,9 @@ void SettingsCodecs::setOpenAiFastMode(bool value)
 
 QString SettingsCodecs::anthropicModel() const
 {
-    const QString model = value(SettingsKeys::AnthropicModel, QStringLiteral("claude-sonnet-5")).toString().trimmed();
+    const QString model = value(SettingsKeys::AnthropicModel, QStringLiteral("claude-opus-5-5")).toString().trimmed();
     if (model.isEmpty()) {
-        return QStringLiteral("claude-sonnet-5");
+        return QStringLiteral("claude-opus-5-5");
     }
     // The picker used to ship Haiku as a dated snapshot; the undated ID is the
     // same model and matches the current picker entry's display name.
@@ -657,7 +657,7 @@ void SettingsCodecs::setAnthropicModel(const QString &value)
 {
     const QString model = value.trimmed();
     m_settings.setValue(SettingsKeys::AnthropicModel,
-                        model.isEmpty() ? QStringLiteral("claude-sonnet-5") : model);
+                        model.isEmpty() ? QStringLiteral("claude-opus-5-5") : model);
 }
 
 QString SettingsCodecs::anthropicAuthMode() const

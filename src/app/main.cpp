@@ -104,6 +104,7 @@ static void migrateSettings()
     if (!migrateSettingsIdentity(newSettings, oldSettings, &error)) {
         qWarning().noquote() << error;
     }
+    migrateRefinementModels(newSettings);
 }
 
 static QStringList commandLineArguments(int argc, char **argv)

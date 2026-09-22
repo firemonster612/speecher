@@ -74,6 +74,7 @@ inline const QString UpdatesLastRunVersion = QStringLiteral("updates/lastRunVers
 inline const QString UpdatesLastRunBuildNumber = QStringLiteral("updates/lastRunBuildNumber");
 inline const QString UpdatesPendingWhatsNewVersion = QStringLiteral("updates/pendingWhatsNewVersion");
 inline const QString IdentityMigrationVersion = QStringLiteral("migration/identityVersion");
+inline const QString RefinementModelMigrationVersion = QStringLiteral("migration/refinementModelVersion");
 inline const QString ClaudeCredentialsPath = QStringLiteral("claude/credentialsPath");
 inline const QString ClaudeEndpointBase = QStringLiteral("claude/endpointBase");
 inline const QString ClaudeVoicePath = QStringLiteral("claude/voicePath");
