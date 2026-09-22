@@ -5,6 +5,7 @@ import java.util.concurrent.TimeUnit
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.OkHttpClient
+import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
@@ -13,6 +14,66 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class SpeechClientsTest {
+    @Test
+    fun `Claude authentication error is classified`() {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse.Builder()
+                    .webSocketUpgrade(
+                        object : WebSocketListener() {
+                            override fun onOpen(webSocket: WebSocket, response: Response) {
+                                webSocket.send("""{"type":"error","error":{"code":"401"}}""")
+                            }
+                        }
+                    )
+                    .build()
+            )
+            server.start()
+            val failures = LinkedBlockingQueue<SpeechEvent.Failed>()
+            val client =
+                ClaudeVoiceClient(
+                    OkHttpClient(),
+                    "secret",
+                    emptyList(),
+                    { if (it is SpeechEvent.Failed) failures.add(it) },
+                    server.url("/voice").toString().replaceFirst("http", "ws"),
+                )
+            assertEquals(SpeechEvent.Failed(true), failures.poll(3, TimeUnit.SECONDS))
+            client.cancel()
+        }
+    }
+
+    @Test
+    fun `Codex fatal authentication error is classified`() {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse.Builder()
+                    .addHeader("Sec-WebSocket-Protocol", "chatgpt-dictation")
+                    .webSocketUpgrade(
+                        object : WebSocketListener() {
+                            override fun onOpen(webSocket: WebSocket, response: Response) {
+                                webSocket.send(
+                                    """{"type":"session.error","fatal":true,"error":{"code":"403","message":"forbidden"}}"""
+                                )
+                            }
+                        }
+                    )
+                    .build()
+            )
+            server.start()
+            val failures = LinkedBlockingQueue<SpeechEvent.Failed>()
+            val client =
+                CodexDictationClient(
+                    OkHttpClient(),
+                    "secret",
+                    { if (it is SpeechEvent.Failed) failures.add(it) },
+                    server.url("/dictation").toString().replaceFirst("http", "ws"),
+                )
+            assertEquals(SpeechEvent.Failed(true), failures.poll(3, TimeUnit.SECONDS))
+            client.cancel()
+        }
+    }
+
     @Test
     fun `Claude sends query headers binary audio and CloseStream`() {
         val frames = LinkedBlockingQueue<String>()

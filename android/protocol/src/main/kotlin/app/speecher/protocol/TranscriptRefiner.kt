@@ -34,15 +34,21 @@ class TranscriptRefiner(private val http: OkHttpClient) {
             val output = StringBuilder()
             var event = ""
             val data = StringBuilder()
-            response.body.charStream().buffered().forEachLine { line ->
+            val reader = response.body.charStream().buffered()
+            var complete = false
+            while (!complete) {
+                val line = reader.readLine() ?: break
                 if (line.isEmpty()) {
-                    if (data.isNotEmpty()) appendEvent(provider, event, data.toString(), output)
+                    if (data.isNotEmpty())
+                        complete = appendEvent(provider, event, data.toString(), output)
                     event = ""
                     data.clear()
                 } else if (line.startsWith("event:")) event = line.substringAfter(':').trim()
                 else if (line.startsWith("data:")) data.append(line.substringAfter(':').trim())
             }
-            if (data.isNotEmpty()) appendEvent(provider, event, data.toString(), output)
+            if (!complete && data.isNotEmpty())
+                complete = appendEvent(provider, event, data.toString(), output)
+            if (!complete) error("Refinement stream ended before completion")
             if (output.isEmpty()) error("Refinement returned no text")
             return output.toString()
         }
@@ -158,10 +164,17 @@ private fun appendEvent(
     name: String,
     data: String,
     output: StringBuilder,
-) {
-    val json = runCatching { Json.parseToJsonElement(data) as JsonObject }.getOrNull() ?: return
+): Boolean {
+    val json =
+        runCatching { Json.parseToJsonElement(data) as JsonObject }.getOrNull() ?: return false
     if (name == "error" || name == "response.failed" || name == "response.incomplete") {
         error("Refinement provider rejected the request")
+    }
+    if (provider == OAuthProvider.Claude && name == "message_delta") {
+        val reason = (json["delta"] as? JsonObject)?.get("stop_reason")?.jsonPrimitive?.content
+        if (reason != null && reason != "end_turn" && reason != "stop_sequence") {
+            error("Refinement stopped before completion")
+        }
     }
     val delta =
         if (provider == OAuthProvider.Claude && name == "content_block_delta") {
@@ -170,4 +183,6 @@ private fun appendEvent(
             json["delta"]?.jsonPrimitive?.content
         } else null
     if (delta != null) output.append(delta)
+    return if (provider == OAuthProvider.Claude) name == "message_stop"
+    else name == "response.completed"
 }

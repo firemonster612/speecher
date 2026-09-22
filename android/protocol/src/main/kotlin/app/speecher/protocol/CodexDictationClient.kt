@@ -1,6 +1,8 @@
 package app.speecher.protocol
 
 import java.util.Base64
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -18,13 +20,18 @@ class CodexDictationClient(
     private val events: (SpeechEvent) -> Unit,
     endpoint: String = "wss://chatgpt.com/backend-api/dictation/stream",
 ) : WebSocketListener(), SpeechClient {
+    private val lock = Any()
     private val pending = mutableListOf<ByteArray>()
     private val finalIds = mutableSetOf<String>()
     private var socket: WebSocket? = null
-    private var started = false
-    private var stopped = false
-    private var cancelled = false
-    private var completed = false
+    @Volatile private var started = false
+    @Volatile private var stopped = false
+    @Volatile private var cancelled = false
+    @Volatile private var completed = false
+    @Volatile private var failed = false
+    private val deadline = Executors.newSingleThreadScheduledExecutor { task ->
+        Thread(task, "codex-dictation-deadline").apply { isDaemon = true }
+    }
 
     init {
         val request =
@@ -37,10 +44,11 @@ class CodexDictationClient(
                 )
                 .build()
         socket = http.newWebSocket(request, this)
+        deadline.schedule({ if (!started) fail(false) }, 10, TimeUnit.SECONDS)
     }
 
     override fun onOpen(webSocket: WebSocket, response: Response) {
-        if (cancelled) return
+        if (cancelled || failed) return
         socket = webSocket
         val vad = buildJsonObject {
             put("type", JsonPrimitive("server_vad"))
@@ -69,19 +77,23 @@ class CodexDictationClient(
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
+        if (cancelled || completed || failed) return
         val event = runCatching {
             Json.parseToJsonElement(text) as JsonObject
         }
             .getOrElse {
-                events(SpeechEvent.Failed(false))
-                webSocket.close(1000, null)
+                fail(false)
                 return
             }
         when (event.string("type")) {
             "session.started" -> {
-                started = true
-                pending.forEach(::sendAudioMessage)
-                pending.clear()
+                if (started) return
+                val buffered =
+                    synchronized(lock) {
+                        started = true
+                        pending.toList().also { pending.clear() }
+                    }
+                buffered.forEach(::sendAudioMessage)
                 if (stopped) closeSession() else events(SpeechEvent.Connected)
             }
             "transcript.segment",
@@ -99,29 +111,37 @@ class CodexDictationClient(
             "session.updated" ->
                 if ((event["session"] as? JsonObject)?.string("status") == "closed") {
                     completed = true
+                    deadline.shutdownNow()
                     events(SpeechEvent.Completed)
                     webSocket.close(1000, null)
                 }
-            "transcript.failed" -> events(SpeechEvent.Failed(false))
+            "transcript.failed" -> fail(event.authenticationError())
             "session.error" ->
                 if (event["fatal"]?.jsonPrimitive?.content == "true") {
-                    events(SpeechEvent.Failed(false))
+                    fail(event.authenticationError())
                 }
         }
     }
 
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-        if (!cancelled && !completed)
-            events(SpeechEvent.Failed(response?.code == 401 || response?.code == 403))
+        fail(response?.code == 401 || response?.code == 403)
     }
 
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-        if (!cancelled && !completed) events(SpeechEvent.Failed(false))
+        fail(false)
     }
 
     override fun sendAudio(pcm: ByteArray) {
-        if (stopped || cancelled || pcm.isEmpty()) return
-        if (started) sendAudioMessage(pcm) else pending.add(pcm)
+        if (stopped || cancelled || failed || pcm.isEmpty()) return
+        val direct =
+            synchronized(lock) {
+                if (started) true
+                else {
+                    pending.add(pcm)
+                    false
+                }
+            }
+        if (direct) sendAudioMessage(pcm)
     }
 
     private fun sendAudioMessage(pcm: ByteArray) {
@@ -143,13 +163,37 @@ class CodexDictationClient(
     private fun closeSession() {
         socket?.send("{\"type\":\"audio.flush\",\"reason\":\"client\"}")
         socket?.send("{\"type\":\"session.close\"}")
+        deadline.schedule({ if (!completed) fail(false) }, 8, TimeUnit.SECONDS)
     }
 
     override fun cancel() {
         cancelled = true
-        pending.clear()
+        deadline.shutdownNow()
+        synchronized(lock) { pending.clear() }
+        socket?.cancel()
+    }
+
+    private fun fail(authentication: Boolean) {
+        val first =
+            synchronized(lock) {
+                if (cancelled || completed || failed) false
+                else {
+                    failed = true
+                    true
+                }
+            }
+        if (!first) return
+        deadline.shutdownNow()
+        events(SpeechEvent.Failed(authentication))
         socket?.cancel()
     }
 }
 
 private fun JsonObject.string(key: String): String = this[key]?.jsonPrimitive?.content.orEmpty()
+
+private fun JsonObject.authenticationError(): Boolean {
+    val error = this["error"] as? JsonObject
+    val detail =
+        "${error?.string("code").orEmpty()} ${error?.string("message").orEmpty()}".lowercase()
+    return listOf("401", "403", "unauthorized", "forbidden").any(detail::contains)
+}

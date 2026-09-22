@@ -7,6 +7,7 @@ import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.OkHttpClient
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -75,6 +76,28 @@ class TranscriptRefinerTest {
             assertEquals("gpt-5.6-luna", body["model"]?.jsonPrimitive?.content)
             assertTrue(body["reasoning"].toString().contains("none"))
             assertEquals("false", body["store"]?.jsonPrimitive?.content)
+        }
+    }
+
+    @Test
+    fun `unfinished stream does not return partial refinement`() {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse.Builder()
+                    .body("event: response.output_text.delta\ndata: {\"delta\":\"partial\"}\n\n")
+                    .build()
+            )
+            server.start()
+            assertThrows(IllegalStateException::class.java) {
+                TranscriptRefiner(OkHttpClient())
+                    .refine(
+                        OAuthProvider.ChatGpt,
+                        tokens,
+                        "raw",
+                        emptyList(),
+                        server.url("/codex").toString().trimEnd('/'),
+                    )
+            }
         }
     }
 }

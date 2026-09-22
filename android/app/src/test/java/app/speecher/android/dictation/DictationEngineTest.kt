@@ -4,6 +4,7 @@ import app.speecher.protocol.SpeechClient
 import app.speecher.protocol.SpeechEvent
 import java.util.concurrent.Executor
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -41,7 +42,7 @@ class DictationEngineTest {
     }
 
     @Test
-    fun `raw insert commits once and cancel leaves field untouched`() {
+    fun `raw insert commits once`() {
         val capture = Capture()
         val client = Client()
         val commits = mutableListOf<String>()
@@ -68,6 +69,41 @@ class DictationEngineTest {
         assertTrue(client.stopped)
         engine.cancel()
         assertEquals(listOf("hello"), commits)
+    }
+
+    @Test
+    fun `audio level reaches listening state and cancel leaves field untouched`() {
+        val capture = Capture()
+        val client = Client()
+        val commits = mutableListOf<String>()
+        lateinit var speech: (SpeechEvent) -> Unit
+        val engine =
+            DictationEngine(
+                capture,
+                { _, events ->
+                    speech = events
+                    client
+                },
+                { _, raw -> raw },
+                { commits.add(it) },
+                Executor { it.run() },
+                {},
+            )
+        engine.start(Provider.Claude)
+        speech(SpeechEvent.Connected)
+        capture.audio?.invoke(byteArrayOf(1, 2), 0.5f)
+        assertEquals(DictationState.Listening("", 0.5f), engine.state)
+        assertEquals(listOf(1.toByte(), 2.toByte()), client.audio.single().toList())
+        engine.cancel()
+        assertTrue(client.cancelled)
+        assertTrue(commits.isEmpty())
+    }
+
+    @Test
+    fun `one signed-in provider completes setup`() {
+        val setup = SetupStatus(setOf(Provider.Claude), true, true, true, true)
+        assertTrue(setup.complete)
+        assertFalse(setup.copy(signedIn = emptySet()).complete)
     }
 
     @Test
