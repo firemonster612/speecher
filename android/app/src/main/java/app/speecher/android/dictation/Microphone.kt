@@ -10,6 +10,8 @@ import kotlin.math.abs
 
 /** Captures 16 kHz mono PCM16 on the caller's worker thread. */
 interface AudioCapture {
+    fun prepare()
+
     fun capture(onAudio: (ByteArray, Float) -> Unit)
 
     fun stop()
@@ -17,6 +19,11 @@ interface AudioCapture {
 
 class Microphone(private val context: Context) : AudioCapture {
     @Volatile private var recorder: AudioRecord? = null
+    @Volatile private var active = false
+
+    override fun prepare() {
+        active = true
+    }
 
     override fun capture(onAudio: (ByteArray, Float) -> Unit) {
         check(
@@ -43,8 +50,19 @@ class Microphone(private val context: Context) : AudioCapture {
                 AudioFormat.ENCODING_PCM_16BIT,
                 size,
             )
-        check(audio.state == AudioRecord.STATE_INITIALIZED) { "Microphone unavailable" }
-        recorder = audio
+        if (audio.state != AudioRecord.STATE_INITIALIZED) {
+            audio.release()
+            error("Microphone unavailable")
+        }
+        val shouldRecord =
+            synchronized(this) {
+                if (active) recorder = audio
+                active
+            }
+        if (!shouldRecord) {
+            audio.release()
+            return
+        }
         try {
             audio.startRecording()
             val samples = ShortArray(1600)
@@ -69,7 +87,9 @@ class Microphone(private val context: Context) : AudioCapture {
         }
     }
 
+    @Synchronized
     override fun stop() {
+        active = false
         recorder = null
     }
 }

@@ -44,6 +44,7 @@ class DictationEngine(
         interim = ""
         inserted = false
         recording = true
+        microphone.prepare()
         publish(DictationState.Connecting)
         executor.execute {
             try {
@@ -118,6 +119,7 @@ class DictationEngine(
             SpeechEvent.Connected -> {
                 publish(DictationState.Listening(transcript(), 0f))
                 executor.execute {
+                    if (current != session || !recording) return@execute
                     try {
                         microphone.capture { audio, level ->
                             synchronized(this) {
@@ -207,6 +209,7 @@ fun createDictationEngine(
     settings: SpeecherSettings,
     connection: () -> InputConnection?,
     onState: (DictationState) -> Unit,
+    onInserted: () -> Unit = {},
 ): DictationEngine {
     val store = TokenStore(context)
     val http = OkHttpClient()
@@ -228,7 +231,11 @@ fun createDictationEngine(
             TranscriptRefiner(http)
                 .refine(provider(selected), token(selected), raw, settings.vocabulary)
         },
-        { text -> connection()?.commitText(text, 1) == true },
+        { text ->
+            val committed = connection()?.commitText(text, 1) == true
+            if (committed) main.post(onInserted)
+            committed
+        },
         Executors.newCachedThreadPool(),
         { next -> main.post { onState(next) } },
     )

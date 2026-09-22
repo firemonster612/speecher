@@ -11,6 +11,8 @@ class DictationEngineTest {
     private class Capture : AudioCapture {
         var audio: ((ByteArray, Float) -> Unit)? = null
 
+        override fun prepare() {}
+
         override fun capture(onAudio: (ByteArray, Float) -> Unit) {
             audio = onAudio
         }

@@ -57,7 +57,7 @@ data class SetupStatus(
 ) {
     val complete: Boolean
         get() =
-            signedIn.containsAll(Provider.entries) &&
+            signedIn.isNotEmpty() &&
                 microphoneGranted &&
                 keyboardEnabled &&
                 chipEnabled &&

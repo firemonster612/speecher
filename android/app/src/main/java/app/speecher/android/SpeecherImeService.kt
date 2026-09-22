@@ -13,6 +13,14 @@ class SpeecherImeService : InputMethodService() {
     private var panelState =
         androidx.compose.runtime.mutableStateOf<DictationState>(DictationState.Connecting)
 
+    override fun onCreate() {
+        super.onCreate()
+        ImeSwap(this).restoreOnRestart()
+        panelState.value = ActiveDictation.state
+        ActiveDictation.observe = ::showState
+        ActiveDictation.onInserted = ::switchBack
+    }
+
     override fun onEvaluateInputViewShown(): Boolean {
         super.onEvaluateInputViewShown()
         return true
@@ -24,19 +32,16 @@ class SpeecherImeService : InputMethodService() {
             view.setContent {
                 EngineSurface(
                     panelState.value,
-                    true,
+                    ActiveDictation.settings.refinementEnabled,
                     {},
                     {
                         ActiveDictation.engine?.cancel()
                         switchBack()
                     },
-                    {
-                        ActiveDictation.engine?.insert()
-                        switchBack()
-                    },
+                    { ActiveDictation.engine?.insert() },
                     {
                         ActiveDictation.engine?.insertRefined(
-                            app.speecher.android.dictation.Provider.Claude
+                            ActiveDictation.settings.refinementProvider
                         )
                     },
                 )
@@ -60,10 +65,14 @@ class SpeecherImeService : InputMethodService() {
     }
 
     private fun switchBack() {
-        /* Swap owns the saved IME and subtype in milestone 6. */
+        ActiveDictation.engine?.close()
+        ActiveDictation.engine = null
+        ImeSwap(this).switchBack(this)
     }
 
     override fun onDestroy() {
+        ActiveDictation.observe = null
+        ActiveDictation.onInserted = null
         owner.destroy()
         super.onDestroy()
     }

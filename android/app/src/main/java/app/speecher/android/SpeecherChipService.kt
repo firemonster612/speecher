@@ -1,6 +1,7 @@
 package app.speecher.android
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Intent
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
@@ -11,6 +12,9 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.compose.ui.platform.ComposeView
 import app.speecher.android.dictation.ActiveDictation
+import app.speecher.android.dictation.DictationState
+import app.speecher.android.dictation.SettingsStore
+import app.speecher.android.dictation.createDictationEngine
 import app.speecher.android.ui.EngineSurface
 
 class SpeecherChipService : AccessibilityService() {
@@ -21,9 +25,14 @@ class SpeecherChipService : AccessibilityService() {
     private var passwordFocused = false
     private val refresh = Runnable { updateChip() }
 
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        ImeSwap(this).restoreOnRestart()
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED) {
-            passwordFocused = event.source?.isPassword == true
+            event.source?.takeIf { it.isEditable }?.let { passwordFocused = it.isPassword }
         }
         handler.removeCallbacks(refresh)
         handler.postDelayed(refresh, 50)
@@ -84,7 +93,33 @@ class SpeecherChipService : AccessibilityService() {
     }
 
     private fun onChipTap() {
-        /* Swap and early engine start are wired in milestone 6. */
+        val settings = SettingsStore(this).load()
+        ActiveDictation.settings = settings
+        ActiveDictation.state = DictationState.Connecting
+        ActiveDictation.engine?.close()
+        val engine =
+            createDictationEngine(
+                this,
+                settings,
+                { ActiveDictation.connection },
+                { state ->
+                    ActiveDictation.state = state
+                    ActiveDictation.observe?.invoke(state)
+                },
+                { ActiveDictation.onInserted?.invoke() },
+            )
+        ActiveDictation.engine = engine
+        engine.start(settings.transcriptionProvider)
+        try {
+            ImeSwap(this).activate()
+            removeChip()
+        } catch (_: Exception) {
+            engine.close()
+            ActiveDictation.engine = null
+            startActivity(
+                Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
     }
 
     private fun removeChip() {
