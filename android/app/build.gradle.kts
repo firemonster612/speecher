@@ -17,6 +17,7 @@ android {
     }
 
     buildFeatures { compose = true }
+    sourceSets.named("main") { res.directories.add("src/engine/res") }
 
     lint {
         warningsAsErrors = true
@@ -39,5 +40,7 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.browser)
     implementation(libs.okhttp)
+    implementation(libs.lifecycle)
+    implementation(libs.savedstate)
     testImplementation(libs.junit4)
 }
