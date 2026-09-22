@@ -321,8 +321,12 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
                     {},
                     false};
         }
-        const CliProxyCredentialResult credentials =
-            CliProxyCredentials::load(m_cliproxyDir, QStringLiteral("codex"), m_cliproxyAccount);
+        // Honor refreshExpired as the Anthropic path does: an account that
+        // expires mid-dictation must refresh at refinement time, not fail it.
+        const CliProxyCredentialResult credentials = refreshExpired
+            ? CliProxyCredentials::loadWithRefresh(m_cliproxyDir, QStringLiteral("codex"),
+                                                   m_cliproxyAccount)
+            : CliProxyCredentials::load(m_cliproxyDir, QStringLiteral("codex"), m_cliproxyAccount);
         if (!credentials.ok) {
             return {false, {}, QStringLiteral("cliproxy"), credentials.error, {}, {}, {}, {}, true};
         }

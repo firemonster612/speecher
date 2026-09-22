@@ -337,6 +337,15 @@ AppCategory classifyTarget(const Target &target,
 
 WritingProfile inferWritingProfile(const Target &target, WritingProfile fallback)
 {
+    // The category already encodes the precedence classifyTarget decided:
+    // custom rules first, then a detected coding agent, then built-ins. A
+    // coding agent inside a named terminal must not lose to the terminal's
+    // built-in Work rule below, or the AI coding profile's settings never
+    // apply to the target the detection exists for. User overrides and
+    // custom recognition rules run in resolveWritingProfile before this.
+    if (target.category == AppCategory::AiCoding) {
+        return WritingProfile::AiCoding;
+    }
     for (const AppRecognitionRule &rule : builtInAppRecognitionRules()) {
         const bool includeWindowTitle = rule.category != AppCategory::AiCoding;
         if (rule.writingProfile && ruleMatches(rule, target, includeWindowTitle, true)) {

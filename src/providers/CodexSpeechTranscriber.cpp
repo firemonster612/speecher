@@ -152,9 +152,21 @@ void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
                 if (m_client != client || m_attemptId != attemptId) {
                     return;
                 }
-                if (m_finalRetranscribe && !m_bufferedPcm.isEmpty()) {
+                // The batch endpoint transcribes only the first ~86 s of a
+                // recording and returns the prefix as a normal success
+                // (docs/research/0004). Past that, a re-transcription would
+                // silently delete the tail, so the streamed transcript stays;
+                // 80 s keeps a margin under the observed cutoff.
+                constexpr qint64 maxRetranscribeBytes = qint64(80) * sampleRateHz * 2;
+                if (m_finalRetranscribe && !m_bufferedPcm.isEmpty()
+                    && m_bufferedPcm.size() <= maxRetranscribeBytes) {
                     startFinalRetranscribe(attemptId);
                 } else {
+                    if (m_bufferedPcm.size() > maxRetranscribeBytes) {
+                        qInfo("Codex final retranscribe skipped: the recording is longer than "
+                              "the batch endpoint transcribes; keeping the streamed transcript");
+                    }
+                    m_bufferedPcm.clear();
                     emit attemptCompleted(attemptId);
                 }
             });

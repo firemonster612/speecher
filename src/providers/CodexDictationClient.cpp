@@ -266,8 +266,21 @@ void CodexDictationClient::handleTextMessage(const QString &message)
         && event.value(QStringLiteral("session")).toObject()
                .value(QStringLiteral("status")).toString() == QStringLiteral("closed")) {
         if (!m_sessionClosed) {
-            m_sessionClosed = true;
-            emit completed();
+            // A closure this client asked for completes the attempt. One the
+            // service imposed mid-stream must be a failure instead: emitting
+            // completed() while the session is still Listening answers
+            // nobody, stop() then returns early on the closed session, and
+            // the app stays Stopping forever. The failure path runs the
+            // existing stream-drop recovery.
+            if (m_finishRequested || m_finalizing) {
+                m_sessionClosed = true;
+                emit completed();
+            } else {
+                fail(QStringLiteral("Codex dictation session was closed by the service"),
+                     true,
+                     QStringLiteral("streaming"));
+                m_sessionClosed = true;
+            }
             m_socket.close();
         }
         return;

@@ -416,6 +416,17 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         target.selectionEnd = 10;
         QCOMPARE(inferWritingProfile(target), WritingProfile::Email);
 
+        // A detected coding agent inside a named terminal takes the AI coding
+        // profile; the terminal's own built-in Work rule must not win.
+        Target agentInTerminal;
+        agentInTerminal.applicationId = QStringLiteral("org.kde.konsole");
+        agentInTerminal.windowTitle = QStringLiteral("claude — ~/project");
+        agentInTerminal.role = QStringLiteral("terminal");
+        agentInTerminal.aiCodingToolActive = true;
+        agentInTerminal.category = classifyTarget(agentInTerminal, {});
+        QCOMPARE(agentInTerminal.category, AppCategory::AiCoding);
+        QCOMPARE(inferWritingProfile(agentInTerminal), WritingProfile::AiCoding);
+
         RefinementContext context;
         context.target = target;
         context.writingProfile = WritingProfile::Email;

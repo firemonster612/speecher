@@ -467,8 +467,8 @@ private slots:
                  QStringLiteral("input_text"));
         const QString content = contentBlocks.at(0).toObject().value(QStringLiteral("text")).toString();
         QVERIFY(content.contains(rawTranscript));
-        QVERIFY(content.contains(QStringLiteral("Preferred vocabulary:\nQt, Pie crust")));
-        QVERIFY(content.contains(QStringLiteral("Binding aliases:\nmy email, speecher repo")));
+        QVERIFY(content.contains(QStringLiteral("\"preferred_vocabulary\":[\"Qt\",\"Pie crust\"]")));
+        QVERIFY(content.contains(QStringLiteral("\"binding_aliases\":[\"my email\",\"speecher repo\"]")));
         const QJsonObject image = contentBlocks.at(1).toObject();
         QCOMPARE(image.value(QStringLiteral("type")).toString(), QStringLiteral("input_image"));
         QCOMPARE(image.value(QStringLiteral("detail")).toString(), QStringLiteral("low"));
@@ -635,8 +635,8 @@ private slots:
         QVERIFY(content.contains(context.target.selectedText));
         QVERIFY(content.contains(QStringLiteral("selected_document")));
         QVERIFY(content.contains(QStringLiteral("spoken_editing_instructions")));
-        QVERIFY(content.contains(QStringLiteral("Preferred vocabulary:\nQt")));
-        QVERIFY(content.contains(QStringLiteral("Binding aliases:\nmy email")));
+        QVERIFY(content.contains(QStringLiteral("\"preferred_vocabulary\":[\"Qt\"]")));
+        QVERIFY(content.contains(QStringLiteral("\"binding_aliases\":[\"my email\"]")));
 
         const QByteArray sse = QByteArrayLiteral("event: content_block_delta\r\n"
                                                  "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"oauth-ok\"}}\r\n\r\n"

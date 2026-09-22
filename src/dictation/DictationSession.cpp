@@ -804,8 +804,9 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
         if (m_state != DictationState::Refining || m_refinementGeneration != m_generation) {
             return;
         }
-        // Selection edits stream a structured reply, not prose; previewing it
-        // would show the wrapper instead of text.
+        // Selection edits stream the complete revised document, not the
+        // dictated words; previewing it would flash the whole document
+        // through the popup a few words at a time.
         if (m_transcriptPipeline.editsSelection) {
             return;
         }
@@ -831,8 +832,15 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
                 preview.truncate(tail);
             }
         }
-        for (const BindingPlaceholder &placeholder : m_transcriptPipeline.bindingResult.placeholders) {
-            preview.replace(placeholder.placeholder, placeholder.replacement);
+        // Descending assignment order: SPEECHER_BINDING_1 is a substring
+        // prefix of SPEECHER_BINDING_10, so ascending replacement corrupts
+        // two-digit placeholders. Final delivery matches whole tokens by
+        // regex; replacing highest-numbered first keeps this cheap substring
+        // pass equivalent to it.
+        const QList<BindingPlaceholder> &placeholders =
+            m_transcriptPipeline.bindingResult.placeholders;
+        for (auto it = placeholders.crbegin(); it != placeholders.crend(); ++it) {
+            preview.replace(it->placeholder, it->replacement);
         }
         const int words = m_settings ? m_settings->previewWords() : 7;
         emit popupRefinementPreviewChanged(WordPreview::lastWords(preview, words));
