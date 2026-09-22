@@ -89,10 +89,21 @@ private slots:
         QCOMPARE(silent.state, KeywatchSetupState::DaemonNotRunning);
         QVERIFY(!silent.ready());
 
+        // A daemon that answers with another protocol version is alive but
+        // cannot serve this build: the verdict says to run setup again, and
+        // not being ready keeps the setup button enabled as the repair.
+        KeywatchProbeFacts mismatched = writable;
+        mismatched.daemonAnswers = true;
+        const KeywatchSetupStatus stale = KeywatchSetup::evaluate(mismatched);
+        QCOMPARE(stale.state, KeywatchSetupState::NeedsReinstall);
+        QVERIFY(!stale.ready());
+        QVERIFY(stale.detail.contains(QStringLiteral("Set it up again")));
+
         // The owner-only socket needs no group or sign-out: once the daemon
-        // answers on it, the helper is ready straight away.
-        KeywatchProbeFacts ready = writable;
-        ready.daemonAnswers = true;
+        // answers on it with this build's protocol, the helper is ready
+        // straight away.
+        KeywatchProbeFacts ready = mismatched;
+        ready.daemonProtocolMatches = true;
         const KeywatchSetupStatus status = KeywatchSetup::evaluate(ready);
         QCOMPARE(status.state, KeywatchSetupState::Ready);
         QVERIFY(status.ready());

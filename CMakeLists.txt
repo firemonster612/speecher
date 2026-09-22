@@ -334,6 +334,7 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/ClaudeVoiceClient.h
   src/providers/ClaudeVoiceProtocol.h
   src/providers/CliProxyCredentials.h
+  src/providers/ProviderProbe.h
   src/providers/ProviderSignIn.h
   src/providers/CodexDictationClient.h
   src/providers/CodexSpeechTranscriber.h
@@ -564,6 +565,7 @@ set(SPEECHER_FRONTEND_QT_HEADERS
   src/ui/InlineMessage.h
   src/ui/Theme.h
   src/ui/TranscriberPopup.h
+  src/ui/WaveformModel.h
   src/ui/WaveformWidget.h
 )
 

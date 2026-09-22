@@ -10,6 +10,9 @@ namespace speecher {
 enum class KeywatchSetupState {
     NotInstalled,
     DaemonNotRunning,
+    // The daemon runs and answers, but with another protocol version: an app
+    // update outlived the installed helper. Only a reinstall repairs it.
+    NeedsReinstall,
     Ready,
 };
 
@@ -21,6 +24,9 @@ struct KeywatchProbeFacts {
     // started, so the files above prove only that the installation exists.
     // This is the daemon's own answer on that socket.
     bool daemonAnswers = false;
+    // Whether that answer spoke this build's protocol version. An answer
+    // alone proves liveness, not compatibility.
+    bool daemonProtocolMatches = false;
 };
 
 struct KeywatchSetupStatus {

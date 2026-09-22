@@ -9,6 +9,7 @@
 #include "output/YdotoolSetup.h"
 #include "output/YdotoolSetupFlow.h"
 #endif
+#include "providers/ProviderProbe.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/settings/SettingsPageSupport.h"
 #ifdef Q_OS_LINUX
@@ -327,20 +328,6 @@ void addTones(QComboBox *combo)
     combo->addItem(QStringLiteral("Gen Z"), QStringLiteral("gen_z"));
 }
 
-// Runs work on a throwaway thread and delivers its result on context's thread.
-// Whether a late result still matters is the caller's business.
-template <typename Result>
-void runOffThread(QObject *context,
-                  std::function<Result()> work,
-                  std::function<void(const Result &)> done)
-{
-    auto result = std::make_shared<Result>();
-    QThread *thread = QThread::create([work, result] { *result = work(); });
-    QObject::connect(thread, &QThread::finished, context, [result, done] { done(*result); });
-    QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    thread->start();
-}
-
 // One selectable provider as a card row: the company's mark, the name in bold
 // on the radio, and what the probe found on the right. An optional note reads
 // under the name, indented past the mark. Both pages' option lists use this.
@@ -386,18 +373,6 @@ ProviderOptionRow addOptionRow(QFormLayout *card,
     settings::addCardRow(card, row, host);
     group->addButton(button);
     return {id, label, button, status};
-}
-
-// The short line naming which sign-in a refinement provider uses. The
-// registry's setup hint explains how to install the CLI, which is more than
-// this row needs; a provider without a line of its own falls back to it.
-QString credentialNote(const ProviderDescriptor &provider)
-{
-    static const QHash<QString, QString> notes{
-        {QStringLiteral("anthropic"), QStringLiteral("Uses your Claude Code sign-in.")},
-        {QStringLiteral("openai"), QStringLiteral("Uses your ChatGPT or Codex sign-in.")},
-    };
-    return notes.value(provider.id, provider.setupHint);
 }
 
 // What the shortcut actually does depends on the activation mode chosen a
@@ -488,8 +463,7 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
     m_cliproxyStatus->setText(QStringLiteral("Checking…"));
     m_cliproxyHint = cliproxyRow.hint;
     m_cliproxyHint->setObjectName(QStringLiteral("welcomeCredentialHint_cliproxy"));
-    m_cliproxyHint->setText(QStringLiteral(
-        "Optional: Claude and Codex accounts saved by CLI Proxy API also work. If yours live in a custom directory, enter it below."));
+    m_cliproxyHint->setText(ProviderSignIn::cliproxyAccountsMissingHint());
     // The directory has to be enterable here: a user whose accounts live in a
     // custom directory would otherwise be held on this page, with the field
     // that could free them gated behind Next.
@@ -556,7 +530,8 @@ void WelcomeSetupPage::checkCredentials()
         }
         auto prepareJob = std::make_shared<SpeechPrepareJob>(std::move(*job));
         ++m_checksOutstanding;
-        runOffThread<SpeechPrepareResult>(
+        runProviderProbe<SpeechPrepareResult>(
+            &m_providers,
             this,
             [prepareJob] { return prepareJob->run(); },
             [this, index, generation, prepareJob](const SpeechPrepareResult &result) {
@@ -608,9 +583,8 @@ void WelcomeSetupPage::showCliproxyCredential(bool found)
     // Unlike the provider rows, the found state is the one that needs a next
     // step: the user this row exists for must switch the sign-in source on the
     // Transcription step, or its probes will fail against the CLI sign-ins.
-    m_cliproxyHint->setText(found
-        ? QStringLiteral("To use one of these accounts, turn on \"Use a CLI Proxy API account\" on the Transcription step.")
-        : QStringLiteral("Optional: Claude and Codex accounts saved by CLI Proxy API also work. If yours live in a custom directory, enter it below."));
+    m_cliproxyHint->setText(found ? ProviderSignIn::cliproxyAccountsFoundHint()
+                                  : ProviderSignIn::cliproxyAccountsMissingHint());
     m_cliproxyHint->show();
     // Keep the field while it has focus: this very check can be the one its
     // editingFinished just triggered.
@@ -686,7 +660,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     m_useCliproxy = new QCheckBox(host);
     m_useCliproxy->setObjectName(QStringLiteral("speechUseCliproxy"));
     m_signInSourceRow = settings::makeRow(
-        QStringLiteral("Use a CLI Proxy API account instead of the service's own sign-in"),
+        ProviderSignIn::cliproxyOptInLabel(),
         QString(),
         m_useCliproxy,
         host);
@@ -940,7 +914,8 @@ void SpeechProviderSetupPage::probeProvider(int index, quint64 generation)
         return;
     }
     auto prepareJob = std::make_shared<SpeechPrepareJob>(std::move(*job));
-    runOffThread<SpeechPrepareResult>(
+    runProviderProbe<SpeechPrepareResult>(
+        &m_providers,
         this,
         [prepareJob] { return prepareJob->run(); },
         [this, index, generation, prepareJob](const SpeechPrepareResult &result) {
@@ -1538,7 +1513,7 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
         // The brands differ from the transcription page's, so say which
         // sign-in each one actually uses.
         m_options.append(addOptionRow(choices, group, provider.id, provider.label,
-                                      credentialNote(provider),
+                                      provider.setupHint,
                                       QStringLiteral("refinementProvider")));
         m_options.last().button->setChecked(provider.id == savedProvider);
     }
@@ -1668,7 +1643,8 @@ void RefinementSetupPage::probeProvider(int index, quint64 generation)
         return;
     }
     auto refreshJob = std::make_shared<RefinementRefreshJob>(std::move(*job));
-    runOffThread<RefinementRefreshResult>(
+    runProviderProbe<RefinementRefreshResult>(
+        &m_providers,
         this,
         [refreshJob] { return refreshJob->run(); },
         [this, index, generation, refreshJob](const RefinementRefreshResult &result) {
@@ -1697,8 +1673,9 @@ void RefinementSetupPage::finishProbe(int index,
     option.status->setText(result.ok ? QStringLiteral("Ready")
                                      : QStringLiteral("Not set up"));
     showSelectedProvider();
-    // A single-provider re-probe runs outside the counted rounds; it must not
-    // drive the one-time auto-selection or push the count negative.
+    // Unlike the speech page, this page has no single-provider re-probe:
+    // every probe belongs to a counted round, and the guard only keeps a
+    // stray result from pushing the count negative.
     if (m_pendingProbes > 0 && --m_pendingProbes == 0) {
         autoSelectReadyProvider();
     }
@@ -1763,12 +1740,8 @@ void RefinementSetupPage::updateFastModeControl()
     if (!openAi && !anthropic) {
         return;
     }
-    m_fastModeHint->setText(openAi
-                                ? QStringLiteral("1.5x speed and increased usage (negligible).")
-                                : QStringLiteral("Faster refinement will use usage credits."));
-    m_fastMode->setToolTip(openAi
-                               ? QStringLiteral("Falls back to standard processing when a fast request fails.")
-                               : QStringLiteral("Only Opus models support fast mode; other models refine at standard speed."));
+    m_fastModeHint->setText(fastModeHelp(provider));
+    m_fastMode->setToolTip(fastModeTooltip(provider));
     const QSignalBlocker blocker(m_fastMode);
     m_fastMode->setChecked(openAi ? m_settings.openAiFastMode() : m_settings.anthropicFastMode());
 }

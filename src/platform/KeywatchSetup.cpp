@@ -34,6 +34,7 @@ constexpr int answerCacheMs = 20000;
 // object.
 std::atomic<std::int64_t> cachedAnswerAtMs{0};
 std::atomic<bool> cachedAnswer{false};
+std::atomic<bool> cachedProtocolMatch{false};
 std::atomic<bool> askInFlight{false};
 
 std::int64_t monotonicMs()
@@ -46,8 +47,10 @@ std::int64_t monotonicMs()
 // Key id 0 is not in the permitted table, so a live daemon answers this with
 // KeyNotPermitted without taking a watch or disturbing one already running. A
 // daemon that failed to start leaves systemd's socket accepting and then
-// closing, which shows up here as no answer.
-bool askDaemon()
+// closing, which shows up here as no answer. The reply's contents matter too:
+// an installed daemon from before a protocol bump answers BadVersion with its
+// own version number, which is alive but unusable.
+bool askDaemon(bool &protocolMatches)
 {
     QLocalSocket socket;
     socket.connectToServer(QString::fromLatin1(keywatch::socketPath));
@@ -62,6 +65,10 @@ bool askDaemon()
             return false;
         }
     }
+    keywatch::WatchReply reply{};
+    socket.read(reinterpret_cast<char *>(&reply), sizeof(reply));
+    protocolMatches = reply.version == keywatch::protocolVersion
+        && reply.refusal != std::uint8_t(keywatch::Refusal::BadVersion);
     return true;
 }
 
@@ -78,8 +85,10 @@ void askDaemonInBackground()
     // whichever pool thread happens to finish the exchange.
     KeywatchSetup::daemonAnswer();
     QThreadPool::globalInstance()->start([] {
-        const bool answered = askDaemon();
+        bool protocolMatches = false;
+        const bool answered = askDaemon(protocolMatches);
         cachedAnswer.store(answered);
+        cachedProtocolMatch.store(protocolMatches);
         cachedAnswerAtMs.store(monotonicMs());
         askInFlight.store(false);
         QMetaObject::invokeMethod(KeywatchSetup::daemonAnswer(),
@@ -122,6 +131,12 @@ KeywatchSetupStatus KeywatchSetup::evaluate(const KeywatchProbeFacts &facts)
                 QStringLiteral("The key helper is installed but does not answer. "
                                "Set it up again to repair it.")};
     }
+    if (!facts.daemonProtocolMatches) {
+        return {KeywatchSetupState::NeedsReinstall,
+                QStringLiteral("Installed, needs an update"),
+                QStringLiteral("The installed key helper is from another version of "
+                               "Speecher. Set it up again to update it.")};
+    }
     return {KeywatchSetupState::Ready,
             QStringLiteral("Ready"),
             QStringLiteral("The key helper is ready.")};
@@ -137,6 +152,7 @@ KeywatchSetupStatus KeywatchSetup::probe()
     // socket node; access() asks the kernel about this process.
     facts.socketWritable = facts.socketExists && access(keywatch::socketPath, W_OK) == 0;
     facts.daemonAnswers = facts.socketWritable && daemonAnswers();
+    facts.daemonProtocolMatches = facts.daemonAnswers && cachedProtocolMatch.load();
     return evaluate(facts);
 }
 
@@ -152,6 +168,7 @@ void KeywatchSetup::forgetDaemonAnswer()
 {
     cachedAnswerAtMs.store(0);
     cachedAnswer.store(false);
+    cachedProtocolMatch.store(false);
 }
 
 bool KeywatchSetup::install(QString *error)

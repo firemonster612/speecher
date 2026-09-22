@@ -37,10 +37,14 @@ QList<RowOption> customRowOptions(const QString &rowId,
         return outputMethods();
     }
     if (rowId == QStringLiteral("openAiCliproxyAccount")) {
-        return cliproxyAccountOptions(QStringLiteral("codex"), draft.refinement.openAiCliproxyAccount, store.cliproxyOauthDir());
+        return cliproxyAccountOptions(ProviderSignIn::cliproxyAccountType(QStringLiteral("openai")),
+                                      draft.refinement.openAiCliproxyAccount,
+                                      store.cliproxyOauthDir());
     }
     if (rowId == QStringLiteral("anthropicCliproxyAccount")) {
-        return cliproxyAccountOptions(QStringLiteral("claude"), draft.refinement.anthropicCliproxyAccount, store.cliproxyOauthDir());
+        return cliproxyAccountOptions(ProviderSignIn::cliproxyAccountType(QStringLiteral("anthropic")),
+                                      draft.refinement.anthropicCliproxyAccount,
+                                      store.cliproxyOauthDir());
     }
     return authModeOptions(rowId);
 }

@@ -83,7 +83,10 @@ inline bool removeFileIfPresent(const std::string &path, std::string &error)
 
 inline std::optional<std::string> findExecutable(std::string_view program)
 {
-    const char *inherited = std::getenv("PATH");
+    // pkexec hands the helpers a sanitized PATH, but sudo often preserves the
+    // caller's; a program resolved here runs as root, so root never trusts the
+    // environment and searches the fixed system directories only.
+    const char *inherited = geteuid() == 0 ? nullptr : std::getenv("PATH");
     const std::string path = inherited && *inherited
         ? inherited
         : "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
@@ -126,7 +129,8 @@ inline bool run(std::string_view program,
          const std::vector<std::string> &arguments,
          std::string &error,
          bool ignoreMissing = false,
-         bool ignoreFailure = false)
+         bool ignoreFailure = false,
+         std::chrono::seconds deadline = std::chrono::minutes(5))
 {
     const std::optional<std::string> executable = findExecutable(program);
     if (!executable) {
@@ -171,12 +175,20 @@ inline bool run(std::string_view program,
 
     int status = 0;
     pid_t waited = 0;
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(5);
+    // SIGTERM first, so a child mid-transaction (a package manager, say) can
+    // close its books; SIGKILL only for one that ignores the request.
+    const auto terminateAt = std::chrono::steady_clock::now() + deadline;
+    std::optional<std::chrono::steady_clock::time_point> killAt;
     while ((waited = waitpid(child, &status, WNOHANG)) == 0) {
-        if (std::chrono::steady_clock::now() >= deadline) {
+        const auto now = std::chrono::steady_clock::now();
+        if (killAt && now >= *killAt) {
             kill(child, SIGKILL);
             waited = waitpid(child, &status, 0);
             break;
+        }
+        if (!killAt && now >= terminateAt) {
+            kill(child, SIGTERM);
+            killAt = now + std::chrono::seconds(10);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }

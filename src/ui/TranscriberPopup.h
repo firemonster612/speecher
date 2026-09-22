@@ -69,7 +69,6 @@ private:
     void applyPreviewText(const QString &preview);
     void applyPillGeometry();
     void restoreStandardLayout();
-    void updateWindowMask();
 
     QVBoxLayout *m_layout = nullptr;
     QFrame *m_previewPill = nullptr;

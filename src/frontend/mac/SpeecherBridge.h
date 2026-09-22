@@ -353,6 +353,11 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
     NS_SWIFT_NAME(setupCliproxyAccount(provider:));
 - (void)setSetupCliproxyAccount:(NSString *)account forProvider:(NSString *)providerId
     NS_SWIFT_NAME(setSetupCliproxyAccount(_:provider:));
+// The shared CLI Proxy API copy (ProviderSignIn): the opt-in label and the
+// Welcome step's two hints, one of which quotes that label.
+@property (nonatomic, readonly, copy) NSString *setupCliproxyOptInLabel;
+@property (nonatomic, readonly, copy) NSString *setupCliproxyFoundHint;
+@property (nonatomic, readonly, copy) NSString *setupCliproxyMissingHint;
 // The configured account directory; empty means automatic detection.
 @property (nonatomic, readonly, copy) NSString *setupCliproxyDirectory;
 // Where detection currently lands, for the directory field's placeholder.

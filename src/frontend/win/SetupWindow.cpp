@@ -12,6 +12,7 @@
 #include "frontend/win/ShortcutRecorder.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "platform/win/WinGlobalShortcutBinder.h"
+#include "providers/ProviderProbe.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/ProviderSignIn.h"
 
@@ -642,9 +643,29 @@ struct SetupWindow::Native {
         skip.Visibility(offerSkip ? Visibility::Visible : Visibility::Collapsed);
     }
 
+    // speechReady and speechMessage answer together: the Transcription page
+    // treats a recorded verdict as checked and paints its message in a verdict
+    // tone, so a probe that stored one without the other would present
+    // "Checking…" as if it were the verdict.
+    void recordSpeechVerdict(const QString &id, const SpeechPrepareResult &result)
+    {
+        QString label = id;
+        for (const ProviderDescriptor &provider :
+             controller->providerRegistry()->speechProviders()) {
+            if (provider.id == id) {
+                label = provider.label;
+                break;
+            }
+        }
+        speechReady.insert(id, result.ok);
+        speechMessage.insert(id, result.ok ? QStringLiteral("%1 is ready.").arg(label)
+                                           : result.message);
+    }
+
     // A speech provider's credential probe, off the UI thread where the
-    // provider offers a job, reported back on it. Results from a superseded
-    // check or a page the wizard has since left are discarded.
+    // provider offers a job, reported back on it. A result is discarded only
+    // when a newer probe of the same provider superseded it; leaving the page
+    // does not — a late verdict still lands in the shared readiness maps.
     void probeSpeechProvider(const QString &id,
                              quint64 generation,
                              std::function<void(const SpeechPrepareResult &)> report)
@@ -663,23 +684,19 @@ struct SetupWindow::Native {
             report(transcriber->prepare(settings));
             return;
         }
-        auto result = std::make_shared<SpeechPrepareResult>();
         auto prepareJob = std::make_shared<SpeechPrepareJob>(std::move(*job));
-        QThread *thread = QThread::create([prepareJob, result] {
-            *result = prepareJob->run();
-        });
-        QObject::connect(thread, &QThread::finished, setup,
-                         [this, id, generation, prepareJob, result, report] {
-            if (generation != speechProbeGeneration.value(id)) {
-                return;
-            }
-            if (prepareJob->apply) {
-                prepareJob->apply(*result);
-            }
-            report(*result);
-        });
-        QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-        thread->start();
+        runProviderProbe<SpeechPrepareResult>(
+            controller->providerRegistry(), setup,
+            [prepareJob] { return prepareJob->run(); },
+            [this, id, generation, prepareJob, report](const SpeechPrepareResult &result) {
+                if (generation != speechProbeGeneration.value(id)) {
+                    return;
+                }
+                if (prepareJob->apply) {
+                    prepareJob->apply(result);
+                }
+                report(result);
+            });
     }
 
     // The refinement equivalent: the refiner's own credential resolution,
@@ -700,23 +717,19 @@ struct SetupWindow::Native {
             report(refiner->prepare(settings).ok);
             return;
         }
-        auto result = std::make_shared<RefinementRefreshResult>();
         auto refreshJob = std::make_shared<RefinementRefreshJob>(std::move(*job));
-        QThread *thread = QThread::create([refreshJob, result] {
-            *result = refreshJob->run();
-        });
-        QObject::connect(thread, &QThread::finished, setup,
-                         [this, id, generation, refreshJob, result, report] {
-            if (generation != refinementProbeGeneration.value(id)) {
-                return;
-            }
-            if (refreshJob->apply) {
-                refreshJob->apply(*result);
-            }
-            report(result->ok);
-        });
-        QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-        thread->start();
+        runProviderProbe<RefinementRefreshResult>(
+            controller->providerRegistry(), setup,
+            [refreshJob] { return refreshJob->run(); },
+            [this, id, generation, refreshJob, report](const RefinementRefreshResult &result) {
+                if (generation != refinementProbeGeneration.value(id)) {
+                    return;
+                }
+                if (refreshJob->apply) {
+                    refreshJob->apply(result);
+                }
+                report(result.ok);
+            });
     }
 
     void showPage(int index)
@@ -854,8 +867,8 @@ struct SetupWindow::Native {
             // a next step: the sign-in must be switched on the Transcription
             // step or its probes will fail against the CLI sign-ins.
             cliproxyHint.Text(win::hs(cliproxyReady
-                ? QStringLiteral("To use one of these accounts, turn on \"Use a CLI Proxy API account\" on the Transcription step.")
-                : QStringLiteral("Optional: Claude and Codex accounts saved by CLI Proxy API also work. If yours live in a custom directory, enter it below.")));
+                ? ProviderSignIn::cliproxyAccountsFoundHint()
+                : ProviderSignIn::cliproxyAccountsMissingHint()));
             cliproxyDir.Visibility(!cliproxyReady
                                            || cliproxyDir.FocusState() != FocusState::Unfocused
                                        ? Visibility::Visible
@@ -892,7 +905,7 @@ struct SetupWindow::Native {
                 probeSpeechProvider(ids.at(index), generation,
                                     [this, id = ids.at(index), status, hint](
                                         const SpeechPrepareResult &result) {
-                    speechReady.insert(id, result.ok);
+                    recordSpeechVerdict(id, result);
                     status.set(result.ok ? QStringLiteral("Sign-in found")
                                          : QStringLiteral("Not found"),
                                result.ok ? StatusTone::Positive : StatusTone::Neutral);
@@ -1023,8 +1036,7 @@ struct SetupWindow::Native {
         signInBody.Spacing(8);
         signInBody.Margin({16, 14, 16, 14});
         signInBody.Children().Append(strongTextBlock(QStringLiteral("Sign-in")));
-        CheckBox useCliproxy = wrappingCheckBox(QStringLiteral(
-            "Use a CLI Proxy API account instead of the service's own sign-in"));
+        CheckBox useCliproxy = wrappingCheckBox(ProviderSignIn::cliproxyOptInLabel());
         signInBody.Children().Append(useCliproxy);
         ComboBox cliproxyAccount;
         cliproxyAccount.MinWidth(240);
@@ -1153,16 +1165,12 @@ struct SetupWindow::Native {
             const quint64 generation = ++checkGeneration;
             for (int index = 0; index < options.size(); ++index) {
                 const QString id = options.at(index).first;
-                const QString label = options.at(index).second;
                 const StatusCell rowStatus = statuses.at(size_t(index));
                 rowStatus.set(QStringLiteral("Checking…"), StatusTone::Neutral);
                 probeSpeechProvider(id, generation,
-                                    [this, id, label, rowStatus, choices, options,
+                                    [this, id, rowStatus, choices, options,
                                      describeSelected](const SpeechPrepareResult &result) {
-                    speechReady.insert(id, result.ok);
-                    speechMessage.insert(id, result.ok
-                                                 ? QStringLiteral("%1 is ready.").arg(label)
-                                                 : result.message);
+                    recordSpeechVerdict(id, result);
                     rowStatus.set(result.ok ? QStringLiteral("Ready")
                                             : QStringLiteral("Not set up"),
                                   result.ok ? StatusTone::Positive : StatusTone::Caution);
@@ -1185,7 +1193,6 @@ struct SetupWindow::Native {
                 return;
             }
             const QString id = options.at(index).first;
-            const QString label = options.at(index).second;
             const StatusCell rowStatus = statuses.at(size_t(index));
             speechReady.remove(id);
             speechMessage.remove(id);
@@ -1194,11 +1201,9 @@ struct SetupWindow::Native {
             refreshGates();
             const quint64 generation = ++checkGeneration;
             probeSpeechProvider(id, generation,
-                                [this, id, label, rowStatus, describeSelected](
+                                [this, id, rowStatus, describeSelected](
                                     const SpeechPrepareResult &result) {
-                speechReady.insert(id, result.ok);
-                speechMessage.insert(id, result.ok ? QStringLiteral("%1 is ready.").arg(label)
-                                                   : result.message);
+                recordSpeechVerdict(id, result);
                 rowStatus.set(result.ok ? QStringLiteral("Ready")
                                         : QStringLiteral("Not set up"),
                               result.ok ? StatusTone::Positive : StatusTone::Caution);
@@ -1929,7 +1934,7 @@ struct SetupWindow::Native {
              controller->providerRegistry()->speechProviders()) {
             probeSpeechProvider(provider.id, generation,
                                 [this, id = provider.id](const SpeechPrepareResult &result) {
-                speechReady.insert(id, result.ok);
+                recordSpeechVerdict(id, result);
                 refreshGates();
                 renderReady();
             });

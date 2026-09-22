@@ -81,6 +81,30 @@ private slots:
                  QStringLiteral("2 of 100 terms, using 2 of 500 tokens"));
     }
 
+    void learnedCorrectionsRespectTheSendCap()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        QStringList terms;
+        for (int i = 0; i < VocabularyLimit::maxKeyterms; ++i) {
+            terms << QStringLiteral("term%1").arg(i);
+        }
+        settings.setCustomVocabulary(terms);
+        settings.setLearnedCorrections({{QStringLiteral("one"), QStringLiteral("githab"),
+                                         QStringLiteral("GitHub"), QStringLiteral("editor"),
+                                         100, 0.8, true, 1, 100}});
+
+        // At the cap, the correction must not push the request over it; the
+        // person's own terms win.
+        const QStringList sent = settings.snapshot().speech.vocabulary;
+        QCOMPARE(sent.size(), VocabularyLimit::maxKeyterms);
+        QVERIFY(!sent.contains(QStringLiteral("GitHub")));
+
+        // Under the cap the correction rides along.
+        settings.setCustomVocabulary({QStringLiteral("Speecher")});
+        QVERIFY(settings.snapshot().speech.vocabulary.contains(QStringLiteral("GitHub")));
+    }
+
     void importKeepsEveryRowInTheFile()
     {
         QByteArray csv = QByteArrayLiteral("term\n");

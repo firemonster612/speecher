@@ -138,6 +138,10 @@ QString KeywatchShortcutBinder::watch(const PhysicalKey &key)
         return QStringLiteral("The key helper refused the watch: %1.").arg(reason);
     }
     m_replied = true;
+    // A KeyEvent that landed in the same readyRead round as the reply is
+    // already signalled, so Qt will not signal it again; drain it now or the
+    // press is only processed when the next event arrives.
+    readFromDaemon();
     return QString();
 }
 

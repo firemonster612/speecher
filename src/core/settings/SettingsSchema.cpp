@@ -1665,9 +1665,8 @@ QList<ProviderAccount> providerAccounts()
     };
     openAi.effort = &RefinementSettings::openAiEffort;
     openAi.fastModeRowId = QStringLiteral("openAiFastMode");
-    openAi.fastModeHelp = QStringLiteral("Faster answers for slightly more usage.");
-    openAi.fastModeTooltip =
-        QStringLiteral("Falls back to standard processing when a fast request fails.");
+    openAi.fastModeHelp = fastModeHelp(QStringLiteral("openai"));
+    openAi.fastModeTooltip = fastModeTooltip(QStringLiteral("openai"));
     openAi.fastMode = &RefinementSettings::openAiFastMode;
     openAi.authRows = {
         customRow(QStringLiteral("openAiAuthMode"),
@@ -1733,9 +1732,8 @@ QList<ProviderAccount> providerAccounts()
     };
     anthropic.effort = &RefinementSettings::anthropicEffort;
     anthropic.fastModeRowId = QStringLiteral("anthropicFastMode");
-    anthropic.fastModeHelp = QStringLiteral("Faster refinement will use usage credits.");
-    anthropic.fastModeTooltip =
-        QStringLiteral("Only Opus models support fast mode; other models refine at standard speed.");
+    anthropic.fastModeHelp = fastModeHelp(QStringLiteral("anthropic"));
+    anthropic.fastModeTooltip = fastModeTooltip(QStringLiteral("anthropic"));
     anthropic.fastMode = &RefinementSettings::anthropicFastMode;
     anthropic.authRows = {
         customRow(QStringLiteral("anthropicAuthMode"),
@@ -1898,6 +1896,21 @@ QString openAiSignInHelp()
 {
     return QStringLiteral("How Speecher signs in to OpenAI. API keys only cover text cleanup; "
                           "dictation needs the ChatGPT sign-in or a CLI Proxy account.");
+}
+
+QString fastModeHelp(const QString &refinementProviderId)
+{
+    return refinementProviderId == QStringLiteral("openai")
+        ? QStringLiteral("Faster answers for slightly more usage.")
+        : QStringLiteral("Faster refinement will use usage credits.");
+}
+
+QString fastModeTooltip(const QString &refinementProviderId)
+{
+    return refinementProviderId == QStringLiteral("openai")
+        ? QStringLiteral("Falls back to standard processing when a fast request fails.")
+        : QStringLiteral("Only Opus models support fast mode; other models refine at "
+                         "standard speed.");
 }
 
 QString restoreClipboardDescription()

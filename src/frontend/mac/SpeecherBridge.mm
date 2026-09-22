@@ -1494,6 +1494,21 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
                                            QString::fromNSString(account));
 }
 
+- (NSString *)setupCliproxyOptInLabel
+{
+    return speecher::ProviderSignIn::cliproxyOptInLabel().toNSString();
+}
+
+- (NSString *)setupCliproxyFoundHint
+{
+    return speecher::ProviderSignIn::cliproxyAccountsFoundHint().toNSString();
+}
+
+- (NSString *)setupCliproxyMissingHint
+{
+    return speecher::ProviderSignIn::cliproxyAccountsMissingHint().toNSString();
+}
+
 - (NSString *)setupCliproxyDirectory
 {
     return ensureSetupSignIn(_state).configuredAccountDirectory().toNSString();

@@ -2,6 +2,7 @@
 #include "YdotoolSetupState.h"
 #include "YdotoolSetupTransaction.h"
 
+#include <chrono>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -74,15 +75,20 @@ bool installYdotoolPackage(std::string &error)
     if (ydotoolInstalled()) {
         return true;
     }
+    // A slow mirror routinely outlives run()'s default five minutes, and
+    // killing a package manager mid-transaction leaves its database damage the
+    // transaction machinery deliberately never undoes. Give installs an hour.
+    constexpr std::chrono::hours packageDeadline{1};
     if (findExecutable("apt-get")) {
-        return run("apt-get", {"update"}, error)
-            && run("apt-get", {"install", "-y", "ydotool"}, error);
+        return run("apt-get", {"update"}, error, false, false, packageDeadline)
+            && run("apt-get", {"install", "-y", "ydotool"}, error, false, false, packageDeadline);
     }
     if (findExecutable("dnf")) {
-        return run("dnf", {"install", "-y", "ydotool"}, error);
+        return run("dnf", {"install", "-y", "ydotool"}, error, false, false, packageDeadline);
     }
     if (findExecutable("zypper")) {
-        return run("zypper", {"--non-interactive", "install", "ydotool"}, error);
+        return run("zypper", {"--non-interactive", "install", "ydotool"}, error,
+                   false, false, packageDeadline);
     }
     if (findExecutable("pacman")) {
         error = "Install ydotool through a full Arch system upgrade (sudo pacman -Syu ydotool), then run setup again";

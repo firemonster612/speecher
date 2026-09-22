@@ -89,14 +89,8 @@ struct ProviderRow: Identifiable {
     }
 
     /// The sign-in instruction the welcome step prints under a row it could
-    /// not find. The registry's hint is written for the provider steps and
-    /// every front end shares it; the Claude one names only the CLI, so the
-    /// welcome step states the fuller instruction that covers the app too.
-    var credentialHint: String {
-        guard id == "claude" else { return setupHint }
-        return "Install Claude Code from claude.com/code and sign in — the desktop app "
-            + "or the claude CLI (/login) both work."
-    }
+    /// not find: the registry's hint, which every front end shares.
+    var credentialHint: String { setupHint }
 
     /// The verdict the transcription and refinement rows carry.
     var readinessStatus: String {
@@ -225,6 +219,11 @@ final class SetupFlowModel: ObservableObject {
     @Published var cliproxyAccount = ""
     @Published var cliproxyDirectory = ""
     @Published var cliproxyDirectoryPlaceholder = ""
+    /// The shared CLI Proxy API copy, read from the bridge so all three
+    /// assistants render the same words.
+    var cliproxyOptInLabel: String { model.bridge.setupCliproxyOptInLabel }
+    var cliproxyFoundHint: String { model.bridge.setupCliproxyFoundHint }
+    var cliproxyMissingHint: String { model.bridge.setupCliproxyMissingHint }
 
     // Microphone.
     @Published var meterLevel: Float = 0
@@ -1334,11 +1333,8 @@ private struct WelcomeStep: View {
                         StatusLabel(text: flow.cliproxyAvailable ? "Accounts found" : "Not found",
                                     tone: flow.cliproxyAvailable ? .positive : .pending)
                     }
-                    Text(flow.cliproxyAvailable
-                        ? "To use one of these accounts, turn on \"Use a CLI Proxy API "
-                            + "account\" on the Transcription step."
-                        : "Optional: Claude and Codex accounts saved by CLI Proxy API also "
-                            + "work. If yours live in a custom directory, enter it below.")
+                    Text(flow.cliproxyAvailable ? flow.cliproxyFoundHint
+                                                : flow.cliproxyMissingHint)
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1462,7 +1458,7 @@ private struct TranscriptionStep: View {
             // Windows assistants.
             if flow.signInSupported {
                 Section("Sign-in") {
-                    Toggle("Use a CLI Proxy API account instead of the service's own sign-in",
+                    Toggle(flow.cliproxyOptInLabel,
                            isOn: Binding(get: { flow.usingCliproxy },
                                          set: { flow.setUseCliproxy($0) }))
                     if flow.usingCliproxy {

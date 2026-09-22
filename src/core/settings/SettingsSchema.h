@@ -278,6 +278,12 @@ QString restoreClipboardDescription();
 // help on every platform rather than something only a hover reveals.
 QString openAiSignInHelp();
 
+// The fast-mode help and tooltip for a refinement provider ("openai" or
+// "anthropic"), rendered by the schema rows and by the setup assistants'
+// own fast-mode checkboxes. Both must say the same thing.
+QString fastModeHelp(const QString &refinementProviderId);
+QString fastModeTooltip(const QString &refinementProviderId);
+
 // The microphone choice as it is offered: a system-default entry ahead of the
 // devices that exist, and a disabled placeholder standing in for a saved device
 // that has gone away. Shared with the setup assistant's own device list.
