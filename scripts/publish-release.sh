@@ -59,17 +59,17 @@ for path, name in binaries:
     elif remote.get("state") != "uploaded" or not remote.get("digest"):
         # A failed upload leaves an empty stub behind; it was never advertised
         # (the manifest goes up last), so replace it.
-        print(f"stub\t{name}")
+        print(f"stub\t{remote['id']}")
         print(f"upload\t{Path(path).with_name(name)}")
     elif remote["digest"] != digest:
         sys.exit(f"Refusing to replace nightly asset {name}: remote digest {remote['digest']!r} differs from "
                  f"local {digest}. A rebuilt nightly must not reuse a published build number; if this asset is "
-                 f"unwanted, run `gh release delete-asset nightly {name}` and re-run.")
+                 f"unwanted, run `gh api -X DELETE repos/firemonster612/speecher/releases/assets/{remote['id']}` and re-run.")
 # Include the build about to be uploaded when retaining the newest ten builds.
 keep = set(sorted({build_number} | {build for build, _ in build_assets}, reverse=True)[:10])
 for build, name in build_assets:
     if build not in keep:
-        print(f"delete\t{name}")
+        print(f"delete\t{assets[name]['id']}")
 PYTHON
   )"
   missing_assets=()
@@ -123,8 +123,9 @@ EOF
   cp artifacts/linux-release/Speecher-x86_64.AppImage "artifacts/linux-release/$appimage_name"
   cp artifacts/macos-release/speecher.dmg "artifacts/macos-release/$dmg_name"
   cp artifacts/windows-release/Speecher-Setup-x64.exe "artifacts/windows-release/$installer_name"
+  # By ID: `gh release delete-asset` cannot see assets whose upload never finished.
   for asset in "${stub_assets[@]}"; do
-    gh release delete-asset "$tag" "$asset" --yes
+    gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/$asset" --silent
   done
   if [ "${#missing_assets[@]}" -gt 0 ]; then
     gh release upload "$tag" "${missing_assets[@]}"
@@ -138,7 +139,7 @@ EOF
   gh release upload "$tag" artifacts/linux-release/update-manifest.json --clobber
 
   for asset in "${stale_assets[@]}"; do
-    gh release delete-asset "$tag" "$asset" --yes
+    gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/$asset" --silent
   done
 else
   if [ -f "docs/releases/$version.md" ]; then

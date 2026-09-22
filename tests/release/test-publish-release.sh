@@ -46,8 +46,10 @@ elif args[:2] == ["release", "upload"]:
         shutil.copyfile(path, Path("uploaded") / path.name)
 elif args[:2] == ["release", "view"]:
     sys.exit(1 if os.environ["RELEASE_EXISTS"] == "no" else 0)
-elif args[:2] in (["release", "create"], ["release", "edit"], ["release", "delete-asset"]):
+elif args[:2] in (["release", "create"], ["release", "edit"]):
     pass
+elif args[:3] == ["api", "-X", "DELETE"]:
+    assert args[3].startswith("repos/firemonster612/speecher/releases/assets/") and args[4:] == ["--silent"], args
 elif args[0] == "api":
     if args[1].endswith("/releases/tags/nightly"):
         print("123")
@@ -109,10 +111,15 @@ for scenario in ("nightly", "identical", "changed", "stale", "stub", "create", "
             digest = hashlib.sha256(f"fixture {base}\n".encode()).hexdigest()
             assets.append({"name": asset_name(build, base), "digest": f"sha256:{digest}", "state": "uploaded"})
     if scenario == "stub":
-        # An interrupted first upload of 402 left an empty DMG asset behind.
+        # Interrupted uploads left empty assets behind: the first DMG of 402, and an old
+        # installer that is pruned by ID because `gh release delete-asset` cannot see it.
         assets.append({"name": immutable[1], "digest": None, "state": "open"})
+        next(asset for asset in assets if asset["name"] == asset_name(390, rolling[2])).update(digest=None, state="starter")
     assets += [{"name": name, "digest": f"sha256:{hashlib.sha256(name.encode()).hexdigest()}", "state": "uploaded"}
         for name in rolling + sidecars + ["update-manifest.json", "unrelated-build999.txt"]]
+    for asset_id, asset in enumerate(assets, 1000):
+        asset["id"] = asset_id
+    asset_names = {str(asset["id"]): asset["name"] for asset in assets}
     asset_list = case / "assets.json"
     asset_list.write_text(json.dumps(list(reversed(assets))))
     if scenario == "changed":
@@ -130,7 +137,7 @@ for scenario in ("nightly", "identical", "changed", "stale", "stub", "create", "
     listings = [command for command in commands if command[:2] == ["gh", "api"] and command[2].endswith("/assets")]
     mutations = [command for command in commands if command[:3] in (
         ["gh", "release", "upload"], ["gh", "release", "edit"], ["gh", "release", "create"],
-        ["gh", "release", "delete-asset"]) or command[:2] in (["git", "tag"], ["git", "push"])]
+        ["gh", "api", "-X"]) or command[:2] in (["git", "tag"], ["git", "push"])]
     if scenario in ("changed", "stale"):
         assert result.returncode != 0, scenario
         assert not mutations, mutations
@@ -189,15 +196,15 @@ for scenario in ("nightly", "identical", "changed", "stale", "stub", "create", "
         "type": "application/x-apple-diskimage", sparkle + "edSignature": "fixture-signature"}
     assert appcast.findtext(f"./channel/item/{sparkle}version") == "402"
     assert output.read_text() == f"channel={channel}\nversion={version}\nbuild_number=402\n"
-    deletes = [command for command in commands if command[:3] == ["gh", "release", "delete-asset"]]
+    deletes = [command for command in commands if command[:4] == ["gh", "api", "-X", "DELETE"]]
+    deleted = lambda command: asset_names[command[4].rsplit("/", 1)[1]]
     if channel == "nightly":
         expected_deletes = {asset_name(build, base) for build in (390, 391, 392) for base in rolling} if scenario != "create" else set()
-        stub_deletes = [command for command in deletes if command[4] == immutable[1]] if scenario == "stub" else []
+        stub_deletes = [command for command in deletes if deleted(command) == immutable[1]] if scenario == "stub" else []
         if scenario == "stub":
             assert len(stub_deletes) == 1 and commands.index(stub_deletes[0]) < commands.index(uploads[0]), "Stub must be deleted before the first upload"
             deletes = [command for command in deletes if command not in stub_deletes]
-        assert len(deletes) == len(expected_deletes) and {command[4] for command in deletes} == expected_deletes, deletes
-        assert all(command[3] == "nightly" and command[5:] == ["--yes"] for command in deletes + stub_deletes), deletes
+        assert len(deletes) == len(expected_deletes) and {deleted(command) for command in deletes} == expected_deletes, deletes
         if deletes:
             assert commands.index(deletes[0]) > commands.index(uploads[-1])
         if scenario != "nightly":
