@@ -575,13 +575,18 @@ final class SetupFlowModel: ObservableObject {
         }
     }
 
-    /// A sign-in change invalidates the selected service's verdict; showing
-    /// "Checking…" holds the gate until the new probe answers.
+    /// A sign-in change invalidates only the selected service's verdict, and
+    /// a probe can be a network OAuth refresh, so only that one re-probes;
+    /// showing "Checking…" holds the gate until the new probe answers.
     private func reprobeSelectedSpeechProvider() {
-        if let index = speechProviders.firstIndex(where: { $0.id == providerId }) {
-            speechProviders[index].probed = false
+        guard let index = speechProviders.firstIndex(where: { $0.id == providerId }) else {
+            return
         }
-        checkSpeechProviders()
+        speechProviders[index].probed = false
+        model.bridge.checkSpeechProvider(named: providerId) { [weak self] id, ready, message in
+            guard let self else { return }
+            record(&speechProviders, id: id, ready: ready, message: message)
+        }
     }
 
     func chooseRefinementProvider(_ id: String) {

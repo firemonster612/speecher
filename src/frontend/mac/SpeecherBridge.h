@@ -331,6 +331,12 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
 // `message` says why a provider is not ready and is empty when it is. A newer
 // round supersedes an older one of the same kind, whose replies are dropped.
 - (void)checkSpeechProviders:(void (^)(NSString *providerId, BOOL ready, NSString *message))report;
+// One provider only, for a sign-in change: the other rows' verdicts stay
+// live, and no extra OAuth refreshes run — matching the Qt and WinUI
+// assistants.
+- (void)checkSpeechProviderNamed:(NSString *)providerId
+                          report:(void (^)(NSString *providerId, BOOL ready, NSString *message))report
+    NS_SWIFT_NAME(checkSpeechProvider(named:report:));
 - (void)checkRefinementProviders:(void (^)(NSString *providerId, BOOL ready, NSString *message))report;
 
 // The CLI Proxy API sign-in a service can be opted into during setup. The
