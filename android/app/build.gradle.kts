@@ -17,6 +17,7 @@ android {
     }
 
     buildFeatures { compose = true }
+    buildFeatures { buildConfig = true }
     sourceSets.named("main") { res.directories.add("src/engine/res") }
 
     lint {
@@ -42,5 +43,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.lifecycle)
     implementation(libs.savedstate)
+    implementation(libs.serialization.json)
     testImplementation(libs.junit4)
+    testImplementation(libs.mockwebserver)
 }
