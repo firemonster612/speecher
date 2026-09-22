@@ -17,6 +17,8 @@ android {
     }
 
     buildFeatures { compose = true }
+    buildFeatures { buildConfig = true }
+    sourceSets.named("main") { res.directories.add("src/engine/res") }
 
     lint {
         warningsAsErrors = true
@@ -39,4 +41,11 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
+    implementation(libs.browser)
+    implementation(libs.okhttp)
+    implementation(libs.lifecycle)
+    implementation(libs.savedstate)
+    implementation(libs.serialization.json)
+    testImplementation(libs.junit4)
+    testImplementation(libs.mockwebserver)
 }
