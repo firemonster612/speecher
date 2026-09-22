@@ -1,7 +1,6 @@
 package app.speecher.android
 
 import android.Manifest
-import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.Settings
@@ -12,7 +11,7 @@ import app.speecher.android.dictation.ActiveDictation
 class ImeSwap(private val context: Context) {
     private val preferences = context.getSharedPreferences("previous-ime", Context.MODE_PRIVATE)
     private val inputMethods = context.getSystemService(InputMethodManager::class.java)
-    private val ownId = ComponentName(context, SpeecherImeService::class.java).flattenToString()
+    private val ownId = speecherImeId(context)
 
     fun activate() {
         check(

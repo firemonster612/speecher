@@ -45,8 +45,7 @@ class SpeecherChipService : AccessibilityService() {
     }
 
     private fun updateChip() {
-        val ownIme =
-            android.content.ComponentName(this, SpeecherImeService::class.java).flattenToString()
+        val ownIme = speecherImeId(this)
         if (
             passwordFocused ||
                 ActiveDictation.imeActive ||

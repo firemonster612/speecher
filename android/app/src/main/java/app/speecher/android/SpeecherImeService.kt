@@ -1,5 +1,7 @@
 package app.speecher.android
 
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.inputmethodservice.InputMethodService
 import android.view.View
@@ -10,6 +12,10 @@ import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
 import app.speecher.android.ui.DictationPanel
 import app.speecher.android.ui.SpeecherTheme
+
+/** The id Android uses for this keyboard: the short `package/.Class` form of its component. */
+fun speecherImeId(context: Context): String =
+    ComponentName(context, SpeecherImeService::class.java).flattenToShortString()
 
 class SpeecherImeService : InputMethodService() {
     private val owner = ServiceViewOwner()
@@ -31,6 +37,8 @@ class SpeecherImeService : InputMethodService() {
 
     override fun onCreateInputView(): View =
         ComposeView(this).also { view ->
+            // Compose looks up its owners from the window root, which the IME framework owns.
+            window.window?.decorView?.let(owner::attach)
             owner.attach(view)
             view.setContent {
                 SpeecherTheme {

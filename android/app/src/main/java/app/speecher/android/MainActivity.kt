@@ -137,7 +137,7 @@ class MainActivity : ComponentActivity() {
         checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
     private fun keyboardEnabled(): Boolean {
-        val ownId = ComponentName(this, SpeecherImeService::class.java).flattenToString()
+        val ownId = speecherImeId(this)
         return getSystemService(InputMethodManager::class.java).enabledInputMethodList.any {
             it.id == ownId
         }
