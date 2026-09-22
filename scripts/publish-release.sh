@@ -64,7 +64,7 @@ for path, name in binaries:
     elif remote["digest"] != digest:
         sys.exit(f"Refusing to replace nightly asset {name}: remote digest {remote['digest']!r} differs from "
                  f"local {digest}. A rebuilt nightly must not reuse a published build number; if this asset is "
-                 f"unwanted, run `gh release delete-asset nightly {name}` and re-run.")
+                 f"unwanted, run `gh api -X DELETE repos/firemonster612/speecher/releases/assets/{remote['id']}` and re-run.")
 # Include the build about to be uploaded when retaining the newest ten builds.
 keep = set(sorted({build_number} | {build for build, _ in build_assets}, reverse=True)[:10])
 for build, name in build_assets:
