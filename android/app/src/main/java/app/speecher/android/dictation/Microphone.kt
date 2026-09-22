@@ -9,10 +9,16 @@ import android.media.MediaRecorder
 import kotlin.math.abs
 
 /** Captures 16 kHz mono PCM16 on the caller's worker thread. */
-class Microphone(private val context: Context) {
+interface AudioCapture {
+    fun capture(onAudio: (ByteArray, Float) -> Unit)
+
+    fun stop()
+}
+
+class Microphone(private val context: Context) : AudioCapture {
     @Volatile private var recorder: AudioRecord? = null
 
-    fun capture(onAudio: (ByteArray, Float) -> Unit) {
+    override fun capture(onAudio: (ByteArray, Float) -> Unit) {
         check(
             context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
@@ -63,7 +69,7 @@ class Microphone(private val context: Context) {
         }
     }
 
-    fun stop() {
+    override fun stop() {
         recorder = null
     }
 }

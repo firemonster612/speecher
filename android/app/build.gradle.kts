@@ -39,4 +39,5 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.browser)
     implementation(libs.okhttp)
+    testImplementation(libs.junit4)
 }
