@@ -6,6 +6,7 @@
 #include "platform/RoutingShortcutBinder.h"
 #include "setup/KeywatchProtocol.h"
 
+#include <QSignalSpy>
 #include <QTest>
 
 #include <memory>
@@ -46,6 +47,9 @@ public:
         removeCount += 1;
         return true;
     }
+
+    void fireActivated() { emit activated(); }
+    void fireDeactivated() { emit deactivated(); }
 
     bool supportedValue = true;
     bool takesSingleKey = false;
@@ -173,6 +177,33 @@ private slots:
         QVERIFY(singleKey->setShortcut(ShortcutBinding::singleKey(QStringLiteral("F13")),
                                        nullptr));
         QCOMPARE(combination->removeCount, removedBySet + 1);
+    }
+
+    // A backend whose desktop registration lingers after the binding moved to
+    // the other backend must not start dictation; a release still passes from
+    // either so a latched activation can always clear.
+    void routerForwardsActivationOnlyFromTheOwningBackend()
+    {
+        auto *combination = new FakeBinder;
+        auto *singleKey = new FakeBinder;
+        singleKey->takesSingleKey = true;
+        RoutingShortcutBinder router(combination, singleKey);
+        QSignalSpy activations(&router, &GlobalShortcutBinder::activated);
+        QSignalSpy releases(&router, &GlobalShortcutBinder::deactivated);
+
+        // No single key is set, so the combination owns the binding.
+        combination->fireActivated();
+        singleKey->fireActivated();
+        QCOMPARE(activations.count(), 1);
+
+        QVERIFY(router.setShortcut(ShortcutBinding::singleKey(QStringLiteral("AltRight"))));
+        combination->fireActivated();
+        singleKey->fireActivated();
+        QCOMPARE(activations.count(), 2);
+
+        combination->fireDeactivated();
+        singleKey->fireDeactivated();
+        QCOMPARE(releases.count(), 2);
     }
 };
 

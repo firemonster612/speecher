@@ -12,7 +12,15 @@ namespace speecher {
 class DeliveryBackend {
 public:
     virtual ~DeliveryBackend() = default;
-    virtual bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error = nullptr) = 0;
+    // clearToInject is the final focus gate: a keyboard backend calls it after
+    // all of its blocking preparation (clipboard helper startup, owner
+    // replacement, modifier release) and immediately before sending the paste
+    // keystroke, aborting when it returns false. Clipboard-only backends may
+    // ignore it; a null function means nothing gates the injection.
+    virtual bool deliver(const DeliveryContent &content,
+                         const std::function<bool()> &clearToInject,
+                         bool *htmlAvailable,
+                         QString *error = nullptr) = 0;
 };
 
 class TextDelivery : public TextDeliveryAdapter {

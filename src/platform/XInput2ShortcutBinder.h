@@ -33,6 +33,9 @@ private:
     void selectRawKeyEvents(bool select);
     void resolveInjectionDevices();
     void readEvents();
+    // Shared decode loop for readEvents() and resuming(), so the two cannot
+    // drift; resuming() drops raw presses (processPresses = false).
+    void processQueuedEvents(bool processPresses);
 
     _XDisplay *m_display = nullptr;
     int m_xiOpcode = 0;

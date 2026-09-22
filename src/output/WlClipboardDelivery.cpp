@@ -326,14 +326,23 @@ bool WlClipboardDelivery::capture(ClipboardSnapshot *snapshot, QString *error)
 // Clipboard managers re-offer our copy under their own format set, and the
 // wl-copy fallback offers text/plain alone, so comparing the whole set made
 // restore a silent no-op. Our dictation is still the selection if its marker
-// survived or the plain text still matches; anything else is somebody's newer
-// copy, which we must never overwrite.
+// survived; a different marker can only come from another Speecher copy and is
+// definitive proof the selection moved on. With the marker absent the plain
+// text still decides (deliberate: managers like Klipper re-offer our copy
+// without the marker, and dropping this fallback regresses restore under
+// them). Accepted residual: a user copy of the identical plain text with
+// different formatting inside the verification window is indistinguishable
+// from a manager re-offer and gets restored over. See RESIDUALS.md.
 bool WlClipboardDelivery::copyStillOnClipboard(const QList<ClipboardMimePart> &copied,
                                                const QList<ClipboardMimePart> &current)
 {
     const QByteArray marker = partData(copied, copyMarkerMimeType());
-    if (!marker.isEmpty() && partData(current, copyMarkerMimeType()) == marker) {
+    const QByteArray currentMarker = partData(current, copyMarkerMimeType());
+    if (!marker.isEmpty() && currentMarker == marker) {
         return true;
+    }
+    if (!currentMarker.isEmpty()) {
+        return false;
     }
     const QByteArray copiedText = plainTextData(copied);
     return !copiedText.isEmpty() && plainTextData(current) == copiedText;

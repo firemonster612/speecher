@@ -23,7 +23,10 @@ public:
     {
     }
 
-    bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
+    bool deliver(const DeliveryContent &content,
+                 const std::function<bool()> &,
+                 bool *htmlAvailable,
+                 QString *error) override
     {
         m_attempts->append(m_method);
         if (htmlAvailable) {
@@ -725,7 +728,10 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         class PasteBackend final : public DeliveryBackend {
         public:
             explicit PasteBackend(bool &prepared) : prepared(prepared) {}
-            bool deliver(const DeliveryContent &, bool *, QString *) override
+            bool deliver(const DeliveryContent &,
+                         const std::function<bool()> &,
+                         bool *,
+                         QString *) override
             {
                 return prepared;
             }
@@ -742,6 +748,56 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         const auto result = delivery.deliver(
             settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
         QCOMPARE(result.receipt, DeliveryReceipt::InputSent);
+    }
+
+    void keyboardBackendGateRefusesPasteAfterBlockingPreparation()
+    {
+        // Focus holds through delivery's own checks and moves while the
+        // backend is inside its blocking preparation; the last-moment gate
+        // the backend calls must refuse the keystroke.
+        class ProviderLosingFocus final : public TargetProvider {
+        public:
+            Target capture(const QList<AppRecognitionRule> &) override { return {}; }
+            bool stillFocused(const Target &) override { return ++checks <= 2; }
+            int checks = 0;
+        } targetProvider;
+        bool pasted = false;
+        class GatedBackend final : public DeliveryBackend {
+        public:
+            explicit GatedBackend(bool &pasted) : pasted(pasted) {}
+            bool deliver(const DeliveryContent &,
+                         const std::function<bool()> &clearToInject,
+                         bool *,
+                         QString *error) override
+            {
+                if (clearToInject && !clearToInject()) {
+                    if (error) {
+                        *error = QStringLiteral(
+                            "The active window changed or could not be verified");
+                    }
+                    return false;
+                }
+                pasted = true;
+                return true;
+            }
+            bool &pasted;
+        };
+        TextDelivery delivery([&](const QString &, const OutputSettings &, PasteMethod) {
+            return std::make_unique<GatedBackend>(pasted);
+        }, &targetProvider);
+
+        OutputSettings settings;
+        settings.method = virtualKeyboardMethod();
+        settings.ydotoolEnabled = true;
+        Target target;
+        target.applicationId = QStringLiteral("org.kde.kate");
+        const DeliveryResult result = delivery.deliver(
+            settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), target);
+
+        QVERIFY(!pasted);
+        QCOMPARE(result.receipt, DeliveryReceipt::Copied);
+        QVERIFY(result.message.contains(
+            QStringLiteral("The active window changed or could not be verified")));
     }
 
     void outputAutomaticFallbackOrder()
@@ -1344,6 +1400,15 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         };
         QVERIFY(WlClipboardDelivery::copyStillOnClipboard(fallbackCopy, viaManager));
         QVERIFY(!WlClipboardDelivery::copyStillOnClipboard(fallbackCopy, otherCopy));
+
+        // A different marker can only be another Speecher copy: definitive
+        // non-ownership even when the plain text matches.
+        const QList<ClipboardMimePart> otherSpeecherCopy{
+            {QStringLiteral("text/plain"), QByteArrayLiteral("dictated text")},
+            {QStringLiteral("application/x-speecher-copy-id"), QByteArrayLiteral("{other-id}")},
+        };
+        QVERIFY(!WlClipboardDelivery::copyStillOnClipboard(copied, otherSpeecherCopy));
+        QVERIFY(!WlClipboardDelivery::copyStillOnClipboard(fallbackCopy, otherSpeecherCopy));
     }
 
     void wlClipboardSnapshotRestoresEmptyClipboard()

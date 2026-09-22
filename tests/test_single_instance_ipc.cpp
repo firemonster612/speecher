@@ -259,6 +259,27 @@ private slots:
         QCOMPARE(commands.at(1).at(0).toString(), QStringLiteral("stop"));
     }
 
+    void singleInstanceIpcExpiresIncompleteRequests()
+    {
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QVERIFY(ipc.listen());
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
+
+        QLocalSocket socket;
+        socket.connectToServer(name);
+        QVERIFY(socket.waitForConnected(500));
+        socket.write(QByteArrayLiteral("{"));
+        socket.flush();
+
+        // The server holds the incomplete request briefly, then expires the
+        // connection instead of keeping the socket and buffer forever.
+        QTRY_VERIFY_WITH_TIMEOUT(socket.state() == QLocalSocket::UnconnectedState, 5000);
+        QCOMPARE(commands.count(), 0);
+    }
+
     void singleInstanceIpcSurvivesAClientThatDisconnectsAfterSending()
     {
         // A CLI client can send its command and drop the connection without

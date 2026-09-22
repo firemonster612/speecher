@@ -593,20 +593,23 @@ void QtAudioInput::processOutputChunk(const QByteArray &pcm, float rms)
         return;
     }
 
-    appendPreRoll(pcm);
     const bool voiced = rms >= float(m_captureSettings.vadThresholdPercent) / 100.0f;
     if (!m_vadSpeaking) {
         if (!voiced) {
+            appendPreRoll(pcm);
             return;
         }
 
         m_vadSpeaking = true;
-        if (m_preRollBuffer.isEmpty()) {
-            emit audioChunk(pcm);
-        } else {
+        // The buffered lead-in first, then the whole voiced chunk. Folding the
+        // chunk into the size-capped pre-roll buffer before this check used to
+        // truncate the start of any voiced chunk longer than the pre-roll
+        // window.
+        if (!m_preRollBuffer.isEmpty()) {
             emit audioChunk(m_preRollBuffer);
+            m_preRollBuffer.clear();
         }
-        m_preRollBuffer.clear();
+        emit audioChunk(pcm);
         m_pendingPostRoll.clear();
         return;
     }

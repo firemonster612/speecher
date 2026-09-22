@@ -214,6 +214,30 @@ bool PortalGlobalShortcutBinder::setShortcut(const ShortcutBinding &, QString *e
     return false;
 }
 
+// The portal keeps the shortcut alive as long as the session is open, so
+// letting a session linger after the user switched to a single key leaves the
+// old combination starting dictation. Closing the session is the removal.
+bool PortalGlobalShortcutBinder::removeRegistration(QString *)
+{
+    m_bindWhenSupported = false;
+    if (!m_requestPath.path().isEmpty()) {
+        closeRequest();
+    }
+    disconnectRequest();
+    closePendingSession();
+    if (!m_sessionPath.path().isEmpty()) {
+        QDBusConnection::sessionBus().asyncCall(QDBusMessage::createMethodCall(
+            QString::fromLatin1(portalService),
+            m_sessionPath.path(),
+            QString::fromLatin1(sessionInterface),
+            QStringLiteral("Close")));
+        m_sessionPath = {};
+    }
+    m_triggerDescription.clear();
+    emit bindingChanged();
+    return true;
+}
+
 bool PortalGlobalShortcutBinder::ensureHostIdentity(bool registration)
 {
     if (m_identityReady) {

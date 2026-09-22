@@ -26,6 +26,7 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QEventLoop>
 #ifdef SPEECHER_E2E_HOOKS
 #include <QMetaEnum>
 #endif
@@ -47,6 +48,9 @@ constexpr qint64 hybridHoldMs = 250;
 // Push-to-talk: a press that lifts inside this window is a brush of the key,
 // not a dictation, and must leave no trace.
 constexpr int pushToTalkMisfireMs = 200;
+// How long a quit mid-dictation waits for the asynchronous media-resume calls
+// to leave the process before the event loop stops for good.
+constexpr int mediaResumeGraceMs = 200;
 #ifdef Q_OS_MACOS
 constexpr int accessibilityPollMs = 5000;
 #endif
@@ -638,6 +642,18 @@ void ApplicationController::showSetup()
 
 void ApplicationController::quitApplication()
 {
+    // Session teardown never resumes the media the session paused, so a quit
+    // mid-dictation would leave the user's music paused. Cancel through
+    // stopListening(), the existing path that calls resumePausedMedia(), then
+    // pump the event loop briefly: the media controllers resume players over
+    // async D-Bus calls that would otherwise still be queued when the process
+    // exits.
+    if (m_session->state() != DictationState::Idle) {
+        stopListening();
+        QEventLoop resumeWindow;
+        QTimer::singleShot(mediaResumeGraceMs, &resumeWindow, &QEventLoop::quit);
+        resumeWindow.exec(QEventLoop::ExcludeUserInputEvents);
+    }
     emit quitRequested();
 }
 

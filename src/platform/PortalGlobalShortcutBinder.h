@@ -34,6 +34,7 @@ public:
     ShortcutBinding shortcut() const override;
     QString shortcutDisplay() const override;
     bool setShortcut(const ShortcutBinding &shortcut, QString *error = nullptr) override;
+    bool removeRegistration(QString *error = nullptr) override;
 
 private slots:
     void handleRequestResponse(uint response, const QVariantMap &results);

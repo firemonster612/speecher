@@ -18,6 +18,12 @@ namespace speecher {
 namespace {
 
 constexpr qsizetype maximumRequestBytes = 64 * 1024;
+// Legitimate clients connect, write one frame, and wait for the response, so
+// these bounds never bite them; they stop a broken or hostile local client
+// from holding descriptors and buffers open indefinitely.
+constexpr int maximumAcceptedSockets = 8;
+constexpr int incompleteRequestTimeoutMs = 2000;
+constexpr int expirySweepIntervalMs = 500;
 
 bool canConnectToServer(const QString &name, int timeoutMs)
 {
@@ -44,8 +50,28 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
     : QObject(parent)
     , m_platform(platform ? std::move(platform) : platformComposition())
 {
+    m_expirySweep.setInterval(expirySweepIntervalMs);
+    connect(&m_expirySweep, &QTimer::timeout, this, [this] {
+        // Keys are copied: disconnecting re-enters the disconnected handler,
+        // which mutates the hash.
+        const QList<QLocalSocket *> sockets = m_incompleteRequestDeadlines.keys();
+        for (QLocalSocket *socket : sockets) {
+            if (m_incompleteRequestDeadlines.value(socket).hasExpired()) {
+                socket->disconnectFromServer();
+            }
+        }
+        if (m_incompleteRequestDeadlines.isEmpty()) {
+            m_expirySweep.stop();
+        }
+    });
     connect(&m_server, &QLocalServer::newConnection, this, [this] {
         while (QLocalSocket *socket = m_server.nextPendingConnection()) {
+            if (m_acceptedSockets.size() >= maximumAcceptedSockets) {
+                socket->disconnectFromServer();
+                socket->deleteLater();
+                continue;
+            }
+            m_acceptedSockets.insert(socket);
             connect(socket, &QLocalSocket::readyRead, this, [this, socket] {
                 // Collect complete frames before emitting: a commandReceived slot can
                 // disconnect the socket, whose disconnected handler removes the buffer
@@ -69,6 +95,15 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                             frames.append(std::exchange(buffer, {}));
                         }
                         break;
+                    }
+                    if (buffer.isEmpty()) {
+                        m_incompleteRequestDeadlines.remove(socket);
+                    } else if (!m_incompleteRequestDeadlines.contains(socket)) {
+                        // The deadline dates from the first incomplete byte;
+                        // trickling more bytes in does not extend it.
+                        m_incompleteRequestDeadlines.insert(
+                            socket, QDeadlineTimer(incompleteRequestTimeoutMs));
+                        m_expirySweep.start();
                     }
                 }
                 if (requestTooLarge) {
@@ -94,6 +129,8 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                 m_socketsInCommand.remove(socket);
                 if (m_socketsPendingDelete.remove(socket)) {
                     m_requestBuffers.remove(socket);
+                    m_incompleteRequestDeadlines.remove(socket);
+                    m_acceptedSockets.remove(socket);
                     socket->deleteLater();
                 }
             });
@@ -105,6 +142,8 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                     return;
                 }
                 m_requestBuffers.remove(socket);
+                m_incompleteRequestDeadlines.remove(socket);
+                m_acceptedSockets.remove(socket);
                 socket->deleteLater();
             });
         }

@@ -207,6 +207,7 @@ void WinTargetProvider::clearCapture()
     m_native->focused.Reset();
     m_valueBeforeInsertion.reset();
     m_insertionOffset.reset();
+    m_replacedSelectionEnd.reset();
 }
 
 Target WinTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRules)
@@ -262,6 +263,7 @@ Target WinTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
                     const int end = selection->second;
                     m_valueBeforeInsertion = value;
                     m_insertionOffset = start;
+                    m_replacedSelectionEnd = end;
                     target.caretOffset = start;
                     if (end > start) {
                         target.selectionStart = start;
@@ -361,6 +363,7 @@ bool WinTargetProvider::insertText(const Target &target,
 
     m_valueBeforeInsertion = before;
     m_insertionOffset = selection->first;
+    m_replacedSelectionEnd = selection->second;
     // SetValue already succeeded. TextDelivery verifies separately; treating
     // unavailable or delayed readback as rejection could insert the text twice.
     return true;
@@ -370,6 +373,7 @@ bool WinTargetProvider::preparePaste(const Target &target)
 {
     m_valueBeforeInsertion.reset();
     m_insertionOffset.reset();
+    m_replacedSelectionEnd.reset();
     if (!stillFocused(target)) {
         return false;
     }
@@ -385,6 +389,7 @@ bool WinTargetProvider::preparePaste(const Target &target)
             && selection->second <= value.size()) {
             m_valueBeforeInsertion = value;
             m_insertionOffset = selection->first;
+            m_replacedSelectionEnd = selection->second;
         }
     }
     return stillFocused(target);
@@ -392,10 +397,16 @@ bool WinTargetProvider::preparePaste(const Target &target)
 
 bool WinTargetProvider::verifyInsertion(const Target &target, const QString &plainText)
 {
-    if (!m_native->focused || !m_insertionOffset || plainText.isEmpty() || target.secure
+    if (!m_native->focused || !m_valueBeforeInsertion || !m_insertionOffset
+        || !m_replacedSelectionEnd || plainText.isEmpty() || target.secure
         || !stillFocused(target)) {
         return false;
     }
+    // The insertion replaces the saved selection with the text; anything else
+    // that changed the control (a background edit, an ignored paste) must not
+    // verify, so require the exact transformation, surrounding text included.
+    const QString expected = m_valueBeforeInsertion->left(*m_insertionOffset)
+        + plainText + m_valueBeforeInsertion->mid(*m_replacedSelectionEnd);
     for (int attempt = 0; attempt < insertionVerificationAttempts; ++attempt) {
         if (attempt > 0) {
             spinEventLoop(insertionVerificationPauseMs);
@@ -403,13 +414,10 @@ bool WinTargetProvider::verifyInsertion(const Target &target, const QString &pla
         if (!stillFocused(target)) {
             return false;
         }
-        const QString value = currentText(m_native->focused.Get());
-        const bool changed = !m_valueBeforeInsertion || value != *m_valueBeforeInsertion;
-        if (!changed || !m_insertionOffset
-            || value.mid(*m_insertionOffset, plainText.size()) != plainText) {
+        if (currentText(m_native->focused.Get()) != expected) {
             continue;
         }
-        observeCorrections(target, value, *m_insertionOffset, plainText);
+        observeCorrections(target, expected, *m_insertionOffset, plainText);
         return true;
     }
     return false;

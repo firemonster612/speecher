@@ -3,10 +3,12 @@
 #include "core/OutputFormat.h"
 #include "app/PlatformComposition.h"
 
+#include <QDeadlineTimer>
 #include <QLocalServer>
 #include <QHash>
 #include <QObject>
 #include <QSet>
+#include <QTimer>
 
 #include <memory>
 #include <optional>
@@ -73,6 +75,13 @@ private:
     // pump free it underneath us.
     QSet<QLocalSocket *> m_socketsInCommand;
     QSet<QLocalSocket *> m_socketsPendingDelete;
+    // Resource bounds: a broken or hostile local client must not hold sockets
+    // and buffers open indefinitely. Accepted sockets are capped, and a socket
+    // whose buffer holds an incomplete request past its deadline is expired by
+    // the sweep timer.
+    QSet<QLocalSocket *> m_acceptedSockets;
+    QHash<QLocalSocket *, QDeadlineTimer> m_incompleteRequestDeadlines;
+    QTimer m_expirySweep;
 };
 
 } // namespace speecher
