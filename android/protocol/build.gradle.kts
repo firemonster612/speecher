@@ -12,7 +12,9 @@ ktfmt { kotlinLangStyle() }
 
 dependencies {
     implementation(libs.serialization.json)
+    implementation(libs.okhttp)
     testImplementation(libs.junit.jupiter)
+    testImplementation(libs.mockwebserver)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 

@@ -37,4 +37,6 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
+    implementation(libs.browser)
+    implementation(libs.okhttp)
 }
