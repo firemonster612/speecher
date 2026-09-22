@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.Speecher" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#131312</item>
+    </style>
+</resources>
