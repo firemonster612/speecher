@@ -12,7 +12,6 @@ class QProgressBar;
 class QPushButton;
 class QPropertyAnimation;
 class QPaintEvent;
-class QResizeEvent;
 class QTimer;
 class QVBoxLayout;
 
@@ -58,7 +57,6 @@ protected:
     void changeEvent(QEvent *event) override;
     void hideEvent(QHideEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
-    void resizeEvent(QResizeEvent *event) override;
 
 private:
     // After the mic stops the popup walks Transcribing then Refining; the live
@@ -69,7 +67,6 @@ private:
     void applyPreviewText(const QString &preview);
     void applyPillGeometry();
     void restoreStandardLayout();
-    void updateWindowMask();
 
     QVBoxLayout *m_layout = nullptr;
     QFrame *m_previewPill = nullptr;

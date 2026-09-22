@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "dictation/DictationSession.h"
+#include "dictation/DictationTypes.h"
 
 #include <QAction>
 #include <QIcon>
@@ -70,11 +71,10 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
 
 void LinuxTrayIcon::applyState(const QString &stateName)
 {
-    const QString lowered = stateName.toLower();
-    const bool listening = lowered == QStringLiteral("starting")
-        || lowered == QStringLiteral("listening");
-    m_toggleAction->setText(listening ? QStringLiteral("Stop Dictation")
-                                      : QStringLiteral("Start Dictation"));
+    const bool listening = dictationListeningPresentation(stateName);
+    const DictationToggleAction toggle = dictationToggleAction(stateName);
+    m_toggleAction->setText(toggle.label);
+    m_toggleAction->setEnabled(toggle.enabled);
     m_tray->setToolTip(listening ? QStringLiteral("Speecher is listening")
                                  : QStringLiteral("Speecher"));
     m_tray->setIcon(trayIcon(listening));

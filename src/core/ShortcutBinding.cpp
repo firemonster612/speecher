@@ -2,6 +2,10 @@
 
 #include <QLatin1StringView>
 
+#ifdef Q_OS_LINUX
+#include "setup/KeywatchProtocol.h"
+#endif
+
 namespace speecher {
 namespace {
 
@@ -84,6 +88,31 @@ constexpr PhysicalKey physicalKeys[] = {
 #undef SPEECHER_CONTROL_NAME
 #undef SPEECHER_ALT_NAME
 #undef SPEECHER_META_NAME
+
+#ifdef Q_OS_LINUX
+// The daemon's allowlist repeats code<->evdev pairs from this table inside its
+// privileged boundary, and the binder validates by code name only: a
+// mismatched edit would make the daemon silently watch a different physical
+// key than the one the user recorded. Keep the copies provably in sync.
+constexpr bool permittedKeysMatchPhysicalKeys()
+{
+    for (const keywatch::PermittedKey &permitted : keywatch::permittedKeys) {
+        bool matched = false;
+        for (const PhysicalKey &key : physicalKeys) {
+            if (permitted.code == key.code) {
+                matched = int(permitted.evdev) == key.evdev;
+                break;
+            }
+        }
+        if (!matched) {
+            return false;
+        }
+    }
+    return true;
+}
+static_assert(permittedKeysMatchPhysicalKeys(),
+              "keywatch::permittedKeys disagrees with physicalKeys about a key's evdev code");
+#endif
 
 // Distinguishes a stored single key from the QKeySequence text older installs hold.
 constexpr auto singleKeyPrefix = "key:";

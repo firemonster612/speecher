@@ -37,6 +37,10 @@ private:
     std::unique_ptr<Native> m_native;
     std::optional<QString> m_valueBeforeInsertion;
     std::optional<int> m_insertionOffset;
+    // End of the selection the insertion replaced, so verification can require
+    // the exact anchored transformation of the saved value rather than accept
+    // any change that happens to show the text at the offset.
+    std::optional<int> m_replacedSelectionEnd;
     std::unique_ptr<WinCorrectionObserver> m_correctionObserver;
     bool m_correctionObservationEnabled = true;
 };

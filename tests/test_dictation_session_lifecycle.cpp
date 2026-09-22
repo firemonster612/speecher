@@ -679,6 +679,47 @@ private slots:
         session.stopListening();
     }
 
+    void cancelForShutdownDuringRefinementNeverDelivers()
+    {
+        // Quitting mid-refinement used to route through stopListening(),
+        // whose Refining branch delivers the fallback transcript — a paste
+        // into whatever window has focus, during shutdown.
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setPauseMediaDuringTranscription(true);
+        settings.setRefinementProvider(QStringLiteral("openai"));
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("quit must not paste this"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(refiner->refineCalls, 1, 250);
+        QCOMPARE(int(session.state()), int(DictationState::Refining));
+
+        session.cancelForShutdown();
+
+        QCOMPARE(int(session.state()), int(DictationState::Idle));
+        QCOMPARE(delivery->calls, 0);
+        QCOMPARE(refiner->cancelCalls, 1);
+        QVERIFY(media->resumeCalls >= 1);
+        // A refinement completion that lands after shutdown is stale and
+        // must stay undelivered.
+        refiner->emitCompletedText(QStringLiteral("quit must not paste this"));
+        QTest::qWait(10);
+        QCOMPARE(delivery->calls, 0);
+        QCOMPARE(int(session.state()), int(DictationState::Idle));
+    }
+
     void dictationSessionNeverCapturesScreenshotForSecureTarget()
     {
         SettingsStore settings;

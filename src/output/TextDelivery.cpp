@@ -28,7 +28,10 @@ public:
     {
     }
 
-    bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
+    bool deliver(const DeliveryContent &content,
+                 const std::function<bool()> &clearToInject,
+                 bool *htmlAvailable,
+                 QString *error) override
     {
         QString copyError;
         if (!m_clipboardDelivery->copy(content, htmlAvailable, &copyError)) {
@@ -41,7 +44,10 @@ public:
         }
 
         QString pasteError;
-        if (!YdotoolDelivery().pasteFromClipboard(content.plainText, m_pasteMethod, &pasteError)) {
+        if (!YdotoolDelivery().pasteFromClipboard(content.plainText,
+                                                  m_pasteMethod,
+                                                  clearToInject,
+                                                  &pasteError)) {
             if (error) {
                 *error = pasteError;
             }
@@ -62,7 +68,10 @@ public:
     {
     }
 
-    bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
+    bool deliver(const DeliveryContent &content,
+                 const std::function<bool()> &,
+                 bool *htmlAvailable,
+                 QString *error) override
     {
         return m_clipboardDelivery->copyWayland(content, htmlAvailable, error);
     }
@@ -80,7 +89,10 @@ public:
     {
     }
 
-    bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
+    bool deliver(const DeliveryContent &content,
+                 const std::function<bool()> &clearToInject,
+                 bool *htmlAvailable,
+                 QString *error) override
     {
         QString copyError;
         if (!m_clipboardDelivery->copy(content, htmlAvailable, &copyError)) {
@@ -91,7 +103,7 @@ public:
             }
             return false;
         }
-        return MacPasteDelivery().paste(error);
+        return MacPasteDelivery().paste(clearToInject, error);
     }
 
 private:
@@ -108,7 +120,10 @@ public:
     {
     }
 
-    bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
+    bool deliver(const DeliveryContent &content,
+                 const std::function<bool()> &clearToInject,
+                 bool *htmlAvailable,
+                 QString *error) override
     {
         QString copyError;
         if (!m_clipboardDelivery->copy(content, htmlAvailable, &copyError)) {
@@ -119,7 +134,7 @@ public:
             }
             return false;
         }
-        return WinPasteDelivery().paste(m_pasteMethod, error);
+        return WinPasteDelivery().paste(m_pasteMethod, clearToInject, error);
     }
 
 private:
@@ -135,7 +150,10 @@ public:
     {
     }
 
-    bool deliver(const DeliveryContent &content, bool *htmlAvailable, QString *error) override
+    bool deliver(const DeliveryContent &content,
+                 const std::function<bool()> &,
+                 bool *htmlAvailable,
+                 QString *error) override
     {
         return m_clipboardDelivery->copyQt(content, htmlAvailable, error);
     }
@@ -379,7 +397,17 @@ DeliveryResult TextDelivery::deliver(const OutputSettings &settings,
                 break;
             }
         }
-        if (backend->deliver(content, &htmlAvailable, &error)) {
+        // The keyboard backends block again after the check above (clipboard
+        // helper startup, owner replacement, modifier release), so they get a
+        // last-moment gate to call immediately before the keystroke goes out.
+        const std::function<bool()> clearToInject =
+            virtualKeyboardInput && m_targetProvider && !currentFocusFallback
+                ? std::function<bool()>([this, &target] {
+                      return m_targetProvider->focusMatch(target)
+                          == TargetProvider::FocusMatch::Same;
+                  })
+                : std::function<bool()>();
+        if (backend->deliver(content, clearToInject, &htmlAvailable, &error)) {
             const bool copied = method == QString::fromLatin1(OutputMethod::WlCopy)
                 || method == QString::fromLatin1(OutputMethod::QtClipboard);
             const bool downgraded = content.html.has_value() && !htmlAvailable;

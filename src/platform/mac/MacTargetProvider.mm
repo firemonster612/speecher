@@ -11,6 +11,7 @@
 #import <Carbon/Carbon.h>
 
 #include <limits>
+#include <utility>
 
 namespace speecher {
 namespace {
@@ -123,6 +124,19 @@ std::optional<int> selectedTextOffset(AXUIElementRef element)
     return static_cast<int>(range->location);
 }
 
+// The selection the write will replace, as [start, end) offsets.
+std::optional<std::pair<int, int>> selectedTextSpan(AXUIElementRef element)
+{
+    const std::optional<CFRange> range = rangeAttribute(element, kAXSelectedTextRangeAttribute);
+    if (!range || range->location < 0 || range->length < 0
+        || range->location > std::numeric_limits<int>::max()
+        || range->length > std::numeric_limits<int>::max() - range->location) {
+        return std::nullopt;
+    }
+    return std::pair<int, int>(static_cast<int>(range->location),
+                               static_cast<int>(range->location + range->length));
+}
+
 // Window numbers remain available without Accessibility permission, but their
 // stacking order cannot identify keyboard focus when the app owns several.
 CGWindowID singleOwnedWindow(pid_t processId)
@@ -210,6 +224,7 @@ void MacTargetProvider::releaseFocusedElement()
     m_windowId = 0;
     m_valueBeforeInsertion.reset();
     m_insertionOffset.reset();
+    m_replacedSelectionEnd.reset();
     if (m_focusedElement) {
         CFRelease(static_cast<AXUIElementRef>(m_focusedElement));
         m_focusedElement = nullptr;
@@ -314,13 +329,15 @@ bool MacTargetProvider::insertText(const Target &target, const QString &plainTex
     // from a control that already happened to contain the text.
     m_valueBeforeInsertion = readStringAttribute(static_cast<AXUIElementRef>(m_focusedElement),
                                              kAXValueAttribute);
-    m_insertionOffset = selectedTextOffset(static_cast<AXUIElementRef>(m_focusedElement));
-    if (!m_insertionOffset) {
+    const auto span = selectedTextSpan(static_cast<AXUIElementRef>(m_focusedElement));
+    if (!span) {
         if (error) {
             *error = QStringLiteral("The focused control did not report its insertion point");
         }
         return false;
     }
+    m_insertionOffset = span->first;
+    m_replacedSelectionEnd = span->second;
 
     // Setting the selected text replaces the selection, or inserts at the caret
     // when there is none.
@@ -341,6 +358,7 @@ bool MacTargetProvider::preparePaste(const Target &target)
 {
     m_valueBeforeInsertion.reset();
     m_insertionOffset.reset();
+    m_replacedSelectionEnd.reset();
     if (target.secure || IsSecureEventInputEnabled()) return false;
     // Shared delivery permits a global paste rule without an identified target.
     // Keep that fallback, but never claim verification without a baseline.
@@ -348,13 +366,28 @@ bool MacTargetProvider::preparePaste(const Target &target)
     if (!stillFocused(target)) return false;
     const auto element = static_cast<AXUIElementRef>(m_focusedElement);
     m_valueBeforeInsertion = readStringAttribute(element, kAXValueAttribute);
-    m_insertionOffset = selectedTextOffset(element);
+    if (const auto span = selectedTextSpan(element)) {
+        m_insertionOffset = span->first;
+        m_replacedSelectionEnd = span->second;
+    }
     return true;
 }
 
 bool MacTargetProvider::verifyInsertion(const Target &target, const QString &plainText)
 {
-    if (!m_focusedElement || plainText.isEmpty() || target.secure || !stillFocused(target)) {
+    if (!m_focusedElement || !m_valueBeforeInsertion || !m_insertionOffset
+        || !m_replacedSelectionEnd || plainText.isEmpty() || target.secure
+        || !stillFocused(target)) {
+        return false;
+    }
+    // The insertion replaces the saved selection with the text; anything else
+    // that changed the control (a background edit, an ignored paste) must not
+    // verify, so require the exact transformation, surrounding text included.
+    const QString expected = m_valueBeforeInsertion->left(*m_insertionOffset)
+        + plainText + m_valueBeforeInsertion->mid(*m_replacedSelectionEnd);
+    if (expected == *m_valueBeforeInsertion) {
+        // Replacing a selection with identical text has no observable
+        // change; value comparison cannot verify it.
         return false;
     }
     for (int attempt = 0; attempt < insertionVerificationAttempts; ++attempt) {
@@ -363,12 +396,10 @@ bool MacTargetProvider::verifyInsertion(const Target &target, const QString &pla
         }
         const QString value = stringAttribute(static_cast<AXUIElementRef>(m_focusedElement),
                                               kAXValueAttribute);
-        const bool changed = m_valueBeforeInsertion && value != *m_valueBeforeInsertion;
-        if (!changed || !m_insertionOffset
-            || value.mid(*m_insertionOffset, plainText.size()) != plainText) {
+        if (value != expected) {
             continue;
         }
-        observeCorrections(target, value, *m_insertionOffset, plainText);
+        observeCorrections(target, expected, *m_insertionOffset, plainText);
         return true;
     }
     return false;

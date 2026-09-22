@@ -23,6 +23,10 @@ namespace speecher {
 namespace {
 
 constexpr int restartHandshakeTimeoutMs = 15000;
+// The replacement waits for the old process's teardown, which can block on a
+// joined provider probe; the longest probe network timeout is 30 s (Claude
+// credential refresh), so the disconnect wait must cover that plus slack.
+constexpr int restartTeardownTimeoutMs = 45000;
 constexpr auto restartSocketEnvironment = "SPEECHER_RESTART_SOCKET";
 
 void setError(QString *error, const QString &message)
@@ -103,7 +107,7 @@ void AppImageUpdater::waitForRestartParent()
     QLocalSocket socket;
     socket.connectToServer(socketName);
     if (socket.waitForConnected(restartHandshakeTimeoutMs)) {
-        socket.waitForDisconnected(restartHandshakeTimeoutMs);
+        socket.waitForDisconnected(restartTeardownTimeoutMs);
     }
 }
 
@@ -230,7 +234,14 @@ void AppImageUpdater::restartApplication()
         emit openReleasePageRequested();
         return;
     }
-    m_restartServer = new QLocalServer(this);
+    // Parented to the application, not the updater: the replacement holds
+    // startup until this server's socket closes, and the updater is destroyed
+    // early in controller teardown, while the old IPC listener (created after
+    // the provider registry, whose destruction can block on a probe join) is
+    // still connectable. Releasing the replacement then makes its
+    // single-instance check refuse startup. As an application child the server
+    // dies with QCoreApplication, after the controller and its IPC listener.
+    m_restartServer = new QLocalServer(QCoreApplication::instance());
     const QString socketName = QStringLiteral("speecher-restart-%1").arg(
         QUuid::createUuid().toString(QUuid::WithoutBraces));
     if (!m_restartServer->listen(socketName)) {

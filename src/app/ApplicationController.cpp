@@ -26,6 +26,7 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QEventLoop>
 #ifdef SPEECHER_E2E_HOOKS
 #include <QMetaEnum>
 #endif
@@ -47,6 +48,9 @@ constexpr qint64 hybridHoldMs = 250;
 // Push-to-talk: a press that lifts inside this window is a brush of the key,
 // not a dictation, and must leave no trace.
 constexpr int pushToTalkMisfireMs = 200;
+// How long a quit mid-dictation waits for the asynchronous media-resume calls
+// to leave the process before the event loop stops for good.
+constexpr int mediaResumeGraceMs = 200;
 #ifdef Q_OS_MACOS
 constexpr int accessibilityPollMs = 5000;
 #endif
@@ -441,6 +445,11 @@ void ApplicationController::showSetupAssistant(SetupAssistantPage page)
 // session start has to wait for the answer instead of capturing silence.
 void ApplicationController::startWithMicrophone(std::function<void()> start)
 {
+    // Every session start funnels through here; a start dispatched during the
+    // quit pump would re-pause the media quitApplication just resumed.
+    if (m_quitting) {
+        return;
+    }
 #ifdef SPEECHER_E2E_HOOKS
     // E2E-build-only hook: stub runs have no microphone to ask about.
     if (qEnvironmentVariableIntValue("SPEECHER_E2E_SKIP_MIC_GATE") == 1) {
@@ -638,6 +647,28 @@ void ApplicationController::showSetup()
 
 void ApplicationController::quitApplication()
 {
+    // The bounded pump below dispatches timers and socket notifiers, so an
+    // IPC "quit" arriving inside it re-enters here; once is enough.
+    if (m_quitting) {
+        return;
+    }
+    m_quitting = true;
+    // Session teardown never resumes the media the session paused, so a quit
+    // mid-dictation would leave the user's music paused. Cancel through
+    // cancelForShutdown() — never stopListening(), whose Refining branch
+    // delivers the fallback transcript into whatever window has focus — then
+    // pump the event loop briefly: the media controllers resume players over
+    // async D-Bus calls that would otherwise still be queued when the process
+    // exits.
+    if (m_session->state() != DictationState::Idle) {
+        m_pushToTalkStart->stop();
+        ++m_microphoneStartGeneration;
+        m_microphoneStartPending = false;
+        m_session->cancelForShutdown();
+        QEventLoop resumeWindow;
+        QTimer::singleShot(mediaResumeGraceMs, &resumeWindow, &QEventLoop::quit);
+        resumeWindow.exec(QEventLoop::ExcludeUserInputEvents);
+    }
     emit quitRequested();
 }
 

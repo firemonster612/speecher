@@ -695,6 +695,16 @@ QPushButton *makeButtonRow(const QString &title, const QString &description, QWi
     return row;
 }
 
+void setButtonRowCaption(QPushButton *row, const QString &caption)
+{
+    // FormButtonRow never draws QPushButton::text; the visible caption is the
+    // child rowTitle label, and assistive tech reads the accessible name.
+    if (auto *title = row->findChild<QLabel *>(QStringLiteral("rowTitle"))) {
+        title->setText(caption);
+    }
+    row->setAccessibleName(caption);
+}
+
 QMargins rowPadding()
 {
     // AbstractFormDelegate: a grid unit sideways, large plus small vertically.

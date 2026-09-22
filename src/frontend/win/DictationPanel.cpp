@@ -5,6 +5,7 @@
 #include "dictation/DictationSession.h"
 #include "dictation/DictationTypes.h"
 #include "frontend/win/SettingsPage.h"
+#include "ui/WaveformModel.h"
 
 #include <windows.h>
 #include <dwmapi.h>
@@ -33,7 +34,6 @@
 #include <QTextBoundaryFinder>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <limits>
 #include <vector>
@@ -65,33 +65,10 @@ constexpr int bottomMargin = 28;
 constexpr int bannerGap = 12;
 constexpr auto windowClassName = L"SpeecherDictationPanel";
 
-// Same dot geometry and travelling crest as the Linux waveform.
-constexpr int levelBarCount = 15;
+// Same dot geometry as the Linux waveform; the travelling crest and level
+// mapping come from the shared model in ui/WaveformModel.h.
+constexpr int levelBarCount = waveform::barCount;
 constexpr float barDotHeight = 3.2f;
-
-float waveMultiplier(float phase)
-{
-    constexpr std::array<std::array<float, 2>, 6> frames{{
-        {0, 1}, {0.2f, 1.2f}, {0.4f, 1.5f}, {0.8f, 1.1f}, {0.9f, 1.3f}, {1, 1}}};
-    for (int i = 1; i < int(frames.size()); ++i) {
-        if (phase > frames[i][0]) {
-            continue;
-        }
-        const float progress = (phase - frames[i - 1][0]) / (frames[i][0] - frames[i - 1][0]);
-        float t = progress;
-        for (int iteration = 0; iteration < 6; ++iteration) {
-            const float inverse = 1 - t;
-            const float x = 1.26f * t * inverse * inverse + 1.74f * t * t * inverse + t * t * t;
-            const float dx = 1.26f * (1 - 4 * t + 3 * t * t) + 1.74f * (2 * t - 3 * t * t) + 3 * t * t;
-            if (dx <= 0) {
-                break;
-            }
-            t = std::clamp(t - (x - progress) / dx, 0.0f, 1.0f);
-        }
-        return frames[i - 1][1] + (frames[i][1] - frames[i - 1][1]) * t * t * (3 - 2 * t);
-    }
-    return 1;
-}
 
 // Whether every pixel is the same colour, which is what a capture with no
 // desktop behind it looks like.
@@ -181,7 +158,7 @@ struct DictationPanel::Native : QObject {
         , controller(owner)
         , panel(q)
     {
-        barTimer.setInterval(16);
+        barTimer.setInterval(waveform::frameIntervalMs);
         barClock.start();
         connect(&barTimer, &QTimer::timeout, this, &Native::animateBars);
         // The same five seconds the Qt popup counts down; the Dismiss button
@@ -550,11 +527,7 @@ struct DictationPanel::Native : QObject {
         completed = false;
         phase = Phase::Live;
         pendingGeneration = generation;
-        levelSum = 0;
-        levelChunks = 0;
-        barTarget = 0;
-        smoothedLevel = 0;
-        levelWindow = barClock.elapsed();
+        level.restart(barClock.elapsed());
         ensureWindow();
         applyTheme();
         // Each dictation starts back at the floor, like the mac panel's
@@ -660,14 +633,7 @@ struct DictationPanel::Native : QObject {
     void setLevel(float value)
     {
         ensureWindow();
-        float mapped = 0;
-        if (value > 0) {
-            const float db = 20 * std::log10(value);
-            dbFloor = std::max(-46.0f, std::min(dbFloor, db));
-            mapped = std::clamp((db - dbFloor) / 20, 0.0f, 1.0f);
-        }
-        levelSum += mapped;
-        ++levelChunks;
+        level.addChunk(value);
     }
 
     void animateBars()
@@ -679,21 +645,11 @@ struct DictationPanel::Native : QObject {
             return;
         }
         barPhase = std::fmod(barPhase + elapsed, 1.0f);
-        if (now - levelWindow >= 150) {
-            if (levelChunks > 0) {
-                barTarget = levelSum / levelChunks;
-            }
-            levelSum = 0;
-            levelChunks = 0;
-            levelWindow += 150;
-            if (now - levelWindow >= 150) { levelWindow = now; }
-        }
-        smoothedLevel = std::floor((smoothedLevel * 0.85f + barTarget * 0.15f) * 100) / 100;
+        level.advance(now);
         for (int i = 0; i < int(barRects.size()); ++i) {
-            const float bulge = 1 - std::abs(7.0f - i) / 24;
             const float phase = barPhase - float(i) / levelBarCount;
-            const float height = barDotHeight * std::max(1.0f, smoothedLevel * 5)
-                * bulge * waveMultiplier(phase - std::floor(phase));
+            const float height = float(barDotHeight * level.audioScale() * waveform::bulge(i)
+                                       * waveform::waveMultiplier(phase - std::floor(phase)));
             barRects[i].Height(height);
             barRects[i].RadiusY(height / 4);
         }
@@ -1040,12 +996,7 @@ struct DictationPanel::Native : QObject {
     QTimer barTimer;
     QElapsedTimer barClock;
     qint64 lastFrame = 0;
-    qint64 levelWindow = 0;
-    float dbFloor = 0;
-    float levelSum = 0;
-    int levelChunks = 0;
-    float smoothedLevel = 0;
-    float barTarget = 0.0f;
+    waveform::LevelModel level;
     float barPhase = 0.0f;
     QTimer problemAutoDismiss;
     Button dismiss{nullptr};

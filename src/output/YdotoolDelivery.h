@@ -5,6 +5,8 @@
 #include <QObject>
 #include <QString>
 
+#include <functional>
+
 namespace speecher {
 
 class YdotoolDelivery : public QObject {
@@ -13,7 +15,12 @@ class YdotoolDelivery : public QObject {
 public:
     explicit YdotoolDelivery(QObject *parent = nullptr);
     bool type(const QString &text, QString *error = nullptr);
-    bool pasteFromClipboard(const QString &text, PasteMethod method, QString *error = nullptr);
+    // clearToInject runs after the modifier-release subprocess, immediately
+    // before the paste keystroke; false aborts without sending anything.
+    bool pasteFromClipboard(const QString &text,
+                            PasteMethod method,
+                            const std::function<bool()> &clearToInject = {},
+                            QString *error = nullptr);
     static bool isAvailable();
     static QString socketPath();
     static QStringList commandArguments(const QString &text);

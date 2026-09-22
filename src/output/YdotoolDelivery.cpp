@@ -154,7 +154,10 @@ bool YdotoolDelivery::type(const QString &text, QString *error)
     return true;
 }
 
-bool YdotoolDelivery::pasteFromClipboard(const QString &text, PasteMethod method, QString *error)
+bool YdotoolDelivery::pasteFromClipboard(const QString &text,
+                                         PasteMethod method,
+                                         const std::function<bool()> &clearToInject,
+                                         QString *error)
 {
     if (text.isEmpty()) {
         return true;
@@ -175,6 +178,15 @@ bool YdotoolDelivery::pasteFromClipboard(const QString &text, PasteMethod method
     }
 
     releaseModifierKeys(executable, env);
+    // The clipboard helper startup and the modifier release above both block;
+    // the user may have switched windows meanwhile. Last check before the
+    // keystroke, because a paste into the wrong window cannot be undone.
+    if (clearToInject && !clearToInject()) {
+        if (error) {
+            *error = QStringLiteral("The active window changed or could not be verified");
+        }
+        return false;
+    }
     if (!runYdotool(executable, env, pasteShortcutArguments(method), shortcutTimeoutMs, error)) {
         releaseModifierKeys(executable, env);
         return false;

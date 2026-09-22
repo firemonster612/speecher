@@ -16,6 +16,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 using namespace speecher::helpers;
 
@@ -240,6 +241,12 @@ bool copyDaemon(std::string &error)
         error = "Could not create the daemon directory";
         return false;
     }
+    // Unlink first: opening a running daemon's binary for overwrite fails with
+    // ETXTBSY, and repair runs exactly when a wedged daemon may still be
+    // alive. A fresh inode replaces the path without touching that process;
+    // the socket restart below then brings up the new binary.
+    std::error_code removeError;
+    std::filesystem::remove(std::string(daemonInstallPath), removeError);
     std::filesystem::copy_file(source, std::string(daemonInstallPath),
                                std::filesystem::copy_options::overwrite_existing, directoryError);
     if (directoryError) {
@@ -326,20 +333,66 @@ bool remove(const std::string &user, std::string &error)
             + " would take it away from " + owner + ".";
         return false;
     }
-    run("systemctl", {"disable", "--now", std::string(socketName)}, error, true, true);
-    if (!removeFileIfPresent(std::string(socketUnitPath), error)
-        || !removeFileIfPresent(std::string(serviceUnitPath), error)
-        || !removeFileIfPresent(std::string(daemonInstallPath), error)) {
-        return false;
-    }
-    if (!removeSelinuxPolicy(error)) {
-        return false;
-    }
-    // One-release cleanup for users added to the old socket-access group.
+    // Every step is attempted and every failure reported, as in
+    // YdotoolSetupHelper::remove(): a stubborn file must not leave the daemon
+    // binary or the SELinux module behind with only one problem named. Each
+    // problem line prints once: an empty label pushes the step's error alone
+    // (removeFileIfPresent already names the path), a label prefixes errors
+    // that do not say which step failed.
+    std::vector<std::string> problems;
+    const auto attempt = [&problems](const std::string &label, bool succeeded, const std::string &why) {
+        if (!succeeded) {
+            problems.push_back(label.empty() ? why : label + (why.empty() ? "" : ": " + why));
+        }
+    };
+
+    // A daemon that cannot be stopped keeps reading keyboards, so when the
+    // unit file exists a failed stop is a problem, not "removed". When the
+    // unit file never existed (removal after a failed install), systemctl's
+    // complaint about an unknown unit is expected; ignoring it keeps remove
+    // idempotent.
     std::string ignored;
+    if (std::filesystem::exists(socketUnitPath)) {
+        std::string stopError;
+        attempt("could not stop the key helper socket",
+                run("systemctl", {"disable", "--now", std::string(socketName)}, stopError, true),
+                stopError);
+    } else {
+        run("systemctl", {"disable", "--now", std::string(socketName)}, ignored, true, true);
+    }
+    // Stopping the socket does not stop its already-running service: a client
+    // holding a connection would keep the daemon reading keyboards after
+    // "removed" was reported. Stop the daemon itself too.
+    if (std::filesystem::exists(serviceUnitPath)) {
+        std::string stopError;
+        attempt("could not stop the key helper daemon",
+                run("systemctl", {"stop", std::string(serviceName)}, stopError, true),
+                stopError);
+    } else {
+        run("systemctl", {"stop", std::string(serviceName)}, ignored, true, true);
+    }
+    for (const std::string_view path : {socketUnitPath, serviceUnitPath, daemonInstallPath}) {
+        std::string stepError;
+        attempt(std::string(),
+                removeFileIfPresent(std::string(path), stepError),
+                stepError);
+    }
+    std::string selinuxError;
+    attempt("could not remove the SELinux module",
+            removeSelinuxPolicy(selinuxError),
+            selinuxError);
+    // One-release cleanup for users added to the old socket-access group.
     run("gpasswd", {"-d", user, std::string(userName)}, ignored, true, true);
-    run("systemctl", {"daemon-reload"}, error, true, true);
-    return true;
+    run("systemctl", {"daemon-reload"}, ignored, true, true);
+
+    if (problems.empty()) {
+        return true;
+    }
+    error = "Some of the key helper setup could not be removed:";
+    for (const std::string &problem : problems) {
+        error += "\n- " + problem;
+    }
+    return false;
 }
 
 void printHelp(const char *program)

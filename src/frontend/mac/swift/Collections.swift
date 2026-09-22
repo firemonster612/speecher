@@ -55,13 +55,31 @@ final class CollectionEditor: ObservableObject {
     func seed() {
         guard !seeded else { return }
         seeded = true
+        load(from: row)
+        draft = collection.blankRecord
+    }
+
+    /// A settings reopen reloaded the draft. A clean editor replaces its
+    /// records and its merge baseline together from the fresh snapshot, so
+    /// records learned or changed while the window was closed appear. A dirty
+    /// editor — a refused save, or the add sheet mid-record — keeps its state:
+    /// reloading would silently discard pending work, and the next successful
+    /// save re-syncs both.
+    func reload(from freshRow: SettingsRowModel) {
+        guard seeded, problems.isEmpty, !adding else { return }
+        load(from: freshRow)
+        // The reloaded records carry new identities, so the old selection
+        // points at nothing.
+        selection = []
+    }
+
+    private func load(from row: SettingsRowModel) {
         let stored = row.value as? [[String: Any]] ?? []
         let locked = collection.lockedRecordCount
         records = stored.enumerated().map {
             CollectionRecord(values: $0.element, locked: $0.offset < locked)
         }
         savedRecords = editableRecords
-        draft = collection.blankRecord
     }
 
     func setValue(_ value: Any, column: String, record id: UUID) {
@@ -175,6 +193,9 @@ struct CollectionRow: View {
             accessoryBar
         }
         .onAppear { editor.seed() }
+        // The window and this view survive close/reopen, so a reopened draft
+        // arrives as a generation bump rather than a fresh onAppear.
+        .onChange(of: model.draftGeneration) { editor.reload(from: row) }
         ForEach(editor.problems, id: \.self) { problem in
             Text(problem)
         }

@@ -2,6 +2,8 @@
 
 #include <QString>
 
+#include <functional>
+
 namespace speecher {
 
 // Synthesises keystrokes with CGEvent. macOS drops posted events silently when
@@ -11,7 +13,9 @@ namespace speecher {
 class MacPasteDelivery {
 public:
     static bool isAvailable();
-    bool paste(QString *error = nullptr);
+    // clearToInject is checked immediately before the keystroke is posted;
+    // false aborts without sending anything.
+    bool paste(const std::function<bool()> &clearToInject = {}, QString *error = nullptr);
 };
 
 } // namespace speecher

@@ -32,8 +32,9 @@ QString accessibilityRequiredReason()
 // one. Deriving down-vs-up from the bit, not from alternating edges, keeps a
 // stale edge while the twin is held from desyncing the state.
 //
-// Caps Lock has no release event: its bit is the lock state, so a bound Caps
-// Lock behaves as a toggle whatever the activation mode.
+// Caps Lock has no release event: its bit is the LOCK state, which flips once
+// per press and never on release, so it cannot be mapped to down/up like the
+// other modifiers; the observe block special-cases it as one press per event.
 std::optional<NSUInteger> modifierFlagBit(int macKeyCode)
 {
     switch (macKeyCode) {
@@ -140,6 +141,21 @@ QString MacSingleKeyShortcutBinder::watch(const PhysicalKey &key)
 
     void (^observe)(NSEvent *) = ^(NSEvent *event) {
         if (event.keyCode != target || postedBySpeecher(event)) {
+            return;
+        }
+        // Caps Lock's flag bit is the lock state: it flips on every press and
+        // never on release, so the down/up mapping below would activate on
+        // every other press only. Treat each flags-changed event as one full
+        // press. A hold cannot be observed for a lock key, so push-to-talk
+        // degrades to a tap on Caps Lock.
+        if (target == kVK_CapsLock) {
+            QMetaObject::invokeMethod(
+                this,
+                [this] {
+                    keyDown();
+                    keyUp();
+                },
+                Qt::QueuedConnection);
             return;
         }
         bool down;

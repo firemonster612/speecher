@@ -6,6 +6,7 @@
 #include "providers/ProviderRegistry.h"
 
 #include <QDebug>
+#include <QHash>
 #include <QRegularExpression>
 #include <QTimer>
 
@@ -394,6 +395,38 @@ void DictationSession::stopListening()
         m_transcriber->finishInput(m_attemptId);
     }
     resumePausedMedia();
+}
+
+// The quit path. stopListening() finalizes — its Refining branch delivers the
+// fallback transcript — so quitting must not go through it. This follows the
+// Starting branch's cancel semantics instead: bump the generation so every
+// pending completion (startup preparation, refinement, delivery result) is
+// stale, cancel the providers, and go Idle with no delivery and no receipt.
+void DictationSession::cancelForShutdown()
+{
+    if (m_state == DictationState::Idle) {
+        return;
+    }
+    ++m_generation;
+    m_startupRunner->cancel();
+    m_audio->stop();
+    m_audioGeneration = 0;
+    if (m_transcriber) {
+        m_transcriber->cancelAttempt(m_attemptId);
+    }
+    if (m_refiner) {
+        m_refiner->cancel();
+    }
+    m_refinementGeneration = 0;
+    m_completionTimer->stop();
+    clearScreenshotContext();
+    m_sessionSettings.reset();
+    m_target = {};
+    m_transcriptPipeline = {};
+    resumePausedMedia();
+    emit popupRefiningChanged(false);
+    emit popupHideRequested();
+    setState(DictationState::Idle);
 }
 
 void DictationSession::setState(DictationState state, const QString &message)
@@ -804,8 +837,9 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
         if (m_state != DictationState::Refining || m_refinementGeneration != m_generation) {
             return;
         }
-        // Selection edits stream a structured reply, not prose; previewing it
-        // would show the wrapper instead of text.
+        // Selection edits stream the complete revised document, not the
+        // dictated words; previewing it would flash the whole document
+        // through the popup a few words at a time.
         if (m_transcriptPipeline.editsSelection) {
             return;
         }
@@ -831,9 +865,29 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
                 preview.truncate(tail);
             }
         }
-        for (const BindingPlaceholder &placeholder : m_transcriptPipeline.bindingResult.placeholders) {
-            preview.replace(placeholder.placeholder, placeholder.replacement);
+        // One left-to-right pass over whole-token matches, the token rule
+        // final restoration uses (BindingMatcher::restorePlaceholders):
+        // each match is replaced through a lookup and the scan continues
+        // after the splice, so inserted replacement text is never rescanned
+        // and a replacement that itself contains placeholder-shaped text
+        // survives here exactly as it does in the delivered result.
+        QHash<QString, QString> replacements;
+        for (const BindingPlaceholder &placeholder :
+             m_transcriptPipeline.bindingResult.placeholders) {
+            replacements.insert(placeholder.placeholder, placeholder.replacement);
         }
+        QString restored;
+        restored.reserve(preview.size());
+        qsizetype cursor = 0;
+        QRegularExpressionMatchIterator tokens = placeholderToken.globalMatch(preview);
+        while (tokens.hasNext()) {
+            const QRegularExpressionMatch token = tokens.next();
+            restored += preview.mid(cursor, token.capturedStart() - cursor);
+            restored += replacements.value(token.captured(), token.captured());
+            cursor = token.capturedEnd();
+        }
+        restored += preview.mid(cursor);
+        preview = std::move(restored);
         const int words = m_settings ? m_settings->previewWords() : 7;
         emit popupRefinementPreviewChanged(WordPreview::lastWords(preview, words));
     });

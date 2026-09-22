@@ -16,6 +16,7 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <memory>
 
 #include <windows.h>
 #include <microsoft.ui.xaml.window.h>
@@ -154,6 +155,7 @@ struct SettingsWindow::Native {
     {
         host.model = &model;
         host.controller = controller;
+        host.alive = alive;
         host.refresh = [this] { queueRebuild(); };
         host.action = [this](const QString &id) { runAction(id); };
         host.hwnd = [this] { return windowHandle(); };
@@ -181,6 +183,9 @@ struct SettingsWindow::Native {
 
     ~Native()
     {
+        // Dispatcher callbacks queued by this object can still be pending;
+        // they hold a weak copy of this token and bail once it is cleared.
+        *alive = false;
         // The Closed token is revoked before Close(), so windowClosed() never
         // runs on this path; quitting with the window open must still save its
         // geometry and give a suspended hotkey back.
@@ -326,8 +331,8 @@ struct SettingsWindow::Native {
         // first frame, so they wait a turn of the dispatcher for it.
         auto queue = winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread();
         queue.TryEnqueue(winrt::Microsoft::UI::Dispatching::DispatcherQueuePriority::Low,
-                         [this] {
-                             if (!window) {
+                         [this, weak = std::weak_ptr<bool>(alive)] {
+                             if (gone(weak) || !window) {
                                  return;
                              }
                              model.loadExpensiveRows();
@@ -336,7 +341,11 @@ struct SettingsWindow::Native {
                              // so it waits another turn.
                              winrt::Microsoft::UI::Dispatching::DispatcherQueue::
                                  GetForCurrentThread()
-                                     .TryEnqueue([this] { loadApiKey(); });
+                                     .TryEnqueue([this, weak] {
+                                         if (!gone(weak)) {
+                                             loadApiKey();
+                                         }
+                                     });
                          });
     }
 
@@ -520,7 +529,10 @@ struct SettingsWindow::Native {
         }
         rebuildQueued = true;
         winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread().TryEnqueue(
-            [this] {
+            [this, weak = std::weak_ptr<bool>(alive)] {
+                if (gone(weak)) {
+                    return;
+                }
                 rebuildQueued = false;
                 if (window) {
                     rebuildPage();
@@ -717,6 +729,17 @@ struct SettingsWindow::Native {
         return printWindowTo(windowHandle(), path);
     }
 
+    // Whether a deferred dispatcher callback may still touch this object.
+    // WinUiHost's dispatcher outlives this Native and drains queued work on
+    // shutdown, so every queued callback checks this before using `this`;
+    // a member-null check cannot establish object lifetime.
+    static bool gone(const std::weak_ptr<bool> &weak)
+    {
+        const std::shared_ptr<bool> alive = weak.lock();
+        return !alive || !*alive;
+    }
+
+    std::shared_ptr<bool> alive = std::make_shared<bool>(true);
     ApplicationController *controller;
     SettingsModel model;
     PaneHost host;

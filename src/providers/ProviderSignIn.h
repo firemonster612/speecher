@@ -21,16 +21,28 @@ public:
     explicit ProviderSignIn(SettingsStore &settings);
 
     static bool supportsCliproxy(const QString &providerId);
-    // Which CLI Proxy API account type backs a speech provider.
+    // Which CLI Proxy API account type backs a provider, speech ("codex",
+    // "claude") or refinement ("openai", "anthropic"). The company's speech
+    // and refinement sides share one account.
     static QString cliproxyAccountType(const QString &providerId);
+
+    // The CLI Proxy API copy every assistant renders: the Welcome step's two
+    // hints and the opt-in label the found-hint quotes. Shared because the
+    // instruction names the control; a copy edited on one platform would send
+    // readers to a checkbox that no longer says that.
+    static QString cliproxyOptInLabel();
+    static QString cliproxyAccountsFoundHint();
+    static QString cliproxyAccountsMissingHint();
 
     bool usingCliproxy(const QString &providerId) const;
     // Opting out returns to the mode this model first saw the provider leave,
     // so a sign-in chosen in Settings (an OpenAI API key, say) survives a
     // round trip through CLI Proxy API instead of being rewritten to the
-    // default. The transcription providers share one sign-in setting per
-    // company with refinement, so this writes the same modes the Providers
-    // settings page does.
+    // default. The memory lives with this instance, so the round trip must
+    // stay within it; opting out from a later run falls back to the
+    // provider's default mode. The transcription providers share one sign-in
+    // setting per company with refinement, so this writes the same modes the
+    // Providers settings page does.
     void setUseCliproxy(const QString &providerId, bool use);
 
     QString cliproxyAccount(const QString &providerId) const;

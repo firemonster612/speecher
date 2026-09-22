@@ -5,6 +5,7 @@
 #include "core/settings/SettingsSchema.h"
 #include "providers/ClaudeCredentials.h"
 #include "providers/OpenAiAuthProvider.h"
+#include "providers/ProviderSignIn.h"
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QComboBox>
@@ -61,7 +62,7 @@ SchemaCustomRowFactory ProviderCustomRows::factory()
             m_openAiCliproxyAccount = new QComboBox(parent);
             return makeCliproxyAccountRow(m_openAiCliproxyAccount,
                                           m_authMode,
-                                          QStringLiteral("codex"),
+                                          ProviderSignIn::cliproxyAccountType(QStringLiteral("openai")),
                                           &m_openAiStoredAccount,
                                           std::move(notifyChanged));
         }
@@ -69,7 +70,7 @@ SchemaCustomRowFactory ProviderCustomRows::factory()
             m_anthropicCliproxyAccount = new QComboBox(parent);
             return makeCliproxyAccountRow(m_anthropicCliproxyAccount,
                                           m_anthropicAuthMode,
-                                          QStringLiteral("claude"),
+                                          ProviderSignIn::cliproxyAccountType(QStringLiteral("anthropic")),
                                           &m_anthropicStoredAccount,
                                           std::move(notifyChanged));
         }
@@ -101,7 +102,7 @@ SchemaCustomRow ProviderCustomRows::makeAuthModeRow(QWidget *parent,
                          if (m_openAiCliproxyAccount) {
                              populateCliproxyAccounts(
                                  m_openAiCliproxyAccount,
-                                 QStringLiteral("codex"),
+                                 ProviderSignIn::cliproxyAccountType(QStringLiteral("openai")),
                                  comboSelection(m_openAiCliproxyAccount, m_openAiStoredAccount));
                          }
                          updateAccountTooltips();
@@ -176,7 +177,7 @@ SchemaCustomRow ProviderCustomRows::makeAnthropicAuthModeRow(QWidget *parent,
                          if (m_anthropicCliproxyAccount) {
                              populateCliproxyAccounts(
                                  m_anthropicCliproxyAccount,
-                                 QStringLiteral("claude"),
+                                 ProviderSignIn::cliproxyAccountType(QStringLiteral("anthropic")),
                                  comboSelection(m_anthropicCliproxyAccount, m_anthropicStoredAccount));
                          }
                          updateAccountTooltips();
@@ -317,13 +318,13 @@ void ProviderCustomRows::repopulateAccounts()
 {
     if (m_openAiCliproxyAccount) {
         populateCliproxyAccounts(m_openAiCliproxyAccount,
-                                 QStringLiteral("codex"),
+                                 ProviderSignIn::cliproxyAccountType(QStringLiteral("openai")),
                                  comboSelection(m_openAiCliproxyAccount, m_openAiStoredAccount));
     }
     if (m_anthropicCliproxyAccount) {
         populateCliproxyAccounts(
             m_anthropicCliproxyAccount,
-            QStringLiteral("claude"),
+            ProviderSignIn::cliproxyAccountType(QStringLiteral("anthropic")),
             comboSelection(m_anthropicCliproxyAccount, m_anthropicStoredAccount));
     }
 }

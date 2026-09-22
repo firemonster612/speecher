@@ -57,8 +57,21 @@ private slots:
         emit controller.stateChanged(QStringLiteral("starting"));
         QCOMPARE(toggle->text(), QStringLiteral("Stop Dictation"));
 
+        // Toggling mid-refinement cancels the refinement, so the action must
+        // not promise a start; during stopping/delivering it does nothing.
+        emit controller.stateChanged(QStringLiteral("refining"));
+        QCOMPARE(toggle->text(), QStringLiteral("Stop Dictation"));
+        QVERIFY(toggle->isEnabled());
+
+        emit controller.stateChanged(QStringLiteral("stopping"));
+        QVERIFY(!toggle->isEnabled());
+
+        emit controller.stateChanged(QStringLiteral("delivering"));
+        QVERIFY(!toggle->isEnabled());
+
         emit controller.stateChanged(QStringLiteral("idle"));
         QCOMPARE(toggle->text(), QStringLiteral("Start Dictation"));
+        QVERIFY(toggle->isEnabled());
         QCOMPARE(icon->toolTip(), QStringLiteral("Speecher"));
     }
 

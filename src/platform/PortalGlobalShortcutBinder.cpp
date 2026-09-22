@@ -214,6 +214,36 @@ bool PortalGlobalShortcutBinder::setShortcut(const ShortcutBinding &, QString *e
     return false;
 }
 
+// The portal keeps the shortcut alive as long as the session is open, so
+// letting a session linger after the user switched to a single key leaves the
+// old combination starting dictation. Closing the session is the removal.
+bool PortalGlobalShortcutBinder::removeRegistration(QString *)
+{
+    m_bindWhenSupported = false;
+    // An in-flight host-identity Register keeps its watcher, whose
+    // continuation would recreate the session this removal closes. Cancel
+    // the continuation (the identity itself may still become ready); a
+    // later bind() re-arms it.
+    m_identityContinuationCancelled = m_identityPending;
+    m_registrationAfterIdentity = false;
+    if (!m_requestPath.path().isEmpty()) {
+        closeRequest();
+    }
+    disconnectRequest();
+    closePendingSession();
+    if (!m_sessionPath.path().isEmpty()) {
+        QDBusConnection::sessionBus().asyncCall(QDBusMessage::createMethodCall(
+            QString::fromLatin1(portalService),
+            m_sessionPath.path(),
+            QString::fromLatin1(sessionInterface),
+            QStringLiteral("Close")));
+        m_sessionPath = {};
+    }
+    m_triggerDescription.clear();
+    emit bindingChanged();
+    return true;
+}
+
 bool PortalGlobalShortcutBinder::ensureHostIdentity(bool registration)
 {
     if (m_identityReady) {
@@ -225,11 +255,15 @@ bool PortalGlobalShortcutBinder::ensureHostIdentity(bool registration)
         return true;
     }
     if (m_identityPending) {
+        // A new session request re-arms a continuation removeRegistration()
+        // cancelled while Register was still in flight.
+        m_identityContinuationCancelled = false;
         m_registrationAfterIdentity = m_registrationAfterIdentity || registration;
         return false;
     }
 
     m_identityPending = true;
+    m_identityContinuationCancelled = false;
     m_registrationAfterIdentity = registration;
     QDBusMessage registrationCall = QDBusMessage::createMethodCall(
         QString::fromLatin1(portalService),
@@ -254,6 +288,13 @@ bool PortalGlobalShortcutBinder::ensureHostIdentity(bool registration)
             return;
         }
         m_identityReady = true;
+        // removeRegistration() ran while Register was in flight: the
+        // identity stays ready for later binds, but creating the session
+        // now would resurrect the shortcut the removal just closed.
+        if (m_identityContinuationCancelled) {
+            m_identityContinuationCancelled = false;
+            return;
+        }
         createSession(requestedRegistration);
     });
     return false;

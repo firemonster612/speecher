@@ -309,7 +309,15 @@ QList<QVariantMap> CollectionEditor::records() const
 
 void CollectionEditor::setRecords(const QList<QVariantMap> &records)
 {
-    // A reload has committed whatever Delete took, so there is nothing to undo.
+    // The editor's own edit comes straight back: announcing a change makes
+    // SettingsPageSet reload every page from the draft, including this one.
+    // Resetting on that echo would destroy the deletion history (and disable
+    // "Undo delete") before the click handler even returns.
+    if (records == lockedRecords() + this->records()) {
+        return;
+    }
+    // A genuinely different set means a reload committed whatever Delete
+    // took, so there is nothing left to undo.
     m_deleted.clear();
     showRecords(records);
 }

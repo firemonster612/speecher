@@ -50,7 +50,7 @@ bool MacPasteDelivery::isAvailable()
     return AXIsProcessTrusted();
 }
 
-bool MacPasteDelivery::paste(QString *error)
+bool MacPasteDelivery::paste(const std::function<bool()> &clearToInject, QString *error)
 {
     if (!isAvailable()) {
         if (error) {
@@ -69,6 +69,15 @@ bool MacPasteDelivery::paste(QString *error)
     const auto keyCode = mac::keyCodeForCharacter(QLatin1Char('V'), Qt::ControlModifier);
     if (!keyCode) {
         if (error) *error = QStringLiteral("Could not find the paste key in the current keyboard layout");
+        return false;
+    }
+    // The clipboard copy before this call blocks; the frontmost app can have
+    // changed meanwhile. Last check before the keystroke, because a paste into
+    // the wrong window cannot be undone.
+    if (clearToInject && !clearToInject()) {
+        if (error) {
+            *error = QStringLiteral("The active window changed or could not be verified");
+        }
         return false;
     }
     return postKeyStroke(*keyCode, kCGEventFlagMaskCommand, error);

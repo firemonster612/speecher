@@ -264,6 +264,49 @@ QString footnote(const SectionSnapshot &section)
     return {};
 }
 
+// Collections and full-width custom rows bypass rowGrid, so a gated one gets
+// the same treatment here: the card content disabled, with the explanation and
+// any gate-lifting action visible outside the disabled subtree.
+UIElement gatedFullWidthCard(const RowSnapshot &row, const UIElement &card, PaneHost &host)
+{
+    if (row.enabled) {
+        return card;
+    }
+    StackPanel wrap;
+    wrap.Spacing(4);
+    // A ContentControl, so IsEnabled reaches every control inside the card.
+    ContentControl gate;
+    gate.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+    gate.IsTabStop(false);
+    gate.IsEnabled(false);
+    detachFromParent(card);
+    gate.Content(card);
+    wrap.Children().Append(gate);
+    if (!row.disabledHelp.isEmpty()) {
+        wrap.Children().Append(
+            secondaryTextBlock(row.disabledHelp, L"SettingsFootnoteStyle", host));
+    }
+    if (!row.disabledAction.isEmpty()) {
+        HyperlinkButton lift;
+        lift.Content(box_value(hs(row.disabledActionLabel)));
+        lift.Padding({0, 2, 0, 0});
+        lift.Click([actionId = row.disabledAction, &host,
+                    weak = std::weak_ptr<bool>(host.alive)](const auto &, const auto &) {
+            // The XAML tree can outlive the window's Native, whose PaneHost
+            // this handler references; the token establishes its lifetime.
+            const std::shared_ptr<bool> alive = weak.lock();
+            if (!alive || !*alive) {
+                return;
+            }
+            if (host.action) {
+                host.action(actionId);
+            }
+        });
+        wrap.Children().Append(lift);
+    }
+    return wrap;
+}
+
 // One schema section as the Settings app draws it: a BodyStrong header, one
 // SettingsCard per row — rows sharing a groupId in one card — spaced 4, and
 // the footnote underneath.
@@ -297,11 +340,15 @@ void appendSection(const StackPanel &column, const SectionSnapshot &section, Pan
     for (const QList<RowSnapshot> &unit : units) {
         const RowSnapshot &first = unit.first();
         if (first.kind == RowKind::Collection) {
-            cards.Children().Append(editorFor(first, host)->card());
+            cards.Children().Append(
+                gatedFullWidthCard(first, editorFor(first, host)->card(), host));
             continue;
         }
         if (first.kind == RowKind::Custom && customRowIsFullWidth(first.id)) {
-            cards.Children().Append(cardContainer(customRowElement(first, host)));
+            cards.Children().Append(
+                gatedFullWidthCard(first,
+                                   cardContainer(customRowElement(first, host)),
+                                   host));
             continue;
         }
         StackPanel rows;
@@ -348,7 +395,23 @@ TextBlock secondaryTextBlock(const QString &text, const wchar_t *styleKey, const
     TextBlock block = styledTextBlock(text, styleKey);
     const ElementTheme theme = host.effectiveTheme ? host.effectiveTheme()
                                                    : ElementTheme::Default;
-    const hstring themeKey = theme == ElementTheme::Light ? L"Light" : L"Dark";
+    // A contrast theme overrides Light/Dark: XAML resolves ThemeResource from
+    // the HighContrast dictionary then, and this code lookup must match it or
+    // secondary text keeps a translucent brush the contrast theme forbids.
+    // Read through SystemParametersInfo, not AccessibilitySettings: that WinRT
+    // class is CoreWindow-dependent and unsupported in a Windows App SDK
+    // desktop app. A contrast switch while the window is open does NOT reach
+    // here — the explicit RequestedTheme pins ActualTheme, so
+    // ActualThemeChanged never fires for it; the correct brush arrives on the
+    // next rebuild or reopen.
+    HIGHCONTRASTW contrast{};
+    contrast.cbSize = sizeof(contrast);
+    const bool highContrast =
+        SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0)
+        && (contrast.dwFlags & HCF_HIGHCONTRASTON);
+    const hstring themeKey = highContrast ? L"HighContrast"
+        : theme == ElementTheme::Light   ? L"Light"
+                                         : L"Dark";
     // The style dictionary is the merged dictionary that carries our theme
     // dictionaries; walk the merged list rather than assuming its position.
     for (const auto &merged : Application::Current().Resources().MergedDictionaries()) {

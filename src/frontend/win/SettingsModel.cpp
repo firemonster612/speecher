@@ -416,10 +416,22 @@ bool SettingsModel::credentialIsEditable() const
 
 QString SettingsModel::credentialStatus() const
 {
+    // The schema marks openAiAuth expensive: resolving the status can enter
+    // the keyring, which the window defers until readApiKey()'s dispatcher
+    // turn. Until then, render a loading value instead of blocking the paint.
+    if (!m_credentialReady) {
+        return QStringLiteral("Checking credentials…");
+    }
+    // The remote CLI Proxy fields decide which credential the status
+    // describes; passing them matches the Qt call site (ProviderCustomRows).
     return OpenAiAuthProvider(m_controller->secretStore(),
                               m_draft.refinement.openAiAuthMode,
                               m_draft.refinement.openAiCliproxyAccount,
-                              m_store->cliproxyOauthDir())
+                              m_store->cliproxyOauthDir(),
+                              {},
+                              {},
+                              m_draft.refinement.cliproxyBaseUrl,
+                              m_draft.refinement.cliproxyApiKey)
         .status();
 }
 
@@ -428,8 +440,13 @@ QString SettingsModel::anthropicCredentialStatus() const
     return win::anthropicCredentialStatus(m_draft, *m_store);
 }
 
-QString SettingsModel::readApiKey() const
+QString SettingsModel::readApiKey()
 {
+    // This is the deferred keyring turn: any unlock prompt happens here, and
+    // the store caches the read, so the status may resolve from now on. The
+    // window rebuilds the providers pane right after, replacing the loading
+    // value.
+    m_credentialReady = true;
     return m_controller->secretStore()->apiKey();
 }
 

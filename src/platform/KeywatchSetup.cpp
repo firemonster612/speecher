@@ -31,9 +31,16 @@ constexpr int answerCacheMs = 20000;
 
 // The probe runs on the UI thread while the exchange with the daemon and the
 // pkexec'd install run on workers, so the cache is atomics rather than a timer
-// object.
+// object. The answer and its protocol flag are one value on purpose: written
+// once per exchange and read with one load, so a probe can never pair a stale
+// answer with a newer exchange's protocol flag.
+enum DaemonAnswerState : int {
+    NoAnswer = 0,
+    AnsweredWrongVersion = 1,
+    AnsweredMatching = 2,
+};
 std::atomic<std::int64_t> cachedAnswerAtMs{0};
-std::atomic<bool> cachedAnswer{false};
+std::atomic<int> cachedAnswerState{NoAnswer};
 std::atomic<bool> askInFlight{false};
 
 std::int64_t monotonicMs()
@@ -46,8 +53,10 @@ std::int64_t monotonicMs()
 // Key id 0 is not in the permitted table, so a live daemon answers this with
 // KeyNotPermitted without taking a watch or disturbing one already running. A
 // daemon that failed to start leaves systemd's socket accepting and then
-// closing, which shows up here as no answer.
-bool askDaemon()
+// closing, which shows up here as no answer. The reply's contents matter too:
+// an installed daemon from before a protocol bump answers BadVersion with its
+// own version number, which is alive but unusable.
+bool askDaemon(bool &protocolMatches)
 {
     QLocalSocket socket;
     socket.connectToServer(QString::fromLatin1(keywatch::socketPath));
@@ -62,6 +71,10 @@ bool askDaemon()
             return false;
         }
     }
+    keywatch::WatchReply reply{};
+    socket.read(reinterpret_cast<char *>(&reply), sizeof(reply));
+    protocolMatches = reply.version == keywatch::protocolVersion
+        && reply.refusal != std::uint8_t(keywatch::Refusal::BadVersion);
     return true;
 }
 
@@ -78,8 +91,11 @@ void askDaemonInBackground()
     // whichever pool thread happens to finish the exchange.
     KeywatchSetup::daemonAnswer();
     QThreadPool::globalInstance()->start([] {
-        const bool answered = askDaemon();
-        cachedAnswer.store(answered);
+        bool protocolMatches = false;
+        const bool answered = askDaemon(protocolMatches);
+        cachedAnswerState.store(!answered           ? NoAnswer
+                                    : protocolMatches ? AnsweredMatching
+                                                      : AnsweredWrongVersion);
         cachedAnswerAtMs.store(monotonicMs());
         askInFlight.store(false);
         QMetaObject::invokeMethod(KeywatchSetup::daemonAnswer(),
@@ -88,13 +104,13 @@ void askDaemonInBackground()
     });
 }
 
-bool daemonAnswers()
+DaemonAnswerState daemonAnswerState()
 {
     const std::int64_t askedAt = cachedAnswerAtMs.load();
     if (askedAt == 0 || monotonicMs() - askedAt >= answerCacheMs) {
         askDaemonInBackground();
     }
-    return cachedAnswer.load();
+    return DaemonAnswerState(cachedAnswerState.load());
 }
 
 } // namespace
@@ -122,6 +138,12 @@ KeywatchSetupStatus KeywatchSetup::evaluate(const KeywatchProbeFacts &facts)
                 QStringLiteral("The key helper is installed but does not answer. "
                                "Set it up again to repair it.")};
     }
+    if (!facts.daemonProtocolMatches) {
+        return {KeywatchSetupState::NeedsReinstall,
+                QStringLiteral("Installed, needs an update"),
+                QStringLiteral("The installed key helper is from another version of "
+                               "Speecher. Set it up again to update it.")};
+    }
     return {KeywatchSetupState::Ready,
             QStringLiteral("Ready"),
             QStringLiteral("The key helper is ready.")};
@@ -136,7 +158,10 @@ KeywatchSetupStatus KeywatchSetup::probe()
     // QFileInfo::isWritable() answers from the owner's point of view for a
     // socket node; access() asks the kernel about this process.
     facts.socketWritable = facts.socketExists && access(keywatch::socketPath, W_OK) == 0;
-    facts.daemonAnswers = facts.socketWritable && daemonAnswers();
+    const DaemonAnswerState answer =
+        facts.socketWritable ? daemonAnswerState() : NoAnswer;
+    facts.daemonAnswers = answer != NoAnswer;
+    facts.daemonProtocolMatches = answer == AnsweredMatching;
     return evaluate(facts);
 }
 
@@ -151,7 +176,7 @@ KeywatchDaemonAnswer *KeywatchSetup::daemonAnswer()
 void KeywatchSetup::forgetDaemonAnswer()
 {
     cachedAnswerAtMs.store(0);
-    cachedAnswer.store(false);
+    cachedAnswerState.store(NoAnswer);
 }
 
 bool KeywatchSetup::install(QString *error)

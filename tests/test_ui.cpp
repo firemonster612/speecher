@@ -1683,7 +1683,7 @@ private slots:
     // 1. Expected values come from that model, not from the implementation.
     void waveformLevelModelFollowsSpeechAndSilence()
     {
-        using LevelModel = speecher::WaveformWidget::LevelModel;
+        using LevelModel = speecher::waveform::LevelModel;
         // A microphone chunk is rms * 8 clipped at 1, so room tone near
         // -50 dBFS arrives as 0.024 and speech near -26 dBFS as 0.4.
         constexpr float roomTone = 0.024f;

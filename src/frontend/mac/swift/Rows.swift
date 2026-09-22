@@ -9,9 +9,27 @@ struct RowView: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        control
-            .disabled(!row.enabled)
-            .help(row.enabled ? row.tooltip : row.disabledHelp)
+        if row.enabled {
+            control.help(row.tooltip)
+        } else {
+            // The schema requires the explanation visible beside the disabled
+            // control and its recovery action usable (SettingsSchema.h's
+            // disabledHelp contract) — a tooltip alone hides both. One
+            // container: RowView sits in Form sections and the setup
+            // assistant, where sibling views would each become a form row
+            // of their own.
+            VStack(alignment: .leading) {
+                control
+                    .disabled(true)
+                    .help(row.disabledHelp)
+                if !row.disabledHelp.isEmpty {
+                    Text(row.disabledHelp)
+                }
+                if !row.disabledAction.isEmpty {
+                    Button(row.disabledActionLabel) { model.trigger(row.disabledAction) }
+                }
+            }
+        }
     }
 
     @ViewBuilder private var control: some View {
@@ -112,7 +130,10 @@ struct RowView: View {
     /// the second one, which is why there is no font or colour here.
     @ViewBuilder private var label: some View {
         Text(row.label)
-        if !row.help.isEmpty {
+        // The gate note in the row body replaces the description while the
+        // row is disabled, matching the Qt and Windows front ends; showing
+        // both would give a gated row two competing descriptions.
+        if row.enabled, !row.help.isEmpty {
             Text(row.help)
         }
     }
@@ -318,7 +339,9 @@ struct CredentialField: View {
                 }
             }
         } else {
-            Text(model.bridge.credentialStatus)
+            // Cached on the model: resolving it live can enter the keyring,
+            // which must not happen inside a SwiftUI body.
+            Text(model.credentialStatus)
         }
     }
 }

@@ -15,7 +15,6 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QPropertyAnimation>
-#include <QResizeEvent>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -438,7 +437,6 @@ void TranscriberPopup::setStatus(const QString &status)
         m_previewPill->adjustSize();
     }
     adjustSize();
-    updateWindowMask();
 }
 
 void TranscriberPopup::setPreview(const QString &preview)
@@ -498,7 +496,6 @@ void TranscriberPopup::applyPreviewText(const QString &preview)
     if (isVisible()) {
         m_positioner->positionBottomCenter(m_surface);
     }
-    updateWindowMask();
 }
 
 void TranscriberPopup::hidePreview()
@@ -509,7 +506,6 @@ void TranscriberPopup::hidePreview()
     if (isVisible()) {
         m_positioner->positionBottomCenter(m_surface);
     }
-    updateWindowMask();
 }
 
 // The capsule's two standard shapes: the bare waveform pill while there are
@@ -571,7 +567,6 @@ void TranscriberPopup::showOAuthRefreshIndicator()
     m_waveform->setStatusText(QStringLiteral("Renewing sign-in…"));
     m_previewPill->adjustSize();
     adjustSize();
-    updateWindowMask();
 }
 
 void TranscriberPopup::showListeningIndicator()
@@ -580,7 +575,6 @@ void TranscriberPopup::showListeningIndicator()
     restoreStandardLayout();
     m_waveform->setMode(WaveformWidget::Mode::Waveform);
     adjustSize();
-    updateWindowMask();
 }
 
 void TranscriberPopup::showMessage(const QString &message)
@@ -592,7 +586,6 @@ void TranscriberPopup::showMessage(const QString &message)
     m_waveform->setMessage(message);
     m_previewPill->adjustSize();
     adjustSize();
-    updateWindowMask();
 }
 
 void TranscriberPopup::showErrorMessage(const QString &message)
@@ -633,7 +626,6 @@ void TranscriberPopup::showErrorMessage(const QString &message)
     if (isVisible()) {
         m_positioner->positionBottomCenter(m_surface);
     }
-    updateWindowMask();
     m_errorDismissAnimation->start();
 }
 
@@ -647,7 +639,6 @@ void TranscriberPopup::showPopup(quint64 generation)
     hidePreview();
     m_pendingPresentationGeneration = generation;
     m_positioner->positionBottomCenter(m_surface);
-    updateWindowMask();
     show();
     raise();
     update();
@@ -726,12 +717,6 @@ void TranscriberPopup::paintEvent(QPaintEvent *event)
     });
 }
 
-void TranscriberPopup::resizeEvent(QResizeEvent *event)
-{
-    QWidget::resizeEvent(event);
-    updateWindowMask();
-}
-
 void TranscriberPopup::applyTheme()
 {
     if (m_applyingTheme) {
@@ -759,11 +744,6 @@ void TranscriberPopup::restoreStandardLayout()
     m_preview->setMinimumWidth(0);
     m_preview->setMaximumWidth(kMaxPreviewWidth);
     applyPillGeometry();
-}
-
-void TranscriberPopup::updateWindowMask()
-{
-    clearMask();
 }
 
 } // namespace speecher

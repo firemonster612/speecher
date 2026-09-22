@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
+#include "dictation/DictationTypes.h"
 #include "frontend/win/SettingsPage.h"
 
 #include <windows.h>
@@ -220,8 +221,6 @@ struct TrayFlyout::Native {
             return;
         }
         const QString lowered = state.toLower();
-        const bool active = lowered == QStringLiteral("starting")
-            || lowered == QStringLiteral("listening");
         QString displayState = state;
         if (!displayState.isEmpty()) {
             displayState.replace(0, 1, displayState.left(1).toUpper());
@@ -233,7 +232,9 @@ struct TrayFlyout::Native {
         statusGlyph.Glyph(L"\uE720");
         level.Visibility(lowered == QStringLiteral("listening")
                              ? Visibility::Visible : Visibility::Collapsed);
-        toggle.Content(box_value(active ? L"Stop Dictation" : L"Start Dictation"));
+        const DictationToggleAction toggleAction = dictationToggleAction(state);
+        toggle.Content(box_value(hstring(toggleAction.label.toStdWString())));
+        toggle.IsEnabled(toggleAction.enabled);
         transcript.Text(hstring((lastTranscript.isEmpty()
                                      ? QStringLiteral("Nothing dictated yet.")
                                      : lastTranscript)

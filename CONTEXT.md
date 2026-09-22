@@ -21,7 +21,7 @@ The desktop application and editable control selected when a Dictation Session s
 _Avoid_: Destination, focused app
 
 **Writing Profile**:
-The Work, Email, Personal, or Other category inferred from the Target, with a user-selected fallback and optional override.
+The Work, Email, Personal, AI coding, or Other category inferred from the Target, with a user-selected fallback and optional override. AI coding wins over a terminal's own identity when a coding agent is detected inside it.
 _Avoid_: Style preset, persona
 
 **Paste Rule**:

@@ -13,6 +13,7 @@
 #import "SpeecherUI-Swift.h"
 
 #include <QApplication>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QStringList>
 #include <QUrl>
@@ -38,6 +39,18 @@ MacFrontEnd::MacFrontEnd(ApplicationController *controller)
         }
         if (id == QStringLiteral("checkForUpdates")) {
             controller->updates()->checkForUpdates(controller->settings()->updateChannel());
+            return;
+        }
+        if (id == QStringLiteral("enableAccessibility")) {
+            // The gate action on accessibility-gated rows: the same grant
+            // flow the setup assistant runs. macOS answers with its own
+            // consent prompt, so a failure here only means the prompt could
+            // not be raised.
+            QString error;
+            if (!controller->enableAccessibility(&error)) {
+                qWarning().noquote()
+                    << "accessibility grant request failed message=" + error;
+            }
             return;
         }
     };

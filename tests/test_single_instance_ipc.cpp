@@ -259,6 +259,57 @@ private slots:
         QCOMPARE(commands.at(1).at(0).toString(), QStringLiteral("stop"));
     }
 
+    void singleInstanceIpcExpiresIncompleteRequests()
+    {
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QVERIFY(ipc.listen());
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
+
+        QLocalSocket socket;
+        socket.connectToServer(name);
+        QVERIFY(socket.waitForConnected(500));
+        socket.write(QByteArrayLiteral("{"));
+        socket.flush();
+
+        // The server holds the incomplete request briefly, then expires the
+        // connection instead of keeping the socket and buffer forever.
+        QTRY_VERIFY_WITH_TIMEOUT(socket.state() == QLocalSocket::UnconnectedState, 5000);
+        QCOMPARE(commands.count(), 0);
+    }
+
+    void singleInstanceIpcExpiresSilentConnectionsBeforeTheyWedgeAdmission()
+    {
+        // Eight clients that connect and never write a byte fill the accept
+        // cap. The deadline armed at accept must expire them so a later
+        // legitimate client is still admitted and answered.
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QVERIFY(ipc.listen());
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
+
+        QLocalSocket silent[8];
+        for (QLocalSocket &socket : silent) {
+            socket.connectToServer(name);
+            QVERIFY(socket.waitForConnected(500));
+        }
+        for (QLocalSocket &socket : silent) {
+            QTRY_VERIFY_WITH_TIMEOUT(socket.state() == QLocalSocket::UnconnectedState, 5000);
+        }
+
+        QLocalSocket client;
+        client.connectToServer(name);
+        QVERIFY(client.waitForConnected(500));
+        client.write(QByteArrayLiteral("{\"command\":\"toggle\"}\n"));
+        client.flush();
+        QTRY_COMPARE(commands.count(), 1);
+        QCOMPARE(commands.first().at(0).toString(), QStringLiteral("toggle"));
+    }
+
     void singleInstanceIpcSurvivesAClientThatDisconnectsAfterSending()
     {
         // A CLI client can send its command and drop the connection without

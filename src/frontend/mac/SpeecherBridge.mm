@@ -14,6 +14,7 @@
 // lists are the same lists.
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "providers/OpenAiAuthProvider.h"
+#include "providers/ProviderProbe.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/ProviderSignIn.h"
 #include "ui/Theme.h"
@@ -22,6 +23,7 @@
 #include <QFileInfo>
 #include <QFileSystemWatcher>
 #include <QGuiApplication>
+#include <QHash>
 #include <QKeySequence>
 #include <QObject>
 #include <QPointer>
@@ -250,72 +252,53 @@ struct BridgeState {
     // source open alongside dictation's own.
     speecher::AudioInput *setupMeter = nullptr;
     // A round of provider checks that a newer round replaced answers to
-    // nobody. The two kinds count separately, so a refinement round does not
-    // cancel the speech round a different step started.
-    quint64 speechCheckGeneration = 0;
+    // nobody. Speech supersession is per provider — probes claim their slot
+    // with a fresh number from checkRound, so re-probing one changed sign-in
+    // cannot strand the other rows' in-flight verdicts. Refinement has no
+    // single-provider re-probe: it supersedes per round on its own
+    // refinementCheckGeneration counter.
+    quint64 checkRound = 0;
+    QHash<QString, quint64> speechProbeGeneration;
     quint64 refinementCheckGeneration = 0;
     // The CLI Proxy API opt-in shared with the other assistants, created on
     // first use so its opt-out memory spans the assistant's lifetime.
     std::unique_ptr<speecher::ProviderSignIn> setupSignIn;
-    // Every live probe thread. A prepare job reads provider objects the
-    // controller owns, so a thread left running past the bridge would race
-    // the controller's destruction (observed as heap corruption in tests).
-    QList<QPointer<QThread>> probeThreads;
-
-    ~BridgeState()
-    {
-        for (const QPointer<QThread> &thread : probeThreads) {
-            if (thread) {
-                thread->wait();
-            }
-        }
-    }
 };
 
 // Runs a provider's prepare or refresh job off the main thread and answers on
-// it, dropping the verdict of a round that a newer one has replaced.
+// the bridge's lifetime object, dropping a verdict stillCurrent disowns.
+// Thread lifetime is runProviderProbe's business: its registry join covers
+// the job (a prepare job reads provider objects the controller owns; a thread
+// left running past them was observed as heap corruption in tests), and its
+// owner guard covers this callback.
 template <typename Job, typename Report>
 void probeInBackground(BridgeState *state,
-                       quint64 BridgeState::*generationCounter,
-                       quint64 generation,
+                       std::function<bool()> stillCurrent,
                        Job &&job,
                        Report report)
 {
     auto probeJob = std::make_shared<std::decay_t<Job>>(std::forward<Job>(job));
-    auto result = std::make_shared<decltype(probeJob->run())>();
-    QThread *thread = QThread::create([probeJob, result] { *result = probeJob->run(); });
-    state->probeThreads.removeAll(nullptr);
-    state->probeThreads.append(thread);
-    // The job reads provider objects the controller owns, and the bridge's own
-    // teardown cannot be relied on to come first (a probe callback can keep
-    // the bridge alive through the Swift flow model). Joining on the
-    // controller's destruction is the guarantee; the connection dies with the
-    // thread, so an already-finished probe costs nothing.
-    if (state->controller) {
-        QObject::connect(state->controller, &QObject::destroyed, thread,
-                         [thread] { thread->wait(); }, Qt::DirectConnection);
-    }
-    QObject::connect(thread,
-                     &QThread::finished,
-                     &state->lifetime,
-                     [state, generationCounter, generation, probeJob, result, report] {
-                         if (generation != state->*generationCounter) {
-                             return;
-                         }
-                         // The job's apply closure belongs to a provider the
-                         // controller owns; a bridge kept alive past its
-                         // controller (a probe callback can retain it through
-                         // the Swift flow model) must not run it.
-                         if (!state->controller) {
-                             return;
-                         }
-                         if (probeJob->apply) {
-                             probeJob->apply(*result);
-                         }
-                         report(result->ok, result->message);
-                     });
-    QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    thread->start();
+    using ProbeResult = decltype(probeJob->run());
+    speecher::runProviderProbe<ProbeResult>(
+        state->controller->providerRegistry(),
+        &state->lifetime,
+        [probeJob] { return probeJob->run(); },
+        [state, probeJob, stillCurrent = std::move(stillCurrent), report](
+            const ProbeResult &result) {
+            if (!stillCurrent()) {
+                return;
+            }
+            // The job's apply closure belongs to a provider the controller
+            // owns; a bridge kept alive past its controller (a probe callback
+            // can retain it through the Swift flow model) must not run it.
+            if (!state->controller) {
+                return;
+            }
+            if (probeJob->apply) {
+                probeJob->apply(result);
+            }
+            report(result.ok, result.message);
+        });
 }
 
 void refreshCredentialWatch(QFileSystemWatcher *watcher, const QString &credentialsPath)
@@ -450,6 +433,8 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @property (nonatomic) BOOL enabled;
 @property (nonatomic, copy) NSString *tooltip;
 @property (nonatomic, copy) NSString *disabledHelp;
+@property (nonatomic, copy) NSString *disabledAction;
+@property (nonatomic, copy) NSString *disabledActionLabel;
 @property (nonatomic, strong, nullable) CollectionModel *collection;
 @end
 
@@ -634,6 +619,8 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     model.enabled = !row.enabled || row.enabled(_state->draft, _state->capabilities);
     model.tooltip = row.tooltip.toNSString();
     model.disabledHelp = row.disabledHelp.toNSString();
+    model.disabledAction = row.disabledAction.toNSString();
+    model.disabledActionLabel = row.disabledActionLabel.toNSString();
     if (const CollectionDescriptor *collection = [self collectionForRow:row]) {
         model.collection = [self collectionModel:*collection];
         model.value = bridgedRecords(collection->records(_state->draft));
@@ -1373,31 +1360,67 @@ bridgedProviders(const QList<speecher::ProviderDescriptor> &providers)
     return bridgedProviders(_state->controller->providerRegistry()->refinementProviders());
 }
 
+// One speech provider's probe, superseded per provider: each probe claims the
+// provider's slot with a fresh round number, and only the newest claim's
+// verdict lands.
+static void probeSpeechProvider(BridgeState *state,
+                                const speecher::ProviderDescriptor &descriptor,
+                                const speecher::SpeechSettings &speech,
+                                void (^report)(NSString *providerId, BOOL ready, NSString *message))
+{
+    NSString *providerId = descriptor.id.toNSString();
+    const auto answer = [report, providerId](bool ready, const QString &message) {
+        report(providerId, ready, message.toNSString());
+    };
+    speecher::ProviderRegistry *registry = state->controller->providerRegistry();
+    speecher::SpeechTranscriber *provider = registry->speechProvider(descriptor.id);
+    if (!provider) {
+        answer(false, QStringLiteral("No transcription service is available."));
+        return;
+    }
+    std::optional<speecher::SpeechPrepareJob> job = provider->createPrepareJob(speech);
+    if (!job || !job->run) {
+        const speecher::SpeechPrepareResult result = provider->prepare(speech);
+        answer(result.ok, result.message);
+        return;
+    }
+    const quint64 generation = ++state->checkRound;
+    state->speechProbeGeneration.insert(descriptor.id, generation);
+    probeInBackground(state,
+                      [state, id = descriptor.id, generation] {
+                          return state->speechProbeGeneration.value(id) == generation;
+                      },
+                      std::move(*job), answer);
+}
+
 - (void)checkSpeechProviders:(void (^)(NSString *providerId, BOOL ready, NSString *message))report
 {
     report = [report copy];
-    const quint64 generation = ++_state->speechCheckGeneration;
     BridgeState *state = _state;
-    speecher::ProviderRegistry *registry = _state->controller->providerRegistry();
     const speecher::SpeechSettings speech = _state->controller->settings()->snapshot().speech;
-    for (const speecher::ProviderDescriptor &descriptor : registry->speechProviders()) {
-        NSString *providerId = descriptor.id.toNSString();
-        const auto answer = [report, providerId](bool ready, const QString &message) {
-            report(providerId, ready, message.toNSString());
-        };
-        speecher::SpeechTranscriber *provider = registry->speechProvider(descriptor.id);
-        if (!provider) {
-            answer(false, QStringLiteral("No transcription service is available."));
-            continue;
+    for (const speecher::ProviderDescriptor &descriptor :
+         _state->controller->providerRegistry()->speechProviders()) {
+        probeSpeechProvider(state, descriptor, speech, report);
+    }
+}
+
+// The single-provider re-probe behind a sign-in change: only the changed
+// provider's verdict is stale, and a probe can be an OAuth refresh over the
+// network, so the others are left alone — matching the Qt and WinUI
+// assistants.
+- (void)checkSpeechProviderNamed:(NSString *)providerId
+                          report:(void (^)(NSString *providerId, BOOL ready, NSString *message))report
+{
+    report = [report copy];
+    BridgeState *state = _state;
+    const QString wanted = QString::fromNSString(providerId);
+    const speecher::SpeechSettings speech = _state->controller->settings()->snapshot().speech;
+    for (const speecher::ProviderDescriptor &descriptor :
+         _state->controller->providerRegistry()->speechProviders()) {
+        if (descriptor.id == wanted) {
+            probeSpeechProvider(state, descriptor, speech, report);
+            return;
         }
-        std::optional<speecher::SpeechPrepareJob> job = provider->createPrepareJob(speech);
-        if (!job || !job->run) {
-            const speecher::SpeechPrepareResult result = provider->prepare(speech);
-            answer(result.ok, result.message);
-            continue;
-        }
-        probeInBackground(state, &BridgeState::speechCheckGeneration, generation,
-                          std::move(*job), answer);
     }
 }
 
@@ -1425,7 +1448,10 @@ bridgedProviders(const QList<speecher::ProviderDescriptor> &providers)
             answer(result.ok, result.message);
             continue;
         }
-        probeInBackground(state, &BridgeState::refinementCheckGeneration, generation,
+        probeInBackground(state,
+                          [state, generation] {
+                              return generation == state->refinementCheckGeneration;
+                          },
                           std::move(*job), answer);
     }
 }
@@ -1492,6 +1518,21 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
 {
     ensureSetupSignIn(_state).setCliproxyAccount(QString::fromNSString(providerId),
                                            QString::fromNSString(account));
+}
+
+- (NSString *)setupCliproxyOptInLabel
+{
+    return speecher::ProviderSignIn::cliproxyOptInLabel().toNSString();
+}
+
+- (NSString *)setupCliproxyFoundHint
+{
+    return speecher::ProviderSignIn::cliproxyAccountsFoundHint().toNSString();
+}
+
+- (NSString *)setupCliproxyMissingHint
+{
+    return speecher::ProviderSignIn::cliproxyAccountsMissingHint().toNSString();
 }
 
 - (NSString *)setupCliproxyDirectory
@@ -1592,10 +1633,16 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
 - (NSString *)credentialStatus
 {
     const AppSettings &draft = [_settingsSchema draft];
+    // The remote CLI Proxy fields decide which credential the status
+    // describes; passing them matches the Qt call site (ProviderCustomRows).
     return speecher::OpenAiAuthProvider(_state->controller->secretStore(),
                                         draft.refinement.openAiAuthMode,
                                         draft.refinement.openAiCliproxyAccount,
-                                        _state->controller->settings()->cliproxyOauthDir())
+                                        _state->controller->settings()->cliproxyOauthDir(),
+                                        {},
+                                        {},
+                                        draft.refinement.cliproxyBaseUrl,
+                                        draft.refinement.cliproxyApiKey)
         .status()
         .toNSString();
 }

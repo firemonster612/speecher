@@ -128,20 +128,26 @@ void XInput2ShortcutBinder::selectRawKeyEvents(bool select)
 
 // Text delivery may have injected the watched key (ydotool's Ctrl+V reaches
 // the server as real input); the round trip makes sure those events are here
-// before they are dropped.
+// before this pass runs. A press queued during suspended delivery must not
+// start dictation, but a release must still clear the down-latch — the user
+// letting go of the stop key during the synchronous delivery would otherwise
+// leave m_down set and swallow the next press — and a hierarchy change must
+// still re-resolve the injection devices.
 void XInput2ShortcutBinder::resuming()
 {
     if (!m_display) {
         return;
     }
     XSync(m_display, False);
-    while (XPending(m_display)) {
-        XEvent event;
-        XNextEvent(m_display, &event);
-    }
+    processQueuedEvents(false);
 }
 
 void XInput2ShortcutBinder::readEvents()
+{
+    processQueuedEvents(true);
+}
+
+void XInput2ShortcutBinder::processQueuedEvents(bool processPresses)
 {
     while (XPending(m_display)) {
         XEvent event;
@@ -160,7 +166,9 @@ void XInput2ShortcutBinder::readEvents()
         if (raw->detail == m_keycode && !(raw->flags & XIKeyRepeat)
             && !m_injectionDeviceIds.contains(raw->sourceid)) {
             if (cookie->evtype == XI_RawKeyPress) {
-                keyDown();
+                if (processPresses) {
+                    keyDown();
+                }
             } else if (cookie->evtype == XI_RawKeyRelease) {
                 keyUp();
             }

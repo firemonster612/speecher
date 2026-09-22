@@ -177,6 +177,10 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
                 combo.Items().Append(item);
             }
             combo.SelectedIndex(selected);
+            // No per-combo gating: this row is full-width, so appendSection
+            // wraps the whole card in gatedFullWidthCard's ContentControl,
+            // whose IsEnabled(false) propagates down the tree. That wrapper
+            // is the load-bearing gate.
             combo.SelectionChanged([rowId = row.id, records, index, columnId = column.id, &host](
                                        const IInspectable &sender, const auto &) {
                 const auto item = sender.as<ComboBox>().SelectedItem();
@@ -262,10 +266,14 @@ QList<RowOption> customRowOptions(const QString &rowId,
         return outputMethods();
     }
     if (rowId == QStringLiteral("openAiCliproxyAccount")) {
-        return cliproxyAccountOptions(QStringLiteral("codex"), draft.refinement.openAiCliproxyAccount, store.cliproxyOauthDir());
+        return cliproxyAccountOptions(ProviderSignIn::cliproxyAccountType(QStringLiteral("openai")),
+                                      draft.refinement.openAiCliproxyAccount,
+                                      store.cliproxyOauthDir());
     }
     if (rowId == QStringLiteral("anthropicCliproxyAccount")) {
-        return cliproxyAccountOptions(QStringLiteral("claude"), draft.refinement.anthropicCliproxyAccount, store.cliproxyOauthDir());
+        return cliproxyAccountOptions(ProviderSignIn::cliproxyAccountType(QStringLiteral("anthropic")),
+                                      draft.refinement.anthropicCliproxyAccount,
+                                      store.cliproxyOauthDir());
     }
     return authModeOptions(rowId);
 }

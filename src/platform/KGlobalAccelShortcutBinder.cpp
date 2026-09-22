@@ -122,6 +122,12 @@ bool KGlobalAccelShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QS
         }
         return false;
     }
+    // removeRegistration() deletes the action when a single key takes over;
+    // choosing a combination again arrives here without a bind() in between,
+    // so recreate the action (and its activation connection) on demand.
+    if (!m_action) {
+        makeShortcutAction();
+    }
     if (!KGlobalAccel::self()->setShortcut(
             m_action,
             {shortcut.combination()},

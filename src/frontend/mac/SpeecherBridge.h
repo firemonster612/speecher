@@ -92,6 +92,10 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 // Shown on the control, and replaced by disabledHelp while enabled says no.
 @property (nonatomic, readonly, copy) NSString *tooltip;
 @property (nonatomic, readonly, copy) NSString *disabledHelp;
+// The action that can lift the gate while enabled says no — an action id the
+// row dispatch understands — and its button caption. Empty when none.
+@property (nonatomic, readonly, copy) NSString *disabledAction;
+@property (nonatomic, readonly, copy) NSString *disabledActionLabel;
 // Set on a Collection row, and on the one Custom row that is a table.
 @property (nonatomic, readonly, strong, nullable) CollectionModel *collection;
 @end
@@ -331,6 +335,12 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
 // `message` says why a provider is not ready and is empty when it is. A newer
 // round supersedes an older one of the same kind, whose replies are dropped.
 - (void)checkSpeechProviders:(void (^)(NSString *providerId, BOOL ready, NSString *message))report;
+// One provider only, for a sign-in change: the other rows' verdicts stay
+// live, and no extra OAuth refreshes run — matching the Qt and WinUI
+// assistants.
+- (void)checkSpeechProviderNamed:(NSString *)providerId
+                          report:(void (^)(NSString *providerId, BOOL ready, NSString *message))report
+    NS_SWIFT_NAME(checkSpeechProvider(named:report:));
 - (void)checkRefinementProviders:(void (^)(NSString *providerId, BOOL ready, NSString *message))report;
 
 // The CLI Proxy API sign-in a service can be opted into during setup. The
@@ -353,6 +363,11 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
     NS_SWIFT_NAME(setupCliproxyAccount(provider:));
 - (void)setSetupCliproxyAccount:(NSString *)account forProvider:(NSString *)providerId
     NS_SWIFT_NAME(setSetupCliproxyAccount(_:provider:));
+// The shared CLI Proxy API copy (ProviderSignIn): the opt-in label and the
+// Welcome step's two hints, one of which quotes that label.
+@property (nonatomic, readonly, copy) NSString *setupCliproxyOptInLabel;
+@property (nonatomic, readonly, copy) NSString *setupCliproxyFoundHint;
+@property (nonatomic, readonly, copy) NSString *setupCliproxyMissingHint;
 // The configured account directory; empty means automatic detection.
 @property (nonatomic, readonly, copy) NSString *setupCliproxyDirectory;
 // Where detection currently lands, for the directory field's placeholder.

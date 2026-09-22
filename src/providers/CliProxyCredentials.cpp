@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QEventLoop>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLockFile>
@@ -129,7 +130,27 @@ bool refreshAccountFile(const QString &directory,
         return false;
     }
 
-    QJsonObject updated = account;
+    // The request above can be outstanding for seconds while CLI Proxy API —
+    // which owns these files and does not share this lock protocol — rewrites
+    // or removes the account. Apply the rotated tokens to the document as it
+    // is NOW, never to the pre-request snapshot: writing that snapshot back
+    // would re-enable a disabled account, resurrect a deleted one, or clobber
+    // a replaced login. The native Claude and Codex paths follow this same
+    // re-read-before-save rule.
+    if (!QFileInfo::exists(QDir(directory).filePath(fileName))) {
+        if (error) {
+            *error = QStringLiteral("CLI Proxy API account %1 was removed during refresh").arg(fileName);
+        }
+        return false;
+    }
+    QJsonObject current = readAccountObject(directory, fileName);
+    if (current.value(QStringLiteral("refresh_token")).toString().trimmed() != refreshToken) {
+        // Another writer replaced the login mid-refresh. Its document wins;
+        // the rotation belongs to a superseded login. Report success without
+        // writing so the caller reads the current file.
+        return true;
+    }
+    QJsonObject updated = current;
     updated.insert(QStringLiteral("access_token"), refreshed.accessToken);
     if (!refreshed.refreshToken.isEmpty()) {
         updated.insert(QStringLiteral("refresh_token"), refreshed.refreshToken);

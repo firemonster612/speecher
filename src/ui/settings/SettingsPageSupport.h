@@ -78,6 +78,9 @@ QLabel *makeSectionLabel(const QString &text, QWidget *parent);
 QFrame *makeSettingsCard(QWidget *parent);
 // FormButtonDelegate: the whole row is the button, with a trailing arrow.
 QPushButton *makeButtonRow(const QString &title, const QString &description, QWidget *parent);
+// Updates a button row's visible title and accessible name; QPushButton::text
+// is never drawn on these rows.
+void setButtonRowCaption(QPushButton *row, const QString &caption);
 // Kirigami Addons FormCard metrics.
 int gridUnit();
 int smallSpacing();

@@ -17,6 +17,21 @@ enum class DictationState {
 QString dictationStateName(DictationState state);
 QString dictationStateLabel(DictationState state, const QString &message = {});
 
+// What a tray Start/Stop control presents for a session state name, matching
+// what toggle() would actually do (DictationSession::toggleSession): it stops
+// starting, listening and refining — a toggle mid-refinement cancels the
+// refinement — and does nothing during stopping and delivering.
+struct DictationToggleAction {
+    QString label;
+    bool enabled = true;
+};
+
+DictationToggleAction dictationToggleAction(const QString &stateName);
+
+// Whether a tray shows the listening icon and tooltip for a session state
+// name: the states where the microphone is open or about to be.
+bool dictationListeningPresentation(const QString &stateName);
+
 struct SessionResponse {
     bool ok = true;
     QString state;

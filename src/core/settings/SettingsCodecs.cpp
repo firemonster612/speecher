@@ -1063,6 +1063,10 @@ AppSettings SettingsCodecs::snapshot() const
             settings.speech.vocabulary.append(correction.corrected);
         }
     }
+    // The corrections joined after customVocabulary() applied the caps, so the
+    // combined request list must be capped again. Corrections sit last, so an
+    // over-cap list drops them before any term the person typed.
+    settings.speech.vocabulary = VocabularyLimit::limited(settings.speech.vocabulary);
 
     settings.refinement.providerId = refinementProvider();
     settings.refinement.style = refinementStyle();

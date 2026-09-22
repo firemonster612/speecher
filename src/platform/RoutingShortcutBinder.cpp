@@ -12,7 +12,17 @@ RoutingShortcutBinder::RoutingShortcutBinder(GlobalShortcutBinder *combination,
     m_combination->setParent(this);
     m_singleKey->setParent(this);
     for (GlobalShortcutBinder *binder : {m_combination, m_singleKey}) {
-        connect(binder, &GlobalShortcutBinder::activated, this, &GlobalShortcutBinder::activated);
+        // Only the binder that owns the binding may start dictation: a backend
+        // whose registration lingers (or arrives late) must not fire alongside
+        // the selected one. A release is forwarded from both unconditionally:
+        // it must always be able to clear a latched activation even if
+        // ownership flipped mid-hold.
+        connect(binder, &GlobalShortcutBinder::activated, this, [this, binder] {
+            const bool singleKeyOwns = m_singleKey->shortcut().isSingleKey();
+            if (binder == (singleKeyOwns ? m_singleKey : m_combination)) {
+                emit activated();
+            }
+        });
         connect(binder, &GlobalShortcutBinder::deactivated, this, &GlobalShortcutBinder::deactivated);
         connect(binder, &GlobalShortcutBinder::bindingChanged, this, &GlobalShortcutBinder::bindingChanged);
         connect(binder, &GlobalShortcutBinder::supportChanged, this, &GlobalShortcutBinder::supportChanged);

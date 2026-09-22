@@ -32,7 +32,9 @@ void WinPasteDelivery::waitForReleasedKeys()
     }
 }
 
-bool WinPasteDelivery::paste(PasteMethod method, QString *error)
+bool WinPasteDelivery::paste(PasteMethod method,
+                             const std::function<bool()> &clearToInject,
+                             QString *error)
 {
     const HWND foreground = GetForegroundWindow();
     // A key can be pressed after preparation. Never alter that physical state
@@ -69,6 +71,15 @@ bool WinPasteDelivery::paste(PasteMethod method, QString *error)
     if (!foreground || GetForegroundWindow() != foreground) {
         if (error) {
             *error = QStringLiteral("The focused window changed before paste");
+        }
+        return false;
+    }
+    // The foreground check above only proves stability across this function;
+    // clearToInject checks the originally captured target, after all blocking
+    // preparation, because a paste into the wrong window cannot be undone.
+    if (clearToInject && !clearToInject()) {
+        if (error) {
+            *error = QStringLiteral("The active window changed or could not be verified");
         }
         return false;
     }
