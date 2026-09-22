@@ -297,12 +297,8 @@ final class AppModel: ObservableObject {
 
     func trigger(_ rowId: String) {
         if rowId == "whatsNew" { showWhatsNew() }
-        if rowId == "enableAccessibility" {
-            // The gate action on accessibility-gated rows: the same grant
-            // flow the shortcut pane's button runs.
-            requestAccessibility()
-            return
-        }
+        // Every schema action, enableAccessibility included, goes to the
+        // front end's one dispatcher (MacFrontEnd.mm).
         bridge.settingsSchema.actionTriggered?(rowId)
     }
 

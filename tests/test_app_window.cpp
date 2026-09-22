@@ -1,6 +1,7 @@
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
+#include "app/UpdateController.h"
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
@@ -638,6 +639,30 @@ private slots:
         AppSettings draft;
         pages.corrections()->appendToDraft(draft);
         QCOMPARE(draft.learnedCorrections, corrections);
+    }
+
+    void updateRowCaptionFollowsTheUpdateState()
+    {
+        // The caption fix hangs on setButtonRowCaption finding the child
+        // label by the "rowTitle" object name; a rename would turn it back
+        // into a silent no-op with nothing failing.
+        ApplicationController controller(true);
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        pages.load();
+
+        auto *check = pages.general()->findChild<QPushButton *>(
+            QStringLiteral("checkForUpdates"));
+        QVERIFY(check);
+        auto *title = check->findChild<QLabel *>(QStringLiteral("rowTitle"));
+        QVERIFY(title);
+        QCOMPARE(title->text(), QStringLiteral("Check now"));
+
+        // Entering the Checking state is synchronous; the network reply that
+        // would resolve it lands long after these assertions.
+        controller.updates()->checkForUpdates(controller.settings()->updateChannel());
+        QCOMPARE(title->text(), QStringLiteral("Checking…"));
+        QVERIFY(!check->isEnabled());
     }
 
     void saveReportsFailedValidator()

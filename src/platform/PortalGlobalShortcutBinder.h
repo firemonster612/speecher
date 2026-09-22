@@ -79,6 +79,9 @@ private:
     bool m_identityReady = false;
     bool m_identityPending = false;
     bool m_registrationAfterIdentity = false;
+    // removeRegistration() ran while a Register was in flight; its watcher
+    // must not create the session it was originally asked for.
+    bool m_identityContinuationCancelled = false;
     QString m_unsupportedReason;
     QString m_triggerDescription;
     QDBusObjectPath m_sessionPath;

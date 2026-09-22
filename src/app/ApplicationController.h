@@ -163,6 +163,9 @@ private:
     QTimer *m_pushToTalkStart = nullptr;
     quint64 m_microphoneStartGeneration = 0;
     bool m_microphoneStartPending = false;
+    // Set for good once quitApplication() runs; guards its re-entry and
+    // blocks new session starts during the shutdown pump.
+    bool m_quitting = false;
 };
 
 } // namespace speecher

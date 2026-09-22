@@ -26,7 +26,17 @@ DictationToggleAction dictationToggleAction(const QString &stateName)
     if (lowered == QStringLiteral("stopping") || lowered == QStringLiteral("delivering")) {
         return {QStringLiteral("Start Dictation"), false};
     }
+    // Keyed on the state name because that is what the callers receive over
+    // their state-change signals, so the compiler cannot enforce coverage:
+    // an unrecognised or future state name deliberately falls through to an
+    // enabled Start, which is also what idle and error present.
     return {QStringLiteral("Start Dictation"), true};
+}
+
+bool dictationListeningPresentation(const QString &stateName)
+{
+    const QString lowered = stateName.toLower();
+    return lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening");
 }
 
 QString dictationStateLabel(DictationState state, const QString &message)

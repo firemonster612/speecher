@@ -177,11 +177,10 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
                 combo.Items().Append(item);
             }
             combo.SelectedIndex(selected);
-            // The synthetic rows carry the parent row's gate: rowGrid only
-            // disables Controls, and the pickers sit inside a StackPanel.
-            if (!row.enabled) {
-                combo.IsEnabled(false);
-            }
+            // No per-combo gating: this row is full-width, so appendSection
+            // wraps the whole card in gatedFullWidthCard's ContentControl,
+            // whose IsEnabled(false) propagates down the tree. That wrapper
+            // is the load-bearing gate.
             combo.SelectionChanged([rowId = row.id, records, index, columnId = column.id, &host](
                                        const IInspectable &sender, const auto &) {
                 const auto item = sender.as<ComboBox>().SelectedItem();
@@ -209,7 +208,6 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
         RowSnapshot profileRow;
         profileRow.id = row.id + QLatin1Char('.') + records.at(index).value(kProfileIdKey).toString();
         profileRow.label = records.at(index).value(kProfileColumn).toString();
-        profileRow.enabled = row.enabled;
         rows.Children().Append(rowGrid(profileRow, pickers, host, index > 0));
     }
     return rows;

@@ -126,9 +126,7 @@ struct TrayIcon::Native {
         QObject::connect(controller, &ApplicationController::stateChanged, q,
                          [this](const QString &state) {
                              stateName = state;
-                             const QString lowered = state.toLower();
-                             listening = lowered == QStringLiteral("starting")
-                                 || lowered == QStringLiteral("listening");
+                             listening = dictationListeningPresentation(state);
                              updateIcon();
                          });
     }

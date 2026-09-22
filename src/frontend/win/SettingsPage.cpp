@@ -10,7 +10,6 @@
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.System.h>
-#include <winrt/Windows.UI.ViewManagement.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
@@ -291,7 +290,14 @@ UIElement gatedFullWidthCard(const RowSnapshot &row, const UIElement &card, Pane
         HyperlinkButton lift;
         lift.Content(box_value(hs(row.disabledActionLabel)));
         lift.Padding({0, 2, 0, 0});
-        lift.Click([actionId = row.disabledAction, &host](const auto &, const auto &) {
+        lift.Click([actionId = row.disabledAction, &host,
+                    weak = std::weak_ptr<bool>(host.alive)](const auto &, const auto &) {
+            // The XAML tree can outlive the window's Native, whose PaneHost
+            // this handler references; the token establishes its lifetime.
+            const std::shared_ptr<bool> alive = weak.lock();
+            if (!alive || !*alive) {
+                return;
+            }
             if (host.action) {
                 host.action(actionId);
             }
@@ -392,9 +398,17 @@ TextBlock secondaryTextBlock(const QString &text, const wchar_t *styleKey, const
     // A contrast theme overrides Light/Dark: XAML resolves ThemeResource from
     // the HighContrast dictionary then, and this code lookup must match it or
     // secondary text keeps a translucent brush the contrast theme forbids.
-    // Contrast changes reach here through the ActualThemeChanged rebuild.
+    // Read through SystemParametersInfo, not AccessibilitySettings: that WinRT
+    // class is CoreWindow-dependent and unsupported in a Windows App SDK
+    // desktop app. A contrast switch while the window is open does NOT reach
+    // here — the explicit RequestedTheme pins ActualTheme, so
+    // ActualThemeChanged never fires for it; the correct brush arrives on the
+    // next rebuild or reopen.
+    HIGHCONTRASTW contrast{};
+    contrast.cbSize = sizeof(contrast);
     const bool highContrast =
-        winrt::Windows::UI::ViewManagement::AccessibilitySettings().HighContrast();
+        SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0)
+        && (contrast.dwFlags & HCF_HIGHCONTRASTON);
     const hstring themeKey = highContrast ? L"HighContrast"
         : theme == ElementTheme::Light   ? L"Light"
                                          : L"Dark";

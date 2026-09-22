@@ -51,6 +51,10 @@ inline winrt::Microsoft::UI::Xaml::ElementTheme requestedTheme(const QString &se
 struct PaneHost {
     SettingsModel *model = nullptr;
     ApplicationController *controller = nullptr;
+    // The settings window's lifetime token: XAML handlers that reference this
+    // host hold a weak copy and bail once the window's Native is gone — a
+    // member-null check cannot establish object lifetime.
+    std::shared_ptr<bool> alive;
     // Queued rebuild of the visible pane, after a write re-derived the rows.
     std::function<void()> refresh;
     // Action rows (runSetup, checkForUpdates, whatsNew) and disabledAction ids.

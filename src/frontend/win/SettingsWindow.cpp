@@ -155,6 +155,7 @@ struct SettingsWindow::Native {
     {
         host.model = &model;
         host.controller = controller;
+        host.alive = alive;
         host.refresh = [this] { queueRebuild(); };
         host.action = [this](const QString &id) { runAction(id); };
         host.hwnd = [this] { return windowHandle(); };

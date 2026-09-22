@@ -407,6 +407,11 @@ bool WinTargetProvider::verifyInsertion(const Target &target, const QString &pla
     // verify, so require the exact transformation, surrounding text included.
     const QString expected = m_valueBeforeInsertion->left(*m_insertionOffset)
         + plainText + m_valueBeforeInsertion->mid(*m_replacedSelectionEnd);
+    if (expected == *m_valueBeforeInsertion) {
+        // Replacing a selection with identical text has no observable
+        // change; value comparison cannot verify it.
+        return false;
+    }
     for (int attempt = 0; attempt < insertionVerificationAttempts; ++attempt) {
         if (attempt > 0) {
             spinEventLoop(insertionVerificationPauseMs);

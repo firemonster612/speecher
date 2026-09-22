@@ -72,6 +72,14 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                 continue;
             }
             m_acceptedSockets.insert(socket);
+            // Armed at accept, not at first byte: a client that connects and
+            // never writes would otherwise never enter the expiry map and
+            // hold one of the accept slots forever — eight of those would
+            // lock every later client out. The complete-frame branch below
+            // removes the deadline once a request lands.
+            m_incompleteRequestDeadlines.insert(
+                socket, QDeadlineTimer(incompleteRequestTimeoutMs));
+            m_expirySweep.start();
             connect(socket, &QLocalSocket::readyRead, this, [this, socket] {
                 // Collect complete frames before emitting: a commandReceived slot can
                 // disconnect the socket, whose disconnected handler removes the buffer
@@ -99,7 +107,8 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                     if (buffer.isEmpty()) {
                         m_incompleteRequestDeadlines.remove(socket);
                     } else if (!m_incompleteRequestDeadlines.contains(socket)) {
-                        // The deadline dates from the first incomplete byte;
+                        // The deadline dates from accept (or from the first
+                        // incomplete byte after a completed request);
                         // trickling more bytes in does not extend it.
                         m_incompleteRequestDeadlines.insert(
                             socket, QDeadlineTimer(incompleteRequestTimeoutMs));

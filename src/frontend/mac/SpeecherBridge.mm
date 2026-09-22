@@ -252,10 +252,11 @@ struct BridgeState {
     // source open alongside dictation's own.
     speecher::AudioInput *setupMeter = nullptr;
     // A round of provider checks that a newer round replaced answers to
-    // nobody. Speech supersession is per provider, so re-probing one changed
-    // sign-in cannot strand the other rows' in-flight verdicts; refinement
-    // has no single-provider re-probe and supersedes per round. Both take
-    // their round numbers from one counter, matching the WinUI assistant.
+    // nobody. Speech supersession is per provider — probes claim their slot
+    // with a fresh number from checkRound, so re-probing one changed sign-in
+    // cannot strand the other rows' in-flight verdicts. Refinement has no
+    // single-provider re-probe: it supersedes per round on its own
+    // refinementCheckGeneration counter.
     quint64 checkRound = 0;
     QHash<QString, quint64> speechProbeGeneration;
     quint64 refinementCheckGeneration = 0;
@@ -1362,10 +1363,10 @@ bridgedProviders(const QList<speecher::ProviderDescriptor> &providers)
 // One speech provider's probe, superseded per provider: each probe claims the
 // provider's slot with a fresh round number, and only the newest claim's
 // verdict lands.
-void probeSpeechProvider(BridgeState *state,
-                         const speecher::ProviderDescriptor &descriptor,
-                         const speecher::SpeechSettings &speech,
-                         void (^report)(NSString *providerId, BOOL ready, NSString *message))
+static void probeSpeechProvider(BridgeState *state,
+                                const speecher::ProviderDescriptor &descriptor,
+                                const speecher::SpeechSettings &speech,
+                                void (^report)(NSString *providerId, BOOL ready, NSString *message))
 {
     NSString *providerId = descriptor.id.toNSString();
     const auto answer = [report, providerId](bool ready, const QString &message) {

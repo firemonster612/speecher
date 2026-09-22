@@ -71,9 +71,7 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
 
 void LinuxTrayIcon::applyState(const QString &stateName)
 {
-    const QString lowered = stateName.toLower();
-    const bool listening = lowered == QStringLiteral("starting")
-        || lowered == QStringLiteral("listening");
+    const bool listening = dictationListeningPresentation(stateName);
     const DictationToggleAction toggle = dictationToggleAction(stateName);
     m_toggleAction->setText(toggle.label);
     m_toggleAction->setEnabled(toggle.enabled);

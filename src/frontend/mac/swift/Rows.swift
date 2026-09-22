@@ -14,15 +14,20 @@ struct RowView: View {
         } else {
             // The schema requires the explanation visible beside the disabled
             // control and its recovery action usable (SettingsSchema.h's
-            // disabledHelp contract) — a tooltip alone hides both.
-            control
-                .disabled(true)
-                .help(row.disabledHelp)
-            if !row.disabledHelp.isEmpty {
-                Text(row.disabledHelp)
-            }
-            if !row.disabledAction.isEmpty {
-                Button(row.disabledActionLabel) { model.trigger(row.disabledAction) }
+            // disabledHelp contract) — a tooltip alone hides both. One
+            // container: RowView sits in Form sections and the setup
+            // assistant, where sibling views would each become a form row
+            // of their own.
+            VStack(alignment: .leading) {
+                control
+                    .disabled(true)
+                    .help(row.disabledHelp)
+                if !row.disabledHelp.isEmpty {
+                    Text(row.disabledHelp)
+                }
+                if !row.disabledAction.isEmpty {
+                    Button(row.disabledActionLabel) { model.trigger(row.disabledAction) }
+                }
             }
         }
     }
@@ -125,7 +130,10 @@ struct RowView: View {
     /// the second one, which is why there is no font or colour here.
     @ViewBuilder private var label: some View {
         Text(row.label)
-        if !row.help.isEmpty {
+        // The gate note in the row body replaces the description while the
+        // row is disabled, matching the Qt and Windows front ends; showing
+        // both would give a gated row two competing descriptions.
+        if row.enabled, !row.help.isEmpty {
             Text(row.help)
         }
     }

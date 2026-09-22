@@ -51,6 +51,10 @@ public slots:
     void toggle();
     void startListening();
     void stopListening();
+    // Shutdown teardown: cancels everything in flight and resumes paused
+    // media without ever delivering text — quitting mid-dictation must not
+    // paste into whatever window has focus.
+    void cancelForShutdown();
     void popupPresented(quint64 generation);
     // How long startup waits for the popup to paint before proceeding without
     // it. Tests raise it so a slow runner cannot fire it under an assertion.

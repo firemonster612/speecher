@@ -28,6 +28,10 @@ struct DictationToggleAction {
 
 DictationToggleAction dictationToggleAction(const QString &stateName);
 
+// Whether a tray shows the listening icon and tooltip for a session state
+// name: the states where the microphone is open or about to be.
+bool dictationListeningPresentation(const QString &stateName);
+
 struct SessionResponse {
     bool ok = true;
     QString state;
