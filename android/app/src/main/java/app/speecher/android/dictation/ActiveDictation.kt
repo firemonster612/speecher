@@ -12,4 +12,5 @@ object ActiveDictation {
     var settings = SpeecherSettings()
     var observe: ((DictationState) -> Unit)? = null
     var onInserted: (() -> Unit)? = null
+    var retry: (() -> Unit)? = null
 }

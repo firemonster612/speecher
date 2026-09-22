@@ -12,10 +12,12 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.compose.ui.platform.ComposeView
 import app.speecher.android.dictation.ActiveDictation
+import app.speecher.android.dictation.DictationEngine
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.SettingsStore
 import app.speecher.android.dictation.createDictationEngine
-import app.speecher.android.ui.EngineSurface
+import app.speecher.android.ui.DictationChip
+import app.speecher.android.ui.SpeecherTheme
 
 class SpeecherChipService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
@@ -87,15 +89,32 @@ class SpeecherChipService : AccessibilityService() {
         }
         val view = ComposeView(this)
         owner.attach(view)
-        view.setContent { EngineSurface(null, false, { onChipTap() }, {}, {}, {}) }
+        view.setContent { SpeecherTheme { DictationChip(onClick = ::onChipTap) } }
         window.addView(view, params)
         chip = view
     }
 
     private fun onChipTap() {
+        ActiveDictation.retry = ::startDictation
+        val engine = startDictation()
+        try {
+            ImeSwap(this).activate()
+            removeChip()
+        } catch (_: Exception) {
+            engine.close()
+            ActiveDictation.engine = null
+            startActivity(
+                Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
+
+    /** The mic starts on the tap, before the keyboard swap lands, to cover the swap gap. */
+    private fun startDictation(): DictationEngine {
         val settings = SettingsStore(this).load()
         ActiveDictation.settings = settings
         ActiveDictation.state = DictationState.Connecting
+        ActiveDictation.observe?.invoke(DictationState.Connecting)
         ActiveDictation.engine?.close()
         val engine =
             createDictationEngine(
@@ -110,16 +129,7 @@ class SpeecherChipService : AccessibilityService() {
             )
         ActiveDictation.engine = engine
         engine.start(settings.transcriptionProvider)
-        try {
-            ImeSwap(this).activate()
-            removeChip()
-        } catch (_: Exception) {
-            engine.close()
-            ActiveDictation.engine = null
-            startActivity(
-                Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-        }
+        return engine
     }
 
     private fun removeChip() {
