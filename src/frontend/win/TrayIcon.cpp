@@ -1,6 +1,7 @@
 #include "frontend/win/TrayIcon.h"
 
 #include "app/ApplicationController.h"
+#include "dictation/DictationTypes.h"
 #include "frontend/win/TrayFlyout.h"
 
 #include <windows.h>
@@ -124,6 +125,7 @@ struct TrayIcon::Native {
 
         QObject::connect(controller, &ApplicationController::stateChanged, q,
                          [this](const QString &state) {
+                             stateName = state;
                              const QString lowered = state.toLower();
                              listening = lowered == QStringLiteral("starting")
                                  || lowered == QStringLiteral("listening");
@@ -228,8 +230,10 @@ struct TrayIcon::Native {
     void showContextMenu(POINT point)
     {
         HMENU menu = CreatePopupMenu();
-        AppendMenuW(menu, MF_STRING, startStopCommand,
-                    listening ? L"Stop Dictation" : L"Start Dictation");
+        const DictationToggleAction toggleAction = dictationToggleAction(stateName);
+        const std::wstring toggleLabel = toggleAction.label.toStdWString();
+        AppendMenuW(menu, MF_STRING | (toggleAction.enabled ? 0u : MF_GRAYED),
+                    startStopCommand, toggleLabel.c_str());
         AppendMenuW(menu, MF_STRING, settingsCommand, L"Settings...");
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu, MF_STRING, quitCommand, L"Quit");
@@ -288,6 +292,7 @@ struct TrayIcon::Native {
     UINT taskbarCreated = 0;
     bool ownsCurrentIcon = false;
     bool listening = false;
+    QString stateName;
 };
 
 TrayIcon::TrayIcon(ApplicationController *controller,

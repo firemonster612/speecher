@@ -43,7 +43,13 @@ final class AppModel: ObservableObject {
     /// settings, so the schema knows nothing about it.
     @Published var apiKey = ""
     @Published var credentialProblem = ""
+    // Resolving the OpenAI status can enter the keyring, so it is read on
+    // loadApiKey()'s deferred turn, never from a SwiftUI body.
+    @Published private(set) var credentialStatus = "Checking credentials…"
     @Published private(set) var anthropicCredentialStatus: String
+    // Bumped when the settings draft is reloaded (window reopen, setup), so
+    // retained collection editors can reload from the fresh snapshot.
+    @Published private(set) var draftGeneration = 0
     @Published private(set) var shortcut: String
     @Published private(set) var shortcutProblem = ""
     /// The non-blocking caveat the last single-key binding earned, such as
@@ -119,6 +125,11 @@ final class AppModel: ObservableObject {
         bridge.anthropicCredentialsChanged = { [weak self] in
             guard let self else { return }
             anthropicCredentialStatus = self.bridge.anthropicCredentialStatus
+            // The watcher also fires for the Codex CLI's file, so the OpenAI
+            // status line is worth re-reading too — once the keyring is warm.
+            if apiKeyLoaded {
+                credentialStatus = self.bridge.credentialStatus
+            }
         }
         bridge.whatsNewChanged = { [weak self] in
             guard let self else { return }
@@ -182,6 +193,8 @@ final class AppModel: ObservableObject {
     func reloadSettingsDraft() {
         bridge.settingsSchema.reloadDraft()
         pages = bridge.settingsSchema.pages
+        // After pages, so an editor reacting to the bump reads fresh rows.
+        draftGeneration += 1
     }
 
     private func loadApiKey() {
@@ -191,6 +204,9 @@ final class AppModel: ObservableObject {
         if edits == apiKeyEdits {
             apiKey = key
         }
+        // The keyring is warm now, so the resolved status can be cached for
+        // CredentialField instead of being read inside its body.
+        credentialStatus = bridge.credentialStatus
     }
 
     func pane(withId id: String) -> Pane? {
@@ -281,6 +297,12 @@ final class AppModel: ObservableObject {
 
     func trigger(_ rowId: String) {
         if rowId == "whatsNew" { showWhatsNew() }
+        if rowId == "enableAccessibility" {
+            // The gate action on accessibility-gated rows: the same grant
+            // flow the shortcut pane's button runs.
+            requestAccessibility()
+            return
+        }
         bridge.settingsSchema.actionTriggered?(rowId)
     }
 
@@ -299,6 +321,11 @@ final class AppModel: ObservableObject {
         pages = bridge.settingsSchema.pages
         if rowId == "anthropicAuthMode" {
             anthropicCredentialStatus = bridge.anthropicCredentialStatus
+        }
+        if apiKeyLoaded,
+           ["openAiAuthMode", "openAiCliproxyAccount", "cliproxyOauthDir",
+            "cliproxyBaseUrl", "cliproxyApiKey"].contains(rowId) {
+            credentialStatus = bridge.credentialStatus
         }
     }
 

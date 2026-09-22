@@ -734,7 +734,7 @@ void SchemaSettingsPage::refreshRows()
         }
         if (row.descriptor.kind == RowKind::Action && row.descriptor.value) {
             if (auto *button = qobject_cast<QPushButton *>(row.control)) {
-                button->setText(row.descriptor.value(draft).toString());
+                settings::setButtonRowCaption(button, row.descriptor.value(draft).toString());
             }
         }
         if (row.descriptor.helpValue && row.description) {

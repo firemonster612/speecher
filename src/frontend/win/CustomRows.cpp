@@ -177,6 +177,11 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
                 combo.Items().Append(item);
             }
             combo.SelectedIndex(selected);
+            // The synthetic rows carry the parent row's gate: rowGrid only
+            // disables Controls, and the pickers sit inside a StackPanel.
+            if (!row.enabled) {
+                combo.IsEnabled(false);
+            }
             combo.SelectionChanged([rowId = row.id, records, index, columnId = column.id, &host](
                                        const IInspectable &sender, const auto &) {
                 const auto item = sender.as<ComboBox>().SelectedItem();
@@ -204,6 +209,7 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
         RowSnapshot profileRow;
         profileRow.id = row.id + QLatin1Char('.') + records.at(index).value(kProfileIdKey).toString();
         profileRow.label = records.at(index).value(kProfileColumn).toString();
+        profileRow.enabled = row.enabled;
         rows.Children().Append(rowGrid(profileRow, pickers, host, index > 0));
     }
     return rows;

@@ -16,6 +16,19 @@ QString dictationStateName(DictationState state)
     return QStringLiteral("error");
 }
 
+DictationToggleAction dictationToggleAction(const QString &stateName)
+{
+    const QString lowered = stateName.toLower();
+    if (lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening")
+        || lowered == QStringLiteral("refining")) {
+        return {QStringLiteral("Stop Dictation"), true};
+    }
+    if (lowered == QStringLiteral("stopping") || lowered == QStringLiteral("delivering")) {
+        return {QStringLiteral("Start Dictation"), false};
+    }
+    return {QStringLiteral("Start Dictation"), true};
+}
+
 QString dictationStateLabel(DictationState state, const QString &message)
 {
     if (state == DictationState::Error) {

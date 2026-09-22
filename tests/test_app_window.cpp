@@ -38,6 +38,7 @@
 #include <QSplitter>
 #include <QStandardPaths>
 #include <QStackedWidget>
+#include <QTableWidget>
 #include <QVBoxLayout>
 
 using namespace speecher;
@@ -600,6 +601,43 @@ private slots:
         QCOMPARE(navigation->currentRow(), 1);
         QCOMPARE(title->text(), QStringLiteral("General"));
         QVERIFY(!back->isVisible());
+    }
+
+    void deletingACorrectionThroughThePageSetKeepsUndoAvailable()
+    {
+        ApplicationController controller(true);
+        const QList<LearnedCorrection> corrections{
+            {QStringLiteral("c-1"), QStringLiteral("speecher"), QStringLiteral("Speecher"),
+             QStringLiteral("org.kde.konsole"), 1750000000000, 0.92, true, 3, 1750000900000},
+            {QStringLiteral("c-2"), QStringLiteral("kay dee ee"), QStringLiteral("KDE"),
+             QStringLiteral("org.mozilla.firefox"), 1749000000000, 0.71, false, 1, 1749000500000},
+        };
+        controller.settings()->setLearnedCorrections(corrections);
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        pages.load();
+
+        auto *table = pages.corrections()->findChild<QTableWidget *>(
+            QStringLiteral("learnedCorrections"));
+        auto *remove = pages.corrections()->findChild<QPushButton *>(
+            QStringLiteral("deleteLearnedCorrections"));
+        auto *undo = pages.corrections()->findChild<QPushButton *>(
+            QStringLiteral("undoDeleteLearnedCorrections"));
+        QVERIFY(table && remove && undo);
+        QCOMPARE(table->rowCount(), 2);
+
+        // Deleting announces the change, and SettingsPageSet reloads every
+        // page from the draft; that echo must not clear the deletion history.
+        table->setCurrentCell(0, 0);
+        remove->click();
+        QCOMPARE(table->rowCount(), 1);
+        QVERIFY(undo->isEnabled());
+
+        undo->click();
+        QCOMPARE(table->rowCount(), 2);
+        AppSettings draft;
+        pages.corrections()->appendToDraft(draft);
+        QCOMPARE(draft.learnedCorrections, corrections);
     }
 
     void saveReportsFailedValidator()

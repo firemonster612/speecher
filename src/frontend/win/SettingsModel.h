@@ -126,7 +126,7 @@ public:
     bool credentialIsEditable() const;
     QString credentialStatus() const;
     QString anthropicCredentialStatus() const;
-    QString readApiKey() const;
+    QString readApiKey();
     // Empty when the keyring took it, otherwise why it refused.
     QString saveApiKey(const QString &apiKey);
 
@@ -154,6 +154,9 @@ private:
     // Choices that cost a device enumeration stay out of a snapshot until the
     // front end has painted and asked for them.
     bool m_expensiveReady = false;
+    // Resolving the OpenAI credential status can enter the keyring, which the
+    // window defers to readApiKey()'s turn; until then it renders as loading.
+    bool m_credentialReady = false;
     // Owns the signal connections, so they end when the model does.
     QObject m_lifetime;
     QFileSystemWatcher m_credentialWatcher;

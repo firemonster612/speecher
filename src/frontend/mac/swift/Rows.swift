@@ -9,9 +9,22 @@ struct RowView: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        control
-            .disabled(!row.enabled)
-            .help(row.enabled ? row.tooltip : row.disabledHelp)
+        if row.enabled {
+            control.help(row.tooltip)
+        } else {
+            // The schema requires the explanation visible beside the disabled
+            // control and its recovery action usable (SettingsSchema.h's
+            // disabledHelp contract) — a tooltip alone hides both.
+            control
+                .disabled(true)
+                .help(row.disabledHelp)
+            if !row.disabledHelp.isEmpty {
+                Text(row.disabledHelp)
+            }
+            if !row.disabledAction.isEmpty {
+                Button(row.disabledActionLabel) { model.trigger(row.disabledAction) }
+            }
+        }
     }
 
     @ViewBuilder private var control: some View {
@@ -318,7 +331,9 @@ struct CredentialField: View {
                 }
             }
         } else {
-            Text(model.bridge.credentialStatus)
+            // Cached on the model: resolving it live can enter the keyring,
+            // which must not happen inside a SwiftUI body.
+            Text(model.credentialStatus)
         }
     }
 }

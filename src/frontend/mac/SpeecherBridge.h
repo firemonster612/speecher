@@ -92,6 +92,10 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 // Shown on the control, and replaced by disabledHelp while enabled says no.
 @property (nonatomic, readonly, copy) NSString *tooltip;
 @property (nonatomic, readonly, copy) NSString *disabledHelp;
+// The action that can lift the gate while enabled says no — an action id the
+// row dispatch understands — and its button caption. Empty when none.
+@property (nonatomic, readonly, copy) NSString *disabledAction;
+@property (nonatomic, readonly, copy) NSString *disabledActionLabel;
 // Set on a Collection row, and on the one Custom row that is a table.
 @property (nonatomic, readonly, strong, nullable) CollectionModel *collection;
 @end

@@ -432,6 +432,8 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @property (nonatomic) BOOL enabled;
 @property (nonatomic, copy) NSString *tooltip;
 @property (nonatomic, copy) NSString *disabledHelp;
+@property (nonatomic, copy) NSString *disabledAction;
+@property (nonatomic, copy) NSString *disabledActionLabel;
 @property (nonatomic, strong, nullable) CollectionModel *collection;
 @end
 
@@ -616,6 +618,8 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     model.enabled = !row.enabled || row.enabled(_state->draft, _state->capabilities);
     model.tooltip = row.tooltip.toNSString();
     model.disabledHelp = row.disabledHelp.toNSString();
+    model.disabledAction = row.disabledAction.toNSString();
+    model.disabledActionLabel = row.disabledActionLabel.toNSString();
     if (const CollectionDescriptor *collection = [self collectionForRow:row]) {
         model.collection = [self collectionModel:*collection];
         model.value = bridgedRecords(collection->records(_state->draft));
@@ -1628,10 +1632,16 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
 - (NSString *)credentialStatus
 {
     const AppSettings &draft = [_settingsSchema draft];
+    // The remote CLI Proxy fields decide which credential the status
+    // describes; passing them matches the Qt call site (ProviderCustomRows).
     return speecher::OpenAiAuthProvider(_state->controller->secretStore(),
                                         draft.refinement.openAiAuthMode,
                                         draft.refinement.openAiCliproxyAccount,
-                                        _state->controller->settings()->cliproxyOauthDir())
+                                        _state->controller->settings()->cliproxyOauthDir(),
+                                        {},
+                                        {},
+                                        draft.refinement.cliproxyBaseUrl,
+                                        draft.refinement.cliproxyApiKey)
         .status()
         .toNSString();
 }
