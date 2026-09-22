@@ -16,7 +16,7 @@ Kotlin + Jetpack Compose. No React Native, no Qt, no shared code with the deskto
 
 Working code that breaks these rules is not done. Reviewers treat a violation as a blocking finding, the same as a bug.
 
-- **`./gradlew check` is the gate.** It runs ktfmt, Android Lint and the compiler with warnings as errors, plus the tests. A change lands green or not at all; fix the warning, never suppress it.
+- **`./gradlew check` is the gate.** It runs ktfmt, Android Lint and the compiler with warnings as errors, plus the tests. A change lands green or not at all; fix the warning, never suppress it. The one sanctioned exception is `tools:ignore="ProtectedPermissions"` on the `WRITE_SECURE_SETTINGS` line of the manifest, because the app receives that permission through the adb grant.
 - **Read `~/.claude/skills/write-less/SKILL.md` before writing.** The diff is the size of the ask. Top-level functions, data classes and sealed types come first; a class exists only when it owns state or a lifecycle (a Service, a ViewModel). One implementation means no interface. Wire dependencies through constructors, with no DI framework and no `Manager`, `Helper` or `Util` names.
 - **Use the platform's API.** When Android or AndroidX already does it, call that instead of rebuilding it.
 - **Tests cover each behavior once**, with literal expected values. Test code that outgrows the code it covers means cut cases, not add them.
