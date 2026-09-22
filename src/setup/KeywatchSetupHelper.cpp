@@ -335,23 +335,45 @@ bool remove(const std::string &user, std::string &error)
     }
     // Every step is attempted and every failure reported, as in
     // YdotoolSetupHelper::remove(): a stubborn file must not leave the daemon
-    // binary or the SELinux module behind with only one problem named.
+    // binary or the SELinux module behind with only one problem named. Each
+    // problem line prints once: an empty label pushes the step's error alone
+    // (removeFileIfPresent already names the path), a label prefixes errors
+    // that do not say which step failed.
     std::vector<std::string> problems;
-    const auto attempt = [&problems](const std::string &what, bool succeeded, const std::string &why) {
+    const auto attempt = [&problems](const std::string &label, bool succeeded, const std::string &why) {
         if (!succeeded) {
-            problems.push_back(what + (why.empty() ? "" : ": " + why));
+            problems.push_back(label.empty() ? why : label + (why.empty() ? "" : ": " + why));
         }
     };
 
+    // A daemon that cannot be stopped keeps reading keyboards, so when the
+    // unit file exists a failed stop is a problem, not "removed". When the
+    // unit file never existed (removal after a failed install), systemctl's
+    // complaint about an unknown unit is expected; ignoring it keeps remove
+    // idempotent.
     std::string ignored;
-    run("systemctl", {"disable", "--now", std::string(socketName)}, ignored, true, true);
+    if (std::filesystem::exists(socketUnitPath)) {
+        std::string stopError;
+        attempt("could not stop the key helper socket",
+                run("systemctl", {"disable", "--now", std::string(socketName)}, stopError, true),
+                stopError);
+    } else {
+        run("systemctl", {"disable", "--now", std::string(socketName)}, ignored, true, true);
+    }
     // Stopping the socket does not stop its already-running service: a client
     // holding a connection would keep the daemon reading keyboards after
     // "removed" was reported. Stop the daemon itself too.
-    run("systemctl", {"stop", std::string(serviceName)}, ignored, true, true);
+    if (std::filesystem::exists(serviceUnitPath)) {
+        std::string stopError;
+        attempt("could not stop the key helper daemon",
+                run("systemctl", {"stop", std::string(serviceName)}, stopError, true),
+                stopError);
+    } else {
+        run("systemctl", {"stop", std::string(serviceName)}, ignored, true, true);
+    }
     for (const std::string_view path : {socketUnitPath, serviceUnitPath, daemonInstallPath}) {
         std::string stepError;
-        attempt("could not remove a file",
+        attempt(std::string(),
                 removeFileIfPresent(std::string(path), stepError),
                 stepError);
     }

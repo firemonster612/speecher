@@ -15,7 +15,6 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QPropertyAnimation>
-#include <QResizeEvent>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -716,11 +715,6 @@ void TranscriberPopup::paintEvent(QPaintEvent *event)
     QTimer::singleShot(0, this, [this, generation] {
         emit popupPresented(generation);
     });
-}
-
-void TranscriberPopup::resizeEvent(QResizeEvent *event)
-{
-    QWidget::resizeEvent(event);
 }
 
 void TranscriberPopup::applyTheme()

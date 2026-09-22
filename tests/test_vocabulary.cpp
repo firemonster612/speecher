@@ -103,6 +103,18 @@ private slots:
         // Under the cap the correction rides along.
         settings.setCustomVocabulary({QStringLiteral("Speecher")});
         QVERIFY(settings.snapshot().speech.vocabulary.contains(QStringLiteral("GitHub")));
+
+        // The token cap holds too: fewer than 100 terms but exactly 500
+        // tokens, so the correction is what would push the request over.
+        QStringList wordyTerms;
+        for (int i = 0; i < 50; ++i) {
+            wordyTerms << QStringLiteral("term%1 two three four five six seven eight nine ten").arg(i);
+        }
+        QCOMPARE(VocabularyLimit::tokenCount(wordyTerms), VocabularyLimit::maxTokens);
+        settings.setCustomVocabulary(wordyTerms);
+        const QStringList wordySent = settings.snapshot().speech.vocabulary;
+        QVERIFY(VocabularyLimit::tokenCount(wordySent) <= VocabularyLimit::maxTokens);
+        QVERIFY(!wordySent.contains(QStringLiteral("GitHub")));
     }
 
     void importKeepsEveryRowInTheFile()

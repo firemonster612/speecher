@@ -158,7 +158,7 @@ struct DictationPanel::Native : QObject {
         , controller(owner)
         , panel(q)
     {
-        barTimer.setInterval(16);
+        barTimer.setInterval(waveform::frameIntervalMs);
         barClock.start();
         connect(&barTimer, &QTimer::timeout, this, &Native::animateBars);
         // The same five seconds the Qt popup counts down; the Dismiss button

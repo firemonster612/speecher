@@ -139,9 +139,12 @@ QString KeywatchShortcutBinder::watch(const PhysicalKey &key)
     }
     m_replied = true;
     // A KeyEvent that landed in the same readyRead round as the reply is
-    // already signalled, so Qt will not signal it again; drain it now or the
-    // press is only processed when the next event arrives.
-    readFromDaemon();
+    // already signalled, so Qt will not signal it again; drain it, or the
+    // press is only processed when the next event arrives. Deferred, not
+    // drained here: watch() runs inside setShortcut(), which resets m_down
+    // after this returns, so a press drained now would be forgotten and its
+    // release swallowed — the key would look held forever.
+    QTimer::singleShot(0, this, [this] { readFromDaemon(); });
     return QString();
 }
 

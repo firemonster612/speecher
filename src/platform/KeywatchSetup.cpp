@@ -31,10 +31,16 @@ constexpr int answerCacheMs = 20000;
 
 // The probe runs on the UI thread while the exchange with the daemon and the
 // pkexec'd install run on workers, so the cache is atomics rather than a timer
-// object.
+// object. The answer and its protocol flag are one value on purpose: written
+// once per exchange and read with one load, so a probe can never pair a stale
+// answer with a newer exchange's protocol flag.
+enum DaemonAnswerState : int {
+    NoAnswer = 0,
+    AnsweredWrongVersion = 1,
+    AnsweredMatching = 2,
+};
 std::atomic<std::int64_t> cachedAnswerAtMs{0};
-std::atomic<bool> cachedAnswer{false};
-std::atomic<bool> cachedProtocolMatch{false};
+std::atomic<int> cachedAnswerState{NoAnswer};
 std::atomic<bool> askInFlight{false};
 
 std::int64_t monotonicMs()
@@ -87,8 +93,9 @@ void askDaemonInBackground()
     QThreadPool::globalInstance()->start([] {
         bool protocolMatches = false;
         const bool answered = askDaemon(protocolMatches);
-        cachedAnswer.store(answered);
-        cachedProtocolMatch.store(protocolMatches);
+        cachedAnswerState.store(!answered           ? NoAnswer
+                                    : protocolMatches ? AnsweredMatching
+                                                      : AnsweredWrongVersion);
         cachedAnswerAtMs.store(monotonicMs());
         askInFlight.store(false);
         QMetaObject::invokeMethod(KeywatchSetup::daemonAnswer(),
@@ -97,13 +104,13 @@ void askDaemonInBackground()
     });
 }
 
-bool daemonAnswers()
+DaemonAnswerState daemonAnswerState()
 {
     const std::int64_t askedAt = cachedAnswerAtMs.load();
     if (askedAt == 0 || monotonicMs() - askedAt >= answerCacheMs) {
         askDaemonInBackground();
     }
-    return cachedAnswer.load();
+    return DaemonAnswerState(cachedAnswerState.load());
 }
 
 } // namespace
@@ -151,8 +158,10 @@ KeywatchSetupStatus KeywatchSetup::probe()
     // QFileInfo::isWritable() answers from the owner's point of view for a
     // socket node; access() asks the kernel about this process.
     facts.socketWritable = facts.socketExists && access(keywatch::socketPath, W_OK) == 0;
-    facts.daemonAnswers = facts.socketWritable && daemonAnswers();
-    facts.daemonProtocolMatches = facts.daemonAnswers && cachedProtocolMatch.load();
+    const DaemonAnswerState answer =
+        facts.socketWritable ? daemonAnswerState() : NoAnswer;
+    facts.daemonAnswers = answer != NoAnswer;
+    facts.daemonProtocolMatches = answer == AnsweredMatching;
     return evaluate(facts);
 }
 
@@ -167,8 +176,7 @@ KeywatchDaemonAnswer *KeywatchSetup::daemonAnswer()
 void KeywatchSetup::forgetDaemonAnswer()
 {
     cachedAnswerAtMs.store(0);
-    cachedAnswer.store(false);
-    cachedProtocolMatch.store(false);
+    cachedAnswerState.store(NoAnswer);
 }
 
 bool KeywatchSetup::install(QString *error)
