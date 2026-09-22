@@ -56,6 +56,26 @@ private slots:
         QVERIFY(!newSettings.contains(QStringLiteral("output/method")));
     }
 
+    void refinementModelMigrationMovesReplacedDefaultsOnce()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings settings(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        settings.setValue(QStringLiteral("openai/model"), QStringLiteral("gpt-5.6-luna"));
+        settings.setValue(QStringLiteral("anthropic/model"), QStringLiteral("claude-opus-5"));
+
+        migrateRefinementModels(settings);
+        QCOMPARE(settings.value(QStringLiteral("openai/model")).toString(),
+                 QStringLiteral("gpt-6-luna"));
+        QCOMPARE(settings.value(QStringLiteral("anthropic/model")).toString(),
+                 QStringLiteral("claude-opus-5"));
+
+        settings.setValue(QStringLiteral("anthropic/model"), QStringLiteral("claude-sonnet-5"));
+        migrateRefinementModels(settings);
+        QCOMPARE(settings.value(QStringLiteral("anthropic/model")).toString(),
+                 QStringLiteral("claude-sonnet-5"));
+    }
+
     // Old installs hold QKeySequence text under shortcuts/toggleDictation, so
     // that form must keep reading as a combination while a single key gets its
     // own prefix.
@@ -182,11 +202,11 @@ private slots:
         QVERIFY(settings.appRecognitionRules().isEmpty());
         QCOMPARE(settings.useTargetContext(), true);
         QCOMPARE(settings.includeScreenshotContext(), false);
-        QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.6-luna"));
+        QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-6-luna"));
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("auto"));
         QCOMPARE(settings.openAiEffort(), QStringLiteral("none"));
         QCOMPARE(settings.openAiFastMode(), true);
-        QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-sonnet-5"));
+        QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-opus-5-5"));
         QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
         QCOMPARE(settings.anthropicEffort(), QStringLiteral("low"));
         QCOMPARE(settings.anthropicFastMode(), true);
@@ -269,7 +289,7 @@ private slots:
         settings.setOpenAiModel(QStringLiteral(" gpt-5.4-nano "));
         QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.4-nano"));
         settings.setOpenAiModel(QString());
-        QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-5.6-luna"));
+        QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-6-luna"));
 
         settings.raw().setValue(QStringLiteral("openai/auth/mode"), QStringLiteral("api_key_env"));
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("env"));
@@ -306,7 +326,7 @@ private slots:
         settings.setAnthropicModel(QStringLiteral(" claude-opus-5 "));
         QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-opus-5"));
         settings.setAnthropicModel(QString());
-        QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-sonnet-5"));
+        QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-opus-5-5"));
         settings.setAnthropicModel(QStringLiteral("claude-haiku-4-5-20251001"));
         QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-haiku-4-5"));
         settings.setAnthropicAuthMode(QStringLiteral("oauth"));

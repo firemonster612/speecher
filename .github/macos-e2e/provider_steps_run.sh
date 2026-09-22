@@ -252,7 +252,7 @@ else
   fi
   if (( ${#errors[@]} == 0 )); then
     cp "$CASE_DIR/pages/step-6-refinement.png" "$CASE_DIR/refinement-anthropic.png"
-    expect_text "$CASE_DIR/refinement-anthropic.png" "Claude Sonnet" \
+    expect_text "$CASE_DIR/refinement-anthropic.png" "Claude Opus" \
       || errors+=("the refinement step does not show the Anthropic stats")
   fi
   if (( ${#errors[@]} )); then

@@ -775,25 +775,26 @@ bool ApplicationController::ensureSetupCompleted()
     return false;
 }
 
-// Model names and speeds here follow the September 2026 defaults; the speed
-// and quality lines come from measured runs of the real refinement request
-// (see .scratch/provider-stats/FINDINGS.md for the method and numbers). The
-// score is the maintainers' overall ranking, folding those lines into one
-// number out of 10.
+// Model names follow the September 22, 2026 defaults. The speed and quality
+// lines were measured on the previous defaults (gpt-5.6-luna at effort none,
+// claude-sonnet-4-6 at effort low; see .scratch/provider-stats/FINDINGS.md)
+// and are estimated forward from vendor latency notes until the new defaults
+// are benchmarked. The score is the maintainers' overall ranking, folding
+// those lines into one number out of 10.
 static QVector<ProviderStat> refinementProviderStats(const QString &id)
 {
     if (id == QStringLiteral("openai")) {
         return {{QStringLiteral("Score"), QStringLiteral("9 / 10")},
-                {QStringLiteral("Default model"), QStringLiteral("gpt-5.6-luna")},
-                {QStringLiteral("Speed"), QStringLiteral("About 3 seconds per dictation")},
+                {QStringLiteral("Default model"), QStringLiteral("gpt-6-luna")},
+                {QStringLiteral("Speed"), QStringLiteral("About 3 seconds per dictation (estimated)")},
                 {QStringLiteral("Efficiency"), QStringLiteral("No reasoning pass; time varies run to run")},
                 {QStringLiteral("Quality"), QStringLiteral("Excellent cleanup; applies spoken corrections reliably")}};
     }
     if (id == QStringLiteral("anthropic")) {
         return {{QStringLiteral("Score"), QStringLiteral("8 / 10")},
-                {QStringLiteral("Default model"), QStringLiteral("Claude Sonnet 5")},
-                {QStringLiteral("Speed"), QStringLiteral("About 2 seconds per dictation")},
-                {QStringLiteral("Efficiency"), QStringLiteral("Light reasoning; very consistent finish times")},
+                {QStringLiteral("Default model"), QStringLiteral("Claude Opus 5.5")},
+                {QStringLiteral("Speed"), QStringLiteral("About 3 seconds per dictation (estimated)")},
+                {QStringLiteral("Efficiency"), QStringLiteral("Always reasons, kept light at low effort")},
                 {QStringLiteral("Quality"), QStringLiteral("Excellent cleanup; can leave a spoken correction in")}};
     }
     return {};

@@ -45,6 +45,24 @@ bool migrateSettingsIdentity(QSettings &newSettings, QSettings &oldSettings, QSt
     return true;
 }
 
+void migrateRefinementModels(QSettings &settings)
+{
+    constexpr int currentMigrationVersion = 1;
+    if (settings.value(SettingsKeys::RefinementModelMigrationVersion).toInt()
+        >= currentMigrationVersion) {
+        return;
+    }
+    const auto replace = [&settings](const QString &key, const QString &from, const QString &to) {
+        if (settings.value(key).toString().trimmed() == from) {
+            settings.setValue(key, to);
+        }
+    };
+    replace(SettingsKeys::OpenAiModel, QStringLiteral("gpt-5.6-luna"), QStringLiteral("gpt-6-luna"));
+    replace(SettingsKeys::AnthropicModel, QStringLiteral("claude-sonnet-5"),
+            QStringLiteral("claude-opus-5-5"));
+    settings.setValue(SettingsKeys::RefinementModelMigrationVersion, currentMigrationVersion);
+}
+
 SettingsStore::SettingsStore(QObject *parent)
     : QObject(parent)
     , SettingsCodecs()

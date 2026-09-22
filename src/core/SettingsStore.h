@@ -12,6 +12,9 @@ namespace speecher {
 bool migrateSettingsIdentity(QSettings &newSettings,
                              QSettings &oldSettings,
                              QString *error = nullptr);
+// Moves a saved refinement model that still names a replaced default to the
+// current default. Runs once, so choosing the old model again later sticks.
+void migrateRefinementModels(QSettings &settings);
 
 class SettingsStore : public QObject, private SettingsCodecs {
     Q_OBJECT

@@ -116,12 +116,12 @@ struct AudioCaptureSettings {
 struct RefinementSettings {
     QString providerId = QStringLiteral("openai");
     QString style = QStringLiteral("balanced");
-    QString openAiModel = QStringLiteral("gpt-5.6-luna");
+    QString openAiModel = QStringLiteral("gpt-6-luna");
     QString openAiAuthMode = QStringLiteral("auto");
     QString openAiEffort = QStringLiteral("none");
     bool openAiFastMode = true;
     QString openAiCliproxyAccount;
-    QString anthropicModel = QStringLiteral("claude-sonnet-5");
+    QString anthropicModel = QStringLiteral("claude-opus-5-5");
     QString anthropicAuthMode = QStringLiteral("oauth");
     QString anthropicEffort = QStringLiteral("low");
     bool anthropicFastMode = true;

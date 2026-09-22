@@ -45,8 +45,9 @@ bool modelSupportsAdaptiveEffort(const QString &model)
         || normalized.contains(QStringLiteral("opus-4-5"));
 }
 
-// Fast mode is a research preview limited to Opus 5 and Opus 4.8; sending
-// speed=fast for other models would fail every request before the fallback.
+// Fast mode is a research preview limited to Opus 5.5, Opus 5 and Opus 4.8
+// ("opus-5" also matches "opus-5-5"); sending speed=fast for other models
+// would fail every request before the fallback.
 bool modelSupportsFastMode(const QString &model)
 {
     const QString normalized = model.toCaseFolded();

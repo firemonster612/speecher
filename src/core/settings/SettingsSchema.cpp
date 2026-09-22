@@ -1634,10 +1634,11 @@ QList<ProviderAccount> providerAccounts()
     openAi.modelRowId = QStringLiteral("openAiModel");
     openAi.modelLabel = QStringLiteral("OpenAI model");
     openAi.modelHelp = QStringLiteral("Model used for refinement.");
-    openAi.modelTooltip = QStringLiteral("Defaults to gpt-5.6-luna with no reasoning effort. "
+    openAi.modelTooltip = QStringLiteral("Defaults to gpt-6-luna with no reasoning effort. "
                                          "Select another model or type another model ID.");
     openAi.modelWidthHint = 16;
     openAi.models = namedModels({
+        QStringLiteral("gpt-6-luna"),
         QStringLiteral("gpt-5.6-luna"),
         QStringLiteral("gpt-5.6-terra"),
         QStringLiteral("gpt-5.6-sol"),
@@ -1703,9 +1704,10 @@ QList<ProviderAccount> providerAccounts()
     anthropic.modelLabel = QStringLiteral("Claude model");
     anthropic.modelHelp = QStringLiteral("Model used for Anthropic refinement.");
     anthropic.modelTooltip =
-        QStringLiteral("Defaults to Claude Sonnet 5. Select a model or type another model ID.");
+        QStringLiteral("Defaults to Claude Opus 5.5. Select a model or type another model ID.");
     anthropic.modelWidthHint = 24;
     anthropic.models = {
+        {QStringLiteral("claude-opus-5-5"), QStringLiteral("Claude Opus 5.5")},
         {QStringLiteral("claude-opus-5"), QStringLiteral("Claude Opus 5")},
         {QStringLiteral("claude-sonnet-5"), QStringLiteral("Claude Sonnet 5")},
         {QStringLiteral("claude-haiku-4-5"), QStringLiteral("Claude Haiku 4.5")},
