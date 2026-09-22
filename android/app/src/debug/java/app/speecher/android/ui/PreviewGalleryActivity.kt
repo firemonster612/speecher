@@ -119,6 +119,18 @@ private val states: Map<String, @Composable () -> Unit> =
             {
                 SpeecherScreen("", null) { Onboarding(pending, {}, {}, {}, {}) }
             },
+        "onboarding-done" to
+            {
+                SpeecherScreen("", null) {
+                    Onboarding(
+                        SetupStatus(Provider.entries.toSet(), true, true, true, true),
+                        {},
+                        {},
+                        {},
+                        {},
+                    )
+                }
+            },
         "settings" to
             {
                 SpeecherScreen("Settings", {}) {

@@ -17,11 +17,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -175,31 +175,35 @@ private fun GrantCommand() {
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                SwapGrantCommand,
-                Modifier.weight(1f).padding(start = 12.dp, top = 10.dp, bottom = 10.dp),
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-            )
-            IconButton({
-                scope.launch {
-                    clipboard.setClipEntry(
-                        ClipEntry(ClipData.newPlainText("adb command", SwapGrantCommand))
-                    )
-                }
-            }) {
-                Icon(painterResource(R.drawable.ic_copy), contentDescription = "Copy command")
-            }
-        }
+        // Full width, so the long permission name fits on one line.
+        Text(
+            SwapGrantCommand,
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+        )
     }
-    Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
         Text(
             "Waiting for the grant",
-            Modifier.padding(start = 8.dp),
+            Modifier.padding(start = 8.dp).weight(1f),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        TextButton({
+            scope.launch {
+                clipboard.setClipEntry(
+                    ClipEntry(ClipData.newPlainText("adb command", SwapGrantCommand))
+                )
+            }
+        }) {
+            Icon(
+                painterResource(R.drawable.ic_copy),
+                contentDescription = null,
+                Modifier.size(18.dp),
+            )
+            Text("Copy", Modifier.padding(start = 8.dp))
+        }
     }
 }
 

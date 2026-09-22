@@ -28,8 +28,8 @@ import app.speecher.android.dictation.SetupStatus
 import app.speecher.android.dictation.SpeecherSettings
 
 /**
- * A full-screen page: a top bar with an optional back arrow and a scrolling body. Every screen in
- * the app sits in one of these.
+ * A full-screen page with a scrolling body. Pages you navigate to get a top bar with [title] and a
+ * back arrow; root pages ([onBack] null) have none, because their body starts with its own title.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,20 +41,20 @@ fun SpeecherScreen(
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(title) },
-                navigationIcon = {
-                    if (onBack != null) {
+            if (onBack != null) {
+                TopAppBar(
+                    title = { Text(title) },
+                    navigationIcon = {
                         IconButton(onBack) {
                             Icon(
                                 painterResource(R.drawable.ic_arrow_back),
                                 contentDescription = "Back",
                             )
                         }
-                    }
-                },
-                actions = { actions() },
-            )
+                    },
+                    actions = { actions() },
+                )
+            }
         }
     ) { padding ->
         Column(
