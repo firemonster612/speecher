@@ -133,15 +133,40 @@ class MainActivity : ComponentActivity() {
 
     private fun checkForUpdate() {
         val preferences = getSharedPreferences("updates", MODE_PRIVATE)
+        val sameVersion =
+            preferences.getString("installed-version", null) == BuildConfig.VERSION_NAME
+        if (sameVersion) {
+            val version = preferences.getString("version", null)
+            val url = preferences.getString("url", null)
+            if (version != null && url != null) update = ApkUpdate(version, url)
+        }
         val now = System.currentTimeMillis()
-        if (now - preferences.getLong("last-check", 0) < 86_400_000) return
-        preferences.edit { putLong("last-check", now) }
+        if (sameVersion && now - preferences.getLong("last-check", 0) < 86_400_000) return
         lifecycleScope.launch {
-            update =
-                runCatching {
-                    withContext(Dispatchers.IO) { newerApk(sharedHttp, BuildConfig.VERSION_NAME) }
+            val result =
+                withContext(Dispatchers.IO) {
+                    runCatching { newerApk(sharedHttp, BuildConfig.VERSION_NAME) }
                 }
-                    .getOrNull()
+            preferences.edit {
+                putLong("last-check", now)
+                putString("installed-version", BuildConfig.VERSION_NAME)
+                if (!sameVersion) {
+                    remove("version")
+                    remove("url")
+                }
+            }
+            result.onSuccess { release ->
+                update = release
+                preferences.edit {
+                    if (release == null) {
+                        remove("version")
+                        remove("url")
+                    } else {
+                        putString("version", release.version)
+                        putString("url", release.downloadUrl)
+                    }
+                }
+            }
         }
     }
 
