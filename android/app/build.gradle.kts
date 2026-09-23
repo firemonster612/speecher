@@ -21,6 +21,19 @@ android {
         buildConfig = true
     }
 
+    // The release key lives outside the repo; see docs/android/releasing.md.
+    val releaseKey = file("${System.getProperty("user.home")}/.config/speecher-android/release.jks")
+    signingConfigs {
+        if (releaseKey.exists()) {
+            create("release") {
+                storeFile = releaseKey
+                storePassword = releaseKey.resolveSibling("release.password").readText()
+                keyAlias = "speecher"
+                keyPassword = storePassword
+            }
+        }
+    }
+
     buildTypes {
         // Debug builds can point speech at a local fake server for emulator tests:
         // ./gradlew assembleDebug -PfakeSpeech=http://10.0.2.2:8765
@@ -31,7 +44,10 @@ android {
                 "\"${providers.gradleProperty("fakeSpeech").getOrElse("")}\"",
             )
         }
-        release { buildConfigField("String", "FAKE_SPEECH_BASE", "\"\"") }
+        release {
+            buildConfigField("String", "FAKE_SPEECH_BASE", "\"\"")
+            signingConfig = signingConfigs.findByName("release")
+        }
     }
     sourceSets.named("main") { res.directories.add("src/engine/res") }
 
