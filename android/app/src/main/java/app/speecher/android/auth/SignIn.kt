@@ -19,7 +19,7 @@ import app.speecher.protocol.OAuthTokens
 import app.speecher.protocol.exchangeTokens
 import app.speecher.protocol.oauthAttempt
 import app.speecher.protocol.oauthCallback
-import app.speecher.protocol.pastedClaudeCode
+import app.speecher.protocol.pastedCode
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.SocketTimeoutException
@@ -113,14 +113,14 @@ class SignIn(private val tokenStore: TokenStore) : AutoCloseable {
         return current
     }
 
-    fun completePastedClaudeCode(codeAndState: String, result: (Result<OAuthTokens>) -> Unit) {
+    fun completePastedCode(pasted: String, result: (Result<OAuthTokens>) -> Unit) {
         val current = requireNotNull(attempt) { "No sign-in in progress" }
-        check(provider == OAuthProvider.Claude) { "Paste code is for Claude only" }
+        val forProvider = requireNotNull(provider) { "No sign-in in progress" }
         ++sequence
         closeListener()
         sharedExecutor.execute {
             val outcome = runCatching {
-                exchange(OAuthProvider.Claude, current, pastedClaudeCode(current, codeAndState))
+                exchange(forProvider, current, pastedCode(current, pasted))
             }
             main.post { result(outcome) }
         }
@@ -179,8 +179,8 @@ class SignInViewModel : ViewModel() {
             .launchUrl(activity, attempt.authorizeUrl.toString().toUri())
     }
 
-    fun paste(codeAndState: String) {
-        signIn?.completePastedClaudeCode(codeAndState, ::finish)
+    fun paste(pasted: String) {
+        signIn?.completePastedCode(pasted, ::finish)
     }
 
     private fun finish(result: Result<OAuthTokens>) {

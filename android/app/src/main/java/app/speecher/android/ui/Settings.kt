@@ -122,7 +122,7 @@ fun Settings(
                 colors = rowColors,
             )
         }
-        if (signingIn == Provider.Claude) PasteCode(onPasteCode)
+        if (signingIn != null) PasteCode(onPasteCode)
     }
 }
 
@@ -151,19 +151,27 @@ internal fun PasteCode(onPasteCode: (String) -> Unit) {
     var code by rememberSaveable { mutableStateOf("") }
     if (!expanded) {
         TextButton({ expanded = true }, Modifier.padding(start = 16.dp)) {
-            Text("Paste code instead")
+            Text("Paste the link instead")
         }
         return
     }
-    Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        OutlinedTextField(
-            code,
-            { code = it },
-            Modifier.weight(1f),
-            label = { Text("Code#state") },
-            singleLine = true,
+    Column(Modifier.padding(horizontal = 16.dp)) {
+        Text(
+            "If the browser can't return on its own, copy its address bar after you approve and " +
+                "paste it here.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        TextButton({ onPasteCode(code) }, enabled = code.isNotBlank()) { Text("Continue") }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                code,
+                { code = it },
+                Modifier.weight(1f),
+                label = { Text("Pasted link or code") },
+                singleLine = true,
+            )
+            TextButton({ onPasteCode(code) }, enabled = code.isNotBlank()) { Text("Continue") }
+        }
     }
 }
 

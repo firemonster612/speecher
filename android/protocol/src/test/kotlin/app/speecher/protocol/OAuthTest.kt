@@ -41,9 +41,26 @@ class OAuthTest {
                 "code=code&state=${claude.state}",
             ),
         )
-        assertEquals("code", pastedClaudeCode(claude, "code#${claude.state}"))
+        assertEquals("code", pastedCode(claude, "code#${claude.state}"))
+        assertThrows(IllegalArgumentException::class.java) { pastedCode(claude, "code#wrong") }
+    }
+
+    @Test
+    fun `pasted code accepts a full redirect URL, a raw query, or a bare code`() {
+        val attempt = oauthAttempt(OAuthProvider.ChatGpt)
+        val state = attempt.state
+        assertEquals(
+            "abc",
+            pastedCode(attempt, "http://localhost:1455/auth/callback?code=abc&state=$state"),
+        )
+        assertEquals("abc", pastedCode(attempt, "code=abc&state=$state"))
+        assertEquals(
+            "a b",
+            pastedCode(attempt, "http://localhost:1455/auth/callback?code=a%20b&state=$state"),
+        )
+        assertEquals("bare", pastedCode(attempt, "  bare  "))
         assertThrows(IllegalArgumentException::class.java) {
-            pastedClaudeCode(claude, "code#wrong")
+            pastedCode(attempt, "http://localhost:1455/auth/callback?code=abc&state=wrong")
         }
     }
 

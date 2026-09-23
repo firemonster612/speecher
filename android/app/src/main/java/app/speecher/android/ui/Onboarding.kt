@@ -75,7 +75,7 @@ fun Onboarding(
             ) {
                 StepButton("Sign in") { onSignIn(provider) }
             }
-            if (provider == Provider.Claude && signingIn == provider) PasteCode(onPasteCode)
+            if (signingIn == provider) PasteCode(onPasteCode)
         }
         signInError?.let {
             Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)

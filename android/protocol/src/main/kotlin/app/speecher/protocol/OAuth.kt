@@ -89,13 +89,44 @@ fun oauthCallback(
         ?: error("OAuth callback has no code")
 }
 
-fun pastedClaudeCode(attempt: OAuthAttempt, pasted: String): String {
-    val parts = pasted.trim().split('#', limit = 2)
-    require(parts.size == 2 && parts[1] == attempt.state && parts[0].isNotEmpty()) {
-        "Claude sign-in code or state is invalid"
+/**
+ * The authorization code out of whatever the user pasted after a browser sign-in: the whole
+ * redirect URL (`http://localhost:1455/auth/callback?code=...&state=...`), a bare
+ * `code=...&state=...` query, Anthropic's `code#state`, or just the code. Any state that travels
+ * with it must match this attempt, so a code from someone else's sign-in is rejected.
+ */
+fun pastedCode(attempt: OAuthAttempt, pasted: String): String {
+    val text = pasted.trim().trim('"')
+    require(text.isNotEmpty()) { "Paste the code or the sign-in link from your browser." }
+
+    if ("code=" in text) {
+        val params =
+            text.substringAfter('?', missingDelimiterValue = text).split('&').mapNotNull {
+                val eq = it.indexOf('=')
+                if (eq <= 0) null else it.take(eq) to urlDecode(it.substring(eq + 1))
+            }
+        val code = params.firstOrNull { it.first == "code" }?.second?.substringBefore('#').orEmpty()
+        val state =
+            params.firstOrNull { it.first == "state" }?.second?.ifEmpty { null }
+                ?: text.substringAfter('#', missingDelimiterValue = "").ifEmpty { null }
+        require(code.isNotEmpty()) { "That link has no sign-in code." }
+        require(state == null || state == attempt.state) { "That link is for a different sign-in." }
+        return code
     }
-    return parts[0]
+    if ('#' in text) {
+        val code = text.substringBefore('#')
+        require(code.isNotEmpty() && text.substringAfter('#') == attempt.state) {
+            "That code is for a different sign-in."
+        }
+        return code
+    }
+    return text
 }
+
+private fun urlDecode(value: String): String = runCatching {
+    java.net.URLDecoder.decode(value, "UTF-8")
+}
+    .getOrDefault(value)
 
 fun exchangeTokens(
     http: OkHttpClient,
