@@ -5,7 +5,6 @@ import android.os.Handler
 import android.os.Looper
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.net.toUri
@@ -24,89 +23,94 @@ import app.speecher.protocol.pastedClaudeCode
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.SocketTimeoutException
+import java.util.concurrent.CountDownLatch
 
 /** Owns one browser sign-in attempt across activity recreation. */
 class SignIn(private val tokenStore: TokenStore) : AutoCloseable {
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var listener: ServerSocket? = null
+    private var listenerClosed: CountDownLatch? = null
     private var attempt: OAuthAttempt? = null
     private var provider: OAuthProvider? = null
     @Volatile private var sequence = 0
 
-    fun start(activity: Activity, provider: OAuthProvider, result: (Result<OAuthTokens>) -> Unit) {
+    fun start(provider: OAuthProvider, result: (Result<OAuthTokens>) -> Unit): OAuthAttempt {
         closeListener()
+        val previous = listenerClosed
+        val closed = CountDownLatch(1)
+        listenerClosed = closed
         val id = ++sequence
         val current = oauthAttempt(provider)
         this.provider = provider
         attempt = current
         sharedExecutor.execute {
-            if (id != sequence) return@execute
-            val outcome = runCatching {
-                val port = if (provider == OAuthProvider.Claude) 54545 else 1455
-                val deadline = System.currentTimeMillis() + 180_000
-                ServerSocket(port, 1, InetAddress.getLoopbackAddress()).use { socket ->
-                    synchronized(this) {
-                        if (id != sequence) {
-                            socket.close()
-                            error("Sign-in attempt was replaced")
-                        }
-                        listener = socket
-                    }
-                    main.post {
-                        if (id == sequence)
-                            CustomTabsIntent.Builder()
-                                .build()
-                                .launchUrl(activity, current.authorizeUrl.toString().toUri())
-                    }
-                    while (System.currentTimeMillis() < deadline && !socket.isClosed) {
-                        socket.soTimeout =
-                            minOf(2_000L, deadline - System.currentTimeMillis())
-                                .toInt()
-                                .coerceAtLeast(1)
-                        val client =
-                            try {
-                                socket.accept()
-                            } catch (_: SocketTimeoutException) {
-                                continue
+            try {
+                previous?.await()
+                if (id != sequence) return@execute
+                val outcome = runCatching {
+                    val port = if (provider == OAuthProvider.Claude) 54545 else 1455
+                    val deadline = System.currentTimeMillis() + 180_000
+                    ServerSocket(port, 1, InetAddress.getLoopbackAddress()).use { socket ->
+                        synchronized(this) {
+                            if (id != sequence) {
+                                socket.close()
+                                error("Sign-in attempt was replaced")
                             }
-                        client.use {
-                            it.soTimeout = 2_000
-                            val requestLine =
+                            listener = socket
+                        }
+                        while (System.currentTimeMillis() < deadline && !socket.isClosed) {
+                            socket.soTimeout =
+                                minOf(2_000L, deadline - System.currentTimeMillis())
+                                    .toInt()
+                                    .coerceAtLeast(1)
+                            val client =
                                 try {
-                                    it.getInputStream().bufferedReader().readLine()
+                                    socket.accept()
                                 } catch (_: SocketTimeoutException) {
-                                    null
+                                    continue
                                 }
-                            val target = requestLine?.split(' ')?.getOrNull(1)
-                            val uri = runCatching { target?.toUri() }.getOrNull()
-                            val code = runCatching {
-                                oauthCallback(
-                                    provider,
-                                    current,
-                                    uri?.path.orEmpty(),
-                                    uri?.encodedQuery.orEmpty(),
-                                )
+                            client.use {
+                                it.soTimeout = 2_000
+                                val requestLine =
+                                    try {
+                                        it.getInputStream().bufferedReader().readLine()
+                                    } catch (_: SocketTimeoutException) {
+                                        null
+                                    }
+                                val target = requestLine?.split(' ')?.getOrNull(1)
+                                val uri = runCatching { target?.toUri() }.getOrNull()
+                                val code = runCatching {
+                                    oauthCallback(
+                                        provider,
+                                        current,
+                                        uri?.path.orEmpty(),
+                                        uri?.encodedQuery.orEmpty(),
+                                    )
+                                }
+                                    .getOrNull()
+                                if (code == null) {
+                                    respond(it, false)
+                                    continue
+                                }
+                                val exchange = runCatching { exchange(provider, current, code) }
+                                respond(it, exchange.isSuccess)
+                                return@runCatching exchange.getOrThrow()
                             }
-                                .getOrNull()
-                            if (code == null) {
-                                respond(it, false)
-                                continue
-                            }
-                            val exchange = runCatching { exchange(provider, current, code) }
-                            respond(it, exchange.isSuccess)
-                            return@runCatching exchange.getOrThrow()
                         }
+                        error("Sign-in callback timed out")
                     }
-                    error("Sign-in callback timed out")
                 }
-            }
-            main.post {
-                if (id == sequence) {
-                    listener = null
-                    result(outcome)
+                main.post {
+                    if (id == sequence) {
+                        listener = null
+                        result(outcome)
+                    }
                 }
+            } finally {
+                closed.countDown()
             }
         }
+        return current
     }
 
     fun completePastedClaudeCode(codeAndState: String, result: (Result<OAuthTokens>) -> Unit) {
@@ -165,14 +169,14 @@ class SignInViewModel : ViewModel() {
     var error by mutableStateOf<String?>(null)
         private set
 
-    var completed by mutableIntStateOf(0)
-        private set
-
     fun start(activity: Activity, provider: Provider) {
         if (signIn == null) signIn = SignIn(TokenStore(activity.applicationContext))
         activeProvider = provider
         error = null
-        signIn?.start(activity, provider.oauth, ::finish)
+        val attempt = signIn?.start(provider.oauth, ::finish) ?: return
+        CustomTabsIntent.Builder()
+            .build()
+            .launchUrl(activity, attempt.authorizeUrl.toString().toUri())
     }
 
     fun paste(codeAndState: String) {
@@ -182,7 +186,6 @@ class SignInViewModel : ViewModel() {
     private fun finish(result: Result<OAuthTokens>) {
         error = result.exceptionOrNull()?.message?.let { "Sign-in failed: $it" }
         activeProvider = null
-        completed++
     }
 
     override fun onCleared() {
