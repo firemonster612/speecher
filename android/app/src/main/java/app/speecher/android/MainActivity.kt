@@ -112,7 +112,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        // The adb grant and the system toggles change outside the app, so poll while visible.
+        // The keyboard and accessibility toggles change outside the app, so poll while visible.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
                 while (true) {
@@ -195,7 +195,6 @@ class MainActivity : ComponentActivity() {
                 microphoneGranted = granted(Manifest.permission.RECORD_AUDIO),
                 keyboardEnabled = keyboardEnabled(),
                 chipEnabled = chipEnabled(),
-                swapGranted = granted(Manifest.permission.WRITE_SECURE_SETTINGS),
             )
     }
 
@@ -233,4 +232,4 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private fun emptyStatus() = SetupStatus(emptySet(), false, false, false, false)
+private fun emptyStatus() = SetupStatus(emptySet(), false, false, false)

@@ -1,7 +1,5 @@
 package app.speecher.android.ui
 
-import android.content.ClipData
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -13,41 +11,29 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ClipEntry
-import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SetupStatus
-import kotlinx.coroutines.launch
-
-/** The one-time grant that lets the chip swap keyboards without a system prompt. */
-const val SwapGrantCommand =
-    "adb shell pm grant app.speecher.android android.permission.WRITE_SECURE_SETTINGS"
 
 /**
- * First-run checklist. Each row reads one [SetupStatus] flag, so the list updates as the engine
- * re-reads the system (for example, the adb grant turns done while the user is at a computer).
+ * First-run checklist. Each row reads one [SetupStatus] flag, so the list updates as the app
+ * re-reads the system while it is open.
  */
 @Composable
 fun Onboarding(
@@ -99,18 +85,11 @@ fun Onboarding(
         Step(
             5,
             "Turn on the dictation button",
-            "Shows a small button beside your keyboard.",
+            "It shows a small button beside your keyboard and lets it switch to Speecher when you " +
+                "tap. Android may ask you to allow this for a sideloaded app.",
             status.chipEnabled,
         ) {
             StepButton("Open settings", onOpenChipSettings)
-        }
-        Step(
-            6,
-            "Grant keyboard switching",
-            "Run this once from a computer with USB debugging on.",
-            status.swapGranted,
-        ) {
-            GrantCommand()
         }
         Section("Try it")
         PracticeField(Modifier.padding(horizontal = 16.dp))
@@ -173,47 +152,6 @@ private fun StepButton(text: String, onClick: () -> Unit) {
     FilledTonalButton(onClick) { Text(text) }
 }
 
-@Composable
-private fun GrantCommand() {
-    val clipboard = LocalClipboard.current
-    val scope = rememberCoroutineScope()
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        // Full width, so the long permission name fits on one line.
-        Text(
-            SwapGrantCommand,
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-        )
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-        Text(
-            "Waiting for the grant",
-            Modifier.padding(start = 8.dp).weight(1f),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        TextButton({
-            scope.launch {
-                clipboard.setClipEntry(
-                    ClipEntry(ClipData.newPlainText("adb command", SwapGrantCommand))
-                )
-            }
-        }) {
-            Icon(
-                painterResource(R.drawable.ic_copy),
-                contentDescription = null,
-                Modifier.size(18.dp),
-            )
-            Text("Copy", Modifier.padding(start = 8.dp))
-        }
-    }
-}
-
 /** A field to try the chip on. Its text is thrown away. */
 @Composable
 internal fun PracticeField(modifier: Modifier = Modifier) {
@@ -260,14 +198,14 @@ private fun OnboardingPreview(status: SetupStatus) = SpeecherTheme {
 @PreviewLightDark
 @Composable
 internal fun OnboardingFreshPreview() =
-    OnboardingPreview(SetupStatus(emptySet(), false, false, false, false))
+    OnboardingPreview(SetupStatus(emptySet(), false, false, false))
 
 @PreviewLightDark
 @Composable
 internal fun OnboardingPartwayPreview() =
-    OnboardingPreview(SetupStatus(setOf(Provider.Claude), true, true, false, false))
+    OnboardingPreview(SetupStatus(setOf(Provider.Claude), true, true, false))
 
 @PreviewLightDark
 @Composable
 internal fun OnboardingDonePreview() =
-    OnboardingPreview(SetupStatus(Provider.entries.toSet(), true, true, true, true))
+    OnboardingPreview(SetupStatus(Provider.entries.toSet(), true, true, true))

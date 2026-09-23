@@ -62,13 +62,7 @@ data class SetupStatus(
     val microphoneGranted: Boolean,
     val keyboardEnabled: Boolean,
     val chipEnabled: Boolean,
-    val swapGranted: Boolean,
 ) {
     val complete: Boolean
-        get() =
-            signedIn.isNotEmpty() &&
-                microphoneGranted &&
-                keyboardEnabled &&
-                chipEnabled &&
-                swapGranted
+        get() = signedIn.isNotEmpty() && microphoneGranted && keyboardEnabled && chipEnabled
 }

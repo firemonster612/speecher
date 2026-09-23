@@ -27,12 +27,10 @@ The app checks the latest GitHub release when it opens, at most once a day. If t
 
 ## Installing on a phone
 
-1. Enable USB debugging, connect the phone, then run `adb install app-release.apk`.
-2. Open Speecher and work through the setup list.
-3. The keyboard-switching step needs this command, run once from the computer:
+No computer is needed after the app is on the phone; setup is entirely on-device.
 
-   ```sh
-   adb shell pm grant app.speecher.android android.permission.WRITE_SECURE_SETTINGS
-   ```
+1. Download and open the APK on the phone (allow "install unknown apps" for the browser once).
+2. Open Speecher and work through the setup list: sign in, allow the microphone, turn on the Speecher keyboard, turn on the dictation button (its accessibility service).
+3. Android may block turning on the dictation-button accessibility service for a sideloaded app. If it does, open App info for Speecher, tap the three-dot menu, choose **Allow restricted settings**, then turn the service on. This is the only friction, and it needs no computer.
 
-4. Android may block turning on the dictation-button accessibility service for a sideloaded app. If it does, open App info for Speecher, tap the three-dot menu, choose **Allow restricted settings**, then turn the service on.
+The accessibility service is what lets the chip switch to the Speecher keyboard and back; there is no adb grant.

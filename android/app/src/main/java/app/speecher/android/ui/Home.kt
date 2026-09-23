@@ -144,9 +144,9 @@ private fun HomePreview(status: SetupStatus) = SpeecherTheme {
 @PreviewLightDark
 @Composable
 internal fun HomeReadyPreview() =
-    HomePreview(SetupStatus(Provider.entries.toSet(), true, true, true, true))
+    HomePreview(SetupStatus(Provider.entries.toSet(), true, true, true))
 
 @PreviewLightDark
 @Composable
 internal fun HomeSetupPendingPreview() =
-    HomePreview(SetupStatus(setOf(Provider.Claude), true, false, false, false))
+    HomePreview(SetupStatus(setOf(Provider.Claude), true, false, false))

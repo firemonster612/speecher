@@ -29,7 +29,13 @@ class SpeecherChipService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        ImeSwap(this).restoreOnRestart()
+        // Recover a swap a dead process never undid: our keyboard is default with nothing
+        // dictating.
+        val swap = ImeSwap(this)
+        if (swap.stranded()) {
+            swap.previousId?.let { softKeyboardController.switchToInputMethod(it) }
+            swap.clear()
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -93,11 +99,16 @@ class SpeecherChipService : AccessibilityService() {
     }
 
     private fun onChipTap() {
+        ImeSwap(this).rememberPrevious()
         val engine = startDictation()
-        try {
-            ImeSwap(this).activate()
+        val switched = runCatching {
+            softKeyboardController.switchToInputMethod(speecherImeId(this))
+        }
+            .getOrDefault(false)
+        if (switched) {
             removeChip()
-        } catch (_: Exception) {
+        } else {
+            // Our keyboard isn't enabled; setup isn't finished, so send them there.
             engine.close()
             ActiveDictation.engine = null
             startActivity(

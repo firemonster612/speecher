@@ -7,7 +7,7 @@ import org.junit.Test
 class SetupStatusTest {
     @Test
     fun `one signed-in provider completes setup`() {
-        val setup = SetupStatus(setOf(Provider.Claude), true, true, true, true)
+        val setup = SetupStatus(setOf(Provider.Claude), true, true, true)
         assertTrue(setup.complete)
         assertFalse(setup.copy(signedIn = emptySet()).complete)
     }

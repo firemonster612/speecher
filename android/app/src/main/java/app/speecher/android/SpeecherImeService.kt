@@ -24,7 +24,7 @@ class SpeecherImeService : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
-        ImeSwap(this).restoreOnRestart()
+        ImeSwap(this).let { if (it.stranded()) it.switchBack(this) }
         panelState.value = ActiveDictation.state
         ActiveDictation.observe = ::showState
         ActiveDictation.onInserted = ::switchBack
