@@ -1,5 +1,8 @@
 package app.speecher.protocol
 
+internal fun isAuthenticationError(detail: String): Boolean =
+    listOf("401", "403", "unauthorized", "forbidden").any { detail.contains(it, ignoreCase = true) }
+
 sealed interface SpeechEvent {
     data object Connected : SpeechEvent
 

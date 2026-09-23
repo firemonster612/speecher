@@ -49,7 +49,6 @@ class CodexDictationClient(
 
     override fun onOpen(webSocket: WebSocket, response: Response) {
         if (cancelled || failed) return
-        socket = webSocket
         val vad = buildJsonObject {
             put("type", JsonPrimitive("server_vad"))
             put("threshold", JsonPrimitive(0.5))
@@ -195,5 +194,5 @@ private fun JsonObject.authenticationError(): Boolean {
     val error = this["error"] as? JsonObject
     val detail =
         "${error?.string("code").orEmpty()} ${error?.string("message").orEmpty()}".lowercase()
-    return listOf("401", "403", "unauthorized", "forbidden").any(detail::contains)
+    return isAuthenticationError(detail)
 }

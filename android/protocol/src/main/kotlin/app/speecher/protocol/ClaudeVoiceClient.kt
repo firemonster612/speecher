@@ -65,7 +65,6 @@ class ClaudeVoiceClient(
 
     override fun onOpen(webSocket: WebSocket, response: Response) {
         if (cancelled || failed) return
-        socket = webSocket
         val buffered =
             synchronized(lock) {
                 connected = true
@@ -106,12 +105,7 @@ class ClaudeVoiceClient(
                     webSocket.close(1000, null)
                 }
             }
-            is ClaudeVoiceEvent.ServerError ->
-                fail(
-                    listOf("401", "403", "unauthorized", "forbidden").any {
-                        event.summary.contains(it, ignoreCase = true)
-                    }
-                )
+            is ClaudeVoiceEvent.ServerError -> fail(isAuthenticationError(event.summary))
             is ClaudeVoiceEvent.TranscriptError -> fail(false)
             ClaudeVoiceEvent.Unknown -> Unit
         }

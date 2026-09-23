@@ -33,7 +33,6 @@ android {
         }
         release { buildConfigField("String", "FAKE_SPEECH_BASE", "\"\"") }
     }
-    buildFeatures { buildConfig = true }
     sourceSets.named("main") { res.directories.add("src/engine/res") }
 
     lint {

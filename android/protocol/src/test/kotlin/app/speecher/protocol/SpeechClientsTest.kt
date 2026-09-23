@@ -10,7 +10,6 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class SpeechClientsTest {
@@ -88,7 +87,7 @@ class SpeechClientsTest {
 
                             override fun onMessage(webSocket: WebSocket, text: String) {
                                 frames.add(text)
-                                if (text.contains("CloseStream"))
+                                if (text == "{\"type\":\"CloseStream\"}")
                                     webSocket.send(
                                         """{"type":"TranscriptEndpoint","data":"hello"}"""
                                     )
@@ -113,7 +112,10 @@ class SpeechClientsTest {
             val request = server.takeRequest()
             assertEquals("Bearer secret", request.headers["Authorization"])
             assertEquals("Speecher", request.headers["x-config-keyterms"])
-            assertEquals("linear16", request.url.queryParameter("encoding"))
+            assertEquals(
+                "encoding=linear16&sample_rate=16000&channels=1&endpointing_ms=300&utterance_end_ms=1000&language=en&use_conversation_engine=true&forward_interims=typed&stt_provider=deepgram-nova3",
+                request.url.encodedQuery,
+            )
             assertEquals("{\"type\":\"KeepAlive\"}", frames.poll(3, TimeUnit.SECONDS))
             assertEquals("binary:0102", frames.poll(3, TimeUnit.SECONDS))
             assertEquals("{\"type\":\"CloseStream\"}", frames.poll(3, TimeUnit.SECONDS))
@@ -134,9 +136,9 @@ class SpeechClientsTest {
                         object : WebSocketListener() {
                             override fun onMessage(webSocket: WebSocket, text: String) {
                                 frames.add(text)
-                                if (text.contains("session.start"))
+                                if (text.startsWith("{\"type\":\"session.start\""))
                                     webSocket.send("""{"type":"session.started"}""")
-                                if (text.contains("session.close")) {
+                                if (text == "{\"type\":\"session.close\"}") {
                                     webSocket.send(
                                         """{"type":"transcript.final","utterance_id":"1","text":"hello"}"""
                                     )
@@ -166,9 +168,10 @@ class SpeechClientsTest {
                 "chatgpt-dictation, openai-bearer.secret",
                 request.headers["Sec-WebSocket-Protocol"],
             )
-            val start = frames.poll(3, TimeUnit.SECONDS)
-            assertTrue(start.contains("\"sample_rate_hz\":16000"))
-            assertTrue(start.contains("\"type\":\"session.start\""))
+            assertEquals(
+                "{\"type\":\"session.start\",\"config\":{\"input_audio_format\":\"pcm16\",\"sample_rate_hz\":16000,\"num_channels\":1,\"max_buffer_size_bytes\":4194304,\"max_utterance_duration_ms\":30000,\"session_ttl_ms\":300000,\"provider_mode\":\"streaming_sse\",\"transcript_delivery_mode\":\"segment\",\"vad\":{\"type\":\"server_vad\",\"threshold\":0.5,\"prefix_padding_ms\":300,\"silence_duration_ms\":500}}}",
+                frames.poll(3, TimeUnit.SECONDS),
+            )
             assertEquals(
                 "{\"type\":\"audio.append\",\"audio\":\"AQI=\"}",
                 frames.poll(3, TimeUnit.SECONDS),
