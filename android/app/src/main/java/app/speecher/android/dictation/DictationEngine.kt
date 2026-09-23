@@ -18,6 +18,14 @@ import okhttp3.OkHttpClient
 val sharedHttp = OkHttpClient()
 val sharedExecutor = Executors.newCachedThreadPool()
 
+private data class Endpoints(val speech: String, val refinement: String)
+
+private sealed interface PendingInsert {
+    data object Raw : PendingInsert
+
+    data class Refined(val provider: Provider) : PendingInsert
+}
+
 class DictationEngine(
     private val capture: (() -> Boolean, (ByteArray, Float) -> Unit) -> Unit,
     private val stopCapture: () -> Unit,
@@ -36,8 +44,7 @@ class DictationEngine(
     private var interim = ""
     @Volatile private var recording = false
     private var inserted = false
-    private var pendingInsert: Provider? = null
-    private var insertPending = false
+    private var pendingInsert: PendingInsert? = null
     private var failedRefinement: Provider? = null
     private var failedCommit: String? = null
     private var sourceProvider = Provider.Claude
@@ -52,7 +59,6 @@ class DictationEngine(
         finalText.append(priorTranscript)
         interim = ""
         inserted = false
-        insertPending = false
         pendingInsert = null
         failedRefinement = null
         failedCommit = null
@@ -93,20 +99,19 @@ class DictationEngine(
 
     @Synchronized
     fun insert() {
-        if (inserted || insertPending) return
+        if (inserted || pendingInsert != null) return
         if (state is DictationState.Failed) {
             commitTranscript((state as DictationState.Failed).transcript)
             return
         }
-        insertPending = true
+        pendingInsert = PendingInsert.Raw
         stop()
     }
 
     @Synchronized
     fun insertRefined(provider: Provider) {
-        if (inserted || insertPending) return
-        insertPending = true
-        pendingInsert = provider
+        if (inserted || pendingInsert != null) return
+        pendingInsert = PendingInsert.Refined(provider)
         stop()
     }
 
@@ -186,28 +191,28 @@ class DictationEngine(
                 publishListening()
             }
             SpeechEvent.Completed -> {
-                if (insertPending) {
-                    insertPending = false
-                    val provider = pendingInsert
-                    pendingInsert = null
-                    if (provider == null) commitTranscript(transcript())
-                    else refineTranscript(provider, transcript())
-                } else publish(DictationState.Listening(transcript(), 0f))
+                if (pendingInsert != null) finishPendingInsert()
+                else publish(DictationState.Listening(transcript(), 0f))
             }
             is SpeechEvent.Failed ->
-                if (insertPending && !event.authentication && transcript().isNotBlank()) {
-                    insertPending = false
-                    val provider = pendingInsert
-                    pendingInsert = null
-                    if (provider == null) commitTranscript(transcript())
-                    else refineTranscript(provider, transcript())
-                } else
+                if (pendingInsert != null && !event.authentication && transcript().isNotBlank())
+                    finishPendingInsert()
+                else
                     fail(
                         current,
                         if (event.authentication) FailureReason.SignedOut
                         else FailureReason.Network,
                         "Speech connection failed",
                     )
+        }
+    }
+
+    private fun finishPendingInsert() {
+        val pending = pendingInsert ?: return
+        pendingInsert = null
+        when (pending) {
+            PendingInsert.Raw -> commitTranscript(transcript())
+            is PendingInsert.Refined -> refineTranscript(pending.provider, transcript())
         }
     }
 
@@ -222,7 +227,7 @@ class DictationEngine(
         recording = false
         stopCapture()
         client?.cancel()
-        insertPending = false
+        pendingInsert = null
         publish(DictationState.Failed(reason, detail, raw, failedRefinement ?: sourceProvider))
     }
 
@@ -279,6 +284,26 @@ fun createDictationEngine(
     val http = sharedHttp
     val microphone = Microphone(context)
     val fake = BuildConfig.FAKE_SPEECH_BASE.takeIf(String::isNotEmpty)
+    val endpoints =
+        if (fake == null)
+            mapOf(
+                Provider.Claude to
+                    Endpoints(
+                        "wss://claude.ai/api/ws/speech_to_text/voice_stream",
+                        "https://api.anthropic.com/v1",
+                    ),
+                Provider.ChatGpt to
+                    Endpoints(
+                        "wss://chatgpt.com/backend-api/dictation/stream",
+                        "https://chatgpt.com/backend-api/codex",
+                    ),
+            )
+        else
+            mapOf(
+                Provider.Claude to
+                    Endpoints("$fake/api/ws/speech_to_text/voice_stream", "$fake/v1"),
+                Provider.ChatGpt to Endpoints("$fake/backend-api/dictation/stream", "$fake/v1"),
+            )
     val main = Handler(Looper.getMainLooper())
     fun token(value: Provider) = store.validTokens(value.oauth, http) ?: throw SignInRequired()
     return DictationEngine(
@@ -287,32 +312,24 @@ fun createDictationEngine(
         { selected, events ->
             val access = token(selected).accessToken
             if (selected == Provider.Claude)
-                fake?.let {
-                    ClaudeVoiceClient(
-                        http,
-                        access,
-                        settings.vocabulary,
-                        events,
-                        "$it/api/ws/speech_to_text/voice_stream",
-                    )
-                } ?: ClaudeVoiceClient(http, access, settings.vocabulary, events)
-            else
-                fake?.let {
-                    CodexDictationClient(http, access, events, "$it/backend-api/dictation/stream")
-                } ?: CodexDictationClient(http, access, events)
+                ClaudeVoiceClient(
+                    http,
+                    access,
+                    settings.vocabulary,
+                    events,
+                    endpoints.getValue(selected).speech,
+                )
+            else CodexDictationClient(http, access, events, endpoints.getValue(selected).speech)
         },
         { selected, raw ->
-            if (fake == null)
-                refineTranscript(http, selected.oauth, token(selected), raw, settings.vocabulary)
-            else
-                refineTranscript(
-                    http,
-                    selected.oauth,
-                    token(selected),
-                    raw,
-                    settings.vocabulary,
-                    "$fake/v1",
-                )
+            refineTranscript(
+                http,
+                selected.oauth,
+                token(selected),
+                raw,
+                settings.vocabulary,
+                endpoints.getValue(selected).refinement,
+            )
         },
         { text ->
             val committed = connection()?.commitText(text, 1) == true

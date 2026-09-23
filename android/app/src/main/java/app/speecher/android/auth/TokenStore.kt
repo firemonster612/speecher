@@ -6,6 +6,7 @@ import android.security.keystore.KeyProperties
 import androidx.core.content.edit
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SignInRequired
+import app.speecher.android.dictation.oauth
 import app.speecher.protocol.OAuthHttpException
 import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.OAuthTokens
@@ -40,10 +41,7 @@ class TokenStore(context: Context) {
     }
 
     fun signedIn(): Set<Provider> =
-        OAuthProvider.entries.mapNotNullTo(mutableSetOf()) {
-            if (load(it) == null) null
-            else if (it == OAuthProvider.Claude) Provider.Claude else Provider.ChatGpt
-        }
+        Provider.entries.filterTo(mutableSetOf()) { load(it.oauth) != null }
 
     fun save(provider: OAuthProvider, tokens: OAuthTokens) {
         val plain =
