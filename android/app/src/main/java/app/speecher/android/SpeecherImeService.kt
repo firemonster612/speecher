@@ -71,9 +71,9 @@ class SpeecherImeService : InputMethodService() {
         super.onFinishInput()
     }
 
-    override fun onFinishInputView(finishingInput: Boolean) {
+    override fun onWindowHidden() {
         ActiveDictation.engine?.cancel()
-        super.onFinishInputView(finishingInput)
+        super.onWindowHidden()
         if (
             android.provider.Settings.Secure.getString(
                 contentResolver,
@@ -96,11 +96,10 @@ class SpeecherImeService : InputMethodService() {
         }
         ActiveDictation.engine?.cancel()
         switchBack()
-        startActivity(
-            Intent(this, MainActivity::class.java)
-                .putExtra("sign_in_provider", failed.provider?.name)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
+        val intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (failed.reason == FailureReason.SignedOut)
+            intent.putExtra("sign_in_provider", failed.provider?.name)
+        startActivity(intent)
     }
 
     private fun switchBack() {

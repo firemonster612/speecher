@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
     private var settings by mutableStateOf(SpeecherSettings())
     private var update by mutableStateOf<ApkUpdate?>(null)
     private var updateError by mutableStateOf<String?>(null)
+    private var page by mutableStateOf(Page.Home)
 
     private val microphone =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { refresh() }
@@ -64,16 +65,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         settings = settingsStore.load()
         refresh()
-        val requestedProvider =
-            intent.getStringExtra("sign_in_provider")?.let { name ->
-                Provider.entries.firstOrNull { it.name == name }
-            }
-        var page by
-            mutableStateOf(
-                if (requestedProvider != null) Page.Settings
-                else if (status.complete) Page.Home else Page.Setup
-            )
-        if (requestedProvider != null && savedInstanceState == null) startSignIn(requestedProvider)
+        page = if (status.complete) Page.Home else Page.Setup
+        if (savedInstanceState == null) handleSignInIntent(intent)
         setContent {
             SpeecherTheme {
                 BackHandler(page != Page.Home) { page = Page.Home }
@@ -129,6 +122,21 @@ class MainActivity : ComponentActivity() {
             }
         }
         checkForUpdate()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleSignInIntent(intent)
+    }
+
+    private fun handleSignInIntent(intent: Intent) {
+        val provider =
+            intent.getStringExtra("sign_in_provider")?.let { name ->
+                Provider.entries.firstOrNull { it.name == name }
+            } ?: return
+        page = Page.Settings
+        startSignIn(provider)
     }
 
     private fun checkForUpdate() {

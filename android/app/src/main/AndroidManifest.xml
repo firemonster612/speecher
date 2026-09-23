@@ -7,7 +7,7 @@
         <intent><action android:name="android.view.InputMethod" /></intent>
     </queries>
     <application android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:label="Speecher" android:icon="@mipmap/ic_launcher" android:theme="@style/Theme.Speecher">
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
