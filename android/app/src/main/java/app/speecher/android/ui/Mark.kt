@@ -2,7 +2,6 @@ package app.speecher.android.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -47,12 +46,12 @@ internal fun MarkBars(heights: List<Float>, color: Color, modifier: Modifier = M
     }
 }
 
-/** The app icon as a Compose element: the bone pill on an ink tile. Same in light and dark. */
+/** The app icon as a Compose element: a high-contrast pill on a tile. */
 @Composable
 fun BrandTile(size: Dp, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
-    val ink = if (isSystemInDarkTheme()) colors.onPrimary else colors.primary
-    val bone = if (isSystemInDarkTheme()) colors.primary else colors.onPrimary
+    val ink = colors.inverseSurface
+    val bone = colors.inverseOnSurface
     Box(
         modifier.size(size).background(ink, RoundedCornerShape(size * 28 / 128)),
         contentAlignment = Alignment.Center,
