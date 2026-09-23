@@ -19,7 +19,7 @@ val sharedHttp = OkHttpClient()
 val sharedExecutor = Executors.newCachedThreadPool()
 
 class DictationEngine(
-    private val capture: ((ByteArray, Float) -> Unit) -> Unit,
+    private val capture: (() -> Boolean, (ByteArray, Float) -> Unit) -> Unit,
     private val stopCapture: () -> Unit,
     private val connect: (Provider, (SpeechEvent) -> Unit) -> SpeechClient,
     private val refine: (Provider, String) -> String,
@@ -34,14 +34,14 @@ class DictationEngine(
     private var client: SpeechClient? = null
     private val finalText = StringBuilder()
     private var interim = ""
-    private var recording = false
+    @Volatile private var recording = false
     private var inserted = false
     private var pendingInsert: Provider? = null
     private var insertPending = false
     private var failedRefinement: Provider? = null
     private var failedCommit: String? = null
     private var sourceProvider = Provider.Claude
-    private var session = 0
+    @Volatile private var session = 0
 
     @Synchronized fun start(provider: Provider) = startSession(provider, "")
 
@@ -156,7 +156,7 @@ class DictationEngine(
                 executor.execute {
                     if (current != session || !recording) return@execute
                     try {
-                        capture { audio, level ->
+                        capture({ current == session && recording }) { audio, level ->
                             synchronized(this) {
                                 if (current == session && recording) {
                                     client?.sendAudio(audio)

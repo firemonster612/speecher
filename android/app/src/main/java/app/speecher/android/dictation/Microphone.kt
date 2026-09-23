@@ -13,12 +13,13 @@ class Microphone(private val context: Context) {
     @Volatile private var recorder: AudioRecord? = null
     @Volatile private var active = false
 
-    fun capture(onAudio: (ByteArray, Float) -> Unit) {
+    fun capture(shouldContinue: () -> Boolean, onAudio: (ByteArray, Float) -> Unit) {
         if (
             context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
                 PackageManager.PERMISSION_GRANTED
         )
             throw SecurityException("Microphone permission is missing")
+        if (!shouldContinue()) return
         active = true
         val rate = 16000
         val size =
@@ -44,8 +45,9 @@ class Microphone(private val context: Context) {
         }
         val shouldRecord =
             synchronized(this) {
-                if (active) recorder = audio
-                active
+                val ready = active && shouldContinue()
+                if (ready) recorder = audio
+                ready
             }
         if (!shouldRecord) {
             audio.release()
@@ -54,7 +56,7 @@ class Microphone(private val context: Context) {
         try {
             audio.startRecording()
             val samples = ShortArray(1600)
-            while (recorder === audio) {
+            while (recorder === audio && shouldContinue()) {
                 val count = audio.read(samples, 0, samples.size)
                 if (count < 0) error("Microphone read failed: $count")
                 if (count == 0) continue

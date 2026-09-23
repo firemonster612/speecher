@@ -42,7 +42,7 @@ class DictationEngineTest {
             val commits = LinkedBlockingQueue<String>()
             val engine =
                 DictationEngine(
-                    {},
+                    { _, _ -> },
                     {},
                     { _, events ->
                         ClaudeVoiceClient(
@@ -70,7 +70,8 @@ class DictationEngineTest {
     private class Capture {
         var audio: ((ByteArray, Float) -> Unit)? = null
 
-        fun capture(onAudio: (ByteArray, Float) -> Unit) {
+        fun capture(shouldContinue: () -> Boolean, onAudio: (ByteArray, Float) -> Unit) {
+            if (!shouldContinue()) return
             audio = onAudio
         }
 
