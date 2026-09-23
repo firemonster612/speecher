@@ -7,9 +7,11 @@ import android.inputmethodservice.InputMethodService
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.compose.ui.platform.ComposeView
+import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
+import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.ui.DictationPanel
 import app.speecher.android.ui.SpeecherTheme
 
@@ -52,7 +54,10 @@ class SpeecherImeService : InputMethodService() {
                         onInsert = { ActiveDictation.engine?.insert() },
                         onInsertRefined = {
                             ActiveDictation.engine?.insertRefined(
-                                ActiveDictation.settings.refinementProvider
+                                resolveSignedIn(
+                                    ActiveDictation.settings.refinementProvider,
+                                    TokenStore(this).signedIn(),
+                                )
                             )
                         },
                         onRecover = ::recover,

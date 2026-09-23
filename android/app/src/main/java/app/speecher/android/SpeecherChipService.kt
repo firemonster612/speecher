@@ -12,11 +12,13 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.compose.ui.platform.ComposeView
+import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationEngine
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.SettingsStore
 import app.speecher.android.dictation.createDictationEngine
+import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.ui.DictationChip
 import app.speecher.android.ui.SpeecherTheme
 import kotlin.math.abs
@@ -173,7 +175,8 @@ class SpeecherChipService : AccessibilityService() {
                 { ActiveDictation.onInserted?.invoke() },
             )
         ActiveDictation.engine = engine
-        engine.start(settings.transcriptionProvider)
+        val signedIn = TokenStore(this).signedIn()
+        engine.start(resolveSignedIn(settings.transcriptionProvider, signedIn))
         return engine
     }
 

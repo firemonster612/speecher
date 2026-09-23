@@ -48,6 +48,13 @@ enum class FailureReason {
     Provider,
 }
 
+/**
+ * The provider to actually use: the one the user picked if they are signed into it, otherwise any
+ * provider they are signed into. Keeps dictation working when only the other account is connected.
+ */
+fun resolveSignedIn(preferred: Provider, signedIn: Set<Provider>): Provider =
+    if (preferred in signedIn) preferred else signedIn.firstOrNull() ?: preferred
+
 /** Everything the user can change in Settings. */
 data class SpeecherSettings(
     val transcriptionProvider: Provider = Provider.Claude,
