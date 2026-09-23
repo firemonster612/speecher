@@ -7,6 +7,7 @@ import android.inputmethodservice.InputMethodService
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.compose.ui.platform.ComposeView
+import androidx.core.view.WindowCompat
 import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationState
@@ -39,6 +40,10 @@ class SpeecherImeService : InputMethodService() {
 
     override fun onCreateInputView(): View =
         ComposeView(this).also { view ->
+            // Draw edge-to-edge so the nav-bar inset reaches Compose instead of being consumed
+            // first; otherwise navigationBarsPadding() collapses to 0 and the panel's background
+            // stops short of the bottom edge, leaving the app behind the keyboard showing through.
+            window.window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
             // Compose looks up its owners from the window root, which the IME framework owns.
             window.window?.decorView?.let(owner::attach)
             owner.attach(view)

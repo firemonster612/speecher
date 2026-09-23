@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import app.speecher.android.R
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.dictation.providerOrder
 
 /** Settings. Every change goes out whole through [onChange]; the caller persists it. */
 @Composable
@@ -52,7 +53,7 @@ fun Settings(
     val rowColors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface)
     Column(modifier) {
         Section("Transcription")
-        ProviderPicker("Transcription provider", settings.transcriptionProvider) {
+        ProviderPicker("Transcription provider", settings.transcriptionProvider, signedIn) {
             onChange(settings.copy(transcriptionProvider = it))
         }
 
@@ -69,7 +70,7 @@ fun Settings(
             colors = rowColors,
         )
         if (settings.refinementEnabled) {
-            ProviderPicker("Refinement provider", settings.refinementProvider) {
+            ProviderPicker("Refinement provider", settings.refinementProvider, signedIn) {
                 onChange(settings.copy(refinementProvider = it))
             }
         }
@@ -107,7 +108,7 @@ fun Settings(
         signInError?.let {
             Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)
         }
-        Provider.entries.forEach { provider ->
+        providerOrder.forEach { provider ->
             val isSignedIn = provider in signedIn
             ListItem(
                 headlineContent = { Text(provider.label) },
@@ -127,17 +128,25 @@ fun Settings(
 }
 
 @Composable
-private fun ProviderPicker(label: String, selected: Provider, onSelect: (Provider) -> Unit) {
+private fun ProviderPicker(
+    label: String,
+    selected: Provider,
+    signedIn: Set<Provider>,
+    onSelect: (Provider) -> Unit,
+) {
     SingleChoiceSegmentedButtonRow(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).semantics {
             contentDescription = label
         }
     ) {
-        Provider.entries.forEachIndexed { index, provider ->
+        providerOrder.forEachIndexed { index, provider ->
+            // A provider you aren't signed into can't be used — dictation would silently fall back
+            // to the other account — so it's disabled here until you connect it in Accounts below.
             SegmentedButton(
                 selected = provider == selected,
                 onClick = { onSelect(provider) },
-                shape = SegmentedButtonDefaults.itemShape(index, Provider.entries.size),
+                enabled = provider in signedIn,
+                shape = SegmentedButtonDefaults.itemShape(index, providerOrder.size),
             ) {
                 Text(provider.label)
             }

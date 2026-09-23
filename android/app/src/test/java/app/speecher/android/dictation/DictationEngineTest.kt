@@ -120,7 +120,7 @@ class DictationEngineTest {
         engine.start(Provider.Claude)
         speech(SpeechEvent.Connected)
         speech(SpeechEvent.Partial("hello"))
-        assertEquals(DictationState.Listening("hello", 0f), engine.state)
+        assertEquals(DictationState.Listening("", "hello", 0f), engine.state)
         engine.insert()
         engine.insert()
         speech(SpeechEvent.Final("world"))
@@ -153,7 +153,7 @@ class DictationEngineTest {
         engine.start(Provider.Claude)
         speech(SpeechEvent.Connected)
         capture.audio?.invoke(byteArrayOf(1, 2), 0.5f)
-        assertEquals(DictationState.Listening("", 0.5f), engine.state)
+        assertEquals(DictationState.Listening("", "", 0.5f), engine.state)
         assertEquals(listOf(1.toByte(), 2.toByte()), client.audio.single().toList())
         engine.cancel()
         assertTrue(client.cancelled)
@@ -230,6 +230,33 @@ class DictationEngineTest {
         commitSucceeds = true
         engine.insert()
         assertEquals(listOf("keep this"), commits)
+    }
+
+    @Test
+    fun `partials stay interim until a final commits them`() {
+        val capture = Capture()
+        lateinit var speech: (SpeechEvent) -> Unit
+        val engine =
+            DictationEngine(
+                capture::capture,
+                capture::stop,
+                { _, events ->
+                    speech = events
+                    Client()
+                },
+                { _, raw -> raw },
+                { true },
+                Executor { it.run() },
+                {},
+            )
+        engine.start(Provider.ChatGpt)
+        speech(SpeechEvent.Connected)
+        speech(SpeechEvent.Partial("hello"))
+        assertEquals(DictationState.Listening("", "hello", 0f), engine.state)
+        speech(SpeechEvent.Final("hello there"))
+        assertEquals(DictationState.Listening("hello there", "", 0f), engine.state)
+        speech(SpeechEvent.Partial("friend"))
+        assertEquals(DictationState.Listening("hello there", "friend", 0f), engine.state)
     }
 
     @Test

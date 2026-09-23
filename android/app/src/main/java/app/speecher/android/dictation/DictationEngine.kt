@@ -51,7 +51,7 @@ class DictationEngine(
     private var pendingInsert: PendingInsert? = null
     private var failedRefinement: Provider? = null
     private var failedCommit: String? = null
-    private var sourceProvider = Provider.Claude
+    private var sourceProvider = providerOrder.first()
     @Volatile private var session = 0
 
     @Synchronized fun start(provider: Provider) = startSession(provider, "")
@@ -92,7 +92,7 @@ class DictationEngine(
         recording = false
         stopCapture()
         client?.stop()
-        publish(DictationState.Listening(transcript(), 0f))
+        publish(listening(0f))
     }
 
     @Synchronized
@@ -161,7 +161,7 @@ class DictationEngine(
             return
         when (event) {
             SpeechEvent.Connected -> {
-                publish(DictationState.Listening(transcript(), 0f))
+                publish(listening(0f))
                 executor.execute {
                     if (current != session || !recording) return@execute
                     try {
@@ -169,7 +169,7 @@ class DictationEngine(
                             synchronized(this) {
                                 if (current == session && recording) {
                                     client?.sendAudio(audio)
-                                    publish(DictationState.Listening(transcript(), level))
+                                    publish(listening(level))
                                 }
                             }
                         }
@@ -195,8 +195,7 @@ class DictationEngine(
                 publishListening()
             }
             SpeechEvent.Completed -> {
-                if (pendingInsert != null) finishPendingInsert()
-                else publish(DictationState.Listening(transcript(), 0f))
+                if (pendingInsert != null) finishPendingInsert() else publish(listening(0f))
             }
             is SpeechEvent.Failed ->
                 if (pendingInsert != null && !event.authentication && transcript().isNotBlank())
@@ -226,13 +225,22 @@ class DictationEngine(
         reason: FailureReason,
         detail: String,
         raw: String = transcript(),
+        commitFailed: Boolean = false,
     ) {
         if (current != session || inserted) return
         recording = false
         stopCapture()
         client?.cancel()
         pendingInsert = null
-        publish(DictationState.Failed(reason, detail, raw, failedRefinement ?: sourceProvider))
+        publish(
+            DictationState.Failed(
+                reason,
+                detail,
+                raw,
+                failedRefinement ?: sourceProvider,
+                commitFailed,
+            )
+        )
     }
 
     private fun commitTranscript(text: String) {
@@ -241,17 +249,22 @@ class DictationEngine(
             failedCommit = null
         } else {
             failedCommit = text
-            fail(session, FailureReason.Provider, "Could not insert text", text)
+            fail(
+                session,
+                FailureReason.Provider,
+                "Could not insert text",
+                text,
+                commitFailed = true,
+            )
         }
     }
 
     private fun publishListening() =
-        publish(
-            DictationState.Listening(
-                transcript(),
-                (state as? DictationState.Listening)?.level ?: 0f,
-            )
-        )
+        publish(listening((state as? DictationState.Listening)?.level ?: 0f))
+
+    /** The current preview split into its committed and interim parts for the panel to render. */
+    private fun listening(level: Float) =
+        DictationState.Listening(finalText.toString(), interim, level)
 
     private fun transcript(): String =
         if (finalText.isEmpty()) interim

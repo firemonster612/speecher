@@ -54,6 +54,8 @@ private fun ChipOverKeyboard() {
         }
         DictationChip(
             {},
+            { _, _ -> },
+            {},
             Modifier.align(Alignment.BottomEnd).padding(with(LocalDensity.current) { 16.toDp() }),
         )
     }

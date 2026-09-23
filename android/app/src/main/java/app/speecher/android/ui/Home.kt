@@ -26,6 +26,7 @@ import app.speecher.android.R
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SetupStatus
 import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.update.ApkUpdate
 
 /**
@@ -116,11 +117,14 @@ fun Home(
         ListItem(
             headlineContent = { Text("Settings") },
             supportingContent = {
+                // Show what dictation will actually use: if the chosen provider isn't signed in,
+                // it falls back to the connected account, so name that rather than the raw setting.
+                val transcription =
+                    resolveSignedIn(settings.transcriptionProvider, status.signedIn).label
+                val refinement = resolveSignedIn(settings.refinementProvider, status.signedIn).label
                 Text(
-                    "Transcribing with ${settings.transcriptionProvider.label}" +
-                        if (settings.refinementEnabled) {
-                            ", refining with ${settings.refinementProvider.label}"
-                        } else ""
+                    "Transcribing with $transcription" +
+                        if (settings.refinementEnabled) ", refining with $refinement" else ""
                 )
             },
             trailingContent = { Chevron() },

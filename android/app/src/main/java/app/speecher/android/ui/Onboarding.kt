@@ -2,6 +2,7 @@ package app.speecher.android.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import app.speecher.android.R
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SetupStatus
+import app.speecher.android.dictation.providerOrder
 
 /**
  * First-run checklist. Each row reads one [SetupStatus] flag, so the list updates as the app
@@ -52,22 +55,13 @@ fun Onboarding(
             "Set up Speecher",
             "A few one-time steps so you can dictate into any text field.",
         )
-        Provider.entries.forEachIndexed { index, provider ->
-            Step(
-                index + 1,
-                "Sign in to ${provider.label}",
-                "Speecher transcribes with your own account.",
-                done = provider in status.signedIn,
-            ) {
-                StepButton("Sign in") { onSignIn(provider) }
-            }
-            if (signingIn == provider) PasteCode(onPasteCode)
-        }
+        var step = 1
+        SignInStep(step++, status.signedIn, signingIn, onSignIn, onPasteCode)
         signInError?.let {
             Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)
         }
         Step(
-            3,
+            step++,
             "Allow the microphone",
             "The keyboard can't ask for it, so Speecher asks here.",
             status.microphoneGranted,
@@ -75,7 +69,7 @@ fun Onboarding(
             StepButton("Allow", onRequestMicrophone)
         }
         Step(
-            4,
+            step++,
             "Turn on the Speecher keyboard",
             "It only listens. You keep typing with your usual keyboard.",
             status.keyboardEnabled,
@@ -83,7 +77,7 @@ fun Onboarding(
             StepButton("Open settings", onOpenKeyboardSettings)
         }
         Step(
-            5,
+            step++,
             "Turn on the dictation button",
             "It shows a small button beside your keyboard and lets it switch to Speecher when you " +
                 "tap. Android may ask you to allow this for a sideloaded app.",
@@ -93,6 +87,48 @@ fun Onboarding(
         }
         Section("Try it")
         PracticeField(Modifier.padding(horizontal = 16.dp))
+    }
+}
+
+/**
+ * Sign-in is one step, not one per provider: either account is enough to finish setup, so the step
+ * is done the moment one connects and the other is offered as an optional extra.
+ */
+@Composable
+private fun SignInStep(
+    number: Int,
+    signedIn: Set<Provider>,
+    signingIn: Provider?,
+    onSignIn: (Provider) -> Unit,
+    onPasteCode: (String) -> Unit,
+) {
+    val done = signedIn.isNotEmpty()
+    val remaining = providerOrder.filter { it !in signedIn }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+        StepMarker(number, done)
+        Column(Modifier.padding(start = 16.dp).weight(1f)) {
+            Text("Sign in to one account", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Speecher transcribes with your own ChatGPT or Claude account. One is enough.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (!done) {
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    remaining.forEach { provider ->
+                        StepButton("Sign in to ${provider.label}") { onSignIn(provider) }
+                    }
+                }
+            } else {
+                remaining.forEach { provider ->
+                    TextButton({ onSignIn(provider) }) {
+                        Text("Add ${provider.label} for a choice of provider")
+                    }
+                }
+            }
+            if (signingIn != null) PasteCode(onPasteCode)
+        }
     }
 }
 

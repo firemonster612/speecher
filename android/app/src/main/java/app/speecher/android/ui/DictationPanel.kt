@@ -35,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -46,6 +47,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.dictation.DictationState
@@ -130,16 +134,20 @@ private val DictationState.transcript: String
     get() =
         when (this) {
             DictationState.Connecting -> ""
-            is DictationState.Listening -> transcript
+            is DictationState.Listening -> text
             is DictationState.Refining -> transcript
             is DictationState.Failed -> transcript
         }
 
 @Composable
 private fun Transcript(state: DictationState, modifier: Modifier) {
-    val text = state.transcript
+    val committed = (state as? DictationState.Listening)?.committed ?: state.transcript
+    val interim = (state as? DictationState.Listening)?.interim ?: ""
     val scroll = rememberScrollState()
-    LaunchedEffect(text) { scroll.animateScrollTo(scroll.maxValue) }
+    // Follow the bottom off layout, not the text: jumping to maxValue after each relayout keeps the
+    // newest words in view without an animation chasing a one-frame-stale target, and shrinking
+    // interim text no longer lurches the preview up then back down.
+    LaunchedEffect(scroll) { snapshotFlow { scroll.maxValue }.collect { scroll.scrollTo(it) } }
     val placeholder =
         when (state) {
             DictationState.Connecting -> "Connecting…"
@@ -148,16 +156,27 @@ private fun Transcript(state: DictationState, modifier: Modifier) {
         }
     val colors = MaterialTheme.colorScheme
     Box(modifier.verticalScroll(scroll)) {
-        Text(
-            text.ifEmpty { placeholder },
-            style = MaterialTheme.typography.bodyLarge,
-            color =
-                when {
-                    text.isEmpty() -> colors.onSurfaceVariant
-                    state is DictationState.Refining -> colors.onSurface.copy(alpha = 0.6f)
-                    else -> colors.onSurface
+        if (committed.isEmpty() && interim.isEmpty()) {
+            Text(
+                placeholder,
+                style = MaterialTheme.typography.bodyLarge,
+                color = colors.onSurfaceVariant,
+            )
+        } else {
+            Text(
+                buildAnnotatedString {
+                    append(committed)
+                    if (committed.isNotEmpty() && interim.isNotEmpty()) append(' ')
+                    if (interim.isNotEmpty()) {
+                        withStyle(SpanStyle(color = colors.onSurfaceVariant)) { append(interim) }
+                    }
                 },
-        )
+                style = MaterialTheme.typography.bodyLarge,
+                color =
+                    if (state is DictationState.Refining) colors.onSurface.copy(alpha = 0.6f)
+                    else colors.onSurface,
+            )
+        }
     }
 }
 
@@ -173,11 +192,15 @@ private fun RowScope.PanelButtons(
     val button = Modifier.weight(1f).height(52.dp)
     TextButton(onCancel, Modifier.height(52.dp)) { Text("Cancel") }
     if (state is DictationState.Failed) {
-        if (state.transcript.isNotBlank()) FilledTonalButton(onInsert, button) { Text("Insert") }
+        // On a commit failure the recovery button already re-commits the same text, so a second
+        // Insert would duplicate it; show only the recovery action there.
+        if (!state.commitFailed && state.transcript.isNotBlank()) {
+            FilledTonalButton(onInsert, button) { Text("Insert") }
+        }
         Button(onRecover, button) { Text(state.reason.recovery) }
         return
     }
-    val canInsert = state is DictationState.Listening && state.transcript.isNotBlank()
+    val canInsert = state is DictationState.Listening && state.text.isNotBlank()
     if (refinementEnabled) {
         FilledTonalButton(onInsertRefined, button, enabled = canInsert) {
             if (state is DictationState.Refining) {
@@ -242,9 +265,10 @@ private fun LiveBars(level: Float) {
             history = history.drop(1) + latest
         }
     }
-    // The envelope keeps the mark's silhouette, tall in the middle, whatever the input does.
+    // The envelope keeps the mark's silhouette, tall in the middle, but only softens the edges now
+    // that the level spans the range, so speech visibly moves every bar instead of a faint few.
     Bars(
-        history.mapIndexed { i, sample -> sample * (0.3f + 0.7f * Envelope[i]) },
+        history.mapIndexed { i, sample -> sample * (0.5f + 0.5f * Envelope[i]) },
         MaterialTheme.colorScheme.onSurface,
     )
 }
@@ -306,16 +330,16 @@ internal fun PanelConnectingPreview() = PanelPreview(DictationState.Connecting)
 
 @PreviewLightDark
 @Composable
-internal fun PanelListeningEmptyPreview() = PanelPreview(DictationState.Listening("", 0.1f))
+internal fun PanelListeningEmptyPreview() = PanelPreview(DictationState.Listening("", "", 0.1f))
 
 @PreviewLightDark
 @Composable
-internal fun PanelListeningPreview() = PanelPreview(DictationState.Listening(SAMPLE_TEXT, 0.7f))
+internal fun PanelListeningPreview() = PanelPreview(DictationState.Listening(SAMPLE_TEXT, "", 0.7f))
 
 @PreviewLightDark
 @Composable
 internal fun PanelListeningNoRefinePreview() =
-    PanelPreview(DictationState.Listening(SAMPLE_TEXT, 0.7f), refinementEnabled = false)
+    PanelPreview(DictationState.Listening(SAMPLE_TEXT, "", 0.7f), refinementEnabled = false)
 
 @PreviewLightDark
 @Composable

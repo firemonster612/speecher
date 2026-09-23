@@ -26,4 +26,15 @@ class SetupStatusTest {
             resolveSignedIn(Provider.Claude, setOf(Provider.Claude, Provider.ChatGpt)),
         )
     }
+
+    @Test
+    fun `provider order and default carry no Claude bias`() {
+        // Neutral, alphabetical order, not the enum declaration order (Claude first).
+        assertEquals(listOf(Provider.ChatGpt, Provider.Claude), providerOrder)
+        // Default follows the signed-in account.
+        assertEquals(Provider.Claude, defaultProvider(setOf(Provider.Claude)))
+        assertEquals(Provider.ChatGpt, defaultProvider(setOf(Provider.ChatGpt)))
+        // None signed in: the first neutral choice, not a hardcoded Claude.
+        assertEquals(Provider.ChatGpt, defaultProvider(emptySet()))
+    }
 }

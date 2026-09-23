@@ -228,8 +228,21 @@ class SignInViewModel : ViewModel() {
     }
 
     private fun finish(result: Result<OAuthTokens>) {
-        error = result.exceptionOrNull()?.message?.let { "Sign-in failed: $it" }
+        error = result.exceptionOrNull()?.let(::signInErrorMessage)
         activeProvider = null
+    }
+
+    // Some failures (dropped sockets, cancellations) carry no message; never leave the user with
+    // no feedback, and turn the few known technical strings into plain copy.
+    private fun signInErrorMessage(cause: Throwable): String {
+        val message = cause.message?.trim()
+        return when {
+            message.isNullOrEmpty() -> "Sign-in didn't complete. Try again."
+            message.contains("Address already in use", ignoreCase = true) ->
+                "Couldn't start sign-in — another attempt may still be open. Try again in a moment."
+            message.contains("timed out", ignoreCase = true) -> "Sign-in timed out. Try again."
+            else -> "Sign-in failed: $message"
+        }
     }
 
     override fun onCleared() {
