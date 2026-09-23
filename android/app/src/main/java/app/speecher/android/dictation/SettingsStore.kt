@@ -19,10 +19,14 @@ class SettingsStore(private val context: Context) {
             refinementEnabled = preferences.getBoolean("refinement", true),
             refinementProvider =
                 Provider.valueOf(preferences.getString("refinementProvider", default.name)!!),
+            transcribePassEnabled = preferences.getBoolean("transcribePass", true),
+            chatGptRefinement = loadRefinement(Provider.ChatGpt),
+            claudeRefinement = loadRefinement(Provider.Claude),
             vocabulary =
                 JSONArray(preferences.getString("vocabulary", "[]")).let { items ->
                     List(items.length()) { index -> items.getString(index) }
                 },
+            chipDockOnMic = preferences.getBoolean("chipDockOnMic", true),
             chipOffsetX = preferences.getInt("chipOffsetX", NO_OFFSET).takeIf { it != NO_OFFSET },
             chipOffsetY = preferences.getInt("chipOffsetY", NO_OFFSET).takeIf { it != NO_OFFSET },
         )
@@ -33,10 +37,25 @@ class SettingsStore(private val context: Context) {
             putString("transcription", settings.transcriptionProvider.name)
             putBoolean("refinement", settings.refinementEnabled)
             putString("refinementProvider", settings.refinementProvider.name)
+            putBoolean("transcribePass", settings.transcribePassEnabled)
+            Provider.entries.forEach { provider ->
+                val choice = settings.refinement(provider)
+                putString("${provider.name}RefinementModel", choice.model)
+                putString("${provider.name}RefinementEffort", choice.effort)
+            }
             putString("vocabulary", JSONArray(settings.vocabulary).toString())
+            putBoolean("chipDockOnMic", settings.chipDockOnMic)
             settings.chipOffsetX?.let { putInt("chipOffsetX", it) } ?: remove("chipOffsetX")
             settings.chipOffsetY?.let { putInt("chipOffsetY", it) } ?: remove("chipOffsetY")
         }
+    }
+
+    private fun loadRefinement(provider: Provider): RefinementChoice {
+        val default = provider.defaultRefinement
+        return RefinementChoice(
+            preferences.getString("${provider.name}RefinementModel", default.model)!!,
+            preferences.getString("${provider.name}RefinementEffort", default.effort)!!,
+        )
     }
 
     private companion object {

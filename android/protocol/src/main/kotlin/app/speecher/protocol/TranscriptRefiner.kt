@@ -20,6 +20,9 @@ fun refineTranscript(
     tokens: OAuthTokens,
     rawTranscript: String,
     vocabulary: List<String>,
+    /** The API model id, and the effort sent as `reasoning.effort` or `output_config.effort`. */
+    model: String,
+    effort: String,
     endpointBase: String =
         if (provider == OAuthProvider.Claude) "https://api.anthropic.com/v1"
         else "https://chatgpt.com/backend-api/codex",
@@ -27,7 +30,9 @@ fun refineTranscript(
     val base = endpointBase.trimEnd('/')
     if (provider == OAuthProvider.Claude) {
         http
-            .newCall(claudeRequest(tokens.accessToken, rawTranscript, vocabulary, base))
+            .newCall(
+                claudeRequest(tokens.accessToken, rawTranscript, vocabulary, model, effort, base)
+            )
             .execute()
             .use { response ->
                 if (!response.isSuccessful) error("Refinement failed with HTTP ${response.code}")
@@ -45,7 +50,9 @@ fun refineTranscript(
                 .toMap(),
             HttpBody(
                 "application/json",
-                chatGptBody(rawTranscript, vocabulary).toString().toByteArray(Charsets.UTF_8),
+                chatGptBody(rawTranscript, vocabulary, model, effort)
+                    .toString()
+                    .toByteArray(Charsets.UTF_8),
             ),
         )
     if (response.status !in 200..299) error("Refinement failed with HTTP ${response.status}")
@@ -78,6 +85,8 @@ private fun claudeRequest(
     token: String,
     raw: String,
     vocabulary: List<String>,
+    model: String,
+    effort: String,
     base: String,
 ): Request {
     val system = buildJsonArray {
@@ -98,7 +107,7 @@ private fun claudeRequest(
         )
     }
     val body = buildJsonObject {
-        put("model", JsonPrimitive("claude-sonnet-5"))
+        put("model", JsonPrimitive(model))
         put("max_tokens", JsonPrimitive(4096))
         put("stream", JsonPrimitive(true))
         put(
@@ -108,7 +117,7 @@ private fun claudeRequest(
                 put("display", JsonPrimitive("omitted"))
             },
         )
-        put("output_config", buildJsonObject { put("effort", JsonPrimitive("low")) })
+        put("output_config", buildJsonObject { put("effort", JsonPrimitive(effort)) })
         put("system", system)
         put(
             "messages",
@@ -136,24 +145,25 @@ private fun claudeRequest(
         .build()
 }
 
-private fun chatGptBody(raw: String, vocabulary: List<String>) = buildJsonObject {
-    put("model", JsonPrimitive("gpt-5.6-luna"))
-    put("reasoning", buildJsonObject { put("effort", JsonPrimitive("none")) })
-    put("instructions", JsonPrimitive(dictationSystemPrompt))
-    put("stream", JsonPrimitive(true))
-    put("store", JsonPrimitive(false))
-    put(
-        "input",
-        buildJsonArray {
-            add(
-                buildJsonObject {
-                    put("role", JsonPrimitive("user"))
-                    put("content", JsonPrimitive(refinementUserMessage(raw, vocabulary)))
-                }
-            )
-        },
-    )
-}
+private fun chatGptBody(raw: String, vocabulary: List<String>, model: String, effort: String) =
+    buildJsonObject {
+        put("model", JsonPrimitive(model))
+        put("reasoning", buildJsonObject { put("effort", JsonPrimitive(effort)) })
+        put("instructions", JsonPrimitive(dictationSystemPrompt))
+        put("stream", JsonPrimitive(true))
+        put("store", JsonPrimitive(false))
+        put(
+            "input",
+            buildJsonArray {
+                add(
+                    buildJsonObject {
+                        put("role", JsonPrimitive("user"))
+                        put("content", JsonPrimitive(refinementUserMessage(raw, vocabulary)))
+                    }
+                )
+            },
+        )
+    }
 
 private fun OAuthTokens.accountId(): String? = runCatching {
     val claims = String(Base64.getUrlDecoder().decode(idToken.split('.')[1]))

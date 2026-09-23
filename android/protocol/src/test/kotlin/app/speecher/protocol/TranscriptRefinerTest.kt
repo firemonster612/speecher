@@ -15,7 +15,7 @@ class TranscriptRefinerTest {
     private val tokens = OAuthTokens("access", "refresh", "", 0, "")
 
     @Test
-    fun `Claude streams refinement with CLI identity and desktop model`() {
+    fun `Claude streams refinement with CLI identity and the chosen model and effort`() {
         MockWebServer().use { server ->
             server.enqueue(
                 MockResponse.Builder()
@@ -32,6 +32,8 @@ class TranscriptRefinerTest {
                     tokens,
                     "helo",
                     listOf("Speecher"),
+                    "claude-opus-5",
+                    "medium",
                     server.url("/v1").toString().trimEnd('/'),
                 )
             assertEquals("Hello", result)
@@ -39,7 +41,8 @@ class TranscriptRefinerTest {
             assertEquals("/v1/messages", request.target)
             assertEquals("claude-code-20250219,oauth-2025-04-20", request.headers["anthropic-beta"])
             val body = Json.parseToJsonElement(request.body!!.utf8()).jsonObject
-            assertEquals("claude-sonnet-5", body["model"]?.jsonPrimitive?.content)
+            assertEquals("claude-opus-5", body["model"]?.jsonPrimitive?.content)
+            assertEquals("{\"effort\":\"medium\"}", body["output_config"].toString())
             assertEquals(
                 "You are Claude Code, Anthropic's official CLI for Claude.",
                 body["system"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content,
@@ -52,7 +55,7 @@ class TranscriptRefinerTest {
     }
 
     @Test
-    fun `ChatGPT streams refinement with desktop model and no reasoning`() {
+    fun `ChatGPT streams refinement with the chosen model and effort`() {
         MockWebServer().use { server ->
             server.enqueue(
                 MockResponse.Builder()
@@ -69,13 +72,15 @@ class TranscriptRefinerTest {
                     tokens,
                     "helo",
                     emptyList(),
+                    "gpt-6-luna",
+                    "none",
                     server.url("/codex").toString().trimEnd('/'),
                 )
             assertEquals("Hello", result)
             val request = server.takeRequest()
             assertEquals("/codex/responses", request.target)
             val body = Json.parseToJsonElement(request.body!!.utf8()).jsonObject
-            assertEquals("gpt-5.6-luna", body["model"]?.jsonPrimitive?.content)
+            assertEquals("gpt-6-luna", body["model"]?.jsonPrimitive?.content)
             assertEquals("{\"effort\":\"none\"}", body["reasoning"].toString())
             assertEquals("false", body["store"]?.jsonPrimitive?.content)
         }
@@ -97,6 +102,8 @@ class TranscriptRefinerTest {
                     tokens,
                     "raw",
                     emptyList(),
+                    "gpt-6-luna",
+                    "none",
                     server.url("/codex").toString().trimEnd('/'),
                 )
             }

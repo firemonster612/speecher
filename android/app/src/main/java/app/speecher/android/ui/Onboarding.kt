@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +46,7 @@ fun Onboarding(
     onRequestMicrophone: () -> Unit,
     onOpenKeyboardSettings: () -> Unit,
     onOpenChipSettings: () -> Unit,
+    onFinish: () -> Unit,
     modifier: Modifier = Modifier,
     signingIn: Provider? = null,
     signInError: String? = null,
@@ -87,6 +89,13 @@ fun Onboarding(
         }
         Section("Try it")
         PracticeField(Modifier.padding(horizontal = 16.dp))
+        Button(
+            onFinish,
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 24.dp),
+            enabled = status.complete,
+        ) {
+            Text("Done")
+        }
     }
 }
 
@@ -228,7 +237,7 @@ internal fun Section(title: String) {
 
 @Composable
 private fun OnboardingPreview(status: SetupStatus) = SpeecherTheme {
-    Surface { Onboarding(status, {}, {}, {}, {}) }
+    Surface { Onboarding(status, {}, {}, {}, {}, {}) }
 }
 
 @PreviewLightDark

@@ -1,14 +1,19 @@
 package app.speecher.android.ui
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -22,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -36,6 +42,8 @@ import app.speecher.android.R
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.providerOrder
+import app.speecher.android.dictation.refinementEfforts
+import app.speecher.android.dictation.refinementModels
 
 /** Settings. Every change goes out whole through [onChange]; the caller persists it. */
 @Composable
@@ -45,6 +53,7 @@ fun Settings(
     onChange: (SpeecherSettings) -> Unit,
     onSignIn: (Provider) -> Unit,
     onSignOut: (Provider) -> Unit,
+    onSetChipPosition: () -> Unit,
     modifier: Modifier = Modifier,
     signingIn: Provider? = null,
     signInError: String? = null,
@@ -73,6 +82,54 @@ fun Settings(
             ProviderPicker("Refinement provider", settings.refinementProvider, signedIn) {
                 onChange(settings.copy(refinementProvider = it))
             }
+            val provider = settings.refinementProvider
+            val choice = settings.refinement(provider)
+            ModelPicker(provider, choice.model, rowColors) {
+                onChange(settings.withRefinement(provider, choice.copy(model = it)))
+            }
+            EffortPicker(provider, choice.effort) {
+                onChange(settings.withRefinement(provider, choice.copy(effort = it)))
+            }
+        }
+        ListItem(
+            headlineContent = { Text("Extra transcription pass") },
+            supportingContent = {
+                Text(
+                    "Re-transcribes your audio with GPT Transcribe for accuracy — slower. " +
+                        "ChatGPT only."
+                )
+            },
+            trailingContent = {
+                Switch(
+                    settings.transcribePassEnabled,
+                    { onChange(settings.copy(transcribePassEnabled = it)) },
+                )
+            },
+            colors = rowColors,
+        )
+
+        Section("Dictation button")
+        ListItem(
+            headlineContent = { Text("Place on the keyboard's mic key") },
+            supportingContent = {
+                Text(
+                    "Turn off to put the button where you choose. Dragging it moves it until the keyboard closes."
+                )
+            },
+            trailingContent = {
+                Switch(settings.chipDockOnMic, { onChange(settings.copy(chipDockOnMic = it)) })
+            },
+            colors = rowColors,
+        )
+        if (!settings.chipDockOnMic) {
+            ListItem(
+                headlineContent = { Text("Set button position") },
+                trailingContent = {
+                    Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null)
+                },
+                modifier = Modifier.clickable(onClick = onSetChipPosition),
+                colors = rowColors,
+            )
         }
 
         Section("Vocabulary")
@@ -155,6 +212,58 @@ private fun ProviderPicker(
 }
 
 @Composable
+private fun ModelPicker(
+    provider: Provider,
+    selected: String,
+    colors: ListItemColors,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ListItem(
+        headlineContent = { Text("Model") },
+        trailingContent = {
+            Box {
+                TextButton({ expanded = true }) {
+                    Text(provider.refinementModels[selected] ?: selected)
+                }
+                DropdownMenu(expanded, { expanded = false }) {
+                    provider.refinementModels.forEach { (id, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = {
+                                expanded = false
+                                onSelect(id)
+                            },
+                        )
+                    }
+                }
+            }
+        },
+        colors = colors,
+    )
+}
+
+@Composable
+private fun EffortPicker(provider: Provider, selected: String, onSelect: (String) -> Unit) {
+    val efforts = provider.refinementEfforts
+    SingleChoiceSegmentedButtonRow(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).semantics {
+            contentDescription = "Reasoning effort"
+        }
+    ) {
+        efforts.forEachIndexed { index, effort ->
+            SegmentedButton(
+                selected = effort == selected,
+                onClick = { onSelect(effort) },
+                shape = SegmentedButtonDefaults.itemShape(index, efforts.size),
+            ) {
+                Text(effort.replaceFirstChar(Char::uppercase))
+            }
+        }
+    }
+}
+
+@Composable
 internal fun PasteCode(onPasteCode: (String) -> Unit) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     var code by rememberSaveable { mutableStateOf("") }
@@ -210,7 +319,7 @@ private fun AddWord(onAdd: (String) -> Unit) {
 
 @Composable
 private fun SettingsPreview(settings: SpeecherSettings, signedIn: Set<Provider>) = SpeecherTheme {
-    Surface { Settings(settings, signedIn, {}, {}, {}) }
+    Surface { Settings(settings, signedIn, {}, {}, {}, {}) }
 }
 
 @PreviewLightDark

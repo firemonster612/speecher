@@ -341,4 +341,32 @@ class DictationEngineTest {
         assertEquals(listOf<Byte>(5), uploads.last())
         assertEquals("clean: streamed words", commits.last())
     }
+
+    @Test
+    fun `ChatGPT refined insert with the extra pass off only cleans up`() {
+        val capture = Capture()
+        lateinit var speech: (SpeechEvent) -> Unit
+        val commits = mutableListOf<String>()
+        val engine =
+            DictationEngine(
+                capture::capture,
+                capture::stop,
+                { _, events ->
+                    speech = events
+                    Client()
+                },
+                { _, raw -> "clean: $raw" },
+                null,
+                { commits.add(it) },
+                Executor { it.run() },
+                {},
+            )
+        engine.start(Provider.ChatGpt)
+        speech(SpeechEvent.Connected)
+        capture.audio?.invoke(byteArrayOf(1, 2), 0f)
+        speech(SpeechEvent.Final("streamed words"))
+        engine.insertRefined(Provider.ChatGpt)
+        speech(SpeechEvent.Completed)
+        assertEquals(listOf("clean: streamed words"), commits)
+    }
 }

@@ -52,8 +52,12 @@ class SpeecherImeService : InputMethodService() {
                 SpeecherTheme {
                     DictationPanel(
                         panelState.value,
-                        ActiveDictation.settings.refinementEnabled ||
-                            ActiveDictation.engine?.sourceProvider?.hasBatchTranscription == true,
+                        ActiveDictation.settings.let {
+                            it.refinementEnabled ||
+                                it.transcribePassEnabled &&
+                                    ActiveDictation.engine?.sourceProvider?.hasBatchTranscription ==
+                                        true
+                        },
                         onCancel = {
                             ActiveDictation.engine?.cancel()
                             switchBack()

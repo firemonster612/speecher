@@ -44,8 +44,8 @@ class DictationEngine(
     private val stopCapture: () -> Unit,
     private val connect: (Provider, (SpeechEvent) -> Unit) -> SpeechClient,
     private val refine: (Provider, String) -> String,
-    /** ChatGPT's batch re-transcription of the session's PCM16 audio. */
-    private val transcribe: (ByteArray) -> String,
+    /** ChatGPT's batch re-transcription of the session's PCM16 audio; null skips that pass. */
+    private val transcribe: ((ByteArray) -> String)?,
     private val commit: (String) -> Boolean,
     private val executor: Executor,
     private val onState: (DictationState) -> Unit,
@@ -190,7 +190,8 @@ class DictationEngine(
                                 if (current == session && recording) {
                                     client?.sendAudio(audio)
                                     if (
-                                        sourceProvider.hasBatchTranscription &&
+                                        transcribe != null &&
+                                            sourceProvider.hasBatchTranscription &&
                                             recorded.size() + audio.size <= MAX_RECORDED_BYTES
                                     )
                                         recorded.write(audio)
@@ -245,15 +246,16 @@ class DictationEngine(
     }
 
     /**
-     * "Insert refined": ChatGPT re-transcribes the whole recording for accuracy, then [cleanup]
-     * tidies the text. A failed or truncated batch pass falls back to the streamed transcript.
+     * "Insert refined": ChatGPT re-transcribes the whole recording for accuracy when the extra pass
+     * is on, then [cleanup] tidies the text. A failed or truncated batch pass falls back to the
+     * streamed transcript.
      */
     private fun insertBest(cleanup: Provider?) {
         val streamed = transcript()
         val audio = recorded.toByteArray()
         fun finish(text: String) =
             if (cleanup != null) refineTranscript(cleanup, text) else commitTranscript(text)
-        if (!sourceProvider.hasBatchTranscription || audio.isEmpty()) {
+        if (transcribe == null || !sourceProvider.hasBatchTranscription || audio.isEmpty()) {
             finish(streamed)
             return
         }
@@ -408,22 +410,27 @@ fun createDictationEngine(
                 )
         },
         { selected, raw ->
+            val choice = settings.refinement(selected)
             refineTranscript(
                 http,
                 selected.oauth,
                 token(selected),
                 raw,
                 settings.vocabulary,
+                choice.model,
+                choice.effort,
                 endpoints.getValue(selected).refinement,
             )
         },
-        { pcm ->
-            transcribeSpeech(
-                token(Provider.ChatGpt).accessToken,
-                pcm,
-                endpoints.getValue(Provider.ChatGpt).transcribe!!,
-            )
-        },
+        if (settings.transcribePassEnabled)
+            { pcm ->
+                transcribeSpeech(
+                    token(Provider.ChatGpt).accessToken,
+                    pcm,
+                    endpoints.getValue(Provider.ChatGpt).transcribe!!,
+                )
+            }
+        else null,
         { text ->
             val committed = connection()?.commitText(text, 1) == true
             if (committed) main.post(onInserted)

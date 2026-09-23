@@ -29,6 +29,7 @@ import app.speecher.android.dictation.SetupStatus
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.oauth
 import app.speecher.android.dictation.sharedHttp
+import app.speecher.android.ui.ChipPosition
 import app.speecher.android.ui.Home
 import app.speecher.android.ui.Onboarding
 import app.speecher.android.ui.SpeecherScreen
@@ -45,6 +46,7 @@ private enum class Page {
     Home,
     Setup,
     Settings,
+    ChipPosition,
 }
 
 class MainActivity : ComponentActivity() {
@@ -70,7 +72,9 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) handleSignInIntent(intent)
         setContent {
             SpeecherTheme {
-                BackHandler(page != Page.Home) { page = Page.Home }
+                BackHandler(page != Page.Home) {
+                    page = if (page == Page.ChipPosition) Page.Settings else Page.Home
+                }
                 when (page) {
                     Page.Home ->
                         SpeecherScreen("Speecher", onBack = null) {
@@ -92,6 +96,7 @@ class MainActivity : ComponentActivity() {
                                 { microphone.launch(Manifest.permission.RECORD_AUDIO) },
                                 { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
                                 { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                                onFinish = { page = Page.Home },
                                 signingIn = signIn.activeProvider,
                                 signInError = signIn.error,
                                 onPasteCode = signIn::paste,
@@ -105,10 +110,21 @@ class MainActivity : ComponentActivity() {
                                 ::changeSettings,
                                 ::startSignIn,
                                 ::signOut,
+                                { page = Page.ChipPosition },
                                 signingIn = signIn.activeProvider,
                                 signInError = signIn.error,
                                 onPasteCode = signIn::paste,
                             )
+                        }
+                    Page.ChipPosition ->
+                        SpeecherScreen(
+                            "Button position",
+                            onBack = { page = Page.Settings },
+                        ) {
+                            ChipPosition(settings.chipOffsetX, settings.chipOffsetY) { x, y ->
+                                changeSettings(settings.copy(chipOffsetX = x, chipOffsetY = y))
+                                page = Page.Settings
+                            }
                         }
                 }
             }

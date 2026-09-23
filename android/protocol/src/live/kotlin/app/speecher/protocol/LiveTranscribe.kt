@@ -33,13 +33,27 @@ fun main() {
     val text = transcribeSpeech(access, pcm)
     println("transcribe: HTTP 2xx, text=\"$text\"")
 
-    val refined =
-        refineTranscript(
-            OkHttpClient(),
-            OAuthProvider.ChatGpt,
-            OAuthTokens(access, "", field("id_token"), 0, ""),
-            "um so i think we should uh ship it on tuesday",
-            emptyList(),
+    // Each model the Settings picker offers, and each effort on the default model (gpt-6-luna).
+    val choices =
+        listOf("gpt-6-luna", "gpt-6-sol", "gpt-5.6-luna").map { it to "none" } +
+            listOf("low", "medium", "high").map { "gpt-6-luna" to it }
+    val failures = choices.count { (model, effort) ->
+        val result = runCatching {
+            refineTranscript(
+                OkHttpClient(),
+                OAuthProvider.ChatGpt,
+                OAuthTokens(access, "", field("id_token"), 0, ""),
+                "um so i think we should uh ship it on tuesday",
+                emptyList(),
+                model,
+                effort,
+            )
+        }
+        println(
+            "refinement $model effort=$effort: " +
+                result.fold({ "\"$it\"" }, { "FAILED ${it.message}" })
         )
-    println("refinement: \"$refined\"")
+        result.isFailure
+    }
+    check(failures == 0) { "$failures refinement choices failed" }
 }

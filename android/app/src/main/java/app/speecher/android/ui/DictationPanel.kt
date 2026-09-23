@@ -9,7 +9,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -42,6 +41,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -85,46 +85,48 @@ fun DictationPanel(
     onRecover: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    BoxWithConstraints(modifier.fillMaxWidth()) {
-        val panelHeight = (maxHeight * 0.38f).coerceIn(240.dp, 360.dp)
-        Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainer) {
-            Column(
-                Modifier.navigationBarsPadding()
-                    .height(panelHeight)
-                    .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 12.dp)
+    // Sized from the display, not from incoming constraints: inside the IME those are the IME
+    // window's own height, so a fraction of them shrinks the panel below the window it sized,
+    // leaving an unpainted band at the bottom edge.
+    val panelHeight =
+        (LocalWindowInfo.current.containerDpSize.height * 0.38f).coerceIn(240.dp, 360.dp)
+    Surface(modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainer) {
+        Column(
+            Modifier.navigationBarsPadding()
+                .height(panelHeight)
+                .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 12.dp)
+        ) {
+            val status =
+                when (state) {
+                    DictationState.Connecting -> "Connecting"
+                    is DictationState.Listening -> "Listening"
+                    is DictationState.Refining -> "Refining transcript"
+                    is DictationState.Failed -> state.reason.title
+                }
+            Box(
+                Modifier.fillMaxWidth().height(56.dp).semantics {
+                    liveRegion = LiveRegionMode.Polite
+                    stateDescription = status
+                },
+                contentAlignment = Alignment.Center,
             ) {
-                val status =
-                    when (state) {
-                        DictationState.Connecting -> "Connecting"
-                        is DictationState.Listening -> "Listening"
-                        is DictationState.Refining -> "Refining transcript"
-                        is DictationState.Failed -> state.reason.title
-                    }
-                Box(
-                    Modifier.fillMaxWidth().height(56.dp).semantics {
-                        liveRegion = LiveRegionMode.Polite
-                        stateDescription = status
-                    },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    when (state) {
-                        DictationState.Connecting -> ConnectingBars()
-                        is DictationState.Listening -> LiveBars(state.level)
-                        is DictationState.Refining -> RefiningBars()
-                        is DictationState.Failed -> FailureMessage(state)
-                    }
+                when (state) {
+                    DictationState.Connecting -> ConnectingBars()
+                    is DictationState.Listening -> LiveBars(state.level)
+                    is DictationState.Refining -> RefiningBars()
+                    is DictationState.Failed -> FailureMessage(state)
                 }
-                Transcript(state, Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PanelButtons(
-                        state,
-                        canRefine,
-                        onCancel,
-                        onInsert,
-                        onInsertRefined,
-                        onRecover,
-                    )
-                }
+            }
+            Transcript(state, Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PanelButtons(
+                    state,
+                    canRefine,
+                    onCancel,
+                    onInsert,
+                    onInsertRefined,
+                    onRecover,
+                )
             }
         }
     }

@@ -88,16 +88,65 @@ fun resolveSignedIn(preferred: Provider, signedIn: Set<Provider>): Provider =
 fun defaultProvider(signedIn: Set<Provider>): Provider =
     providerOrder.firstOrNull { it in signedIn } ?: providerOrder.first()
 
+/** The model and reasoning effort one provider refines with, as the API ids it sends. */
+data class RefinementChoice(val model: String, val effort: String)
+
+/** Desktop's defaults, moved to the current models: no reasoning for OpenAI, low for Claude. */
+val Provider.defaultRefinement: RefinementChoice
+    get() =
+        when (this) {
+            Provider.ChatGpt -> RefinementChoice("gpt-6-luna", "none")
+            Provider.Claude -> RefinementChoice("claude-sonnet-5", "low")
+        }
+
+/** The refinement models Settings offers, as API id to label; the default comes first. */
+val Provider.refinementModels: Map<String, String>
+    get() =
+        when (this) {
+            Provider.ChatGpt ->
+                mapOf(
+                    "gpt-6-luna" to "GPT-6 Luna",
+                    "gpt-6-sol" to "GPT-6 Sol",
+                    "gpt-5.6-luna" to "GPT-5.6 Luna",
+                )
+            Provider.Claude ->
+                mapOf("claude-sonnet-5" to "Claude Sonnet 5", "claude-opus-5" to "Claude Opus 5")
+        }
+
+/**
+ * The efforts each endpoint accepts: OpenAI's `reasoning.effort` can turn reasoning off, while
+ * Anthropic's adaptive-thinking `output_config.effort` starts at low.
+ */
+val Provider.refinementEfforts: List<String>
+    get() =
+        when (this) {
+            Provider.ChatGpt -> listOf("none", "low", "medium", "high")
+            Provider.Claude -> listOf("low", "medium", "high")
+        }
+
 /** Everything the user can change in Settings. */
 data class SpeecherSettings(
     val transcriptionProvider: Provider = providerOrder.first(),
     val refinementEnabled: Boolean = true,
     val refinementProvider: Provider = providerOrder.first(),
+    /** Whether "Insert refined" re-transcribes ChatGPT dictation with GPT Transcribe first. */
+    val transcribePassEnabled: Boolean = true,
+    val chatGptRefinement: RefinementChoice = Provider.ChatGpt.defaultRefinement,
+    val claudeRefinement: RefinementChoice = Provider.Claude.defaultRefinement,
     val vocabulary: List<String> = emptyList(),
-    /** The dragged chip position, as a pixel offset from the keyboard's bottom-right corner. */
+    /** Place the chip on the keyboard's mic key; off uses the custom position below. */
+    val chipDockOnMic: Boolean = true,
+    /** The custom chip position, as a pixel offset from the keyboard's bottom-right corner. */
     val chipOffsetX: Int? = null,
     val chipOffsetY: Int? = null,
-)
+) {
+    fun refinement(provider: Provider): RefinementChoice =
+        if (provider == Provider.Claude) claudeRefinement else chatGptRefinement
+
+    fun withRefinement(provider: Provider, choice: RefinementChoice): SpeecherSettings =
+        if (provider == Provider.Claude) copy(claudeRefinement = choice)
+        else copy(chatGptRefinement = choice)
+}
 
 /** What the setup checklist needs to know. Each flag is one step. */
 data class SetupStatus(

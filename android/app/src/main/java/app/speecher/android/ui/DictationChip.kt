@@ -19,25 +19,33 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import kotlin.math.hypot
+
+/** The chip's size, shared with the overlay window that holds it. */
+val ChipSize = DpSize(52.dp, 36.dp)
+
+/** The chip's inset from the keyboard's bottom-right corner when it has nowhere better to sit. */
+val ChipMargin = 6.dp
 
 /**
  * The overlay chip docked beside the keyboard: the brand pill with its bars, in tonal surface
  * colours so it sits next to the keyboard's own keys without competing with them. A short tap
- * starts dictation ([onTap]); dragging past the touch slop moves the window ([onDrag]/[onDragEnd])
- * so the user can place it clear of their keyboard's controls.
+ * starts dictation ([onTap]). Dragging past the touch slop calls [onDragStart], then [onDrag] with
+ * the finger's travel from where it went down, so the caller can move the chip by that much.
  */
 @Composable
 fun DictationChip(
     onTap: () -> Unit,
+    onDragStart: () -> Unit,
     onDrag: (Float, Float) -> Unit,
-    onDragEnd: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
         modifier =
             modifier
-                .size(width = 52.dp, height = 36.dp)
+                .size(ChipSize)
                 .semantics {
                     contentDescription = "Dictate"
                     role = Role.Button
@@ -52,31 +60,32 @@ fun DictationChip(
                     val slop = viewConfiguration.touchSlop
                     awaitEachGesture {
                         val down = awaitFirstDown()
+                        // Raw screen coordinates, not the change's position: the overlay window
+                        // moves with the drag, so window-local positions shift under the finger
+                        // and feed each move back into the next one.
+                        val start = currentEvent.motionEvent ?: return@awaitEachGesture
+                        val startX = start.rawX
+                        val startY = start.rawY
                         var dragging = false
-                        // End a drag however the gesture stops (lifted, cancelled or the chip
-                        // removed), or the service would keep ignoring keyboard changes.
-                        try {
-                            while (true) {
-                                val change =
-                                    awaitPointerEvent().changes.firstOrNull { it.id == down.id }
-                                        ?: break
-                                if (change.changedToUp()) {
-                                    change.consume()
-                                    if (!dragging) onTap()
-                                    break
-                                }
-                                // Positions are local to the overlay window, which moves with the
-                                // drag, so the distance from the grab point is exactly how far the
-                                // window must move to stay under the finger.
-                                val offset = change.position - down.position
-                                if (!dragging && offset.getDistance() > slop) dragging = true
-                                if (dragging) {
-                                    onDrag(offset.x, offset.y)
-                                    change.consume()
-                                }
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (change.changedToUp()) {
+                                change.consume()
+                                if (!dragging) onTap()
+                                break
                             }
-                        } finally {
-                            if (dragging) onDragEnd()
+                            val motion = event.motionEvent ?: continue
+                            val dx = motion.rawX - startX
+                            val dy = motion.rawY - startY
+                            if (!dragging && hypot(dx, dy) > slop) {
+                                dragging = true
+                                onDragStart()
+                            }
+                            if (dragging) {
+                                onDrag(dx, dy)
+                                change.consume()
+                            }
                         }
                     }
                 },
@@ -98,6 +107,6 @@ fun DictationChip(
 @Composable
 internal fun ChipPreview() = SpeecherTheme {
     Surface(color = MaterialTheme.colorScheme.background) {
-        DictationChip({}, { _, _ -> }, {}, Modifier.padding(16.dp))
+        DictationChip({}, {}, { _, _ -> }, Modifier.padding(16.dp))
     }
 }
