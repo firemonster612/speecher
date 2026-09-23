@@ -26,6 +26,7 @@ import app.speecher.android.R
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SetupStatus
 import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.update.ApkUpdate
 
 /**
  * A full-screen page with a scrolling body. Pages you navigate to get a top bar with [title] and a
@@ -76,6 +77,9 @@ fun Home(
     onOpenSetup: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
+    update: ApkUpdate? = null,
+    onUpdate: () -> Unit = {},
+    updateError: String? = null,
 ) {
     Column(modifier) {
         Row(
@@ -99,6 +103,15 @@ fun Home(
                 trailingContent = { Chevron() },
                 modifier = Modifier.clickable(onClick = onOpenSetup),
             )
+        }
+        if (update != null)
+            ListItem(
+                headlineContent = { Text("Update to v${update.version}") },
+                trailingContent = { Chevron() },
+                modifier = Modifier.clickable(onClick = onUpdate),
+            )
+        updateError?.let {
+            Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)
         }
         ListItem(
             headlineContent = { Text("Settings") },

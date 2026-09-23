@@ -17,6 +17,7 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -27,12 +28,18 @@ import app.speecher.android.dictation.SettingsStore
 import app.speecher.android.dictation.SetupStatus
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.oauth
+import app.speecher.android.dictation.sharedHttp
 import app.speecher.android.ui.Home
 import app.speecher.android.ui.Onboarding
 import app.speecher.android.ui.SpeecherScreen
 import app.speecher.android.ui.SpeecherTheme
+import app.speecher.android.update.ApkUpdate
+import app.speecher.android.update.installApk
+import app.speecher.android.update.newerApk
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private enum class Page {
     Home,
@@ -47,6 +54,8 @@ class MainActivity : ComponentActivity() {
 
     private var status by mutableStateOf(emptyStatus())
     private var settings by mutableStateOf(SpeecherSettings())
+    private var update by mutableStateOf<ApkUpdate?>(null)
+    private var updateError by mutableStateOf<String?>(null)
 
     private val microphone =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { refresh() }
@@ -76,6 +85,9 @@ class MainActivity : ComponentActivity() {
                                 settings,
                                 { page = Page.Setup },
                                 { page = Page.Settings },
+                                update = update,
+                                onUpdate = ::installUpdate,
+                                updateError = updateError,
                             )
                         }
                     Page.Setup ->
@@ -115,6 +127,31 @@ class MainActivity : ComponentActivity() {
                     delay(1_000)
                 }
             }
+        }
+        checkForUpdate()
+    }
+
+    private fun checkForUpdate() {
+        val preferences = getSharedPreferences("updates", MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        if (now - preferences.getLong("last-check", 0) < 86_400_000) return
+        preferences.edit { putLong("last-check", now) }
+        lifecycleScope.launch {
+            update =
+                runCatching {
+                    withContext(Dispatchers.IO) { newerApk(sharedHttp, BuildConfig.VERSION_NAME) }
+                }
+                    .getOrNull()
+        }
+    }
+
+    private fun installUpdate() {
+        val release = update ?: return
+        lifecycleScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { installApk(this@MainActivity, sharedHttp, release) }
+            }
+                .onFailure { updateError = "Could not install update: ${it.message}" }
         }
     }
 

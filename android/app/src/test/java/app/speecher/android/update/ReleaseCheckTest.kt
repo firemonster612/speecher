@@ -22,15 +22,14 @@ class ReleaseCheckTest {
                 MockResponse.Builder().body("""{"tag_name":"v0.3.0","assets":[]}""").build()
             )
             server.start()
-            val check = ReleaseCheck(OkHttpClient())
             assertEquals(
                 ApkUpdate(
                     "0.2.0",
                     "https://github.com/firemonster612/speecher/releases/download/v0.2.0/Speecher.apk",
                 ),
-                check.newerApk("0.1.0", server.url("/latest").toString()),
+                newerApk(OkHttpClient(), "0.1.0", server.url("/latest").toString()),
             )
-            assertNull(check.newerApk("0.2.0", server.url("/latest").toString()))
+            assertNull(newerApk(OkHttpClient(), "0.2.0", server.url("/latest").toString()))
         }
     }
 }
