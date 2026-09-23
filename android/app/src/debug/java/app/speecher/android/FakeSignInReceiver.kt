@@ -9,8 +9,8 @@ import app.speecher.protocol.OAuthTokens
 
 /**
  * Debug builds only. Stores a fake, far-future token so emulator tests can run the engine against
- * the local fake speech server. Defaults to Claude; pass `--es provider ChatGpt` for the other:
- * `am broadcast -n app.speecher.android/.FakeSignInReceiver --es provider ChatGpt`.
+ * the local fake speech server. Defaults to Claude; pass `--es provider ChatGpt` for the other: `am
+ * broadcast -n app.speecher.android/.FakeSignInReceiver --es provider ChatGpt`.
  */
 class FakeSignInReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

@@ -37,7 +37,10 @@ class SpeechClientsTest {
                     { if (it is SpeechEvent.Failed) failures.add(it) },
                     server.url("/voice").toString().replaceFirst("http", "ws"),
                 )
-            assertEquals(SpeechEvent.Failed(true), failures.poll(3, TimeUnit.SECONDS))
+            assertEquals(
+                SpeechEvent.Failed(true, "type=error code=401"),
+                failures.poll(3, TimeUnit.SECONDS),
+            )
             client.cancel()
         }
     }
@@ -68,7 +71,10 @@ class SpeechClientsTest {
                     { if (it is SpeechEvent.Failed) failures.add(it) },
                     server.url("/dictation").toString().replaceFirst("http", "ws"),
                 )
-            assertEquals(SpeechEvent.Failed(true), failures.poll(3, TimeUnit.SECONDS))
+            assertEquals(
+                SpeechEvent.Failed(true, "403 forbidden"),
+                failures.poll(3, TimeUnit.SECONDS),
+            )
             client.cancel()
         }
     }

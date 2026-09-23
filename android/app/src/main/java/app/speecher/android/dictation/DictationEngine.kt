@@ -205,7 +205,7 @@ class DictationEngine(
                         current,
                         if (event.authentication) FailureReason.SignedOut
                         else FailureReason.Network,
-                        "Speech connection failed",
+                        event.detail.ifEmpty { "Speech connection failed" },
                     )
         }
     }

@@ -44,7 +44,11 @@ class CodexDictationClient(
                 )
                 .build()
         socket = http.newWebSocket(request, this)
-        deadline.schedule({ if (!started) fail(false) }, 10, TimeUnit.SECONDS)
+        deadline.schedule(
+            { if (!started) fail(false, "no session.start in 10s") },
+            10,
+            TimeUnit.SECONDS,
+        )
     }
 
     override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -81,7 +85,7 @@ class CodexDictationClient(
             Json.parseToJsonElement(text) as JsonObject
         }
             .getOrElse {
-                fail(false)
+                fail(false, "bad event payload")
                 return
             }
         when (event.string("type")) {
@@ -114,20 +118,30 @@ class CodexDictationClient(
                     events(SpeechEvent.Completed)
                     webSocket.close(1000, null)
                 }
-            "transcript.failed" -> fail(event.authenticationError())
+            "transcript.failed" -> fail(event.authenticationError(), event.errorDetail())
             "session.error" ->
                 if (event["fatal"]?.jsonPrimitive?.content == "true") {
-                    fail(event.authenticationError())
+                    fail(event.authenticationError(), event.errorDetail())
                 }
         }
     }
 
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-        fail(response?.code == 401 || response?.code == 403)
+        val code = response?.code
+        val detail =
+            listOfNotNull(code?.let { "HTTP $it" }, t.message?.takeIf { it.isNotBlank() })
+                .joinToString(": ")
+                .ifEmpty { "connect failed" }
+        fail(code == 401 || code == 403, detail)
     }
 
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-        fail(false)
+        fail(false, "closed $code ${reason.take(80)}".trim())
+    }
+
+    private fun JsonObject.errorDetail(): String {
+        val error = this["error"] as? JsonObject ?: return "provider error"
+        return "${error.string("code")} ${error.string("message")}".trim().take(120)
     }
 
     override fun sendAudio(pcm: ByteArray) {
@@ -162,7 +176,7 @@ class CodexDictationClient(
     private fun closeSession() {
         socket?.send("{\"type\":\"audio.flush\",\"reason\":\"client\"}")
         socket?.send("{\"type\":\"session.close\"}")
-        deadline.schedule({ if (!completed) fail(false) }, 8, TimeUnit.SECONDS)
+        deadline.schedule({ if (!completed) fail(false, "no close in 8s") }, 8, TimeUnit.SECONDS)
     }
 
     override fun cancel() {
@@ -172,7 +186,7 @@ class CodexDictationClient(
         socket?.cancel()
     }
 
-    private fun fail(authentication: Boolean) {
+    private fun fail(authentication: Boolean, detail: String = "") {
         val first =
             synchronized(lock) {
                 if (cancelled || completed || failed) false
@@ -183,7 +197,7 @@ class CodexDictationClient(
             }
         if (!first) return
         deadline.shutdownNow()
-        events(SpeechEvent.Failed(authentication))
+        events(SpeechEvent.Failed(authentication, detail))
         socket?.cancel()
     }
 }

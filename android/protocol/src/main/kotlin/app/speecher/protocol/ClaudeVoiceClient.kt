@@ -60,7 +60,11 @@ class ClaudeVoiceClient(
                 }
                 .build()
         socket = http.newWebSocket(request, this)
-        keepAlive.schedule({ if (!connected) fail(false) }, 10, TimeUnit.SECONDS)
+        keepAlive.schedule(
+            { if (!connected) fail(false, "no connect in 10s") },
+            10,
+            TimeUnit.SECONDS,
+        )
     }
 
     override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -105,18 +109,24 @@ class ClaudeVoiceClient(
                     webSocket.close(1000, null)
                 }
             }
-            is ClaudeVoiceEvent.ServerError -> fail(isAuthenticationError(event.summary))
-            is ClaudeVoiceEvent.TranscriptError -> fail(false)
+            is ClaudeVoiceEvent.ServerError ->
+                fail(isAuthenticationError(event.summary), event.summary.take(120))
+            is ClaudeVoiceEvent.TranscriptError -> fail(false, event.summary.take(120))
             ClaudeVoiceEvent.Unknown -> Unit
         }
     }
 
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-        fail(response?.code == 401 || response?.code == 403)
+        val code = response?.code
+        val detail =
+            listOfNotNull(code?.let { "HTTP $it" }, t.message?.takeIf { it.isNotBlank() })
+                .joinToString(": ")
+                .ifEmpty { "connect failed" }
+        fail(code == 401 || code == 403, detail)
     }
 
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-        fail(false)
+        fail(false, "closed $code ${reason.take(80)}".trim())
     }
 
     override fun sendAudio(pcm: ByteArray) {
@@ -135,7 +145,7 @@ class ClaudeVoiceClient(
                 }
             }
         if (overflow) {
-            fail(false)
+            fail(false, "audio buffer overflow")
             return
         }
         if (direct) socket?.send(pcm.toByteString())
@@ -145,12 +155,17 @@ class ClaudeVoiceClient(
         if (stopped || cancelled) return
         stopped = true
         if (connected) closeStream()
-        else keepAlive.schedule({ if (!connected) fail(false) }, 5, TimeUnit.SECONDS)
+        else
+            keepAlive.schedule(
+                { if (!connected) fail(false, "no connect in 5s") },
+                5,
+                TimeUnit.SECONDS,
+            )
     }
 
     private fun closeStream() {
         socket?.send("{\"type\":\"CloseStream\"}")
-        keepAlive.schedule({ if (!completed) fail(false) }, 5, TimeUnit.SECONDS)
+        keepAlive.schedule({ if (!completed) fail(false, "no close in 5s") }, 5, TimeUnit.SECONDS)
     }
 
     override fun cancel() {
@@ -163,7 +178,7 @@ class ClaudeVoiceClient(
         socket?.cancel()
     }
 
-    private fun fail(authentication: Boolean) {
+    private fun fail(authentication: Boolean, detail: String = "") {
         val first =
             synchronized(lock) {
                 if (cancelled || completed || failed) false
@@ -174,7 +189,7 @@ class ClaudeVoiceClient(
             }
         if (!first) return
         keepAlive.shutdownNow()
-        events(SpeechEvent.Failed(authentication))
+        events(SpeechEvent.Failed(authentication, detail))
         socket?.cancel()
     }
 }

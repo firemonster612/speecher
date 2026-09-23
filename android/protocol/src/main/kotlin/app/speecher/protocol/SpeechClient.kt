@@ -12,7 +12,7 @@ sealed interface SpeechEvent {
 
     data object Completed : SpeechEvent
 
-    data class Failed(val authentication: Boolean) : SpeechEvent
+    data class Failed(val authentication: Boolean, val detail: String = "") : SpeechEvent
 }
 
 interface SpeechClient {
