@@ -124,13 +124,45 @@ internal fun connectTls(
                                 "RSA" -> "ECDHE_RSA"
                                 else -> "UNKNOWN"
                             }
-                        manager.checkServerTrusted(chain, authType)
+                        checkServerTrusted(manager, chain, authType, host)
                         verifyHostname(host, chain.first())
                     }
                 }
         }
     )
     return protocol
+}
+
+// Android's platform trust manager (RootTrustManager) rejects the 2-arg checkServerTrusted with
+// "Domain specific configurations require that the hostname be provided". Use the hostname-aware
+// android.net.http.X509TrustManagerExtensions when it is present (Android), and fall back to the
+// standard 2-arg call off-device (host-JVM tests, where that class does not exist). Chain
+// validation
+// only; SAN hostname matching stays in verifyHostname.
+internal fun checkServerTrusted(
+    manager: X509TrustManager,
+    chain: Array<X509Certificate>,
+    authType: String,
+    host: String,
+) {
+    val extensions = runCatching {
+        val type = Class.forName("android.net.http.X509TrustManagerExtensions")
+        type to type.getConstructor(X509TrustManager::class.java).newInstance(manager)
+    }
+        .getOrNull()
+    if (extensions == null) {
+        manager.checkServerTrusted(chain, authType)
+        return
+    }
+    val (type, instance) = extensions
+    type
+        .getMethod(
+            "checkServerTrusted",
+            Array<X509Certificate>::class.java,
+            String::class.java,
+            String::class.java,
+        )
+        .invoke(instance, chain, authType, host)
 }
 
 internal fun verifyHostname(host: String, certificate: X509Certificate) {
