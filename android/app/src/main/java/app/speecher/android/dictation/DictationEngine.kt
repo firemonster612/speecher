@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.view.inputmethod.InputConnection
+import app.speecher.android.BuildConfig
 import app.speecher.android.auth.TokenStore
 import app.speecher.protocol.ClaudeVoiceClient
 import app.speecher.protocol.CodexDictationClient
@@ -223,13 +224,32 @@ fun createDictationEngine(
         Microphone(context),
         { selected, events ->
             val access = token(selected).accessToken
+            val fake = BuildConfig.FAKE_SPEECH_BASE.takeIf(String::isNotEmpty)
             if (selected == Provider.Claude)
-                ClaudeVoiceClient(http, access, settings.vocabulary, events)
+                fake?.let {
+                    ClaudeVoiceClient(
+                        http,
+                        access,
+                        settings.vocabulary,
+                        events,
+                        "$it/api/ws/speech_to_text/voice_stream",
+                    )
+                } ?: ClaudeVoiceClient(http, access, settings.vocabulary, events)
             else CodexDictationClient(http, access, events)
         },
         { selected, raw ->
-            TranscriptRefiner(http)
-                .refine(provider(selected), token(selected), raw, settings.vocabulary)
+            val refiner = TranscriptRefiner(http)
+            val fake = BuildConfig.FAKE_SPEECH_BASE.takeIf(String::isNotEmpty)
+            if (fake == null)
+                refiner.refine(provider(selected), token(selected), raw, settings.vocabulary)
+            else
+                refiner.refine(
+                    provider(selected),
+                    token(selected),
+                    raw,
+                    settings.vocabulary,
+                    "$fake/v1",
+                )
         },
         { text ->
             val committed = connection()?.commitText(text, 1) == true

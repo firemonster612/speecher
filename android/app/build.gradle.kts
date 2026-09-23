@@ -16,7 +16,23 @@ android {
         versionName = "0.1.0"
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    buildTypes {
+        // Debug builds can point speech at a local fake server for emulator tests:
+        // ./gradlew assembleDebug -PfakeSpeech=http://10.0.2.2:8765
+        debug {
+            buildConfigField(
+                "String",
+                "FAKE_SPEECH_BASE",
+                "\"${providers.gradleProperty("fakeSpeech").getOrElse("")}\"",
+            )
+        }
+        release { buildConfigField("String", "FAKE_SPEECH_BASE", "\"\"") }
+    }
     buildFeatures { buildConfig = true }
     sourceSets.named("main") { res.directories.add("src/engine/res") }
 
