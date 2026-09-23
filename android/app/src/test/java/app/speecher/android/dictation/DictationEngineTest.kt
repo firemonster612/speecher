@@ -1,24 +1,80 @@
 package app.speecher.android.dictation
 
+import app.speecher.protocol.ClaudeVoiceClient
 import app.speecher.protocol.SpeechClient
 import app.speecher.protocol.SpeechEvent
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
+import okhttp3.OkHttpClient
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DictationEngineTest {
-    private class Capture : AudioCapture {
+    @Test
+    fun `final sent after CloseStream is committed`() {
+        MockWebServer().use { server ->
+            val closes = LinkedBlockingQueue<String>()
+            server.enqueue(
+                MockResponse.Builder()
+                    .webSocketUpgrade(
+                        object : WebSocketListener() {
+                            override fun onMessage(webSocket: WebSocket, text: String) {
+                                if (text == "{\"type\":\"CloseStream\"}") {
+                                    closes.add(text)
+                                    webSocket.send(
+                                        "{\"type\":\"TranscriptEndpoint\",\"data\":\"late final\"}"
+                                    )
+                                }
+                            }
+                        }
+                    )
+                    .build()
+            )
+            server.start()
+            val listening = CountDownLatch(1)
+            val commits = LinkedBlockingQueue<String>()
+            val engine =
+                DictationEngine(
+                    {},
+                    {},
+                    { _, events ->
+                        ClaudeVoiceClient(
+                            OkHttpClient(),
+                            "fake",
+                            emptyList(),
+                            events,
+                            server.url("/voice").toString().replaceFirst("http", "ws"),
+                        )
+                    },
+                    { _, raw -> raw },
+                    { commits.add(it) },
+                    Executor { it.run() },
+                    { if (it is DictationState.Listening) listening.countDown() },
+                )
+            engine.start(Provider.Claude)
+            assertTrue(listening.await(3, TimeUnit.SECONDS))
+            engine.insert()
+            assertEquals("{\"type\":\"CloseStream\"}", closes.poll(3, TimeUnit.SECONDS))
+            assertEquals("late final", commits.poll(3, TimeUnit.SECONDS))
+            engine.close()
+        }
+    }
+
+    private class Capture {
         var audio: ((ByteArray, Float) -> Unit)? = null
 
-        override fun prepare() {}
-
-        override fun capture(onAudio: (ByteArray, Float) -> Unit) {
+        fun capture(onAudio: (ByteArray, Float) -> Unit) {
             audio = onAudio
         }
 
-        override fun stop() {
+        fun stop() {
             audio = null
         }
     }
@@ -49,7 +105,8 @@ class DictationEngineTest {
         lateinit var speech: (SpeechEvent) -> Unit
         val engine =
             DictationEngine(
-                capture,
+                capture::capture,
+                capture::stop,
                 { _, events ->
                     speech = events
                     client
@@ -65,10 +122,12 @@ class DictationEngineTest {
         assertEquals(DictationState.Listening("hello", 0f), engine.state)
         engine.insert()
         engine.insert()
-        assertEquals(listOf("hello"), commits)
+        speech(SpeechEvent.Final("world"))
+        speech(SpeechEvent.Completed)
+        assertEquals(listOf("world"), commits)
         assertTrue(client.stopped)
         engine.cancel()
-        assertEquals(listOf("hello"), commits)
+        assertEquals(listOf("world"), commits)
     }
 
     @Test
@@ -79,7 +138,8 @@ class DictationEngineTest {
         lateinit var speech: (SpeechEvent) -> Unit
         val engine =
             DictationEngine(
-                capture,
+                capture::capture,
+                capture::stop,
                 { _, events ->
                     speech = events
                     client
@@ -100,19 +160,14 @@ class DictationEngineTest {
     }
 
     @Test
-    fun `one signed-in provider completes setup`() {
-        val setup = SetupStatus(setOf(Provider.Claude), true, true, true, true)
-        assertTrue(setup.complete)
-        assertFalse(setup.copy(signedIn = emptySet()).complete)
-    }
-
-    @Test
     fun `refined insert uses cleanup result once and failures stay in panel state`() {
+        val capture = Capture()
         val commits = mutableListOf<String>()
         lateinit var speech: (SpeechEvent) -> Unit
         val engine =
             DictationEngine(
-                Capture(),
+                capture::capture,
+                capture::stop,
                 { _, events ->
                     speech = events
                     Client()
@@ -125,12 +180,14 @@ class DictationEngineTest {
         engine.start(Provider.ChatGpt)
         speech(SpeechEvent.Final("hello"))
         engine.insertRefined(Provider.Claude)
+        speech(SpeechEvent.Completed)
         engine.insert()
         assertEquals(listOf("Hello."), commits)
 
         val failed =
             DictationEngine(
-                Capture(),
+                capture::capture,
+                capture::stop,
                 { _, events ->
                     speech = events
                     Client()
@@ -143,5 +200,62 @@ class DictationEngineTest {
         failed.start(Provider.Claude)
         speech(SpeechEvent.Failed(true))
         assertEquals(FailureReason.SignedOut, (failed.state as DictationState.Failed).reason)
+    }
+
+    @Test
+    fun `failed commit keeps transcript available for retry`() {
+        val capture = Capture()
+        lateinit var speech: (SpeechEvent) -> Unit
+        var commitSucceeds = false
+        val commits = mutableListOf<String>()
+        val engine =
+            DictationEngine(
+                capture::capture,
+                capture::stop,
+                { _, events ->
+                    speech = events
+                    Client()
+                },
+                { _, raw -> raw },
+                { text -> if (commitSucceeds) commits.add(text) else false },
+                Executor { it.run() },
+                {},
+            )
+        engine.start(Provider.Claude)
+        speech(SpeechEvent.Final("keep this"))
+        engine.insert()
+        speech(SpeechEvent.Completed)
+        assertEquals("keep this", (engine.state as DictationState.Failed).transcript)
+        commitSucceeds = true
+        engine.insert()
+        assertEquals(listOf("keep this"), commits)
+    }
+
+    @Test
+    fun `retry repeats refinement on saved transcript`() {
+        val capture = Capture()
+        lateinit var speech: (SpeechEvent) -> Unit
+        var attempts = 0
+        val commits = mutableListOf<String>()
+        val engine =
+            DictationEngine(
+                capture::capture,
+                capture::stop,
+                { _, events ->
+                    speech = events
+                    Client()
+                },
+                { _, raw -> if (++attempts == 1) error("temporary") else "$raw refined" },
+                { commits.add(it) },
+                Executor { it.run() },
+                {},
+            )
+        engine.start(Provider.Claude)
+        speech(SpeechEvent.Final("save me"))
+        engine.insertRefined(Provider.Claude)
+        speech(SpeechEvent.Completed)
+        assertEquals("save me", (engine.state as DictationState.Failed).transcript)
+        engine.retry()
+        assertEquals(listOf("save me refined"), commits)
     }
 }

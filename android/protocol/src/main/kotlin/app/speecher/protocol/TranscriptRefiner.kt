@@ -13,45 +13,44 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
-class TranscriptRefiner(private val http: OkHttpClient) {
-    fun refine(
-        provider: OAuthProvider,
-        tokens: OAuthTokens,
-        rawTranscript: String,
-        vocabulary: List<String>,
-        endpointBase: String =
-            if (provider == OAuthProvider.Claude) "https://api.anthropic.com/v1"
-            else "https://chatgpt.com/backend-api/codex",
-    ): String {
-        val request =
-            if (provider == OAuthProvider.Claude) {
-                claudeRequest(tokens.accessToken, rawTranscript, vocabulary, endpointBase)
-            } else {
-                chatGptRequest(tokens, rawTranscript, vocabulary, endpointBase)
-            }
-        http.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("Refinement failed with HTTP ${response.code}")
-            val output = StringBuilder()
-            var event = ""
-            val data = StringBuilder()
-            val reader = response.body.charStream().buffered()
-            var complete = false
-            while (!complete) {
-                val line = reader.readLine() ?: break
-                if (line.isEmpty()) {
-                    if (data.isNotEmpty())
-                        complete = appendEvent(provider, event, data.toString(), output)
-                    event = ""
-                    data.clear()
-                } else if (line.startsWith("event:")) event = line.substringAfter(':').trim()
-                else if (line.startsWith("data:")) data.append(line.substringAfter(':').trim())
-            }
-            if (!complete && data.isNotEmpty())
-                complete = appendEvent(provider, event, data.toString(), output)
-            if (!complete) error("Refinement stream ended before completion")
-            if (output.isEmpty()) error("Refinement returned no text")
-            return output.toString()
+fun refineTranscript(
+    http: OkHttpClient,
+    provider: OAuthProvider,
+    tokens: OAuthTokens,
+    rawTranscript: String,
+    vocabulary: List<String>,
+    endpointBase: String =
+        if (provider == OAuthProvider.Claude) "https://api.anthropic.com/v1"
+        else "https://chatgpt.com/backend-api/codex",
+): String {
+    val request =
+        if (provider == OAuthProvider.Claude) {
+            claudeRequest(tokens.accessToken, rawTranscript, vocabulary, endpointBase)
+        } else {
+            chatGptRequest(tokens, rawTranscript, vocabulary, endpointBase)
         }
+    http.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) error("Refinement failed with HTTP ${response.code}")
+        val output = StringBuilder()
+        var event = ""
+        val data = StringBuilder()
+        val reader = response.body.charStream().buffered()
+        var complete = false
+        while (!complete) {
+            val line = reader.readLine() ?: break
+            if (line.isEmpty()) {
+                if (data.isNotEmpty())
+                    complete = appendEvent(provider, event, data.toString(), output)
+                event = ""
+                data.clear()
+            } else if (line.startsWith("event:")) event = line.substringAfter(':').trim()
+            else if (line.startsWith("data:")) data.append(line.substringAfter(':').trim())
+        }
+        if (!complete && data.isNotEmpty())
+            complete = appendEvent(provider, event, data.toString(), output)
+        if (!complete) error("Refinement stream ended before completion")
+        if (output.isEmpty()) error("Refinement returned no text")
+        return output.toString()
     }
 }
 

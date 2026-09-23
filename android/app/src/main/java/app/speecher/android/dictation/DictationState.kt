@@ -1,10 +1,15 @@
 package app.speecher.android.dictation
 
+import app.speecher.protocol.OAuthProvider
+
 /** The two accounts Speecher can sign in to. Each one can transcribe and refine. */
 enum class Provider {
     Claude,
     ChatGpt,
 }
+
+val Provider.oauth: OAuthProvider
+    get() = if (this == Provider.Claude) OAuthProvider.Claude else OAuthProvider.ChatGpt
 
 /** What the dictation panel shows. The engine produces it; the UI only renders it. */
 sealed interface DictationState {
@@ -20,8 +25,12 @@ sealed interface DictationState {
     data class Refining(val transcript: String) : DictationState
 
     /** Dictation stopped. [transcript] holds whatever was heard before the failure. */
-    data class Failed(val reason: FailureReason, val detail: String, val transcript: String) :
-        DictationState
+    data class Failed(
+        val reason: FailureReason,
+        val detail: String,
+        val transcript: String,
+        val provider: Provider? = null,
+    ) : DictationState
 }
 
 /** Why dictation failed. Each reason maps to one recovery action in the panel. */

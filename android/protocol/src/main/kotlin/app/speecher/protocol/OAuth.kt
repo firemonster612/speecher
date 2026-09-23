@@ -31,6 +31,8 @@ data class OAuthTokens(
 
 data class OAuthAttempt(val verifier: String, val state: String, val authorizeUrl: HttpUrl)
 
+class OAuthHttpException(val status: Int) : Exception("OAuth token endpoint returned HTTP $status")
+
 private const val CLAUDE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 private const val CHATGPT_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 private const val CLAUDE_SCOPE =
@@ -95,92 +97,99 @@ fun pastedClaudeCode(attempt: OAuthAttempt, pasted: String): String {
     return parts[0]
 }
 
-class OAuthTokenClient(
-    private val http: OkHttpClient,
-    private val nowMillis: () -> Long = System::currentTimeMillis,
-) {
-    fun exchange(
-        provider: OAuthProvider,
-        attempt: OAuthAttempt,
-        code: String,
-        tokenUrl: String = tokenUrl(provider),
-    ): OAuthTokens {
-        val body =
-            if (provider == OAuthProvider.Claude) {
-                buildJsonObject {
-                        put("grant_type", JsonPrimitive("authorization_code"))
-                        put("code", JsonPrimitive(code))
-                        put("redirect_uri", JsonPrimitive(oauthRedirect(provider)))
-                        put("client_id", JsonPrimitive(CLAUDE_CLIENT_ID))
-                        put("code_verifier", JsonPrimitive(attempt.verifier))
-                        put("state", JsonPrimitive(attempt.state))
-                    }
-                    .toString()
-                    .toRequestBody(JSON_MEDIA_TYPE)
-            } else {
-                FormBody.Builder()
-                    .add("grant_type", "authorization_code")
-                    .add("code", code)
-                    .add("redirect_uri", oauthRedirect(provider))
-                    .add("client_id", CHATGPT_CLIENT_ID)
-                    .add("code_verifier", attempt.verifier)
-                    .build()
-            }
-        return requestTokens(tokenUrl, body)
-    }
-
-    fun refresh(
-        provider: OAuthProvider,
-        tokens: OAuthTokens,
-        tokenUrl: String = tokenUrl(provider),
-    ): OAuthTokens {
-        val body = buildJsonObject {
-            put("grant_type", JsonPrimitive("refresh_token"))
-            put("refresh_token", JsonPrimitive(tokens.refreshToken))
-            put(
-                "client_id",
-                JsonPrimitive(
-                    if (provider == OAuthProvider.Claude) CLAUDE_CLIENT_ID else CHATGPT_CLIENT_ID
-                ),
-            )
-            if (provider == OAuthProvider.Claude)
-                put("scope", JsonPrimitive(tokens.scope.ifEmpty { CLAUDE_SCOPE }))
-            else put("scope", JsonPrimitive("openid profile email"))
-        }
-            .toString()
-            .toRequestBody(JSON_MEDIA_TYPE)
-        val refreshed = requestTokens(tokenUrl, body)
-        return refreshed.copy(
-            refreshToken = refreshed.refreshToken.ifEmpty { tokens.refreshToken },
-            idToken = refreshed.idToken.ifEmpty { tokens.idToken },
-            scope = refreshed.scope.ifEmpty { tokens.scope },
-        )
-    }
-
-    private fun requestTokens(url: String, body: okhttp3.RequestBody): OAuthTokens {
-        val request =
-            Request.Builder()
-                .url(url)
-                .post(body)
-                .header("Accept", "application/json, text/plain, */*")
-                .header("User-Agent", "axios/1.15.2")
+fun exchangeTokens(
+    http: OkHttpClient,
+    provider: OAuthProvider,
+    attempt: OAuthAttempt,
+    code: String,
+    nowMillis: () -> Long = System::currentTimeMillis,
+    tokenUrl: String = tokenUrl(provider),
+): OAuthTokens {
+    val body =
+        if (provider == OAuthProvider.Claude) {
+            buildJsonObject {
+                    put("grant_type", JsonPrimitive("authorization_code"))
+                    put("code", JsonPrimitive(code))
+                    put("redirect_uri", JsonPrimitive(oauthRedirect(provider)))
+                    put("client_id", JsonPrimitive(CLAUDE_CLIENT_ID))
+                    put("code_verifier", JsonPrimitive(attempt.verifier))
+                    put("state", JsonPrimitive(attempt.state))
+                }
+                .toString()
+                .toByteArray()
+                .toRequestBody(JSON_MEDIA_TYPE)
+        } else {
+            FormBody.Builder()
+                .add("grant_type", "authorization_code")
+                .add("code", code)
+                .add("redirect_uri", oauthRedirect(provider))
+                .add("client_id", CHATGPT_CLIENT_ID)
+                .add("code_verifier", attempt.verifier)
                 .build()
-        http.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("OAuth token endpoint returned HTTP ${response.code}")
-            val json =
-                Json.parseToJsonElement(response.body.string()) as? JsonObject
-                    ?: error("OAuth token endpoint returned invalid JSON")
-            val access = json.string("access_token")
-            if (access.isEmpty()) error("OAuth token endpoint returned no access token")
-            val expiresIn = json.string("expires_in").toLongOrNull() ?: 3600L
-            return OAuthTokens(
-                access,
-                json.string("refresh_token"),
-                json.string("id_token"),
-                nowMillis() + expiresIn * 1000,
-                json.string("scope"),
-            )
         }
+    val exchanged = requestTokens(http, tokenUrl, body, nowMillis)
+    return if (provider == OAuthProvider.Claude) exchanged.copy(scope = CLAUDE_SCOPE) else exchanged
+}
+
+fun refreshTokens(
+    http: OkHttpClient,
+    provider: OAuthProvider,
+    tokens: OAuthTokens,
+    nowMillis: () -> Long = System::currentTimeMillis,
+    tokenUrl: String = tokenUrl(provider),
+): OAuthTokens {
+    val body = buildJsonObject {
+        put("grant_type", JsonPrimitive("refresh_token"))
+        put("refresh_token", JsonPrimitive(tokens.refreshToken))
+        put(
+            "client_id",
+            JsonPrimitive(
+                if (provider == OAuthProvider.Claude) CLAUDE_CLIENT_ID else CHATGPT_CLIENT_ID
+            ),
+        )
+        if (provider == OAuthProvider.Claude)
+            put("scope", JsonPrimitive(tokens.scope.ifEmpty { CLAUDE_SCOPE }))
+        else put("scope", JsonPrimitive("openid profile email"))
+    }
+        .toString()
+        .toByteArray()
+        .toRequestBody(JSON_MEDIA_TYPE)
+    val refreshed = requestTokens(http, tokenUrl, body, nowMillis)
+    return refreshed.copy(
+        refreshToken = refreshed.refreshToken.ifEmpty { tokens.refreshToken },
+        idToken = refreshed.idToken.ifEmpty { tokens.idToken },
+        scope = tokens.scope,
+    )
+}
+
+private fun requestTokens(
+    http: OkHttpClient,
+    url: String,
+    body: okhttp3.RequestBody,
+    nowMillis: () -> Long,
+): OAuthTokens {
+    val request =
+        Request.Builder()
+            .url(url)
+            .post(body)
+            .header("Accept", "application/json, text/plain, */*")
+            .header("User-Agent", "axios/1.15.2")
+            .build()
+    http.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) throw OAuthHttpException(response.code)
+        val json =
+            Json.parseToJsonElement(response.body.string()) as? JsonObject
+                ?: error("OAuth token endpoint returned invalid JSON")
+        val access = json.string("access_token")
+        if (access.isEmpty()) error("OAuth token endpoint returned no access token")
+        val expiresIn = json.string("expires_in").toLongOrNull() ?: 3600L
+        return OAuthTokens(
+            access,
+            json.string("refresh_token"),
+            json.string("id_token"),
+            nowMillis() + expiresIn * 1000,
+            json.string("scope"),
+        )
     }
 }
 

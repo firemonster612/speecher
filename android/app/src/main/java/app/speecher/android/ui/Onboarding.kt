@@ -57,6 +57,9 @@ fun Onboarding(
     onOpenKeyboardSettings: () -> Unit,
     onOpenChipSettings: () -> Unit,
     modifier: Modifier = Modifier,
+    signingIn: Provider? = null,
+    signInError: String? = null,
+    onPasteCode: (String) -> Unit = {},
 ) {
     Column(modifier) {
         ScreenTitle(
@@ -72,6 +75,10 @@ fun Onboarding(
             ) {
                 StepButton("Sign in") { onSignIn(provider) }
             }
+            if (provider == Provider.Claude && signingIn == provider) PasteCode(onPasteCode)
+        }
+        signInError?.let {
+            Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)
         }
         Step(
             3,

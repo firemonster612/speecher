@@ -34,7 +34,7 @@ class SpeecherChipService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED) {
-            event.source?.takeIf { it.isEditable }?.let { passwordFocused = it.isPassword }
+            passwordFocused = event.source?.isPassword == true
         }
         handler.removeCallbacks(refresh)
         handler.postDelayed(refresh, 50)
@@ -48,7 +48,6 @@ class SpeecherChipService : AccessibilityService() {
         val ownIme = speecherImeId(this)
         if (
             passwordFocused ||
-                ActiveDictation.imeActive ||
                 Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD) ==
                     ownIme
         ) {
@@ -94,7 +93,6 @@ class SpeecherChipService : AccessibilityService() {
     }
 
     private fun onChipTap() {
-        ActiveDictation.retry = ::startDictation
         val engine = startDictation()
         try {
             ImeSwap(this).activate()

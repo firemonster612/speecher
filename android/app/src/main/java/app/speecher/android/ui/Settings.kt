@@ -27,6 +27,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
@@ -43,11 +45,14 @@ fun Settings(
     onSignIn: (Provider) -> Unit,
     onSignOut: (Provider) -> Unit,
     modifier: Modifier = Modifier,
+    signingIn: Provider? = null,
+    signInError: String? = null,
+    onPasteCode: (String) -> Unit = {},
 ) {
     val rowColors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface)
     Column(modifier) {
         Section("Transcription")
-        ProviderPicker(settings.transcriptionProvider) {
+        ProviderPicker("Transcription provider", settings.transcriptionProvider) {
             onChange(settings.copy(transcriptionProvider = it))
         }
 
@@ -64,7 +69,7 @@ fun Settings(
             colors = rowColors,
         )
         if (settings.refinementEnabled) {
-            ProviderPicker(settings.refinementProvider) {
+            ProviderPicker("Refinement provider", settings.refinementProvider) {
                 onChange(settings.copy(refinementProvider = it))
             }
         }
@@ -99,6 +104,9 @@ fun Settings(
         }
 
         Section("Accounts")
+        signInError?.let {
+            Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)
+        }
         Provider.entries.forEach { provider ->
             val isSignedIn = provider in signedIn
             ListItem(
@@ -114,13 +122,16 @@ fun Settings(
                 colors = rowColors,
             )
         }
+        if (signingIn == Provider.Claude) PasteCode(onPasteCode)
     }
 }
 
 @Composable
-private fun ProviderPicker(selected: Provider, onSelect: (Provider) -> Unit) {
+private fun ProviderPicker(label: String, selected: Provider, onSelect: (Provider) -> Unit) {
     SingleChoiceSegmentedButtonRow(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).semantics {
+            contentDescription = label
+        }
     ) {
         Provider.entries.forEachIndexed { index, provider ->
             SegmentedButton(
@@ -131,6 +142,28 @@ private fun ProviderPicker(selected: Provider, onSelect: (Provider) -> Unit) {
                 Text(provider.label)
             }
         }
+    }
+}
+
+@Composable
+internal fun PasteCode(onPasteCode: (String) -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    var code by rememberSaveable { mutableStateOf("") }
+    if (!expanded) {
+        TextButton({ expanded = true }, Modifier.padding(start = 16.dp)) {
+            Text("Paste code instead")
+        }
+        return
+    }
+    Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            code,
+            { code = it },
+            Modifier.weight(1f),
+            label = { Text("Code#state") },
+            singleLine = true,
+        )
+        TextButton({ onPasteCode(code) }, enabled = code.isNotBlank()) { Text("Continue") }
     }
 }
 

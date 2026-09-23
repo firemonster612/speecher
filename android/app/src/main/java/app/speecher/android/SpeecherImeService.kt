@@ -64,13 +64,23 @@ class SpeecherImeService : InputMethodService() {
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         ActiveDictation.connection = currentInputConnection
-        ActiveDictation.imeActive = true
     }
 
     override fun onFinishInput() {
         ActiveDictation.connection = null
-        ActiveDictation.imeActive = false
         super.onFinishInput()
+    }
+
+    override fun onFinishInputView(finishingInput: Boolean) {
+        ActiveDictation.engine?.cancel()
+        super.onFinishInputView(finishingInput)
+        if (
+            android.provider.Settings.Secure.getString(
+                contentResolver,
+                android.provider.Settings.Secure.DEFAULT_INPUT_METHOD,
+            ) == speecherImeId(this)
+        )
+            switchBack()
     }
 
     fun showState(state: DictationState) {
@@ -81,13 +91,15 @@ class SpeecherImeService : InputMethodService() {
     private fun recover() {
         val failed = panelState.value as? DictationState.Failed ?: return
         if (failed.reason == FailureReason.Network || failed.reason == FailureReason.Provider) {
-            ActiveDictation.retry?.invoke()
+            ActiveDictation.engine?.retry()
             return
         }
         ActiveDictation.engine?.cancel()
         switchBack()
         startActivity(
-            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            Intent(this, MainActivity::class.java)
+                .putExtra("sign_in_provider", failed.provider?.name)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         )
     }
 

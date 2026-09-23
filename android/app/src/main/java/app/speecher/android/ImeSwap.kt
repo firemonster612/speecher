@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import androidx.core.content.edit
-import app.speecher.android.dictation.ActiveDictation
 
 class ImeSwap(private val context: Context) {
     private val preferences = context.getSharedPreferences("previous-ime", Context.MODE_PRIVATE)
@@ -31,20 +30,14 @@ class ImeSwap(private val context: Context) {
             putString("id", previous)
             putInt("subtype", subtype)
         }
-        ActiveDictation.swapInProgress = true
-        try {
-            check(
-                Settings.Secure.putString(
-                    context.contentResolver,
-                    Settings.Secure.DEFAULT_INPUT_METHOD,
-                    ownId,
-                )
-            ) {
-                "Could not switch to Speecher"
-            }
-        } catch (error: Exception) {
-            ActiveDictation.swapInProgress = false
-            throw error
+        check(
+            Settings.Secure.putString(
+                context.contentResolver,
+                Settings.Secure.DEFAULT_INPUT_METHOD,
+                ownId,
+            )
+        ) {
+            "Could not switch to Speecher"
         }
     }
 
@@ -58,12 +51,10 @@ class ImeSwap(private val context: Context) {
                 ?.firstOrNull { it.hashCode() == savedSubtype }
         if (info != null) service.switchInputMethod(previous, subtype)
         else service.switchToPreviousInputMethod()
-        ActiveDictation.swapInProgress = false
         preferences.edit(commit = true) { clear() }
     }
 
     fun restoreOnRestart() {
-        if (ActiveDictation.swapInProgress) return
         val previous = preferences.getString("id", null) ?: return
         val selected =
             Settings.Secure.getString(context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)

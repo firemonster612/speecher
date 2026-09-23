@@ -9,28 +9,28 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import android.view.inputmethod.InputMethodManager
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import app.speecher.android.auth.SignIn
+import app.speecher.android.auth.SignInViewModel
 import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SettingsStore
 import app.speecher.android.dictation.SetupStatus
 import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.dictation.oauth
 import app.speecher.android.ui.Home
 import app.speecher.android.ui.Onboarding
 import app.speecher.android.ui.SpeecherScreen
 import app.speecher.android.ui.SpeecherTheme
-import app.speecher.protocol.OAuthProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -43,7 +43,7 @@ private enum class Page {
 class MainActivity : ComponentActivity() {
     private val tokens by lazy { TokenStore(this) }
     private val settingsStore by lazy { SettingsStore(this) }
-    private val signIn by lazy { SignIn(this, tokens) }
+    private val signIn: SignInViewModel by viewModels()
 
     private var status by mutableStateOf(emptyStatus())
     private var settings by mutableStateOf(SpeecherSettings())
@@ -55,14 +55,28 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         settings = settingsStore.load()
         refresh()
-        var page by mutableStateOf(if (status.complete) Page.Home else Page.Setup)
+        val requestedProvider =
+            intent.getStringExtra("sign_in_provider")?.let { name ->
+                Provider.entries.firstOrNull { it.name == name }
+            }
+        var page by
+            mutableStateOf(
+                if (requestedProvider != null) Page.Settings
+                else if (status.complete) Page.Home else Page.Setup
+            )
+        if (requestedProvider != null && savedInstanceState == null) startSignIn(requestedProvider)
         setContent {
             SpeecherTheme {
                 BackHandler(page != Page.Home) { page = Page.Home }
                 when (page) {
                     Page.Home ->
                         SpeecherScreen("Speecher", onBack = null) {
-                            Home(status, settings, { page = Page.Setup }, { page = Page.Settings })
+                            Home(
+                                status,
+                                settings,
+                                { page = Page.Setup },
+                                { page = Page.Settings },
+                            )
                         }
                     Page.Setup ->
                         SpeecherScreen("Set up Speecher", onBack = null) {
@@ -72,6 +86,9 @@ class MainActivity : ComponentActivity() {
                                 { microphone.launch(Manifest.permission.RECORD_AUDIO) },
                                 { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
                                 { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                                signingIn = signIn.activeProvider,
+                                signInError = signIn.error,
+                                onPasteCode = signIn::paste,
                             )
                         }
                     Page.Settings ->
@@ -82,6 +99,9 @@ class MainActivity : ComponentActivity() {
                                 ::changeSettings,
                                 ::startSignIn,
                                 ::signOut,
+                                signingIn = signIn.activeProvider,
+                                signInError = signIn.error,
+                                onPasteCode = signIn::paste,
                             )
                         }
                 }
@@ -96,11 +116,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    override fun onDestroy() {
-        signIn.close()
-        super.onDestroy()
     }
 
     private fun refresh() {
@@ -120,12 +135,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startSignIn(provider: Provider) {
-        signIn.start(provider.oauth) { result ->
-            result.onFailure {
-                Toast.makeText(this, "Sign-in failed: ${it.message}", Toast.LENGTH_LONG).show()
-            }
-            refresh()
-        }
+        signIn.start(this, provider)
     }
 
     private fun signOut(provider: Provider) {
@@ -154,6 +164,3 @@ class MainActivity : ComponentActivity() {
 }
 
 private fun emptyStatus() = SetupStatus(emptySet(), false, false, false, false)
-
-private val Provider.oauth: OAuthProvider
-    get() = if (this == Provider.Claude) OAuthProvider.Claude else OAuthProvider.ChatGpt

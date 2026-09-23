@@ -1,6 +1,7 @@
 package app.speecher.protocol
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import mockwebserver3.MockResponse
@@ -8,7 +9,6 @@ import mockwebserver3.MockWebServer
 import okhttp3.OkHttpClient
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class TranscriptRefinerTest {
@@ -26,26 +26,28 @@ class TranscriptRefinerTest {
             )
             server.start()
             val result =
-                TranscriptRefiner(OkHttpClient())
-                    .refine(
-                        OAuthProvider.Claude,
-                        tokens,
-                        "helo",
-                        listOf("Speecher"),
-                        server.url("/v1").toString().trimEnd('/'),
-                    )
+                refineTranscript(
+                    OkHttpClient(),
+                    OAuthProvider.Claude,
+                    tokens,
+                    "helo",
+                    listOf("Speecher"),
+                    server.url("/v1").toString().trimEnd('/'),
+                )
             assertEquals("Hello", result)
             val request = server.takeRequest()
             assertEquals("/v1/messages", request.target)
             assertEquals("claude-code-20250219,oauth-2025-04-20", request.headers["anthropic-beta"])
             val body = Json.parseToJsonElement(request.body!!.utf8()).jsonObject
             assertEquals("claude-sonnet-5", body["model"]?.jsonPrimitive?.content)
-            assertTrue(
-                body["system"]
-                    .toString()
-                    .contains("You are Claude Code, Anthropic's official CLI for Claude.")
+            assertEquals(
+                "You are Claude Code, Anthropic's official CLI for Claude.",
+                body["system"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content,
             )
-            assertTrue(body["messages"].toString().contains("Speecher"))
+            assertEquals(
+                "Dictation refinement input. Refine raw_transcript using the system instructions and return only the final refined transcript.\n{\"mode\":\"refine_dictation\",\"raw_transcript\":\"helo\"}\n\nPreferred vocabulary:\nSpeecher\n\nBinding aliases:\n",
+                body["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonPrimitive.content,
+            )
         }
     }
 
@@ -61,20 +63,20 @@ class TranscriptRefinerTest {
             )
             server.start()
             val result =
-                TranscriptRefiner(OkHttpClient())
-                    .refine(
-                        OAuthProvider.ChatGpt,
-                        tokens,
-                        "helo",
-                        emptyList(),
-                        server.url("/codex").toString().trimEnd('/'),
-                    )
+                refineTranscript(
+                    OkHttpClient(),
+                    OAuthProvider.ChatGpt,
+                    tokens,
+                    "helo",
+                    emptyList(),
+                    server.url("/codex").toString().trimEnd('/'),
+                )
             assertEquals("Hello", result)
             val request = server.takeRequest()
             assertEquals("/codex/responses", request.target)
             val body = Json.parseToJsonElement(request.body!!.utf8()).jsonObject
             assertEquals("gpt-5.6-luna", body["model"]?.jsonPrimitive?.content)
-            assertTrue(body["reasoning"].toString().contains("none"))
+            assertEquals("{\"effort\":\"none\"}", body["reasoning"].toString())
             assertEquals("false", body["store"]?.jsonPrimitive?.content)
         }
     }
@@ -89,14 +91,14 @@ class TranscriptRefinerTest {
             )
             server.start()
             assertThrows(IllegalStateException::class.java) {
-                TranscriptRefiner(OkHttpClient())
-                    .refine(
-                        OAuthProvider.ChatGpt,
-                        tokens,
-                        "raw",
-                        emptyList(),
-                        server.url("/codex").toString().trimEnd('/'),
-                    )
+                refineTranscript(
+                    OkHttpClient(),
+                    OAuthProvider.ChatGpt,
+                    tokens,
+                    "raw",
+                    emptyList(),
+                    server.url("/codex").toString().trimEnd('/'),
+                )
             }
         }
     }
