@@ -10,8 +10,11 @@ import app.speecher.protocol.ClaudeVoiceClient
 import app.speecher.protocol.CodexDictationClient
 import app.speecher.protocol.SpeechClient
 import app.speecher.protocol.SpeechEvent
+import app.speecher.protocol.preferredTranscript
 import app.speecher.protocol.refineTranscript
+import app.speecher.protocol.transcribeSpeech
 import app.speecher.protocol.webSocketTransport
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import okhttp3.OkHttpClient
@@ -22,12 +25,18 @@ import okhttp3.brotli.BrotliInterceptor
 val sharedHttp = OkHttpClient.Builder().addInterceptor(BrotliInterceptor).build()
 val sharedExecutor = Executors.newCachedThreadPool()
 
-private data class Endpoints(val speech: String, val refinement: String)
+/** [transcribe] is the batch speech-to-text endpoint, for the providers that have one. */
+private data class Endpoints(
+    val speech: String,
+    val refinement: String,
+    val transcribe: String? = null,
+)
 
 private sealed interface PendingInsert {
     data object Raw : PendingInsert
 
-    data class Refined(val provider: Provider) : PendingInsert
+    /** [cleanup] is the LLM that tidies the transcript, or null when refinement is off. */
+    data class Refined(val cleanup: Provider?) : PendingInsert
 }
 
 class DictationEngine(
@@ -35,6 +44,8 @@ class DictationEngine(
     private val stopCapture: () -> Unit,
     private val connect: (Provider, (SpeechEvent) -> Unit) -> SpeechClient,
     private val refine: (Provider, String) -> String,
+    /** ChatGPT's batch re-transcription of the session's PCM16 audio. */
+    private val transcribe: (ByteArray) -> String,
     private val commit: (String) -> Boolean,
     private val executor: Executor,
     private val onState: (DictationState) -> Unit,
@@ -51,10 +62,19 @@ class DictationEngine(
     private var pendingInsert: PendingInsert? = null
     private var failedRefinement: Provider? = null
     private var failedCommit: String? = null
-    private var sourceProvider = providerOrder.first()
+    /** The provider streaming this dictation. */
+    var sourceProvider = providerOrder.first()
+        private set
+
+    /** The session's audio, kept for the batch pass. A retried session appends to it. */
+    private val recorded = ByteArrayOutputStream()
     @Volatile private var session = 0
 
-    @Synchronized fun start(provider: Provider) = startSession(provider, "")
+    @Synchronized
+    fun start(provider: Provider) {
+        recorded.reset()
+        startSession(provider, "")
+    }
 
     private fun startSession(provider: Provider, priorTranscript: String) {
         cancelSession()
@@ -113,9 +133,9 @@ class DictationEngine(
     }
 
     @Synchronized
-    fun insertRefined(provider: Provider) {
+    fun insertRefined(cleanup: Provider?) {
         if (inserted || pendingInsert != null) return
-        pendingInsert = PendingInsert.Refined(provider)
+        pendingInsert = PendingInsert.Refined(cleanup)
         stop()
     }
 
@@ -169,6 +189,11 @@ class DictationEngine(
                             synchronized(this) {
                                 if (current == session && recording) {
                                     client?.sendAudio(audio)
+                                    if (
+                                        sourceProvider.hasBatchTranscription &&
+                                            recorded.size() + audio.size <= MAX_RECORDED_BYTES
+                                    )
+                                        recorded.write(audio)
                                     publish(listening(level))
                                 }
                             }
@@ -215,7 +240,36 @@ class DictationEngine(
         pendingInsert = null
         when (pending) {
             PendingInsert.Raw -> commitTranscript(transcript())
-            is PendingInsert.Refined -> refineTranscript(pending.provider, transcript())
+            is PendingInsert.Refined -> insertBest(pending.cleanup)
+        }
+    }
+
+    /**
+     * "Insert refined": ChatGPT re-transcribes the whole recording for accuracy, then [cleanup]
+     * tidies the text. A failed or truncated batch pass falls back to the streamed transcript.
+     */
+    private fun insertBest(cleanup: Provider?) {
+        val streamed = transcript()
+        val audio = recorded.toByteArray()
+        fun finish(text: String) =
+            if (cleanup != null) refineTranscript(cleanup, text) else commitTranscript(text)
+        if (!sourceProvider.hasBatchTranscription || audio.isEmpty()) {
+            finish(streamed)
+            return
+        }
+        val current = session
+        publish(DictationState.Refining(streamed))
+        executor.execute {
+            val batch =
+                try {
+                    transcribe(audio)
+                } catch (_: Exception) {
+                    null
+                }
+            synchronized(this) {
+                if (current != session || inserted) return@execute
+                finish(preferredTranscript(batch, streamed))
+            }
         }
     }
 
@@ -287,6 +341,9 @@ class DictationEngine(
     }
 }
 
+// 90 s of 16 kHz mono PCM16: the batch endpoint transcribes no more than that.
+private const val MAX_RECORDED_BYTES = 90 * 16000 * 2
+
 class SignInRequired : Exception()
 
 /** Android wiring; call [DictationEngine.start] on the chip tap before the IME appears. */
@@ -313,13 +370,19 @@ fun createDictationEngine(
                     Endpoints(
                         "wss://chatgpt.com/backend-api/dictation/stream",
                         "https://chatgpt.com/backend-api/codex",
+                        "https://chatgpt.com/backend-api/transcribe",
                     ),
             )
         else
             mapOf(
                 Provider.Claude to
                     Endpoints("$fake/api/ws/speech_to_text/voice_stream", "$fake/v1"),
-                Provider.ChatGpt to Endpoints("$fake/backend-api/dictation/stream", "$fake/v1"),
+                Provider.ChatGpt to
+                    Endpoints(
+                        "$fake/backend-api/dictation/stream",
+                        "$fake/v1",
+                        "$fake/backend-api/transcribe",
+                    ),
             )
     val main = Handler(Looper.getMainLooper())
     fun token(value: Provider) = store.validTokens(value.oauth, http) ?: throw SignInRequired()
@@ -352,6 +415,13 @@ fun createDictationEngine(
                 raw,
                 settings.vocabulary,
                 endpoints.getValue(selected).refinement,
+            )
+        },
+        { pcm ->
+            transcribeSpeech(
+                token(Provider.ChatGpt).accessToken,
+                pcm,
+                endpoints.getValue(Provider.ChatGpt).transcribe!!,
             )
         },
         { text ->

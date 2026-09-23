@@ -11,6 +11,10 @@ enum class Provider {
 val Provider.oauth: OAuthProvider
     get() = if (this == Provider.Claude) OAuthProvider.Claude else OAuthProvider.ChatGpt
 
+/** Only ChatGPT has a batch speech-to-text pass; "Insert refined" runs it before cleanup. */
+val Provider.hasBatchTranscription: Boolean
+    get() = this == Provider.ChatGpt
+
 /** What the dictation panel shows. The engine produces it; the UI only renders it. */
 sealed interface DictationState {
     /** The panel is up and the microphone is not yet streaming. */
@@ -30,7 +34,7 @@ sealed interface DictationState {
                 else if (interim.isEmpty()) committed else "$committed $interim"
     }
 
-    /** The user asked for a refined insert and the cleanup pass is running. */
+    /** The user asked for a refined insert and the batch or cleanup pass is running. */
     data class Refining(val transcript: String) : DictationState
 
     /**

@@ -12,6 +12,7 @@ import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
+import app.speecher.android.dictation.hasBatchTranscription
 import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.ui.DictationPanel
 import app.speecher.android.ui.SpeecherTheme
@@ -51,18 +52,22 @@ class SpeecherImeService : InputMethodService() {
                 SpeecherTheme {
                     DictationPanel(
                         panelState.value,
-                        ActiveDictation.settings.refinementEnabled,
+                        ActiveDictation.settings.refinementEnabled ||
+                            ActiveDictation.engine?.sourceProvider?.hasBatchTranscription == true,
                         onCancel = {
                             ActiveDictation.engine?.cancel()
                             switchBack()
                         },
                         onInsert = { ActiveDictation.engine?.insert() },
                         onInsertRefined = {
+                            val settings = ActiveDictation.settings
                             ActiveDictation.engine?.insertRefined(
-                                resolveSignedIn(
-                                    ActiveDictation.settings.refinementProvider,
-                                    TokenStore(this).signedIn(),
-                                )
+                                if (settings.refinementEnabled)
+                                    resolveSignedIn(
+                                        settings.refinementProvider,
+                                        TokenStore(this).signedIn(),
+                                    )
+                                else null
                             )
                         },
                         onRecover = ::recover,

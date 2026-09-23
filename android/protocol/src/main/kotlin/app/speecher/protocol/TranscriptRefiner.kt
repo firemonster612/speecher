@@ -1,5 +1,6 @@
 package app.speecher.protocol
 
+import java.io.BufferedReader
 import java.util.Base64
 import java.util.UUID
 import kotlinx.serialization.json.Json
@@ -23,35 +24,54 @@ fun refineTranscript(
         if (provider == OAuthProvider.Claude) "https://api.anthropic.com/v1"
         else "https://chatgpt.com/backend-api/codex",
 ): String {
-    val request =
-        if (provider == OAuthProvider.Claude) {
-            claudeRequest(tokens.accessToken, rawTranscript, vocabulary, endpointBase)
-        } else {
-            chatGptRequest(tokens, rawTranscript, vocabulary, endpointBase)
-        }
-    http.newCall(request).execute().use { response ->
-        if (!response.isSuccessful) error("Refinement failed with HTTP ${response.code}")
-        val output = StringBuilder()
-        var event = ""
-        val data = StringBuilder()
-        val reader = response.body.charStream().buffered()
-        var complete = false
-        while (!complete) {
-            val line = reader.readLine() ?: break
-            if (line.isEmpty()) {
-                if (data.isNotEmpty())
-                    complete = appendEvent(provider, event, data.toString(), output)
-                event = ""
-                data.clear()
-            } else if (line.startsWith("event:")) event = line.substringAfter(':').trim()
-            else if (line.startsWith("data:")) data.append(line.substringAfter(':').trim())
-        }
-        if (!complete && data.isNotEmpty())
-            complete = appendEvent(provider, event, data.toString(), output)
-        if (!complete) error("Refinement stream ended before completion")
-        if (output.isEmpty()) error("Refinement returned no text")
-        return output.toString()
+    val base = endpointBase.trimEnd('/')
+    if (provider == OAuthProvider.Claude) {
+        http
+            .newCall(claudeRequest(tokens.accessToken, rawTranscript, vocabulary, base))
+            .execute()
+            .use { response ->
+                if (!response.isSuccessful) error("Refinement failed with HTTP ${response.code}")
+                return readRefinement(provider, response.body.charStream().buffered())
+            }
     }
+    // chatgpt.com sits behind Cloudflare, which rejects OkHttp's Conscrypt handshake with a 403.
+    val response =
+        httpPost(
+            "$base/responses",
+            listOfNotNull(
+                    "Authorization" to "Bearer ${tokens.accessToken}",
+                    tokens.accountId()?.let { "ChatGPT-Account-ID" to it },
+                )
+                .toMap(),
+            HttpBody(
+                "application/json",
+                chatGptBody(rawTranscript, vocabulary).toString().toByteArray(Charsets.UTF_8),
+            ),
+        )
+    if (response.status !in 200..299) error("Refinement failed with HTTP ${response.status}")
+    return readRefinement(provider, response.body.inputStream().bufferedReader())
+}
+
+/** Reads a server-sent-event stream until the provider's completion event. */
+private fun readRefinement(provider: OAuthProvider, reader: BufferedReader): String {
+    val output = StringBuilder()
+    var event = ""
+    val data = StringBuilder()
+    var complete = false
+    while (!complete) {
+        val line = reader.readLine() ?: break
+        if (line.isEmpty()) {
+            if (data.isNotEmpty()) complete = appendEvent(provider, event, data.toString(), output)
+            event = ""
+            data.clear()
+        } else if (line.startsWith("event:")) event = line.substringAfter(':').trim()
+        else if (line.startsWith("data:")) data.append(line.substringAfter(':').trim())
+    }
+    if (!complete && data.isNotEmpty())
+        complete = appendEvent(provider, event, data.toString(), output)
+    if (!complete) error("Refinement stream ended before completion")
+    if (output.isEmpty()) error("Refinement returned no text")
+    return output.toString()
 }
 
 private fun claudeRequest(
@@ -104,7 +124,7 @@ private fun claudeRequest(
     }
     val id = UUID.randomUUID().toString()
     return Request.Builder()
-        .url(base.trimEnd('/') + "/messages")
+        .url("$base/messages")
         .header("Authorization", "Bearer $token")
         .header("anthropic-version", "2023-06-01")
         .header("anthropic-beta", "claude-code-20250219,oauth-2025-04-20")
@@ -116,36 +136,23 @@ private fun claudeRequest(
         .build()
 }
 
-private fun chatGptRequest(
-    tokens: OAuthTokens,
-    raw: String,
-    vocabulary: List<String>,
-    base: String,
-): Request {
-    val body = buildJsonObject {
-        put("model", JsonPrimitive("gpt-5.6-luna"))
-        put("reasoning", buildJsonObject { put("effort", JsonPrimitive("none")) })
-        put("instructions", JsonPrimitive(dictationSystemPrompt))
-        put("stream", JsonPrimitive(true))
-        put("store", JsonPrimitive(false))
-        put(
-            "input",
-            buildJsonArray {
-                add(
-                    buildJsonObject {
-                        put("role", JsonPrimitive("user"))
-                        put("content", JsonPrimitive(refinementUserMessage(raw, vocabulary)))
-                    }
-                )
-            },
-        )
-    }
-    return Request.Builder()
-        .url(base.trimEnd('/') + "/responses")
-        .header("Authorization", "Bearer ${tokens.accessToken}")
-        .apply { tokens.accountId()?.let { header("ChatGPT-Account-ID", it) } }
-        .post(body.toString().toRequestBody("application/json".toMediaType()))
-        .build()
+private fun chatGptBody(raw: String, vocabulary: List<String>) = buildJsonObject {
+    put("model", JsonPrimitive("gpt-5.6-luna"))
+    put("reasoning", buildJsonObject { put("effort", JsonPrimitive("none")) })
+    put("instructions", JsonPrimitive(dictationSystemPrompt))
+    put("stream", JsonPrimitive(true))
+    put("store", JsonPrimitive(false))
+    put(
+        "input",
+        buildJsonArray {
+            add(
+                buildJsonObject {
+                    put("role", JsonPrimitive("user"))
+                    put("content", JsonPrimitive(refinementUserMessage(raw, vocabulary)))
+                }
+            )
+        },
+    )
 }
 
 private fun OAuthTokens.accountId(): String? = runCatching {

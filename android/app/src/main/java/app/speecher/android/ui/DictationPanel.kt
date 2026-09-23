@@ -78,7 +78,7 @@ private val Envelope =
 @Composable
 fun DictationPanel(
     state: DictationState,
-    refinementEnabled: Boolean,
+    canRefine: Boolean,
     onCancel: () -> Unit,
     onInsert: () -> Unit,
     onInsertRefined: () -> Unit,
@@ -118,7 +118,7 @@ fun DictationPanel(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PanelButtons(
                         state,
-                        refinementEnabled,
+                        canRefine,
                         onCancel,
                         onInsert,
                         onInsertRefined,
@@ -183,7 +183,7 @@ private fun Transcript(state: DictationState, modifier: Modifier) {
 @Composable
 private fun RowScope.PanelButtons(
     state: DictationState,
-    refinementEnabled: Boolean,
+    canRefine: Boolean,
     onCancel: () -> Unit,
     onInsert: () -> Unit,
     onInsertRefined: () -> Unit,
@@ -201,7 +201,7 @@ private fun RowScope.PanelButtons(
         return
     }
     val canInsert = state is DictationState.Listening && state.text.isNotBlank()
-    if (refinementEnabled) {
+    if (canRefine) {
         FilledTonalButton(onInsertRefined, button, enabled = canInsert) {
             if (state is DictationState.Refining) {
                 CircularProgressIndicator(
@@ -316,8 +316,8 @@ private fun Bars(levels: List<Float>, color: Color) {
 }
 
 @Composable
-private fun PanelPreview(state: DictationState, refinementEnabled: Boolean = true) {
-    SpeecherTheme { DictationPanel(state, refinementEnabled, {}, {}, {}, {}) }
+private fun PanelPreview(state: DictationState, canRefine: Boolean = true) {
+    SpeecherTheme { DictationPanel(state, canRefine, {}, {}, {}, {}) }
 }
 
 private const val SAMPLE_TEXT =
@@ -339,7 +339,7 @@ internal fun PanelListeningPreview() = PanelPreview(DictationState.Listening(SAM
 @PreviewLightDark
 @Composable
 internal fun PanelListeningNoRefinePreview() =
-    PanelPreview(DictationState.Listening(SAMPLE_TEXT, "", 0.7f), refinementEnabled = false)
+    PanelPreview(DictationState.Listening(SAMPLE_TEXT, "", 0.7f), canRefine = false)
 
 @PreviewLightDark
 @Composable

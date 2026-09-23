@@ -9,6 +9,10 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
+/** chatgpt.com's speech endpoints expect a browser, as the ChatGPT web app is their client. */
+internal const val codexBrowserUserAgent =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+
 class CodexDictationClient(
     private val transport: WebSocketTransport,
     token: String,
@@ -30,10 +34,7 @@ class CodexDictationClient(
     init {
         transport.open(
             endpoint,
-            mapOf(
-                "User-Agent" to
-                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
-            ),
+            mapOf("User-Agent" to codexBrowserUserAgent),
             "chatgpt-dictation, openai-bearer.$token",
             this,
         )

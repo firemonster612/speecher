@@ -43,3 +43,10 @@ tasks.register<JavaExec>("liveClaude") {
     classpath = live.runtimeClasspath
     mainClass.set("app.speecher.protocol.LiveClaudeKt")
 }
+
+tasks.register<JavaExec>("liveTranscribe") {
+    description =
+        "Opt-in live ChatGPT transcribe + refinement over BC TLS HTTP using ~/.codex/auth.json"
+    classpath = live.runtimeClasspath
+    mainClass.set("app.speecher.protocol.LiveTranscribeKt")
+}

@@ -54,6 +54,7 @@ class DictationEngineTest {
                         )
                     },
                     { _, raw -> raw },
+                    { error("no batch pass") },
                     { commits.add(it) },
                     Executor { it.run() },
                     { if (it is DictationState.Listening) listening.countDown() },
@@ -113,6 +114,7 @@ class DictationEngineTest {
                     client
                 },
                 { _, raw -> raw },
+                { error("no batch pass") },
                 { commits.add(it) },
                 Executor { it.run() },
                 {},
@@ -146,6 +148,7 @@ class DictationEngineTest {
                     client
                 },
                 { _, raw -> raw },
+                { error("no batch pass") },
                 { commits.add(it) },
                 Executor { it.run() },
                 {},
@@ -174,6 +177,7 @@ class DictationEngineTest {
                     Client()
                 },
                 { _, _ -> "Hello." },
+                { error("no batch pass") },
                 { commits.add(it) },
                 Executor { it.run() },
                 {},
@@ -194,6 +198,7 @@ class DictationEngineTest {
                     Client()
                 },
                 { _, raw -> raw },
+                { error("no batch pass") },
                 { commits.add(it) },
                 Executor { it.run() },
                 {},
@@ -218,6 +223,7 @@ class DictationEngineTest {
                     Client()
                 },
                 { _, raw -> raw },
+                { error("no batch pass") },
                 { text -> if (commitSucceeds) commits.add(text) else false },
                 Executor { it.run() },
                 {},
@@ -245,6 +251,7 @@ class DictationEngineTest {
                     Client()
                 },
                 { _, raw -> raw },
+                { error("no batch pass") },
                 { true },
                 Executor { it.run() },
                 {},
@@ -274,6 +281,7 @@ class DictationEngineTest {
                     Client()
                 },
                 { _, raw -> if (++attempts == 1) error("temporary") else "$raw refined" },
+                { error("no batch pass") },
                 { commits.add(it) },
                 Executor { it.run() },
                 {},
@@ -285,5 +293,52 @@ class DictationEngineTest {
         assertEquals("save me", (engine.state as DictationState.Failed).transcript)
         engine.retry()
         assertEquals(listOf("save me refined"), commits)
+    }
+
+    @Test
+    fun `ChatGPT refined insert re-transcribes the recording then cleans up, falling back to the stream`() {
+        val capture = Capture()
+        lateinit var speech: (SpeechEvent) -> Unit
+        val uploads = mutableListOf<List<Byte>>()
+        var batchFails = false
+        val commits = mutableListOf<String>()
+        fun engine() =
+            DictationEngine(
+                capture::capture,
+                capture::stop,
+                { _, events ->
+                    speech = events
+                    Client()
+                },
+                { _, raw -> "clean: $raw" },
+                { pcm ->
+                    uploads.add(pcm.toList())
+                    if (batchFails) error("HTTP 500") else "Hello there, friend."
+                },
+                { commits.add(it) },
+                Executor { it.run() },
+                {},
+            )
+        val batch = engine()
+        batch.start(Provider.ChatGpt)
+        speech(SpeechEvent.Connected)
+        capture.audio?.invoke(byteArrayOf(1, 2), 0f)
+        capture.audio?.invoke(byteArrayOf(3, 4), 0f)
+        speech(SpeechEvent.Final("hello there friend"))
+        batch.insertRefined(null)
+        speech(SpeechEvent.Completed)
+        assertEquals(listOf(listOf<Byte>(1, 2, 3, 4)), uploads)
+        assertEquals(listOf("Hello there, friend."), commits)
+
+        batchFails = true
+        val fallback = engine()
+        fallback.start(Provider.ChatGpt)
+        speech(SpeechEvent.Connected)
+        capture.audio?.invoke(byteArrayOf(5), 0f)
+        speech(SpeechEvent.Final("streamed words"))
+        fallback.insertRefined(Provider.Claude)
+        speech(SpeechEvent.Completed)
+        assertEquals(listOf<Byte>(5), uploads.last())
+        assertEquals("clean: streamed words", commits.last())
     }
 }
