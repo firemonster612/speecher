@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import androidx.core.content.edit
+import app.speecher.android.dictation.ActiveDictation
 
 class ImeSwap(private val context: Context) {
     private val preferences = context.getSharedPreferences("previous-ime", Context.MODE_PRIVATE)
@@ -54,7 +55,13 @@ class ImeSwap(private val context: Context) {
         preferences.edit(commit = true) { clear() }
     }
 
+    /**
+     * Crash recovery. Our keyboard is the default but this process has no live dictation, so the
+     * previous process died mid-swap and would otherwise strand the user in our keyboard. A swap in
+     * progress always has a live engine, so this never undoes one.
+     */
     fun restoreOnRestart() {
+        if (ActiveDictation.engine != null) return
         val previous = preferences.getString("id", null) ?: return
         val selected =
             Settings.Secure.getString(context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
