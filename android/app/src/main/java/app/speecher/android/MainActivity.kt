@@ -65,7 +65,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         settings = settingsStore.load()
         refresh()
-        page = if (status.complete) Page.Home else Page.Setup
+        signIn.restore(this)
+        page = if (status.complete && signIn.activeProvider == null) Page.Home else Page.Setup
         if (savedInstanceState == null) handleSignInIntent(intent)
         setContent {
             SpeecherTheme {

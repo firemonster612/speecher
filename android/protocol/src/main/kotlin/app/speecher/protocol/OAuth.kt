@@ -74,6 +74,14 @@ fun oauthRedirect(provider: OAuthProvider): String =
     if (provider == OAuthProvider.Claude) "http://localhost:54545/callback"
     else "http://localhost:1455/auth/callback"
 
+/**
+ * Rebuild a pending attempt from a persisted verifier and state so a pasted callback can finish
+ * even after the app was killed during the browser trip. The authorize URL is not restored, since
+ * only the code exchange (which uses the verifier and state) remains.
+ */
+fun restoredAttempt(verifier: String, state: String): OAuthAttempt =
+    OAuthAttempt(verifier, state, "https://localhost/".toHttpUrl())
+
 fun oauthCallback(
     provider: OAuthProvider,
     attempt: OAuthAttempt,

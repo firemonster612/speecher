@@ -65,6 +65,20 @@ class OAuthTest {
     }
 
     @Test
+    fun `an attempt restored from disk still validates a pasted callback`() {
+        val attempt = oauthAttempt(OAuthProvider.ChatGpt)
+        val restored = restoredAttempt(attempt.verifier, attempt.state)
+        assertEquals(attempt.verifier, restored.verifier)
+        assertEquals(
+            "abc",
+            pastedCode(
+                restored,
+                "http://localhost:1455/auth/callback?code=abc&state=${attempt.state}",
+            ),
+        )
+    }
+
+    @Test
     fun `Claude exchanges JSON and refreshes JSON`() {
         MockWebServer().use { server ->
             server.enqueue(

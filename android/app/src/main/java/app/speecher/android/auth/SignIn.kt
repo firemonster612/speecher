@@ -1,12 +1,14 @@
 package app.speecher.android.auth
 
 import android.app.Activity
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import app.speecher.android.dictation.Provider
@@ -20,19 +22,27 @@ import app.speecher.protocol.exchangeTokens
 import app.speecher.protocol.oauthAttempt
 import app.speecher.protocol.oauthCallback
 import app.speecher.protocol.pastedCode
-import java.net.InetAddress
+import app.speecher.protocol.restoredAttempt
 import java.net.ServerSocket
 import java.net.SocketTimeoutException
 import java.util.concurrent.CountDownLatch
 
-/** Owns one browser sign-in attempt across activity recreation. */
-class SignIn(private val tokenStore: TokenStore) : AutoCloseable {
+/**
+ * Owns one browser sign-in attempt, persisted so a pasted callback survives the app being killed.
+ */
+class SignIn(context: Context) : AutoCloseable {
+    private val tokenStore = TokenStore(context)
+    private val pending = context.getSharedPreferences("pending-signin", Context.MODE_PRIVATE)
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var listener: ServerSocket? = null
     private var listenerClosed: CountDownLatch? = null
-    private var attempt: OAuthAttempt? = null
-    private var provider: OAuthProvider? = null
+    private var attempt: OAuthAttempt? = restoredPending()
+    private var provider: OAuthProvider? = restoredProvider()
     @Volatile private var sequence = 0
+
+    /** The provider of a sign-in still waiting for its code, restored after the app was killed. */
+    val pendingProvider: OAuthProvider?
+        get() = provider
 
     fun start(provider: OAuthProvider, result: (Result<OAuthTokens>) -> Unit): OAuthAttempt {
         closeListener()
@@ -43,6 +53,11 @@ class SignIn(private val tokenStore: TokenStore) : AutoCloseable {
         val current = oauthAttempt(provider)
         this.provider = provider
         attempt = current
+        pending.edit(commit = true) {
+            putString("provider", provider.name)
+            putString("verifier", current.verifier)
+            putString("state", current.state)
+        }
         sharedExecutor.execute {
             try {
                 previous?.await()
@@ -50,7 +65,10 @@ class SignIn(private val tokenStore: TokenStore) : AutoCloseable {
                 val outcome = runCatching {
                     val port = if (provider == OAuthProvider.Claude) 54545 else 1455
                     val deadline = System.currentTimeMillis() + 180_000
-                    ServerSocket(port, 1, InetAddress.getLoopbackAddress()).use { socket ->
+                    // Wildcard bind so the browser reaches us on either 127.0.0.1 or ::1; the
+                    // accept
+                    // loop rejects anything that is not from this device's loopback.
+                    ServerSocket(port, 1).use { socket ->
                         synchronized(this) {
                             if (id != sequence) {
                                 socket.close()
@@ -70,6 +88,7 @@ class SignIn(private val tokenStore: TokenStore) : AutoCloseable {
                                     continue
                                 }
                             client.use {
+                                if (!it.inetAddress.isLoopbackAddress) return@use
                                 it.soTimeout = 2_000
                                 val requestLine =
                                     try {
@@ -114,8 +133,8 @@ class SignIn(private val tokenStore: TokenStore) : AutoCloseable {
     }
 
     fun completePastedCode(pasted: String, result: (Result<OAuthTokens>) -> Unit) {
-        val current = requireNotNull(attempt) { "No sign-in in progress" }
-        val forProvider = requireNotNull(provider) { "No sign-in in progress" }
+        val current = requireNotNull(attempt) { "No sign-in in progress. Tap Sign in first." }
+        val forProvider = requireNotNull(provider) { "No sign-in in progress. Tap Sign in first." }
         ++sequence
         closeListener()
         sharedExecutor.execute {
@@ -126,6 +145,17 @@ class SignIn(private val tokenStore: TokenStore) : AutoCloseable {
         }
     }
 
+    private fun restoredPending(): OAuthAttempt? {
+        val verifier = pending.getString("verifier", null) ?: return null
+        val state = pending.getString("state", null) ?: return null
+        return restoredAttempt(verifier, state)
+    }
+
+    private fun restoredProvider(): OAuthProvider? =
+        pending.getString("provider", null)?.let { name ->
+            OAuthProvider.entries.firstOrNull { it.name == name }
+        }
+
     private fun exchange(
         provider: OAuthProvider,
         attempt: OAuthAttempt,
@@ -133,6 +163,7 @@ class SignIn(private val tokenStore: TokenStore) : AutoCloseable {
     ): OAuthTokens {
         val saved = exchangeTokens(sharedHttp, provider, attempt, code)
         tokenStore.save(provider, saved)
+        pending.edit(commit = true) { clear() }
         return saved
     }
 
@@ -170,13 +201,26 @@ class SignInViewModel : ViewModel() {
         private set
 
     fun start(activity: Activity, provider: Provider) {
-        if (signIn == null) signIn = SignIn(TokenStore(activity.applicationContext))
+        if (signIn == null) signIn = SignIn(activity.applicationContext)
         activeProvider = provider
         error = null
         val attempt = signIn?.start(provider.oauth, ::finish) ?: return
         CustomTabsIntent.Builder()
             .build()
             .launchUrl(activity, attempt.authorizeUrl.toString().toUri())
+    }
+
+    /**
+     * After the app was killed mid-sign-in, bring back the paste field for the pending provider.
+     */
+    fun restore(activity: Activity) {
+        val existing = signIn ?: SignIn(activity.applicationContext).also { signIn = it }
+        if (activeProvider == null) {
+            activeProvider =
+                existing.pendingProvider?.let { pending ->
+                    Provider.entries.firstOrNull { it.oauth == pending }
+                }
+        }
     }
 
     fun paste(pasted: String) {

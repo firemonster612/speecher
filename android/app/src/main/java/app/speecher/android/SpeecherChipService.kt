@@ -24,6 +24,8 @@ class SpeecherChipService : AccessibilityService() {
     private val owner = ServiceViewOwner()
     private val window by lazy { getSystemService(WINDOW_SERVICE) as WindowManager }
     private var chip: ComposeView? = null
+    private var chipX = Int.MIN_VALUE
+    private var chipY = Int.MIN_VALUE
     private var passwordFocused = false
     private val refresh = Runnable { updateChip() }
 
@@ -67,8 +69,14 @@ class SpeecherChipService : AccessibilityService() {
         }
         val bounds = Rect()
         keyboard.getBoundsInScreen(bounds)
-        val size = (48 * resources.displayMetrics.density).toInt()
-        val margin = (16 * resources.displayMetrics.density).toInt()
+        val size = (44 * resources.displayMetrics.density).toInt()
+        val margin = (6 * resources.displayMetrics.density).toInt()
+        // Sit on the keyboard's top-right strip, over Gboard's own mic, so it never covers the app.
+        val x = resources.displayMetrics.widthPixels - bounds.right + margin
+        val y = bounds.top + margin
+        val existing = chip
+        // The suggestion strip fires window changes on every keystroke; don't move a settled chip.
+        if (existing != null && x == chipX && y == chipY) return
         val params =
             WindowManager.LayoutParams(
                     size,
@@ -80,13 +88,14 @@ class SpeecherChipService : AccessibilityService() {
                 )
                 .apply {
                     gravity = Gravity.TOP or Gravity.END
-                    x = resources.displayMetrics.widthPixels - bounds.right + margin
-                    y = bounds.top - size - margin
+                    this.x = x
+                    this.y = y
                     fitInsetsTypes = 0
                     layoutInDisplayCutoutMode =
                         WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
                 }
-        val existing = chip
+        chipX = x
+        chipY = y
         if (existing != null) {
             window.updateViewLayout(existing, params)
             return
@@ -143,6 +152,8 @@ class SpeecherChipService : AccessibilityService() {
     private fun removeChip() {
         chip?.let(window::removeView)
         chip = null
+        chipX = Int.MIN_VALUE
+        chipY = Int.MIN_VALUE
     }
 
     override fun onDestroy() {
