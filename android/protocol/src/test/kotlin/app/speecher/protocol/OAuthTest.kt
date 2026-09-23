@@ -110,9 +110,9 @@ class OAuthTest {
                 request.body!!.utf8(),
             )
             // The Claude Code Axios header set that clears Cloudflare on Anthropic domains.
+            // Accept-Encoding is left to the client's brotli interceptor so the reply is decoded.
             assertEquals("axios/1.15.2", request.headers["User-Agent"])
             assertEquals("application/json, text/plain, */*", request.headers["Accept"])
-            assertEquals("gzip, compress, deflate, br", request.headers["Accept-Encoding"])
             assertEquals("close", request.headers["Connection"])
             val refreshed =
                 refreshTokens(

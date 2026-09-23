@@ -228,14 +228,14 @@ private fun requestTokens(
 
 /**
  * The header set Claude Code's Axios OAuth client sends, which CLI Proxy API replays to clear
- * Cloudflare's bot checks on Anthropic domains. Brotli on the shared client decodes the reply this
- * `Accept-Encoding` invites. OkHttp owns the TLS handshake, so the JA3 fingerprint is Conscrypt's,
- * not Node's; a probe from this network still reached the OAuth handler with these headers.
+ * Cloudflare's bot checks on Anthropic domains. Accept-Encoding is left to the shared client's
+ * brotli interceptor, which advertises br/gzip and, crucially, decodes the reply; setting it here
+ * ourselves would make the interceptor pass the compressed bytes through undecoded. OkHttp owns the
+ * TLS handshake, so the JA3 fingerprint is Conscrypt's, not Node's.
  */
 private fun Request.Builder.anthropicAxiosHeaders(): Request.Builder =
     header("Accept", "application/json, text/plain, */*")
         .header("User-Agent", "axios/1.15.2")
-        .header("Accept-Encoding", "gzip, compress, deflate, br")
         .header("Connection", "close")
 
 private val JSON_MEDIA_TYPE = "application/json".toMediaType()

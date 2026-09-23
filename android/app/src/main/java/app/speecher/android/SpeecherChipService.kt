@@ -9,6 +9,7 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.compose.ui.platform.ComposeView
 import app.speecher.android.dictation.ActiveDictation
@@ -18,6 +19,7 @@ import app.speecher.android.dictation.SettingsStore
 import app.speecher.android.dictation.createDictationEngine
 import app.speecher.android.ui.DictationChip
 import app.speecher.android.ui.SpeecherTheme
+import kotlin.math.abs
 
 class SpeecherChipService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
@@ -67,16 +69,25 @@ class SpeecherChipService : AccessibilityService() {
             removeChip()
             return
         }
-        val bounds = Rect()
-        keyboard.getBoundsInScreen(bounds)
         val size = (44 * resources.displayMetrics.density).toInt()
         val margin = (6 * resources.displayMetrics.density).toInt()
-        // Sit on the keyboard's top-right strip, over Gboard's own mic, so it never covers the app.
-        val x = resources.displayMetrics.widthPixels - bounds.right + margin
-        val y = bounds.top + margin
+        val kb = Rect().also(keyboard::getBoundsInScreen)
+        val mic = keyboard.micRect()
         val existing = chip
-        // The suggestion strip fires window changes on every keystroke; don't move a settled chip.
-        if (existing != null && x == chipX && y == chipY) return
+        // Sit on the keyboard's own voice button when we can read it, else on the top-right strip
+        // where it usually lives. If detection blips to null while the chip is already up, hold the
+        // last spot rather than jump to the fallback, so it never flips back and forth.
+        val center =
+            when {
+                mic != null -> mic.centerX() to mic.centerY()
+                existing != null -> return
+                else -> (kb.right - size / 2 - margin) to (kb.top + size / 2 + margin)
+            }
+        val x = center.first - size / 2
+        val y = center.second - size / 2
+        // The suggestion strip fires window changes on every keystroke; ignore small jitter so a
+        // settled chip never bounces.
+        if (existing != null && abs(x - chipX) < JITTER && abs(y - chipY) < JITTER) return
         val params =
             WindowManager.LayoutParams(
                     size,
@@ -87,7 +98,7 @@ class SpeecherChipService : AccessibilityService() {
                     android.graphics.PixelFormat.TRANSLUCENT,
                 )
                 .apply {
-                    gravity = Gravity.TOP or Gravity.END
+                    gravity = Gravity.TOP or Gravity.START
                     this.x = x
                     this.y = y
                     fitInsetsTypes = 0
@@ -105,6 +116,23 @@ class SpeecherChipService : AccessibilityService() {
         view.setContent { SpeecherTheme { DictationChip(onClick = ::onChipTap) } }
         window.addView(view, params)
         chip = view
+    }
+
+    /** The screen bounds of the keyboard's own voice-input button, if it exposes one. */
+    private fun AccessibilityWindowInfo.micRect(): Rect? {
+        val voice = root?.let(::findVoiceNode) ?: return null
+        return Rect().also(voice::getBoundsInScreen).takeIf { !it.isEmpty }
+    }
+
+    private fun findVoiceNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val label = node.contentDescription?.toString()?.lowercase()
+        if (label != null && ("voice" in label || "microphone" in label)) return node
+        for (i in 0 until node.childCount) {
+            node.getChild(i)?.let(::findVoiceNode)?.let {
+                return it
+            }
+        }
+        return null
     }
 
     private fun onChipTap() {
@@ -161,5 +189,9 @@ class SpeecherChipService : AccessibilityService() {
         removeChip()
         owner.destroy()
         super.onDestroy()
+    }
+
+    private companion object {
+        const val JITTER = 24
     }
 }
