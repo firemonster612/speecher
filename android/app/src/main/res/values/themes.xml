@@ -1,7 +1,7 @@
 <resources>
     <!-- Only paints the window before Compose draws; SpeecherTheme owns every colour after that. -->
     <style name="Theme.Speecher" parent="@android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">#FAF9F4</item>
-        <item name="android:windowSplashScreenBackground">#FAF9F4</item>
+        <item name="android:windowBackground">@color/launch_background</item>
+        <item name="android:windowSplashScreenBackground">@color/launch_background</item>
     </style>
 </resources>

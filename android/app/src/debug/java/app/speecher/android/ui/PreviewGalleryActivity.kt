@@ -35,9 +35,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.speecher.android.R
-import app.speecher.android.dictation.Provider
-import app.speecher.android.dictation.SetupStatus
-import app.speecher.android.dictation.SpeecherSettings
 
 private val bottom: (@Composable () -> Unit) -> @Composable () -> Unit = { content ->
     { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) { content() } }
@@ -91,8 +88,6 @@ private fun LauncherIcons() {
     }
 }
 
-private val pending = SetupStatus(setOf(Provider.Claude), true, true, false, false)
-
 /** One entry per preview state, keyed by the `state` extra. */
 private val states: Map<String, @Composable () -> Unit> =
     mapOf(
@@ -109,54 +104,11 @@ private val states: Map<String, @Composable () -> Unit> =
         "launcher-icon" to { LauncherIcons() },
         "home-ready" to { HomeReadyPreview() },
         "home-pending" to { HomeSetupPendingPreview() },
-        "onboarding-fresh" to
-            {
-                SpeecherScreen("", null) {
-                    Onboarding(SetupStatus(emptySet(), false, false, false, false), {}, {}, {}, {})
-                }
-            },
-        "onboarding-partway" to
-            {
-                SpeecherScreen("", null) { Onboarding(pending, {}, {}, {}, {}) }
-            },
-        "onboarding-done" to
-            {
-                SpeecherScreen("", null) {
-                    Onboarding(
-                        SetupStatus(Provider.entries.toSet(), true, true, true, true),
-                        {},
-                        {},
-                        {},
-                        {},
-                    )
-                }
-            },
-        "settings" to
-            {
-                SpeecherScreen("Settings", {}) {
-                    Settings(
-                        SpeecherSettings(
-                            vocabulary = listOf("Speecher", "Kirigami", "Priya Raman")
-                        ),
-                        Provider.entries.toSet(),
-                        {},
-                        {},
-                        {},
-                    )
-                }
-            },
-        "settings-refinement-off" to
-            {
-                SpeecherScreen("Settings", {}) {
-                    Settings(
-                        SpeecherSettings(Provider.ChatGpt, refinementEnabled = false),
-                        setOf(Provider.ChatGpt),
-                        {},
-                        {},
-                        {},
-                    )
-                }
-            },
+        "onboarding-fresh" to { OnboardingFreshPreview() },
+        "onboarding-partway" to { OnboardingPartwayPreview() },
+        "onboarding-done" to { OnboardingDonePreview() },
+        "settings" to { SettingsPreview() },
+        "settings-refinement-off" to { SettingsRefinementOffPreview() },
     )
 
 /**

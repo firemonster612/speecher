@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -40,6 +41,11 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.dictation.DictationState
@@ -49,8 +55,6 @@ import kotlin.math.abs
 import kotlin.math.sin
 import kotlinx.coroutines.delay
 
-/** Gboard's height on the Pixel 7 emulator (883 px region less the 63 px gesture bar, 420 dpi). */
-private val PanelHeight = 312.dp
 private const val BAR_COUNT = 29
 private const val SAMPLE_MILLIS = 70L
 
@@ -77,30 +81,46 @@ fun DictationPanel(
     onRecover: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainer) {
-        Column(
-            Modifier.navigationBarsPadding()
-                .height(PanelHeight)
-                .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 12.dp)
-        ) {
-            Box(Modifier.fillMaxWidth().height(56.dp), contentAlignment = Alignment.Center) {
-                when (state) {
-                    DictationState.Connecting -> ConnectingBars()
-                    is DictationState.Listening -> LiveBars(state.level)
-                    is DictationState.Refining -> RefiningBars()
-                    is DictationState.Failed -> FailureMessage(state)
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val panelHeight = (maxHeight * 0.38f).coerceIn(240.dp, 360.dp)
+        Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainer) {
+            Column(
+                Modifier.navigationBarsPadding()
+                    .height(panelHeight)
+                    .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 12.dp)
+            ) {
+                val status =
+                    when (state) {
+                        DictationState.Connecting -> "Connecting"
+                        is DictationState.Listening -> "Listening"
+                        is DictationState.Refining -> "Refining transcript"
+                        is DictationState.Failed -> state.reason.title
+                    }
+                Box(
+                    Modifier.fillMaxWidth().height(56.dp).semantics {
+                        liveRegion = LiveRegionMode.Polite
+                        stateDescription = status
+                    },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    when (state) {
+                        DictationState.Connecting -> ConnectingBars()
+                        is DictationState.Listening -> LiveBars(state.level)
+                        is DictationState.Refining -> RefiningBars()
+                        is DictationState.Failed -> FailureMessage(state)
+                    }
                 }
-            }
-            Transcript(state, Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PanelButtons(
-                    state,
-                    refinementEnabled,
-                    onCancel,
-                    onInsert,
-                    onInsertRefined,
-                    onRecover,
-                )
+                Transcript(state, Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PanelButtons(
+                        state,
+                        refinementEnabled,
+                        onCancel,
+                        onInsert,
+                        onInsertRefined,
+                        onRecover,
+                    )
+                }
             }
         }
     }
@@ -161,7 +181,10 @@ private fun RowScope.PanelButtons(
     if (refinementEnabled) {
         FilledTonalButton(onInsertRefined, button, enabled = canInsert) {
             if (state is DictationState.Refining) {
-                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                CircularProgressIndicator(
+                    Modifier.size(18.dp).semantics { contentDescription = "Refining transcript" },
+                    strokeWidth = 2.dp,
+                )
             } else {
                 Text("Insert refined", maxLines = 1)
             }
