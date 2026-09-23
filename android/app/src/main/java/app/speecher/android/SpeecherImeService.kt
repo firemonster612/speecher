@@ -71,9 +71,12 @@ class SpeecherImeService : InputMethodService() {
         super.onFinishInput()
     }
 
-    override fun onWindowHidden() {
+    /**
+     * A hide is a dismissal only if the panel stays hidden. Apps that recreate on rotation hide and
+     * re-show the keyboard within a few hundred milliseconds, and that must not end the dictation.
+     */
+    private val dismiss = Runnable {
         ActiveDictation.engine?.cancel()
-        super.onWindowHidden()
         if (
             android.provider.Settings.Secure.getString(
                 contentResolver,
@@ -81,6 +84,17 @@ class SpeecherImeService : InputMethodService() {
             ) == speecherImeId(this)
         )
             switchBack()
+    }
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    override fun onWindowShown() {
+        handler.removeCallbacks(dismiss)
+        super.onWindowShown()
+    }
+
+    override fun onWindowHidden() {
+        super.onWindowHidden()
+        handler.postDelayed(dismiss, DISMISS_GRACE_MILLIS)
     }
 
     fun showState(state: DictationState) {
@@ -109,9 +123,12 @@ class SpeecherImeService : InputMethodService() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(dismiss)
         ActiveDictation.observe = null
         ActiveDictation.onInserted = null
         owner.destroy()
         super.onDestroy()
     }
 }
+
+private const val DISMISS_GRACE_MILLIS = 750L
