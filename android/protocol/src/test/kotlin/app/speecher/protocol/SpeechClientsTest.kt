@@ -4,7 +4,6 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
-import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
@@ -31,7 +30,7 @@ class SpeechClientsTest {
             val failures = LinkedBlockingQueue<SpeechEvent.Failed>()
             val client =
                 ClaudeVoiceClient(
-                    OkHttpClient(),
+                    webSocketTransport(server.url("/").toString()),
                     "secret",
                     emptyList(),
                     { if (it is SpeechEvent.Failed) failures.add(it) },
@@ -66,7 +65,7 @@ class SpeechClientsTest {
             val failures = LinkedBlockingQueue<SpeechEvent.Failed>()
             val client =
                 CodexDictationClient(
-                    OkHttpClient(),
+                    webSocketTransport(server.url("/").toString()),
                     "secret",
                     { if (it is SpeechEvent.Failed) failures.add(it) },
                     server.url("/dictation").toString().replaceFirst("http", "ws"),
@@ -106,7 +105,7 @@ class SpeechClientsTest {
             val events = LinkedBlockingQueue<SpeechEvent>()
             val client =
                 ClaudeVoiceClient(
-                    OkHttpClient(),
+                    webSocketTransport(server.url("/").toString()),
                     "secret",
                     listOf("Speecher"),
                     events::add,
@@ -161,7 +160,7 @@ class SpeechClientsTest {
             val events = LinkedBlockingQueue<SpeechEvent>()
             val client =
                 CodexDictationClient(
-                    OkHttpClient(),
+                    webSocketTransport(server.url("/").toString()),
                     "secret",
                     events::add,
                     server.url("/dictation").toString().replaceFirst("http", "ws"),
@@ -189,6 +188,7 @@ class SpeechClientsTest {
             assertEquals("{\"type\":\"session.close\"}", frames.poll(3, TimeUnit.SECONDS))
             assertEquals(SpeechEvent.Final("hello"), events.poll(3, TimeUnit.SECONDS))
             assertEquals(SpeechEvent.Completed, events.poll(3, TimeUnit.SECONDS))
+            client.cancel()
         }
     }
 }

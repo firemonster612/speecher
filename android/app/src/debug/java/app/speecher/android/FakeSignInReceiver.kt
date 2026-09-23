@@ -17,7 +17,8 @@ class FakeSignInReceiver : BroadcastReceiver() {
         val provider =
             OAuthProvider.entries.firstOrNull { it.name == intent.getStringExtra("provider") }
                 ?: OAuthProvider.Claude
+        val access = intent.getStringExtra("access") ?: "fake-access"
         TokenStore(context)
-            .save(provider, OAuthTokens("fake-access", "fake-refresh", "", Long.MAX_VALUE, ""))
+            .save(provider, OAuthTokens(access, "fake-refresh", "", Long.MAX_VALUE, ""))
     }
 }

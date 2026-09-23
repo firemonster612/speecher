@@ -3,24 +3,17 @@ package app.speecher.protocol
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
-import okhttp3.WebSocket
-import okhttp3.WebSocketListener
-import okio.ByteString.Companion.toByteString
 
 class ClaudeVoiceClient(
-    http: OkHttpClient,
+    private val transport: WebSocketTransport,
     token: String,
     vocabulary: List<String>,
     private val events: (SpeechEvent) -> Unit,
     endpoint: String = "wss://claude.ai/api/ws/speech_to_text/voice_stream",
-) : WebSocketListener(), SpeechClient {
+) : WebSocketTransport.Listener, SpeechClient {
     private val lock = Any()
     private val pending = mutableListOf<ByteArray>()
     private var pendingBytes = 0
-    private var socket: WebSocket? = null
     @Volatile private var connected = false
     @Volatile private var stopped = false
     @Volatile private var cancelled = false
@@ -46,20 +39,17 @@ class ClaudeVoiceClient(
                     }
                 }
                 .build()
-        val request =
-            Request.Builder()
-                .url(url)
-                .header("Authorization", "Bearer $token")
-                .header("User-Agent", "Claude-Code")
-                .header("x-app", "cli")
-                .header("anthropic-client-platform", "linux")
-                .apply {
-                    claudeVoiceKeytermsHeader(vocabulary).takeIf(String::isNotEmpty)?.let {
-                        header("x-config-keyterms", it)
-                    }
-                }
-                .build()
-        socket = http.newWebSocket(request, this)
+        val headers =
+            mutableMapOf(
+                "Authorization" to "Bearer $token",
+                "User-Agent" to "Claude-Code",
+                "x-app" to "cli",
+                "anthropic-client-platform" to "linux",
+            )
+        claudeVoiceKeytermsHeader(vocabulary).takeIf(String::isNotEmpty)?.let {
+            headers["x-config-keyterms"] = it
+        }
+        transport.open(url.toString(), headers, null, this)
         keepAlive.schedule(
             { if (!connected) fail(false, "no connect in 10s") },
             10,
@@ -67,7 +57,7 @@ class ClaudeVoiceClient(
         )
     }
 
-    override fun onOpen(webSocket: WebSocket, response: Response) {
+    override fun onOpen() {
         if (cancelled || failed) return
         val buffered =
             synchronized(lock) {
@@ -77,18 +67,18 @@ class ClaudeVoiceClient(
                     pendingBytes = 0
                 }
             }
-        webSocket.send("{\"type\":\"KeepAlive\"}")
+        transport.sendText("{\"type\":\"KeepAlive\"}")
         keepAlive.scheduleAtFixedRate(
-            { if (!cancelled && !completed) webSocket.send("{\"type\":\"KeepAlive\"}") },
+            { if (!cancelled && !completed) transport.sendText("{\"type\":\"KeepAlive\"}") },
             8,
             8,
             TimeUnit.SECONDS,
         )
-        buffered.forEach { webSocket.send(it.toByteString()) }
+        buffered.forEach { transport.sendBinary(it) }
         if (stopped) closeStream() else events(SpeechEvent.Connected)
     }
 
-    override fun onMessage(webSocket: WebSocket, text: String) {
+    override fun onText(text: String) {
         if (cancelled || completed || failed) return
         when (val event = parseClaudeVoiceEvent(text)) {
             is ClaudeVoiceEvent.Working -> {
@@ -106,7 +96,7 @@ class ClaudeVoiceClient(
                     completed = true
                     keepAlive.shutdownNow()
                     events(SpeechEvent.Completed)
-                    webSocket.close(1000, null)
+                    transport.close(1000, null)
                 }
             }
             is ClaudeVoiceEvent.ServerError ->
@@ -116,16 +106,16 @@ class ClaudeVoiceClient(
         }
     }
 
-    override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-        val code = response?.code
+    override fun onFailure(error: Throwable, statusCode: Int?) {
+        val code = statusCode
         val detail =
-            listOfNotNull(code?.let { "HTTP $it" }, t.message?.takeIf { it.isNotBlank() })
+            listOfNotNull(code?.let { "HTTP $it" }, error.message?.takeIf { it.isNotBlank() })
                 .joinToString(": ")
                 .ifEmpty { "connect failed" }
         fail(code == 401 || code == 403, detail)
     }
 
-    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+    override fun onClosed(code: Int, reason: String) {
         fail(false, "closed $code ${reason.take(80)}".trim())
     }
 
@@ -148,7 +138,7 @@ class ClaudeVoiceClient(
             fail(false, "audio buffer overflow")
             return
         }
-        if (direct) socket?.send(pcm.toByteString())
+        if (direct) transport.sendBinary(pcm)
     }
 
     override fun stop() {
@@ -164,7 +154,7 @@ class ClaudeVoiceClient(
     }
 
     private fun closeStream() {
-        socket?.send("{\"type\":\"CloseStream\"}")
+        transport.sendText("{\"type\":\"CloseStream\"}")
         keepAlive.schedule({ if (!completed) fail(false, "no close in 5s") }, 5, TimeUnit.SECONDS)
     }
 
@@ -175,7 +165,7 @@ class ClaudeVoiceClient(
             pending.clear()
             pendingBytes = 0
         }
-        socket?.cancel()
+        transport.cancel()
     }
 
     private fun fail(authentication: Boolean, detail: String = "") {
@@ -190,6 +180,6 @@ class ClaudeVoiceClient(
         if (!first) return
         keepAlive.shutdownNow()
         events(SpeechEvent.Failed(authentication, detail))
-        socket?.cancel()
+        transport.cancel()
     }
 }

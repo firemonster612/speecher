@@ -3,13 +3,13 @@ package app.speecher.android.dictation
 import app.speecher.protocol.ClaudeVoiceClient
 import app.speecher.protocol.SpeechClient
 import app.speecher.protocol.SpeechEvent
+import app.speecher.protocol.webSocketTransport
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
-import okhttp3.OkHttpClient
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.junit.Assert.assertEquals
@@ -46,7 +46,7 @@ class DictationEngineTest {
                     {},
                     { _, events ->
                         ClaudeVoiceClient(
-                            OkHttpClient(),
+                            webSocketTransport(server.url("/").toString()),
                             "fake",
                             emptyList(),
                             events,

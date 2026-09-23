@@ -11,6 +11,7 @@ import app.speecher.protocol.CodexDictationClient
 import app.speecher.protocol.SpeechClient
 import app.speecher.protocol.SpeechEvent
 import app.speecher.protocol.refineTranscript
+import app.speecher.protocol.webSocketTransport
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import okhttp3.OkHttpClient
@@ -316,13 +317,19 @@ fun createDictationEngine(
             val access = token(selected).accessToken
             if (selected == Provider.Claude)
                 ClaudeVoiceClient(
-                    http,
+                    webSocketTransport(endpoints.getValue(selected).speech),
                     access,
                     settings.vocabulary,
                     events,
                     endpoints.getValue(selected).speech,
                 )
-            else CodexDictationClient(http, access, events, endpoints.getValue(selected).speech)
+            else
+                CodexDictationClient(
+                    webSocketTransport(endpoints.getValue(selected).speech),
+                    access,
+                    events,
+                    endpoints.getValue(selected).speech,
+                )
         },
         { selected, raw ->
             refineTranscript(
