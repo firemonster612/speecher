@@ -12,8 +12,8 @@ android {
         applicationId = "app.speecher.android"
         minSdk = 31
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
     }
 
     buildFeatures {
@@ -74,6 +74,7 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     implementation(libs.browser)
     implementation(libs.okhttp)
+    implementation(libs.okhttp.brotli)
     implementation(libs.lifecycle)
     implementation(libs.savedstate)
     implementation(libs.serialization.json)

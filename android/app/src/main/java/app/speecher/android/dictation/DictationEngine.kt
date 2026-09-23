@@ -14,8 +14,11 @@ import app.speecher.protocol.refineTranscript
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import okhttp3.OkHttpClient
+import okhttp3.brotli.BrotliInterceptor
 
-val sharedHttp = OkHttpClient()
+// Brotli lets the OAuth requests advertise the same compressions Claude Code's Axios client does
+// (br included) and still decode the reply, so the sign-in traffic looks native to Cloudflare.
+val sharedHttp = OkHttpClient.Builder().addInterceptor(BrotliInterceptor).build()
 val sharedExecutor = Executors.newCachedThreadPool()
 
 private data class Endpoints(val speech: String, val refinement: String)

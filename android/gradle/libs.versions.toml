@@ -24,6 +24,7 @@ junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "jun
 junit4 = { module = "junit:junit", version.ref = "junit4" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+okhttp-brotli = { module = "com.squareup.okhttp3:okhttp-brotli", version.ref = "okhttp" }
 mockwebserver = { module = "com.squareup.okhttp3:mockwebserver3", version.ref = "okhttp" }
 browser = { module = "androidx.browser:browser", version.ref = "browser" }
 lifecycle = { module = "androidx.lifecycle:lifecycle-runtime", version.ref = "lifecycle" }

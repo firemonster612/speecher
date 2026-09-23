@@ -78,7 +78,11 @@ class OAuthTest {
                 "{\"grant_type\":\"authorization_code\",\"code\":\"code\",\"redirect_uri\":\"http://localhost:54545/callback\",\"client_id\":\"9d1c250a-e61b-44d9-88ed-5944d1962f5e\",\"code_verifier\":\"${attempt.verifier}\",\"state\":\"${attempt.state}\"}",
                 request.body!!.utf8(),
             )
+            // The Claude Code Axios header set that clears Cloudflare on Anthropic domains.
             assertEquals("axios/1.15.2", request.headers["User-Agent"])
+            assertEquals("application/json, text/plain, */*", request.headers["Accept"])
+            assertEquals("gzip, compress, deflate, br", request.headers["Accept-Encoding"])
+            assertEquals("close", request.headers["Connection"])
             val refreshed =
                 refreshTokens(
                     OkHttpClient(),

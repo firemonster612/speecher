@@ -168,13 +168,7 @@ private fun requestTokens(
     body: okhttp3.RequestBody,
     nowMillis: () -> Long,
 ): OAuthTokens {
-    val request =
-        Request.Builder()
-            .url(url)
-            .post(body)
-            .header("Accept", "application/json, text/plain, */*")
-            .header("User-Agent", "axios/1.15.2")
-            .build()
+    val request = Request.Builder().url(url).post(body).anthropicAxiosHeaders().build()
     http.newCall(request).execute().use { response ->
         if (!response.isSuccessful) throw OAuthHttpException(response.code)
         val json =
@@ -192,6 +186,18 @@ private fun requestTokens(
         )
     }
 }
+
+/**
+ * The header set Claude Code's Axios OAuth client sends, which CLI Proxy API replays to clear
+ * Cloudflare's bot checks on Anthropic domains. Brotli on the shared client decodes the reply this
+ * `Accept-Encoding` invites. OkHttp owns the TLS handshake, so the JA3 fingerprint is Conscrypt's,
+ * not Node's; a probe from this network still reached the OAuth handler with these headers.
+ */
+private fun Request.Builder.anthropicAxiosHeaders(): Request.Builder =
+    header("Accept", "application/json, text/plain, */*")
+        .header("User-Agent", "axios/1.15.2")
+        .header("Accept-Encoding", "gzip, compress, deflate, br")
+        .header("Connection", "close")
 
 private val JSON_MEDIA_TYPE = "application/json".toMediaType()
 
