@@ -1,6 +1,8 @@
 package app.speecher.android.dictation
 
 import app.speecher.protocol.OAuthProvider
+import app.speecher.protocol.WritingProfile
+import app.speecher.protocol.WritingProfileSettings
 
 /** The two accounts Speecher can sign in to. Each one can transcribe and refine. */
 enum class Provider {
@@ -141,6 +143,12 @@ data class SpeecherSettings(
     val chipOffsetY: Int? = null,
     /** Keep the display awake while a dictation is running. */
     val keepScreenOn: Boolean = true,
+    /** Send the target app's identity and the text before the caret to the refiner. */
+    val useTargetContext: Boolean = true,
+    /** The profile used when the target app does not imply one. */
+    val defaultWritingProfile: WritingProfile = WritingProfile.Other,
+    val writingProfiles: Map<WritingProfile, WritingProfileSettings> =
+        WritingProfile.entries.associateWith { WritingProfileSettings() },
 ) {
     fun refinement(provider: Provider): RefinementChoice =
         if (provider == Provider.Claude) claudeRefinement else chatGptRefinement

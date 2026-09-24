@@ -13,7 +13,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -44,6 +43,38 @@ import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.providerOrder
 import app.speecher.android.dictation.refinementEfforts
 import app.speecher.android.dictation.refinementModels
+import app.speecher.protocol.CleanupStrength
+import app.speecher.protocol.Tone
+import app.speecher.protocol.WritingProfile
+import app.speecher.protocol.WritingProfileSettings
+
+// Labels from the desktop's SettingsSchema.cpp, in its order.
+private val profileLabels =
+    mapOf(
+        WritingProfile.Work to "Work",
+        WritingProfile.Email to "Email",
+        WritingProfile.Personal to "Personal",
+        WritingProfile.AiCoding to "AI coding",
+        WritingProfile.Other to "Other",
+    )
+
+private val cleanupLabels =
+    mapOf(
+        CleanupStrength.None to "None",
+        CleanupStrength.LightCleanup to "Light",
+        CleanupStrength.Balanced to "Medium",
+        CleanupStrength.StrongPolish to "High",
+    )
+
+private val toneLabels =
+    mapOf(
+        Tone.None to "No tone override",
+        Tone.Formal to "Formal",
+        Tone.Casual to "Casual",
+        Tone.VeryCasual to "Very casual",
+        Tone.Excited to "Excited",
+        Tone.GenZ to "Gen Z",
+    )
 
 /** Settings. Every change goes out whole through [onChange]; the caller persists it. */
 @Composable
@@ -92,12 +123,41 @@ fun Settings(
             }
             val provider = settings.refinementProvider
             val choice = settings.refinement(provider)
-            ModelPicker(provider, choice.model, rowColors) {
-                onChange(settings.withRefinement(provider, choice.copy(model = it)))
-            }
+            ListItem(
+                headlineContent = { Text("Model") },
+                trailingContent = {
+                    Dropdown(provider.refinementModels, choice.model) {
+                        onChange(settings.withRefinement(provider, choice.copy(model = it)))
+                    }
+                },
+                colors = rowColors,
+            )
             EffortPicker(provider, choice.effort) {
                 onChange(settings.withRefinement(provider, choice.copy(effort = it)))
             }
+            ListItem(
+                headlineContent = { Text("Fallback profile") },
+                supportingContent = {
+                    Text("Writing profile used when the target app does not imply one.")
+                },
+                trailingContent = {
+                    Dropdown(profileLabels, settings.defaultWritingProfile) {
+                        onChange(settings.copy(defaultWritingProfile = it))
+                    }
+                },
+                colors = rowColors,
+            )
+            ListItem(
+                headlineContent = { Text("Context") },
+                supportingContent = { Text("Send the target app's context to the refiner") },
+                trailingContent = {
+                    Switch(
+                        settings.useTargetContext,
+                        { onChange(settings.copy(useTargetContext = it)) },
+                    )
+                },
+                colors = rowColors,
+            )
         }
         ListItem(
             headlineContent = { Text("Extra transcription pass") },
@@ -115,6 +175,37 @@ fun Settings(
             },
             colors = rowColors,
         )
+        if (settings.refinementEnabled) {
+            Section("Profile behavior")
+            Text(
+                "Choose cleanup strength and an optional explicit tone for each automatically " +
+                    "detected profile.",
+                Modifier.padding(horizontal = 16.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            profileLabels.forEach { (profile, label) ->
+                val behavior = settings.writingProfiles.getValue(profile)
+                fun update(next: WritingProfileSettings) =
+                    onChange(
+                        settings.copy(
+                            writingProfiles = settings.writingProfiles + (profile to next)
+                        )
+                    )
+                ListItem(
+                    headlineContent = { Text(label) },
+                    supportingContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Dropdown(cleanupLabels, behavior.cleanupStrength) {
+                                update(behavior.copy(cleanupStrength = it))
+                            }
+                            Dropdown(toneLabels, behavior.tone) { update(behavior.copy(tone = it)) }
+                        }
+                    },
+                    colors = rowColors,
+                )
+            }
+        }
 
         Section("Dictation button")
         ListItem(
@@ -219,36 +310,24 @@ private fun ProviderPicker(
     }
 }
 
+/** A text button showing [options]' label for [selected] that opens a menu of all of them. */
 @Composable
-private fun ModelPicker(
-    provider: Provider,
-    selected: String,
-    colors: ListItemColors,
-    onSelect: (String) -> Unit,
-) {
+private fun <T> Dropdown(options: Map<T, String>, selected: T, onSelect: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    ListItem(
-        headlineContent = { Text("Model") },
-        trailingContent = {
-            Box {
-                TextButton({ expanded = true }) {
-                    Text(provider.refinementModels[selected] ?: selected)
-                }
-                DropdownMenu(expanded, { expanded = false }) {
-                    provider.refinementModels.forEach { (id, label) ->
-                        DropdownMenuItem(
-                            text = { Text(label) },
-                            onClick = {
-                                expanded = false
-                                onSelect(id)
-                            },
-                        )
-                    }
-                }
+    Box {
+        TextButton({ expanded = true }) { Text(options[selected] ?: selected.toString()) }
+        DropdownMenu(expanded, { expanded = false }) {
+            options.forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        expanded = false
+                        onSelect(value)
+                    },
+                )
             }
-        },
-        colors = colors,
-    )
+        }
+    }
 }
 
 @Composable

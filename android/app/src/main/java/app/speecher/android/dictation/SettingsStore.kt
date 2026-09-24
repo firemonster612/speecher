@@ -3,6 +3,10 @@ package app.speecher.android.dictation
 import android.content.Context
 import androidx.core.content.edit
 import app.speecher.android.auth.TokenStore
+import app.speecher.protocol.CleanupStrength
+import app.speecher.protocol.Tone
+import app.speecher.protocol.WritingProfile
+import app.speecher.protocol.WritingProfileSettings
 import org.json.JSONArray
 
 class SettingsStore(private val context: Context) {
@@ -30,6 +34,26 @@ class SettingsStore(private val context: Context) {
             chipOffsetX = preferences.getInt("chipOffsetX", NO_OFFSET).takeIf { it != NO_OFFSET },
             chipOffsetY = preferences.getInt("chipOffsetY", NO_OFFSET).takeIf { it != NO_OFFSET },
             keepScreenOn = preferences.getBoolean("keepScreenOn", true),
+            useTargetContext = preferences.getBoolean("useTargetContext", true),
+            defaultWritingProfile =
+                WritingProfile.valueOf(
+                    preferences.getString("defaultWritingProfile", WritingProfile.Other.name)!!
+                ),
+            writingProfiles =
+                WritingProfile.entries.associateWith { profile ->
+                    val default = WritingProfileSettings()
+                    WritingProfileSettings(
+                        CleanupStrength.valueOf(
+                            preferences.getString(
+                                "${profile.name}Cleanup",
+                                default.cleanupStrength.name,
+                            )!!
+                        ),
+                        Tone.valueOf(
+                            preferences.getString("${profile.name}Tone", default.tone.name)!!
+                        ),
+                    )
+                },
         )
     }
 
@@ -49,6 +73,12 @@ class SettingsStore(private val context: Context) {
             settings.chipOffsetX?.let { putInt("chipOffsetX", it) } ?: remove("chipOffsetX")
             settings.chipOffsetY?.let { putInt("chipOffsetY", it) } ?: remove("chipOffsetY")
             putBoolean("keepScreenOn", settings.keepScreenOn)
+            putBoolean("useTargetContext", settings.useTargetContext)
+            putString("defaultWritingProfile", settings.defaultWritingProfile.name)
+            settings.writingProfiles.forEach { (profile, choice) ->
+                putString("${profile.name}Cleanup", choice.cleanupStrength.name)
+                putString("${profile.name}Tone", choice.tone.name)
+            }
         }
     }
 

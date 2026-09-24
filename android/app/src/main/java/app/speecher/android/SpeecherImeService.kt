@@ -14,6 +14,7 @@ import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
 import app.speecher.android.dictation.resolveSignedIn
+import app.speecher.android.dictation.targetApp
 import app.speecher.android.ui.DictationPanel
 import app.speecher.android.ui.SpeecherTheme
 
@@ -77,10 +78,12 @@ class SpeecherImeService : InputMethodService() {
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         ActiveDictation.connection = currentInputConnection
+        ActiveDictation.target = attribute?.let { targetApp(it, packageManager) }
     }
 
     override fun onFinishInput() {
         ActiveDictation.connection = null
+        ActiveDictation.target = null
         super.onFinishInput()
     }
 

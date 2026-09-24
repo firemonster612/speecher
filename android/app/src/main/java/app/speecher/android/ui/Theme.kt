@@ -3,9 +3,13 @@ package app.speecher.android.ui
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
 import app.speecher.android.dictation.Provider
 
 // The desktop mark is a warm off-white pill (#F2F0E6) on near-black (#1F1F1F). The scheme keeps
@@ -90,10 +94,21 @@ private val Dark =
         surfaceContainerHighest = Color(0xFF353532),
     )
 
-/** Speecher's Material 3 theme. Dynamic colour is off on purpose: the brand is ink and bone. */
+/**
+ * Speecher's Material 3 theme, in the wallpaper's dynamic colours (minSdk 31 always has them).
+ * Previews have no wallpaper, so they keep the ink-and-bone schemes.
+ */
 @Composable
 fun SpeecherTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, content = content)
+    val dark = isSystemInDarkTheme()
+    val context = LocalContext.current
+    val colors =
+        when {
+            LocalInspectionMode.current -> if (dark) Dark else Light
+            dark -> dynamicDarkColorScheme(context)
+            else -> dynamicLightColorScheme(context)
+        }
+    MaterialTheme(colorScheme = colors, content = content)
 }
 
 internal val Provider.label: String

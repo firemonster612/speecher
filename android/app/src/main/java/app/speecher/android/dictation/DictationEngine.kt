@@ -7,6 +7,7 @@ import android.view.inputmethod.InputConnection
 import app.speecher.android.BuildConfig
 import app.speecher.android.auth.TokenStore
 import app.speecher.protocol.ClaudeVoiceClient
+import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CodexDictationClient
 import app.speecher.protocol.SpeechClient
 import app.speecher.protocol.SpeechEvent
@@ -403,17 +404,25 @@ fun createDictationEngine(
                 )
         },
         { selected, raw ->
+            val context =
+                refinementContext(settings, ActiveDictation.target) { length ->
+                    connection()?.getTextBeforeCursor(length, 0)
+                }
             val choice = settings.refinement(selected)
-            refineTranscript(
-                http,
-                selected.oauth,
-                token(selected),
-                raw,
-                settings.vocabulary,
-                choice.model,
-                choice.effort,
-                endpoints.getValue(selected).refinement,
-            )
+            // A profile set to no cleanup inserts the transcript as heard, as the desktop does.
+            if (context.style == CleanupStrength.None) raw
+            else
+                refineTranscript(
+                    http,
+                    selected.oauth,
+                    token(selected),
+                    raw,
+                    settings.vocabulary,
+                    choice.model,
+                    choice.effort,
+                    context,
+                    endpoints.getValue(selected).refinement,
+                )
         },
         if (settings.transcribePassEnabled)
             { pcm ->

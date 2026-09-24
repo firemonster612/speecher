@@ -23,6 +23,7 @@ fun refineTranscript(
     /** The API model id, and the effort sent as `reasoning.effort` or `output_config.effort`. */
     model: String,
     effort: String,
+    context: RefinementContext,
     endpointBase: String =
         if (provider == OAuthProvider.Claude) "https://api.anthropic.com/v1"
         else "https://chatgpt.com/backend-api/codex",
@@ -31,7 +32,15 @@ fun refineTranscript(
     if (provider == OAuthProvider.Claude) {
         http
             .newCall(
-                claudeRequest(tokens.accessToken, rawTranscript, vocabulary, model, effort, base)
+                claudeRequest(
+                    tokens.accessToken,
+                    rawTranscript,
+                    vocabulary,
+                    model,
+                    effort,
+                    context,
+                    base,
+                )
             )
             .execute()
             .use { response ->
@@ -50,7 +59,7 @@ fun refineTranscript(
                 .toMap(),
             HttpBody(
                 "application/json",
-                chatGptBody(rawTranscript, vocabulary, model, effort)
+                chatGptBody(rawTranscript, vocabulary, model, effort, context)
                     .toString()
                     .toByteArray(Charsets.UTF_8),
             ),
@@ -87,6 +96,7 @@ private fun claudeRequest(
     vocabulary: List<String>,
     model: String,
     effort: String,
+    context: RefinementContext,
     base: String,
 ): Request {
     val system = buildJsonArray {
@@ -102,7 +112,7 @@ private fun claudeRequest(
         add(
             buildJsonObject {
                 put("type", JsonPrimitive("text"))
-                put("text", JsonPrimitive(dictationSystemPrompt))
+                put("text", JsonPrimitive(dictationSystemPrompt(context)))
             }
         )
     }
@@ -145,25 +155,30 @@ private fun claudeRequest(
         .build()
 }
 
-private fun chatGptBody(raw: String, vocabulary: List<String>, model: String, effort: String) =
-    buildJsonObject {
-        put("model", JsonPrimitive(model))
-        put("reasoning", buildJsonObject { put("effort", JsonPrimitive(effort)) })
-        put("instructions", JsonPrimitive(dictationSystemPrompt))
-        put("stream", JsonPrimitive(true))
-        put("store", JsonPrimitive(false))
-        put(
-            "input",
-            buildJsonArray {
-                add(
-                    buildJsonObject {
-                        put("role", JsonPrimitive("user"))
-                        put("content", JsonPrimitive(refinementUserMessage(raw, vocabulary)))
-                    }
-                )
-            },
-        )
-    }
+private fun chatGptBody(
+    raw: String,
+    vocabulary: List<String>,
+    model: String,
+    effort: String,
+    context: RefinementContext,
+) = buildJsonObject {
+    put("model", JsonPrimitive(model))
+    put("reasoning", buildJsonObject { put("effort", JsonPrimitive(effort)) })
+    put("instructions", JsonPrimitive(dictationSystemPrompt(context)))
+    put("stream", JsonPrimitive(true))
+    put("store", JsonPrimitive(false))
+    put(
+        "input",
+        buildJsonArray {
+            add(
+                buildJsonObject {
+                    put("role", JsonPrimitive("user"))
+                    put("content", JsonPrimitive(refinementUserMessage(raw, vocabulary)))
+                }
+            )
+        },
+    )
+}
 
 private fun OAuthTokens.accountId(): String? = runCatching {
     val claims = String(Base64.getUrlDecoder().decode(idToken.split('.')[1]))

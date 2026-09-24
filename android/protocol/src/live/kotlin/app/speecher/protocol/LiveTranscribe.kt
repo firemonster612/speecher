@@ -47,6 +47,7 @@ fun main() {
                 emptyList(),
                 model,
                 effort,
+                RefinementContext(),
             )
         }
         println(
@@ -56,4 +57,28 @@ fun main() {
         result.isFailure
     }
     check(failures == 0) { "$failures refinement choices failed" }
+
+    // A populated target context: Messages, casual tone, text before the caret.
+    val context =
+        resolveRefinementContext(
+            "com.google.android.apps.messaging",
+            "Messages",
+            null,
+            "Dinner plan",
+            WritingProfile.Other,
+            mapOf(WritingProfile.Other to WritingProfileSettings(tone = Tone.Casual)),
+        )
+    println("context: ${context.category.id}/${context.profile.id}/${context.tone.id}")
+    val casual =
+        refineTranscript(
+            OkHttpClient(),
+            OAuthProvider.ChatGpt,
+            OAuthTokens(access, "", field("id_token"), 0, ""),
+            "um so are we still on for seven or should we push it to eight",
+            emptyList(),
+            "gpt-6-luna",
+            "none",
+            context,
+        )
+    println("refinement with context: \"$casual\"")
 }

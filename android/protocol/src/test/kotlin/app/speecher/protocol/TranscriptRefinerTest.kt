@@ -34,6 +34,7 @@ class TranscriptRefinerTest {
                     listOf("Speecher"),
                     "claude-opus-5",
                     "medium",
+                    RefinementContext(),
                     server.url("/v1").toString().trimEnd('/'),
                 )
             assertEquals("Hello", result)
@@ -74,6 +75,7 @@ class TranscriptRefinerTest {
                     emptyList(),
                     "gpt-6-luna",
                     "none",
+                    RefinementContext(),
                     server.url("/codex").toString().trimEnd('/'),
                 )
             assertEquals("Hello", result)
@@ -104,6 +106,7 @@ class TranscriptRefinerTest {
                     emptyList(),
                     "gpt-6-luna",
                     "none",
+                    RefinementContext(),
                     server.url("/codex").toString().trimEnd('/'),
                 )
             }

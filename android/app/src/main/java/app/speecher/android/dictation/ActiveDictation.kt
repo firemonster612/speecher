@@ -6,6 +6,7 @@ import android.view.inputmethod.InputConnection
 object ActiveDictation {
     @Volatile var engine: DictationEngine? = null
     @Volatile var connection: InputConnection? = null
+    @Volatile var target: TargetApp? = null
     @Volatile var state: DictationState = DictationState.Connecting
     @Volatile var settings = SpeecherSettings()
     @Volatile var observe: ((DictationState) -> Unit)? = null
