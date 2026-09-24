@@ -12,9 +12,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import app.speecher.android.dictation.Provider
 
-// The desktop mark is a warm off-white pill (#F2F0E6) on near-black (#1F1F1F). The scheme keeps
-// those two as the primary pair and fills everything else with warm greys between them, so the
-// only colour that is not ink, bone or a grey is the error red.
+// The fallback schemes, used only where there is no wallpaper to draw dynamic colour from
+// (previews).
+// They keep the desktop mark's warm off-white (#F2F0E6) and near-black (#1F1F1F) as the primary
+// pair
+// and fill everything else with warm greys between them, so the only other colour is the error red.
 
 private val Light =
     lightColorScheme(

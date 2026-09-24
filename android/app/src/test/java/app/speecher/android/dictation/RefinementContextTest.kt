@@ -1,7 +1,10 @@
 package app.speecher.android.dictation
 
 import android.text.InputType
+import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.NearbyText
+import app.speecher.protocol.WritingProfile
+import app.speecher.protocol.WritingProfileSettings
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -14,7 +17,15 @@ class RefinementContextTest {
     private val screen = ScreenCapture("Sam", "Are we still on for tonight?")
 
     private fun sent(settings: SpeecherSettings, target: TargetApp) =
-        refinementContext(settings, target, screen, "AAAA") { dinner }
+        refinementContext(settings, target, screen, "AAAA") {
+                if (
+                    settings.writingProfiles.values.any {
+                        it.cleanupStrength == CleanupStrength.None
+                    }
+                )
+                    error("read the field with no cleanup to do")
+                dinner
+            }
             .let {
                 listOf(
                     it.nearbyText,
@@ -27,31 +38,45 @@ class RefinementContextTest {
             }
 
     @Test
-    fun `field and screen context is sent only with context on and outside password fields`() {
+    fun `field and screen context is sent only with context on, outside password fields, when refining`() {
         assertEquals(
             listOf(
                 listOf(dinner, "text", "Message", "Sam", "Are we still on for tonight?", "AAAA"),
-                listOf(null, "", "", "", "", null),
-                listOf(null, "", "", "", "", null),
+                listOf(null, "text", "", "", "", null),
+                listOf(null, "text", "", "", "", null),
+                listOf(null, "text", "", "", "", null),
             ),
             listOf(
                 sent(SpeecherSettings(), messages),
                 sent(SpeecherSettings(useTargetContext = false), messages),
                 sent(SpeecherSettings(), messages.copy(secure = true)),
+                sent(
+                    SpeecherSettings(
+                        writingProfiles =
+                            WritingProfile.entries.associateWith {
+                                WritingProfileSettings(CleanupStrength.None)
+                            }
+                    ),
+                    messages,
+                ),
             ),
         )
     }
 
     @Test
-    fun `surrounding text splits at the selection, offset into the field when known`() {
+    fun `surrounding text splits at the selection, offset into the field when known, or is dropped when out of range`() {
         assertEquals(
             listOf(
                 NearbyText("Dinner at ", " works for me", 110, 115),
                 NearbyText("Dinner at ", " works for me", -1, -1),
+                null,
+                null,
             ),
             listOf(
                 nearbyText("Dinner at seven works for me", 10, 15, 100),
                 nearbyText("Dinner at seven works for me", 10, 15, -1),
+                nearbyText("Dinner at seven works for me", 10, 40, 100),
+                nearbyText("Dinner at seven works for me", -1, -1, -1),
             ),
         )
     }

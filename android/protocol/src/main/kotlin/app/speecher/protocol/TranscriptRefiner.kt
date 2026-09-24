@@ -43,13 +43,23 @@ fun refineTranscript(
         )
     }
     if (context.screenshotJpeg == null) return refine(context)
-    // A model without vision rejects the image; the dictation still deserves a text-only pass.
+    // A model without vision rejects the image, and an oversized one is refused; the dictation
+    // still
+    // deserves a text-only pass. Other failures would fail again, so they are not retried.
     return try {
         refine(context)
-    } catch (_: IllegalStateException) {
+    } catch (failure: RefinementHttpError) {
+        if (failure.status !in IMAGE_REJECTED_STATUSES) throw failure
         refine(context.copy(screenshotJpeg = null))
     }
 }
+
+/** A refinement request the provider answered with a non-2xx [status]. */
+class RefinementHttpError(val status: Int) :
+    IllegalStateException("Refinement failed with HTTP $status")
+
+/** Bad request and payload too large: what a provider answers when it will not take the image. */
+private val IMAGE_REJECTED_STATUSES = setOf(400, 413)
 
 private fun refineOnce(
     http: OkHttpClient,
@@ -78,7 +88,7 @@ private fun refineOnce(
             )
             .execute()
             .use { response ->
-                if (!response.isSuccessful) error("Refinement failed with HTTP ${response.code}")
+                if (!response.isSuccessful) throw RefinementHttpError(response.code)
                 return readRefinement(provider, response.body.charStream().buffered())
             }
     }
@@ -98,7 +108,7 @@ private fun refineOnce(
                     .toByteArray(Charsets.UTF_8),
             ),
         )
-    if (response.status !in 200..299) error("Refinement failed with HTTP ${response.status}")
+    if (response.status !in 200..299) throw RefinementHttpError(response.status)
     return readRefinement(provider, response.body.inputStream().bufferedReader())
 }
 

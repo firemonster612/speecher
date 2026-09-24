@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Rect
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -26,6 +27,7 @@ import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.dictation.screenCapture
 import app.speecher.android.dictation.screenshotJpeg
 import app.speecher.android.dictation.sharedExecutor
+import app.speecher.android.dictation.uncoveredRows
 import app.speecher.android.ui.ChipMargin
 import app.speecher.android.ui.ChipSize
 import app.speecher.android.ui.DictationChip
@@ -296,7 +298,8 @@ class SpeecherChipService : AccessibilityService() {
     private fun onChipTap() {
         ImeSwap(this).rememberPrevious()
         val engine = startDictation()
-        // Only now, before the swap, is the active window still the app being dictated into.
+        // Only now, before the swap, does the focused field still belong to the app being dictated
+        // into.
         captureScreen(engine)
         val switched = runCatching {
             softKeyboardController.switchToInputMethod(speecherImeId(this))
@@ -306,8 +309,7 @@ class SpeecherChipService : AccessibilityService() {
             removeChip()
         } else {
             // Our keyboard isn't enabled; setup isn't finished, so send them there.
-            engine.close()
-            ActiveDictation.engine = null
+            ActiveDictation.end()
             startActivity(
                 Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
@@ -319,9 +321,8 @@ class SpeecherChipService : AccessibilityService() {
         val settings = SettingsStore(this).load()
         ActiveDictation.settings = settings
         ActiveDictation.state = DictationState.Connecting
-        ActiveDictation.clearScreen()
+        ActiveDictation.end()
         ActiveDictation.observe?.invoke(DictationState.Connecting)
-        ActiveDictation.engine?.close()
         val engine =
             createDictationEngine(
                 this,
@@ -340,38 +341,75 @@ class SpeecherChipService : AccessibilityService() {
     }
 
     /**
-     * Reads what the user opted into sharing from the target window. The text is read here; the
-     * screenshot arrives later and is dropped if a newer dictation started. A failed or
+     * Reads what the user opted into sharing from the focused field's own window, so nothing from
+     * another app, the status bar, a notification or the keyboard goes out under the target's name.
+     * Both parts arrive later on the executor and are dropped if the session has ended; a failed or
      * rate-limited screenshot is simply absent.
      */
     private fun captureScreen(engine: DictationEngine) {
         val settings = ActiveDictation.settings
         if (!settings.refinementEnabled || !settings.useTargetContext || passwordFocused) return
+        val target = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.window ?: return
+        val root = target.root ?: return
         if (settings.includeScreenText) {
-            ActiveDictation.screen = rootInActiveWindow?.let(::screenCapture)
+            sharedExecutor.execute {
+                val screen = screenCapture(root)
+                ActiveDictation.storeCapture(engine) { this.screen = screen }
+            }
         }
         if (!settings.includeScreenshot) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            takeScreenshotOfWindow(target.id, sharedExecutor, screenshotCallback(engine))
+            return
+        }
+        // Before Android 14 only the whole display can be captured: keep the target's bounds, less
+        // the rows of every window drawn over it and the status bar, which not every device lists
+        // among the windows.
+        val bounds = Rect().also(target::getBoundsInScreen)
+        val statusBar =
+            window.currentWindowMetrics.windowInsets.getInsets(WindowInsets.Type.statusBars()).top
+        val rows =
+            uncoveredRows(
+                bounds.top until bounds.bottom,
+                windows
+                    .filter { it.layer > target.layer }
+                    .map { Rect().also(it::getBoundsInScreen) }
+                    .filter { Rect.intersects(it, bounds) }
+                    .map { it.top until it.bottom } + listOf(0 until statusBar),
+            ) ?: return
         takeScreenshot(
             Display.DEFAULT_DISPLAY,
             sharedExecutor,
-            object : TakeScreenshotCallback {
-                override fun onSuccess(screenshot: ScreenshotResult) {
-                    // Runs on the executor: a failed encode is a skipped screenshot, not a crash.
-                    val jpeg =
-                        screenshot.hardwareBuffer.use { buffer ->
-                            runCatching {
-                                Bitmap.wrapHardwareBuffer(buffer, screenshot.colorSpace)
-                                    ?.let(::screenshotJpeg)
-                            }
-                                .getOrNull()
-                        }
-                    if (ActiveDictation.engine === engine) ActiveDictation.screenshotJpeg = jpeg
-                }
-
-                override fun onFailure(errorCode: Int) = Unit
-            },
+            screenshotCallback(engine, Rect(bounds.left, rows.first, bounds.right, rows.last + 1)),
         )
     }
+
+    /** Encodes the screenshot, or its [crop] when given, and keeps it while [engine] is running. */
+    private fun screenshotCallback(engine: DictationEngine, crop: Rect? = null) =
+        object : TakeScreenshotCallback {
+            override fun onSuccess(screenshot: ScreenshotResult) {
+                // Runs on the executor: a failed encode is a skipped screenshot, not a crash.
+                val jpeg =
+                    screenshot.hardwareBuffer.use { buffer ->
+                        runCatching {
+                            val bitmap =
+                                Bitmap.wrapHardwareBuffer(buffer, screenshot.colorSpace)
+                                    ?: return@runCatching null
+                            val area = Rect(0, 0, bitmap.width, bitmap.height)
+                            val jpeg =
+                                if (crop == null || area.intersect(crop))
+                                    screenshotJpeg(bitmap, area)
+                                else null
+                            bitmap.recycle()
+                            jpeg
+                        }
+                            .getOrNull()
+                    }
+                ActiveDictation.storeCapture(engine) { screenshotJpeg = jpeg }
+            }
+
+            override fun onFailure(errorCode: Int) = Unit
+        }
 
     private fun removeChip() {
         removePill()

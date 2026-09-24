@@ -3,10 +3,9 @@ package app.speecher.android.dictation
 import android.content.Context
 import androidx.core.content.edit
 import app.speecher.android.auth.TokenStore
-import app.speecher.protocol.CleanupStrength
-import app.speecher.protocol.Tone
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
+import kotlin.enums.enumEntries
 import org.json.JSONArray
 
 class SettingsStore(private val context: Context) {
@@ -18,11 +17,9 @@ class SettingsStore(private val context: Context) {
         // fixed provider, so neither Claude nor ChatGPT is favoured on a fresh install.
         val default = defaultProvider(TokenStore(context).signedIn())
         return SpeecherSettings(
-            transcriptionProvider =
-                Provider.valueOf(preferences.getString("transcription", default.name)!!),
+            transcriptionProvider = enumOf(preferences.getString("transcription", null), default),
             refinementEnabled = preferences.getBoolean("refinement", true),
-            refinementProvider =
-                Provider.valueOf(preferences.getString("refinementProvider", default.name)!!),
+            refinementProvider = enumOf(preferences.getString("refinementProvider", null), default),
             transcribePassEnabled = preferences.getBoolean("transcribePass", true),
             chatGptRefinement = loadRefinement(Provider.ChatGpt),
             claudeRefinement = loadRefinement(Provider.Claude),
@@ -38,22 +35,16 @@ class SettingsStore(private val context: Context) {
             includeScreenText = preferences.getBoolean("includeScreenText", false),
             includeScreenshot = preferences.getBoolean("includeScreenshot", false),
             defaultWritingProfile =
-                WritingProfile.valueOf(
-                    preferences.getString("defaultWritingProfile", WritingProfile.Other.name)!!
-                ),
+                enumOf(preferences.getString("defaultWritingProfile", null), WritingProfile.Other),
             writingProfiles =
                 WritingProfile.entries.associateWith { profile ->
                     val default = WritingProfileSettings()
                     WritingProfileSettings(
-                        CleanupStrength.valueOf(
-                            preferences.getString(
-                                "${profile.name}Cleanup",
-                                default.cleanupStrength.name,
-                            )!!
+                        enumOf(
+                            preferences.getString("${profile.name}Cleanup", null),
+                            default.cleanupStrength,
                         ),
-                        Tone.valueOf(
-                            preferences.getString("${profile.name}Tone", default.tone.name)!!
-                        ),
+                        enumOf(preferences.getString("${profile.name}Tone", null), default.tone),
                     )
                 },
         )
@@ -98,3 +89,7 @@ class SettingsStore(private val context: Context) {
         const val NO_OFFSET = Int.MIN_VALUE
     }
 }
+
+/** The constant [name] names, or [default] when it is missing or a later release renamed it. */
+private inline fun <reified E : Enum<E>> enumOf(name: String?, default: E): E =
+    enumEntries<E>().firstOrNull { it.name == name } ?: default

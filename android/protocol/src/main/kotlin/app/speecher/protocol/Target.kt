@@ -176,6 +176,10 @@ fun resolveRefinementContext(
     fallbackProfile: WritingProfile,
     profiles: Map<WritingProfile, WritingProfileSettings>,
 ): RefinementContext {
+    // The desktop also matches the process name, the accessibility role and, outside AI coding
+    // rules, the window title. Android has no process name apart from the package, the role here is
+    // an input type rather than an app's own role, and the window title is only read when the user
+    // opts into screen text, so apps are recognised by id and name alone.
     val identity = listOf(applicationId, applicationName)
     val category =
         builtInRules.firstOrNull { it.category != null && it.matches(identity) }?.category

@@ -56,10 +56,7 @@ class SpeecherImeService : InputMethodService() {
                         // The transcription pass runs on both buttons, so only cleanup sets them
                         // apart.
                         ActiveDictation.settings.refinementEnabled,
-                        onCancel = {
-                            ActiveDictation.engine?.cancel()
-                            switchBack()
-                        },
+                        onCancel = ::switchBack,
                         onInsert = { ActiveDictation.engine?.insert() },
                         onInsertRefined = {
                             ActiveDictation.engine?.insertRefined(
@@ -92,7 +89,7 @@ class SpeecherImeService : InputMethodService() {
      * re-show the keyboard within a few hundred milliseconds, and that must not end the dictation.
      */
     private val dismiss = Runnable {
-        ActiveDictation.engine?.cancel()
+        ActiveDictation.end()
         keepScreenOn(null)
         if (
             android.provider.Settings.Secure.getString(
@@ -144,7 +141,6 @@ class SpeecherImeService : InputMethodService() {
             ActiveDictation.engine?.retry()
             return
         }
-        ActiveDictation.engine?.cancel()
         switchBack()
         val intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (failed.reason == FailureReason.SignedOut)
@@ -153,9 +149,7 @@ class SpeecherImeService : InputMethodService() {
     }
 
     private fun switchBack() {
-        ActiveDictation.engine?.close()
-        ActiveDictation.engine = null
-        ActiveDictation.clearScreen()
+        ActiveDictation.end()
         keepScreenOn(null)
         ImeSwap(this).switchBack(this)
     }

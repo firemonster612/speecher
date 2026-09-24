@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import app.speecher.protocol.AppCategory
+import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.NearbyText
 import app.speecher.protocol.RefinementContext
 import app.speecher.protocol.resolveRefinementContext
@@ -63,7 +64,9 @@ fun controlRole(inputType: Int): String =
 
 /**
  * An IME can see the app it serves without a `<queries>` entry. Only the Productivity category maps
- * onto a desktop category (Office); the rest classify by name as the desktop does.
+ * onto a desktop category (Office); the rest classify by name as the desktop does. Productivity
+ * also holds note and to-do apps, which the desktop would leave General; they take Office and the
+ * Work profile too, a deliberate trade for recognising office suites that no name rule catches.
  */
 fun targetApp(editor: EditorInfo, packages: PackageManager): TargetApp {
     val name = editor.packageName.orEmpty()
@@ -86,21 +89,31 @@ fun targetApp(editor: EditorInfo, packages: PackageManager): TargetApp {
 
 /**
  * Splits InputConnection.getSurroundingText around its selection. [offset] is where [text] starts
- * in the field, -1 when the editor does not say, which leaves the selection offsets unknown.
+ * in the field, -1 when the editor does not say, which leaves the selection offsets unknown. Null
+ * when the editor reports a selection outside [text]: the context is optional, the refinement is
+ * not.
  */
-fun nearbyText(text: CharSequence, selectionStart: Int, selectionEnd: Int, offset: Int) =
-    NearbyText(
+fun nearbyText(
+    text: CharSequence,
+    selectionStart: Int,
+    selectionEnd: Int,
+    offset: Int,
+): NearbyText? {
+    if (selectionStart !in 0..selectionEnd || selectionEnd > text.length) return null
+    return NearbyText(
         text.substring(0, selectionStart),
         text.substring(selectionEnd),
         if (offset >= 0) offset + selectionStart else -1,
         if (offset >= 0) offset + selectionEnd else -1,
     )
+}
 
 /**
- * The target's profile, cleanup and tone, as TranscriptPipeline resolves them. With context off or
- * in a password field nothing about the field or screen is sent, and the text around the caret is
- * not read at all. [screen] and [screenshotJpeg] are what the chip captured, only if the user opted
- * in.
+ * The target's profile, cleanup and tone, as TranscriptPipeline resolves them. The app's identity
+ * and the field's kind are always sent, as on the desktop. With context off or in a password field
+ * nothing else about the field or screen is sent, and the text around the caret is not read at all;
+ * nor is it read when the profile does no cleanup, since nothing is refined. [screen] and
+ * [screenshotJpeg] are what the chip captured, only if the user opted in.
  */
 fun refinementContext(
     settings: SpeecherSettings,
@@ -112,17 +125,20 @@ fun refinementContext(
     val includeText = settings.useTargetContext && target != null && !target.secure
     val context =
         resolveRefinementContext(
-            target?.packageName.orEmpty(),
-            target?.label.orEmpty(),
-            target?.category,
-            if (includeText) surroundingText(CONTEXT_CHARACTERS) ?: NearbyText() else null,
-            settings.defaultWritingProfile,
-            settings.writingProfiles,
-        )
-    if (!includeText) return context
+                target?.packageName.orEmpty(),
+                target?.label.orEmpty(),
+                target?.category,
+                null,
+                settings.defaultWritingProfile,
+                settings.writingProfiles,
+            )
+            .copy(controlRole = target?.role.orEmpty())
+    if (!includeText || context.style == CleanupStrength.None) return context
     return context.copy(
-        controlRole = target.role,
+        nearbyText = surroundingText(CONTEXT_CHARACTERS) ?: NearbyText(),
         fieldHint = target.hint,
+        // The desktop sends the window title regardless; here it comes from the screen text the
+        // user opted into, so it stays behind the same switches.
         windowTitle = screen?.title.orEmpty(),
         screenText = screen?.text.orEmpty(),
         screenshotJpeg = screenshotJpeg,

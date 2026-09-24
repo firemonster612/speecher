@@ -31,10 +31,9 @@ class DictationEngineTest {
                                     webSocket.send(
                                         "{\"type\":\"TranscriptEndpoint\",\"data\":\"late final\"}"
                                     )
-                                    // Close the server side too, so MockWebServer's task queue
-                                    // drains
-                                    // deterministically on use-block exit (real servers close; the
-                                    // mock otherwise "gives up waiting for queue to shut down").
+                                    // Close the server side too, as real servers do, so
+                                    // MockWebServer's task queue drains when the use block exits
+                                    // instead of giving up waiting for it to shut down.
                                     webSocket.close(1000, null)
                                 }
                             }

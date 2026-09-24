@@ -16,8 +16,21 @@ object ActiveDictation {
     /** A base64 JPEG screenshot from the tap, if the user opted in and it arrived. */
     @Volatile var screenshotJpeg: String? = null
 
-    fun clearScreen() {
+    /**
+     * Ends the running session: the engine closes and what the chip captured of the screen goes
+     * with it. Shares a lock with [storeCapture], so a capture that lands late cannot survive.
+     */
+    @Synchronized
+    fun end() {
+        engine?.close()
+        engine = null
         screen = null
         screenshotJpeg = null
+    }
+
+    /** Runs [store] only while [owner] is still the running session's engine. */
+    @Synchronized
+    fun storeCapture(owner: DictationEngine, store: ActiveDictation.() -> Unit) {
+        if (engine === owner) store()
     }
 }

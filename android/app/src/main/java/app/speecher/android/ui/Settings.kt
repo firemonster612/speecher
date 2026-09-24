@@ -149,7 +149,13 @@ fun Settings(
             )
             ListItem(
                 headlineContent = { Text("Context") },
-                supportingContent = { Text("Send the target app's context to the refiner") },
+                supportingContent = {
+                    Text(
+                        "Sends the field's placeholder and the text around the cursor to your " +
+                            "refinement provider. The app's name is always sent, to pick a " +
+                            "writing profile."
+                    )
+                },
                 trailingContent = {
                     Switch(
                         settings.useTargetContext,
@@ -164,7 +170,8 @@ fun Settings(
                     supportingContent = {
                         Text(
                             "Reads the visible text of the app you're dictating into and sends " +
-                                "it to the refiner. Never stored."
+                                "it to your refinement provider. Speecher discards it when the " +
+                                "dictation ends."
                         )
                     },
                     trailingContent = {
@@ -179,8 +186,9 @@ fun Settings(
                     headlineContent = { Text("Screenshot") },
                     supportingContent = {
                         Text(
-                            "Sends a screenshot of the app you're dictating into to the refiner. " +
-                                "Needs a vision-capable refinement model, such as Claude Sonnet 5."
+                            "Sends a screenshot of the app you're dictating into, without the " +
+                                "status bar or keyboard, to your refinement provider. Needs a " +
+                                "vision-capable refinement model, such as Claude Sonnet 5."
                         )
                     },
                     trailingContent = {

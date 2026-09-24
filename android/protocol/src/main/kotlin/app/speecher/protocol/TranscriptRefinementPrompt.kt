@@ -139,6 +139,11 @@ private fun contextJson(context: RefinementContext): JsonObject = buildJsonObjec
     put("application_category", JsonPrimitive(context.category.id))
     put("application_id", JsonPrimitive(context.applicationId))
     put("application_name", JsonPrimitive(context.applicationName))
+    // The insertion point: commitText replaces the selection, so the text lands at its start.
+    context.nearbyText
+        ?.selectionStart
+        ?.takeIf { it >= 0 }
+        ?.let { put("caret_offset", JsonPrimitive(it)) }
     put("control_role", JsonPrimitive(context.controlRole))
     put("document_url", JsonPrimitive(""))
     if (context.fieldHint.isNotEmpty()) put("field_hint", JsonPrimitive(context.fieldHint))

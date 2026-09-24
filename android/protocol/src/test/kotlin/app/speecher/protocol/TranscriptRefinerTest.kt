@@ -160,6 +160,29 @@ class TranscriptRefinerTest {
     }
 
     @Test
+    fun `a rate limit with a screenshot attached fails without a second request`() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse.Builder().code(429).build())
+            server.start()
+            val failure =
+                assertThrows(RefinementHttpError::class.java) {
+                    refineTranscript(
+                        OkHttpClient(),
+                        OAuthProvider.ChatGpt,
+                        tokens,
+                        "helo",
+                        emptyList(),
+                        "gpt-6-luna",
+                        "none",
+                        RefinementContext(screenshotJpeg = "AAAA"),
+                        server.url("/codex").toString().trimEnd('/'),
+                    )
+                }
+            assertEquals(429 to 1, failure.status to server.requestCount)
+        }
+    }
+
+    @Test
     fun `unfinished stream does not return partial refinement`() {
         MockWebServer().use { server ->
             server.enqueue(

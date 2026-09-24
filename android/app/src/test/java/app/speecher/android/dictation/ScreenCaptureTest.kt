@@ -6,7 +6,10 @@ import org.junit.Test
 class ScreenCaptureTest {
     private class Node(val label: String?, vararg val children: Node)
 
-    private fun text(root: Node) = visibleText(root, { it.children.toList() }, Node::label)
+    private fun text(
+        root: Node,
+        children: (Node) -> Sequence<Node> = { it.children.asSequence() },
+    ) = screenCapture(root, { "Chat" }, children, Node::label)?.text
 
     @Test
     fun `visible text reads depth first, skipping blank labels`() {
@@ -18,7 +21,27 @@ class ScreenCaptureTest {
     @Test
     fun `visible text stops at 2000 characters`() {
         val screen = Node(null, *Array(30) { Node("x".repeat(299)) })
-        assertEquals(2000, text(screen).length)
+        assertEquals(2000, text(screen)?.length)
+    }
+
+    @Test
+    fun `the walk fetches at most 500 nodes and drops the capture if a node throws`() {
+        var fetched = 0
+        val screen = Node(null, *Array(2000) { Node("") })
+        text(screen) { node -> node.children.asSequence().onEach { fetched++ } }
+        assertEquals(499, fetched)
+        assertEquals(null, text(screen) { error("stale node") })
+    }
+
+    @Test
+    fun `a screenshot keeps the target's rows below the status bar and above the keyboard`() {
+        assertEquals(
+            listOf(80..1399, null),
+            listOf(
+                uncoveredRows(0..2399, listOf(0..79, 1400..2399)),
+                uncoveredRows(0..2399, listOf(0..1300, 1200..2399)),
+            ),
+        )
     }
 
     @Test

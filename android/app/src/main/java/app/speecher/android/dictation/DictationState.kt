@@ -143,7 +143,10 @@ data class SpeecherSettings(
     val chipOffsetY: Int? = null,
     /** Keep the display awake while a dictation is running. */
     val keepScreenOn: Boolean = true,
-    /** Send the target app's identity and the text before the caret to the refiner. */
+    /**
+     * Send the field's placeholder and the text around the caret to the refiner. The app's identity
+     * and the field's kind go regardless, to pick the writing profile, as on the desktop.
+     */
     val useTargetContext: Boolean = true,
     /** With context on, also read the target window's title and visible text at chip tap. */
     val includeScreenText: Boolean = false,
