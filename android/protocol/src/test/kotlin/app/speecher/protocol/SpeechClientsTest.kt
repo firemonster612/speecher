@@ -21,6 +21,7 @@ class SpeechClientsTest {
                         object : WebSocketListener() {
                             override fun onOpen(webSocket: WebSocket, response: Response) {
                                 webSocket.send("""{"type":"error","error":{"code":"401"}}""")
+                                webSocket.close(1000, null)
                             }
                         }
                     )
@@ -56,6 +57,7 @@ class SpeechClientsTest {
                                 webSocket.send(
                                     """{"type":"session.error","fatal":true,"error":{"code":"403","message":"forbidden"}}"""
                                 )
+                                webSocket.close(1000, null)
                             }
                         }
                     )
@@ -92,10 +94,12 @@ class SpeechClientsTest {
 
                             override fun onMessage(webSocket: WebSocket, text: String) {
                                 frames.add(text)
-                                if (text == "{\"type\":\"CloseStream\"}")
+                                if (text == "{\"type\":\"CloseStream\"}") {
                                     webSocket.send(
                                         """{"type":"TranscriptEndpoint","data":"hello"}"""
                                     )
+                                    webSocket.close(1000, null)
+                                }
                             }
                         }
                     )
@@ -111,8 +115,9 @@ class SpeechClientsTest {
                     events::add,
                     server.url("/voice").toString().replaceFirst("http", "ws"),
                 )
-            assertEquals(SpeechEvent.Connected, events.poll(3, TimeUnit.SECONDS))
+            // Sent while the socket is still opening: held and flushed after the handshake.
             client.sendAudio(byteArrayOf(1, 2))
+            assertEquals(SpeechEvent.Connected, events.poll(3, TimeUnit.SECONDS))
             client.stop()
             val request = server.takeRequest()
             assertEquals("Bearer secret", request.headers["Authorization"])
@@ -150,6 +155,7 @@ class SpeechClientsTest {
                                     webSocket.send(
                                         """{"type":"session.updated","session":{"status":"closed"}}"""
                                     )
+                                    webSocket.close(1000, null)
                                 }
                             }
                         }

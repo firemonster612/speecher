@@ -93,11 +93,11 @@ private fun LauncherIcons() {
 /** One entry per preview state, keyed by the `state` extra. */
 private val states: Map<String, @Composable () -> Unit> =
     mapOf(
-        "panel-connecting" to bottom { PanelConnectingPreview() },
         "panel-listening-empty" to bottom { PanelListeningEmptyPreview() },
         "panel-listening" to bottom { PanelListeningPreview() },
         "panel-listening-no-refine" to bottom { PanelListeningNoRefinePreview() },
         "panel-refining" to bottom { PanelRefiningPreview() },
+        "panel-refining-stream" to bottom { PanelRefiningStreamPreview() },
         "panel-failed-microphone" to bottom { PanelFailedMicrophonePreview() },
         "panel-failed-signed-out" to bottom { PanelFailedSignedOutPreview() },
         "panel-failed-network" to bottom { PanelFailedNetworkPreview() },

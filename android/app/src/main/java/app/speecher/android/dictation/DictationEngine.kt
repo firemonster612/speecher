@@ -40,7 +40,8 @@ class DictationEngine(
     private val capture: (() -> Boolean, (ByteArray, Float) -> Unit) -> Unit,
     private val stopCapture: () -> Unit,
     private val connect: (Provider, (SpeechEvent) -> Unit) -> SpeechClient,
-    private val refine: (Provider, String) -> String,
+    /** Refines the raw transcript, reporting the refined text so far as it streams in. */
+    private val refine: (Provider, String, (String) -> Unit) -> String,
     /** ChatGPT's batch re-transcription of the session's PCM16 audio; null skips that pass. */
     private val transcribe: ((ByteArray) -> String)?,
     private val commit: (String) -> Boolean,
@@ -48,10 +49,12 @@ class DictationEngine(
     private val onState: (DictationState) -> Unit,
 ) : AutoCloseable {
     @Volatile
-    var state: DictationState = DictationState.Connecting
+    var state: DictationState = DictationState.Listening()
         private set
 
     private var client: SpeechClient? = null
+    /** Audio captured before [connect] returned a client, handed to it when it does. */
+    private val unsent = mutableListOf<ByteArray>()
     private val finalText = StringBuilder()
     private var interim = ""
     @Volatile private var recording = false
@@ -85,13 +88,18 @@ class DictationEngine(
         failedCommit = null
         sourceProvider = provider
         recording = true
-        publish(DictationState.Connecting)
+        // Listening from the tap: the microphone starts now and the clients hold audio until their
+        // socket is up, so words spoken while it connects are sent, not lost.
+        publish(listening(0f))
+        executor.execute { captureAudio(current) }
         executor.execute {
             try {
                 val opened = connect(provider) { event -> onSpeech(current, event) }
                 synchronized(this) {
-                    if (current == session) {
+                    if (current == session && state !is DictationState.Failed) {
                         client = opened
+                        unsent.forEach(opened::sendAudio)
+                        unsent.clear()
                         if (!recording) opened.stop()
                     } else opened.cancel()
                 }
@@ -148,13 +156,42 @@ class DictationEngine(
         else startSession(sourceProvider, failed.transcript)
     }
 
+    private fun captureAudio(current: Int) {
+        try {
+            capture({ current == session && recording }) { audio, level ->
+                synchronized(this) {
+                    if (current == session && recording) {
+                        client?.sendAudio(audio) ?: unsent.add(audio)
+                        if (
+                            transcribe != null &&
+                                sourceProvider.hasBatchTranscription &&
+                                recorded.size() + audio.size <= MAX_RECORDED_BYTES
+                        )
+                            recorded.write(audio)
+                        publish(listening(level))
+                    }
+                }
+            }
+        } catch (_: SecurityException) {
+            fail(current, FailureReason.MicrophoneDenied, "Grant microphone permission in Speecher")
+        } catch (_: Exception) {
+            fail(current, FailureReason.Provider, "Microphone unavailable")
+        }
+    }
+
     private fun refineTranscript(provider: Provider, raw: String) {
         val current = session
         failedRefinement = provider
         publish(DictationState.Refining(raw))
         executor.execute {
             try {
-                val text = refine(provider, raw)
+                val text =
+                    refine(provider, raw) { refined ->
+                        synchronized(this) {
+                            if (current == session && state is DictationState.Refining)
+                                publish(DictationState.Refining(raw, refined))
+                        }
+                    }
                 synchronized(this) {
                     if (current != session || inserted) return@execute
                     commitTranscript(text)
@@ -177,36 +214,7 @@ class DictationEngine(
         )
             return
         when (event) {
-            SpeechEvent.Connected -> {
-                publish(listening(0f))
-                executor.execute {
-                    if (current != session || !recording) return@execute
-                    try {
-                        capture({ current == session && recording }) { audio, level ->
-                            synchronized(this) {
-                                if (current == session && recording) {
-                                    client?.sendAudio(audio)
-                                    if (
-                                        transcribe != null &&
-                                            sourceProvider.hasBatchTranscription &&
-                                            recorded.size() + audio.size <= MAX_RECORDED_BYTES
-                                    )
-                                        recorded.write(audio)
-                                    publish(listening(level))
-                                }
-                            }
-                        }
-                    } catch (_: SecurityException) {
-                        fail(
-                            current,
-                            FailureReason.MicrophoneDenied,
-                            "Grant microphone permission in Speecher",
-                        )
-                    } catch (_: Exception) {
-                        fail(current, FailureReason.Provider, "Microphone unavailable")
-                    }
-                }
-            }
+            SpeechEvent.Connected -> Unit
             is SpeechEvent.Partial -> {
                 interim = event.text
                 publishListening()
@@ -278,9 +286,10 @@ class DictationEngine(
         commitFailed: Boolean = false,
     ) {
         if (current != session || inserted) return
-        recording = false
-        stopCapture()
-        client?.cancel()
+        // The microphone and the connection start together and can both fail; the first failure
+        // is the one shown. Only a failed commit replaces a failure, with its retry.
+        if (state is DictationState.Failed && !commitFailed) return
+        cancelSession()
         pendingInsert = null
         publish(
             DictationState.Failed(
@@ -330,6 +339,7 @@ class DictationEngine(
         stopCapture()
         client?.cancel()
         client = null
+        unsent.clear()
     }
 
     override fun close() {
@@ -403,7 +413,7 @@ fun createDictationEngine(
                     endpoints.getValue(selected).speech,
                 )
         },
-        { selected, raw ->
+        { selected, raw, onRefined ->
             val context =
                 refinementContext(
                     settings,
@@ -431,6 +441,7 @@ fun createDictationEngine(
                     choice.effort,
                     context,
                     endpoints.getValue(selected).refinement,
+                    onRefined,
                 )
         },
         if (settings.transcribePassEnabled)

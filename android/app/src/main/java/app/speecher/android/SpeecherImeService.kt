@@ -25,7 +25,7 @@ fun speecherImeId(context: Context): String =
 class SpeecherImeService : InputMethodService() {
     private val owner = ServiceViewOwner()
     private var panelState =
-        androidx.compose.runtime.mutableStateOf<DictationState>(DictationState.Connecting)
+        androidx.compose.runtime.mutableStateOf<DictationState>(DictationState.Listening())
 
     override fun onCreate() {
         super.onCreate()

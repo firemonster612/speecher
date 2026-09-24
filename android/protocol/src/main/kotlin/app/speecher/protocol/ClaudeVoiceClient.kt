@@ -59,14 +59,6 @@ class ClaudeVoiceClient(
 
     override fun onOpen() {
         if (cancelled || failed) return
-        val buffered =
-            synchronized(lock) {
-                connected = true
-                pending.toList().also {
-                    pending.clear()
-                    pendingBytes = 0
-                }
-            }
         transport.sendText("{\"type\":\"KeepAlive\"}")
         keepAlive.scheduleAtFixedRate(
             { if (!cancelled && !completed) transport.sendText("{\"type\":\"KeepAlive\"}") },
@@ -74,7 +66,13 @@ class ClaudeVoiceClient(
             8,
             TimeUnit.SECONDS,
         )
-        buffered.forEach { transport.sendBinary(it) }
+        // Flushed under the lock so audio captured meanwhile queues behind it, not ahead.
+        synchronized(lock) {
+            connected = true
+            pending.forEach { transport.sendBinary(it) }
+            pending.clear()
+            pendingBytes = 0
+        }
         if (stopped) closeStream() else events(SpeechEvent.Connected)
     }
 
@@ -121,24 +119,18 @@ class ClaudeVoiceClient(
 
     override fun sendAudio(pcm: ByteArray) {
         if (stopped || cancelled || failed || pcm.isEmpty()) return
-        var overflow = false
-        val direct =
-            synchronized(lock) {
-                if (connected) true
-                else if (pendingBytes + pcm.size > 4 * 1024 * 1024) {
-                    overflow = true
-                    false
-                } else {
-                    pending.add(pcm)
-                    pendingBytes += pcm.size
-                    false
-                }
+        synchronized(lock) {
+            if (connected) {
+                transport.sendBinary(pcm)
+                return
             }
-        if (overflow) {
-            fail(false, "audio buffer overflow")
-            return
+            if (pendingBytes + pcm.size <= 4 * 1024 * 1024) {
+                pending.add(pcm)
+                pendingBytes += pcm.size
+                return
+            }
         }
-        if (direct) transport.sendBinary(pcm)
+        fail(false, "audio buffer overflow")
     }
 
     override fun stop() {

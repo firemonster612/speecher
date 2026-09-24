@@ -320,9 +320,9 @@ class SpeecherChipService : AccessibilityService() {
     private fun startDictation(): DictationEngine {
         val settings = SettingsStore(this).load()
         ActiveDictation.settings = settings
-        ActiveDictation.state = DictationState.Connecting
+        ActiveDictation.state = DictationState.Listening()
         ActiveDictation.end()
-        ActiveDictation.observe?.invoke(DictationState.Connecting)
+        ActiveDictation.observe?.invoke(DictationState.Listening())
         val engine =
             createDictationEngine(
                 this,

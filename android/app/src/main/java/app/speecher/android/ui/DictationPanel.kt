@@ -1,7 +1,6 @@
 package app.speecher.android.ui
 
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -98,7 +97,6 @@ fun DictationPanel(
         ) {
             val status =
                 when (state) {
-                    DictationState.Connecting -> "Connecting"
                     is DictationState.Listening -> "Listening"
                     is DictationState.Refining -> "Refining transcript"
                     is DictationState.Failed -> state.reason.title
@@ -111,7 +109,6 @@ fun DictationPanel(
                 contentAlignment = Alignment.Center,
             ) {
                 when (state) {
-                    DictationState.Connecting -> ConnectingBars()
                     is DictationState.Listening -> LiveBars(state.level)
                     is DictationState.Refining -> RefiningBars()
                     is DictationState.Failed -> FailureMessage(state)
@@ -135,7 +132,6 @@ fun DictationPanel(
 private val DictationState.transcript: String
     get() =
         when (this) {
-            DictationState.Connecting -> ""
             is DictationState.Listening -> text
             is DictationState.Refining -> transcript
             is DictationState.Failed -> transcript
@@ -143,19 +139,18 @@ private val DictationState.transcript: String
 
 @Composable
 private fun Transcript(state: DictationState, modifier: Modifier) {
-    val committed = (state as? DictationState.Listening)?.committed ?: state.transcript
-    val interim = (state as? DictationState.Listening)?.interim ?: ""
+    // Refining shows the raw transcript dimmed until the cleanup's first token, then the cleaned
+    // text as it streams in, through the same append-only preview as live dictation.
+    val refined = (state as? DictationState.Refining)?.refined.orEmpty()
+    val committed =
+        (state as? DictationState.Listening)?.committed ?: refined.ifEmpty { state.transcript }
+    val interim = (state as? DictationState.Listening)?.interim.orEmpty()
     val scroll = rememberScrollState()
     // Follow the bottom off layout, not the text: jumping to maxValue after each relayout keeps the
     // newest words in view without an animation chasing a one-frame-stale target, and shrinking
     // interim text no longer lurches the preview up then back down.
     LaunchedEffect(scroll) { snapshotFlow { scroll.maxValue }.collect { scroll.scrollTo(it) } }
-    val placeholder =
-        when (state) {
-            DictationState.Connecting -> "Connecting…"
-            is DictationState.Listening -> "Start speaking"
-            else -> ""
-        }
+    val placeholder = if (state is DictationState.Listening) "Speak now" else ""
     val colors = MaterialTheme.colorScheme
     Box(modifier.verticalScroll(scroll)) {
         if (committed.isEmpty() && interim.isEmpty()) {
@@ -175,7 +170,8 @@ private fun Transcript(state: DictationState, modifier: Modifier) {
                 },
                 style = MaterialTheme.typography.bodyLarge,
                 color =
-                    if (state is DictationState.Refining) colors.onSurface.copy(alpha = 0.6f)
+                    if (state is DictationState.Refining && refined.isEmpty())
+                        colors.onSurface.copy(alpha = 0.6f)
                     else colors.onSurface,
             )
         }
@@ -276,14 +272,6 @@ private fun LiveBars(level: Float) {
 }
 
 @Composable
-private fun ConnectingBars() {
-    val alpha by
-        rememberInfiniteTransition()
-            .animateFloat(0.25f, 0.6f, infiniteRepeatable(tween(700), RepeatMode.Reverse))
-    Bars(List(BAR_COUNT) { 0f }, MaterialTheme.colorScheme.onSurface.copy(alpha = alpha))
-}
-
-@Composable
 private fun RefiningBars() {
     val phase by
         rememberInfiniteTransition()
@@ -328,11 +316,7 @@ private const val SAMPLE_TEXT =
 
 @PreviewLightDark
 @Composable
-internal fun PanelConnectingPreview() = PanelPreview(DictationState.Connecting)
-
-@PreviewLightDark
-@Composable
-internal fun PanelListeningEmptyPreview() = PanelPreview(DictationState.Listening("", "", 0.1f))
+internal fun PanelListeningEmptyPreview() = PanelPreview(DictationState.Listening(level = 0.1f))
 
 @PreviewLightDark
 @Composable
@@ -346,6 +330,13 @@ internal fun PanelListeningNoRefinePreview() =
 @PreviewLightDark
 @Composable
 internal fun PanelRefiningPreview() = PanelPreview(DictationState.Refining(SAMPLE_TEXT))
+
+@PreviewLightDark
+@Composable
+internal fun PanelRefiningStreamPreview() =
+    PanelPreview(
+        DictationState.Refining(SAMPLE_TEXT, "Can we move the design review to Thursday afternoon?")
+    )
 
 @PreviewLightDark
 @Composable

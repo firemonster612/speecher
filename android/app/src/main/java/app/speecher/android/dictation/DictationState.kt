@@ -19,16 +19,17 @@ val Provider.hasBatchTranscription: Boolean
 
 /** What the dictation panel shows. The engine produces it; the UI only renders it. */
 sealed interface DictationState {
-    /** The panel is up and the microphone is not yet streaming. */
-    data object Connecting : DictationState
-
     /**
-     * Streaming. [committed] is the finalised text and [interim] the recogniser's current guess for
-     * the word in progress; keeping them apart lets the preview grow append-only instead of
-     * reflowing whenever an interim shrinks. [level] is the input loudness from 0 to 1.
+     * The microphone is live from the tap, while the connection may still be opening. [committed]
+     * is the finalised text and [interim] the recogniser's current guess for the word in progress;
+     * keeping them apart lets the preview grow append-only instead of reflowing whenever an interim
+     * shrinks. [level] is the input loudness from 0 to 1.
      */
-    data class Listening(val committed: String, val interim: String, val level: Float) :
-        DictationState {
+    data class Listening(
+        val committed: String = "",
+        val interim: String = "",
+        val level: Float = 0f,
+    ) : DictationState {
         /** The whole live preview: committed text with the interim word appended. */
         val text: String
             get() =
@@ -36,8 +37,11 @@ sealed interface DictationState {
                 else if (interim.isEmpty()) committed else "$committed $interim"
     }
 
-    /** The user pressed Insert and the batch or cleanup pass is running. */
-    data class Refining(val transcript: String) : DictationState
+    /**
+     * The user pressed Insert and the batch or cleanup pass is running. [refined] is the cleanup
+     * text streamed so far, empty until its first token arrives.
+     */
+    data class Refining(val transcript: String, val refined: String = "") : DictationState
 
     /**
      * Dictation stopped. [transcript] holds whatever was heard before the failure. [commitFailed]

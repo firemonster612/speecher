@@ -35,17 +35,30 @@ fun multipartFile(
     )
 }
 
-/**
- * POSTs [body] over HTTP/1.1 and reads the whole response. https URLs use the same browser-shaped
- * BC TLS as the speech WebSocket, because Cloudflare rejects Conscrypt's handshake on chatgpt.com;
- * http URLs use a plain socket, for fake-server builds and tests. One request per connection.
- */
+/** As [httpPostStreaming], reading the whole response body. */
 fun httpPost(
     url: String,
     headers: Map<String, String>,
     body: HttpBody,
     fingerprint: TlsFingerprint = TlsFingerprints.active,
-): HttpResponse {
+): HttpResponse =
+    httpPostStreaming(url, headers, body, fingerprint) { status, input ->
+        HttpResponse(status, readAtMost(input))
+    }
+
+/**
+ * POSTs [body] over HTTP/1.1 and hands the status and decoded body stream to [read] as the bytes
+ * arrive. https URLs use the same browser-shaped BC TLS as the speech WebSocket, because Cloudflare
+ * rejects Conscrypt's handshake on chatgpt.com; http URLs use a plain socket, for fake-server
+ * builds and tests. One request per connection.
+ */
+fun <T> httpPostStreaming(
+    url: String,
+    headers: Map<String, String>,
+    body: HttpBody,
+    fingerprint: TlsFingerprint = TlsFingerprints.active,
+    read: (status: Int, body: InputStream) -> T,
+): T {
     val uri = URI(url)
     val secure =
         when (uri.scheme) {
@@ -88,11 +101,11 @@ fun httpPost(
         )
         output.write(body.bytes)
         output.flush()
-        return readResponse(BufferedInputStream(tls?.inputStream ?: socket.getInputStream()))
+        return readResponse(BufferedInputStream(tls?.inputStream ?: socket.getInputStream()), read)
     }
 }
 
-private fun readResponse(input: InputStream): HttpResponse {
+private fun <T> readResponse(input: InputStream, read: (Int, InputStream) -> T): T {
     var lines: List<String>
     var status: Int
     // Interim 1xx responses (e.g. 103 Early Hints) precede the real one; skip them.
@@ -112,42 +125,67 @@ private fun readResponse(input: InputStream): HttpResponse {
     val length = fields["content-length"]
     val raw =
         when {
-            fields["transfer-encoding"]?.contains("chunked", true) == true -> readChunked(input)
+            fields["transfer-encoding"]?.contains("chunked", true) == true ->
+                ChunkedInputStream(input)
             length != null ->
                 readExactly(
-                    input,
-                    length.toIntOrNull()?.takeIf { it >= 0 }
-                        ?: throw IOException("Invalid Content-Length: $length"),
-                )
-            else -> readAtMost(input)
+                        input,
+                        length.toIntOrNull()?.takeIf { it >= 0 }
+                            ?: throw IOException("Invalid Content-Length: $length"),
+                    )
+                    .inputStream()
+            else -> input
         }
     val body =
         when (val encoding = fields["content-encoding"]?.lowercase()) {
             null,
             "identity" -> raw
-            "gzip" -> GZIPInputStream(raw.inputStream()).use(::readAtMost)
+            "gzip" -> GZIPInputStream(raw)
             else -> throw IOException("Unsupported Content-Encoding: $encoding")
         }
-    return HttpResponse(status, body)
+    return read(status, body)
 }
 
-private fun readChunked(input: InputStream): ByteArray {
-    val body = ByteArrayOutputStream()
-    while (true) {
-        val line = readLine(input)
-        val size =
-            line.substringBefore(';').trim().toIntOrNull(16)?.takeIf { it >= 0 }
-                ?: throw IOException("Invalid chunk size: $line")
-        if (size == 0) break
-        if (body.size() + size > MAX_BODY_BYTES) throw IOException("HTTP response too large")
-        body.write(readExactly(input, size))
-        if (readLine(input).isNotEmpty()) throw IOException("Invalid chunk terminator")
+/**
+ * Decodes a chunked body as it arrives, so a server-sent-event stream reaches its reader event by
+ * event. Each chunk's terminator is read lazily, at the start of the next read, so a read never
+ * waits on bytes the server has not sent yet.
+ */
+private class ChunkedInputStream(private val input: InputStream) : InputStream() {
+    private var remaining = 0
+    private var started = false
+    private var finished = false
+
+    override fun read(): Int {
+        val byte = ByteArray(1)
+        return if (read(byte, 0, 1) < 0) -1 else byte[0].toInt() and 0xff
     }
-    // Trailer fields end at an empty line; nothing here needs them.
-    do {
-        val trailer = readLine(input)
-    } while (trailer.isNotEmpty())
-    return body.toByteArray()
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        if (finished) return -1
+        if (length == 0) return 0
+        if (remaining == 0) {
+            if (started && readLine(input).isNotEmpty())
+                throw IOException("Invalid chunk terminator")
+            started = true
+            val line = readLine(input)
+            remaining =
+                line.substringBefore(';').trim().toIntOrNull(16)?.takeIf { it >= 0 }
+                    ?: throw IOException("Invalid chunk size: $line")
+            if (remaining == 0) {
+                // Trailer fields end at an empty line; nothing here needs them.
+                do {
+                    val trailer = readLine(input)
+                } while (trailer.isNotEmpty())
+                finished = true
+                return -1
+            }
+        }
+        val count = input.read(buffer, offset, minOf(length, remaining))
+        if (count < 0) throw EOFException("HTTP chunk ended early")
+        remaining -= count
+        return count
+    }
 }
 
 private fun readExactly(input: InputStream, size: Int): ByteArray {

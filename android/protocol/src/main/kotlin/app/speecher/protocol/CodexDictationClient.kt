@@ -85,12 +85,12 @@ class CodexDictationClient(
         when (event.string("type")) {
             "session.started" -> {
                 if (started) return
-                val buffered =
-                    synchronized(lock) {
-                        started = true
-                        pending.toList().also { pending.clear() }
-                    }
-                buffered.forEach(::sendAudioMessage)
+                // Flushed under the lock so audio captured meanwhile queues behind it, not ahead.
+                synchronized(lock) {
+                    started = true
+                    pending.forEach(::sendAudioMessage)
+                    pending.clear()
+                }
                 if (stopped) closeSession() else events(SpeechEvent.Connected)
             }
             "transcript.segment",
@@ -140,15 +140,7 @@ class CodexDictationClient(
 
     override fun sendAudio(pcm: ByteArray) {
         if (stopped || cancelled || failed || pcm.isEmpty()) return
-        val direct =
-            synchronized(lock) {
-                if (started) true
-                else {
-                    pending.add(pcm)
-                    false
-                }
-            }
-        if (direct) sendAudioMessage(pcm)
+        synchronized(lock) { if (started) sendAudioMessage(pcm) else pending.add(pcm) }
     }
 
     private fun sendAudioMessage(pcm: ByteArray) {

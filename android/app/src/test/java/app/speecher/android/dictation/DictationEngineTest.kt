@@ -1,15 +1,21 @@
 package app.speecher.android.dictation
 
 import app.speecher.protocol.ClaudeVoiceClient
+import app.speecher.protocol.OAuthProvider
+import app.speecher.protocol.OAuthTokens
+import app.speecher.protocol.RefinementContext
 import app.speecher.protocol.SpeechClient
 import app.speecher.protocol.SpeechEvent
+import app.speecher.protocol.refineTranscript
 import app.speecher.protocol.webSocketTransport
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import mockwebserver3.MockResponse
+import mockwebserver3.MockResponseBody
 import mockwebserver3.MockWebServer
+import okhttp3.OkHttpClient
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.junit.Assert.assertEquals
@@ -57,7 +63,7 @@ class DictationEngineTest {
                             server.url("/voice").toString().replaceFirst("http", "ws"),
                         )
                     },
-                    { _, raw -> raw },
+                    { _, raw, _ -> raw },
                     { error("no batch pass") },
                     { commits.add(it) },
                     Executor { it.run() },
@@ -104,6 +110,114 @@ class DictationEngineTest {
     }
 
     @Test
+    fun `speech before the connection opens is captured and sent once it does`() {
+        val capture = Capture()
+        val client = Client()
+        val tasks = ArrayDeque<Runnable>()
+        lateinit var speech: (SpeechEvent) -> Unit
+        val engine =
+            DictationEngine(
+                capture::capture,
+                capture::stop,
+                { _, events ->
+                    speech = events
+                    client
+                },
+                { _, raw, _ -> raw },
+                null,
+                { true },
+                Executor { tasks.add(it) },
+                {},
+            )
+        engine.start(Provider.Claude)
+        assertEquals(DictationState.Listening(), engine.state)
+        tasks.removeFirst().run() // The microphone, started by the tap.
+        capture.audio?.invoke(byteArrayOf(1, 2), 0.5f)
+        assertEquals(DictationState.Listening("", "", 0.5f), engine.state)
+        tasks.removeFirst().run() // The connection, which returns the client after the audio.
+        speech(SpeechEvent.Connected)
+        capture.audio?.invoke(byteArrayOf(3), 0.5f)
+        assertEquals(listOf(listOf<Byte>(1, 2), listOf<Byte>(3)), client.audio.map { it.toList() })
+    }
+
+    @Test
+    fun `refinement streams into the panel and commits the final text once`() {
+        MockWebServer().use { server ->
+            val firstShown = CountDownLatch(1)
+            var streamedBeforeEnd = false
+            fun chunk(event: String, delta: String) =
+                "event: $event\ndata: {\"delta\":\"$delta\"}\n\n"
+                    .let { "${it.length.toString(16)}\r\n$it\r\n" }
+            server.enqueue(
+                MockResponse.Builder()
+                    .addHeader("Transfer-Encoding", "chunked")
+                    .body(
+                        object : MockResponseBody {
+                            override val contentLength = -1L
+
+                            override fun writeTo(sink: okio.BufferedSink) {
+                                sink.writeUtf8(chunk("response.output_text.delta", "Hello")).flush()
+                                // The rest waits until the panel shows the first token, so a reader
+                                // that
+                                // takes the reply whole leaves streamedBeforeEnd false.
+                                streamedBeforeEnd = firstShown.await(3, TimeUnit.SECONDS)
+                                sink
+                                    .writeUtf8(chunk("response.output_text.delta", " there."))
+                                    .writeUtf8(chunk("response.completed", ""))
+                                    .writeUtf8("0\r\n\r\n")
+                                    .flush()
+                            }
+                        }
+                    )
+                    .build()
+            )
+            server.start()
+            lateinit var speech: (SpeechEvent) -> Unit
+            val refined = mutableListOf<String>()
+            val commits = mutableListOf<String>()
+            val engine =
+                DictationEngine(
+                    { _, _ -> },
+                    {},
+                    { _, events ->
+                        speech = events
+                        Client()
+                    },
+                    { _, raw, onText ->
+                        refineTranscript(
+                            OkHttpClient(),
+                            OAuthProvider.ChatGpt,
+                            OAuthTokens("access", "", "", 0, ""),
+                            raw,
+                            emptyList(),
+                            "gpt-6-luna",
+                            "none",
+                            RefinementContext(),
+                            server.url("/codex").toString(),
+                            onText,
+                        )
+                    },
+                    null,
+                    { commits.add(it) },
+                    Executor { it.run() },
+                    { state ->
+                        if (state is DictationState.Refining && state.refined.isNotEmpty()) {
+                            refined.add(state.refined)
+                            firstShown.countDown()
+                        }
+                    },
+                )
+            engine.start(Provider.ChatGpt)
+            speech(SpeechEvent.Final("hello there"))
+            engine.insertRefined(Provider.ChatGpt)
+            speech(SpeechEvent.Completed)
+            assertTrue(streamedBeforeEnd)
+            assertEquals(listOf("Hello", "Hello there."), refined)
+            assertEquals(listOf("Hello there."), commits)
+        }
+    }
+
+    @Test
     fun `raw insert commits once`() {
         val capture = Capture()
         val client = Client()
@@ -117,7 +231,7 @@ class DictationEngineTest {
                     speech = events
                     client
                 },
-                { _, raw -> raw },
+                { _, raw, _ -> raw },
                 { error("no batch pass") },
                 { commits.add(it) },
                 Executor { it.run() },
@@ -151,7 +265,7 @@ class DictationEngineTest {
                     speech = events
                     client
                 },
-                { _, raw -> raw },
+                { _, raw, _ -> raw },
                 { error("no batch pass") },
                 { commits.add(it) },
                 Executor { it.run() },
@@ -180,7 +294,7 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, _ -> "Hello." },
+                { _, _, _ -> "Hello." },
                 { error("no batch pass") },
                 { commits.add(it) },
                 Executor { it.run() },
@@ -201,7 +315,7 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, raw -> raw },
+                { _, raw, _ -> raw },
                 { error("no batch pass") },
                 { commits.add(it) },
                 Executor { it.run() },
@@ -226,7 +340,7 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, raw -> raw },
+                { _, raw, _ -> raw },
                 { error("no batch pass") },
                 { text -> if (commitSucceeds) commits.add(text) else false },
                 Executor { it.run() },
@@ -254,7 +368,7 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, raw -> raw },
+                { _, raw, _ -> raw },
                 { error("no batch pass") },
                 { true },
                 Executor { it.run() },
@@ -284,7 +398,7 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, raw -> if (++attempts == 1) error("temporary") else "$raw refined" },
+                { _, raw, _ -> if (++attempts == 1) error("temporary") else "$raw refined" },
                 { error("no batch pass") },
                 { commits.add(it) },
                 Executor { it.run() },
@@ -314,7 +428,7 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, raw -> "clean: $raw" },
+                { _, raw, _ -> "clean: $raw" },
                 { pcm ->
                     uploads.add(pcm.toList())
                     if (batchFails) error("HTTP 500") else "Hello there, friend."
@@ -359,7 +473,7 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, _ -> error("plain Insert never cleans up") },
+                { _, _, _ -> error("plain Insert never cleans up") },
                 transcribe,
                 { commits.add(it) },
                 Executor { it.run() },
@@ -390,7 +504,7 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, raw -> "clean: $raw" },
+                { _, raw, _ -> "clean: $raw" },
                 null,
                 { commits.add(it) },
                 Executor { it.run() },

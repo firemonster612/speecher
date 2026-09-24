@@ -69,6 +69,7 @@ fun main() {
             mapOf(WritingProfile.Other to WritingProfileSettings(tone = Tone.Casual)),
         )
     println("context: ${context.category.id}/${context.profile.id}/${context.tone.id}")
+    val partials = mutableListOf<String>()
     val casual =
         refineTranscript(
             OkHttpClient(),
@@ -79,8 +80,12 @@ fun main() {
             "gpt-6-luna",
             "none",
             context,
+            onText = partials::add,
         )
     println("refinement with context: \"$casual\"")
+    // Each partial extends the last, and the final result is the last partial.
+    check(partials.zipWithNext().all { (a, b) -> b.startsWith(a) } && partials.last() == casual)
+    println("streamed ${partials.size} partials: ${partials.joinToString(" | ") { "\"$it\"" }}")
 
     // The a11y capture's keys: the chat's window title and its visible messages.
     val screen =

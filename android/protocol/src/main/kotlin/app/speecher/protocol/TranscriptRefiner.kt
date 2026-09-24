@@ -28,6 +28,8 @@ fun refineTranscript(
     endpointBase: String =
         if (provider == OAuthProvider.Claude) "https://api.anthropic.com/v1"
         else "https://chatgpt.com/backend-api/codex",
+    /** Receives the refined text so far each time the stream adds to it. */
+    onText: (String) -> Unit = {},
 ): String {
     val refine = { sent: RefinementContext ->
         refineOnce(
@@ -40,12 +42,13 @@ fun refineTranscript(
             effort,
             sent,
             endpointBase,
+            onText,
         )
     }
     if (context.screenshotJpeg == null) return refine(context)
     // A model without vision rejects the image, and an oversized one is refused; the dictation
-    // still
-    // deserves a text-only pass. Other failures would fail again, so they are not retried.
+    // still deserves a text-only pass. Other failures would fail again, so they are not retried.
+    // Both statuses arrive before any text, so the retry never replays streamed output.
     return try {
         refine(context)
     } catch (failure: RefinementHttpError) {
@@ -71,6 +74,7 @@ private fun refineOnce(
     effort: String,
     context: RefinementContext,
     endpointBase: String,
+    onText: (String) -> Unit,
 ): String {
     val base = endpointBase.trimEnd('/')
     if (provider == OAuthProvider.Claude) {
@@ -89,31 +93,35 @@ private fun refineOnce(
             .execute()
             .use { response ->
                 if (!response.isSuccessful) throw RefinementHttpError(response.code)
-                return readRefinement(provider, response.body.charStream().buffered())
+                return readRefinement(provider, response.body.charStream().buffered(), onText)
             }
     }
     // chatgpt.com sits behind Cloudflare, which rejects OkHttp's Conscrypt handshake with a 403.
-    val response =
-        httpPost(
-            "$base/responses",
-            listOfNotNull(
-                    "Authorization" to "Bearer ${tokens.accessToken}",
-                    tokens.accountId()?.let { "ChatGPT-Account-ID" to it },
-                )
-                .toMap(),
-            HttpBody(
-                "application/json",
-                chatGptBody(rawTranscript, vocabulary, model, effort, context)
-                    .toString()
-                    .toByteArray(Charsets.UTF_8),
-            ),
-        )
-    if (response.status !in 200..299) throw RefinementHttpError(response.status)
-    return readRefinement(provider, response.body.inputStream().bufferedReader())
+    return httpPostStreaming(
+        "$base/responses",
+        listOfNotNull(
+                "Authorization" to "Bearer ${tokens.accessToken}",
+                tokens.accountId()?.let { "ChatGPT-Account-ID" to it },
+            )
+            .toMap(),
+        HttpBody(
+            "application/json",
+            chatGptBody(rawTranscript, vocabulary, model, effort, context)
+                .toString()
+                .toByteArray(Charsets.UTF_8),
+        ),
+    ) { status, body ->
+        if (status !in 200..299) throw RefinementHttpError(status)
+        readRefinement(provider, body.bufferedReader(), onText)
+    }
 }
 
 /** Reads a server-sent-event stream until the provider's completion event. */
-private fun readRefinement(provider: OAuthProvider, reader: BufferedReader): String {
+private fun readRefinement(
+    provider: OAuthProvider,
+    reader: BufferedReader,
+    onText: (String) -> Unit,
+): String {
     val output = StringBuilder()
     var event = ""
     val data = StringBuilder()
@@ -121,7 +129,11 @@ private fun readRefinement(provider: OAuthProvider, reader: BufferedReader): Str
     while (!complete) {
         val line = reader.readLine() ?: break
         if (line.isEmpty()) {
-            if (data.isNotEmpty()) complete = appendEvent(provider, event, data.toString(), output)
+            if (data.isNotEmpty()) {
+                val before = output.length
+                complete = appendEvent(provider, event, data.toString(), output)
+                if (output.length > before) onText(output.toString())
+            }
             event = ""
             data.clear()
         } else if (line.startsWith("event:")) event = line.substringAfter(':').trim()
