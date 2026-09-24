@@ -58,13 +58,13 @@ fun main() {
     }
     check(failures == 0) { "$failures refinement choices failed" }
 
-    // A populated target context: Messages, casual tone, text before the caret.
+    // A populated target context: Messages, casual tone, text around a selected word.
     val context =
         resolveRefinementContext(
             "com.google.android.apps.messaging",
             "Messages",
             null,
-            "Dinner plan",
+            NearbyText("Dinner at ", " works for me", 10, 15),
             WritingProfile.Other,
             mapOf(WritingProfile.Other to WritingProfileSettings(tone = Tone.Casual)),
         )

@@ -45,8 +45,20 @@ data class WritingProfileSettings(
 )
 
 /**
- * The refinement configuration and target context sent to the refiner. [textBeforeCaret] is null
- * when nearby text is excluded (context off or a secure field), which drops the caret keys.
+ * The field's text around the caret: [before] the selection start, [after] the selection end.
+ * Selection offsets are absolute in the field, -1 when the editor does not report them, as on the
+ * desktop.
+ */
+data class NearbyText(
+    val before: String = "",
+    val after: String = "",
+    val selectionStart: Int = -1,
+    val selectionEnd: Int = -1,
+)
+
+/**
+ * The refinement configuration and target context sent to the refiner. [nearbyText] is null when
+ * nearby text is excluded (context off or a secure field), which drops the caret keys.
  */
 data class RefinementContext(
     val style: CleanupStrength = CleanupStrength.Balanced,
@@ -55,7 +67,7 @@ data class RefinementContext(
     val category: AppCategory = AppCategory.Unknown,
     val applicationId: String = "",
     val applicationName: String = "",
-    val textBeforeCaret: String? = null,
+    val nearbyText: NearbyText? = null,
 )
 
 private class RecognitionRule(
@@ -151,7 +163,7 @@ fun resolveRefinementContext(
     applicationId: String,
     applicationName: String,
     platformCategory: AppCategory?,
-    textBeforeCaret: String?,
+    nearbyText: NearbyText?,
     fallbackProfile: WritingProfile,
     profiles: Map<WritingProfile, WritingProfileSettings>,
 ): RefinementContext {
@@ -181,6 +193,6 @@ fun resolveRefinementContext(
         category,
         applicationId,
         applicationName,
-        textBeforeCaret,
+        nearbyText,
     )
 }

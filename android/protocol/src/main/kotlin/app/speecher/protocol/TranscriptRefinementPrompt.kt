@@ -140,9 +140,13 @@ private fun contextJson(context: RefinementContext): JsonObject = buildJsonObjec
     put("refinement_style", JsonPrimitive(context.style.id))
     put("requested_tone", JsonPrimitive(context.tone.id))
     put("screenshot_supplied", JsonPrimitive(false))
-    if (context.textBeforeCaret != null) {
-        put("text_after_caret", JsonPrimitive(""))
-        put("text_before_caret", JsonPrimitive(context.textBeforeCaret))
+    context.nearbyText?.let {
+        if (it.selectionStart >= 0 && it.selectionEnd > it.selectionStart) {
+            put("selection_end", JsonPrimitive(it.selectionEnd))
+            put("selection_start", JsonPrimitive(it.selectionStart))
+        }
+        put("text_after_caret", JsonPrimitive(it.after))
+        put("text_before_caret", JsonPrimitive(it.before))
     }
     put("window_title", JsonPrimitive(""))
     put("writing_profile", JsonPrimitive(context.profile.id))

@@ -11,9 +11,9 @@ class TargetTest {
     private fun resolve(
         id: String,
         name: String,
-        textBeforeCaret: String? = null,
+        nearbyText: NearbyText? = null,
         profiles: Map<WritingProfile, WritingProfileSettings> = emptyMap(),
-    ) = resolveRefinementContext(id, name, null, textBeforeCaret, WritingProfile.Other, profiles)
+    ) = resolveRefinementContext(id, name, null, nearbyText, WritingProfile.Other, profiles)
 
     @Test
     fun `light cleanup for an unknown target omits balanced rules and caret text`() {
@@ -45,12 +45,12 @@ class TargetTest {
     }
 
     @Test
-    fun `profile tone and text before the caret reach the context object`() {
+    fun `profile tone, text around the caret and the selection reach the context object`() {
         val context =
             resolve(
                 "com.google.android.apps.messaging",
                 "Messages",
-                "Dinner plan",
+                NearbyText("Dinner at ", " works for me", 10, 15),
                 mapOf(WritingProfile.Other to WritingProfileSettings(tone = Tone.Casual)),
             )
         assertEquals(desktopPrompt("balanced-messages"), dictationSystemPrompt(context))

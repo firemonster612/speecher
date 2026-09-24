@@ -406,7 +406,11 @@ fun createDictationEngine(
         { selected, raw ->
             val context =
                 refinementContext(settings, ActiveDictation.target) { length ->
-                    connection()?.getTextBeforeCursor(length, 0)
+                    connection()?.getSurroundingText(length, length, 0)?.let {
+                        // A selection made backwards reports its start after its end.
+                        val (start, end) = listOf(it.selectionStart, it.selectionEnd).sorted()
+                        nearbyText(it.text, start, end, it.offset)
+                    }
                 }
             val choice = settings.refinement(selected)
             // A profile set to no cleanup inserts the transcript as heard, as the desktop does.

@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import app.speecher.protocol.AppCategory
+import app.speecher.protocol.NearbyText
 import app.speecher.protocol.RefinementContext
 import app.speecher.protocol.resolveRefinementContext
 
@@ -17,7 +18,7 @@ data class TargetApp(
     val secure: Boolean,
 )
 
-/** How much text before the caret the refiner sees, the desktop's limit. */
+/** How much text on each side of the caret the refiner sees, the desktop's limit. */
 private const val CONTEXT_CHARACTERS = 240
 
 private val passwordTypes =
@@ -50,20 +51,32 @@ fun targetApp(editor: EditorInfo, packages: PackageManager): TargetApp {
 }
 
 /**
+ * Splits InputConnection.getSurroundingText around its selection. [offset] is where [text] starts
+ * in the field, -1 when the editor does not say, which leaves the selection offsets unknown.
+ */
+fun nearbyText(text: CharSequence, selectionStart: Int, selectionEnd: Int, offset: Int) =
+    NearbyText(
+        text.substring(0, selectionStart),
+        text.substring(selectionEnd),
+        if (offset >= 0) offset + selectionStart else -1,
+        if (offset >= 0) offset + selectionEnd else -1,
+    )
+
+/**
  * The target's profile, cleanup and tone, as TranscriptPipeline resolves them. With context off or
- * in a password field the text before the caret is not read at all.
+ * in a password field the text around the caret is not read at all.
  */
 fun refinementContext(
     settings: SpeecherSettings,
     target: TargetApp?,
-    textBeforeCursor: (Int) -> CharSequence?,
+    surroundingText: (Int) -> NearbyText?,
 ): RefinementContext {
     val includeText = settings.useTargetContext && target != null && !target.secure
     return resolveRefinementContext(
         target?.packageName.orEmpty(),
         target?.label.orEmpty(),
         target?.category,
-        if (includeText) textBeforeCursor(CONTEXT_CHARACTERS)?.toString().orEmpty() else null,
+        if (includeText) surroundingText(CONTEXT_CHARACTERS) ?: NearbyText() else null,
         settings.defaultWritingProfile,
         settings.writingProfiles,
     )
