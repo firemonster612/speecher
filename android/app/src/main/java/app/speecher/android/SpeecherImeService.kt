@@ -155,6 +155,7 @@ class SpeecherImeService : InputMethodService() {
     private fun switchBack() {
         ActiveDictation.engine?.close()
         ActiveDictation.engine = null
+        ActiveDictation.clearScreen()
         keepScreenOn(null)
         ImeSwap(this).switchBack(this)
     }

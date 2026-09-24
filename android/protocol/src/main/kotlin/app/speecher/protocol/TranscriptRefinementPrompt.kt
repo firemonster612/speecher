@@ -130,16 +130,22 @@ internal fun dictationSystemPrompt(context: RefinementContext): String {
         .joinToString("\n\n")
 }
 
-/** Keys in alphabetical order, as QJsonObject serialises them; Android has no window or URL. */
+/**
+ * Keys in alphabetical order, as QJsonObject serialises them; Android has no document URL. The
+ * Android-only field_hint and screen_text appear only with a value, so an Android context without
+ * them matches the desktop's object exactly.
+ */
 private fun contextJson(context: RefinementContext): JsonObject = buildJsonObject {
     put("application_category", JsonPrimitive(context.category.id))
     put("application_id", JsonPrimitive(context.applicationId))
     put("application_name", JsonPrimitive(context.applicationName))
-    put("control_role", JsonPrimitive(""))
+    put("control_role", JsonPrimitive(context.controlRole))
     put("document_url", JsonPrimitive(""))
+    if (context.fieldHint.isNotEmpty()) put("field_hint", JsonPrimitive(context.fieldHint))
     put("refinement_style", JsonPrimitive(context.style.id))
     put("requested_tone", JsonPrimitive(context.tone.id))
-    put("screenshot_supplied", JsonPrimitive(false))
+    if (context.screenText.isNotEmpty()) put("screen_text", JsonPrimitive(context.screenText))
+    put("screenshot_supplied", JsonPrimitive(context.screenshotJpeg != null))
     context.nearbyText?.let {
         if (it.selectionStart >= 0 && it.selectionEnd > it.selectionStart) {
             put("selection_end", JsonPrimitive(it.selectionEnd))
@@ -148,7 +154,7 @@ private fun contextJson(context: RefinementContext): JsonObject = buildJsonObjec
         put("text_after_caret", JsonPrimitive(it.after))
         put("text_before_caret", JsonPrimitive(it.before))
     }
-    put("window_title", JsonPrimitive(""))
+    put("window_title", JsonPrimitive(context.windowTitle))
     put("writing_profile", JsonPrimitive(context.profile.id))
 }
 

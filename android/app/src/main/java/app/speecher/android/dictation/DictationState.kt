@@ -145,6 +145,10 @@ data class SpeecherSettings(
     val keepScreenOn: Boolean = true,
     /** Send the target app's identity and the text before the caret to the refiner. */
     val useTargetContext: Boolean = true,
+    /** With context on, also read the target window's title and visible text at chip tap. */
+    val includeScreenText: Boolean = false,
+    /** With context on, also send a screenshot taken at chip tap, for vision models. */
+    val includeScreenshot: Boolean = false,
     /** The profile used when the target app does not imply one. */
     val defaultWritingProfile: WritingProfile = WritingProfile.Other,
     val writingProfiles: Map<WritingProfile, WritingProfileSettings> =

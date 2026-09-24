@@ -11,4 +11,13 @@ object ActiveDictation {
     @Volatile var settings = SpeecherSettings()
     @Volatile var observe: ((DictationState) -> Unit)? = null
     @Volatile var onInserted: (() -> Unit)? = null
+    /** What the chip read of the target window at tap, if the user opted in and it arrived. */
+    @Volatile var screen: ScreenCapture? = null
+    /** A base64 JPEG screenshot from the tap, if the user opted in and it arrived. */
+    @Volatile var screenshotJpeg: String? = null
+
+    fun clearScreen() {
+        screen = null
+        screenshotJpeg = null
+    }
 }

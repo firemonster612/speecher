@@ -405,7 +405,12 @@ fun createDictationEngine(
         },
         { selected, raw ->
             val context =
-                refinementContext(settings, ActiveDictation.target) { length ->
+                refinementContext(
+                    settings,
+                    ActiveDictation.target,
+                    ActiveDictation.screen,
+                    ActiveDictation.screenshotJpeg,
+                ) { length ->
                     connection()?.getSurroundingText(length, length, 0)?.let {
                         // A selection made backwards reports its start after its end.
                         val (start, end) = listOf(it.selectionStart, it.selectionEnd).sorted()

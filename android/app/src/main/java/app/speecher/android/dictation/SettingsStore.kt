@@ -35,6 +35,8 @@ class SettingsStore(private val context: Context) {
             chipOffsetY = preferences.getInt("chipOffsetY", NO_OFFSET).takeIf { it != NO_OFFSET },
             keepScreenOn = preferences.getBoolean("keepScreenOn", true),
             useTargetContext = preferences.getBoolean("useTargetContext", true),
+            includeScreenText = preferences.getBoolean("includeScreenText", false),
+            includeScreenshot = preferences.getBoolean("includeScreenshot", false),
             defaultWritingProfile =
                 WritingProfile.valueOf(
                     preferences.getString("defaultWritingProfile", WritingProfile.Other.name)!!
@@ -74,6 +76,8 @@ class SettingsStore(private val context: Context) {
             settings.chipOffsetY?.let { putInt("chipOffsetY", it) } ?: remove("chipOffsetY")
             putBoolean("keepScreenOn", settings.keepScreenOn)
             putBoolean("useTargetContext", settings.useTargetContext)
+            putBoolean("includeScreenText", settings.includeScreenText)
+            putBoolean("includeScreenshot", settings.includeScreenshot)
             putString("defaultWritingProfile", settings.defaultWritingProfile.name)
             settings.writingProfiles.forEach { (profile, choice) ->
                 putString("${profile.name}Cleanup", choice.cleanupStrength.name)

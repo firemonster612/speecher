@@ -2,10 +2,12 @@ package app.speecher.android
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.view.Display
 import android.view.Gravity
 import android.view.WindowInsets
 import android.view.WindowManager
@@ -21,6 +23,9 @@ import app.speecher.android.dictation.SettingsStore
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.createDictationEngine
 import app.speecher.android.dictation.resolveSignedIn
+import app.speecher.android.dictation.screenCapture
+import app.speecher.android.dictation.screenshotJpeg
+import app.speecher.android.dictation.sharedExecutor
 import app.speecher.android.ui.ChipMargin
 import app.speecher.android.ui.ChipSize
 import app.speecher.android.ui.DictationChip
@@ -291,6 +296,8 @@ class SpeecherChipService : AccessibilityService() {
     private fun onChipTap() {
         ImeSwap(this).rememberPrevious()
         val engine = startDictation()
+        // Only now, before the swap, is the active window still the app being dictated into.
+        captureScreen(engine)
         val switched = runCatching {
             softKeyboardController.switchToInputMethod(speecherImeId(this))
         }
@@ -312,6 +319,7 @@ class SpeecherChipService : AccessibilityService() {
         val settings = SettingsStore(this).load()
         ActiveDictation.settings = settings
         ActiveDictation.state = DictationState.Connecting
+        ActiveDictation.clearScreen()
         ActiveDictation.observe?.invoke(DictationState.Connecting)
         ActiveDictation.engine?.close()
         val engine =
@@ -329,6 +337,40 @@ class SpeecherChipService : AccessibilityService() {
         val signedIn = TokenStore(this).signedIn()
         engine.start(resolveSignedIn(settings.transcriptionProvider, signedIn))
         return engine
+    }
+
+    /**
+     * Reads what the user opted into sharing from the target window. The text is read here; the
+     * screenshot arrives later and is dropped if a newer dictation started. A failed or
+     * rate-limited screenshot is simply absent.
+     */
+    private fun captureScreen(engine: DictationEngine) {
+        val settings = ActiveDictation.settings
+        if (!settings.refinementEnabled || !settings.useTargetContext || passwordFocused) return
+        if (settings.includeScreenText) {
+            ActiveDictation.screen = rootInActiveWindow?.let(::screenCapture)
+        }
+        if (!settings.includeScreenshot) return
+        takeScreenshot(
+            Display.DEFAULT_DISPLAY,
+            sharedExecutor,
+            object : TakeScreenshotCallback {
+                override fun onSuccess(screenshot: ScreenshotResult) {
+                    // Runs on the executor: a failed encode is a skipped screenshot, not a crash.
+                    val jpeg =
+                        screenshot.hardwareBuffer.use { buffer ->
+                            runCatching {
+                                Bitmap.wrapHardwareBuffer(buffer, screenshot.colorSpace)
+                                    ?.let(::screenshotJpeg)
+                            }
+                                .getOrNull()
+                        }
+                    if (ActiveDictation.engine === engine) ActiveDictation.screenshotJpeg = jpeg
+                }
+
+                override fun onFailure(errorCode: Int) = Unit
+            },
+        )
     }
 
     private fun removeChip() {

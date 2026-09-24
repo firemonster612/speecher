@@ -16,6 +16,10 @@ data class TargetApp(
     val category: AppCategory?,
     /** A password field: its text never leaves the device, as on the desktop. */
     val secure: Boolean,
+    /** The field's kind, from its input type; see [controlRole]. */
+    val role: String = "",
+    /** The field's placeholder, such as "Search" or "Message". */
+    val hint: String = "",
 )
 
 /** How much text on each side of the caret the refiner sees, the desktop's limit. */
@@ -28,6 +32,34 @@ private val passwordTypes =
         InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
         InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD,
     )
+
+private val textRoles =
+    mapOf(
+        InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS to "email address",
+        InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT to "email subject",
+        InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE to "short message",
+        InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE to "long message",
+        InputType.TYPE_TEXT_VARIATION_PERSON_NAME to "person name",
+        InputType.TYPE_TEXT_VARIATION_POSTAL_ADDRESS to "postal address",
+        InputType.TYPE_TEXT_VARIATION_URI to "url",
+        InputType.TYPE_TEXT_VARIATION_FILTER to "filter",
+    )
+
+/**
+ * The field's kind in words, the Android counterpart of the accessibility role the desktop sends as
+ * control_role: a text variation when the app names one, otherwise the input class.
+ */
+fun controlRole(inputType: Int): String =
+    when (inputType and InputType.TYPE_MASK_CLASS) {
+        InputType.TYPE_CLASS_TEXT ->
+            textRoles[inputType and InputType.TYPE_MASK_VARIATION]
+                ?: if (inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0) "multi-line text"
+                else "text"
+        InputType.TYPE_CLASS_NUMBER -> "number"
+        InputType.TYPE_CLASS_PHONE -> "phone number"
+        InputType.TYPE_CLASS_DATETIME -> "date and time"
+        else -> ""
+    }
 
 /**
  * An IME can see the app it serves without a `<queries>` entry. Only the Productivity category maps
@@ -47,6 +79,8 @@ fun targetApp(editor: EditorInfo, packages: PackageManager): TargetApp {
         if (info?.category == ApplicationInfo.CATEGORY_PRODUCTIVITY) AppCategory.Office else null,
         editor.inputType and (InputType.TYPE_MASK_CLASS or InputType.TYPE_MASK_VARIATION) in
             passwordTypes,
+        controlRole(editor.inputType),
+        editor.hintText?.toString().orEmpty(),
     )
 }
 
@@ -64,20 +98,33 @@ fun nearbyText(text: CharSequence, selectionStart: Int, selectionEnd: Int, offse
 
 /**
  * The target's profile, cleanup and tone, as TranscriptPipeline resolves them. With context off or
- * in a password field the text around the caret is not read at all.
+ * in a password field nothing about the field or screen is sent, and the text around the caret is
+ * not read at all. [screen] and [screenshotJpeg] are what the chip captured, only if the user opted
+ * in.
  */
 fun refinementContext(
     settings: SpeecherSettings,
     target: TargetApp?,
+    screen: ScreenCapture?,
+    screenshotJpeg: String?,
     surroundingText: (Int) -> NearbyText?,
 ): RefinementContext {
     val includeText = settings.useTargetContext && target != null && !target.secure
-    return resolveRefinementContext(
-        target?.packageName.orEmpty(),
-        target?.label.orEmpty(),
-        target?.category,
-        if (includeText) surroundingText(CONTEXT_CHARACTERS) ?: NearbyText() else null,
-        settings.defaultWritingProfile,
-        settings.writingProfiles,
+    val context =
+        resolveRefinementContext(
+            target?.packageName.orEmpty(),
+            target?.label.orEmpty(),
+            target?.category,
+            if (includeText) surroundingText(CONTEXT_CHARACTERS) ?: NearbyText() else null,
+            settings.defaultWritingProfile,
+            settings.writingProfiles,
+        )
+    if (!includeText) return context
+    return context.copy(
+        controlRole = target.role,
+        fieldHint = target.hint,
+        windowTitle = screen?.title.orEmpty(),
+        screenText = screen?.text.orEmpty(),
+        screenshotJpeg = screenshotJpeg,
     )
 }

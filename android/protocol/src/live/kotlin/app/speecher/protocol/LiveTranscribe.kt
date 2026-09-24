@@ -81,4 +81,25 @@ fun main() {
             context,
         )
     println("refinement with context: \"$casual\"")
+
+    // The a11y capture's keys: the chat's window title and its visible messages.
+    val screen =
+        context.copy(
+            controlRole = "short message",
+            fieldHint = "Message",
+            windowTitle = "Priya Raman",
+            screenText = "Priya Raman\nAre we still doing Kowloon Kitchen tonight?\nMessage",
+        )
+    val withScreen =
+        refineTranscript(
+            OkHttpClient(),
+            OAuthProvider.ChatGpt,
+            OAuthTokens(access, "", field("id_token"), 0, ""),
+            "yeah tell pre are we're still on for cow loon kitchen at seven",
+            emptyList(),
+            "gpt-6-luna",
+            "none",
+            screen,
+        )
+    println("refinement with window title and screen text: \"$withScreen\"")
 }

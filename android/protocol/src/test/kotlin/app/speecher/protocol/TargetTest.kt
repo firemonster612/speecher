@@ -57,6 +57,23 @@ class TargetTest {
     }
 
     @Test
+    fun `field, window, screen text and screenshot fill their keys in alphabetical order`() {
+        val context =
+            resolve("com.google.android.gm", "Gmail")
+                .copy(
+                    controlRole = "email subject",
+                    fieldHint = "Subject",
+                    windowTitle = "Compose",
+                    screenText = "To: Sam\nSubject",
+                    screenshotJpeg = "AAAA",
+                )
+        assertEquals(
+            "{\"application_category\":\"general\",\"application_id\":\"com.google.android.gm\",\"application_name\":\"Gmail\",\"control_role\":\"email subject\",\"document_url\":\"\",\"field_hint\":\"Subject\",\"refinement_style\":\"balanced\",\"requested_tone\":\"none\",\"screen_text\":\"To: Sam\\nSubject\",\"screenshot_supplied\":true,\"window_title\":\"Compose\",\"writing_profile\":\"other\"}",
+            dictationSystemPrompt(context).substringAfterLast('\n'),
+        )
+    }
+
+    @Test
     fun `apps classify as the desktop rules do`() {
         val results =
             listOf(

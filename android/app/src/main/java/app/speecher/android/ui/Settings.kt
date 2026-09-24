@@ -158,6 +158,40 @@ fun Settings(
                 },
                 colors = rowColors,
             )
+            if (settings.useTargetContext) {
+                ListItem(
+                    headlineContent = { Text("Screen text") },
+                    supportingContent = {
+                        Text(
+                            "Reads the visible text of the app you're dictating into and sends " +
+                                "it to the refiner. Never stored."
+                        )
+                    },
+                    trailingContent = {
+                        Switch(
+                            settings.includeScreenText,
+                            { onChange(settings.copy(includeScreenText = it)) },
+                        )
+                    },
+                    colors = rowColors,
+                )
+                ListItem(
+                    headlineContent = { Text("Screenshot") },
+                    supportingContent = {
+                        Text(
+                            "Sends a screenshot of the app you're dictating into to the refiner. " +
+                                "Needs a vision-capable refinement model, such as Claude Sonnet 5."
+                        )
+                    },
+                    trailingContent = {
+                        Switch(
+                            settings.includeScreenshot,
+                            { onChange(settings.copy(includeScreenshot = it)) },
+                        )
+                    },
+                    colors = rowColors,
+                )
+            }
         }
         ListItem(
             headlineContent = { Text("Extra transcription pass") },

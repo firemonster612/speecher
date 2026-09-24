@@ -1,6 +1,7 @@
 package app.speecher.protocol
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -85,6 +86,76 @@ class TranscriptRefinerTest {
             assertEquals("gpt-6-luna", body["model"]?.jsonPrimitive?.content)
             assertEquals("{\"effort\":\"none\"}", body["reasoning"].toString())
             assertEquals("false", body["store"]?.jsonPrimitive?.content)
+        }
+    }
+
+    @Test
+    fun `Claude attaches a captured screenshot as a base64 image block after the text`() {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse.Builder()
+                    .body(
+                        "event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\nevent: message_stop\ndata: {}\n\n"
+                    )
+                    .build()
+            )
+            server.start()
+            refineTranscript(
+                OkHttpClient(),
+                OAuthProvider.Claude,
+                tokens,
+                "helo",
+                emptyList(),
+                "claude-sonnet-5",
+                "low",
+                RefinementContext(screenshotJpeg = "AAAA"),
+                server.url("/v1").toString().trimEnd('/'),
+            )
+            val body = Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject
+            val content = body["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray
+            assertEquals("text", content[0].jsonObject["type"]!!.jsonPrimitive.content)
+            assertEquals(
+                "{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/jpeg\",\"data\":\"AAAA\"}}",
+                content[1].toString(),
+            )
+        }
+    }
+
+    @Test
+    fun `ChatGPT retries without the screenshot when the model rejects it`() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse.Builder().code(400).build())
+            server.enqueue(
+                MockResponse.Builder()
+                    .body(
+                        "event: response.output_text.delta\ndata: {\"delta\":\"Hello\"}\n\nevent: response.completed\ndata: {}\n\n"
+                    )
+                    .build()
+            )
+            server.start()
+            val result =
+                refineTranscript(
+                    OkHttpClient(),
+                    OAuthProvider.ChatGpt,
+                    tokens,
+                    "helo",
+                    emptyList(),
+                    "gpt-6-luna",
+                    "none",
+                    RefinementContext(screenshotJpeg = "AAAA"),
+                    server.url("/codex").toString().trimEnd('/'),
+                )
+            assertEquals("Hello", result)
+            fun content() =
+                Json.parseToJsonElement(server.takeRequest().body!!.utf8())
+                    .jsonObject["input"]!!
+                    .jsonArray[0]
+                    .jsonObject["content"]!!
+            assertEquals(
+                "{\"type\":\"input_image\",\"image_url\":\"data:image/jpeg;base64,AAAA\",\"detail\":\"low\"}",
+                content().jsonArray[1].toString(),
+            )
+            assertEquals(true, content() is JsonPrimitive)
         }
     }
 

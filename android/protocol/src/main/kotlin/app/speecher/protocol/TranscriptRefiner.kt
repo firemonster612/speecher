@@ -4,6 +4,7 @@ import java.io.BufferedReader
 import java.util.Base64
 import java.util.UUID
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -27,6 +28,39 @@ fun refineTranscript(
     endpointBase: String =
         if (provider == OAuthProvider.Claude) "https://api.anthropic.com/v1"
         else "https://chatgpt.com/backend-api/codex",
+): String {
+    val refine = { sent: RefinementContext ->
+        refineOnce(
+            http,
+            provider,
+            tokens,
+            rawTranscript,
+            vocabulary,
+            model,
+            effort,
+            sent,
+            endpointBase,
+        )
+    }
+    if (context.screenshotJpeg == null) return refine(context)
+    // A model without vision rejects the image; the dictation still deserves a text-only pass.
+    return try {
+        refine(context)
+    } catch (_: IllegalStateException) {
+        refine(context.copy(screenshotJpeg = null))
+    }
+}
+
+private fun refineOnce(
+    http: OkHttpClient,
+    provider: OAuthProvider,
+    tokens: OAuthTokens,
+    rawTranscript: String,
+    vocabulary: List<String>,
+    model: String,
+    effort: String,
+    context: RefinementContext,
+    endpointBase: String,
 ): String {
     val base = endpointBase.trimEnd('/')
     if (provider == OAuthProvider.Claude) {
@@ -135,7 +169,10 @@ private fun claudeRequest(
                 add(
                     buildJsonObject {
                         put("role", JsonPrimitive("user"))
-                        put("content", JsonPrimitive(refinementUserMessage(raw, vocabulary)))
+                        put(
+                            "content",
+                            claudeContent(refinementUserMessage(raw, vocabulary), context),
+                        )
                     }
                 )
             },
@@ -173,12 +210,60 @@ private fun chatGptBody(
             add(
                 buildJsonObject {
                     put("role", JsonPrimitive("user"))
-                    put("content", JsonPrimitive(refinementUserMessage(raw, vocabulary)))
+                    put("content", chatGptContent(refinementUserMessage(raw, vocabulary), context))
                 }
             )
         },
     )
 }
+
+/** The user message, with the screenshot as an image block after it when one was captured. */
+private fun claudeContent(message: String, context: RefinementContext): JsonElement {
+    val screenshot = context.screenshotJpeg ?: return JsonPrimitive(message)
+    return buildJsonArray {
+        add(
+            buildJsonObject {
+                put("type", JsonPrimitive("text"))
+                put("text", JsonPrimitive(message))
+            }
+        )
+        add(
+            buildJsonObject {
+                put("type", JsonPrimitive("image"))
+                put(
+                    "source",
+                    buildJsonObject {
+                        put("type", JsonPrimitive("base64"))
+                        put("media_type", JsonPrimitive(SCREENSHOT_MEDIA_TYPE))
+                        put("data", JsonPrimitive(screenshot))
+                    },
+                )
+            }
+        )
+    }
+}
+
+/** As [claudeContent], in the Responses API's input_text and low-detail input_image items. */
+private fun chatGptContent(message: String, context: RefinementContext): JsonElement {
+    val screenshot = context.screenshotJpeg ?: return JsonPrimitive(message)
+    return buildJsonArray {
+        add(
+            buildJsonObject {
+                put("type", JsonPrimitive("input_text"))
+                put("text", JsonPrimitive(message))
+            }
+        )
+        add(
+            buildJsonObject {
+                put("type", JsonPrimitive("input_image"))
+                put("image_url", JsonPrimitive("data:$SCREENSHOT_MEDIA_TYPE;base64,$screenshot"))
+                put("detail", JsonPrimitive("low"))
+            }
+        )
+    }
+}
+
+private const val SCREENSHOT_MEDIA_TYPE = "image/jpeg"
 
 private fun OAuthTokens.accountId(): String? = runCatching {
     val claims = String(Base64.getUrlDecoder().decode(idToken.split('.')[1]))

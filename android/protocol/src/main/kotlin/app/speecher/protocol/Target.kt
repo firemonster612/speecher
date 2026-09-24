@@ -68,6 +68,15 @@ data class RefinementContext(
     val applicationId: String = "",
     val applicationName: String = "",
     val nearbyText: NearbyText? = null,
+    /** The field's input type, sent as the desktop's control_role. */
+    val controlRole: String = "",
+    /** The field's placeholder text. The desktop has no such key; sent only when present. */
+    val fieldHint: String = "",
+    val windowTitle: String = "",
+    /** The target window's visible text. The desktop has no such key; sent only when present. */
+    val screenText: String = "",
+    /** A base64 JPEG of the screen, attached as an image for a vision model. */
+    val screenshotJpeg: String? = null,
 )
 
 private class RecognitionRule(
