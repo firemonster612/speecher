@@ -92,6 +92,8 @@ class MainActivity : ComponentActivity() {
                         SpeecherScreen("Set up Speecher", onBack = null) {
                             Onboarding(
                                 status,
+                                settings,
+                                ::changeSettings,
                                 ::startSignIn,
                                 { microphone.launch(Manifest.permission.RECORD_AUDIO) },
                                 { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },

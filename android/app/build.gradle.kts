@@ -88,4 +88,5 @@ dependencies {
     implementation(libs.serialization.json)
     testImplementation(libs.junit4)
     testImplementation(libs.mockwebserver)
+    testImplementation(libs.robolectric)
 }

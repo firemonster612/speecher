@@ -53,9 +53,7 @@ class SpeecherImeService : InputMethodService() {
                 SpeecherTheme {
                     DictationPanel(
                         panelState.value,
-                        // The transcription pass runs on both buttons, so only cleanup sets them
-                        // apart.
-                        ActiveDictation.settings.refinementEnabled,
+                        ActiveDictation.settings.shownButtonLayout,
                         onCancel = ::switchBack,
                         onInsert = { ActiveDictation.engine?.insert() },
                         onInsertRefined = {

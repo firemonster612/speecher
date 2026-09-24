@@ -51,8 +51,10 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import app.speecher.android.dictation.ButtonLayout
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
+import app.speecher.android.dictation.InsertAction
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
@@ -77,7 +79,7 @@ private val Envelope =
 @Composable
 fun DictationPanel(
     state: DictationState,
-    canRefine: Boolean,
+    layout: ButtonLayout,
     onCancel: () -> Unit,
     onInsert: () -> Unit,
     onInsertRefined: () -> Unit,
@@ -118,7 +120,7 @@ fun DictationPanel(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PanelButtons(
                     state,
-                    canRefine,
+                    layout,
                     onCancel,
                     onInsert,
                     onInsertRefined,
@@ -181,7 +183,7 @@ private fun Transcript(state: DictationState, modifier: Modifier) {
 @Composable
 private fun RowScope.PanelButtons(
     state: DictationState,
-    canRefine: Boolean,
+    layout: ButtonLayout,
     onCancel: () -> Unit,
     onInsert: () -> Unit,
     onInsertRefined: () -> Unit,
@@ -199,20 +201,33 @@ private fun RowScope.PanelButtons(
         return
     }
     val canInsert = state is DictationState.Listening && state.text.isNotBlank()
-    if (canRefine) {
-        FilledTonalButton(onInsertRefined, button, enabled = canInsert) {
-            if (state is DictationState.Refining) {
-                CircularProgressIndicator(
-                    Modifier.size(18.dp).semantics { contentDescription = "Refining transcript" },
-                    strokeWidth = 2.dp,
-                )
-            } else {
-                Text("Insert refined", maxLines = 1)
-            }
+    fun InsertAction.onClick() = if (this == InsertAction.Insert) onInsert else onInsertRefined
+    layout.actions.dropLast(1).forEach { action ->
+        FilledTonalButton(action.onClick(), Modifier.height(52.dp), enabled = canInsert) {
+            Text(action.label, maxLines = 1)
         }
     }
-    Button(onInsert, button, enabled = canInsert) { Text("Insert") }
+    // Both buttons pass through Refining (the transcription pass runs on each), so the filled one
+    // carries the progress whichever was tapped.
+    val primary = layout.actions.last()
+    Button(primary.onClick(), button, enabled = canInsert) {
+        if (state is DictationState.Refining) {
+            CircularProgressIndicator(
+                Modifier.size(18.dp).semantics { contentDescription = "Refining transcript" },
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Text(primary.label, maxLines = 1)
+        }
+    }
 }
+
+private val InsertAction.label: String
+    get() =
+        when (this) {
+            InsertAction.Insert -> "Insert"
+            InsertAction.InsertRefined -> "Insert refined"
+        }
 
 private val FailureReason.title: String
     get() =
@@ -306,8 +321,11 @@ private fun Bars(levels: List<Float>, color: Color) {
 }
 
 @Composable
-private fun PanelPreview(state: DictationState, canRefine: Boolean = true) {
-    SpeecherTheme { DictationPanel(state, canRefine, {}, {}, {}, {}) }
+private fun PanelPreview(
+    state: DictationState,
+    layout: ButtonLayout = ButtonLayout.RefinedPrimary,
+) {
+    SpeecherTheme { DictationPanel(state, layout, {}, {}, {}, {}) }
 }
 
 private const val SAMPLE_TEXT =
@@ -325,7 +343,12 @@ internal fun PanelListeningPreview() = PanelPreview(DictationState.Listening(SAM
 @PreviewLightDark
 @Composable
 internal fun PanelListeningNoRefinePreview() =
-    PanelPreview(DictationState.Listening(SAMPLE_TEXT, "", 0.7f), canRefine = false)
+    PanelPreview(DictationState.Listening(SAMPLE_TEXT, "", 0.7f), ButtonLayout.InsertOnly)
+
+@PreviewLightDark
+@Composable
+internal fun PanelListeningRefinedOnlyPreview() =
+    PanelPreview(DictationState.Listening(SAMPLE_TEXT, "", 0.7f), ButtonLayout.RefinedOnly)
 
 @PreviewLightDark
 @Composable

@@ -96,6 +96,7 @@ private val states: Map<String, @Composable () -> Unit> =
         "panel-listening-empty" to bottom { PanelListeningEmptyPreview() },
         "panel-listening" to bottom { PanelListeningPreview() },
         "panel-listening-no-refine" to bottom { PanelListeningNoRefinePreview() },
+        "panel-listening-refined-only" to bottom { PanelListeningRefinedOnlyPreview() },
         "panel-refining" to bottom { PanelRefiningPreview() },
         "panel-refining-stream" to bottom { PanelRefiningStreamPreview() },
         "panel-failed-microphone" to bottom { PanelFailedMicrophonePreview() },
@@ -112,6 +113,7 @@ private val states: Map<String, @Composable () -> Unit> =
         "onboarding-done" to { OnboardingDonePreview() },
         "settings" to { SettingsPreview() },
         "settings-refinement-off" to { SettingsRefinementOffPreview() },
+        "button-layouts" to { ButtonLayoutPickerPreview() },
     )
 
 /**

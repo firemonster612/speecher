@@ -130,6 +130,21 @@ val Provider.refinementEfforts: List<String>
             Provider.Claude -> listOf("low", "medium", "high")
         }
 
+enum class InsertAction {
+    Insert,
+    InsertRefined,
+}
+
+/**
+ * Which Insert buttons the panel offers beside Cancel, left to right; the last is the filled one.
+ */
+enum class ButtonLayout(val actions: List<InsertAction>) {
+    /** A prominent Insert refined with a smaller Insert. */
+    RefinedPrimary(listOf(InsertAction.Insert, InsertAction.InsertRefined)),
+    InsertOnly(listOf(InsertAction.Insert)),
+    RefinedOnly(listOf(InsertAction.InsertRefined)),
+}
+
 /** Everything the user can change in Settings. */
 data class SpeecherSettings(
     val transcriptionProvider: Provider = providerOrder.first(),
@@ -160,7 +175,14 @@ data class SpeecherSettings(
     val defaultWritingProfile: WritingProfile = WritingProfile.Other,
     val writingProfiles: Map<WritingProfile, WritingProfileSettings> =
         WritingProfile.entries.associateWith { WritingProfileSettings() },
+    val buttonLayout: ButtonLayout = ButtonLayout.RefinedPrimary,
 ) {
+    /**
+     * The layout the panel shows. With refinement off there is nothing to refine, so only Insert.
+     */
+    val shownButtonLayout: ButtonLayout
+        get() = if (refinementEnabled) buttonLayout else ButtonLayout.InsertOnly
+
     fun refinement(provider: Provider): RefinementChoice =
         if (provider == Provider.Claude) claudeRefinement else chatGptRefinement
 

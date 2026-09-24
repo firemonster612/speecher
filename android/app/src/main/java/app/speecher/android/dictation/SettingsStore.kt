@@ -47,6 +47,8 @@ class SettingsStore(private val context: Context) {
                         enumOf(preferences.getString("${profile.name}Tone", null), default.tone),
                     )
                 },
+            buttonLayout =
+                enumOf(preferences.getString("buttonLayout", null), ButtonLayout.RefinedPrimary),
         )
     }
 
@@ -74,6 +76,7 @@ class SettingsStore(private val context: Context) {
                 putString("${profile.name}Cleanup", choice.cleanupStrength.name)
                 putString("${profile.name}Tone", choice.tone.name)
             }
+            putString("buttonLayout", settings.buttonLayout.name)
         }
     }
 

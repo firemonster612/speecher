@@ -249,6 +249,12 @@ fun Settings(
             }
         }
 
+        // With refinement off the panel only offers Insert, so there is no layout to choose.
+        if (settings.refinementEnabled) {
+            Section("Buttons")
+            ButtonLayoutPicker(settings.buttonLayout) { onChange(settings.copy(buttonLayout = it)) }
+        }
+
         Section("Dictation button")
         ListItem(
             headlineContent = { Text("Place on the keyboard's mic key") },

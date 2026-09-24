@@ -15,9 +15,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,15 +36,19 @@ import androidx.compose.ui.unit.dp
 import app.speecher.android.R
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SetupStatus
+import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.providerOrder
 
 /**
  * First-run checklist. Each row reads one [SetupStatus] flag, so the list updates as the app
- * re-reads the system while it is open.
+ * re-reads the system while it is open. The choices below the steps are optional and go out whole
+ * through [onChangeSettings], as in Settings.
  */
 @Composable
 fun Onboarding(
     status: SetupStatus,
+    settings: SpeecherSettings,
+    onChangeSettings: (SpeecherSettings) -> Unit,
     onSignIn: (Provider) -> Unit,
     onRequestMicrophone: () -> Unit,
     onOpenKeyboardSettings: () -> Unit,
@@ -86,6 +93,25 @@ fun Onboarding(
             status.chipEnabled,
         ) {
             StepButton("Open settings", onOpenChipSettings)
+        }
+        Section("Buttons")
+        ButtonLayoutPicker(settings.buttonLayout) {
+            onChangeSettings(settings.copy(buttonLayout = it))
+        }
+        Section("Optional context")
+        OptionalSwitch(
+            "Screen text",
+            "Lets refinement read the app you're dictating into.",
+            settings.includeScreenText,
+        ) {
+            onChangeSettings(settings.copy(includeScreenText = it))
+        }
+        OptionalSwitch(
+            "Screenshot",
+            "Sends a picture of the screen to your refinement provider. Needs a vision model.",
+            settings.includeScreenshot,
+        ) {
+            onChangeSettings(settings.copy(includeScreenshot = it))
         }
         Section("Try it")
         PracticeField(Modifier.padding(horizontal = 16.dp))
@@ -167,6 +193,21 @@ private fun Step(
 }
 
 @Composable
+private fun OptionalSwitch(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(description) },
+        trailingContent = { Switch(checked, onCheckedChange) },
+        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
+    )
+}
+
+@Composable
 private fun StepMarker(number: Int, done: Boolean) {
     val colors = MaterialTheme.colorScheme
     val shape = Modifier.size(28.dp)
@@ -237,7 +278,7 @@ internal fun Section(title: String) {
 
 @Composable
 private fun OnboardingPreview(status: SetupStatus) = SpeecherTheme {
-    Surface { Onboarding(status, {}, {}, {}, {}, {}) }
+    Surface { Onboarding(status, SpeecherSettings(), {}, {}, {}, {}, {}, {}) }
 }
 
 @PreviewLightDark
