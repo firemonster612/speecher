@@ -21,7 +21,32 @@ permissions:
   contents: read
 
 jobs:
+  # linux, macos and windows are required checks on master. On a pull request that
+  # only touches the Android client (android.yml builds that) they are skipped, and
+  # GitHub counts a job skipped by its `if` as passing. On pushes `changes` does not
+  # run, so they always build.
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    outputs:
+      desktop: ${{ steps.filter.outputs.desktop }}
+    steps:
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          predicate-quantifier: every
+          filters: |
+            desktop:
+              - '**'
+              - '!android/**'
+              - '!docs/android/**'
+              - '!.github/workflows/android.yml'
+
   linux:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result != 'failure' && needs.changes.outputs.desktop != 'false' }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
@@ -198,6 +223,8 @@ jobs:
           if-no-files-found: error
 
   macos:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result != 'failure' && needs.changes.outputs.desktop != 'false' }}
     runs-on: macos-26
     env:
       CMAKE_C_COMPILER_LAUNCHER: ccache
@@ -330,6 +357,8 @@ jobs:
           if-no-files-found: error
 
   windows:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result != 'failure' && needs.changes.outputs.desktop != 'false' }}
     runs-on: windows-2025
     env:
       CMAKE_C_COMPILER_LAUNCHER: sccache
@@ -417,7 +446,15 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+    # `changes` is skipped on pushes, and a skipped job anywhere upstream skips a job
+    # left on the default success() check, so name the three results explicitly.
+    if: >-
+      !cancelled()
+      && needs.linux.result == 'success'
+      && needs.macos.result == 'success'
+      && needs.windows.result == 'success'
+      && github.event_name == 'push'
+      && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
     concurrency:
       group: release-publish-${{ github.repository }}
       cancel-in-progress: false
