@@ -1,6 +1,7 @@
 package app.speecher.android.auth
 
 import android.app.Activity
+import android.app.Application
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -10,7 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.edit
 import androidx.core.net.toUri
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.oauth
 import app.speecher.android.dictation.sharedExecutor
@@ -192,8 +193,12 @@ class SignIn(context: Context) : AutoCloseable {
     }
 }
 
-class SignInViewModel : ViewModel() {
-    private var signIn: SignIn? = null
+/**
+ * The sign-in attempt the screens show. While one waits in the browser, [SignInListenerService]
+ * keeps the process from being frozen; every way the attempt ends stops it.
+ */
+class SignInViewModel(application: Application) : AndroidViewModel(application) {
+    private val signIn = SignIn(application)
     var activeProvider by mutableStateOf<Provider?>(null)
         private set
 
@@ -201,10 +206,11 @@ class SignInViewModel : ViewModel() {
         private set
 
     fun start(activity: Activity, provider: Provider) {
-        if (signIn == null) signIn = SignIn(activity.applicationContext)
         activeProvider = provider
         error = null
-        val attempt = signIn?.start(provider.oauth, ::finish) ?: return
+        // Before the browser covers us: Android only lets a foreground app start the service.
+        SignInListenerService.start(activity, provider, ::timedOut)
+        val attempt = signIn.start(provider.oauth, ::finish)
         CustomTabsIntent.Builder()
             .build()
             .launchUrl(activity, attempt.authorizeUrl.toString().toUri())
@@ -213,21 +219,26 @@ class SignInViewModel : ViewModel() {
     /**
      * After the app was killed mid-sign-in, bring back the paste field for the pending provider.
      */
-    fun restore(activity: Activity) {
-        val existing = signIn ?: SignIn(activity.applicationContext).also { signIn = it }
+    fun restore() {
         if (activeProvider == null) {
             activeProvider =
-                existing.pendingProvider?.let { pending ->
+                signIn.pendingProvider?.let { pending ->
                     Provider.entries.firstOrNull { it.oauth == pending }
                 }
         }
     }
 
     fun paste(pasted: String) {
-        signIn?.completePastedCode(pasted, ::finish)
+        signIn.completePastedCode(pasted, ::finish)
+    }
+
+    private fun timedOut() {
+        signIn.close()
+        finish(Result.failure(IllegalStateException("Sign-in callback timed out")))
     }
 
     private fun finish(result: Result<OAuthTokens>) {
+        SignInListenerService.stop(getApplication())
         error = result.exceptionOrNull()?.let(::signInErrorMessage)
         activeProvider = null
     }
@@ -246,6 +257,7 @@ class SignInViewModel : ViewModel() {
     }
 
     override fun onCleared() {
-        signIn?.close()
+        signIn.close()
+        SignInListenerService.stop(getApplication())
     }
 }

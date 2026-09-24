@@ -11,18 +11,25 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
@@ -53,6 +61,7 @@ fun Onboarding(
     onRequestMicrophone: () -> Unit,
     onOpenKeyboardSettings: () -> Unit,
     onOpenChipSettings: () -> Unit,
+    onOpenAppInfo: () -> Unit,
     onFinish: () -> Unit,
     modifier: Modifier = Modifier,
     signingIn: Provider? = null,
@@ -88,11 +97,10 @@ fun Onboarding(
         Step(
             step++,
             "Turn on the dictation button",
-            "It shows a small button beside your keyboard and lets it switch to Speecher when you " +
-                "tap. Android may ask you to allow this for a sideloaded app.",
+            "It shows a small button beside your keyboard and switches to Speecher when you tap it.",
             status.chipEnabled,
         ) {
-            StepButton("Open settings", onOpenChipSettings)
+            RestrictedSettingsSteps(onOpenAppInfo, onOpenChipSettings)
         }
         Section("Buttons")
         ButtonLayoutPicker(settings.buttonLayout) {
@@ -162,9 +170,106 @@ private fun SignInStep(
                     }
                 }
             }
-            if (signingIn != null) PasteCode(onPasteCode)
+            if (signingIn != null) PasteCode(signingIn, onPasteCode)
         }
     }
+}
+
+/**
+ * Android blocks accessibility for sideloaded apps until the user allows restricted settings on the
+ * app's info page. On some versions that menu item only appears once Android has refused, hence the
+ * fallback in step 2. Success shows up through the chipEnabled poll; nothing here reads the state.
+ */
+@Composable
+private fun RestrictedSettingsSteps(onOpenAppInfo: () -> Unit, onOpenChipSettings: () -> Unit) {
+    Text(
+        "Android blocks accessibility for apps installed outside the Play Store. Speecher needs " +
+            "it only to show the dictation button over your keyboard and switch keyboards when " +
+            "you tap it. It doesn't read your screen unless you turn on Screen text or Screenshot " +
+            "below.",
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    Spacer(Modifier.height(10.dp))
+    AcknowledgedSteps(
+        listOf(
+            "Tap Open app info.",
+            "Open the menu in the corner (often three dots) and choose Allow restricted " +
+                "settings, then confirm. If it isn't there, tap Open accessibility settings, try " +
+                "to turn on Speecher chip once, then come back and look again.",
+            "Come back here and tap Open accessibility settings to turn on Speecher chip.",
+        )
+    ) { understood ->
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(onOpenAppInfo, enabled = understood) { Text("Open app info") }
+            FilledTonalButton(onOpenChipSettings, enabled = understood) {
+                Text("Open accessibility settings")
+            }
+        }
+    }
+}
+
+/**
+ * What a browser sign-in will look like, shown before the browser opens so the paste fallback is on
+ * screen before anyone needs it.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SignInStepsSheet(provider: Provider, onOpen: () -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismiss, sheetState = rememberModalBottomSheetState(true)) {
+        SignInSteps(provider, onOpen, onDismiss)
+    }
+}
+
+@Composable
+internal fun SignInSteps(provider: Provider, onOpen: () -> Unit, onCancel: () -> Unit) {
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp)) {
+        Text("Before you sign in", style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(16.dp))
+        AcknowledgedSteps(
+            listOf(
+                "A browser opens to ${provider.label}'s sign-in page.",
+                "Sign in and approve Speecher.",
+                "The browser should bring you back to Speecher on its own.",
+                "If it doesn't, long-press the address bar and copy the link. It starts with " +
+                    "http://localhost. Come back to Speecher and paste it.",
+            )
+        ) { understood ->
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            ) {
+                TextButton(onCancel) { Text("Cancel") }
+                Button(onOpen, enabled = understood) { Text("Open ${provider.label} sign-in") }
+            }
+        }
+    }
+}
+
+/**
+ * Numbered [steps] people tend to skip, then an "I understand" box that gates the [actions], so
+ * nobody reaches them without the steps on screen.
+ */
+@Composable
+internal fun AcknowledgedSteps(steps: List<String>, actions: @Composable (Boolean) -> Unit) {
+    var understood by rememberSaveable { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        steps.forEachIndexed { index, step ->
+            Text("${index + 1}. $step", style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 8.dp).toggleable(
+            understood,
+            role = Role.Checkbox,
+        ) {
+            understood = it
+        },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(understood, onCheckedChange = null)
+        Text("I understand", Modifier.padding(start = 12.dp))
+    }
+    actions(understood)
 }
 
 @Composable
@@ -278,7 +383,13 @@ internal fun Section(title: String) {
 
 @Composable
 private fun OnboardingPreview(status: SetupStatus) = SpeecherTheme {
-    Surface { Onboarding(status, SpeecherSettings(), {}, {}, {}, {}, {}, {}) }
+    Surface { Onboarding(status, SpeecherSettings(), {}, {}, {}, {}, {}, {}, {}) }
+}
+
+@PreviewLightDark
+@Composable
+internal fun SignInStepsPreview() = SpeecherTheme {
+    Surface { SignInSteps(Provider.ChatGpt, {}, {}) }
 }
 
 @PreviewLightDark

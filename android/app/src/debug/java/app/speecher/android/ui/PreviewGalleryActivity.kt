@@ -108,6 +108,7 @@ private val states: Map<String, @Composable () -> Unit> =
         "launcher-icon" to { LauncherIcons() },
         "home-ready" to { HomeReadyPreview() },
         "home-pending" to { HomeSetupPendingPreview() },
+        "sign-in-steps" to { SignInStepsPreview() },
         "onboarding-fresh" to { OnboardingFreshPreview() },
         "onboarding-partway" to { OnboardingPartwayPreview() },
         "onboarding-done" to { OnboardingDonePreview() },

@@ -53,6 +53,14 @@ android {
     }
     sourceSets.named("main") { res.directories.add("src/engine/res") }
 
+    // Robolectric reads the merged manifest (SDK level, the Compose test activity) from here. Its
+    // Android 17 runtime reaches into the JDK's file descriptors, which Java 21 only allows when
+    // exported.
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all { it.jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED") }
+    }
+
     lint {
         warningsAsErrors = true
         abortOnError = true
@@ -89,4 +97,10 @@ dependencies {
     testImplementation(libs.junit4)
     testImplementation(libs.mockwebserver)
     testImplementation(libs.robolectric)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    // Compose's test rule brings Espresso 3.5, which calls an InputManager method Android 17
+    // removed.
+    testImplementation(libs.espresso.core)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

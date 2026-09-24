@@ -5,6 +5,8 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
@@ -32,6 +34,7 @@ import app.speecher.android.dictation.sharedHttp
 import app.speecher.android.ui.ChipPosition
 import app.speecher.android.ui.Home
 import app.speecher.android.ui.Onboarding
+import app.speecher.android.ui.SignInStepsSheet
 import app.speecher.android.ui.SpeecherScreen
 import app.speecher.android.ui.SpeecherTheme
 import app.speecher.android.update.ApkUpdate
@@ -59,19 +62,35 @@ class MainActivity : ComponentActivity() {
     private var update by mutableStateOf<ApkUpdate?>(null)
     private var updateError by mutableStateOf<String?>(null)
     private var page by mutableStateOf(Page.Home)
+    // The provider whose "Before you sign in" steps are up. The browser only opens from there.
+    private var signInSteps by mutableStateOf<Provider?>(null)
 
     private val microphone =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { refresh() }
+
+    // Only for the sign-in notification. Refused, it stays hidden and sign-in works the same.
+    private val notifications =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = settingsStore.load()
         refresh()
-        signIn.restore(this)
+        signIn.restore()
         page = if (status.complete && signIn.activeProvider == null) Page.Home else Page.Setup
         if (savedInstanceState == null) handleSignInIntent(intent)
         setContent {
             SpeecherTheme {
+                signInSteps?.let { provider ->
+                    SignInStepsSheet(
+                        provider,
+                        onOpen = {
+                            signInSteps = null
+                            signIn.start(this, provider)
+                        },
+                        onDismiss = { signInSteps = null },
+                    )
+                }
                 BackHandler(page != Page.Home) {
                     page = if (page == Page.ChipPosition) Page.Settings else Page.Home
                 }
@@ -98,6 +117,14 @@ class MainActivity : ComponentActivity() {
                                 { microphone.launch(Manifest.permission.RECORD_AUDIO) },
                                 { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
                                 { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                                {
+                                    startActivity(
+                                        Intent(
+                                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                            Uri.fromParts("package", packageName, null),
+                                        )
+                                    )
+                                },
                                 onFinish = { page = Page.Home },
                                 signingIn = signIn.activeProvider,
                                 signInError = signIn.error,
@@ -225,7 +252,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startSignIn(provider: Provider) {
-        signIn.start(this, provider)
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                !granted(Manifest.permission.POST_NOTIFICATIONS)
+        ) {
+            notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        signInSteps = provider
     }
 
     private fun signOut(provider: Provider) {

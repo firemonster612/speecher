@@ -327,7 +327,7 @@ fun Settings(
                 colors = rowColors,
             )
         }
-        if (signingIn != null) PasteCode(onPasteCode)
+        if (signingIn != null) PasteCode(signingIn, onPasteCode)
     }
 }
 
@@ -398,21 +398,18 @@ private fun EffortPicker(provider: Provider, selected: String, onSelect: (String
     }
 }
 
+/**
+ * Shown the whole time a sign-in waits, so anyone back from a browser that didn't return them finds
+ * the fallback without looking for it.
+ */
 @Composable
-internal fun PasteCode(onPasteCode: (String) -> Unit) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
+internal fun PasteCode(provider: Provider, onPasteCode: (String) -> Unit) {
     var code by rememberSaveable { mutableStateOf("") }
-    if (!expanded) {
-        TextButton({ expanded = true }, Modifier.padding(start = 16.dp)) {
-            Text("Paste the link instead")
-        }
-        return
-    }
     Column(Modifier.padding(horizontal = 16.dp)) {
         Text(
-            "If the browser can't return on its own, copy its address bar after you approve and " +
-                "paste it here.",
-            style = MaterialTheme.typography.bodySmall,
+            "Waiting for ${provider.label}. If the browser didn't bring you back, copy its " +
+                "address bar (it starts with http://localhost) and paste it here.",
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
