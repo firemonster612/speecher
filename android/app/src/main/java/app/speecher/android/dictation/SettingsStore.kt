@@ -29,6 +29,7 @@ class SettingsStore(private val context: Context) {
             chipDockOnMic = preferences.getBoolean("chipDockOnMic", true),
             chipOffsetX = preferences.getInt("chipOffsetX", NO_OFFSET).takeIf { it != NO_OFFSET },
             chipOffsetY = preferences.getInt("chipOffsetY", NO_OFFSET).takeIf { it != NO_OFFSET },
+            keepScreenOn = preferences.getBoolean("keepScreenOn", true),
         )
     }
 
@@ -47,6 +48,7 @@ class SettingsStore(private val context: Context) {
             putBoolean("chipDockOnMic", settings.chipDockOnMic)
             settings.chipOffsetX?.let { putInt("chipOffsetX", it) } ?: remove("chipOffsetX")
             settings.chipOffsetY?.let { putInt("chipOffsetY", it) } ?: remove("chipOffsetY")
+            putBoolean("keepScreenOn", settings.keepScreenOn)
         }
     }
 

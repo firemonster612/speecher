@@ -343,6 +343,37 @@ class DictationEngineTest {
     }
 
     @Test
+    fun `ChatGPT plain insert commits the batch text with the extra pass on, the stream with it off`() {
+        val capture = Capture()
+        lateinit var speech: (SpeechEvent) -> Unit
+        val commits = mutableListOf<String>()
+        fun engine(transcribe: ((ByteArray) -> String)?) =
+            DictationEngine(
+                capture::capture,
+                capture::stop,
+                { _, events ->
+                    speech = events
+                    Client()
+                },
+                { _, _ -> error("plain Insert never cleans up") },
+                transcribe,
+                { commits.add(it) },
+                Executor { it.run() },
+                {},
+            )
+        for (pass in listOf({ _: ByteArray -> "Hello there, friend." }, null)) {
+            val engine = engine(pass)
+            engine.start(Provider.ChatGpt)
+            speech(SpeechEvent.Connected)
+            capture.audio?.invoke(byteArrayOf(1, 2), 0f)
+            speech(SpeechEvent.Final("hello there friend"))
+            engine.insert()
+            speech(SpeechEvent.Completed)
+        }
+        assertEquals(listOf("Hello there, friend.", "hello there friend"), commits)
+    }
+
+    @Test
     fun `ChatGPT refined insert with the extra pass off only cleans up`() {
         val capture = Capture()
         lateinit var speech: (SpeechEvent) -> Unit

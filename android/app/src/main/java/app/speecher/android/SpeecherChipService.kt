@@ -24,6 +24,7 @@ import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.ui.ChipMargin
 import app.speecher.android.ui.ChipSize
 import app.speecher.android.ui.DictationChip
+import app.speecher.android.ui.SavePositionPill
 import app.speecher.android.ui.SpeecherTheme
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -33,6 +34,9 @@ class SpeecherChipService : AccessibilityService() {
     private val owner = ServiceViewOwner()
     private val window by lazy { getSystemService(WINDOW_SERVICE) as WindowManager }
     private var chip: ComposeView? = null
+    // Offers to keep a drag's position; ignored, it goes away and the drag stays temporary.
+    private var pill: ComposeView? = null
+    private val dismissPill = Runnable { removePill() }
     private var chipX = Int.MIN_VALUE
     private var chipY = Int.MIN_VALUE
     // The chip window's position when the current drag began.
@@ -80,7 +84,7 @@ class SpeecherChipService : AccessibilityService() {
             removeChip()
             return
         }
-        val keyboard = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        val keyboard = keyboardWindow()
         if (keyboard == null) {
             removeChip()
             return
@@ -102,14 +106,16 @@ class SpeecherChipService : AccessibilityService() {
                 (kb.right + offsetX) to (kb.bottom + offsetY)
             } else {
                 val mic = keyboard.micRect()
-                // Sit on the keyboard's own voice button when we can read it. Otherwise use the
-                // bottom-right corner, clear of the top toolbar/suggestion strip that many
-                // keyboards fill with their own controls; the user can drag it from there. If
-                // detection blips to null while the chip is already up, hold the last spot.
+                // Sit on the keyboard's own voice button when we can read it. If detection blips to
+                // null while the chip is already up, hold the last spot. Docked but undetected, go
+                // to the top-right of the strip, where Gboard keeps its voice key; otherwise use
+                // the bottom-right corner. Either way the user can drag it from there.
                 val center =
                     when {
                         mic != null -> mic.centerX() to mic.centerY()
                         existing != null -> return
+                        placement.chipDockOnMic ->
+                            (kb.right - width / 2 - margin) to (kb.top + height / 2 + margin)
                         else -> (kb.right - width / 2 - margin) to (kb.bottom - height / 2 - margin)
                     }
                 (center.first - width / 2) to (center.second - height / 2)
@@ -134,6 +140,7 @@ class SpeecherChipService : AccessibilityService() {
                     onTap = ::onChipTap,
                     onDragStart = ::onChipDragStart,
                     onDrag = ::onChipDrag,
+                    onDragEnd = ::showPill,
                 )
             }
         }
@@ -141,23 +148,25 @@ class SpeecherChipService : AccessibilityService() {
         chip = view
     }
 
-    private fun chipParams(x: Int, y: Int, width: Int, height: Int) =
+    private fun overlayParams(width: Int, height: Int) =
         WindowManager.LayoutParams(
-                width,
-                height,
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-                android.graphics.PixelFormat.TRANSLUCENT,
-            )
-            .apply {
-                gravity = Gravity.TOP or Gravity.START
-                this.x = x
-                this.y = y
-                fitInsetsTypes = 0
-                layoutInDisplayCutoutMode =
-                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-            }
+            width,
+            height,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            android.graphics.PixelFormat.TRANSLUCENT,
+        )
+
+    private fun chipParams(x: Int, y: Int, width: Int, height: Int) =
+        overlayParams(width, height).apply {
+            gravity = Gravity.TOP or Gravity.START
+            this.x = x
+            this.y = y
+            fitInsetsTypes = 0
+            layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
 
     /** Keep the chip on the visible display, clear of the cutout, so a drag can't lose it. */
     private fun clampToDisplay(x: Int, y: Int, width: Int, height: Int): Pair<Int, Int> {
@@ -171,6 +180,7 @@ class SpeecherChipService : AccessibilityService() {
     }
 
     private fun onChipDragStart() {
+        removePill()
         nudged = true
         dragStartX = chipX
         dragStartY = chipY
@@ -194,6 +204,67 @@ class SpeecherChipService : AccessibilityService() {
         window.updateViewLayout(view, params)
     }
 
+    /**
+     * Shows the save offer beside the chip, on whichever side has more room, centred on it
+     * vertically, and takes it down again after a few seconds.
+     */
+    private fun showPill() {
+        removePill()
+        val chipParams = chip?.layoutParams as? WindowManager.LayoutParams ?: return
+        val bounds = window.currentWindowMetrics.bounds
+        val gap = (ChipMargin.value * resources.displayMetrics.density).toInt()
+        val onLeft = chipX + chipParams.width / 2 > bounds.centerX()
+        val params =
+            overlayParams(
+                    WindowManager.LayoutParams.WRAP_CONTENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT,
+                )
+                .apply {
+                    gravity = Gravity.CENTER_VERTICAL or if (onLeft) Gravity.END else Gravity.START
+                    x = if (onLeft) bounds.right - chipX + gap else chipX + chipParams.width + gap
+                    y = chipY + chipParams.height / 2 - bounds.centerY()
+                    fitInsetsTypes = 0
+                    layoutInDisplayCutoutMode =
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                }
+        val view = ComposeView(this)
+        owner.attach(view)
+        view.setContent { SpeecherTheme { SavePositionPill(onSave = ::saveChipPosition) } }
+        window.addView(view, params)
+        pill = view
+        handler.postDelayed(dismissPill, PILL_MILLIS)
+    }
+
+    /**
+     * Keeps the dragged spot: the custom position, measured from the keyboard's bottom-right corner
+     * like the in-app editor's, with docking turned off so it applies from now on.
+     */
+    private fun saveChipPosition() {
+        removePill()
+        val keyboard = keyboardWindow() ?: return
+        val kb = Rect().also(keyboard::getBoundsInScreen)
+        val store = SettingsStore(this)
+        placement =
+            store
+                .load()
+                .copy(
+                    chipDockOnMic = false,
+                    chipOffsetX = chipX - kb.right,
+                    chipOffsetY = chipY - kb.bottom,
+                )
+        store.save(placement)
+    }
+
+    private fun removePill() {
+        handler.removeCallbacks(dismissPill)
+        pill?.let(window::removeView)
+        pill = null
+    }
+
+    private fun keyboardWindow() = windows.firstOrNull {
+        it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
+    }
+
     /** The screen bounds of the keyboard's own voice-input button, if it exposes one. */
     private fun AccessibilityWindowInfo.micRect(): Rect? {
         val voice = root?.let(::findVoiceNode) ?: return null
@@ -203,14 +274,12 @@ class SpeecherChipService : AccessibilityService() {
     private fun findVoiceNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         // Match the label, the visible text and the view id: content descriptions are localized, so
         // no fixed word set finds every keyboard's mic key. Missing it is normal, not exceptional —
-        // the caller just falls back to a corner the user can drag from.
-        val labels =
-            listOfNotNull(
-                node.contentDescription?.toString(),
-                node.text?.toString(),
-                node.viewIdResourceName,
-            )
-        if (labels.any { label -> VOICE_TOKENS.any { it in label.lowercase() } }) return node
+        // the caller just falls back to a corner the user can drag from. Words must start with a
+        // token so a suggestion like "economic" is not taken for the mic; ids such as
+        // key_pos_header_voice may carry the token anywhere.
+        val words = listOfNotNull(node.contentDescription, node.text)
+        val id = node.viewIdResourceName?.lowercase().orEmpty()
+        if (words.any(VOICE_WORD::containsMatchIn) || VOICE_TOKENS.any { it in id }) return node
         for (i in 0 until node.childCount) {
             node.getChild(i)?.let(::findVoiceNode)?.let {
                 return it
@@ -263,6 +332,7 @@ class SpeecherChipService : AccessibilityService() {
     }
 
     private fun removeChip() {
+        removePill()
         chip?.let(window::removeView)
         chip = null
         chipX = Int.MIN_VALUE
@@ -279,6 +349,24 @@ class SpeecherChipService : AccessibilityService() {
 
     private companion object {
         const val JITTER_DP = 8f
-        val VOICE_TOKENS = listOf("voice", "microphone", "mic", "dictat", "speak", "speech")
+        const val PILL_MILLIS = 4_000L
+        // English plus the common European forms: voz (es/pt), vocal/vocale (fr/it), Sprach- and
+        // Mikro- (de), dictado/dictée/Diktat. "mic" covers microphone, micrófono and microfone.
+        val VOICE_TOKENS =
+            listOf(
+                "voice",
+                "voz",
+                "vocal",
+                "sprach",
+                "mic",
+                "mikro",
+                "speak",
+                "speech",
+                "dicta",
+                "dicté",
+                "dikt",
+            )
+        val VOICE_WORD =
+            Regex("(?<!\\p{L})(${VOICE_TOKENS.joinToString("|")})", RegexOption.IGNORE_CASE)
     }
 }

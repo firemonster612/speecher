@@ -132,6 +132,8 @@ class MainActivity : ComponentActivity() {
         // The keyboard and accessibility toggles change outside the app, so poll while visible.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                // The chip's save offer writes settings too, so never edit a stale copy.
+                settings = settingsStore.load()
                 while (true) {
                     refresh()
                     delay(1_000)

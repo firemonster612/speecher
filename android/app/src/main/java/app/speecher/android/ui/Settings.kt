@@ -65,6 +65,14 @@ fun Settings(
         ProviderPicker("Transcription provider", settings.transcriptionProvider, signedIn) {
             onChange(settings.copy(transcriptionProvider = it))
         }
+        ListItem(
+            headlineContent = { Text("Keep screen on") },
+            supportingContent = { Text("Stops the screen turning off while you dictate.") },
+            trailingContent = {
+                Switch(settings.keepScreenOn, { onChange(settings.copy(keepScreenOn = it)) })
+            },
+            colors = rowColors,
+        )
 
         Section("Refinement")
         ListItem(
@@ -95,8 +103,8 @@ fun Settings(
             headlineContent = { Text("Extra transcription pass") },
             supportingContent = {
                 Text(
-                    "Re-transcribes your audio with GPT Transcribe for accuracy — slower. " +
-                        "ChatGPT only."
+                    "Re-transcribes your audio with GPT Transcribe before Insert and Insert " +
+                        "refined, for accuracy — slower. ChatGPT only."
                 )
             },
             trailingContent = {

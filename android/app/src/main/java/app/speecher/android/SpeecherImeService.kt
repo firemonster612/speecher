@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.inputmethodservice.InputMethodService
 import android.view.View
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.WindowCompat
@@ -12,7 +13,6 @@ import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
-import app.speecher.android.dictation.hasBatchTranscription
 import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.ui.DictationPanel
 import app.speecher.android.ui.SpeecherTheme
@@ -52,26 +52,20 @@ class SpeecherImeService : InputMethodService() {
                 SpeecherTheme {
                     DictationPanel(
                         panelState.value,
-                        ActiveDictation.settings.let {
-                            it.refinementEnabled ||
-                                it.transcribePassEnabled &&
-                                    ActiveDictation.engine?.sourceProvider?.hasBatchTranscription ==
-                                        true
-                        },
+                        // The transcription pass runs on both buttons, so only cleanup sets them
+                        // apart.
+                        ActiveDictation.settings.refinementEnabled,
                         onCancel = {
                             ActiveDictation.engine?.cancel()
                             switchBack()
                         },
                         onInsert = { ActiveDictation.engine?.insert() },
                         onInsertRefined = {
-                            val settings = ActiveDictation.settings
                             ActiveDictation.engine?.insertRefined(
-                                if (settings.refinementEnabled)
-                                    resolveSignedIn(
-                                        settings.refinementProvider,
-                                        TokenStore(this).signedIn(),
-                                    )
-                                else null
+                                resolveSignedIn(
+                                    ActiveDictation.settings.refinementProvider,
+                                    TokenStore(this).signedIn(),
+                                )
                             )
                         },
                         onRecover = ::recover,
@@ -96,6 +90,7 @@ class SpeecherImeService : InputMethodService() {
      */
     private val dismiss = Runnable {
         ActiveDictation.engine?.cancel()
+        keepScreenOn(null)
         if (
             android.provider.Settings.Secure.getString(
                 contentResolver,
@@ -109,6 +104,7 @@ class SpeecherImeService : InputMethodService() {
     override fun onWindowShown() {
         handler.removeCallbacks(dismiss)
         super.onWindowShown()
+        keepScreenOn(panelState.value.takeIf { ActiveDictation.engine != null })
     }
 
     override fun onWindowHidden() {
@@ -118,6 +114,24 @@ class SpeecherImeService : InputMethodService() {
 
     fun showState(state: DictationState) {
         panelState.value = state
+        keepScreenOn(state)
+    }
+
+    /**
+     * Holds the display awake through a running session, [state] being its latest; null or a
+     * failure means no session is running. The window flag lapses with the panel, unlike a wake
+     * lock.
+     */
+    private fun keepScreenOn(state: DictationState?) {
+        val flag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        val panel = window.window ?: return
+        if (
+            ActiveDictation.settings.keepScreenOn &&
+                state != null &&
+                state !is DictationState.Failed
+        )
+            panel.addFlags(flag)
+        else panel.clearFlags(flag)
     }
 
     /** Network and provider failures retry in place; the others need the app. */
@@ -138,6 +152,7 @@ class SpeecherImeService : InputMethodService() {
     private fun switchBack() {
         ActiveDictation.engine?.close()
         ActiveDictation.engine = null
+        keepScreenOn(null)
         ImeSwap(this).switchBack(this)
     }
 

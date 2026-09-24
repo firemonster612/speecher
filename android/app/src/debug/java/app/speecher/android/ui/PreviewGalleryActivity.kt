@@ -103,6 +103,7 @@ private val states: Map<String, @Composable () -> Unit> =
         "panel-failed-network" to bottom { PanelFailedNetworkPreview() },
         "panel-failed-provider" to bottom { PanelFailedProviderPreview() },
         "chip" to { ChipOverKeyboard() },
+        "save-position-pill" to { SavePositionPillPreview() },
         "launcher-icon" to { LauncherIcons() },
         "home-ready" to { HomeReadyPreview() },
         "home-pending" to { HomeSetupPendingPreview() },

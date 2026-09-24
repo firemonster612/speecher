@@ -32,12 +32,8 @@ private data class Endpoints(
     val transcribe: String? = null,
 )
 
-private sealed interface PendingInsert {
-    data object Raw : PendingInsert
-
-    /** [cleanup] is the LLM that tidies the transcript, or null when refinement is off. */
-    data class Refined(val cleanup: Provider?) : PendingInsert
-}
+/** [cleanup] is the LLM that tidies the transcript, or null for a plain Insert. */
+private data class PendingInsert(val cleanup: Provider?)
 
 class DictationEngine(
     private val capture: (() -> Boolean, (ByteArray, Float) -> Unit) -> Unit,
@@ -128,14 +124,14 @@ class DictationEngine(
             commitTranscript((state as DictationState.Failed).transcript)
             return
         }
-        pendingInsert = PendingInsert.Raw
+        pendingInsert = PendingInsert(null)
         stop()
     }
 
     @Synchronized
     fun insertRefined(cleanup: Provider?) {
         if (inserted || pendingInsert != null) return
-        pendingInsert = PendingInsert.Refined(cleanup)
+        pendingInsert = PendingInsert(cleanup)
         stop()
     }
 
@@ -239,16 +235,13 @@ class DictationEngine(
     private fun finishPendingInsert() {
         val pending = pendingInsert ?: return
         pendingInsert = null
-        when (pending) {
-            PendingInsert.Raw -> commitTranscript(transcript())
-            is PendingInsert.Refined -> insertBest(pending.cleanup)
-        }
+        insertBest(pending.cleanup)
     }
 
     /**
-     * "Insert refined": ChatGPT re-transcribes the whole recording for accuracy when the extra pass
-     * is on, then [cleanup] tidies the text. A failed or truncated batch pass falls back to the
-     * streamed transcript.
+     * Both Insert buttons: ChatGPT re-transcribes the whole recording for accuracy when the extra
+     * pass is on, then [cleanup], if any, tidies the text. A failed or truncated batch pass falls
+     * back to the streamed transcript.
      */
     private fun insertBest(cleanup: Provider?) {
         val streamed = transcript()

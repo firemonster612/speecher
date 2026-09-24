@@ -11,7 +11,7 @@ enum class Provider {
 val Provider.oauth: OAuthProvider
     get() = if (this == Provider.Claude) OAuthProvider.Claude else OAuthProvider.ChatGpt
 
-/** Only ChatGPT has a batch speech-to-text pass; "Insert refined" runs it before cleanup. */
+/** Only ChatGPT has a batch speech-to-text pass; both Insert buttons can run it. */
 val Provider.hasBatchTranscription: Boolean
     get() = this == Provider.ChatGpt
 
@@ -34,7 +34,7 @@ sealed interface DictationState {
                 else if (interim.isEmpty()) committed else "$committed $interim"
     }
 
-    /** The user asked for a refined insert and the batch or cleanup pass is running. */
+    /** The user pressed Insert and the batch or cleanup pass is running. */
     data class Refining(val transcript: String) : DictationState
 
     /**
@@ -129,7 +129,7 @@ data class SpeecherSettings(
     val transcriptionProvider: Provider = providerOrder.first(),
     val refinementEnabled: Boolean = true,
     val refinementProvider: Provider = providerOrder.first(),
-    /** Whether "Insert refined" re-transcribes ChatGPT dictation with GPT Transcribe first. */
+    /** Whether both Insert buttons re-transcribe ChatGPT dictation with GPT Transcribe first. */
     val transcribePassEnabled: Boolean = true,
     val chatGptRefinement: RefinementChoice = Provider.ChatGpt.defaultRefinement,
     val claudeRefinement: RefinementChoice = Provider.Claude.defaultRefinement,
@@ -139,6 +139,8 @@ data class SpeecherSettings(
     /** The custom chip position, as a pixel offset from the keyboard's bottom-right corner. */
     val chipOffsetX: Int? = null,
     val chipOffsetY: Int? = null,
+    /** Keep the display awake while a dictation is running. */
+    val keepScreenOn: Boolean = true,
 ) {
     fun refinement(provider: Provider): RefinementChoice =
         if (provider == Provider.Claude) claudeRefinement else chatGptRefinement

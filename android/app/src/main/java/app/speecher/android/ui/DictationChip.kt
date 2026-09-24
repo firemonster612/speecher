@@ -3,11 +3,14 @@ package app.speecher.android.ui
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,7 +36,8 @@ val ChipMargin = 6.dp
  * The overlay chip docked beside the keyboard: the brand pill with its bars, in tonal surface
  * colours so it sits next to the keyboard's own keys without competing with them. A short tap
  * starts dictation ([onTap]). Dragging past the touch slop calls [onDragStart], then [onDrag] with
- * the finger's travel from where it went down, so the caller can move the chip by that much.
+ * the finger's travel from where it went down, so the caller can move the chip by that much, and
+ * [onDragEnd] when the finger lifts.
  */
 @Composable
 fun DictationChip(
@@ -41,6 +45,7 @@ fun DictationChip(
     onDragStart: () -> Unit,
     onDrag: (Float, Float) -> Unit,
     modifier: Modifier = Modifier,
+    onDragEnd: () -> Unit = {},
 ) {
     Surface(
         modifier =
@@ -72,7 +77,7 @@ fun DictationChip(
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
                             if (change.changedToUp()) {
                                 change.consume()
-                                if (!dragging) onTap()
+                                if (dragging) onDragEnd() else onTap()
                                 break
                             }
                             val motion = event.motionEvent ?: continue
@@ -102,6 +107,25 @@ fun DictationChip(
         }
     }
 }
+
+/** Offered beside the chip after a drag; [onSave] keeps the dragged position. */
+@Composable
+fun SavePositionPill(onSave: () -> Unit) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.inverseSurface,
+        shadowElevation = 2.dp,
+    ) {
+        Row(Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Save position?", style = MaterialTheme.typography.bodyMedium)
+            TextButton(onSave) { Text("Save", color = MaterialTheme.colorScheme.inversePrimary) }
+        }
+    }
+}
+
+@PreviewLightDark
+@Composable
+internal fun SavePositionPillPreview() = SpeecherTheme { SavePositionPill {} }
 
 @PreviewLightDark
 @Composable
