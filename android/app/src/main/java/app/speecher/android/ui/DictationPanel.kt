@@ -6,6 +6,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -41,6 +44,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -48,13 +52,17 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.speecher.android.R
 import app.speecher.android.dictation.ButtonLayout
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
 import app.speecher.android.dictation.InsertAction
+import app.speecher.android.dictation.PanelSize
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
@@ -62,6 +70,10 @@ import kotlinx.coroutines.delay
 
 private const val BAR_COUNT = 29
 private const val SAMPLE_MILLIS = 70L
+
+/** Room for the waveform, two lines of transcript and the buttons, about half the full panel. */
+private val COMPACT_HEIGHT = 184.dp
+private val BAR_HEIGHT = 56.dp
 
 /**
  * A bell from 0 at the edges to 1 in the middle, with a little irregularity so it reads as sound.
@@ -75,11 +87,15 @@ private val Envelope =
 /**
  * The IME's input view. It draws its first frame complete, with no enter animation, because the
  * swap already leaves a blank gap before it appears (m2-spike-findings, "Frame-level flicker").
+ * [onToggleSize] is the minimize control: the full and compact panels collapse to a bar, and
+ * tapping the bar expands it.
  */
 @Composable
 fun DictationPanel(
     state: DictationState,
     layout: ButtonLayout,
+    size: PanelSize,
+    onToggleSize: () -> Unit,
     onCancel: () -> Unit,
     onInsert: () -> Unit,
     onInsertRefined: () -> Unit,
@@ -89,26 +105,46 @@ fun DictationPanel(
     // Sized from the display, not from incoming constraints: inside the IME those are the IME
     // window's own height, so a fraction of them shrinks the panel below the window it sized,
     // leaving an unpainted band at the bottom edge.
-    val panelHeight =
-        (LocalWindowInfo.current.containerDpSize.height * 0.38f).coerceIn(240.dp, 360.dp)
+    val height = panelHeight(size, LocalWindowInfo.current.containerDpSize.height)
+    val status =
+        when (state) {
+            is DictationState.Listening -> if (state.reconnecting) "Reconnecting" else "Listening"
+            is DictationState.Refining -> "Refining transcript"
+            is DictationState.Failed -> state.reason.title
+        }
+    val announced = Modifier.semantics {
+        liveRegion = LiveRegionMode.Polite
+        stateDescription = status
+    }
     Surface(modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainer) {
+        if (size == PanelSize.Minimized) {
+            Row(
+                Modifier.navigationBarsPadding()
+                    .height(height)
+                    .fillMaxWidth()
+                    .clickable(onClickLabel = "Expand", onClick = onToggleSize)
+                    .then(announced)
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MinimizedBar(state, layout, onInsert, onInsertRefined)
+            }
+            return@Surface
+        }
+        val compact = size == PanelSize.Compact
         Column(
             Modifier.navigationBarsPadding()
-                .height(panelHeight)
-                .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 12.dp)
+                .height(height)
+                .padding(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = if (compact) 8.dp else 20.dp,
+                    bottom = 12.dp,
+                )
         ) {
-            val status =
-                when (state) {
-                    is DictationState.Listening ->
-                        if (state.reconnecting) "Reconnecting" else "Listening"
-                    is DictationState.Refining -> "Refining transcript"
-                    is DictationState.Failed -> state.reason.title
-                }
             Box(
-                Modifier.fillMaxWidth().height(56.dp).semantics {
-                    liveRegion = LiveRegionMode.Polite
-                    stateDescription = status
-                },
+                Modifier.fillMaxWidth().height(56.dp).then(announced),
                 contentAlignment = Alignment.Center,
             ) {
                 when (state) {
@@ -126,8 +162,20 @@ fun DictationPanel(
                     is DictationState.Refining -> RefiningBars()
                     is DictationState.Failed -> FailureMessage(state)
                 }
+                // A failure never collapses, so its recovery stays in view.
+                if (state !is DictationState.Failed) {
+                    IconButton(onToggleSize, Modifier.align(Alignment.CenterEnd)) {
+                        Icon(
+                            painterResource(R.drawable.ic_minimize),
+                            contentDescription = "Minimize",
+                        )
+                    }
+                }
             }
-            Transcript(state, Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp))
+            Transcript(
+                state,
+                Modifier.weight(1f).fillMaxWidth().padding(vertical = if (compact) 4.dp else 12.dp),
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PanelButtons(
                     state,
@@ -140,6 +188,46 @@ fun DictationPanel(
             }
         }
     }
+}
+
+/** The panel's height above the navigation bar at [size], on a display [displayHeight] tall. */
+internal fun panelHeight(size: PanelSize, displayHeight: Dp): Dp =
+    when (size) {
+        PanelSize.Full -> (displayHeight * 0.38f).coerceIn(240.dp, 360.dp)
+        PanelSize.Compact -> COMPACT_HEIGHT
+        PanelSize.Minimized -> BAR_HEIGHT
+    }
+
+/**
+ * The collapsed panel: a recording dot and a small waveform, the newest words on one line (cut at
+ * the start so the latest stay visible), and the primary Insert.
+ */
+@Composable
+private fun RowScope.MinimizedBar(
+    state: DictationState,
+    layout: ButtonLayout,
+    onInsert: () -> Unit,
+    onInsertRefined: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    if (state is DictationState.Listening) {
+        Canvas(Modifier.size(8.dp)) { drawCircle(colors.error) }
+        LiveBars(state.level, SMALL_BAR_WIDTH, SMALL_BARS_HEIGHT)
+    } else {
+        RefiningBars(SMALL_BAR_WIDTH, SMALL_BARS_HEIGHT)
+    }
+    val words =
+        if (state is DictationState.Refining && state.refined.isNotEmpty()) state.refined
+        else state.transcript
+    Text(
+        words.ifEmpty { if (state is DictationState.Listening) "Speak now" else "" },
+        Modifier.weight(1f),
+        color = if (words.isEmpty()) colors.onSurfaceVariant else colors.onSurface,
+        overflow = TextOverflow.StartEllipsis,
+        maxLines = 1,
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    PrimaryInsertButton(state, layout, onInsert, onInsertRefined, Modifier.height(40.dp))
 }
 
 private val DictationState.transcript: String
@@ -211,17 +299,38 @@ private fun RowScope.PanelButtons(
         Button(onRecover, button) { Text(state.reason.recovery) }
         return
     }
-    val canInsert = state is DictationState.Listening && state.text.isNotBlank()
-    fun InsertAction.onClick() = if (this == InsertAction.Insert) onInsert else onInsertRefined
     layout.actions.dropLast(1).forEach { action ->
-        FilledTonalButton(action.onClick(), Modifier.height(52.dp), enabled = canInsert) {
+        FilledTonalButton(
+            action.pick(onInsert, onInsertRefined),
+            Modifier.height(52.dp),
+            enabled = state.canInsert,
+        ) {
             Text(action.label, maxLines = 1)
         }
     }
-    // Both buttons pass through Refining (the transcription pass runs on each), so the filled one
-    // carries the progress whichever was tapped.
+    PrimaryInsertButton(state, layout, onInsert, onInsertRefined, button)
+}
+
+private fun InsertAction.pick(onInsert: () -> Unit, onInsertRefined: () -> Unit) =
+    if (this == InsertAction.Insert) onInsert else onInsertRefined
+
+private val DictationState.canInsert: Boolean
+    get() = this is DictationState.Listening && text.isNotBlank()
+
+/**
+ * The layout's filled button. Both buttons pass through Refining (the transcription pass runs on
+ * each), so this one carries the progress whichever was tapped.
+ */
+@Composable
+private fun PrimaryInsertButton(
+    state: DictationState,
+    layout: ButtonLayout,
+    onInsert: () -> Unit,
+    onInsertRefined: () -> Unit,
+    modifier: Modifier,
+) {
     val primary = layout.actions.last()
-    Button(primary.onClick(), button, enabled = canInsert) {
+    Button(primary.pick(onInsert, onInsertRefined), modifier, enabled = state.canInsert) {
         if (state is DictationState.Refining) {
             CircularProgressIndicator(
                 Modifier.size(18.dp).semantics { contentDescription = "Refining transcript" },
@@ -277,9 +386,12 @@ private fun FailureMessage(state: DictationState.Failed) {
     }
 }
 
+private val SMALL_BAR_WIDTH = 1.5.dp
+private val SMALL_BARS_HEIGHT = 24.dp
+
 /** Scrolls the input level through the bars, newest on the right. */
 @Composable
-private fun LiveBars(level: Float) {
+private fun LiveBars(level: Float, barWidth: Dp = 4.dp, height: Dp = 40.dp) {
     val latest by rememberUpdatedState(level)
     // Starts full of the current level so the first frame is already a waveform, not a blank.
     var history by remember { mutableStateOf(List(BAR_COUNT) { level }) }
@@ -294,11 +406,13 @@ private fun LiveBars(level: Float) {
     Bars(
         history.mapIndexed { i, sample -> sample * (0.5f + 0.5f * Envelope[i]) },
         MaterialTheme.colorScheme.onSurface,
+        barWidth,
+        height,
     )
 }
 
 @Composable
-private fun RefiningBars() {
+private fun RefiningBars(barWidth: Dp = 4.dp, height: Dp = 40.dp) {
     val phase by
         rememberInfiniteTransition()
             .animateFloat(
@@ -309,15 +423,16 @@ private fun RefiningBars() {
     Bars(
         List(BAR_COUNT) { 0.2f + 0.2f * (1 + sin(phase - it * 0.45f)) / 2 },
         MaterialTheme.colorScheme.onSurfaceVariant,
+        barWidth,
+        height,
     )
 }
 
 /** Rounded bars in the mark's proportions: 7 wide on a 13 step. [levels] run from 0 to 1. */
 @Composable
-private fun Bars(levels: List<Float>, color: Color) {
-    val barWidth = 4.dp
+private fun Bars(levels: List<Float>, color: Color, barWidth: Dp, height: Dp) {
     val step = barWidth * 13 / 7
-    Canvas(Modifier.width(step * (levels.size - 1) + barWidth).height(40.dp)) {
+    Canvas(Modifier.width(step * (levels.size - 1) + barWidth).height(height)) {
         val width = barWidth.toPx()
         levels.forEachIndexed { index, level ->
             val height = width + (size.height - width) * level.coerceIn(0f, 1f)
@@ -335,8 +450,9 @@ private fun Bars(levels: List<Float>, color: Color) {
 private fun PanelPreview(
     state: DictationState,
     layout: ButtonLayout = ButtonLayout.RefinedPrimary,
+    size: PanelSize = PanelSize.Full,
 ) {
-    SpeecherTheme { DictationPanel(state, layout, {}, {}, {}, {}) }
+    SpeecherTheme { DictationPanel(state, layout, size, {}, {}, {}, {}, {}) }
 }
 
 private const val SAMPLE_TEXT =
@@ -360,6 +476,16 @@ internal fun PanelListeningNoRefinePreview() =
 @Composable
 internal fun PanelListeningRefinedOnlyPreview() =
     PanelPreview(DictationState.Listening(SAMPLE_TEXT, "", 0.7f), ButtonLayout.RefinedOnly)
+
+@PreviewLightDark
+@Composable
+internal fun PanelCompactPreview() =
+    PanelPreview(DictationState.Listening(SAMPLE_TEXT, "", 0.7f), size = PanelSize.Compact)
+
+@PreviewLightDark
+@Composable
+internal fun PanelMinimizedPreview() =
+    PanelPreview(DictationState.Listening(SAMPLE_TEXT, "", 0.7f), size = PanelSize.Minimized)
 
 @PreviewLightDark
 @Composable
