@@ -10,7 +10,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
-import app.speecher.android.dictation.Provider
 
 // The fallback schemes, used only where there is no wallpaper to draw dynamic colour from
 // (previews).
@@ -112,10 +111,3 @@ fun SpeecherTheme(content: @Composable () -> Unit) {
         }
     MaterialTheme(colorScheme = colors, content = content)
 }
-
-internal val Provider.label: String
-    get() =
-        when (this) {
-            Provider.Claude -> "Claude"
-            Provider.ChatGpt -> "ChatGPT"
-        }

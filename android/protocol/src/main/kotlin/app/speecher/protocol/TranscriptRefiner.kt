@@ -56,34 +56,37 @@ fun refineTranscript(
             streamed = true
             onText(it)
         }
-    // A model without vision rejects the image, and an oversized one is refused; the dictation
-    // still deserves a text-only pass. Other failures would fail again, so they are not retried.
-    // Both statuses arrive before any text, so the retry never replays streamed output.
-    fun refineAtSpeed(fast: Boolean): String {
-        if (context.screenshotJpeg == null) return refine(context, fast)
+    // Fast mode must never cost the user their insert: anything that fails it before text streams
+    // gets one standard-speed try with the same content, as the desktop's StreamingRefinement does.
+    fun refineFastFirst(): String {
+        if (
+            fastMode == null ||
+                !fastMode.get() ||
+                provider == OAuthProvider.Claude && !modelSupportsFastMode(model)
+        )
+            return refine(context, fast = false)
         return try {
-            refine(context, fast)
-        } catch (failure: RefinementHttpError) {
-            if (failure.status !in IMAGE_REJECTED_STATUSES) throw failure
-            refine(context.copy(screenshotJpeg = null), fast)
+            refine(context, fast = true)
+        } catch (failure: Exception) {
+            if (streamed || failure is RefinementStopped) throw failure
+            // A stall says nothing about fast mode, so like the desktop only a refusal latches it
+            // off. BC TLS rethrows a socket read timeout as it is, so the chatgpt.com path stalls
+            // with the same SocketTimeoutException as OkHttp's.
+            refine(context, fast = false).also {
+                if (failure !is SocketTimeoutException) fastMode.set(false)
+            }
         }
     }
-    if (
-        fastMode == null ||
-            !fastMode.get() ||
-            provider == OAuthProvider.Claude && !modelSupportsFastMode(model)
-    )
-        return refineAtSpeed(fast = false)
-    // Fast mode must never cost the user their insert: anything that fails it before text streams
-    // gets one standard-speed try, as the desktop's StreamingRefinement does.
+    if (context.screenshotJpeg == null) return refineFastFirst()
+    // Only once standard speed has also refused the request is the image the suspect: a model
+    // without vision rejects it, and an oversized one is refused, yet the dictation still deserves
+    // a text-only pass. Other failures would fail again, so they are not retried. Both statuses
+    // arrive before any text, so the retry never replays streamed output.
     return try {
-        refineAtSpeed(fast = true)
-    } catch (failure: Exception) {
-        if (streamed || failure is RefinementStopped) throw failure
-        // A stall says nothing about fast mode, so like the desktop only a refusal latches it off.
-        refineAtSpeed(fast = false).also {
-            if (failure !is SocketTimeoutException) fastMode.set(false)
-        }
+        refineFastFirst()
+    } catch (failure: RefinementHttpError) {
+        if (failure.status !in IMAGE_REJECTED_STATUSES) throw failure
+        refine(context.copy(screenshotJpeg = null), fast = false)
     }
 }
 

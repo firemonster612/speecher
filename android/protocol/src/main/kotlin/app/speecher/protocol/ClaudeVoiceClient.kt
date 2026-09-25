@@ -51,7 +51,7 @@ class ClaudeVoiceClient(
         }
         transport.open(url.toString(), headers, null, this)
         keepAlive.schedule(
-            { if (!connected) fail(false, "no connect in 10s") },
+            { if (!connected) fail(false, "no connect in 10s", retryable = true) },
             10,
             TimeUnit.SECONDS,
         )
@@ -91,9 +91,7 @@ class ClaudeVoiceClient(
                 if (value.isNotEmpty()) events(SpeechEvent.Final(value))
                 lastInterim = ""
                 if (stopped) {
-                    completed = true
-                    keepAlive.shutdownNow()
-                    events(SpeechEvent.Completed)
+                    complete()
                     transport.close(1000, null)
                 }
             }
@@ -118,7 +116,8 @@ class ClaudeVoiceClient(
     }
 
     override fun onClosed(code: Int, reason: String) {
-        fail(false, "closed $code ${reason.take(80)}".trim(), isRetryableClose(code))
+        if (connected && !stopped && endsSession(code)) complete()
+        else fail(false, "closed $code ${reason.take(80)}".trim(), retryable = true)
     }
 
     override fun sendAudio(pcm: ByteArray) {
@@ -162,6 +161,20 @@ class ClaudeVoiceClient(
             pendingBytes = 0
         }
         transport.cancel()
+    }
+
+    private fun complete() {
+        val first =
+            synchronized(lock) {
+                if (cancelled || completed || failed) false
+                else {
+                    completed = true
+                    true
+                }
+            }
+        if (!first) return
+        keepAlive.shutdownNow()
+        events(SpeechEvent.Completed)
     }
 
     private fun fail(authentication: Boolean, detail: String = "", retryable: Boolean = false) {

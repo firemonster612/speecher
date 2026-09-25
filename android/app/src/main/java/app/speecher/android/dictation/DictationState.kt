@@ -13,6 +13,14 @@ enum class Provider {
 val Provider.oauth: OAuthProvider
     get() = if (this == Provider.Claude) OAuthProvider.Claude else OAuthProvider.ChatGpt
 
+/** The provider's name as people know it, in the app and on the browser's sign-in page. */
+val Provider.label: String
+    get() =
+        when (this) {
+            Provider.Claude -> "Claude"
+            Provider.ChatGpt -> "ChatGPT"
+        }
+
 /** Only ChatGPT has a batch speech-to-text pass; both Insert buttons can run it. */
 val Provider.hasBatchTranscription: Boolean
     get() = this == Provider.ChatGpt

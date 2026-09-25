@@ -1,13 +1,16 @@
 package app.speecher.android.dictation
 
 import app.speecher.protocol.ClaudeVoiceClient
+import app.speecher.protocol.CodexDictationClient
 import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.OAuthTokens
 import app.speecher.protocol.RefinementContext
 import app.speecher.protocol.SpeechClient
 import app.speecher.protocol.SpeechEvent
+import app.speecher.protocol.WebSocketTransport
 import app.speecher.protocol.refineTranscript
 import app.speecher.protocol.webSocketTransport
+import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.LinkedBlockingQueue
@@ -160,6 +163,7 @@ class DictationEngineTest {
                 { true },
                 Executor { tasks.add(it) },
                 { states.add(it) },
+                pause = {},
             )
         engine.start(Provider.Claude)
         tasks.removeFirst().run() // The microphone.
@@ -183,6 +187,213 @@ class DictationEngineTest {
             engine.state,
         )
         assertTrue(states.none { it is DictationState.Failed })
+    }
+
+    /**
+     * An engine whose connections and backoffs the test runs by hand. [connect] sees each
+     * connection's number, from 1, and can throw to fail it.
+     */
+    private class Reconnects(connect: (Int) -> Unit = {}) {
+        var connections = 0
+        val capture = Capture()
+        val clients = mutableListOf<Client>()
+        val speech = mutableListOf<(SpeechEvent) -> Unit>()
+        val tasks = ArrayDeque<Runnable>()
+        val pauses = mutableListOf<Long>()
+        val commits = mutableListOf<String>()
+        val engine =
+            DictationEngine(
+                capture::capture,
+                capture::stop,
+                { _, events ->
+                    connect(++connections)
+                    speech.add(events)
+                    Client().also(clients::add)
+                },
+                { _, raw, _ -> raw },
+                null,
+                { commits.add(it) },
+                Executor { tasks.add(it) },
+                {},
+                pauses::add,
+            )
+
+        /** Starts dictating, then loses the first stream after it heard [heard]. */
+        fun dropAfter(heard: String) {
+            engine.start(Provider.Claude)
+            tasks.removeFirst().run() // The microphone.
+            tasks.removeFirst().run() // The first connection.
+            speech[0](SpeechEvent.Connected)
+            speech[0](SpeechEvent.Final(heard))
+            speech[0](SpeechEvent.Failed(false, "closed 1006", retryable = true))
+        }
+    }
+
+    @Test
+    fun `a drop once the reconnect budget is spent fails with the transcript kept`() {
+        val run = Reconnects()
+        run.dropAfter("part 0")
+        repeat(2) { stream ->
+            run.tasks.removeFirst().run() // The reconnect, after its backoff.
+            run.speech[stream + 1](SpeechEvent.Connected)
+            run.speech[stream + 1](SpeechEvent.Final("part ${stream + 1}"))
+            run.speech[stream + 1](SpeechEvent.Failed(false, "closed 1006", retryable = true))
+        }
+        assertEquals(listOf(1_000L, 3_000L), run.pauses)
+        assertEquals(
+            DictationState.Failed(
+                FailureReason.Network,
+                "closed 1006",
+                "part 0 part 1 part 2",
+                Provider.Claude,
+            ),
+            run.engine.state,
+        )
+        assertTrue(run.tasks.isEmpty())
+    }
+
+    @Test
+    fun `a reconnect that cannot connect retries with the rest of the budget`() {
+        val run = Reconnects { opened -> if (opened == 2) throw IOException("network down") }
+        run.dropAfter("before the drop")
+        run.tasks.removeFirst().run() // The first reconnect, with the network still down.
+        run.capture.audio?.invoke(byteArrayOf(9), 0f) // Spoken while offline.
+        run.tasks.removeFirst().run() // The second reconnect.
+        run.speech[1](SpeechEvent.Connected)
+        assertEquals(listOf(1_000L, 3_000L), run.pauses)
+        assertEquals(listOf(listOf<Byte>(9)), run.clients[1].audio.map { it.toList() })
+        assertEquals(DictationState.Listening("before the drop", "", 0f), run.engine.state)
+    }
+
+    @Test
+    fun `an authentication failure mid-dictation fails instead of reconnecting`() {
+        val run = Reconnects()
+        run.engine.start(Provider.Claude)
+        run.tasks.removeFirst().run() // The microphone.
+        run.tasks.removeFirst().run() // The connection.
+        run.speech[0](SpeechEvent.Connected)
+        run.speech[0](SpeechEvent.Final("kept"))
+        run.speech[0](SpeechEvent.Failed(true, "HTTP 401"))
+        assertEquals(
+            DictationState.Failed(FailureReason.SignedOut, "HTTP 401", "kept", Provider.Claude),
+            run.engine.state,
+        )
+        assertTrue(run.tasks.isEmpty())
+    }
+
+    @Test
+    fun `Insert during a reconnect that cannot connect inserts what was heard`() {
+        val run = Reconnects { opened -> if (opened == 2) throw IOException("network down") }
+        run.dropAfter("heard so far")
+        run.engine.insert()
+        run.tasks.removeFirst().run()
+        assertEquals(listOf("heard so far"), run.commits)
+    }
+
+    private class FakeTransport : WebSocketTransport {
+        lateinit var server: WebSocketTransport.Listener
+        val sent = mutableListOf<String>()
+
+        override fun open(
+            url: String,
+            headers: Map<String, String>,
+            subprotocol: String?,
+            listener: WebSocketTransport.Listener,
+        ) {
+            server = listener
+        }
+
+        override fun sendText(text: String) = sent.add(text)
+
+        override fun sendBinary(bytes: ByteArray) = sent.add("binary:${bytes.joinToString()}")
+
+        override fun close(code: Int, reason: String?) {}
+
+        override fun cancel() {}
+    }
+
+    /**
+     * Dictates through four provider sessions that each end on the server's side, with a word
+     * spoken after each end and before the next session opens, and returns every session's
+     * transport. More rollovers than the reconnect budget, and none of them may fail.
+     */
+    private fun rollOver(
+        provider: Provider,
+        client: (WebSocketTransport, (SpeechEvent) -> Unit) -> SpeechClient,
+        session: (WebSocketTransport.Listener, String) -> Unit,
+    ): List<FakeTransport> {
+        val capture = Capture()
+        val transports = mutableListOf<FakeTransport>()
+        val tasks = ArrayDeque<Runnable>()
+        val states = mutableListOf<DictationState>()
+        val engine =
+            DictationEngine(
+                capture::capture,
+                capture::stop,
+                { _, events -> client(FakeTransport().also(transports::add), events) },
+                { _, raw, _ -> raw },
+                null,
+                { true },
+                Executor { tasks.add(it) },
+                { states.add(it) },
+            )
+        engine.start(provider)
+        tasks.removeFirst().run() // The microphone.
+        repeat(4) { index ->
+            tasks.removeFirst().run() // The session's connection.
+            session(transports[index].server, "part $index")
+            capture.audio?.invoke(byteArrayOf(index.toByte()), 0f)
+        }
+        assertEquals(
+            DictationState.Listening("part 0 part 1 part 2 part 3", "", 0f),
+            engine.state,
+        )
+        assertTrue(states.none { it is DictationState.Failed })
+        engine.close()
+        return transports
+    }
+
+    @Test
+    fun `ChatGPT closing its session mid-dictation rolls over to a new one every time`() {
+        val transports =
+            rollOver(
+                Provider.ChatGpt,
+                { transport, events -> CodexDictationClient(transport, "token", events) },
+            ) { server, words ->
+                server.onOpen()
+                server.onText("""{"type":"session.started"}""")
+                server.onText("""{"type":"transcript.final","utterance_id":"1","text":"$words"}""")
+                server.onText("""{"type":"session.updated","session":{"status":"closed"}}""")
+            }
+        assertEquals(
+            listOf(
+                listOf("""{"type":"audio.append","audio":"AA=="}"""),
+                listOf("""{"type":"audio.append","audio":"AQ=="}"""),
+                listOf("""{"type":"audio.append","audio":"Ag=="}"""),
+            ),
+            transports.subList(1, 4).map { transport ->
+                transport.sent.filter { it.startsWith("""{"type":"audio.append"""") }
+            },
+        )
+    }
+
+    @Test
+    fun `Claude closing the stream mid-dictation rolls over to a new one every time`() {
+        val transports =
+            rollOver(
+                Provider.Claude,
+                { transport, events -> ClaudeVoiceClient(transport, "token", emptyList(), events) },
+            ) { server, words ->
+                server.onOpen()
+                server.onText("""{"type":"TranscriptEndpoint","data":"$words"}""")
+                server.onClosed(1000, "")
+            }
+        assertEquals(
+            listOf(listOf("binary:0"), listOf("binary:1"), listOf("binary:2")),
+            transports.subList(1, 4).map { transport ->
+                transport.sent.filter { it.startsWith("binary:") }
+            },
+        )
     }
 
     @Test

@@ -12,12 +12,64 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 class SpeechClientsTest {
+    private class FakeTransport : WebSocketTransport {
+        lateinit var server: WebSocketTransport.Listener
+
+        override fun open(
+            url: String,
+            headers: Map<String, String>,
+            subprotocol: String?,
+            listener: WebSocketTransport.Listener,
+        ) {
+            server = listener
+        }
+
+        override fun sendText(text: String) = true
+
+        override fun sendBinary(bytes: ByteArray) = true
+
+        override fun close(code: Int, reason: String?) {}
+
+        override fun cancel() {}
+    }
+
+    /** What a live Codex stream reports when the server closes it with [code]. */
+    private fun codexClosed(code: Int): SpeechEvent {
+        val transport = FakeTransport()
+        val events = mutableListOf<SpeechEvent>()
+        CodexDictationClient(transport, "token", events::add).also {
+            transport.server.onText("""{"type":"session.started"}""")
+            transport.server.onClosed(code, "")
+            it.cancel()
+        }
+        return events.last()
+    }
+
     @Test
-    fun `server restarts and outages are retryable closes, refusals are not`() {
+    fun `an unrequested close ends the session when normal and is a retryable drop otherwise`() {
         assertEquals(
-            listOf(1001, 1011, 1012, 1013),
-            listOf(1000, 1001, 1002, 1008, 1011, 1012, 1013, 4001).filter(::isRetryableClose),
+            listOf(
+                SpeechEvent.Completed,
+                SpeechEvent.Completed,
+                SpeechEvent.Failed(false, "closed 1001", retryable = true),
+                SpeechEvent.Failed(false, "closed 1008", retryable = true),
+                SpeechEvent.Failed(false, "closed 4001", retryable = true),
+            ),
+            listOf(1000, 1005, 1001, 1008, 4001).map(::codexClosed),
         )
+    }
+
+    @Test
+    fun `a Codex error that says it is not retryable is not retried`() {
+        val transport = FakeTransport()
+        val events = mutableListOf<SpeechEvent>()
+        val client = CodexDictationClient(transport, "token", events::add)
+        transport.server.onText("""{"type":"session.started"}""")
+        transport.server.onText(
+            """{"type":"session.error","fatal":true,"error":{"code":"quota","message":"exceeded","retryable":false}}"""
+        )
+        assertEquals(SpeechEvent.Failed(false, "quota exceeded", retryable = false), events.last())
+        client.cancel()
     }
 
     @Test

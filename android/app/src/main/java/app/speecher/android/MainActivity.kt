@@ -68,7 +68,8 @@ class MainActivity : ComponentActivity() {
     private val microphone =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { refresh() }
 
-    // The provider waiting on the notification prompt before its browser sign-in opens.
+    // The provider waiting on the notification prompt before its browser sign-in opens. Saved with
+    // the activity, whose recreation under the prompt would otherwise drop the sign-in.
     private var signInAfterPrompt: Provider? = null
 
     // Only for the sign-in notification. Refused, it stays hidden and sign-in works the same.
@@ -80,6 +81,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        signInAfterPrompt =
+            savedInstanceState?.getString(SIGN_IN_AFTER_PROMPT)?.let(Provider::valueOf)
         settings = settingsStore.load()
         refresh()
         signIn.restore()
@@ -116,7 +119,7 @@ class MainActivity : ComponentActivity() {
                                 status,
                                 settings,
                                 ::changeSettings,
-                                ::startSignIn,
+                                { signInSteps = it },
                                 { microphone.launch(Manifest.permission.RECORD_AUDIO) },
                                 { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
                                 { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
@@ -140,7 +143,7 @@ class MainActivity : ComponentActivity() {
                                 settings,
                                 status.signedIn,
                                 ::changeSettings,
-                                ::startSignIn,
+                                { signInSteps = it },
                                 ::signOut,
                                 { page = Page.ChipPosition },
                                 signingIn = signIn.activeProvider,
@@ -175,6 +178,11 @@ class MainActivity : ComponentActivity() {
         checkForUpdate()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(SIGN_IN_AFTER_PROMPT, signInAfterPrompt?.name)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -187,7 +195,7 @@ class MainActivity : ComponentActivity() {
                 Provider.entries.firstOrNull { it.name == name }
             } ?: return
         page = Page.Settings
-        startSignIn(provider)
+        signInSteps = provider
     }
 
     private fun checkForUpdate() {
@@ -254,10 +262,6 @@ class MainActivity : ComponentActivity() {
         settings = changed
     }
 
-    private fun startSignIn(provider: Provider) {
-        signInSteps = provider
-    }
-
     /**
      * The sheet explained the notification, so ask for it now, and open the browser once the prompt
      * is answered either way; opening it at once would bury the prompt under the browser.
@@ -297,5 +301,7 @@ class MainActivity : ComponentActivity() {
             }
     }
 }
+
+private const val SIGN_IN_AFTER_PROMPT = "sign-in-after-prompt"
 
 private fun emptyStatus() = SetupStatus(emptySet(), false, false, false)

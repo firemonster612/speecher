@@ -54,6 +54,8 @@ class DictationEngine(
     private val commit: (String) -> Boolean,
     private val executor: Executor,
     private val onState: (DictationState) -> Unit,
+    /** Waits out a reconnect's backoff on the executor thread. */
+    private val pause: (Long) -> Unit = Thread::sleep,
 ) : AutoCloseable {
     @Volatile
     var state: DictationState = DictationState.Listening()
@@ -69,8 +71,12 @@ class DictationEngine(
      * Identifies the current stream within the session, so a replaced stream's events are dropped.
      */
     private var attempt = 0
-    /** Whether the current stream connected, so a drop is a mid-dictation loss worth reopening. */
-    private var streaming = false
+    /**
+     * Whether this dictation has had a live stream, so losing one, or failing to reopen it, is a
+     * mid-dictation drop worth reconnecting rather than a failure to connect at all.
+     */
+    private var streamed = false
+    /** Set while a dropped stream reopens, for the panel's hint. A session rollover shows none. */
     private var reconnecting = false
     private var reconnectsLeft = 0
     private val finalText = StringBuilder()
@@ -106,8 +112,9 @@ class DictationEngine(
         failedCommit = null
         sourceProvider = provider
         recording = true
+        streamed = false
         reconnecting = false
-        reconnectsLeft = SPEECH_RECONNECTS_PER_SESSION
+        reconnectsLeft = RECONNECT_BACKOFF_MS.size
         // Listening from the tap: the microphone starts now and the clients hold audio until their
         // socket is up, so words spoken while it connects are sent, not lost.
         publish(listening(0f))
@@ -115,17 +122,16 @@ class DictationEngine(
         openStream(current)
     }
 
-    private fun openStream(current: Int) {
+    private fun openStream(current: Int, delayMillis: Long = 0) {
         val opening = ++attempt
-        streaming = false
         val provider = sourceProvider
         executor.execute {
+            if (delayMillis > 0) pause(delayMillis)
+            if (synchronized(this) { !isCurrent(current, opening) }) return@execute
             try {
                 val opened = connect(provider) { event -> onSpeech(current, opening, event) }
                 synchronized(this) {
-                    if (
-                        current == session && opening == attempt && state !is DictationState.Failed
-                    ) {
+                    if (isCurrent(current, opening)) {
                         client = opened
                         unsent.forEach(opened::sendAudio)
                         unsent.clear()
@@ -135,10 +141,26 @@ class DictationEngine(
             } catch (_: SignInRequired) {
                 fail(current, FailureReason.SignedOut, "Sign in to continue")
             } catch (_: Exception) {
-                fail(current, FailureReason.Network, "Could not connect to the speech provider")
+                synchronized(this) {
+                    if (isCurrent(current, opening))
+                        streamFailed(
+                            current,
+                            retryable = true,
+                            FailureReason.Network,
+                            "Could not connect to the speech provider",
+                        )
+                }
             }
         }
     }
+
+    /** Whether [opening] is still the stream this dictation is waiting on. */
+    private fun isCurrent(current: Int, opening: Int) =
+        current == session &&
+            opening == attempt &&
+            !inserted &&
+            state !is DictationState.Refining &&
+            state !is DictationState.Failed
 
     @Synchronized
     fun stop() {
@@ -235,17 +257,10 @@ class DictationEngine(
 
     @Synchronized
     private fun onSpeech(current: Int, opening: Int, event: SpeechEvent) {
-        if (
-            current != session ||
-                opening != attempt ||
-                inserted ||
-                state is DictationState.Refining ||
-                state is DictationState.Failed
-        )
-            return
+        if (!isCurrent(current, opening)) return
         when (event) {
             SpeechEvent.Connected -> {
-                streaming = true
+                streamed = true
                 if (reconnecting) {
                     reconnecting = false
                     publishListening()
@@ -261,31 +276,47 @@ class DictationEngine(
                 interim = ""
                 publishListening()
             }
-            SpeechEvent.Completed -> {
-                if (pendingInsert != null) finishPendingInsert() else publish(listening(0f))
-            }
+            SpeechEvent.Completed ->
+                if (pendingInsert != null) finishPendingInsert()
+                // Still recording, so the provider ended the session itself, as ChatGPT does at its
+                // session limit. That is not an error: carry on in a new session.
+                else if (recording) reopen(current) else publish(listening(0f))
             is SpeechEvent.Failed ->
-                if (pendingInsert != null && !event.authentication && transcript().isNotBlank())
-                    finishPendingInsert()
-                else if (event.retryable && streaming && recording && reconnectsLeft > 0)
-                    reconnect(current)
-                else
-                    fail(
-                        current,
-                        if (event.authentication) FailureReason.SignedOut
-                        else FailureReason.Network,
-                        event.detail.ifEmpty { "Speech connection failed" },
-                    )
+                streamFailed(
+                    current,
+                    event.retryable,
+                    if (event.authentication) FailureReason.SignedOut else FailureReason.Network,
+                    event.detail.ifEmpty { "Speech connection failed" },
+                )
         }
     }
 
     /**
-     * A stream that drops mid-dictation is a lost connection, not the end of the dictation, as on
-     * the desktop: the microphone keeps running into [unsent] while a fresh stream opens. The dead
-     * stream will never finalise the words in progress, so they are committed now.
+     * A stream failed, or could not open. A pending Insert takes what was heard; a retryable loss
+     * mid-dictation reconnects while the budget lasts, as on the desktop; anything else fails.
      */
-    private fun reconnect(current: Int) {
-        reconnectsLeft--
+    private fun streamFailed(
+        current: Int,
+        retryable: Boolean,
+        reason: FailureReason,
+        detail: String,
+    ) {
+        if (pendingInsert != null && reason != FailureReason.SignedOut && transcript().isNotBlank())
+            finishPendingInsert()
+        else if (retryable && streamed && recording && reconnectsLeft > 0) {
+            val backoff = RECONNECT_BACKOFF_MS[RECONNECT_BACKOFF_MS.size - reconnectsLeft]
+            reconnectsLeft--
+            reconnecting = true
+            reopen(current, backoff)
+        } else fail(current, reason, detail)
+    }
+
+    /**
+     * Replaces the ended stream with a new one after [delayMillis]. The microphone keeps running
+     * into [unsent] meanwhile. The old stream will never finalise the words in progress, so they
+     * are committed now.
+     */
+    private fun reopen(current: Int, delayMillis: Long = 0) {
         if (interim.isNotEmpty()) {
             if (finalText.isNotEmpty()) finalText.append(' ')
             finalText.append(interim)
@@ -293,9 +324,8 @@ class DictationEngine(
         }
         client?.cancel()
         client = null
-        reconnecting = true
         publishListening()
-        openStream(current)
+        openStream(current, delayMillis)
     }
 
     private fun finishPendingInsert() {
@@ -404,8 +434,11 @@ class DictationEngine(
     }
 }
 
-/** The desktop's budget of silent reconnects per dictation before a drop fails it. */
-private const val SPEECH_RECONNECTS_PER_SESSION = 2
+/**
+ * The wait before each reconnect after a dropped stream, so a Wi-Fi to mobile handoff can settle.
+ * Its length is the desktop's budget of reconnects per dictation; session rollovers cost none.
+ */
+private val RECONNECT_BACKOFF_MS = longArrayOf(1_000, 3_000)
 
 // 90 s of 16 kHz mono PCM16: the batch endpoint transcribes no more than that.
 private const val MAX_RECORDED_BYTES = 90 * 16000 * 2

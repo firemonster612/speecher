@@ -239,6 +239,75 @@ class TranscriptRefinerTest {
     }
 
     @Test
+    fun `a fast-mode refusal with a screenshot retries at standard speed with the image first`() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse.Builder().code(400).build())
+            server.enqueue(
+                MockResponse.Builder()
+                    .body(
+                        "event: response.output_text.delta\ndata: {\"delta\":\"Hello\"}\n\nevent: response.completed\ndata: {}\n\n"
+                    )
+                    .build()
+            )
+            server.start()
+            refineTranscript(
+                OkHttpClient(),
+                OAuthProvider.ChatGpt,
+                tokens,
+                "helo",
+                emptyList(),
+                "gpt-6-luna",
+                "none",
+                RefinementContext(screenshotJpeg = "AAAA"),
+                server.url("/codex").toString(),
+                AtomicBoolean(true),
+            )
+            val requests =
+                List(2) { Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject }
+            assertEquals(
+                listOf("priority" to true, null to true),
+                requests.map { body ->
+                    body["service_tier"]?.jsonPrimitive?.content to
+                        (body["input"]!!.jsonArray[0].jsonObject["content"] !is JsonPrimitive)
+                },
+            )
+        }
+    }
+
+    @Test
+    fun `fast mode is not retried once refined text has streamed`() {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse.Builder()
+                    .body("event: response.output_text.delta\ndata: {\"delta\":\"Hel\"}\n\n")
+                    .build()
+            )
+            server.start()
+            val fast = AtomicBoolean(true)
+            val shown = mutableListOf<String>()
+            assertThrows(IllegalStateException::class.java) {
+                refineTranscript(
+                    OkHttpClient(),
+                    OAuthProvider.ChatGpt,
+                    tokens,
+                    "helo",
+                    emptyList(),
+                    "gpt-6-luna",
+                    "none",
+                    RefinementContext(),
+                    server.url("/codex").toString(),
+                    fast,
+                    shown::add,
+                )
+            }
+            assertEquals(
+                Triple(listOf("Hel"), 1, true),
+                Triple(shown, server.requestCount, fast.get()),
+            )
+        }
+    }
+
+    @Test
     fun `a rate limit with a screenshot attached fails without a second request`() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse.Builder().code(429).build())

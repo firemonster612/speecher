@@ -13,10 +13,10 @@ import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import app.speecher.android.dictation.Provider
+import app.speecher.android.dictation.label
 import app.speecher.android.dictation.oauth
 import app.speecher.android.dictation.sharedExecutor
 import app.speecher.android.dictation.sharedHttp
-import app.speecher.android.ui.label
 import app.speecher.protocol.OAuthAttempt
 import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.OAuthTokens
@@ -46,7 +46,12 @@ class SignIn(context: Context) : AutoCloseable {
     val pendingProvider: OAuthProvider?
         get() = provider
 
-    fun start(provider: OAuthProvider, result: (Result<OAuthTokens>) -> Unit): OAuthAttempt {
+    /** [label] names the provider on the page the browser shows once the redirect arrives. */
+    fun start(
+        provider: OAuthProvider,
+        label: String,
+        result: (Result<OAuthTokens>) -> Unit,
+    ): OAuthAttempt {
         closeListener()
         val previous = listenerClosed
         val closed = CountDownLatch(1)
@@ -110,11 +115,11 @@ class SignIn(context: Context) : AutoCloseable {
                                 }
                                     .getOrNull()
                                 if (code == null) {
-                                    respond(it, provider, false)
+                                    respond(it, label, false)
                                     continue
                                 }
                                 val exchange = runCatching { exchange(provider, current, code) }
-                                respond(it, provider, exchange.isSuccess)
+                                respond(it, label, exchange.isSuccess)
                                 return@runCatching exchange.getOrThrow()
                             }
                         }
@@ -169,9 +174,8 @@ class SignIn(context: Context) : AutoCloseable {
         return saved
     }
 
-    private fun respond(client: java.net.Socket, provider: OAuthProvider, success: Boolean) {
+    private fun respond(client: java.net.Socket, label: String, success: Boolean) {
         val status = if (success) "200 OK" else "400 Bad Request"
-        val label = Provider.entries.first { it.oauth == provider }.label
         client
             .getOutputStream()
             .write(
@@ -242,7 +246,7 @@ class SignInViewModel(application: Application) : AndroidViewModel(application) 
         error = null
         // Before the browser covers us: Android only lets a foreground app start the service.
         SignInListenerService.start(activity, provider, ::timedOut)
-        val attempt = signIn.start(provider.oauth, ::finish)
+        val attempt = signIn.start(provider.oauth, provider.label, ::finish)
         CustomTabsIntent.Builder()
             .build()
             .launchUrl(activity, attempt.authorizeUrl.toString().toUri())

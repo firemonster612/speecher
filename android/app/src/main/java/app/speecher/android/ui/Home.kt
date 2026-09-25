@@ -26,6 +26,7 @@ import app.speecher.android.R
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SetupStatus
 import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.dictation.label
 import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.update.ApkUpdate
 

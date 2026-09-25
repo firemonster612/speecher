@@ -45,6 +45,7 @@ import app.speecher.android.R
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SetupStatus
 import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.dictation.label
 import app.speecher.android.dictation.providerOrder
 
 /**
@@ -251,9 +252,7 @@ internal fun SignInSteps(provider: Provider, onOpen: () -> Unit, onCancel: () ->
         ) { understood ->
             // Shown before the button that asks for the notification permission.
             Text(
-                "Speecher keeps a small \"Signing in\" notification up while the browser is open " +
-                    "so Android doesn't pause it and the sign-in can finish. It never sends you " +
-                    "notifications.",
+                "A \"Signing in\" notification keeps Speecher running while the browser is open.",
                 Modifier.padding(bottom = 8.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

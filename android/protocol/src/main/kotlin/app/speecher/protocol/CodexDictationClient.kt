@@ -39,7 +39,7 @@ class CodexDictationClient(
             this,
         )
         deadline.schedule(
-            { if (!started) fail(false, "no session.start in 10s") },
+            { if (!started) fail(false, "no session.start in 10s", retryable = true) },
             10,
             TimeUnit.SECONDS,
         )
@@ -107,9 +107,7 @@ class CodexDictationClient(
             }
             "session.updated" ->
                 if ((event["session"] as? JsonObject)?.string("status") == "closed") {
-                    completed = true
-                    deadline.shutdownNow()
-                    events(SpeechEvent.Completed)
+                    complete()
                     transport.close(1000, null)
                 }
             "transcript.failed" -> failWith(event)
@@ -128,7 +126,8 @@ class CodexDictationClient(
     }
 
     override fun onClosed(code: Int, reason: String) {
-        fail(false, "closed $code ${reason.take(80)}".trim(), isRetryableClose(code))
+        if (started && !stopped && endsSession(code)) complete()
+        else fail(false, "closed $code ${reason.take(80)}".trim(), retryable = true)
     }
 
     /** A provider error is retryable unless it is about sign-in or says `"retryable": false`. */
@@ -175,6 +174,20 @@ class CodexDictationClient(
         deadline.shutdownNow()
         synchronized(lock) { pending.clear() }
         transport.cancel()
+    }
+
+    private fun complete() {
+        val first =
+            synchronized(lock) {
+                if (cancelled || completed || failed) false
+                else {
+                    completed = true
+                    true
+                }
+            }
+        if (!first) return
+        deadline.shutdownNow()
+        events(SpeechEvent.Completed)
     }
 
     private fun fail(authentication: Boolean, detail: String = "", retryable: Boolean = false) {
