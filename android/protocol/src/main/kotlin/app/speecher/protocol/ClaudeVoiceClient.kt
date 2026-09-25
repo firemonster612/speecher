@@ -97,9 +97,12 @@ class ClaudeVoiceClient(
                     transport.close(1000, null)
                 }
             }
-            is ClaudeVoiceEvent.ServerError ->
-                fail(isAuthenticationError(event.summary), event.summary.take(120))
-            is ClaudeVoiceEvent.TranscriptError -> fail(false, event.summary.take(120))
+            is ClaudeVoiceEvent.ServerError -> {
+                val authentication = isAuthenticationError(event.summary)
+                fail(authentication, event.summary.take(120), retryable = !authentication)
+            }
+            is ClaudeVoiceEvent.TranscriptError ->
+                fail(false, event.summary.take(120), retryable = true)
             ClaudeVoiceEvent.Unknown -> Unit
         }
     }
@@ -110,11 +113,12 @@ class ClaudeVoiceClient(
             listOfNotNull(code?.let { "HTTP $it" }, error.message?.takeIf { it.isNotBlank() })
                 .joinToString(": ")
                 .ifEmpty { "connect failed" }
-        fail(code == 401 || code == 403, detail)
+        val authentication = code == 401 || code == 403
+        fail(authentication, detail, retryable = !authentication)
     }
 
     override fun onClosed(code: Int, reason: String) {
-        fail(false, "closed $code ${reason.take(80)}".trim())
+        fail(false, "closed $code ${reason.take(80)}".trim(), isRetryableClose(code))
     }
 
     override fun sendAudio(pcm: ByteArray) {
@@ -160,7 +164,7 @@ class ClaudeVoiceClient(
         transport.cancel()
     }
 
-    private fun fail(authentication: Boolean, detail: String = "") {
+    private fun fail(authentication: Boolean, detail: String = "", retryable: Boolean = false) {
         val first =
             synchronized(lock) {
                 if (cancelled || completed || failed) false
@@ -171,7 +175,7 @@ class ClaudeVoiceClient(
             }
         if (!first) return
         keepAlive.shutdownNow()
-        events(SpeechEvent.Failed(authentication, detail))
+        events(SpeechEvent.Failed(authentication, detail, retryable))
         transport.cancel()
     }
 }

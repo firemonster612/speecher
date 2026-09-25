@@ -1,8 +1,10 @@
 package app.speecher.protocol
 
 import java.io.BufferedReader
+import java.net.SocketTimeoutException
 import java.util.Base64
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -28,10 +30,17 @@ fun refineTranscript(
     endpointBase: String =
         if (provider == OAuthProvider.Claude) "https://api.anthropic.com/v1"
         else "https://chatgpt.com/backend-api/codex",
+    /**
+     * Non-null asks for fast mode while it holds true. A fast request the provider rejects is
+     * retried at standard speed, and when that succeeds this is set false so later requests skip
+     * straight to standard speed.
+     */
+    fastMode: AtomicBoolean? = null,
     /** Receives the refined text so far each time the stream adds to it. */
     onText: (String) -> Unit = {},
 ): String {
-    val refine = { sent: RefinementContext ->
+    var streamed = false
+    fun refine(sent: RefinementContext, fast: Boolean) =
         refineOnce(
             http,
             provider,
@@ -41,25 +50,59 @@ fun refineTranscript(
             model,
             effort,
             sent,
+            fast,
             endpointBase,
-            onText,
-        )
-    }
-    if (context.screenshotJpeg == null) return refine(context)
+        ) {
+            streamed = true
+            onText(it)
+        }
     // A model without vision rejects the image, and an oversized one is refused; the dictation
     // still deserves a text-only pass. Other failures would fail again, so they are not retried.
     // Both statuses arrive before any text, so the retry never replays streamed output.
+    fun refineAtSpeed(fast: Boolean): String {
+        if (context.screenshotJpeg == null) return refine(context, fast)
+        return try {
+            refine(context, fast)
+        } catch (failure: RefinementHttpError) {
+            if (failure.status !in IMAGE_REJECTED_STATUSES) throw failure
+            refine(context.copy(screenshotJpeg = null), fast)
+        }
+    }
+    if (
+        fastMode == null ||
+            !fastMode.get() ||
+            provider == OAuthProvider.Claude && !modelSupportsFastMode(model)
+    )
+        return refineAtSpeed(fast = false)
+    // Fast mode must never cost the user their insert: anything that fails it before text streams
+    // gets one standard-speed try, as the desktop's StreamingRefinement does.
     return try {
-        refine(context)
-    } catch (failure: RefinementHttpError) {
-        if (failure.status !in IMAGE_REJECTED_STATUSES) throw failure
-        refine(context.copy(screenshotJpeg = null))
+        refineAtSpeed(fast = true)
+    } catch (failure: Exception) {
+        if (streamed || failure is RefinementStopped) throw failure
+        // A stall says nothing about fast mode, so like the desktop only a refusal latches it off.
+        refineAtSpeed(fast = false).also {
+            if (failure !is SocketTimeoutException) fastMode.set(false)
+        }
     }
 }
+
+/**
+ * Anthropic's fast mode is a research preview limited to Opus 5 and Opus 4.8; other models fail
+ * every request that asks for it.
+ */
+fun modelSupportsFastMode(model: String): Boolean =
+    model.lowercase().let { it.contains("opus-5") || it.contains("opus-4-8") }
 
 /** A refinement request the provider answered with a non-2xx [status]. */
 class RefinementHttpError(val status: Int) :
     IllegalStateException("Refinement failed with HTTP $status")
+
+/**
+ * The provider ended the response itself (failed, incomplete, or an unexpected stop reason). The
+ * desktop retries those at neither speed, so neither does the fast-mode fallback.
+ */
+private class RefinementStopped(message: String) : IllegalStateException(message)
 
 /** Bad request and payload too large: what a provider answers when it will not take the image. */
 private val IMAGE_REJECTED_STATUSES = setOf(400, 413)
@@ -73,6 +116,7 @@ private fun refineOnce(
     model: String,
     effort: String,
     context: RefinementContext,
+    fast: Boolean,
     endpointBase: String,
     onText: (String) -> Unit,
 ): String {
@@ -87,6 +131,7 @@ private fun refineOnce(
                     model,
                     effort,
                     context,
+                    fast,
                     base,
                 )
             )
@@ -106,7 +151,7 @@ private fun refineOnce(
             .toMap(),
         HttpBody(
             "application/json",
-            chatGptBody(rawTranscript, vocabulary, model, effort, context)
+            chatGptBody(rawTranscript, vocabulary, model, effort, context, fast)
                 .toString()
                 .toByteArray(Charsets.UTF_8),
         ),
@@ -153,6 +198,7 @@ private fun claudeRequest(
     model: String,
     effort: String,
     context: RefinementContext,
+    fast: Boolean,
     base: String,
 ): Request {
     val system = buildJsonArray {
@@ -176,6 +222,7 @@ private fun claudeRequest(
         put("model", JsonPrimitive(model))
         put("max_tokens", JsonPrimitive(4096))
         put("stream", JsonPrimitive(true))
+        if (fast) put("speed", JsonPrimitive("fast"))
         put(
             "thinking",
             buildJsonObject {
@@ -205,7 +252,11 @@ private fun claudeRequest(
         .url("$base/messages")
         .header("Authorization", "Bearer $token")
         .header("anthropic-version", "2023-06-01")
-        .header("anthropic-beta", "claude-code-20250219,oauth-2025-04-20")
+        .header(
+            "anthropic-beta",
+            if (fast) "claude-code-20250219,oauth-2025-04-20,fast-mode-2026-02-01"
+            else "claude-code-20250219,oauth-2025-04-20",
+        )
         .header("User-Agent", "claude-cli/unknown (external, cli)")
         .header("x-app", "cli")
         .header("x-claude-code-session-id", id)
@@ -220,12 +271,15 @@ private fun chatGptBody(
     model: String,
     effort: String,
     context: RefinementContext,
+    fast: Boolean,
 ) = buildJsonObject {
     put("model", JsonPrimitive(model))
     put("reasoning", buildJsonObject { put("effort", JsonPrimitive(effort)) })
     put("instructions", JsonPrimitive(dictationSystemPrompt(context)))
     put("stream", JsonPrimitive(true))
     put("store", JsonPrimitive(false))
+    // chatgpt.com rejects "fast" ("Unsupported service_tier: fast"); "priority" is its fast tier.
+    if (fast) put("service_tier", JsonPrimitive("priority"))
     put(
         "input",
         buildJsonArray {
@@ -305,13 +359,14 @@ private fun appendEvent(
 ): Boolean {
     val json =
         runCatching { Json.parseToJsonElement(data) as JsonObject }.getOrNull() ?: return false
-    if (name == "error" || name == "response.failed" || name == "response.incomplete") {
-        error("Refinement provider rejected the request")
+    if (name == "error") error("Refinement provider rejected the request")
+    if (name == "response.failed" || name == "response.incomplete") {
+        throw RefinementStopped("Refinement provider ended the response: $name")
     }
     if (provider == OAuthProvider.Claude && name == "message_delta") {
         val reason = (json["delta"] as? JsonObject)?.get("stop_reason")?.jsonPrimitive?.content
         if (reason != null && reason != "end_turn" && reason != "stop_sequence") {
-            error("Refinement stopped before completion")
+            throw RefinementStopped("Refinement stopped before completion")
         }
     }
     val delta =

@@ -23,6 +23,8 @@ class SettingsStore(private val context: Context) {
             transcribePassEnabled = preferences.getBoolean("transcribePass", true),
             chatGptRefinement = loadRefinement(Provider.ChatGpt),
             claudeRefinement = loadRefinement(Provider.Claude),
+            chatGptFastMode = preferences.getBoolean("openAiFastMode", true),
+            claudeFastMode = preferences.getBoolean("anthropicFastMode", true),
             vocabulary =
                 JSONArray(preferences.getString("vocabulary", "[]")).let { items ->
                     List(items.length()) { index -> items.getString(index) }
@@ -63,6 +65,8 @@ class SettingsStore(private val context: Context) {
                 putString("${provider.name}RefinementModel", choice.model)
                 putString("${provider.name}RefinementEffort", choice.effort)
             }
+            putBoolean("openAiFastMode", settings.chatGptFastMode)
+            putBoolean("anthropicFastMode", settings.claudeFastMode)
             putString("vocabulary", JSONArray(settings.vocabulary).toString())
             putBoolean("chipDockOnMic", settings.chipDockOnMic)
             settings.chipOffsetX?.let { putInt("chipOffsetX", it) } ?: remove("chipOffsetX")

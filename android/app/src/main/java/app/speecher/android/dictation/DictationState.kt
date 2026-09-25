@@ -23,12 +23,14 @@ sealed interface DictationState {
      * The microphone is live from the tap, while the connection may still be opening. [committed]
      * is the finalised text and [interim] the recogniser's current guess for the word in progress;
      * keeping them apart lets the preview grow append-only instead of reflowing whenever an interim
-     * shrinks. [level] is the input loudness from 0 to 1.
+     * shrinks. [level] is the input loudness from 0 to 1. [reconnecting] is set while a dropped
+     * speech stream is being reopened; the microphone keeps recording meanwhile.
      */
     data class Listening(
         val committed: String = "",
         val interim: String = "",
         val level: Float = 0f,
+        val reconnecting: Boolean = false,
     ) : DictationState {
         /** The whole live preview: committed text with the interim word appended. */
         val text: String
@@ -154,6 +156,11 @@ data class SpeecherSettings(
     val transcribePassEnabled: Boolean = true,
     val chatGptRefinement: RefinementChoice = Provider.ChatGpt.defaultRefinement,
     val claudeRefinement: RefinementChoice = Provider.Claude.defaultRefinement,
+    /**
+     * Ask each provider for its faster, slightly costlier tier; on by default, as on the desktop.
+     */
+    val chatGptFastMode: Boolean = true,
+    val claudeFastMode: Boolean = true,
     val vocabulary: List<String> = emptyList(),
     /** Place the chip on the keyboard's mic key; off uses the custom position below. */
     val chipDockOnMic: Boolean = true,
@@ -189,6 +196,13 @@ data class SpeecherSettings(
     fun withRefinement(provider: Provider, choice: RefinementChoice): SpeecherSettings =
         if (provider == Provider.Claude) copy(claudeRefinement = choice)
         else copy(chatGptRefinement = choice)
+
+    fun fastMode(provider: Provider): Boolean =
+        if (provider == Provider.Claude) claudeFastMode else chatGptFastMode
+
+    fun withFastMode(provider: Provider, enabled: Boolean): SpeecherSettings =
+        if (provider == Provider.Claude) copy(claudeFastMode = enabled)
+        else copy(chatGptFastMode = enabled)
 }
 
 /** What the setup checklist needs to know. Each flag is one step. */

@@ -68,9 +68,15 @@ class MainActivity : ComponentActivity() {
     private val microphone =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { refresh() }
 
+    // The provider waiting on the notification prompt before its browser sign-in opens.
+    private var signInAfterPrompt: Provider? = null
+
     // Only for the sign-in notification. Refused, it stays hidden and sign-in works the same.
     private val notifications =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            signInAfterPrompt?.let { signIn.start(this, it) }
+            signInAfterPrompt = null
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,10 +90,7 @@ class MainActivity : ComponentActivity() {
                 signInSteps?.let { provider ->
                     SignInStepsSheet(
                         provider,
-                        onOpen = {
-                            signInSteps = null
-                            signIn.start(this, provider)
-                        },
+                        onOpen = { openSignIn(provider) },
                         onDismiss = { signInSteps = null },
                     )
                 }
@@ -252,13 +255,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startSignIn(provider: Provider) {
+        signInSteps = provider
+    }
+
+    /**
+     * The sheet explained the notification, so ask for it now, and open the browser once the prompt
+     * is answered either way; opening it at once would bury the prompt under the browser.
+     */
+    private fun openSignIn(provider: Provider) {
+        signInSteps = null
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 !granted(Manifest.permission.POST_NOTIFICATIONS)
         ) {
+            signInAfterPrompt = provider
             notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-        signInSteps = provider
+        } else signIn.start(this, provider)
     }
 
     private fun signOut(provider: Provider) {

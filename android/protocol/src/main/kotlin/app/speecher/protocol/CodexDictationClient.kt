@@ -112,11 +112,8 @@ class CodexDictationClient(
                     events(SpeechEvent.Completed)
                     transport.close(1000, null)
                 }
-            "transcript.failed" -> fail(event.authenticationError(), event.errorDetail())
-            "session.error" ->
-                if (event["fatal"]?.jsonPrimitive?.content == "true") {
-                    fail(event.authenticationError(), event.errorDetail())
-                }
+            "transcript.failed" -> failWith(event)
+            "session.error" -> if (event["fatal"]?.jsonPrimitive?.content == "true") failWith(event)
         }
     }
 
@@ -126,11 +123,19 @@ class CodexDictationClient(
             listOfNotNull(code?.let { "HTTP $it" }, error.message?.takeIf { it.isNotBlank() })
                 .joinToString(": ")
                 .ifEmpty { "connect failed" }
-        fail(code == 401 || code == 403, detail)
+        val authentication = code == 401 || code == 403
+        fail(authentication, detail, retryable = !authentication)
     }
 
     override fun onClosed(code: Int, reason: String) {
-        fail(false, "closed $code ${reason.take(80)}".trim())
+        fail(false, "closed $code ${reason.take(80)}".trim(), isRetryableClose(code))
+    }
+
+    /** A provider error is retryable unless it is about sign-in or says `"retryable": false`. */
+    private fun failWith(event: JsonObject) {
+        val authentication = event.authenticationError()
+        val retryable = (event["error"] as? JsonObject)?.get("retryable")?.jsonPrimitive?.content
+        fail(authentication, event.errorDetail(), !authentication && retryable != "false")
     }
 
     private fun JsonObject.errorDetail(): String {
@@ -172,7 +177,7 @@ class CodexDictationClient(
         transport.cancel()
     }
 
-    private fun fail(authentication: Boolean, detail: String = "") {
+    private fun fail(authentication: Boolean, detail: String = "", retryable: Boolean = false) {
         val first =
             synchronized(lock) {
                 if (cancelled || completed || failed) false
@@ -183,7 +188,7 @@ class CodexDictationClient(
             }
         if (!first) return
         deadline.shutdownNow()
-        events(SpeechEvent.Failed(authentication, detail))
+        events(SpeechEvent.Failed(authentication, detail, retryable))
         transport.cancel()
     }
 }

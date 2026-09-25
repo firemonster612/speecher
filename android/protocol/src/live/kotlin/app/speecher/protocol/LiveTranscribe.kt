@@ -2,6 +2,7 @@ package app.speecher.protocol
 
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlinx.serialization.json.Json
@@ -57,6 +58,26 @@ fun main() {
         result.isFailure
     }
     check(failures == 0) { "$failures refinement choices failed" }
+
+    // Fast mode: service_tier=priority, falling back to standard speed if chatgpt.com refuses it.
+    val fast = AtomicBoolean(true)
+    val fastResult =
+        refineTranscript(
+            OkHttpClient(),
+            OAuthProvider.ChatGpt,
+            OAuthTokens(access, "", field("id_token"), 0, ""),
+            "um so i think we should uh ship it on tuesday",
+            emptyList(),
+            "gpt-6-luna",
+            "none",
+            RefinementContext(),
+            fastMode = fast,
+        )
+    println(
+        "refinement fast mode: \"$fastResult\" " +
+            if (fast.get()) "(service_tier=priority accepted)"
+            else "(service_tier=priority rejected, standard-speed fallback answered)"
+    )
 
     // A populated target context: Messages, casual tone, text around a selected word.
     val context =

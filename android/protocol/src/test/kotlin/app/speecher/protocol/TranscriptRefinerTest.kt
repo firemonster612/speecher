@@ -1,5 +1,6 @@
 package app.speecher.protocol
 
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
@@ -86,6 +87,84 @@ class TranscriptRefinerTest {
             assertEquals("gpt-6-luna", body["model"]?.jsonPrimitive?.content)
             assertEquals("{\"effort\":\"none\"}", body["reasoning"].toString())
             assertEquals("false", body["store"]?.jsonPrimitive?.content)
+        }
+    }
+
+    @Test
+    fun `ChatGPT fast mode asks for the fast tier and drops to standard speed once it is rejected`() {
+        MockWebServer().use { server ->
+            val ok =
+                "event: response.output_text.delta\ndata: {\"delta\":\"Hello\"}\n\nevent: response.completed\ndata: {}\n\n"
+            server.enqueue(MockResponse.Builder().code(400).build())
+            server.enqueue(MockResponse.Builder().body(ok).build())
+            server.enqueue(MockResponse.Builder().body(ok).build())
+            server.start()
+            val fast = AtomicBoolean(true)
+            repeat(2) {
+                val result =
+                    refineTranscript(
+                        OkHttpClient(),
+                        OAuthProvider.ChatGpt,
+                        tokens,
+                        "helo",
+                        emptyList(),
+                        "gpt-6-luna",
+                        "none",
+                        RefinementContext(),
+                        server.url("/codex").toString(),
+                        fast,
+                    )
+                assertEquals("Hello", result)
+            }
+            fun tier() =
+                Json.parseToJsonElement(server.takeRequest().body!!.utf8())
+                    .jsonObject["service_tier"]
+                    ?.jsonPrimitive
+                    ?.content
+            assertEquals(listOf("priority", null, null), List(3) { tier() })
+            assertEquals(false, fast.get())
+        }
+    }
+
+    @Test
+    fun `Claude fast mode is sent only for Opus models`() {
+        MockWebServer().use { server ->
+            val ok =
+                "event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\nevent: message_stop\ndata: {}\n\n"
+            server.enqueue(MockResponse.Builder().body(ok).build())
+            server.enqueue(MockResponse.Builder().body(ok).build())
+            server.start()
+            for (model in listOf("claude-opus-5", "claude-sonnet-5")) {
+                refineTranscript(
+                    OkHttpClient(),
+                    OAuthProvider.Claude,
+                    tokens,
+                    "helo",
+                    emptyList(),
+                    model,
+                    "low",
+                    RefinementContext(),
+                    server.url("/v1").toString(),
+                    AtomicBoolean(true),
+                )
+            }
+            val requests = List(2) { server.takeRequest() }
+            assertEquals(
+                listOf(
+                    "claude-code-20250219,oauth-2025-04-20,fast-mode-2026-02-01",
+                    "claude-code-20250219,oauth-2025-04-20",
+                ),
+                requests.map { it.headers["anthropic-beta"] },
+            )
+            assertEquals(
+                listOf("fast", null),
+                requests.map {
+                    Json.parseToJsonElement(it.body!!.utf8())
+                        .jsonObject["speed"]
+                        ?.jsonPrimitive
+                        ?.content
+                },
+            )
         }
     }
 

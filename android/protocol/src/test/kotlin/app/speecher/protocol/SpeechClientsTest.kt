@@ -13,6 +13,14 @@ import org.junit.jupiter.api.Test
 
 class SpeechClientsTest {
     @Test
+    fun `server restarts and outages are retryable closes, refusals are not`() {
+        assertEquals(
+            listOf(1001, 1011, 1012, 1013),
+            listOf(1000, 1001, 1002, 1008, 1011, 1012, 1013, 4001).filter(::isRetryableClose),
+        )
+    }
+
+    @Test
     fun `Claude authentication error is classified`() {
         MockWebServer().use { server ->
             server.enqueue(

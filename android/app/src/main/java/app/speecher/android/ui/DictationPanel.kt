@@ -99,7 +99,8 @@ fun DictationPanel(
         ) {
             val status =
                 when (state) {
-                    is DictationState.Listening -> "Listening"
+                    is DictationState.Listening ->
+                        if (state.reconnecting) "Reconnecting" else "Listening"
                     is DictationState.Refining -> "Refining transcript"
                     is DictationState.Failed -> state.reason.title
                 }
@@ -111,7 +112,17 @@ fun DictationPanel(
                 contentAlignment = Alignment.Center,
             ) {
                 when (state) {
-                    is DictationState.Listening -> LiveBars(state.level)
+                    is DictationState.Listening ->
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            LiveBars(state.level)
+                            if (state.reconnecting) {
+                                Text(
+                                    "Reconnecting…",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     is DictationState.Refining -> RefiningBars()
                     is DictationState.Failed -> FailureMessage(state)
                 }
@@ -349,6 +360,11 @@ internal fun PanelListeningNoRefinePreview() =
 @Composable
 internal fun PanelListeningRefinedOnlyPreview() =
     PanelPreview(DictationState.Listening(SAMPLE_TEXT, "", 0.7f), ButtonLayout.RefinedOnly)
+
+@PreviewLightDark
+@Composable
+internal fun PanelReconnectingPreview() =
+    PanelPreview(DictationState.Listening(SAMPLE_TEXT, "", 0.5f, reconnecting = true))
 
 @PreviewLightDark
 @Composable

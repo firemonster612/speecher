@@ -106,6 +106,14 @@ fun Onboarding(
         ButtonLayoutPicker(settings.buttonLayout) {
             onChangeSettings(settings.copy(buttonLayout = it))
         }
+        Section("Refinement")
+        OptionalSwitch(
+            "Fast mode",
+            FAST_MODE_DESCRIPTION,
+            settings.chatGptFastMode && settings.claudeFastMode,
+        ) {
+            onChangeSettings(settings.copy(chatGptFastMode = it, claudeFastMode = it))
+        }
         Section("Optional context")
         OptionalSwitch(
             "Screen text",
@@ -177,8 +185,9 @@ private fun SignInStep(
 
 /**
  * Android blocks accessibility for sideloaded apps until the user allows restricted settings on the
- * app's info page. On some versions that menu item only appears once Android has refused, hence the
- * fallback in step 2. Success shows up through the chipEnabled poll; nothing here reads the state.
+ * app's info page, and that menu item only appears after Android has refused to turn the service on
+ * once, so the steps start in Accessibility. Success shows up through the chipEnabled poll; nothing
+ * here reads the state.
  */
 @Composable
 private fun RestrictedSettingsSteps(onOpenAppInfo: () -> Unit, onOpenChipSettings: () -> Unit) {
@@ -192,20 +201,26 @@ private fun RestrictedSettingsSteps(onOpenAppInfo: () -> Unit, onOpenChipSetting
     Spacer(Modifier.height(10.dp))
     AcknowledgedSteps(
         listOf(
-            "Tap Open app info.",
-            "Open the menu in the corner (often three dots) and choose Allow restricted " +
-                "settings, then confirm. If it isn't there, tap Open accessibility settings, try " +
-                "to turn on Speecher chip once, then come back and look again.",
-            "Come back here and tap Open accessibility settings to turn on Speecher chip.",
-        )
-    ) { understood ->
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilledTonalButton(onOpenAppInfo, enabled = understood) { Text("Open app info") }
-            FilledTonalButton(onOpenChipSettings, enabled = understood) {
-                Text("Open accessibility settings")
+            "Open Accessibility settings.",
+            "Find Speecher chip. It's marked as restricted.",
+            "Tap the greyed-out Speecher chip row. Android says it's blocked. Close that message.",
+            "Open App info, tap the three-dot menu, then Allow restricted settings.",
+            "Go back to Accessibility and turn Speecher chip on.",
+        ),
+        stepDetail = { index, understood ->
+            when (index) {
+                0 ->
+                    FilledTonalButton(onOpenChipSettings, enabled = understood) {
+                        Text("Open accessibility settings")
+                    }
+                2 -> BlockedRowIllustration()
+                3 -> {
+                    AllowRestrictedIllustration()
+                    FilledTonalButton(onOpenAppInfo, enabled = understood) { Text("Open app info") }
+                }
             }
-        }
-    }
+        },
+    )
 }
 
 /**
@@ -234,6 +249,15 @@ internal fun SignInSteps(provider: Provider, onOpen: () -> Unit, onCancel: () ->
                     "http://localhost. Come back to Speecher and paste it.",
             )
         ) { understood ->
+            // Shown before the button that asks for the notification permission.
+            Text(
+                "Speecher keeps a small \"Signing in\" notification up while the browser is open " +
+                    "so Android doesn't pause it and the sign-in can finish. It never sends you " +
+                    "notifications.",
+                Modifier.padding(bottom = 8.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
@@ -247,14 +271,20 @@ internal fun SignInSteps(provider: Provider, onOpen: () -> Unit, onCancel: () ->
 
 /**
  * Numbered [steps] people tend to skip, then an "I understand" box that gates the [actions], so
- * nobody reaches them without the steps on screen.
+ * nobody reaches them without the steps on screen. [stepDetail] adds content under a step, given
+ * its index and whether the box is ticked, for actions that belong beside that step.
  */
 @Composable
-internal fun AcknowledgedSteps(steps: List<String>, actions: @Composable (Boolean) -> Unit) {
+internal fun AcknowledgedSteps(
+    steps: List<String>,
+    stepDetail: @Composable (Int, Boolean) -> Unit = { _, _ -> },
+    actions: @Composable (Boolean) -> Unit = {},
+) {
     var understood by rememberSaveable { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         steps.forEachIndexed { index, step ->
             Text("${index + 1}. $step", style = MaterialTheme.typography.bodyMedium)
+            stepDetail(index, understood)
         }
     }
     Row(

@@ -18,6 +18,7 @@ import app.speecher.protocol.webSocketTransport
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import okhttp3.OkHttpClient
 import okhttp3.brotli.BrotliInterceptor
 
@@ -25,6 +26,12 @@ import okhttp3.brotli.BrotliInterceptor
 // (br included) and still decode the reply, so the sign-in traffic looks native to Cloudflare.
 val sharedHttp = OkHttpClient.Builder().addInterceptor(BrotliInterceptor).build()
 val sharedExecutor = Executors.newCachedThreadPool()
+
+/**
+ * Whether fast mode is still worth asking each provider for. Cleared for the rest of the process
+ * once a fast request fails and the standard-speed retry succeeds, as the desktop does.
+ */
+private val fastModeAvailable = Provider.entries.associateWith { AtomicBoolean(true) }
 
 /** [transcribe] is the batch speech-to-text endpoint, for the providers that have one. */
 private data class Endpoints(
@@ -53,8 +60,19 @@ class DictationEngine(
         private set
 
     private var client: SpeechClient? = null
-    /** Audio captured before [connect] returned a client, handed to it when it does. */
+    /**
+     * Audio captured while no client is open, at the tap or during a reconnect, handed to the next
+     * client [connect] returns.
+     */
     private val unsent = mutableListOf<ByteArray>()
+    /**
+     * Identifies the current stream within the session, so a replaced stream's events are dropped.
+     */
+    private var attempt = 0
+    /** Whether the current stream connected, so a drop is a mid-dictation loss worth reopening. */
+    private var streaming = false
+    private var reconnecting = false
+    private var reconnectsLeft = 0
     private val finalText = StringBuilder()
     private var interim = ""
     @Volatile private var recording = false
@@ -88,15 +106,26 @@ class DictationEngine(
         failedCommit = null
         sourceProvider = provider
         recording = true
+        reconnecting = false
+        reconnectsLeft = SPEECH_RECONNECTS_PER_SESSION
         // Listening from the tap: the microphone starts now and the clients hold audio until their
         // socket is up, so words spoken while it connects are sent, not lost.
         publish(listening(0f))
         executor.execute { captureAudio(current) }
+        openStream(current)
+    }
+
+    private fun openStream(current: Int) {
+        val opening = ++attempt
+        streaming = false
+        val provider = sourceProvider
         executor.execute {
             try {
-                val opened = connect(provider) { event -> onSpeech(current, event) }
+                val opened = connect(provider) { event -> onSpeech(current, opening, event) }
                 synchronized(this) {
-                    if (current == session && state !is DictationState.Failed) {
+                    if (
+                        current == session && opening == attempt && state !is DictationState.Failed
+                    ) {
                         client = opened
                         unsent.forEach(opened::sendAudio)
                         unsent.clear()
@@ -205,16 +234,23 @@ class DictationEngine(
     }
 
     @Synchronized
-    private fun onSpeech(current: Int, event: SpeechEvent) {
+    private fun onSpeech(current: Int, opening: Int, event: SpeechEvent) {
         if (
             current != session ||
+                opening != attempt ||
                 inserted ||
                 state is DictationState.Refining ||
                 state is DictationState.Failed
         )
             return
         when (event) {
-            SpeechEvent.Connected -> Unit
+            SpeechEvent.Connected -> {
+                streaming = true
+                if (reconnecting) {
+                    reconnecting = false
+                    publishListening()
+                }
+            }
             is SpeechEvent.Partial -> {
                 interim = event.text
                 publishListening()
@@ -231,6 +267,8 @@ class DictationEngine(
             is SpeechEvent.Failed ->
                 if (pendingInsert != null && !event.authentication && transcript().isNotBlank())
                     finishPendingInsert()
+                else if (event.retryable && streaming && recording && reconnectsLeft > 0)
+                    reconnect(current)
                 else
                     fail(
                         current,
@@ -239,6 +277,25 @@ class DictationEngine(
                         event.detail.ifEmpty { "Speech connection failed" },
                     )
         }
+    }
+
+    /**
+     * A stream that drops mid-dictation is a lost connection, not the end of the dictation, as on
+     * the desktop: the microphone keeps running into [unsent] while a fresh stream opens. The dead
+     * stream will never finalise the words in progress, so they are committed now.
+     */
+    private fun reconnect(current: Int) {
+        reconnectsLeft--
+        if (interim.isNotEmpty()) {
+            if (finalText.isNotEmpty()) finalText.append(' ')
+            finalText.append(interim)
+            interim = ""
+        }
+        client?.cancel()
+        client = null
+        reconnecting = true
+        publishListening()
+        openStream(current)
     }
 
     private fun finishPendingInsert() {
@@ -323,7 +380,7 @@ class DictationEngine(
 
     /** The current preview split into its committed and interim parts for the panel to render. */
     private fun listening(level: Float) =
-        DictationState.Listening(finalText.toString(), interim, level)
+        DictationState.Listening(finalText.toString(), interim, level, reconnecting)
 
     private fun transcript(): String =
         if (finalText.isEmpty()) interim
@@ -346,6 +403,9 @@ class DictationEngine(
         cancel()
     }
 }
+
+/** The desktop's budget of silent reconnects per dictation before a drop fails it. */
+private const val SPEECH_RECONNECTS_PER_SESSION = 2
 
 // 90 s of 16 kHz mono PCM16: the batch endpoint transcribes no more than that.
 private const val MAX_RECORDED_BYTES = 90 * 16000 * 2
@@ -441,6 +501,7 @@ fun createDictationEngine(
                     choice.effort,
                     context,
                     endpoints.getValue(selected).refinement,
+                    fastModeAvailable.getValue(selected).takeIf { settings.fastMode(selected) },
                     onRefined,
                 )
         },

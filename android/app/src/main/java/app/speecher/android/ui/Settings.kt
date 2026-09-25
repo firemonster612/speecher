@@ -47,6 +47,11 @@ import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.Tone
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
+import app.speecher.protocol.modelSupportsFastMode
+
+internal const val FAST_MODE_DESCRIPTION =
+    "Makes refinement faster. Uses a little more of your usage, but the difference is tiny."
+private const val FAST_MODE_OPUS_ONLY = "Only works with Opus models."
 
 // Labels from the desktop's SettingsSchema.cpp, in its order.
 private val profileLabels =
@@ -135,6 +140,20 @@ fun Settings(
             EffortPicker(provider, choice.effort) {
                 onChange(settings.withRefinement(provider, choice.copy(effort = it)))
             }
+            val unsupported = provider == Provider.Claude && !modelSupportsFastMode(choice.model)
+            ListItem(
+                headlineContent = { Text("Fast mode") },
+                supportingContent = {
+                    Text(if (unsupported) FAST_MODE_OPUS_ONLY else FAST_MODE_DESCRIPTION)
+                },
+                trailingContent = {
+                    Switch(
+                        settings.fastMode(provider),
+                        { onChange(settings.withFastMode(provider, it)) },
+                    )
+                },
+                colors = rowColors,
+            )
             ListItem(
                 headlineContent = { Text("Fallback profile") },
                 supportingContent = {

@@ -141,6 +141,51 @@ class DictationEngineTest {
     }
 
     @Test
+    fun `a stream closed with 1012 mid-dictation reconnects without losing words or failing`() {
+        val capture = Capture()
+        val clients = mutableListOf<Client>()
+        val speech = mutableListOf<(SpeechEvent) -> Unit>()
+        val tasks = ArrayDeque<Runnable>()
+        val states = mutableListOf<DictationState>()
+        val engine =
+            DictationEngine(
+                capture::capture,
+                capture::stop,
+                { _, events ->
+                    speech.add(events)
+                    Client().also(clients::add)
+                },
+                { _, raw, _ -> raw },
+                null,
+                { true },
+                Executor { tasks.add(it) },
+                { states.add(it) },
+            )
+        engine.start(Provider.Claude)
+        tasks.removeFirst().run() // The microphone.
+        tasks.removeFirst().run() // The first connection.
+        speech[0](SpeechEvent.Connected)
+        speech[0](SpeechEvent.Final("first part"))
+        speech[0](SpeechEvent.Partial("still talking"))
+        speech[0](SpeechEvent.Failed(false, "closed 1012", retryable = true))
+        capture.audio?.invoke(byteArrayOf(7), 0.5f) // Spoken while the new stream opens.
+        assertEquals(
+            DictationState.Listening("first part still talking", "", 0.5f, reconnecting = true),
+            engine.state,
+        )
+        tasks.removeFirst().run() // The second connection.
+        speech[1](SpeechEvent.Connected)
+        speech[1](SpeechEvent.Final("second part"))
+        assertTrue(clients[0].cancelled)
+        assertEquals(listOf(listOf<Byte>(7)), clients[1].audio.map { it.toList() })
+        assertEquals(
+            DictationState.Listening("first part still talking second part", "", 0.5f),
+            engine.state,
+        )
+        assertTrue(states.none { it is DictationState.Failed })
+    }
+
+    @Test
     fun `refinement streams into the panel and commits the final text once`() {
         MockWebServer().use { server ->
             val firstShown = CountDownLatch(1)
@@ -194,7 +239,7 @@ class DictationEngineTest {
                             "none",
                             RefinementContext(),
                             server.url("/codex").toString(),
-                            onText,
+                            onText = onText,
                         )
                     },
                     null,

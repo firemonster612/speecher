@@ -16,6 +16,7 @@ import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.oauth
 import app.speecher.android.dictation.sharedExecutor
 import app.speecher.android.dictation.sharedHttp
+import app.speecher.android.ui.label
 import app.speecher.protocol.OAuthAttempt
 import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.OAuthTokens
@@ -109,11 +110,11 @@ class SignIn(context: Context) : AutoCloseable {
                                 }
                                     .getOrNull()
                                 if (code == null) {
-                                    respond(it, false)
+                                    respond(it, provider, false)
                                     continue
                                 }
                                 val exchange = runCatching { exchange(provider, current, code) }
-                                respond(it, exchange.isSuccess)
+                                respond(it, provider, exchange.isSuccess)
                                 return@runCatching exchange.getOrThrow()
                             }
                         }
@@ -168,15 +169,14 @@ class SignIn(context: Context) : AutoCloseable {
         return saved
     }
 
-    private fun respond(client: java.net.Socket, success: Boolean) {
+    private fun respond(client: java.net.Socket, provider: OAuthProvider, success: Boolean) {
         val status = if (success) "200 OK" else "400 Bad Request"
-        val message =
-            if (success) "You can return to Speecher."
-            else "Sign-in failed. Return to Speecher and try again."
+        val label = Provider.entries.first { it.oauth == provider }.label
         client
             .getOutputStream()
             .write(
-                "HTTP/1.1 $status\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n$message"
+                ("HTTP/1.1 $status\r\nContent-Type: text/html; charset=utf-8\r\n" +
+                        "Connection: close\r\n\r\n${signInPage(label, success)}")
                     .toByteArray()
             )
     }
@@ -191,6 +191,38 @@ class SignIn(context: Context) : AutoCloseable {
         ++sequence
         closeListener()
     }
+}
+
+/**
+ * The page the browser shows after the redirect to Speecher's loopback listener. Custom Tabs
+ * usually ignore `window.close()`, so the page also says how to leave.
+ */
+internal fun signInPage(provider: String, success: Boolean): String {
+    val message =
+        if (success)
+            "<h1>Signed in to $provider</h1><p>You can close this tab. It closes in 5 seconds.</p>" +
+                "<p>Tap the X in the top-left corner to go back to Speecher.</p>" +
+                "<script>setTimeout(() => window.close(), 5000)</script>"
+        else "<h1>Sign-in didn't complete</h1><p>Go back to Speecher and try again.</p>"
+    // The app icon's geometry, from packaging/io.github.firemonster612.speecher.svg.
+    val mark =
+        """<svg viewBox="0 0 128 128" width="72" height="72" aria-hidden="true">""" +
+            """<rect width="128" height="128" rx="28" fill="#1f1f1f"/>""" +
+            """<rect x="26" y="36" width="76" height="56" rx="28" fill="#f2f0e6"/>""" +
+            """<rect x="43" y="52" width="7" height="24" rx="3.5" fill="#202020"/>""" +
+            """<rect x="56" y="44" width="7" height="40" rx="3.5" fill="#202020"/>""" +
+            """<rect x="69" y="48" width="7" height="32" rx="3.5" fill="#202020"/>""" +
+            """<rect x="82" y="56" width="7" height="16" rx="3.5" fill="#202020"/></svg>"""
+    return """<!doctype html><html><head><meta charset="utf-8">""" +
+        """<meta name="viewport" content="width=device-width, initial-scale=1">""" +
+        "<title>Speecher</title><style>" +
+        ":root{color-scheme:light dark}" +
+        "body{margin:0;padding:48px 24px;font:18px/1.5 system-ui,sans-serif;text-align:center;" +
+        "background:#faf9f4;color:#1c1b18}" +
+        "h1{font-size:28px;line-height:1.25;margin:24px 0 16px}p{margin:8px 0;color:#5f5c53}" +
+        "@media (prefers-color-scheme:dark){body{background:#131312;color:#e6e4da}" +
+        "p{color:#bab7ab}}" +
+        "</style></head><body>$mark$message</body></html>"
 }
 
 /**
