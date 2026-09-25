@@ -65,10 +65,9 @@ ClaudeVoiceClient::ClaudeVoiceClient(QObject *parent, int connectionTimeoutMs)
         const QString phase = (m_finalizing || m_finishRequested)
             ? QStringLiteral("finalize")
             : wasConnected ? QStringLiteral("streaming") : QStringLiteral("connect");
-        // The server may end a live stream on its own with a clean close;
+        // Any end of a live stream is the server ending it (see isRemoteClose);
         // Claude Code reports that as the end of the stream, not an error.
-        const bool serverEndedStream = unexpected && phase == QStringLiteral("streaming")
-            && isCleanWebSocketClose(m_socket.closeCode());
+        const bool serverEndedStream = unexpected && phase == QStringLiteral("streaming");
         m_connected = false;
         m_finalizing = false;
         m_keepAliveTimer.stop();
@@ -93,8 +92,11 @@ ClaudeVoiceClient::ClaudeVoiceClient(QObject *parent, int connectionTimeoutMs)
         }
         qInfo() << "claude websocket binary message bytes=" << message.size();
     });
-    connect(&m_socket, &QWebSocket::errorOccurred, this, [this](QAbstractSocket::SocketError) {
+    connect(&m_socket, &QWebSocket::errorOccurred, this, [this](QAbstractSocket::SocketError error) {
         qWarning().noquote() << "claude websocket error=" + m_socket.errorString();
+        if (isRemoteClose(error) && m_connected && !m_finishRequested && !m_finalizing) {
+            return;
+        }
         if (!m_cancelled && !m_failureEmitted) {
             const QString detail = m_socket.errorString();
             const bool authentication = detail.contains(QStringLiteral("401"))
@@ -286,7 +288,7 @@ void ClaudeVoiceClient::requestFinalization()
 
 void ClaudeVoiceClient::fail(const QString &message, bool retryable, const QString &phase)
 {
-    if (m_cancelled || m_failureEmitted) {
+    if (m_cancelled || m_failureEmitted || m_completed) {
         return;
     }
     m_failureEmitted = true;
