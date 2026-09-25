@@ -906,7 +906,7 @@ private slots:
         const int fastHeaderEnd = fastRequest.indexOf("\r\n\r\n");
         QVERIFY2(fastHeaderEnd >= 0, fastRequest.constData());
         const QJsonObject fastBody = QJsonDocument::fromJson(fastRequest.mid(fastHeaderEnd + 4)).object();
-        QCOMPARE(fastBody.value(QStringLiteral("service_tier")).toString(), QStringLiteral("fast"));
+        QCOMPARE(fastBody.value(QStringLiteral("service_tier")).toString(), QStringLiteral("priority"));
 
         const QByteArray error = QByteArrayLiteral(R"({"error":{"message":"fast mode unavailable"}})");
         fastSocket->write(QByteArrayLiteral("HTTP/1.1 400 Bad Request\r\n"

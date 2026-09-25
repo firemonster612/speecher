@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/test_auth.h"
+#include "common/test_doubles.h"
 #include "common/test_http.h"
 
 #include <QScopeGuard>
@@ -109,14 +110,23 @@ private slots:
         peer->deleteLater();
     }
 
-    void codexDictationClientReportsUnexpectedRemoteClose()
+    void codexDictationClientSeparatesServiceEndFromDroppedStream_data()
     {
+        QTest::addColumn<bool>("dropped");
+        QTest::newRow("clean close") << false;
+        QTest::newRow("dropped connection") << true;
+    }
+
+    void codexDictationClientSeparatesServiceEndFromDroppedStream()
+    {
+        QFETCH(bool, dropped);
         QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
         server.setSupportedSubprotocols({QStringLiteral("openai-bearer.test-token")});
         QVERIFY(server.listen(QHostAddress::LocalHost));
 
         CodexDictationClient client;
         QSignalSpy connected(&client, &CodexDictationClient::connected);
+        QSignalSpy completed(&client, &CodexDictationClient::completed);
         QSignalSpy failed(&client, &CodexDictationClient::failed);
         client.start(QUrl(QStringLiteral("ws://127.0.0.1:%1/dictation/stream")
                               .arg(server.serverPort())),
@@ -128,11 +138,123 @@ private slots:
             R"({"type":"session.started","sequence_no":1,"session":{"session_id":"s1","status":"active","config":{"provider_mode":"streaming_sse","transcript_delivery_mode":"final_only"}}})"));
         QTRY_COMPARE_WITH_TIMEOUT(connected.count(), 1, 1000);
 
-        peer->close();
+        if (dropped) {
+            peer->abort();
+            QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
+            QCOMPARE(failed.first().at(1).toBool(), true);
+            QCOMPARE(failed.first().at(2).toString(), QStringLiteral("streaming"));
+            QCOMPARE(completed.count(), 0);
+        } else {
+            peer->close();
+            QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 1000);
+            QCOMPARE(failed.count(), 0);
+        }
+    }
 
-        QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
-        QCOMPARE(failed.first().at(1).toBool(), true);
-        QCOMPARE(failed.first().at(2).toString(), QStringLiteral("streaming"));
+    // Codex ends every session after session_ttl_ms (5 minutes) with
+    // session.updated status=closed, whether or not the person has stopped.
+    void codexSessionEndedByTheServiceRollsOverWithoutLosingDictation()
+    {
+        QTemporaryDir credentials;
+        QVERIFY(writeCliProxyAccount(credentials.path(), QStringLiteral("codex-a@example.com.json"),
+                                     QStringLiteral("codex"), QStringLiteral("codex-token"),
+                                     QDateTime::currentDateTimeUtc().addSecs(3600)));
+        QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
+        server.setSupportedSubprotocols({QStringLiteral("chatgpt-dictation")});
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        qputenv("SPEECHER_CODEX_DICTATION_URL",
+                QStringLiteral("ws://127.0.0.1:%1/dictation/stream")
+                    .arg(server.serverPort()).toUtf8());
+        DictationSession::setStableAttemptMs(0);
+        const auto restore = qScopeGuard([] {
+            qunsetenv("SPEECHER_CODEX_DICTATION_URL");
+            DictationSession::setStableAttemptMs(10000);
+        });
+
+        QList<QWebSocket *> peers;
+        QList<QStringList> audioByPeer;
+        connect(&server, &QWebSocketServer::newConnection, this, [&] {
+            QWebSocket *peer = server.nextPendingConnection();
+            const qsizetype index = peers.size();
+            peers.append(peer);
+            audioByPeer.append(QStringList());
+            connect(peer, &QWebSocket::textMessageReceived, this, [&audioByPeer, index](const QString &message) {
+                const QJsonObject event = QJsonDocument::fromJson(message.toUtf8()).object();
+                if (event.value(QStringLiteral("type")).toString() == QStringLiteral("audio.append")) {
+                    audioByPeer[index].append(QString::fromLatin1(QByteArray::fromBase64(
+                        event.value(QStringLiteral("audio")).toString().toLatin1())));
+                }
+            });
+        });
+
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
+        settings.setCliproxyOauthDir(credentials.path());
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        CodexSpeechTranscriber *transcriber = nullptr;
+        registry.registerSpeechProvider({QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+                                        [&transcriber](QObject *parent) {
+                                            transcriber = new CodexSpeechTranscriber(parent);
+                                            return transcriber;
+                                        });
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        QSignalSpy errors(&session, &DictationSession::popupErrorRequested);
+        QSignalSpy previews(&session, &DictationSession::previewChanged);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(session.state(), DictationState::Listening, 1000);
+        QVERIFY(transcriber);
+        QSignalSpy failures(transcriber, &SpeechTranscriber::failed);
+
+        // More rollovers than the error budget allows reconnects.
+        constexpr int rollovers = 3;
+        for (int round = 0; round <= rollovers; ++round) {
+            QTRY_COMPARE_WITH_TIMEOUT(peers.size(), round + 1, 1000);
+            // Audio captured while the new stream is still starting is held
+            // for it, not dropped.
+            audio.pushAudio(QStringLiteral("handover %1").arg(round).toLatin1());
+            peers[round]->sendTextMessage(QStringLiteral(
+                R"({"type":"session.started","sequence_no":1,"session":{"session_id":"s","status":"active","config":{}}})"));
+            audio.pushAudio(QStringLiteral("speech %1").arg(round).toLatin1());
+            QTRY_COMPARE_WITH_TIMEOUT(audioByPeer[round],
+                                      QStringList({QStringLiteral("handover %1").arg(round),
+                                                   QStringLiteral("speech %1").arg(round)}),
+                                      1000);
+            peers[round]->sendTextMessage(QStringLiteral(
+                R"({"type":"transcript.final","sequence_no":2,"utterance_id":"u1","text":"part %1"})").arg(round));
+            if (round == rollovers) {
+                break;
+            }
+            // The current utterance never finalised: the rollover keeps it.
+            peers[round]->sendTextMessage(QStringLiteral(
+                R"({"type":"transcript.segment","sequence_no":3,"utterance_id":"u2","text":"tail %1"})").arg(round));
+            QTRY_VERIFY_WITH_TIMEOUT(previews.last().first().toString().endsWith(
+                                         QStringLiteral("tail %1").arg(round)), 1000);
+            peers[round]->sendTextMessage(QStringLiteral(
+                R"({"type":"session.updated","sequence_no":4,"session":{"session_id":"s","status":"closed","config":{}}})"));
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(previews.last().first().toString().endsWith(QStringLiteral("part 3")), 1000);
+        QCOMPARE(session.state(), DictationState::Listening);
+        QVERIFY(audio.isActive());
+
+        session.stopListening();
+        peers.last()->sendTextMessage(QStringLiteral(
+            R"({"type":"session.updated","sequence_no":5,"session":{"session_id":"s","status":"closed","config":{}}})"));
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 1000);
+        QCOMPARE(delivery.lastText,
+                 QStringLiteral("part 0 tail 0 part 1 tail 1 part 2 tail 2 part 3"));
+        QCOMPARE(failures.count(), 0);
+        QCOMPARE(errors.count(), 0);
+        QVERIFY2(!session.lastMessage().contains(QStringLiteral("may be missing")),
+                 qPrintable(session.lastMessage()));
+        qDeleteAll(peers);
     }
 
     void speechTranscribersLoadCliproxyAccounts()

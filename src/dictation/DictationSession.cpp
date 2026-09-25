@@ -18,6 +18,13 @@ namespace {
 constexpr int kSpeechReconnectsPerSession = 2;
 }
 
+int DictationSession::s_stableAttemptMs = 10000;
+
+void DictationSession::setStableAttemptMs(int ms)
+{
+    s_stableAttemptMs = ms;
+}
+
 DictationSession::DictationSession(SettingsStore *settings,
                                    AudioInput *audio,
                                    MediaController *mediaController,
@@ -474,6 +481,7 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation, const
     }
 
     m_attemptBaseText.clear();
+    m_attemptClock.start();
     m_transcriber->startAttempt(m_attemptId, settings.speech);
 
     QString audioError;
@@ -706,26 +714,21 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
         && m_state != DictationState::Stopping) {
         return;
     }
-    if (m_state == DictationState::Listening && failure.retryable
-        && failure.phase == QStringLiteral("streaming") && m_sessionSettings
-        && m_speechReconnectsLeft > 0) {
+    const bool reconnectable = m_state == DictationState::Listening && failure.retryable
+        && failure.phase == QStringLiteral("streaming") && m_sessionSettings;
+    if (reconnectable && attemptWasStable()) {
+        // The budget limits streams that keep failing; one that ran for a
+        // while before dropping was healthy.
+        m_speechReconnectsLeft = kSpeechReconnectsPerSession;
+    }
+    if (reconnectable && m_speechReconnectsLeft > 0) {
         // A dropped stream mid-sentence is a transient connection loss, not the
-        // end of the Dictation Session: keep the audio running and open a fresh
-        // attempt on the same transcriber. The partial for the current utterance
-        // will never be finalised by the dead stream, so commit it now.
+        // end of the Dictation Session.
         m_speechWarning = QStringLiteral("Part of the dictation may be missing. The connection dropped.");
         --m_speechReconnectsLeft;
-        ++m_attemptId;
-        qInfo().noquote() << "speech stream reconnecting attempt=" << m_attemptId
+        qInfo().noquote() << "speech stream reconnecting attempt=" << m_attemptId + 1
                           << "reason=" + failure.message;
-        const QString partial = m_transcript->partial();
-        if (!partial.isEmpty()) {
-            m_transcript->commitFinal(partial);
-        }
-        // A whole-attempt transcript from the new attempt covers only the
-        // audio after this reconnect; the text committed so far must survive.
-        m_attemptBaseText = m_transcript->text();
-        m_transcriber->startAttempt(m_attemptId, m_sessionSettings->speech);
+        startNextAttempt();
         return;
     }
     qWarning().noquote() << "speech transcriber failed transcriptEmpty=" << m_transcript->isEmpty()
@@ -755,6 +758,47 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
     m_sessionSettings.reset();
     resumePausedMedia();
     setState(DictationState::Error, failure.message);
+}
+
+void DictationSession::rollOverSpeechAttempt()
+{
+    if (!attemptWasStable()) {
+        // A stream the provider ends almost as soon as it opens is a refusal,
+        // not a rollover; treating it as a drop stops it looping unbounded.
+        handleSpeechFailure({m_attemptId,
+                             QStringLiteral("The speech stream ended as soon as it opened"),
+                             true,
+                             QStringLiteral("streaming")});
+        return;
+    }
+    // The provider ended a healthy stream on its own (Codex's session TTL, a
+    // clean server close) while the person is still talking. That is routine:
+    // no warning, and the healthy stream refills the error budget.
+    m_speechReconnectsLeft = kSpeechReconnectsPerSession;
+    qInfo() << "speech stream ended by the provider; rolling over to attempt" << m_attemptId + 1;
+    startNextAttempt();
+}
+
+// Opens a fresh attempt on the same transcriber while the microphone keeps
+// running; the transcriber buffers audio until the new stream is ready.
+void DictationSession::startNextAttempt()
+{
+    ++m_attemptId;
+    // The ended stream will never finalise the current utterance.
+    const QString partial = m_transcript->partial();
+    if (!partial.isEmpty()) {
+        m_transcript->commitFinal(partial);
+    }
+    // A whole-attempt transcript from the new attempt covers only the audio
+    // from here on; the text committed so far must survive.
+    m_attemptBaseText = m_transcript->text();
+    m_attemptClock.start();
+    m_transcriber->startAttempt(m_attemptId, m_sessionSettings->speech);
+}
+
+bool DictationSession::attemptWasStable() const
+{
+    return m_attemptClock.isValid() && m_attemptClock.elapsed() >= s_stableAttemptMs;
 }
 
 bool DictationSession::selectSpeechTranscriber(const QString &providerId, QString *error)
@@ -818,9 +862,14 @@ void DictationSession::connectSpeechTranscriber(SpeechTranscriber *transcriber)
         }
     });
     m_transcriberConnections << connect(m_transcriber, &SpeechTranscriber::attemptCompleted, this, [this](quint64 attemptId) {
-        if (attemptId == m_attemptId && m_state == DictationState::Stopping) {
+        if (attemptId != m_attemptId) {
+            return;
+        }
+        if (m_state == DictationState::Stopping) {
             emit popupFrozenChanged(true);
             beginRefinement(m_generation);
+        } else if (m_state == DictationState::Listening) {
+            rollOverSpeechAttempt();
         }
     });
     m_transcriberConnections << connect(m_transcriber, &SpeechTranscriber::failed, this, &DictationSession::handleSpeechFailure);

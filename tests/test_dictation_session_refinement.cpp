@@ -1,6 +1,8 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
 
+#include <QScopeGuard>
+
 using namespace speecher::test;
 
 
@@ -816,6 +818,62 @@ private slots:
         speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
         QCOMPARE(speech->startCalls, 5);
         QCOMPARE(int(session.state()), int(DictationState::Listening));
+    }
+
+    void dictationSessionTreatsAStreamEndedAtOnceAsAFailure()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(session.state(), DictationState::Listening, 250);
+        speech->emitFinalText(QStringLiteral("keep this"));
+        // A provider that ends every stream as soon as it opens must not make
+        // the session reopen streams without bound.
+        speech->emitCompletion();
+        speech->emitCompletion();
+        QCOMPARE(speech->startCalls, 3);
+        QCOMPARE(session.state(), DictationState::Listening);
+        speech->emitCompletion();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 250);
+        QCOMPARE(delivery.lastText, QStringLiteral("keep this"));
+        QCOMPARE(speech->startCalls, 3);
+        QVERIFY(session.lastMessage().contains(QStringLiteral("Part of the dictation may be missing")));
+    }
+
+    void dictationSessionRestoresReconnectBudgetAfterAStableStream()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        DictationSession::setStableAttemptMs(0);
+        const auto restore = qScopeGuard([] { DictationSession::setStableAttemptMs(10000); });
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(session.state(), DictationState::Listening, 250);
+        // Each drop follows a stream that had been healthy, so none of them
+        // spends the budget meant for a stream that keeps failing.
+        for (int drop = 0; drop < 5; ++drop) {
+            speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+        }
+        QCOMPARE(speech->startCalls, 6);
+        QCOMPARE(session.state(), DictationState::Listening);
     }
 
     void dictationSessionDoesNotReconnectAfterConnectPhaseFailure()

@@ -5,6 +5,7 @@
 #include "dictation/StartupPreparationRunner.h"
 #include "dictation/TranscriptPipeline.h"
 
+#include <QElapsedTimer>
 #include <QMetaObject>
 #include <QPointer>
 #include <QVector>
@@ -59,6 +60,9 @@ public slots:
     // How long startup waits for the popup to paint before proceeding without
     // it. Tests raise it so a slow runner cannot fire it under an assertion.
     static void setPopupPaintFallbackMs(int ms);
+    // How long a speech attempt must stream before its end counts as a
+    // routine rollover rather than a failure. Tests lower it.
+    static void setStableAttemptMs(int ms);
 
 signals:
     void stateChanged(const QString &stateName);
@@ -82,6 +86,7 @@ signals:
 
 private:
     static int s_popupPaintFallbackMs;
+    static int s_stableAttemptMs;
 
     void setState(DictationState state, const QString &message = {});
     void continueStartupAfterPopup(quint64 generation);
@@ -91,6 +96,9 @@ private:
     void beginRefinement(quint64 generation);
     void failSelectionEdit(const QString &message);
     void handleSpeechFailure(const SpeechFailure &failure);
+    void rollOverSpeechAttempt();
+    void startNextAttempt();
+    bool attemptWasStable() const;
     void deliverFinal(const QString &text);
     void clearScreenshotContext();
     void resumePausedMedia();
@@ -133,6 +141,7 @@ private:
     QString m_refinementStream;
     bool m_heardSpeech = false;
     int m_speechReconnectsLeft = 0;
+    QElapsedTimer m_attemptClock;
     // Committed text carried over from before the current speech attempt; a
     // whole-attempt transcript replaces only what followed it.
     QString m_attemptBaseText;

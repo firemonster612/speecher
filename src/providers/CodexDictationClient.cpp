@@ -8,6 +8,8 @@
 #include <utility>
 
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
+#include "providers/WebSocketClose.h"
+
 #include <QWebSocketHandshakeOptions>
 #endif
 
@@ -47,7 +49,14 @@ CodexDictationClient::CodexDictationClient(QObject *parent)
     connect(&m_socket, &QWebSocket::textMessageReceived,
             this, &CodexDictationClient::handleTextMessage);
     connect(&m_socket, &QWebSocket::disconnected, this, [this] {
-        if (!m_cancelled && !m_sessionClosed && !m_failureEmitted) {
+        // A drop reports errorOccurred first; reaching here unfailed with a
+        // normal close code means the service closed the stream deliberately.
+        const bool cleanServiceClose = m_sessionStarted && !m_finishRequested && !m_finalizing
+            && isCleanWebSocketClose(m_socket.closeCode());
+        if (!m_cancelled && !m_sessionClosed && !m_failureEmitted && cleanServiceClose) {
+            m_sessionClosed = true;
+            emit completed();
+        } else if (!m_cancelled && !m_sessionClosed && !m_failureEmitted) {
             fail(m_sessionStarted
                      ? QStringLiteral("Codex dictation stream closed before the session finished")
                      : QStringLiteral("Codex dictation stream closed before session.start completed"),
@@ -266,21 +275,12 @@ void CodexDictationClient::handleTextMessage(const QString &message)
         && event.value(QStringLiteral("session")).toObject()
                .value(QStringLiteral("status")).toString() == QStringLiteral("closed")) {
         if (!m_sessionClosed) {
-            // A closure this client asked for completes the attempt. One the
-            // service imposed mid-stream must be a failure instead: emitting
-            // completed() while the session is still Listening answers
-            // nobody, stop() then returns early on the closed session, and
-            // the app stays Stopping forever. The failure path runs the
-            // existing stream-drop recovery.
-            if (m_finishRequested || m_finalizing) {
-                m_sessionClosed = true;
-                emit completed();
-            } else {
-                fail(QStringLiteral("Codex dictation session was closed by the service"),
-                     true,
-                     QStringLiteral("streaming"));
-                m_sessionClosed = true;
-            }
+            // Either the closure this client asked for, or one the service
+            // imposed mid-stream (session_ttl_ms expiring). Both end the
+            // attempt; the Dictation Session rolls a mid-stream end over to a
+            // new attempt.
+            m_sessionClosed = true;
+            emit completed();
             m_socket.close();
         }
         return;

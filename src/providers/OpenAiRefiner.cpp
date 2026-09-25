@@ -101,7 +101,8 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
         body.insert(QStringLiteral("stream"), true);
         body.insert(QStringLiteral("store"), false);
         if (fast) {
-            body.insert(QStringLiteral("service_tier"), QStringLiteral("fast"));
+            // chatgpt.com rejects "fast" (HTTP 400 "Unsupported service_tier: fast"); "priority" is accepted.
+            body.insert(QStringLiteral("service_tier"), QStringLiteral("priority"));
         }
         QJsonObject user;
         user.insert(QStringLiteral("role"), QStringLiteral("user"));

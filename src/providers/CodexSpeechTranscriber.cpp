@@ -131,6 +131,7 @@ void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
     m_finalRetranscribe = settings.codexFinalRetranscribe;
     m_bufferedPcm.clear();
     m_streamedFinalChars = 0;
+    m_inputFinished = false;
     m_attemptId = attemptId;
     m_client = new CodexDictationClient(this);
     CodexDictationClient *client = m_client;
@@ -158,7 +159,9 @@ void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
                 // silently delete the tail, so the streamed transcript stays;
                 // 80 s keeps a margin under the observed cutoff.
                 constexpr qint64 maxRetranscribeBytes = qint64(80) * sampleRateHz * 2;
-                if (m_finalRetranscribe && !m_bufferedPcm.isEmpty()
+                // A session the service ended mid-dictation completes at once:
+                // the next attempt must start while the microphone still runs.
+                if (m_finalRetranscribe && m_inputFinished && !m_bufferedPcm.isEmpty()
                     && m_bufferedPcm.size() <= maxRetranscribeBytes) {
                     startFinalRetranscribe(attemptId);
                 } else {
@@ -253,6 +256,7 @@ void CodexSpeechTranscriber::startFinalRetranscribe(quint64 attemptId)
 void CodexSpeechTranscriber::finishInput(quint64 attemptId)
 {
     if (m_client && attemptId == m_attemptId) {
+        m_inputFinished = true;
         m_client->stop();
     }
 }
