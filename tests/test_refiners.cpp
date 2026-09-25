@@ -157,7 +157,7 @@ private slots:
         const auto start = [&] {
             const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
             if (anthropic) claude.refine("hello", {}, {}, "token", endpoint, "claude-opus-5", "low", true, "balanced", {});
-            else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", true, "balanced", {});
+            else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, "acct-id", "gpt-test", "low", true, "balanced", {});
         };
         start();
         for (int attempt = 0; attempt < 3; ++attempt) {
@@ -885,6 +885,43 @@ private slots:
         socket->disconnectFromHost();
     }
 
+    void openAiFastModeAsksForPriorityOnlyFromAChatGptAccount_data()
+    {
+        QTest::addColumn<QString>("accountId");
+        QTest::addColumn<bool>("priority");
+        QTest::newRow("chatgpt account") << QStringLiteral("acct-id") << true;
+        // api.openai.com bills priority at a higher rate; API keys stay standard.
+        QTest::newRow("api key") << QString() << false;
+    }
+
+    void openAiFastModeAsksForPriorityOnlyFromAChatGptAccount()
+    {
+        QFETCH(QString, accountId);
+        QFETCH(bool, priority);
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        OpenAiRefiner refiner;
+        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
+                       QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
+                       accountId, QStringLiteral("gpt-test"), QStringLiteral("low"), true,
+                       QStringLiteral("balanced"), {});
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(socket);
+        const QByteArray request = readHttpRequest(socket, 1000);
+        const int headerEnd = request.indexOf("\r\n\r\n");
+        QVERIFY2(headerEnd >= 0, request.constData());
+        const QJsonObject body = QJsonDocument::fromJson(request.mid(headerEnd + 4)).object();
+        if (priority) {
+            QCOMPARE(body.value(QStringLiteral("service_tier")).toString(), QStringLiteral("priority"));
+        } else {
+            QVERIFY(!body.contains(QStringLiteral("service_tier")));
+        }
+        refiner.cancel();
+    }
+
     void openAiRefinerRetriesAtStandardSpeedWhenFastModeFails()
     {
         QTcpServer server;
@@ -896,7 +933,7 @@ private slots:
 
         refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
-                       {}, QStringLiteral("gpt-test"), QStringLiteral("low"), true,
+                       QStringLiteral("acct-id"), QStringLiteral("gpt-test"), QStringLiteral("low"), true,
                        QStringLiteral("balanced"), {});
 
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
@@ -955,7 +992,7 @@ private slots:
         elapsed.start();
         refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
-                       {}, QStringLiteral("gpt-test"), QStringLiteral("low"), true,
+                       QStringLiteral("acct-id"), QStringLiteral("gpt-test"), QStringLiteral("low"), true,
                        QStringLiteral("balanced"), {});
 
         for (int attempt = 0; attempt < 2; ++attempt) {
@@ -1087,7 +1124,7 @@ private slots:
 
         refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
-                       {}, QStringLiteral("gpt-test"), QStringLiteral("low"), true,
+                       QStringLiteral("acct-id"), QStringLiteral("gpt-test"), QStringLiteral("low"), true,
                        QStringLiteral("balanced"), {});
 
         const QByteArray error = QByteArrayLiteral(R"({"error":{"message":"nope"}})");

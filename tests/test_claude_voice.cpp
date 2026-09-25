@@ -154,8 +154,8 @@ private slots:
         }
     }
 
-    // Claude Code treats a clean close (1000/1005) of its voice stream as the
-    // stream ending, not an error; Speecher rolls over to a new stream.
+    // A clean close of a live voice stream is the server ending it, not an
+    // error; Speecher rolls over to a new stream.
     void claudeStreamEndedByTheServerRollsOverWithoutLosingDictation()
     {
         QTemporaryDir credentials;
@@ -164,8 +164,11 @@ private slots:
                                      QDateTime::currentDateTimeUtc().addSecs(3600)));
         QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
         QVERIFY(server.listen(QHostAddress::LocalHost));
+        const int stableAttemptMs = DictationSession::stableAttemptMs();
         DictationSession::setStableAttemptMs(0);
-        const auto restore = qScopeGuard([] { DictationSession::setStableAttemptMs(10000); });
+        const auto restore = qScopeGuard([stableAttemptMs] {
+            DictationSession::setStableAttemptMs(stableAttemptMs);
+        });
 
         QList<QWebSocket *> peers;
         QList<QStringList> audioByPeer;

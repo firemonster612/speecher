@@ -62,6 +62,7 @@ public slots:
     static void setPopupPaintFallbackMs(int ms);
     // How long a speech attempt must stream before its end counts as a
     // routine rollover rather than a failure. Tests lower it.
+    static int stableAttemptMs();
     static void setStableAttemptMs(int ms);
 
 signals:
@@ -98,6 +99,7 @@ private:
     void handleSpeechFailure(const SpeechFailure &failure);
     void rollOverSpeechAttempt();
     void startNextAttempt();
+    void refillReconnectsIfAttemptWasStable();
     bool attemptWasStable() const;
     void deliverFinal(const QString &text);
     void clearScreenshotContext();

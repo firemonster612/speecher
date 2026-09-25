@@ -151,10 +151,18 @@ private slots:
         }
     }
 
+    void codexSessionEndedByTheServiceRollsOverWithoutLosingDictation_data()
+    {
+        QTest::addColumn<bool>("retranscribe");
+        QTest::newRow("streamed transcript") << false;
+        QTest::newRow("final retranscribe") << true;
+    }
+
     // Codex ends every session after session_ttl_ms (5 minutes) with
     // session.updated status=closed, whether or not the person has stopped.
     void codexSessionEndedByTheServiceRollsOverWithoutLosingDictation()
     {
+        QFETCH(bool, retranscribe);
         QTemporaryDir credentials;
         QVERIFY(writeCliProxyAccount(credentials.path(), QStringLiteral("codex-a@example.com.json"),
                                      QStringLiteral("codex"), QStringLiteral("codex-token"),
@@ -162,13 +170,19 @@ private slots:
         QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
         server.setSupportedSubprotocols({QStringLiteral("chatgpt-dictation")});
         QVERIFY(server.listen(QHostAddress::LocalHost));
+        QTcpServer http;
+        QVERIFY(http.listen(QHostAddress::LocalHost));
         qputenv("SPEECHER_CODEX_DICTATION_URL",
                 QStringLiteral("ws://127.0.0.1:%1/dictation/stream")
                     .arg(server.serverPort()).toUtf8());
+        qputenv("SPEECHER_CODEX_TRANSCRIBE_URL",
+                QStringLiteral("http://127.0.0.1:%1/transcribe").arg(http.serverPort()).toUtf8());
+        const int stableAttemptMs = DictationSession::stableAttemptMs();
         DictationSession::setStableAttemptMs(0);
-        const auto restore = qScopeGuard([] {
+        const auto restore = qScopeGuard([stableAttemptMs] {
             qunsetenv("SPEECHER_CODEX_DICTATION_URL");
-            DictationSession::setStableAttemptMs(10000);
+            qunsetenv("SPEECHER_CODEX_TRANSCRIBE_URL");
+            DictationSession::setStableAttemptMs(stableAttemptMs);
         });
 
         QList<QWebSocket *> peers;
@@ -193,6 +207,7 @@ private slots:
         settings.setSpeechProvider(QStringLiteral("codex"));
         settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
         settings.setCliproxyOauthDir(credentials.path());
+        settings.setCodexFinalRetranscribe(retranscribe);
         FakeAudioInput audio;
         FakeMediaController media;
         FakeDelivery delivery;
@@ -242,14 +257,26 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(previews.last().first().toString().endsWith(QStringLiteral("part 3")), 1000);
         QCOMPARE(session.state(), DictationState::Listening);
         QVERIFY(audio.isActive());
+        // The accuracy pass belongs to the end of dictation, not to a rollover.
+        QVERIFY(!http.hasPendingConnections());
 
         session.stopListening();
         peers.last()->sendTextMessage(QStringLiteral(
             R"({"type":"session.updated","sequence_no":5,"session":{"session_id":"s","status":"closed","config":{}}})"));
+        if (retranscribe) {
+            QTRY_VERIFY_WITH_TIMEOUT(http.hasPendingConnections(), 2000);
+            std::unique_ptr<QTcpSocket> request(http.nextPendingConnection());
+            QVERIFY(readHttpRequest(request.get(), 2000).startsWith("POST /transcribe"));
+            const QByteArray body = QByteArrayLiteral(R"({"text":"batch 3"})");
+            request->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                           + QByteArray::number(body.size()) + "\r\n\r\n" + body);
+            request->flush();
+        }
 
-        QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 1000);
+        QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 2000);
         QCOMPARE(delivery.lastText,
-                 QStringLiteral("part 0 tail 0 part 1 tail 1 part 2 tail 2 part 3"));
+                 QStringLiteral("part 0 tail 0 part 1 tail 1 part 2 tail 2 ")
+                     + (retranscribe ? QStringLiteral("batch 3") : QStringLiteral("part 3")));
         QCOMPARE(failures.count(), 0);
         QCOMPARE(errors.count(), 0);
         QVERIFY2(!session.lastMessage().contains(QStringLiteral("may be missing")),

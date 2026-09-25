@@ -74,6 +74,10 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
                            const QString &refinementStyle,
                            const RefinementContext &context)
 {
+    // Fast mode is the ChatGPT account backend's priority tier; only its
+    // requests carry an account id. api.openai.com bills "priority" at a
+    // higher per-token rate, so API-key requests never ask for it.
+    const bool chatGptAccount = !accountId.isEmpty();
     m_stream.start([=](bool fast) -> StreamingRefinement::Request {
         QUrl endpoint(endpointBase.isEmpty() ? QStringLiteral("https://api.openai.com/v1") : endpointBase);
         endpoint.setPath(endpoint.path().replace(QRegularExpression(QStringLiteral("/$")), QString()) + QStringLiteral("/responses"));
@@ -115,7 +119,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
         }
         body.insert(QStringLiteral("input"), QJsonArray{user});
         return {request, QJsonDocument(body).toJson(QJsonDocument::Compact)};
-    }, fastMode);
+    }, fastMode && chatGptAccount);
 }
 
 void OpenAiRefiner::cancel()

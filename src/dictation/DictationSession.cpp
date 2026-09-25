@@ -16,9 +16,16 @@ namespace speecher {
 namespace {
 // Dropped speech streams the session reopens before giving up and delivering.
 constexpr int kSpeechReconnectsPerSession = 2;
+// How long a speech attempt must stream before its end counts as healthy.
+constexpr int kDefaultStableAttemptMs = 10000;
 }
 
-int DictationSession::s_stableAttemptMs = 10000;
+int DictationSession::s_stableAttemptMs = kDefaultStableAttemptMs;
+
+int DictationSession::stableAttemptMs()
+{
+    return s_stableAttemptMs;
+}
 
 void DictationSession::setStableAttemptMs(int ms)
 {
@@ -716,10 +723,8 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
     }
     const bool reconnectable = m_state == DictationState::Listening && failure.retryable
         && failure.phase == QStringLiteral("streaming") && m_sessionSettings;
-    if (reconnectable && attemptWasStable()) {
-        // The budget limits streams that keep failing; one that ran for a
-        // while before dropping was healthy.
-        m_speechReconnectsLeft = kSpeechReconnectsPerSession;
+    if (reconnectable) {
+        refillReconnectsIfAttemptWasStable();
     }
     if (reconnectable && m_speechReconnectsLeft > 0) {
         // A dropped stream mid-sentence is a transient connection loss, not the
@@ -763,10 +768,10 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
 void DictationSession::rollOverSpeechAttempt()
 {
     if (!attemptWasStable()) {
-        // A stream the provider ends almost as soon as it opens is a refusal,
+        // A stream the provider ends within seconds of starting is a refusal,
         // not a rollover; treating it as a drop stops it looping unbounded.
         handleSpeechFailure({m_attemptId,
-                             QStringLiteral("The speech stream ended as soon as it opened"),
+                             QStringLiteral("The speech stream ended within seconds of starting"),
                              true,
                              QStringLiteral("streaming")});
         return;
@@ -774,7 +779,7 @@ void DictationSession::rollOverSpeechAttempt()
     // The provider ended a healthy stream on its own (Codex's session TTL, a
     // clean server close) while the person is still talking. That is routine:
     // no warning, and the healthy stream refills the error budget.
-    m_speechReconnectsLeft = kSpeechReconnectsPerSession;
+    refillReconnectsIfAttemptWasStable();
     qInfo() << "speech stream ended by the provider; rolling over to attempt" << m_attemptId + 1;
     startNextAttempt();
 }
@@ -794,6 +799,15 @@ void DictationSession::startNextAttempt()
     m_attemptBaseText = m_transcript->text();
     m_attemptClock.start();
     m_transcriber->startAttempt(m_attemptId, m_sessionSettings->speech);
+}
+
+// The reconnect budget limits streams that keep failing; one that streamed
+// for a while before it ended was healthy.
+void DictationSession::refillReconnectsIfAttemptWasStable()
+{
+    if (attemptWasStable()) {
+        m_speechReconnectsLeft = kSpeechReconnectsPerSession;
+    }
 }
 
 bool DictationSession::attemptWasStable() const

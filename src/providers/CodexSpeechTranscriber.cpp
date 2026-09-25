@@ -165,7 +165,7 @@ void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
                     && m_bufferedPcm.size() <= maxRetranscribeBytes) {
                     startFinalRetranscribe(attemptId);
                 } else {
-                    if (m_bufferedPcm.size() > maxRetranscribeBytes) {
+                    if (m_inputFinished && m_bufferedPcm.size() > maxRetranscribeBytes) {
                         qInfo("Codex final retranscribe skipped: the recording is longer than "
                               "the batch endpoint transcribes; keeping the streamed transcript");
                     }
