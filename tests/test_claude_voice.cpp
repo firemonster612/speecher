@@ -116,16 +116,24 @@ private slots:
         QCOMPARE(bufferFailure.first().at(2).toString(), QStringLiteral("connect"));
     }
 
-    void claudeVoiceClientSeparatesServerEndFromDroppedStream_data()
+    void claudeVoiceClientEndsALiveStreamOnAnyServerEnd_data()
     {
         QTest::addColumn<bool>("dropped");
-        QTest::newRow("clean close") << false;
-        QTest::newRow("dropped connection") << true;
+        QTest::addColumn<bool>("finishing");
+        QTest::addColumn<QString>("failedPhase");
+        QTest::newRow("clean close while streaming") << false << false << QString();
+        QTest::newRow("dropped while streaming") << true << false << QString();
+        QTest::newRow("dropped while finalizing") << true << true << QStringLiteral("finalize");
     }
 
-    void claudeVoiceClientSeparatesServerEndFromDroppedStream()
+    // Qt cannot tell a server's clean close from a drop, so any end of a live
+    // stream is the server ending it; once the client asked to finish, an end
+    // without the final transcript is still a failure.
+    void claudeVoiceClientEndsALiveStreamOnAnyServerEnd()
     {
         QFETCH(bool, dropped);
+        QFETCH(bool, finishing);
+        QFETCH(QString, failedPhase);
         QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
         QVERIFY(server.listen(QHostAddress::LocalHost));
 
@@ -133,6 +141,7 @@ private slots:
         QSignalSpy connected(&client, &ClaudeVoiceClient::connected);
         QSignalSpy completed(&client, &ClaudeVoiceClient::completed);
         QSignalSpy failed(&client, &ClaudeVoiceClient::failed);
+        QSignalSpy closed(&client, &ClaudeVoiceClient::closed);
         client.start(
             QUrl(QStringLiteral("ws://127.0.0.1:%1/voice").arg(server.serverPort())),
             QStringLiteral("test-token"),
@@ -140,22 +149,54 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         std::unique_ptr<QWebSocket> socket(server.nextPendingConnection());
         QTRY_COMPARE_WITH_TIMEOUT(connected.count(), 1, 1000);
+        if (finishing) {
+            QSignalSpy serverMessages(socket.get(), &QWebSocket::textMessageReceived);
+            client.stop();
+            QTRY_VERIFY_WITH_TIMEOUT(serverMessages.contains(
+                                         QVariantList{QStringLiteral("{\"type\":\"CloseStream\"}")}), 1000);
+        }
 
         if (dropped) {
             socket->abort();
-            QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
-            QCOMPARE(failed.first().at(1).toBool(), true);
-            QCOMPARE(failed.first().at(2).toString(), QStringLiteral("streaming"));
-            QCOMPARE(completed.count(), 0);
         } else {
             socket->close();
-            QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 1000);
+        }
+        QTRY_COMPARE_WITH_TIMEOUT(closed.count(), 1, 1000);
+        if (failedPhase.isEmpty()) {
+            QCOMPARE(completed.count(), 1);
             QCOMPARE(failed.count(), 0);
+        } else {
+            QCOMPARE(completed.count(), 0);
+            QCOMPARE(failed.count(), 1);
+            QCOMPARE(failed.first().at(1).toBool(), true);
+            QCOMPARE(failed.first().at(2).toString(), failedPhase);
         }
     }
 
-    // A clean close of a live voice stream is the server ending it, not an
-    // error; Speecher rolls over to a new stream.
+    void claudeVoiceClientFailsWhenTheServerDropsItBeforeConnecting()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        ClaudeVoiceClient client;
+        QSignalSpy completed(&client, &ClaudeVoiceClient::completed);
+        QSignalSpy failed(&client, &ClaudeVoiceClient::failed);
+        client.start(
+            QUrl(QStringLiteral("ws://127.0.0.1:%1/voice").arg(server.serverPort())),
+            QStringLiteral("test-token"),
+            {});
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        std::unique_ptr<QTcpSocket> socket(server.nextPendingConnection());
+        socket->abort();
+
+        QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
+        QCOMPARE(failed.first().at(1).toBool(), true);
+        QCOMPARE(failed.first().at(2).toString(), QStringLiteral("connect"));
+        QCOMPARE(completed.count(), 0);
+    }
+
+    // Any end of a live voice stream, a clean close or a drop, is the server
+    // ending it, not an error; Speecher rolls over to a new stream.
     void claudeStreamEndedByTheServerRollsOverWithoutLosingDictation()
     {
         QTemporaryDir credentials;
@@ -227,7 +268,11 @@ private slots:
                 R"({"type":"TranscriptInterim","data":"tail %1"})").arg(round));
             QTRY_VERIFY_WITH_TIMEOUT(previews.last().first().toString().endsWith(
                                          QStringLiteral("tail %1").arg(round)), 1000);
-            peers[round]->close();
+            if (round % 2 == 0) {
+                peers[round]->close();
+            } else {
+                peers[round]->abort();
+            }
         }
         QTRY_VERIFY_WITH_TIMEOUT(previews.last().first().toString().endsWith(QStringLiteral("part 3")), 1000);
         QCOMPARE(session.state(), DictationState::Listening);
