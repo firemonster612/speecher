@@ -342,6 +342,7 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/OpenAiRefiner.h
   src/providers/OpenAiTranscriptRefiner.h
   src/providers/TranscriptRefinementPrompt.h
+  src/providers/WebSocketClose.h
 )
 
 set(SPEECHER_PLATFORM_SOURCES

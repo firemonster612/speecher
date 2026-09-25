@@ -11,6 +11,10 @@
 
 #include <utility>
 
+#ifdef SPEECHER_WITH_QT_WEBSOCKETS
+#include "providers/WebSocketClose.h"
+#endif
+
 namespace speecher {
 
 namespace {
@@ -61,12 +65,19 @@ ClaudeVoiceClient::ClaudeVoiceClient(QObject *parent, int connectionTimeoutMs)
         const QString phase = (m_finalizing || m_finishRequested)
             ? QStringLiteral("finalize")
             : wasConnected ? QStringLiteral("streaming") : QStringLiteral("connect");
+        // The server may end a live stream on its own with a clean close;
+        // Claude Code reports that as the end of the stream, not an error.
+        const bool serverEndedStream = unexpected && phase == QStringLiteral("streaming")
+            && isCleanWebSocketClose(m_socket.closeCode());
         m_connected = false;
         m_finalizing = false;
         m_keepAliveTimer.stop();
         clearPendingAudio();
-        qInfo() << "claude websocket disconnected";
-        if (unexpected) {
+        qInfo() << "claude websocket disconnected closeCode=" << m_socket.closeCode();
+        if (serverEndedStream) {
+            m_completed = true;
+            emit completed();
+        } else if (unexpected) {
             fail(phase == QStringLiteral("finalize")
                      ? QStringLiteral("Claude voice stream closed before final transcript completion")
                      : QStringLiteral("Claude voice stream disconnected unexpectedly"),

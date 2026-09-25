@@ -60,6 +60,11 @@ OpenAiRefiner::OpenAiRefiner(QObject *parent,
     connect(&m_stream, &StreamingRefinement::failed, this, &OpenAiRefiner::failed);
 }
 
+bool isPublicOpenAiApi(const QUrl &endpoint)
+{
+    return endpoint.host().compare(QStringLiteral("api.openai.com"), Qt::CaseInsensitive) == 0;
+}
+
 void OpenAiRefiner::refine(const QString &rawTranscript,
                            const QStringList &vocabulary,
                            const QStringList &bindingVocabulary,
@@ -74,8 +79,14 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
                            const QString &refinementStyle,
                            const RefinementContext &context)
 {
+    // Fast mode is the ChatGPT backend's priority tier, reached directly with a
+    // ChatGPT account or through a CLI Proxy API server (which maps "fast" to
+    // "priority" itself). The public API bills "priority" at a higher per-token
+    // rate, so API-key requests to api.openai.com never ask for it.
+    const QUrl base(endpointBase.isEmpty() ? QStringLiteral("https://api.openai.com/v1") : endpointBase);
+    const bool publicApi = isPublicOpenAiApi(base);
     m_stream.start([=](bool fast) -> StreamingRefinement::Request {
-        QUrl endpoint(endpointBase.isEmpty() ? QStringLiteral("https://api.openai.com/v1") : endpointBase);
+        QUrl endpoint = base;
         endpoint.setPath(endpoint.path().replace(QRegularExpression(QStringLiteral("/$")), QString()) + QStringLiteral("/responses"));
 
         QNetworkRequest request(endpoint);
@@ -101,7 +112,8 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
         body.insert(QStringLiteral("stream"), true);
         body.insert(QStringLiteral("store"), false);
         if (fast) {
-            body.insert(QStringLiteral("service_tier"), QStringLiteral("fast"));
+            // chatgpt.com rejects "fast" (HTTP 400 "Unsupported service_tier: fast"); "priority" is accepted.
+            body.insert(QStringLiteral("service_tier"), QStringLiteral("priority"));
         }
         QJsonObject user;
         user.insert(QStringLiteral("role"), QStringLiteral("user"));
@@ -114,7 +126,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
         }
         body.insert(QStringLiteral("input"), QJsonArray{user});
         return {request, QJsonDocument(body).toJson(QJsonDocument::Compact)};
-    }, fastMode);
+    }, fastMode && !publicApi);
 }
 
 void OpenAiRefiner::cancel()

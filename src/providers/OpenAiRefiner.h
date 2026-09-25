@@ -1,10 +1,16 @@
 #pragma once
 
+#include <QUrl>
+
 #include "providers/StreamingRefinement.h"
 
 #include <QStringList>
 
 namespace speecher {
+
+// api.openai.com bills the priority tier at a higher per-token rate.
+bool isPublicOpenAiApi(const QUrl &endpoint);
+
 
 struct RefinementContext;
 

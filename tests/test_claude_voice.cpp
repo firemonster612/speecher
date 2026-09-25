@@ -1,12 +1,18 @@
 #include "common/test_suites.h"
+#include "common/test_auth.h"
+#include "common/test_doubles.h"
 
 #include "core/AppSettings.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsKeys.h"
+#include "dictation/DictationSession.h"
 #include "providers/ClaudeCredentials.h"
+#include "providers/ClaudeSpeechTranscriber.h"
 #include "providers/ClaudeVoiceClient.h"
 #include "providers/ClaudeVoiceProtocol.h"
 
 #include <QFile>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTimer>
@@ -19,6 +25,7 @@
 #include <memory>
 
 using namespace speecher;
+using namespace speecher::test;
 
 
 class ClaudeVoiceTests : public QObject {
@@ -109,13 +116,22 @@ private slots:
         QCOMPARE(bufferFailure.first().at(2).toString(), QStringLiteral("connect"));
     }
 
-    void claudeVoiceClientReportsUnexpectedRemoteClose()
+    void claudeVoiceClientSeparatesServerEndFromDroppedStream_data()
     {
+        QTest::addColumn<bool>("dropped");
+        QTest::newRow("clean close") << false;
+        QTest::newRow("dropped connection") << true;
+    }
+
+    void claudeVoiceClientSeparatesServerEndFromDroppedStream()
+    {
+        QFETCH(bool, dropped);
         QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
         QVERIFY(server.listen(QHostAddress::LocalHost));
 
         ClaudeVoiceClient client;
         QSignalSpy connected(&client, &ClaudeVoiceClient::connected);
+        QSignalSpy completed(&client, &ClaudeVoiceClient::completed);
         QSignalSpy failed(&client, &ClaudeVoiceClient::failed);
         client.start(
             QUrl(QStringLiteral("ws://127.0.0.1:%1/voice").arg(server.serverPort())),
@@ -125,11 +141,111 @@ private slots:
         std::unique_ptr<QWebSocket> socket(server.nextPendingConnection());
         QTRY_COMPARE_WITH_TIMEOUT(connected.count(), 1, 1000);
 
-        socket->close();
+        if (dropped) {
+            socket->abort();
+            QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
+            QCOMPARE(failed.first().at(1).toBool(), true);
+            QCOMPARE(failed.first().at(2).toString(), QStringLiteral("streaming"));
+            QCOMPARE(completed.count(), 0);
+        } else {
+            socket->close();
+            QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 1000);
+            QCOMPARE(failed.count(), 0);
+        }
+    }
 
-        QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
-        QCOMPARE(failed.first().at(1).toBool(), true);
-        QCOMPARE(failed.first().at(2).toString(), QStringLiteral("streaming"));
+    // A clean close of a live voice stream is the server ending it, not an
+    // error; Speecher rolls over to a new stream.
+    void claudeStreamEndedByTheServerRollsOverWithoutLosingDictation()
+    {
+        QTemporaryDir credentials;
+        QVERIFY(writeCliProxyAccount(credentials.path(), QStringLiteral("claude-a@example.com.json"),
+                                     QStringLiteral("claude"), QStringLiteral("claude-token"),
+                                     QDateTime::currentDateTimeUtc().addSecs(3600)));
+        QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        const int stableAttemptMs = DictationSession::stableAttemptMs();
+        DictationSession::setStableAttemptMs(0);
+        const auto restore = qScopeGuard([stableAttemptMs] {
+            DictationSession::setStableAttemptMs(stableAttemptMs);
+        });
+
+        QList<QWebSocket *> peers;
+        QList<QStringList> audioByPeer;
+        connect(&server, &QWebSocketServer::newConnection, this, [&] {
+            QWebSocket *peer = server.nextPendingConnection();
+            const qsizetype index = peers.size();
+            peers.append(peer);
+            audioByPeer.append(QStringList());
+            connect(peer, &QWebSocket::binaryMessageReceived, this, [&audioByPeer, index](const QByteArray &pcm) {
+                audioByPeer[index].append(QString::fromLatin1(pcm));
+            });
+        });
+
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.setSpeechProvider(QStringLiteral("claude"));
+        settings.setAnthropicAuthMode(QStringLiteral("cliproxy"));
+        settings.setCliproxyOauthDir(credentials.path());
+        settings.raw().setValue(SettingsKeys::ClaudeEndpointBase,
+                                QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+        settings.raw().setValue(SettingsKeys::ClaudeVoicePath, QStringLiteral("/voice"));
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        ClaudeSpeechTranscriber *transcriber = nullptr;
+        registry.registerSpeechProvider({QStringLiteral("claude"), QStringLiteral("Claude Voice")},
+                                        [&transcriber](QObject *parent) {
+                                            transcriber = new ClaudeSpeechTranscriber(parent);
+                                            return transcriber;
+                                        });
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        QSignalSpy errors(&session, &DictationSession::popupErrorRequested);
+        QSignalSpy previews(&session, &DictationSession::previewChanged);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(session.state(), DictationState::Listening, 1000);
+        QVERIFY(transcriber);
+        QSignalSpy failures(transcriber, &SpeechTranscriber::failed);
+
+        // More rollovers than the error budget allows reconnects.
+        constexpr int rollovers = 3;
+        for (int round = 0; round <= rollovers; ++round) {
+            QTRY_COMPARE_WITH_TIMEOUT(peers.size(), round + 1, 1000);
+            audio.pushAudio(QStringLiteral("speech %1").arg(round).toLatin1());
+            QTRY_COMPARE_WITH_TIMEOUT(audioByPeer[round],
+                                      QStringList({QStringLiteral("speech %1").arg(round)}), 1000);
+            peers[round]->sendTextMessage(QStringLiteral(
+                R"({"type":"TranscriptEndpoint","data":"part %1"})").arg(round));
+            if (round == rollovers) {
+                break;
+            }
+            // The current utterance never reached an endpoint: the rollover keeps it.
+            peers[round]->sendTextMessage(QStringLiteral(
+                R"({"type":"TranscriptInterim","data":"tail %1"})").arg(round));
+            QTRY_VERIFY_WITH_TIMEOUT(previews.last().first().toString().endsWith(
+                                         QStringLiteral("tail %1").arg(round)), 1000);
+            peers[round]->close();
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(previews.last().first().toString().endsWith(QStringLiteral("part 3")), 1000);
+        QCOMPARE(session.state(), DictationState::Listening);
+        QVERIFY(audio.isActive());
+
+        QSignalSpy clientMessages(peers.last(), &QWebSocket::textMessageReceived);
+        session.stopListening();
+        QTRY_VERIFY_WITH_TIMEOUT(clientMessages.contains(QVariantList{QStringLiteral("{\"type\":\"CloseStream\"}")}), 1000);
+        peers.last()->sendTextMessage(QStringLiteral(R"({"type":"TranscriptEndpoint","data":""})"));
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 1000);
+        QCOMPARE(delivery.lastText,
+                 QStringLiteral("part 0 tail 0 part 1 tail 1 part 2 tail 2 part 3"));
+        QCOMPARE(failures.count(), 0);
+        QCOMPARE(errors.count(), 0);
+        QVERIFY2(!session.lastMessage().contains(QStringLiteral("may be missing")),
+                 qPrintable(session.lastMessage()));
+        qDeleteAll(peers);
     }
 
     void liveClaudeVoiceProvider()
