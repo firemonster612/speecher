@@ -885,26 +885,15 @@ private slots:
         socket->disconnectFromHost();
     }
 
-    void openAiFastModeAsksForPriorityOnlyFromAChatGptAccount_data()
+    void openAiFastModeAsksForPriorityWithoutAnAccountId()
     {
-        QTest::addColumn<QString>("accountId");
-        QTest::addColumn<bool>("priority");
-        QTest::newRow("chatgpt account") << QStringLiteral("acct-id") << true;
-        // api.openai.com bills priority at a higher rate; API keys stay standard.
-        QTest::newRow("api key") << QString() << false;
-    }
-
-    void openAiFastModeAsksForPriorityOnlyFromAChatGptAccount()
-    {
-        QFETCH(QString, accountId);
-        QFETCH(bool, priority);
+        // A CLI Proxy API server has no ChatGPT account id but maps fast mode itself.
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
-
         OpenAiRefiner refiner;
         refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
-                       accountId, QStringLiteral("gpt-test"), QStringLiteral("low"), true,
+                       QString(), QStringLiteral("gpt-test"), QStringLiteral("low"), true,
                        QStringLiteral("balanced"), {});
 
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
@@ -914,12 +903,15 @@ private slots:
         const int headerEnd = request.indexOf("\r\n\r\n");
         QVERIFY2(headerEnd >= 0, request.constData());
         const QJsonObject body = QJsonDocument::fromJson(request.mid(headerEnd + 4)).object();
-        if (priority) {
-            QCOMPARE(body.value(QStringLiteral("service_tier")).toString(), QStringLiteral("priority"));
-        } else {
-            QVERIFY(!body.contains(QStringLiteral("service_tier")));
-        }
+        QCOMPARE(body.value(QStringLiteral("service_tier")).toString(), QStringLiteral("priority"));
         refiner.cancel();
+    }
+
+    void openAiFastModeSkipsOnlyThePublicApi()
+    {
+        QVERIFY(isPublicOpenAiApi(QUrl(QStringLiteral("https://api.openai.com/v1"))));
+        QVERIFY(!isPublicOpenAiApi(QUrl(QStringLiteral("https://chatgpt.com/backend-api/codex"))));
+        QVERIFY(!isPublicOpenAiApi(QUrl(QStringLiteral("http://100.87.14.125:8317/v1"))));
     }
 
     void openAiRefinerRetriesAtStandardSpeedWhenFastModeFails()
