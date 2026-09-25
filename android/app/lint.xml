@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- All exemptions below are scoped to BouncyCastle's bctls jar only; they never apply to our
+         own source. See AGENTS.md.
+
+         TrustAllX509TrustManager: BouncyCastle's own bytecode ships trust managers with empty
+         check{Client,Server}Trusted methods. Our TLS code (BcTlsConnection) validates the chain
+         against the system trust store and verifies the hostname, so this is a false positive in
+         a third-party jar. The check stays active for our code.
+
+         GradleDependency / NewerVersionAvailable: bctls is deliberately pinned at 1.86; the 1.86.1
+         hotfix changes nothing we rely on. Every other dependency is still held current. -->
+    <issue id="TrustAllX509TrustManager">
+        <ignore regexp="bctls-jdk18on" />
+    </issue>
+    <issue id="GradleDependency">
+        <ignore regexp="bctls-jdk18on" />
+    </issue>
+    <issue id="NewerVersionAvailable">
+        <ignore regexp="bctls-jdk18on" />
+    </issue>
+</lint>

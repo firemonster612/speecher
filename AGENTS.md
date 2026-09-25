@@ -14,6 +14,9 @@ Domain documentation uses the single-context layout. See `docs/agents/domain.md`
 
 ## UI changes: scope and rules
 
+These rules cover the desktop app under `src/`. The Android client under
+`android/` follows `android/AGENTS.md` instead.
+
 These exist because a "make the settings rows nicer" request once turned into
 a rewrite of the sidebar, the colours and the Dictation page. Do not repeat it.
 

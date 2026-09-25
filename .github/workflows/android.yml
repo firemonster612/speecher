@@ -1,0 +1,66 @@
+name: Android
+
+# Builds and checks the Android client. `./gradlew check` is the gate named in
+# android/AGENTS.md: ktfmt, Android Lint and the compiler with warnings as
+# errors, plus the JVM and Robolectric unit tests. The live network checks
+# (liveDictation, liveClaude, liveTranscribe) need real tokens and stay local.
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - android/**
+      - .github/workflows/android.yml
+  pull_request:
+    paths:
+      - android/**
+      - .github/workflows/android.yml
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Check
+        run: ./gradlew check
+
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug
+
+      - name: Upload reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-reports
+          path: |
+            android/app/build/reports
+            android/protocol/build/reports
+          if-no-files-found: ignore
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: speecher-android-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

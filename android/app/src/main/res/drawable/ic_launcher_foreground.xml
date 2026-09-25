@@ -1,0 +1,25 @@
+<!-- The desktop mark (packaging/io.github.firemonster612.speecher.svg) in its own 128-unit
+     coordinates: the bone pill with its four bars cut out, so the ink background shows through
+     them. One silhouette serves as both the foreground and the monochrome layer. A launcher shows
+     the middle 72 of the 108dp, so scaling by 72/108 keeps the pill the same share of the visible
+     icon as it has of the desktop tile. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="128"
+    android:viewportHeight="128">
+    <group
+        android:pivotX="64"
+        android:pivotY="64"
+        android:scaleX="0.667"
+        android:scaleY="0.667">
+        <path
+            android:fillColor="#F2F0E6"
+            android:fillType="evenOdd"
+            android:pathData="M54,36H74A28,28 0,0 1,74,92H54A28,28 0,0 1,54,36Z
+                M43,55.5A3.5,3.5 0,0 1,50,55.5V72.5A3.5,3.5 0,0 1,43,72.5Z
+                M56,47.5A3.5,3.5 0,0 1,63,47.5V80.5A3.5,3.5 0,0 1,56,80.5Z
+                M69,51.5A3.5,3.5 0,0 1,76,51.5V76.5A3.5,3.5 0,0 1,69,76.5Z
+                M82,59.5A3.5,3.5 0,0 1,89,59.5V68.5A3.5,3.5 0,0 1,82,68.5Z" />
+    </group>
+</vector>
