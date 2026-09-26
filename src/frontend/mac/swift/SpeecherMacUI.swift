@@ -98,9 +98,16 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Screenshot automation, as on Qt and Windows: SPEECHER_GRAB_PAGE names
+    /// the pane to show before the grab.
     @MainActor
     @objc public func captureSettings(toPath path: String) -> Bool {
-        settings?.capture(toPath: path) ?? false
+        if let page = ProcessInfo.processInfo.environment["SPEECHER_GRAB_PAGE"]?.lowercased(),
+           let pane = model.panes.first(where: { $0.id.lowercased() == page }) {
+            model.pane = pane.id
+            RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        }
+        return settings?.capture(toPath: path) ?? false
     }
 
     /// A fresh flow every run: the assistant that was closed mid-way starts

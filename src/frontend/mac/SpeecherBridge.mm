@@ -1,6 +1,7 @@
 #include "frontend/mac/SpeecherBridge.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
 #include "app/PlatformComposition.h"
 #include "app/UpdateController.h"
 #include "core/SecretStore.h"
@@ -13,6 +14,8 @@
 // the Qt front end rather than reassembled, because the device and provider
 // lists are the same lists.
 #include "frontend/qt/SchemaSettingsPage.h"
+#include "providers/CustomEndpoints.h"
+#include "providers/LocalModelStore.h"
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/ProviderProbe.h"
 #include "providers/ProviderRegistry.h"
@@ -29,6 +32,7 @@
 #include <QPointer>
 #include <QRegularExpression>
 #include <QThread>
+#include <QTimer>
 
 #include <memory>
 #include <optional>
@@ -263,6 +267,10 @@ struct BridgeState {
     // The CLI Proxy API opt-in shared with the other assistants, created on
     // first use so its opt-out memory spans the assistant's lifetime.
     std::unique_ptr<speecher::ProviderSignIn> setupSignIn;
+    // LocalSetup's changes, download and pull progress, at most one refresh
+    // per tick: progress arrives per network read.
+    QTimer localRefresh;
+    bool localRowsChanged = false;
 };
 
 // Runs a provider's prepare or refresh job off the main thread and answers on
@@ -436,6 +444,7 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @property (nonatomic, copy) NSString *disabledAction;
 @property (nonatomic, copy) NSString *disabledActionLabel;
 @property (nonatomic, strong, nullable) CollectionModel *collection;
+@property (nonatomic) BOOL secret;
 @end
 
 @implementation SettingsRowModel
@@ -479,6 +488,72 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @end
 
 @implementation SettingsPaneModel
+@end
+
+@interface LocalModelInfo ()
+@property (nonatomic, copy) NSString *modelId;
+@property (nonatomic, copy) NSString *name;
+@property (nonatomic, copy) NSString *fileName;
+@property (nonatomic, copy) NSString *sizeText;
+@property (nonatomic) double librispeechWer;
+@property (nonatomic) double fleursWer;
+@property (nonatomic) BOOL streams;
+@property (nonatomic, copy) NSString *licence;
+@property (nonatomic, copy) NSArray<NSString *> *pros;
+@property (nonatomic, copy) NSArray<NSString *> *cons;
+@property (nonatomic, copy) NSString *fitLabel;
+@property (nonatomic) BOOL tooLarge;
+@property (nonatomic) BOOL suggested;
+@property (nonatomic, copy) NSString *speedLine;
+@property (nonatomic, copy) NSString *speedCell;
+@property (nonatomic) BOOL downloaded;
+@property (nonatomic) BOOL downloading;
+@property (nonatomic) double downloadFraction;
+@property (nonatomic, copy) NSString *progressText;
+@property (nonatomic) BOOL speedTestRunning;
+@property (nonatomic, copy) NSString *problem;
+@end
+
+@implementation LocalModelInfo
+@end
+
+@interface LocalRunnerInfo ()
+@property (nonatomic, copy) NSString *runnerId;
+@property (nonatomic, copy) NSString *name;
+@property (nonatomic, copy) NSString *version;
+@property (nonatomic, copy) NSArray<NSString *> *models;
+@end
+
+@implementation LocalRunnerInfo
+@end
+
+@interface CleanupModelInfo ()
+@property (nonatomic, copy) NSString *ollamaTag;
+@property (nonatomic, copy) NSString *name;
+@property (nonatomic, copy) NSString *sizeText;
+@end
+
+@implementation CleanupModelInfo
+@end
+
+@interface RefinementEndpointForm ()
+@property (nonatomic, copy) NSString *format;
+@property (nonatomic, copy) NSString *serverUrl;
+@property (nonatomic, copy) NSString *apiKey;
+@property (nonatomic, copy) NSString *model;
+@end
+
+@implementation RefinementEndpointForm
+@end
+
+@interface CleanupPullInfo ()
+@property (nonatomic) BOOL running;
+@property (nonatomic) double fraction;
+@property (nonatomic, copy) NSString *progressText;
+@property (nonatomic, copy) NSString *error;
+@end
+
+@implementation CleanupPullInfo
 @end
 
 @interface CollectionImportResult ()
@@ -621,6 +696,7 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     model.disabledHelp = row.disabledHelp.toNSString();
     model.disabledAction = row.disabledAction.toNSString();
     model.disabledActionLabel = row.disabledActionLabel.toNSString();
+    model.secret = row.secret;
     if (const CollectionDescriptor *collection = [self collectionForRow:row]) {
         model.collection = [self collectionModel:*collection];
         model.value = bridgedRecords(collection->records(_state->draft));
@@ -854,12 +930,13 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
     // toggle is the fourth member, and naming it is clearer than spelling out
     // the colour-scheme default in between.
     capabilities.launchAtLoginAccepted = controller->launchAtLoginAccepted();
+    speecher::SchemaContext context = speecher::qtSchemaContext(*controller->platform(),
+                                                                *controller->providerRegistry(),
+                                                                controller->pendingWhatsNewVersion());
+    context.liveFacts = [setup = controller->localSetup()] { return setup->liveFacts(); };
     _settingsSchema = [[SettingsSchemaModel alloc]
         initWithStore:controller->settings()
-               schema:speecher::buildSettingsSchema(
-                          speecher::qtSchemaContext(*controller->platform(),
-                                                    *controller->providerRegistry(),
-                                                    controller->pendingWhatsNewVersion()))
+               schema:speecher::buildSettingsSchema(context)
          capabilities:capabilities];
     __weak SpeecherBridge *weakSelf = self;
     BridgeState *state = _state;
@@ -946,7 +1023,41 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                          }
                      });
     [self connectPanelTo:controller->session()];
+    [self connectLocalSetup:controller->localSetup()];
     return self;
+}
+
+- (void)connectLocalSetup:(speecher::LocalSetup *)setup
+{
+    __weak SpeecherBridge *weakSelf = self;
+    BridgeState *state = _state;
+    QTimer *refresh = &_state->localRefresh;
+    refresh->setSingleShot(true);
+    refresh->setInterval(100);
+    QObject::connect(refresh, &QTimer::timeout, &_state->lifetime, [weakSelf, state] {
+        // A bridge can outlive its controller, and every read the refresh
+        // prompts goes through it.
+        if (!state->controller) {
+            return;
+        }
+        const bool rowsChanged = std::exchange(state->localRowsChanged, false);
+        SpeecherBridge *bridge = weakSelf;
+        if (bridge.localSetupChanged) {
+            bridge.localSetupChanged(rowsChanged);
+        }
+    });
+    const auto schedule = [refresh] {
+        if (!refresh->isActive()) {
+            refresh->start();
+        }
+    };
+    QObject::connect(setup, &speecher::LocalSetup::changed, &_state->lifetime, [state, schedule] {
+        state->localRowsChanged = true;
+        schedule();
+    });
+    QObject::connect(setup, &speecher::LocalSetup::pullProgress, &_state->lifetime, schedule);
+    QObject::connect(&setup->models(), &speecher::LocalModelStore::downloadProgress,
+                     &_state->lifetime, schedule);
 }
 
 // The dictation panel's signals, which the session emits and no page renders.
@@ -1666,6 +1777,220 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
         return nil;
     }
     return secrets->status().toNSString();
+}
+
+- (BOOL)localSpeechAvailable
+{
+    return _state->controller->providerRegistry()->speechProvider(QStringLiteral("local")) != nullptr;
+}
+
+- (void)probeLocalHardware
+{
+    _state->controller->localSetup()->probeHardware();
+}
+
+- (NSString *)localHardwareLine
+{
+    return _state->controller->localSetup()->hardwareLine().toNSString();
+}
+
+- (BOOL)localHardwareKnown
+{
+    return _state->controller->localSetup()->hardwareKnown();
+}
+
+static QString progressText(qint64 done, qint64 total)
+{
+    return QStringLiteral("%1 of %2").arg(speecher::downloadSizeText(done), speecher::downloadSizeText(total));
+}
+
+static LocalModelInfo *bridgedLocalModel(const speecher::LocalSetup &setup, const speecher::LocalModel &model)
+{
+    using namespace speecher;
+    LocalModelInfo *info = [[LocalModelInfo alloc] init];
+    info.modelId = model.id.toNSString();
+    info.name = model.name.toNSString();
+    info.fileName = model.fileName.toNSString();
+    info.sizeText = downloadSizeText(model.sizeBytes).toNSString();
+    info.librispeechWer = model.librispeechCleanWer;
+    info.fleursWer = model.fleursEnglishWer;
+    info.streams = model.streams;
+    info.licence = model.licence.toNSString();
+    info.pros = bridgedStrings(model.pros);
+    info.cons = bridgedStrings(model.cons);
+    info.fitLabel = setup.fitLabel(model).toNSString();
+    info.tooLarge = setup.fit(model) == ModelFit::TooLarge;
+    info.suggested = model.id == setup.suggestedModel().id;
+
+    const HardwareProfile &hardware = setup.hardware().profile;
+    const std::optional<double> measured = setup.measuredSeconds(model.id);
+    info.speedTestRunning = setup.speedTestRunning(model.id);
+    info.speedLine = (info.speedTestRunning ? QStringLiteral("Testing…")
+                                            : localModelSpeedLine(model, hardware, measured))
+                         .toNSString();
+    const std::optional<SpeedEstimate> estimate = estimatedSpeed(model, hardware);
+    info.speedCell = (measured ? speechSecondsText(*measured)
+                      : estimate ? QStringLiteral("~") + speechSecondsText(estimate->secondsFor10sSpeech)
+                                 : QStringLiteral("Not measured"))
+                         .toNSString();
+
+    const auto progress = setup.downloadProgress(model.id);
+    info.downloading = progress.has_value();
+    info.downloaded = !progress && setup.models().isDownloaded(model);
+    info.downloadFraction = progress && progress->second > 0 ? double(progress->first) / double(progress->second) : 0;
+    info.progressText = progress ? progressText(progress->first, model.sizeBytes).toNSString() : @"";
+    const QString downloadError = setup.downloadError(model.id);
+    info.problem = (downloadError.isEmpty() ? setup.speedTestError(model.id) : downloadError).toNSString();
+    return info;
+}
+
+- (NSArray<LocalModelInfo *> *)localModels
+{
+    const speecher::LocalSetup &setup = *_state->controller->localSetup();
+    NSMutableArray<LocalModelInfo *> *models = [NSMutableArray array];
+    for (const speecher::LocalModel &model : speecher::localModelCatalog()) {
+        [models addObject:bridgedLocalModel(setup, model)];
+    }
+    return models;
+}
+
+- (NSString *)localModelId
+{
+    return _state->controller->settings()->localSpeechSettings().modelId.toNSString();
+}
+
+- (void)setLocalModel:(NSString *)modelId
+{
+    SettingsStore *store = _state->controller->settings();
+    speecher::LocalSpeechSettings local = store->localSpeechSettings();
+    local.modelId = QString::fromNSString(modelId);
+    store->setLocalSpeechSettings(local);
+}
+
+- (void)downloadLocalModel:(NSString *)modelId
+{
+    if (const speecher::LocalModel *model = speecher::findLocalModel(QString::fromNSString(modelId))) {
+        _state->controller->localSetup()->download(*model);
+    }
+}
+
+- (void)cancelLocalModelDownload:(NSString *)modelId
+{
+    _state->controller->localSetup()->cancelDownload(QString::fromNSString(modelId));
+}
+
+- (void)deleteLocalModel:(NSString *)modelId
+{
+    if (const speecher::LocalModel *model = speecher::findLocalModel(QString::fromNSString(modelId))) {
+        _state->controller->localSetup()->removeModel(*model);
+    }
+}
+
+- (void)testLocalModelSpeed:(NSString *)modelId
+{
+    _state->controller->localSetup()->runSpeedTest(QString::fromNSString(modelId));
+}
+
+- (void)detectLocalRunners
+{
+    _state->controller->localSetup()->detectRunners();
+}
+
+- (BOOL)detectingLocalRunners
+{
+    return _state->controller->localSetup()->detectingRunners();
+}
+
+- (NSArray<LocalRunnerInfo *> *)localRunners
+{
+    NSMutableArray<LocalRunnerInfo *> *runners = [NSMutableArray array];
+    for (const speecher::DetectedRunner &runner : _state->controller->localSetup()->runners()) {
+        LocalRunnerInfo *info = [[LocalRunnerInfo alloc] init];
+        info.runnerId = runner.id.toNSString();
+        info.name = runner.name.toNSString();
+        info.version = runner.version.toNSString();
+        info.models = bridgedStrings(runner.models);
+        [runners addObject:info];
+    }
+    return runners;
+}
+
+- (CleanupModelInfo *)suggestedCleanupModel
+{
+    const std::optional<speecher::CleanupModel> model = _state->controller->localSetup()->suggestedCleanupModel();
+    if (!model) {
+        return nil;
+    }
+    CleanupModelInfo *info = [[CleanupModelInfo alloc] init];
+    info.ollamaTag = model->ollamaTag.toNSString();
+    info.name = model->name.toNSString();
+    info.sizeText = speecher::downloadSizeText(model->sizeBytes).toNSString();
+    return info;
+}
+
+- (void)pullCleanupModel:(NSString *)ollamaTag
+{
+    _state->controller->localSetup()->pullCleanupModel(QString::fromNSString(ollamaTag));
+}
+
+- (CleanupPullInfo *)cleanupPull
+{
+    const speecher::LocalSetup::Pull pull = _state->controller->localSetup()->pull();
+    CleanupPullInfo *info = [[CleanupPullInfo alloc] init];
+    info.running = pull.running;
+    info.fraction = pull.totalBytes > 0 ? double(pull.completedBytes) / double(pull.totalBytes) : 0;
+    info.progressText = progressText(pull.completedBytes, pull.totalBytes).toNSString();
+    info.error = pull.error.toNSString();
+    return info;
+}
+
+- (RefinementEndpointForm *)refinementEndpointForm
+{
+    const speecher::RefinementSettings refinement = _state->controller->settings()->snapshot().refinement;
+    const speecher::RefinementEndpoint shown = speecher::resolvedRefinementEndpoint(refinement);
+    RefinementEndpointForm *form = [[RefinementEndpointForm alloc] init];
+    form.format = refinement.endpoint.format.toNSString();
+    form.serverUrl = shown.apiBase.toNSString();
+    form.apiKey = shown.apiKey.toNSString();
+    form.model = refinement.endpoint.model.toNSString();
+    return form;
+}
+
+- (void)saveRefinementEndpointFormat:(NSString *)format
+                           serverUrl:(NSString *)serverUrl
+                              apiKey:(NSString *)apiKey
+                               model:(NSString *)model
+{
+    SettingsStore *store = _state->controller->settings();
+    AppSettings settings = store->snapshot();
+    speecher::RefinementEndpointSettings &endpoint = settings.refinement.endpoint;
+    const speecher::RefinementEndpoint shown = speecher::resolvedRefinementEndpoint(settings.refinement);
+    const QString url = QString::fromNSString(serverUrl).trimmed();
+    const QString key = QString::fromNSString(apiKey).trimmed();
+    if (url != shown.apiBase || key != shown.apiKey) {
+        endpoint.preset.clear();
+        endpoint.baseUrl = url;
+        endpoint.apiKey = key;
+    }
+    endpoint.format = QString::fromNSString(format);
+    endpoint.model = QString::fromNSString(model).trimmed();
+    store->applySnapshot(settings);
+}
+
+- (void)checkRefinementEndpoint
+{
+    _state->controller->localSetup()->checkRefinementEndpoint(
+        _state->controller->settings()->snapshot().refinement);
+}
+
+- (NSString *)refinementEndpointStatus
+{
+    return _state->controller->localSetup()->liveFacts().refinementEndpointStatus.toNSString();
+}
+
+- (NSArray<NSString *> *)refinementEndpointModels
+{
+    return bridgedStrings(_state->controller->localSetup()->liveFacts().refinementEndpointModels);
 }
 
 @end

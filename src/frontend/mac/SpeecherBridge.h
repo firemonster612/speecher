@@ -98,6 +98,8 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, copy) NSString *disabledActionLabel;
 // Set on a Collection row, and on the one Custom row that is a table.
 @property (nonatomic, readonly, strong, nullable) CollectionModel *collection;
+// Text rows only: a key or password, shown masked.
+@property (nonatomic, readonly) BOOL secret;
 @end
 
 @interface SettingsSectionModel : NSObject
@@ -208,6 +210,77 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
 // What a person must do before this provider works, or empty when it needs
 // nothing.
 @property (nonatomic, readonly, copy) NSString *setupHint;
+@end
+
+// One Local Model as the Local models page and the setup assistant show it:
+// the catalog's facts in core's words, and where this computer stands with it.
+@interface LocalModelInfo : NSObject
+@property (nonatomic, readonly, copy) NSString *modelId;
+@property (nonatomic, readonly, copy) NSString *name;
+@property (nonatomic, readonly, copy) NSString *fileName;
+// "731 MB", as download sizes are quoted.
+@property (nonatomic, readonly, copy) NSString *sizeText;
+// Word error rates in percent.
+@property (nonatomic, readonly) double librispeechWer;
+@property (nonatomic, readonly) double fleursWer;
+// Text appears as the person speaks rather than after they stop.
+@property (nonatomic, readonly) BOOL streams;
+@property (nonatomic, readonly, copy) NSString *licence;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *pros;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *cons;
+// "Fits", "Tight fit", "Too large", or "Checking…" before the hardware is known.
+@property (nonatomic, readonly, copy) NSString *fitLabel;
+@property (nonatomic, readonly) BOOL tooLarge;
+// The model Speecher suggests for this computer; see localHardwareKnown.
+@property (nonatomic, readonly) BOOL suggested;
+// How long 10 s of speech takes here, as a sentence ("About 0.7 s for 10 s of
+// speech (estimated)") and as a table cell ("~0.7 s").
+@property (nonatomic, readonly, copy) NSString *speedLine;
+@property (nonatomic, readonly, copy) NSString *speedCell;
+@property (nonatomic, readonly) BOOL downloaded;
+@property (nonatomic, readonly) BOOL downloading;
+// While downloading: 0 to 1, and "164 MB of 199 MB".
+@property (nonatomic, readonly) double downloadFraction;
+@property (nonatomic, readonly, copy) NSString *progressText;
+@property (nonatomic, readonly) BOOL speedTestRunning;
+// The last download or Speed Test failure. Empty when there is none.
+@property (nonatomic, readonly, copy) NSString *problem;
+@end
+
+// A Local Runner found on this computer.
+@interface LocalRunnerInfo : NSObject
+// "ollama", "lmstudio" or "llama-server", as the localRunner row stores it.
+@property (nonatomic, readonly, copy) NSString *runnerId;
+@property (nonatomic, readonly, copy) NSString *name;
+// Empty where the runner does not report one.
+@property (nonatomic, readonly, copy) NSString *version;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *models;
+@end
+
+// The cleanup model Speecher suggests pulling into Ollama.
+@interface CleanupModelInfo : NSObject
+@property (nonatomic, readonly, copy) NSString *ollamaTag;
+@property (nonatomic, readonly, copy) NSString *name;
+@property (nonatomic, readonly, copy) NSString *sizeText;
+@end
+
+// The refinement Custom Endpoint as the setup assistant's form shows it: with
+// the CLI Proxy API preset, the server and key are the proxy's.
+@interface RefinementEndpointForm : NSObject
+// "openai" or "anthropic".
+@property (nonatomic, readonly, copy) NSString *format;
+@property (nonatomic, readonly, copy) NSString *serverUrl;
+@property (nonatomic, readonly, copy) NSString *apiKey;
+@property (nonatomic, readonly, copy) NSString *model;
+@end
+
+// The last cleanup model pull through Ollama.
+@interface CleanupPullInfo : NSObject
+@property (nonatomic, readonly) BOOL running;
+@property (nonatomic, readonly) double fraction;
+// "1.2 GB of 5.3 GB" while running.
+@property (nonatomic, readonly, copy) NSString *progressText;
+@property (nonatomic, readonly, copy) NSString *error;
 @end
 
 @interface SpeecherBridge : NSObject
@@ -409,6 +482,55 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
 - (NSString *)readApiKey;
 // nil when the keyring took it, otherwise why it refused.
 - (nullable NSString *)saveApiKey:(NSString *)apiKey;
+
+// Running models on this computer: ApplicationController's LocalSetup, so a
+// download, a Speed Test or a pull outlives the window that started it.
+// Whether this build can run speech on this computer at all.
+@property (nonatomic, readonly) BOOL localSpeechAvailable;
+// Anything below changed. rowsChanged says the settings rows that report it,
+// and the settings LocalSetup writes, changed too; it is NO for a download or
+// pull's progress alone. Arrives on the main thread, often while one runs.
+@property (nonatomic, copy, nullable) void (^localSetupChanged)(BOOL rowsChanged);
+// Starts the hardware probe the first time; until it answers the line says so.
+- (void)probeLocalHardware;
+// "Apple M4 Max, 14 threads · Apple M4 Max, Metal · 36 GB memory".
+@property (nonatomic, readonly, copy) NSString *localHardwareLine;
+// Until the probe answers, fit labels say "Checking…" and the suggestion is a
+// guess not worth calling one.
+@property (nonatomic, readonly) BOOL localHardwareKnown;
+// The catalog, in the order it lists the models.
+@property (nonatomic, readonly, copy) NSArray<LocalModelInfo *> *localModels;
+// The saved Local Model, which the localModelBrowser row only reports while
+// Local model is the speech provider.
+@property (nonatomic, readonly, copy) NSString *localModelId;
+// Saves the Local Model dictation uses, whichever provider is chosen.
+- (void)setLocalModel:(NSString *)modelId NS_SWIFT_NAME(setLocalModel(_:));
+- (void)downloadLocalModel:(NSString *)modelId NS_SWIFT_NAME(downloadLocalModel(_:));
+- (void)cancelLocalModelDownload:(NSString *)modelId NS_SWIFT_NAME(cancelLocalModelDownload(_:));
+- (void)deleteLocalModel:(NSString *)modelId NS_SWIFT_NAME(deleteLocalModel(_:));
+- (void)testLocalModelSpeed:(NSString *)modelId NS_SWIFT_NAME(testLocalModelSpeed(_:));
+
+- (void)detectLocalRunners;
+@property (nonatomic, readonly) BOOL detectingLocalRunners;
+@property (nonatomic, readonly, copy) NSArray<LocalRunnerInfo *> *localRunners;
+// nil when cleanup here would be slower than a cloud provider or none.
+@property (nonatomic, readonly, strong, nullable) CleanupModelInfo *suggestedCleanupModel;
+- (void)pullCleanupModel:(NSString *)ollamaTag NS_SWIFT_NAME(pullCleanupModel(_:));
+@property (nonatomic, readonly, strong) CleanupPullInfo *cleanupPull;
+
+@property (nonatomic, readonly, strong) RefinementEndpointForm *refinementEndpointForm;
+// Saves the form. A preset stays until the server or key differs from its own.
+- (void)saveRefinementEndpointFormat:(NSString *)format
+                           serverUrl:(NSString *)serverUrl
+                              apiKey:(NSString *)apiKey
+                               model:(NSString *)model
+    NS_SWIFT_NAME(saveRefinementEndpoint(format:serverUrl:apiKey:model:));
+// Tests the saved endpoint; the verdict and model list arrive with
+// localSetupChanged.
+- (void)checkRefinementEndpoint;
+// The last verdict, "Checking…" while one runs, empty before the first.
+@property (nonatomic, readonly, copy) NSString *refinementEndpointStatus;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *refinementEndpointModels;
 @end
 
 #ifdef __cplusplus
