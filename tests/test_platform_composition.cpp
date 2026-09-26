@@ -867,34 +867,35 @@ private slots:
         SetupAssistant assistant(&controller);
         assistant.show();
         QCoreApplication::processEvents();
+        auto *welcome = assistant.findChild<WelcomeSetupPage *>();
+        auto *transcription = assistant.findChild<SpeechProviderSetupPage *>();
+        QVERIFY(welcome && transcription);
+        // With no sign-in, a build with speech on this computer takes that
+        // path on Welcome, so the first unfinished step is Transcription,
+        // where no model has been downloaded. Choosing it here does what the
+        // sign-in checks do on their own once they answer. Without local
+        // speech, no sign-in holds Welcome itself.
+        auto *localPath = welcome->findChild<QAbstractButton *>(QStringLiteral("welcomePathLocal"));
+        const bool localSpeech = localPath != nullptr;
+        if (localSpeech) localPath->click();
 
+        // Walked with Next, as a person would: QWizard goes back only through
+        // pages it visited.
         const int lastPage = assistant.pageTitles().size() - 1;
-#ifdef SPEECHER_WITH_KASSISTANT
         for (int step = 0; step < lastPage; ++step) {
             assistant.next();
         }
-#else
-        assistant.setCurrentId(assistant.pageIds().at(lastPage));
-#endif
         QCoreApplication::processEvents();
 
-        // No provider is signed in on this fake platform, so the very first
-        // gate is shut. Pressing Finish must land the user back on that step
-        // rather than marking setup complete.
+        // Pressing Finish must land the user back on the first unfinished
+        // step rather than marking setup complete.
         QVERIFY(QMetaObject::invokeMethod(&assistant, "accept"));
         QCoreApplication::processEvents();
 
         QVERIFY(!controller.settings()->setupCompleted());
         QVERIFY(assistant.isVisible());
-        WelcomeSetupPage *welcome = nullptr;
-        for (QWidget *widget : assistant.findChildren<QWidget *>()) {
-            if (auto *page = dynamic_cast<WelcomeSetupPage *>(widget)) {
-                welcome = page;
-                break;
-            }
-        }
-        QVERIFY(welcome);
-        QVERIFY(welcome->isVisible());
+        QCOMPARE(welcome->isVisible(), !localSpeech);
+        QCOMPARE(transcription->isVisible(), localSpeech);
     }
 
     void globalShortcutSinglePageOnlyShowsTheShortcutPage()
