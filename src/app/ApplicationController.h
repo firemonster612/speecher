@@ -19,6 +19,7 @@ enum class SetupAssistantPage;
 class DictationSession;
 class AudioInput;
 class GlobalShortcutBinder;
+class LocalModelStore;
 class ProviderRegistry;
 class SecretStore;
 class SettingsStore;
@@ -52,6 +53,8 @@ public:
     void clearPendingWhatsNew();
     SecretStore *secretStore() const;
     ProviderRegistry *providerRegistry() const;
+    // Owned here so a download outlives whichever window started it.
+    LocalModelStore *localModelStore() const;
     const PlatformComposition *platform() const;
     QString stateName() const;
     IpcResponse response(bool ok = true, const QString &message = {}) const;
@@ -138,6 +141,7 @@ private:
     SettingsStore *m_settings = nullptr;
     SecretStore *m_secrets = nullptr;
     ProviderRegistry *m_providers = nullptr;
+    LocalModelStore *m_localModels = nullptr;
     AudioInput *m_audio = nullptr;
     DictationSession *m_session = nullptr;
     UpdateController *m_updates = nullptr;

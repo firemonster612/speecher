@@ -692,6 +692,126 @@ elseif(WIN32)
   target_link_libraries(speecher_providers PRIVATE Advapi32)
 endif()
 
+# Local speech runs in-process on transcribe.cpp; see
+# docs/adr/0006-local-models-and-custom-endpoints.md. Linux and Windows x64
+# build the ggml backends as modules shipped beside libtranscribe (one module
+# per CPU instruction set, plus Vulkan), so one package runs on any x86-64
+# machine and falls back to the CPU where no Vulkan driver loads. Elsewhere
+# (macOS, ARM) everything is static, with Metal compiled in on Apple Silicon.
+option(SPEECHER_WITH_LOCAL_SPEECH "Run speech models on this computer with transcribe.cpp" ON)
+if(SPEECHER_WITH_LOCAL_SPEECH)
+  set(SPEECHER_LOCAL_SPEECH_MODULES OFF)
+  if(NOT APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+    set(SPEECHER_LOCAL_SPEECH_MODULES ON)
+  endif()
+
+  set(SPEECHER_LOCAL_SPEECH_VULKAN_DEFAULT OFF)
+  if(SPEECHER_LOCAL_SPEECH_MODULES)
+    # Where the LunarG SDK puts SPIRV-Headers on Windows, as ggml looks too.
+    if(DEFINED ENV{VULKAN_SDK})
+      list(APPEND CMAKE_PREFIX_PATH "$ENV{VULKAN_SDK}")
+    endif()
+    find_package(Vulkan QUIET COMPONENTS glslc)
+    find_package(SPIRV-Headers CONFIG QUIET)
+    if(Vulkan_FOUND AND Vulkan_glslc_FOUND AND SPIRV-Headers_FOUND)
+      set(SPEECHER_LOCAL_SPEECH_VULKAN_DEFAULT ON)
+    else()
+      message(STATUS "Local speech: Vulkan is off because the Vulkan headers, glslc or "
+        "SPIRV-Headers were not found; models will run on the CPU.")
+    endif()
+  endif()
+  option(SPEECHER_LOCAL_SPEECH_VULKAN "Build transcribe.cpp's Vulkan backend"
+    ${SPEECHER_LOCAL_SPEECH_VULKAN_DEFAULT})
+  if(SPEECHER_RELEASE_BUILD AND NOT SPEECHER_LOCAL_SPEECH_VULKAN)
+    message(FATAL_ERROR "SPEECHER_RELEASE_BUILD requires SPEECHER_LOCAL_SPEECH_VULKAN=ON "
+      "(install libvulkan-dev, glslc and spirv-headers).")
+  endif()
+
+  set(TRANSCRIBE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(TRANSCRIBE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(TRANSCRIBE_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+  # A package must not depend on whichever BLAS the build host has installed.
+  set(TRANSCRIBE_USE_SYSTEM_BLAS OFF CACHE BOOL "" FORCE)
+  set(TRANSCRIBE_VULKAN ${SPEECHER_LOCAL_SPEECH_VULKAN} CACHE BOOL "" FORCE)
+  set(TRANSCRIBE_BUILD_SHARED ${SPEECHER_LOCAL_SPEECH_MODULES} CACHE BOOL "" FORCE)
+  set(TRANSCRIBE_GGML_BACKEND_DL ${SPEECHER_LOCAL_SPEECH_MODULES} CACHE BOOL "" FORCE)
+  set(GGML_CPU_ALL_VARIANTS ${SPEECHER_LOCAL_SPEECH_MODULES} CACHE BOOL "" FORCE)
+  # Never tune the distributed build to the machine that compiled it.
+  set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+
+  include(FetchContent)
+  # v0.2.4's release commit.
+  FetchContent_Declare(transcribe
+    URL https://github.com/handy-computer/transcribe.cpp/archive/7d37cea2248a1fb6aca9652a1d37debccbbb1ff3.tar.gz
+    URL_HASH SHA256=abbe8a1e7352cc2a101ffdc37b2a0de1e6b3f04121e27d24ff1d63821ab6ccfb
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    # Added below with EXCLUDE_FROM_ALL, which keeps ggml's headers and CMake
+    # package files out of `cmake --install`.
+    SOURCE_SUBDIR speecher-adds-this-itself
+  )
+  FetchContent_MakeAvailable(transcribe)
+  # A function scope so that Qt's automatic code generation, switched on for
+  # this project, stays off for transcribe.cpp's plain C and C++ targets.
+  function(speecher_add_transcribe)
+    set(CMAKE_AUTOMOC OFF)
+    set(CMAKE_AUTORCC OFF)
+    set(CMAKE_AUTOUIC OFF)
+    add_subdirectory("${transcribe_SOURCE_DIR}" "${transcribe_BINARY_DIR}" EXCLUDE_FROM_ALL)
+  endfunction()
+  speecher_add_transcribe()
+  # transcribe.cpp names its headers from CMAKE_SOURCE_DIR, which is Speecher's
+  # tree when it is built as a subproject.
+  target_include_directories(transcribe PUBLIC "$<BUILD_INTERFACE:${transcribe_SOURCE_DIR}/include>")
+
+  if(SPEECHER_LOCAL_SPEECH_MODULES)
+    # libtranscribe finds its backend modules in its own directory, so keep
+    # every piece beside the executables in the build tree and beside
+    # libtranscribe once installed.
+    set(SPEECHER_LOCAL_SPEECH_LIBRARIES transcribe ggml ggml-base)
+    # ggml only ever adds to this list, so a backend switched off since the
+    # last configure can still be named in it.
+    foreach(backend IN LISTS GGML_AVAILABLE_BACKENDS)
+      if(TARGET ${backend})
+        list(APPEND SPEECHER_LOCAL_SPEECH_LIBRARIES ${backend})
+      endif()
+    endforeach()
+    # The package carries the libraries, not the headers to build against them.
+    set_target_properties(ggml PROPERTIES PUBLIC_HEADER "")
+    set_target_properties(${SPEECHER_LOCAL_SPEECH_LIBRARIES} PROPERTIES
+      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+    include(GNUInstallDirs)
+    if(WIN32)
+      set(SPEECHER_LOCAL_SPEECH_INSTALL_DIR "${CMAKE_INSTALL_BINDIR}")
+    else()
+      set(SPEECHER_LOCAL_SPEECH_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}")
+    endif()
+    install(TARGETS ${SPEECHER_LOCAL_SPEECH_LIBRARIES}
+      LIBRARY DESTINATION "${SPEECHER_LOCAL_SPEECH_INSTALL_DIR}" NAMELINK_SKIP
+      RUNTIME DESTINATION "${SPEECHER_LOCAL_SPEECH_INSTALL_DIR}"
+    )
+  endif()
+
+  target_sources(speecher_providers PRIVATE
+    src/providers/HardwareProbe.cpp
+    src/providers/HardwareProbe.h
+    src/providers/LocalSpeechEngine.cpp
+    src/providers/LocalSpeechEngine.h
+    src/providers/LocalSpeechTranscriber.cpp
+    src/providers/LocalSpeechTranscriber.h
+  )
+  target_compile_definitions(speecher_providers PUBLIC SPEECHER_WITH_LOCAL_SPEECH=1)
+  target_link_libraries(speecher_providers PRIVATE transcribe)
+  # LibriSpeech test-clean utterance 6930-75918-0018 (CC BY 4.0, Panayotov et
+  # al., openslr.org/12), 16 kHz mono signed 16-bit little-endian PCM.
+  qt_add_resources(speecher_providers speed_test_clip
+    PREFIX "/speedtest"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/assets/speedtest"
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/speedtest/librispeech-6930-75918-0018.s16le"
+  )
+endif()
+
 add_library(speecher_platform STATIC
   ${SPEECHER_PLATFORM_SOURCES}
   ${SPEECHER_PLATFORM_HEADERS}

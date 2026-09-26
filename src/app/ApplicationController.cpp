@@ -20,6 +20,10 @@
 #include "providers/E2EProviders.h"
 #endif
 #include "providers/CodexSpeechTranscriber.h"
+#include "providers/LocalModelStore.h"
+#ifdef SPEECHER_WITH_LOCAL_SPEECH
+#include "providers/LocalSpeechTranscriber.h"
+#endif
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
 #include "platform/GlobalShortcutBinder.h"
@@ -66,6 +70,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_settings(new SettingsStore(this))
     , m_secrets(new SecretStore(m_settings, this))
     , m_providers(new ProviderRegistry(this))
+    , m_localModels(new LocalModelStore(this))
     , m_shortcutBinder(m_platform->createGlobalShortcutBinder(this))
     , m_ipc(new SingleInstanceIpc(m_platform, this))
     , m_pushToTalkStart(new QTimer(this))
@@ -299,6 +304,11 @@ void ApplicationController::clearPendingWhatsNew()
 SecretStore *ApplicationController::secretStore() const
 {
     return m_secrets;
+}
+
+LocalModelStore *ApplicationController::localModelStore() const
+{
+    return m_localModels;
 }
 
 ProviderRegistry *ApplicationController::providerRegistry() const
@@ -852,6 +862,24 @@ void ApplicationController::registerProviders()
         [](QObject *parent) {
             return new CodexSpeechTranscriber(parent);
         });
+#ifdef SPEECHER_WITH_LOCAL_SPEECH
+    m_providers->registerSpeechProvider(
+        {QStringLiteral("local"),
+         QStringLiteral("Local model"),
+         QStringLiteral("Download a model on the Local models page. It runs on this computer, with no account."),
+         false,
+         QStringLiteral("Runs on this computer: no account, works offline after a one-time "
+                        "download. English; speed depends on the model and this computer."),
+         {{QStringLiteral("Score"), QStringLiteral("7 / 10")},
+          {QStringLiteral("Engine"), QStringLiteral("transcribe.cpp with a downloaded model")},
+          {QStringLiteral("Languages"), QStringLiteral("English")},
+          {QStringLiteral("Speed"), QStringLiteral("Depends on the model and this computer")},
+          {QStringLiteral("Accuracy"), QStringLiteral("Close to the cloud services on clear speech")},
+          {QStringLiteral("Formatting"), QStringLiteral("Punctuation and capitals")}}},
+        [this](QObject *parent) {
+            return new LocalSpeechTranscriber(*m_localModels, parent);
+        });
+#endif
     m_providers->registerRefinementProvider(
         {QStringLiteral("openai"), QStringLiteral("OpenAI"),
          QStringLiteral("Uses your ChatGPT or Codex sign-in."), true,
