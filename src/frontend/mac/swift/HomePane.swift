@@ -308,16 +308,7 @@ struct HomePane: View {
                 let detail = Text("You dictate most around \(labels[peak]), and \(insights.busiestWeekday)s are your busiest day.")
                     .foregroundStyle(.secondary)
                 Text("\(verdict) \(detail)")
-                Chart(0..<24, id: \.self) { hour in
-                    BarMark(x: .value("Hour", labels[hour]),
-                            y: .value("Dictations", counts.indices.contains(hour) ? counts[hour] : 0))
-                        .foregroundStyle(Color.accentColor.opacity(hour == peak ? 1 : 0.42))
-                }
-                .chartXAxis {
-                    AxisMarks(values: [0, 6, 12, 18].map { labels[$0] })
-                }
-                .chartYAxis(.hidden)
-                .frame(height: 96)
+                HourChart(counts: counts, labels: labels, peak: peak)
             } else {
                 Text("After a few days of dictation this shows the hours you talk most.")
             }
@@ -465,6 +456,9 @@ private struct ActivityHeatmap: View {
     let strengths: [NSNumber]
     let measure: HeatMeasure
     @State private var width: CGFloat = 0
+    /// The day under the pointer, outlined and described at once rather than
+    /// after the system's tooltip delay.
+    @State private var hovered: Date?
 
     static let cell: CGFloat = 11
     private static let rowLabels = ["Mon", "", "Wed", "", "Fri", "", ""]
@@ -497,8 +491,28 @@ private struct ActivityHeatmap: View {
                         ForEach(columns[index], id: \.date) { day in
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(heatColor(measure.level(day), strengths))
+                                .overlay {
+                                    if hovered == day.date {
+                                        RoundedRectangle(cornerRadius: 2)
+                                            .strokeBorder(Color.primary, lineWidth: 1.5)
+                                    }
+                                }
                                 .frame(width: Self.cell, height: Self.cell)
-                                .help(tooltip(day))
+                                .onHover { inside in
+                                    if inside {
+                                        hovered = day.date
+                                    } else if hovered == day.date {
+                                        hovered = nil
+                                    }
+                                }
+                                .popover(isPresented: Binding(
+                                    get: { hovered == day.date },
+                                    set: { if !$0, hovered == day.date { hovered = nil } }),
+                                         arrowEdge: .top) {
+                                    Text(tooltip(day))
+                                        .font(.caption)
+                                        .padding(8)
+                                }
                         }
                     }
                 }
@@ -575,5 +589,40 @@ private struct ProfileBadge: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
             .background(Capsule().fill(Color(nsColor: .controlAccentColor).opacity(0.3)))
+    }
+}
+
+/// Dictations by hour. The bar under the pointer takes the full accent, as the
+/// peak does, and its count shows above the chart at once.
+private struct HourChart: View {
+    let counts: [Int]
+    let labels: [String]
+    let peak: Int
+    @State private var hovered: String?
+
+    var body: some View {
+        let hour = hovered.flatMap { labels.firstIndex(of: $0) }
+        Chart(0..<24, id: \.self) { index in
+            BarMark(x: .value("Hour", labels[index]),
+                    y: .value("Dictations", counts.indices.contains(index) ? counts[index] : 0))
+                .foregroundStyle(Color.accentColor.opacity(index == peak || index == hour ? 1 : 0.42))
+                .annotation(position: .top, alignment: .center) {
+                    if index == hour {
+                        let count = counts.indices.contains(index) ? counts[index] : 0
+                        Text("\(labels[index]) to \(labels[(index + 1) % 24]): \(count) \(count == 1 ? "dictation" : "dictations")")
+                            .font(.caption)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.regularMaterial, in: Capsule())
+                            .fixedSize()
+                    }
+                }
+        }
+        .chartXSelection(value: $hovered)
+        .chartXAxis {
+            AxisMarks(values: [0, 6, 12, 18].map { labels[$0] })
+        }
+        .chartYAxis(.hidden)
+        .frame(height: 96)
     }
 }

@@ -11,6 +11,7 @@
 #include "ui/AppWindow.h"
 #include "ui/InlineMessage.h"
 #include "ui/HomePage.h"
+#include "ui/InsightsCharts.h"
 #include "ui/settings/SettingsPageSet.h"
 #include "ui/Theme.h"
 #ifdef Q_OS_LINUX
@@ -21,6 +22,7 @@
 #include <QDir>
 #include <QFile>
 #include <QLabel>
+#include <QToolTip>
 #include <QSet>
 #include <QLineEdit>
 #include <QListWidget>
@@ -297,6 +299,40 @@ private slots:
         emit controller.session()->dictationRecorded(record);
         QVERIFY(controller.clearInsights());
         QVERIFY(!controller.lastRecord());
+    }
+
+    void chartsDescribeTheCellUnderThePointerAtOnce()
+    {
+        // Hovering a heatmap day or an hour bar marks it and shows its tip
+        // on the move itself, not after the platform's tooltip delay.
+        const QDate today(2026, 9, 26);
+        QList<HeatmapDay> days;
+        for (int offset = 6; offset >= 0; --offset) {
+            days.append({today.addDays(-offset), offset == 0 ? 3 : 1, 30, 60000});
+        }
+        InsightsHeatmap week(InsightsHeatmap::Shape::Week);
+        week.setDays(days);
+        week.resize(week.sizeHint());
+        week.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&week));
+        // Monday's dot: the first of seven equal columns, just under the top.
+        const QPoint monday(week.width() / 14, 6);
+        QTest::mouseMove(&week, monday);
+        QTRY_VERIFY_WITH_TIMEOUT(QToolTip::isVisible(), 200);
+        QVERIFY(QToolTip::text().contains(QStringLiteral("dictation")));
+        QTest::mouseMove(&week, QPoint(week.width() - 1, week.height() - 1));
+        QTRY_VERIFY_WITH_TIMEOUT(!QToolTip::isVisible(), 1000);
+
+        InsightsBarChart hours;
+        std::array<int, 24> counts{};
+        counts[10] = 4;
+        hours.setCounts(counts, 10);
+        hours.resize(480, hours.sizeHint().height());
+        hours.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&hours));
+        QTest::mouseMove(&hours, QPoint(480 * 10 / 24 + 5, 10));
+        QTRY_VERIFY_WITH_TIMEOUT(QToolTip::isVisible(), 200);
+        QVERIFY(QToolTip::text().contains(QStringLiteral("4 dictations")));
     }
 
     void aNewSessionForgetsTheLastRecord()

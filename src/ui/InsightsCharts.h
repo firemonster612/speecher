@@ -35,6 +35,8 @@ public:
 
 protected:
     bool event(QEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void leaveEvent(QEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
 
 private:
@@ -62,6 +64,9 @@ private:
     QColor levelColor(int level) const;
 
     Shape m_shape;
+    // The cell under the pointer, outlined and described at once rather than
+    // after the tooltip delay; -1 when none is.
+    int m_hovered = -1;
     HeatMeasure m_measure = HeatMeasure::Dictations;
     QList<HeatmapDay> m_days;
     HeatScale m_scale{{}, HeatMeasure::Dictations};
@@ -100,14 +105,19 @@ public:
 
 protected:
     bool event(QEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void leaveEvent(QEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
 
 private:
     int barArea() const;
     QRectF slot(int hour) const;
+    int hourAt(const QPointF &position) const;
+    void showHour(int hour, const QPoint &globalPosition);
 
     std::array<int, 24> m_counts{};
     int m_peakHour = 0;
+    int m_hovered = -1;
 };
 
 } // namespace speecher

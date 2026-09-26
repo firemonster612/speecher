@@ -4,6 +4,7 @@
 
 #include <QHelpEvent>
 #include <QLocale>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QToolTip>
 
@@ -233,19 +234,48 @@ int InsightsHeatmap::heightForWidth(int width) const
 
 bool InsightsHeatmap::event(QEvent *event)
 {
+    // Hover shows the tip at once (mouseMoveEvent); the delayed tooltip event
+    // would only repeat it late, or pop a stale one after the pointer left.
     if (event->type() == QEvent::ToolTip) {
-        const auto *help = static_cast<QHelpEvent *>(event);
-        for (const Cell &cell : layOut(width()).cells) {
-            if (!cell.tip.isEmpty() && cell.rect.adjusted(-1, -1, 1, 1).contains(help->pos())) {
-                QToolTip::showText(help->globalPos(), cell.tip, this, cell.rect.toAlignedRect());
-                return true;
-            }
-        }
-        QToolTip::hideText();
         event->ignore();
         return true;
     }
     return QWidget::event(event);
+}
+
+void InsightsHeatmap::mouseMoveEvent(QMouseEvent *event)
+{
+    const QList<Cell> cells = layOut(width()).cells;
+    int hovered = -1;
+    for (int index = 0; index < cells.size(); ++index) {
+        // The gap between cells belongs to a cell, so the tip does not flicker
+        // off while the pointer crosses it.
+        const qreal pad = kCellGap / 2.0;
+        if (!cells.at(index).tip.isEmpty()
+            && cells.at(index).rect.adjusted(-pad, -pad, pad, pad).contains(event->position())) {
+            hovered = index;
+            break;
+        }
+    }
+    if (hovered == m_hovered) return;
+    m_hovered = hovered;
+    update();
+    if (hovered < 0) {
+        QToolTip::hideText();
+        return;
+    }
+    const Cell &cell = cells.at(hovered);
+    QToolTip::showText(event->globalPosition().toPoint(), cell.tip, this,
+                       cell.rect.toAlignedRect());
+}
+
+void InsightsHeatmap::leaveEvent(QEvent *event)
+{
+    QWidget::leaveEvent(event);
+    if (m_hovered < 0) return;
+    m_hovered = -1;
+    QToolTip::hideText();
+    update();
 }
 
 void InsightsHeatmap::paintEvent(QPaintEvent *)
@@ -264,6 +294,16 @@ void InsightsHeatmap::paintEvent(QPaintEvent *)
             painter.drawEllipse(cell.rect.adjusted(-2, -2, 2, 2));
             painter.setPen(Qt::NoPen);
         }
+    }
+    // The hovered cell is outlined in the text colour, which reads on every
+    // level from empty to full accent.
+    if (m_hovered >= 0 && m_hovered < geometry.cells.size()) {
+        const QRectF hovered = geometry.cells.at(m_hovered).rect.adjusted(-0.5, -0.5, 0.5, 0.5);
+        const qreal radius = m_shape == Shape::Week ? hovered.width() / 2 : 2.5;
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(palette().color(QPalette::Text), 1.5));
+        painter.drawRoundedRect(hovered, radius, radius);
+        painter.setPen(Qt::NoPen);
     }
     painter.setPen(palette().color(QPalette::PlaceholderText));
     for (const Label &label : geometry.labels) {
@@ -308,24 +348,53 @@ QSize InsightsBarChart::minimumSizeHint() const
 
 bool InsightsBarChart::event(QEvent *event)
 {
+    // As on the heatmap: hover describes a bar at once, so the delayed
+    // tooltip event has nothing to add.
     if (event->type() == QEvent::ToolTip) {
-        const auto *help = static_cast<QHelpEvent *>(event);
-        for (int hour = 0; hour < 24; ++hour) {
-            const QRectF hit = slot(hour).adjusted(0, 0, kBarGap, 0);
-            if (hit.contains(help->pos())) {
-                QToolTip::showText(help->globalPos(),
-                                   QStringLiteral("<b>%1 to %2</b><br>%3")
-                                       .arg(hourLabel(hour), hourLabel((hour + 1) % 24),
-                                            plural(m_counts[hour], QStringLiteral("dictation"), QStringLiteral("dictations"))),
-                                   this, hit.toAlignedRect());
-                return true;
-            }
-        }
-        QToolTip::hideText();
         event->ignore();
         return true;
     }
     return QWidget::event(event);
+}
+
+int InsightsBarChart::hourAt(const QPointF &position) const
+{
+    for (int hour = 0; hour < 24; ++hour) {
+        if (slot(hour).adjusted(0, 0, kBarGap, 0).contains(position)) return hour;
+    }
+    return -1;
+}
+
+void InsightsBarChart::showHour(int hour, const QPoint &globalPosition)
+{
+    QToolTip::showText(globalPosition,
+                       QStringLiteral("<b>%1 to %2</b><br>%3")
+                           .arg(hourLabel(hour), hourLabel((hour + 1) % 24),
+                                plural(m_counts[hour], QStringLiteral("dictation"),
+                                       QStringLiteral("dictations"))),
+                       this, slot(hour).adjusted(0, 0, kBarGap, 0).toAlignedRect());
+}
+
+void InsightsBarChart::mouseMoveEvent(QMouseEvent *event)
+{
+    const int hour = hourAt(event->position());
+    if (hour == m_hovered) return;
+    m_hovered = hour;
+    update();
+    if (hour < 0) {
+        QToolTip::hideText();
+        return;
+    }
+    showHour(hour, event->globalPosition().toPoint());
+}
+
+void InsightsBarChart::leaveEvent(QEvent *event)
+{
+    QWidget::leaveEvent(event);
+    if (m_hovered < 0) return;
+    m_hovered = -1;
+    QToolTip::hideText();
+    update();
 }
 
 void InsightsBarChart::paintEvent(QPaintEvent *)
@@ -339,8 +408,10 @@ void InsightsBarChart::paintEvent(QPaintEvent *)
         if (m_counts[hour] == 0) continue;
         const QRectF box = slot(hour);
         const qreal height = std::max(3.0, m_counts[hour] * (area - 4.0) / most);
-        painter.setBrush(hour == m_peakHour ? palette().color(QPalette::Highlight)
-                                            : accentTint(palette(), kMutedBarPercent));
+        // A hovered bar takes the full accent, as the peak does.
+        painter.setBrush(hour == m_peakHour || hour == m_hovered
+                             ? palette().color(QPalette::Highlight)
+                             : accentTint(palette(), kMutedBarPercent));
         painter.drawRoundedRect(QRectF(box.left(), area - height, box.width(), height), 2, 2);
     }
     painter.setPen(QPen(settings::frameColor(palette()), 1));
