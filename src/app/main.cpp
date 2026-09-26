@@ -5,8 +5,11 @@
 #include "app/UpdateController.h"
 #include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
+#include "app/ProviderSetup.h"
+#include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
+#include "providers/ProviderRegistry.h"
 #ifndef SPEECHER_WITH_WINUI
 #include "frontend/qt/QtFrontEnd.h"
 #include "ui/Theme.h"
@@ -46,7 +49,15 @@
 #include <QTimer>
 #include <QMutex>
 
+#include <cstdio>
 #include <iostream>
+#ifdef Q_OS_WIN
+#include <io.h>
+#define isatty _isatty
+#define fileno _fileno
+#else
+#include <unistd.h>
+#endif
 
 using namespace speecher;
 
@@ -194,6 +205,17 @@ int main(int argc, char **argv)
         // No QApplication: talking to a running instance must not need a display.
         QCoreApplication app(argc, argv);
         return runCliCommand(decision, platform);
+    }
+    if (decision.mode == LaunchMode::TranscribeHeadless) {
+        // Its own settings reader, secrets and providers: no IPC, no display,
+        // and nothing shared with a running instance's dictation.
+        QCoreApplication app(argc, argv);
+        SettingsStore settings;
+        SecretStore secrets(&settings);
+        ProviderRegistry providers;
+        registerProviders(providers, &secrets);
+        return runHeadlessTranscribe(decision.transcribeFiles, decision.headless, &settings, &providers,
+                                     std::cout, std::cerr, isatty(fileno(stderr)));
     }
 
 #ifdef SPEECHER_WITH_WINUI

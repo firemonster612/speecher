@@ -182,6 +182,19 @@ open build/speecher.app     # macOS
 
 The four CLI commands contact the running app through a per-user socket (on macOS the binary lives at `build/speecher.app/Contents/MacOS/speecher`). `toggle` switches recording on or off, `start` only starts it, `stop` only stops it, and `status` prints the current state. If `toggle` or `start` can't find a running instance, it starts a popup-only background process and begins listening. Calling `stop` or `status` without a running instance prints `idle`.
 
+### Transcribing audio files
+
+`speecher transcribe memo.wav` (or opening an audio file with Speecher from a file manager) opens a small Transcribe window with the file listed. Any option below runs it without a window instead: the files are transcribed in the calling process, progress goes to stderr, and each transcript is saved as `<name>-transcribed.txt` next to its audio file. It uses its own provider connections, so it never interrupts a running Speecher's dictation.
+
+```sh
+speecher transcribe --headless memo.wav                  # settings' choices, save beside
+speecher transcribe --refine none --stdout *.m4a         # raw speech, printed too
+speecher transcribe --profile email --output ~/notes talk.mp3
+speecher transcribe --json --output none a.wav b.wav     # one JSON object per file, then a summary
+```
+
+`--model` picks the speech provider, `--refine` the refinement provider (or `none`), `--cleanup` the cleanup level (`none`, `light`, `medium`, `high`), `--profile` a writing profile whose saved cleanup and tone seed the run, and `--tone` a tone. `--no-vocabulary` skips custom vocabulary, `--raw` prints and saves the unrefined transcript. Unset choices come from your settings. The exit status is 0 when every file was transcribed, 1 when any failed, and 2 for a usage error. `speecher --help` lists every option.
+
 On Linux, Speecher uses one window with a KDE-style sidebar, searchable settings pages, and dictation controls; `speecher settings` opens it on General settings. On macOS, Speecher is a menu bar app: dictation lives in the menu bar item and a floating panel, and settings open in a native window from the menu bar, the Dock, or ⌘,.
 On Windows, Speecher uses a WinUI 3 settings window, a notification-area icon,
 and a non-activating dictation panel.

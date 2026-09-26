@@ -587,6 +587,56 @@ private slots:
         QCOMPARE(verb.transcribeFiles, QStringList{QDir::current().absoluteFilePath(QStringLiteral("later.mp3"))});
     }
 
+    void transcribeOptionsRunWithoutAWindow()
+    {
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        QFile file(audio);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.close();
+        const auto parse = [&audio](QStringList options) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher"), QStringLiteral("transcribe")} + options
+                                        + QStringList{audio},
+                                    {});
+        };
+
+        const CommandLineDecision decision = parse({QStringLiteral("--cleanup"), QStringLiteral("light"),
+                                                    QStringLiteral("--profile"), QStringLiteral("ai-coding"),
+                                                    QStringLiteral("--tone"), QStringLiteral("very-casual"),
+                                                    QStringLiteral("--refine"), QStringLiteral("none"),
+                                                    QStringLiteral("--output"), dir.path(),
+                                                    QStringLiteral("--no-vocabulary"), QStringLiteral("--json")});
+        QCOMPARE(decision.mode, LaunchMode::TranscribeHeadless);
+        QCOMPARE(decision.transcribeFiles, QStringList{audio});
+        QCOMPARE(decision.headless.cleanupStrength, std::optional(QStringLiteral("light_cleanup")));
+        QCOMPARE(decision.headless.writingProfile, std::optional(QStringLiteral("ai_coding")));
+        QCOMPARE(decision.headless.tone, std::optional(QStringLiteral("very_casual")));
+        QCOMPARE(decision.headless.refinementProviderId, std::optional(QStringLiteral("none")));
+        QCOMPARE(decision.headless.destination, TranscriptDestination::Folder);
+        QCOMPARE(decision.headless.folder, dir.path());
+        QVERIFY(!decision.headless.applyVocabulary);
+        QVERIFY(decision.headless.json);
+        QCOMPARE(parse({QStringLiteral("--headless")}).mode, LaunchMode::TranscribeHeadless);
+        // Without options the files still open in the window.
+        QCOMPARE(parse({}).mode, LaunchMode::RunGui);
+
+        for (const QStringList &mistake : {QStringList{QStringLiteral("--cleanup"), QStringLiteral("extreme")},
+                                           QStringList{QStringLiteral("--frobnicate")},
+                                           QStringList{QStringLiteral("--output"), dir.filePath(QStringLiteral("nowhere"))}}) {
+            const CommandLineDecision refused = parse(mistake);
+            QCOMPARE(refused.mode, LaunchMode::Exit);
+            QCOMPARE(refused.exitCode, 2);
+        }
+        QCOMPARE(parseCommandLine({QStringLiteral("speecher"), QStringLiteral("transcribe"), QStringLiteral("--json")}, {})
+                     .exitCode,
+                 2);
+        QCOMPARE(parseCommandLine({QStringLiteral("speecher"), QStringLiteral("transcribe"), QStringLiteral("--json"),
+                                   dir.filePath(QStringLiteral("missing.wav"))},
+                                  {})
+                     .exitCode,
+                 2);
+    }
+
     void quitIsAClientCommand()
     {
         const CommandLineDecision decision = parseCommandLine(

@@ -1,6 +1,7 @@
 #include "common/test_suites.h"
 #include "common/test_doubles.h"
 
+#include "app/HeadlessTranscribe.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "transcribe/FileTranscriptionSession.h"
@@ -11,9 +12,12 @@
 #include <QFile>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QtEndian>
 
 #include <cmath>
+#include <sstream>
 
 using namespace speecher;
 using namespace speecher::test;
@@ -320,6 +324,54 @@ private slots:
         QCOMPARE(overallFileProgress(1.0, TranscribePhase::Transcribing, false, 0), 0.90);
         QVERIFY(overallFileProgress(1.0, TranscribePhase::Finishing, true, 600000) <= 0.80);
         QVERIFY(overallFileProgress(1.0, TranscribePhase::Finishing, false, 600000) <= 0.97);
+    }
+
+    void headlessRunSavesPrintsAndReportsFailure()
+    {
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        const QString broken = dir.filePath(QStringLiteral("broken.wav"));
+        QFile file(broken);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("not audio at all");
+        file.close();
+        SettingsStore settings;
+        HeadlessTranscribeOptions options;
+        options.speechProviderId = QStringLiteral("claude");
+        options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("balanced");
+        options.json = true;
+        std::ostringstream out;
+        std::ostringstream err;
+
+        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 0);
+        QStringList lines = QString::fromStdString(out.str()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        QCOMPARE(lines.size(), 2);
+        const QJsonObject result = QJsonDocument::fromJson(lines.at(0).toUtf8()).object();
+        QCOMPARE(result.value(QStringLiteral("file")).toString(), audio);
+        QCOMPARE(result.value(QStringLiteral("ok")).toBool(), true);
+        QCOMPARE(result.value(QStringLiteral("text")).toString(), QStringLiteral("Heard it."));
+        const QString saved = dir.filePath(QStringLiteral("memo-transcribed.txt"));
+        QCOMPARE(result.value(QStringLiteral("saved")).toString(), saved);
+        QCOMPARE(readFile(saved), QStringLiteral("Heard it."));
+        QCOMPARE(QJsonDocument::fromJson(lines.at(1).toUtf8()).object(),
+                 QJsonObject({{QStringLiteral("summary"), true}, {QStringLiteral("files"), 1},
+                              {QStringLiteral("succeeded"), 1}, {QStringLiteral("failed"), 0}}));
+        QVERIFY(QString::fromStdString(err.str()).contains(QStringLiteral("saved ")));
+
+        // Raw text to stdout, saved nowhere; the unreadable file fails alone.
+        options.json = false;
+        options.printTranscripts = true;
+        options.raw = true;
+        options.destination = TranscriptDestination::None;
+        out.str({});
+        QCOMPARE(runHeadlessTranscribe({broken, audio}, options, &settings, m_registry.get(), out, err, false), 1);
+        const QString printed = QString::fromStdString(out.str());
+        QVERIFY2(printed.startsWith(QStringLiteral("# memo.wav\n\nheard ")), qPrintable(printed));
+        QVERIFY(!printed.contains(QStringLiteral("broken.wav")));
+        QVERIFY(QString::fromStdString(err.str()).contains(QStringLiteral("broken.wav: failed: ")));
+        QVERIFY(!QFile::exists(dir.filePath(QStringLiteral("memo-transcribed (2).txt"))));
     }
 
 private:

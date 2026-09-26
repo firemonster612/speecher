@@ -477,6 +477,7 @@ set(SPEECHER_APP_SOURCES
   src/app/ApplicationController.cpp
   src/app/CommandLine.cpp
   src/app/CompositionSockets.cpp
+  src/app/HeadlessTranscribe.cpp
   src/app/ManifestUpdater.cpp
   src/app/PlatformSelection.cpp
   src/app/ProviderSetup.cpp
@@ -490,6 +491,7 @@ set(SPEECHER_APP_HEADERS
   src/app/ApplicationController.h
   src/app/CommandLine.h
   src/app/CompositionSockets.h
+  src/app/HeadlessTranscribe.h
   src/app/ManifestUpdater.h
   src/app/ShortcutSuspendingDelivery.h
   src/app/PlatformComposition.h
