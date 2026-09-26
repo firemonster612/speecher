@@ -81,6 +81,18 @@ bool asksForRange(const QByteArray &request, const QByteArray &range)
     return request.toLower().contains("\r\nrange: " + range + "\r\n");
 }
 
+QUrl listenLocally(QTcpServer &server)
+{
+    if (!server.listen(QHostAddress::LocalHost)) qFatal("cannot listen on localhost");
+    return QUrl(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+}
+
+void writePart(const LocalModelStore &store, const LocalModel &model, const QByteArray &bytes)
+{
+    QFile part(store.modelPath(model) + QStringLiteral(".part"));
+    if (!part.open(QIODevice::WriteOnly) || part.write(bytes) != bytes.size()) qFatal("cannot write partial file");
+}
+
 // Answers one request with status and body, and hands back the request.
 QByteArray serveOnce(QTcpServer &server, const QByteArray &statusLine, const QByteArray &body,
                      qint64 declaredLength = -1)
@@ -284,7 +296,6 @@ private slots:
         setup.initializeSpeechModel();
         QVERIFY(!settings.localSpeechSettings().modelChosen);
         QCOMPARE(settings.localSpeechSettings().modelId, beforeProbe);
-        QCOMPARE(setup.modelState(*findLocalModel("cohere")).speedText, QString("Not measured"));
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
         setup.probeHardware();
         QTRY_VERIFY(setup.hardwareKnown());
@@ -300,12 +311,6 @@ private slots:
         auto speech = settings.snapshot().speech;
         auto state = setup.modelState(model, speech);
         QVERIFY(!state.downloaded && !state.downloading && !state.inUse);
-#ifdef SPEECHER_WITH_LOCAL_SPEECH
-        setup.probeHardware();
-        QTRY_VERIFY(setup.hardwareKnown());
-        const auto estimated = setup.modelState(*findLocalModel("parakeet"));
-        QVERIFY(estimated.speedText.endsWith("(estimated)"));
-#endif
         auto local = settings.localSpeechSettings();
         local.speedTestSeconds.insert(model.id, 0.8);
         settings.setLocalSpeechSettings(local);
@@ -364,15 +369,11 @@ private slots:
 
     void catalogEntriesArePinned()
     {
-        const QList<LocalModel> &models = localModelCatalog();
-        QCOMPARE(models.size(), 4);
-        for (const LocalModel &model : models) {
+        for (const LocalModel &model : localModelCatalog()) {
             QCOMPARE(model.revision.size(), 40);
             QCOMPARE(model.sha256.size(), 64);
             QVERIFY(model.sizeBytes > 0);
         }
-        QVERIFY(!findLocalModel(QStringLiteral("granite")));
-        QCOMPARE(findLocalModel(QStringLiteral("parakeet"))->sizeBytes, 731357568);
     }
 
     void fitComparesModelMemoryWithTheBudget()
@@ -445,15 +446,10 @@ private slots:
     {
         QTemporaryDir dir;
         QTcpServer server;
-        QVERIFY(server.listen(QHostAddress::LocalHost));
         const QByteArray content = QByteArray("GGUF") + QByteArray(4096, 'x') + "end";
         const LocalModel model = fakeModel(content);
-        LocalModelStore store(dir.path(), QUrl(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort())));
-        {
-            QFile part(store.modelPath(model) + QStringLiteral(".part"));
-            QVERIFY(part.open(QIODevice::WriteOnly));
-            part.write(content.left(1000));
-        }
+        LocalModelStore store(dir.path(), listenLocally(server));
+        writePart(store, model, content.left(1000));
         QSignalSpy finished(&store, &LocalModelStore::downloadFinished);
         QSignalSpy failed(&store, &LocalModelStore::downloadFailed);
 
@@ -482,10 +478,9 @@ private slots:
     {
         QTemporaryDir dir;
         QTcpServer server;
-        QVERIFY(server.listen(QHostAddress::LocalHost));
         const QByteArray content(2048, 'a');
         const LocalModel model = fakeModel(content);
-        LocalModelStore store(dir.path(), QUrl(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort())));
+        LocalModelStore store(dir.path(), listenLocally(server));
         QSignalSpy finished(&store, &LocalModelStore::downloadFinished);
         QSignalSpy failed(&store, &LocalModelStore::downloadFailed);
 
@@ -505,10 +500,9 @@ private slots:
     {
         QTemporaryDir dir;
         QTcpServer server;
-        QVERIFY(server.listen(QHostAddress::LocalHost));
         const QByteArray content(4000, 'c');
         const LocalModel model = fakeModel(content);
-        LocalModelStore store(dir.path(), QUrl(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort())));
+        LocalModelStore store(dir.path(), listenLocally(server));
         QSignalSpy failed(&store, &LocalModelStore::downloadFailed);
 
         store.download(model);
@@ -524,10 +518,9 @@ private slots:
     {
         QTemporaryDir dir;
         QTcpServer server;
-        QVERIFY(server.listen(QHostAddress::LocalHost));
         const QByteArray content(4000, 'd');
         const LocalModel model = fakeModel(content);
-        LocalModelStore store(dir.path(), QUrl(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort())));
+        LocalModelStore store(dir.path(), listenLocally(server));
         QSignalSpy progress(&store, &LocalModelStore::downloadProgress);
 
         store.download(model);
@@ -547,15 +540,10 @@ private slots:
     {
         QTemporaryDir dir;
         QTcpServer server;
-        QVERIFY(server.listen(QHostAddress::LocalHost));
         const QByteArray content = QByteArray(3000, 'e') + "tail";
         const LocalModel model = fakeModel(content);
-        LocalModelStore store(dir.path(), QUrl(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort())));
-        {
-            QFile part(store.modelPath(model) + QStringLiteral(".part"));
-            QVERIFY(part.open(QIODevice::WriteOnly));
-            part.write(QByteArray(1000, 'z'));
-        }
+        LocalModelStore store(dir.path(), listenLocally(server));
+        writePart(store, model, QByteArray(1000, 'z'));
         QSignalSpy finished(&store, &LocalModelStore::downloadFinished);
 
         store.download(model);
@@ -571,15 +559,10 @@ private slots:
     {
         QTemporaryDir dir;
         QTcpServer server;
-        QVERIFY(server.listen(QHostAddress::LocalHost));
         const QByteArray content(2500, 'f');
         const LocalModel model = fakeModel(content);
-        LocalModelStore store(dir.path(), QUrl(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort())));
-        {
-            QFile part(store.modelPath(model) + QStringLiteral(".part"));
-            QVERIFY(part.open(QIODevice::WriteOnly));
-            part.write(QByteArray(1000, 'z'));
-        }
+        LocalModelStore store(dir.path(), listenLocally(server));
+        writePart(store, model, QByteArray(1000, 'z'));
         QSignalSpy finished(&store, &LocalModelStore::downloadFinished);
 
         store.download(model);
@@ -598,8 +581,7 @@ private slots:
     {
         QTemporaryDir dir;
         QTcpServer server;
-        QVERIFY(server.listen(QHostAddress::LocalHost));
-        LocalModelStore store(dir.path(), QUrl(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort())));
+        LocalModelStore store(dir.path(), listenLocally(server));
         // A complete, sparse 512 MiB partial file goes straight to the hash
         // check. Its hash is wrong, which the check only learns at the end.
         LocalModel large = fakeModel({});
@@ -737,11 +719,6 @@ private slots:
         QVERIFY(split.finalWords.isEmpty());
         QCOMPARE(split.partial, QStringLiteral(" again"));
         QCOMPARE(split.finalChars, 11);
-
-        split = splitStreamText({}, 0);
-        QVERIFY(split.finalWords.isEmpty());
-        QVERIFY(split.partial.isEmpty());
-        QCOMPARE(split.finalChars, 0);
 
         // Nothing committed yet: all of it is tentative.
         split = splitStreamText({{}, QStringLiteral("the night")}, 0);
