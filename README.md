@@ -147,6 +147,13 @@ Required Qt modules are Core, Widgets, Network, and Multimedia. Linux builds req
 
 CMake prints a `Speecher feature summary` for KDE, LayerShellQt, Qt WebSockets, QtKeychain, AT-SPI, and the Wayland helper. A missing optional dependency appears as `0` there and omits that integration. Release AppImages use `SPEECHER_RELEASE_BUILD=ON`, which rejects every missing release integration. AT-SPI supplies target discovery, context, and paste verification on Linux; macOS uses the Accessibility API instead.
 
+Local speech (transcribe.cpp) is off in a default build because it more than
+doubles a clean build. Turn it on with `-DSPEECHER_WITH_LOCAL_SPEECH=ON`; that
+compiles one CPU backend tuned for your machine. Release packages also pass
+`-DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON` so one package runs on any x86-64 CPU, and
+`SPEECHER_RELEASE_BUILD=ON` turns both on. Custom endpoints and local runners
+such as Ollama need no build option.
+
 ## AppImage
 
 Build a portable AppImage with:

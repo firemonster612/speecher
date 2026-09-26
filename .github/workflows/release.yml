@@ -106,7 +106,7 @@ jobs:
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --workdir /workspace \
             speecher-appimage:forky \
-            bash -lc 'git config --global --add safe.directory "*" && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_KDE=ON'
+            bash -lc 'git config --global --add safe.directory "*" && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_KDE=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON'
 
       - name: Build
         run: |
@@ -282,6 +282,7 @@ jobs:
           fi
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DSPEECHER_BUILD_TESTS=ON \
+            -DSPEECHER_WITH_LOCAL_SPEECH=ON \
             -DSPEECHER_SPARKLE_ED_PUBLIC_KEY="${SPARKLE_ED_PUBLIC_KEY:-}"
 
       - name: Build
@@ -418,7 +419,7 @@ jobs:
 
       - name: Configure
         shell: pwsh
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON -DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON
 
       - name: Build
         shell: pwsh

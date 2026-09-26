@@ -667,6 +667,9 @@ private slots:
 
     void localRefreshPreservesPendingSettingsEdits()
     {
+#ifndef SPEECHER_WITH_LOCAL_SPEECH
+        QSKIP("The Local models page needs local speech");
+#endif
         ApplicationController controller(true);
         controller.settings()->raw().clear();
         QWidget parent;

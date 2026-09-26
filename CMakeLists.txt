@@ -721,7 +721,13 @@ endif()
 # per CPU instruction set, plus Vulkan), so one package runs on any x86-64
 # machine and falls back to the CPU where no Vulkan driver loads. Elsewhere
 # (macOS, ARM) everything is static, with Metal compiled in on Apple Silicon.
-option(SPEECHER_WITH_LOCAL_SPEECH "Run speech models on this computer with transcribe.cpp" ON)
+#
+# Off by default so an everyday build stays fast: transcribe.cpp more than
+# doubles a clean build. Release builds turn it on. A local build with it on
+# compiles one CPU backend tuned for this machine unless
+# SPEECHER_LOCAL_SPEECH_ALL_CPUS asks for every instruction set, as packages do.
+option(SPEECHER_WITH_LOCAL_SPEECH "Run speech models on this computer with transcribe.cpp"
+  ${SPEECHER_RELEASE_BUILD})
 if(SPEECHER_WITH_LOCAL_SPEECH)
   set(SPEECHER_LOCAL_SPEECH_MODULES OFF)
   if(NOT APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
@@ -765,9 +771,18 @@ if(SPEECHER_WITH_LOCAL_SPEECH)
   set(TRANSCRIBE_VULKAN ${SPEECHER_LOCAL_SPEECH_VULKAN} CACHE BOOL "" FORCE)
   set(TRANSCRIBE_BUILD_SHARED ${SPEECHER_LOCAL_SPEECH_MODULES} CACHE BOOL "" FORCE)
   set(TRANSCRIBE_GGML_BACKEND_DL ${SPEECHER_LOCAL_SPEECH_MODULES} CACHE BOOL "" FORCE)
-  set(GGML_CPU_ALL_VARIANTS ${SPEECHER_LOCAL_SPEECH_MODULES} CACHE BOOL "" FORCE)
-  # Never tune the distributed build to the machine that compiled it.
-  set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+  # Packages carry every CPU backend so they run on any x86-64 machine; a
+  # local build compiles only the one tuned for the machine it runs on.
+  option(SPEECHER_LOCAL_SPEECH_ALL_CPUS
+    "Build a CPU backend for every x86-64 instruction set, as release packages need"
+    ${SPEECHER_RELEASE_BUILD})
+  if(SPEECHER_LOCAL_SPEECH_MODULES AND SPEECHER_LOCAL_SPEECH_ALL_CPUS)
+    set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
+    set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+  else()
+    set(GGML_CPU_ALL_VARIANTS OFF CACHE BOOL "" FORCE)
+    set(GGML_NATIVE ${SPEECHER_LOCAL_SPEECH_MODULES} CACHE BOOL "" FORCE)
+  endif()
 
   include(FetchContent)
   # v0.2.4's release commit.
