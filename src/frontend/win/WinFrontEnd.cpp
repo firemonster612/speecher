@@ -58,6 +58,12 @@ struct WinFrontEnd::Native {
             settings = std::make_unique<win::SettingsWindow>(controller, transcribe.get());
             settings->setActionHook(
                 [q = frontEnd](const QString &id) { q->actionTriggered(id); });
+            // A theme change in settings reaches the Transcribe window too.
+            settings->setThemeHook([this] {
+                if (transcribeWindow) {
+                    transcribeWindow->applyTheme();
+                }
+            });
         }
         return settings.get();
     }

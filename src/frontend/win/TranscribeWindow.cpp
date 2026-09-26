@@ -100,7 +100,7 @@ struct TranscribeWindow::Native {
         contentRow.Height({1, GridUnitType::Star});
         root.RowDefinitions().Append(titleRow);
         root.RowDefinitions().Append(contentRow);
-        root.RequestedTheme(requestedTheme(controller->settings()->theme()));
+        applyTheme();
         // The code-resolved secondary brushes follow the theme only through a
         // rebuild; this covers the system flipping while set to System.
         root.ActualThemeChanged([this](const auto &, const auto &) { queueRebuild(); });
@@ -142,6 +142,13 @@ struct TranscribeWindow::Native {
         SetWindowPos(handle, nullptr, area.left + (area.right - area.left - width) / 2,
                      area.top + (area.bottom - area.top - height) / 2, width, height,
                      SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    void applyTheme()
+    {
+        if (root) {
+            root.RequestedTheme(requestedTheme(controller->settings()->theme()));
+        }
     }
 
     void windowClosed()
@@ -216,6 +223,11 @@ TranscribeWindow::~TranscribeWindow() = default;
 void TranscribeWindow::show()
 {
     m_native->show();
+}
+
+void TranscribeWindow::applyTheme()
+{
+    m_native->applyTheme();
 }
 
 bool TranscribeWindow::capture(const QString &path)

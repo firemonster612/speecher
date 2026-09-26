@@ -443,7 +443,7 @@ private slots:
 
         frontEnd->showTranscribeFiles({audio});
 
-        QTRY_VERIFY_WITH_TIMEOUT(FindWindowW(nullptr, L"Transcribe — Speecher") != nullptr, 2000);
+        QTRY_VERIFY_WITH_TIMEOUT(FindWindowW(nullptr, L"Transcribe \u2014 Speecher") != nullptr, 2000);
         QCOMPARE(FindWindowW(nullptr, L"Speecher") != nullptr, settingsWasOpen);
     }
 

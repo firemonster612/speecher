@@ -51,6 +51,8 @@ public:
     // What Action rows run. The window handles whatsNew itself and forwards
     // everything (whatsNew included) here; W4's front end wires the rest.
     void setActionHook(std::function<void(const QString &id)> hook);
+    // Runs after this window applies a theme change, so other windows can.
+    void setThemeHook(std::function<void()> hook);
 
 private:
     friend class ::speecher::WinFrontEndTests;

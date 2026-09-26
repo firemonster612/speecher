@@ -147,7 +147,12 @@ struct SettingsWindow::Native {
         host.effectiveTheme = [this] {
             return root ? root.ActualTheme() : ElementTheme::Default;
         };
-        model.themeChanged = [this] { applyTheme(); };
+        model.themeChanged = [this] {
+            applyTheme();
+            if (themeHook) {
+                themeHook();
+            }
+        };
         model.capabilitiesChanged = [this] { queueRebuild(); };
         model.anthropicCredentialsChanged = [this] { queueRebuild(); };
         QObject::connect(controller->updates(),
@@ -791,6 +796,7 @@ struct SettingsWindow::Native {
     // and reopenings, like host does.
     TranscribePane *transcribe;
     std::function<void(const QString &)> actionHook;
+    std::function<void()> themeHook;
     QObject lifetime;
 
     Window window{nullptr};
@@ -872,6 +878,11 @@ void SettingsWindow::inform(const QString &title)
 void SettingsWindow::setActionHook(std::function<void(const QString &)> hook)
 {
     m_native->actionHook = std::move(hook);
+}
+
+void SettingsWindow::setThemeHook(std::function<void()> hook)
+{
+    m_native->themeHook = std::move(hook);
 }
 
 } // namespace speecher::win

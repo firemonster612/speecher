@@ -23,6 +23,8 @@ public:
 
     // Creates the window if none is open, otherwise brings it forward.
     void show();
+    // Follows the app theme setting after it changes.
+    void applyTheme();
     // Shows the window and saves a picture of it for --grab.
     bool capture(const QString &path);
 
