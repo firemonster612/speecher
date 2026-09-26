@@ -22,6 +22,7 @@
 #include <QDir>
 #include <QFile>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QToolTip>
 #include <QSet>
 #include <QLineEdit>
@@ -303,8 +304,15 @@ private slots:
 
     void chartsDescribeTheCellUnderThePointerAtOnce()
     {
-        // Hovering a heatmap day or an hour bar marks it and shows its tip
-        // on the move itself, not after the platform's tooltip delay.
+        // Hovering a heatmap day or an hour bar shows its tip on the move
+        // itself, not after the platform's tooltip delay. The moves go to the
+        // chart directly: a synthetic cursor would reach whatever window an
+        // earlier test left under it.
+        const auto hover = [](QWidget *widget, QPoint at) {
+            QMouseEvent move(QEvent::MouseMove, QPointF(at), widget->mapToGlobal(QPointF(at)),
+                             Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(widget, &move);
+        };
         const QDate today(2026, 9, 26);
         QList<HeatmapDay> days;
         for (int offset = 6; offset >= 0; --offset) {
@@ -316,11 +324,10 @@ private slots:
         week.show();
         QVERIFY(QTest::qWaitForWindowExposed(&week));
         // Monday's dot: the first of seven equal columns, just under the top.
-        const QPoint monday(week.width() / 14, 6);
-        QTest::mouseMove(&week, monday);
+        hover(&week, QPoint(week.width() / 14, 6));
         QTRY_VERIFY_WITH_TIMEOUT(QToolTip::isVisible(), 200);
         QVERIFY(QToolTip::text().contains(QStringLiteral("dictation")));
-        QTest::mouseMove(&week, QPoint(week.width() - 1, week.height() - 1));
+        hover(&week, QPoint(week.width() - 1, week.height() - 1));
         QTRY_VERIFY_WITH_TIMEOUT(!QToolTip::isVisible(), 1000);
 
         InsightsBarChart hours;
@@ -330,9 +337,10 @@ private slots:
         hours.resize(480, hours.sizeHint().height());
         hours.show();
         QVERIFY(QTest::qWaitForWindowExposed(&hours));
-        QTest::mouseMove(&hours, QPoint(480 * 10 / 24 + 5, 10));
+        hover(&hours, QPoint(480 * 10 / 24 + 5, 10));
         QTRY_VERIFY_WITH_TIMEOUT(QToolTip::isVisible(), 200);
         QVERIFY(QToolTip::text().contains(QStringLiteral("4 dictations")));
+        QToolTip::hideText();
     }
 
     void aNewSessionForgetsTheLastRecord()
