@@ -147,7 +147,6 @@ jobs:
             packaging/run-linux-protocol-tests.sh build
 
       - name: Package AppImage
-        if: github.event_name != 'pull_request'
         run: |
           if [ "${GITHUB_REF_NAME}" = "master" ]; then
             updinfo='gh-releases-zsync|firemonster612|speecher|nightly|Speecher-*x86_64.AppImage.zsync'
@@ -163,10 +162,9 @@ jobs:
             bash -lc 'git config --global --add safe.directory "*" && packaging/build-appimage.sh'
 
       - name: Verify packaged AppImage
-        if: github.event_name != 'pull_request'
         run: |
           expected_version=
-          if [ "${GITHUB_REF_NAME}" != master ]; then
+          if [ "${GITHUB_REF_NAME}" != master ] && [ "${GITHUB_EVENT_NAME}" != pull_request ]; then
             expected_version="${GITHUB_REF_NAME#v}"
           fi
           docker run --rm \
@@ -214,10 +212,10 @@ jobs:
             speecher-appimage:forky ccache --show-stats
 
       - name: Upload Linux release artifacts
-        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: linux-release
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 0 }}
           path: |
             dist/Speecher-x86_64.AppImage
             dist/Speecher-x86_64.AppImage.zsync
@@ -315,17 +313,46 @@ jobs:
           security list-keychains -d user -s "$keychain_path"
           rm "$certificate_path"
 
-      - name: Package DMG
-        if: github.event_name != 'pull_request'
-        env:
-          SPEECHER_SIGN_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+      - name: Capture Transcribe pane screenshots
+        if: github.event_name == 'pull_request'
         run: |
-          if [ -z "${SPEECHER_SIGN_IDENTITY:-}" ] || [ "$SPEECHER_SIGN_IDENTITY" = - ]; then
-            echo "MACOS_SIGNING_IDENTITY must name the stable release signing identity." >&2
-            exit 1
+          mkdir -p shots audio
+          say -o audio/meeting-notes.aiff "Quick sync on the transcriber page. The file picker is done and the waveform preview ships behind a flag first."
+          say -o audio/voice-memo.aiff "Reminder for tomorrow. Pick up the dry cleaning before noon and call the dentist."
+          afconvert -f WAVE -d LEI16@16000 audio/meeting-notes.aiff audio/meeting-notes.wav
+          afconvert -f WAVE -d LEI16@16000 audio/voice-memo.aiff audio/voice-memo.wav
+          DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib" DYLD_LIBRARY_PATH="$QT_ROOT_DIR/lib" \
+            SPEECHER_GRAB_PAGE=transcribe ./build/speecher.app/Contents/MacOS/speecher \
+            audio/meeting-notes.wav audio/voice-memo.wav --grab shots/mac-transcribe-setup.png
+          test -s shots/mac-transcribe-setup.png
+          DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib" DYLD_LIBRARY_PATH="$QT_ROOT_DIR/lib" \
+            SPEECHER_GRAB_PAGE=transcribe-window ./build/speecher.app/Contents/MacOS/speecher \
+            audio/meeting-notes.wav audio/voice-memo.wav --grab shots/mac-transcribe-window.png
+          test -s shots/mac-transcribe-window.png
+
+      - name: Upload macOS Transcribe screenshots
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: mac-shots
+          retention-days: 3
+          path: shots/
+
+      - name: Package DMG
+        env:
+          # Pull requests build an ad-hoc-signed DMG; releases require the stable identity.
+          SPEECHER_SIGN_IDENTITY: ${{ github.event_name == 'pull_request' && '-' || secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" != pull_request ]; then
+            if [ -z "${SPEECHER_SIGN_IDENTITY:-}" ] || [ "$SPEECHER_SIGN_IDENTITY" = - ]; then
+              echo "MACOS_SIGNING_IDENTITY must name the stable release signing identity." >&2
+              exit 1
+            fi
           fi
-          bash packaging/macos/build-dmg.sh build
-          test -s build/designated-requirement.txt
+          bash packaging/macos/build-dmg.sh build || { tail -60 build/speecher-dmg.log; exit 1; }
+          if [ "${GITHUB_EVENT_NAME}" != pull_request ]; then
+            test -s build/designated-requirement.txt
+          fi
 
       - name: Sign DMG for Sparkle
         if: github.event_name != 'pull_request'
@@ -348,10 +375,10 @@ jobs:
           printf 'sparkle:edSignature=%s\nlength=%s\n' "$signature" "$signed_length" > build/sparkle-signature.txt
 
       - name: Upload macOS release artifacts
-        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: macos-release
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 0 }}
           path: |
             build/speecher.dmg
             build/sparkle-signature.txt
@@ -427,20 +454,18 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
       - name: Package installer
-        if: github.event_name != 'pull_request'
         shell: pwsh
         run: packaging/windows/build-installer.ps1 -BuildDir build
 
       - name: Verify installer
-        if: github.event_name != 'pull_request'
         shell: pwsh
         run: packaging/windows/verify-installer.ps1 -InstallerPath dist/Speecher-Setup-x64.exe
 
       - name: Upload Windows release artifacts
-        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: windows-release
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 0 }}
           path: |
             dist/Speecher-Setup-x64.exe
             dist/Speecher-Setup-x64.exe.sha256

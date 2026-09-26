@@ -259,6 +259,32 @@ private slots:
         QCOMPARE(commands.at(1).at(0).toString(), QStringLiteral("stop"));
     }
 
+    void singleInstanceIpcCarriesTheFilesToTranscribe()
+    {
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QVERIFY(ipc.listen());
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
+        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
+                [](const QString &, const QString &, QLocalSocket *socket, const QStringList &) {
+                    SingleInstanceIpc::writeResponse(socket, {true, QStringLiteral("idle"), {}});
+                });
+        const QStringList files{QStringLiteral("/tmp/a.wav"), QStringLiteral("/tmp/b c.mp3")};
+
+        QThread *client = QThread::create([platform, files] {
+            SingleInstanceIpc::sendCommandDetailed(
+                QStringLiteral("transcribe"), std::nullopt, files, nullptr, 2000, platform);
+        });
+        client->start();
+        QTRY_COMPARE(commands.count(), 1);
+        client->wait();
+        delete client;
+        QCOMPARE(commands.first().at(0).toString(), QStringLiteral("transcribe"));
+        QCOMPARE(commands.first().at(3).toStringList(), files);
+    }
+
     void singleInstanceIpcExpiresIncompleteRequests()
     {
         const QString name = uniqueIpcName();
@@ -322,7 +348,7 @@ private slots:
         QVERIFY(ipc.listen());
         QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
         connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
-                [&ipc](const QString &, const QString &, QLocalSocket *socket) {
+                [&ipc](const QString &, const QString &, QLocalSocket *socket, const QStringList &) {
                     ipc.writeResponse(socket, {true, QStringLiteral("idle"), {}});
                 });
 

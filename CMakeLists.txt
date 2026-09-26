@@ -483,9 +483,13 @@ set(SPEECHER_APP_SOURCES
   src/app/ApplicationController.cpp
   src/app/CommandLine.cpp
   src/app/CompositionSockets.cpp
+  src/app/HeadlessTranscribe.cpp
   src/app/ManifestUpdater.cpp
   src/app/PlatformSelection.cpp
+  src/app/ProviderSetup.cpp
   src/app/SingleInstanceIpc.cpp
+  src/transcribe/FileTranscriptionSession.cpp
+  src/transcribe/TranscribePresentation.cpp
 )
 
 set(SPEECHER_APP_HEADERS
@@ -493,11 +497,15 @@ set(SPEECHER_APP_HEADERS
   src/app/ApplicationController.h
   src/app/CommandLine.h
   src/app/CompositionSockets.h
+  src/app/HeadlessTranscribe.h
   src/app/ManifestUpdater.h
   src/app/ShortcutSuspendingDelivery.h
   src/app/PlatformComposition.h
+  src/app/ProviderSetup.h
   src/app/SingleInstanceIpc.h
   src/app/UpdateController.h
+  src/transcribe/FileTranscriptionSession.h
+  src/transcribe/TranscribePresentation.h
 )
 
 set(SPEECHER_APP_LINUX_SOURCES
@@ -548,6 +556,9 @@ set(SPEECHER_FRONTEND_QT_SOURCES
   src/ui/HostStylePlugin.cpp
   src/ui/InlineMessage.cpp
   src/ui/Theme.cpp
+  src/ui/TranscribeLoomWidget.cpp
+  src/ui/TranscribePage.cpp
+  src/ui/TranscribeWindow.cpp
   src/ui/TranscriberPopup.cpp
   src/ui/WaveformWidget.cpp
 )
@@ -573,6 +584,9 @@ set(SPEECHER_FRONTEND_QT_HEADERS
   src/ui/HostStylePlugin.h
   src/ui/InlineMessage.h
   src/ui/Theme.h
+  src/ui/TranscribeLoomWidget.h
+  src/ui/TranscribePage.h
+  src/ui/TranscribeWindow.h
   src/ui/TranscriberPopup.h
   src/ui/WaveformModel.h
   src/ui/WaveformWidget.h
@@ -624,6 +638,7 @@ set(SPEECHER_FRONTEND_MAC_SWIFT_SOURCES
   src/frontend/mac/swift/SetupAssistant.swift
   src/frontend/mac/swift/ShortcutPane.swift
   src/frontend/mac/swift/SpeecherMacUI.swift
+  src/frontend/mac/swift/TranscribePane.swift
   src/frontend/mac/swift/UpdatePreview.swift
 )
 
@@ -639,6 +654,8 @@ set(SPEECHER_FRONTEND_WIN_SOURCES
   src/frontend/win/SetupWindow.cpp
   src/frontend/win/TrayFlyout.cpp
   src/frontend/win/TrayIcon.cpp
+  src/frontend/win/TranscribePane.cpp
+  src/frontend/win/TranscribeWindow.cpp
   src/frontend/win/WinFrontEnd.cpp
   src/frontend/win/WinUiHost.cpp
 )
@@ -655,6 +672,8 @@ set(SPEECHER_FRONTEND_WIN_HEADERS
   src/frontend/win/SetupWindow.h
   src/frontend/win/TrayFlyout.h
   src/frontend/win/TrayIcon.h
+  src/frontend/win/TranscribePane.h
+  src/frontend/win/TranscribeWindow.h
   src/frontend/win/WinFrontEnd.h
   src/frontend/win/WinUiHost.h
 )
@@ -1274,6 +1293,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_claude_voice.cpp
     tests/test_codex_dictation.cpp
     tests/test_audio_pcm_converter.cpp
+    tests/test_file_transcription.cpp
   )
   if(UNIX)
     target_sources(speecher_tests PRIVATE tests/test_update_controller.cpp)
@@ -1349,6 +1369,7 @@ if(SPEECHER_BUILD_TESTS)
     claude_voice
     codex_dictation
     audio_pcm_converter
+    file_transcription
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND SPEECHER_TEST_SUITES linux_style_choice linux_tray keywatch helper_install)

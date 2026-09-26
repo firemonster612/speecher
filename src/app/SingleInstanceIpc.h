@@ -53,11 +53,20 @@ public:
                                                 int timeoutMs = 2500,
                                                 std::shared_ptr<const SingleInstancePlatform> platform = {},
                                                 QString *error = nullptr);
+    // files rides along as the request's "files" array (the transcribe command).
+    static IpcCommandResult sendCommandDetailed(const QString &command,
+                                                std::optional<OutputFormat> outputFormat,
+                                                const QStringList &files,
+                                                IpcResponse *response,
+                                                int timeoutMs = 2500,
+                                                std::shared_ptr<const SingleInstancePlatform> platform = {},
+                                                QString *error = nullptr);
 
 signals:
     void commandReceived(const QString &command,
                          const QString &outputFormat,
-                         QLocalSocket *socket);
+                         QLocalSocket *socket,
+                         const QStringList &files);
 
 public slots:
     static void writeResponse(QLocalSocket *socket, const IpcResponse &response);

@@ -186,6 +186,8 @@ enum class PaneLayout {
     Alternatives,
     // The shortcut recorder, which has no schema rows behind it.
     Shortcut,
+    // Transcribing audio files, which has no schema rows behind it either.
+    Transcribe,
     // Home: the dictation card and insights, drawn by each front end from
     // InsightsSummary rather than from schema rows.
     Home,

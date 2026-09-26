@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/HeadlessTranscribe.h"
 #include "core/OutputFormat.h"
 
 #include <QString>
@@ -20,6 +21,9 @@ enum class LaunchMode {
     // A window-less process that answers the shortcut and the IPC socket.
     RunDaemon,
     RunGui,
+    // `speecher transcribe` with options: transcribe the files in this
+    // process without a window, print the results and quit.
+    TranscribeHeadless,
 };
 
 struct CommandLineDecision {
@@ -32,11 +36,18 @@ struct CommandLineDecision {
     bool showSettings = false;
     bool showSetup = false;
     QString grabPath;
+    // RunGui: absolute paths to open in the Transcribe window, from
+    // `speecher transcribe <files...>` or bare audio file arguments (what a
+    // file manager's "Open with" passes). TranscribeHeadless: the files to
+    // transcribe.
+    QStringList transcribeFiles;
+    HeadlessTranscribeOptions headless;
 };
 
 // Decides what the process is for, before any GUI type is constructed, so that
-// `speecher status` never opens a display. Prints the --version banner and any
-// rejected option itself, because both are the whole of what those runs do.
+// `speecher status` never opens a display. Prints the --version banner, the
+// --help text and any rejected option itself, because each is the whole of
+// what those runs do.
 CommandLineDecision parseCommandLine(const QStringList &arguments, const QString &logPath);
 
 // Drops the flags that make a launch *do* something — start dictation, open

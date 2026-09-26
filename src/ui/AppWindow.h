@@ -27,6 +27,7 @@ class InlineMessage;
 class ApplicationController;
 class HomePage;
 class SettingsPageSet;
+class TranscribePage;
 
 class AppWindow : public QMainWindow {
     Q_OBJECT
@@ -37,6 +38,8 @@ public:
     QStringList pageTitles() const;
     int pageCount() const;
     void navigateToSettings(AppPageId page = AppPageId::General);
+    // Opens the Transcribe page with these files added to its list.
+    void showTranscribeFiles(const QStringList &paths);
     void showWhatsNew();
     void flushPendingAutoSave();
     void rememberGeometry();
@@ -61,6 +64,7 @@ private:
     ApplicationController *m_controller;
     SettingsPageSet *m_pages;
     HomePage *m_home;
+    TranscribePage *m_transcribe;
     QTabWidget *m_vocabularyTabs = nullptr;
     int m_correctionsTab = 0;
     QList<QWidget *> m_pageWidgets;

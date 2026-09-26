@@ -35,6 +35,21 @@ try {
         throw "Installed application has no multimedia plugins"
     }
 
+    # Open with: offered for audio files without becoming their default.
+    $Command = (Get-ItemProperty "HKCU:\Software\Classes\Speecher.AudioFile\shell\open\command")."(default)"
+    if ($Command -ne "`"$Exe`" `"%1`"") {
+        throw "Open with command is '$Command'"
+    }
+    foreach ($Extension in ".wav", ".mp3", ".m4a", ".flac", ".ogg") {
+        $Progids = Get-Item "HKCU:\Software\Classes\$Extension\OpenWithProgids" -ErrorAction SilentlyContinue
+        if (-not $Progids -or $Progids.GetValueNames() -notcontains "Speecher.AudioFile") {
+            throw "$Extension does not offer Speecher under Open with"
+        }
+        if ((Get-ItemProperty "HKCU:\Software\Classes\$Extension" -ErrorAction SilentlyContinue)."(default)" -eq "Speecher.AudioFile") {
+            throw "The installer made Speecher the default for $Extension"
+        }
+    }
+
     # Launch with only system directories on PATH to prove the install is
     # self-contained. WinUI 3 cannot render into the offscreen QPA platform
     # (it needs a real HWND), so this opens the settings window on the runner's
@@ -63,6 +78,9 @@ try {
     $Uninstaller = Join-Path $InstallDir "unins000.exe"
     if (Test-Path $Uninstaller) {
         Start-Process $Uninstaller -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+    }
+    if (Test-Path "HKCU:\Software\Classes\Speecher.AudioFile") {
+        throw "Uninstall left the Speecher.AudioFile ProgId behind"
     }
     if (Test-Path $InstallDir) {
         Remove-Item $InstallDir -Recurse -Force
