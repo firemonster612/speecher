@@ -1,7 +1,6 @@
 #pragma once
 
 #include <QString>
-#include <QStringList>
 
 #include <functional>
 #include <memory>
@@ -13,22 +12,22 @@ class WinFrontEndTests;
 
 namespace win {
 
+class TranscribePane;
+
 // The settings window: a Mica Microsoft.UI.Xaml.Window with the TitleBar
 // control, a left NavigationView over the pane table, search, the update
 // banner, and the What's New page — the Windows 11 Settings app's shell around
 // the schema. Owns the SettingsModel; recreated windows reuse it.
 class SettingsWindow {
 public:
-    explicit SettingsWindow(ApplicationController *controller);
+    // transcribe backs the Transcribe pane and outlives the window.
+    SettingsWindow(ApplicationController *controller, TranscribePane *transcribe);
     ~SettingsWindow();
 
     // Creates the window if none is open, brings it forward, reloads the
     // draft, and remembers the pane from last time.
     void show();
     void showWhatsNew();
-    // Shows the window on the Transcribe pane with these files added to its
-    // list; the batch is not started.
-    void showTranscribeFiles(const QStringList &paths);
     bool isVisible() const;
 
     // Saves a picture of the window for --grab. SPEECHER_GRAB_PAGE names a

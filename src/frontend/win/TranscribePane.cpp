@@ -58,6 +58,46 @@ const wchar_t *const kAudioExtensions[] = {L".wav", L".mp3", L".m4a", L".mp4", L
 // Same dot geometry as the dictation panel's bars.
 constexpr double kBarWidth = 3.2;
 constexpr double kBarDotHeight = 3.2;
+// How long a finished file shows at 100% before the next one replaces it.
+constexpr int kLandingMs = 600;
+// TODO(round2): switch to core transcribeStepHint
+const QString kConfigureHint = QStringLiteral("Check these options, then press Transcribe.");
+
+// How far the current file is through all of its work, 0..1: reading the
+// audio, sending it, waiting for the final text, refining. Sending takes most
+// of the bar because it grows with the file's length; without refinement,
+// sending and finishing stretch over refining's share. The open-ended waits
+// (reading, finishing, refining) ease toward the end of their share, covering
+// about two thirds of it in kWaitEaseMs, and never pass it: every span ends
+// below 1, which only fileFinished shows, once the transcript is refined and
+// saved.
+// TODO(round2): switch to core overallFileProgress
+constexpr qreal kWaitEaseMs = 4000.0;
+qreal wholeFileProgress(qreal fractionSent, TranscribePhase phase, bool refines, qint64 msInPhase)
+{
+    struct Span {
+        qreal from;
+        qreal to;
+    };
+    Span span{0.0, 0.05};
+    switch (phase) {
+    case TranscribePhase::Reading:
+        break;
+    case TranscribePhase::Transcribing:
+        span = {0.05, refines ? 0.75 : 0.90};
+        break;
+    case TranscribePhase::Finishing:
+        span = refines ? Span{0.75, 0.80} : Span{0.90, 0.97};
+        break;
+    case TranscribePhase::Refining:
+        span = {0.80, 0.97};
+        break;
+    }
+    const qreal within = phase == TranscribePhase::Transcribing
+        ? std::clamp(fractionSent, 0.0, 1.0)
+        : 1.0 - std::exp(-qreal(std::max<qint64>(msInPhase, 0)) / kWaitEaseMs);
+    return span.from + (span.to - span.from) * within;
+}
 
 QString writeText(const QString &path, const QString &text)
 {
@@ -67,12 +107,6 @@ QString writeText(const QString &path, const QString &text)
         return QStringLiteral("Could not save %1: %2").arg(QDir::toNativeSeparators(path), file.errorString());
     }
     return {};
-}
-
-bool gone(const std::weak_ptr<bool> &weak)
-{
-    const std::shared_ptr<bool> alive = weak.lock();
-    return !alive || !*alive;
 }
 
 // A ComboBox over (id, label) pairs that reports the chosen id.
@@ -133,70 +167,139 @@ Grid lineGrid()
     return grid;
 }
 
+// "1 Configure · 2 Transcribe · 3 Export" above the stage: the current step
+// in bold, the steps behind it checked, the ones ahead dim, and a hint under
+// Configure that it is only a check before pressing Transcribe.
+void appendSteps(const StackPanel &column, TranscribeStep current, const PaneHost &host)
+{
+    StackPanel steps;
+    steps.Orientation(Orientation::Horizontal);
+    steps.Spacing(8);
+    steps.HorizontalAlignment(HorizontalAlignment::Center);
+    steps.Margin({0, 16, 0, 0});
+    for (TranscribeStep step : {TranscribeStep::Configure, TranscribeStep::Transcribe, TranscribeStep::Export}) {
+        const int number = int(step) + 1;
+        if (number > 1) {
+            steps.Children().Append(secondaryTextBlock(QStringLiteral("\u00b7"), L"SettingsCardBodyStyle", host));
+        }
+        const QString label = transcribeStepLabel(step);
+        if (step < current) {
+            StackPanel done;
+            done.Orientation(Orientation::Horizontal);
+            done.Spacing(4);
+            FontIcon check = glyph(kGlyphDone);
+            check.FontSize(14);
+            check.VerticalAlignment(VerticalAlignment::Center);
+            done.Children().Append(check);
+            done.Children().Append(styledTextBlock(label, L"SettingsCardBodyStyle"));
+            steps.Children().Append(done);
+        } else if (step == current) {
+            steps.Children().Append(
+                styledTextBlock(QStringLiteral("%1 %2").arg(number).arg(label), L"BodyStrongTextBlockStyle"));
+        } else {
+            steps.Children().Append(
+                secondaryTextBlock(QStringLiteral("%1 %2").arg(number).arg(label), L"SettingsCardBodyStyle", host));
+        }
+    }
+    column.Children().Append(steps);
+    if (current == TranscribeStep::Configure) {
+        TextBlock hint = secondaryTextBlock(kConfigureHint, L"SettingsCardDescriptionStyle", host);
+        hint.HorizontalAlignment(HorizontalAlignment::Center);
+        hint.Margin({0, 4, 0, 0});
+        column.Children().Append(hint);
+    }
+}
+
+QString percentLabel(qreal progress)
+{
+    return QStringLiteral("%1%").arg(int(progress * 100));
+}
+
 } // namespace
 
-TranscribePane::TranscribePane(PaneHost &host, std::function<void()> rebuild)
-    : m_host(host)
-    , m_rebuild(std::move(rebuild))
+TranscribePane::TranscribePane(ApplicationController *controller)
+    : m_controller(controller)
 {
     m_barTimer.setInterval(waveform::frameIntervalMs);
     m_barClock.start();
     connect(&m_barTimer, &QTimer::timeout, this, &TranscribePane::animateBars);
 
-    FileTranscriptionSession *session = m_host.controller->fileTranscription();
+    // Every event goes through afterLanding: a finished file holds at 100% for
+    // a moment, and the session has already started the next one.
+    FileTranscriptionSession *session = m_controller->fileTranscription();
     connect(session, &FileTranscriptionSession::fileStarted, this, [this](int index, const QString &path) {
-        m_current = index;
-        m_currentPath = path;
-        m_peaks.clear();
-        setProgress(0);
-        if (m_headerText) {
-            m_headerText.Text(hs(processingTitle(m_batch, m_current)));
-        }
-        setPhase(transcribePhaseLabel(TranscribePhase::Reading));
+        afterLanding([this, index, path] {
+            m_current = index;
+            m_currentPath = path;
+            m_peaks.clear();
+            m_fractionSent = 0;
+            m_fileFinished = false;
+            for (const View &view : m_views) {
+                if (view.headerText) {
+                    view.headerText.Text(hs(processingTitle(m_batch, m_current)));
+                }
+            }
+            setPhase(TranscribePhase::Reading);
+        });
     });
     connect(session, &FileTranscriptionSession::fileDecoded, this,
             [this](int, const QVector<float> &peaks, qint64 durationMs) {
-                m_durationsMs.insert(m_currentPath, durationMs);
-                m_peaks = peaks;
-                setPhase(transcribePhaseLabel(TranscribePhase::Transcribing));
+                afterLanding([this, peaks, durationMs] {
+                    m_durationsMs.insert(m_currentPath, durationMs);
+                    m_peaks = peaks;
+                    setPhase(TranscribePhase::Transcribing);
+                });
             });
     connect(session, &FileTranscriptionSession::fileProgress, this, [this](int, qreal fraction) {
-        setProgress(fraction);
-        if (fraction >= 1.0) {
-            setPhase(transcribePhaseLabel(TranscribePhase::Finishing));
-        }
+        afterLanding([this, fraction] {
+            m_fractionSent = fraction;
+            if (fraction >= 1.0) {
+                setPhase(TranscribePhase::Finishing);
+            } else {
+                showProgress();
+            }
+        });
     });
     connect(session, &FileTranscriptionSession::fileRefining, this,
-            [this] { setPhase(transcribePhaseLabel(TranscribePhase::Refining)); });
+            [this] { afterLanding([this] { setPhase(TranscribePhase::Refining); }); });
     connect(session, &FileTranscriptionSession::fileFinished, this,
             [this](int, const TranscribeFileResult &result) {
-                if (m_retrying < 0) {
+                afterLanding([this, result] {
+                    if (m_retrying >= 0) {
+                        return;
+                    }
                     m_results.append(result);
+                    m_fileFinished = true;
+                    showProgress();
                     refreshQueue();
-                }
+                    m_landing = true;
+                    QTimer::singleShot(kLandingMs, this, &TranscribePane::land);
+                });
             });
     connect(session, &FileTranscriptionSession::batchFinished, this,
             [this](const QList<TranscribeFileResult> &results, bool cancelled) {
-                m_current = -1;
-                if (m_retrying >= 0) {
-                    if (!results.isEmpty()) {
-                        m_results[m_retrying] = results.first();
+                afterLanding([this, results, cancelled] {
+                    m_current = -1;
+                    if (m_retrying >= 0) {
+                        if (!results.isEmpty()) {
+                            m_results[m_retrying] = results.first();
+                        }
+                        m_retrying = -1;
+                        rebuild();
+                        return;
                     }
-                    m_retrying = -1;
-                    m_rebuild();
-                    return;
-                }
-                m_barTimer.stop();
-                m_cancelled = cancelled;
-                // A batch cancelled before any file finished has nothing to show.
-                m_stage = m_results.isEmpty() ? Stage::Setup : Stage::Results;
-                m_showRaw = false;
-                m_expanded.clear();
-                if (!m_results.isEmpty() && !m_results.first().refined.isEmpty()) {
-                    m_expanded.insert(0);
-                }
-                m_resultsProblem.clear();
-                m_rebuild();
+                    m_barTimer.stop();
+                    m_cancelled = cancelled;
+                    // A batch cancelled before any file finished has nothing to show.
+                    m_step = m_results.isEmpty() ? TranscribeStep::Configure : TranscribeStep::Export;
+                    m_showRaw = false;
+                    m_expanded.clear();
+                    if (!m_results.isEmpty() && !m_results.first().refined.isEmpty()) {
+                        m_expanded.insert(0);
+                    }
+                    m_resultsProblem.clear();
+                    rebuild();
+                });
             });
     seedOptions();
 }
@@ -204,7 +307,7 @@ TranscribePane::TranscribePane(PaneHost &host, std::function<void()> rebuild)
 void TranscribePane::addFiles(const QStringList &paths)
 {
     // Files opened over finished results start the next batch.
-    if (m_stage == Stage::Results) {
+    if (m_step == TranscribeStep::Export) {
         backToSetup();
     }
     for (const QString &path : paths) {
@@ -213,13 +316,13 @@ void TranscribePane::addFiles(const QStringList &paths)
             m_files << absolute;
             probeAudioDuration(absolute, this, [this, absolute](qint64 durationMs) {
                 m_durationsMs.insert(absolute, durationMs);
-                if (m_stage == Stage::Setup) {
-                    m_rebuild();
+                if (m_step == TranscribeStep::Configure) {
+                    rebuild();
                 }
             });
         }
     }
-    m_rebuild();
+    rebuild();
 }
 
 // The finished files leave the list; files added while the batch ran, and any
@@ -230,30 +333,35 @@ void TranscribePane::backToSetup()
         m_files.removeOne(result.path);
     }
     seedOptions();
-    m_stage = Stage::Setup;
+    m_step = TranscribeStep::Configure;
 }
 
 void TranscribePane::enter()
 {
-    if (m_stage == Stage::Setup) {
+    // Another window showing the pane keeps the choices made there.
+    if (m_step == TranscribeStep::Configure && m_views.empty()) {
         seedOptions();
     }
 }
 
-void TranscribePane::forgetElements()
+void TranscribePane::forget(const PaneHost &host)
 {
-    m_barTimer.stop();
-    m_bars.clear();
-    m_progressBar = nullptr;
-    m_phaseText = nullptr;
-    m_percentText = nullptr;
-    m_headerText = nullptr;
-    m_queue = nullptr;
+    std::erase_if(m_views, [&host](const View &view) { return view.host == &host; });
+}
+
+// Re-renders the pane in every window showing it.
+void TranscribePane::rebuild()
+{
+    for (const View &view : m_views) {
+        if (view.host->refresh) {
+            view.host->refresh();
+        }
+    }
 }
 
 void TranscribePane::seedOptions()
 {
-    const AppSettings settings = m_host.controller->settings()->snapshot();
+    const AppSettings settings = m_controller->settings()->snapshot();
     m_speech = settings.speech.providerId;
     m_vocabulary = true;
     m_refiner = settings.refinement.providerId;
@@ -267,8 +375,7 @@ void TranscribePane::seedOptions()
 void TranscribePane::applyWritingProfile()
 {
     const WritingProfileSettings profile = writingProfileSettingsFor(
-        m_host.controller->settings()->snapshot().refinement.writingProfiles,
-        writingProfileFromName(m_profile));
+        m_controller->settings()->snapshot().refinement.writingProfiles, writingProfileFromName(m_profile));
     m_cleanup = profile.cleanupStrength;
     m_tone = profile.tone;
 }
@@ -291,20 +398,22 @@ void TranscribePane::startBatch()
 {
     m_batch = m_files;
     m_batchOptions = options();
-    m_batchLabels = batchLabels(m_batchOptions, *m_host.controller->providerRegistry(),
-                                m_host.controller->settings()->snapshot().refinement);
+    m_batchLabels = batchLabels(m_batchOptions, *m_controller->providerRegistry(),
+                                m_controller->settings()->snapshot().refinement);
     m_results.clear();
     m_cancelled = false;
     m_current = -1;
-    m_phase.clear();
-    m_progress = 0;
+    m_phase = TranscribePhase::Reading;
+    m_phaseClock.start();
+    m_fractionSent = 0;
+    m_fileFinished = false;
     m_startError.clear();
     // Before start(): a batch whose files all fail at once finishes inside it.
-    m_stage = Stage::Processing;
-    if (!m_host.controller->startFileTranscription(m_batch, m_batchOptions, &m_startError)) {
-        m_stage = Stage::Setup;
+    m_step = TranscribeStep::Transcribe;
+    if (!m_controller->startFileTranscription(m_batch, m_batchOptions, &m_startError)) {
+        m_step = TranscribeStep::Configure;
     }
-    m_rebuild();
+    rebuild();
 }
 
 // Runs one failed file again with the batch's choices; its row takes the new
@@ -313,21 +422,23 @@ void TranscribePane::retry(int index)
 {
     m_retrying = index;
     QString error;
-    if (!m_host.controller->startFileTranscription({m_results.at(index).path}, m_batchOptions, &error)) {
+    if (!m_controller->startFileTranscription({m_results.at(index).path}, m_batchOptions, &error)) {
         m_retrying = -1;
         m_resultsProblem = error;
     }
-    m_rebuild();
+    rebuild();
 }
 
-UIElement TranscribePane::build()
+UIElement TranscribePane::build(PaneHost &host, const QString &title)
 {
-    forgetElements();
+    forget(host);
+    m_views.push_back({&host});
     StackPanel column;
-    ScrollViewer scroll = pageScaffold(QStringLiteral("Transcribe"), column);
-    switch (m_stage) {
-    case Stage::Setup:
-        appendSetup(column);
+    ScrollViewer scroll = pageScaffold(title, column);
+    appendSteps(column, m_step, host);
+    switch (m_step) {
+    case TranscribeStep::Configure:
+        appendSetup(column, host);
         // Files dropped anywhere on the pane join the list. A transparent
         // background makes the whole scroller hit-testable, gutters included.
         scroll.Background(winrt::Microsoft::UI::Xaml::Media::SolidColorBrush(
@@ -338,21 +449,20 @@ UIElement TranscribePane::build()
                 args.AcceptedOperation(DataPackageOperation::Copy);
             }
         });
-        scroll.Drop([this](const IInspectable &, const DragEventArgs &args) { dropFiles(args); });
+        scroll.Drop([this, &host](const IInspectable &, const DragEventArgs &args) { dropFiles(host, args); });
         break;
-    case Stage::Processing:
-        appendProcessing(column);
+    case TranscribeStep::Transcribe:
+        appendProcessing(column, m_views.back());
         break;
-    case Stage::Results:
-        appendResults(column);
+    case TranscribeStep::Export:
+        appendResults(column, host);
         break;
     }
     return scroll;
 }
 
-void TranscribePane::appendSetup(const StackPanel &column)
+void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
 {
-    PaneHost &host = m_host;
     const auto row = [&host](const QString &label, const QString &help, const UIElement &control,
                              bool follows, bool enabled = true) {
         RowSnapshot snapshot;
@@ -371,7 +481,7 @@ void TranscribePane::appendSetup(const StackPanel &column)
     // Audio files: a browse row, then one row per file with its size.
     StackPanel files;
     Button browse = textButton(m_files.isEmpty() ? QStringLiteral("Browse\u2026") : QStringLiteral("Add more\u2026"));
-    browse.Click([this](const auto &, const auto &) { chooseFiles(); });
+    browse.Click([this, &host](const auto &, const auto &) { chooseFiles(host); });
     files.Children().Append(row(m_files.isEmpty() ? QStringLiteral("Choose audio files")
                                                   : QStringLiteral("Add more files"),
                                 QStringLiteral("Drop files here or browse \u00b7 wav, mp3, m4a, flac, ogg"),
@@ -384,7 +494,7 @@ void TranscribePane::appendSetup(const StackPanel &column)
         Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(remove, L"Remove");
         remove.Click([this, path](const auto &, const auto &) {
             m_files.removeOne(path);
-            m_rebuild();
+            rebuild();
         });
         files.Children().Append(
             row(info.fileName(), audioFileDetail(info.size(), m_durationsMs.value(path, -1)), remove, true));
@@ -392,7 +502,7 @@ void TranscribePane::appendSetup(const StackPanel &column)
     card(QStringLiteral("Audio files"), files);
 
     // Transcription.
-    ProviderRegistry *registry = m_host.controller->providerRegistry();
+    ProviderRegistry *registry = m_controller->providerRegistry();
     QList<RowOption> speechOptions;
     QString speechSummary;
     for (const ProviderDescriptor &provider : registry->speechProviders()) {
@@ -407,7 +517,7 @@ void TranscribePane::appendSetup(const StackPanel &column)
                                           [this](const QString &id) {
                                               if (id != m_speech) {
                                                   m_speech = id;
-                                                  m_rebuild();
+                                                  rebuild();
                                               }
                                           }),
                                  false));
@@ -430,7 +540,7 @@ void TranscribePane::appendSetup(const StackPanel &column)
     for (const ProviderDescriptor &provider : registry->refinementProviders()) {
         refinerOptions.append({provider.id, provider.label});
     }
-    const QString model = refinementModel(m_refiner, m_host.controller->settings()->snapshot().refinement);
+    const QString model = refinementModel(m_refiner, m_controller->settings()->snapshot().refinement);
     const bool refining = m_refiner != QStringLiteral("none");
     StackPanel refine;
     refine.Children().Append(row(QStringLiteral("Provider"),
@@ -439,14 +549,14 @@ void TranscribePane::appendSetup(const StackPanel &column)
                                           [this](const QString &id) {
                                               if (id != m_refiner) {
                                                   m_refiner = id;
-                                                  m_rebuild();
+                                                  rebuild();
                                               }
                                           }),
                                  false));
     if (!model.isEmpty()) {
         refine.Children().Append(row(QStringLiteral("Model"),
                                      QStringLiteral("Change it on the Refinement page"),
-                                     secondaryTextBlock(model, L"SettingsInfoTextStyle", m_host),
+                                     secondaryTextBlock(model, L"SettingsInfoTextStyle", host),
                                      true));
     }
     refine.Children().Append(row(QStringLiteral("Cleanup"),
@@ -466,7 +576,7 @@ void TranscribePane::appendSetup(const StackPanel &column)
                                               if (id != m_profile) {
                                                   m_profile = id;
                                                   applyWritingProfile();
-                                                  m_rebuild();
+                                                  rebuild();
                                               }
                                           }),
                                  true, refining));
@@ -489,7 +599,7 @@ void TranscribePane::appendSetup(const StackPanel &column)
                                      ? QStringLiteral("Copy or export from the results afterwards")
                                      : kSaveHint,
                                  comboBox(destinations, QString::number(int(m_destination)),
-                                          [this](const QString &id) {
+                                          [this, &host](const QString &id) {
                                               const auto destination = TranscriptDestination(id.toInt());
                                               if (destination == m_destination) {
                                                   return;
@@ -497,14 +607,14 @@ void TranscribePane::appendSetup(const StackPanel &column)
                                               m_destination = destination;
                                               if (destination == TranscriptDestination::Folder
                                                   && m_folder.isEmpty()) {
-                                                  chooseFolder();
+                                                  chooseFolder(host);
                                               }
-                                              m_rebuild();
+                                              rebuild();
                                           }),
                                  false));
     if (m_destination == TranscriptDestination::Folder) {
         Button change = textButton(QStringLiteral("Change\u2026"));
-        change.Click([this](const auto &, const auto &) { chooseFolder(); });
+        change.Click([this, &host](const auto &, const auto &) { chooseFolder(host); });
         output.Children().Append(row(QStringLiteral("Folder"), QDir::toNativeSeparators(m_folder), change, true));
     }
     card(QStringLiteral("Output"), output);
@@ -529,10 +639,10 @@ void TranscribePane::appendSetup(const StackPanel &column)
     column.Children().Append(start);
 }
 
-void TranscribePane::appendProcessing(const StackPanel &column)
+void TranscribePane::appendProcessing(const StackPanel &column, View &view)
 {
-    m_headerText = styledTextBlock(processingTitle(m_batch, m_current), L"SettingsSectionHeaderStyle");
-    column.Children().Append(m_headerText);
+    view.headerText = styledTextBlock(processingTitle(m_batch, m_current), L"SettingsSectionHeaderStyle");
+    column.Children().Append(view.headerText);
 
     StackPanel stage;
     stage.Padding({16, 16, 16, 16});
@@ -560,36 +670,35 @@ void TranscribePane::appendProcessing(const StackPanel &column)
             bar.Fill(fill);
         }
         bars.Children().Append(bar);
-        m_bars.push_back(bar);
+        view.bars.push_back(bar);
     }
     stage.Children().Append(bars);
 
-    m_progressBar = ProgressBar();
-    m_progressBar.Minimum(0);
-    m_progressBar.Maximum(100);
-    m_progressBar.Value(m_progress * 100);
-    stage.Children().Append(m_progressBar);
+    view.progressBar = ProgressBar();
+    view.progressBar.Minimum(0);
+    view.progressBar.Maximum(100);
+    stage.Children().Append(view.progressBar);
 
     Grid status = lineGrid();
-    m_phaseText = styledTextBlock(m_phase, L"SettingsCardBodyStyle");
-    status.Children().Append(m_phaseText);
-    m_percentText = secondaryTextBlock(QStringLiteral("%1%").arg(qRound(m_progress * 100)),
-                                       L"SettingsCardDescriptionStyle", m_host);
-    Grid::SetColumn(m_percentText, 1);
-    status.Children().Append(m_percentText);
+    view.phaseText = styledTextBlock(transcribePhaseLabel(m_phase), L"SettingsCardBodyStyle");
+    status.Children().Append(view.phaseText);
+    view.percentText = secondaryTextBlock({}, L"SettingsCardDescriptionStyle", *view.host);
+    Grid::SetColumn(view.percentText, 1);
+    status.Children().Append(view.percentText);
     stage.Children().Append(status);
 
     StackPanel content;
     content.Children().Append(stage);
-    m_queue = StackPanel();
-    content.Children().Append(m_queue);
+    view.queue = StackPanel();
+    content.Children().Append(view.queue);
     column.Children().Append(cardContainer(content));
-    refreshQueue();
+    refreshQueue(view);
+    showProgress();
 
     Button cancel = textButton(QStringLiteral("Cancel"));
     cancel.HorizontalAlignment(HorizontalAlignment::Center);
     cancel.Margin({0, 24, 0, 0});
-    cancel.Click([this](const auto &, const auto &) { m_host.controller->fileTranscription()->cancel(); });
+    cancel.Click([this](const auto &, const auto &) { m_controller->fileTranscription()->cancel(); });
     column.Children().Append(cancel);
 
     m_lastFrame = m_barClock.elapsed();
@@ -597,32 +706,69 @@ void TranscribePane::appendProcessing(const StackPanel &column)
     m_barTimer.start();
 }
 
-void TranscribePane::setProgress(qreal fraction)
+// The whole file's progress in every window: 100% only once it is
+// transcribed, refined and saved.
+void TranscribePane::showProgress()
 {
-    m_progress = fraction;
-    if (m_progressBar) {
-        m_progressBar.Value(fraction * 100);
-        m_percentText.Text(hs(QStringLiteral("%1%").arg(qRound(fraction * 100))));
+    const qreal progress = m_fileFinished
+        ? 1.0
+        : wholeFileProgress(m_fractionSent, m_phase, refinesTranscripts(m_batchOptions), m_phaseClock.elapsed());
+    for (const View &view : m_views) {
+        if (view.progressBar) {
+            view.progressBar.Value(progress * 100);
+            view.percentText.Text(hs(percentLabel(progress)));
+        }
     }
 }
 
-void TranscribePane::setPhase(const QString &phase)
+void TranscribePane::setPhase(TranscribePhase phase)
 {
     m_phase = phase;
-    if (m_phaseText) {
-        m_phaseText.Text(hs(phase));
+    m_phaseClock.start();
+    for (const View &view : m_views) {
+        if (view.phaseText) {
+            view.phaseText.Text(hs(transcribePhaseLabel(phase)));
+        }
     }
+    showProgress();
     refreshQueue();
+}
+
+// Runs a session event now, or after the finished file on screen has had its
+// moment at 100%.
+void TranscribePane::afterLanding(std::function<void()> event)
+{
+    if (m_landing) {
+        m_afterLanding << std::move(event);
+        return;
+    }
+    event();
+}
+
+void TranscribePane::land()
+{
+    m_landing = false;
+    // A queued fileFinished lands the next file and stops the replay.
+    while (!m_landing && !m_afterLanding.isEmpty()) {
+        m_afterLanding.takeFirst()();
+    }
+}
+
+void TranscribePane::refreshQueue()
+{
+    for (const View &view : m_views) {
+        refreshQueue(view);
+    }
 }
 
 // One row per file once there is more than one: done, failed, the phase of
 // the current one, or waiting.
-void TranscribePane::refreshQueue()
+void TranscribePane::refreshQueue(const View &view)
 {
-    if (!m_queue) {
+    if (!view.queue) {
         return;
     }
-    m_queue.Children().Clear();
+    view.queue.Children().Clear();
     if (m_batch.size() < 2) {
         return;
     }
@@ -653,21 +799,25 @@ void TranscribePane::refreshQueue()
             line.Children().Append(glyph(mark));
         }
         TextBlock name = state == TranscribeQueueState::Waiting
-            ? secondaryTextBlock(QFileInfo(m_batch.at(i)).fileName(), L"SettingsCardBodyStyle", m_host)
+            ? secondaryTextBlock(QFileInfo(m_batch.at(i)).fileName(), L"SettingsCardBodyStyle", *view.host)
             : styledTextBlock(QFileInfo(m_batch.at(i)).fileName(), L"SettingsCardBodyStyle");
         Grid::SetColumn(name, 1);
         line.Children().Append(name);
-        TextBlock stateText =
-            secondaryTextBlock(queueStateLabel(state, m_phase), L"SettingsCardDescriptionStyle", m_host);
+        TextBlock stateText = secondaryTextBlock(queueStateLabel(state, transcribePhaseLabel(m_phase)),
+                                                 L"SettingsCardDescriptionStyle", *view.host);
         Grid::SetColumn(stateText, 2);
         line.Children().Append(stateText);
-        m_queue.Children().Append(line);
+        view.queue.Children().Append(line);
     }
 }
 
+// Each frame: the bars follow the audio at the point the upload has reached,
+// and the progress eases through the open-ended waits.
 void TranscribePane::animateBars()
 {
-    if (m_bars.empty()) {
+    const bool anyBars = std::any_of(m_views.begin(), m_views.end(),
+                                     [](const View &view) { return !view.bars.empty(); });
+    if (!anyBars) {
         m_barTimer.stop();
         return;
     }
@@ -675,18 +825,22 @@ void TranscribePane::animateBars()
     const float elapsed = std::clamp((now - m_lastFrame) / 1000.0f, 0.0f, 0.1f);
     m_lastFrame = now;
     if (!m_peaks.isEmpty()) {
-        const int at = std::clamp(int(m_progress * m_peaks.size()), 0, int(m_peaks.size()) - 1);
-        m_level.addChunk(m_progress < 1.0 ? m_peaks.at(at) : 0.0f);
+        const bool sending = m_phase == TranscribePhase::Transcribing && !m_fileFinished;
+        const int at = std::clamp(int(m_fractionSent * m_peaks.size()), 0, int(m_peaks.size()) - 1);
+        m_level.addChunk(sending ? m_peaks.at(at) : 0.0f);
     }
     m_barPhase = std::fmod(m_barPhase + elapsed, 1.0f);
     m_level.advance(now);
-    for (int i = 0; i < int(m_bars.size()); ++i) {
-        const float phase = m_barPhase - float(i) / waveform::barCount;
-        const double height = kBarDotHeight * m_level.audioScale() * waveform::bulge(i)
-            * waveform::waveMultiplier(phase - std::floor(phase));
-        m_bars[i].Height(height);
-        m_bars[i].RadiusY(height / 4);
+    for (const View &view : m_views) {
+        for (int i = 0; i < int(view.bars.size()); ++i) {
+            const float phase = m_barPhase - float(i) / waveform::barCount;
+            const double height = kBarDotHeight * m_level.audioScale() * waveform::bulge(i)
+                * waveform::waveMultiplier(phase - std::floor(phase));
+            view.bars[i].Height(height);
+            view.bars[i].RadiusY(height / 4);
+        }
     }
+    showProgress();
 }
 
 Button TranscribePane::copyButton(const QString &label, const QString &text)
@@ -701,7 +855,7 @@ Button TranscribePane::copyButton(const QString &label, const QString &text)
     return button;
 }
 
-void TranscribePane::appendResults(const StackPanel &column)
+void TranscribePane::appendResults(const StackPanel &column, PaneHost &host)
 {
     column.Children().Append(styledTextBlock(
         m_results.size() > 1 ? QStringLiteral("Transcripts") : QStringLiteral("Transcript"),
@@ -726,7 +880,7 @@ void TranscribePane::appendResults(const StackPanel &column)
             const bool showRaw = selected && selected.Text() == L"Raw";
             if (showRaw != m_showRaw) {
                 m_showRaw = showRaw;
-                m_rebuild();
+                rebuild();
             }
         });
         toolbar.Children().Append(variants);
@@ -736,14 +890,14 @@ void TranscribePane::appendResults(const StackPanel &column)
     actions.Spacing(8);
     actions.Children().Append(copyButton(QStringLiteral("Copy all"), allTranscripts(m_results, m_showRaw)));
     Button exportAllButton = textButton(QStringLiteral("Export all"));
-    exportAllButton.Click([this](const auto &, const auto &) { exportAll(); });
+    exportAllButton.Click([this, &host](const auto &, const auto &) { exportAll(host); });
     actions.Children().Append(exportAllButton);
     Grid::SetColumn(actions, 1);
     toolbar.Children().Append(actions);
     top.Children().Append(toolbar);
     top.Children().Append(secondaryTextBlock(
         batchSummary(m_results, int(m_batch.size()), m_cancelled, m_durationsMs, m_batchOptions, m_batchLabels),
-        L"SettingsCardDescriptionStyle", m_host));
+        L"SettingsCardDescriptionStyle", host));
     column.Children().Append(cardContainer(top));
 
     if (!m_resultsProblem.isEmpty()) {
@@ -771,7 +925,7 @@ void TranscribePane::appendResults(const StackPanel &column)
         label.Spacing(2);
         label.VerticalAlignment(VerticalAlignment::Center);
         label.Children().Append(styledTextBlock(QFileInfo(result.path).fileName(), L"SettingsCardBodyStyle"));
-        label.Children().Append(secondaryTextBlock(meta, L"SettingsCardDescriptionStyle", m_host));
+        label.Children().Append(secondaryTextBlock(meta, L"SettingsCardDescriptionStyle", host));
         // A transcript that came through with a problem on the way (refinement
         // fell back to the raw text, saving failed) says so in its header,
         // visible without opening the row.
@@ -794,7 +948,7 @@ void TranscribePane::appendResults(const StackPanel &column)
             saved.Spacing(4);
             saved.VerticalAlignment(VerticalAlignment::Center);
             saved.Children().Append(glyph(kGlyphDone));
-            saved.Children().Append(secondaryTextBlock(QStringLiteral("Saved"), L"SettingsCardDescriptionStyle", m_host));
+            saved.Children().Append(secondaryTextBlock(QStringLiteral("Saved"), L"SettingsCardDescriptionStyle", host));
             ToolTipService::SetToolTip(saved, box_value(hs(QDir::toNativeSeparators(result.savedPath))));
             buttons.Children().Append(saved);
         }
@@ -807,8 +961,8 @@ void TranscribePane::appendResults(const StackPanel &column)
         } else {
             buttons.Children().Append(copyButton(QStringLiteral("Copy"), text));
             Button exportButton = textButton(QStringLiteral("Export"));
-            exportButton.Click([this, path = result.path, text](const auto &, const auto &) {
-                exportOne(path, text);
+            exportButton.Click([this, &host, path = result.path, text](const auto &, const auto &) {
+                exportOne(host, path, text);
             });
             buttons.Children().Append(exportButton);
         }
@@ -836,17 +990,17 @@ void TranscribePane::appendResults(const StackPanel &column)
     again.Margin({0, 24, 0, 0});
     again.Click([this](const auto &, const auto &) {
         backToSetup();
-        m_rebuild();
+        rebuild();
     });
     column.Children().Append(again);
 }
 
-winrt::fire_and_forget TranscribePane::chooseFiles()
+winrt::fire_and_forget TranscribePane::chooseFiles(PaneHost &host)
 {
-    const std::weak_ptr<bool> weak = m_host.alive;
+    const std::weak_ptr<bool> weak = host.alive;
     try {
         Pickers::FileOpenPicker picker;
-        check_hresult(picker.as<::IInitializeWithWindow>()->Initialize(m_host.hwnd()));
+        check_hresult(picker.as<::IInitializeWithWindow>()->Initialize(host.hwnd()));
         picker.SuggestedStartLocation(Pickers::PickerLocationId::MusicLibrary);
         for (const wchar_t *extension : kAudioExtensions) {
             picker.FileTypeFilter().Append(extension);
@@ -865,12 +1019,12 @@ winrt::fire_and_forget TranscribePane::chooseFiles()
     }
 }
 
-winrt::fire_and_forget TranscribePane::chooseFolder()
+winrt::fire_and_forget TranscribePane::chooseFolder(PaneHost &host)
 {
-    const std::weak_ptr<bool> weak = m_host.alive;
+    const std::weak_ptr<bool> weak = host.alive;
     try {
         Pickers::FolderPicker picker;
-        check_hresult(picker.as<::IInitializeWithWindow>()->Initialize(m_host.hwnd()));
+        check_hresult(picker.as<::IInitializeWithWindow>()->Initialize(host.hwnd()));
         picker.SuggestedStartLocation(Pickers::PickerLocationId::DocumentsLibrary);
         picker.FileTypeFilter().Append(L"*");
         const auto folder = co_await picker.PickSingleFolderAsync();
@@ -883,18 +1037,18 @@ winrt::fire_and_forget TranscribePane::chooseFolder()
             // Cancelled with no folder to fall back on.
             m_destination = TranscriptDestination::BesideInput;
         }
-        m_rebuild();
+        rebuild();
     } catch (const winrt::hresult_error &error) {
         qWarning() << "choosing a folder failed:" << qs(error.message());
     }
 }
 
-winrt::fire_and_forget TranscribePane::exportOne(QString audioPath, QString text)
+winrt::fire_and_forget TranscribePane::exportOne(PaneHost &host, QString audioPath, QString text)
 {
-    const std::weak_ptr<bool> weak = m_host.alive;
+    const std::weak_ptr<bool> weak = host.alive;
     try {
         Pickers::FileSavePicker picker;
-        check_hresult(picker.as<::IInitializeWithWindow>()->Initialize(m_host.hwnd()));
+        check_hresult(picker.as<::IInitializeWithWindow>()->Initialize(host.hwnd()));
         picker.SuggestedFileName(hs(QFileInfo(audioPath).completeBaseName() + QStringLiteral("-transcribed")));
         picker.FileTypeChoices().Insert(L"Text file", winrt::single_threaded_vector<hstring>({hstring(L".txt")}));
         const auto file = co_await picker.PickSaveFileAsync();
@@ -903,19 +1057,19 @@ winrt::fire_and_forget TranscribePane::exportOne(QString audioPath, QString text
         }
         m_resultsProblem = writeText(qs(file.Path()), text);
         if (!m_resultsProblem.isEmpty()) {
-            m_rebuild();
+            rebuild();
         }
     } catch (const winrt::hresult_error &error) {
         qWarning() << "exporting a transcript failed:" << qs(error.message());
     }
 }
 
-winrt::fire_and_forget TranscribePane::exportAll()
+winrt::fire_and_forget TranscribePane::exportAll(PaneHost &host)
 {
-    const std::weak_ptr<bool> weak = m_host.alive;
+    const std::weak_ptr<bool> weak = host.alive;
     try {
         Pickers::FolderPicker picker;
-        check_hresult(picker.as<::IInitializeWithWindow>()->Initialize(m_host.hwnd()));
+        check_hresult(picker.as<::IInitializeWithWindow>()->Initialize(host.hwnd()));
         picker.FileTypeFilter().Append(L"*");
         const auto folder = co_await picker.PickSingleFolderAsync();
         if (gone(weak) || !folder) {
@@ -932,15 +1086,15 @@ winrt::fire_and_forget TranscribePane::exportAll()
             }
         }
         m_resultsProblem = errors.join(QLatin1Char('\n'));
-        m_rebuild();
+        rebuild();
     } catch (const winrt::hresult_error &error) {
         qWarning() << "exporting transcripts failed:" << qs(error.message());
     }
 }
 
-winrt::fire_and_forget TranscribePane::dropFiles(DragEventArgs args)
+winrt::fire_and_forget TranscribePane::dropFiles(PaneHost &host, DragEventArgs args)
 {
-    const std::weak_ptr<bool> weak = m_host.alive;
+    const std::weak_ptr<bool> weak = host.alive;
     if (!args.DataView().Contains(StandardDataFormats::StorageItems())) {
         co_return;
     }
