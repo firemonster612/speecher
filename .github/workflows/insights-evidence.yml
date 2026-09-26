@@ -91,6 +91,7 @@ jobs:
       - name: Grab Home and General
         run: |
           mkdir -p evidence
+          failed=0
           # As .github/macos-e2e/common.sh runs the app: Qt from the installed kit.
           export DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib"
           export SPEECHER_INSIGHTS_SEED="$GITHUB_WORKSPACE/docs/insights-mockup/seed-active.jsonl"
@@ -100,14 +101,21 @@ jobs:
             page="${shot%-bottom}"
             scroll=""
             [ "$shot" = home-bottom ] && scroll=bottom
-            SPEECHER_GRAB_PAGE="$page" SPEECHER_GRAB_SCROLL="$scroll" \
+            status=0
+            SPEECHER_GRAB_PAGE="$page" SPEECHER_GRAB_SCROLL="$scroll" QT_LOGGING_RULES="*.debug=false" \
               build/speecher.app/Contents/MacOS/speecher \
-              --grab "evidence/mac-$shot.png" 2>&1 | tee "evidence/mac-$shot-grab.log"
-            test -s "evidence/mac-$shot.png"
+              --grab "evidence/mac-$shot.png" > "evidence/mac-$shot-grab.log" 2>&1 || status=$?
+            echo "mac-$shot exit=$status"
+            tail -20 "evidence/mac-$shot-grab.log"
+            if [ ! -s "evidence/mac-$shot.png" ]; then
+              cp ~/Library/Logs/DiagnosticReports/speecher*.ips evidence/ 2>/dev/null || true
+              failed=1
+            fi
             pkill -9 -x speecher || true
             # A killed instance leaves its single-instance socket behind.
             find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
           done
+          exit $failed
 
       - name: Screen capture with the window shown
         # The backing-store grab has no sidebar vibrancy; screencapture shows
