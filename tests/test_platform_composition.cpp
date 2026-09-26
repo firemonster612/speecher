@@ -10,6 +10,7 @@
 #include "dictation/DictationSession.h"
 #include "platform/CorrectionDiff.h"
 #include "platform/mac/MacMediaController.h"
+#include "providers/LocalModelStore.h"
 #include "platform/GlobalShortcutBinder.h"
 #ifdef Q_OS_LINUX
 #include "platform/KGlobalAccelShortcutBinder.h"
@@ -294,6 +295,11 @@ public:
     void alert() override
     {
         calls << QStringLiteral("alert");
+    }
+
+    void notifyIfNoWindowShown(const QString &title, const QString &message) override
+    {
+        calls << QStringLiteral("notify %1: %2").arg(title, message);
     }
 
     QStringList calls;
@@ -1761,6 +1767,24 @@ private slots:
                               QStringLiteral("showSettingsWindow"),
                               QStringLiteral("showSetupAssistant"),
                               QStringLiteral("captureMainWindow /tmp/speecher-grab.png")}));
+    }
+
+    void aFinishedModelDownloadIsAnnouncedThroughTheFrontEnd()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        FakeAppFrontEnd frontEnd;
+        controller.setFrontEnd(&frontEnd);
+        LocalSpeechSettings local = controller.settings()->localSpeechSettings();
+        local.modelId = QStringLiteral("moonshine-small");
+        controller.settings()->setLocalSpeechSettings(local);
+        controller.settings()->setSpeechProvider(QStringLiteral("local"));
+
+        emit controller.localModelStore()->downloadFinished(QStringLiteral("moonshine-small"));
+
+        QCOMPARE(frontEnd.calls,
+                 QStringList({QStringLiteral("notify Moonshine Small is ready: You can start "
+                                             "dictating. Speech stays on this computer.")}));
     }
 
     void unfinishedSetupSendsTheUserToTheAssistantInstead()

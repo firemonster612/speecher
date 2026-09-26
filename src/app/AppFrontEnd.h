@@ -31,6 +31,17 @@ public:
 
     // The system's attention sound.
     virtual void alert() = 0;
+
+    // A system notification for news that arrives while no Speecher window is
+    // on screen, such as a Local Model download finishing after setup closed:
+    // the tray balloon on Linux and Windows, the notification centre on macOS.
+    // A front end with a window up already shows the news there and does
+    // nothing. The default is for front ends that have not been ported yet.
+    virtual void notifyIfNoWindowShown(const QString &title, const QString &message)
+    {
+        Q_UNUSED(title);
+        Q_UNUSED(message);
+    }
 };
 
 } // namespace speecher

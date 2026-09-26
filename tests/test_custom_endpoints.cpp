@@ -486,6 +486,29 @@ private slots:
                  QStringLiteral("LiquidAI/lfm2.5-1.2b-instruct"));
     }
 
+    void hardwareMapsToTheLatencyTableRow()
+    {
+        constexpr quint64 gib = quint64(1) << 30;
+        const auto row = [](HardwareProfile::Accelerator accelerator, const QString &chip, quint64 gpu) {
+            HardwareProfile hardware;
+            hardware.accelerator = accelerator;
+            hardware.chipName = chip;
+            hardware.gpuMemoryBytes = gpu;
+            return cleanupHardwareFor(hardware);
+        };
+        using A = HardwareProfile::Accelerator;
+        QCOMPARE(row(A::Cpu, QStringLiteral("AMD Ryzen 9 7945HX"), 0), CleanupHardware::Cpu);
+        QCOMPARE(row(A::IntegratedGpu, QStringLiteral("AMD Ryzen 7 PRO 4750U"), 0),
+                 CleanupHardware::IntegratedGpu);
+        QCOMPARE(row(A::DedicatedGpu, QString(), 12 * gib), CleanupHardware::DedicatedGpu);
+        // Gemma 4 E4B does not fit a 6 GB card and would run on the processor.
+        QCOMPARE(row(A::DedicatedGpu, QString(), 6 * gib), CleanupHardware::Cpu);
+        QCOMPARE(row(A::AppleSilicon, QStringLiteral("Apple M1"), 8 * gib), CleanupHardware::AppleBase);
+        QCOMPARE(row(A::AppleSilicon, QStringLiteral("Apple M3 Pro"), 18 * gib), CleanupHardware::ApplePro);
+        QCOMPARE(row(A::AppleSilicon, QStringLiteral("Apple M4 Max"), 36 * gib), CleanupHardware::AppleMax);
+        QCOMPARE(row(A::AppleSilicon, QStringLiteral("Apple M2 Ultra"), 64 * gib), CleanupHardware::AppleMax);
+    }
+
     void ollamaPullReportsProgressAcrossLayers()
     {
         FakeServer ollama;

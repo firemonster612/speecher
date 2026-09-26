@@ -253,8 +253,7 @@ SchemaCustomRow ProviderCustomRows::makeCliproxyApiKeyRow(
     m_cliproxyApiKey = new QLineEdit(parent);
     m_cliproxyApiKey->setEchoMode(QLineEdit::Password);
     m_cliproxyApiKey->setPlaceholderText(QStringLiteral("A key the server accepts"));
-    m_cliproxyApiKey->setToolTip(
-        QStringLiteral("Stored unencrypted in Speecher's settings file."));
+    m_cliproxyApiKey->setToolTip(keyStorageHelp());
     QObject::connect(m_cliproxyApiKey,
                      &QLineEdit::textEdited,
                      m_cliproxyApiKey,

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/LocalModelCatalog.h"
 #include "dictation/DictationPorts.h"
 
 #include <QNetworkAccessManager>
@@ -55,6 +56,11 @@ enum class CleanupHardware {
     ApplePro,
     AppleMax,
 };
+
+// The latency table's row for this machine. Apple chips are told apart by
+// name, and a graphics card too small for the larger model counts as the
+// processor, which is where that model would end up running.
+CleanupHardware cleanupHardwareFor(const HardwareProfile &hardware);
 
 // The larger model when it cleans a dictation in 2 s or less, the smaller
 // when it takes 3 s or less, else nothing: cloud refinement or none will

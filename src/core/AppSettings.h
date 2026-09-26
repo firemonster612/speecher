@@ -165,6 +165,14 @@ struct LocalRunnerSettings {
     bool operator==(const LocalRunnerSettings &other) const = default;
 };
 
+// What a person calls a Local Runner stored by id.
+inline QString localRunnerName(const QString &runnerId)
+{
+    if (runnerId == QStringLiteral("lmstudio")) return QStringLiteral("LM Studio");
+    if (runnerId == QStringLiteral("llama-server")) return QStringLiteral("llama-server");
+    return QStringLiteral("Ollama");
+}
+
 struct RefinementSettings {
     QString providerId = QStringLiteral("openai");
     QString style = QStringLiteral("balanced");

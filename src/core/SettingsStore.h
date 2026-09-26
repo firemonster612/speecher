@@ -111,6 +111,10 @@ public:
     using SettingsCodecs::setRestoreClipboardAfterTyping;
     using SettingsCodecs::setSoundsEnabled;
     using SettingsCodecs::setSpeechProvider;
+    using SettingsCodecs::localSpeechSettings;
+    using SettingsCodecs::setLocalSpeechSettings;
+    using SettingsCodecs::localRunnerSettings;
+    using SettingsCodecs::setLocalRunnerSettings;
     using SettingsCodecs::setCodexFinalRetranscribe;
     using SettingsCodecs::setSetupCompleted;
     using SettingsCodecs::setStoredApiKeyFallback;

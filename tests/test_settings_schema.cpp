@@ -958,6 +958,123 @@ private slots:
         QCOMPARE(runPaneIds.size(), expected.size());
     }
 
+    void customEndpointRowsSitUnderTheirPickerWhileItIsChosen()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsPage &audio = schema.page(QStringLiteral("audio"));
+        const SettingsPage &refinement = schema.page(QStringLiteral("refinement"));
+        const auto idsAfter = [](const SettingsPage &page, const QString &picker) {
+            for (const SettingsSection &section : page.sections) {
+                QStringList ids;
+                for (const SettingsRow &row : section.rows) {
+                    ids.append(row.id);
+                }
+                const int at = ids.indexOf(picker);
+                if (at >= 0) {
+                    return ids.mid(at + 1);
+                }
+            }
+            return QStringList();
+        };
+        QCOMPARE(idsAfter(audio, QStringLiteral("speechProvider")).mid(1, 5),
+                 QStringList({QStringLiteral("speechEndpointUrl"), QStringLiteral("speechEndpointPath"),
+                              QStringLiteral("speechEndpointApiKey"), QStringLiteral("speechEndpointModel"),
+                              QStringLiteral("speechEndpointTest")}));
+        QCOMPARE(idsAfter(refinement, QStringLiteral("refinementProvider")).mid(0, 8),
+                 QStringList({QStringLiteral("localRunner"), QStringLiteral("localRunnerModel"),
+                              QStringLiteral("localRunnerDetect"), QStringLiteral("refinementEndpointFormat"),
+                              QStringLiteral("refinementEndpointUrl"), QStringLiteral("refinementEndpointApiKey"),
+                              QStringLiteral("refinementEndpointModel"),
+                              QStringLiteral("refinementEndpointTest")}));
+
+        AppSettings settings;
+        const Capabilities capabilities;
+        const SettingsRow &speechUrl = rowById(audio, QStringLiteral("speechEndpointUrl"));
+        const SettingsRow &runner = rowById(refinement, QStringLiteral("localRunner"));
+        const SettingsRow &refinementUrl = rowById(refinement, QStringLiteral("refinementEndpointUrl"));
+        QVERIFY(!speechUrl.visible(settings, capabilities));
+        QVERIFY(!runner.visible(settings, capabilities));
+        QVERIFY(!refinementUrl.visible(settings, capabilities));
+        settings.speech.providerId = QStringLiteral("endpoint");
+        settings.refinement.providerId = QStringLiteral("local");
+        QVERIFY(speechUrl.visible(settings, capabilities));
+        QVERIFY(runner.visible(settings, capabilities));
+        QVERIFY(!refinementUrl.visible(settings, capabilities));
+        settings.refinement.providerId = QStringLiteral("endpoint");
+        QVERIFY(!runner.visible(settings, capabilities));
+        QVERIFY(refinementUrl.visible(settings, capabilities));
+
+        QVERIFY(rowById(audio, QStringLiteral("speechEndpointApiKey")).secret);
+        QVERIFY(rowById(refinement, QStringLiteral("refinementEndpointApiKey")).secret);
+        rowById(audio, QStringLiteral("speechEndpointPath")).apply(settings, QStringLiteral(" /inference "));
+        rowById(refinement, QStringLiteral("refinementEndpointModel")).apply(settings, QStringLiteral("gemma4:e4b"));
+        rowById(refinement, QStringLiteral("localRunnerModel")).apply(settings, QStringLiteral("lfm"));
+        QCOMPARE(settings.speech.endpoint.path, QStringLiteral("/inference"));
+        QCOMPARE(settings.refinement.endpoint.model, QStringLiteral("gemma4:e4b"));
+        QCOMPARE(settings.refinement.localRunner.model, QStringLiteral("lfm"));
+    }
+
+    void endpointAndRunnerRowsReportWhatTheAppLayerLearned()
+    {
+        SchemaContext context = fakeContext();
+        LiveFacts facts;
+        facts.speechEndpointStatus = QStringLiteral("Connected. Models available: 2.");
+        facts.speechEndpointModels = {QStringLiteral("whisper-1"), QStringLiteral("parakeet")};
+        facts.runners = {{QStringLiteral("ollama"), QStringLiteral("Ollama 0.34.4")}};
+        facts.runnerModels.insert(QStringLiteral("ollama"), {QStringLiteral("gemma4:e4b")});
+        context.liveFacts = [&facts] { return facts; };
+        const SettingsSchema schema = buildSettingsSchema(context);
+        const SettingsPage &audio = schema.page(QStringLiteral("audio"));
+        const SettingsPage &refinement = schema.page(QStringLiteral("refinement"));
+        const AppSettings settings;
+
+        QCOMPARE(rowById(audio, QStringLiteral("speechEndpointTest")).helpValue(settings), facts.speechEndpointStatus);
+        QCOMPARE(rowById(audio, QStringLiteral("speechEndpointModel")).suggestions(settings).size(), 2);
+        QCOMPARE(rowById(refinement, QStringLiteral("refinementEndpointTest")).helpValue(settings),
+                 QStringLiteral("Not tested yet."));
+        QCOMPARE(rowById(refinement, QStringLiteral("localRunnerModel")).suggestions(settings).first().id,
+                 QStringLiteral("gemma4:e4b"));
+        QCOMPARE(rowById(refinement, QStringLiteral("localRunner")).options(settings).size(), 1);
+
+        // A saved runner that is not answering stays selectable and says so.
+        facts.runners.clear();
+        const QList<RowOption> runners = rowById(refinement, QStringLiteral("localRunner")).options(settings);
+        QCOMPARE(runners.size(), 1);
+        QCOMPARE(runners.first().label, QStringLiteral("Ollama (not running)"));
+    }
+
+    void localModelsPageFollowsRefinement()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        QStringList pageIds;
+        for (const SettingsPage &page : schema.pages) {
+            pageIds.append(page.id);
+        }
+        QCOMPARE(pageIds.indexOf(QStringLiteral("localModels")),
+                 pageIds.indexOf(QStringLiteral("refinement")) + 1);
+        const SettingsPage &page = schema.page(QStringLiteral("localModels"));
+        QCOMPARE(page.title, QStringLiteral("Local models"));
+        const SettingsRow &browser = rowById(page, QStringLiteral("localModelBrowser"));
+        QCOMPARE(browser.kind, RowKind::Custom);
+
+        // Choosing a model is choosing to dictate with it.
+        AppSettings settings;
+        QCOMPARE(browser.value(settings).toString(), QString());
+        browser.apply(settings, QStringLiteral("moonshine-small"));
+        QCOMPARE(settings.speech.providerId, QStringLiteral("local"));
+        QCOMPARE(settings.speech.local.modelId, QStringLiteral("moonshine-small"));
+        QCOMPARE(browser.value(settings).toString(), QStringLiteral("moonshine-small"));
+
+        rowById(page, QStringLiteral("localIdleUnload")).apply(settings, QStringLiteral("0"));
+        QCOMPARE(settings.speech.local.idleUnloadMinutes, 0);
+        // The GPU picker only earns a row with more than one GPU.
+        QVERIFY(!rowById(page, QStringLiteral("localDevice")).visible(settings, Capabilities{}));
+
+        // On macOS and Windows it is its own pane, next to Text.
+        const QStringList &run = schema.sidebarRuns.at(1);
+        QCOMPARE(run.indexOf(QStringLiteral("localModels")), run.indexOf(QStringLiteral("text")) + 1);
+    }
+
     void aSavedMicrophoneSurvivesGoingMissing()
     {
         const QList<RowOption> present{{QStringLiteral("mic-1"), QStringLiteral("Desk microphone")}};

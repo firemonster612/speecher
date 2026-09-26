@@ -102,6 +102,29 @@ QList<DetectedRunner> detectLocalRunners(int timeoutMs)
     return runners;
 }
 
+CleanupHardware cleanupHardwareFor(const HardwareProfile &hardware)
+{
+    // Gemma 4 E4B is 5.3 GB before its context; a card that cannot hold it
+    // spills to system memory and runs at the processor's pace.
+    constexpr quint64 largeCleanupModelGpuBytes = quint64(8) << 30;
+    switch (hardware.accelerator) {
+    case HardwareProfile::Accelerator::Cpu:
+        return CleanupHardware::Cpu;
+    case HardwareProfile::Accelerator::IntegratedGpu:
+        return CleanupHardware::IntegratedGpu;
+    case HardwareProfile::Accelerator::DedicatedGpu:
+        return hardware.gpuMemoryBytes >= largeCleanupModelGpuBytes ? CleanupHardware::DedicatedGpu
+                                                                     : CleanupHardware::Cpu;
+    case HardwareProfile::Accelerator::AppleSilicon:
+        break;
+    }
+    if (hardware.chipName.contains(QStringLiteral("Max")) || hardware.chipName.contains(QStringLiteral("Ultra"))) {
+        return CleanupHardware::AppleMax;
+    }
+    return hardware.chipName.contains(QStringLiteral("Pro")) ? CleanupHardware::ApplePro
+                                                             : CleanupHardware::AppleBase;
+}
+
 std::optional<CleanupModel> suggestedCleanupModel(CleanupHardware hardware)
 {
     // Seconds for a 150-word dictation with the model loaded, from

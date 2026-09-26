@@ -191,4 +191,49 @@ const LocalModel &suggestedLocalModel(const HardwareProfile &hardware)
                              });
 }
 
+QString modelFitLabel(ModelFit fit)
+{
+    switch (fit) {
+    case ModelFit::Fits:
+        return QStringLiteral("Fits");
+    case ModelFit::Tight:
+        return QStringLiteral("Tight fit");
+    case ModelFit::TooLarge:
+        break;
+    }
+    return QStringLiteral("Too large");
+}
+
+QString downloadSizeText(qint64 bytes)
+{
+    constexpr double megabyte = 1e6;
+    constexpr double gigabyte = 1e9;
+    if (bytes < qint64(gigabyte)) {
+        return QStringLiteral("%1 MB").arg(qRound(double(bytes) / megabyte));
+    }
+    return QStringLiteral("%1 GB").arg(double(bytes) / gigabyte, 0, 'f', 1);
+}
+
+QString speechSecondsText(double seconds)
+{
+    return QStringLiteral("%1 s").arg(std::max(seconds, 0.1), 0, 'f', 1);
+}
+
+QString localModelSpeedLine(const LocalModel &model,
+                            const HardwareProfile &hardware,
+                            std::optional<double> measuredSeconds)
+{
+    if (measuredSeconds) {
+        return QStringLiteral("%1 for 10 s of speech, measured here").arg(speechSecondsText(*measuredSeconds));
+    }
+    const std::optional<SpeedEstimate> estimate = estimatedSpeed(model, hardware);
+    if (!estimate) {
+        return QStringLiteral("Not measured on a computer like this one yet");
+    }
+    return QStringLiteral("About %1 for 10 s of speech (%2)")
+        .arg(speechSecondsText(estimate->secondsFor10sSpeech),
+             estimate->measuredOnThisChip ? QStringLiteral("measured on the same chip")
+                                          : QStringLiteral("estimated"));
+}
+
 } // namespace speecher

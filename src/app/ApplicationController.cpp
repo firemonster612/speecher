@@ -20,6 +20,7 @@
 #include "providers/E2EProviders.h"
 #endif
 #include "providers/CodexSpeechTranscriber.h"
+#include "app/LocalSetup.h"
 #include "providers/LocalModelStore.h"
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
 #include "providers/LocalSpeechTranscriber.h"
@@ -139,6 +140,9 @@ ApplicationController::ApplicationController(bool popupOnly,
             this,
             &ApplicationController::globalShortcutRegistrationFinished);
     registerProviders();
+    m_localSetup = new LocalSetup(*m_settings, *m_providers, *m_localModels, this);
+    connect(m_localModels, &LocalModelStore::downloadFinished,
+            this, &ApplicationController::notifyModelReady);
     TargetProvider *targetProvider = m_platform->createTargetProvider(this);
     targetProvider->setCorrectionObservationEnabled(m_settings->correctionLearningEnabled());
     connect(m_settings,
@@ -312,6 +316,27 @@ SecretStore *ApplicationController::secretStore() const
 LocalModelStore *ApplicationController::localModelStore() const
 {
     return m_localModels;
+}
+
+LocalSetup *ApplicationController::localSetup() const
+{
+    return m_localSetup;
+}
+
+// A download the setup assistant left running finishes long after its window
+// closed; nothing on screen would say dictation now works.
+void ApplicationController::notifyModelReady(const QString &modelId)
+{
+    const LocalModel *model = findLocalModel(modelId);
+    if (!m_frontEnd || !model) {
+        return;
+    }
+    const bool inUse = m_settings->speechProvider() == QStringLiteral("local")
+        && m_settings->localSpeechSettings().modelId == modelId;
+    m_frontEnd->notifyIfNoWindowShown(
+        QStringLiteral("%1 is ready").arg(model->name),
+        inUse ? QStringLiteral("You can start dictating. Speech stays on this computer.")
+              : QStringLiteral("Choose it on the Local models page to dictate with it."));
 }
 
 ProviderRegistry *ApplicationController::providerRegistry() const
@@ -873,12 +898,10 @@ void ApplicationController::registerProviders()
          false,
          QStringLiteral("Runs on this computer: no account, works offline after a one-time "
                         "download. English; speed depends on the model and this computer."),
-         {{QStringLiteral("Score"), QStringLiteral("7 / 10")},
-          {QStringLiteral("Engine"), QStringLiteral("transcribe.cpp with a downloaded model")},
+         {{QStringLiteral("Engine"), QStringLiteral("transcribe.cpp")},
           {QStringLiteral("Languages"), QStringLiteral("English")},
           {QStringLiteral("Speed"), QStringLiteral("Depends on the model and this computer")},
-          {QStringLiteral("Accuracy"), QStringLiteral("Close to the cloud services on clear speech")},
-          {QStringLiteral("Formatting"), QStringLiteral("Punctuation and capitals")}}},
+          {QStringLiteral("Accuracy"), QStringLiteral("See the Local models page")}}},
         [this](QObject *parent) {
             return new LocalSpeechTranscriber(*m_localModels, parent);
         });
