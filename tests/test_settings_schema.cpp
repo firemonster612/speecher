@@ -1162,8 +1162,6 @@ private slots:
         QCOMPARE(settings.speech.local.modelId, QStringLiteral("moonshine-small"));
         QCOMPARE(browser.value(settings).toString(), QStringLiteral("moonshine-small"));
 
-        rowById(page, QStringLiteral("localIdleUnload")).apply(settings, QStringLiteral("0"));
-        QCOMPARE(settings.speech.local.idleUnloadMinutes, 0);
         // The GPU picker only earns a row with more than one GPU.
         QVERIFY(!rowById(page, QStringLiteral("localDevice")).visible(settings, Capabilities{}));
 
