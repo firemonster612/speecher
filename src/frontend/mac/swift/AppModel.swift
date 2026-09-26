@@ -184,9 +184,9 @@ final class AppModel: ObservableObject {
     }
 
     /// What a window showing local models asks for on the way up: the
-    /// hardware (probed once) and the runners (looked for every time).
+    /// hardware (probed once) and the runners (looked for every time), which
+    /// refinement uses even where speech cannot run here.
     func refreshLocalSetup() {
-        guard bridge.localSpeechAvailable else { return }
         bridge.probeLocalHardware()
         bridge.detectLocalRunners()
     }
