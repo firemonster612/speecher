@@ -1,4 +1,5 @@
 #include "providers/EndpointSpeechTranscriber.h"
+#include "providers/EndpointRequest.h"
 
 #include "providers/PcmWav.h"
 #include "providers/ServerSentEvents.h"
@@ -35,7 +36,7 @@ QString endpointErrorMessage(const QByteArray &body, const QString &fallback)
 
 SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint, const QByteArray &pcm16kMono)
 {
-    QNetworkRequest request{QUrl(endpoint.baseUrl + endpoint.path)};
+    QNetworkRequest request = endpointRequest(QUrl(endpoint.baseUrl + endpoint.path));
     if (!endpoint.apiKey.isEmpty()) {
         request.setRawHeader("Authorization", "Bearer " + endpoint.apiKey.toUtf8());
     }

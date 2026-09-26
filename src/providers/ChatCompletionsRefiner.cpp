@@ -1,4 +1,5 @@
 #include "providers/ChatCompletionsRefiner.h"
+#include "providers/EndpointRequest.h"
 
 #include "core/EndpointUrl.h"
 #include "providers/TranscriptRefinementPrompt.h"
@@ -107,7 +108,7 @@ void ChatCompletionsRefiner::refine(const QString &rawTranscript,
     const QString systemPrompt = smallModel ? compactRefinementSystemPrompt(refinementStyle, context)
                                             : refinementSystemPrompt(refinementStyle, context);
     m_buildRequest = [=](bool withReasoningFields) -> StreamingRefinement::Request {
-        QNetworkRequest request(QUrl(withoutTrailingSlashes(endpointBase) + QStringLiteral("/chat/completions")));
+        QNetworkRequest request = endpointRequest(QUrl(withoutTrailingSlashes(endpointBase) + QStringLiteral("/chat/completions")));
         request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
         if (!apiKey.isEmpty()) {
             request.setRawHeader("Authorization", "Bearer " + apiKey.toUtf8());

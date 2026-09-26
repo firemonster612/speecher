@@ -162,6 +162,46 @@ private slots:
         }
     }
 
+    void speechEndpointRejectsCrossOriginRedirects()
+    {
+        FakeServer destination;
+        FakeServer server;
+        server.route("POST /v1/audio/transcriptions",
+                     "HTTP/1.1 307 Temporary Redirect\r\nLocation: " + destination.origin().toUtf8()
+                         + "/stolen\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        SpeechSettings settings;
+        settings.endpoint.baseUrl = server.origin();
+        settings.endpoint.apiKey = QStringLiteral("private-key");
+        EndpointSpeechTranscriber transcriber;
+        QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        transcriber.startAttempt(9, settings);
+        transcriber.sendAudio(9, QByteArray("private-audio"));
+        transcriber.finishInput(9);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
+        QCOMPARE(destination.requests.size(), 0);
+        QCOMPARE(server.requests.size(), 1);
+        QCOMPARE(completed.size(), 0);
+        const auto failure = failed.first().first().value<SpeechFailure>();
+        QVERIFY2(failure.message.contains(QStringLiteral("redirect"), Qt::CaseInsensitive), qPrintable(failure.message));
+    }
+
+    void connectionCheckRejectsCrossOriginRedirects()
+    {
+        FakeServer destination;
+        FakeServer server;
+        server.route("GET /v1/models",
+                     "HTTP/1.1 307 Temporary Redirect\r\nLocation: " + destination.origin().toUtf8()
+                         + "/stolen\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        SpeechEndpointSettings endpoint;
+        endpoint.baseUrl = server.origin();
+        endpoint.apiKey = QStringLiteral("private-key");
+        const auto result = checkSpeechEndpoint(endpoint);
+        QVERIFY(!result.ok);
+        QCOMPARE(destination.requests.size(), 0);
+        QVERIFY2(result.message.contains(QStringLiteral("redirect"), Qt::CaseInsensitive), qPrintable(result.message));
+    }
+
     void speechEndpointReadsAJsonTranscriptOnce()
     {
         FakeServer server;

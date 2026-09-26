@@ -1,4 +1,5 @@
 #include "providers/LocalRunner.h"
+#include "providers/EndpointRequest.h"
 
 #include "providers/BlockingHttp.h"
 #include "providers/ChatCompletionsRefiner.h"
@@ -15,7 +16,7 @@ namespace {
 
 HttpResult get(const QString &url, int timeoutMs)
 {
-    return blockingGet(QNetworkRequest{QUrl(url)}, timeoutMs);
+    return blockingGet(endpointRequest(QUrl(url)), timeoutMs);
 }
 
 QJsonObject jsonObject(const HttpResult &result)
@@ -265,7 +266,7 @@ void LocalRunnerRefiner::refine(const QString &rawTranscript,
 // prompt) beside the cleanup keeps it resident whichever finishes first.
 void LocalRunnerRefiner::keepOllamaModelLoaded(const QString &model)
 {
-    QNetworkRequest request{QUrl(localRunnerOrigin(QStringLiteral("ollama")) + QStringLiteral("/api/generate"))};
+    QNetworkRequest request = endpointRequest(QUrl(localRunnerOrigin(QStringLiteral("ollama")) + QStringLiteral("/api/generate")));
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     const QJsonObject body{{QStringLiteral("model"), model}, {QStringLiteral("keep_alive"), -1}};
     QNetworkReply *reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
@@ -294,7 +295,7 @@ void OllamaPull::start(const QString &model, const QString &origin)
     m_layers.clear();
     m_succeeded = false;
     m_error.clear();
-    QNetworkRequest request{QUrl(origin + QStringLiteral("/api/pull"))};
+    QNetworkRequest request = endpointRequest(QUrl(origin + QStringLiteral("/api/pull")));
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     const QJsonObject body{{QStringLiteral("model"), model}, {QStringLiteral("stream"), true}};
     QNetworkReply *reply = m_network.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));

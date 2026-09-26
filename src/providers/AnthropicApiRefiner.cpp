@@ -1,4 +1,5 @@
 #include "providers/AnthropicApiRefiner.h"
+#include "providers/EndpointRequest.h"
 
 #include "providers/ClaudeCredentials.h"
 #include "providers/TranscriptRefinementPrompt.h"
@@ -193,7 +194,7 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
 {
     m_stream.start([=](bool fast) -> StreamingRefinement::Request {
         const QUrl endpoint = messagesEndpoint(endpointBase);
-        QNetworkRequest request(endpoint);
+        QNetworkRequest request = endpointRequest(endpoint);
         request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
         request.setRawHeader("Authorization", "Bearer " + bearerToken.toUtf8());
         request.setRawHeader("anthropic-version", "2023-06-01");
@@ -242,7 +243,7 @@ void AnthropicApiRefiner::refineWithApiKey(const QString &rawTranscript,
                                            const RefinementContext &context)
 {
     m_stream.start([=](bool) -> StreamingRefinement::Request {
-        QNetworkRequest request(messagesEndpoint(endpointBase));
+        QNetworkRequest request = endpointRequest(messagesEndpoint(endpointBase));
         request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
         request.setRawHeader("anthropic-version", "2023-06-01");
         if (!apiKey.isEmpty()) {

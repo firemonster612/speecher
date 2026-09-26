@@ -35,7 +35,7 @@ inline HttpResult blockingGet(const QNetworkRequest &request, int timeoutMs)
     } else {
         result.status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         result.body = reply->readAll();
-        if (result.status == 0) {
+        if (reply->error() != QNetworkReply::NoError) {
             result.error = reply->errorString();
         }
     }

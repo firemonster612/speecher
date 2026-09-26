@@ -1,4 +1,5 @@
 #include "providers/CustomEndpoints.h"
+#include "providers/EndpointRequest.h"
 
 #include "core/EndpointUrl.h"
 #include "providers/BlockingHttp.h"
@@ -13,7 +14,7 @@ namespace {
 
 EndpointCheck checkFromListing(const HttpResult &result, const QString &url)
 {
-    if (result.status == 0) {
+    if (result.status == 0 || (result.status < 400 && !result.error.isEmpty())) {
         return {false, QStringLiteral("Could not reach %1: %2").arg(url, result.error), {}};
     }
     if (result.status == 401 || result.status == 403) {
@@ -48,7 +49,7 @@ EndpointCheck checkSpeechEndpoint(const SpeechEndpointSettings &endpoint, int ti
         return {false, QStringLiteral("Enter the server URL."), {}};
     }
     const QString url = endpoint.baseUrl + QStringLiteral("/v1/models");
-    QNetworkRequest request{QUrl(url)};
+    QNetworkRequest request = endpointRequest(QUrl(url));
     if (!endpoint.apiKey.isEmpty()) {
         request.setRawHeader("Authorization", "Bearer " + endpoint.apiKey.toUtf8());
     }
@@ -61,7 +62,7 @@ EndpointCheck checkRefinementEndpoint(const RefinementSettings &settings, int ti
     if (endpoint.apiBase.isEmpty()) {
         return {false, QStringLiteral("Enter the server URL."), {}};
     }
-    QNetworkRequest request{QUrl(endpoint.apiBase + QStringLiteral("/models"))};
+    QNetworkRequest request = endpointRequest(QUrl(endpoint.apiBase + QStringLiteral("/models")));
     if (endpoint.format == QStringLiteral("anthropic")) {
         request.setRawHeader("anthropic-version", "2023-06-01");
         if (!endpoint.apiKey.isEmpty()) request.setRawHeader("x-api-key", endpoint.apiKey.toUtf8());
@@ -76,7 +77,7 @@ EndpointCheck checkRefinementEndpoint(const RefinementSettings &settings, int ti
     // Ollama's own listing names every pulled model, including ones its
     // OpenAI-compatible listing leaves out.
     const HttpResult tags = blockingGet(
-        QNetworkRequest{QUrl(endpointServerBase(endpoint.apiBase) + QStringLiteral("/api/tags"))},
+        endpointRequest(QUrl(endpointServerBase(endpoint.apiBase) + QStringLiteral("/api/tags"))),
         timeoutMs);
     const QStringList models = tags.status == 200 ? modelIdsFromListing(tags.body) : QStringList{};
     return models.isEmpty() ? check : checkFromListing(tags, endpoint.apiBase);

@@ -1,4 +1,5 @@
 #include "providers/OpenAiRefiner.h"
+#include "providers/EndpointRequest.h"
 
 #include "providers/TranscriptRefinementPrompt.h"
 
@@ -89,7 +90,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
         QUrl endpoint = base;
         endpoint.setPath(endpoint.path().replace(QRegularExpression(QStringLiteral("/$")), QString()) + QStringLiteral("/responses"));
 
-        QNetworkRequest request(endpoint);
+        QNetworkRequest request = endpointRequest(endpoint);
         request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
         request.setRawHeader("Authorization", "Bearer " + bearerToken.toUtf8());
         if (!organization.isEmpty()) {
