@@ -6,3 +6,4 @@ mockup seed (`docs/insights-mockup/seed-active.jsonl`) and today pinned to
 
 - `home-share-button.png`: Home, with Share beside the period picker.
 - `share-menu.png`: the Share menu open.
+- `stats-image.png`: what "Copy image with stats" puts on the clipboard.

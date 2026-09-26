@@ -19,8 +19,19 @@ QString plural(int count, const QString &noun)
     return QStringLiteral("%1 %2").arg(number(count), count == 1 ? noun : noun + u's');
 }
 
-// "last 30 days", "this year", "all time".
-QString periodName(InsightsRange range)
+QString speedup(const InsightsSummary &summary)
+{
+    return QLocale().toString(double(summary.wordsPerMinute) / summary.typingWordsPerMinute, 'f', 1);
+}
+
+QString isoDate(const QDate &date)
+{
+    return date.toString(Qt::ISODate);
+}
+
+} // namespace
+
+QString insightsPeriodName(InsightsRange range)
 {
     switch (range) {
     case InsightsRange::Last7Days: return QStringLiteral("last 7 days");
@@ -31,39 +42,9 @@ QString periodName(InsightsRange range)
     return QStringLiteral("all time");
 }
 
-// The period as the tail of a sentence: "in the last 30 days", "so far".
-QString periodPhrase(InsightsRange range)
-{
-    switch (range) {
-    case InsightsRange::Last7Days: return QStringLiteral("in the last 7 days");
-    case InsightsRange::Last30Days: return QStringLiteral("in the last 30 days");
-    case InsightsRange::ThisYear: return QStringLiteral("this year");
-    case InsightsRange::AllTime: break;
-    }
-    return QStringLiteral("so far");
-}
-
-QString speedup(const InsightsSummary &summary)
-{
-    return QLocale().toString(double(summary.wordsPerMinute) / summary.typingWordsPerMinute, 'f', 1);
-}
-
-QString lowered(QString text)
-{
-    if (!text.isEmpty()) text[0] = text.at(0).toLower();
-    return text;
-}
-
-QString isoDate(const QDate &date)
-{
-    return date.toString(Qt::ISODate);
-}
-
-} // namespace
-
 QString insightsShareText(const InsightsSummary &summary, InsightsRange range)
 {
-    QStringList lines{QStringLiteral("My Speecher stats, %1").arg(periodName(range))};
+    QStringList lines{QStringLiteral("My Speecher stats, %1").arg(insightsPeriodName(range))};
     lines << QStringLiteral("%1 in %2 (%3 of audio)")
                  .arg(plural(summary.words, QStringLiteral("word")),
                       plural(summary.dictations, QStringLiteral("dictation")),
@@ -92,24 +73,6 @@ QString insightsShareText(const InsightsSummary &summary, InsightsRange range)
     return lines.join(u'\n');
 }
 
-QString insightsPostText(const InsightsSummary &summary, InsightsRange range)
-{
-    QString text = QStringLiteral("I've dictated %1 with Speecher %2")
-                       .arg(plural(summary.words, QStringLiteral("word")), periodPhrase(range));
-    if (summary.words > 0) {
-        text += QStringLiteral(", %1").arg(lowered(summary.bookComparison));
-    }
-    if (summary.wordsPerMinute > 0) {
-        text += QStringLiteral(", at %1 words per minute (%2× faster than typing)")
-                    .arg(number(summary.wordsPerMinute), speedup(summary));
-    }
-    text += u'.';
-    if (summary.currentStreak > 1) {
-        text += QStringLiteral(" %1-day streak and counting.").arg(summary.currentStreak);
-    }
-    return text;
-}
-
 QByteArray insightsJson(const InsightsSummary &summary, InsightsRange range, const QDate &today)
 {
     QJsonArray apps;
@@ -127,7 +90,7 @@ QByteArray insightsJson(const InsightsSummary &summary, InsightsRange range, con
                                 {QStringLiteral("audioMs"), day.audioMs}});
     }
     const QJsonObject period{
-        {QStringLiteral("name"), periodName(range)},
+        {QStringLiteral("name"), insightsPeriodName(range)},
         {QStringLiteral("words"), summary.words},
         {QStringLiteral("dictations"), summary.dictations},
         {QStringLiteral("audioMs"), summary.audioMs},

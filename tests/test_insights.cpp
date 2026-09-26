@@ -461,21 +461,6 @@ private slots:
                                 "100 words per minute, 2.5× faster than typing\n"
                                 "2-day streak, my longest yet\n"
                                 "Top apps: Kate 100%"));
-        const QString post = insightsPostText(summary, InsightsRange::Last7Days);
-        QCOMPARE(post,
-                 QStringLiteral("I've dictated 150 words with Speecher in the last 7 days, about half "
-                                "the Gettysburg Address, at 100 words per minute (2.5× faster than "
-                                "typing). 2-day streak and counting."));
-    }
-
-    void postFitsOnXForTheMockupSeed()
-    {
-        const InsightsLog log(QFINDTESTDATA("../docs/insights-mockup/seed-active.jsonl"),
-                              InsightsLog::Access::ReadOnly);
-        for (InsightsRange range : {InsightsRange::Last7Days, InsightsRange::Last30Days,
-                                    InsightsRange::ThisYear, InsightsRange::AllTime}) {
-            QVERIFY(insightsPostText(summarize(log.records(), range, kToday), range).size() <= 280);
-        }
     }
 
     void jsonCarriesThePeriodStreakAndActiveDays()
