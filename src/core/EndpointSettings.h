@@ -22,6 +22,7 @@ struct RefinementEndpointEdit {
     std::optional<QString> baseUrl;
     std::optional<QString> apiKey;
     std::optional<QString> model;
+    std::optional<QString> preset;
 };
 void editRefinementEndpoint(AppSettings &settings, const RefinementEndpointEdit &edit);
 

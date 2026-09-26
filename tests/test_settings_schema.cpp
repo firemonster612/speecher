@@ -55,6 +55,31 @@ class SettingsSchemaTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void refinementServerChoiceSelectsTheCliProxyPreset()
+    {
+        const auto schema = buildSettingsSchema(fakeContext());
+        const auto &page = schema.page("refinement");
+        QVERIFY(hasRow(page, "refinementEndpointServer"));
+        const auto &server = rowById(page, "refinementEndpointServer");
+        AppSettings settings;
+        settings.refinement.providerId = "endpoint";
+        settings.refinement.cliproxyBaseUrl = "http://proxy.example:8317";
+        settings.refinement.cliproxyApiKey = "saved-key";
+        const auto options = server.options(settings);
+        QCOMPARE(options.size(), 2);
+        QCOMPARE(options.at(0).label, QString("Custom"));
+        QCOMPARE(options.at(1).label, QString("CLI Proxy API"));
+        server.apply(settings, options.at(1).id);
+        QCOMPARE(settings.refinement.endpoint.preset, QString("cliproxy"));
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiBase, QString("http://proxy.example:8317/v1"));
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QString("saved-key"));
+        server.apply(settings, options.at(0).id);
+        QVERIFY(settings.refinement.endpoint.preset.isEmpty());
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiBase, QString("http://proxy.example:8317/v1"));
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QString("saved-key"));
+        QCOMPARE(settings.refinement.cliproxyApiKey, QString("saved-key"));
+    }
+
     void endpointPresetRowsShowAndEditEffectiveValues()
     {
         const auto schema = buildSettingsSchema(fakeContext());
@@ -1049,9 +1074,10 @@ private slots:
                  QStringList({QStringLiteral("speechEndpointUrl"), QStringLiteral("speechEndpointPath"),
                               QStringLiteral("speechEndpointApiKey"), QStringLiteral("speechEndpointModel"),
                               QStringLiteral("speechEndpointTest")}));
-        QCOMPARE(idsAfter(refinement, QStringLiteral("refinementProvider")).mid(0, 8),
+        QCOMPARE(idsAfter(refinement, QStringLiteral("refinementProvider")).mid(0, 9),
                  QStringList({QStringLiteral("localRunner"), QStringLiteral("localRunnerModel"),
-                              QStringLiteral("localRunnerDetect"), QStringLiteral("refinementEndpointFormat"),
+                              QStringLiteral("localRunnerDetect"), QStringLiteral("refinementEndpointServer"),
+                              QStringLiteral("refinementEndpointFormat"),
                               QStringLiteral("refinementEndpointUrl"), QStringLiteral("refinementEndpointApiKey"),
                               QStringLiteral("refinementEndpointModel"),
                               QStringLiteral("refinementEndpointTest")}));

@@ -25,7 +25,8 @@ void editRefinementEndpoint(AppSettings &settings, const RefinementEndpointEdit 
     const bool unread = settings.unreadSecretKeys.contains(proxy ? proxyKey : endpointKey);
     const bool serverChanged = edit.baseUrl && withoutTrailingSlashes(*edit.baseUrl) != effective.apiBase;
     const bool keyChanged = edit.apiKey && (edit.apiKey->trimmed() != effective.apiKey || unread);
-    if ((serverChanged || keyChanged) && endpoint.preset == QStringLiteral("cliproxy")) {
+    const bool leavingPreset = edit.preset && *edit.preset != QStringLiteral("cliproxy");
+    if ((serverChanged || keyChanged || leavingPreset) && endpoint.preset == QStringLiteral("cliproxy")) {
         endpoint.preset.clear();
         endpoint.baseUrl = effective.apiBase;
         endpoint.apiKey = effective.apiKey;
@@ -41,6 +42,7 @@ void editRefinementEndpoint(AppSettings &settings, const RefinementEndpointEdit 
         }
         settings.unreadSecretKeys.removeAll(endpointKey);
     }
+    if (edit.preset) endpoint.preset = *edit.preset;
     if (edit.format) endpoint.format = *edit.format;
     if (edit.model) endpoint.model = edit.model->trimmed();
 }

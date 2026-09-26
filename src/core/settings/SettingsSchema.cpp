@@ -552,6 +552,15 @@ QList<SettingsRow> localRunnerRows(const std::function<LiveFacts()> &facts)
 QList<SettingsRow> refinementEndpointRows(const std::function<LiveFacts(const AppSettings &)> &facts)
 {
     QList<SettingsRow> rows{
+        choiceRow(QStringLiteral("refinementEndpointServer"),
+                  QStringLiteral("Server"),
+                  QString(),
+                  fixedOptions({
+                      {QString(), QStringLiteral("Custom")},
+                      {QStringLiteral("cliproxy"), QStringLiteral("CLI Proxy API")},
+                  }),
+                  [](const AppSettings &settings) { return settings.refinement.endpoint.preset; },
+                  [](AppSettings &settings, const QString &value) { editRefinementEndpoint(settings, {.preset = value}); }),
         choiceRow(QStringLiteral("refinementEndpointFormat"),
                   QStringLiteral("Format"),
                   QStringLiteral("The API the server speaks."),
@@ -579,9 +588,9 @@ QList<SettingsRow> refinementEndpointRows(const std::function<LiveFacts(const Ap
         connectionTestRow(QStringLiteral("refinementEndpointTest"),
                           [](const LiveFacts &live) { return live.refinementEndpointStatus; }, facts),
     };
-    rows[2].secret = true;
-    rows[3].contentWidthHint = 20;
-    rows[3].suggestions = [facts](const AppSettings &settings) {
+    rows[3].secret = true;
+    rows[4].contentWidthHint = 20;
+    rows[4].suggestions = [facts](const AppSettings &settings) {
         return namedOptions(facts(settings).refinementEndpointModels);
     };
     for (SettingsRow &row : rows) {
