@@ -95,7 +95,7 @@
   .btn.ghost { background: none; color: inherit; box-shadow: inset 0 0 0 1.5px currentColor; }
 
   /* Hero */
-  .hero { padding-top: clamp(28px, 5vh, 64px); padding-bottom: clamp(72px, 10vw, 140px); }
+  .hero { padding-top: clamp(28px, 5vh, 64px); padding-bottom: clamp(56px, 7vw, 104px); }
   .hero h1 del::after { animation: strike .42s cubic-bezier(.6,0,.2,1) .15s both; }
   @keyframes strike { from { transform: scaleX(0); } }
   .hero-row { display: grid; grid-template-columns: minmax(0, 330px) minmax(0, 1fr); gap: clamp(28px, 4vw, 56px); margin-top: clamp(28px, 4vw, 48px); align-items: stretch; }
@@ -243,7 +243,7 @@
   .static-rows { display: none; }
 
   /* Platforms */
-  .platforms { background: var(--graphite); padding-block: clamp(80px, 10vw, 140px); overflow: hidden; }
+  .platforms { background: var(--graphite); padding-block: clamp(56px, 7vw, 112px); overflow: hidden; }
   /* Pinned from the top: less padding so the heading and fan fit one viewport. */
   /* It fills the viewport while pinned, so no page background shows below it; the fan
      takes the space under the heading and centres in it. */
@@ -302,7 +302,7 @@
   .mac speecher-popup { font-family: -apple-system, "SF Pro Text", system-ui, sans-serif; }
 
   /* Price */
-  .price { background: var(--saffron); color: var(--ink); padding-block: clamp(72px, 9vw, 130px); margin-top: clamp(16px, 2vw, 24px); }
+  .price { background: var(--saffron); color: var(--ink); padding-block: clamp(56px, 7vw, 104px); margin-top: clamp(16px, 2vw, 24px); }
   .price-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 5vw, 72px); align-items: center; }
   .price .body { margin-top: 24px; font-size: clamp(1.1rem, 1.4vw, 1.3rem); max-width: 34ch; color: #2a2418; }
   .eq-fit { position: relative; }
@@ -341,7 +341,7 @@
   .narrow .equals { left: 162px; top: 316px; font-size: 36px; }
   .narrow .zero-out { left: 196px; top: 282px; font-size: 104px; }
   .narrow .zero-out small { font-size: 26px; }
-  .trust { margin-top: clamp(56px, 7vw, 96px); }
+  .trust { margin-top: clamp(40px, 5vw, 72px); }
   .trust h3 { font-size: 1.25rem; font-weight: 750; margin-bottom: 18px; }
   .trust ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
   .trust li { background: var(--ink); color: var(--fg); border-radius: 22px; padding: 22px; font-size: 1rem; line-height: 1.4; display: grid; gap: 16px; align-content: start; }
@@ -351,7 +351,7 @@
   .price .local-note { margin-top: 14px; font-size: clamp(1rem, 1.2vw, 1.15rem); }
   .price .local-note a { color: inherit; font-weight: 700; text-underline-offset: 3px; }
 
-  .local { background: var(--graphite); padding-block: clamp(72px, 9vw, 130px); margin-top: clamp(16px, 2vw, 24px); }
+  .local { background: var(--graphite); padding-block: clamp(56px, 7vw, 104px); margin-top: clamp(16px, 2vw, 24px); }
   .local-grid { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 6fr); gap: clamp(32px, 5vw, 72px); align-items: center; }
   .local .body { margin-top: 24px; color: var(--soft); font-size: clamp(1.05rem, 1.3vw, 1.2rem); max-width: 40ch; }
   .soon-chip { display: inline-block; margin: 0 0 20px; padding: 7px 12px; border-radius: 999px; background: rgb(124 240 184 / .12); color: #7cf0b8; font: 600 .85rem/1 var(--sans); }
@@ -378,10 +378,9 @@
   .reel-out b { font: 860 clamp(2.6rem, 4.4vw, 4rem)/.9 var(--sans); font-stretch: 110%; letter-spacing: -.05em; color: #7cf0b8; display: inline-block; }
   .reel-eq, .reel-dot { color: var(--dim); }
 
-  .android { background: linear-gradient(160deg, var(--blue) 0%, var(--blue-deep) 100%); padding-block: clamp(72px, 9vw, 130px); margin-top: clamp(16px, 2vw, 24px); overflow: hidden; }
+  .android { background: linear-gradient(160deg, var(--blue) 0%, var(--blue-deep) 100%); padding-block: clamp(56px, 7vw, 104px); margin-top: clamp(16px, 2vw, 24px); overflow: hidden; }
   .android-grid { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: clamp(32px, 5vw, 72px); align-items: center; }
   .android .body { margin-top: 24px; color: #dfe4ff; font-size: clamp(1.05rem, 1.3vw, 1.2rem); max-width: 40ch; }
-  .android pre { margin: 26px 0 0; padding: 18px 20px; border-radius: 16px; background: rgb(0 0 0 / .3); white-space: pre-wrap; overflow-wrap: anywhere; font-size: clamp(.95rem, 1.4vw, 1.1rem); }
   .android .after { margin-top: 16px; color: #dfe4ff; }
   .phone-stage { position: relative; height: 620px; }
   .phone { position: absolute; right: 8%; top: 0; width: 280px; height: 622px; border-radius: 44px; background: #0c0c0e; padding: 10px; box-shadow: 0 40px 80px -24px rgb(0 0 30 / .8), inset 0 0 0 2px #2c2c33; transform: rotate(4deg); will-change: transform; }
@@ -390,7 +389,7 @@
   .zoom div { height: 159px; background: url(assets/panel-compact.png) 0 -579px / 330px auto no-repeat; }
 
   /* Downloads */
-  .downloads { padding-block: clamp(96px, 11vw, 160px) clamp(64px, 8vw, 110px); }
+  .downloads { padding-block: clamp(72px, 8vw, 120px) clamp(56px, 6vw, 88px); }
   .dl { list-style: none; margin: 48px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
   .dl li { background: var(--graphite); border-radius: 28px; padding: clamp(24px, 3vw, 36px); display: grid; gap: 14px; align-content: start; }
   .dl h3 { font-size: clamp(1.8rem, 3vw, 2.6rem); font-weight: 820; font-stretch: 108%; letter-spacing: -.035em; line-height: 1; }
@@ -414,21 +413,28 @@
   @media (max-width: 640px) {
     .nav nav a:not(.pill) { display: none; }
     .dl { grid-template-columns: minmax(0, 1fr); }
-    .trust ul { grid-template-columns: minmax(0, 1fr); }
-    .trust li { grid-template-columns: 34px 1fr; align-items: center; }
+    .trust li { padding: 18px; font-size: .95rem; }
     .fix { white-space: normal; }
     .phone { width: 230px; height: 511px; border-radius: 38px; right: 0; }
     .phone img { border-radius: 30px; }
     .zoom { width: 270px; top: 200px; left: 0; }
     .zoom div { height: 130px; background-size: 270px auto; background-position: 0 -474px; }
-    .phone-stage { height: 500px; }
+    .phone-stage { height: 440px; }
+    .phone { width: 200px; height: 444px; }
     .reels { grid-template-columns: minmax(0, 1fr); }
     .reel-win { height: var(--item); -webkit-mask-image: none; mask-image: none; }
     .reel-win::after { top: 4px; }
     .reel-out { justify-content: flex-start; }
   }
 
-  /* Narrow screens and reduced motion: one card per step, stacked, no pinning. */
+  /* Narrow screens: heading, then the card, then the steps that drive it. */
+  @media (max-width: 991.98px) {
+    .show-stage { height: auto; min-height: 0; display: flex; flex-direction: column; align-items: stretch; gap: 32px; padding-block: 96px 40px; }
+    .show-left { display: contents; }
+    #card-fit { order: 1; }
+    .steps { order: 2; margin-top: 0; }
+  }
+  /* Reduced motion: one card per step, stacked. */
   .stacked .show-stage { height: auto; min-height: 0; display: block; padding-block: 96px 40px; }
   .stacked .show-stage .steps, .stacked #card-fit { display: none; }
   .stacked .static-rows { display: grid; gap: 64px; margin-top: 48px; }
@@ -619,11 +625,9 @@
   <section class="panel android" aria-labelledby="android-h">
     <div class="wrap android-grid">
       <div>
-        <h2 id="android-h">Android is <span class="fix"><del>here</del> <ins>coming.</ins></span></h2>
+        <h2 id="android-h">Android is coming.</h2>
         <p class="body">A dictation-only keyboard and a small floating chip. Tap the chip, speak, then tap Insert or Insert refined. It signs in with Claude or ChatGPT like the desktop app. Android 12 or newer.</p>
-        <p class="after">No published build yet. To try it now, build it and install the APK:</p>
-        <pre><code>cd android &amp;&amp; ./gradlew :app:assembleDebug</code></pre>
-        <p class="after"><a href="https://github.com/firemonster612/speecher/tree/master/android">Android source on GitHub</a></p>
+        <p class="after">No published build yet. <a href="https://github.com/firemonster612/speecher/tree/master/android">Build it from source</a>.</p>
       </div>
       <div class="phone-stage" id="phone-stage">
         <div class="phone"><img src="assets/panel-compact.png" width="1080" height="2400" alt="The Android panel open under a New chat screen, with a Speak now prompt and Cancel, Insert and Insert refined buttons."></div>
@@ -701,6 +705,8 @@ gsap.registerPlugin(ScrollTrigger);
 // Pinning, snapping and scrubbing only on wide screens with motion allowed.
 const DESK = '(min-width: 992px) and (prefers-reduced-motion: no-preference)';
 const NOT_DESK = '(max-width: 991.98px), (prefers-reduced-motion: reduce)';
+const MOTION = '(prefers-reduced-motion: no-preference)';
+const STILL = '(prefers-reduced-motion: reduce)';
 const mm = gsap.matchMedia();
 
 /* ---------- Hero machine ---------- */
@@ -1042,21 +1048,6 @@ const STEP_SECONDS = [5.33, 5.6, 9, 6.13];
 const STEP_START = [0.2, 0.18, 0.1, 0.2];
 const GAP = 0.4;
 
-// Plays one step of a card on a timer, looping, so a step is never shown half-done by scroll.
-function stepPlayer(card, onProgress = () => {}) {
-  let step = 0, t0 = 0;
-  const tick = () => {
-    const d = STEP_SECONDS[step], s0 = STEP_START[step], len = d * (1 - s0);
-    const e = ((performance.now() - t0) / 1000) % (len + GAP);
-    card.el.classList.toggle('blank', e >= len);
-    if (e < len) { const p = s0 + e / d; card.render(step + p); onProgress((p - s0) / (1 - s0)); }
-  };
-  return {
-    play(i) { step = i; t0 = performance.now(); gsap.ticker.add(tick); tick(); },
-    stop() { gsap.ticker.remove(tick); },
-  };
-}
-
 function fitCard(card, fit, maxH) {
   fit.style.maxWidth = '';
   const s = Math.min(1.25, fit.clientWidth / 600, Math.max(0.3, maxH / 470));
@@ -1072,10 +1063,10 @@ function fitCard(card, fit, maxH) {
   const items = $$('.steps li', section);
   const bars = $$('.steps .bar', section);
 
-  // Wide screens: the showcase plays by itself. Each step plays to its end, holds its finished
+  // With motion allowed, the showcase plays by itself. Each step plays to its end, holds its finished
   // state for a moment, then hands over to the next; after the last it starts again. Scrolling
   // just scrolls the page. The step titles jump straight to a step.
-  mm.add(DESK, () => {
+  mm.add(MOTION, () => {
     const fit = $('#card-fit');
     const card = new StepCard(fit);
     const N = items.length;
@@ -1125,9 +1116,9 @@ function fitCard(card, fit, maxH) {
     };
   });
 
-  // Narrow screens and reduced motion: one card per step, stacked; each autoplays in view.
+  // Reduced motion: one finished card per step, stacked.
   let rows = null;
-  mm.add(NOT_DESK, () => {
+  mm.add(STILL, () => {
     document.documentElement.classList.add('stacked');
     rows ??= items.map((li, i) => {
       const row = document.createElement('div');
@@ -1137,22 +1128,13 @@ function fitCard(card, fit, maxH) {
       const fit = $('.card-fit', row);
       const card = new StepCard(fit);
       card.render(i + 0.9);
-      return { row, fit, card, player: still ? null : stepPlayer(card) };
+      return { row, fit, card };
     });
     const refit = () => rows.forEach((r) => fitCard(r.card, r.fit, 460));
     refit();
     addEventListener('resize', refit);
-    const io = new IntersectionObserver((entries) => {
-      for (const e of entries) {
-        const i = rows.findIndex((r) => r.row === e.target);
-        if (e.isIntersecting) rows[i].player.play(i); else rows[i].player.stop();
-      }
-    }, { threshold: 0.35 });
-    if (!still) rows.forEach((r) => io.observe(r.row));
     return () => {
       document.documentElement.classList.remove('stacked');
-      io.disconnect();
-      rows.forEach((r) => r.player?.stop());
       removeEventListener('resize', refit);
     };
   });
@@ -1200,7 +1182,7 @@ function fitCard(card, fit, maxH) {
   mm.add(DESK, () => {
     section.classList.add('pinned');
     size();
-    const tl = gsap.timeline({ scrollTrigger: { trigger: section, start: 'top top', end: '+=70%', pin: true, anticipatePin: 1, scrub: 1, invalidateOnRefresh: true, onRefreshInit: size } });
+    const tl = gsap.timeline({ scrollTrigger: { trigger: section, start: 'top top', end: '+=45%', pin: true, anticipatePin: 1, scrub: 1, invalidateOnRefresh: true, onRefreshInit: size } });
     cards.forEach((c, k) => tl.fromTo(c, piled(c, k), { ...fanned(c), ease: 'power2.inOut' }, 0));
     return () => { section.classList.remove('pinned'); size(); };
   });
