@@ -29,9 +29,16 @@ public:
 
     // Saves a picture of the window for --grab. SPEECHER_GRAB_PAGE names a
     // schema page id (general, audio, refinement, output, vocabulary,
-    // corrections, bindings, providers, whatsNew) or the shortcut pane, to
-    // show before the grab. A ":index" suffix is tolerated and ignored.
+    // corrections, bindings, providers, whatsNew) or the home or shortcut
+    // pane, to show before the grab. A ":index" suffix is tolerated and ignored.
     bool capture(const QString &path);
+
+    // Asks in a ContentDialog over the window, Cancel being the default, and
+    // runs `confirmed` only if the person chose confirmLabel.
+    void confirm(const QString &title,
+                 const QString &text,
+                 const QString &confirmLabel,
+                 std::function<void()> confirmed);
 
     // What Action rows run. The window handles whatsNew itself and forwards
     // everything (whatsNew included) here; W4's front end wires the rest.
