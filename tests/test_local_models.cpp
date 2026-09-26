@@ -190,6 +190,8 @@ private slots:
         QFile file(store.modelPath(model));
         QVERIFY(file.open(QIODevice::ReadOnly));
         QCOMPARE(file.readAll(), content);
+        // Windows will not delete a file something still holds open.
+        file.close();
         QVERIFY(!QFile::exists(store.modelPath(model) + QStringLiteral(".part")));
 
         QVERIFY(store.remove(model));
