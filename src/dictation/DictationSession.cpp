@@ -230,7 +230,7 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
         return;
     }
 
-    AppSettings settings = m_settings->snapshot();
+    AppSettings settings = m_settings->dictationSnapshot();
     if (format) {
         settings.output.format = *format;
     }

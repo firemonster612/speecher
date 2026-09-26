@@ -25,11 +25,13 @@ public:
     using LaunchAtLoginReconciler = std::function<bool(bool, QString *)>;
 
     explicit SettingsStore(QObject *parent = nullptr);
-    // The snapshot carries the endpoint and CLI Proxy API keys, which live
-    // in the keyring. It waits for the keyring only for keys the chosen
-    // providers send, and only when SecretStore::prefetch has not yet
-    // cached them.
+    // Carries every saved endpoint and CLI Proxy API key, so a settings
+    // surface shows and saves them all. A key SecretStore::prefetch has not
+    // cached yet waits for the keyring (1.5 s at most).
     AppSettings snapshot() const;
+    // For starting a Dictation Session: waits for the keyring only for keys
+    // the chosen providers send; the others are left as cached so far.
+    AppSettings dictationSnapshot() const;
     void applySnapshot(const AppSettings &draft);
     SecretStore *secrets() const;
     QString cliproxyApiKey() const;
@@ -183,6 +185,13 @@ signals:
 
 private:
     void emitAudioCaptureSettingsChangedIfNeeded(const AudioCaptureSettings &previous);
+
+    struct SecretsToRead {
+        bool cliproxyKey = true;
+        bool refinementEndpointKey = true;
+        bool speechEndpointKey = true;
+    };
+    AppSettings snapshotReading(const SecretsToRead &wait) const;
 
     LaunchAtLoginReconciler m_reconcileLaunchAtLogin;
     SecretStore *m_secrets = nullptr;
