@@ -537,7 +537,8 @@ set(SPEECHER_FRONTEND_QT_SOURCES
   src/frontend/qt/WritingProfileGrid.cpp
   src/ui/AccessibilityNotice.cpp
   src/ui/AppWindow.cpp
-  src/ui/DictationPage.cpp
+  src/ui/HomePage.cpp
+  src/ui/InsightsCharts.cpp
   src/ui/SetupAssistant.cpp
   src/ui/setup/SetupPages.cpp
   src/ui/settings/SettingsPageSupport.cpp
@@ -561,7 +562,8 @@ set(SPEECHER_FRONTEND_QT_HEADERS
   src/ui/AccessibilityNotice.h
   src/ui/AppPage.h
   src/ui/AppWindow.h
-  src/ui/DictationPage.h
+  src/ui/HomePage.h
+  src/ui/InsightsCharts.h
   src/ui/SetupAssistant.h
   src/ui/setup/SetupPages.h
   src/ui/settings/SettingsPageSupport.h

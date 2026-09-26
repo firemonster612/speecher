@@ -4,7 +4,7 @@
 #include "app/UpdateController.h"
 #include "core/SettingsStore.h"
 #include "frontend/qt/SchemaSettingsPage.h"
-#include "ui/DictationPage.h"
+#include "ui/HomePage.h"
 #include "ui/InlineMessage.h"
 #include "ui/settings/SettingsPageSet.h"
 #include "ui/settings/SettingsPageSupport.h"
@@ -73,7 +73,7 @@ struct PageDefinition {
 // or gradients that stay dark on dark schemes), so one of them in the list
 // makes the whole column read as mismatched.
 const QList<PageDefinition> kPages{
-    {QStringLiteral("Dictation"), QStringLiteral("audio-input-microphone"), QString()},
+    {QStringLiteral("Home"), QStringLiteral("go-home"), QStringLiteral("user-home")},
     {QStringLiteral("General"), QStringLiteral("settings-configure"), QStringLiteral("configure")},
     {QStringLiteral("Audio"), QStringLiteral("audio-volume-high"), QStringLiteral("player-volume")},
     {QStringLiteral("Output"), QStringLiteral("edit-paste"), QStringLiteral("edit-copy")},
@@ -172,14 +172,17 @@ AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
     : QMainWindow(parent)
     , m_controller(controller)
     , m_pages(new SettingsPageSet(controller, this))
-    , m_dictation(new DictationPage(controller, this))
+    , m_home(new HomePage(controller, this))
 {
     setObjectName(QStringLiteral("appWindow"));
     setWindowTitle(QStringLiteral("Speecher"));
     buildSharedPages();
-    connect(m_pages, &SettingsPageSet::changed, m_dictation, &DictationPage::refreshSummary);
     connect(m_pages, &SettingsPageSet::whatsNewRequested, this, &AppWindow::showWhatsNew);
-    connect(m_dictation, &DictationPage::navigateRequested, this, &AppWindow::navigateToSettings);
+    connect(m_home, &HomePage::navigateRequested, this, &AppWindow::navigateToSettings);
+    connect(m_home, &HomePage::correctionsRequested, this, [this] {
+        navigateToSettings(AppPageId::Vocabulary);
+        m_vocabularyTabs->setCurrentIndex(m_correctionsTab);
+    });
     connect(m_controller->updates(),
             &UpdateController::changed,
             this,
@@ -353,7 +356,6 @@ void AppWindow::paintEvent(QPaintEvent *event)
     m_afterShowLoadScheduled = true;
     QTimer::singleShot(0, this, [this] {
         m_pages->loadAfterShow();
-        m_dictation->refreshSummary();
     });
 }
 
@@ -436,7 +438,8 @@ void AppWindow::buildSharedPages()
         return scroll;
     };
     addTab(m_pages->vocabulary(), QStringLiteral("Vocabulary"));
-    addTab(m_pages->corrections(), QStringLiteral("Learned corrections"));
+    m_vocabularyTabs = tabs;
+    m_correctionsTab = tabs->indexOf(addTab(m_pages->corrections(), QStringLiteral("Learned corrections")));
     m_pages->preserveBindingScroll(
         addTab(m_pages->bindings(), QStringLiteral("Replacements && snippets")));
 
@@ -449,7 +452,7 @@ void AppWindow::buildSharedPages()
     vocabularyLayout->addWidget(tabs, 1);
 
     m_pageWidgets = {
-        m_dictation,
+        m_home,
         m_pages->general(),
         m_pages->audio(),
         m_pages->output(),
@@ -912,7 +915,8 @@ void AppWindow::runAutoSave()
         m_autoSaveWarningText->setText(outcome.messages.join(QLatin1Char('\n')));
     }
     m_autoSaveWarning->setVisible(!saved);
-    m_dictation->refreshSummary();
+    // The Insights setting and the learned corrections both show on Home.
+    m_home->refresh();
 }
 
 void AppWindow::rememberGeometry()

@@ -16,6 +16,7 @@ class QPushButton;
 class QShowEvent;
 class QSplitter;
 class QStackedWidget;
+class QTabWidget;
 class QTimer;
 class QToolButton;
 
@@ -24,7 +25,7 @@ namespace speecher {
 class InlineMessage;
 
 class ApplicationController;
-class DictationPage;
+class HomePage;
 class SettingsPageSet;
 
 class AppWindow : public QMainWindow {
@@ -59,7 +60,9 @@ private:
 
     ApplicationController *m_controller;
     SettingsPageSet *m_pages;
-    DictationPage *m_dictation;
+    HomePage *m_home;
+    QTabWidget *m_vocabularyTabs = nullptr;
+    int m_correctionsTab = 0;
     QList<QWidget *> m_pageWidgets;
     QStackedWidget *m_stack = nullptr;
     QListWidget *m_navigation = nullptr;
