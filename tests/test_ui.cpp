@@ -1199,6 +1199,24 @@ private slots:
         QCOMPARE(settings.localSpeechSettings().modelId, QStringLiteral("moonshine-small"));
     }
 
+    void anUnreadySignInWithNoRunnerLeavesRefinementOff()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        ProviderRegistry providers;
+        providers.registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("OpenAI")}, [](QObject *parent) {
+            auto *refiner = new FakeRefiner(parent);
+            refiner->prepareResult = {false, QStringLiteral("Not signed in")};
+            return refiner;
+        });
+
+        RefinementSetupPage page(settings, providers);
+        page.show();
+        QCOMPARE(settings.refinementProvider(), QStringLiteral("none"));
+        QVERIFY(page.findChild<QCheckBox *>(QStringLiteral("refinementSkip"))->isChecked());
+    }
+
     void theAssistantKeepsTheCliProxyPresetUntilItsServerIsEdited()
     {
         SettingsStore settings;

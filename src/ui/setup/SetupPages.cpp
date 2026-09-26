@@ -2075,7 +2075,10 @@ QWidget *RefinementSetupPage::makeLocalRunnerDetail()
         m_settings.setLocalRunnerSettings(runner);
         showSelectedProvider();
     });
-    connect(m_local, &LocalSetup::changed, this, [this] { showLocalRunner(); });
+    connect(m_local, &LocalSetup::changed, this, [this] {
+        showLocalRunner();
+        autoSelectReadyProvider();
+    });
     connect(m_local, &LocalSetup::pullProgress, this, [this] { showLocalRunner(); });
     return m_localDetail;
 }
@@ -2256,12 +2259,13 @@ void RefinementSetupPage::showEvent(QShowEvent *event)
     QWidget::showEvent(event);
     // Same reasoning as the transcription page: probe when the page is shown,
     // not while the wizard is building, so the credential reads serialize and
-    // a mid-wizard sign-in is picked up.
-    checkProviders();
+    // a mid-wizard sign-in is picked up. Runners first, so a probe that
+    // answers at once finds the runner check still pending.
     if (m_local) {
         m_local->probeHardware();
         m_local->detectRunners();
     }
+    checkProviders();
 }
 
 int RefinementSetupPage::selectedIndex() const
@@ -2408,13 +2412,20 @@ void RefinementSetupPage::showSelectedProvider()
 
 void RefinementSetupPage::autoSelectReadyProvider()
 {
-    if (m_autoSelectDone || m_userSelected) return;
+    const bool probing = std::any_of(m_options.cbegin(), m_options.cend(), [](const auto &option) { return !option.probed; });
+    if (m_autoSelectDone || m_userSelected || probing || (m_local && m_local->detectingRunners())) return;
     m_autoSelectDone = true;
     const int index = selectedIndex();
     if (index < 0) return;
     QStringList ready;
     for (const auto &option : m_options) if (option.ok) ready.append(option.id);
-    const auto chosen = setupProviderChoice(m_options.at(index).id, ready, m_userSelected);
+    const bool runnerFound = m_local && m_local->runnerChoice().available;
+    const auto chosen = setupRefinementChoice(m_options.at(index).id, ready, runnerFound);
+    if (chosen == QStringLiteral("none")) {
+        m_skip->setChecked(true);
+        skipCleanup(true);
+        return;
+    }
     for (const auto &option : m_options) {
         if (option.id == chosen) option.button->setChecked(true);
     }

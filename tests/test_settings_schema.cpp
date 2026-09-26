@@ -80,6 +80,23 @@ private slots:
         QCOMPARE(settings.refinement.cliproxyApiKey, QString("saved-key"));
     }
 
+    void returningToCustomRestoresTheServerEnteredBefore()
+    {
+        const auto schema = buildSettingsSchema(fakeContext());
+        const auto &server = rowById(schema.page("refinement"), "refinementEndpointServer");
+        AppSettings settings;
+        settings.refinement.providerId = "endpoint";
+        settings.refinement.endpoint.baseUrl = "http://localhost:8080/v1";
+        settings.refinement.endpoint.apiKey = "custom-key";
+        settings.refinement.cliproxyBaseUrl = "http://proxy.example:8317";
+        settings.refinement.cliproxyApiKey = "proxy-key";
+        server.apply(settings, "cliproxy");
+        server.apply(settings, QString());
+        const auto endpoint = resolvedRefinementEndpoint(settings.refinement);
+        QCOMPARE(endpoint.apiBase, QString("http://localhost:8080/v1"));
+        QCOMPARE(endpoint.apiKey, QString("custom-key"));
+    }
+
     void endpointPresetRowsShowAndEditEffectiveValues()
     {
         const auto schema = buildSettingsSchema(fakeContext());

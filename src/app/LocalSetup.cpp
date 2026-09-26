@@ -56,6 +56,13 @@ QString setupProviderChoice(const QString &saved, const QStringList &ready, bool
     return saved;
 }
 
+QString setupRefinementChoice(const QString &saved, const QStringList &ready, bool runnerFound)
+{
+    const QString chosen = setupProviderChoice(saved, ready, false);
+    if (!isSetupSignInProvider(chosen) || ready.contains(chosen)) return chosen;
+    return runnerFound ? QStringLiteral("local") : QStringLiteral("none");
+}
+
 QString WelcomeChoice::update(const QString &provider, const QStringList &readyProviders,
                               bool proxyAccountFound, std::optional<bool> userChoice)
 {

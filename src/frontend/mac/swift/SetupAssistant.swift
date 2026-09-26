@@ -762,14 +762,17 @@ final class SetupFlowModel: ObservableObject {
         autoSelect(providerId, among: speechProviders, row: "speechProvider")
     }
 
-    /// The same courtesy on the refinement step. None is not a provider row,
-    /// so someone who wants no cleanup is left on it.
-    private func autoSelectReadyRefinementProvider() {
+    /// The same courtesy on the refinement step, once the runner check has
+    /// answered too. Core keeps None and an own model, and moves an unready
+    /// sign-in to a runner found here or to None.
+    func autoSelectReadyRefinementProvider() {
         guard !refinementAutoSelected, !refinementChosenByUser,
               refinementProviders.allSatisfy(\.probed),
-              selectedRefinementProvider != nil else { return }
+              let chosen = model.bridge.setupRefinementChoice(
+                  saved: refinementProviderId,
+                  readyProviders: refinementProviders.filter(\.ready).map(\.id)) else { return }
         refinementAutoSelected = true
-        autoSelect(refinementProviderId, among: refinementProviders, row: "refinementProvider")
+        if chosen != refinementProviderId { model.setValue(chosen, for: "refinementProvider") }
     }
 
     private func autoSelect(_ saved: String, among rows: [ProviderRow], row: String) {
@@ -2037,9 +2040,11 @@ private struct RefinementStep: View {
         }
         .formStyle(.grouped)
         .onAppear {
-            flow.checkRefinementProviders()
+            // Runners first, so a check that answers at once waits for them.
             model.refreshLocalSetup()
+            flow.checkRefinementProviders()
         }
+        .onChange(of: model.local) { flow.autoSelectReadyRefinementProvider() }
     }
 
     private struct Group {

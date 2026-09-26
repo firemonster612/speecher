@@ -1863,30 +1863,35 @@ struct SetupWindow::Native {
         content.Children().Append(panel);
     }
 
-    // The refinement twin of autoSelectSpeechProvider. None, someone's own
-    // runner and their own server are choices, never an unready sign-in to
-    // move away from; setupProviderChoice keeps them. Saved before the button
-    // is checked, so its Checked handler finds nothing left to write.
+    // The refinement twin of autoSelectSpeechProvider, once every provider
+    // and the runner check have answered. None, someone's own runner and
+    // their own server are choices, never an unready sign-in to move away
+    // from; setupRefinementChoice keeps them. Saved before the button is
+    // checked, so its Checked handler finds nothing left to write.
     void autoSelectRefinementProvider(const std::vector<RefinementOption> &options)
     {
-        const QString saved = controller->settings()->refinementProvider();
-        if (refinementSelectionSettled || !refinementReady.contains(saved)) {
+        LocalSetup *local = controller->localSetup();
+        const bool probing = std::any_of(options.cbegin(), options.cend(), [this](const RefinementOption &option) {
+            return !refinementReady.contains(option.id);
+        });
+        if (refinementSelectionSettled || probing || local->detectingRunners()) {
             return;
         }
+        refinementSelectionSettled = true;
+        const QString saved = controller->settings()->refinementProvider();
         QStringList ready;
         for (const RefinementOption &option : options) {
             if (refinementReady.value(option.id, false)) {
                 ready.append(option.id);
             }
         }
-        const QString chosen = setupProviderChoice(saved, ready, false);
+        const QString chosen = setupRefinementChoice(saved, ready, local->runnerChoice().available.has_value());
+        if (chosen == saved) {
+            return;
+        }
+        selectRefinement(chosen);
         for (const RefinementOption &option : options) {
-            if (option.id == chosen && chosen != saved) {
-                refinementSelectionSettled = true;
-                selectRefinement(chosen);
-                option.button.IsChecked(true);
-                return;
-            }
+            option.button.IsChecked(option.id == chosen);
         }
     }
 
@@ -2047,6 +2052,7 @@ struct SetupWindow::Native {
         QObject::connect(local, &LocalSetup::changed, pageScope.get(), [this, options] {
             showRunner(*options);
             showEndpointCheck();
+            autoSelectRefinementProvider(*options);
         });
         QObject::connect(local, &LocalSetup::pullProgress, pageScope.get(), [this] { showPull(); });
         content.Children().Append(panel);
