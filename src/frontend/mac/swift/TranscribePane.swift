@@ -53,8 +53,13 @@ final class TranscriptionModel: ObservableObject {
     @Published var expanded: Set<String> = []
     @Published private(set) var copied = ""
     @Published private(set) var exportProblem = ""
-    /// The choices the last batch ran with, which its summary describes.
+    /// The result row a retry is running for.
+    @Published private(set) var retrying: Int?
+    /// The choices the last batch ran with, which its summary describes, and
+    /// what the summary calls them, read when it started.
     private var batchOptions = Options()
+    private var batchLabels: SpeecherTranscribeBatchLabels?
+    private var cancelled = false
 
     let speechProviders: [SpeecherProviderModel]
     let refinementProviders: [SpeecherProviderModel]
@@ -76,14 +81,19 @@ final class TranscriptionModel: ObservableObject {
         tones = bridge.writingTones
         profiles = bridge.writingProfiles
         seedOptions()
-        bridge.transcriptionFileStarted = { [weak self] index, _ in self?.fileStarted(index) }
+        bridge.transcriptionFileStarted = { [weak self] index, path in self?.fileStarted(index, path: path) }
         bridge.transcriptionFileDecoded = { [weak self] index, peaks, durationMs in
             self?.fileDecoded(index, peaks: peaks, durationMs: durationMs)
         }
         bridge.transcriptionFileProgress = { [weak self] _, fraction in self?.fileProgressed(fraction) }
         bridge.transcriptionFilePartial = { [weak self] _, text in self?.partial = text }
-        bridge.transcriptionFileRefining = { [weak self] _ in self?.phase = "Refining…" }
-        bridge.transcriptionFileFinished = { [weak self] _, result in self?.results.append(result) }
+        bridge.transcriptionFileRefining = { [weak self] _ in
+            guard let self else { return }
+            self.phase = self.bridge.phaseLabel(.refining)
+        }
+        bridge.transcriptionFileFinished = { [weak self] _, result in
+            if self?.retrying == nil { self?.results.append(result) }
+        }
         bridge.transcriptionBatchFinished = { [weak self] results, cancelled in
             self?.batchFinished(results, cancelled: cancelled)
         }
@@ -145,13 +155,12 @@ final class TranscriptionModel: ObservableObject {
     var startCaption: String { files.count > 1 ? "Transcribe \(files.count) files" : "Transcribe" }
 
     func detail(for file: AudioFile) -> String {
-        let size = ByteCountFormatter.string(fromByteCount: file.bytes, countStyle: .file)
-        guard let duration = durations[file.path] else { return size }
-        return durationLabel(duration) + " · " + size
+        bridge.audioFileDetail(bytes: file.bytes, durationMs: durations[file.path] ?? -1)
     }
 
     /// Adds the audio among these paths, once each. A finished batch's results
-    /// give way to the setup that the new files are for.
+    /// give way to the setup that the new files are for; during a batch they
+    /// wait in the setup list it returns to.
     func add(_ paths: [String]) {
         guard !paths.isEmpty else { return }
         if stage == .results { transcribeMore() }
@@ -209,7 +218,9 @@ final class TranscriptionModel: ObservableObject {
         guard !files.isEmpty else { return }
         batch = files.map(\.path)
         batchOptions = options
+        batchLabels = bridge.batchLabels(for: bridged(options))
         results = []
+        cancelled = false
         current = -1
         startError = ""
         // Before the call: the session announces its first file from inside it.
@@ -222,51 +233,72 @@ final class TranscriptionModel: ObservableObject {
 
     func cancel() { bridge.cancelTranscription() }
 
-    var processingTitle: String {
-        guard batch.indices.contains(current) else { return "Transcribing" }
-        let name = fileName(batch[current])
-        return batch.count > 1 ? "Transcribing · \(name) (\(current + 1) of \(batch.count))"
-                               : "Transcribing · \(name)"
-    }
+    var processingTitle: String { bridge.processingTitle(batch: batch, current: current) }
 
     /// What the queue says about one file of the batch, and its symbol.
-    func queueState(_ index: Int) -> (text: String, symbol: String) {
-        if index < results.count {
-            return results[index].failed ? ("Failed", "exclamationmark.circle") : ("Done", "checkmark.circle")
+    func queueState(_ index: Int) -> (text: String, symbol: String, waiting: Bool) {
+        let state = bridge.queueState(at: index, current: current, finished: results)
+        let symbol: String
+        switch state {
+        case .current: symbol = "play.circle"
+        case .done: symbol = "checkmark.circle"
+        case .failed: symbol = "exclamationmark.circle"
+        default: symbol = "circle"
         }
-        return index == current ? (phase, "play.circle") : ("Waiting", "circle")
+        return (bridge.queueStateLabel(state, phase: phase), symbol, state == .waiting)
     }
 
-    private func fileStarted(_ index: Int) {
+    private func fileStarted(_ index: Int, path: String) {
         current = index
+        currentPath = path
         fraction = 0
         peaks = []
         partial = ""
-        phase = "Reading the audio…"
+        phase = bridge.phaseLabel(.reading)
     }
 
     private func fileDecoded(_ index: Int, peaks levels: [NSNumber], durationMs: Int64) {
         peaks = levels.map(\.floatValue)
-        if batch.indices.contains(index) { durations[batch[index]] = durationMs }
-        phase = "Transcribing…"
+        durations[currentPath] = durationMs
+        phase = bridge.phaseLabel(.transcribing)
     }
 
     private func fileProgressed(_ value: Double) {
         fraction = value
-        if value >= 1 { phase = "Finishing the transcript…" }
+        if value >= 1 { phase = bridge.phaseLabel(.finishing) }
     }
 
     private func batchFinished(_ finished: [SpeecherTranscriptResult], cancelled: Bool) {
         current = -1
-        if cancelled {
+        if let row = retrying {
+            if let result = finished.first { results[row] = result }
+            retrying = nil
+            return
+        }
+        // A batch cancelled before any file finished has nothing to show.
+        guard !finished.isEmpty else {
             stage = .setup
             return
         }
+        self.cancelled = cancelled
         results = finished
         showRefined = true
         exportProblem = ""
         expanded = Set(finished.prefix(1).filter { !$0.failed }.map(\.path))
         stage = .results
+    }
+
+    /// The file being read, which a retry's index does not locate in batch.
+    private var currentPath = ""
+
+    /// Runs one failed file again with the batch's choices; its row takes the
+    /// new result.
+    func retry(_ index: Int) {
+        retrying = index
+        if let refusal = bridge.startTranscribing(files: [results[index].path], options: bridged(batchOptions)) {
+            retrying = nil
+            exportProblem = refusal
+        }
     }
 
     private func bridged(_ options: Options) -> SpeecherTranscribeOptions {
@@ -285,40 +317,23 @@ final class TranscriptionModel: ObservableObject {
     // MARK: Results
 
     /// Whether the batch refined anything, which is when Raw is worth offering.
-    var refinedAvailable: Bool { batchOptions.refiner != "none" && batchOptions.cleanup != "none" }
+    var refinedAvailable: Bool { bridge.refinesTranscripts(bridged(batchOptions)) }
+
+    private var showingRaw: Bool { refinedAvailable && !showRefined }
 
     func shownText(_ result: SpeecherTranscriptResult) -> String {
-        let text = refinedAvailable && !showRefined ? result.raw : result.refined
-        return text.isEmpty ? result.raw : text
+        bridge.shownTranscript(result, raw: showingRaw)
     }
 
     func meta(_ result: SpeecherTranscriptResult) -> String {
-        if result.failed { return result.error }
-        let words = "\(shownText(result).split(whereSeparator: \.isWhitespace).count) words"
-        guard let duration = durations[result.path] else { return words }
-        return durationLabel(duration) + " · " + words
+        bridge.resultMeta(result, durationMs: durations[result.path] ?? -1, raw: showingRaw)
     }
 
     var summary: String {
-        let failed = results.filter(\.failed).count
-        var parts: [String] = []
-        if results.count > 1 { parts.append("\(results.count - failed) transcripts") }
-        if failed > 0 { parts.append("\(failed) failed") }
-        let total = results.compactMap { durations[$0.path] }.reduce(0, +)
-        if total > 0 { parts.append("\(durationLabel(total)) of audio") }
-        let speech = speechProviders.first { $0.providerId == batchOptions.speech }?.label ?? batchOptions.speech
-        parts.append("transcribed with \(speech)")
-        if refinedAvailable {
-            let refiner = refinementProviders.first { $0.providerId == batchOptions.refiner }?.label ?? ""
-            parts.append("refined with \(refiner) \(bridge.refinementModel(provider: batchOptions.refiner))"
-                .trimmingCharacters(in: .whitespaces))
-        }
-        if results.contains(where: { !$0.savedPath.isEmpty }) {
-            parts.append(batchOptions.destination == .folder
-                ? "saved to \((batchOptions.folder as NSString).abbreviatingWithTildeInPath)"
-                : "saved next to each audio file")
-        }
-        return parts.joined(separator: " · ")
+        guard let labels = batchLabels else { return "" }
+        return bridge.batchSummary(results: results, batchSize: batch.count, cancelled: cancelled,
+                                   durations: durations.mapValues { NSNumber(value: $0) },
+                                   options: bridged(batchOptions), labels: labels)
     }
 
     func expansion(of path: String) -> Binding<Bool> {
@@ -334,10 +349,7 @@ final class TranscriptionModel: ObservableObject {
     }
 
     func copyAll() {
-        let texts = results.filter { !$0.failed }.map { result in
-            results.count > 1 ? "# \(fileName(result.path))\n\n\(shownText(result))" : shownText(result)
-        }
-        putOnPasteboard(texts.joined(separator: "\n\n\n"))
+        putOnPasteboard(bridge.allTranscripts(results, raw: showingRaw))
         flashCopied("all")
     }
 
@@ -366,9 +378,11 @@ final class TranscriptionModel: ObservableObject {
             .joined(separator: "\n")
     }
 
-    /// Back to setup with fresh choices. Files added while the batch ran stay.
+    /// Back to setup with fresh choices. The finished files leave the list;
+    /// files added while the batch ran, and any a cancel skipped, stay.
     func transcribeMore() {
-        files.removeAll { batch.contains($0.path) }
+        let finished = Set(results.map(\.path))
+        files.removeAll { finished.contains($0.path) }
         seedOptions()
         stage = .setup
     }
@@ -389,11 +403,6 @@ final class TranscriptionModel: ObservableObject {
 
 private func fileName(_ path: String) -> String {
     (path as NSString).lastPathComponent
-}
-
-private func durationLabel(_ milliseconds: Int64) -> String {
-    let seconds = (milliseconds + 500) / 1000
-    return seconds >= 60 ? "\(seconds / 60) min \(seconds % 60) s" : "\(seconds) s"
 }
 
 struct TranscribePane: View {
@@ -565,8 +574,7 @@ struct TranscribePane: View {
                             } label: {
                                 Label(fileName(path), systemImage: state.symbol)
                             }
-                            .foregroundStyle(index > model.current && index >= model.results.count
-                                             ? HierarchicalShapeStyle.secondary : .primary)
+                            .foregroundStyle(state.waiting ? HierarchicalShapeStyle.secondary : .primary)
                         }
                     }
                 } header: {
@@ -610,7 +618,9 @@ struct TranscribePane: View {
                     Text(model.results.count > 1 ? "Transcripts" : "Transcript")
                 }
                 Section {
-                    ForEach(model.results, id: \.path) { result($0) }
+                    ForEach(Array(model.results.enumerated()), id: \.element.path) { index, item in
+                        result(item, at: index)
+                    }
                 }
             }
             .formStyle(.grouped)
@@ -620,7 +630,7 @@ struct TranscribePane: View {
         }
     }
 
-    private func result(_ result: SpeecherTranscriptResult) -> some View {
+    private func result(_ result: SpeecherTranscriptResult, at index: Int) -> some View {
         DisclosureGroup(isExpanded: model.expansion(of: result.path)) {
             Text(model.shownText(result))
                 .textSelection(.enabled)
@@ -633,7 +643,10 @@ struct TranscribePane: View {
                             .foregroundStyle(.green)
                             .help(result.savedPath)
                     }
-                    if !result.failed {
+                    if result.failed {
+                        Button(model.retrying == index ? "Retrying…" : "Retry") { model.retry(index) }
+                            .disabled(model.retrying != nil)
+                    } else {
                         Button(model.copied == result.path ? "Copied" : "Copy") { model.copy(result) }
                         Button("Export…") { model.export(result) }
                     }
@@ -642,6 +655,12 @@ struct TranscribePane: View {
                 Text(fileName(result.path))
                 Text(model.meta(result))
                     .foregroundStyle(result.failed ? Color.red : Color.secondary)
+                // A transcript that came through with a problem on the way
+                // (refinement fell back to the raw text, saving failed).
+                if !result.failed && !result.error.isEmpty {
+                    Label(result.error, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
             }
         }
     }

@@ -18,6 +18,7 @@
 #include "providers/ProviderRegistry.h"
 #include "providers/ProviderSignIn.h"
 #include "transcribe/FileTranscriptionSession.h"
+#include "transcribe/TranscribePresentation.h"
 #include "ui/Theme.h"
 
 #include <QDebug>
@@ -399,6 +400,37 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @implementation SpeecherTranscribeOptions
 @end
 
+@interface SpeecherTranscribeBatchLabels ()
+@property (nonatomic) speecher::TranscribeBatchLabels labels;
+@end
+
+@implementation SpeecherTranscribeBatchLabels
+@end
+
+static speecher::TranscribeOptions coreTranscribeOptions(SpeecherTranscribeOptions *options)
+{
+    speecher::TranscribeOptions core;
+    core.speechProviderId = QString::fromNSString(options.speechProviderId);
+    core.applyVocabulary = options.applyVocabulary;
+    core.refinementProviderId = QString::fromNSString(options.refinementProviderId);
+    core.cleanupStrength = QString::fromNSString(options.cleanupStrength);
+    core.tone = QString::fromNSString(options.tone);
+    core.writingProfile = QString::fromNSString(options.writingProfile);
+    switch (options.destination) {
+    case SpeecherTranscriptDestinationFolder:
+        core.destination = speecher::TranscriptDestination::Folder;
+        break;
+    case SpeecherTranscriptDestinationNowhere:
+        core.destination = speecher::TranscriptDestination::None;
+        break;
+    case SpeecherTranscriptDestinationBesideInput:
+        core.destination = speecher::TranscriptDestination::BesideInput;
+        break;
+    }
+    core.folder = QString::fromNSString(options.folder);
+    return core;
+}
+
 @interface SpeecherTranscriptResult ()
 @property (nonatomic, copy) NSString *path;
 @property (nonatomic, copy) NSString *raw;
@@ -410,6 +442,26 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 
 @implementation SpeecherTranscriptResult
 @end
+
+static speecher::TranscribeFileResult coreTranscriptResult(SpeecherTranscriptResult *result)
+{
+    speecher::TranscribeFileResult core;
+    core.path = QString::fromNSString(result.path);
+    core.raw = QString::fromNSString(result.raw);
+    core.refined = QString::fromNSString(result.refined);
+    core.savedPath = QString::fromNSString(result.savedPath);
+    core.error = QString::fromNSString(result.error);
+    return core;
+}
+
+static QList<speecher::TranscribeFileResult> coreTranscriptResults(NSArray<SpeecherTranscriptResult *> *results)
+{
+    QList<speecher::TranscribeFileResult> core;
+    for (SpeecherTranscriptResult *result in results) {
+        core.append(coreTranscriptResult(result));
+    }
+    return core;
+}
 
 static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::TranscribeFileResult &result)
 {
@@ -1829,15 +1881,9 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
 
 - (NSString *)refinementModelForProvider:(NSString *)providerId
 {
-    const speecher::RefinementSettings refinement = _state->controller->settings()->snapshot().refinement;
-    const QString provider = QString::fromNSString(providerId);
-    if (provider == QStringLiteral("openai")) {
-        return refinement.openAiModel.toNSString();
-    }
-    if (provider == QStringLiteral("anthropic")) {
-        return refinement.anthropicModel.toNSString();
-    }
-    return @"";
+    return speecher::refinementModel(QString::fromNSString(providerId),
+                                     _state->controller->settings()->snapshot().refinement)
+        .toNSString();
 }
 
 - (NSArray<NSString *> *)audioFilesAmong:(NSArray<NSString *> *)paths
@@ -1857,27 +1903,8 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
     for (NSString *path in paths) {
         files.append(QString::fromNSString(path));
     }
-    speecher::TranscribeOptions core;
-    core.speechProviderId = QString::fromNSString(options.speechProviderId);
-    core.applyVocabulary = options.applyVocabulary;
-    core.refinementProviderId = QString::fromNSString(options.refinementProviderId);
-    core.cleanupStrength = QString::fromNSString(options.cleanupStrength);
-    core.tone = QString::fromNSString(options.tone);
-    core.writingProfile = QString::fromNSString(options.writingProfile);
-    switch (options.destination) {
-    case SpeecherTranscriptDestinationFolder:
-        core.destination = speecher::TranscriptDestination::Folder;
-        break;
-    case SpeecherTranscriptDestinationNowhere:
-        core.destination = speecher::TranscriptDestination::None;
-        break;
-    case SpeecherTranscriptDestinationBesideInput:
-        core.destination = speecher::TranscriptDestination::BesideInput;
-        break;
-    }
-    core.folder = QString::fromNSString(options.folder);
     QString error;
-    if (_state->controller->startFileTranscription(files, core, &error)) {
+    if (_state->controller->startFileTranscription(files, coreTranscribeOptions(options), &error)) {
         return nil;
     }
     return error.isEmpty() ? @"There are no audio files to transcribe." : error.toNSString();
@@ -1894,6 +1921,90 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
     speecher::saveTranscript(QString::fromNSString(audioPath), QString::fromNSString(folder),
                              QString::fromNSString(text), &error);
     return error.isEmpty() ? nil : error.toNSString();
+}
+
+- (NSString *)transcribePhaseLabel:(SpeecherTranscribePhase)phase
+{
+    return speecher::transcribePhaseLabel(static_cast<speecher::TranscribePhase>(phase)).toNSString();
+}
+
+- (NSString *)durationLabel:(int64_t)durationMs
+{
+    return speecher::durationLabel(durationMs).toNSString();
+}
+
+- (NSString *)audioFileDetailWithBytes:(int64_t)bytes durationMs:(int64_t)durationMs
+{
+    return speecher::audioFileDetail(bytes, durationMs).toNSString();
+}
+
+- (BOOL)refinesTranscripts:(SpeecherTranscribeOptions *)options
+{
+    return speecher::refinesTranscripts(coreTranscribeOptions(options));
+}
+
+- (NSString *)shownTranscript:(SpeecherTranscriptResult *)result raw:(BOOL)raw
+{
+    return speecher::shownTranscript(coreTranscriptResult(result), raw).toNSString();
+}
+
+- (NSString *)resultMeta:(SpeecherTranscriptResult *)result durationMs:(int64_t)durationMs raw:(BOOL)raw
+{
+    return speecher::resultMeta(coreTranscriptResult(result), durationMs, raw).toNSString();
+}
+
+- (NSString *)allTranscripts:(NSArray<SpeecherTranscriptResult *> *)results raw:(BOOL)raw
+{
+    return speecher::allTranscripts(coreTranscriptResults(results), raw).toNSString();
+}
+
+- (NSString *)processingTitleForBatch:(NSArray<NSString *> *)batch current:(NSInteger)current
+{
+    QStringList paths;
+    for (NSString *path in batch) {
+        paths.append(QString::fromNSString(path));
+    }
+    return speecher::processingTitle(paths, int(current)).toNSString();
+}
+
+- (SpeecherTranscribeQueueState)queueStateAt:(NSInteger)index
+                                     current:(NSInteger)current
+                                    finished:(NSArray<SpeecherTranscriptResult *> *)finished
+{
+    return static_cast<SpeecherTranscribeQueueState>(
+        speecher::queueState(int(index), int(current), coreTranscriptResults(finished)));
+}
+
+- (NSString *)queueStateLabel:(SpeecherTranscribeQueueState)state phase:(NSString *)phase
+{
+    return speecher::queueStateLabel(static_cast<speecher::TranscribeQueueState>(state),
+                                     QString::fromNSString(phase))
+        .toNSString();
+}
+
+- (SpeecherTranscribeBatchLabels *)batchLabelsForOptions:(SpeecherTranscribeOptions *)options
+{
+    SpeecherTranscribeBatchLabels *labels = [[SpeecherTranscribeBatchLabels alloc] init];
+    labels.labels = speecher::batchLabels(coreTranscribeOptions(options),
+                                            *_state->controller->providerRegistry(),
+                                            _state->controller->settings()->snapshot().refinement);
+    return labels;
+}
+
+- (NSString *)batchSummaryForResults:(NSArray<SpeecherTranscriptResult *> *)results
+                           batchSize:(NSInteger)batchSize
+                           cancelled:(BOOL)cancelled
+                           durations:(NSDictionary<NSString *, NSNumber *> *)durationsMs
+                             options:(SpeecherTranscribeOptions *)options
+                              labels:(SpeecherTranscribeBatchLabels *)labels
+{
+    QHash<QString, qint64> durations;
+    for (NSString *path in durationsMs) {
+        durations.insert(QString::fromNSString(path), durationsMs[path].longLongValue);
+    }
+    return speecher::batchSummary(coreTranscriptResults(results), int(batchSize), cancelled, durations,
+                                  coreTranscribeOptions(options), labels.labels)
+        .toNSString();
 }
 
 @end

@@ -251,6 +251,27 @@ typedef NS_ENUM(NSInteger, SpeecherTranscriptDestination) {
 @property (nonatomic, readonly) BOOL failed;
 @end
 
+// Mirrors speecher::TranscribePhase.
+typedef NS_ENUM(NSInteger, SpeecherTranscribePhase) {
+    SpeecherTranscribePhaseReading,
+    SpeecherTranscribePhaseTranscribing,
+    SpeecherTranscribePhaseFinishing,
+    SpeecherTranscribePhaseRefining,
+};
+
+// Mirrors speecher::TranscribeQueueState.
+typedef NS_ENUM(NSInteger, SpeecherTranscribeQueueState) {
+    SpeecherTranscribeQueueStateWaiting,
+    SpeecherTranscribeQueueStateCurrent,
+    SpeecherTranscribeQueueStateDone,
+    SpeecherTranscribeQueueStateFailed,
+};
+
+// What a batch's results summary names its choices, captured when it starts.
+// Mirrors speecher::TranscribeBatchLabels.
+@interface SpeecherTranscribeBatchLabels : NSObject
+@end
+
 @interface SpeecherBridge : NSObject
 @property (nonatomic, readonly, strong) SettingsSchemaModel *settingsSchema;
 @property (nonatomic, readonly, copy) NSString *stateName;
@@ -483,6 +504,36 @@ typedef NS_ENUM(NSInteger, SpeecherTranscriptDestination) {
                           forAudioFile:(NSString *)audioPath
                               inFolder:(NSString *)folder
     NS_SWIFT_NAME(saveTranscript(_:forAudioFile:inFolder:));
+// The Transcribe pane's wording, shared with the Qt and Windows front ends
+// (speecher/transcribe/TranscribePresentation.h). A negative length is unknown.
+- (NSString *)transcribePhaseLabel:(SpeecherTranscribePhase)phase NS_SWIFT_NAME(phaseLabel(_:));
+- (NSString *)durationLabel:(int64_t)durationMs NS_SWIFT_NAME(durationLabel(_:));
+- (NSString *)audioFileDetailWithBytes:(int64_t)bytes durationMs:(int64_t)durationMs
+    NS_SWIFT_NAME(audioFileDetail(bytes:durationMs:));
+- (BOOL)refinesTranscripts:(SpeecherTranscribeOptions *)options NS_SWIFT_NAME(refinesTranscripts(_:));
+- (NSString *)shownTranscript:(SpeecherTranscriptResult *)result raw:(BOOL)raw
+    NS_SWIFT_NAME(shownTranscript(_:raw:));
+- (NSString *)resultMeta:(SpeecherTranscriptResult *)result durationMs:(int64_t)durationMs raw:(BOOL)raw
+    NS_SWIFT_NAME(resultMeta(_:durationMs:raw:));
+- (NSString *)allTranscripts:(NSArray<SpeecherTranscriptResult *> *)results raw:(BOOL)raw
+    NS_SWIFT_NAME(allTranscripts(_:raw:));
+- (NSString *)processingTitleForBatch:(NSArray<NSString *> *)batch current:(NSInteger)current
+    NS_SWIFT_NAME(processingTitle(batch:current:));
+- (SpeecherTranscribeQueueState)queueStateAt:(NSInteger)index
+                                     current:(NSInteger)current
+                                    finished:(NSArray<SpeecherTranscriptResult *> *)finished
+    NS_SWIFT_NAME(queueState(at:current:finished:));
+- (NSString *)queueStateLabel:(SpeecherTranscribeQueueState)state phase:(NSString *)phase
+    NS_SWIFT_NAME(queueStateLabel(_:phase:));
+- (SpeecherTranscribeBatchLabels *)batchLabelsForOptions:(SpeecherTranscribeOptions *)options
+    NS_SWIFT_NAME(batchLabels(for:));
+- (NSString *)batchSummaryForResults:(NSArray<SpeecherTranscriptResult *> *)results
+                           batchSize:(NSInteger)batchSize
+                           cancelled:(BOOL)cancelled
+                           durations:(NSDictionary<NSString *, NSNumber *> *)durationsMs
+                             options:(SpeecherTranscribeOptions *)options
+                              labels:(SpeecherTranscribeBatchLabels *)labels
+    NS_SWIFT_NAME(batchSummary(results:batchSize:cancelled:durations:options:labels:));
 // The batch as it runs, on the main thread. Indexes count files in the order
 // they were passed to startTranscribing.
 @property (nonatomic, copy, nullable) void (^transcriptionBatchStarted)(NSInteger count);
