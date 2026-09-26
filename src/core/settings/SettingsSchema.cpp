@@ -554,7 +554,7 @@ QList<SettingsRow> refinementEndpointRows(const std::function<LiveFacts(const Ap
     QList<SettingsRow> rows{
         choiceRow(QStringLiteral("refinementEndpointServer"),
                   QStringLiteral("Server"),
-                  QString(),
+                  QStringLiteral("Your own server, or the CLI Proxy API server set up under Accounts."),
                   fixedOptions({
                       {QString(), QStringLiteral("Custom")},
                       {QStringLiteral("cliproxy"), QStringLiteral("CLI Proxy API")},
