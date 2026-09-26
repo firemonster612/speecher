@@ -580,6 +580,119 @@ private slots:
         QCOMPARE(delivery->lastTarget.caretOffset, 42);
     }
 
+    void deliveredDictationIsRecordedOnlyWhenInsightsAreOn_data()
+    {
+        QTest::addColumn<bool>("enabled");
+        QTest::addColumn<bool>("delivered");
+        QTest::newRow("on") << true << true;
+        QTest::newRow("off") << false << true;
+        QTest::newRow("delivery failed") << true << false;
+    }
+
+    void deliveredDictationIsRecordedOnlyWhenInsightsAreOn()
+    {
+        QFETCH(bool, enabled);
+        QFETCH(bool, delivered);
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.setInsightsEnabled(enabled);
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto targetProvider = std::make_unique<FakeTargetProvider>();
+        targetProvider->target.applicationName = QStringLiteral("Kate");
+        targetProvider->target.processName = QStringLiteral("kate");
+        auto delivery = std::make_unique<FakeDelivery>();
+        if (!delivered) {
+            delivery->result = {false, DeliveryReceipt::None, false, QStringLiteral("No target")};
+        }
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(
+            &settings, audio.get(), media.get(), targetProvider.get(), delivery.get(), &registry);
+        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("Hello, dear world."));
+        QTest::qWait(20);
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+
+        QCOMPARE(recorded.count(), enabled && delivered ? 1 : 0);
+        if (!recorded.isEmpty()) {
+            const auto record = recorded.first().first().value<DictationRecord>();
+            QCOMPARE(record.words, 3);
+            QCOMPARE(record.appName, QStringLiteral("Kate"));
+            QVERIFY(record.audioMs > 0);
+        }
+    }
+
+    void selectionEditRecordsTheSpokenInstruction()
+    {
+        // The refiner returns the whole revised selection; the record counts
+        // what was dictated, not that.
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.setInsightsEnabled(true);
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto targetProvider = std::make_unique<FakeTargetProvider>();
+        targetProvider->target.selectedText = QStringLiteral("the release is tomorrow");
+        targetProvider->target.selectionStart = 0;
+        targetProvider->target.selectionEnd = 23;
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(
+            &settings, audio.get(), media.get(), targetProvider.get(), delivery.get(), &registry);
+        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("Make it louder"));
+        refiner->autoComplete = true;
+        refiner->autoCompleteText = QStringLiteral("THE RELEASE IS TOMORROW, EVERYONE, BE READY!");
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+
+        QCOMPARE(recorded.count(), 1);
+        QCOMPARE(recorded.first().first().value<DictationRecord>().words, 3);
+    }
+
+    void turningInsightsOffMidSessionRecordsNothing()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.setInsightsEnabled(true);
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("Hello"));
+        settings.setInsightsEnabled(false);
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+
+        QCOMPARE(recorded.count(), 0);
+    }
+
     void dictationSessionDefersTargetCaptureUntilPopupCanPaint()
     {
         SettingsStore settings;

@@ -27,6 +27,7 @@ public:
     QList<AppRecognitionRule> appRecognitionRules() const; void setAppRecognitionRules(const QList<AppRecognitionRule> &rules);
     QList<BindingRule> bindingRules() const; bool setBindingRules(const QList<BindingRule> &rules, QString *error = nullptr);
     bool correctionLearningEnabled() const; void setCorrectionLearningEnabled(bool value);
+    bool insightsEnabled() const; void setInsightsEnabled(bool value);
     QList<LearnedCorrection> learnedCorrections() const; void setLearnedCorrections(const QList<LearnedCorrection> &corrections);
     void setLearnedCorrectionEnabled(const QString &id, bool enabled); void removeLearnedCorrection(const QString &id);
     QString refinementProvider() const; void setRefinementProvider(const QString &value);

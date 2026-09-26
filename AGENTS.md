@@ -23,8 +23,8 @@ a rewrite of the sidebar, the colours and the Dictation page. Do not repeat it.
 - **Change only what was asked.** A request about settings rows touches
   `src/ui/settings/SettingsPageSupport.*` (row and card widgets) and
   `src/frontend/qt/SchemaSettingsPage.cpp` (how schema rows are rendered).
-  The sidebar and header live in `src/ui/AppWindow.cpp`; the Dictation page in
-  `src/ui/DictationPage.cpp`; page content in `src/core/settings/SettingsSchema.cpp`.
+  The sidebar and header live in `src/ui/AppWindow.cpp`; the Home page in
+  `src/ui/HomePage.cpp`; page content in `src/core/settings/SettingsSchema.cpp`.
   Do not edit a file outside the request's area without saying so first.
 - **The style draws, we do not.** No stylesheets, no hand-painted frames,
   highlights, hover states or shadows, no colours other than palette roles, no
@@ -35,7 +35,12 @@ a rewrite of the sidebar, the colours and the Dictation page. Do not repeat it.
   FormCard (a rounded rectangle in the Base colour with a frame at
   Kirigami's frame contrast) because Qt Widgets has no such container; it uses
   palette colours only and lives in `SettingsPageSupport.cpp`. Hover on button
-  rows comes from the style's own item primitive, not from us.
+  rows comes from the style's own item primitive, not from us. Home's activity
+  heatmap and hour bar chart are the other exception, because Qt Widgets has
+  no chart widgets; they paint rounded cells and bars from Highlight mixed over
+  Base and live in `src/ui/InsightsCharts.cpp`. Home's progress bars use the
+  same tint: every bar but the leading one gets a palette whose Highlight and
+  Accent are that mix (`makeBar` in `src/ui/HomePage.cpp`).
 - **Settings pages follow Kirigami Addons FormCard.** Bold header above the
   card, title and small grey description on the left, control on the right,
   inset separators, button rows with a trailing arrow, cards capped at 30

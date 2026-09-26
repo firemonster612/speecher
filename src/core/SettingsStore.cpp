@@ -115,6 +115,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setVocabularyEntries(draft.vocabulary);
     setLearnedCorrections(draft.learnedCorrections);
     setCorrectionLearningEnabled(draft.correctionLearningEnabled);
+    setInsightsEnabled(draft.insightsEnabled);
     // The settings surface refuses invalid replacements before it saves, so a
     // rejection here is a bug rather than something a person typed.
     QString replacementError;

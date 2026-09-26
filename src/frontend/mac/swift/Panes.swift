@@ -41,11 +41,14 @@ enum PaneLayout {
     case alternatives
     /// The shortcut recorder, which has no schema rows behind it.
     case shortcut
+    /// The dictation card and insights, drawn from the insights summary.
+    case home
 
     init(_ layout: SpeecherPaneLayout) {
         switch layout {
         case .alternatives: self = .alternatives
         case .shortcut: self = .shortcut
+        case .home: self = .home
         case .sections: self = .sections
         @unknown default: self = .sections
         }
@@ -83,6 +86,8 @@ struct PaneView: View {
         switch pane.layout {
         case .shortcut:
             ShortcutPane(model: model)
+        case .home:
+            HomePane(model: model)
         case .sections:
             Form {
                 ForEach(model.groupCards(for: pane)) { card($0) }
@@ -107,6 +112,14 @@ struct PaneView: View {
                 unclaimedCards
             }
             .formStyle(.grouped)
+            // Another pane can link straight to one of these views, as Home
+            // does to Corrections.
+            .onChange(of: model.requestedGroup, initial: true) { _, title in
+                guard let title,
+                      let index = pane.groups.firstIndex(where: { $0.title == title }) else { return }
+                alternative = index
+                model.requestedGroup = nil
+            }
         }
     }
 

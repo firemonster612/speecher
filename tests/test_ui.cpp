@@ -698,13 +698,15 @@ private slots:
             const std::unique_ptr<SchemaSettingsPage> page =
                 std::make_unique<SchemaSettingsPage>(schema.page(id), nullptr, customRows);
             // Every card carries its section title; General's cards are the
-            // agreed four and Output keeps its schema order plus the rules.
+            // agreed five and Output keeps its schema order plus the rules.
             const QStringList generalLabels{
 #ifdef Q_OS_LINUX
                 QStringLiteral("Dictation"),
+                QStringLiteral("Insights"),
                 QStringLiteral("Global Shortcut"),
 #else
                 QStringLiteral("Appearance & behavior"),
+                QStringLiteral("Insights"),
                 QStringLiteral("System"),
 #endif
                 QStringLiteral("Setup"),

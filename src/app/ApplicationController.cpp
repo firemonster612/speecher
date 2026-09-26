@@ -10,6 +10,7 @@
 #else
 #include "app/AppImageUpdater.h"
 #endif
+#include "core/InsightsLog.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
@@ -27,6 +28,7 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QEventLoop>
+#include <QStandardPaths>
 #ifdef SPEECHER_E2E_HOOKS
 #include <QMetaEnum>
 #endif
@@ -172,6 +174,33 @@ ApplicationController::ApplicationController(bool popupOnly,
     m_updates = new AppImageUpdater(m_settings, m_session, this);
 #endif
 
+    // A seed log stands in for real history in screenshots and demos, so it
+    // is never written; a pinned today makes those screenshots repeatable.
+    const QString insightsSeed = qEnvironmentVariable("SPEECHER_INSIGHTS_SEED");
+    m_insightsLog = insightsSeed.isEmpty()
+        ? new InsightsLog(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+                              + QStringLiteral("/insights.jsonl"),
+                          InsightsLog::Access::ReadWrite,
+                          this)
+        : new InsightsLog(insightsSeed, InsightsLog::Access::ReadOnly, this);
+    m_insightsToday =
+        QDate::fromString(qEnvironmentVariable("SPEECHER_INSIGHTS_TODAY"), Qt::ISODate);
+    connect(m_session, &DictationSession::dictationRecorded, m_insightsLog, &InsightsLog::append);
+    // The record describes the transcript Home shows, so it goes whenever
+    // that transcript does: a new session starting (which drops the last
+    // transcript, delivered or not) and a delivery. The session reports a
+    // delivery first, then (while insights record it) its record.
+    connect(m_session, &DictationSession::stateChanged, this, [this] {
+        if (m_session->state() == DictationState::Starting) {
+            forgetLastRecord();
+        }
+    });
+    connect(m_session, &DictationSession::transcriptDelivered, this, &ApplicationController::forgetLastRecord);
+    connect(m_session, &DictationSession::dictationRecorded, this, [this](const DictationRecord &record) {
+        m_lastRecord = record;
+        emit lastRecordChanged();
+    });
+
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::stateChanged);
 #ifdef Q_OS_MACOS
@@ -221,6 +250,38 @@ void ApplicationController::setFrontEnd(AppFrontEnd *frontEnd)
 DictationSession *ApplicationController::session() const
 {
     return m_session;
+}
+
+InsightsLog *ApplicationController::insightsLog() const
+{
+    return m_insightsLog;
+}
+
+QDate ApplicationController::insightsToday() const
+{
+    return m_insightsToday.isValid() ? m_insightsToday : QDate::currentDate();
+}
+
+const std::optional<DictationRecord> &ApplicationController::lastRecord() const
+{
+    return m_lastRecord;
+}
+
+bool ApplicationController::clearInsights()
+{
+    if (!m_insightsLog->clear()) {
+        return false;
+    }
+    forgetLastRecord();
+    return true;
+}
+
+void ApplicationController::forgetLastRecord()
+{
+    if (m_lastRecord) {
+        m_lastRecord.reset();
+        emit lastRecordChanged();
+    }
 }
 
 bool ApplicationController::popupOnly() const

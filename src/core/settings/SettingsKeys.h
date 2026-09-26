@@ -35,6 +35,7 @@ inline const QString ShortcutActivationMode = QStringLiteral("shortcuts/activati
 inline const QString CorrectionLearningEnabled = QStringLiteral("vocabulary/correctionLearningEnabled");
 inline const QString LearnedCorrections = QStringLiteral("vocabulary/learnedCorrections");
 inline const QString CorrectionEvidence = QStringLiteral("vocabulary/correctionEvidence");
+inline const QString InsightsEnabled = QStringLiteral("insights/enabled");
 inline const QString RefinementProvider = QStringLiteral("refinement/provider");
 inline const QString RefinementStyle = QStringLiteral("refinement/style");
 inline const QString DefaultWritingProfile = QStringLiteral("refinement/defaultWritingProfile");

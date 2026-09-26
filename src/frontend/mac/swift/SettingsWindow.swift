@@ -25,6 +25,17 @@ struct RootView: View {
         .searchable(text: $query, placement: .sidebar, prompt: "Search")
         .toolbar(removing: .sidebarToggle)
         .toolbar(removing: .title)
+        .confirmationDialog("Delete all insights history?",
+                            isPresented: $model.confirmingClearInsights) {
+            Button("Delete History", role: .destructive) { model.clearInsights() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your stats, streaks and records are erased from this computer. This can't be undone.")
+        }
+        .alert("Speecher couldn't delete the insights history.",
+               isPresented: $model.clearInsightsFailed) {
+            Button("OK", role: .cancel) {}
+        }
     }
 
     @ViewBuilder private var detail: some View {
@@ -250,6 +261,8 @@ final class SpeecherSettingsWindow {
         // The first SwiftUI version used an oversized default. Keep future
         // resizing persistent without restoring that pre-release frame.
         window.setFrameAutosaveName("SpeecherSettingsV2")
+        // After the autosaved frame, which would otherwise win.
+        applyRequestedSize()
         // The window title is the pane the user is looking at. The pane list is
         // captured by value: a closure the model's own publisher retains must
         // not capture the model.
@@ -258,6 +271,17 @@ final class SpeecherSettingsWindow {
         titleObserver = model.$pane.sink { [weak window] pane in
             window?.title = panes.first { $0.id == pane }?.title ?? "Settings"
         }
+    }
+
+    /// Screenshot automation: SPEECHER_GRAB_SIZE=WxH sizes the window's
+    /// content, as on Linux. Says whether it asked for a size.
+    @discardableResult
+    private func applyRequestedSize() -> Bool {
+        let parts = (ProcessInfo.processInfo.environment["SPEECHER_GRAB_SIZE"] ?? "")
+            .split(separator: "x").compactMap { Double($0) }
+        guard parts.count == 2 else { return false }
+        window.setContentSize(NSSize(width: parts[0], height: parts[1]))
+        return true
     }
 
     /// Whether the window is on screen, which a Sparkle relaunch restores.
@@ -290,7 +314,23 @@ final class SpeecherSettingsWindow {
     // detail column and the titlebar are real. SwiftUI's ImageRenderer is not an
     // alternative: it refuses NavigationSplitView outright. For a composited
     // shot, screencapture with Screen Recording granted is the way.
+    //
+    // SPEECHER_GRAB_PAGE names the pane to show first, as on the other front
+    // ends; unset or unknown leaves the window as it is.
     func capture(toPath path: String) -> Bool {
+        let request = ProcessInfo.processInfo.environment["SPEECHER_GRAB_PAGE"]?
+            .lowercased().split(separator: ":").first.map(String.init) ?? ""
+        // Again here: showing the window fitted it to the screen, and the
+        // backing store has no such limit.
+        let resized = applyRequestedSize()
+        let pane = model.panes.first { $0.id.lowercased() == request }
+        if let pane { model.pane = pane.id }
+        if resized || pane != nil {
+            // Let SwiftUI render the pane before the backing store is read.
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+        }
         guard let content = window.contentView,
               let view = content.superview ?? window.contentView,
               let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {

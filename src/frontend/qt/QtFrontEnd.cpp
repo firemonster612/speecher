@@ -15,7 +15,10 @@
 #endif
 
 #include <QApplication>
+#include <QListWidget>
 #include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QTabWidget>
 #include <QTimer>
 #include <QCoreApplication>
@@ -151,10 +154,10 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
     if (!m_appWindow) {
         return false;
     }
-    // Screenshot automation: SPEECHER_GRAB_PAGE names a settings page
-    // (general, audio, output, auth, refinement, vocabulary), optionally with
-    // a tab index ("vocabulary:2"), to show before the grab. Unset or unknown
-    // leaves the window as launched.
+    // Screenshot automation: SPEECHER_GRAB_PAGE names a page (home, general,
+    // audio, output, auth, refinement, vocabulary), optionally with a tab
+    // index ("vocabulary:2"), to show before the grab. Unset or unknown
+    // leaves the window as launched, which is Home.
     static const QStringList pageNames{
         QStringLiteral("general"), QStringLiteral("audio"), QStringLiteral("output"),
         QStringLiteral("auth"), QStringLiteral("refinement"), QStringLiteral("vocabulary")};
@@ -214,6 +217,30 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
                 if (tabs->isVisible()) {
                     tabs->setCurrentIndex(request.at(1).toInt());
                 }
+            }
+        }
+        QCoreApplication::processEvents();
+    }
+    if (request.first() == QStringLiteral("home")) {
+        m_appWindow->findChild<QListWidget *>(QStringLiteral("appNavigation"))->setCurrentRow(0);
+        QCoreApplication::processEvents();
+    }
+    // Height-for-width rows (wrapped labels, the heatmap) settle over a few
+    // posted relayouts; one processEvents pass grabs them half laid out.
+    QElapsedTimer settle;
+    settle.start();
+    while (settle.elapsed() < 300) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(10);
+    }
+    // SPEECHER_GRAB_SCROLL=<pixels> or =bottom scrolls the visible page, so
+    // a second grab can show what lies below the first screen.
+    const QString scroll = qEnvironmentVariable("SPEECHER_GRAB_SCROLL");
+    if (!scroll.isEmpty()) {
+        for (QScrollArea *area : m_appWindow->findChildren<QScrollArea *>()) {
+            if (area->isVisible()) {
+                QScrollBar *bar = area->verticalScrollBar();
+                bar->setValue(scroll == QStringLiteral("bottom") ? bar->maximum() : scroll.toInt());
             }
         }
         QCoreApplication::processEvents();

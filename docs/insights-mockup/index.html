@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speecher: Home with insights</title>
+<link rel="stylesheet" href="insights.css">
+</head>
+<body>
+
+<!-- Mockup controls. Not part of the design. -->
+<div class="mock-bar" role="toolbar" aria-label="Mockup controls">
+  <label>State
+    <select data-param="state">
+      <option value="active">Regular user</option>
+      <option value="new">First day</option>
+      <option value="lapsed">Streak broken</option>
+    </select>
+  </label>
+  <label>Theme
+    <select data-param="theme">
+      <option value="dark">Breeze Dark</option>
+      <option value="light">Breeze Light</option>
+    </select>
+  </label>
+  <label>Accent
+    <select data-param="accent">
+      <option value="blue">Blue</option>
+      <option value="violet">Violet</option>
+      <option value="orange">Orange</option>
+    </select>
+  </label>
+  <label>Window
+    <select data-param="width">
+      <option value="wide">1040 px</option>
+      <option value="narrow">720 px</option>
+    </select>
+  </label>
+</div>
+
+<div class="stage">
+  <div class="window" id="window">
+    <header class="win-header">
+      <div class="search-section">
+        <div class="search">
+          <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4 4"/></svg>
+          <span>Search…</span>
+        </div>
+      </div>
+      <h1 id="page-title">Home</h1>
+    </header>
+    <div class="win-body">
+      <nav class="sidebar" aria-label="Pages">
+        <ul>
+          <li data-page="home"><svg class="icon" viewBox="0 0 16 16"><path d="M2.5 7.5L8 3l5.5 4.5M4 6.5V13h3v-3.5h2V13h3V6.5"/></svg>Home</li>
+          <li data-page="general"><svg class="icon" viewBox="0 0 16 16"><path d="M2 4h12M2 12h12M5 2v4M11 10v4"/></svg>General</li>
+          <li><svg class="icon" viewBox="0 0 16 16"><path d="M2 6h3l4-3v10l-4-3H2zM11.5 5.5a3.5 3.5 0 010 5"/></svg>Audio</li>
+          <li><svg class="icon" viewBox="0 0 16 16"><path d="M4 3h8v11H4zM6 2h4v2H6zM6 7h4M6 10h4"/></svg>Output</li>
+          <li><svg class="icon" viewBox="0 0 16 16"><circle cx="8" cy="5.5" r="3"/><path d="M2.5 14a5.5 5.5 0 0111 0"/></svg>Accounts</li>
+          <li><svg class="icon" viewBox="0 0 16 16"><path d="M3 13L11 5M10 2v2M13 5h-2M12.5 2.5l-1 1"/></svg>Refinement</li>
+          <li><svg class="icon" viewBox="0 0 16 16"><path d="M3 14L8 2l5 12M5 10h6"/></svg>Vocabulary</li>
+        </ul>
+        <button class="button quit">Quit Speecher</button>
+      </nav>
+      <main class="content" id="content">
+        <div class="column" id="column"></div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+
+<script src="insights.js"></script>
+</body>
+</html>

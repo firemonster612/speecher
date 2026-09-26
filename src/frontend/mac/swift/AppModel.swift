@@ -63,6 +63,23 @@ final class AppModel: ObservableObject {
     @Published var pane: String {
         didSet { UserDefaults.standard.set(pane, forKey: Self.paneKey) }
     }
+    /// Home's numbers for the chosen period, re-read whole when the log, the
+    /// Insights setting or the period changes.
+    @Published private(set) var insights: SpeecherInsightsModel
+    @Published private(set) var insightsEnabled: Bool
+    @Published var insightsRange = SpeecherInsightsRange.last30Days {
+        didSet { refreshInsights() }
+    }
+    /// "12 words, Mail, today": the last transcript's length and, when
+    /// insights recorded it, where it went and when.
+    @Published private(set) var transcriptDetail = ""
+    /// The Clear insights history row asked, and the confirmation is up.
+    @Published var confirmingClearInsights = false
+    /// Deleting the history failed, and the alert saying so is up.
+    @Published var clearInsightsFailed = false
+    /// The group an alternatives pane should switch to when it next shows,
+    /// by title; the pane clears it once it has.
+    @Published var requestedGroup: String? = nil
 
     let bridge: SpeecherBridge
     private static let paneKey = "settingsPane"
@@ -105,6 +122,8 @@ final class AppModel: ObservableObject {
         whatsNewPending = bridge.whatsNewPending
         anthropicCredentialStatus = bridge.anthropicCredentialStatus
         pane = UserDefaults.standard.string(forKey: Self.paneKey) ?? panes[0].id
+        insights = bridge.insightsSummary(range: .last30Days)
+        insightsEnabled = bridge.insightsEnabled
         bridge.statusChanged = { [weak self] status in
             self?.status = status
         }
@@ -113,6 +132,13 @@ final class AppModel: ObservableObject {
         }
         bridge.transcriptChanged = { [weak self] transcript in
             self?.transcript = transcript
+            self?.refreshTranscriptDetail()
+        }
+        bridge.insightsChanged = { [weak self] in
+            self?.refreshInsights()
+        }
+        bridge.lastRecordChanged = { [weak self] in
+            self?.refreshTranscriptDetail()
         }
         // These closures must reach the bridge through self: the bridge owns
         // them, so capturing the local `bridge` would retain it in a cycle and
@@ -139,6 +165,39 @@ final class AppModel: ObservableObject {
             self?.refreshUpdate()
         }
         refreshUpdate()
+        refreshTranscriptDetail()
+    }
+
+    /// Re-reads Home's numbers. Home calls it when it appears, so a day that
+    /// turned over while the window stayed open is picked up.
+    func refreshInsights() {
+        insightsEnabled = bridge.insightsEnabled
+        insights = bridge.insightsSummary(range: insightsRange)
+        refreshTranscriptDetail()
+    }
+
+    private func refreshTranscriptDetail() {
+        let words = bridge.lastTranscriptWords
+        transcriptDetail = (["\(words) \(words == 1 ? "word" : "words")",
+                             bridge.lastRecordApp, bridge.lastRecordDay])
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+    }
+
+    var learnedCorrectionCount: Int { bridge.learnedCorrectionCount }
+
+    func clearInsights() {
+        let cleared = bridge.clearInsights()
+        // On the next turn: this runs from the confirmation dialog's button,
+        // and an alert raised while that dialog is still dismissing is lost.
+        DispatchQueue.main.async { [weak self] in
+            self?.clearInsightsFailed = !cleared
+        }
+    }
+
+    func showCorrections() {
+        requestedGroup = "Corrections"
+        pane = "vocabulary"
     }
 
     private func refreshUpdate() {
@@ -297,6 +356,12 @@ final class AppModel: ObservableObject {
 
     func trigger(_ rowId: String) {
         if rowId == "whatsNew" { showWhatsNew() }
+        // Asked here rather than in MacFrontEnd.mm: the confirmation is a
+        // SwiftUI dialog on the settings window (RootView).
+        if rowId == "clearInsights" {
+            confirmingClearInsights = true
+            return
+        }
         // Every schema action, enableAccessibility included, goes to the
         // front end's one dispatcher (MacFrontEnd.mm).
         bridge.settingsSchema.actionTriggered?(rowId)
@@ -317,6 +382,9 @@ final class AppModel: ObservableObject {
         pages = bridge.settingsSchema.pages
         if rowId == "anthropicAuthMode" {
             anthropicCredentialStatus = bridge.anthropicCredentialStatus
+        }
+        if rowId == "insightsEnabled" {
+            refreshInsights()
         }
         if apiKeyLoaded,
            ["openAiAuthMode", "openAiCliproxyAccount", "cliproxyOauthDir",

@@ -3,6 +3,8 @@
 #include "app/ApplicationController.h"
 #include "app/PlatformComposition.h"
 #include "app/UpdateController.h"
+#include "core/InsightsLog.h"
+#include "core/InsightsSummary.h"
 #include "core/SecretStore.h"
 #include "core/ShortcutBinding.h"
 #include "core/SettingsStore.h"
@@ -25,6 +27,7 @@
 #include <QGuiApplication>
 #include <QHash>
 #include <QKeySequence>
+#include <QLocale>
 #include <QObject>
 #include <QPointer>
 #include <QRegularExpression>
@@ -99,6 +102,8 @@ SpeecherPaneLayout bridgedPaneLayout(PaneLayout layout)
         return SpeecherPaneLayoutAlternatives;
     case PaneLayout::Shortcut:
         return SpeecherPaneLayoutShortcut;
+    case PaneLayout::Home:
+        return SpeecherPaneLayoutHome;
     }
 }
 
@@ -488,6 +493,233 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 
 @implementation CollectionImportResult
 @end
+
+@interface SpeecherInsightsDayModel ()
+@property (nonatomic, copy) NSDate *date;
+@property (nonatomic) NSInteger dictations;
+@property (nonatomic) NSInteger words;
+@property (nonatomic) NSInteger audioMs;
+@property (nonatomic) NSInteger dictationsLevel;
+@property (nonatomic) NSInteger wordsLevel;
+@property (nonatomic) NSInteger audioLevel;
+@end
+
+@implementation SpeecherInsightsDayModel
+@end
+
+@interface SpeecherInsightsAppModel ()
+@property (nonatomic, copy) NSString *name;
+@property (nonatomic, copy) NSString *profileLabel;
+@property (nonatomic) NSInteger words;
+@property (nonatomic) NSInteger percent;
+@end
+
+@implementation SpeecherInsightsAppModel
+@end
+
+@interface SpeecherInsightsModel ()
+@property (nonatomic) NSInteger recordCount;
+@property (nonatomic) NSInteger words;
+@property (nonatomic) NSInteger dictations;
+@property (nonatomic) double dictationsPerActiveDay;
+@property (nonatomic, copy) NSString *wordsDeltaText;
+@property (nonatomic, copy) NSString *dictationsDeltaText;
+@property (nonatomic, copy) NSString *bookComparison;
+@property (nonatomic, copy) NSString *bookComparisonTip;
+@property (nonatomic, copy) NSString *audioTotalText;
+@property (nonatomic, copy) NSString *averageDictationText;
+@property (nonatomic) NSInteger currentStreak;
+@property (nonatomic) NSInteger bestStreak;
+@property (nonatomic, copy) NSString *bestStreakEnd;
+@property (nonatomic) BOOL bestStreakEndsToday;
+@property (nonatomic, copy) NSString *streakText;
+@property (nonatomic, copy) NSArray<NSNumber *> *weekActivity;
+@property (nonatomic) NSInteger todayIndex;
+@property (nonatomic, copy) NSArray<NSString *> *weekLetters;
+@property (nonatomic, copy) NSArray<SpeecherInsightsDayModel *> *heatmap;
+@property (nonatomic, copy) NSArray<NSString *> *weekMonthLabels;
+@property (nonatomic, copy) NSArray<NSNumber *> *heatStrengths;
+@property (nonatomic) NSInteger activeDaysLastYear;
+@property (nonatomic, copy) NSArray<NSNumber *> *hourCounts;
+@property (nonatomic, copy) NSArray<NSString *> *hourLabels;
+@property (nonatomic) NSInteger peakHour;
+@property (nonatomic, copy) NSString *busiestWeekday;
+@property (nonatomic, copy) NSString *persona;
+@property (nonatomic) BOOL hasHourData;
+@property (nonatomic) NSInteger wordsPerMinute;
+@property (nonatomic) NSInteger typingWordsPerMinute;
+@property (nonatomic) NSInteger minutesSavedVersusTyping;
+@property (nonatomic, copy) NSString *speedupText;
+@property (nonatomic, copy) NSArray<SpeecherInsightsAppModel *> *apps;
+@property (nonatomic) NSInteger allTimeWords;
+@property (nonatomic) NSInteger nextMilestone;
+@property (nonatomic, copy) NSString *milestoneText;
+@property (nonatomic, copy) NSString *longestDuration;
+@property (nonatomic) NSInteger longestWords;
+@property (nonatomic, copy) NSString *longestApp;
+@property (nonatomic, copy) NSString *longestDay;
+@property (nonatomic, copy) NSString *busiestDay;
+@property (nonatomic) NSInteger busiestDayDictations;
+@property (nonatomic, copy) NSString *wordiestDay;
+@property (nonatomic) NSInteger wordiestDayWords;
+@property (nonatomic, copy, nullable) NSDate *firstDictation;
+@property (nonatomic) NSInteger firstDictationDaysAgo;
+@end
+
+@implementation SpeecherInsightsModel
+@end
+
+namespace {
+
+speecher::InsightsRange coreInsightsRange(SpeecherInsightsRange range)
+{
+    switch (range) {
+    case SpeecherInsightsRangeLast7Days:
+        return speecher::InsightsRange::Last7Days;
+    case SpeecherInsightsRangeLast30Days:
+        return speecher::InsightsRange::Last30Days;
+    case SpeecherInsightsRangeThisYear:
+        return speecher::InsightsRange::ThisYear;
+    case SpeecherInsightsRangeAllTime:
+        return speecher::InsightsRange::AllTime;
+    }
+    return speecher::InsightsRange::Last30Days;
+}
+
+NSDate *bridgedDate(const QDate &date)
+{
+    return date.startOfDay().toNSDate();
+}
+
+// The day as the page words it, or empty for a day the summary does not have.
+NSString *bridgedRelativeDay(const QDate &date, const QDate &today)
+{
+    return date.isValid() ? speecher::relativeDay(date, today).toNSString() : @"";
+}
+
+// Each measure's levels are worked out up front, so switching the measure
+// only picks another column.
+NSArray<SpeecherInsightsDayModel *> *bridgedHeatmap(const QList<speecher::HeatmapDay> &days)
+{
+    const speecher::HeatScale dictations(days, speecher::HeatMeasure::Dictations);
+    const speecher::HeatScale words(days, speecher::HeatMeasure::Words);
+    const speecher::HeatScale audio(days, speecher::HeatMeasure::Audio);
+    NSMutableArray<SpeecherInsightsDayModel *> *bridged = [NSMutableArray array];
+    for (const speecher::HeatmapDay &day : days) {
+        SpeecherInsightsDayModel *model = [[SpeecherInsightsDayModel alloc] init];
+        model.date = bridgedDate(day.date);
+        model.dictations = day.dictations;
+        model.words = day.words;
+        model.audioMs = day.audioMs;
+        model.dictationsLevel = dictations.level(day);
+        model.wordsLevel = words.level(day);
+        model.audioLevel = audio.level(day);
+        [bridged addObject:model];
+    }
+    return bridged;
+}
+
+NSArray<NSString *> *bridgedWeekMonthLabels(const QList<speecher::HeatmapDay> &days)
+{
+    const int weeks = int((days.size() + 6) / 7);
+    const QMap<int, QString> labels = speecher::monthLabels(days, weeks);
+    NSMutableArray<NSString *> *bridged = [NSMutableArray array];
+    for (int week = 0; week < weeks; ++week) {
+        [bridged addObject:labels.value(week).toNSString()];
+    }
+    return bridged;
+}
+
+SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
+                                       qsizetype recordCount,
+                                       const QDate &today)
+{
+    SpeecherInsightsModel *model = [[SpeecherInsightsModel alloc] init];
+    model.recordCount = recordCount;
+    model.words = summary.words;
+    model.dictations = summary.dictations;
+    model.dictationsPerActiveDay = summary.dictationsPerActiveDay;
+    model.wordsDeltaText = speecher::deltaText(summary.wordsDelta, summary.deltaPeriodLabel).toNSString();
+    model.dictationsDeltaText =
+        speecher::deltaText(summary.dictationsDelta, summary.deltaPeriodLabel).toNSString();
+    model.bookComparison = summary.bookComparison.toNSString();
+    model.bookComparisonTip = summary.bookComparisonTip.toNSString();
+    model.audioTotalText = speecher::audioTotalText(summary.audioMs).toNSString();
+    model.averageDictationText = speecher::averageDictationText(summary).toNSString();
+
+    model.currentStreak = summary.currentStreak;
+    model.bestStreak = summary.bestStreak;
+    model.bestStreakEnd = bridgedRelativeDay(summary.bestStreakEnd, today);
+    model.bestStreakEndsToday = summary.bestStreakEndsToday;
+    model.streakText = speecher::streakText(summary, today).toNSString();
+    NSMutableArray<NSNumber *> *week = [NSMutableArray array];
+    NSMutableArray<NSString *> *letters = [NSMutableArray array];
+    for (int day = 0; day < 7; ++day) {
+        [week addObject:@(summary.weekActivity[day])];
+        [letters addObject:QLocale().dayName(day + 1, QLocale::NarrowFormat).toNSString()];
+    }
+    model.weekActivity = week;
+    model.todayIndex = summary.todayIndex;
+    model.weekLetters = letters;
+
+    model.heatmap = bridgedHeatmap(summary.heatmap);
+    model.weekMonthLabels = bridgedWeekMonthLabels(summary.heatmap);
+    NSMutableArray<NSNumber *> *strengths = [NSMutableArray array];
+    for (double strength : speecher::kHeatStrengths) {
+        [strengths addObject:@(strength)];
+    }
+    model.heatStrengths = strengths;
+    model.activeDaysLastYear = summary.activeDaysLastYear;
+
+    NSMutableArray<NSNumber *> *hours = [NSMutableArray array];
+    NSMutableArray<NSString *> *hourLabels = [NSMutableArray array];
+    for (int hour = 0; hour < 24; ++hour) {
+        [hours addObject:@(summary.hourCounts[hour])];
+        [hourLabels addObject:speecher::hourLabel(hour).toNSString()];
+    }
+    model.hourCounts = hours;
+    model.hourLabels = hourLabels;
+    model.peakHour = summary.peakHour;
+    model.busiestWeekday =
+        QLocale().dayName(summary.busiestWeekday, QLocale::LongFormat).toNSString();
+    model.persona = summary.persona.toNSString();
+    model.hasHourData = summary.hasHourData;
+
+    model.wordsPerMinute = summary.wordsPerMinute;
+    model.typingWordsPerMinute = summary.typingWordsPerMinute;
+    model.minutesSavedVersusTyping = summary.minutesSavedVersusTyping;
+    model.speedupText = summary.speedupText.toNSString();
+
+    NSMutableArray<SpeecherInsightsAppModel *> *apps = [NSMutableArray array];
+    for (const speecher::AppShare &share : summary.apps) {
+        SpeecherInsightsAppModel *app = [[SpeecherInsightsAppModel alloc] init];
+        app.name = share.name.toNSString();
+        app.profileLabel = share.profileLabel.toNSString();
+        app.words = share.words;
+        app.percent = share.percent;
+        [apps addObject:app];
+    }
+    model.apps = apps;
+
+    model.allTimeWords = summary.allTimeWords;
+    model.nextMilestone = summary.nextMilestone;
+    model.milestoneText = speecher::milestoneText(summary).toNSString();
+    model.longestDuration = speecher::clockText(summary.longest.audioMs).toNSString();
+    model.longestWords = summary.longest.words;
+    model.longestApp = summary.longest.appName.toNSString();
+    model.longestDay = bridgedRelativeDay(summary.longest.date, today);
+    model.busiestDay = bridgedRelativeDay(summary.busiestDay.date, today);
+    model.busiestDayDictations = summary.busiestDay.dictations;
+    model.wordiestDay = bridgedRelativeDay(summary.wordiestDay.date, today);
+    model.wordiestDayWords = summary.wordiestDay.words;
+    model.firstDictation =
+        summary.firstDictation.isValid() ? bridgedDate(summary.firstDictation) : nil;
+    model.firstDictationDaysAgo =
+        summary.firstDictation.isValid() ? summary.firstDictation.daysTo(today) : 0;
+    return model;
+}
+
+} // namespace
 
 // Declared so the bridge below can call it; the C++ types keep it out of the
 // public header.
@@ -945,6 +1177,24 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                              bridge.updateChanged();
                          }
                      });
+    QObject::connect(controller->insightsLog(),
+                     &speecher::InsightsLog::changed,
+                     &_state->lifetime,
+                     [weakSelf] {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.insightsChanged) {
+                             bridge.insightsChanged();
+                         }
+                     });
+    QObject::connect(controller,
+                     &speecher::ApplicationController::lastRecordChanged,
+                     &_state->lifetime,
+                     [weakSelf] {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.lastRecordChanged) {
+                             bridge.lastRecordChanged();
+                         }
+                     });
     [self connectPanelTo:controller->session()];
     return self;
 }
@@ -1069,6 +1319,17 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                              bridge.transcriptChanged(transcript.toNSString());
                          }
                      });
+    // What was delivered, which refinement can make differ from the preview.
+    QObject::connect(session,
+                     &DictationSession::transcriptDelivered,
+                     &_state->lifetime,
+                     [weakSelf, state](const QString &text) {
+                         state->lastTranscript = text;
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.transcriptChanged) {
+                             bridge.transcriptChanged(text.toNSString());
+                         }
+                     });
 }
 
 - (void)notePopupPresented:(uint64_t)generation
@@ -1079,6 +1340,50 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 - (NSString *)lastTranscript
 {
     return _state->lastTranscript.toNSString();
+}
+
+- (NSInteger)lastTranscriptWords
+{
+    return speecher::countWords(_state->lastTranscript);
+}
+
+- (NSString *)lastRecordApp
+{
+    const std::optional<speecher::DictationRecord> &record = _state->controller->lastRecord();
+    return record ? record->appName.toNSString() : @"";
+}
+
+- (NSString *)lastRecordDay
+{
+    const std::optional<speecher::DictationRecord> &record = _state->controller->lastRecord();
+    return record ? speecher::relativeDay(record->finishedAt.date(),
+                                          _state->controller->insightsToday())
+                        .toNSString()
+                  : @"";
+}
+
+- (BOOL)insightsEnabled
+{
+    return _state->controller->settings()->insightsEnabled();
+}
+
+- (SpeecherInsightsModel *)insightsSummaryForRange:(SpeecherInsightsRange)range
+{
+    const QList<speecher::DictationRecord> &records = _state->controller->insightsLog()->records();
+    const QDate today = _state->controller->insightsToday();
+    return bridgedInsights(speecher::summarize(records, coreInsightsRange(range), today),
+                           records.size(),
+                           today);
+}
+
+- (BOOL)clearInsights
+{
+    return _state->controller->clearInsights();
+}
+
+- (NSInteger)learnedCorrectionCount
+{
+    return _state->controller->settings()->learnedCorrections().size();
 }
 
 - (BOOL)shortcutSupported

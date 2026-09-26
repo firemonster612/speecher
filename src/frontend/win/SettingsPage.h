@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/InsightsSummary.h"
 #include "frontend/win/SettingsModel.h"
 
 #include <QHash>
@@ -10,6 +11,7 @@
 #undef GetCurrentTime
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
+#include <winrt/Microsoft.UI.Xaml.Media.h>
 #pragma pop_macro("GetCurrentTime")
 
 #include <functional>
@@ -59,6 +61,8 @@ struct PaneHost {
     std::function<void()> refresh;
     // Action rows (runSetup, checkForUpdates, whatsNew) and disabledAction ids.
     std::function<void(const QString &id)> action;
+    // Selects a sidebar pane, for links on a page.
+    std::function<void(const QString &paneId)> showPane;
     // The settings window's HWND, which the file picker needs.
     std::function<HWND()> hwnd;
     // The window's XamlRoot, which ContentDialog needs.
@@ -86,6 +90,10 @@ struct PaneHost {
     // 0 when no modifier is pending; -1 once a second key joined it — a
     // modifier-only chord is not a valid combination and must not commit.
     int shortcutPendingModifier = 0;
+    // Home's pickers: the stats period, and the Activity measure as an index
+    // into Dictations / Words / Minutes of audio.
+    InsightsRange homeRange = InsightsRange::Last30Days;
+    int homeMeasure = 0;
 };
 
 // One schema page as a WinUI page: ScrollViewer over a 1064-wide column with
@@ -97,6 +105,11 @@ winrt::Microsoft::UI::Xaml::UIElement buildPage(const PageSnapshot &page, PaneHo
 // The global-shortcut recorder page, the one settings surface with no schema
 // page behind it.
 winrt::Microsoft::UI::Xaml::UIElement buildShortcutPage(PaneHost &host);
+
+// The Gallery's settings page scaffold: gutters on the scroller, the column
+// capped at 1064 inside them, the page title on top. Shared with Home.
+winrt::Microsoft::UI::Xaml::Controls::ScrollViewer pageScaffold(
+    const QString &title, winrt::Microsoft::UI::Xaml::Controls::StackPanel &column);
 
 // A SettingsCard-shaped container (Card brushes, 1 px stroke, control corner
 // radius) around arbitrary content; shared with the collection editor and the
@@ -127,6 +140,14 @@ winrt::Microsoft::UI::Xaml::Controls::TextBlock styledTextBlock(const QString &t
 winrt::Microsoft::UI::Xaml::Controls::TextBlock secondaryTextBlock(const QString &text,
                                                                    const wchar_t *styleKey,
                                                                    const PaneHost &host);
+
+// Whether a Windows contrast theme is on, which overrides Light and Dark.
+bool highContrastOn();
+
+// A brush from styles.xaml's theme dictionary for the window's ActualTheme (or
+// the contrast theme), resolved in code for the reason secondaryTextBlock
+// gives. Null when the key is missing.
+winrt::Microsoft::UI::Xaml::Media::Brush themeBrush(const wchar_t *key, const PaneHost &host);
 
 // A Choice row's control: options as items, disabled ones kept visible, the
 // write going through setValueAndCommit. Shared with the pickers the custom

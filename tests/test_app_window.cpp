@@ -2,7 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/UpdateController.h"
-#include "core/OutputMethod.h"
+#include "core/InsightsLog.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "core/TranscriptState.h"
@@ -10,7 +10,7 @@
 #include "ui/AppPage.h"
 #include "ui/AppWindow.h"
 #include "ui/InlineMessage.h"
-#include "ui/DictationPage.h"
+#include "ui/HomePage.h"
 #include "ui/settings/SettingsPageSet.h"
 #include "ui/Theme.h"
 #ifdef Q_OS_LINUX
@@ -30,7 +30,6 @@
 #include <QCheckBox>
 #include <QGuiApplication>
 #include <QIcon>
-#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QToolButton>
 #include <QSaveFile>
@@ -40,6 +39,7 @@
 #include <QStandardPaths>
 #include <QStackedWidget>
 #include <QTableWidget>
+#include <QTemporaryDir>
 #include <QVBoxLayout>
 
 using namespace speecher;
@@ -75,34 +75,27 @@ private slots:
         }
     }
 
-    void dictationPageRecoversBackgroundTranscript()
+    void homeRecoversBackgroundTranscript()
     {
         ApplicationController controller(true);
         auto *transcript = controller.session()->findChild<TranscriptState *>();
         QVERIFY(transcript);
         transcript->commitFinal(QStringLiteral("Words from the background session."));
-        DictationPage page(&controller);
-        auto *editor = page.findChild<QPlainTextEdit *>(QStringLiteral("dictationTranscript"));
-        QVERIFY(editor);
-        QCOMPARE(editor->toPlainText(), QStringLiteral("Words from the background session."));
-        editor->clear();
+        HomePage page(&controller);
+        page.resize(900, 700);
         page.show();
-        QCOMPARE(editor->toPlainText(), QStringLiteral("Words from the background session."));
-        const QString screenshot = qEnvironmentVariable("SPEECHER_T4_SCREENSHOT");
-        if (!screenshot.isEmpty()) {
-            page.resize(760, 700);
-            QCoreApplication::processEvents();
-            QVERIFY(page.grab().save(screenshot));
-        }
-        controller.session()->stateChanged(QStringLiteral("starting"));
-        QVERIFY(editor->toPlainText().isEmpty());
+        auto *last = page.findChild<QLabel *>(QStringLiteral("lastTranscript"));
+        QVERIFY(last);
+        QTRY_COMPARE(last->text(), QStringLiteral("Words from the background session."));
+        auto *meta = page.findChild<QLabel *>(QStringLiteral("lastTranscriptMeta"));
+        QCOMPARE(meta->text(), QStringLiteral("5 words"));
     }
 
     void sidebarShellConstructsWithSharedPageTitles()
     {
         ApplicationController controller(true);
         const QStringList titles{
-            QStringLiteral("Dictation"),
+            QStringLiteral("Home"),
             QStringLiteral("General"),
             QStringLiteral("Audio"),
             QStringLiteral("Output"),
@@ -214,103 +207,115 @@ private slots:
         QVERIFY(!pages->save(false, false));
     }
 
-    void dictationSummaryDefersSavedMicrophoneResolutionUntilShow()
+    void homeCopiesTheLastTranscript()
     {
         ApplicationController controller(true);
-        AppSettings settings = controller.settings()->snapshot();
-        settings.audio.deviceId = QStringLiteral("saved-device");
-        controller.settings()->applySnapshot(settings);
-
-        AppWindow window(&controller);
-        auto *microphone = window.findChild<QLabel *>(QStringLiteral("microphoneSummary"));
-        QVERIFY(microphone);
-        QCOMPARE(microphone->property("fullText").toString(),
-                 QStringLiteral("Selected microphone"));
-    }
-
-    void dictationSummaryCardsNavigate()
-    {
-        ApplicationController controller(true);
-        DictationPage page(&controller);
+        controller.session()->findChild<TranscriptState *>()->commitFinal(
+            QStringLiteral("hello transcript"));
+        HomePage page(&controller);
         page.show();
-        QCoreApplication::processEvents();
-
-        QLabel *value = page.findChild<QLabel *>(QStringLiteral("refinementSummary"));
-        QVERIFY(value);
-        QWidget *card = value->parentWidget();
-        while (card && !card->property("navTarget").isValid()) {
-            card = card->parentWidget();
-        }
-        QVERIFY(card);
-
-        QSignalSpy navigate(&page, &DictationPage::navigateRequested);
-        QTest::mouseClick(card, Qt::LeftButton);
-        QCOMPARE(navigate.count(), 1);
-        QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::Refinement);
-    }
-
-    void dictationSummaryNamesTheShortcutAndOutputInUserTerms()
-    {
-        ApplicationController controller(true);
-        DictationPage page(&controller);
-        page.show();
-        QCoreApplication::processEvents();
-
-        // No Theme card; the slot shows the Global Shortcut and opens General.
-        QVERIFY(!page.findChild<QLabel *>(QStringLiteral("themeSummary")));
-        QLabel *shortcut = page.findChild<QLabel *>(QStringLiteral("shortcutSummary"));
-        QVERIFY(shortcut);
-        const QString expected = controller.globalShortcutDisplay().isEmpty()
-            ? QString()
-            : controller.globalShortcutDisplay();
-        if (!expected.isEmpty()) {
-            QCOMPARE(shortcut->property("fullText").toString(), expected);
-        } else {
-            QVERIFY(!shortcut->property("fullText").toString().isEmpty());
-        }
-        QWidget *card = shortcut->parentWidget();
-        while (card && !card->property("navTarget").isValid()) {
-            card = card->parentWidget();
-        }
-        QVERIFY(card);
-        QSignalSpy navigate(&page, &DictationPage::navigateRequested);
-        QTest::mouseClick(card, Qt::LeftButton);
-        QCOMPARE(navigate.count(), 1);
-        QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::General);
-
-        // The Output card names the chosen method, not the platform's status.
-        QLabel *output = nullptr;
-        for (QLabel *label : page.findChildren<QLabel *>()) {
-            if (label->property("fullText").toString()
-                == OutputMethod::label(controller.settings()->outputMethod())) {
-                output = label;
-            }
-        }
-        QVERIFY(output);
-    }
-
-    void dictationTranscriptStaysReadOnlyAndCopies()
-    {
-        ApplicationController controller(true);
-        DictationPage page(&controller);
-        page.show();
-        QCoreApplication::processEvents();
-
-        auto *transcript = page.findChild<QPlainTextEdit *>(QStringLiteral("dictationTranscript"));
-        QVERIFY(transcript);
-        // Edits would go nowhere, so the transcript never unlocks.
-        QVERIFY(transcript->isReadOnly());
-        page.setStatus(QStringLiteral("listening"));
-        QVERIFY(transcript->isReadOnly());
-        page.setStatus(QStringLiteral("idle"));
-        QVERIFY(transcript->isReadOnly());
-        QVERIFY(transcript->textInteractionFlags() & Qt::TextSelectableByMouse);
-
-        transcript->setPlainText(QStringLiteral("hello transcript"));
-        auto *copy = transcript->findChild<QToolButton *>(QStringLiteral("copyTranscript"));
+        auto *copy = page.findChild<QToolButton *>(QStringLiteral("copyTranscript"));
         QVERIFY(copy);
         copy->click();
         QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("hello transcript"));
+    }
+
+    void homeShowsInsightsOnlyWhenOnAndRecorded()
+    {
+        QTemporaryDir dir;
+        QFile seed(dir.filePath(QStringLiteral("seed.jsonl")));
+        QVERIFY(seed.open(QIODevice::WriteOnly));
+        seed.write(R"({"finishedAt":"2026-09-25T09:55:00","audioMs":38000,"words":90,"app":"Thunderbird","profile":"email"})"
+                   "\n");
+        seed.close();
+        qputenv("SPEECHER_INSIGHTS_SEED", seed.fileName().toLocal8Bit());
+        qputenv("SPEECHER_INSIGHTS_TODAY", "2026-09-26");
+        const auto restore = qScopeGuard([] {
+            qunsetenv("SPEECHER_INSIGHTS_SEED");
+            qunsetenv("SPEECHER_INSIGHTS_TODAY");
+        });
+        ApplicationController controller(true);
+        QCOMPARE(controller.insightsLog()->records().size(), 1);
+
+        controller.settings()->setInsightsEnabled(false);
+        HomePage page(&controller);
+        page.resize(1000, 800);
+        page.show();
+        auto *notice = page.findChild<QFrame *>(QStringLiteral("insightsNotice"));
+        QVERIFY(notice);
+        QVERIFY(notice->isVisible());
+        QCOMPARE(notice->findChild<QLabel *>(QStringLiteral("insightsNoticeTitle"))->text(),
+                 QStringLiteral("Insights are off"));
+        QVERIFY(page.findChildren<QFrame *>(QStringLiteral("insightTile")).isEmpty());
+        QSignalSpy navigate(&page, &HomePage::navigateRequested);
+        page.findChild<QPushButton *>(QStringLiteral("insightsNoticeSettings"))->click();
+        QCOMPARE(navigate.count(), 1);
+        QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::General);
+
+        controller.settings()->setInsightsEnabled(true);
+        page.refresh();
+        QVERIFY(!notice->isVisible());
+        const QList<QFrame *> tiles = page.findChildren<QFrame *>(QStringLiteral("insightTile"));
+        QCOMPARE(tiles.size(), 4);
+        QStringList values;
+        for (QFrame *tile : tiles) {
+            values << tile->findChild<QLabel *>(QStringLiteral("insightValue"))->text();
+        }
+        QCOMPARE(values.first(), QStringLiteral("90"));
+        QVERIFY(page.findChild<QWidget *>(QStringLiteral("activityHeatmap")));
+
+        // Clearing the log leaves "No insights yet".
+        controller.clearInsights();
+        QVERIFY(notice->isVisible());
+        QCOMPARE(notice->findChild<QLabel *>(QStringLiteral("insightsNoticeTitle"))->text(),
+                 QStringLiteral("No insights yet"));
+        QVERIFY(page.findChildren<QFrame *>(QStringLiteral("insightTile")).isEmpty());
+    }
+
+    void controllerKeepsTheRecordOfTheLastTranscript()
+    {
+        QTemporaryDir dir;
+        const QString seed = dir.filePath(QStringLiteral("seed.jsonl"));
+        QFile(seed).open(QIODevice::WriteOnly);
+        qputenv("SPEECHER_INSIGHTS_SEED", seed.toLocal8Bit());
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_INSIGHTS_SEED"); });
+        ApplicationController controller(true);
+        QSignalSpy changed(&controller, &ApplicationController::lastRecordChanged);
+        const DictationRecord record{QDateTime(QDate(2026, 9, 26), QTime(9, 0)), 4000, 3,
+                                     QStringLiteral("Kate"), WritingProfile::Other};
+
+        emit controller.session()->transcriptDelivered(QStringLiteral("one two three"));
+        emit controller.session()->dictationRecorded(record);
+        QCOMPARE(controller.lastRecord()->appName, QStringLiteral("Kate"));
+
+        // A delivery insights did not record leaves no record behind.
+        emit controller.session()->transcriptDelivered(QStringLiteral("four"));
+        QVERIFY(!controller.lastRecord());
+        QCOMPARE(changed.count(), 2);
+
+        // Clearing the history forgets the record the caption shows.
+        emit controller.session()->dictationRecorded(record);
+        QVERIFY(controller.clearInsights());
+        QVERIFY(!controller.lastRecord());
+    }
+
+    void aNewSessionForgetsTheLastRecord()
+    {
+        // The session drops its last transcript when the next one starts,
+        // delivered or not, so the caption's record must go with it: a
+        // cancelled or failed session must not wear the previous one's app.
+        QTemporaryDir dir;
+        const QString seed = dir.filePath(QStringLiteral("seed.jsonl"));
+        QFile(seed).open(QIODevice::WriteOnly);
+        qputenv("SPEECHER_INSIGHTS_SEED", seed.toLocal8Bit());
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_INSIGHTS_SEED"); });
+        ApplicationController controller(true);
+        emit controller.session()->dictationRecorded(
+            {QDateTime(QDate(2026, 9, 26), QTime(9, 0)), 4000, 3, QStringLiteral("Kate"),
+             WritingProfile::Other});
+        QVERIFY(controller.lastRecord());
+        controller.session()->toggle();
+        QTRY_VERIFY(!controller.lastRecord());
     }
 
     void dictationHasOneStartControlAndTheHeaderHasNone()
@@ -328,10 +333,10 @@ private slots:
         QCOMPARE(startControls, 1);
     }
 
-    void dictationPageKeepsTheLastErrorUntilTheNextSession()
+    void homeKeepsTheLastErrorUntilTheNextSession()
     {
         ApplicationController controller(true);
-        DictationPage page(&controller);
+        HomePage page(&controller);
         page.show();
         QCoreApplication::processEvents();
 
@@ -372,10 +377,10 @@ private slots:
         QCOMPARE(copy->toolButtonStyle(), Qt::ToolButtonTextOnly);
     }
 
-    void dictationPageShowsHonestBusyActions()
+    void homeShowsHonestBusyActions()
     {
         ApplicationController controller(true);
-        DictationPage page(&controller);
+        HomePage page(&controller);
 
         page.setStatus(QStringLiteral("Refining"));
         QCOMPARE(page.toggleButton()->text(), QStringLiteral("Cancel Refinement"));

@@ -455,6 +455,25 @@ void SettingsPageSet::runPageAction(const QString &rowId)
         m_controller->showSetupAssistant();
         return;
     }
+    if (rowId == QStringLiteral("clearInsights")) {
+        QMessageBox confirm(qobject_cast<QWidget *>(parent()));
+        confirm.setIcon(QMessageBox::Question);
+        confirm.setWindowTitle(QStringLiteral("Clear insights history"));
+        confirm.setText(QStringLiteral("Delete all insights history?"));
+        confirm.setInformativeText(QStringLiteral("Your stats, streaks and records are erased from "
+                                                  "this computer. This can't be undone."));
+        QPushButton *remove = confirm.addButton(QStringLiteral("Delete History"),
+                                                QMessageBox::DestructiveRole);
+        confirm.addButton(QMessageBox::Cancel);
+        confirm.setDefaultButton(QMessageBox::Cancel);
+        confirm.exec();
+        if (confirm.clickedButton() == remove && !m_controller->clearInsights()) {
+            QMessageBox::warning(qobject_cast<QWidget *>(parent()),
+                                 QStringLiteral("Clear insights history"),
+                                 QStringLiteral("Speecher couldn't delete the insights history."));
+        }
+        return;
+    }
     if (rowId == QStringLiteral("checkForUpdates")) {
         if (m_controller->updates()->state() == UpdateController::State::UpdateAvailable) {
             m_controller->updates()->updateNow();
