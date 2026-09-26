@@ -7,9 +7,6 @@
 #include <QThread>
 #include <QUrl>
 
-#include <atomic>
-#include <memory>
-
 namespace speecher {
 
 // Local Model files on disk: downloads that resume, are checked against the
@@ -52,15 +49,9 @@ private:
     void reportProgress(const QString &modelId, quint64 serial, qint64 received, qint64 total);
     void reportEnd(const QString &modelId, quint64 serial, const QString &error);
 
-    struct Running {
-        quint64 serial = 0;
-        // Read by the worker while it hashes, so cancel() need not wait for
-        // a whole multi-gigabyte file.
-        std::shared_ptr<std::atomic_bool> cancelled;
-    };
-
     QString m_directory;
-    QHash<QString, Running> m_downloads;
+    // The serial of each running download.
+    QHash<QString, quint64> m_downloads;
     quint64 m_lastSerial = 0;
     QThread m_thread;
     Worker *m_worker = nullptr;

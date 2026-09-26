@@ -306,6 +306,40 @@ private slots:
         QVERIFY(store.isDownloaded(model));
     }
 
+    void cancelDoesNotWaitForAnotherModelsHashCheck()
+    {
+        QTemporaryDir dir;
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        LocalModelStore store(dir.path(), QUrl(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort())));
+        // A complete, sparse 512 MiB partial file goes straight to the hash
+        // check. Its hash is wrong, which the check only learns at the end.
+        LocalModel large = fakeModel({});
+        large.id = QStringLiteral("large");
+        large.fileName = QStringLiteral("large.gguf");
+        large.sizeBytes = qint64(512) << 20;
+        {
+            QFile part(store.modelPath(large) + QStringLiteral(".part"));
+            QVERIFY(part.open(QIODevice::WriteOnly));
+            QVERIFY(part.resize(large.sizeBytes));
+        }
+        const LocalModel other = fakeModel("other");
+        QSignalSpy failed(&store, &LocalModelStore::downloadFailed);
+
+        QElapsedTimer timer;
+        timer.start();
+        store.download(large);
+        store.download(other);
+        store.cancel(other.id);
+        const qint64 cancelMs = timer.elapsed();
+        QVERIFY(failed.wait(60000));
+        const qint64 hashMs = timer.elapsed();
+
+        QCOMPARE(failed.first().at(0).toString(), large.id);
+        QVERIFY2(cancelMs * 4 < hashMs, qPrintable(QStringLiteral("cancel took %1 ms of a %2 ms hash check")
+                                                       .arg(cancelMs).arg(hashMs)));
+    }
+
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
     // Runs a real model when SPEECHER_TEST_LOCAL_MODEL names a catalog id and
     // SPEECHER_TEST_LOCAL_MODEL_DIR holds its file.

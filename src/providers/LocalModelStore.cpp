@@ -41,7 +41,7 @@ public:
     {
     }
 
-    void start(const LocalModel &model, quint64 serial, std::shared_ptr<std::atomic_bool> cancelled);
+    void start(const LocalModel &model, quint64 serial);
     void stop(const QString &modelId);
 
 private:
@@ -51,8 +51,7 @@ private:
         QFile file;
         QNetworkReply *reply = nullptr;
         qint64 resumedFrom = 0;
-        // Set by the store's thread to stop hashing early.
-        std::shared_ptr<std::atomic_bool> cancelled;
+        QCryptographicHash hash{QCryptographicHash::Sha256};
     };
 
     QString modelPath(const LocalModel &model) const
@@ -63,6 +62,8 @@ private:
     void writeReceived(Download *download);
     void finishReply(Download *download);
     void verifyAndInstall(Download *download);
+    void hashNextChunk(const QString &modelId, quint64 serial);
+    void install(Download *download);
     void end(Download *download, const QString &error);
 
     LocalModelStore *m_store;
@@ -73,14 +74,12 @@ private:
     std::map<QString, std::unique_ptr<Download>> m_downloads;
 };
 
-void LocalModelStore::Worker::start(const LocalModel &model, quint64 serial,
-                                    std::shared_ptr<std::atomic_bool> cancelled)
+void LocalModelStore::Worker::start(const LocalModel &model, quint64 serial)
 {
     auto owned = std::make_unique<Download>();
     Download *download = owned.get();
     download->model = model;
     download->serial = serial;
-    download->cancelled = std::move(cancelled);
     download->file.setFileName(partPath(modelPath(model)));
     m_downloads[model.id] = std::move(owned);
     if (!QDir().mkpath(m_directory)
@@ -176,22 +175,38 @@ void LocalModelStore::Worker::finishReply(Download *download)
 
 void LocalModelStore::Worker::verifyAndInstall(Download *download)
 {
-    const QString path = download->file.fileName();
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        end(download, QStringLiteral("Speecher could not read the download back from %1.").arg(path));
+    if (!download->file.open(QIODevice::ReadOnly)) {
+        end(download, QStringLiteral("Speecher could not read the download back from %1.")
+                          .arg(download->file.fileName()));
         return;
     }
-    QCryptographicHash hash(QCryptographicHash::Sha256);
-    while (!file.atEnd()) {
-        // cancel() waits for this thread, so stop hashing as soon as it asks.
-        if (*download->cancelled) {
-            return;
-        }
-        hash.addData(file.read(hashChunkBytes));
+    hashNextChunk(download->model.id, download->serial);
+}
+
+// One chunk per event, so stop() and other downloads get a turn between
+// chunks rather than waiting for a whole multi-gigabyte file.
+void LocalModelStore::Worker::hashNextChunk(const QString &modelId, quint64 serial)
+{
+    const auto it = m_downloads.find(modelId);
+    // stop() ended this download while the chunk waited in the queue.
+    if (it == m_downloads.end() || it->second->serial != serial) {
+        return;
     }
-    file.close();
-    if (hash.result().toHex() != download->model.sha256.toLatin1()) {
+    Download *download = it->second.get();
+    if (download->file.atEnd()) {
+        install(download);
+        return;
+    }
+    download->hash.addData(download->file.read(hashChunkBytes));
+    QMetaObject::invokeMethod(this, [this, modelId, serial] { hashNextChunk(modelId, serial); },
+                              Qt::QueuedConnection);
+}
+
+void LocalModelStore::Worker::install(Download *download)
+{
+    download->file.close();
+    const QString path = download->file.fileName();
+    if (download->hash.result().toHex() != download->model.sha256.toLatin1()) {
         QFile::remove(path);
         end(download, QStringLiteral("The downloaded file was damaged, so Speecher deleted it. Download it again."));
         return;
@@ -280,23 +295,21 @@ void LocalModelStore::download(const LocalModel &model)
     if (m_downloads.contains(model.id)) {
         return;
     }
-    const Running running{++m_lastSerial, std::make_shared<std::atomic_bool>(false)};
-    m_downloads.insert(model.id, running);
-    QMetaObject::invokeMethod(m_worker, [worker = m_worker, model, running] {
-        worker->start(model, running.serial, running.cancelled);
+    const quint64 serial = ++m_lastSerial;
+    m_downloads.insert(model.id, serial);
+    QMetaObject::invokeMethod(m_worker, [worker = m_worker, model, serial] {
+        worker->start(model, serial);
     }, Qt::QueuedConnection);
 }
 
 void LocalModelStore::cancel(const QString &modelId)
 {
-    const auto it = m_downloads.constFind(modelId);
-    if (it == m_downloads.cend()) {
+    if (!m_downloads.remove(modelId)) {
         return;
     }
-    *it->cancelled = true;
-    m_downloads.erase(it);
     // Blocking: remove() deletes the partial file next, which Windows refuses
-    // while the worker still has it open.
+    // while the worker still has it open. The worker hashes in chunks, so
+    // this waits for at most one chunk of another download.
     QMetaObject::invokeMethod(m_worker, [worker = m_worker, modelId] {
         worker->stop(modelId);
     }, Qt::BlockingQueuedConnection);
@@ -313,14 +326,14 @@ bool LocalModelStore::remove(const LocalModel &model)
 
 void LocalModelStore::reportProgress(const QString &modelId, quint64 serial, qint64 received, qint64 total)
 {
-    if (m_downloads.value(modelId).serial == serial) {
+    if (m_downloads.value(modelId) == serial) {
         emit downloadProgress(modelId, received, total);
     }
 }
 
 void LocalModelStore::reportEnd(const QString &modelId, quint64 serial, const QString &error)
 {
-    if (m_downloads.value(modelId).serial != serial) {
+    if (m_downloads.value(modelId) != serial) {
         return;
     }
     m_downloads.remove(modelId);
