@@ -1,6 +1,7 @@
 #pragma once
 
 #include "transcribe/FileTranscriptionSession.h"
+#include "transcribe/TranscribePresentation.h"
 #include "ui/WaveformModel.h"
 
 #include <QElapsedTimer>
@@ -50,18 +51,16 @@ private:
     void applyWritingProfile();
     TranscribeOptions options() const;
     void startBatch();
+    void retry(int index);
     void backToSetup();
     void appendSetup(const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column);
     void appendProcessing(const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column);
     void appendResults(const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column);
     void refreshQueue();
     winrt::Microsoft::UI::Xaml::Controls::Button copyButton(const QString &label, const QString &text);
-    QString processingTitle() const;
     void setProgress(qreal fraction);
     void setPhase(const QString &phase);
     void animateBars();
-    QString shownText(const TranscribeFileResult &result) const;
-    QString summary() const;
 
     winrt::fire_and_forget chooseFiles();
     winrt::fire_and_forget chooseFolder();
@@ -88,9 +87,15 @@ private:
     // The batch.
     QStringList m_batch;
     TranscribeOptions m_batchOptions;
+    TranscribeBatchLabels m_batchLabels;
     QList<TranscribeFileResult> m_results;
+    bool m_cancelled = false;
+    // The result row a retry is running for, or -1.
+    int m_retrying = -1;
+    // Lengths of setup-list files (probed) and batch files (decoded).
     QHash<QString, qint64> m_durationsMs;
     int m_current = -1;
+    QString m_currentPath;
     QString m_phase;
     qreal m_progress = 0;
     QVector<float> m_peaks;

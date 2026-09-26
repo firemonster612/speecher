@@ -6,14 +6,13 @@
 #include "core/settings/SettingsSchema.h"
 #include "frontend/win/SettingsPage.h"
 #include "providers/ProviderRegistry.h"
+#include "transcribe/TranscribePresentation.h"
 
 #include <QClipboard>
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
-#include <QLocale>
-#include <QRegularExpression>
 #include <QSaveFile>
 
 #include <shobjidl.h>
@@ -46,25 +45,19 @@ using winrt::Windows::ApplicationModel::DataTransfer::DataPackageOperation;
 using winrt::Windows::ApplicationModel::DataTransfer::StandardDataFormats;
 namespace Pickers = winrt::Windows::Storage::Pickers;
 
-const QString kSaveHint = QStringLiteral("Each transcript is saved as ⟨name⟩-transcribed.txt");
+// Non-ASCII text is written as \u escapes: MSVC reads a source without a BOM
+// in the system code page.
+const QString kSaveHint = QStringLiteral("Each transcript is saved as \u27e8name\u27e9-transcribed.txt");
+// Segoe Fluent Icons.
+constexpr wchar_t kGlyphRemove = L'\uE711';
+constexpr wchar_t kGlyphDone = L'\uE73E';
+constexpr wchar_t kGlyphFailed = L'\uE783';
+constexpr wchar_t kGlyphCurrent = L'\uE768';
 const wchar_t *const kAudioExtensions[] = {L".wav", L".mp3", L".m4a", L".mp4", L".aac", L".flac",
                                            L".ogg", L".oga", L".opus", L".webm"};
 // Same dot geometry as the dictation panel's bars.
 constexpr double kBarWidth = 3.2;
 constexpr double kBarDotHeight = 3.2;
-
-QString durationLabel(qint64 ms)
-{
-    const qint64 seconds = (ms + 500) / 1000;
-    return seconds >= 60 ? QStringLiteral("%1 min %2 s").arg(seconds / 60).arg(seconds % 60)
-                         : QStringLiteral("%1 s").arg(seconds);
-}
-
-int wordCount(const QString &text)
-{
-    static const QRegularExpression whitespace(QStringLiteral("\\s+"));
-    return int(text.split(whitespace, Qt::SkipEmptyParts).size());
-}
 
 QString writeText(const QString &path, const QString &text)
 {
@@ -74,16 +67,6 @@ QString writeText(const QString &path, const QString &text)
         return QStringLiteral("Could not save %1: %2").arg(QDir::toNativeSeparators(path), file.errorString());
     }
     return {};
-}
-
-QString providerLabel(const QList<ProviderDescriptor> &providers, const QString &id)
-{
-    for (const ProviderDescriptor &provider : providers) {
-        if (provider.id == id) {
-            return provider.label;
-        }
-    }
-    return id;
 }
 
 bool gone(const std::weak_ptr<bool> &weak)
@@ -161,39 +144,52 @@ TranscribePane::TranscribePane(PaneHost &host, std::function<void()> rebuild)
     connect(&m_barTimer, &QTimer::timeout, this, &TranscribePane::animateBars);
 
     FileTranscriptionSession *session = m_host.controller->fileTranscription();
-    connect(session, &FileTranscriptionSession::fileStarted, this, [this](int index, const QString &) {
+    connect(session, &FileTranscriptionSession::fileStarted, this, [this](int index, const QString &path) {
         m_current = index;
+        m_currentPath = path;
         m_peaks.clear();
         setProgress(0);
         if (m_headerText) {
-            m_headerText.Text(hs(processingTitle()));
+            m_headerText.Text(hs(processingTitle(m_batch, m_current)));
         }
-        setPhase(QStringLiteral("Reading the audio…"));
+        setPhase(transcribePhaseLabel(TranscribePhase::Reading));
     });
     connect(session, &FileTranscriptionSession::fileDecoded, this,
-            [this](int index, const QVector<float> &peaks, qint64 durationMs) {
-                m_durationsMs.insert(m_batch.value(index), durationMs);
+            [this](int, const QVector<float> &peaks, qint64 durationMs) {
+                m_durationsMs.insert(m_currentPath, durationMs);
                 m_peaks = peaks;
-                setPhase(QStringLiteral("Transcribing…"));
+                setPhase(transcribePhaseLabel(TranscribePhase::Transcribing));
             });
     connect(session, &FileTranscriptionSession::fileProgress, this, [this](int, qreal fraction) {
         setProgress(fraction);
         if (fraction >= 1.0) {
-            setPhase(QStringLiteral("Finishing the transcript…"));
+            setPhase(transcribePhaseLabel(TranscribePhase::Finishing));
         }
     });
     connect(session, &FileTranscriptionSession::fileRefining, this,
-            [this] { setPhase(QStringLiteral("Refining…")); });
+            [this] { setPhase(transcribePhaseLabel(TranscribePhase::Refining)); });
     connect(session, &FileTranscriptionSession::fileFinished, this,
             [this](int, const TranscribeFileResult &result) {
-                m_results.append(result);
-                refreshQueue();
+                if (m_retrying < 0) {
+                    m_results.append(result);
+                    refreshQueue();
+                }
             });
     connect(session, &FileTranscriptionSession::batchFinished, this,
-            [this](const QList<TranscribeFileResult> &, bool cancelled) {
+            [this](const QList<TranscribeFileResult> &results, bool cancelled) {
                 m_current = -1;
+                if (m_retrying >= 0) {
+                    if (!results.isEmpty()) {
+                        m_results[m_retrying] = results.first();
+                    }
+                    m_retrying = -1;
+                    m_rebuild();
+                    return;
+                }
                 m_barTimer.stop();
-                m_stage = cancelled ? Stage::Setup : Stage::Results;
+                m_cancelled = cancelled;
+                // A batch cancelled before any file finished has nothing to show.
+                m_stage = m_results.isEmpty() ? Stage::Setup : Stage::Results;
                 m_showRaw = false;
                 m_expanded.clear();
                 if (!m_results.isEmpty() && !m_results.first().refined.isEmpty()) {
@@ -215,16 +211,23 @@ void TranscribePane::addFiles(const QStringList &paths)
         const QString absolute = QFileInfo(path).absoluteFilePath();
         if (isAudioFile(absolute) && !m_files.contains(absolute)) {
             m_files << absolute;
+            probeAudioDuration(absolute, this, [this, absolute](qint64 durationMs) {
+                m_durationsMs.insert(absolute, durationMs);
+                if (m_stage == Stage::Setup) {
+                    m_rebuild();
+                }
+            });
         }
     }
     m_rebuild();
 }
 
-// The finished batch leaves the list; files added while it ran stay.
+// The finished files leave the list; files added while the batch ran, and any
+// a cancelled batch never reached, stay.
 void TranscribePane::backToSetup()
 {
-    for (const QString &path : std::as_const(m_batch)) {
-        m_files.removeOne(path);
+    for (const TranscribeFileResult &result : std::as_const(m_results)) {
+        m_files.removeOne(result.path);
     }
     seedOptions();
     m_stage = Stage::Setup;
@@ -288,8 +291,10 @@ void TranscribePane::startBatch()
 {
     m_batch = m_files;
     m_batchOptions = options();
+    m_batchLabels = batchLabels(m_batchOptions, *m_host.controller->providerRegistry(),
+                                m_host.controller->settings()->snapshot().refinement);
     m_results.clear();
-    m_durationsMs.clear();
+    m_cancelled = false;
     m_current = -1;
     m_phase.clear();
     m_progress = 0;
@@ -298,6 +303,19 @@ void TranscribePane::startBatch()
     m_stage = Stage::Processing;
     if (!m_host.controller->startFileTranscription(m_batch, m_batchOptions, &m_startError)) {
         m_stage = Stage::Setup;
+    }
+    m_rebuild();
+}
+
+// Runs one failed file again with the batch's choices; its row takes the new
+// result.
+void TranscribePane::retry(int index)
+{
+    m_retrying = index;
+    QString error;
+    if (!m_host.controller->startFileTranscription({m_results.at(index).path}, m_batchOptions, &error)) {
+        m_retrying = -1;
+        m_resultsProblem = error;
     }
     m_rebuild();
 }
@@ -352,16 +370,16 @@ void TranscribePane::appendSetup(const StackPanel &column)
 
     // Audio files: a browse row, then one row per file with its size.
     StackPanel files;
-    Button browse = textButton(m_files.isEmpty() ? QStringLiteral("Browse…") : QStringLiteral("Add more…"));
+    Button browse = textButton(m_files.isEmpty() ? QStringLiteral("Browse\u2026") : QStringLiteral("Add more\u2026"));
     browse.Click([this](const auto &, const auto &) { chooseFiles(); });
     files.Children().Append(row(m_files.isEmpty() ? QStringLiteral("Choose audio files")
                                                   : QStringLiteral("Add more files"),
-                                QStringLiteral("Drop files here or browse · wav, mp3, m4a, flac, ogg"),
+                                QStringLiteral("Drop files here or browse \u00b7 wav, mp3, m4a, flac, ogg"),
                                 browse, false));
     for (const QString &path : std::as_const(m_files)) {
         const QFileInfo info(path);
         Button remove;
-        remove.Content(glyph(L''));
+        remove.Content(glyph(kGlyphRemove));
         ToolTipService::SetToolTip(remove, box_value(L"Remove"));
         Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(remove, L"Remove");
         remove.Click([this, path](const auto &, const auto &) {
@@ -369,9 +387,7 @@ void TranscribePane::appendSetup(const StackPanel &column)
             m_rebuild();
         });
         files.Children().Append(
-            row(info.fileName(),
-                QLocale().formattedDataSize(info.size(), 1, QLocale::DataSizeSIFormat),
-                remove, true));
+            row(info.fileName(), audioFileDetail(info.size(), m_durationsMs.value(path, -1)), remove, true));
     }
     card(QStringLiteral("Audio files"), files);
 
@@ -414,10 +430,7 @@ void TranscribePane::appendSetup(const StackPanel &column)
     for (const ProviderDescriptor &provider : registry->refinementProviders()) {
         refinerOptions.append({provider.id, provider.label});
     }
-    const RefinementSettings refinement = m_host.controller->settings()->snapshot().refinement;
-    const QString model = m_refiner == QStringLiteral("openai")      ? refinement.openAiModel
-                        : m_refiner == QStringLiteral("anthropic") ? refinement.anthropicModel
-                                                                   : QString();
+    const QString model = refinementModel(m_refiner, m_host.controller->settings()->snapshot().refinement);
     const bool refining = m_refiner != QStringLiteral("none");
     StackPanel refine;
     refine.Children().Append(row(QStringLiteral("Provider"),
@@ -467,7 +480,7 @@ void TranscribePane::appendSetup(const StackPanel &column)
     // Output.
     const QList<RowOption> destinations{
         {QString::number(int(TranscriptDestination::BesideInput)), QStringLiteral("Next to each audio file")},
-        {QString::number(int(TranscriptDestination::Folder)), QStringLiteral("One folder…")},
+        {QString::number(int(TranscriptDestination::Folder)), QStringLiteral("One folder\u2026")},
         {QString::number(int(TranscriptDestination::None)), QStringLiteral("Just show them here")},
     };
     StackPanel output;
@@ -490,7 +503,7 @@ void TranscribePane::appendSetup(const StackPanel &column)
                                           }),
                                  false));
     if (m_destination == TranscriptDestination::Folder) {
-        Button change = textButton(QStringLiteral("Change…"));
+        Button change = textButton(QStringLiteral("Change\u2026"));
         change.Click([this](const auto &, const auto &) { chooseFolder(); });
         output.Children().Append(row(QStringLiteral("Folder"), QDir::toNativeSeparators(m_folder), change, true));
     }
@@ -518,7 +531,7 @@ void TranscribePane::appendSetup(const StackPanel &column)
 
 void TranscribePane::appendProcessing(const StackPanel &column)
 {
-    m_headerText = styledTextBlock(processingTitle(), L"SettingsSectionHeaderStyle");
+    m_headerText = styledTextBlock(processingTitle(m_batch, m_current), L"SettingsSectionHeaderStyle");
     column.Children().Append(m_headerText);
 
     StackPanel stage;
@@ -584,17 +597,6 @@ void TranscribePane::appendProcessing(const StackPanel &column)
     m_barTimer.start();
 }
 
-QString TranscribePane::processingTitle() const
-{
-    if (m_current < 0) {
-        return QStringLiteral("Transcribing");
-    }
-    const QString name = QFileInfo(m_batch.value(m_current)).fileName();
-    return m_batch.size() > 1
-        ? QStringLiteral("Transcribing · %1 (%2 of %3)").arg(name).arg(m_current + 1).arg(m_batch.size())
-        : QStringLiteral("Transcribing · %1").arg(name);
-}
-
 void TranscribePane::setProgress(qreal fraction)
 {
     m_progress = fraction;
@@ -625,15 +627,20 @@ void TranscribePane::refreshQueue()
         return;
     }
     for (int i = 0; i < m_batch.size(); ++i) {
+        const TranscribeQueueState state = queueState(i, m_current, m_results);
         wchar_t mark = 0;
-        QString state = QStringLiteral("Waiting");
-        if (i < m_results.size()) {
-            const bool failed = m_results.at(i).failed();
-            mark = failed ? L'' : L'';
-            state = failed ? QStringLiteral("Failed") : QStringLiteral("Done");
-        } else if (i == m_current) {
-            mark = L'';
-            state = m_phase;
+        switch (state) {
+        case TranscribeQueueState::Waiting:
+            break;
+        case TranscribeQueueState::Current:
+            mark = kGlyphCurrent;
+            break;
+        case TranscribeQueueState::Done:
+            mark = kGlyphDone;
+            break;
+        case TranscribeQueueState::Failed:
+            mark = kGlyphFailed;
+            break;
         }
         // Every line follows the stage above it, so each gets the separator.
         Grid line = separatedGrid();
@@ -645,13 +652,13 @@ void TranscribePane::refreshQueue()
         if (mark) {
             line.Children().Append(glyph(mark));
         }
-        const bool waiting = i > m_current && i >= m_results.size();
-        TextBlock name = waiting
+        TextBlock name = state == TranscribeQueueState::Waiting
             ? secondaryTextBlock(QFileInfo(m_batch.at(i)).fileName(), L"SettingsCardBodyStyle", m_host)
             : styledTextBlock(QFileInfo(m_batch.at(i)).fileName(), L"SettingsCardBodyStyle");
         Grid::SetColumn(name, 1);
         line.Children().Append(name);
-        TextBlock stateText = secondaryTextBlock(state, L"SettingsCardDescriptionStyle", m_host);
+        TextBlock stateText =
+            secondaryTextBlock(queueStateLabel(state, m_phase), L"SettingsCardDescriptionStyle", m_host);
         Grid::SetColumn(stateText, 2);
         line.Children().Append(stateText);
         m_queue.Children().Append(line);
@@ -682,48 +689,6 @@ void TranscribePane::animateBars()
     }
 }
 
-QString TranscribePane::shownText(const TranscribeFileResult &result) const
-{
-    return m_showRaw ? result.raw : result.refined;
-}
-
-QString TranscribePane::summary() const
-{
-    const int count = int(m_results.size());
-    const int failed = int(std::count_if(m_results.cbegin(), m_results.cend(),
-                                         [](const TranscribeFileResult &result) { return result.failed(); }));
-    qint64 totalMs = 0;
-    int saved = 0;
-    for (const TranscribeFileResult &result : m_results) {
-        totalMs += m_durationsMs.value(result.path, 0);
-        saved += !result.savedPath.isEmpty();
-    }
-    ProviderRegistry *registry = m_host.controller->providerRegistry();
-    QStringList parts;
-    if (count > 1) {
-        parts << QStringLiteral("%1 transcripts").arg(count - failed);
-    }
-    if (failed > 0) {
-        parts << QStringLiteral("%1 failed").arg(failed);
-    }
-    if (totalMs > 0) {
-        parts << QStringLiteral("%1 of audio").arg(durationLabel(totalMs));
-    }
-    parts << QStringLiteral("transcribed with %1")
-                 .arg(providerLabel(registry->speechProviders(), m_batchOptions.speechProviderId));
-    if (m_batchOptions.refinementProviderId != QStringLiteral("none")
-        && m_batchOptions.cleanupStrength != QStringLiteral("none")) {
-        parts << QStringLiteral("refined with %1")
-                     .arg(providerLabel(registry->refinementProviders(), m_batchOptions.refinementProviderId));
-    }
-    if (saved > 0) {
-        parts << (m_batchOptions.destination == TranscriptDestination::Folder
-                      ? QStringLiteral("saved to %1").arg(QDir::toNativeSeparators(m_batchOptions.folder))
-                      : QStringLiteral("saved next to each audio file"));
-    }
-    return parts.join(QStringLiteral(" · "));
-}
-
 Button TranscribePane::copyButton(const QString &label, const QString &text)
 {
     Button button = textButton(label);
@@ -747,8 +712,7 @@ void TranscribePane::appendResults(const StackPanel &column)
     top.Padding({16, 16, 16, 16});
     top.Spacing(8);
     Grid toolbar = lineGrid();
-    if (m_batchOptions.refinementProviderId != QStringLiteral("none")
-        && m_batchOptions.cleanupStrength != QStringLiteral("none")) {
+    if (refinesTranscripts(m_batchOptions)) {
         SelectorBar variants;
         SelectorBarItem refined;
         refined.Text(L"Refined");
@@ -767,25 +731,19 @@ void TranscribePane::appendResults(const StackPanel &column)
         });
         toolbar.Children().Append(variants);
     }
-    QStringList parts;
-    for (const TranscribeFileResult &result : std::as_const(m_results)) {
-        if (!result.failed()) {
-            parts << (m_results.size() > 1
-                          ? QStringLiteral("# %1\n\n%2").arg(QFileInfo(result.path).fileName(), shownText(result))
-                          : shownText(result));
-        }
-    }
     StackPanel actions;
     actions.Orientation(Orientation::Horizontal);
     actions.Spacing(8);
-    actions.Children().Append(copyButton(QStringLiteral("Copy all"), parts.join(QStringLiteral("\n\n\n"))));
+    actions.Children().Append(copyButton(QStringLiteral("Copy all"), allTranscripts(m_results, m_showRaw)));
     Button exportAllButton = textButton(QStringLiteral("Export all"));
     exportAllButton.Click([this](const auto &, const auto &) { exportAll(); });
     actions.Children().Append(exportAllButton);
     Grid::SetColumn(actions, 1);
     toolbar.Children().Append(actions);
     top.Children().Append(toolbar);
-    top.Children().Append(secondaryTextBlock(summary(), L"SettingsCardDescriptionStyle", m_host));
+    top.Children().Append(secondaryTextBlock(
+        batchSummary(m_results, int(m_batch.size()), m_cancelled, m_durationsMs, m_batchOptions, m_batchLabels),
+        L"SettingsCardDescriptionStyle", m_host));
     column.Children().Append(cardContainer(top));
 
     if (!m_resultsProblem.isEmpty()) {
@@ -805,12 +763,8 @@ void TranscribePane::appendResults(const StackPanel &column)
     files.Margin({0, 4, 0, 0});
     for (int i = 0; i < m_results.size(); ++i) {
         const TranscribeFileResult &result = m_results.at(i);
-        const QString text = shownText(result);
-        const qint64 duration = m_durationsMs.value(result.path, -1);
-        QString meta = result.failed() ? result.error : QStringLiteral("%1 words").arg(wordCount(text));
-        if (duration >= 0 && !result.failed()) {
-            meta.prepend(durationLabel(duration) + QStringLiteral(" · "));
-        }
+        const QString text = shownTranscript(result, m_showRaw);
+        const QString meta = resultMeta(result, m_durationsMs.value(result.path, -1), m_showRaw);
 
         Grid header = lineGrid();
         StackPanel label;
@@ -818,6 +772,17 @@ void TranscribePane::appendResults(const StackPanel &column)
         label.VerticalAlignment(VerticalAlignment::Center);
         label.Children().Append(styledTextBlock(QFileInfo(result.path).fileName(), L"SettingsCardBodyStyle"));
         label.Children().Append(secondaryTextBlock(meta, L"SettingsCardDescriptionStyle", m_host));
+        // A transcript that came through with a problem on the way (refinement
+        // fell back to the raw text, saving failed) says so in its header,
+        // visible without opening the row.
+        if (!result.failed() && !result.error.isEmpty()) {
+            InfoBar warning;
+            warning.IsClosable(false);
+            warning.IsOpen(true);
+            warning.Severity(InfoBarSeverity::Warning);
+            warning.Message(hs(result.error));
+            label.Children().Append(warning);
+        }
         header.Children().Append(label);
         StackPanel buttons;
         buttons.Orientation(Orientation::Horizontal);
@@ -828,12 +793,18 @@ void TranscribePane::appendResults(const StackPanel &column)
             saved.Orientation(Orientation::Horizontal);
             saved.Spacing(4);
             saved.VerticalAlignment(VerticalAlignment::Center);
-            saved.Children().Append(glyph(L''));
+            saved.Children().Append(glyph(kGlyphDone));
             saved.Children().Append(secondaryTextBlock(QStringLiteral("Saved"), L"SettingsCardDescriptionStyle", m_host));
             ToolTipService::SetToolTip(saved, box_value(hs(QDir::toNativeSeparators(result.savedPath))));
             buttons.Children().Append(saved);
         }
-        if (!result.failed()) {
+        if (result.failed()) {
+            Button retryButton = textButton(i == m_retrying ? QStringLiteral("Retrying\u2026")
+                                                            : QStringLiteral("Retry"));
+            retryButton.IsEnabled(m_retrying < 0);
+            retryButton.Click([this, i](const auto &, const auto &) { retry(i); });
+            buttons.Children().Append(retryButton);
+        } else {
             buttons.Children().Append(copyButton(QStringLiteral("Copy"), text));
             Button exportButton = textButton(QStringLiteral("Export"));
             exportButton.Click([this, path = result.path, text](const auto &, const auto &) {
@@ -848,10 +819,11 @@ void TranscribePane::appendResults(const StackPanel &column)
         item.HorizontalAlignment(HorizontalAlignment::Stretch);
         item.HorizontalContentAlignment(HorizontalAlignment::Stretch);
         item.Header(header);
-        TextBlock body = styledTextBlock(text.isEmpty() ? result.raw : text, L"SettingsInfoTextStyle");
+        TextBlock body = styledTextBlock(text, L"SettingsInfoTextStyle");
         body.IsTextSelectionEnabled(true);
         item.Content(body);
-        item.IsEnabled(!body.Text().empty());
+        // Disabling the Expander disables its header too, which carries Retry.
+        item.IsEnabled(!body.Text().empty() || result.failed());
         item.IsExpanded(m_expanded.contains(i));
         item.Expanding([this, i](const auto &, const auto &) { m_expanded.insert(i); });
         item.Collapsed([this, i](const auto &, const auto &) { m_expanded.remove(i); });
@@ -953,7 +925,7 @@ winrt::fire_and_forget TranscribePane::exportAll()
         for (const TranscribeFileResult &result : std::as_const(m_results)) {
             QString error;
             if (!result.failed()) {
-                saveTranscript(result.path, qs(folder.Path()), shownText(result), &error);
+                saveTranscript(result.path, qs(folder.Path()), shownTranscript(result, m_showRaw), &error);
             }
             if (!error.isEmpty()) {
                 errors << error;
