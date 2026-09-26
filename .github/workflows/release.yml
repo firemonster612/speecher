@@ -313,6 +313,26 @@ jobs:
           security list-keychains -d user -s "$keychain_path"
           rm "$certificate_path"
 
+      - name: Capture Transcribe pane screenshots
+        if: github.event_name == 'pull_request'
+        run: |
+          mkdir -p shots audio
+          say -o audio/meeting-notes.aiff "Quick sync on the transcriber page. The file picker is done and the waveform preview ships behind a flag first."
+          say -o audio/voice-memo.aiff "Reminder for tomorrow. Pick up the dry cleaning before noon and call the dentist."
+          afconvert -f WAVE -d LEI16@16000 audio/meeting-notes.aiff audio/meeting-notes.wav
+          afconvert -f WAVE -d LEI16@16000 audio/voice-memo.aiff audio/voice-memo.wav
+          SPEECHER_GRAB_PAGE=transcribe ./build/speecher.app/Contents/MacOS/speecher \
+            audio/meeting-notes.wav audio/voice-memo.wav --grab shots/mac-transcribe-setup.png
+          test -s shots/mac-transcribe-setup.png
+
+      - name: Upload macOS Transcribe screenshots
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: mac-shots
+          retention-days: 3
+          path: shots/
+
       - name: Package DMG
         env:
           # Pull requests build an ad-hoc-signed DMG; releases require the stable identity.
@@ -324,7 +344,7 @@ jobs:
               exit 1
             fi
           fi
-          bash packaging/macos/build-dmg.sh build
+          bash packaging/macos/build-dmg.sh build || { tail -60 build/speecher-dmg.log; exit 1; }
           if [ "${GITHUB_EVENT_NAME}" != pull_request ]; then
             test -s build/designated-requirement.txt
           fi
