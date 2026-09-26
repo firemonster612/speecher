@@ -438,7 +438,8 @@ final class SetupFlowModel: ObservableObject {
             let name = runner?.options.first { $0.rowOptionId == runnerId }?.label ?? runnerId
             return "\(name) with \(RowView.text(model.row("localRunnerModel")?.value))"
         case "endpoint":
-            return "\(model.bridge.refinementEndpointForm.model) on your server"
+            let server = model.bridge.refinementEndpointForm.model
+            return server.isEmpty ? "your server" : "\(server) on your server"
         default:
             return provider.label
         }
@@ -2108,8 +2109,11 @@ private struct RefinementStep: View {
         .onAppear {
             flow.checkRefinementProviders()
             model.refreshLocalSetup()
+            flow.adoptFoundRunner()
         }
-        .onChange(of: model.local.runners.first?.runnerId) { flow.adoptFoundRunner() }
+        // A runner can answer before or after the step appears, and its list
+        // changes after a pull.
+        .onChange(of: model.local.runners.first?.models) { flow.adoptFoundRunner() }
     }
 
     private struct Group {
@@ -2194,7 +2198,9 @@ private struct LocalRunnerSections: View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 if pull.running {
-                    Text("Downloading \(cleanup?.name ?? "the model") through Ollama: \(pull.progressText)")
+                    // Ollama names the size with its first progress line.
+                    Text("Downloading \(cleanup?.name ?? "the model") through Ollama"
+                        + (pull.fraction > 0 ? ": \(pull.progressText)" : "…"))
                 } else if let cleanup {
                     Text("Suggested for this computer: \(cleanup.name), \(cleanup.sizeText).")
                     if !pull.error.isEmpty {
