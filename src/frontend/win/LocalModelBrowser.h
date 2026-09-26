@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/LocalSetup.h"
 #include "frontend/win/SettingsPage.h"
 
 #include <QObject>
@@ -7,9 +8,6 @@
 #include <memory>
 
 namespace speecher {
-
-class LocalSetup;
-struct LocalModel;
 
 namespace win {
 
@@ -32,6 +30,8 @@ private:
     winrt::Microsoft::UI::Xaml::Controls::StackPanel makeDetail();
     winrt::Microsoft::UI::Xaml::Controls::Button addButton(const wchar_t *text);
     const LocalModel &selected() const;
+    // What LocalSetup reports about this model against the settings on screen.
+    LocalSetup::ModelState state(const LocalModel &model) const;
     void pick(int index);
     void showDetail();
 

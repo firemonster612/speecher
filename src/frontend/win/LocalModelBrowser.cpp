@@ -121,7 +121,7 @@ UIElement LocalModelBrowser::listItem(const LocalModel &model, const QString &su
     item.ColumnDefinitions().Append(textColumn);
     FontIcon icon;
     // Segoe Fluent Icons: CheckMark once on disk, Download before.
-    icon.Glyph(m_setup.models().isDownloaded(model) ? L"" : L"");
+    icon.Glyph(state(model).downloaded ? L"\uE73E" : L"\uE896");
     icon.FontSize(16);
     icon.VerticalAlignment(VerticalAlignment::Center);
     item.Children().Append(icon);
@@ -247,10 +247,15 @@ void LocalModelBrowser::pick(int index)
     showDetail();
 }
 
+LocalSetup::ModelState LocalModelBrowser::state(const LocalModel &model) const
+{
+    return m_setup.modelState(model, m_host.model->draft().speech);
+}
+
 void LocalModelBrowser::showDetail()
 {
     const LocalModel &model = selected();
-    const HardwareProfile &hardware = m_setup.hardware().profile;
+    const LocalSetup::ModelState state = this->state(model);
     const bool tooLarge = m_setup.fit(model) == ModelFit::TooLarge;
     m_name.Text(hs(model.name));
     m_subtitle.Text(hs(model.id == m_setup.suggestedModel().id && m_setup.hardwareKnown()
@@ -258,9 +263,7 @@ void LocalModelBrowser::showDetail()
                            : model.fileName));
     m_size.Text(hs(QStringLiteral("%1 · %2").arg(downloadSizeText(model.sizeBytes),
                                                  m_setup.fitLabel(model))));
-    m_speed.Text(hs(m_setup.speedTestRunning(model.id)
-                        ? QStringLiteral("Testing…")
-                        : localModelSpeedLine(model, hardware, m_setup.measuredSeconds(model.id))));
+    m_speed.Text(hs(state.speedDetail));
     m_wer.Text(hs(QStringLiteral("%1 clear speech (LibriSpeech)\n%2 everyday speech (FLEURS)")
                       .arg(werText(model.librispeechCleanWer), werText(model.fleursEnglishWer))));
     m_textShows.Text(model.streams ? L"As you speak" : L"After you stop");
@@ -274,14 +277,12 @@ void LocalModelBrowser::showDetail()
     }
     m_prosCons.Text(hs(notes.join(QLatin1Char('\n'))));
 
-    const QString problem = m_setup.downloadError(model.id).isEmpty() ? m_setup.speedTestError(model.id)
-                                                                      : m_setup.downloadError(model.id);
-    m_problem.Message(hs(problem));
-    m_problem.IsOpen(!problem.isEmpty());
+    m_problem.Message(hs(state.problem));
+    m_problem.IsOpen(!state.problem.isEmpty());
 
     const auto progress = m_setup.downloadProgress(model.id);
-    const bool downloaded = !progress && m_setup.models().isDownloaded(model);
-    const bool inUse = downloaded && model.id == m_inUse;
+    const bool downloaded = state.downloaded;
+    const bool inUse = state.inUse;
     setVisible(m_progress, bool(progress));
     setVisible(m_cancel, bool(progress));
     if (progress) {

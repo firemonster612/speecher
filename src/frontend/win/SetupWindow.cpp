@@ -4,6 +4,7 @@
 #include "app/LocalSetup.h"
 #include "app/PlatformComposition.h"
 #include "core/AppSettings.h"
+#include "core/EndpointSettings.h"
 #include "core/OutputFormat.h"
 #include "core/SettingsStore.h"
 #include "core/ShortcutBinding.h"
@@ -44,6 +45,7 @@
 #include <QHash>
 #include <QKeySequence>
 #include <QThread>
+#include <QPointer>
 #include <QTimer>
 
 #include <algorithm>
@@ -513,10 +515,11 @@ struct SetupWindow::Native {
         window.SystemBackdrop(MicaBackdrop());
         window.ExtendsContentIntoTitleBar(true);
         window.Closed([this](const auto &, const auto &) {
-            microphone->stop();
+            clearPage();
             resumeShortcut();
             window = nullptr;
             content = nullptr;
+            skip = back = next = nullptr;
         });
 
         Grid root;
@@ -614,24 +617,11 @@ struct SetupWindow::Native {
                      SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
-    // A saved model the person already dictates with, or has on disk or
-    // coming, is their choice; anything else is only the default and the
-    // suggestion replaces it once Local is selected.
-    void resetLocalChoice()
-    {
-        localPath = false;
-        pathPicked = false;
-        localModelId = controller->settings()->localSpeechSettings().modelId;
-        const LocalModel *saved = findLocalModel(localModelId);
-        localPicked = localSpeech && saved
-            && (controller->settings()->speechProvider() == kLocal
-                || localSpeech->models().isDownloaded(*saved) || localSpeech->models().isDownloading(saved->id));
-    }
-
     void show(SetupAssistantPage requested)
     {
+        // A new run of the assistant starts with no path chosen.
         if (!window) {
-            resetLocalChoice();
+            welcomeChoice = WelcomeChoice();
         }
         ensureWindow();
         singlePage = requested == SetupAssistantPage::GlobalShortcut;
@@ -652,7 +642,7 @@ struct SetupWindow::Native {
             // Welcome: running on this computer was chosen, or at least one
             // provider sign-in is on this machine, or a usable CLI Proxy API
             // account the Transcription step can opt into.
-            return (localSpeech && localPath) || anySignInFound();
+            return (localSpeech && welcomeChoice.local()) || anySignInFound();
         case 1:
             // A Local Model counts once its download has started: it keeps
             // going while setup continues.
@@ -718,7 +708,9 @@ struct SetupWindow::Native {
     // A speech provider's credential probe, off the UI thread where the
     // provider offers a job, reported back on it. A result is discarded only
     // when a newer probe of the same provider superseded it; leaving the page
-    // does not — a late verdict still lands in the shared readiness maps.
+    // does not — a late verdict still lands in the shared readiness maps, but
+    // report, which draws on the page that asked, runs only while that page is
+    // on screen.
     void probeSpeechProvider(const QString &id,
                              quint64 generation,
                              std::function<void(const SpeechPrepareResult &)> report)
@@ -726,29 +718,36 @@ struct SetupWindow::Native {
         // Superseded per provider, not per wizard: re-probing one provider's
         // changed sign-in must not strand the others' in-flight verdicts.
         speechProbeGeneration.insert(id, generation);
+        const auto land = [this, id, page = QPointer<QObject>(pageScope.get()),
+                           report](const SpeechPrepareResult &result) {
+            recordSpeechVerdict(id, result);
+            if (page) {
+                report(result);
+            }
+        };
         SpeechTranscriber *transcriber = controller->providerRegistry()->speechProvider(id);
         if (!transcriber) {
-            report({false, QStringLiteral("No transcription service is available.")});
+            land({false, QStringLiteral("No transcription service is available.")});
             return;
         }
         const SpeechSettings settings = controller->settings()->snapshot().speech;
         std::optional<SpeechPrepareJob> job = transcriber->createPrepareJob(settings);
         if (!job || !job->run) {
-            report(transcriber->prepare(settings));
+            land(transcriber->prepare(settings));
             return;
         }
         auto prepareJob = std::make_shared<SpeechPrepareJob>(std::move(*job));
         runProviderProbe<SpeechPrepareResult>(
             controller->providerRegistry(), setup,
             [prepareJob] { return prepareJob->run(); },
-            [this, id, generation, prepareJob, report](const SpeechPrepareResult &result) {
+            [this, id, generation, prepareJob, land](const SpeechPrepareResult &result) {
                 if (generation != speechProbeGeneration.value(id)) {
                     return;
                 }
                 if (prepareJob->apply) {
                     prepareJob->apply(result);
                 }
-                report(result);
+                land(result);
             });
     }
 
@@ -759,37 +758,42 @@ struct SetupWindow::Native {
                                  std::function<void(bool)> report)
     {
         refinementProbeGeneration.insert(id, generation);
+        const auto land = [this, id, page = QPointer<QObject>(pageScope.get()), report](bool ok) {
+            refinementReady.insert(id, ok);
+            if (page) {
+                report(ok);
+            }
+        };
         TranscriptRefiner *refiner = controller->providerRegistry()->refinementProvider(id);
         if (!refiner) {
-            report(false);
+            land(false);
             return;
         }
         const RefinementSettings settings = controller->settings()->snapshot().refinement;
         std::optional<RefinementRefreshJob> job = refiner->createRefreshJob(settings);
         if (!job || !job->run) {
-            report(refiner->prepare(settings).ok);
+            land(refiner->prepare(settings).ok);
             return;
         }
         auto refreshJob = std::make_shared<RefinementRefreshJob>(std::move(*job));
         runProviderProbe<RefinementRefreshResult>(
             controller->providerRegistry(), setup,
             [refreshJob] { return refreshJob->run(); },
-            [this, id, generation, refreshJob, report](const RefinementRefreshResult &result) {
+            [this, id, generation, refreshJob, land](const RefinementRefreshResult &result) {
                 if (generation != refinementProbeGeneration.value(id)) {
                     return;
                 }
                 if (refreshJob->apply) {
                     refreshJob->apply(result);
                 }
-                report(result.ok);
+                land(result.ok);
             });
     }
 
-    void showPage(int index)
+    // Forgets the page on screen: its controls, its callbacks and its Qt
+    // connections, so nothing that answers later draws on a page that is gone.
+    void clearPage()
     {
-        if (index < 0 || index >= SetupWindow::pageTitles().size()) {
-            return;
-        }
         microphone->stop();
         microphoneLevel = nullptr;
         microphoneStatus = nullptr;
@@ -803,9 +807,16 @@ struct SetupWindow::Native {
         endpointForm = {};
         refinementRefresh = nullptr;
         transcriptionRefresh = nullptr;
-        // Connections made for the page going away end with it.
         pageScope = std::make_unique<QObject>();
         ++checkGeneration;
+    }
+
+    void showPage(int index)
+    {
+        if (index < 0 || index >= SetupWindow::pageTitles().size()) {
+            return;
+        }
+        clearPage();
         pageIndex = index;
         // The recorder page needs the bound chord delivered as a key event,
         // which RegisterHotKey would otherwise consume system-wide.
@@ -879,7 +890,7 @@ struct SetupWindow::Native {
     {
         QList<ProviderDescriptor> providers = controller->providerRegistry()->speechProviders();
         providers.removeIf([](const ProviderDescriptor &provider) {
-            return provider.id == kLocal || provider.id == kEndpoint;
+            return !isSetupSignInProvider(provider.id);
         });
         return providers;
     }
@@ -894,16 +905,38 @@ struct SetupWindow::Native {
         return cliproxyReady;
     }
 
-    // Running on this computer was chosen, by the person or as the default:
-    // the Transcription step starts on Local model. A repeat of the same
-    // default is not news to it.
-    void choosePath(bool local)
+    // Every speech provider this assistant sets.
+    void setSpeechProvider(const QString &id)
     {
-        const bool changed = localPath != local;
-        localPath = local;
-        if (local && (changed || pathPicked)) {
-            speechSelectionSettled = true;
-            controller->settings()->setSpeechProvider(kLocal);
+        controller->settings()->setSpeechProvider(id);
+        settleLocalModel();
+    }
+
+    // With Local chosen, the suggestion becomes the saved model unless the
+    // person chose one. Before the hardware probe answers the suggestion is
+    // only the smallest model, so this waits for it.
+    void settleLocalModel()
+    {
+        if (localSelected() && localSpeech->hardwareKnown()) {
+            localSpeech->initializeSpeechModel();
+        }
+    }
+
+    // The Welcome path, the person's when choice is given and otherwise the
+    // default the completed checks suggest. WelcomeChoice decides the speech
+    // provider that goes with it, including undoing a default it wrote.
+    void choosePath(std::optional<bool> choice = std::nullopt)
+    {
+        QStringList ready;
+        for (const ProviderDescriptor &provider : signInProviders()) {
+            if (speechReady.value(provider.id, false)) {
+                ready.append(provider.id);
+            }
+        }
+        const QString current = controller->settings()->speechProvider();
+        const QString provider = welcomeChoice.update(current, ready, cliproxyReady, choice);
+        if (provider != current) {
+            setSpeechProvider(provider);
         }
         refreshGates();
     }
@@ -958,7 +991,7 @@ struct SetupWindow::Native {
             addPath(kComputerGlyph, QStringLiteral("Run on this computer"),
                     QStringLiteral("Private, no account, works offline after a one-time download."),
                     FrameworkElement{nullptr});
-            selectProgrammatically(paths, programmaticPathIndex, localPath ? 1 : 0);
+            paths.SelectedIndex(welcomeChoice.local() ? 1 : 0);
             panel.Children().Append(paths);
 
             localDetail = StackPanel();
@@ -977,20 +1010,20 @@ struct SetupWindow::Native {
         panel.Children().Append(signInDetail);
         const auto showPath = [localDetail, signInDetail, this] {
             if (localDetail) {
-                setShown(localDetail, localPath);
-                setShown(signInDetail, !localPath);
+                setShown(localDetail, welcomeChoice.local());
+                setShown(signInDetail, !welcomeChoice.local());
             }
         };
         if (paths) {
+            // The page selects the path WelcomeChoice holds, on building and
+            // after checks; only a move away from it is the person's choice.
+            // Treating the echo as a choice once sent Back to Welcome through
+            // a provider write the person never made.
             paths.SelectionChanged([this, paths, showPath](const auto &, const auto &) {
                 const int index = paths.SelectedIndex();
-                if (index < 0) {
-                    return;
+                if (index >= 0 && (index == 1) != welcomeChoice.local()) {
+                    choosePath(index == 1);
                 }
-                if (!wasProgrammatic(programmaticPathIndex, index)) {
-                    pathPicked = true;
-                }
-                choosePath(index == 1);
                 showPath();
             });
         }
@@ -998,13 +1031,13 @@ struct SetupWindow::Native {
         // Until the person picks, every round of checks sets the default:
         // the sign-in when one is found, else this computer.
         const auto checksAnswered = [this, paths, showPath] {
-            if (!paths || pathPicked) {
+            if (!paths) {
                 return;
             }
-            choosePath(!anySignInFound());
-            const int wanted = localPath ? 1 : 0;
+            choosePath();
+            const int wanted = welcomeChoice.local() ? 1 : 0;
             if (paths.SelectedIndex() != wanted) {
-                selectProgrammatically(paths, programmaticPathIndex, wanted);
+                paths.SelectedIndex(wanted);
             }
             showPath();
         };
@@ -1110,7 +1143,6 @@ struct SetupWindow::Native {
                                     [this, id = ids.at(index), status, hint, outstanding,
                                      checksAnswered, showSignInPath](
                                         const SpeechPrepareResult &result) {
-                    recordSpeechVerdict(id, result);
                     status.set(result.ok ? QStringLiteral("Sign-in found")
                                          : QStringLiteral("Not found"),
                                result.ok ? StatusTone::Positive : StatusTone::Neutral);
@@ -1172,26 +1204,31 @@ struct SetupWindow::Native {
         });
     }
 
-    // Once per wizard run, and never over a choice made here: a saved provider
-    // whose probe failed gives way to one whose probe succeeded.
+    // Once per wizard run, and never over a choice made here: a saved sign-in
+    // whose probe failed gives way to one whose probe succeeded, by the rule
+    // the other assistants share.
     void autoSelectSpeechProvider(const RadioButtons &choices,
                                   const QList<QPair<QString, QString>> &options)
     {
-        if (speechSelectionSettled) {
-            return;
-        }
         const QString saved = controller->settings()->speechProvider();
-        if (!speechReady.contains(saved) || speechReady.value(saved)) {
+        if (speechSelectionSettled || !speechReady.contains(saved)) {
             return;
         }
+        QStringList ready;
+        for (const auto &option : options) {
+            if (speechReady.value(option.first, false)) {
+                ready.append(option.first);
+            }
+        }
+        const QString chosen = setupProviderChoice(saved, ready, false);
         for (int index = 0; index < options.size(); ++index) {
-            if (!speechReady.value(options.at(index).first, false)) {
+            if (options.at(index).first != chosen || chosen == saved) {
                 continue;
             }
             // Persisted here rather than left to the selection handler, so the
             // switch holds whether or not the control reports it.
             speechSelectionSettled = true;
-            controller->settings()->setSpeechProvider(options.at(index).first);
+            setSpeechProvider(chosen);
             selectProgrammatically(choices, programmaticSpeechIndex, index);
             return;
         }
@@ -1205,28 +1242,20 @@ struct SetupWindow::Native {
     // The model the Local card shows, which is the one dictation will use.
     const LocalModel &localChoice() const
     {
-        const LocalModel *chosen = findLocalModel(localModelId);
-        return localPicked && chosen ? *chosen : localSpeech->suggestedModel();
+        return localSpeech->speechModelChoice();
     }
 
-    // Picking in the compare table or pressing Download is a choice the
-    // suggestion never overrides.
+    // Picking in the compare table is a choice the suggestion never
+    // overrides; chooseSpeechModel announces it, which redraws the page.
     void setLocalChoice(const QString &modelId)
     {
-        localPicked = true;
-        localModelId = modelId;
-        LocalSpeechSettings local = controller->settings()->localSpeechSettings();
-        local.modelId = modelId;
-        controller->settings()->setLocalSpeechSettings(local);
-        if (transcriptionRefresh) {
-            transcriptionRefresh();
-        }
+        localSpeech->chooseSpeechModel(modelId);
     }
 
     bool localDownloadStarted() const
     {
-        const LocalModel &model = localChoice();
-        return localSpeech->models().isDownloaded(model) || localSpeech->models().isDownloading(model.id);
+        const auto state = localSpeech->modelState(localChoice());
+        return state.downloaded || state.downloading;
     }
 
     // The Local card: the hardware line, the suggested model with its facts
@@ -1327,7 +1356,7 @@ struct SetupWindow::Native {
 
         card.download.Click([this](const auto &, const auto &) {
             const LocalModel &model = localChoice();
-            setLocalChoice(model.id);
+            localSpeech->chooseSpeechModel(model.id);
             localSpeech->download(model);
         });
         card.cancel.Click([this](const auto &, const auto &) { localSpeech->cancelDownload(localChoice().id); });
@@ -1350,14 +1379,7 @@ struct SetupWindow::Native {
             return;
         }
         setShown(card.section, localSelected());
-        const HardwareProfile &hardware = localSpeech->hardware().profile;
         const LocalModel &model = localChoice();
-        if (localSelected() && !localPicked && controller->settings()->localSpeechSettings().modelId != model.id) {
-            // The suggestion is what dictation will use unless the person picks.
-            LocalSpeechSettings local = controller->settings()->localSpeechSettings();
-            local.modelId = model.id;
-            controller->settings()->setLocalSpeechSettings(local);
-        }
         card.hardware.Text(win::hs(localSpeech->hardwareLine()));
         card.caption.Text(model.id == localSpeech->suggestedModel().id ? L"Suggested for this computer"
                                                                        : L"Your choice");
@@ -1366,7 +1388,7 @@ struct SetupWindow::Native {
             QStringLiteral("%1\n%2\n%3% of words wrong on clear speech, %4% on everyday speech")
                 .arg(model.streams ? QStringLiteral("Words appear as you speak")
                                    : QStringLiteral("Text appears after you stop speaking"),
-                     localModelSpeedLine(model, hardware, localSpeech->measuredSeconds(model.id)))
+                     localSpeech->modelState(model).speedDetail)
                 .arg(model.librispeechCleanWer)
                 .arg(model.fleursEnglishWer)));
         const bool tooLarge = localSpeech->fit(model) == ModelFit::TooLarge;
@@ -1379,17 +1401,12 @@ struct SetupWindow::Native {
         int selected = -1;
         for (int row = 0; row < catalog.size(); ++row) {
             const LocalModel &entry = catalog.at(row);
-            const std::optional<double> measured = localSpeech->measuredSeconds(entry.id);
-            const std::optional<SpeedEstimate> estimate = estimatedSpeed(entry, hardware);
-            const QString speed = measured ? speechSecondsText(*measured)
-                : estimate                 ? QStringLiteral("~") + speechSecondsText(estimate->secondsFor10sSpeech)
-                                           : QStringLiteral("Not measured");
             const QStringList cells{
                 entry.id == localSpeech->suggestedModel().id ? entry.name + QStringLiteral(" (suggested)")
                                                              : entry.name,
                 downloadSizeText(entry.sizeBytes),
                 QStringLiteral("%1% / %2%").arg(entry.librispeechCleanWer).arg(entry.fleursEnglishWer),
-                speed,
+                localSpeech->modelState(entry).speedText,
                 entry.streams ? QStringLiteral("As you speak") : QStringLiteral("After you stop"),
                 localSpeech->fitLabel(entry),
             };
@@ -1417,7 +1434,8 @@ struct SetupWindow::Native {
         }
         const LocalModel &model = localChoice();
         const auto progress = localSpeech->downloadProgress(model.id);
-        const bool downloaded = !progress && localSpeech->models().isDownloaded(model);
+        const auto modelState = localSpeech->modelState(model);
+        const bool downloaded = modelState.downloaded;
         setShown(card.download, !progress && !downloaded);
         setShown(card.progress, bool(progress));
         setShown(card.cancel, bool(progress));
@@ -1429,7 +1447,7 @@ struct SetupWindow::Native {
         } else if (downloaded) {
             state = QStringLiteral("Downloaded");
         } else {
-            state = localSpeech->downloadError(model.id);
+            state = modelState.problem;
         }
         card.state.Text(win::hs(state));
         setShown(card.state, !state.isEmpty());
@@ -1603,7 +1621,7 @@ struct SetupWindow::Native {
             if (id == kLocal) {
                 // Next opens as soon as a download has started: it keeps going
                 // while setup continues, and the Ready page shows where it got to.
-                const bool downloaded = localSpeech->models().isDownloaded(localChoice());
+                const bool downloaded = localSpeech->modelState(localChoice()).downloaded;
                 status.set(downloaded ? QString()
                            : localDownloadStarted()
                                ? QStringLiteral("The download keeps going while you finish setup.")
@@ -1642,8 +1660,10 @@ struct SetupWindow::Native {
             }
             if (!wasProgrammatic(programmaticSpeechIndex, index)) {
                 speechSelectionSettled = true;
+                // An explicit choice here outranks the Welcome path's default.
+                welcomeChoice.providerChosen();
             }
-            controller->settings()->setSpeechProvider(options.at(index).first);
+            setSpeechProvider(options.at(index).first);
             describeSelected();
             refreshSignInCard(options.at(index).first);
             refreshGates();
@@ -1661,7 +1681,6 @@ struct SetupWindow::Native {
                 probeSpeechProvider(id, generation,
                                     [this, id, rowStatus, choices, options,
                                      describeSelected](const SpeechPrepareResult &result) {
-                    recordSpeechVerdict(id, result);
                     rowStatus.set(result.ok ? QStringLiteral("Ready")
                                             : QStringLiteral("Not set up"),
                                   result.ok ? StatusTone::Positive : StatusTone::Caution);
@@ -1694,7 +1713,6 @@ struct SetupWindow::Native {
             probeSpeechProvider(id, generation,
                                 [this, id, rowStatus, describeSelected](
                                     const SpeechPrepareResult &result) {
-                recordSpeechVerdict(id, result);
                 rowStatus.set(result.ok ? QStringLiteral("Ready")
                                         : QStringLiteral("Not set up"),
                               result.ok ? StatusTone::Positive : StatusTone::Caution);
@@ -1758,7 +1776,9 @@ struct SetupWindow::Native {
         refreshSignInCard(controller->settings()->speechProvider());
         if (localSpeech) {
             panel.Children().Append(makeLocalSection());
+            settleLocalModel();
             const auto refresh = [this, describeSelected] {
+                settleLocalModel();
                 describeSelected();
                 refreshGates();
             };
@@ -1870,27 +1890,30 @@ struct SetupWindow::Native {
         content.Children().Append(panel);
     }
 
-    // The refinement twin of autoSelectSpeechProvider. None is a deliberate
-    // choice, not an unready provider, so a saved None is left alone; so is
-    // someone's own runner or server, whose setup is on this page.
+    // The refinement twin of autoSelectSpeechProvider. None, someone's own
+    // runner and their own server are choices, never an unready sign-in to
+    // move away from; setupProviderChoice keeps them. Saved before the button
+    // is checked, so its Checked handler finds nothing left to write.
     void autoSelectRefinementProvider(const std::vector<RefinementOption> &options)
     {
-        if (refinementSelectionSettled) {
-            return;
-        }
         const QString saved = controller->settings()->refinementProvider();
-        if (saved == kNone || saved == kLocal || saved == kEndpoint || !refinementReady.contains(saved)
-            || refinementReady.value(saved)) {
+        if (refinementSelectionSettled || !refinementReady.contains(saved)) {
             return;
         }
+        QStringList ready;
         for (const RefinementOption &option : options) {
-            if (!refinementReady.value(option.id, false)) {
-                continue;
+            if (refinementReady.value(option.id, false)) {
+                ready.append(option.id);
             }
-            refinementSelectionSettled = true;
-            option.button.IsChecked(true);
-            selectRefinement(option.id);
-            return;
+        }
+        const QString chosen = setupProviderChoice(saved, ready, false);
+        for (const RefinementOption &option : options) {
+            if (option.id == chosen && chosen != saved) {
+                refinementSelectionSettled = true;
+                selectRefinement(chosen);
+                option.button.IsChecked(true);
+                return;
+            }
         }
     }
 
@@ -2033,8 +2056,8 @@ struct SetupWindow::Native {
             }
             for (const RefinementOption &option : *options) {
                 if (option.id == lastRefinementProvider) {
-                    option.button.IsChecked(true);
                     selectRefinement(option.id);
+                    option.button.IsChecked(true);
                 }
             }
         });
@@ -2062,7 +2085,6 @@ struct SetupWindow::Native {
         for (const RefinementOption &option : *options) {
             probeRefinementProvider(option.id, generation,
                                     [this, id = option.id, status = option.status, options](bool ok) {
-                refinementReady.insert(id, ok);
                 // The own-model rows say what is on this computer, not a
                 // sign-in verdict; showRunner keeps them.
                 if (id != kLocal && id != kEndpoint) {
@@ -2145,17 +2167,17 @@ struct SetupWindow::Native {
                 controller->localSetup()->pullCleanupModel(model->ollamaTag);
             }
         });
-        // Idempotent, so a selection this page made itself writes nothing new.
+        // A pick of another model is the person's; showRunner's own selection
+        // matches what is saved and writes nothing.
         runner.model.SelectionChanged([this](const winrt::Windows::Foundation::IInspectable &sender, const auto &) {
             const auto item = sender.as<ComboBox>().SelectedItem();
             if (!item) {
                 return;
             }
-            LocalRunnerSettings chosen = controller->settings()->localRunnerSettings();
+            const RunnerChoice choice = controller->localSetup()->runnerChoice();
             const QString model = win::qs(unbox_value<hstring>(item));
-            if (chosen.model != model) {
-                chosen.model = model;
-                controller->settings()->setLocalRunnerSettings(chosen);
+            if (choice.available && choice.selection.model != model) {
+                controller->settings()->setLocalRunnerSettings({choice.available->id, model});
             }
         });
         return runner.root;
@@ -2167,13 +2189,13 @@ struct SetupWindow::Native {
             return;
         }
         LocalSetup *local = controller->localSetup();
-        const QList<DetectedRunner> runners = local->runners();
-        const bool found = !runners.isEmpty();
+        const RunnerChoice choice = local->runnerChoice();
+        const bool found = choice.available.has_value();
         const bool detecting = local->detectingRunners();
         for (const RefinementOption &option : options) {
             if (option.id == kLocal) {
                 option.status.set(detecting ? QStringLiteral("Checking…")
-                                  : found   ? QStringLiteral("%1 found").arg(runners.first().name)
+                                  : found   ? QStringLiteral("%1 found").arg(choice.available->name)
                                             : QStringLiteral("No runner"),
                                   found ? StatusTone::Positive : StatusTone::Neutral);
             }
@@ -2181,49 +2203,37 @@ struct SetupWindow::Native {
         runner.status.Text(win::hs(
             detecting ? QStringLiteral("Looking for Ollama, LM Studio and llama-server…")
             : found   ? QStringLiteral("%1 %2 is running on this computer.")
-                          .arg(runners.first().name, runners.first().version).simplified()
-                      : QStringLiteral("No local runner found on this computer.")));
+                          .arg(choice.available->name, choice.available->version).simplified()
+            : choice.selection.runner.isEmpty()
+                ? QStringLiteral("No local runner found on this computer.")
+                : QStringLiteral("%1 is unavailable. Your saved selection is unchanged.")
+                      .arg(localRunnerName(choice.selection.runner))));
         setShown(runner.noRunner, !found && !detecting);
         setShown(runner.card, found);
         if (!found) {
             return;
         }
-        // The first runner found is the one the settings name.
-        const DetectedRunner &first = runners.first();
-        LocalRunnerSettings chosen = controller->settings()->localRunnerSettings();
-        if (chosen.runner != first.id) {
-            chosen.runner = first.id;
-            controller->settings()->setLocalRunnerSettings(chosen);
+        // The runner's models, plus a saved one it does not list, so the
+        // saved choice stays on screen rather than silently changing.
+        QStringList models = choice.available->models;
+        if (!choice.selection.model.isEmpty() && !models.contains(choice.selection.model)) {
+            models.append(choice.selection.model);
         }
-        const std::optional<CleanupModel> suggested = local->suggestedCleanupModel();
-        if (chosen.model.isEmpty() && !first.models.isEmpty()) {
-            // The suggested cleanup model when the runner has it.
-            const auto installed = std::find_if(first.models.cbegin(), first.models.cend(),
-                                                [&suggested](const QString &model) {
-                                                    return suggested && model.startsWith(suggested->ollamaTag);
-                                                });
-            chosen.model = installed != first.models.cend() ? *installed : first.models.first();
-            controller->settings()->setLocalRunnerSettings(chosen);
-        }
-        if (runner.shownModels != first.models) {
-            runner.shownModels = first.models;
+        if (runner.shownModels != models) {
+            runner.shownModels = models;
             runner.model.Items().Clear();
-            for (const QString &model : first.models) {
+            for (const QString &model : models) {
                 runner.model.Items().Append(box_value(win::hs(model)));
             }
         }
-        runner.model.SelectedIndex(int(first.models.indexOf(chosen.model)));
-        setShown(runner.modelRow, !first.models.isEmpty());
+        runner.model.SelectedIndex(int(models.indexOf(choice.selection.model)));
+        setShown(runner.modelRow, !models.isEmpty());
 
-        const bool haveSuggested = suggested
-            && std::any_of(first.models.cbegin(), first.models.cend(), [&suggested](const QString &model) {
-                   return model == suggested->ollamaTag || model == suggested->ollamaTag + QStringLiteral(":latest");
-               });
         const LocalSetup::Pull pull = local->pull();
-        const bool offer = first.id == QStringLiteral("ollama") && (pull.running || !haveSuggested);
+        const bool offer = choice.showSuggestion || pull.running;
         setShown(runner.suggestion, offer);
-        setShown(runner.suggestionSeparator, offer && !first.models.isEmpty());
-        setShown(runner.pull, !pull.running && suggested.has_value());
+        setShown(runner.suggestionSeparator, offer && !models.isEmpty());
+        setShown(runner.pull, !pull.running && choice.offerPull);
         showPull();
     }
 
@@ -2306,39 +2316,64 @@ struct SetupWindow::Native {
         endpointForm.status = textBlock(QString());
         endpointForm.root.Children().Append(endpointForm.status);
 
-        const auto save = [this] {
-            AppSettings settings = controller->settings()->snapshot();
-            settings.refinement = endpointFromFields();
-            controller->settings()->applySnapshot(settings);
-        };
-        endpointForm.url.LostFocus([save](const auto &, const auto &) { save(); });
-        endpointForm.key.LostFocus([save](const auto &, const auto &) { save(); });
-        endpointForm.format.SelectionChanged([save](const auto &, const auto &) { save(); });
-        endpointForm.model.LostFocus([save](const auto &, const auto &) { save(); });
-        endpointForm.model.SelectionChanged([save](const auto &, const auto &) { save(); });
-        connect.Click([this, save](const auto &, const auto &) {
-            save();
-            controller->localSetup()->checkRefinementEndpoint(endpointFromFields());
+        // Each field saves only its own edit, compared with what that field
+        // showed: editRefinementEndpoint decides what the edit does to a
+        // preset and to the stored key.
+        endpointForm.shownUrl = saved.apiBase;
+        endpointForm.shownKey = saved.apiKey;
+        endpointForm.url.LostFocus([this](const auto &, const auto &) { saveEndpointUrl(); });
+        endpointForm.key.LostFocus([this](const auto &, const auto &) { saveEndpointKey(); });
+        endpointForm.format.SelectionChanged([this](const auto &, const auto &) {
+            saveEndpointEdit({.format = endpointForm.format.SelectedIndex() == 1 ? QStringLiteral("anthropic")
+                                                                                 : QStringLiteral("openai")});
+        });
+        endpointForm.model.LostFocus([this](const auto &, const auto &) { saveEndpointModel(); });
+        endpointForm.model.SelectionChanged([this](const auto &, const auto &) { saveEndpointModel(); });
+        connect.Click([this](const auto &, const auto &) {
+            saveEndpointUrl();
+            saveEndpointKey();
+            saveEndpointModel();
+            controller->localSetup()->checkRefinementEndpoint(controller->settings()->snapshot().refinement);
         });
         return endpointForm.root;
     }
 
-    RefinementSettings endpointFromFields() const
+    void saveEndpointEdit(const RefinementEndpointEdit &edit)
     {
-        RefinementSettings settings = controller->settings()->snapshot().refinement;
-        const RefinementEndpoint shown = resolvedRefinementEndpoint(settings);
-        const QString url = win::qs(endpointForm.url.Text()).trimmed();
-        const QString key = win::qs(endpointForm.key.Password()).trimmed();
-        // A preset stays until the person edits the server or key it supplies.
-        if (url != shown.apiBase || key != shown.apiKey) {
-            settings.endpoint.preset.clear();
-            settings.endpoint.baseUrl = url;
-            settings.endpoint.apiKey = key;
+        AppSettings settings = controller->settings()->snapshot();
+        editRefinementEndpoint(settings, edit);
+        controller->settings()->applySnapshot(settings);
+        showEndpointCheck();
+    }
+
+    void saveEndpointUrl()
+    {
+        const QString url = win::qs(endpointForm.url.Text());
+        if (url != endpointForm.shownUrl) {
+            endpointForm.shownUrl = url;
+            saveEndpointEdit({.baseUrl = url});
         }
-        settings.endpoint.format = endpointForm.format.SelectedIndex() == 1 ? QStringLiteral("anthropic")
-                                                                            : QStringLiteral("openai");
-        settings.endpoint.model = endpointModel();
-        return settings;
+    }
+
+    void saveEndpointKey()
+    {
+        const QString key = win::qs(endpointForm.key.Password());
+        if (key != endpointForm.shownKey) {
+            endpointForm.shownKey = key;
+            saveEndpointEdit({.apiKey = key});
+        }
+    }
+
+    void saveEndpointModel()
+    {
+        // Refilling the list from a check is not the person picking a model.
+        if (endpointForm.refilling) {
+            return;
+        }
+        const QString model = endpointModel();
+        if (model != controller->settings()->snapshot().refinement.endpoint.model) {
+            saveEndpointEdit({.model = model});
+        }
     }
 
     // The model picked from the server's list, or typed.
@@ -2361,16 +2396,19 @@ struct SetupWindow::Native {
         }
         endpointForm.shownModels = facts.refinementEndpointModels;
         const QString typed = endpointModel();
-        // A typed model the server does not list stays on offer, first.
+        // A typed model the server does not list stays on offer, first; with
+        // none typed, the list waits for the person to pick.
         QStringList models = facts.refinementEndpointModels;
         if (!typed.isEmpty() && !models.contains(typed)) {
             models.prepend(typed);
         }
+        endpointForm.refilling = true;
         endpointForm.model.Items().Clear();
         for (const QString &model : models) {
             endpointForm.model.Items().Append(box_value(win::hs(model)));
         }
-        endpointForm.model.SelectedIndex(typed.isEmpty() ? 0 : int(models.indexOf(typed)));
+        endpointForm.model.SelectedIndex(int(models.indexOf(typed)));
+        endpointForm.refilling = false;
     }
 
     void showProfiles()
@@ -2715,8 +2753,8 @@ struct SetupWindow::Native {
         if (!localSelected()) {
             return {};
         }
-        const QString modelId = controller->settings()->localSpeechSettings().modelId;
-        return localSpeech->models().isDownloading(modelId) ? modelId : QString();
+        const LocalModel &model = localChoice();
+        return localSpeech->modelState(model).downloading ? model.id : QString();
     }
 
     void renderReadyComplete()
@@ -2751,9 +2789,8 @@ struct SetupWindow::Native {
         StackPanel rows = rowList(card(readyBody, QString()));
         const QString speechId = controller->settings()->speechProvider();
         if (localSelected()) {
-            const LocalModel *model = findLocalModel(controller->settings()->localSpeechSettings().modelId);
             const QString label = QStringLiteral("Transcription — %1, on this computer")
-                                      .arg(model ? model->name : QString());
+                                      .arg(localChoice().name);
             if (downloading.isEmpty()) {
                 appendRow(rows, readyRow(glyphMark(kComputerGlyph), label, QStringLiteral("Ready"),
                                          StatusTone::Positive));
@@ -2801,7 +2838,7 @@ struct SetupWindow::Native {
         QString refinementName = QStringLiteral("None");
         QString refinementStatus = QStringLiteral("No cleanup");
         StatusTone refinementTone = StatusTone::Neutral;
-        FrameworkElement refinementMark = glyphMark(L'');
+        FrameworkElement refinementMark = glyphMark(L'\uE738');
         if (refinementId != kNone) {
             const AppSettings saved = controller->settings()->snapshot();
             refinementName = refinementId == kLocal
@@ -2814,15 +2851,16 @@ struct SetupWindow::Native {
                              : refinementId == kEndpoint ? FrameworkElement(glyphMark(kServerGlyph))
                                                          : brandMark(refinementId);
             // Someone's own runner or server is ready once its form is filled,
-            // which the page's probe may have run before.
-            if (refinementId == kLocal || refinementId == kEndpoint) {
-                if (TranscriptRefiner *refiner = controller->providerRegistry()->refinementProvider(refinementId)) {
-                    refinementReady.insert(refinementId, refiner->prepare(saved.refinement).ok);
-                }
-            }
-            if (!refinementReady.contains(refinementId)) {
+            // which the refinement page's probe may have seen before it was.
+            const bool ownModel = refinementId == kLocal || refinementId == kEndpoint;
+            TranscriptRefiner *refiner = controller->providerRegistry()->refinementProvider(refinementId);
+            const std::optional<bool> ready = ownModel && refiner
+                ? std::optional<bool>(refiner->prepare(saved.refinement).ok)
+                : refinementReady.contains(refinementId) ? std::optional<bool>(refinementReady.value(refinementId))
+                                                         : std::nullopt;
+            if (!ready) {
                 refinementStatus = QStringLiteral("Not checked");
-            } else if (refinementReady.value(refinementId)) {
+            } else if (*ready) {
                 refinementStatus = QStringLiteral("Ready");
                 refinementTone = StatusTone::Positive;
             } else {
@@ -2887,8 +2925,7 @@ struct SetupWindow::Native {
         for (const ProviderDescriptor &provider :
              controller->providerRegistry()->speechProviders()) {
             probeSpeechProvider(provider.id, generation,
-                                [this, id = provider.id](const SpeechPrepareResult &result) {
-                recordSpeechVerdict(id, result);
+                                [this](const SpeechPrepareResult &) {
                 refreshGates();
                 renderReady();
             });
@@ -3027,20 +3064,17 @@ struct SetupWindow::Native {
         PasswordBox key{nullptr};
         ComboBox model{nullptr};
         QStringList shownModels;
+        // What the server and key fields last showed or saved.
+        QString shownUrl;
+        QString shownKey;
+        bool refilling = false;
         TextBlock status{nullptr};
     } endpointForm;
     std::function<void()> refinementRefresh;
     // The provider to go back to when Skip cleanup is cleared.
     QString lastRefinementProvider;
-    // The model the Local card offers, and whether the person chose it; see
-    // resetLocalChoice.
-    QString localModelId;
-    bool localPicked = false;
-    // The Welcome page's path: running on this computer, and whether the
-    // person picked a path rather than the checks defaulting it.
-    bool localPath = false;
-    bool pathPicked = false;
-    int programmaticPathIndex = -1;
+    // The Welcome page's path, kept across Back and Next.
+    WelcomeChoice welcomeChoice;
     // Owns the Qt connections of the page on screen.
     std::unique_ptr<QObject> pageScope = std::make_unique<QObject>();
     // Discards the results of a check the wizard has moved on from.
