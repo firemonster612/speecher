@@ -1099,7 +1099,7 @@ if(TARGET speecher_frontend_mac)
 endif()
 
 if(WIN32)
-  target_sources(speecher PRIVATE packaging/windows/speecher.manifest)
+  target_sources(speecher PRIVATE packaging/windows/speecher.manifest packaging/windows/speecher.rc)
 endif()
 if(TARGET speecher_frontend_win)
   set_target_properties(speecher PROPERTIES WIN32_EXECUTABLE TRUE)

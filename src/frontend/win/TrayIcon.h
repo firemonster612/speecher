@@ -17,8 +17,8 @@ public:
     ~TrayIcon() override;
 
     // A balloon from the notification-area icon, which Windows 11 shows as a
-    // toast. Clicking it opens the settings window.
-    void showMessage(const QString &title, const QString &message);
+    // toast. Clicking it runs clicked.
+    void showMessage(const QString &title, const QString &message, std::function<void()> clicked);
 
 private:
     struct Native;

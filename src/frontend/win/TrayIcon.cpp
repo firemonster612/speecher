@@ -210,8 +210,9 @@ struct TrayIcon::Native {
         ownsCurrentIcon = false;
     }
 
-    void showMessage(const QString &title, const QString &message)
+    void showMessage(const QString &title, const QString &message, std::function<void()> clicked)
     {
+        messageClicked = std::move(clicked);
         NOTIFYICONDATAW data = iconData();
         data.uFlags = NIF_INFO;
         data.dwInfoFlags = NIIF_INFO;
@@ -282,9 +283,14 @@ struct TrayIcon::Native {
             flyout.show(iconRect());
             return 1;
         case WM_LBUTTONDBLCLK:
-        case NIN_BALLOONUSERCLICK:
             flyout.hide();
             showSettings();
+            return 1;
+        case NIN_BALLOONUSERCLICK:
+            flyout.hide();
+            if (messageClicked) {
+                messageClicked();
+            }
             return 1;
         case WM_CONTEXTMENU:
             showContextMenu({GET_X_LPARAM(wParam), GET_Y_LPARAM(wParam)});
@@ -296,6 +302,8 @@ struct TrayIcon::Native {
 
     ApplicationController *controller;
     std::function<void()> showSettings;
+    // What clicking the balloon on screen does.
+    std::function<void()> messageClicked;
     TrayFlyout flyout;
     WindowCallback callback;
     HWND window = nullptr;
@@ -316,9 +324,9 @@ TrayIcon::TrayIcon(ApplicationController *controller,
 
 TrayIcon::~TrayIcon() = default;
 
-void TrayIcon::showMessage(const QString &title, const QString &message)
+void TrayIcon::showMessage(const QString &title, const QString &message, std::function<void()> clicked)
 {
-    m_native->showMessage(title, message);
+    m_native->showMessage(title, message, std::move(clicked));
 }
 
 } // namespace speecher
