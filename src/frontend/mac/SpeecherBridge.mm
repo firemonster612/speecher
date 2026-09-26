@@ -507,6 +507,8 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @property (nonatomic) BOOL speedTestRunning;
 @property (nonatomic, copy) NSString *speedText;
 @property (nonatomic, copy) NSString *speedDetail;
+@property (nonatomic, copy) NSString *cardFacts;
+@property (nonatomic, copy) NSArray<NSString *> *tableCells;
 @property (nonatomic) BOOL downloaded;
 @property (nonatomic) BOOL downloading;
 @property (nonatomic) BOOL inUse;
@@ -1899,13 +1901,15 @@ static LocalModelInfo *bridgedLocalModel(const speecher::LocalSetup &setup, cons
     info.pros = bridgedStrings(model.pros);
     info.cons = bridgedStrings(model.cons);
     info.fitLabel = setup.fitLabel(model).toNSString();
-    info.tooLarge = setup.fit(model) == ModelFit::TooLarge;
-    info.suggested = setup.hardwareKnown() && model.id == setup.suggestedModel().id;
     info.speedTestRunning = setup.speedTestRunning(model.id);
 
     const LocalSetup::ModelState state = setup.modelState(model);
+    info.tooLarge = state.tooLarge;
+    info.suggested = state.suggested;
     info.speedText = state.speedText.toNSString();
     info.speedDetail = state.speedDetail.toNSString();
+    info.cardFacts = state.cardFacts.toNSString();
+    info.tableCells = bridgedStrings(state.tableCells);
     info.downloaded = state.downloaded;
     info.downloading = state.downloading;
     info.inUse = state.inUse;

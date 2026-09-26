@@ -239,6 +239,9 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
 // last download or Speed Test failure (empty when there is none).
 @property (nonatomic, readonly, copy) NSString *speedText;
 @property (nonatomic, readonly, copy) NSString *speedDetail;
+// The setup card's three lines, and the comparison table's six cells.
+@property (nonatomic, readonly, copy) NSString *cardFacts;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *tableCells;
 @property (nonatomic, readonly) BOOL downloaded;
 @property (nonatomic, readonly) BOOL downloading;
 @property (nonatomic, readonly) BOOL inUse;

@@ -256,11 +256,8 @@ void LocalModelBrowser::showDetail()
 {
     const LocalModel &model = selected();
     const LocalSetup::ModelState state = this->state(model);
-    const bool tooLarge = m_setup.fit(model) == ModelFit::TooLarge;
     m_name.Text(hs(model.name));
-    m_subtitle.Text(hs(model.id == m_setup.suggestedModel().id && m_setup.hardwareKnown()
-                           ? QStringLiteral("Suggested for this computer")
-                           : model.fileName));
+    m_subtitle.Text(hs(state.suggested ? QStringLiteral("Suggested for this computer") : model.fileName));
     m_size.Text(hs(QStringLiteral("%1 · %2").arg(downloadSizeText(model.sizeBytes),
                                                  m_setup.fitLabel(model))));
     m_speed.Text(hs(state.speedDetail));
@@ -294,10 +291,10 @@ void LocalModelBrowser::showDetail()
     }
     setVisible(m_state, !m_state.Text().empty());
     setVisible(m_download, !progress && !downloaded);
-    m_download.IsEnabled(!tooLarge);
-    m_download.Content(box_value(hs(tooLarge ? QStringLiteral("Too large for this computer")
-                                             : QStringLiteral("Download %1")
-                                                   .arg(downloadSizeText(model.sizeBytes)))));
+    m_download.IsEnabled(!state.tooLarge);
+    m_download.Content(box_value(hs(state.tooLarge ? QStringLiteral("Too large for this computer")
+                                                   : QStringLiteral("Download %1")
+                                                         .arg(downloadSizeText(model.sizeBytes)))));
     setVisible(m_use, downloaded && !inUse);
     setVisible(m_test, downloaded);
     m_test.IsEnabled(!m_setup.speedTestRunning(model.id));

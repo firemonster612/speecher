@@ -114,13 +114,22 @@ public:
     void initializeRunner();
     RunnerChoice runnerChoice() const;
 
+    // What every front end shows for a model on the Local card and in the
+    // comparison table.
     struct ModelState {
         bool downloaded = false;
         bool downloading = false;
         bool inUse = false;
+        // Only once the hardware is known.
+        bool suggested = false;
+        bool tooLarge = false;
         QString problem;
         QString speedText;
         QString speedDetail;
+        // The card's three lines: when text shows, speed, word errors.
+        QString cardFacts;
+        // Model, Download, Word errors, 10 s of speech, Text shows, Memory.
+        QStringList tableCells;
     };
     ModelState modelState(const LocalModel &model, std::optional<SpeechSettings> speech = std::nullopt) const;
 
@@ -161,6 +170,7 @@ signals:
     void cleanupModelPulled(const QString &ollamaTag);
 
 private:
+    friend class LocalSetupTestAccess;
     struct EndpointState {
         quint64 generation = 0;
         bool checking = false;

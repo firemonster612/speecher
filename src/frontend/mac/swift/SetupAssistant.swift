@@ -1796,10 +1796,7 @@ private struct LocalChoiceSections: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     Text(choice.name).fontWeight(.semibold)
-                    Text(choice.streams ? "Words appear as you speak" : "Text appears after you stop speaking")
-                    Text(choice.speedDetail)
-                    Text("\(LocalModelText.wer(choice.librispeechWer)) of words wrong on clear speech, "
-                        + "\(LocalModelText.wer(choice.fleursWer)) on everyday speech")
+                    Text(choice.cardFacts)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 12)
@@ -1851,23 +1848,17 @@ private struct LocalChoiceSections: View {
             // Each fact column is as wide as its longest value, and the model
             // column takes what is left, so every value reads whole at the
             // assistant's width.
-            TableColumn("Model") { entry in
-                Text(entry.suggested ? "\(entry.name) (suggested)" : entry.name)
-            }
-            .width(min: 150)
-            TableColumn("Download", value: \.sizeText)
+            TableColumn("Model") { entry in Text(entry.tableCells[0]) }
+                .width(min: 150)
+            TableColumn("Download") { entry in Text(entry.tableCells[1]) }
                 .width(58)
-            TableColumn("Word errors") { entry in
-                Text("\(LocalModelText.wer(entry.librispeechWer)) / \(LocalModelText.wer(entry.fleursWer))")
-            }
-            .width(88)
-            TableColumn("10 s of speech", value: \.speedText)
+            TableColumn("Word errors") { entry in Text(entry.tableCells[2]) }
+                .width(88)
+            TableColumn("10 s of speech") { entry in Text(entry.tableCells[3]) }
                 .width(108)
-            TableColumn("Text shows") { entry in
-                Text(entry.streams ? "As you speak" : "After you stop")
-            }
-            .width(84)
-            TableColumn("Memory", value: \.fitLabel)
+            TableColumn("Text shows") { entry in Text(entry.tableCells[4]) }
+                .width(84)
+            TableColumn("Memory") { entry in Text(entry.tableCells[5]) }
                 .width(62)
         }
         .controlSize(.small)

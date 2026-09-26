@@ -1370,36 +1370,21 @@ struct SetupWindow::Native {
         }
         setShown(card.section, localSelected());
         const LocalModel &model = localChoice();
+        const LocalSetup::ModelState state = localSpeech->modelState(model);
         card.hardware.Text(win::hs(localSpeech->hardwareLine()));
-        card.caption.Text(model.id == localSpeech->suggestedModel().id ? L"Suggested for this computer"
-                                                                       : L"Your choice");
+        card.caption.Text(state.suggested ? L"Suggested for this computer" : L"Your choice");
         card.name.Text(win::hs(model.name));
-        card.facts.Text(win::hs(
-            QStringLiteral("%1\n%2\n%3% of words wrong on clear speech, %4% on everyday speech")
-                .arg(model.streams ? QStringLiteral("Words appear as you speak")
-                                   : QStringLiteral("Text appears after you stop speaking"),
-                     localSpeech->modelState(model).speedDetail)
-                .arg(model.librispeechCleanWer)
-                .arg(model.fleursEnglishWer)));
-        const bool tooLarge = localSpeech->fit(model) == ModelFit::TooLarge;
-        card.download.IsEnabled(!tooLarge);
-        card.download.Content(box_value(win::hs(tooLarge ? QStringLiteral("Too large for this computer")
-                                                         : QStringLiteral("Download %1")
-                                                               .arg(downloadSizeText(model.sizeBytes)))));
+        card.facts.Text(win::hs(state.cardFacts));
+        card.download.IsEnabled(!state.tooLarge);
+        card.download.Content(box_value(win::hs(state.tooLarge ? QStringLiteral("Too large for this computer")
+                                                               : QStringLiteral("Download %1")
+                                                                     .arg(downloadSizeText(model.sizeBytes)))));
 
         const QList<LocalModel> &catalog = localModelCatalog();
         int selected = -1;
         for (int row = 0; row < catalog.size(); ++row) {
             const LocalModel &entry = catalog.at(row);
-            const QStringList cells{
-                entry.id == localSpeech->suggestedModel().id ? entry.name + QStringLiteral(" (suggested)")
-                                                             : entry.name,
-                downloadSizeText(entry.sizeBytes),
-                QStringLiteral("%1% / %2%").arg(entry.librispeechCleanWer).arg(entry.fleursEnglishWer),
-                localSpeech->modelState(entry).speedText,
-                entry.streams ? QStringLiteral("As you speak") : QStringLiteral("After you stop"),
-                localSpeech->fitLabel(entry),
-            };
+            const QStringList cells = localSpeech->modelState(entry).tableCells;
             const auto rowCells = card.compare.Items().GetAt(uint32_t(row)).as<Grid>().Children();
             for (int column = 0; column < cells.size(); ++column) {
                 rowCells.GetAt(uint32_t(column)).as<TextBlock>().Text(win::hs(cells.at(column)));
