@@ -768,10 +768,14 @@ struct SettingsWindow::Native {
         QTimer::singleShot(250, &settle, &QEventLoop::quit);
         settle.exec();
         // SPEECHER_GRAB_SCROLL=bottom shows the end of the page, as on the
-        // other platforms.
-        if (qEnvironmentVariable("SPEECHER_GRAB_SCROLL") == QStringLiteral("bottom")) {
+        // other platforms; "middle" shows what lies between, which a window
+        // this short would otherwise never capture.
+        const QString scrollTo = qEnvironmentVariable("SPEECHER_GRAB_SCROLL");
+        if (scrollTo == QStringLiteral("bottom") || scrollTo == QStringLiteral("middle")) {
             if (const auto scroll = pageHost.Child().try_as<ScrollViewer>()) {
-                scroll.ChangeView(nullptr, scroll.ScrollableHeight(), nullptr, true);
+                const double end = scroll.ScrollableHeight();
+                scroll.ChangeView(nullptr, scrollTo == QStringLiteral("middle") ? end * 0.6 : end,
+                                  nullptr, true);
                 QTimer::singleShot(250, &settle, &QEventLoop::quit);
                 settle.exec();
             }

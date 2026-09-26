@@ -19,6 +19,7 @@
 #include <winrt/Windows.UI.h>
 #include <winrt/Windows.UI.ViewManagement.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
+#include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
 #pragma pop_macro("GetCurrentTime")
 
@@ -440,6 +441,47 @@ UIElement statTiles(const InsightsSummary &summary, const QDate &today, const Pa
                        170);
 }
 
+// A chart mark's tip, shown the moment the pointer arrives rather than after
+// WinUI's hover delay, as on the other platforms.
+void setImmediateTip(const FrameworkElement &mark, const QString &text)
+{
+    ToolTip tip;
+    tip.Content(box_value(hs(text)));
+    ToolTipService::SetToolTip(mark, tip);
+    mark.PointerEntered([tip](const IInspectable &, const auto &) { tip.IsOpen(true); });
+    mark.PointerExited([tip](const IInspectable &, const auto &) { tip.IsOpen(false); });
+}
+
+// A heatmap cell that outlines itself in the text colour while the pointer is
+// on it, which reads on every level from empty to full accent. The tint and
+// the outline are separate layers: the tint's opacity is the level, and the
+// outline must not fade with it.
+Grid hoverableCell(const Border &tint)
+{
+    Border outline;
+    outline.CornerRadius({2, 2, 2, 2});
+    outline.BorderThickness({1.5, 1.5, 1.5, 1.5});
+    Grid cell;
+    cell.Width(kHeatCell);
+    cell.Height(kHeatCell);
+    // Transparent, not empty: an unfilled Grid lets the pointer through.
+    cell.Background(SolidColorBrush(winrt::Windows::UI::Color{0, 0, 0, 0}));
+    cell.Children().Append(tint);
+    cell.Children().Append(outline);
+    const auto resources = Application::Current().Resources();
+    const auto key = box_value(hstring(L"TextFillColorPrimaryBrush"));
+    if (resources.HasKey(key)) {
+        const Brush brush = resources.Lookup(key).as<Brush>();
+        cell.PointerEntered([outline, brush](const IInspectable &, const auto &) {
+            outline.BorderBrush(brush);
+        });
+        cell.PointerExited([outline](const IInspectable &, const auto &) {
+            outline.BorderBrush(nullptr);
+        });
+    }
+    return cell;
+}
+
 Border heatCell(int level, const Brush &accent, const Brush &empty)
 {
     Border cell;
@@ -516,11 +558,9 @@ Grid heatmapWeeks(const QList<HeatmapDay> &days, int weeksShown, HeatMeasure mea
     const HeatScale scale(days, measure);
     for (int index = first * 7; index < days.size(); ++index) {
         const HeatmapDay &day = days.at(index);
-        Border cell = heatCell(scale.level(day), accent, empty);
-        ToolTipService::SetToolTip(
-            cell,
-            box_value(hs(describeDay(day, measure) + QLatin1Char('\n')
-                         + locale.toString(day.date, QStringLiteral("ddd, MMM d, yyyy")))));
+        Grid cell = hoverableCell(heatCell(scale.level(day), accent, empty));
+        setImmediateTip(cell, describeDay(day, measure) + QLatin1Char('\n')
+                                  + locale.toString(day.date, QStringLiteral("ddd, MMM d, yyyy")));
         Grid::SetColumn(cell, index / 7 - first + 1);
         Grid::SetRow(cell, index % 7 + 1);
         grid.Children().Append(cell);
@@ -607,12 +647,14 @@ UIElement hourChart(const InsightsSummary &summary, const PaneHost &host, const 
         bar.Height(count > 0 && most > 0 ? std::max(3.0, kHourChartHeight * count / most) : 0);
         bar.CornerRadius({2, 2, 0, 0});
         bar.Background(accent);
-        bar.Opacity(hour == summary.peakHour ? 1.0 : kMutedBarOpacity);
-        ToolTipService::SetToolTip(
-            bar,
-            box_value(hs(QStringLiteral("%1 to %2\n%3")
-                             .arg(hourLabel(hour), hourLabel((hour + 1) % 24),
-                                  plural(count, QStringLiteral("dictation"))))));
+        const double resting = hour == summary.peakHour ? 1.0 : kMutedBarOpacity;
+        bar.Opacity(resting);
+        setImmediateTip(bar, QStringLiteral("%1 to %2\n%3")
+                                 .arg(hourLabel(hour), hourLabel((hour + 1) % 24),
+                                      plural(count, QStringLiteral("dictation"))));
+        // A hovered bar takes the full accent, as the peak does.
+        bar.PointerEntered([bar](const IInspectable &, const auto &) { bar.Opacity(1.0); });
+        bar.PointerExited([bar, resting](const IInspectable &, const auto &) { bar.Opacity(resting); });
         Grid::SetColumn(bar, hour);
         chart.Children().Append(bar);
     }
@@ -689,7 +731,27 @@ UIElement paceCard(const InsightsSummary &summary, const PaneHost &host)
     return cardContainer(body);
 }
 
-UIElement appsCard(const InsightsSummary &summary, const PaneHost &host)
+// A Writing Profile as a badge: its label on a pill of the chart accent at the
+// heatmap's lightest level, as the Linux and macOS badges are.
+Grid profileBadge(const QString &label, const Brush &accent)
+{
+    // The tint is its own layer so its opacity leaves the label at full
+    // strength; the label's margin is the pill's padding.
+    Border tint;
+    tint.Background(accent);
+    tint.Opacity(kHeatStrengths.at(1));
+    tint.CornerRadius({9, 9, 9, 9});
+    TextBlock text = styledTextBlock(label, L"CaptionTextBlockStyle");
+    text.Margin({8, 1, 8, 2});
+    Grid pill;
+    pill.HorizontalAlignment(HorizontalAlignment::Left);
+    pill.VerticalAlignment(VerticalAlignment::Center);
+    pill.Children().Append(tint);
+    pill.Children().Append(text);
+    return pill;
+}
+
+UIElement appsCard(const InsightsSummary &summary, const PaneHost &host, const Brush &accent)
 {
     if (summary.apps.isEmpty()) {
         return emptyPeriodCard(QStringLiteral("Where your words go"), host);
@@ -699,9 +761,13 @@ UIElement appsCard(const InsightsSummary &summary, const PaneHost &host)
     std::vector<BarEntry> entries;
     for (const AppShare &app : summary.apps) {
         StackPanel name;
-        name.Children().Append(styledTextBlock(app.name, L"SettingsCardBodyStyle"));
+        name.Orientation(Orientation::Horizontal);
+        name.Spacing(8);
+        TextBlock appName = styledTextBlock(app.name, L"SettingsCardBodyStyle");
+        appName.VerticalAlignment(VerticalAlignment::Center);
+        name.Children().Append(appName);
         if (!app.profileLabel.isEmpty()) {
-            name.Children().Append(secondaryCaption(app.profileLabel, host));
+            name.Children().Append(profileBadge(app.profileLabel, accent));
         }
         entries.push_back({name, double(app.words), double(summary.apps.first().words),
                            QStringLiteral("%1%").arg(app.percent),
@@ -873,7 +939,7 @@ UIElement buildHomePage(PaneHost &host)
     insights.Children().Append(statTiles(summary, today, host, accent, empty));
     insights.Children().Append(activityCard(summary, host, accent, empty));
     insights.Children().Append(adaptiveRow({hoursCard(summary, host, accent), paceCard(summary, host)}, 320));
-    insights.Children().Append(adaptiveRow({appsCard(summary, host), correctionsCard(host)}, 320));
+    insights.Children().Append(adaptiveRow({appsCard(summary, host, accent), correctionsCard(host)}, 320));
     column.Children().Append(insights);
 
     column.Children().Append(styledTextBlock(QStringLiteral("Records"), L"SettingsSectionHeaderStyle"));
