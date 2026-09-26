@@ -1522,6 +1522,21 @@ if(SPEECHER_BUILD_TESTS)
     set_tests_properties(speecher_atspi_unavailable_peer PROPERTIES TIMEOUT 10)
   endif()
 
+  # The endpoint key tests against a working keyring, which the developer's
+  # own session may not offer (a locked collection falls back to the
+  # settings file). Skipped where gnome-keyring is not installed.
+  if(UNIX AND NOT APPLE)
+    find_program(SPEECHER_DBUS_RUN_SESSION dbus-run-session)
+    find_program(SPEECHER_GNOME_KEYRING gnome-keyring-daemon)
+    if(SPEECHER_DBUS_RUN_SESSION AND SPEECHER_GNOME_KEYRING)
+      add_test(NAME speecher_custom_endpoints_keyring
+        COMMAND ${SPEECHER_DBUS_RUN_SESSION} -- ${CMAKE_CURRENT_SOURCE_DIR}/tests/keyring/with_session_keyring.sh
+                $<TARGET_FILE:speecher_tests> --suite custom_endpoints)
+      set_tests_properties(speecher_custom_endpoints_keyring PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE TIMEOUT 120)
+    endif()
+  endif()
+
   qt_add_executable(speecher_atspi_fixture
     tests/atspi_fixture.cpp
   )
