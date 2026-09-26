@@ -1051,6 +1051,9 @@ private slots:
                 provider->prepareResult = {false, QStringLiteral("Sign-in required")};
                 return provider;
             });
+        // A ready local provider is not a sign-in.
+        providers.registerSpeechProvider({QStringLiteral("local"), QStringLiteral("Local model"), QString()},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
         QTemporaryDir models;
         LocalModelStore store(models.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
         LocalSetup local(settings, providers, store);
@@ -1109,92 +1112,48 @@ private slots:
         local.cancelDownload(local.suggestedModel().id);
     }
 
+    // A saved model that is not the suggestion survives reopening setup
+    // whether it is absent (a cancelled download), partial or downloaded.
     void reopeningSetupKeepsTheSavedLocalModel()
     {
         SettingsStore settings;
         settings.raw().clear();
         settings.setSpeechProvider(QStringLiteral("claude"));
         ProviderRegistry providers;
-        providers.registerSpeechProvider(
-            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
-            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
-        providers.registerSpeechProvider(
-            {QStringLiteral("local"), QStringLiteral("Local model"), QString()},
-            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        for (const char *id : {"claude", "local"}) {
+            providers.registerSpeechProvider({id, id, {}},
+                [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        }
         QTemporaryDir models;
         LocalModelStore store(models.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
         LocalSetup local(settings, providers, store);
-        // A model that is not the suggestion, already on disk.
         const LocalModel &chosen = *findLocalModel(QStringLiteral("cohere"));
         QVERIFY(chosen.id != local.suggestedModel().id);
-        {
-            QFile file(store.modelPath(chosen));
-            QVERIFY(file.open(QIODevice::WriteOnly));
-            QVERIFY(file.resize(chosen.sizeBytes));
-        }
         LocalSpeechSettings saved = settings.localSpeechSettings();
         saved.modelId = chosen.id;
         settings.setLocalSpeechSettings(saved);
 
-        // Opened while another provider is chosen, the page leaves it alone.
-        {
-            SpeechProviderSetupPage setup(settings, providers, &local);
-            setup.show();
+        for (const QString &suffix : {QStringLiteral("absent"), QStringLiteral(".part"), QString()}) {
+            if (suffix != QStringLiteral("absent")) {
+                QFile file(store.modelPath(chosen) + suffix);
+                QVERIFY(file.open(QIODevice::WriteOnly));
+                QVERIFY(file.resize(suffix.isEmpty() ? chosen.sizeBytes : 7));
+            }
+            SpeechProviderSetupPage page(settings, providers, &local);
+            page.show();
+            QCOMPARE(settings.localSpeechSettings().modelId, chosen.id);
+            page.chooseProvider(QStringLiteral("local"));
+            QCOMPARE(page.localModelId(), chosen.id);
             QCOMPARE(settings.localSpeechSettings().modelId, chosen.id);
         }
 
-        // Choosing Local shows the saved model, which is downloaded.
+        // Opened with Local chosen, it shows the downloaded model and is ready.
         settings.setSpeechProvider(QStringLiteral("local"));
         SpeechProviderSetupPage setup(settings, providers, &local);
         setup.show();
         QCOMPARE(settings.localSpeechSettings().modelId, chosen.id);
         QCOMPARE(setup.findChild<QLabel *>(QStringLiteral("speechLocalModelName"))->text(), chosen.name);
-        QCOMPARE(setup.localModelId(), chosen.id);
         QVERIFY(setup.ready());
-    }
-
-    void reopeningSetupKeepsCancelledAndPartialModelChoices()
-    {
-        SettingsStore settings;
-        settings.raw().clear();
-        settings.setSpeechProvider("claude");
-        auto saved = settings.localSpeechSettings();
-        saved.modelId = "cohere";
-        settings.setLocalSpeechSettings(saved);
-        ProviderRegistry providers;
-        providers.registerSpeechProvider({"local", "Local model", {}},
-            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
-        QTemporaryDir directory;
-        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
-        LocalSetup local(settings, providers, models);
-        for (bool partial : {false, true}) {
-            if (partial) {
-                QFile file(models.modelPath(*findLocalModel("cohere")) + ".part");
-                QVERIFY(file.open(QIODevice::WriteOnly));
-                file.write("partial");
-            }
-            SpeechProviderSetupPage page(settings, providers, &local);
-            page.chooseProvider("local");
-            QCOMPARE(page.localModelId(), QString("cohere"));
-            QCOMPARE(settings.localSpeechSettings().modelId, QString("cohere"));
-        }
-    }
-
-    void welcomeDoesNotCountLocalAsASignIn()
-    {
-        SettingsStore settings;
-        settings.raw().clear();
-        QTemporaryDir directory;
-        settings.raw().setValue("cliproxy/oauthDir", directory.path());
-        ProviderRegistry providers;
-        providers.registerSpeechProvider({"local", "Local model", {}},
-            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
-        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
-        LocalSetup local(settings, providers, models);
-        WelcomeSetupPage page(settings, providers, &local);
-        page.show();
-        QVERIFY(page.findChild<QRadioButton *>("welcomePathLocal")->isChecked());
-        QCOMPARE(page.findChild<QLabel *>("welcomePathSignInStatus")->text(), QString("None found"));
     }
 
     void comparisonKeyboardSelectionChangesDownloadTarget()
