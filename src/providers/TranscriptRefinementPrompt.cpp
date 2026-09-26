@@ -374,6 +374,12 @@ QString dictationRefinementSystemPrompt(const QString &style,
     return parts.join(QStringLiteral("\n\n"));
 }
 
+QString refinementSystemPrompt(const QString &style, const RefinementContext &context)
+{
+    return context.editSelection ? selectedDocumentEditingSystemPrompt(style, context)
+                                 : dictationRefinementSystemPrompt(style, context);
+}
+
 QString transcriptRefinementUserMessage(const QString &rawTranscript,
                                         const QStringList &vocabulary,
                                         const QStringList &bindingVocabulary,

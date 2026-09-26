@@ -1,5 +1,7 @@
 #include "providers/StreamingRefinement.h"
 
+#include "providers/ServerSentEvents.h"
+
 #include <QDebug>
 #include <QNetworkReply>
 #include <QPointer>
@@ -100,27 +102,8 @@ void StreamingRefinement::parseChunk(const QByteArray &chunk)
     const QScopedValueRollback parsing(m_parsing, true);
     const quint64 generation = m_generation;
     m_buffer += chunk;
-    while (true) {
-        int boundary = m_buffer.indexOf("\n\n");
-        int separatorBytes = 2;
-        const int crlfBoundary = m_buffer.indexOf("\r\n\r\n");
-        if (crlfBoundary >= 0 && (boundary < 0 || crlfBoundary < boundary)) {
-            boundary = crlfBoundary;
-            separatorBytes = 4;
-        }
-        if (boundary < 0) return;
-        const QByteArray frame = m_buffer.left(boundary);
-        m_buffer.remove(0, boundary + separatorBytes);
-        QByteArray name;
-        QByteArray data;
-        for (const QByteArray &line : frame.split('\n')) {
-            if (line.startsWith("event:")) {
-                name = line.mid(6).trimmed();
-            } else if (line.startsWith("data:")) {
-                data += line.mid(5).trimmed();
-            }
-        }
-        const Event event = m_decodeEvent(name, data);
+    while (const std::optional<SseFrame> frame = takeSseFrame(m_buffer)) {
+        const Event event = m_decodeEvent(frame->name, frame->data);
         switch (event.kind) {
         case Event::Ignore:
             break;
