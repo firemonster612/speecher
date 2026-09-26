@@ -19,11 +19,19 @@ public:
     explicit TranscribeLoomWidget(QWidget *parent = nullptr);
 
     QSize sizeHint() const override;
+    // True from finishFile() until the playhead has reached the end.
+    bool isLanding() const;
 
 public slots:
     // A new file: its peak levels (0..1) and a fresh page of words.
     void startFile(const QVector<float> &peaks, int seed);
     void setProgress(qreal fraction);
+    // The file is done: the playhead runs to the end and the last words land,
+    // then landed() follows. Hidden, it lands at once.
+    void finishFile();
+
+signals:
+    void landed();
 
 protected:
     void hideEvent(QHideEvent *event) override;
@@ -46,6 +54,7 @@ private:
     };
 
     void tick();
+    void land();
 
     QTimer m_timer;
     QElapsedTimer m_clock;
@@ -56,6 +65,10 @@ private:
     // Eased toward m_target so progress that arrives in steps still glides.
     qreal m_shown = 0.0;
     quint32 m_random = 1;
+    bool m_landing = false;
+    // When the playhead reached the end, or -1; the finished page stays up a
+    // moment before landed().
+    qint64 m_reachedEndAt = -1;
 };
 
 } // namespace speecher

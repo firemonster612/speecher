@@ -26,6 +26,9 @@ constexpr int kLines = 6;
 constexpr qreal kPopWindow = 0.045;
 // How far behind the playhead a consumed bar fades out, in pixels.
 constexpr qreal kFadeDistance = 60.0;
+// How long a finished page stays up, its last words settling, before the
+// next file replaces it.
+constexpr qint64 kLandedHoldMs = 450;
 
 qreal easeOutBack(qreal t)
 {
@@ -56,6 +59,11 @@ QSize TranscribeLoomWidget::sizeHint() const
     return {480, kHeight};
 }
 
+bool TranscribeLoomWidget::isLanding() const
+{
+    return m_landing;
+}
+
 void TranscribeLoomWidget::startFile(const QVector<float> &peaks, int seed)
 {
     m_peaks = peaks;
@@ -63,6 +71,8 @@ void TranscribeLoomWidget::startFile(const QVector<float> &peaks, int seed)
     m_words.clear();
     m_target = 0.0;
     m_shown = 0.0;
+    m_landing = false;
+    m_reachedEndAt = -1;
     m_random = quint32(seed) * 2654435761u + 1;
     // Word pills laid out into lines; each gets the progress point where it
     // pops in, spread evenly across the file.
@@ -93,6 +103,23 @@ void TranscribeLoomWidget::setProgress(qreal fraction)
     m_target = std::clamp(fraction, 0.0, 1.0);
 }
 
+void TranscribeLoomWidget::finishFile()
+{
+    m_target = 1.0;
+    m_landing = true;
+    m_reachedEndAt = -1;
+    if (!isVisible()) {
+        m_shown = 1.0;
+        land();
+    }
+}
+
+void TranscribeLoomWidget::land()
+{
+    m_landing = false;
+    emit landed();
+}
+
 void TranscribeLoomWidget::showEvent(QShowEvent *event)
 {
     m_timer.start();
@@ -103,11 +130,25 @@ void TranscribeLoomWidget::hideEvent(QHideEvent *event)
 {
     m_timer.stop();
     QWidget::hideEvent(event);
+    if (m_landing) {
+        m_shown = 1.0;
+        land();
+    }
 }
 
 void TranscribeLoomWidget::tick()
 {
-    m_shown += (m_target - m_shown) * 0.12;
+    // Landing runs the playhead to the end at a steady clip rather than the
+    // ease's ever-slower approach.
+    m_shown = m_landing ? std::min(1.0, m_shown + std::max((1.0 - m_shown) * 0.12, 0.01))
+                        : m_shown + (m_target - m_shown) * 0.12;
+    if (m_landing && m_shown >= 1.0) {
+        if (m_reachedEndAt < 0) {
+            m_reachedEndAt = m_clock.elapsed();
+        } else if (m_clock.elapsed() - m_reachedEndAt >= kLandedHoldMs) {
+            land();
+        }
+    }
     const qreal innerWidth = width() - kSidePad * 2;
     const qreal headX = kSidePad + innerWidth * m_shown;
     const qreal pageTop = kWaveTop + kWaveHeight + kPageGap;

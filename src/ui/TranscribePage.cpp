@@ -132,6 +132,26 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
         layout->addSpacing(settings::sectionGap());
         layout->addWidget(widget, 0, Qt::AlignHCenter);
     };
+    // ---- Steps ----
+    auto *steps = new QHBoxLayout;
+    steps->setSpacing(settings::relatedSpacing());
+    steps->addStretch();
+    for (TranscribeStep step : {TranscribeStep::Configure, TranscribeStep::Transcribe, TranscribeStep::Export}) {
+        if (!m_stepLabels.isEmpty()) {
+            steps->addWidget(dimLabel(QStringLiteral("·"), content));
+        }
+        auto *label = new QLabel(transcribeStepLabel(step), content);
+        m_stepLabels << label;
+        steps->addWidget(label);
+    }
+    steps->addStretch();
+    column->addLayout(steps);
+    m_stepHint = dimLabel(QString(), content);
+    m_stepHint->setAlignment(Qt::AlignHCenter);
+    column->addSpacing(settings::smallSpacing());
+    column->addWidget(m_stepHint);
+    column->addSpacing(settings::groupGap());
+
     // ---- Setup ----
     m_setup = new QWidget(content);
     auto *setup = new QVBoxLayout(m_setup);
@@ -303,6 +323,13 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     auto *cancel = new QPushButton(QStringLiteral("Cancel"), m_processing);
     cancel->setObjectName(QStringLiteral("transcribeCancel"));
     connect(cancel, &QPushButton::clicked, m_controller->fileTranscription(), &FileTranscriptionSession::cancel);
+    m_progressTimer.setInterval(100);
+    connect(&m_progressTimer, &QTimer::timeout, this, &TranscribePage::refreshProgress);
+    connect(m_loom, &TranscribeLoomWidget::landed, this, [this] {
+        while (!m_afterLanding.isEmpty() && !m_loom->isLanding()) {
+            m_afterLanding.takeFirst()();
+        }
+    });
     addCentered(processing, cancel);
     column->addWidget(m_processing);
 
@@ -380,62 +407,82 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     column->addWidget(m_results);
     column->addStretch();
 
+    // A file's events wait while the loom lands the one before it; the engine
+    // starts the next file the moment the last one finishes.
     FileTranscriptionSession *session = m_controller->fileTranscription();
     connect(session, &FileTranscriptionSession::fileStarted, this, [this](int index, const QString &path) {
-        m_current = index;
-        m_currentPath = path;
-        m_processingHeader->setText(processingTitle(m_batch, index));
-        m_percent->setText(QStringLiteral("0%"));
-        m_loom->startFile({}, index);
-        setPhase(transcribePhaseLabel(TranscribePhase::Reading));
+        afterLanding([this, index, path] {
+            m_current = index;
+            m_currentPath = path;
+            m_processingHeader->setText(processingTitle(m_batch, index));
+            m_fractionSent = 0.0;
+            m_loom->startFile({}, index);
+            setPhase(TranscribePhase::Reading);
+            m_progressTimer.start();
+        });
     });
     connect(session, &FileTranscriptionSession::fileDecoded, this,
             [this](int index, const QVector<float> &peaks, qint64 durationMs) {
-                m_durationsMs.insert(m_currentPath, durationMs);
-                m_loom->startFile(peaks, index);
-                setPhase(transcribePhaseLabel(TranscribePhase::Transcribing));
+                afterLanding([this, index, peaks, durationMs] {
+                    m_durationsMs.insert(m_currentPath, durationMs);
+                    m_loom->startFile(peaks, index);
+                    setPhase(TranscribePhase::Transcribing);
+                });
             });
     connect(session, &FileTranscriptionSession::fileProgress, this, [this](int, qreal fraction) {
-        m_loom->setProgress(fraction);
-        m_percent->setText(QStringLiteral("%1%").arg(qRound(fraction * 100)));
-        if (fraction >= 1.0) {
-            setPhase(transcribePhaseLabel(TranscribePhase::Finishing));
-        }
+        afterLanding([this, fraction] {
+            m_fractionSent = fraction;
+            if (fraction >= 1.0) {
+                setPhase(TranscribePhase::Finishing);
+            } else {
+                refreshProgress();
+            }
+        });
     });
     connect(session, &FileTranscriptionSession::fileRefining, this,
-            [this] { setPhase(transcribePhaseLabel(TranscribePhase::Refining)); });
+            [this] { afterLanding([this] { setPhase(TranscribePhase::Refining); }); });
     connect(session, &FileTranscriptionSession::fileFinished, this,
             [this](int, const TranscribeFileResult &result) {
-                if (m_retrying < 0) {
+                afterLanding([this, result] {
+                    if (m_retrying >= 0) {
+                        return;
+                    }
+                    m_progressTimer.stop();
+                    m_percent->setText(QStringLiteral("100%"));
                     m_batchResults.append(result);
                     refreshQueue();
-                }
+                    m_loom->finishFile();
+                });
             });
     connect(session, &FileTranscriptionSession::batchFinished, this,
             [this](const QList<TranscribeFileResult> &results, bool cancelled) {
-                m_current = -1;
-                if (m_retrying >= 0) {
-                    if (!results.isEmpty()) {
-                        m_batchResults[m_retrying] = results.first();
+                afterLanding([this, results, cancelled] {
+                    m_running = false;
+                    m_progressTimer.stop();
+                    m_current = -1;
+                    if (m_retrying >= 0) {
+                        if (!results.isEmpty()) {
+                            m_batchResults[m_retrying] = results.first();
+                        }
+                        m_retrying = -1;
+                        showResults();
+                        return;
                     }
-                    m_retrying = -1;
+                    if (m_batchResults.isEmpty()) {
+                        showStage(TranscribeStep::Configure);
+                        return;
+                    }
+                    m_cancelled = cancelled;
+                    m_variants->setVisible(refinesTranscripts(m_batchOptions));
+                    m_showRefined->setChecked(true);
                     showResults();
-                    return;
-                }
-                if (m_batchResults.isEmpty()) {
-                    showStage(Stage::Setup);
-                    return;
-                }
-                m_cancelled = cancelled;
-                m_variants->setVisible(refinesTranscripts(m_batchOptions));
-                m_showRefined->setChecked(true);
-                showResults();
-                showStage(Stage::Results);
+                    showStage(TranscribeStep::Export);
+                });
             });
 
     seedOptionsFromSettings();
     refreshFileList();
-    showStage(Stage::Setup);
+    showStage(TranscribeStep::Configure);
     settings::applyLabelHierarchy(this);
 }
 
@@ -468,7 +515,7 @@ void TranscribePage::backToSetup()
     }
     refreshFileList();
     seedOptionsFromSettings();
-    showStage(Stage::Setup);
+    showStage(TranscribeStep::Configure);
 }
 
 void TranscribePage::dragEnterEvent(QDragEnterEvent *event)
@@ -498,11 +545,36 @@ void TranscribePage::showEvent(QShowEvent *event)
     }
 }
 
-void TranscribePage::showStage(Stage stage)
+void TranscribePage::showStage(TranscribeStep step)
 {
-    m_setup->setVisible(stage == Stage::Setup);
-    m_processing->setVisible(stage == Stage::Processing);
-    m_results->setVisible(stage == Stage::Results);
+    m_setup->setVisible(step == TranscribeStep::Configure);
+    m_processing->setVisible(step == TranscribeStep::Transcribe);
+    m_results->setVisible(step == TranscribeStep::Export);
+    refreshSteps(step);
+}
+
+// Done steps are checked in the positive colour, the current one is bold and
+// the ones still ahead are dim.
+void TranscribePage::refreshSteps(TranscribeStep current)
+{
+    for (int i = 0; i < m_stepLabels.size(); ++i) {
+        const auto step = TranscribeStep(i);
+        QLabel *label = m_stepLabels.at(i);
+        const bool done = i < int(current);
+        label->setText(QStringLiteral("%1 %2").arg(done ? QStringLiteral("✓") : QString::number(i + 1),
+                                                   transcribeStepLabel(step)));
+        QFont font = label->font();
+        font.setBold(step == current);
+        label->setFont(font);
+        QPalette palette = this->palette();
+        if (done) {
+            palette.setColor(QPalette::WindowText, settings::positiveTextColor(palette));
+        }
+        label->setPalette(palette);
+        label->setForegroundRole(i > int(current) ? QPalette::PlaceholderText : QPalette::WindowText);
+    }
+    m_stepHint->setText(transcribeStepHint(current));
+    m_stepHint->setVisible(!m_stepHint->text().isEmpty());
 }
 
 void TranscribePage::seedOptionsFromSettings()
@@ -629,12 +701,14 @@ void TranscribePage::startBatch()
     m_batchResults.clear();
     m_cancelled = false;
     // Before start(): a batch whose files all fail at once finishes inside it.
-    showStage(Stage::Processing);
+    showStage(TranscribeStep::Transcribe);
+    m_running = true;
     QString error;
     if (!m_controller->startFileTranscription(m_batch, m_batchOptions, &error)) {
+        m_running = false;
         m_startError->setText(error);
         m_startError->show();
-        showStage(Stage::Setup);
+        showStage(TranscribeStep::Configure);
         return;
     }
     m_startError->hide();
@@ -645,19 +719,45 @@ void TranscribePage::startBatch()
 void TranscribePage::retry(int index)
 {
     m_retrying = index;
+    m_running = true;
     QString error;
     if (!m_controller->startFileTranscription({m_batchResults.at(index).path}, m_batchOptions, &error)) {
         m_retrying = -1;
+        m_running = false;
         m_summary->setText(error);
         return;
     }
     showResults();
 }
 
-void TranscribePage::setPhase(const QString &phase)
+void TranscribePage::setPhase(TranscribePhase phase)
 {
-    m_phase->setText(phase);
+    m_phaseNow = phase;
+    m_phaseClock.start();
+    m_phase->setText(transcribePhaseLabel(phase));
+    refreshProgress();
     refreshQueue();
+}
+
+void TranscribePage::refreshProgress()
+{
+    const qreal progress = overallFileProgress(m_fractionSent, m_phaseNow, refinesTranscripts(m_batchOptions),
+                                               m_phaseClock.elapsed());
+    m_loom->setProgress(progress);
+    m_percent->setText(QStringLiteral("%1%").arg(int(progress * 100)));
+}
+
+void TranscribePage::afterLanding(std::function<void()> event)
+{
+    // Another surface's batch shares the engine; this page shows only its own.
+    if (!m_running) {
+        return;
+    }
+    if (m_loom->isLanding()) {
+        m_afterLanding << std::move(event);
+        return;
+    }
+    event();
 }
 
 void TranscribePage::refreshQueue()

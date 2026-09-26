@@ -3,8 +3,12 @@
 #include "transcribe/FileTranscriptionSession.h"
 #include "transcribe/TranscribePresentation.h"
 
+#include <QElapsedTimer>
 #include <QHash>
+#include <QTimer>
 #include <QWidget>
+
+#include <functional>
 
 class QAbstractButton;
 class QButtonGroup;
@@ -38,9 +42,8 @@ protected:
     void showEvent(QShowEvent *event) override;
 
 private:
-    enum class Stage { Setup, Processing, Results };
-
-    void showStage(Stage stage);
+    void showStage(TranscribeStep step);
+    void refreshSteps(TranscribeStep current);
     void seedOptionsFromSettings();
     void applyWritingProfile();
     void refreshRefinementRows();
@@ -49,13 +52,19 @@ private:
     void backToSetup();
     void startBatch();
     void retry(int index);
-    void setPhase(const QString &phase);
+    void setPhase(TranscribePhase phase);
+    void refreshProgress();
+    // Runs a batch event now, or once the loom has finished landing the file
+    // before it, so the next file never replaces a page still settling.
+    void afterLanding(std::function<void()> event);
     void refreshQueue();
     void showResults();
     bool showingRaw() const;
     TranscribeOptions options() const;
 
     ApplicationController *m_controller;
+    QList<QLabel *> m_stepLabels;
+    QLabel *m_stepHint;
     QWidget *m_setup;
     QWidget *m_processing;
     QWidget *m_results;
@@ -88,6 +97,12 @@ private:
     QLabel *m_phase;
     QLabel *m_percent;
     QFrame *m_queueCard;
+    TranscribePhase m_phaseNow = TranscribePhase::Reading;
+    QElapsedTimer m_phaseClock;
+    qreal m_fractionSent = 0.0;
+    // Eases the open-ended waits forward between engine signals.
+    QTimer m_progressTimer;
+    QList<std::function<void()>> m_afterLanding;
 
     // Results
     QLabel *m_resultsHeader;
@@ -97,6 +112,9 @@ private:
     QFrame *m_resultsCard;
 
     // The running or last batch.
+    // True while a batch this page started runs; another Transcribe surface
+    // shares the engine, and its batches are not this page's to show.
+    bool m_running = false;
     QStringList m_batch;
     TranscribeOptions m_batchOptions;
     TranscribeBatchLabels m_batchLabels;
