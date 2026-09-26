@@ -1,9 +1,12 @@
 #include "common/test_prelude.h"
+#include "core/InsightsExport.h"
 #include "core/InsightsLog.h"
 #include "core/InsightsSummary.h"
 
 #include <QDir>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
 
 using namespace speecher;
@@ -444,6 +447,50 @@ private slots:
         const QMap<int, QString> narrow = monthLabels(heatmap, 20);
         QCOMPARE(narrow, (QMap<int, QString>{{3, QStringLiteral("Jun")}, {8, QStringLiteral("Jul")},
                                              {12, QStringLiteral("Aug")}, {17, QStringLiteral("Sep")}}));
+    }
+
+    void shareTextListsThePeriodsNumbers()
+    {
+        const QList<DictationRecord> records{recordOn(kToday.addDays(-1), 100, 60000),
+                                             recordOn(kToday, 50, 30000)};
+        const InsightsSummary summary = summarize(records, InsightsRange::Last7Days, kToday);
+        QCOMPARE(insightsShareText(summary, InsightsRange::Last7Days),
+                 QStringLiteral("My Speecher stats, last 7 days\n"
+                                "150 words in 2 dictations (2 min of audio)\n"
+                                "About half the Gettysburg Address\n"
+                                "100 words per minute, 2.5× faster than typing\n"
+                                "2-day streak, my longest yet\n"
+                                "Top apps: Kate 100%"));
+        const QString post = insightsPostText(summary, InsightsRange::Last7Days);
+        QCOMPARE(post,
+                 QStringLiteral("I've dictated 150 words with Speecher in the last 7 days, about half "
+                                "the Gettysburg Address, at 100 words per minute (2.5× faster than "
+                                "typing). 2-day streak and counting."));
+    }
+
+    void postFitsOnXForTheMockupSeed()
+    {
+        const InsightsLog log(QFINDTESTDATA("../docs/insights-mockup/seed-active.jsonl"),
+                              InsightsLog::Access::ReadOnly);
+        for (InsightsRange range : {InsightsRange::Last7Days, InsightsRange::Last30Days,
+                                    InsightsRange::ThisYear, InsightsRange::AllTime}) {
+            QVERIFY(insightsPostText(summarize(log.records(), range, kToday), range).size() <= 280);
+        }
+    }
+
+    void jsonCarriesThePeriodStreakAndActiveDays()
+    {
+        const QList<DictationRecord> records{recordOn(kToday.addDays(-40), 30), recordOn(kToday, 20)};
+        const InsightsSummary summary = summarize(records, InsightsRange::Last30Days, kToday);
+        const QJsonObject json =
+            QJsonDocument::fromJson(insightsJson(summary, InsightsRange::Last30Days, kToday)).object();
+        QCOMPARE(json[u"today"].toString(), QStringLiteral("2026-09-26"));
+        QCOMPARE(json[u"period"][u"name"].toString(), QStringLiteral("last 30 days"));
+        QCOMPARE(json[u"period"][u"words"].toInt(), 20);
+        QCOMPARE(json[u"streak"][u"current"].toInt(), 1);
+        QCOMPARE(json[u"records"][u"allTimeWords"].toInt(), 50);
+        QCOMPARE(json[u"days"].toArray().size(), 2);
+        QCOMPARE(json[u"days"][1][u"date"].toString(), QStringLiteral("2026-09-26"));
     }
 
     void noDeltaWhenThePreviousPeriodIsEmpty()
