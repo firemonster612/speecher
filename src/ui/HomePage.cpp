@@ -8,7 +8,6 @@
 #include "ui/WaveformWidget.h"
 #include "ui/settings/SettingsPageSupport.h"
 
-#include <QBuffer>
 #include <QClipboard>
 #include <QComboBox>
 #include <QEvent>
@@ -606,17 +605,13 @@ QFrame *HomePage::buildHoursCard(const InsightsSummary &summary, QWidget *parent
         content->addStretch();
         return card;
     }
-    auto *verdict = new QLabel(host);
-    verdict->setWordWrap(true);
-    verdict->setTextFormat(Qt::RichText);
-    verdict->setText(
-        QStringLiteral("<b>%1.</b> <span style=\"color:%2\">You dictate most around %3, and %4s "
-                       "are your busiest day.</span>")
-            .arg(summary.persona.toHtmlEscaped(),
-                 palette().color(QPalette::PlaceholderText).name(),
-                 hourLabel(summary.peakHour),
-                 QLocale().dayName(summary.busiestWeekday, QLocale::LongFormat)));
-    content->addWidget(verdict);
+    content->addWidget(boldLabel(summary.persona + u'.', host));
+    content->addWidget(mutedLabel(QStringLiteral("You dictate most around %1, and %2s are your "
+                                                 "busiest day.")
+                                      .arg(hourLabel(summary.peakHour),
+                                           QLocale().dayName(summary.busiestWeekday,
+                                                             QLocale::LongFormat)),
+                                  host, false));
     content->addStretch();
     auto *chart = new InsightsBarChart(host);
     chart->setObjectName(QStringLiteral("hoursChart"));
@@ -782,31 +777,35 @@ QFrame *HomePage::buildRecordsCard(const InsightsSummary &summary, QWidget *pare
 
 QWidget *HomePage::buildFooter(QWidget *parent)
 {
-    // One centred paragraph with the lock icon inline, so a narrow window
-    // wraps it as a whole.
-    QString lock;
+    // The lock and the sentence on one centred line, the link under them.
+    auto *footer = new QWidget(parent);
+    footer->setObjectName(QStringLiteral("insightsPrivacyNote"));
+    auto *column = new QVBoxLayout(footer);
+    column->setContentsMargins(0, settings::relatedSpacing(), 0, 0);
+    column->setSpacing(settings::tightSpacing());
+    auto *line = new QHBoxLayout;
+    line->setSpacing(settings::tightSpacing());
+    line->addStretch();
     const QIcon lockIcon = themedIcon(QStringLiteral("object-locked"), QStringLiteral("lock"));
     if (!lockIcon.isNull()) {
-        const int extent = QFontMetrics(settings::smallFont(font())).ascent();
-        QByteArray png;
-        QBuffer buffer(&png);
-        buffer.open(QIODevice::WriteOnly);
-        lockIcon.pixmap(extent, extent).save(&buffer, "PNG");
-        lock = QStringLiteral("<img src=\"data:image/png;base64,%1\" width=\"%2\" height=\"%2\"> ")
-                   .arg(QString::fromLatin1(png.toBase64()))
-                   .arg(extent);
+        auto *lock = new QLabel(footer);
+        const int extent = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
+        lock->setPixmap(lockIcon.pixmap(extent, extent));
+        line->addWidget(lock, 0, Qt::AlignVCenter);
     }
-    QLabel *note = mutedLabel(
-        lock + QStringLiteral("Insights are stored only on this computer and are never sent to "
-                              "the cloud. <a href=\"general\">Insights settings</a>"),
-        parent);
-    note->setObjectName(QStringLiteral("insightsPrivacyNote"));
-    note->setTextFormat(Qt::RichText);
-    note->setAlignment(Qt::AlignHCenter);
-    note->setContentsMargins(0, settings::relatedSpacing(), 0, 0);
-    connect(note, &QLabel::linkActivated, this,
+    QLabel *note = mutedLabel(QStringLiteral("Insights are stored only on this computer and are "
+                                             "never sent to the cloud."),
+                              footer);
+    line->addWidget(note);
+    line->addStretch();
+    column->addLayout(line);
+    auto *link = new QLabel(QStringLiteral("<a href=\"general\">Insights settings</a>"), footer);
+    link->setFont(settings::smallFont(link->font()));
+    link->setAlignment(Qt::AlignHCenter);
+    connect(link, &QLabel::linkActivated, this,
             [this] { emit navigateRequested(AppPageId::General); });
-    return note;
+    column->addWidget(link);
+    return footer;
 }
 
 void HomePage::applyWidth()
