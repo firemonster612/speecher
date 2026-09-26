@@ -71,10 +71,20 @@ final class TranscriptionModel: ObservableObject {
     /// The session's events that arrived while a finished file's playhead
     /// glides to the end; nil when none is gliding.
     private var heldEvents: [@MainActor (TranscriptionModel) -> Void]?
-    private static let finishGlide = 0.5
+    /// The core's kTranscribeLandingMs: how long the playhead glides to the
+    /// end before the next file replaces it.
+    private let finishGlide: Double
+    /// The highest progress the current file has shown, so a restarted
+    /// speech stream never moves it back.
+    private var highestProgress = 0.0
+    /// How many views of the pane are on screen: the settings pane, the
+    /// Transcribe window, or both.
+    private var shownViews = 0
 
     /// The step indicator's names, in order.
     let stepLabels: [String]
+    /// The line under the indicator while the pane is on Configure.
+    let configureHint: String
     let speechProviders: [SpeecherProviderModel]
     let refinementProviders: [SpeecherProviderModel]
     let cleanupStrengths: [RowOptionModel]
@@ -95,6 +105,8 @@ final class TranscriptionModel: ObservableObject {
         tones = bridge.writingTones
         profiles = bridge.writingProfiles
         stepLabels = [SpeecherTranscribeStep.configure, .transcribe, .export].map { bridge.stepLabel($0) }
+        configureHint = bridge.stepHint(.configure)
+        finishGlide = bridge.transcribeLandingSeconds
         seedOptions()
         bridge.transcriptionFileStarted = { [weak self] index, path in
             self?.deliver { $0.fileStarted(index, path: path) }
@@ -145,6 +157,18 @@ final class TranscriptionModel: ObservableObject {
         fresh.folder = options.folder
         options = fresh
         startError = ""
+    }
+
+    /// A view of the pane came on screen. The first one on setup takes the
+    /// settings as they are now; one joining another keeps the choices made
+    /// there, as on Windows.
+    func viewAppeared() {
+        if shownViews == 0, stage == .setup { seedOptions() }
+        shownViews += 1
+    }
+
+    func viewDisappeared() {
+        shownViews = max(0, shownViews - 1)
     }
 
     /// Picking a profile brings its cleanup and tone, as it does for
@@ -276,15 +300,16 @@ final class TranscriptionModel: ObservableObject {
     func overallFileProgress(at now: Date) -> Double {
         if finishedFile != nil { return 1 }
         let msInPhase = Int64(max(0, now.timeIntervalSince(phaseStarted)) * 1000)
-        return bridge.overallFileProgress(fractionSent: fraction, phase: phase,
-                                          refines: refinedAvailable, msInPhase: msInPhase)
+        highestProgress = max(highestProgress, bridge.overallFileProgress(
+            fractionSent: fraction, phase: phase, refines: refinedAvailable, msInPhase: msInPhase))
+        return highestProgress
     }
 
     /// Where the loom draws its playhead: the file's progress, gliding from
     /// where it was to the end once the file has finished.
     func playhead(at now: Date) -> Double {
         guard let finished = finishedFile else { return overallFileProgress(at: now) }
-        let t = min(1, now.timeIntervalSince(finished.at) / Self.finishGlide)
+        let t = min(1, now.timeIntervalSince(finished.at) / finishGlide)
         return finished.from + (1 - finished.from) * (1 - pow(1 - t, 3))
     }
 
@@ -331,6 +356,7 @@ final class TranscriptionModel: ObservableObject {
         current = index
         currentPath = path
         fraction = 0
+        highestProgress = 0
         peaks = []
         partial = ""
         finishedFile = nil
@@ -357,8 +383,9 @@ final class TranscriptionModel: ObservableObject {
         let reached = playhead(at: now)
         finishedFile = (at: now, from: reached)
         heldEvents = []
+        let glide = finishGlide
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(Self.finishGlide))
+            try? await Task.sleep(for: .seconds(glide))
             self?.releaseHeldEvents()
         }
     }
@@ -509,8 +536,8 @@ struct TranscribePane: View {
             case .results: results
             }
         }
-        // Settings changed on another pane show up here, as on the Qt page.
-        .onAppear { if model.stage == .setup { model.seedOptions() } }
+        .onAppear { model.viewAppeared() }
+        .onDisappear { model.viewDisappeared() }
     }
 
     // MARK: Steps
@@ -526,7 +553,7 @@ struct TranscribePane: View {
                 }
             }
             if model.step == .configure {
-                Text("Check these options, then press Transcribe.")
+                Text(model.configureHint)
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

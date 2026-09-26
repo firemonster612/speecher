@@ -417,6 +417,7 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
             m_currentPath = path;
             m_processingHeader->setText(processingTitle(m_batch, index));
             m_fractionSent = 0.0;
+            m_progress = {};
             m_loomSeed = int(QRandomGenerator::global()->generate() & 0x7fffffff);
             m_loom->startFile({}, m_loomSeed);
             setPhase(TranscribePhase::Reading);
@@ -743,8 +744,8 @@ void TranscribePage::setPhase(TranscribePhase phase)
 
 void TranscribePage::refreshProgress()
 {
-    const qreal progress = overallFileProgress(m_fractionSent, m_phaseNow, refinesTranscripts(m_batchOptions),
-                                               m_phaseClock.elapsed());
+    const qreal progress = m_progress.advance(overallFileProgress(
+        m_fractionSent, m_phaseNow, refinesTranscripts(m_batchOptions), m_phaseClock.elapsed()));
     m_loom->setProgress(progress);
     m_percent->setText(QStringLiteral("%1%").arg(int(progress * 100)));
 }

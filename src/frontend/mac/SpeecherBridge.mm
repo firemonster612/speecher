@@ -2238,6 +2238,16 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
     return speecher::transcribeStepLabel(static_cast<speecher::TranscribeStep>(step)).toNSString();
 }
 
+- (NSString *)transcribeStepHint:(SpeecherTranscribeStep)step
+{
+    return speecher::transcribeStepHint(static_cast<speecher::TranscribeStep>(step)).toNSString();
+}
+
+- (double)transcribeLandingSeconds
+{
+    return speecher::kTranscribeLandingMs / 1000.0;
+}
+
 - (double)overallFileProgress:(double)fractionSent
                         phase:(SpeecherTranscribePhase)phase
                       refines:(BOOL)refines

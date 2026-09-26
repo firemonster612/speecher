@@ -100,12 +100,14 @@ int runHeadlessTranscribe(const QStringList &files,
     QElapsedTimer phaseClock;
     TranscribePhase phase = TranscribePhase::Reading;
     qreal fractionSent = 0.0;
+    ForwardProgress shownProgress;
     int lastPercent = -1;
     QString name;
     // A new phase always gets a line; within one, a terminal gets every
     // percent and a log every tenth.
     const auto showProgress = [&](bool newPhase) {
-        const int percent = int(overallFileProgress(fractionSent, phase, refines, phaseClock.elapsed()) * 100);
+        const int percent = int(
+            shownProgress.advance(overallFileProgress(fractionSent, phase, refines, phaseClock.elapsed())) * 100);
         const std::string line = (name + QStringLiteral(": ") + transcribePhaseLabel(phase)
                                   + QStringLiteral(" %1%").arg(percent))
                                      .toStdString();
@@ -126,6 +128,7 @@ int runHeadlessTranscribe(const QStringList &files,
     QObject::connect(&session, &FileTranscriptionSession::fileStarted, &loop, [&](int, const QString &path) {
         name = QFileInfo(path).fileName();
         fractionSent = 0.0;
+        shownProgress = {};
         setPhase(TranscribePhase::Reading);
     });
     QObject::connect(&session, &FileTranscriptionSession::fileDecoded, &loop,

@@ -58,8 +58,7 @@ const wchar_t *const kAudioExtensions[] = {L".wav", L".mp3", L".m4a", L".mp4", L
 // Same dot geometry as the dictation panel's bars.
 constexpr double kBarWidth = 3.2;
 constexpr double kBarDotHeight = 3.2;
-// How long a finished file shows at 100% before the next one replaces it.
-constexpr int kLandingMs = 600;
+
 QString writeText(const QString &path, const QString &text)
 {
     QSaveFile file(path);
@@ -194,6 +193,7 @@ TranscribePane::TranscribePane(ApplicationController *controller)
             m_currentPath = path;
             m_peaks.clear();
             m_fractionSent = 0;
+            m_progress = {};
             m_fileFinished = false;
             for (const View &view : m_views) {
                 if (view.headerText) {
@@ -234,7 +234,7 @@ TranscribePane::TranscribePane(ApplicationController *controller)
                     showProgress();
                     refreshQueue();
                     m_landing = true;
-                    QTimer::singleShot(kLandingMs, this, &TranscribePane::land);
+                    QTimer::singleShot(kTranscribeLandingMs, this, &TranscribePane::land);
                 });
             });
     connect(session, &FileTranscriptionSession::batchFinished, this,
@@ -673,7 +673,8 @@ void TranscribePane::showProgress()
 {
     const qreal progress = m_fileFinished
         ? 1.0
-        : overallFileProgress(m_fractionSent, m_phase, refinesTranscripts(m_batchOptions), m_phaseClock.elapsed());
+        : m_progress.advance(overallFileProgress(m_fractionSent, m_phase, refinesTranscripts(m_batchOptions),
+                                                 m_phaseClock.elapsed()));
     for (const View &view : m_views) {
         if (view.progressBar) {
             view.progressBar.Value(progress * 100);

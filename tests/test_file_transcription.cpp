@@ -326,6 +326,18 @@ private slots:
         QVERIFY(overallFileProgress(1.0, TranscribePhase::Finishing, false, 600000) <= 0.97);
     }
 
+    // A stream that restarts can report less audio sent than before; what a
+    // bar shows holds its highest point until the next file starts.
+    void shownProgressNeverMovesBack()
+    {
+        ForwardProgress shown;
+        QCOMPARE(shown.advance(overallFileProgress(0.6, TranscribePhase::Transcribing, true, 0)), 0.47);
+        QCOMPARE(shown.advance(overallFileProgress(0.2, TranscribePhase::Transcribing, true, 0)), 0.47);
+        QCOMPARE(shown.advance(overallFileProgress(0.8, TranscribePhase::Transcribing, true, 0)), 0.61);
+        shown = {};
+        QCOMPARE(shown.advance(overallFileProgress(0.0, TranscribePhase::Reading, true, 0)), 0.0);
+    }
+
     void headlessRunSavesPrintsAndReportsFailure()
     {
         QTemporaryDir dir;

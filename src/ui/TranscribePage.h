@@ -100,6 +100,7 @@ private:
     TranscribePhase m_phaseNow = TranscribePhase::Reading;
     QElapsedTimer m_phaseClock;
     qreal m_fractionSent = 0.0;
+    ForwardProgress m_progress;
     // Eases the open-ended waits forward between engine signals.
     QTimer m_progressTimer;
     QList<std::function<void()>> m_afterLanding;

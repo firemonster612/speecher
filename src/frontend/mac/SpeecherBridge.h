@@ -643,6 +643,10 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 // (speecher/transcribe/TranscribePresentation.h). A negative length is unknown.
 - (NSString *)transcribePhaseLabel:(SpeecherTranscribePhase)phase NS_SWIFT_NAME(phaseLabel(_:));
 - (NSString *)transcribeStepLabel:(SpeecherTranscribeStep)step NS_SWIFT_NAME(stepLabel(_:));
+// The line under the step indicator; empty for a step that needs none.
+- (NSString *)transcribeStepHint:(SpeecherTranscribeStep)step NS_SWIFT_NAME(stepHint(_:));
+// How long a finished file holds at the end before the next one replaces it.
+@property (nonatomic, readonly) double transcribeLandingSeconds;
 // A file's share of its whole work, below 1 until the file has finished.
 - (double)overallFileProgress:(double)fractionSent
                         phase:(SpeecherTranscribePhase)phase

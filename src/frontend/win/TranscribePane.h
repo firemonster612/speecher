@@ -124,6 +124,7 @@ private:
     // open-ended waits forward.
     QElapsedTimer m_phaseClock;
     qreal m_fractionSent = 0;
+    ForwardProgress m_progress;
     // The current file is transcribed, refined and saved.
     bool m_fileFinished = false;
     // While a finished file shows at 100%, the session's later events wait here.

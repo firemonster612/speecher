@@ -25,6 +25,24 @@ QString transcribePhaseLabel(TranscribePhase phase);
 // transcript is refined and saved.
 qreal overallFileProgress(qreal fractionSent, TranscribePhase phase, bool refines, qint64 msInPhase);
 
+// What a file's progress bar shows: the highest progress it has reached, so a
+// speech stream that restarts mid-file never moves the bar back. One per
+// file; start a new one when the next file starts.
+struct ForwardProgress {
+    qreal highest = 0.0;
+    qreal advance(qreal progress)
+    {
+        if (progress > highest) {
+            highest = progress;
+        }
+        return highest;
+    }
+};
+
+// How long a finished file holds at the end, its playhead or bar full,
+// before the next file replaces it.
+inline constexpr int kTranscribeLandingMs = 500;
+
 // The steps the step indicator at the top of a Transcribe surface names:
 // the setup form, the running batch and the results.
 enum class TranscribeStep { Configure, Transcribe, Export };
