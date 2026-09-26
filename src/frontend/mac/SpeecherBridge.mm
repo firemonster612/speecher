@@ -1933,6 +1933,15 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
     return speecher::transcribeStepLabel(static_cast<speecher::TranscribeStep>(step)).toNSString();
 }
 
+- (double)overallFileProgress:(double)fractionSent
+                        phase:(SpeecherTranscribePhase)phase
+                      refines:(BOOL)refines
+                    msInPhase:(int64_t)msInPhase
+{
+    return speecher::overallFileProgress(fractionSent, static_cast<speecher::TranscribePhase>(phase),
+                                         refines, msInPhase);
+}
+
 - (NSString *)durationLabel:(int64_t)durationMs
 {
     return speecher::durationLabel(durationMs).toNSString();

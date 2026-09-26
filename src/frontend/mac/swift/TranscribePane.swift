@@ -273,21 +273,11 @@ final class TranscriptionModel: ObservableObject {
     /// and the wait to 97%. The open-ended phases ease toward the top of their
     /// span without reaching it. 1 comes only once the file has finished,
     /// refined and saved.
-    // TODO(round2): switch to core overallFileProgress once bridged
     func overallFileProgress(at now: Date) -> Double {
         if finishedFile != nil { return 1 }
-        let span: (from: Double, to: Double)
-        switch phase {
-        case .reading: span = (0, 0.05)
-        case .transcribing: span = (0.05, refinedAvailable ? 0.75 : 0.90)
-        case .finishing: span = refinedAvailable ? (from: 0.75, to: 0.80) : (from: 0.90, to: 0.97)
-        case .refining: span = (0.80, 0.97)
-        @unknown default: span = (0, 0)
-        }
-        let within = phase == .transcribing
-            ? min(1, max(0, fraction))
-            : 1 - exp(-max(0, now.timeIntervalSince(phaseStarted)) / 4)
-        return span.from + (span.to - span.from) * within
+        let msInPhase = Int64(max(0, now.timeIntervalSince(phaseStarted)) * 1000)
+        return bridge.overallFileProgress(fractionSent: fraction, phase: phase,
+                                          refines: refinedAvailable, msInPhase: msInPhase)
     }
 
     /// Where the loom draws its playhead: the file's progress, gliding from

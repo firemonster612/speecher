@@ -515,6 +515,12 @@ typedef NS_ENUM(NSInteger, SpeecherTranscribeQueueState) {
 // (speecher/transcribe/TranscribePresentation.h). A negative length is unknown.
 - (NSString *)transcribePhaseLabel:(SpeecherTranscribePhase)phase NS_SWIFT_NAME(phaseLabel(_:));
 - (NSString *)transcribeStepLabel:(SpeecherTranscribeStep)step NS_SWIFT_NAME(stepLabel(_:));
+// A file's share of its whole work, below 1 until the file has finished.
+- (double)overallFileProgress:(double)fractionSent
+                        phase:(SpeecherTranscribePhase)phase
+                      refines:(BOOL)refines
+                    msInPhase:(int64_t)msInPhase
+    NS_SWIFT_NAME(overallFileProgress(fractionSent:phase:refines:msInPhase:));
 - (NSString *)durationLabel:(int64_t)durationMs NS_SWIFT_NAME(durationLabel(_:));
 - (NSString *)audioFileDetailWithBytes:(int64_t)bytes durationMs:(int64_t)durationMs
     NS_SWIFT_NAME(audioFileDetail(bytes:durationMs:));
