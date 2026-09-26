@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "core/settings/SettingsKeys.h"
+#include <QProcess>
 #ifdef SPEECHER_WITH_QKEYCHAIN
 #include "core/KeyringResult.h"
 #include "core/ShortcutBinding.h"
@@ -34,6 +35,25 @@ private slots:
         const auto actual = settings.raw().format();
         QSettings::setDefaultFormat(previous);
         QCOMPARE(actual, QSettings::IniFormat);
+    }
+
+    void otherTestProcessesCannotClearSettingsFallbacks()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.raw().setValue(SettingsKeys::SpeechEndpointApiKey, QStringLiteral("speech-secret"));
+        settings.raw().sync();
+
+        // This peer clears its settings, as many suites do at the start of a test.
+        QProcess peer;
+        peer.setProcessChannelMode(QProcess::MergedChannels);
+        peer.start(QCoreApplication::applicationFilePath(),
+                   {QStringLiteral("--suite"), QStringLiteral("settings"),
+                    QStringLiteral("legacySpeechModelIsAnExplicitChoice")});
+        QVERIFY(peer.waitForFinished());
+        QVERIFY2(peer.exitStatus() == QProcess::NormalExit && peer.exitCode() == 0,
+                 peer.readAll().constData());
+        QCOMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QStringLiteral("speech-secret"));
     }
 
 #ifdef SPEECHER_WITH_QKEYCHAIN

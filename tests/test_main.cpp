@@ -4,7 +4,7 @@
 #include <QDebug>
 #include <QScopeGuard>
 #include <QStandardPaths>
-#ifdef Q_OS_MACOS
+#ifndef Q_OS_WIN
 #include <QSettings>
 #include <QTemporaryDir>
 #include "core/SettingsStore.h"
@@ -30,12 +30,12 @@ int main(int argc, char **argv)
         return runDeliveryTests(argc - 1, argv + 1);
     }
 #endif
-#ifdef Q_OS_MACOS
-    // Test mode alone does not redirect macOS CFPreferences. Keep every test
-    // QSettings instance away from the user's native preferences.
+#ifndef Q_OS_WIN
+    // Test mode shares one settings directory across Linux test processes and
+    // does not redirect macOS CFPreferences. Give each process its own store.
     QTemporaryDir preferences;
     if (!preferences.isValid()) {
-        qCritical() << "Could not create isolated macOS test preferences";
+        qCritical() << "Could not create isolated test preferences";
         return 1;
     }
     QSettings::setDefaultFormat(QSettings::IniFormat);
@@ -86,11 +86,11 @@ int main(int argc, char **argv)
     });
 #endif
     QStandardPaths::setTestModeEnabled(true);
-#ifdef Q_OS_MACOS
+#ifndef Q_OS_WIN
     // Refuse to run mutating suites if the production store ignores isolation.
     speecher::SettingsStore isolatedSettings;
     if (isolatedSettings.raw().format() != QSettings::IniFormat) {
-        qCritical() << "Tests must not use native macOS preferences";
+        qCritical() << "Tests must use isolated INI preferences";
         return 1;
     }
 #endif
