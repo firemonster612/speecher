@@ -321,7 +321,8 @@ jobs:
           say -o audio/voice-memo.aiff "Reminder for tomorrow. Pick up the dry cleaning before noon and call the dentist."
           afconvert -f WAVE -d LEI16@16000 audio/meeting-notes.aiff audio/meeting-notes.wav
           afconvert -f WAVE -d LEI16@16000 audio/voice-memo.aiff audio/voice-memo.wav
-          SPEECHER_GRAB_PAGE=transcribe ./build/speecher.app/Contents/MacOS/speecher \
+          DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib" DYLD_LIBRARY_PATH="$QT_ROOT_DIR/lib" \
+            SPEECHER_GRAB_PAGE=transcribe ./build/speecher.app/Contents/MacOS/speecher \
             audio/meeting-notes.wav audio/voice-memo.wav --grab shots/mac-transcribe-setup.png
           test -s shots/mac-transcribe-setup.png
 
