@@ -1,6 +1,7 @@
 #include "frontend/win/SettingsModel.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
 #include "app/PlatformComposition.h"
 #include "app/UpdateController.h"
 #include "core/SecretStore.h"
@@ -41,7 +42,8 @@ QStringList fileExtensions(const QString &filter)
 // because that helper lives in the Qt front end this one must not link.
 SchemaContext winSchemaContext(const PlatformComposition &platform,
                                const ProviderRegistry &providers,
-                               const QString &lastSeenVersion)
+                               const QString &lastSeenVersion,
+                               const LocalSetup &localSetup)
 {
     QList<RowOption> speech;
     for (const ProviderDescriptor &provider : providers.speechProviders()) {
@@ -67,6 +69,7 @@ SchemaContext winSchemaContext(const PlatformComposition &platform,
         false,
         QStringLiteral(SPEECHER_VERSION),
         lastSeenVersion,
+        [&localSetup] { return localSetup.liveFacts(); },
     };
 }
 
@@ -137,7 +140,8 @@ SettingsModel::SettingsModel(ApplicationController *controller)
     , m_store(controller->settings())
     , m_schema(buildSettingsSchema(winSchemaContext(*controller->platform(),
                                                     *controller->providerRegistry(),
-                                                    controller->pendingWhatsNewVersion())))
+                                                    controller->pendingWhatsNewVersion(),
+                                                    *controller->localSetup())))
     , m_draft(m_store->snapshot())
     , m_loaded(m_draft)
     , m_capabilities{controller->accessibilitySupported() && controller->accessibilityEnabled(),
@@ -228,6 +232,7 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
     snapshot.contentWidthHint = row.contentWidthHint;
     snapshot.options = optionsForRow(row);
     snapshot.suggestions = row.suggestions ? row.suggestions(m_draft) : QList<RowOption>();
+    snapshot.secret = row.secret;
     snapshot.enabled = !row.enabled || row.enabled(m_draft, m_capabilities);
     snapshot.tooltip = row.tooltip;
     snapshot.disabledHelp = row.disabledHelp;

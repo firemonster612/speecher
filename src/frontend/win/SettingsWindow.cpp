@@ -1,11 +1,13 @@
 #include "frontend/win/SettingsWindow.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
 #include "app/UpdateController.h"
 #include "core/SettingsStore.h"
 #include "frontend/win/SettingsModel.h"
 #include "frontend/win/SettingsPage.h"
 #include "frontend/win/ShortcutRecorder.h"
+#include "providers/LocalModelStore.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -19,6 +21,7 @@
 #include <memory>
 
 #include <windows.h>
+#include <shellapi.h>
 #include <microsoft.ui.xaml.window.h>
 
 #pragma push_macro("GetCurrentTime")
@@ -69,6 +72,7 @@ wchar_t glyphForIconId(const QString &iconId)
         {QStringLiteral("swap"), L'\uE8AB'},
         {QStringLiteral("key"), L'\uE192'},
         {QStringLiteral("shortcut"), L'\uE765'},
+        {QStringLiteral("localModels"), L'\uE977'},
     };
     return glyphs.value(iconId, L'\uE713');
 }
@@ -179,6 +183,15 @@ struct SettingsWindow::Native {
                              refreshBanner();
                              rebuildSidebar();
                          });
+        // What LocalSetup learns shows up in rows on three pages: endpoint
+        // verdicts, runners, the hardware and the model list.
+        QObject::connect(controller->localSetup(), &LocalSetup::changed, &lifetime, [this] {
+            static const QStringList livePages{QStringLiteral("audio"), QStringLiteral("refinement"),
+                                               QStringLiteral("localModels")};
+            if (livePages.contains(currentPane)) {
+                queueRebuild();
+            }
+        });
     }
 
     ~Native()
@@ -336,6 +349,8 @@ struct SettingsWindow::Native {
                                  return;
                              }
                              model.loadExpensiveRows();
+                             controller->localSetup()->probeHardware();
+                             controller->localSetup()->detectRunners();
                              rebuildPage();
                              // Only the keyring can stop to ask for an unlock,
                              // so it waits another turn.
@@ -354,6 +369,7 @@ struct SettingsWindow::Native {
         saveGeometry();
         // The editors hold XAML trees of the window that is going away.
         host.editors.clear();
+        host.localModels.reset();
         ShortcutRecorder::setRecording(host, false);
         window = nullptr;
         root = nullptr;
@@ -516,6 +532,21 @@ struct SettingsWindow::Native {
     {
         if (id == QStringLiteral("whatsNew")) {
             showWhatsNew();
+        }
+        // The rows LiveFacts reports on; every edit is already committed, so
+        // the draft is what is stored.
+        LocalSetup *local = controller->localSetup();
+        if (id == QStringLiteral("speechEndpointTest")) {
+            local->checkSpeechEndpoint(model.draft().speech.endpoint);
+        } else if (id == QStringLiteral("refinementEndpointTest")) {
+            local->checkRefinementEndpoint(model.draft().refinement);
+        } else if (id == QStringLiteral("localRunnerDetect") || id == QStringLiteral("localModelsRunner")) {
+            local->detectRunners();
+        } else if (id == QStringLiteral("localModelFolder")) {
+            const QString folder = local->models().directory();
+            QDir().mkpath(folder);
+            ShellExecuteW(nullptr, L"open", reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(folder).utf16()),
+                          nullptr, nullptr, SW_SHOWNORMAL);
         }
         if (actionHook) {
             actionHook(id);
