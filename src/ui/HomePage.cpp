@@ -148,7 +148,9 @@ QProgressBar *makeBar(int value, int maximum, bool leading, QWidget *parent)
         const QColor tint = accentTint(bar->palette(), kMutedProgressPercent);
         QPalette tinted = bar->palette();
         tinted.setColor(QPalette::Highlight, tint);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
         tinted.setColor(QPalette::Accent, tint);
+#endif
         bar->setPalette(tinted);
     }
     return bar;
