@@ -100,3 +100,14 @@ Local and Custom endpoint cards.
 - Vulkan builds need `glslc` and Vulkan headers in CI.
 - A transcribe.cpp upgrade is a deliberate, tested change, never a floating
   dependency.
+- If transcribe.cpp stalls or changes direction, sherpa-onnx (Apache-2.0) is
+  the fallback engine. It covers the same English models except Voxtral, but
+  has no Vulkan backend, so AMD and Intel GPUs on Linux would run on the CPU.
+  Only `LocalSpeechEngine` talks to transcribe.cpp, so a switch stays in one
+  class.
+- Model files download from the `handy-computer` Hugging Face account, pinned
+  by revision and sha256. If those repos move, mirror the pinned files under an
+  account the project controls.
+- Local speech is off in a default build (`SPEECHER_WITH_LOCAL_SPEECH`) because
+  it more than doubles a clean build; release builds turn it on and build every
+  CPU backend (`SPEECHER_LOCAL_SPEECH_ALL_CPUS`).

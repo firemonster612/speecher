@@ -837,6 +837,13 @@ if(SPEECHER_WITH_LOCAL_SPEECH)
   # transcribe.cpp names its headers from CMAKE_SOURCE_DIR, which is Speecher's
   # tree when it is built as a subproject.
   target_include_directories(transcribe PUBLIC "$<BUILD_INTERFACE:${transcribe_SOURCE_DIR}/include>")
+  # transcribe.cpp and the ggml and miniz code it vendors are MIT licensed;
+  # their notices ship beside the binaries on every platform.
+  set(SPEECHER_LOCAL_SPEECH_NOTICES "${CMAKE_CURRENT_BINARY_DIR}/transcribe.cpp-licenses.md")
+  file(READ "${transcribe_SOURCE_DIR}/LICENSE" _transcribe_license)
+  file(READ "${transcribe_SOURCE_DIR}/THIRD-PARTY-LICENSES.md" _transcribe_third_party)
+  file(WRITE "${SPEECHER_LOCAL_SPEECH_NOTICES}"
+    "# transcribe.cpp\n\n${_transcribe_license}\n\n${_transcribe_third_party}")
 
   if(SPEECHER_LOCAL_SPEECH_MODULES)
     # libtranscribe finds its backend modules in its own directory, so keep
@@ -1179,6 +1186,9 @@ if(APPLE)
     packaging/macos/speecher-menubar.png
     packaging/macos/speecher-menubar@2x.png
   )
+  if(SPEECHER_WITH_LOCAL_SPEECH)
+    list(APPEND SPEECHER_MACOS_RESOURCES "${SPEECHER_LOCAL_SPEECH_NOTICES}")
+  endif()
   target_sources(speecher PRIVATE ${SPEECHER_MACOS_RESOURCES})
   set_source_files_properties(${SPEECHER_MACOS_RESOURCES} PROPERTIES
     MACOSX_PACKAGE_LOCATION "Resources"
@@ -1436,6 +1446,9 @@ endif()
 if(UNIX AND NOT APPLE)
   install(FILES "${CMAKE_CURRENT_BINARY_DIR}/io.github.firemonster612.speecher.desktop" DESTINATION ${SPEECHER_INSTALL_APPLICATIONS_DIR})
   install(FILES packaging/io.github.firemonster612.speecher.svg DESTINATION ${SPEECHER_INSTALL_HICOLOR_DIR}/scalable/apps)
+  if(SPEECHER_WITH_LOCAL_SPEECH)
+    install(FILES "${SPEECHER_LOCAL_SPEECH_NOTICES}" DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/speecher")
+  endif()
   install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/post-install.cmake")
 endif()
 
