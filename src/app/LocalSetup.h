@@ -36,7 +36,8 @@ public:
     LocalModelStore &models() const;
 
     // Starts the probe the first time; hardwareKnown() stays false until it
-    // answers. Loading the speech engine's backends is what makes it slow.
+    // answers, and always in a build without local speech. Loading the speech
+    // engine's backends is what makes it slow.
     void probeHardware();
     bool hardwareKnown() const;
     const HardwareSummary &hardware() const;
@@ -54,13 +55,16 @@ public:
     // shown by whichever window opens next.
     void download(const LocalModel &model);
     void cancelDownload(const QString &modelId);
+    // Deleting the model dictation uses moves it to another downloaded one.
     bool removeModel(const LocalModel &model);
     // Bytes received and total for a running download.
     std::optional<std::pair<qint64, qint64>> downloadProgress(const QString &modelId) const;
     QString downloadError(const QString &modelId) const;
 
-    // Runs on its own after every download that finishes.
+    // Runs on its own after every download that finishes. A request while
+    // another test runs waits for it.
     void runSpeedTest(const QString &modelId);
+    // Running or waiting its turn.
     bool speedTestRunning(const QString &modelId) const;
     std::optional<double> measuredSeconds(const QString &modelId) const;
     QString speedTestError(const QString &modelId) const;
@@ -90,6 +94,9 @@ public:
 
 signals:
     void changed();
+    // Bytes of a running Ollama pull; pull() has them too. changed() only
+    // marks its start, end and failure.
+    void pullProgress(qint64 completedBytes, qint64 totalBytes);
     void cleanupModelPulled(const QString &ollamaTag);
 
 private:
@@ -108,6 +115,7 @@ private:
     QHash<QString, std::pair<qint64, qint64>> m_progress;
     QHash<QString, QString> m_downloadErrors;
     QString m_speedTestModel;
+    QStringList m_speedTestQueue;
     QHash<QString, QString> m_speedTestErrors;
     QList<DetectedRunner> m_runners;
     bool m_detectingRunners = false;

@@ -2264,6 +2264,11 @@ const SettingsPage &SettingsSchema::page(const QString &id) const
     qFatal("no settings page with id %s", qPrintable(id));
 }
 
+bool SettingsSchema::hasPage(const QString &id) const
+{
+    return std::any_of(pages.cbegin(), pages.cend(), [&id](const SettingsPage &page) { return page.id == id; });
+}
+
 QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices, const QString &selectedDeviceId)
 {
     const RowOption missing{selectedDeviceId,
@@ -2482,13 +2487,26 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context)
                               audioPage(context),
                               outputPage(context),
                               refinementPage(context),
-                              localModelsPage(context),
                               vocabularyPage(),
                               correctionsPage(),
                               bindingsPage(),
                               providersPage()};
+    QList<SettingsPane> panes = settingsPanes();
+    QList<QStringList> runs = settingsSidebarRuns();
+    // Local models exists where this build runs speech models, which is when
+    // the registry offers the local speech provider.
+    const QString localModels = QStringLiteral("localModels");
+    if (std::any_of(context.speechProviders.cbegin(), context.speechProviders.cend(),
+                    [](const RowOption &provider) { return provider.id == QStringLiteral("local"); })) {
+        pages.insert(4, localModelsPage(context));
+    } else {
+        panes.removeIf([&localModels](const SettingsPane &pane) { return pane.id == localModels; });
+        for (QStringList &run : runs) {
+            run.removeAll(localModels);
+        }
+    }
     pages.append(whatsNewPage(pages, context));
-    return {std::move(pages), settingsPanes(), settingsSidebarRuns()};
+    return {std::move(pages), std::move(panes), std::move(runs)};
 }
 
 QList<RowOption> cleanupStrengths()

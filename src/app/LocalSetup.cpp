@@ -9,13 +9,15 @@
 #endif
 
 #include <QDir>
+#include <QTimer>
 
 namespace speecher {
 namespace {
 
+// Decimal gigabytes, as memory is sold and download sizes are quoted.
 QString gigabytesText(quint64 bytes)
 {
-    return QStringLiteral("%1 GB").arg(qRound(double(bytes) / double(quint64(1) << 30)));
+    return QStringLiteral("%1 GB").arg(qRound(double(bytes) / 1e9));
 }
 
 QString acceleratorName(const QString &kind)
@@ -56,7 +58,7 @@ LocalSetup::LocalSetup(SettingsStore &settings,
             [this](qint64 completed, qint64 total, const QString &) {
                 m_pull.completedBytes = completed;
                 m_pull.totalBytes = total;
-                emit changed();
+                emit pullProgress(completed, total);
             });
     connect(&m_ollamaPull, &OllamaPull::finished, this, [this] {
         m_pull.running = false;
@@ -78,6 +80,11 @@ LocalSetup::LocalSetup(SettingsStore &settings,
         connect(local, &LocalSpeechTranscriber::speedTestFinished, this,
                 [this](const QString &modelId, double seconds, const QString &error) {
                     m_speedTestModel.clear();
+                    if (!m_speedTestQueue.isEmpty()) {
+                        QTimer::singleShot(0, this, [this, next = m_speedTestQueue.takeFirst()] {
+                            runSpeedTest(next);
+                        });
+                    }
                     if (error.isEmpty()) {
                         m_speedTestErrors.remove(modelId);
                         LocalSpeechSettings local = m_settings.localSpeechSettings();
@@ -112,9 +119,9 @@ void LocalSetup::probeHardware()
                                           emit changed();
                                       });
 #else
+    // Without the speech engine there is nothing to ask; the hardware stays
+    // unknown rather than read as zero memory.
     m_hardwareProbing = false;
-    m_hardwareKnown = true;
-    emit changed();
 #endif
 }
 
@@ -184,8 +191,19 @@ bool LocalSetup::removeModel(const LocalModel &model)
 {
     const bool removed = m_models.remove(model);
     m_progress.remove(model.id);
+    m_speedTestQueue.removeAll(model.id);
     LocalSpeechSettings local = m_settings.localSpeechSettings();
     local.speedTestSeconds.remove(model.id);
+    // Dictation moves to another downloaded model rather than a missing file.
+    // With none left it stays, and dictating says to download one.
+    if (local.modelId == model.id) {
+        for (const LocalModel &other : localModelCatalog()) {
+            if (m_models.isDownloaded(other)) {
+                local.modelId = other.id;
+                break;
+            }
+        }
+    }
     m_settings.setLocalSpeechSettings(local);
     emit changed();
     return removed;
@@ -208,7 +226,14 @@ void LocalSetup::runSpeedTest(const QString &modelId)
 {
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
     auto *local = qobject_cast<LocalSpeechTranscriber *>(m_providers.speechProvider(QStringLiteral("local")));
-    if (!local || !m_speedTestModel.isEmpty()) {
+    if (!local || m_speedTestModel == modelId || m_speedTestQueue.contains(modelId)) {
+        return;
+    }
+    // One test at a time, on the engine dictation uses; the rest wait their
+    // turn. Every path of LocalSpeechTranscriber::runSpeedTest answers with
+    // speedTestFinished, which starts the next.
+    if (!m_speedTestModel.isEmpty()) {
+        m_speedTestQueue.append(modelId);
         return;
     }
     m_speedTestModel = modelId;
@@ -222,7 +247,7 @@ void LocalSetup::runSpeedTest(const QString &modelId)
 
 bool LocalSetup::speedTestRunning(const QString &modelId) const
 {
-    return m_speedTestModel == modelId;
+    return m_speedTestModel == modelId || m_speedTestQueue.contains(modelId);
 }
 
 std::optional<double> LocalSetup::measuredSeconds(const QString &modelId) const

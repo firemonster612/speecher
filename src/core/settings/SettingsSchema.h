@@ -217,6 +217,8 @@ struct SettingsPane {
 };
 
 struct SettingsSchema {
+    // localModels is among them only when speechProviders offers "local",
+    // and so is its pane.
     QList<SettingsPage> pages;
     QList<SettingsPane> panes;
     // The sidebar's runs, in order: pane ids, each run separated from the next
@@ -225,6 +227,7 @@ struct SettingsSchema {
     QList<QStringList> sidebarRuns;
 
     const SettingsPage &page(const QString &id) const;
+    bool hasPage(const QString &id) const;
 };
 
 // A refinement provider as the settings surface sees it: what to call it, and

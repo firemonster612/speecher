@@ -1045,7 +1045,9 @@ private slots:
 
     void localModelsPageFollowsRefinement()
     {
-        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        SchemaContext context = fakeContext();
+        context.speechProviders.append({QStringLiteral("local"), QStringLiteral("Local model")});
+        const SettingsSchema schema = buildSettingsSchema(context);
         QStringList pageIds;
         for (const SettingsPage &page : schema.pages) {
             pageIds.append(page.id);
@@ -1073,6 +1075,16 @@ private slots:
         // On macOS and Windows it is its own pane, next to Text.
         const QStringList &run = schema.sidebarRuns.at(1);
         QCOMPARE(run.indexOf(QStringLiteral("localModels")), run.indexOf(QStringLiteral("text")) + 1);
+
+        // A build that cannot run speech models has no page or pane for them.
+        const SettingsSchema without = buildSettingsSchema(fakeContext());
+        QVERIFY(!without.hasPage(QStringLiteral("localModels")));
+        QVERIFY(std::none_of(without.panes.cbegin(), without.panes.cend(), [](const SettingsPane &pane) {
+            return pane.id == QStringLiteral("localModels");
+        }));
+        for (const QStringList &otherRun : without.sidebarRuns) {
+            QVERIFY(!otherRun.contains(QStringLiteral("localModels")));
+        }
     }
 
     void aSavedMicrophoneSurvivesGoingMissing()
