@@ -5,6 +5,8 @@
 #include "app/UpdateController.h"
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
+#include "core/SecretStore.h"
+#include "core/settings/SettingsKeys.h"
 #include "dictation/DictationSession.h"
 #include "core/TranscriptState.h"
 #include "frontend/qt/QtFrontEnd.h"
@@ -643,6 +645,24 @@ private slots:
         AppSettings draft;
         pages.corrections()->appendToDraft(draft);
         QCOMPARE(draft.learnedCorrections, corrections);
+    }
+
+    void localRefreshDoesNotReadUnreadKeyringSecrets()
+    {
+        ApplicationController controller(true);
+        controller.settings()->raw().setValue(SettingsKeys::SecretsInKeyring,
+                                              QStringList{QStringLiteral("speech-endpoint-key")});
+        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
+        QWidget parent;
+        // Isolate the refresh's settings read from the schema's liveFacts queries.
+        SettingsPageSet pages(&controller, &parent, buildSettingsSchema({}));
+        QVERIFY(!controller.secretStore()->isSecretKnown(SecretStore::Secret::SpeechEndpointKey));
+
+        emit controller.localSetup()->changed();
+
+        QVERIFY2(controller.secretStore()->lastError().isEmpty(), "Local refresh tried to read the keyring");
+        QVERIFY(!controller.secretStore()->isSecretKnown(SecretStore::Secret::SpeechEndpointKey));
     }
 
     void localRefreshPreservesPendingSettingsEdits()

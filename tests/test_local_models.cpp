@@ -1,5 +1,7 @@
 #include "app/LocalSetup.h"
 #include "core/SettingsStore.h"
+#include "core/SecretStore.h"
+#include "core/settings/SettingsKeys.h"
 #include "providers/ProviderRegistry.h"
 #include "common/test_http.h"
 #include "common/test_suites.h"
@@ -13,6 +15,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QSignalSpy>
+#include <QScopeGuard>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
@@ -85,6 +88,24 @@ class LocalModelsTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void liveFactsDoesNotReadUnreadKeyringSecrets()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.raw().setValue(SettingsKeys::SecretsInKeyring,
+                               QStringList{QStringLiteral("speech-endpoint-key")});
+        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
+        ProviderRegistry providers;
+        QTemporaryDir directory;
+        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
+        LocalSetup setup(settings, providers, models);
+
+        QVERIFY(!setup.liveFacts().modelFolder.isEmpty());
+        QVERIFY2(settings.secrets()->lastError().isEmpty(), "liveFacts tried to read the keyring");
+        QVERIFY(!settings.secrets()->isSecretKnown(SecretStore::Secret::SpeechEndpointKey));
+    }
+
     void endpointChecksDiscardSupersededResults_data()
     {
         QTest::addColumn<bool>("refinement");

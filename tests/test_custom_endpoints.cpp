@@ -1106,8 +1106,30 @@ private slots:
         QVERIFY(!settings.raw().contains(SettingsKeys::SpeechEndpointApiKey));
     }
 
+    void constructingSettingsDoesNotTouchTheKeyring()
+    {
+        const QString pendingDeletion = SettingsKeys::RefinementEndpointApiKey + QStringLiteral("PendingDeletion");
+        {
+            SettingsStore settings;
+            settings.raw().clear();
+            settings.raw().setValue(SettingsKeys::CliproxyApiKey, QStringLiteral("legacy-proxy-key"));
+            settings.raw().setValue(pendingDeletion, true);
+            settings.raw().sync();
+        }
+        qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE"); });
+
+        SettingsStore settings;
+
+        QVERIFY2(settings.secrets()->lastError().isEmpty(), "SettingsStore construction touched the keyring");
+        QCOMPARE(settings.raw().value(SettingsKeys::CliproxyApiKey).toString(), QStringLiteral("legacy-proxy-key"));
+        QVERIFY(settings.raw().value(pendingDeletion).toBool());
+        QVERIFY(!settings.raw().contains(SettingsKeys::SecretsInKeyring));
+        settings.raw().clear();
+    }
+
     // Existing CLI Proxy API users keep their key: it moves from the settings
-    // file to the keyring on first load when a keyring accepts it.
+    // file to the keyring on controller startup when a keyring accepts it.
     void cliproxyKeyMigratesOutOfTheSettingsFile()
     {
         {
@@ -1117,12 +1139,16 @@ private slots:
             settings.raw().setValue(SettingsKeys::CliproxyApiKey, QStringLiteral(" legacy-proxy-key "));
             settings.raw().sync();
         }
-        SettingsStore settings;
+        ApplicationController controller(true);
+        SettingsStore &settings = *controller.settings();
         QCOMPARE(settings.cliproxyApiKey(), QStringLiteral("legacy-proxy-key"));
         QCOMPARE(settings.snapshot().refinement.cliproxyApiKey, QStringLiteral("legacy-proxy-key"));
         const bool migrated = settings.raw().value(SettingsKeys::SecretsInKeyring).toStringList()
                                   .contains(QStringLiteral("cliproxy-api-key"));
         QCOMPARE(settings.raw().contains(SettingsKeys::CliproxyApiKey), !migrated);
+        if (qEnvironmentVariableIntValue("SPEECHER_TEST_EXPECT_KEYRING") == 1) {
+            QVERIFY(migrated);
+        }
         qInfo() << "cliproxy key migrated to the keyring:" << migrated;
 
         settings.setCliproxyApiKey(QString());

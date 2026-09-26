@@ -139,6 +139,7 @@ ApplicationController::ApplicationController(bool popupOnly,
             &GlobalShortcutBinder::registrationFinished,
             this,
             &ApplicationController::globalShortcutRegistrationFinished);
+    m_secrets->migrateSettingsFallbacks();
     m_secrets->prefetch();
     registerProviders();
     m_localSetup = new LocalSetup(*m_settings, *m_providers, *m_localModels, this);

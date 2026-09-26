@@ -56,6 +56,9 @@ public:
     bool usesInsecureSettingsFallback() const;
 
 private:
+    // Startup migration belongs to the controller, not temporary settings stores.
+    friend class ApplicationController;
+
     struct CachedSecret {
         QString value;
         bool known = false;
