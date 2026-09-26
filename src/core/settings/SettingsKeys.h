@@ -55,7 +55,22 @@ inline const QString AnthropicFastMode = QStringLiteral("anthropic/fastMode");
 inline const QString AnthropicCliproxyAccount = QStringLiteral("anthropic/cliproxyAccount");
 inline const QString CliproxyOauthDir = QStringLiteral("cliproxy/oauthDir");
 inline const QString CliproxyBaseUrl = QStringLiteral("cliproxy/baseUrl");
+// The settings-file copy of a secret is only a fallback for machines without
+// a keyring; SecretStore owns these four keys.
 inline const QString CliproxyApiKey = QStringLiteral("cliproxy/apiKey");
+inline const QString SpeechEndpointApiKey = QStringLiteral("endpoint/speech/apiKey");
+inline const QString RefinementEndpointApiKey = QStringLiteral("endpoint/refinement/apiKey");
+// The keyring entries SecretStore has written besides the OpenAI key.
+inline const QString SecretsInKeyring = QStringLiteral("secrets/inKeyring");
+inline const QString SpeechEndpointBaseUrl = QStringLiteral("endpoint/speech/baseUrl");
+inline const QString SpeechEndpointPath = QStringLiteral("endpoint/speech/path");
+inline const QString SpeechEndpointModel = QStringLiteral("endpoint/speech/model");
+inline const QString RefinementEndpointPreset = QStringLiteral("endpoint/refinement/preset");
+inline const QString RefinementEndpointFormat = QStringLiteral("endpoint/refinement/format");
+inline const QString RefinementEndpointBaseUrl = QStringLiteral("endpoint/refinement/baseUrl");
+inline const QString RefinementEndpointModel = QStringLiteral("endpoint/refinement/model");
+inline const QString LocalRunner = QStringLiteral("localRunner/runner");
+inline const QString LocalRunnerModel = QStringLiteral("localRunner/model");
 inline const QString OutputMethod = QStringLiteral("output/method");
 inline const QString OutputFormat = QStringLiteral("output/format");
 inline const QString YdotoolEnabled = QStringLiteral("output/ydotoolEnabled");

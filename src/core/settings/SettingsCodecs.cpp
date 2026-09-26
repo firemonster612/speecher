@@ -43,6 +43,31 @@ AudioCaptureSettings normalizedAudioCaptureSettings(AudioCaptureSettings setting
     return settings;
 }
 
+bool isRefinementProviderId(const QString &id)
+{
+    return id == QStringLiteral("none") || id == QStringLiteral("anthropic")
+        || id == QStringLiteral("openai") || id == QStringLiteral("endpoint")
+        || id == QStringLiteral("local");
+}
+
+QString normalizedEndpointPath(const QString &path)
+{
+    const QString trimmed = path.trimmed();
+    if (trimmed.isEmpty()) {
+        return SpeechEndpointSettings{}.path;
+    }
+    return trimmed.startsWith(QLatin1Char('/')) ? trimmed : QLatin1Char('/') + trimmed;
+}
+
+QString withoutTrailingSlashes(QString url)
+{
+    url = url.trimmed();
+    while (url.endsWith(QLatin1Char('/'))) {
+        url.chop(1);
+    }
+    return url;
+}
+
 QString defaultRefinementProvider()
 {
     if (CliToolDiscovery::isCodexInstalled()) {
@@ -180,6 +205,63 @@ bool SettingsCodecs::codexFinalRetranscribe() const
 void SettingsCodecs::setCodexFinalRetranscribe(bool value)
 {
     m_settings.setValue(SettingsKeys::CodexFinalRetranscribe, value);
+}
+
+SpeechEndpointSettings SettingsCodecs::speechEndpointSettings() const
+{
+    SpeechEndpointSettings settings;
+    settings.baseUrl = endpointServerBase(value(SettingsKeys::SpeechEndpointBaseUrl, QString()).toString());
+    settings.path = normalizedEndpointPath(value(SettingsKeys::SpeechEndpointPath, settings.path).toString());
+    settings.model = value(SettingsKeys::SpeechEndpointModel, QString()).toString().trimmed();
+    return settings;
+}
+
+void SettingsCodecs::setSpeechEndpointSettings(const SpeechEndpointSettings &value)
+{
+    m_settings.setValue(SettingsKeys::SpeechEndpointBaseUrl, endpointServerBase(value.baseUrl));
+    m_settings.setValue(SettingsKeys::SpeechEndpointPath, normalizedEndpointPath(value.path));
+    m_settings.setValue(SettingsKeys::SpeechEndpointModel, value.model.trimmed());
+}
+
+RefinementEndpointSettings SettingsCodecs::refinementEndpointSettings() const
+{
+    RefinementEndpointSettings settings;
+    const QString preset = value(SettingsKeys::RefinementEndpointPreset, QString()).toString();
+    settings.preset = preset == QStringLiteral("cliproxy") ? preset : QString();
+    const QString format = value(SettingsKeys::RefinementEndpointFormat, settings.format).toString();
+    settings.format = format == QStringLiteral("anthropic") ? format : QStringLiteral("openai");
+    settings.baseUrl = withoutTrailingSlashes(value(SettingsKeys::RefinementEndpointBaseUrl, QString()).toString());
+    settings.model = value(SettingsKeys::RefinementEndpointModel, QString()).toString().trimmed();
+    return settings;
+}
+
+void SettingsCodecs::setRefinementEndpointSettings(const RefinementEndpointSettings &value)
+{
+    m_settings.setValue(SettingsKeys::RefinementEndpointPreset,
+                        value.preset == QStringLiteral("cliproxy") ? value.preset : QString());
+    m_settings.setValue(SettingsKeys::RefinementEndpointFormat,
+                        value.format == QStringLiteral("anthropic") ? value.format : QStringLiteral("openai"));
+    m_settings.setValue(SettingsKeys::RefinementEndpointBaseUrl, withoutTrailingSlashes(value.baseUrl));
+    m_settings.setValue(SettingsKeys::RefinementEndpointModel, value.model.trimmed());
+}
+
+LocalRunnerSettings SettingsCodecs::localRunnerSettings() const
+{
+    LocalRunnerSettings settings;
+    const QString runner = value(SettingsKeys::LocalRunner, settings.runner).toString();
+    if (runner == QStringLiteral("lmstudio") || runner == QStringLiteral("llama-server")) {
+        settings.runner = runner;
+    }
+    settings.model = value(SettingsKeys::LocalRunnerModel, QString()).toString().trimmed();
+    return settings;
+}
+
+void SettingsCodecs::setLocalRunnerSettings(const LocalRunnerSettings &value)
+{
+    const bool known = value.runner == QStringLiteral("lmstudio")
+        || value.runner == QStringLiteral("llama-server");
+    m_settings.setValue(SettingsKeys::LocalRunner, known ? value.runner : QStringLiteral("ollama"));
+    m_settings.setValue(SettingsKeys::LocalRunnerModel, value.model.trimmed());
 }
 
 // The terms a transcription request carries. Everything a person typed is
@@ -370,7 +452,7 @@ QString SettingsCodecs::refinementProvider() const
     const QString key = SettingsKeys::RefinementProvider;
     const QString provider = m_settings.contains(key) ? value(key, QStringLiteral("openai")).toString()
                                                       : defaultRefinementProvider();
-    if (provider == QStringLiteral("none") || provider == QStringLiteral("anthropic")) {
+    if (isRefinementProviderId(provider)) {
         return provider;
     }
 #ifdef SPEECHER_E2E_HOOKS
@@ -386,7 +468,7 @@ QString SettingsCodecs::refinementProvider() const
 
 void SettingsCodecs::setRefinementProvider(const QString &value)
 {
-    if (value == QStringLiteral("none") || value == QStringLiteral("anthropic")) {
+    if (isRefinementProviderId(value)) {
         m_settings.setValue(SettingsKeys::RefinementProvider, value);
         return;
     }
@@ -986,16 +1068,6 @@ void SettingsCodecs::setCliproxyBaseUrl(const QString &value)
     m_settings.setValue(SettingsKeys::CliproxyBaseUrl, endpointServerBase(value));
 }
 
-QString SettingsCodecs::cliproxyApiKey() const
-{
-    return value(SettingsKeys::CliproxyApiKey, QString()).toString().trimmed();
-}
-
-void SettingsCodecs::setCliproxyApiKey(const QString &value)
-{
-    m_settings.setValue(SettingsKeys::CliproxyApiKey, value.trimmed());
-}
-
 QString SettingsCodecs::claudeCredentialsPath() const
 {
     return value(SettingsKeys::ClaudeCredentialsPath, QDir::homePath() + QStringLiteral("/.claude/.credentials.json")).toString();
@@ -1049,6 +1121,7 @@ AppSettings SettingsCodecs::snapshot() const
     settings.speech.cliproxyOauthDir = cliproxyOauthDir();
     settings.speech.claudeCliproxyAccount = anthropicCliproxyAccount();
     settings.speech.codexCliproxyAccount = openAiCliproxyAccount();
+    settings.speech.endpoint = speechEndpointSettings();
     settings.audio = audioCaptureSettings();
     settings.appRecognitionRules = appRecognitionRules();
     settings.bindings = bindingRules();
@@ -1083,7 +1156,8 @@ AppSettings SettingsCodecs::snapshot() const
     settings.refinement.cliproxyOauthDir = cliproxyOauthDir();
     settings.refinement.cliproxyOauthDirConfigured = configuredCliproxyOauthDir();
     settings.refinement.cliproxyBaseUrl = cliproxyBaseUrl();
-    settings.refinement.cliproxyApiKey = cliproxyApiKey();
+    settings.refinement.endpoint = refinementEndpointSettings();
+    settings.refinement.localRunner = localRunnerSettings();
     settings.refinement.anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     settings.refinement.claudeCredentialsPath = claudeCredentialsPath();
     settings.refinement.defaultWritingProfile = defaultWritingProfile();

@@ -86,6 +86,18 @@ struct UiSettings {
     bool soundsEnabled = false;
 };
 
+// The speech Custom Endpoint: an OpenAI-style audio transcriptions server.
+struct SpeechEndpointSettings {
+    // The server's origin, without the path.
+    QString baseUrl;
+    // whisper.cpp's server answers on /inference.
+    QString path = QStringLiteral("/v1/audio/transcriptions");
+    QString model;
+    QString apiKey;
+
+    bool operator==(const SpeechEndpointSettings &other) const = default;
+};
+
 struct SpeechSettings {
     QString providerId = QStringLiteral("claude");
     QString claudeAuthMode = QStringLiteral("oauth");
@@ -99,6 +111,7 @@ struct SpeechSettings {
     QString cliproxyOauthDir;
     QString claudeCliproxyAccount;
     QString codexCliproxyAccount;
+    SpeechEndpointSettings endpoint;
 };
 
 struct AudioCaptureSettings {
@@ -111,6 +124,30 @@ struct AudioCaptureSettings {
     int vadThresholdPercent = 2;
 
     bool operator==(const AudioCaptureSettings &other) const = default;
+};
+
+// The refinement Custom Endpoint.
+struct RefinementEndpointSettings {
+    // "cliproxy" takes the server and key from the CLI Proxy API settings;
+    // empty uses the fields below.
+    QString preset;
+    // "openai" (Chat Completions) or "anthropic" (Messages).
+    QString format = QStringLiteral("openai");
+    // The API base the endpoint paths hang off, e.g. http://localhost:11434/v1.
+    QString baseUrl;
+    QString model;
+    QString apiKey;
+
+    bool operator==(const RefinementEndpointSettings &other) const = default;
+};
+
+// Refinement through a Local Runner on this computer.
+struct LocalRunnerSettings {
+    // "ollama", "lmstudio" or "llama-server".
+    QString runner = QStringLiteral("ollama");
+    QString model;
+
+    bool operator==(const LocalRunnerSettings &other) const = default;
 };
 
 struct RefinementSettings {
@@ -133,6 +170,8 @@ struct RefinementSettings {
     QString cliproxyOauthDirConfigured;
     QString cliproxyBaseUrl;
     QString cliproxyApiKey;
+    RefinementEndpointSettings endpoint;
+    LocalRunnerSettings localRunner;
     QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     QString claudeCredentialsPath;
     QStringList bindingVocabulary;

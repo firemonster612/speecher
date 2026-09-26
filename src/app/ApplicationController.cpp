@@ -64,7 +64,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_popupOnly(popupOnly)
     , m_platform(std::move(platform))
     , m_settings(new SettingsStore(this))
-    , m_secrets(new SecretStore(m_settings, this))
+    , m_secrets(m_settings->secrets())
     , m_providers(new ProviderRegistry(this))
     , m_shortcutBinder(m_platform->createGlobalShortcutBinder(this))
     , m_ipc(new SingleInstanceIpc(m_platform, this))

@@ -9,6 +9,8 @@
 
 namespace speecher {
 
+class SecretStore;
+
 bool migrateSettingsIdentity(QSettings &newSettings,
                              QSettings &oldSettings,
                              QString *error = nullptr);
@@ -23,7 +25,13 @@ public:
     using LaunchAtLoginReconciler = std::function<bool(bool, QString *)>;
 
     explicit SettingsStore(QObject *parent = nullptr);
+    // The snapshot carries the endpoint and CLI Proxy API keys, which live
+    // in the keyring; reading them may wait for it.
+    AppSettings snapshot() const;
     void applySnapshot(const AppSettings &draft);
+    SecretStore *secrets() const;
+    QString cliproxyApiKey() const;
+    void setCliproxyApiKey(const QString &value);
     bool launchAtLogin() const;
     void setLaunchAtLogin(bool enabled);
     void setLaunchAtLoginReconciler(LaunchAtLoginReconciler reconcile);
@@ -44,8 +52,6 @@ public:
     using SettingsCodecs::setCliproxyOauthDir;
     using SettingsCodecs::cliproxyBaseUrl;
     using SettingsCodecs::setCliproxyBaseUrl;
-    using SettingsCodecs::cliproxyApiKey;
-    using SettingsCodecs::setCliproxyApiKey;
     using SettingsCodecs::appRecognitionRules;
     using SettingsCodecs::audioCaptureSettings;
     using SettingsCodecs::bindingRules;
@@ -120,7 +126,6 @@ public:
     using SettingsCodecs::setUpdatesLastRunBuildNumber;
     using SettingsCodecs::setUpdatesPendingWhatsNewVersion;
     using SettingsCodecs::setUpdatesLastCheckTime;
-    using SettingsCodecs::snapshot;
     using SettingsCodecs::soundsEnabled;
     using SettingsCodecs::speechProvider;
     using SettingsCodecs::codexFinalRetranscribe;
@@ -174,6 +179,7 @@ private:
     void emitAudioCaptureSettingsChangedIfNeeded(const AudioCaptureSettings &previous);
 
     LaunchAtLoginReconciler m_reconcileLaunchAtLogin;
+    SecretStore *m_secrets = nullptr;
 };
 
 } // namespace speecher
