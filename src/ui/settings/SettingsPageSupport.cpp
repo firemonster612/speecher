@@ -154,6 +154,23 @@ protected:
 };
 
 
+WrappingLabel::WrappingLabel(const QString &text, QWidget *parent)
+    : QLabel(text, parent)
+{
+}
+
+WrappingLabel::WrappingLabel(QWidget *parent)
+    : QLabel(parent)
+{
+}
+
+void WrappingLabel::resizeEvent(QResizeEvent *event)
+{
+    QLabel::resizeEvent(event);
+    setMinimumHeight(0);
+    setMinimumHeight(heightForWidth(event->size().width()));
+}
+
 QColor separatorColor(const QPalette &palette)
 {
     const QColor window = palette.color(QPalette::Window);
@@ -347,6 +364,28 @@ void addCardRow(QFormLayout *layout, QWidget *row, QWidget *parent)
         layout->addRow(inset);
     }
     layout->addRow(row);
+}
+
+void setCardRowVisible(QWidget *row, bool visible)
+{
+    row->setVisible(visible);
+    QWidget *host = row->parentWidget();
+    auto *form = host ? qobject_cast<QFormLayout *>(host->layout()) : nullptr;
+    if (!form) {
+        return;
+    }
+    for (int index = 1; index < form->rowCount(); ++index) {
+        QLayoutItem *item = form->itemAt(index, QFormLayout::SpanningRole);
+        if (!item || item->widget() != row) {
+            continue;
+        }
+        QLayoutItem *above = form->itemAt(index - 1, QFormLayout::SpanningRole);
+        if (above && above->widget()
+            && above->widget()->objectName() == QLatin1String("rowSeparator")) {
+            above->widget()->setVisible(visible);
+        }
+        return;
+    }
 }
 
 void addRow(QFormLayout *layout, QFrame *row, QWidget *parent, bool addSeparator)

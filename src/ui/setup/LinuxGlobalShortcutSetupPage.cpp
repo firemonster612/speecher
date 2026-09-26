@@ -690,7 +690,7 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
     m_setShortcut->setCombinationsAvailable(combinationsAvailable);
     m_captureLead->setText(captureLead(combinationsAvailable, portalVisible));
     m_captureControls->setVisible(ready && known);
-    setCardRowVisible(m_keyHelperControls, ready && known && m_waylandSession);
+    settings::setCardRowVisible(m_keyHelperControls, ready && known && m_waylandSession);
     if (m_waylandSession && ready && known) {
         refreshKeyHelper();
     }

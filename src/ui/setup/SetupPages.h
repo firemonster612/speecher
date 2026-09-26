@@ -43,10 +43,6 @@ void setSetupStepCounter(QWidget *page, int step, int total);
 // pixmap for a provider with no mark of its own.
 QPixmap providerMark(const QString &providerId, int size, qreal devicePixelRatio);
 
-// Shows or hides a row of a settings card along with the hairline above it,
-// which would otherwise be left behind as a gap where the row was.
-void setCardRowVisible(QWidget *row, bool visible);
-
 // What one wizard step reports to the Ready page.
 struct SetupStepStatus {
     QString name;

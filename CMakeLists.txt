@@ -544,6 +544,7 @@ set(SPEECHER_APP_MAC_HEADERS
 set(SPEECHER_FRONTEND_QT_SOURCES
   src/frontend/qt/BindingRows.cpp
   src/frontend/qt/CollectionRow.cpp
+  src/frontend/qt/LocalModelRows.cpp
   src/frontend/qt/OutputCustomRows.cpp
   src/frontend/qt/ProviderCustomRows.cpp
   src/frontend/qt/QtFrontEnd.cpp
@@ -567,6 +568,7 @@ set(SPEECHER_FRONTEND_QT_SOURCES
 set(SPEECHER_FRONTEND_QT_HEADERS
   src/frontend/qt/BindingRows.h
   src/frontend/qt/CollectionRow.h
+  src/frontend/qt/LocalModelRows.h
   src/frontend/qt/OutputCustomRows.h
   src/frontend/qt/ProviderCustomRows.h
   src/frontend/qt/QtFrontEnd.h

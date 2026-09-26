@@ -21,6 +21,8 @@ class LinuxTrayIcon final : public QObject {
 public:
     explicit LinuxTrayIcon(ApplicationController *controller, QObject *parent = nullptr);
 
+    void showMessage(const QString &title, const QString &message);
+
 private:
     void applyState(const QString &stateName);
 

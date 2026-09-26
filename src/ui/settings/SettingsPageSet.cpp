@@ -1,11 +1,14 @@
 #include "ui/settings/SettingsPageSet.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
 #include "app/UpdateController.h"
 #include "core/AppSettings.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
+#include "frontend/qt/LocalModelRows.h"
 #include "frontend/qt/SchemaSettingsPage.h"
+#include "providers/LocalModelStore.h"
 #ifdef Q_OS_LINUX
 #include "output/YdotoolSetup.h"
 #include "platform/KeywatchSetup.h"
@@ -79,10 +82,11 @@ SettingsPage &pageById(SettingsSchema &schema, const QString &id)
 
 SettingsSchema settingsSchema(ApplicationController *controller)
 {
-    SettingsSchema schema = buildSettingsSchema(qtSchemaContext(
-        *controller->platform(),
-        *controller->providerRegistry(),
-        controller->pendingWhatsNewVersion()));
+    SchemaContext context = qtSchemaContext(*controller->platform(),
+                                            *controller->providerRegistry(),
+                                            controller->pendingWhatsNewVersion());
+    context.liveFacts = [setup = controller->localSetup()] { return setup->liveFacts(); };
+    SettingsSchema schema = buildSettingsSchema(context);
     UpdateController *updates = controller->updates();
     SettingsPage &general = pageById(schema, QStringLiteral("general"));
 
@@ -227,6 +231,8 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     , m_audio(addPage(QStringLiteral("audio"), parent))
     , m_output(addPage(QStringLiteral("output"), parent, m_outputRows.factory()))
     , m_refinement(addPage(QStringLiteral("refinement"), parent))
+    , m_localModels(addPage(QStringLiteral("localModels"), parent,
+                            localModelRows(*controller->localSetup())))
     , m_vocabulary(addPage(QStringLiteral("vocabulary"), parent))
     , m_corrections(addPage(QStringLiteral("corrections"), parent))
     , m_bindings(addPage(QStringLiteral("bindings"), parent, m_bindingRows.factory()))
@@ -253,6 +259,14 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
             &SettingsPageSet::refreshUpdateRows);
     connect(this, &SettingsPageSet::changed,
             this, &SettingsPageSet::refreshUpdateRows);
+    // What LocalSetup learns shows up in rows on three pages: endpoint
+    // verdicts, runners, model lists.
+    connect(controller->localSetup(), &LocalSetup::changed, this, [this] {
+        for (SchemaSettingsPage *page : {m_audio, m_refinement, m_localModels}) {
+            const QSignalBlocker blocker(page);
+            page->load(m_draft);
+        }
+    });
     updateAccessibilityState(controller->accessibilitySupported(),
                              controller->accessibilityEnabled(),
                              controller->accessibilityPersistent());
@@ -315,6 +329,7 @@ SchemaSettingsPage *SettingsPageSet::general() const { return m_general; }
 SchemaSettingsPage *SettingsPageSet::audio() const { return m_audio; }
 SchemaSettingsPage *SettingsPageSet::output() const { return m_output; }
 SchemaSettingsPage *SettingsPageSet::refinement() const { return m_refinement; }
+SchemaSettingsPage *SettingsPageSet::localModels() const { return m_localModels; }
 SchemaSettingsPage *SettingsPageSet::providerModels() const { return m_providerModels; }
 SchemaSettingsPage *SettingsPageSet::providerAuth() const { return m_providerAuth; }
 SchemaSettingsPage *SettingsPageSet::vocabulary() const { return m_vocabulary; }
@@ -350,6 +365,8 @@ void SettingsPageSet::loadAfterShow()
     }
     m_providerRows.loadSecret();
     refreshUpdateRows();
+    m_controller->localSetup()->probeHardware();
+    m_controller->localSetup()->detectRunners();
 }
 
 bool SettingsPageSet::save(bool showValidationErrors,
@@ -461,6 +478,25 @@ void SettingsPageSet::runPageAction(const QString &rowId)
         } else {
             m_controller->updates()->checkForUpdates(m_draft.updates.channel);
         }
+        return;
+    }
+    LocalSetup *local = m_controller->localSetup();
+    if (rowId == QStringLiteral("speechEndpointTest")) {
+        local->checkSpeechEndpoint(m_draft.speech.endpoint);
+        return;
+    }
+    if (rowId == QStringLiteral("refinementEndpointTest")) {
+        local->checkRefinementEndpoint(m_draft.refinement);
+        return;
+    }
+    if (rowId == QStringLiteral("localRunnerDetect") || rowId == QStringLiteral("localModelsRunner")) {
+        local->detectRunners();
+        return;
+    }
+    if (rowId == QStringLiteral("localModelFolder")) {
+        const QString folder = local->models().directory();
+        QDir().mkpath(folder);
+        QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
         return;
     }
     if (rowId == QStringLiteral("whatsNew")) {
@@ -644,6 +680,7 @@ void SettingsPageSet::applyCapabilities()
     m_general->setCapabilities(capabilities);
     m_output->setCapabilities(capabilities);
     m_refinement->setCapabilities(capabilities);
+    m_localModels->setCapabilities(capabilities);
     m_corrections->setCapabilities(capabilities);
     m_whatsNew->setCapabilities(capabilities);
 }

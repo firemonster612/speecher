@@ -47,6 +47,7 @@ public:
     SchemaSettingsPage *audio() const;
     SchemaSettingsPage *output() const;
     SchemaSettingsPage *refinement() const;
+    SchemaSettingsPage *localModels() const;
     SchemaSettingsPage *providerModels() const;
     SchemaSettingsPage *providerAuth() const;
     SchemaSettingsPage *vocabulary() const;
@@ -97,6 +98,7 @@ private:
     SchemaSettingsPage *m_audio;
     SchemaSettingsPage *m_output;
     SchemaSettingsPage *m_refinement;
+    SchemaSettingsPage *m_localModels;
     SchemaSettingsPage *m_vocabulary;
     SchemaSettingsPage *m_corrections;
     SchemaSettingsPage *m_bindings;

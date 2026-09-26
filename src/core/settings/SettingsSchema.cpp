@@ -497,11 +497,14 @@ QList<SettingsRow> localRunnerRows(const std::function<LiveFacts()> &facts)
         QStringLiteral("Runner"),
         QStringLiteral("The app on this computer that runs the cleanup model."),
         [facts](const AppSettings &settings) {
-            QList<RowOption> options = facts().runners;
+            const LiveFacts live = facts();
+            QList<RowOption> options = live.runners;
             const QString chosen = settings.refinement.localRunner.runner;
             if (std::none_of(options.cbegin(), options.cend(),
                              [&chosen](const RowOption &option) { return option.id == chosen; })) {
-                options.append({chosen, QStringLiteral("%1 (not running)").arg(localRunnerName(chosen))});
+                options.append({chosen, live.detectingRunners
+                                            ? localRunnerName(chosen)
+                                            : QStringLiteral("%1 (not running)").arg(localRunnerName(chosen))});
             }
             return options;
         },
@@ -530,9 +533,9 @@ QList<SettingsRow> localRunnerRows(const std::function<LiveFacts()> &facts)
     };
 
     SettingsRow detect = actionRow(QStringLiteral("localRunnerDetect"),
-                                   QStringLiteral("Look again"),
+                                   QStringLiteral("Look for runners"),
                                    QStringLiteral("Not checked yet."),
-                                   QStringLiteral("Check again"));
+                                   QStringLiteral("Look for runners again"));
     detect.helpValue = [facts](const AppSettings &) { return runnersSummary(facts()); };
 
     QList<SettingsRow> rows{std::move(runner), std::move(model), std::move(detect)};
@@ -1295,7 +1298,7 @@ SettingsPage localModelsPage(const SchemaContext &context)
     SettingsRow runner = actionRow(QStringLiteral("localModelsRunner"),
                                    QStringLiteral("Local runner"),
                                    QStringLiteral("Not checked yet."),
-                                   QStringLiteral("Check again"));
+                                   QStringLiteral("Look for runners again"));
     runner.value = [facts](const AppSettings &) {
         const LiveFacts live = facts();
         return QVariant(live.runners.isEmpty() ? QStringLiteral("No local runner found")

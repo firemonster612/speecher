@@ -10,6 +10,7 @@ class QWidget;
 namespace speecher {
 
 class AppWindow;
+class LinuxTrayIcon;
 class ApplicationController;
 class SetupAssistant;
 class TranscriberPopup;
@@ -30,6 +31,7 @@ public:
     bool captureMainWindow(const QString &path) override;
     void showDictationError(const QString &message) override;
     void alert() override;
+    void notifyIfNoWindowShown(const QString &title, const QString &message) override;
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -41,10 +43,15 @@ private:
     void refreshUpdateChip();
     void refreshWhatsNewChip();
     void watchForFirstFrame(QWidget *window);
+    // Screenshot automation; see captureMainWindow.
+    static bool clickGrabButtons(QWidget *window);
 
     ApplicationController *m_controller;
     TranscriberPopup *m_popup;
     AppWindow *m_appWindow = nullptr;
+#ifdef Q_OS_LINUX
+    LinuxTrayIcon *m_tray = nullptr;
+#endif
     QPointer<SetupAssistant> m_setupAssistant;
     bool m_reportedReady = false;
 };

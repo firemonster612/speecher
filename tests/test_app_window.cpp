@@ -108,10 +108,11 @@ private slots:
             QStringLiteral("Output"),
             QStringLiteral("Accounts"),
             QStringLiteral("Refinement"),
+            QStringLiteral("Local models"),
             QStringLiteral("Vocabulary"),
         };
         AppWindow window(&controller);
-        QCOMPARE(window.pageCount(), 7);
+        QCOMPARE(window.pageCount(), 8);
         QCOMPARE(window.pageTitles(), titles);
     }
 
@@ -571,7 +572,8 @@ private slots:
 
         navigation->setCurrentRow(1);
         whatsNew->click();
-        QCOMPARE(stack->currentIndex(), 7);
+        // What's New sits after the sidebar's pages.
+        QCOMPARE(stack->currentIndex(), window.pageCount());
         navigation->setCurrentRow(1);
         QCOMPARE(stack->currentIndex(), 1);
     }
@@ -592,7 +594,8 @@ private slots:
         // Opened from General, the same way the update banner opens it.
         navigation->setCurrentRow(1);
         whatsNew->click();
-        QCOMPARE(stack->currentIndex(), 7);
+        // What's New sits after the sidebar's pages.
+        QCOMPARE(stack->currentIndex(), window.pageCount());
         QCOMPARE(title->text(), QStringLiteral("What's New"));
         QVERIFY(back->isVisible());
         QVERIFY(!navigation->currentItem());

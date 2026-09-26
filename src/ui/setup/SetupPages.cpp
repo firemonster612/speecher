@@ -32,7 +32,6 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QRadioButton>
-#include <QResizeEvent>
 #include <QSignalBlocker>
 #include <QStyle>
 #include <QSystemTrayIcon>
@@ -69,28 +68,6 @@ QPixmap providerMark(const QString &providerId, int size, qreal devicePixelRatio
     // QIcon renders the SVG at the ratio asked for, so the mark stays sharp on
     // a scaled display.
     return QIcon(resource).pixmap(QSize(size, size), devicePixelRatio);
-}
-
-void setCardRowVisible(QWidget *row, bool visible)
-{
-    row->setVisible(visible);
-    QWidget *host = row->parentWidget();
-    auto *form = host ? qobject_cast<QFormLayout *>(host->layout()) : nullptr;
-    if (!form) {
-        return;
-    }
-    for (int index = 1; index < form->rowCount(); ++index) {
-        QLayoutItem *item = form->itemAt(index, QFormLayout::SpanningRole);
-        if (!item || item->widget() != row) {
-            continue;
-        }
-        QLayoutItem *above = form->itemAt(index - 1, QFormLayout::SpanningRole);
-        if (above && above->widget()
-            && above->widget()->objectName() == QLatin1String("rowSeparator")) {
-            above->widget()->setVisible(visible);
-        }
-        return;
-    }
 }
 
 void setSetupStepCounter(QWidget *page, int step, int total)
@@ -135,21 +112,8 @@ void ProviderStatsBlock::setStats(const QVector<ProviderStat> &stats)
 
 namespace {
 
-// A word-wrapped QLabel that needs more lines than its width-blind size hint
-// paints its last line clipped; keeping minimumHeight at heightForWidth makes
-// the layout give it the real height (same fix as the settings rows').
-class WrappingLabel final : public QLabel {
-public:
-    using QLabel::QLabel;
-
-protected:
-    void resizeEvent(QResizeEvent *event) override
-    {
-        QLabel::resizeEvent(event);
-        setMinimumHeight(0);
-        setMinimumHeight(heightForWidth(event->size().width()));
-    }
-};
+using settings::setCardRowVisible;
+using settings::WrappingLabel;
 
 QVBoxLayout *makePage(QWidget *page, const QString &description, QLabel **introOut = nullptr)
 {

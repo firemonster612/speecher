@@ -79,6 +79,7 @@ const QList<PageDefinition> kPages{
     {QStringLiteral("Output"), QStringLiteral("edit-paste"), QStringLiteral("edit-copy")},
     {QStringLiteral("Accounts"), QStringLiteral("user-identity"), QStringLiteral("im-user")},
     {QStringLiteral("Refinement"), QStringLiteral("tools-wizard"), QStringLiteral("document-edit")},
+    {QStringLiteral("Local models"), QStringLiteral("computer"), QStringLiteral("computer-laptop")},
     {QStringLiteral("Vocabulary"), QStringLiteral("tools-check-spelling"), QStringLiteral("accessories-dictionary")},
 };
 
@@ -455,6 +456,7 @@ void AppWindow::buildSharedPages()
         m_pages->output(),
         auth,
         refinement,
+        m_pages->localModels(),
         vocabularyContent,
         m_pages->whatsNew(),
     };

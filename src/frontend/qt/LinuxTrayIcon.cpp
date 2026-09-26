@@ -69,6 +69,11 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
     m_tray->show();
 }
 
+void LinuxTrayIcon::showMessage(const QString &title, const QString &message)
+{
+    m_tray->showMessage(title, message, QSystemTrayIcon::Information);
+}
+
 void LinuxTrayIcon::applyState(const QString &stateName)
 {
     const bool listening = dictationListeningPresentation(stateName);
