@@ -85,7 +85,15 @@ void InsightsLog::append(const DictationRecord &record)
     if (m_access == Access::ReadWrite) {
         QDir().mkpath(QFileInfo(m_path).absolutePath());
         QFile file(m_path);
-        if (!file.open(QIODevice::Append) || file.write(encode(record)) < 0) {
+        QByteArray line = encode(record);
+        if (file.open(QIODevice::ReadWrite | QIODevice::Append) && file.size() > 0) {
+            // A line cut short by a crash would swallow this record on reload.
+            file.seek(file.size() - 1);
+            if (file.read(1) != "\n") {
+                line.prepend('\n');
+            }
+        }
+        if (!file.isOpen() || file.write(line) != line.size()) {
             qWarning().noquote() << "insights log append failed path=" + m_path
                                  << "error=" + file.errorString();
         }

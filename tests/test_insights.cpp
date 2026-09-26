@@ -89,6 +89,24 @@ private slots:
         QCOMPARE(log.records().at(1).words, 3);
     }
 
+    void appendAfterATruncatedLineKeepsTheNewRecord()
+    {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("insights.jsonl"));
+        writeAll(path,
+                 R"({"finishedAt":"2025-10-03T09:55:00","audioMs":38000,"words":90,"app":"Slack","profile":"work"})"
+                 "\n{\"finishedAt\":\"2025-10-03T1");
+        {
+            QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("insights log skipped")));
+            InsightsLog log(path);
+            log.append(recordOn(kToday, 7));
+        }
+        QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("insights log skipped")));
+        const InsightsLog reloaded(path);
+        QCOMPARE(reloaded.records().size(), 2);
+        QCOMPARE(reloaded.records().at(1).words, 7);
+    }
+
     void clearDeletesTheFile()
     {
         QTemporaryDir dir;
