@@ -1,6 +1,7 @@
 #include "app/LocalSetup.h"
 
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsKeys.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderProbe.h"
 #include "providers/ProviderRegistry.h"
@@ -10,6 +11,8 @@
 
 #include <QDir>
 #include <QTimer>
+
+#include <algorithm>
 
 namespace speecher {
 namespace {
@@ -30,6 +33,79 @@ QString acceleratorName(const QString &kind)
 
 } // namespace
 
+bool isSetupSignInProvider(const QString &id)
+{
+    return id == QStringLiteral("claude") || id == QStringLiteral("codex")
+        || id == QStringLiteral("openai") || id == QStringLiteral("anthropic");
+}
+
+QString setupProviderChoice(const QString &saved, const QStringList &ready, bool explicitlyChosen)
+{
+    if (explicitlyChosen || !isSetupSignInProvider(saved) || ready.contains(saved)) return saved;
+    for (const auto &id : ready) {
+        if (isSetupSignInProvider(id)) return id;
+    }
+    return saved;
+}
+
+QString WelcomeChoice::update(const QString &provider, const QStringList &readyProviders,
+                              bool proxyAccountFound, std::optional<bool> userChoice)
+{
+    QStringList signIns;
+    for (const auto &id : readyProviders) {
+        if (isSetupSignInProvider(id)) signIns.append(id);
+    }
+    m_signInFound = proxyAccountFound || !signIns.isEmpty();
+    if (userChoice) m_explicit = userChoice;
+    const bool local = m_explicit.value_or(!m_signInFound);
+    const bool transition = local != m_local;
+    m_local = local;
+    if (!transition && !userChoice) return provider;
+    if (local) {
+        if (provider != QStringLiteral("local") && (userChoice || isSetupSignInProvider(provider))) {
+            m_previousProvider = provider;
+            return QStringLiteral("local");
+        }
+        return provider;
+    }
+    if (m_previousProvider && provider == QStringLiteral("local")) {
+        const QString previous = *m_previousProvider;
+        m_previousProvider.reset();
+        return userChoice && !isSetupSignInProvider(previous) && !signIns.isEmpty()
+            ? signIns.first() : setupProviderChoice(previous, signIns, false);
+    }
+    m_previousProvider.reset();
+    return userChoice && !signIns.isEmpty() ? signIns.first() : provider;
+}
+
+RunnerChoice resolveRunnerChoice(const LocalRunnerSettings &saved,
+                                const QList<DetectedRunner> &runners,
+                                const std::optional<CleanupModel> &suggestion)
+{
+    RunnerChoice choice{saved, {}, false};
+    const auto found = std::find_if(runners.cbegin(), runners.cend(), [&saved](const auto &runner) {
+        return runner.id == saved.runner;
+    });
+    if (found != runners.cend()) choice.available = *found;
+    else if (saved.runner.isEmpty() && saved.model.isEmpty() && !runners.isEmpty()) {
+        choice.available = runners.first();
+        choice.selection.runner = choice.available->id;
+        const auto &models = choice.available->models;
+        const auto preferred = std::find_if(models.cbegin(), models.cend(), [&suggestion](const auto &model) {
+            return suggestion && model.startsWith(suggestion->ollamaTag);
+        });
+        if (!models.isEmpty()) choice.selection.model = preferred == models.cend() ? models.first() : *preferred;
+    }
+    if (choice.available && choice.available->id == QStringLiteral("ollama") && suggestion) {
+        const auto &models = choice.available->models;
+        choice.offerPull = !models.contains(suggestion->ollamaTag)
+            && !models.contains(suggestion->ollamaTag + QStringLiteral(":latest"));
+    }
+    choice.showSuggestion = choice.available && choice.available->id == QStringLiteral("ollama")
+        && (!suggestion || choice.offerPull);
+    return choice;
+}
+
 LocalSetup::LocalSetup(SettingsStore &settings,
                        ProviderRegistry &providers,
                        LocalModelStore &models,
@@ -45,6 +121,7 @@ LocalSetup::LocalSetup(SettingsStore &settings,
             });
     connect(&m_models, &LocalModelStore::downloadFinished, this, [this](const QString &modelId) {
         m_progress.remove(modelId);
+        setDownloadPending(modelId, false);
         emit changed();
         runSpeedTest(modelId);
     });
@@ -52,6 +129,7 @@ LocalSetup::LocalSetup(SettingsStore &settings,
             [this](const QString &modelId, const QString &message) {
                 m_progress.remove(modelId);
                 m_downloadErrors.insert(modelId, message);
+                setDownloadPending(modelId, false);
                 emit changed();
             });
     connect(&m_ollamaPull, &OllamaPull::progress, this,
@@ -97,6 +175,14 @@ LocalSetup::LocalSetup(SettingsStore &settings,
                 });
     }
 #endif
+    QTimer::singleShot(0, this, [this] {
+        const auto pending = m_settings.raw().value(SettingsKeys::LocalPendingDownloads).toStringList();
+        for (const auto &id : pending) {
+            const auto *model = findLocalModel(id);
+            if (model && !m_models.isDownloaded(*model)) download(*model);
+            else setDownloadPending(id, false);
+        }
+    });
 }
 
 LocalModelStore &LocalSetup::models() const
@@ -172,8 +258,19 @@ QString LocalSetup::fitLabel(const LocalModel &model) const
     return known ? modelFitLabel(*known) : QStringLiteral("Checking…");
 }
 
+void LocalSetup::setDownloadPending(const QString &id, bool pending)
+{
+    auto ids = m_settings.raw().value(SettingsKeys::LocalPendingDownloads).toStringList();
+    ids.removeAll(id);
+    if (pending) ids.append(id);
+    m_settings.raw().setValue(SettingsKeys::LocalPendingDownloads, ids);
+    m_settings.raw().sync();
+}
+
 void LocalSetup::download(const LocalModel &model)
 {
+    if (m_models.isDownloaded(model) || m_models.isDownloading(model.id)) return;
+    setDownloadPending(model.id, true);
     m_downloadErrors.remove(model.id);
     m_progress.insert(model.id, {0, model.sizeBytes});
     m_models.download(model);
@@ -182,6 +279,7 @@ void LocalSetup::download(const LocalModel &model)
 
 void LocalSetup::cancelDownload(const QString &modelId)
 {
+    setDownloadPending(modelId, false);
     m_models.cancel(modelId);
     m_progress.remove(modelId);
     emit changed();
@@ -189,6 +287,7 @@ void LocalSetup::cancelDownload(const QString &modelId)
 
 bool LocalSetup::removeModel(const LocalModel &model)
 {
+    setDownloadPending(model.id, false);
     const bool removed = m_models.remove(model);
     m_progress.remove(model.id);
     m_speedTestQueue.removeAll(model.id);
@@ -262,6 +361,63 @@ QString LocalSetup::speedTestError(const QString &modelId) const
     return m_speedTestErrors.value(modelId);
 }
 
+const LocalModel &LocalSetup::speechModelChoice() const
+{
+    const auto saved = m_settings.localSpeechSettings();
+    const auto *model = findLocalModel(saved.modelId);
+    return saved.modelChosen && model ? *model : suggestedModel();
+}
+
+void LocalSetup::initializeSpeechModel()
+{
+    if (!m_settings.localSpeechSettings().modelChosen) chooseSpeechModel(suggestedModel().id);
+}
+
+void LocalSetup::chooseSpeechModel(const QString &id)
+{
+    if (!findLocalModel(id)) return;
+    auto local = m_settings.localSpeechSettings();
+    local.modelId = id;
+    local.modelChosen = true;
+    m_settings.setLocalSpeechSettings(local);
+    emit changed();
+}
+
+RunnerChoice LocalSetup::runnerChoice() const
+{
+    return resolveRunnerChoice(m_settings.localRunnerSettings(), m_runners, suggestedCleanupModel());
+}
+
+void LocalSetup::initializeRunner()
+{
+    const auto saved = m_settings.localRunnerSettings();
+    if (!saved.runner.isEmpty() || !saved.model.isEmpty()) return;
+    const auto choice = runnerChoice();
+    if (choice.available) m_settings.setLocalRunnerSettings(choice.selection);
+}
+
+LocalSetup::ModelState LocalSetup::modelState(const LocalModel &model, std::optional<SpeechSettings> draft) const
+{
+    SpeechSettings speech;
+    speech.providerId = m_settings.speechProvider();
+    speech.local = m_settings.localSpeechSettings();
+    if (draft) speech = *draft;
+    ModelState state;
+    state.downloading = m_models.isDownloading(model.id);
+    state.downloaded = !state.downloading && m_models.isDownloaded(model);
+    state.inUse = state.downloaded && speech.providerId == QStringLiteral("local") && speech.local.modelId == model.id;
+    state.problem = m_downloadErrors.value(model.id, m_speedTestErrors.value(model.id));
+    const auto measured = measuredSeconds(model.id);
+    const auto estimate = m_hardwareKnown ? estimatedSpeed(model, m_hardware.profile) : std::nullopt;
+    state.speedText = measured ? speechSecondsText(*measured)
+        : estimate ? QStringLiteral("~") + speechSecondsText(estimate->secondsFor10sSpeech) + QStringLiteral(" (estimated)")
+                   : QStringLiteral("Not measured");
+    state.speedDetail = speedTestRunning(model.id) ? QStringLiteral("Testing…")
+        : measured || estimate ? localModelSpeedLine(model, m_hardware.profile, measured)
+                               : QStringLiteral("Not measured");
+    return state;
+}
+
 void LocalSetup::detectRunners()
 {
     if (m_detectingRunners) {
@@ -273,6 +429,7 @@ void LocalSetup::detectRunners()
                                             [this](const QList<DetectedRunner> &runners) {
                                                 m_runners = runners;
                                                 m_detectingRunners = false;
+                                                initializeRunner();
                                                 emit changed();
                                             });
 }
@@ -306,24 +463,34 @@ LocalSetup::Pull LocalSetup::pull() const
 
 void LocalSetup::checkSpeechEndpoint(const SpeechEndpointSettings &endpoint)
 {
+    const auto generation = ++m_speechEndpoint.generation;
+    m_checkedSpeech = endpoint;
+    m_speechEndpoint.result = {};
     m_speechEndpoint.checking = true;
     emit changed();
     runProviderProbe<EndpointCheck>(&m_providers, this,
                                     [endpoint] { return speecher::checkSpeechEndpoint(endpoint); },
-                                    [this](const EndpointCheck &check) {
-                                        m_speechEndpoint = {false, check};
+                                    [this, generation](const EndpointCheck &check) {
+                                        if (generation != m_speechEndpoint.generation) return;
+                                        m_speechEndpoint.checking = false;
+                                        m_speechEndpoint.result = check;
                                         emit changed();
                                     });
 }
 
 void LocalSetup::checkRefinementEndpoint(const RefinementSettings &settings)
 {
+    const auto generation = ++m_refinementEndpoint.generation;
+    m_checkedRefinement = resolvedRefinementEndpoint(settings);
+    m_refinementEndpoint.result = {};
     m_refinementEndpoint.checking = true;
     emit changed();
     runProviderProbe<EndpointCheck>(&m_providers, this,
                                     [settings] { return speecher::checkRefinementEndpoint(settings); },
-                                    [this](const EndpointCheck &check) {
-                                        m_refinementEndpoint = {false, check};
+                                    [this, generation](const EndpointCheck &check) {
+                                        if (generation != m_refinementEndpoint.generation) return;
+                                        m_refinementEndpoint.checking = false;
+                                        m_refinementEndpoint.result = check;
                                         emit changed();
                                     });
 }
@@ -335,11 +502,20 @@ QString LocalSetup::endpointStatus(const EndpointState &state)
 
 LiveFacts LocalSetup::liveFacts() const
 {
+    return liveFacts(m_settings.snapshot());
+}
+
+LiveFacts LocalSetup::liveFacts(const AppSettings &draft) const
+{
     LiveFacts facts;
-    facts.speechEndpointStatus = endpointStatus(m_speechEndpoint);
-    facts.speechEndpointModels = m_speechEndpoint.result.models;
-    facts.refinementEndpointStatus = endpointStatus(m_refinementEndpoint);
-    facts.refinementEndpointModels = m_refinementEndpoint.result.models;
+    if (m_checkedSpeech == draft.speech.endpoint) {
+        facts.speechEndpointStatus = endpointStatus(m_speechEndpoint);
+        facts.speechEndpointModels = m_speechEndpoint.result.models;
+    }
+    if (m_checkedRefinement == resolvedRefinementEndpoint(draft.refinement)) {
+        facts.refinementEndpointStatus = endpointStatus(m_refinementEndpoint);
+        facts.refinementEndpointModels = m_refinementEndpoint.result.models;
+    }
     for (const DetectedRunner &runner : m_runners) {
         facts.runners.append({runner.id,
                               runner.version.isEmpty()

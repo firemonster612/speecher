@@ -1,3 +1,6 @@
+#include <QTcpSocket>
+#include <QToolButton>
+#include <QTableWidget>
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
 #include "common/test_auth.h"
@@ -1129,6 +1132,71 @@ private slots:
         QVERIFY(setup.ready());
     }
 
+    void reopeningSetupKeepsCancelledAndPartialModelChoices()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setSpeechProvider("claude");
+        auto saved = settings.localSpeechSettings();
+        saved.modelId = "cohere";
+        settings.setLocalSpeechSettings(saved);
+        ProviderRegistry providers;
+        providers.registerSpeechProvider({"local", "Local model", {}},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        QTemporaryDir directory;
+        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
+        LocalSetup local(settings, providers, models);
+        for (bool partial : {false, true}) {
+            if (partial) {
+                QFile file(models.modelPath(*findLocalModel("cohere")) + ".part");
+                QVERIFY(file.open(QIODevice::WriteOnly));
+                file.write("partial");
+            }
+            SpeechProviderSetupPage page(settings, providers, &local);
+            page.chooseProvider("local");
+            QCOMPARE(page.localModelId(), QString("cohere"));
+            QCOMPARE(settings.localSpeechSettings().modelId, QString("cohere"));
+        }
+    }
+
+    void welcomeDoesNotCountLocalAsASignIn()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        QTemporaryDir directory;
+        settings.raw().setValue("cliproxy/oauthDir", directory.path());
+        ProviderRegistry providers;
+        providers.registerSpeechProvider({"local", "Local model", {}},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
+        LocalSetup local(settings, providers, models);
+        WelcomeSetupPage page(settings, providers, &local);
+        page.show();
+        QVERIFY(page.findChild<QRadioButton *>("welcomePathLocal")->isChecked());
+        QCOMPARE(page.findChild<QLabel *>("welcomePathSignInStatus")->text(), QString("None found"));
+    }
+
+    void comparisonKeyboardSelectionChangesDownloadTarget()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        providers.registerSpeechProvider({"local", "Local model", {}},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        QTemporaryDir directory;
+        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
+        LocalSetup local(settings, providers, models);
+        SpeechProviderSetupPage page(settings, providers, &local);
+        page.show();
+        page.findChild<QToolButton *>("speechLocalCompare")->click();
+        auto *table = page.findChild<QTableWidget *>("speechLocalCompareTable");
+        table->setFocus();
+        QTest::keyClick(table, Qt::Key_End, Qt::ControlModifier);
+        const auto expected = localModelCatalog().last().id;
+        QCOMPARE(page.localModelId(), expected);
+        QCOMPARE(settings.localSpeechSettings().modelId, expected);
+    }
+
     void deletingTheModelInUseMovesDictationToAnotherDownloadedOne()
     {
         SettingsStore settings;
@@ -1178,6 +1246,74 @@ private slots:
         emit url->editingFinished();
         QCOMPARE(settings.snapshot().refinement.endpoint.preset, QString());
         QCOMPARE(settings.snapshot().refinement.endpoint.baseUrl, QStringLiteral("http://localhost:8080/v1"));
+    }
+
+    void connectKeepsAnUnchosenEndpointModelEmpty()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        connect(&server, &QTcpServer::newConnection, &server, [&] {
+            auto *socket = server.nextPendingConnection();
+            connect(socket, &QTcpSocket::readyRead, socket, [socket] {
+                socket->readAll();
+                const QByteArray body = R"({"data":[{"id":"test-model"}]})";
+                socket->write("HTTP/1.1 200 OK\r\nContent-Length: " + QByteArray::number(body.size())
+                              + "\r\nConnection: close\r\n\r\n" + body);
+                socket->disconnectFromHost();
+            });
+        });
+        auto snapshot = settings.snapshot();
+        snapshot.refinement.providerId = "endpoint";
+        snapshot.refinement.endpoint.baseUrl = QString("http://127.0.0.1:%1").arg(server.serverPort());
+        settings.applySnapshot(snapshot);
+        ProviderRegistry providers;
+        QTemporaryDir directory;
+        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
+        LocalSetup local(settings, providers, models);
+        RefinementSetupPage page(settings, providers, &local);
+        page.findChild<QPushButton *>("refinementEndpointConnect")->click();
+        auto *combo = page.findChild<QComboBox *>("refinementEndpointModel");
+        QTRY_COMPARE(combo->count(), 1);
+        QVERIFY(combo->currentText().isEmpty());
+        QVERIFY(settings.snapshot().refinement.endpoint.model.isEmpty());
+        combo->setCurrentIndex(0);
+        combo->setEditText("test-model");
+        QCOMPARE(settings.snapshot().refinement.endpoint.model, QString("test-model"));
+    }
+
+    void schemaDoesNotTurnAnUntouchedUnreadKeyIntoAnEdit()
+    {
+        ProviderRegistry providers;
+        const auto platform = platformComposition();
+        auto page = schemaPage("refinement", *platform, providers);
+        AppSettings settings;
+        settings.refinement.providerId = "endpoint";
+        const auto key = SecretStore::settingsKey(SecretStore::Secret::RefinementEndpointKey);
+        settings.unreadSecretKeys = {key};
+        page->load(settings);
+        page->appendToDraft(settings);
+        QVERIFY(settings.unreadSecretKeys.contains(key));
+    }
+
+    void editingEndpointModelPreservesALateKey()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        QTemporaryDir models;
+        LocalModelStore store(models.path(), QUrl("http://127.0.0.1:1"));
+        LocalSetup local(settings, providers, store);
+        RefinementSetupPage page(settings, providers, &local);
+        auto snapshot = settings.snapshot();
+        snapshot.refinement.endpoint.apiKey = "late-key";
+        settings.applySnapshot(snapshot);
+        auto *model = page.findChild<QComboBox *>("refinementEndpointModel");
+        QVERIFY(model);
+        model->setEditText("chosen-model");
+        QCOMPARE(settings.snapshot().refinement.endpoint.apiKey, QString("late-key"));
+        QCOMPARE(settings.snapshot().refinement.endpoint.model, QString("chosen-model"));
     }
 
     void setupSignInSourceSwitchesToCliProxy()

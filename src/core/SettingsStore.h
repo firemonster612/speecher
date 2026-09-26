@@ -29,9 +29,11 @@ public:
     // surface shows and saves them all. A key SecretStore::prefetch has not
     // cached yet waits for the keyring (1.5 s at most).
     AppSettings snapshot() const;
-    // For starting a Dictation Session: waits for the keyring only for keys
-    // the chosen providers send; the others are left as cached so far.
+    // Never waits for the keyring on the GUI thread. Startup preparation
+    // resolves unread keys for the selected providers on its worker.
     AppSettings dictationSnapshot() const;
+    // Run on the startup worker. Returns an error if a required key is unreadable.
+    static QString resolveDictationSecrets(AppSettings &settings);
     void applySnapshot(const AppSettings &draft);
     SecretStore *secrets() const;
     QString cliproxyApiKey() const;
@@ -186,12 +188,7 @@ signals:
 private:
     void emitAudioCaptureSettingsChangedIfNeeded(const AudioCaptureSettings &previous);
 
-    struct SecretsToRead {
-        bool cliproxyKey = true;
-        bool refinementEndpointKey = true;
-        bool speechEndpointKey = true;
-    };
-    AppSettings snapshotReading(const SecretsToRead &wait) const;
+    AppSettings snapshotReading(bool waitForKeyring) const;
 
     LaunchAtLoginReconciler m_reconcileLaunchAtLogin;
     SecretStore *m_secrets = nullptr;

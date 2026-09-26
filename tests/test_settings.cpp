@@ -14,6 +14,18 @@ class SettingsTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void legacySpeechModelIsAnExplicitChoice()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.raw().setValue("local/model", "parakeet");
+        QVERIFY(settings.localSpeechSettings().modelChosen);
+        auto saved = settings.localSpeechSettings();
+        saved.idleUnloadMinutes = 60;
+        settings.setLocalSpeechSettings(saved);
+        QVERIFY(SettingsStore().localSpeechSettings().modelChosen);
+    }
+
     void settingsRespectConfiguredStorageFormat()
     {
         const auto previous = QSettings::defaultFormat();
@@ -428,6 +440,7 @@ private slots:
 
         AppSettings draft = settings.snapshot();
         draft.speech.local.modelId = QStringLiteral("cohere");
+        draft.speech.local.modelChosen = true;
         draft.speech.local.deviceId = QStringLiteral("0000:c1:00.0");
         draft.speech.local.idleUnloadMinutes = 0;
         draft.speech.local.speedTestSeconds = {{QStringLiteral("parakeet"), 0.42},

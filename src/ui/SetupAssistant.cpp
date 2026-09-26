@@ -137,8 +137,10 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
                                                            *controller->providerRegistry(),
                                                            localSpeech,
                                                            this);
-        connect(m_welcomePage, &WelcomeSetupPage::localPathChosen, this, [this] {
-            m_speechProviderPage->chooseProvider(QStringLiteral("local"));
+        connect(m_speechProviderPage, &SpeechProviderSetupPage::providerChosen,
+                m_welcomePage, &WelcomeSetupPage::preserveSpeechChoice);
+        connect(m_welcomePage, &WelcomeSetupPage::pathProviderChanged, this, [this](const QString &provider) {
+            m_speechProviderPage->chooseProvider(provider);
         });
         m_microphonePage = new MicrophoneSetupPage(*controller->settings(),
                                                    *controller->platform(),

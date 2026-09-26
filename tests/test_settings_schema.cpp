@@ -1,3 +1,5 @@
+#include "core/EndpointSettings.h"
+#include "core/SecretStore.h"
 #include "common/test_suites.h"
 
 #include "core/BindingProcessor.h"
@@ -53,6 +55,73 @@ class SettingsSchemaTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void endpointPresetRowsShowAndEditEffectiveValues()
+    {
+        const auto schema = buildSettingsSchema(fakeContext());
+        const auto &page = schema.page("refinement");
+        const auto &url = rowById(page, "refinementEndpointUrl");
+        const auto &key = rowById(page, "refinementEndpointApiKey");
+        AppSettings settings;
+        settings.refinement.endpoint.preset = "cliproxy";
+        settings.refinement.cliproxyBaseUrl = "http://proxy.example:8317";
+        settings.refinement.cliproxyApiKey = "saved-key";
+        QCOMPARE(url.value(settings).toString(), QString("http://proxy.example:8317/v1"));
+        QCOMPARE(key.value(settings).toString(), QString("saved-key"));
+        url.apply(settings, "http://proxy.example:8317/v1");
+        QCOMPARE(settings.refinement.endpoint.preset, QString("cliproxy"));
+        url.apply(settings, "http://other.example/v1");
+        QVERIFY(settings.refinement.endpoint.preset.isEmpty());
+        QCOMPARE(settings.refinement.endpoint.baseUrl, QString("http://other.example/v1"));
+        QCOMPARE(settings.refinement.endpoint.apiKey, QString("saved-key"));
+    }
+
+    void endpointEditsPreserveLateSecretsAndExplicitClears()
+    {
+        const auto schema = buildSettingsSchema(fakeContext());
+        const auto key = SecretStore::settingsKey(SecretStore::Secret::RefinementEndpointKey);
+        AppSettings loaded;
+        loaded.unreadSecretKeys = {key};
+        AppSettings draft = loaded;
+        editRefinementEndpoint(draft, {.model = "chosen"});
+        AppSettings current = loaded;
+        current.unreadSecretKeys.clear();
+        current.refinement.endpoint.apiKey = "late-key";
+        auto merged = mergeSettingsDraft(schema, loaded, draft, current);
+        QCOMPARE(merged.refinement.endpoint.apiKey, QString("late-key"));
+        QCOMPARE(merged.refinement.endpoint.model, QString("chosen"));
+        editRefinementEndpoint(draft, {.apiKey = QString()});
+        merged = mergeSettingsDraft(schema, loaded, draft, current);
+        QVERIFY(merged.refinement.endpoint.apiKey.isEmpty());
+        QVERIFY(!merged.unreadSecretKeys.contains(key));
+    }
+
+    void detachingAnUnreadProxyUrlPreservesItsKeySource()
+    {
+        AppSettings settings;
+        settings.refinement.endpoint.preset = "cliproxy";
+        settings.refinement.cliproxyBaseUrl = "http://proxy.example:8317";
+        settings.unreadSecretKeys = {SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey)};
+        const AppSettings unread = settings;
+        auto cleared = unread;
+        editRefinementEndpoint(cleared, {.apiKey = QString()});
+        auto late = unread;
+        late.refinement.cliproxyApiKey = "late-proxy-key";
+        late.unreadSecretKeys.clear();
+        const auto merged = mergeSettingsDraft(buildSettingsSchema(fakeContext()), unread, cleared, late);
+        QVERIFY(resolvedRefinementEndpoint(merged.refinement).apiKey.isEmpty());
+        QCOMPARE(merged.refinement.cliproxyApiKey, QString("late-proxy-key"));
+        editRefinementEndpoint(settings, {.baseUrl = "http://other.example/v1"});
+        settings.refinement.cliproxyApiKey = "late-proxy-key";
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QString("late-proxy-key"));
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiBase, QString("http://other.example/v1"));
+        SettingsStore store;
+        store.raw().clear();
+        store.applySnapshot(settings);
+        QVERIFY(SettingsStore().snapshot().refinement.endpoint.useCliproxyKey);
+        editRefinementEndpoint(settings, {.apiKey = QString()});
+        QVERIFY(resolvedRefinementEndpoint(settings.refinement).apiKey.isEmpty());
+    }
+
     void writingProfileCollectionIsDescribedBySchema()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
@@ -1026,7 +1095,8 @@ private slots:
         const SettingsSchema schema = buildSettingsSchema(context);
         const SettingsPage &audio = schema.page(QStringLiteral("audio"));
         const SettingsPage &refinement = schema.page(QStringLiteral("refinement"));
-        const AppSettings settings;
+        AppSettings settings;
+        settings.refinement.localRunner.runner = QStringLiteral("ollama");
 
         QCOMPARE(rowById(audio, QStringLiteral("speechEndpointTest")).helpValue(settings), facts.speechEndpointStatus);
         QCOMPARE(rowById(audio, QStringLiteral("speechEndpointModel")).suggestions(settings).size(), 2);

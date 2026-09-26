@@ -1,13 +1,16 @@
 #include "core/SecretStore.h"
 
-#include "core/KeyringResult.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
 
+#include <QCoreApplication>
 #include <QDebug>
 #include <QStandardPaths>
+#include <QThread>
 
 #include <iterator>
+#include <memory>
+#include <optional>
 
 #ifdef SPEECHER_WITH_QKEYCHAIN
 #if __has_include(<qt6keychain/keychain.h>)
@@ -47,6 +50,11 @@ const SecretEntry &entryFor(SecretStore::Secret secret)
     return secretEntries[size_t(secret)];
 }
 
+QString pendingDeletionKey(SecretStore::Secret secret)
+{
+    return SecretStore::settingsKey(secret) + QStringLiteral("PendingDeletion");
+}
+
 QString keyringEntry(SecretStore::Secret secret)
 {
     return QString::fromLatin1(entryFor(secret).keyringEntry);
@@ -78,7 +86,14 @@ namespace {
 
 #ifdef SPEECHER_WITH_QKEYCHAIN
 template <typename Job>
-bool runKeychainJob(Job &job, QString *error)
+auto makeKeychainJob()
+{
+    return std::unique_ptr<Job, void (*)(Job *)>(new Job(keyringService()),
+                                               [](Job *job) { job->deleteLater(); });
+}
+
+template <typename Job>
+std::optional<QKeychain::Error> runKeychainJob(Job &job, QString *error)
 {
     QEventLoop loop;
     QTimer watchdog;
@@ -90,6 +105,10 @@ bool runKeychainJob(Job &job, QString *error)
     });
     watchdog.setSingleShot(true);
     QObject::connect(&watchdog, &QTimer::timeout, &loop, &QEventLoop::quit);
+    // QtKeychain's process-wide executor is not thread-safe. Its jobs run
+    // asynchronously on the GUI thread; only this caller's thread waits.
+    // Deferred deletion also keeps the job alive through executor cleanup.
+    job.moveToThread(QCoreApplication::instance()->thread());
     job.start();
     if (!finished) {
         watchdog.start(keyringTimeoutMs);
@@ -99,15 +118,12 @@ bool runKeychainJob(Job &job, QString *error)
         if (error) {
             *error = QStringLiteral("Desktop keyring request timed out");
         }
-        return false;
+        return std::nullopt;
     }
-    if (job.error() == QKeychain::NoError) {
-        return true;
-    }
-    if (error) {
+    if (job.error() != QKeychain::NoError && error) {
         *error = job.errorString();
     }
-    return false;
+    return job.error();
 }
 #endif
 
@@ -137,7 +153,7 @@ void SecretStore::prefetch()
 {
 #ifdef SPEECHER_WITH_QKEYCHAIN
     for (const SecretEntry &row : secretEntries) {
-        if (row.secret == Secret::OpenAiApiKey || !mayBeInKeyring(row.secret) || cached(row.secret).known
+        if (row.secret == Secret::OpenAiApiKey || deletionPending(row.secret) || !mayBeInKeyring(row.secret) || cached(row.secret).known
             || keyringReadsTimeOut()) {
             continue;
         }
@@ -190,8 +206,19 @@ void SecretStore::recordKeyringEntry(Secret secret, bool present) const
     }
 }
 
+bool SecretStore::deletionPending(Secret secret) const
+{
+    return m_settings && m_settings->raw().value(pendingDeletionKey(secret)).toBool();
+}
+
+bool SecretStore::isSecretKnown(Secret secret) const
+{
+    return deletionPending(secret) || cached(secret).known;
+}
+
 QString SecretStore::secret(Secret secret) const
 {
+    if (deletionPending(secret)) return {};
     CachedSecret &entry = cached(secret);
     if (entry.known) {
         return entry.value;
@@ -214,6 +241,7 @@ QString SecretStore::secret(Secret secret) const
 
 QString SecretStore::cachedSecret(Secret secret) const
 {
+    if (deletionPending(secret)) return {};
     const CachedSecret &entry = cached(secret);
     if (entry.known || mayBeInKeyring(secret)) return entry.value;
     // Not in the keyring, so the settings file is the whole answer.
@@ -238,6 +266,7 @@ bool SecretStore::saveToKeyring(Secret secret, const QString &value)
     }
     if (m_settings) {
         m_settings->raw().remove(settingsKey(secret));
+        m_settings->raw().remove(pendingDeletionKey(secret));
     }
     cacheValue(secret, cleaned);
     return true;
@@ -259,6 +288,15 @@ bool SecretStore::saveSecret(Secret secret, const QString &value)
     if (!m_settings) {
         return false;
     }
+    if (cleaned.isEmpty()) {
+        // Suppress the old key across restarts until deletion can be retried.
+        m_settings->raw().setValue(pendingDeletionKey(secret), true);
+        m_settings->raw().remove(settingsKey(secret));
+        m_settings->raw().sync();
+        cacheValue(secret, {});
+        return m_settings->raw().status() == QSettings::NoError;
+    }
+    m_settings->raw().remove(pendingDeletionKey(secret));
     qWarning().noquote() << "keyring unavailable, keeping" << keyringEntry(secret)
                          << "in the settings file:" << m_lastError;
     m_settings->raw().setValue(settingsKey(secret), cleaned);
@@ -307,19 +345,24 @@ bool SecretStore::usesInsecureSettingsFallback() const
 
 QString SecretStore::keyringSecret(Secret secret) const
 {
+    if (QStandardPaths::isTestModeEnabled()) {
+        const int delay = qEnvironmentVariableIntValue("SPEECHER_TEST_KEYRING_READ_DELAY_MS");
+        if (delay > 0) QThread::msleep(delay);
+    }
 #ifdef SPEECHER_WITH_QKEYCHAIN
     if (keyringReadsTimeOut()) {
         m_lastError = QStringLiteral("Desktop keyring request timed out");
         return {};
     }
-    QKeychain::ReadPasswordJob job(keyringService());
-    job.setKey(keyringEntry(secret));
+    auto job = makeKeychainJob<QKeychain::ReadPasswordJob>();
+    job->setKey(keyringEntry(secret));
     QString error;
-    if (runKeychainJob(job, &error)) {
+    const auto result = runKeychainJob(*job, &error);
+    if (result == QKeychain::NoError) {
         m_lastError.clear();
-        return job.textData().trimmed();
+        return job->textData().trimmed();
     }
-    if (job.error() == QKeychain::EntryNotFound) {
+    if (result == QKeychain::EntryNotFound) {
         m_lastError.clear();
         return {};
     }
@@ -333,10 +376,10 @@ QString SecretStore::keyringSecret(Secret secret) const
 bool SecretStore::writeKeyringSecret(Secret secret, const QString &value) const
 {
 #ifdef SPEECHER_WITH_QKEYCHAIN
-    QKeychain::WritePasswordJob job(keyringService());
-    job.setKey(keyringEntry(secret));
-    job.setTextData(value);
-    const bool ok = runKeychainJob(job, &m_lastError);
+    auto job = makeKeychainJob<QKeychain::WritePasswordJob>();
+    job->setKey(keyringEntry(secret));
+    job->setTextData(value);
+    const bool ok = runKeychainJob(*job, &m_lastError) == QKeychain::NoError;
     if (ok) {
         recordKeyringEntry(secret, true);
     }
@@ -351,12 +394,17 @@ bool SecretStore::writeKeyringSecret(Secret secret, const QString &value) const
 
 bool SecretStore::deleteKeyringSecret(Secret secret) const
 {
+    if (QStandardPaths::isTestModeEnabled()
+        && qEnvironmentVariableIntValue("SPEECHER_TEST_KEYRING_DELETE_FAILURE") == 1) {
+        m_lastError = QStringLiteral("Keyring deletion denied");
+        return false;
+    }
 #ifdef SPEECHER_WITH_QKEYCHAIN
-    QKeychain::DeletePasswordJob job(keyringService());
-    job.setKey(keyringEntry(secret));
+    auto job = makeKeychainJob<QKeychain::DeletePasswordJob>();
+    job->setKey(keyringEntry(secret));
     QString error;
-    runKeychainJob(job, &error);
-    if (keyringDeletionSucceeded(job.error())) {
+    const auto result = runKeychainJob(*job, &error);
+    if (result == QKeychain::NoError || result == QKeychain::EntryNotFound) {
         m_lastError.clear();
         recordKeyringEntry(secret, false);
         return true;
@@ -391,6 +439,13 @@ bool SecretStore::deleteKeyringSecrets() const
 void SecretStore::migrateSettingsFallbacks()
 {
     for (const SecretEntry &row : secretEntries) {
+        if (deletionPending(row.secret)) {
+            if (deleteKeyringSecret(row.secret)) {
+                m_settings->raw().remove(pendingDeletionKey(row.secret));
+            }
+            cacheValue(row.secret, {});
+            continue;
+        }
         const QString legacy = settingsFallback(row.secret);
         if (legacy.isEmpty()) {
             continue;
