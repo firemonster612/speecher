@@ -22,10 +22,12 @@ class SettingsStore;
 bool offersSetupSpeechProvider(const QString &id, const QString &saved, bool localAvailable);
 bool isSetupSignInProvider(const QString &id);
 QString setupProviderChoice(const QString &saved, const QStringList &ready, bool explicitlyChosen);
-// Refinement is optional: an unready sign-in with no ready one to move to
-// gives way to a runner on this computer, or to "none". Asked once the
-// provider checks and the runner check have answered.
-QString setupRefinementChoice(const QString &saved, const QStringList &ready, bool runnerFound);
+// Refinement is optional: an unready default sign-in with no ready one to
+// move to gives way to a runner on this computer, or to "none". A saved
+// provider is kept. Asked once the provider checks and the runner check have
+// answered.
+QString setupRefinementChoice(const QString &saved, const QStringList &ready, bool runnerFound,
+                              bool explicitlyChosen);
 
 // One per assistant, retained across Back/Next. update returns the speech
 // provider to persist; a missing userChoice follows completed sign-in checks.

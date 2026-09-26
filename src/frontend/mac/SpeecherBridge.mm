@@ -2128,7 +2128,8 @@ static void probeSpeechProvider(BridgeState *state,
     QStringList ready;
     for (NSString *id in readyProviders) ready.append(QString::fromNSString(id));
     return speecher::setupRefinementChoice(QString::fromNSString(saved), ready,
-                                           setup.runnerChoice().available.has_value()).toNSString();
+                                           setup.runnerChoice().available.has_value(),
+                                           _state->store->refinementProviderChosen()).toNSString();
 }
 
 - (BOOL)offersSetupSpeechProvider:(NSString *)providerId saved:(NSString *)saved localAvailable:(BOOL)localAvailable

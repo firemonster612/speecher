@@ -2420,7 +2420,8 @@ void RefinementSetupPage::autoSelectReadyProvider()
     QStringList ready;
     for (const auto &option : m_options) if (option.ok) ready.append(option.id);
     const bool runnerFound = m_local && m_local->runnerChoice().available;
-    const auto chosen = setupRefinementChoice(m_options.at(index).id, ready, runnerFound);
+    const auto chosen = setupRefinementChoice(m_options.at(index).id, ready, runnerFound,
+                                              m_settings.refinementProviderChosen());
     if (chosen == QStringLiteral("none")) {
         m_skip->setChecked(true);
         skipCleanup(true);

@@ -506,13 +506,19 @@ QString SettingsCodecs::refinementProvider() const
     return QStringLiteral("openai");
 }
 
+bool SettingsCodecs::refinementProviderChosen() const
+{
+    return m_settings.contains(SettingsKeys::RefinementProvider);
+}
+
 void SettingsCodecs::setRefinementProvider(const QString &value)
 {
-    if (isRefinementProviderId(value)) {
-        m_settings.setValue(SettingsKeys::RefinementProvider, value);
-        return;
-    }
-    m_settings.setValue(SettingsKeys::RefinementProvider, QStringLiteral("openai"));
+    const QString provider = isRefinementProviderId(value) ? value : QStringLiteral("openai");
+    // Saving a snapshot that still holds the default leaves it a default,
+    // which the setup assistant may replace; only a different provider is a
+    // choice.
+    if (!refinementProviderChosen() && provider == refinementProvider()) return;
+    m_settings.setValue(SettingsKeys::RefinementProvider, provider);
 }
 
 QString SettingsCodecs::refinementStyle() const

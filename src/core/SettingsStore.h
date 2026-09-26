@@ -85,6 +85,7 @@ public:
     using SettingsCodecs::recordVocabularyUsage;
     using SettingsCodecs::refinementPreviewEnabled;
     using SettingsCodecs::refinementProvider;
+    using SettingsCodecs::refinementProviderChosen;
     using SettingsCodecs::refinementStyle;
     using SettingsCodecs::transcriptionPreviewEnabled;
     using SettingsCodecs::removeLearnedCorrection;

@@ -1885,7 +1885,8 @@ struct SetupWindow::Native {
                 ready.append(option.id);
             }
         }
-        const QString chosen = setupRefinementChoice(saved, ready, local->runnerChoice().available.has_value());
+        const QString chosen = setupRefinementChoice(saved, ready, local->runnerChoice().available.has_value(),
+                                                     controller->settings()->refinementProviderChosen());
         if (chosen == saved) {
             return;
         }

@@ -36,6 +36,8 @@ public:
     QList<LearnedCorrection> learnedCorrections() const; void setLearnedCorrections(const QList<LearnedCorrection> &corrections);
     void setLearnedCorrectionEnabled(const QString &id, bool enabled); void removeLearnedCorrection(const QString &id);
     QString refinementProvider() const; void setRefinementProvider(const QString &value);
+    // A provider was saved, as opposed to the default read from installed CLIs.
+    bool refinementProviderChosen() const;
     QString refinementStyle() const; void setRefinementStyle(const QString &value);
     QString defaultWritingProfile() const; void setDefaultWritingProfile(const QString &value);
     QList<WritingProfileSettings> writingProfileSettings() const; void setWritingProfileSettings(const QList<WritingProfileSettings> &value);

@@ -1203,9 +1203,11 @@ private slots:
 
     void anUnreadySignInWithNoRunnerLeavesRefinementOff()
     {
+        // The default, not a saved choice: OpenAI while Codex is installed.
+        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
+        const auto cleanup = qScopeGuard([] { qunsetenv("SPEECHER_TEST_CODEX_INSTALLED"); });
         SettingsStore settings;
         settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("openai"));
         ProviderRegistry providers;
         providers.registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("OpenAI")}, [](QObject *parent) {
             auto *refiner = new FakeRefiner(parent);
@@ -1217,6 +1219,26 @@ private slots:
         page.show();
         QCOMPARE(settings.refinementProvider(), QStringLiteral("none"));
         QVERIFY(page.findChild<QCheckBox *>(QStringLiteral("refinementSkip"))->isChecked());
+    }
+
+    void aSavedRefinementProviderStaysThoughItsSignInIsUnready()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        // As a person's earlier choice, or a profile seeded outside the app.
+        settings.raw().setValue(QStringLiteral("refinement/provider"), QStringLiteral("anthropic"));
+        ProviderRegistry providers;
+        providers.registerRefinementProvider({QStringLiteral("anthropic"), QStringLiteral("Anthropic")},
+                                             [](QObject *parent) {
+                                                 auto *refiner = new FakeRefiner(parent);
+                                                 refiner->prepareResult = {false, QStringLiteral("Not signed in")};
+                                                 return refiner;
+                                             });
+
+        RefinementSetupPage page(settings, providers);
+        page.show();
+        QCOMPARE(settings.refinementProvider(), QStringLiteral("anthropic"));
+        QVERIFY(!page.findChild<QCheckBox *>(QStringLiteral("refinementSkip"))->isChecked());
     }
 
     void theAssistantKeepsTheCliProxyPresetUntilItsServerIsEdited()

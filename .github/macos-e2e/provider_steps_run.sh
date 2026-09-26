@@ -200,7 +200,8 @@ if ! seed_setup_tcc; then
   exit 1
 fi
 
-# P1: the defaults (Claude Voice, OpenAI) show their stats on their steps.
+# P1: the default Claude Voice shows its stats; refinement's default OpenAI,
+# not signed in with no runner here, gives way to None, which shows none.
 fresh_reset
 case_begin P1
 if ! launch_setup || ! wait_for_assistant; then
@@ -219,14 +220,14 @@ else
     wait_for_page_capture 6 refinement || errors+=("could not reach the refinement step")
   fi
   if (( ${#errors[@]} == 0 )); then
-    cp "$CASE_DIR/pages/step-6-refinement.png" "$CASE_DIR/refinement-openai.png"
-    expect_text "$CASE_DIR/refinement-openai.png" "About 3 seconds" \
-      || errors+=("the refinement step does not show the OpenAI stats")
+    cp "$CASE_DIR/pages/step-6-refinement.png" "$CASE_DIR/refinement-default.png"
+    expect_no_text "$CASE_DIR/refinement-default.png" "Default model" \
+      || errors+=("the refinement step kept an unready default sign-in instead of None")
   fi
   if (( ${#errors[@]} )); then
     fail_case "$(IFS='; '; echo "${errors[*]}")"
   else
-    pass_case "Claude Voice and OpenAI stats render on their setup steps."
+    pass_case "Claude Voice stats render, and an unready default refinement starts on None."
   fi
 fi
 
