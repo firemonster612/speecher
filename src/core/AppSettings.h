@@ -96,6 +96,8 @@ struct LocalSpeechSettings {
     int idleUnloadMinutes = 10;
     // Model id to the Speed Test's measured seconds for the bundled clip.
     QMap<QString, double> speedTestSeconds;
+    // False only for an unchosen default; legacy saved model ids are choices.
+    bool modelChosen = false;
 
     bool operator==(const LocalSpeechSettings &other) const = default;
 };
@@ -153,13 +155,16 @@ struct RefinementEndpointSettings {
     QString model;
     QString apiKey;
 
+    // A detached URL can still use an unread proxy key until the user edits the key.
+    bool useCliproxyKey = false;
+
     bool operator==(const RefinementEndpointSettings &other) const = default;
 };
 
 // Refinement through a Local Runner on this computer.
 struct LocalRunnerSettings {
-    // "ollama", "lmstudio" or "llama-server".
-    QString runner = QStringLiteral("ollama");
+    // "ollama", "lmstudio" or "llama-server"; empty until configured.
+    QString runner;
     QString model;
 
     bool operator==(const LocalRunnerSettings &other) const = default;

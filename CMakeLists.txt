@@ -237,6 +237,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/bindings/NoBindDirectiveParser.cpp
   src/core/CliToolDiscovery.cpp
   src/core/LearnedCorrection.cpp
+  src/core/EndpointSettings.cpp
   src/core/LocalModelCatalog.cpp
   src/core/OutputMethod.cpp
   src/core/OutputFormat.cpp

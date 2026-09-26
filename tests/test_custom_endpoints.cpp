@@ -890,6 +890,7 @@ private slots:
         QTest::newRow("openai-proxy") << QStringLiteral("openai") << QStringLiteral("claude") << true << true;
         QTest::newRow("anthropic-proxy") << QStringLiteral("anthropic") << QStringLiteral("claude") << true << true;
         QTest::newRow("proxy-preset") << QStringLiteral("endpoint") << QStringLiteral("claude") << true << true;
+        QTest::newRow("inherited-proxy-key") << QStringLiteral("endpoint-inherited") << QStringLiteral("claude") << true << true;
         QTest::newRow("speech-endpoint") << QStringLiteral("none") << QStringLiteral("endpoint") << true << true;
         QTest::newRow("none-inactive-proxy") << QStringLiteral("none") << QStringLiteral("claude") << true << false;
         QTest::newRow("local-inactive-proxy") << QStringLiteral("local") << QStringLiteral("claude") << true << false;
@@ -907,12 +908,14 @@ private slots:
             reset.raw().clear();
         }
         SettingsStore settings;
-        settings.setRefinementProvider(refiner);
+        settings.setRefinementProvider(refiner == QStringLiteral("endpoint-inherited") ? QStringLiteral("endpoint") : refiner);
         settings.setSpeechProvider(speechProvider);
         settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
         settings.setAnthropicAuthMode(QStringLiteral("cliproxy"));
         settings.setCliproxyBaseUrl(remote ? QStringLiteral("http://proxy.example:8317") : QString());
-        settings.raw().setValue(SettingsKeys::RefinementEndpointPreset, QStringLiteral("cliproxy"));
+        settings.raw().setValue(SettingsKeys::RefinementEndpointPreset,
+                                refiner == QStringLiteral("endpoint-inherited") ? QString() : QStringLiteral("cliproxy"));
+        settings.raw().setValue(SettingsKeys::RefinementEndpointUseCliproxyKey, refiner == QStringLiteral("endpoint-inherited"));
         settings.raw().setValue(SettingsKeys::SpeechEndpointBaseUrl, QStringLiteral("http://speech.example"));
         settings.raw().setValue(SettingsKeys::SecretsInKeyring,
             QStringList{QStringLiteral("cliproxy-api-key"), QStringLiteral("speech-endpoint-key")});

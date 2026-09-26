@@ -109,12 +109,13 @@ QString SettingsStore::resolveDictationSecrets(AppSettings &settings)
     if (settings.speech.providerId == QStringLiteral("endpoint")) {
         require(Secret::SpeechEndpointKey, settings.speech.endpoint.apiKey);
     }
-    if (refinement.providerId == QStringLiteral("endpoint") && refinement.endpoint.preset.isEmpty()) {
+    if (refinement.providerId == QStringLiteral("endpoint") && refinement.endpoint.preset.isEmpty()
+        && !refinement.endpoint.useCliproxyKey) {
         require(Secret::RefinementEndpointKey, refinement.endpoint.apiKey);
     }
     // Speech uses local OAuth account files, never the remote proxy API key.
     const bool proxyPreset = refinement.providerId == QStringLiteral("endpoint")
-        && refinement.endpoint.preset == QStringLiteral("cliproxy");
+        && (refinement.endpoint.preset == QStringLiteral("cliproxy") || refinement.endpoint.useCliproxyKey);
     const bool remoteProxy = !refinement.cliproxyBaseUrl.isEmpty()
         && ((refinement.providerId == QStringLiteral("openai") && refinement.openAiAuthMode == QStringLiteral("cliproxy"))
             || (refinement.providerId == QStringLiteral("anthropic") && refinement.anthropicAuthMode == QStringLiteral("cliproxy")));

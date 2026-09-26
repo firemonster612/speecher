@@ -281,6 +281,8 @@ struct SchemaContext {
     QString lastSeenVersion;
     // Absent reads as nothing learned yet.
     std::function<LiveFacts()> liveFacts;
+    // Endpoint verdicts must match the draft currently on screen.
+    std::function<LiveFacts(const AppSettings &)> liveFactsForDraft;
 };
 
 QList<RowOption> cleanupStrengths();

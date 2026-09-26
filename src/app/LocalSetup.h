@@ -17,6 +17,37 @@ class LocalModelStore;
 class ProviderRegistry;
 class SettingsStore;
 
+// Readiness never overrides a saved own-model choice.
+bool isSetupSignInProvider(const QString &id);
+QString setupProviderChoice(const QString &saved, const QStringList &ready, bool explicitlyChosen);
+
+// One per assistant, retained across Back/Next. update returns the speech
+// provider to persist; a missing userChoice follows completed sign-in checks.
+class WelcomeChoice {
+public:
+    QString update(const QString &provider, const QStringList &readyProviders,
+                   bool proxyAccountFound, std::optional<bool> userChoice = std::nullopt);
+    // An explicit Transcription choice is no longer an automatic path write.
+    void providerChosen() { m_previousProvider.reset(); }
+    bool local() const { return m_local; }
+    bool ready() const { return m_local || m_signInFound; }
+private:
+    std::optional<bool> m_explicit;
+    std::optional<QString> m_previousProvider;
+    bool m_local = false;
+    bool m_signInFound = false;
+};
+
+struct RunnerChoice {
+    LocalRunnerSettings selection;
+    std::optional<DetectedRunner> available;
+    bool offerPull = false;
+    bool showSuggestion = false;
+};
+RunnerChoice resolveRunnerChoice(const LocalRunnerSettings &saved,
+                                const QList<DetectedRunner> &runners,
+                                const std::optional<CleanupModel> &suggestion);
+
 // Everything a front end shows about running models on this computer beyond
 // the files themselves: the hardware, Local Runners, the Custom Endpoints'
 // connection tests, Speed Tests and cleanup models pulled through Ollama.
@@ -69,6 +100,23 @@ public:
     std::optional<double> measuredSeconds(const QString &modelId) const;
     QString speedTestError(const QString &modelId) const;
 
+    // Commands, called on setup entry/explicit edits, never while rendering.
+    void initializeSpeechModel();
+    void chooseSpeechModel(const QString &id);
+    const LocalModel &speechModelChoice() const;
+    void initializeRunner();
+    RunnerChoice runnerChoice() const;
+
+    struct ModelState {
+        bool downloaded = false;
+        bool downloading = false;
+        bool inUse = false;
+        QString problem;
+        QString speedText;
+        QString speedDetail;
+    };
+    ModelState modelState(const LocalModel &model, std::optional<SpeechSettings> speech = std::nullopt) const;
+
     void detectRunners();
     bool detectingRunners() const;
     QList<DetectedRunner> runners() const;
@@ -91,6 +139,7 @@ public:
 
     // What the schema's rows report; see LiveFacts.
     LiveFacts liveFacts() const;
+    LiveFacts liveFacts(const AppSettings &draft) const;
 
 signals:
     void changed();
@@ -101,9 +150,11 @@ signals:
 
 private:
     struct EndpointState {
+        quint64 generation = 0;
         bool checking = false;
         EndpointCheck result;
     };
+    void setDownloadPending(const QString &id, bool pending);
     static QString endpointStatus(const EndpointState &state);
 
     SettingsStore &m_settings;
@@ -121,6 +172,8 @@ private:
     bool m_detectingRunners = false;
     OllamaPull m_ollamaPull;
     Pull m_pull;
+    std::optional<SpeechEndpointSettings> m_checkedSpeech;
+    std::optional<RefinementEndpoint> m_checkedRefinement;
     EndpointState m_speechEndpoint;
     EndpointState m_refinementEndpoint;
 };
