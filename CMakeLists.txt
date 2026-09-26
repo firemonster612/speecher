@@ -479,6 +479,7 @@ set(SPEECHER_APP_SOURCES
   src/app/CompositionSockets.cpp
   src/app/ManifestUpdater.cpp
   src/app/PlatformSelection.cpp
+  src/app/ProviderSetup.cpp
   src/app/SingleInstanceIpc.cpp
   src/transcribe/FileTranscriptionSession.cpp
   src/transcribe/TranscribePresentation.cpp
@@ -492,6 +493,7 @@ set(SPEECHER_APP_HEADERS
   src/app/ManifestUpdater.h
   src/app/ShortcutSuspendingDelivery.h
   src/app/PlatformComposition.h
+  src/app/ProviderSetup.h
   src/app/SingleInstanceIpc.h
   src/app/UpdateController.h
   src/transcribe/FileTranscriptionSession.h
