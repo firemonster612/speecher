@@ -125,6 +125,23 @@ private slots:
         QVERIFY(!merged.unreadSecretKeys.contains(key));
     }
 
+    // The Qt row applies every keystroke and reads the value back into the
+    // field, so a URL typed one character at a time must survive intact.
+    void typingTheEndpointUrlKeepsItsSlashes()
+    {
+        const auto schema = buildSettingsSchema(fakeContext());
+        const auto &url = rowById(schema.page("refinement"), "refinementEndpointUrl");
+        AppSettings settings;
+        settings.refinement.providerId = "endpoint";
+        const QString typed = "http://127.0.0.1:9000/v1";
+        for (qsizetype i = 1; i <= typed.size(); ++i) {
+            const QString shown = url.value(settings).toString();
+            url.apply(settings, shown + typed.at(i - 1));
+        }
+        QCOMPARE(url.value(settings).toString(), typed);
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiBase, typed);
+    }
+
     void detachingAnUnreadProxyUrlDropsTheProxyKey()
     {
         AppSettings settings;

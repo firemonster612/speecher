@@ -23,7 +23,9 @@ void editRefinementEndpoint(AppSettings &settings, const RefinementEndpointEdit 
     const auto endpointKey = SecretStore::settingsKey(SecretStore::Secret::RefinementEndpointKey);
     const bool proxy = endpoint.preset == QStringLiteral("cliproxy") || endpoint.useCliproxyKey;
     const bool unread = settings.unreadSecretKeys.contains(proxy ? proxyKey : endpointKey);
-    const bool serverChanged = edit.baseUrl && withoutTrailingSlashes(*edit.baseUrl) != effective.apiBase;
+    // Another server, as opposed to the same address typed with a trailing slash.
+    const bool serverChanged = edit.baseUrl && withoutTrailingSlashes(*edit.baseUrl) != withoutTrailingSlashes(effective.apiBase);
+    const bool urlEdited = edit.baseUrl && edit.baseUrl->trimmed() != effective.apiBase;
     const bool keyChanged = edit.apiKey && (edit.apiKey->trimmed() != effective.apiKey || unread);
     const bool leavingPreset = edit.preset && *edit.preset != QStringLiteral("cliproxy");
     if ((serverChanged || keyChanged || leavingPreset) && endpoint.preset == QStringLiteral("cliproxy")) {
@@ -36,7 +38,9 @@ void editRefinementEndpoint(AppSettings &settings, const RefinementEndpointEdit 
         endpoint.useCliproxyKey = sameServer && unread;
         settings.unreadSecretKeys.removeAll(endpointKey);
     }
-    if (serverChanged) endpoint.baseUrl = withoutTrailingSlashes(*edit.baseUrl);
+    // Stored as typed: a field that is re-read while someone types must not
+    // lose the "/" they just entered. Saving and requests drop trailing slashes.
+    if (urlEdited) endpoint.baseUrl = edit.baseUrl->trimmed();
     if (edit.apiKey) {
         if (keyChanged) {
             endpoint.apiKey = edit.apiKey->trimmed();
