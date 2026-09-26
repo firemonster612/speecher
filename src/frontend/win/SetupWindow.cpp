@@ -1334,7 +1334,8 @@ struct SetupWindow::Native {
         for (const LocalModel &model : localModelCatalog()) {
             Grid row = columnGrid();
             for (int column = 0; column < titles.size(); ++column) {
-                TextBlock cell = textBlock(QString(), column == 0);
+                // The name and the speed ("~0.7 s (estimated)") wrap rather than clip.
+                TextBlock cell = textBlock(QString(), column == 0 || column == 3);
                 cell.VerticalAlignment(VerticalAlignment::Center);
                 Grid::SetColumn(cell, column);
                 row.Children().Append(cell);
