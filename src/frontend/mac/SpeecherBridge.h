@@ -220,7 +220,7 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 };
 
 // One day of the activity heatmap, with its colour level 0..4 under each
-// measure the heatmap can show (speecher::heatLevel among the active days).
+// measure the heatmap can show (speecher::HeatScale).
 @interface SpeecherInsightsDayModel : NSObject
 @property (nonatomic, readonly, copy) NSDate *date;
 @property (nonatomic, readonly) NSInteger dictations;
@@ -241,7 +241,8 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 
 // Everything Home shows for one period, as speecher::summarize computed it.
 // Days the page words relative to today ("yesterday", "Mar 1, 2026") arrive
-// already worded, and are empty where the summary has no such day.
+// already worded, and are empty where the summary has no such day. So do the
+// lines every Home shares (the speecher text helpers beside summarize).
 @interface SpeecherInsightsModel : NSObject
 // Every record in the log, whatever the period: 0 means Home has nothing yet.
 @property (nonatomic, readonly) NSInteger recordCount;
@@ -249,33 +250,41 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 // The period.
 @property (nonatomic, readonly) NSInteger words;
 @property (nonatomic, readonly) NSInteger dictations;
-@property (nonatomic, readonly) NSInteger audioMs;
-@property (nonatomic, readonly) NSInteger averageAudioMs;
 @property (nonatomic, readonly) double dictationsPerActiveDay;
-// Percent change against the previous period, or nil when there is none.
-@property (nonatomic, readonly, strong, nullable) NSNumber *wordsDelta;
-@property (nonatomic, readonly, strong, nullable) NSNumber *dictationsDelta;
-@property (nonatomic, readonly, copy) NSString *deltaPeriodLabel;
+// "▲ 29% vs previous 30 days"; empty without a previous period to compare.
+@property (nonatomic, readonly, copy) NSString *wordsDeltaText;
+@property (nonatomic, readonly, copy) NSString *dictationsDeltaText;
 @property (nonatomic, readonly, copy) NSString *bookComparison;
 @property (nonatomic, readonly, copy) NSString *bookComparisonTip;
+// "4.0 hours", and "Average dictation 1:07" (or "Nothing yet").
+@property (nonatomic, readonly, copy) NSString *audioTotalText;
+@property (nonatomic, readonly, copy) NSString *averageDictationText;
 
 // Streak.
 @property (nonatomic, readonly) NSInteger currentStreak;
 @property (nonatomic, readonly) NSInteger bestStreak;
 @property (nonatomic, readonly, copy) NSString *bestStreakEnd;
 @property (nonatomic, readonly) BOOL bestStreakEndsToday;
-@property (nonatomic, readonly) NSInteger brokenStreakLength;
-@property (nonatomic, readonly, copy) NSString *brokenStreakEnded;
+// The line under the streak; empty with no history.
+@property (nonatomic, readonly, copy) NSString *streakText;
 // Seven BOOLs, Monday first, and today's slot among them.
 @property (nonatomic, readonly, copy) NSArray<NSNumber *> *weekActivity;
 @property (nonatomic, readonly) NSInteger todayIndex;
+// The locale's narrow weekday names, Monday first.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *weekLetters;
 
 // Every day of the last 53 Monday-first weeks up to today, oldest first.
 @property (nonatomic, readonly, copy) NSArray<SpeecherInsightsDayModel *> *heatmap;
+// One per heatmap week: the month named over it, or empty. Whatever the
+// number of weeks shown, the labels are the tail of this list.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *weekMonthLabels;
+// How strongly each heat level 0..4 shows the accent.
+@property (nonatomic, readonly, copy) NSArray<NSNumber *> *heatStrengths;
 @property (nonatomic, readonly) NSInteger activeDaysLastYear;
 
-// The period by local hour: 24 counts.
+// The period by local hour: 24 counts, and each hour's label ("10 am").
 @property (nonatomic, readonly, copy) NSArray<NSNumber *> *hourCounts;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *hourLabels;
 @property (nonatomic, readonly) NSInteger peakHour;
 // The weekday's name, such as "Tuesday".
 @property (nonatomic, readonly, copy) NSString *busiestWeekday;
@@ -283,7 +292,10 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 @property (nonatomic, readonly) BOOL hasHourData;
 
 @property (nonatomic, readonly) NSInteger wordsPerMinute;
+@property (nonatomic, readonly) NSInteger typingWordsPerMinute;
 @property (nonatomic, readonly) NSInteger minutesSavedVersusTyping;
+// "That's 3.6× faster than typing at 40 words per minute."
+@property (nonatomic, readonly, copy) NSString *speedupText;
 
 @property (nonatomic, readonly, copy) NSArray<SpeecherInsightsAppModel *> *apps;
 
@@ -291,8 +303,10 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 @property (nonatomic, readonly) NSInteger allTimeWords;
 // 0 once every milestone is passed.
 @property (nonatomic, readonly) NSInteger nextMilestone;
-@property (nonatomic, readonly, strong, nullable) NSNumber *passedMilestone;
-@property (nonatomic, readonly) NSInteger longestAudioMs;
+// "8,850 to go. You passed 1,000 already.", or "You passed 1,000,000 words".
+@property (nonatomic, readonly, copy) NSString *milestoneText;
+// "m:ss".
+@property (nonatomic, readonly, copy) NSString *longestDuration;
 @property (nonatomic, readonly) NSInteger longestWords;
 @property (nonatomic, readonly, copy) NSString *longestApp;
 @property (nonatomic, readonly, copy) NSString *longestDay;
@@ -359,14 +373,17 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 - (void)notePopupPresented:(uint64_t)generation NS_SWIFT_NAME(notePopupPresented(generation:));
 
 // The last transcript Speecher heard, which the menu bar panel offers to copy
-// again. Empty until one exists.
+// again: the running preview, then the text as delivered. Empty until one
+// exists.
 @property (nonatomic, readonly, copy) NSString *lastTranscript;
 @property (nonatomic, copy, nullable) void (^transcriptChanged)(NSString *transcript);
-// The last transcript's word count (speecher::countWords), and the app and
-// relative day of the newest insights record. Empty strings with no record.
+// The last transcript's word count (speecher::countWords).
 @property (nonatomic, readonly) NSInteger lastTranscriptWords;
-@property (nonatomic, readonly, copy) NSString *lastTranscriptApp;
-@property (nonatomic, readonly, copy) NSString *lastTranscriptDay;
+// The app and relative day insights recorded for the last delivered
+// transcript (ApplicationController::lastRecord). Empty strings with none.
+@property (nonatomic, readonly, copy) NSString *lastRecordApp;
+@property (nonatomic, readonly, copy) NSString *lastRecordDay;
+@property (nonatomic, copy, nullable) void (^lastRecordChanged)(void);
 
 // Home's insights. The setting says whether new dictations are recorded; the
 // log keeps what it has either way until it is cleared.

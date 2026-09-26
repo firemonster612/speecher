@@ -22,10 +22,6 @@ private enum HeatMeasure: String, CaseIterable, Identifiable {
     }
 }
 
-/// The pace the "saved over typing" figure is measured against, which the
-/// core's summary also uses (kTypingWpm in InsightsSummary.cpp).
-private let typingWordsPerMinute = 40
-
 struct HomePane: View {
     @ObservedObject var model: AppModel
     @State private var measure = HeatMeasure.dictations
@@ -41,6 +37,8 @@ struct HomePane: View {
     var body: some View {
         ScrollViewReader { proxy in
             form.onAppear {
+                // "Today" may have moved on while the window stayed open.
+                model.refreshInsights()
                 guard Self.opensAtBottom else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     proxy.scrollTo(Self.bottomID, anchor: .bottom)
@@ -54,9 +52,8 @@ struct HomePane: View {
             dictationCard
             if !model.insightsEnabled {
                 notice(title: "Insights are off",
-                       text: "Speecher isn't keeping any record of your dictation. If you turn "
-                           + "insights on, your stats are stored only on this computer and never "
-                           + "sent to the cloud.",
+                       text: "Speecher isn't recording new dictation. History you already have "
+                           + "stays on this computer until you clear it in Insights settings.",
                        action: "Insights settings…")
             } else if insights.recordCount == 0 {
                 notice(title: "No insights yet",
@@ -171,13 +168,13 @@ struct HomePane: View {
     private var wordsTile: AnyView {
         tile("Words dictated", symbol: "text.alignleft", value: insights.words.formatted()) {
             Text(insights.bookComparison).help(insights.bookComparisonTip)
-            delta(insights.wordsDelta)
+            line(insights.wordsDeltaText)
         }
     }
 
     private var streakTile: AnyView {
         tile("Streak", symbol: "flame", value: plural(insights.currentStreak, "day")) {
-            if let line = streakLine { Text(line) }
+            line(insights.streakText)
             weekDots
         }
     }
@@ -187,15 +184,13 @@ struct HomePane: View {
             Text(insights.dictations == 0
                  ? "Nothing yet"
                  : "\(insights.dictationsPerActiveDay.formatted(.number.precision(.fractionLength(1)))) a day when you dictate")
-            delta(insights.dictationsDelta)
+            line(insights.dictationsDeltaText)
         }
     }
 
     private var audioTile: AnyView {
-        tile("Audio transcribed", symbol: "waveform", value: audioTotal) {
-            Text(insights.dictations == 0
-                 ? "Nothing yet"
-                 : "Average dictation \(clock(insights.averageAudioMs))")
+        tile("Audio transcribed", symbol: "waveform", value: insights.audioTotalText) {
+            Text(insights.averageDictationText)
         }
     }
 
@@ -220,36 +215,16 @@ struct HomePane: View {
         )
     }
 
-    /// "+29% vs previous 30 days", with a true minus sign for a fall.
-    @ViewBuilder private func delta(_ change: NSNumber?) -> some View {
-        if let change = change?.intValue {
-            let period = insights.deltaPeriodLabel
-            Text(change == 0
-                 ? "same as previous \(period)"
-                 : "\(change > 0 ? "+" : "\u{2212}")\(abs(change))% vs previous \(period)")
-        }
-    }
-
-    private var streakLine: String? {
-        if insights.currentStreak > 0 {
-            let today = insights.weekActivity.indices.contains(insights.todayIndex)
-                && insights.weekActivity[insights.todayIndex].boolValue
-            if !today { return "Dictate today to keep it going" }
-            return insights.currentStreak >= insights.bestStreak
-                ? "Your longest yet"
-                : "Best: \(plural(insights.bestStreak, "day"))"
-        }
-        if insights.brokenStreakLength > 0 {
-            return "\(insights.brokenStreakLength)-day run ended \(insights.brokenStreakEnded)"
-        }
-        return nil
+    /// A tile line the core words, left out when it is empty.
+    @ViewBuilder private func line(_ text: String) -> some View {
+        if !text.isEmpty { Text(text) }
     }
 
     /// This week, Monday first: a filled dot for a day with dictation, a ring
     /// around today, and bare letters for the days still to come.
     private var weekDots: some View {
         HStack(spacing: 4) {
-            ForEach(Array(["M", "T", "W", "T", "F", "S", "S"].enumerated()), id: \.offset) { index, letter in
+            ForEach(Array(insights.weekLetters.enumerated()), id: \.offset) { index, letter in
                 let active = insights.weekActivity.indices.contains(index)
                     && insights.weekActivity[index].boolValue
                 Text(letter)
@@ -257,8 +232,7 @@ struct HomePane: View {
                     .frame(width: 16, height: 16)
                     .background {
                         if index <= insights.todayIndex {
-                            Circle().fill(active ? Color.accentColor.opacity(0.52)
-                                                 : Color.primary.opacity(0.08))
+                            Circle().fill(heatColor(active ? 2 : 0, insights.heatStrengths))
                         }
                     }
                     .overlay {
@@ -270,19 +244,12 @@ struct HomePane: View {
         }
     }
 
-    private var audioTotal: String {
-        let hours = Double(insights.audioMs) / 3_600_000
-        if hours >= 1 {
-            return "\(hours.formatted(.number.precision(.fractionLength(1)))) hours"
-        }
-        return "\(Int((Double(insights.audioMs) / 60_000).rounded())) min"
-    }
-
     // MARK: Activity
 
     private var activity: some View {
         Section {
-            ActivityHeatmap(days: insights.heatmap, measure: measure)
+            ActivityHeatmap(days: insights.heatmap, monthLabels: insights.weekMonthLabels,
+                            strengths: insights.heatStrengths, measure: measure)
         } header: {
             HStack {
                 Text("Activity")
@@ -301,7 +268,7 @@ struct HomePane: View {
                 Text("Less")
                 ForEach(0..<5) { level in
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(heatColor(level))
+                        .fill(heatColor(level, insights.heatStrengths))
                         .frame(width: ActivityHeatmap.cell, height: ActivityHeatmap.cell)
                 }
                 Text("More")
@@ -335,18 +302,19 @@ struct HomePane: View {
         card("When you talk") {
             if insights.hasHourData {
                 let counts = insights.hourCounts.map(\.intValue)
+                let labels = insights.hourLabels
                 let peak = insights.peakHour
                 let verdict = Text("\(insights.persona).").bold()
-                let detail = Text("You dictate most around \(hourLabel(peak)), and \(insights.busiestWeekday)s are your busiest day.")
+                let detail = Text("You dictate most around \(labels[peak]), and \(insights.busiestWeekday)s are your busiest day.")
                     .foregroundStyle(.secondary)
                 Text("\(verdict) \(detail)")
                 Chart(0..<24, id: \.self) { hour in
-                    BarMark(x: .value("Hour", hourLabel(hour)),
+                    BarMark(x: .value("Hour", labels[hour]),
                             y: .value("Dictations", counts.indices.contains(hour) ? counts[hour] : 0))
                         .foregroundStyle(Color.accentColor.opacity(hour == peak ? 1 : 0.42))
                 }
                 .chartXAxis {
-                    AxisMarks(values: [0, 6, 12, 18].map(hourLabel))
+                    AxisMarks(values: [0, 6, 12, 18].map { labels[$0] })
                 }
                 .chartYAxis(.hidden)
                 .frame(height: 96)
@@ -366,9 +334,9 @@ struct HomePane: View {
                 LabeledContent("Your speaking pace", value: "\(wpm) wpm")
                 LabeledContent("Saved over typing", value: minutes(insights.minutesSavedVersusTyping))
                 bar("You, speaking", value: wpm, total: scale, emphasised: true, caption: "\(wpm)")
-                bar("Typical typing", value: typingWordsPerMinute, total: scale, emphasised: false,
-                    caption: "\(typingWordsPerMinute)")
-                Text("That's \((Double(wpm) / Double(typingWordsPerMinute)).formatted(.number.precision(.fractionLength(1))))× faster than typing at \(typingWordsPerMinute) words per minute.")
+                let typing = insights.typingWordsPerMinute
+                bar("Typical typing", value: typing, total: scale, emphasised: false, caption: "\(typing)")
+                Text(insights.speedupText)
                     .foregroundStyle(.secondary)
             }
         }
@@ -397,7 +365,7 @@ struct HomePane: View {
                 .monospacedDigit()
             Text("Speecher learned these from edits you made after dictating.")
                 .foregroundStyle(.secondary)
-            Button("Show Corrections") { model.showCorrections() }
+            Button("Review Corrections…") { model.showCorrections() }
         }
     }
 
@@ -432,7 +400,7 @@ struct HomePane: View {
                    value: plural(insights.bestStreak, "day"))
             record("Longest dictation",
                    "\(insights.longestWords) words into \(insights.longestApp), \(insights.longestDay)",
-                   value: clock(insights.longestAudioMs))
+                   value: insights.longestDuration)
             record("Busiest day", capitalised(insights.busiestDay),
                    value: plural(insights.busiestDayDictations, "dictation"))
             record("Wordiest day", capitalised(insights.wordiestDay),
@@ -458,19 +426,17 @@ struct HomePane: View {
     }
 
     @ViewBuilder private var milestone: some View {
-        let passed = insights.passedMilestone?.intValue
         if insights.nextMilestone > 0 {
             let next = insights.nextMilestone
-            let toGo = "\((next - insights.allTimeWords).formatted()) to go"
             LabeledContent {
                 ProgressView(value: Double(insights.allTimeWords), total: Double(next))
                     .frame(width: 120)
             } label: {
                 Text("Next milestone: \(next.formatted()) words")
-                Text(passed.map { "\(toGo). You passed \($0.formatted()) already." } ?? toGo)
+                Text(insights.milestoneText)
             }
-        } else if let passed {
-            record("Every milestone passed", "The last was \(passed.formatted()) words",
+        } else {
+            record("Every milestone passed", insights.milestoneText,
                    value: plural(insights.allTimeWords, "word"))
         }
     }
@@ -490,6 +456,9 @@ struct HomePane: View {
 /// weeks that fit whole.
 private struct ActivityHeatmap: View {
     let days: [SpeecherInsightsDayModel]
+    /// One per week, from the core; the weeks shown take its tail.
+    let monthLabels: [String]
+    let strengths: [NSNumber]
     let measure: HeatMeasure
     @State private var width: CGFloat = 0
 
@@ -506,6 +475,7 @@ private struct ActivityHeatmap: View {
         // Whole weeks only: the gap follows every column but the last.
         let fitting = Int((width - Self.labelWidth + gap) / (Self.cell + gap))
         let columns = Array(weeks.suffix(max(fitting, 1)))
+        let months = Array(monthLabels.suffix(columns.count))
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: gap) {
                 label("")
@@ -517,12 +487,12 @@ private struct ActivityHeatmap: View {
             HStack(alignment: .top, spacing: gap) {
                 ForEach(columns.indices, id: \.self) { index in
                     VStack(alignment: .leading, spacing: gap) {
-                        label(monthLabel(columns, index))
+                        label(months.indices.contains(index) ? months[index] : "")
                             .fixedSize()
                             .frame(width: Self.cell, alignment: .leading)
                         ForEach(columns[index], id: \.date) { day in
                             RoundedRectangle(cornerRadius: 2)
-                                .fill(heatColor(measure.level(day)))
+                                .fill(heatColor(measure.level(day), strengths))
                                 .frame(width: Self.cell, height: Self.cell)
                                 .help(tooltip(day))
                         }
@@ -538,21 +508,6 @@ private struct ActivityHeatmap: View {
         Text(text.isEmpty ? " " : text)
             .font(.caption2)
             .foregroundStyle(.secondary)
-    }
-
-    /// A month's name over the first week that starts in it, except in the
-    /// last two weeks, where it would run off the end.
-    private func monthLabel(_ weeks: [[SpeecherInsightsDayModel]], _ index: Int) -> String {
-        guard index < weeks.count - 2, let monday = weeks[index].first?.date else { return "" }
-        let calendar = Calendar.current
-        let month = calendar.component(.month, from: monday)
-        if index == 0 {
-            guard calendar.component(.day, from: monday) <= 7 else { return "" }
-        } else if let previous = weeks[index - 1].first?.date,
-                  calendar.component(.month, from: previous) == month {
-            return ""
-        }
-        return monday.formatted(.dateTime.month(.abbreviated))
     }
 
     private func tooltip(_ day: SpeecherInsightsDayModel) -> String {
@@ -577,11 +532,10 @@ private struct ActivityHeatmap: View {
 // MARK: Wording
 
 /// Heat level 0..4: a faint wash of the text colour for no dictation, then the
-/// accent at rising strength.
-private func heatColor(_ level: Int) -> Color {
-    let strength: [Double] = [0, 0.30, 0.52, 0.76, 1]
-    guard level > 0, level < strength.count else { return Color.primary.opacity(0.08) }
-    return Color.accentColor.opacity(strength[level])
+/// accent at the core's strength for the level.
+private func heatColor(_ level: Int, _ strengths: [NSNumber]) -> Color {
+    guard level > 0, level < strengths.count else { return Color.primary.opacity(0.08) }
+    return Color.accentColor.opacity(strengths[level].doubleValue)
 }
 
 private func plural(_ count: Int, _ noun: String) -> String {
@@ -590,17 +544,6 @@ private func plural(_ count: Int, _ noun: String) -> String {
 
 private func capitalised(_ text: String) -> String {
     text.prefix(1).uppercased() + text.dropFirst()
-}
-
-/// "9 am", "12 pm".
-private func hourLabel(_ hour: Int) -> String {
-    "\(hour % 12 == 0 ? 12 : hour % 12) \(hour < 12 ? "am" : "pm")"
-}
-
-/// "m:ss" for a length in milliseconds.
-private func clock(_ milliseconds: Int) -> String {
-    let seconds = (milliseconds + 500) / 1000
-    return "\(seconds / 60):\(String(format: "%02d", seconds % 60))"
 }
 
 /// "45 min", "2 h 5 min".

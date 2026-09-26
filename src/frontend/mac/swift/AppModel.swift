@@ -70,8 +70,8 @@ final class AppModel: ObservableObject {
     @Published var insightsRange = SpeecherInsightsRange.last30Days {
         didSet { refreshInsights() }
     }
-    /// "12 words, Mail, today": the last transcript's length and where the
-    /// newest recorded dictation went. Parts the log cannot say drop out.
+    /// "12 words, Mail, today": the last transcript's length and, when
+    /// insights recorded it, where it went and when.
     @Published private(set) var transcriptDetail = ""
     /// The Clear insights history row asked, and the confirmation is up.
     @Published var confirmingClearInsights = false
@@ -137,6 +137,9 @@ final class AppModel: ObservableObject {
         bridge.insightsChanged = { [weak self] in
             self?.refreshInsights()
         }
+        bridge.lastRecordChanged = { [weak self] in
+            self?.refreshTranscriptDetail()
+        }
         // These closures must reach the bridge through self: the bridge owns
         // them, so capturing the local `bridge` would retain it in a cycle and
         // its dealloc — the watcher, the signal connections — would never run.
@@ -165,7 +168,9 @@ final class AppModel: ObservableObject {
         refreshTranscriptDetail()
     }
 
-    private func refreshInsights() {
+    /// Re-reads Home's numbers. Home calls it when it appears, so a day that
+    /// turned over while the window stayed open is picked up.
+    func refreshInsights() {
         insightsEnabled = bridge.insightsEnabled
         insights = bridge.insightsSummary(range: insightsRange)
         refreshTranscriptDetail()
@@ -173,10 +178,8 @@ final class AppModel: ObservableObject {
 
     private func refreshTranscriptDetail() {
         let words = bridge.lastTranscriptWords
-        // The app and day come from the newest record, which only describes
-        // the last transcript while insights are recording.
-        let recorded = bridge.insightsEnabled ? [bridge.lastTranscriptApp, bridge.lastTranscriptDay] : []
-        transcriptDetail = (["\(words) \(words == 1 ? "word" : "words")"] + recorded)
+        transcriptDetail = (["\(words) \(words == 1 ? "word" : "words")",
+                             bridge.lastRecordApp, bridge.lastRecordDay])
             .filter { !$0.isEmpty }
             .joined(separator: ", ")
     }
