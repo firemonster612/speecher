@@ -7,6 +7,7 @@
 #include "app/ShortcutSuspendingDelivery.h"
 #include "core/LearnedCorrection.h"
 #include "core/SettingsStore.h"
+#include "transcribe/FileTranscriptionSession.h"
 #include "dictation/DictationSession.h"
 #include "platform/CorrectionDiff.h"
 #include "platform/mac/MacMediaController.h"

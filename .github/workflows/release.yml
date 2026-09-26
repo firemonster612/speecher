@@ -147,7 +147,6 @@ jobs:
             packaging/run-linux-protocol-tests.sh build
 
       - name: Package AppImage
-        if: github.event_name != 'pull_request'
         run: |
           if [ "${GITHUB_REF_NAME}" = "master" ]; then
             updinfo='gh-releases-zsync|firemonster612|speecher|nightly|Speecher-*x86_64.AppImage.zsync'
@@ -163,7 +162,6 @@ jobs:
             bash -lc 'git config --global --add safe.directory "*" && packaging/build-appimage.sh'
 
       - name: Verify packaged AppImage
-        if: github.event_name != 'pull_request'
         run: |
           expected_version=
           if [ "${GITHUB_REF_NAME}" != master ]; then
@@ -316,7 +314,6 @@ jobs:
           rm "$certificate_path"
 
       - name: Package DMG
-        if: github.event_name != 'pull_request'
         env:
           SPEECHER_SIGN_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
         run: |
@@ -427,12 +424,10 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
       - name: Package installer
-        if: github.event_name != 'pull_request'
         shell: pwsh
         run: packaging/windows/build-installer.ps1 -BuildDir build
 
       - name: Verify installer
-        if: github.event_name != 'pull_request'
         shell: pwsh
         run: packaging/windows/verify-installer.ps1 -InstallerPath dist/Speecher-Setup-x64.exe
 
