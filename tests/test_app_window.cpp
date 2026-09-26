@@ -115,7 +115,7 @@ private slots:
             QStringLiteral("Vocabulary"),
         };
         AppWindow window(&controller);
-        QCOMPARE(window.pageCount(), 8);
+        QCOMPARE(window.pageCount(), 9);
         QCOMPARE(window.pageTitles(), titles);
     }
 

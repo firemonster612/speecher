@@ -608,7 +608,7 @@ void AppWindow::buildSidebarShell()
     m_navigation->setIconSize(QSize(22, 22));
     m_navigation->setItemDelegate(new WholeItemDelegate(m_navigation));
     for (int index = 0; index < kPages.size(); ++index) {
-        if (index == int(AppPageId::LocalModels) + 1 && !m_pages->localModels()) {
+        if (index == int(AppPageId::LocalModels) + kFirstSettingsRow && !m_pages->localModels()) {
             continue;
         }
         const auto &page = kPages.at(index);

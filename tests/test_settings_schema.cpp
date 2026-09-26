@@ -1231,7 +1231,7 @@ private slots:
         QVERIFY(!rowById(page, QStringLiteral("localDevice")).visible(settings, Capabilities{}));
 
         // On macOS and Windows it is its own pane, next to Text.
-        const QStringList &run = schema.sidebarRuns.at(1);
+        const QStringList &run = schema.sidebarRuns.at(2);
         QCOMPARE(run.indexOf(QStringLiteral("localModels")), run.indexOf(QStringLiteral("text")) + 1);
 
         // A build that cannot run speech models has no page or pane for them.
