@@ -325,6 +325,10 @@ jobs:
             SPEECHER_GRAB_PAGE=transcribe ./build/speecher.app/Contents/MacOS/speecher \
             audio/meeting-notes.wav audio/voice-memo.wav --grab shots/mac-transcribe-setup.png
           test -s shots/mac-transcribe-setup.png
+          DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib" DYLD_LIBRARY_PATH="$QT_ROOT_DIR/lib" \
+            SPEECHER_GRAB_PAGE=transcribe-window ./build/speecher.app/Contents/MacOS/speecher \
+            audio/meeting-notes.wav audio/voice-memo.wav --grab shots/mac-transcribe-window.png
+          test -s shots/mac-transcribe-window.png
 
       - name: Upload macOS Transcribe screenshots
         if: github.event_name == 'pull_request'

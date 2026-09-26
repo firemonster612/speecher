@@ -158,24 +158,34 @@ void MacFrontEnd::showSetupAssistant(SetupAssistantPage)
     }];
 }
 
+// Opened audio gets a Transcribe window of its own rather than the settings
+// window, so all that is on screen is what the files need.
 void MacFrontEnd::showTranscribeFiles(const QStringList &paths)
 {
-    showMainWindow();
     NSMutableArray<NSString *> *files = [NSMutableArray arrayWithCapacity:NSUInteger(paths.size())];
     for (const QString &path : paths) {
         [files addObject:path.toNSString()];
     }
     [m_native->ui showTranscribeFiles:files];
+    // As showMainWindow does, for when this window is the first on screen.
+    m_controller->frontEndReady();
 }
 
 bool MacFrontEnd::captureMainWindow(const QString &path)
 {
-    // SPEECHER_GRAB_PAGE=transcribe grabs the Transcribe pane, with any audio
+    // SPEECHER_GRAB_PAGE=transcribe grabs the settings window's Transcribe
+    // pane and transcribe-window the Transcribe window, both with any audio
     // files the command line named. As on Qt, SPEECHER_GRAB_CLICK=
     // transcribeStart starts them and SPEECHER_GRAB_WAIT_MS lets the batch
     // run before the grab.
-    if (qEnvironmentVariable("SPEECHER_GRAB_PAGE").toLower() == QStringLiteral("transcribe")) {
-        showTranscribeFiles({});
+    const QString page = qEnvironmentVariable("SPEECHER_GRAB_PAGE").toLower();
+    const bool transcribeWindow = page == QStringLiteral("transcribe-window");
+    if (transcribeWindow || page == QStringLiteral("transcribe")) {
+        if (transcribeWindow) {
+            showTranscribeFiles({});
+        } else {
+            [m_native->ui showTranscribePane];
+        }
         if (qEnvironmentVariable("SPEECHER_GRAB_CLICK") == QStringLiteral("transcribeStart")) {
             [m_native->ui startTranscription];
         }
@@ -185,7 +195,8 @@ bool MacFrontEnd::captureMainWindow(const QString &path)
                            &QEventLoop::quit);
         wait.exec();
     }
-    return [m_native->ui captureSettingsToPath:path.toNSString()];
+    return transcribeWindow ? [m_native->ui captureTranscribeWindowToPath:path.toNSString()]
+                            : [m_native->ui captureSettingsToPath:path.toNSString()];
 }
 
 void MacFrontEnd::showDictationError(const QString &message)

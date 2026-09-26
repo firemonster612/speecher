@@ -282,17 +282,22 @@ final class SpeecherSettingsWindow {
     }
 
     // Called from the front end on the main thread, which is where the window
-    // has to be touched.
-    //
-    // This is the window's backing store, so nothing the compositor draws for
-    // the window comes out: vibrancy materials are blank, and the whole sidebar
-    // column, which SwiftUI puts inside a glass container, is missing. The
-    // detail column and the titlebar are real. SwiftUI's ImageRenderer is not an
-    // alternative: it refuses NavigationSplitView outright. For a composited
-    // shot, screencapture with Screen Recording granted is the way.
+    // has to be touched. SwiftUI's ImageRenderer is not an alternative: it
+    // refuses NavigationSplitView outright.
     func capture(toPath path: String) -> Bool {
-        guard let content = window.contentView,
-              let view = content.superview ?? window.contentView,
+        window.captureBackingStore(toPath: path)
+    }
+}
+
+extension NSWindow {
+    /// Writes the window as a PNG, titlebar included. This is the backing
+    /// store, so nothing the compositor draws for the window comes out:
+    /// vibrancy materials are blank, and the settings sidebar, which SwiftUI
+    /// puts inside a glass container, is missing. For a composited shot,
+    /// screencapture with Screen Recording granted is the way.
+    func captureBackingStore(toPath path: String) -> Bool {
+        guard let content = contentView,
+              let view = content.superview ?? contentView,
               let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
             return false
         }

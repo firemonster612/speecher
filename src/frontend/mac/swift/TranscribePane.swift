@@ -907,3 +907,35 @@ struct TranscribeLoom: View {
     }
 }
 
+/// The Transcribe pane on its own, for audio opened from Finder: the same view
+/// over the same model as the settings pane, so a batch shows in either.
+@MainActor
+final class SpeecherTranscribeWindow {
+    private let window: NSWindow
+
+    init(model: TranscriptionModel) {
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 680),
+                          styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                          backing: .buffered,
+                          defer: false)
+        // Kept and reopened, as the settings window is.
+        window.isReleasedWhenClosed = false
+        window.title = "Transcribe — Speecher"
+        let hosting = NSHostingController(rootView: TranscribePane(model: model))
+        // The window keeps its size as the pane moves between stages.
+        hosting.sizingOptions = []
+        window.contentViewController = hosting
+        window.setContentSize(NSSize(width: 560, height: 680))
+        window.minSize = NSSize(width: 460, height: 480)
+        window.center()
+        window.setFrameAutosaveName("SpeecherTranscribe")
+    }
+
+    func show() {
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    func capture(toPath path: String) -> Bool {
+        window.captureBackingStore(toPath: path)
+    }
+}
