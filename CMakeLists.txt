@@ -10,8 +10,10 @@ project(speecher VERSION 0.1.1 LANGUAGES C CXX)
 include(cmake/GitVersion.cmake)
 
 if(APPLE)
-  # The macOS platform backend is Objective-C++.
-  enable_language(OBJCXX)
+  # The macOS platform backend is Objective-C++. Objective-C too, for ggml's
+  # Metal backend: with only OBJCXX enabled CMake compiles its .m files as
+  # Objective-C++, where they do not build.
+  enable_language(OBJC OBJCXX)
 
   include(FetchContent)
   FetchContent_Declare(sparkle

@@ -176,7 +176,8 @@ private slots:
         const QByteArray request = serveOnce(server, "206 Partial Content", content.mid(1000));
 
         QVERIFY(request.startsWith("GET /owner/repo/resolve/abc123/fake.gguf "));
-        QVERIFY(request.contains("\r\nRange: bytes=1000-\r\n"));
+        // Header names are case-insensitive; Qt on macOS sends them lowercase.
+        QVERIFY(request.toLower().contains("\r\nrange: bytes=1000-\r\n"));
         QVERIFY(finished.wait(5000));
         QCOMPARE(failed.size(), 0);
         QVERIFY(store.isDownloaded(model));
@@ -295,7 +296,7 @@ private slots:
         QSignalSpy finished(&store, &LocalModelStore::downloadFinished);
 
         store.download(model);
-        QVERIFY(serveOnce(server, "416 Range Not Satisfiable", {}).contains("\r\nRange: bytes=1000-\r\n"));
+        QVERIFY(serveOnce(server, "416 Range Not Satisfiable", {}).toLower().contains("\r\nrange: bytes=1000-\r\n"));
         // The retry comes from the event loop, which serveOnce does not run.
         QTRY_VERIFY(server.hasPendingConnections());
         const QByteArray retry = serveOnce(server, "200 OK", content);
