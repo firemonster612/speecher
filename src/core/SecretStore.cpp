@@ -133,7 +133,6 @@ SecretStore::SecretStore(SettingsStore *settings, QObject *parent)
     : QObject(parent)
     , m_settings(settings)
 {
-    migrateSettingsFallbacks();
 }
 
 SecretStore::CachedSecret &SecretStore::cached(Secret secret) const
