@@ -384,8 +384,10 @@ struct HomePane: View {
             }
         } label: {
             HStack(spacing: 6) {
-                Text(title)
-                if !detail.isEmpty { ProfileBadge(label: detail) }
+                // An app name stays on one line; the badge beside it would
+                // otherwise squeeze a two-word name onto two.
+                Text(title).lineLimit(1).fixedSize()
+                if !detail.isEmpty { ProfileBadge(label: detail).fixedSize() }
             }
         }
     }

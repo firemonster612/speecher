@@ -241,9 +241,9 @@ jobs:
           New-Item -ItemType Directory -Force -Path evidence | Out-Null
           $env:SPEECHER_INSIGHTS_SEED = (Resolve-Path docs/insights-mockup/seed-active.jsonl).Path
           $exe = (Resolve-Path build/speecher.exe).Path
-          foreach ($shot in "home", "general", "home-bottom") {
-            $env:SPEECHER_GRAB_PAGE = $shot -replace '-bottom$', ''
-            $env:SPEECHER_GRAB_SCROLL = if ($shot -eq "home-bottom") { "bottom" } else { "" }
+          foreach ($shot in "home", "general", "home-middle", "home-bottom") {
+            $env:SPEECHER_GRAB_PAGE = $shot -replace '-(middle|bottom)$', ''
+            $env:SPEECHER_GRAB_SCROLL = if ($shot -match '-(middle|bottom)$') { $Matches[1] } else { "" }
             $out = Join-Path (Resolve-Path evidence).Path "win-$shot.png"
             $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
             if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
