@@ -11,5 +11,5 @@ Every capture uses the seed log `docs/insights-mockup/seed-active.jsonl`
   `e4ed5d05`. `mac-home.png` and `mac-home-bottom.png` are screen captures of
   the composited window; `mac-general-insights-off.png` is the window's
   backing store, which leaves the sidebar blank.
-- `win-*`: the same workflow on a Windows Server 2025 runner at `e4ed5d05`,
+- `win-*`: the same workflow on a Windows Server 2025 runner at `e6399c02`,
   through `PrintWindow`.
