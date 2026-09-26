@@ -16,13 +16,15 @@
 #undef GetCurrentTime
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.UI.h>
+#include <winrt/Windows.UI.ViewManagement.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
 #pragma pop_macro("GetCurrentTime")
 
 #include <algorithm>
 #include <array>
-#include <cstdlib>
+#include <memory>
 #include <vector>
 
 namespace speecher::win {
@@ -34,15 +36,15 @@ using namespace winrt::Windows::Foundation;
 using namespace winrt::Microsoft::UI::Xaml;
 using namespace winrt::Microsoft::UI::Xaml::Controls;
 using winrt::Microsoft::UI::Xaml::Media::Brush;
+using winrt::Microsoft::UI::Xaml::Media::SolidColorBrush;
 
 const QString kGeneralPane = QStringLiteral("general");
 const QString kCorrectionsPane = QStringLiteral("corrections");
-// InsightsSummary's typing pace, which the Pace card draws a bar for.
-constexpr int kTypingWordsPerMinute = 40;
 constexpr double kHeatCell = 12;
+constexpr double kHeatGap = 3;
+// Wide enough for "Wed" in the caption style.
+constexpr double kHeatLabelWidth = 32;
 constexpr double kHourChartHeight = 80;
-// The accent over the card at each heat level; level 0 is the empty brush.
-constexpr std::array<double, 5> kHeatOpacity{1.0, 0.30, 0.52, 0.76, 1.0};
 constexpr double kMutedBarOpacity = 0.42;
 
 const std::array<InsightsRange, 4> kRanges{InsightsRange::Last7Days,
@@ -60,19 +62,12 @@ QString plural(int count, const QString &one)
     return QStringLiteral("%1 %2").arg(number(count), count == 1 ? one : one + QLatin1Char('s'));
 }
 
-// "m:ss".
-QString minutesAndSeconds(int ms)
-{
-    const int seconds = qRound(ms / 1000.0);
-    return QStringLiteral("%1:%2").arg(seconds / 60).arg(seconds % 60, 2, 10, QLatin1Char('0'));
-}
-
-QString duration(int seconds)
+QString duration(qint64 seconds)
 {
     if (seconds < 60) {
         return QStringLiteral("%1s").arg(seconds);
     }
-    const int minutes = qRound(seconds / 60.0);
+    const qint64 minutes = (seconds + 30) / 60;
     if (minutes < 60) {
         return QStringLiteral("%1 min").arg(minutes);
     }
@@ -80,10 +75,30 @@ QString duration(int seconds)
                         : QStringLiteral("%1 h").arg(minutes / 60);
 }
 
-QString hourLabel(int hour)
+// Home's chart colours, built from the system accent in code. As brushes in
+// styles.xaml they took their colour from a ThemeResource inside a theme
+// dictionary fetched in code, which drew nothing. The accent is Dark1 on Light
+// and Light2 on Dark, as AccentFillColorDefaultBrush picks; the empty cell a
+// faint text-on-card tint; a contrast theme uses Highlight and GrayText.
+struct ChartBrushes {
+    Brush accent{nullptr};
+    Brush empty{nullptr};
+};
+
+ChartBrushes chartBrushes(const PaneHost &host)
 {
-    return QStringLiteral("%1 %2").arg(hour % 12 == 0 ? 12 : hour % 12)
-        .arg(hour < 12 ? QStringLiteral("am") : QStringLiteral("pm"));
+    using namespace winrt::Windows::UI::ViewManagement;
+    const UISettings system;
+    if (highContrastOn()) {
+        return {SolidColorBrush(system.UIElementColor(UIElementType::Highlight)),
+                SolidColorBrush(system.UIElementColor(UIElementType::GrayText))};
+    }
+    // Default counts as Dark, as themeBrush reads it.
+    const bool light = host.effectiveTheme && host.effectiveTheme() == ElementTheme::Light;
+    return {SolidColorBrush(system.GetColorValue(light ? UIColorType::AccentDark1
+                                                       : UIColorType::AccentLight2)),
+            SolidColorBrush(light ? winrt::Windows::UI::Color{0x18, 0x00, 0x00, 0x00}
+                                  : winrt::Windows::UI::Color{0x15, 0xFF, 0xFF, 0xFF})};
 }
 
 QString capitalized(QString text)
@@ -92,20 +107,6 @@ QString capitalized(QString text)
         text[0] = text.at(0).toUpper();
     }
     return text;
-}
-
-QString deltaLine(std::optional<int> delta, const QString &period)
-{
-    if (!delta) {
-        return {};
-    }
-    if (*delta == 0) {
-        return QStringLiteral("same as previous %1").arg(period);
-    }
-    return QStringLiteral("%1 %2% vs previous %3")
-        .arg(*delta > 0 ? QStringLiteral("▲") : QStringLiteral("▼"))
-        .arg(std::abs(*delta))
-        .arg(period);
 }
 
 TextBlock secondaryCaption(const QString &text, const PaneHost &host)
@@ -287,12 +288,9 @@ UIElement dictationCard(PaneHost &host, const QDate &today)
     if (transcript.isEmpty()) {
         return cardContainer(body);
     }
-    // The app and day come from the newest record, which is this transcript's
-    // while insights are on.
     QStringList meta{plural(countWords(transcript), QStringLiteral("word"))};
-    const QList<DictationRecord> &records = controller->insightsLog()->records();
-    if (controller->settings()->insightsEnabled() && !records.isEmpty()) {
-        meta << records.last().appName << relativeDay(records.last().finishedAt.date(), today);
+    if (const std::optional<DictationRecord> &record = controller->lastRecord()) {
+        meta << record->appName << relativeDay(record->finishedAt.date(), today);
     }
     Grid last;
     last.ColumnSpacing(12);
@@ -357,24 +355,6 @@ StackPanel statTile(const QString &label,
     return tile;
 }
 
-QString streakLine(const InsightsSummary &summary, const QDate &today)
-{
-    if (summary.currentStreak > 0) {
-        if (!summary.weekActivity.at(summary.todayIndex)) {
-            return QStringLiteral("Dictate today to keep it going");
-        }
-        return summary.currentStreak >= summary.bestStreak
-            ? QStringLiteral("Your longest yet")
-            : QStringLiteral("Best: %1").arg(plural(summary.bestStreak, QStringLiteral("day")));
-    }
-    if (summary.brokenStreakLength > 0) {
-        return QStringLiteral("%1-day run ended %2")
-            .arg(summary.brokenStreakLength)
-            .arg(relativeDay(summary.brokenStreakEnded, today));
-    }
-    return {};
-}
-
 // This week, Monday first: a dot per day so far, filled on days with
 // dictation, today ringed (in the text colour when its dot is already accent).
 StackPanel weekDots(const InsightsSummary &summary, const Brush &accent, const Brush &empty,
@@ -415,12 +395,12 @@ UIElement statTiles(const InsightsSummary &summary, const QDate &today, const Pa
         QStringLiteral("Words dictated"),
         number(summary.words),
         {{summary.bookComparison, summary.bookComparisonTip},
-         {deltaLine(summary.wordsDelta, summary.deltaPeriodLabel), {}}},
+         {deltaText(summary.wordsDelta, summary.deltaPeriodLabel), {}}},
         host);
 
     StackPanel streak = statTile(QStringLiteral("Streak"),
                                  plural(summary.currentStreak, QStringLiteral("day")),
-                                 {{streakLine(summary, today), {}}},
+                                 {{streakText(summary, today), {}}},
                                  host);
     streak.Children().Append(weekDots(summary, accent, empty, host));
 
@@ -432,20 +412,13 @@ UIElement statTiles(const InsightsSummary &summary, const QDate &today, const Pa
                     .arg(QLocale().toString(summary.dictationsPerActiveDay, 'f', 1))
               : QStringLiteral("Nothing yet"),
           {}},
-         {deltaLine(summary.dictationsDelta, summary.deltaPeriodLabel), {}}},
+         {deltaText(summary.dictationsDelta, summary.deltaPeriodLabel), {}}},
         host);
 
-    constexpr int hourMs = 3600 * 1000;
-    StackPanel audio = statTile(
-        QStringLiteral("Audio transcribed"),
-        summary.audioMs >= hourMs
-            ? QStringLiteral("%1 hours").arg(QLocale().toString(double(summary.audioMs) / hourMs, 'f', 1))
-            : QStringLiteral("%1 min").arg(qRound(summary.audioMs / 60000.0)),
-        {{summary.dictations > 0
-              ? QStringLiteral("Average dictation %1").arg(minutesAndSeconds(summary.averageAudioMs))
-              : QStringLiteral("Nothing yet"),
-          {}}},
-        host);
+    StackPanel audio = statTile(QStringLiteral("Audio transcribed"),
+                                audioTotalText(summary.audioMs),
+                                {{averageDictationText(summary), {}}},
+                                host);
 
     return adaptiveRow({cardContainer(words), cardContainer(streak), cardContainer(dictations),
                         cardContainer(audio)},
@@ -459,23 +432,11 @@ Border heatCell(int level, const Brush &accent, const Brush &empty)
     cell.Height(kHeatCell);
     cell.CornerRadius({2, 2, 2, 2});
     cell.Background(level == 0 ? empty : accent);
-    cell.Opacity(kHeatOpacity.at(level));
+    cell.Opacity(level == 0 ? 1.0 : kHeatStrengths.at(level));
     return cell;
 }
 
-int measureValue(const HeatmapDay &day, int measure)
-{
-    switch (measure) {
-    case 1:
-        return day.words;
-    case 2:
-        return day.audioMs;
-    default:
-        return day.dictations;
-    }
-}
-
-QString describeDay(const HeatmapDay &day, int measure)
+QString describeDay(const HeatmapDay &day, HeatMeasure measure)
 {
     if (day.dictations == 0) {
         return QStringLiteral("No dictation");
@@ -483,29 +444,30 @@ QString describeDay(const HeatmapDay &day, int measure)
     const QString dictations = plural(day.dictations, QStringLiteral("dictation"));
     const QString words = plural(day.words, QStringLiteral("word"));
     switch (measure) {
-    case 1:
+    case HeatMeasure::Words:
         return QStringLiteral("%1 from %2").arg(words, dictations);
-    case 2:
-        return QStringLiteral("%1 of audio").arg(duration(qRound(day.audioMs / 1000.0)));
-    default:
-        return QStringLiteral("%1, %2").arg(dictations, words);
+    case HeatMeasure::Audio:
+        return QStringLiteral("%1 of audio").arg(duration((day.audioMs + 500) / 1000));
+    case HeatMeasure::Dictations:
+        break;
     }
+    return QStringLiteral("%1, %2").arg(dictations, words);
 }
 
-// GitHub's layout: a column per Monday-first week, Mon/Wed/Fri on the left,
-// month names over the week each month starts in.
-UIElement heatmapGrid(const InsightsSummary &summary, int measure, const PaneHost &host,
-                      const Brush &accent, const Brush &empty)
+// GitHub's layout for the latest `weeksShown` weeks: a column per
+// Monday-first week, Mon/Wed/Fri on the left, month names over the week each
+// month starts in.
+Grid heatmapWeeks(const QList<HeatmapDay> &days, int weeksShown, HeatMeasure measure,
+                  const PaneHost &host, const Brush &accent, const Brush &empty)
 {
-    const QList<HeatmapDay> &days = summary.heatmap;
-    const int weeks = static_cast<int>((days.size() + 6) / 7);
+    const int first = static_cast<int>((days.size() + 6) / 7) - weeksShown;
     Grid grid;
-    grid.ColumnSpacing(3);
-    grid.RowSpacing(3);
+    grid.ColumnSpacing(kHeatGap);
+    grid.RowSpacing(kHeatGap);
     ColumnDefinition labelColumn;
-    labelColumn.Width({0, GridUnitType::Auto});
+    labelColumn.Width({kHeatLabelWidth, GridUnitType::Pixel});
     grid.ColumnDefinitions().Append(labelColumn);
-    for (int week = 0; week < weeks; ++week) {
+    for (int week = 0; week < weeksShown; ++week) {
         ColumnDefinition column;
         column.Width({kHeatCell, GridUnitType::Pixel});
         grid.ColumnDefinitions().Append(column);
@@ -528,45 +490,51 @@ UIElement heatmapGrid(const InsightsSummary &summary, int measure, const PaneHos
         Grid::SetRowSpan(text, 2);
         grid.Children().Append(text);
     }
-
-    QList<int> activeValues;
-    for (const HeatmapDay &day : days) {
-        if (day.dictations > 0) {
-            activeValues.append(measureValue(day, measure));
-        }
+    const QMap<int, QString> months = monthLabels(days, weeksShown);
+    for (auto label = months.cbegin(); label != months.cend(); ++label) {
+        TextBlock month = secondaryCaption(label.value(), host);
+        month.TextWrapping(TextWrapping::NoWrap);
+        Grid::SetColumn(month, label.key() + 1);
+        Grid::SetColumnSpan(month, std::min(4, weeksShown - label.key()));
+        grid.Children().Append(month);
     }
-    int lastMonth = -1;
-    for (int week = 0; week < weeks; ++week) {
-        const QDate monday = days.at(week * 7).date;
-        if (monday.month() != lastMonth && week < weeks - 2) {
-            if (lastMonth != -1 || monday.day() <= 7) {
-                TextBlock month = secondaryCaption(
-                    locale.standaloneMonthName(monday.month(), QLocale::ShortFormat), host);
-                month.TextWrapping(TextWrapping::NoWrap);
-                Grid::SetColumn(month, week + 1);
-                Grid::SetColumnSpan(month, std::min(4, weeks - week));
-                grid.Children().Append(month);
-            }
-            lastMonth = monday.month();
-        }
-    }
-    for (int index = 0; index < days.size(); ++index) {
+    const HeatScale scale(days, measure);
+    for (int index = first * 7; index < days.size(); ++index) {
         const HeatmapDay &day = days.at(index);
-        Border cell = heatCell(heatLevel(measureValue(day, measure), activeValues), accent, empty);
+        Border cell = heatCell(scale.level(day), accent, empty);
         ToolTipService::SetToolTip(
             cell,
             box_value(hs(describeDay(day, measure) + QLatin1Char('\n')
                          + locale.toString(day.date, QStringLiteral("ddd, MMM d, yyyy")))));
-        Grid::SetColumn(cell, index / 7 + 1);
+        Grid::SetColumn(cell, index / 7 - first + 1);
         Grid::SetRow(cell, index % 7 + 1);
         grid.Children().Append(cell);
     }
-    // A narrow window shrinks the year rather than cutting weeks off.
-    Viewbox fit;
-    fit.StretchDirection(StretchDirection::DownOnly);
-    fit.HorizontalAlignment(HorizontalAlignment::Left);
-    fit.Child(grid);
-    return fit;
+    return grid;
+}
+
+// The heatmap at whole weeks: as many of the latest as fit the card's width,
+// refitted when it changes, the cells never shrinking.
+UIElement heatmapGrid(const InsightsSummary &summary, HeatMeasure measure, const PaneHost &host,
+                      const Brush &accent, const Brush &empty)
+{
+    Grid holder;
+    auto shown = std::make_shared<int>(0);
+    holder.SizeChanged([days = summary.heatmap, measure, &host, accent, empty, shown](
+                           const IInspectable &sender, const SizeChangedEventArgs &args) {
+        const int weeks = static_cast<int>((days.size() + 6) / 7);
+        const int fitting = std::clamp(
+            static_cast<int>((args.NewSize().Width - kHeatLabelWidth) / (kHeatCell + kHeatGap)), 1,
+            weeks);
+        if (fitting == *shown) {
+            return;
+        }
+        *shown = fitting;
+        const Grid target = sender.as<Grid>();
+        target.Children().Clear();
+        target.Children().Append(heatmapWeeks(days, fitting, measure, host, accent, empty));
+    });
+    return holder;
 }
 
 UIElement activityCard(const InsightsSummary &summary, PaneHost &host,
@@ -582,13 +550,14 @@ UIElement activityCard(const InsightsSummary &summary, PaneHost &host,
                         host.homeMeasure = index;
                         host.refresh();
                     })));
-    body.Children().Append(heatmapGrid(summary, host.homeMeasure, host, accent, empty));
+    body.Children().Append(heatmapGrid(summary, static_cast<HeatMeasure>(host.homeMeasure), host,
+                                       accent, empty));
 
     StackPanel legend;
     legend.Orientation(Orientation::Horizontal);
     legend.Spacing(3);
     legend.Children().Append(secondaryCaption(QStringLiteral("Less"), host));
-    for (int level = 0; level < static_cast<int>(kHeatOpacity.size()); ++level) {
+    for (int level = 0; level < static_cast<int>(kHeatStrengths.size()); ++level) {
         Border cell = heatCell(level, accent, empty);
         cell.VerticalAlignment(VerticalAlignment::Center);
         legend.Children().Append(cell);
@@ -691,7 +660,7 @@ UIElement paceCard(const InsightsSummary &summary, const PaneHost &host)
     figures.Spacing(32);
     figures.Children().Append(figure(QStringLiteral("%1 wpm").arg(summary.wordsPerMinute),
                                      QStringLiteral("Your speaking pace"), host));
-    figures.Children().Append(figure(duration(summary.minutesSavedVersusTyping * 60),
+    figures.Children().Append(figure(duration(qint64(summary.minutesSavedVersusTyping) * 60),
                                      QStringLiteral("Saved over typing"), host));
     body.Children().Append(figures);
     const double scale = std::max(summary.wordsPerMinute, 160);
@@ -699,13 +668,9 @@ UIElement paceCard(const InsightsSummary &summary, const PaneHost &host)
         {{styledTextBlock(QStringLiteral("You, speaking"), L"SettingsCardBodyStyle"),
           double(summary.wordsPerMinute), scale, number(summary.wordsPerMinute), {}},
          {styledTextBlock(QStringLiteral("Typical typing"), L"SettingsCardBodyStyle"),
-          double(kTypingWordsPerMinute), scale, number(kTypingWordsPerMinute), {}}},
+          double(summary.typingWordsPerMinute), scale, number(summary.typingWordsPerMinute), {}}},
         host));
-    body.Children().Append(secondaryCaption(
-        QStringLiteral("That's %1× faster than typing at %2 words per minute.")
-            .arg(QLocale().toString(double(summary.wordsPerMinute) / kTypingWordsPerMinute, 'f', 1))
-            .arg(kTypingWordsPerMinute),
-        host));
+    body.Children().Append(secondaryCaption(summary.speedupText, host));
     return cardContainer(body);
 }
 
@@ -740,7 +705,7 @@ UIElement correctionsCard(PaneHost &host)
     body.Children().Append(secondaryCaption(
         QStringLiteral("Speecher learned these from edits you made after dictating."), host));
     HyperlinkButton open;
-    open.Content(box_value(L"Review learned corrections"));
+    open.Content(box_value(L"Review Corrections…"));
     open.Padding({0, 2, 0, 0});
     open.Click([&host](const auto &, const auto &) { host.showPane(kCorrectionsPane); });
     body.Children().Append(open);
@@ -765,11 +730,11 @@ UIElement recordsCard(const InsightsSummary &summary, const QDate &today, PaneHo
         progress.Minimum(0);
         progress.Maximum(summary.nextMilestone);
         progress.Value(summary.allTimeWords);
-        QString help = QStringLiteral("%1 to go").arg(number(summary.nextMilestone - summary.allTimeWords));
-        if (summary.passedMilestone) {
-            help += QStringLiteral(". You passed %1 already.").arg(number(*summary.passedMilestone));
-        }
-        append(QStringLiteral("Next milestone: %1 words").arg(number(summary.nextMilestone)), help, progress);
+        append(QStringLiteral("Next milestone: %1 words").arg(number(summary.nextMilestone)),
+               milestoneText(summary), progress);
+    } else {
+        append(QStringLiteral("Every milestone passed"), milestoneText(summary),
+               value(plural(summary.allTimeWords, QStringLiteral("word"))));
     }
     append(QStringLiteral("Longest streak"),
            summary.bestStreakEndsToday
@@ -780,7 +745,7 @@ UIElement recordsCard(const InsightsSummary &summary, const QDate &today, PaneHo
            QStringLiteral("%1 words into %2, %3")
                .arg(number(summary.longest.words), summary.longest.appName,
                     relativeDay(summary.longest.date, today)),
-           value(minutesAndSeconds(summary.longest.audioMs)));
+           value(clockText(summary.longest.audioMs)));
     append(QStringLiteral("Busiest day"),
            capitalized(relativeDay(summary.busiestDay.date, today)),
            value(plural(summary.busiestDay.dictations, QStringLiteral("dictation"))));
@@ -874,8 +839,9 @@ UIElement buildHomePage(PaneHost &host)
     }
 
     const InsightsSummary summary = summarize(records, host.homeRange, today);
-    const Brush accent = themeBrush(L"HomeChartAccentBrush", host);
-    const Brush empty = themeBrush(L"HomeChartEmptyBrush", host);
+    const ChartBrushes brushes = chartBrushes(host);
+    const Brush &accent = brushes.accent;
+    const Brush &empty = brushes.empty;
 
     const int rangeIndex = static_cast<int>(
         std::find(kRanges.begin(), kRanges.end(), host.homeRange) - kRanges.begin());

@@ -14,27 +14,16 @@
            this dictionary in code by the window's ActualTheme, so it cannot
            alias a theme resource that resolves against the app theme. -->
       <SolidColorBrush x:Key="SettingsCardDescriptionForeground" Color="#9E000000"/>
-      <!-- Home's charts, fetched in code the same way. The accent is
-           AccentFillColorDefaultBrush's own definition per theme. The empty
-           heatmap cell is a faint text-on-card mix: Dark uses
-           ControlFillColorSecondary's value, Light ControlAltFillColorQuarternary's,
-           because Light's ControlFillColorSecondary is white on a white card. -->
-      <SolidColorBrush x:Key="HomeChartAccentBrush" Color="{ThemeResource SystemAccentColorDark1}"/>
-      <SolidColorBrush x:Key="HomeChartEmptyBrush" Color="#18000000"/>
     </ResourceDictionary>
     <ResourceDictionary x:Key="Dark">
       <StaticResource x:Key="SettingsCardBackground" ResourceKey="CardBackgroundFillColorDefaultBrush"/>
       <StaticResource x:Key="SettingsCardBorderBrush" ResourceKey="CardStrokeColorDefaultBrush"/>
       <SolidColorBrush x:Key="SettingsCardDescriptionForeground" Color="#C5FFFFFF"/>
-      <SolidColorBrush x:Key="HomeChartAccentBrush" Color="{ThemeResource SystemAccentColorLight2}"/>
-      <SolidColorBrush x:Key="HomeChartEmptyBrush" Color="#15FFFFFF"/>
     </ResourceDictionary>
     <ResourceDictionary x:Key="HighContrast">
       <SolidColorBrush x:Key="SettingsCardBackground" Color="{ThemeResource SystemColorButtonFaceColor}"/>
       <SolidColorBrush x:Key="SettingsCardBorderBrush" Color="{ThemeResource SystemColorButtonTextColor}"/>
       <SolidColorBrush x:Key="SettingsCardDescriptionForeground" Color="{ThemeResource SystemColorButtonTextColor}"/>
-      <SolidColorBrush x:Key="HomeChartAccentBrush" Color="{ThemeResource SystemColorHighlightColor}"/>
-      <SolidColorBrush x:Key="HomeChartEmptyBrush" Color="{ThemeResource SystemColorGrayTextColor}"/>
     </ResourceDictionary>
   </ResourceDictionary.ThemeDictionaries>
 

@@ -397,6 +397,14 @@ TextBlock secondaryTextBlock(const QString &text, const wchar_t *styleKey, const
     return block;
 }
 
+bool highContrastOn()
+{
+    HIGHCONTRASTW contrast{};
+    contrast.cbSize = sizeof(contrast);
+    return SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0)
+        && (contrast.dwFlags & HCF_HIGHCONTRASTON);
+}
+
 winrt::Microsoft::UI::Xaml::Media::Brush themeBrush(const wchar_t *key, const PaneHost &host)
 {
     const ElementTheme theme = host.effectiveTheme ? host.effectiveTheme()
@@ -410,12 +418,7 @@ winrt::Microsoft::UI::Xaml::Media::Brush themeBrush(const wchar_t *key, const Pa
     // here — the explicit RequestedTheme pins ActualTheme, so
     // ActualThemeChanged never fires for it; the correct brush arrives on the
     // next rebuild or reopen.
-    HIGHCONTRASTW contrast{};
-    contrast.cbSize = sizeof(contrast);
-    const bool highContrast =
-        SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0)
-        && (contrast.dwFlags & HCF_HIGHCONTRASTON);
-    const hstring themeKey = highContrast ? L"HighContrast"
+    const hstring themeKey = highContrastOn() ? L"HighContrast"
         : theme == ElementTheme::Light   ? L"Light"
                                          : L"Dark";
     // The style dictionary is the merged dictionary that carries our theme

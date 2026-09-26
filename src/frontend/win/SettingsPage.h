@@ -141,6 +141,9 @@ winrt::Microsoft::UI::Xaml::Controls::TextBlock secondaryTextBlock(const QString
                                                                    const wchar_t *styleKey,
                                                                    const PaneHost &host);
 
+// Whether a Windows contrast theme is on, which overrides Light and Dark.
+bool highContrastOn();
+
 // A brush from styles.xaml's theme dictionary for the window's ActualTheme (or
 // the contrast theme), resolved in code for the reason secondaryTextBlock
 // gives. Null when the key is missing.

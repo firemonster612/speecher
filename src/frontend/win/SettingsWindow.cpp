@@ -209,6 +209,7 @@ struct SettingsWindow::Native {
         };
         QObject::connect(controller, &ApplicationController::stateChanged, &lifetime, rebuildHome);
         QObject::connect(controller->insightsLog(), &InsightsLog::changed, &lifetime, rebuildHome);
+        QObject::connect(controller, &ApplicationController::lastRecordChanged, &lifetime, rebuildHome);
     }
 
     ~Native()
