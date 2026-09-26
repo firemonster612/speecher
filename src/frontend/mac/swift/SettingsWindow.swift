@@ -171,7 +171,7 @@ struct WhatsNewStrip: View {
     }
 }
 
-/// The source list: eight regular panes in runs, plus What's New while selected,
+/// The source list: nine regular panes in runs, plus What's New while selected,
 /// filtered by whatever the search field holds. The schema is the index, so a
 /// pane answers to its own name and to any group heading, row label or help text
 /// it carries.

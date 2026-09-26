@@ -98,6 +98,20 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// The Transcribe pane with these files added, not yet started. The front
+    /// end has already put the settings window on screen.
+    @MainActor
+    @objc(showTranscribeFiles:)
+    public func showTranscribe(files: [String]) {
+        model.showTranscribe(files: files)
+    }
+
+    /// Starts the files the Transcribe pane lists, for the screenshot path.
+    @MainActor
+    @objc public func startTranscription() {
+        model.transcription.start()
+    }
+
     @MainActor
     @objc public func captureSettings(toPath path: String) -> Bool {
         settings?.capture(toPath: path) ?? false

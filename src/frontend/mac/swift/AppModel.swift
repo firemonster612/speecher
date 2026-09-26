@@ -65,6 +65,9 @@ final class AppModel: ObservableObject {
     }
 
     let bridge: SpeecherBridge
+    /// The Transcribe pane's batch, kept here so it outlives the pane's view:
+    /// a batch keeps running while another pane is on screen.
+    let transcription: TranscriptionModel
     private static let paneKey = "settingsPane"
     /// A keyring read that lands after typing started must not overwrite it.
     private var apiKeyEdits = 0
@@ -94,6 +97,7 @@ final class AppModel: ObservableObject {
 
     init(bridge: SpeecherBridge) {
         self.bridge = bridge
+        transcription = TranscriptionModel(bridge: bridge)
         pages = bridge.settingsSchema.pages
         let panes = bridge.settingsSchema.panes.map(Pane.init)
         self.panes = panes
@@ -305,6 +309,13 @@ final class AppModel: ObservableObject {
     func showWhatsNew() {
         pane = "whatsNew"
         bridge.clearPendingWhatsNew()
+    }
+
+    /// Opens the Transcribe pane with these files added to the list, not yet
+    /// started: what opening audio with Speecher does.
+    func showTranscribe(files: [String]) {
+        pane = "transcribe"
+        transcription.add(files)
     }
 
     func dismissWhatsNew() {

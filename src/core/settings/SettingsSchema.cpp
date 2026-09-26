@@ -2023,7 +2023,7 @@ int compareBaseVersions(const QString &left, const QString &right)
     return 0;
 }
 
-// The settings window's eight regular panes and contextual What's New page, as
+// The settings window's nine regular panes and contextual What's New page, as
 // macOS shows them and Windows will. The pages above supply rows and values;
 // which pane a row appears on is decided here, so both front ends read one
 // arrangement instead of each keeping its own.
@@ -2073,6 +2073,7 @@ static QList<SettingsPane> settingsPanes()
               group("Silence", {QStringLiteral("vadEnabled"),
                                 QStringLiteral("vadThresholdPercent")})}),
         pane("shortcut", "Shortcut", "command", {}, PaneLayout::Shortcut, {}),
+        pane("transcribe", "Transcribe", "waveform", {}, PaneLayout::Transcribe, {}),
         pane("text", "Text", "text.cursor", {QStringLiteral("refinement")},
              PaneLayout::Sections,
              {group("Refinement", {QStringLiteral("refinementProvider"),
@@ -2127,6 +2128,7 @@ static QList<QStringList> settingsSidebarRuns()
     return {
         {QStringLiteral("general")},
         {QStringLiteral("dictation"), QStringLiteral("shortcut"), QStringLiteral("text")},
+        {QStringLiteral("transcribe")},
         {QStringLiteral("delivery"), QStringLiteral("apps")},
         {QStringLiteral("vocabulary"), QStringLiteral("accounts")},
     };
