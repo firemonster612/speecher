@@ -1,21 +1,11 @@
 #pragma once
 
-#include "core/AppSettings.h"
+#include "core/EndpointSettings.h"
 
 #include <QByteArray>
 #include <QStringList>
 
 namespace speecher {
-
-// The refinement Custom Endpoint with its preset applied.
-struct RefinementEndpoint {
-    QString format;
-    QString apiBase;
-    QString apiKey;
-    QString model;
-};
-
-RefinementEndpoint resolvedRefinementEndpoint(const RefinementSettings &settings);
 
 // The answer to "Test connection".
 struct EndpointCheck {

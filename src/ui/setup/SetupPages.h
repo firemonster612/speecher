@@ -1,6 +1,7 @@
 #pragma once
 
-#include "core/AppSettings.h"
+#include "core/EndpointSettings.h"
+#include "app/LocalSetup.h"
 #include "providers/ProviderSignIn.h"
 
 #include <QList>
@@ -121,6 +122,7 @@ public:
     // Re-run the probe while the page is off screen, so a sign-in that lapsed
     // mid-wizard closes the gate before Finish commits.
     void recheck();
+    void preserveSpeechChoice() { m_pathChoice.providerChosen(); }
 
 signals:
     void readyChanged();
@@ -129,12 +131,13 @@ signals:
     void checkFinished();
     // Running on this computer was chosen, by the person or as the default.
     void localPathChosen();
+    void pathProviderChanged(const QString &provider);
 
 protected:
     void showEvent(QShowEvent *event) override;
 
 private:
-    void choosePath(bool local);
+    void choosePath(std::optional<bool> local = std::nullopt);
     void showSignInPathStatus();
 
     struct CredentialRow {
@@ -172,7 +175,7 @@ private:
     QLabel *m_hardware = nullptr;
     // Until the person picks a path, every round of checks sets the
     // default: the sign-in when one is found, else this computer.
-    bool m_pathPicked = false;
+    WelcomeChoice m_pathChoice;
 };
 
 class SpeechProviderSetupPage final : public QWidget, public SetupStep {
@@ -199,6 +202,7 @@ public:
     void recheck();
 
 signals:
+    void providerChosen();
     void readyChanged();
 
 protected:
@@ -258,9 +262,9 @@ private:
     QPushButton *m_localCancel = nullptr;
     QToolButton *m_compareToggle = nullptr;
     QTableWidget *m_compare = nullptr;
-    QString m_localModelId;
+
     // The suggestion stands until the person picks a model themselves.
-    bool m_localPicked = false;
+
     quint64 m_checkGeneration = 0;
     int m_pendingProbes = 0;
     // Auto-selecting a ready provider is a one-time courtesy on the first
@@ -413,8 +417,7 @@ private:
     QWidget *makeEndpointDetail();
     void showLocalRunner();
     void showEndpointCheck();
-    RefinementSettings endpointFromFields() const;
-    void saveEndpointFields();
+    void saveEndpointEdit(const RefinementEndpointEdit &edit);
 
     SettingsStore &m_settings;
     ProviderRegistry &m_providers;

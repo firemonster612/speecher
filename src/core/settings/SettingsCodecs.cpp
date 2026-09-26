@@ -203,6 +203,7 @@ LocalSpeechSettings SettingsCodecs::localSpeechSettings() const
     const LocalSpeechSettings defaults;
     LocalSpeechSettings settings;
     settings.modelId = value(SettingsKeys::LocalModel, defaults.modelId).toString();
+    settings.modelChosen = value(SettingsKeys::LocalModelChosen, m_settings.contains(SettingsKeys::LocalModel)).toBool();
     settings.deviceId = value(SettingsKeys::LocalDevice, QString()).toString();
     settings.idleUnloadMinutes =
         std::max(0, value(SettingsKeys::LocalIdleUnloadMinutes, defaults.idleUnloadMinutes).toInt());
@@ -218,6 +219,9 @@ LocalSpeechSettings SettingsCodecs::localSpeechSettings() const
 
 void SettingsCodecs::setLocalSpeechSettings(const LocalSpeechSettings &value)
 {
+    const auto previous = localSpeechSettings();
+    m_settings.setValue(SettingsKeys::LocalModelChosen, value.modelChosen || previous.modelChosen
+                        || value.modelId != previous.modelId);
     m_settings.setValue(SettingsKeys::LocalModel, value.modelId);
     m_settings.setValue(SettingsKeys::LocalDevice, value.deviceId);
     m_settings.setValue(SettingsKeys::LocalIdleUnloadMinutes, std::max(0, value.idleUnloadMinutes));
@@ -250,6 +254,7 @@ RefinementEndpointSettings SettingsCodecs::refinementEndpointSettings() const
     RefinementEndpointSettings settings;
     const QString preset = value(SettingsKeys::RefinementEndpointPreset, QString()).toString();
     settings.preset = preset == QStringLiteral("cliproxy") ? preset : QString();
+    settings.useCliproxyKey = value(SettingsKeys::RefinementEndpointUseCliproxyKey, false).toBool();
     const QString format = value(SettingsKeys::RefinementEndpointFormat, settings.format).toString();
     settings.format = format == QStringLiteral("anthropic") ? format : QStringLiteral("openai");
     settings.baseUrl = withoutTrailingSlashes(value(SettingsKeys::RefinementEndpointBaseUrl, QString()).toString());
@@ -259,6 +264,7 @@ RefinementEndpointSettings SettingsCodecs::refinementEndpointSettings() const
 
 void SettingsCodecs::setRefinementEndpointSettings(const RefinementEndpointSettings &value)
 {
+    m_settings.setValue(SettingsKeys::RefinementEndpointUseCliproxyKey, value.useCliproxyKey);
     m_settings.setValue(SettingsKeys::RefinementEndpointPreset,
                         value.preset == QStringLiteral("cliproxy") ? value.preset : QString());
     m_settings.setValue(SettingsKeys::RefinementEndpointFormat,
@@ -270,8 +276,10 @@ void SettingsCodecs::setRefinementEndpointSettings(const RefinementEndpointSetti
 LocalRunnerSettings SettingsCodecs::localRunnerSettings() const
 {
     LocalRunnerSettings settings;
-    const QString runner = value(SettingsKeys::LocalRunner, settings.runner).toString();
-    if (runner == QStringLiteral("lmstudio") || runner == QStringLiteral("llama-server")) {
+    const QString previousDefault = value(SettingsKeys::LocalRunnerModel, QString()).toString().isEmpty()
+        ? QString() : QStringLiteral("ollama");
+    const QString runner = value(SettingsKeys::LocalRunner, previousDefault).toString();
+    if (runner == QStringLiteral("ollama") || runner == QStringLiteral("lmstudio") || runner == QStringLiteral("llama-server")) {
         settings.runner = runner;
     }
     settings.model = value(SettingsKeys::LocalRunnerModel, QString()).toString().trimmed();
@@ -280,9 +288,9 @@ LocalRunnerSettings SettingsCodecs::localRunnerSettings() const
 
 void SettingsCodecs::setLocalRunnerSettings(const LocalRunnerSettings &value)
 {
-    const bool known = value.runner == QStringLiteral("lmstudio")
+    const bool known = value.runner == QStringLiteral("ollama") || value.runner == QStringLiteral("lmstudio")
         || value.runner == QStringLiteral("llama-server");
-    m_settings.setValue(SettingsKeys::LocalRunner, known ? value.runner : QStringLiteral("ollama"));
+    m_settings.setValue(SettingsKeys::LocalRunner, known ? value.runner : QString());
     m_settings.setValue(SettingsKeys::LocalRunnerModel, value.model.trimmed());
 }
 

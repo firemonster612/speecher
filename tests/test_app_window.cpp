@@ -1,3 +1,4 @@
+#include "app/LocalSetup.h"
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
@@ -642,6 +643,21 @@ private slots:
         AppSettings draft;
         pages.corrections()->appendToDraft(draft);
         QCOMPARE(draft.learnedCorrections, corrections);
+    }
+
+    void localRefreshPreservesPendingSettingsEdits()
+    {
+        ApplicationController controller(true);
+        controller.settings()->raw().clear();
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        pages.load();
+        auto *idle = parent.findChild<QComboBox *>("localIdleUnload");
+        QVERIFY(idle);
+        idle->setCurrentIndex(idle->findData(60));
+        emit controller.localSetup()->changed();
+        QVERIFY(pages.save(false, false));
+        QCOMPARE(controller.settings()->localSpeechSettings().idleUnloadMinutes, 60);
     }
 
     void updateRowCaptionFollowsTheUpdateState()

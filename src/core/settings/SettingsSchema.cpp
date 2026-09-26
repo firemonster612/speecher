@@ -1,5 +1,8 @@
 #include "core/settings/SettingsSchema.h"
 
+#include "core/EndpointSettings.h"
+#include "core/SecretStore.h"
+
 #include "core/EndpointUrl.h"
 
 #include "core/BindingProcessor.h"
@@ -423,13 +426,13 @@ QList<RowOption> namedOptions(const QStringList &ids)
 
 // Test connection: the row's subtitle is the last verdict.
 SettingsRow connectionTestRow(QString id, std::function<QString(const LiveFacts &)> status,
-                              std::function<LiveFacts()> facts)
+                              std::function<LiveFacts(const AppSettings &)> facts)
 {
     const QString untested = QStringLiteral("Not tested yet.");
     SettingsRow row = actionRow(std::move(id), QStringLiteral("Connection"), untested,
                                 QStringLiteral("Test connection"));
-    row.helpValue = [status = std::move(status), facts = std::move(facts), untested](const AppSettings &) {
-        const QString verdict = status(facts());
+    row.helpValue = [status = std::move(status), facts = std::move(facts), untested](const AppSettings &settings) {
+        const QString verdict = status(facts(settings));
         return verdict.isEmpty() ? untested : verdict;
     };
     return row;
@@ -452,7 +455,7 @@ QString runnersSummary(const LiveFacts &live)
 }
 
 // The speech Custom Endpoint, under the Transcription picker.
-QList<SettingsRow> speechEndpointRows(const std::function<LiveFacts()> &facts)
+QList<SettingsRow> speechEndpointRows(const std::function<LiveFacts(const AppSettings &)> &facts)
 {
     QList<SettingsRow> rows{
         textRow(QStringLiteral("speechEndpointUrl"),
@@ -480,8 +483,8 @@ QList<SettingsRow> speechEndpointRows(const std::function<LiveFacts()> &facts)
     };
     rows[2].secret = true;
     rows[3].contentWidthHint = 20;
-    rows[3].suggestions = [facts](const AppSettings &) {
-        return namedOptions(facts().speechEndpointModels);
+    rows[3].suggestions = [facts](const AppSettings &settings) {
+        return namedOptions(facts(settings).speechEndpointModels);
     };
     for (SettingsRow &row : rows) {
         row.visible = whileSpeechProvider(QStringLiteral("endpoint"));
@@ -502,7 +505,7 @@ QList<SettingsRow> localRunnerRows(const std::function<LiveFacts()> &facts)
             const QString chosen = settings.refinement.localRunner.runner;
             if (std::none_of(options.cbegin(), options.cend(),
                              [&chosen](const RowOption &option) { return option.id == chosen; })) {
-                options.append({chosen, live.detectingRunners
+                options.append({chosen, chosen.isEmpty() ? QStringLiteral("Not selected") : live.detectingRunners
                                             ? localRunnerName(chosen)
                                             : QStringLiteral("%1 (not running)").arg(localRunnerName(chosen))});
             }
@@ -546,7 +549,7 @@ QList<SettingsRow> localRunnerRows(const std::function<LiveFacts()> &facts)
 }
 
 // The refinement Custom Endpoint, under the Provider picker.
-QList<SettingsRow> refinementEndpointRows(const std::function<LiveFacts()> &facts)
+QList<SettingsRow> refinementEndpointRows(const std::function<LiveFacts(const AppSettings &)> &facts)
 {
     QList<SettingsRow> rows{
         choiceRow(QStringLiteral("refinementEndpointFormat"),
@@ -556,30 +559,30 @@ QList<SettingsRow> refinementEndpointRows(const std::function<LiveFacts()> &fact
                       {QStringLiteral("openai"), QStringLiteral("OpenAI-compatible (Chat Completions)")},
                       {QStringLiteral("anthropic"), QStringLiteral("Anthropic-compatible (Messages)")},
                   }),
-                  [](const AppSettings &settings) { return settings.refinement.endpoint.format; },
-                  [](AppSettings &settings, const QString &value) { settings.refinement.endpoint.format = value; }),
+                  [](const AppSettings &settings) { return resolvedRefinementEndpoint(settings.refinement).format; },
+                  [](AppSettings &settings, const QString &value) { editRefinementEndpoint(settings, {.format = value}); }),
         textRow(QStringLiteral("refinementEndpointUrl"),
                 QStringLiteral("Server URL"),
                 QStringLiteral("The API base, such as http://localhost:11434/v1."),
-                [](const AppSettings &settings) { return settings.refinement.endpoint.baseUrl; },
-                [](AppSettings &settings, const QString &value) { settings.refinement.endpoint.baseUrl = value; }),
+                [](const AppSettings &settings) { return resolvedRefinementEndpoint(settings.refinement).apiBase; },
+                [](AppSettings &settings, const QString &value) { editRefinementEndpoint(settings, {.baseUrl = value}); }),
         textRow(QStringLiteral("refinementEndpointApiKey"),
                 QStringLiteral("API key"),
                 QStringLiteral("Optional. ") + keyStorageHelp(),
-                [](const AppSettings &settings) { return settings.refinement.endpoint.apiKey; },
-                [](AppSettings &settings, const QString &value) { settings.refinement.endpoint.apiKey = value; }),
+                [](const AppSettings &settings) { return resolvedRefinementEndpoint(settings.refinement).apiKey; },
+                [](AppSettings &settings, const QString &value) { editRefinementEndpoint(settings, {.apiKey = value}); }),
         textRow(QStringLiteral("refinementEndpointModel"),
                 QStringLiteral("Model"),
                 QStringLiteral("Test the connection to list the server's models, or type one."),
-                [](const AppSettings &settings) { return settings.refinement.endpoint.model; },
-                [](AppSettings &settings, const QString &value) { settings.refinement.endpoint.model = value; }),
+                [](const AppSettings &settings) { return resolvedRefinementEndpoint(settings.refinement).model; },
+                [](AppSettings &settings, const QString &value) { editRefinementEndpoint(settings, {.model = value}); }),
         connectionTestRow(QStringLiteral("refinementEndpointTest"),
                           [](const LiveFacts &live) { return live.refinementEndpointStatus; }, facts),
     };
     rows[2].secret = true;
     rows[3].contentWidthHint = 20;
-    rows[3].suggestions = [facts](const AppSettings &) {
-        return namedOptions(facts().refinementEndpointModels);
+    rows[3].suggestions = [facts](const AppSettings &settings) {
+        return namedOptions(facts(settings).refinementEndpointModels);
     };
     for (SettingsRow &row : rows) {
         row.visible = whileRefinementProvider(QStringLiteral("endpoint"));
@@ -1086,7 +1089,9 @@ SettingsPage audioPage(const SchemaContext &context)
             {QStringLiteral("Transcription"),
              QString(),
              QList<SettingsRow>{std::move(speechProvider), std::move(finalRetranscribe)}
-                 + speechEndpointRows([context] { return liveFacts(context); })},
+                 + speechEndpointRows([context](const AppSettings &draft) {
+                     return context.liveFactsForDraft ? context.liveFactsForDraft(draft) : liveFacts(context);
+                 })},
             {QStringLiteral("Capture"), QString(), {std::move(device)}},
             {QStringLiteral("Silence trimming"),
              QString(),
@@ -1217,7 +1222,9 @@ SettingsPage refinementPage(const SchemaContext &context)
                            [](AppSettings &settings, const QString &value) { settings.refinement.providerId = value; }),
              }
                  + localRunnerRows(facts)
-                 + refinementEndpointRows(facts)
+                 + refinementEndpointRows([context](const AppSettings &draft) {
+                     return context.liveFactsForDraft ? context.liveFactsForDraft(draft) : liveFacts(context);
+                 })
                  + QList<SettingsRow>{
                  std::move(fallbackProfile),
                  std::move(targetContext),
@@ -1252,6 +1259,7 @@ SettingsPage localModelsPage(const SchemaContext &context)
             return;
         }
         settings.speech.local.modelId = modelId;
+        settings.speech.local.modelChosen = true;
         settings.speech.providerId = QStringLiteral("local");
     };
 
@@ -2593,10 +2601,20 @@ QList<RowOption> authModeOptions(const QString &rowId)
 AppSettings mergeSettingsDraft(const SettingsSchema &schema, const AppSettings &loaded,
                                const AppSettings &draft, AppSettings current)
 {
+    const QString endpointKey = SecretStore::settingsKey(SecretStore::Secret::RefinementEndpointKey);
+    const QString proxyKey = SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey);
+    const bool clearedUnreadKey = loaded.unreadSecretKeys.contains(endpointKey)
+        && !draft.unreadSecretKeys.contains(endpointKey);
+    const bool detachedUnreadProxyKey = loaded.unreadSecretKeys.contains(proxyKey)
+        && (loaded.refinement.endpoint.preset == QStringLiteral("cliproxy") || loaded.refinement.endpoint.useCliproxyKey)
+        && draft.refinement.endpoint.preset.isEmpty() && !draft.refinement.endpoint.useCliproxyKey;
     for (const SettingsPage &page : schema.pages) {
         for (const SettingsSection &section : page.sections) {
             for (const SettingsRow &row : section.rows) {
-                if (!row.value || !row.apply || row.value(loaded) == row.value(draft)) continue;
+                if (!row.value || !row.apply) continue;
+                const bool editedKey = row.id == QStringLiteral("refinementEndpointApiKey")
+                    && (clearedUnreadKey || detachedUnreadProxyKey);
+                if (!editedKey && row.value(loaded) == row.value(draft)) continue;
                 const CollectionDescriptor &collection = row.collection;
                 if (collection.identityColumn.isEmpty()) {
                     row.apply(current, row.value(draft));

@@ -197,7 +197,6 @@ private:
             const QSignalBlocker blocker(m_list);
             selectModel(m_inUse.isEmpty() ? m_setup.suggestedModel().id : m_inUse);
         }
-        const HardwareProfile &hardware = m_setup.hardware().profile;
         const QString suggested = m_setup.suggestedModel().id;
         m_hardware->setText(m_setup.hardwareLine());
         for (int row = 0; row < m_list->count(); ++row) {
@@ -209,24 +208,23 @@ private:
             item->setText(QStringLiteral("%1\n%2 · %3 WER · %4")
                               .arg(model.name, downloadSizeText(model.sizeBytes),
                                    werLine(model.librispeechCleanWer), verdict));
-            const bool downloaded = m_setup.models().isDownloaded(model);
+            const bool downloaded = m_setup.modelState(model).downloaded;
             item->setIcon(QIcon::fromTheme(downloaded ? QStringLiteral("dialog-ok")
                                                       : QStringLiteral("download")));
         }
-        showDetail(selected(), hardware, suggested);
+        showDetail(selected(), suggested);
     }
 
-    void showDetail(const LocalModel &model, const HardwareProfile &hardware, const QString &suggested)
+    void showDetail(const LocalModel &model, const QString &suggested)
     {
+        const auto state = m_setup.modelState(model);
         const bool tooLarge = m_setup.fit(model) == ModelFit::TooLarge;
         m_name->setText(model.name);
         m_subtitle->setText(model.id == suggested && m_setup.hardwareKnown()
                                 ? QStringLiteral("Suggested for this computer")
                                 : model.fileName);
         m_size->setText(QStringLiteral("%1 · %2").arg(downloadSizeText(model.sizeBytes), m_setup.fitLabel(model)));
-        m_speed->setText(m_setup.speedTestRunning(model.id)
-                             ? QStringLiteral("Testing…")
-                             : localModelSpeedLine(model, hardware, m_setup.measuredSeconds(model.id)));
+        m_speed->setText(state.speedDetail);
         m_wer->setText(QStringLiteral("%1 clear speech (LibriSpeech)\n%2 everyday speech (FLEURS)")
                            .arg(werLine(model.librispeechCleanWer), werLine(model.fleursEnglishWer)));
         m_textShows->setText(model.streams ? QStringLiteral("As you speak") : QStringLiteral("After you stop"));
@@ -241,14 +239,11 @@ private:
         }
         m_prosCons->setText(notes.join(QLatin1Char('\n')));
 
-        const QString problem = m_setup.downloadError(model.id).isEmpty() ? m_setup.speedTestError(model.id)
-                                                                          : m_setup.downloadError(model.id);
-        m_problem->setText(problem);
-        m_problem->setVisible(!problem.isEmpty());
-
+        m_problem->setText(state.problem);
+        m_problem->setVisible(!state.problem.isEmpty());
         const auto progress = m_setup.downloadProgress(model.id);
-        const bool downloaded = !progress && m_setup.models().isDownloaded(model);
-        const bool inUse = downloaded && model.id == m_inUse;
+        const bool downloaded = state.downloaded;
+        const bool inUse = state.inUse;
         m_progress->setVisible(bool(progress));
         m_cancel->setVisible(bool(progress));
         if (progress) {

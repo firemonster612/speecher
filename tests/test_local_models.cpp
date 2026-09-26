@@ -1,3 +1,6 @@
+#include "app/LocalSetup.h"
+#include "core/SettingsStore.h"
+#include "providers/ProviderRegistry.h"
 #include "common/test_http.h"
 #include "common/test_suites.h"
 #include "core/LocalModelCatalog.h"
@@ -82,6 +85,200 @@ class LocalModelsTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void endpointChecksDiscardSupersededResults_data()
+    {
+        QTest::addColumn<bool>("refinement");
+        QTest::newRow("speech") << false;
+        QTest::newRow("refinement") << true;
+    }
+
+    void endpointChecksDiscardSupersededResults()
+    {
+        QFETCH(bool, refinement);
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        QTemporaryDir directory;
+        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
+        LocalSetup setup(settings, providers, models);
+        QTcpServer slow, fast;
+        QVERIFY(slow.listen(QHostAddress::LocalHost));
+        QVERIFY(fast.listen(QHostAddress::LocalHost));
+        const auto endpoint = [](quint16 port) {
+            SpeechEndpointSettings result;
+            result.baseUrl = QString("http://127.0.0.1:%1").arg(port);
+            return result;
+        };
+        const auto modelsForCheck = [&] {
+            const auto facts = setup.liveFacts();
+            return refinement ? facts.refinementEndpointModels : facts.speechEndpointModels;
+        };
+        const auto check = [&](AppSettings &snapshot) {
+            snapshot.refinement.endpoint.baseUrl = snapshot.speech.endpoint.baseUrl;
+            settings.applySnapshot(snapshot);
+            if (refinement) setup.checkRefinementEndpoint(snapshot.refinement);
+            else setup.checkSpeechEndpoint(snapshot.speech.endpoint);
+        };
+        auto snapshot = settings.snapshot();
+        snapshot.speech.endpoint = endpoint(slow.serverPort());
+        check(snapshot);
+        QTRY_VERIFY(slow.hasPendingConnections());
+        snapshot.speech.endpoint = endpoint(fast.serverPort());
+        check(snapshot);
+        QTRY_VERIFY(fast.hasPendingConnections());
+        serveOnce(fast, "200 OK", R"({"data":[{"id":"new-B"}]})");
+        QTRY_COMPARE(modelsForCheck(), QStringList{"new-B"});
+        serveOnce(slow, "200 OK", R"({"data":[{"id":"old-A"}]})");
+        QTest::qWait(100);
+        QCOMPARE(modelsForCheck(), QStringList{"new-B"});
+        snapshot.speech.endpoint.model = "edited-after-check";
+        snapshot.refinement.endpoint.model = "edited-after-check";
+        settings.applySnapshot(snapshot);
+        const auto facts = setup.liveFacts();
+        QVERIFY((refinement ? facts.refinementEndpointStatus : facts.speechEndpointStatus).isEmpty());
+        QVERIFY(modelsForCheck().isEmpty());
+    }
+
+    void sharedChoicesPreserveSavedConfiguration()
+    {
+        const QList<DetectedRunner> runners{{"ollama", "Ollama", {}, {}, {"other", "gemma4:e4b:latest"}},
+                                             {"lmstudio", "LM Studio", {}, {}, {"studio-model"}}};
+        const CleanupModel suggestion{"gemma4:e4b", "Gemma", 100};
+        auto choice = resolveRunnerChoice({"lmstudio", "studio-model"}, runners, suggestion);
+        QCOMPARE(choice.selection.runner, QString("lmstudio"));
+        QCOMPARE(choice.available->id, QString("lmstudio"));
+        choice = resolveRunnerChoice({"missing", "saved-model"}, runners, suggestion);
+        QVERIFY(!choice.available);
+        QCOMPARE(choice.selection.model, QString("saved-model"));
+        choice = resolveRunnerChoice({{}, {}}, runners, suggestion);
+        QCOMPARE(choice.selection.runner, QString("ollama"));
+        QCOMPARE(choice.selection.model, QString("gemma4:e4b:latest"));
+        QVERIFY(!choice.offerPull);
+        choice = resolveRunnerChoice({"ollama", "saved-model"}, runners, CleanupModel{"absent", {}, 0});
+        QVERIFY(choice.offerPull);
+        QVERIFY(choice.showSuggestion);
+        choice = resolveRunnerChoice({"ollama", "saved-model"}, runners, std::nullopt);
+        QVERIFY(choice.showSuggestion);
+        QVERIFY(!choice.offerPull);
+        for (const auto &id : {"local", "endpoint", "none"})
+            QCOMPARE(setupProviderChoice(id, {"claude"}, false), QString(id));
+        QCOMPARE(setupProviderChoice("claude", {"codex"}, false), QString("codex"));
+        QCOMPARE(setupProviderChoice("claude", {"codex"}, true), QString("claude"));
+    }
+
+    void welcomeDefaultsFollowOnlySignInsAndUndoTheirOwnWrite()
+    {
+        WelcomeChoice choice;
+        auto provider = choice.update("claude", {"local", "endpoint"}, false);
+        QVERIFY(choice.local());
+        QCOMPARE(provider, QString("local"));
+        provider = choice.update(provider, {"claude"}, false);
+        QVERIFY(!choice.local());
+        QCOMPARE(provider, QString("claude"));
+        provider = choice.update(provider, {"claude"}, false, true);
+        QCOMPARE(provider, QString("local"));
+        QCOMPARE(choice.update(provider, {"claude"}, false), QString("local"));
+        provider = choice.update(provider, {"claude"}, false, false);
+        QCOMPARE(provider, QString("claude"));
+        WelcomeChoice reopened;
+        QCOMPARE(reopened.update("local", {}, false), QString("local"));
+        QCOMPARE(reopened.update("local", {"claude"}, false), QString("local"));
+        WelcomeChoice automatic;
+        QCOMPARE(automatic.update("claude", {}, false), QString("local"));
+        automatic.providerChosen();
+        QCOMPARE(automatic.update("local", {"claude"}, false), QString("local"));
+        QVERIFY(!isSetupSignInProvider("local"));
+        QVERIFY(!isSetupSignInProvider("endpoint"));
+        QVERIFY(isSetupSignInProvider("codex"));
+    }
+
+    void interruptedDownloadsResumeButCancelledOnesDoNot()
+    {
+        QTemporaryDir directory;
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        const QUrl origin(QString("http://127.0.0.1:%1").arg(server.serverPort()));
+        const auto &model = *findLocalModel("moonshine-small");
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        {
+            LocalModelStore models(directory.path(), origin);
+            LocalSetup setup(settings, providers, models);
+            setup.download(model);
+            QVERIFY(models.isDownloading(model.id));
+            QVERIFY(setup.modelState(model).downloading);
+            QVERIFY(!setup.modelState(model).downloaded);
+        }
+        {
+            LocalModelStore models(directory.path(), origin);
+            LocalSetup setup(settings, providers, models);
+            QTRY_VERIFY(models.isDownloading(model.id));
+            setup.cancelDownload(model.id);
+        }
+        LocalModelStore models(directory.path(), origin);
+        LocalSetup setup(settings, providers, models);
+        QCoreApplication::processEvents();
+        QVERIFY(!models.isDownloading(model.id));
+    }
+
+    void speechModelChoiceAndDisplayAreShared()
+    {
+        QTemporaryDir directory;
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
+#ifdef SPEECHER_WITH_LOCAL_SPEECH
+        providers.registerSpeechProvider({"local", "Local model", {}},
+            [&models](QObject *parent) { return new LocalSpeechTranscriber(models, parent); });
+#endif
+        LocalSetup setup(settings, providers, models);
+        QVERIFY(!settings.localSpeechSettings().modelChosen);
+        auto unchanged = settings.localSpeechSettings();
+        unchanged.idleUnloadMinutes = 60;
+        settings.setLocalSpeechSettings(unchanged);
+        QVERIFY(!settings.localSpeechSettings().modelChosen);
+        setup.initializeSpeechModel();
+        QCOMPARE(settings.localSpeechSettings().modelId, setup.suggestedModel().id);
+        QVERIFY(settings.localSpeechSettings().modelChosen);
+        setup.chooseSpeechModel("cohere");
+        setup.initializeSpeechModel();
+        QCOMPARE(setup.speechModelChoice().id, QString("cohere"));
+        const auto &model = *findLocalModel("cohere");
+        auto speech = settings.snapshot().speech;
+        auto state = setup.modelState(model, speech);
+        QVERIFY(!state.downloaded && !state.downloading && !state.inUse);
+        QCOMPARE(state.speedText, QString("Not measured"));
+#ifdef SPEECHER_WITH_LOCAL_SPEECH
+        setup.probeHardware();
+        QTRY_VERIFY(setup.hardwareKnown());
+        const auto estimated = setup.modelState(*findLocalModel("parakeet"));
+        QVERIFY(estimated.speedText.endsWith("(estimated)"));
+#endif
+        auto local = settings.localSpeechSettings();
+        local.speedTestSeconds.insert(model.id, 0.8);
+        settings.setLocalSpeechSettings(local);
+        QCOMPARE(setup.modelState(model, speech).speedText, speechSecondsText(0.8));
+        {
+            QFile file(models.modelPath(model));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            QVERIFY(file.resize(model.sizeBytes));
+        }
+        speech.providerId = "local";
+        state = setup.modelState(model, speech);
+        QVERIFY(state.downloaded && state.inUse);
+        speech.providerId = "claude";
+        QVERIFY(!setup.modelState(model, speech).inUse);
+#ifdef SPEECHER_WITH_LOCAL_SPEECH
+        auto *provider = qobject_cast<LocalSpeechTranscriber *>(providers.speechProvider("local"));
+        emit provider->speedTestFinished(model.id, 0, "speed problem");
+        QCOMPARE(setup.modelState(model, speech).problem, QString("speed problem"));
+#endif
+        emit models.downloadFailed(model.id, "download problem");
+        QCOMPARE(setup.modelState(model, speech).problem, QString("download problem"));
+    }
+
     void catalogEntriesArePinned()
     {
         const QList<LocalModel> &models = localModelCatalog();
@@ -312,6 +509,40 @@ private slots:
         QVERIFY(!retry.toLower().contains("\r\nrange:"));
         QVERIFY(finished.wait(5000));
         QVERIFY(store.isDownloaded(model));
+    }
+
+    void cancelDoesNotWaitForAnotherModelsHashCheck()
+    {
+        QTemporaryDir dir;
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        LocalModelStore store(dir.path(), QUrl(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort())));
+        // A complete, sparse 512 MiB partial file goes straight to the hash
+        // check. Its hash is wrong, which the check only learns at the end.
+        LocalModel large = fakeModel({});
+        large.id = QStringLiteral("large");
+        large.fileName = QStringLiteral("large.gguf");
+        large.sizeBytes = qint64(512) << 20;
+        {
+            QFile part(store.modelPath(large) + QStringLiteral(".part"));
+            QVERIFY(part.open(QIODevice::WriteOnly));
+            QVERIFY(part.resize(large.sizeBytes));
+        }
+        const LocalModel other = fakeModel("other");
+        QSignalSpy failed(&store, &LocalModelStore::downloadFailed);
+
+        QElapsedTimer timer;
+        timer.start();
+        store.download(large);
+        store.download(other);
+        store.cancel(other.id);
+        const qint64 cancelMs = timer.elapsed();
+        QVERIFY(failed.wait(60000));
+        const qint64 hashMs = timer.elapsed();
+
+        QCOMPARE(failed.first().at(0).toString(), large.id);
+        QVERIFY2(cancelMs * 4 < hashMs, qPrintable(QStringLiteral("cancel took %1 ms of a %2 ms hash check")
+                                                       .arg(cancelMs).arg(hashMs)));
     }
 
 #ifdef SPEECHER_WITH_LOCAL_SPEECH

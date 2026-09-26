@@ -15,6 +15,7 @@ namespace speecher {
 struct StartupPreparationResult {
     quint64 generation = 0;
     SpeechPrepareResult speech;
+    std::optional<AppSettings> resolvedSettings;
     RefinementRefreshResult refinerRefresh;
     bool refinerRefreshAttempted = false;
 };
@@ -29,7 +30,8 @@ public:
     void start(quint64 generation,
                std::optional<SpeechPrepareJob> speechJob,
                std::optional<RefinementRefreshJob> refinerJob,
-               SpeechPrepareResult speechPrepared);
+               SpeechPrepareResult speechPrepared,
+               std::optional<AppSettings> secretsToResolve = std::nullopt);
     void cancel();
 
 signals:

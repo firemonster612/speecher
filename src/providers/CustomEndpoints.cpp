@@ -42,16 +42,6 @@ QStringList modelIdsFromListing(const QByteArray &body)
     return ids;
 }
 
-RefinementEndpoint resolvedRefinementEndpoint(const RefinementSettings &settings)
-{
-    const RefinementEndpointSettings &endpoint = settings.endpoint;
-    if (endpoint.preset == QStringLiteral("cliproxy")) {
-        return {endpoint.format, endpointApiBase(settings.cliproxyBaseUrl), settings.cliproxyApiKey,
-                endpoint.model};
-    }
-    return {endpoint.format, endpoint.baseUrl, endpoint.apiKey, endpoint.model};
-}
-
 EndpointCheck checkSpeechEndpoint(const SpeechEndpointSettings &endpoint, int timeoutMs)
 {
     if (endpoint.baseUrl.isEmpty()) {

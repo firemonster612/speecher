@@ -71,7 +71,8 @@ void StreamingRefinement::post(const Request &request)
         }
         const QString message = m_provider + QStringLiteral(" refinement failed: ") + detail;
         reply->deleteLater();
-        if (!retryAtStandardSpeed(message, true)) emit failed(message);
+        const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (!retryAtStandardSpeed(message, true)) emit failed(message, httpStatus);
     });
 }
 
@@ -136,7 +137,7 @@ void StreamingRefinement::fail(const QString &message, Retry retry)
     if (reply && !queuedAbort) reply->abort();
     if (retry == Retry::Never || !retryAtStandardSpeed(message, retry == Retry::AfterRejection)) {
         m_standardFallback = nullptr;
-        emit failed(message);
+        emit failed(message, reply ? reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() : 0);
     }
     // A failure listener may drain deferred deletes or start another request.
     if (reply && queuedAbort) {

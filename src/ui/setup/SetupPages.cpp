@@ -482,11 +482,9 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
                               QStringLiteral("computer"))
                           .first;
         connect(m_signInPath, &QRadioButton::clicked, this, [this] {
-            m_pathPicked = true;
             choosePath(false);
         });
         connect(m_localPath, &QRadioButton::clicked, this, [this] {
-            m_pathPicked = true;
             choosePath(true);
         });
 
@@ -531,6 +529,7 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
     settings::addCardRow(card, leadRow, host);
 
     for (const ProviderDescriptor &provider : m_providers.speechProviders()) {
+        if (!isSetupSignInProvider(provider.id)) continue;
         const StatusRow row = makeStatusRow(host,
                                             makeProviderMark(provider.id, host),
                                             credentialSourceLabel(provider.id, provider.label),
@@ -582,29 +581,30 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
         // Default to the sign-in when the first round finds one, else to this
         // computer; either way only until the person picks.
         connect(this, &WelcomeSetupPage::checkFinished, this, [this] {
-            if (m_pathPicked) {
-                return;
-            }
-            const bool anyFound = std::any_of(m_rows.cbegin(), m_rows.cend(),
-                                              [](const CredentialRow &row) { return row.found; });
-            choosePath(!anyFound && !m_cliproxyFound);
+            choosePath();
         });
     }
     // The first showEvent runs the first probe. Probing from here as well
     // aimed two rounds at the same providers before the page was even visible.
 }
 
-void WelcomeSetupPage::choosePath(bool local)
+void WelcomeSetupPage::choosePath(std::optional<bool> choice)
 {
+    QStringList ready;
+    for (const auto &row : m_rows) if (row.found) ready.append(row.providerId);
+    const QString current = m_settings.speechProvider();
+    const QString provider = m_pathChoice.update(current, ready, m_cliproxyFound, choice);
+    const bool local = m_pathChoice.local();
     const bool changed = m_localPath->isChecked() != local;
     m_localPath->setChecked(local);
     m_signInPath->setChecked(!local);
     m_localDetail->setVisible(local);
     m_signInDetail->setVisible(!local);
-    // A repeat of the same default is not news to the Transcription step.
-    if (local && (changed || m_pathPicked)) {
-        emit localPathChosen();
+    if (provider != current) {
+        m_settings.setSpeechProvider(provider);
+        emit pathProviderChanged(provider);
     }
+    if (local && (changed || choice)) emit localPathChosen();
     updateReady();
 }
 
@@ -724,10 +724,8 @@ void WelcomeSetupPage::updateReady()
                                       [](const CredentialRow &row) { return row.found; });
     if (m_local) {
         showSignInPathStatus();
-        if (m_localPath->isChecked()) {
-            setReady(true);
-            return;
-        }
+        setReady(m_pathChoice.ready());
+        return;
     }
     // With no speech providers registered at all there is nothing to sign in
     // to, and holding Next would strand the user on page one.
@@ -836,14 +834,6 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     m_accuracyPass->setObjectName(QStringLiteral("codexFinalRetranscribe"));
     m_accuracyPass->setChecked(m_settings.codexFinalRetranscribe());
     if (m_local) {
-        // A saved model the person already dictates with, or has on disk or
-        // coming, is their choice; anything else is only the default and the
-        // suggestion replaces it.
-        m_localModelId = m_settings.localSpeechSettings().modelId;
-        const LocalModel *saved = findLocalModel(m_localModelId);
-        m_localPicked = saved
-            && (m_settings.speechProvider() == QStringLiteral("local")
-                || m_local->models().isDownloaded(*saved) || m_local->models().isDownloading(saved->id));
         layout->addWidget(makeLocalSection());
     }
     layout->addWidget(m_stats);
@@ -858,7 +848,10 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
 
     for (const ProviderOptionRow &option : m_options) {
         const QString providerId = option.id;
-        connect(option.button, &QRadioButton::clicked, this, [this] { m_userSelected = true; });
+        connect(option.button, &QRadioButton::clicked, this, [this] {
+            m_userSelected = true;
+            emit providerChosen();
+        });
         connect(option.button, &QRadioButton::toggled, this, [this, providerId](bool checked) {
             if (checked) {
                 selectProvider(providerId);
@@ -992,8 +985,8 @@ QWidget *SpeechProviderSetupPage::makeLocalSection()
         compareNote->setVisible(open);
         showLocalChoice();
     });
-    connect(m_compare, &QTableWidget::cellClicked, this, [this](int row, int) {
-        setLocalChoice(localModelCatalog().at(row).id);
+    connect(m_compare, &QTableWidget::currentCellChanged, this, [this](int row, int, int, int) {
+        if (row >= 0) setLocalChoice(localModelCatalog().at(row).id);
     });
     connect(m_localDownload, &QPushButton::clicked, this, [this] {
         m_local->download(localChoice());
@@ -1016,17 +1009,12 @@ bool SpeechProviderSetupPage::localSelected() const
 
 const LocalModel &SpeechProviderSetupPage::localChoice() const
 {
-    const LocalModel *chosen = findLocalModel(m_localModelId);
-    return m_localPicked && chosen ? *chosen : m_local->suggestedModel();
+    return m_local->speechModelChoice();
 }
 
 void SpeechProviderSetupPage::setLocalChoice(const QString &modelId)
 {
-    m_localPicked = true;
-    m_localModelId = modelId;
-    LocalSpeechSettings local = m_settings.localSpeechSettings();
-    local.modelId = modelId;
-    m_settings.setLocalSpeechSettings(local);
+    m_local->chooseSpeechModel(modelId);
     showLocalChoice();
     showSelectedProvider();
 }
@@ -1034,7 +1022,8 @@ void SpeechProviderSetupPage::setLocalChoice(const QString &modelId)
 bool SpeechProviderSetupPage::localDownloadStarted() const
 {
     const LocalModel &model = localChoice();
-    return m_local->models().isDownloaded(model) || m_local->models().isDownloading(model.id);
+    const auto state = m_local->modelState(model);
+    return state.downloaded || state.downloading;
 }
 
 QString SpeechProviderSetupPage::localModelId() const
@@ -1048,27 +1037,21 @@ void SpeechProviderSetupPage::showLocalChoice()
         return;
     }
     m_localSection->setVisible(localSelected());
-    const HardwareProfile &hardware = m_local->hardware().profile;
     const LocalModel &model = localChoice();
     const bool suggested = model.id == m_local->suggestedModel().id;
-    if (localSelected() && !m_localPicked && m_settings.localSpeechSettings().modelId != model.id) {
-        // The suggestion is what dictation will use unless the person picks.
-        LocalSpeechSettings local = m_settings.localSpeechSettings();
-        local.modelId = model.id;
-        m_settings.setLocalSpeechSettings(local);
-    }
     m_localHardware->setText(m_local->hardwareLine());
     m_localCaption->setText(suggested ? QStringLiteral("Suggested for this computer") : QStringLiteral("Your choice"));
     m_localName->setText(model.name);
     m_localFacts->setText(QStringLiteral("%1\n%2\n%3% of words wrong on clear speech, %4% on everyday speech")
                               .arg(model.streams ? QStringLiteral("Words appear as you speak")
                                                  : QStringLiteral("Text appears after you stop speaking"),
-                                   localModelSpeedLine(model, hardware, m_local->measuredSeconds(model.id)))
+                                   m_local->modelState(model, m_settings.snapshot().speech).speedDetail)
                               .arg(model.librispeechCleanWer)
                               .arg(model.fleursEnglishWer));
 
     const auto progress = m_local->downloadProgress(model.id);
-    const bool downloaded = !progress && m_local->models().isDownloaded(model);
+    const auto state = m_local->modelState(model);
+    const bool downloaded = state.downloaded;
     const bool tooLarge = m_local->fit(model) == ModelFit::TooLarge;
     m_localDownload->setVisible(!progress && !downloaded);
     m_localDownload->setEnabled(!tooLarge);
@@ -1084,7 +1067,7 @@ void SpeechProviderSetupPage::showLocalChoice()
         setStatusColor(m_localState, true);
         m_localState->setText(QStringLiteral("Downloaded"));
     } else {
-        m_localState->setText(m_local->downloadError(model.id));
+        m_localState->setText(state.problem);
     }
     m_localState->setVisible(!m_localState->text().isEmpty());
 
@@ -1093,11 +1076,7 @@ void SpeechProviderSetupPage::showLocalChoice()
                                  : QStringLiteral("Compare %1 other models").arg(localModelCatalog().size() - 1));
     for (int row = 0; row < localModelCatalog().size(); ++row) {
         const LocalModel &entry = localModelCatalog().at(row);
-        const std::optional<double> measured = m_local->measuredSeconds(entry.id);
-        const std::optional<SpeedEstimate> estimate = estimatedSpeed(entry, hardware);
-        const QString speed = measured ? speechSecondsText(*measured)
-            : estimate                 ? QStringLiteral("~") + speechSecondsText(estimate->secondsFor10sSpeech)
-                                       : QStringLiteral("Not measured");
+        const QString speed = m_local->modelState(entry, m_settings.snapshot().speech).speedText;
         const QStringList cells{
             entry.id == m_local->suggestedModel().id ? entry.name + QStringLiteral(" (suggested)") : entry.name,
             downloadSizeText(entry.sizeBytes),
@@ -1201,6 +1180,7 @@ void SpeechProviderSetupPage::setReady(bool ready)
 
 void SpeechProviderSetupPage::selectProvider(const QString &providerId)
 {
+    if (m_local && providerId == QStringLiteral("local")) m_local->initializeSpeechModel();
     m_settings.setSpeechProvider(providerId);
     const QList<ProviderDescriptor> providers = m_providers.speechProviders();
     const auto it = std::find_if(providers.cbegin(), providers.cend(),
@@ -1366,7 +1346,7 @@ void SpeechProviderSetupPage::showSelectedProvider()
     if (localSelected()) {
         // Next opens as soon as a download has started: it keeps going while
         // setup continues, and the Ready page shows where it got to.
-        const bool downloaded = m_local->models().isDownloaded(localChoice());
+        const bool downloaded = m_local->modelState(localChoice()).downloaded;
         const bool started = localDownloadStarted();
         setStatusColor(m_status, false);
         m_status->setText(downloaded ? QString()
@@ -1402,21 +1382,15 @@ void SpeechProviderSetupPage::showSelectedProvider()
 
 void SpeechProviderSetupPage::autoSelectReadyProvider()
 {
-    if (m_autoSelectDone || m_userSelected) {
-        return;
-    }
+    if (m_autoSelectDone || m_userSelected) return;
     m_autoSelectDone = true;
     const int index = selectedIndex();
-    if (index >= 0 && m_options.at(index).ok) {
-        return;
-    }
-    // The saved service cannot transcribe but another one can: start the user
-    // on the one that works rather than on a dead end.
-    for (const ProviderOptionRow &option : m_options) {
-        if (option.ok) {
-            option.button->setChecked(true);
-            return;
-        }
+    if (index < 0) return;
+    QStringList ready;
+    for (const auto &option : m_options) if (option.ok) ready.append(option.id);
+    const auto chosen = setupProviderChoice(m_options.at(index).id, ready, m_userSelected);
+    for (const auto &option : m_options) {
+        if (option.id == chosen) option.button->setChecked(true);
     }
 }
 
@@ -2177,41 +2151,39 @@ QWidget *RefinementSetupPage::makeEndpointDetail()
     m_endpointStatus->setWordWrap(true);
     layout->addWidget(m_endpointStatus);
 
-    for (QLineEdit *edit : {m_endpointUrl, m_endpointKey}) {
-        connect(edit, &QLineEdit::editingFinished, this, [this] { saveEndpointFields(); });
-    }
-    connect(m_endpointFormat, &QComboBox::activated, this, [this] { saveEndpointFields(); });
-    connect(m_endpointModel, &QComboBox::currentTextChanged, this, [this] { saveEndpointFields(); });
+    // Compare against what this field showed, never against a newly read secret.
+    const auto bindText = [this](QLineEdit *field, bool key) {
+        connect(field, &QLineEdit::editingFinished, this,
+                [this, field, key, shown = field->text()]() mutable {
+                    if (field->text() == shown) return;
+                    shown = field->text();
+                    saveEndpointEdit(key ? RefinementEndpointEdit{.apiKey = shown}
+                                         : RefinementEndpointEdit{.baseUrl = shown});
+                });
+    };
+    bindText(m_endpointUrl, false);
+    bindText(m_endpointKey, true);
+    connect(m_endpointFormat, &QComboBox::activated, this, [this] {
+        saveEndpointEdit({.format = m_endpointFormat->currentData().toString()});
+    });
+    connect(m_endpointModel, &QComboBox::currentTextChanged, this, [this](const QString &model) {
+        saveEndpointEdit({.model = model});
+    });
     connect(connectButton, &QPushButton::clicked, this, [this] {
-        saveEndpointFields();
-        m_local->checkRefinementEndpoint(endpointFromFields());
+        emit m_endpointUrl->editingFinished();
+        emit m_endpointKey->editingFinished();
+        m_local->checkRefinementEndpoint(m_settings.snapshot().refinement);
     });
     connect(m_local, &LocalSetup::changed, this, [this] { showEndpointCheck(); });
     return m_endpointDetail;
 }
 
-RefinementSettings RefinementSetupPage::endpointFromFields() const
-{
-    RefinementSettings settings = m_settings.snapshot().refinement;
-    const RefinementEndpoint shown = resolvedRefinementEndpoint(settings);
-    const QString url = m_endpointUrl->text().trimmed();
-    const QString key = m_endpointKey->text().trimmed();
-    // A preset stays until the person edits the server or key it supplies.
-    if (url != shown.apiBase || key != shown.apiKey) {
-        settings.endpoint.preset.clear();
-        settings.endpoint.baseUrl = url;
-        settings.endpoint.apiKey = key;
-    }
-    settings.endpoint.format = m_endpointFormat->currentData().toString();
-    settings.endpoint.model = m_endpointModel->currentText().trimmed();
-    return settings;
-}
-
-void RefinementSetupPage::saveEndpointFields()
+void RefinementSetupPage::saveEndpointEdit(const RefinementEndpointEdit &edit)
 {
     AppSettings settings = m_settings.snapshot();
-    settings.refinement = endpointFromFields();
+    editRefinementEndpoint(settings, edit);
     m_settings.applySnapshot(settings);
+    showEndpointCheck();
     showSelectedProvider();
 }
 
@@ -2220,26 +2192,30 @@ void RefinementSetupPage::showEndpointCheck()
     const LiveFacts facts = m_local->liveFacts();
     m_endpointStatus->setText(facts.refinementEndpointStatus);
     m_endpointStatus->setVisible(!facts.refinementEndpointStatus.isEmpty());
-    if (!facts.refinementEndpointModels.isEmpty()) {
+    QStringList shown;
+    for (int i = 0; i < m_endpointModel->count(); ++i) shown.append(m_endpointModel->itemText(i));
+    if (shown != facts.refinementEndpointModels) {
         const QString typed = m_endpointModel->currentText();
+        const int cursor = m_endpointModel->lineEdit()->cursorPosition();
         const QSignalBlocker blocker(m_endpointModel);
         m_endpointModel->clear();
         m_endpointModel->addItems(facts.refinementEndpointModels);
-        m_endpointModel->setEditText(typed.isEmpty() ? facts.refinementEndpointModels.first() : typed);
+        m_endpointModel->setEditText(typed);
+        m_endpointModel->lineEdit()->setCursorPosition(cursor);
     }
 }
 
 void RefinementSetupPage::showLocalRunner()
 {
-    const QList<DetectedRunner> runners = m_local->runners();
+    const auto choice = m_local->runnerChoice();
     const LocalSetup::Pull pull = m_local->pull();
-    const bool found = !runners.isEmpty();
+    const bool found = choice.available.has_value();
     // The own-model rows say what is on this computer, not a sign-in verdict.
     for (const ProviderOptionRow &option : m_options) {
         if (option.id == QStringLiteral("local")) {
             setStatusColor(option.status, found);
             option.status->setText(m_local->detectingRunners() ? QStringLiteral("Checking…")
-                                   : found ? QStringLiteral("%1 found").arg(runners.first().name)
+                                   : found ? QStringLiteral("%1 found").arg(choice.available->name)
                                            : QStringLiteral("No runner"));
         } else if (option.id == QStringLiteral("endpoint")) {
             option.status->clear();
@@ -2249,51 +2225,30 @@ void RefinementSetupPage::showLocalRunner()
         setStatusColor(m_runnerStatus, false);
         m_runnerStatus->setText(QStringLiteral("Looking for Ollama, LM Studio and llama-server…"));
     } else if (found) {
-        const DetectedRunner &runner = runners.first();
+        const DetectedRunner &runner = *choice.available;
         setStatusColor(m_runnerStatus, true);
         m_runnerStatus->setText(QStringLiteral("%1 %2 is running on this computer.").arg(runner.name, runner.version));
     } else {
         setStatusColor(m_runnerStatus, false);
-        m_runnerStatus->setText(QStringLiteral("No local runner found on this computer."));
+        m_runnerStatus->setText(choice.selection.runner.isEmpty()
+            ? QStringLiteral("No local runner found on this computer.")
+            : QStringLiteral("%1 is unavailable. Your saved selection is unchanged.").arg(localRunnerName(choice.selection.runner)));
     }
     m_noRunner->setVisible(!found && !m_local->detectingRunners());
     m_runnerCard->setVisible(found);
 
-    // The first runner found is the one the settings name.
-    if (found) {
-        const DetectedRunner &runner = runners.first();
-        LocalRunnerSettings chosen = m_settings.localRunnerSettings();
-        if (chosen.runner != runner.id) {
-            chosen.runner = runner.id;
-            m_settings.setLocalRunnerSettings(chosen);
-        }
+    {
         const QSignalBlocker blocker(m_runnerModel);
         m_runnerModel->clear();
-        m_runnerModel->addItems(runner.models);
-        if (chosen.model.isEmpty() && !runner.models.isEmpty()) {
-            // The suggested cleanup model when the runner has it.
-            const std::optional<CleanupModel> suggested = m_local->suggestedCleanupModel();
-            const auto installed = std::find_if(runner.models.cbegin(), runner.models.cend(),
-                                                [&suggested](const QString &model) {
-                                                    return suggested && model.startsWith(suggested->ollamaTag);
-                                                });
-            chosen.model = installed != runner.models.cend() ? *installed : runner.models.first();
-            m_settings.setLocalRunnerSettings(chosen);
-        }
-        m_runnerModel->setCurrentText(chosen.model);
-        m_runnerModelRow->setVisible(!runner.models.isEmpty());
+        if (found) m_runnerModel->addItems(choice.available->models);
+        if (!choice.selection.model.isEmpty() && m_runnerModel->findText(choice.selection.model) < 0)
+            m_runnerModel->addItem(choice.selection.model);
+        m_runnerModel->setCurrentIndex(m_runnerModel->findText(choice.selection.model));
+        m_runnerModelRow->setVisible(found);
     }
-
     const std::optional<CleanupModel> suggested = m_local->suggestedCleanupModel();
-    const bool haveSuggested = found && suggested
-        && std::any_of(runners.first().models.cbegin(), runners.first().models.cend(),
-                       [&suggested](const QString &model) {
-                           return model == suggested->ollamaTag
-                               || model == suggested->ollamaTag + QStringLiteral(":latest");
-                       });
-    const bool ollama = found && runners.first().id == QStringLiteral("ollama");
-    settings::setCardRowVisible(m_cleanupSuggestion, ollama && (pull.running || !haveSuggested));
-    m_pull->setVisible(!pull.running && suggested.has_value());
+    settings::setCardRowVisible(m_cleanupSuggestion, choice.showSuggestion || pull.running);
+    m_pull->setVisible(!pull.running && choice.offerPull);
     m_pullProgress->setVisible(pull.running);
     if (pull.running) {
         m_pullProgress->setValue(pull.totalBytes > 0 ? int(pull.completedBytes * 1000 / pull.totalBytes) : 0);
@@ -2473,23 +2428,15 @@ void RefinementSetupPage::showSelectedProvider()
 
 void RefinementSetupPage::autoSelectReadyProvider()
 {
-    if (m_autoSelectDone || m_userSelected) {
-        return;
-    }
+    if (m_autoSelectDone || m_userSelected) return;
     m_autoSelectDone = true;
     const int index = selectedIndex();
-    // Someone's own runner or server was their choice, made in Settings or on
-    // an earlier run; its setup is on this page, not a reason to move away.
-    const QString chosen = index < 0 ? QString() : m_options.at(index).id;
-    if (index < 0 || m_options.at(index).ok || chosen == QStringLiteral("local")
-        || chosen == QStringLiteral("endpoint")) {
-        return;
-    }
-    for (const ProviderOptionRow &option : m_options) {
-        if (option.ok) {
-            option.button->setChecked(true);
-            return;
-        }
+    if (index < 0) return;
+    QStringList ready;
+    for (const auto &option : m_options) if (option.ok) ready.append(option.id);
+    const auto chosen = setupProviderChoice(m_options.at(index).id, ready, m_userSelected);
+    for (const auto &option : m_options) {
+        if (option.id == chosen) option.button->setChecked(true);
     }
 }
 
