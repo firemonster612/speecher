@@ -99,6 +99,8 @@ SpeecherPaneLayout bridgedPaneLayout(PaneLayout layout)
         return SpeecherPaneLayoutAlternatives;
     case PaneLayout::Shortcut:
         return SpeecherPaneLayoutShortcut;
+    case PaneLayout::Home:
+        return SpeecherPaneLayoutHome;
     }
 }
 

@@ -2059,6 +2059,7 @@ static QList<SettingsPane> settingsPanes()
         return SettingsPaneGroup{QLatin1String(title), QString(), std::move(rows)};
     };
     return {
+        pane("home", "Home", "house", {}, PaneLayout::Home, {}),
         pane("general", "General", "gearshape", {QStringLiteral("general")},
              PaneLayout::Sections,
              {group("Appearance", {QStringLiteral("themeControl"),
@@ -2146,6 +2147,7 @@ static QList<SettingsPane> settingsPanes()
 static QList<QStringList> settingsSidebarRuns()
 {
     return {
+        {QStringLiteral("home")},
         {QStringLiteral("general")},
         {QStringLiteral("dictation"), QStringLiteral("shortcut"), QStringLiteral("text")},
         {QStringLiteral("delivery"), QStringLiteral("apps")},

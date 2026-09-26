@@ -118,6 +118,7 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
     SpeecherPaneLayoutSections,
     SpeecherPaneLayoutAlternatives,
     SpeecherPaneLayoutShortcut,
+    SpeecherPaneLayoutHome,
 };
 
 // One card a pane shows: a heading, a footnote, and the schema rows it names.
