@@ -1928,6 +1928,11 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
     return speecher::transcribePhaseLabel(static_cast<speecher::TranscribePhase>(phase)).toNSString();
 }
 
+- (NSString *)transcribeStepLabel:(SpeecherTranscribeStep)step
+{
+    return speecher::transcribeStepLabel(static_cast<speecher::TranscribeStep>(step)).toNSString();
+}
+
 - (NSString *)durationLabel:(int64_t)durationMs
 {
     return speecher::durationLabel(durationMs).toNSString();

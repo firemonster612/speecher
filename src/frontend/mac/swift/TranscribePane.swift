@@ -42,13 +42,16 @@ final class TranscriptionModel: ObservableObject {
     // The running batch.
     @Published private(set) var batch: [String] = []
     @Published private(set) var current = -1
-    @Published private(set) var phase = ""
+    @Published private(set) var phase = SpeecherTranscribePhase.reading
     @Published private(set) var fraction = 0.0
     @Published private(set) var peaks: [Float] = []
     @Published private(set) var partial = ""
 
     // What it produced.
     @Published private(set) var results: [SpeecherTranscriptResult] = []
+    /// Whether the batch refines its transcripts: how its progress is shared
+    /// out, and whether its results offer Raw.
+    @Published private(set) var refinedAvailable = false
     @Published var showRefined = true
     @Published var expanded: Set<String> = []
     @Published private(set) var copied = ""
@@ -60,7 +63,18 @@ final class TranscriptionModel: ObservableObject {
     private var batchOptions = Options()
     private var batchLabels: SpeecherTranscribeBatchLabels?
     private var cancelled = false
+    /// When the current file entered its phase, which the open-ended waits
+    /// creep from.
+    private var phaseStarted = Date()
+    /// Once the current file has finished: when, and where its playhead was.
+    private var finishedFile: (at: Date, from: Double)?
+    /// The session's events that arrived while a finished file's playhead
+    /// glides to the end; nil when none is gliding.
+    private var heldEvents: [@MainActor (TranscriptionModel) -> Void]?
+    private static let finishGlide = 0.5
 
+    /// The step indicator's names, in order.
+    let stepLabels: [String]
     let speechProviders: [SpeecherProviderModel]
     let refinementProviders: [SpeecherProviderModel]
     let cleanupStrengths: [RowOptionModel]
@@ -80,22 +94,37 @@ final class TranscriptionModel: ObservableObject {
         cleanupStrengths = bridge.cleanupStrengths
         tones = bridge.writingTones
         profiles = bridge.writingProfiles
+        stepLabels = [SpeecherTranscribeStep.configure, .transcribe, .export].map { bridge.stepLabel($0) }
         seedOptions()
-        bridge.transcriptionFileStarted = { [weak self] index, path in self?.fileStarted(index, path: path) }
-        bridge.transcriptionFileDecoded = { [weak self] index, peaks, durationMs in
-            self?.fileDecoded(index, peaks: peaks, durationMs: durationMs)
+        bridge.transcriptionFileStarted = { [weak self] index, path in
+            self?.deliver { $0.fileStarted(index, path: path) }
         }
-        bridge.transcriptionFileProgress = { [weak self] _, fraction in self?.fileProgressed(fraction) }
-        bridge.transcriptionFilePartial = { [weak self] _, text in self?.partial = text }
+        bridge.transcriptionFileDecoded = { [weak self] index, peaks, durationMs in
+            self?.deliver { $0.fileDecoded(index, peaks: peaks, durationMs: durationMs) }
+        }
+        bridge.transcriptionFileProgress = { [weak self] _, fraction in
+            self?.deliver { $0.fileProgressed(fraction) }
+        }
+        bridge.transcriptionFilePartial = { [weak self] _, text in
+            self?.deliver { $0.partial = text }
+        }
         bridge.transcriptionFileRefining = { [weak self] _ in
-            guard let self else { return }
-            self.phase = self.bridge.phaseLabel(.refining)
+            self?.deliver { $0.enter(.refining) }
         }
         bridge.transcriptionFileFinished = { [weak self] _, result in
-            if self?.retrying == nil { self?.results.append(result) }
+            self?.deliver { $0.fileFinished(result) }
         }
         bridge.transcriptionBatchFinished = { [weak self] results, cancelled in
-            self?.batchFinished(results, cancelled: cancelled)
+            self?.deliver { $0.batchFinished(results, cancelled: cancelled) }
+        }
+    }
+
+    /// Where the pane is in its three steps.
+    var step: SpeecherTranscribeStep {
+        switch stage {
+        case .setup: return .configure
+        case .processing: return .transcribe
+        case .results: return .export
         }
     }
 
@@ -219,6 +248,7 @@ final class TranscriptionModel: ObservableObject {
         batch = files.map(\.path)
         batchOptions = options
         batchLabels = bridge.batchLabels(for: bridged(options))
+        refinedAvailable = bridge.refinesTranscripts(bridged(options))
         results = []
         cancelled = false
         current = -1
@@ -235,6 +265,39 @@ final class TranscriptionModel: ObservableObject {
 
     var processingTitle: String { bridge.processingTitle(batch: batch, current: current) }
 
+    var phaseLabel: String { bridge.phaseLabel(phase) }
+
+    /// How far the current file is through all of its work, from 0 to 1, in
+    /// the core's spans: reading 0–5%, sending 5–75%, waiting for the final
+    /// text 75–80%, refining 80–97%; without refinement sending runs to 90%
+    /// and the wait to 97%. The open-ended phases ease toward the top of their
+    /// span without reaching it. 1 comes only once the file has finished,
+    /// refined and saved.
+    // TODO(round2): switch to core overallFileProgress once bridged
+    func overallFileProgress(at now: Date) -> Double {
+        if finishedFile != nil { return 1 }
+        let span: (from: Double, to: Double)
+        switch phase {
+        case .reading: span = (0, 0.05)
+        case .transcribing: span = (0.05, refinedAvailable ? 0.75 : 0.90)
+        case .finishing: span = refinedAvailable ? (from: 0.75, to: 0.80) : (from: 0.90, to: 0.97)
+        case .refining: span = (0.80, 0.97)
+        @unknown default: span = (0, 0)
+        }
+        let within = phase == .transcribing
+            ? min(1, max(0, fraction))
+            : 1 - exp(-max(0, now.timeIntervalSince(phaseStarted)) / 4)
+        return span.from + (span.to - span.from) * within
+    }
+
+    /// Where the loom draws its playhead: the file's progress, gliding from
+    /// where it was to the end once the file has finished.
+    func playhead(at now: Date) -> Double {
+        guard let finished = finishedFile else { return overallFileProgress(at: now) }
+        let t = min(1, now.timeIntervalSince(finished.at) / Self.finishGlide)
+        return finished.from + (1 - finished.from) * (1 - pow(1 - t, 3))
+    }
+
     /// What the queue says about one file of the batch, and its symbol.
     func queueState(_ index: Int) -> (text: String, symbol: String, waiting: Bool) {
         let state = bridge.queueState(at: index, current: current, finished: results)
@@ -245,7 +308,33 @@ final class TranscriptionModel: ObservableObject {
         case .failed: symbol = "exclamationmark.circle"
         default: symbol = "circle"
         }
-        return (bridge.queueStateLabel(state, phase: phase), symbol, state == .waiting)
+        return (bridge.queueStateLabel(state, phase: phaseLabel), symbol, state == .waiting)
+    }
+
+    /// Runs a session event now, or once a finished file's playhead has
+    /// reached the end, so the next file never replaces it mid-glide.
+    private func deliver(_ event: @escaping @MainActor (TranscriptionModel) -> Void) {
+        if heldEvents != nil {
+            heldEvents?.append(event)
+        } else {
+            event(self)
+        }
+    }
+
+    private func releaseHeldEvents() {
+        guard var events = heldEvents else { return }
+        heldEvents = nil
+        while !events.isEmpty, heldEvents == nil {
+            let event = events.removeFirst()
+            event(self)
+        }
+        // Another file finished among them; the rest wait for its glide.
+        if heldEvents != nil { heldEvents = events }
+    }
+
+    private func enter(_ next: SpeecherTranscribePhase) {
+        phase = next
+        phaseStarted = Date()
     }
 
     private func fileStarted(_ index: Int, path: String) {
@@ -254,18 +343,34 @@ final class TranscriptionModel: ObservableObject {
         fraction = 0
         peaks = []
         partial = ""
-        phase = bridge.phaseLabel(.reading)
+        finishedFile = nil
+        enter(.reading)
     }
 
     private func fileDecoded(_ index: Int, peaks levels: [NSNumber], durationMs: Int64) {
         peaks = levels.map(\.floatValue)
         durations[currentPath] = durationMs
-        phase = bridge.phaseLabel(.transcribing)
+        enter(.transcribing)
     }
 
     private func fileProgressed(_ value: Double) {
         fraction = value
-        if value >= 1 { phase = bridge.phaseLabel(.finishing) }
+        if value >= 1, phase == .transcribing { enter(.finishing) }
+    }
+
+    private func fileFinished(_ result: SpeecherTranscriptResult) {
+        // A retry's row takes its result from batchFinished, and the results
+        // page it runs on has no playhead to wait for.
+        guard retrying == nil else { return }
+        results.append(result)
+        let now = Date()
+        let reached = playhead(at: now)
+        finishedFile = (at: now, from: reached)
+        heldEvents = []
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.finishGlide))
+            self?.releaseHeldEvents()
+        }
     }
 
     private func batchFinished(_ finished: [SpeecherTranscriptResult], cancelled: Bool) {
@@ -315,9 +420,6 @@ final class TranscriptionModel: ObservableObject {
     }
 
     // MARK: Results
-
-    /// Whether the batch refined anything, which is when Raw is worth offering.
-    var refinedAvailable: Bool { bridge.refinesTranscripts(bridged(batchOptions)) }
 
     private var showingRaw: Bool { refinedAvailable && !showRefined }
 
@@ -409,7 +511,8 @@ struct TranscribePane: View {
     @ObservedObject var model: TranscriptionModel
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            steps
             switch model.stage {
             case .setup: setup
             case .processing: processing
@@ -418,6 +521,42 @@ struct TranscribePane: View {
         }
         // Settings changed on another pane show up here, as on the Qt page.
         .onAppear { if model.stage == .setup { model.seedOptions() } }
+    }
+
+    // MARK: Steps
+
+    /// "1 Configure · 2 Transcribe · 3 Export": the step the pane is on in
+    /// bold, the ones behind it checked, the ones ahead dimmed.
+    private var steps: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 6) {
+                ForEach(Array(model.stepLabels.enumerated()), id: \.offset) { index, label in
+                    if index > 0 { Text("·").foregroundStyle(.tertiary) }
+                    stepItem(label, at: index)
+                }
+            }
+            if model.step == .configure {
+                Text("Check these options, then press Transcribe.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .scenePadding([.top, .horizontal])
+    }
+
+    @ViewBuilder private func stepItem(_ label: String, at index: Int) -> some View {
+        let current = model.step.rawValue
+        if index < current {
+            Label(label, systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.secondary)
+        } else if index == current {
+            Label(label, systemImage: "\(index + 1).circle.fill")
+                .fontWeight(.semibold)
+        } else {
+            Label(label, systemImage: "\(index + 1).circle")
+                .foregroundStyle(.tertiary)
+        }
     }
 
     // MARK: Setup
@@ -562,9 +701,11 @@ struct TranscribePane: View {
         VStack(spacing: 0) {
             Form {
                 Section {
-                    TranscribeLoom(peaks: model.peaks, progress: model.fraction, text: model.partial)
-                    LabeledContent(model.phase) {
-                        Text("\(Int((model.fraction * 100).rounded()))%")
+                    TranscribeLoom(peaks: model.peaks, playhead: model.playhead(at:), text: model.partial)
+                    TimelineView(.periodic(from: .now, by: 0.25)) { timeline in
+                        LabeledContent(model.phaseLabel) {
+                            Text(percent(model.overallFileProgress(at: timeline.date)))
+                        }
                     }
                     if model.batch.count > 1 {
                         ForEach(Array(model.batch.enumerated()), id: \.offset) { index, path in
@@ -665,6 +806,10 @@ struct TranscribePane: View {
         }
     }
 
+    private func percent(_ progress: Double) -> String {
+        "\(Int((progress * 100).rounded(.down)))%"
+    }
+
     private func actionBar<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         HStack {
             Spacer()
@@ -680,15 +825,20 @@ struct TranscribePane: View {
 /// shrink away as motes of sound fall toward the words written so far.
 struct TranscribeLoom: View {
     let peaks: [Float]
-    let progress: Double
+    /// The playhead's share of the file at a moment, which moves between the
+    /// session's events while the file waits on its provider.
+    let playhead: @MainActor (Date) -> Double
     let text: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TimelineView(.animation(paused: reduceMotion)) { timeline in
+            // Reduce Motion stills the bars and motes but not the playhead,
+            // which is the progress; a slower clock is enough for it.
+            TimelineView(.animation(minimumInterval: reduceMotion ? 0.5 : nil)) { timeline in
                 Canvas { context, size in
-                    draw(in: &context, size: size, time: timeline.date.timeIntervalSinceReferenceDate)
+                    draw(in: &context, size: size, progress: playhead(timeline.date),
+                         time: timeline.date.timeIntervalSinceReferenceDate)
                 }
             }
             .frame(height: 96)
@@ -700,10 +850,11 @@ struct TranscribeLoom: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Transcription progress")
-        .accessibilityValue("\(Int((progress * 100).rounded())) percent")
+        .accessibilityValue("\(Int((playhead(Date()) * 100).rounded(.down))) percent")
     }
 
-    private func draw(in context: inout GraphicsContext, size: CGSize, time: TimeInterval) {
+    private func draw(in context: inout GraphicsContext, size: CGSize, progress: Double,
+                      time: TimeInterval) {
         // A flat line of short bars until the decoder has read the file.
         let levels = peaks.isEmpty ? Array(repeating: Float(0.04), count: 120) : peaks
         let waveHeight = size.height * 0.7
@@ -755,3 +906,4 @@ struct TranscribeLoom: View {
         }
     }
 }
+
