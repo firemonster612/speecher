@@ -175,6 +175,9 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         guard settings?.isVisible != true, setupAssistant?.isVisible != true,
               Bundle.main.bundleURL.pathExtension == "app" else { return }
         let center = UNUserNotificationCenter.current()
+        // Closing the last window can leave Speecher the active app, where
+        // macOS holds notifications back unless the delegate asks for them.
+        center.delegate = ForegroundNotifications.shared
         center.requestAuthorization(options: [.alert, .sound]) { granted, error in
             guard granted else {
                 NSLog("Speecher: notifications are not allowed%@",
@@ -217,5 +220,18 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         let index = min(1, appMenu.items.count)
         appMenu.insertItem(item, at: index)
         appMenu.insertItem(.separator(), at: index + 1)
+    }
+}
+
+/// Shows Speecher's notifications while Speecher is the active app. It only
+/// posts when no window of its own is up to show the news instead.
+private final class ForegroundNotifications: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = ForegroundNotifications()
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler:
+                                    @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list, .sound])
     }
 }

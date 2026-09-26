@@ -36,22 +36,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var update = UpdateStatus()
     /// What LocalSetup knows about running models on this computer, re-read
     /// whole on every change it announces.
-    struct LocalStatus {
-        var hardwareLine = ""
-        var hardwareKnown = false
-        var models: [LocalModelInfo] = []
-        var runners: [LocalRunnerInfo] = []
-        var detectingRunners = false
-        var cleanupModel: CleanupModelInfo?
-        var pull: CleanupPullInfo?
-        var endpointStatus = ""
-        var endpointModels: [String] = []
-
-        func model(_ id: String) -> LocalModelInfo? { models.first { $0.modelId == id } }
-        var suggestedModel: LocalModelInfo? { models.first(where: \.suggested) }
-    }
-
-    @Published private(set) var local = LocalStatus()
+    @Published private(set) var local: LocalSetupState
     /// "Later" on the restart banner: hides it until a different version or a
     /// restart makes it worth showing again, exactly as the Linux banner does.
     @Published var updateBannerDeferred = false
@@ -118,6 +103,7 @@ final class AppModel: ObservableObject {
         sidebarRuns = bridge.settingsSchema.sidebarRuns
         status = bridge.stateName
         transcript = bridge.lastTranscript
+        local = bridge.localSetupState
         shortcut = bridge.shortcutDisplay
         accessibilityEnabled = bridge.accessibilityEnabled
         whatsNewPending = bridge.whatsNewPending
@@ -158,7 +144,7 @@ final class AppModel: ObservableObject {
         }
         bridge.localSetupChanged = { [weak self] rowsChanged in
             guard let self else { return }
-            refreshLocal()
+            local = self.bridge.localSetupState
             // Endpoint verdicts, runners and model lists are row text, and
             // LocalSetup writes settings (a pulled model, a Speed Test), so
             // the draft is re-read too. Every edit here is already committed.
@@ -168,19 +154,6 @@ final class AppModel: ObservableObject {
             }
         }
         refreshUpdate()
-        refreshLocal()
-    }
-
-    private func refreshLocal() {
-        local = LocalStatus(hardwareLine: bridge.localHardwareLine,
-                            hardwareKnown: bridge.localHardwareKnown,
-                            models: bridge.localModels,
-                            runners: bridge.localRunners,
-                            detectingRunners: bridge.detectingLocalRunners,
-                            cleanupModel: bridge.suggestedCleanupModel,
-                            pull: bridge.cleanupPull,
-                            endpointStatus: bridge.refinementEndpointStatus,
-                            endpointModels: bridge.refinementEndpointModels)
     }
 
     /// What a window showing local models asks for on the way up: the
@@ -347,16 +320,23 @@ final class AppModel: ObservableObject {
 
     func trigger(_ rowId: String) {
         if rowId == "whatsNew" { showWhatsNew() }
+        // Every schema action, enableAccessibility included, goes to the
+        // front end's one dispatcher (MacFrontEnd.mm).
+        guard Self.testsTypedText.contains(rowId) else {
+            bridge.settingsSchema.actionTriggered?(rowId)
+            return
+        }
         // A button click leaves a field being typed in still editing, and the
-        // field saves when it lets go: end that first, and act a turn later,
-        // so Test connection tests the address on screen.
+        // field saves when it lets go: end that first, and test a turn later,
+        // so the address on screen is the one tested.
         NSApp.keyWindow?.makeFirstResponder(nil)
         DispatchQueue.main.async { [bridge] in
-            // Every schema action, enableAccessibility included, goes to the
-            // front end's one dispatcher (MacFrontEnd.mm).
             bridge.settingsSchema.actionTriggered?(rowId)
         }
     }
+
+    /// The actions that read what the fields beside them hold.
+    private static let testsTypedText: Set<String> = ["speechEndpointTest", "refinementEndpointTest"]
 
     func showWhatsNew() {
         pane = "whatsNew"

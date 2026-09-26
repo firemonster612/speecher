@@ -6,7 +6,6 @@
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "frontend/mac/SpeecherBridge.h"
-#include "providers/LocalModelStore.h"
 
 #import <AppKit/AppKit.h>
 
@@ -17,7 +16,6 @@
 #include <QApplication>
 #include <QDebug>
 #include <QDesktopServices>
-#include <QDir>
 #include <QStringList>
 #include <QUrl>
 namespace speecher {
@@ -44,25 +42,9 @@ MacFrontEnd::MacFrontEnd(ApplicationController *controller)
             controller->updates()->checkForUpdates(controller->settings()->updateChannel());
             return;
         }
-        // The rows LiveFacts reports on; see SettingsSchema.h. The endpoint
-        // tests read the settings, which every edit on macOS commits at once.
-        LocalSetup *local = controller->localSetup();
-        if (id == QStringLiteral("speechEndpointTest")) {
-            local->checkSpeechEndpoint(controller->settings()->snapshot().speech.endpoint);
-            return;
-        }
-        if (id == QStringLiteral("refinementEndpointTest")) {
-            local->checkRefinementEndpoint(controller->settings()->snapshot().refinement);
-            return;
-        }
-        if (id == QStringLiteral("localRunnerDetect") || id == QStringLiteral("localModelsRunner")) {
-            local->detectRunners();
-            return;
-        }
-        if (id == QStringLiteral("localModelFolder")) {
-            const QString folder = local->models().directory();
-            QDir().mkpath(folder);
-            QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+        // Every edit on macOS commits at once, so the settings are what the
+        // window shows.
+        if (controller->localSetup()->runSettingsAction(id, controller->settings()->snapshot())) {
             return;
         }
         if (id == QStringLiteral("enableAccessibility")) {

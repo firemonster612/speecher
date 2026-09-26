@@ -255,16 +255,9 @@ final class SetupFlowModel: ObservableObject {
     // Start at login, applied when setup finishes so a skip leaves it alone.
     @Published var launchAtLogin: Bool
 
-    // Running on this computer. The welcome step's path follows the sign-in
-    // checks until the person picks one.
-    @Published private(set) var localPath = false
-    private var pathPicked = false
-    /// The Local Model the transcription step shows, which is the one
-    /// dictation will use. A saved model the person dictates with, has on disk
-    /// or is downloading was their choice; anything else is only the default,
-    /// and the suggestion replaces it.
-    @Published private(set) var localModelId: String
-    private var localModelPicked: Bool
+    // Running on this computer. Core's WelcomeChoice owns the welcome step's
+    // path: it follows the sign-in checks until the person picks one.
+    private let welcome = SetupWelcomeChoice()
     @Published var compareOpen = false
     /// What the steps read through this model from AppModel (rows, local
     /// models, runners) redraws them when AppModel changes.
@@ -283,11 +276,7 @@ final class SetupFlowModel: ObservableObject {
         launchAtLogin = RowView.flag(model.row("launchAtLogin")?.value)
         let savedRefinement = RowView.text(model.row("refinementProvider")?.value)
         lastRefinementProvider = savedRefinement == "none" ? "" : savedRefinement
-        localModelId = model.bridge.localModelId
-        let saved = model.local.model(model.bridge.localModelId)
-        localModelPicked = saved.map {
-            RowView.text(model.row("speechProvider")?.value) == "local" || $0.downloaded || $0.downloading
-        } ?? false
+        speechEndpointSaved = RowView.text(model.row("speechProvider")?.value) == "endpoint"
         cliproxyDirectory = model.bridge.setupCliproxyDirectory
         modelChanges = model.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         if !model.shortcut.isEmpty {
@@ -313,12 +302,13 @@ final class SetupFlowModel: ObservableObject {
             return true
         }
         switch stepId {
-        // Nothing later in the assistant can succeed without one of the
-        // provider sign-ins, so the first step holds until a probe finds one.
-        // With no speech provider registered at all there is nothing to sign in
-        // to, and holding here would strand the person on step one.
+        // The first step holds until this computer is the path or a probe
+        // finds a sign-in. With no speech provider registered at all there is
+        // nothing to sign in to, and holding here would strand the person on
+        // step one. A later step's re-probe can close this gate; only this
+        // step's own checks move the path.
         case "welcome":
-            return localPath || speechProviders.isEmpty || signInFound
+            return localPath || signInFound || speechProviders.isEmpty
         case "transcription": return localSelected ? localDownloadStarted : providerReady
         case "microphone":
             return microphonePermission == .authorized && microphoneInputDetected
@@ -409,14 +399,17 @@ final class SetupFlowModel: ObservableObject {
                                ready: true))
         // Refinement is the one line that can say something other than Ready:
         // it is never gated, so this step is reachable with None chosen or
-        // with a provider that is not signed in.
+        // with a provider that is not signed in. An own-model choice's
+        // verdict is its settings as they stand, not an earlier probe.
         if let refinement = selectedRefinementProvider {
+            let ownModel = model.bridge.ownModelRefinementSummary
+            let ready = ownModel.isEmpty ? refinement.ready : model.bridge.ownModelRefinementReady
             items.append(ReadyItem(id: "refinement",
                                    providerId: refinement.id,
-                                   symbol: refinement.id == "local" ? "cpu" : "server.rack",
-                                   label: "Refinement — \(refinementSummary(refinement))",
-                                   status: refinement.ready ? "Ready" : "Not set up",
-                                   ready: refinement.ready))
+                                   symbol: "server.rack",
+                                   label: "Refinement — \(ownModel.isEmpty ? refinement.label : ownModel)",
+                                   status: ready ? "Ready" : "Not set up",
+                                   ready: ready))
         } else {
             items.append(ReadyItem(id: "refinement",
                                    providerId: "none",
@@ -426,23 +419,6 @@ final class SetupFlowModel: ObservableObject {
                                    ready: false))
         }
         return items
-    }
-
-    /// What the ready checklist names for a refinement choice: the runner and
-    /// model for this computer, the model for a server.
-    private func refinementSummary(_ provider: ProviderRow) -> String {
-        switch provider.id {
-        case "local":
-            let runner = model.row("localRunner")
-            let runnerId = RowView.text(runner?.value)
-            let name = runner?.options.first { $0.rowOptionId == runnerId }?.label ?? runnerId
-            return "\(name) with \(RowView.text(model.row("localRunnerModel")?.value))"
-        case "endpoint":
-            let server = model.bridge.refinementEndpointForm.model
-            return server.isEmpty ? "your server" : "\(server) on your server"
-        default:
-            return provider.label
-        }
     }
 
     /// What the audio device row currently names, for the ready checklist.
@@ -510,15 +486,19 @@ final class SetupFlowModel: ObservableObject {
     }
 
     /// The services the transcription step lists. A speech server is set up
-    /// in Settings alone, and Local only where this build can run it.
+    /// in Settings alone, so it is listed only when it was the saved choice;
+    /// Local only where this build can run it.
     var transcriptionChoices: [ProviderRow] {
-        speechProviders.filter { $0.id != "endpoint" && ($0.id != "local" || offersLocal) }
+        speechProviders.filter {
+            ($0.id != "endpoint" || speechEndpointSaved) && ($0.id != "local" || offersLocal)
+        }
     }
+    private let speechEndpointSaved: Bool
 
     /// The sign-ins the welcome step checks: not Local or a speech server,
     /// which need none.
     var signInProviders: [ProviderRow] {
-        speechProviders.filter { $0.id != "local" && $0.id != "endpoint" }
+        speechProviders.filter { model.bridge.isSetupSignInProvider($0.id) }
     }
 
     var signInFound: Bool { signInProviders.contains(where: \.ready) || cliproxyAvailable }
@@ -549,7 +529,9 @@ final class SetupFlowModel: ObservableObject {
         return "\(provider.label) is not signed in. Dictation will deliver the raw transcript."
     }
 
-    func checkSpeechProviders() {
+    /// A round of speech checks. Only the welcome step's own round may move
+    /// the path: a later step re-probes to close its gate, not to choose.
+    func checkSpeechProviders(followingPath: Bool = false) {
         // A directory typed but not yet submitted still counts: Check Again
         // must check what the person sees, not the last committed value.
         commitTypedDirectory()
@@ -558,8 +540,8 @@ final class SetupFlowModel: ObservableObject {
             guard let self else { return }
             record(&speechProviders, id: id, ready: ready, message: message)
             autoSelectReadySpeechProvider()
-            if signInProviders.allSatisfy(\.probed) {
-                followSignInsWithPath()
+            if followingPath, signInProviders.allSatisfy(\.probed) {
+                updatePath(choice: nil)
             }
         }
     }
@@ -570,61 +552,42 @@ final class SetupFlowModel: ObservableObject {
 
     var offersLocal: Bool { model.bridge.localSpeechAvailable }
 
-    /// Until the person picks, every finished round of sign-in checks sets
-    /// the path: the sign-in when one is found, this computer otherwise.
-    private func followSignInsWithPath() {
-        guard offersLocal, !pathPicked else { return }
-        setPath(local: !signInFound)
-    }
+    var localPath: Bool { welcome.local }
 
     func pickPath(local: Bool) {
-        pathPicked = true
-        setPath(local: local)
+        updatePath(choice: local)
     }
 
-    /// Choosing this computer starts the transcription step on Local model,
-    /// as if the person had chosen it there.
-    private func setPath(local: Bool) {
-        let changed = local != localPath
-        localPath = local
-        if local, changed || pathPicked {
-            speechChosenByUser = true
-            if providerId != "local" {
-                model.setValue("local", for: "speechProvider")
-            }
-            adoptSuggestionIfUnpicked()
+    /// Core decides the path and the speech provider that goes with it: the
+    /// sign-in path restores or picks a sign-in, this computer selects Local.
+    private func updatePath(choice: Bool?) {
+        guard offersLocal else { return }
+        let ready = signInProviders.filter(\.ready).map(\.id)
+        let current = providerId
+        objectWillChange.send()
+        let provider = welcome.update(provider: current, readyProviders: ready,
+                                      proxyAccountFound: cliproxyAvailable,
+                                      choice: choice.map { NSNumber(value: $0) })
+        if provider != current {
+            model.setValue(provider, for: "speechProvider")
+            if provider == "local" { model.bridge.initializeSpeechModel() }
+            refreshCliproxy()
         }
     }
 
     var localSelected: Bool { offersLocal && providerId == "local" }
 
-    /// The model the Local card shows.
-    var localChoice: LocalModelInfo? {
-        localModelPicked ? model.local.model(localModelId) ?? model.local.suggestedModel
-                         : model.local.suggestedModel
-    }
+    /// The model the Local card shows, which is the one dictation will use.
+    var localChoice: LocalModelInfo? { model.local.model(model.local.speechModelChoice) }
 
     var localDownloadStarted: Bool {
         guard let choice = localChoice else { return false }
         return choice.downloaded || choice.downloading
     }
 
-    /// The suggestion is what dictation will use unless the person picks, but
-    /// only once Local is the choice: a visit to this step must not rewrite a
-    /// model someone set up for later.
-    func adoptSuggestionIfUnpicked() {
-        guard localSelected, !localModelPicked,
-              let suggestion = model.local.suggestedModel?.modelId,
-              suggestion != model.bridge.localModelId else { return }
-        model.bridge.setLocalModel(suggestion)
-        localModelId = suggestion
-    }
-
     /// Picking in the comparison table, or downloading, is a choice.
     func chooseLocalModel(_ id: String) {
-        localModelPicked = true
-        localModelId = id
-        model.bridge.setLocalModel(id)
+        model.bridge.chooseSpeechModel(id)
     }
 
     func downloadLocalChoice() {
@@ -641,27 +604,10 @@ final class SetupFlowModel: ObservableObject {
 
     // MARK: Refinement on this computer or a server
 
-    var runner: LocalRunnerInfo? { model.local.runners.first }
-
-    /// The first runner found is the one the settings name, with the
-    /// suggested cleanup model when it has it, else its first model.
-    func adoptFoundRunner() {
-        guard refinementProviderId == "local", let runner else { return }
-        if RowView.text(model.row("localRunner")?.value) != runner.runnerId {
-            model.setValue(runner.runnerId, for: "localRunner")
-        }
-        guard RowView.text(model.row("localRunnerModel")?.value).isEmpty,
-              let first = runner.models.first else { return }
-        let suggested = model.local.cleanupModel?.ollamaTag
-        let installed = runner.models.first { suggested != nil && $0.hasPrefix(suggested!) }
-        model.setValue(installed ?? first, for: "localRunnerModel")
-    }
-
-    /// Whether the runner already has the suggested cleanup model.
-    var runnerHasSuggestedModel: Bool {
-        guard let runner, let tag = model.local.cleanupModel?.ollamaTag else { return false }
-        return runner.models.contains { $0 == tag || $0 == tag + ":latest" }
-    }
+    /// Core's runner choice: the saved runner when it answers (never another
+    /// one swapped in), with the model and pull offer that go with it.
+    var runnerChoice: LocalRunnerChoice { model.local.runnerChoice }
+    var runner: LocalRunnerInfo? { runnerChoice.available }
 
     func pullSuggestedCleanupModel() {
         guard let tag = model.local.cleanupModel?.ollamaTag else { return }
@@ -679,8 +625,10 @@ final class SetupFlowModel: ObservableObject {
     /// The step's own words for the chosen runner.
     var runnerStatus: String {
         if model.local.detectingRunners { return "Looking for Ollama, LM Studio and llama-server…" }
-        guard let runner else { return "No local runner found on this computer." }
-        return "\(runner.name) \(runner.version) is running on this computer."
+        if let runner { return "\(runner.name) \(runner.version) is running on this computer." }
+        return runnerChoice.runnerId.isEmpty
+            ? "No local runner found on this computer."
+            : "\(runnerChoice.runnerName) is unavailable. Your saved selection is unchanged."
     }
 
     /// The "This computer" row's status, which reports what is running here
@@ -711,8 +659,10 @@ final class SetupFlowModel: ObservableObject {
     func chooseSpeechProvider(_ id: String) {
         guard id != providerId else { return }
         speechChosenByUser = true
+        welcome.providerChosen()
         commitTypedDirectory()
         model.setValue(id, for: "speechProvider")
+        if id == "local" { model.bridge.initializeSpeechModel() }
         refreshCliproxy()
     }
 
@@ -789,7 +739,6 @@ final class SetupFlowModel: ObservableObject {
             lastRefinementProvider = id
         }
         model.setValue(id, for: "refinementProvider")
-        adoptFoundRunner()
     }
 
     /// None is not a provider row but a way out of all of them: clearing it
@@ -806,30 +755,30 @@ final class SetupFlowModel: ObservableObject {
     }
 
     /// The saved service cannot transcribe but another one can: start the
-    /// person on the one that works rather than on a dead end.
+    /// person on the one that works rather than on a dead end. Core decides
+    /// when that may happen; an own-model choice is never moved.
     private func autoSelectReadySpeechProvider() {
         guard !speechAutoSelected, !speechChosenByUser,
               speechProviders.allSatisfy(\.probed) else { return }
         speechAutoSelected = true
-        guard !localSelected, selectedSpeechProvider?.ready != true,
-              let ready = signInProviders.first(where: \.ready) else { return }
-        model.setValue(ready.id, for: "speechProvider")
+        autoSelect(providerId, among: speechProviders, row: "speechProvider")
     }
 
-    /// The same courtesy on the refinement step, except that None is a choice
-    /// in its own right: someone who wants no cleanup is left on it.
+    /// The same courtesy on the refinement step. None is not a provider row,
+    /// so someone who wants no cleanup is left on it.
     private func autoSelectReadyRefinementProvider() {
         guard !refinementAutoSelected, !refinementChosenByUser,
-              refinementProviders.allSatisfy(\.probed) else { return }
+              refinementProviders.allSatisfy(\.probed),
+              selectedRefinementProvider != nil else { return }
         refinementAutoSelected = true
-        // Someone's own runner or server was their choice, made in Settings or
-        // on an earlier run; its setup is on this step, not a reason to move.
-        guard let selected = selectedRefinementProvider, !selected.ready,
-              !Self.ownModelProviders.contains(selected.id),
-              let ready = refinementProviders.first(where: {
-                  $0.ready && !Self.ownModelProviders.contains($0.id)
-              }) else { return }
-        model.setValue(ready.id, for: "refinementProvider")
+        autoSelect(refinementProviderId, among: refinementProviders, row: "refinementProvider")
+    }
+
+    private func autoSelect(_ saved: String, among rows: [ProviderRow], row: String) {
+        let chosen = model.bridge.setupProviderChoice(saved: saved,
+                                                      readyProviders: rows.filter(\.ready).map(\.id),
+                                                      explicitlyChosen: false)
+        if chosen != saved { model.setValue(chosen, for: row) }
     }
 
     // MARK: Microphone
@@ -1358,6 +1307,7 @@ private struct ProviderMark: View {
     let providerId: String
     /// What an id with no brand behind it draws instead.
     var fallback = "minus.circle"
+    private static let symbols = ["local": "cpu", "endpoint": "server.rack"]
 
     var body: some View {
         Group {
@@ -1366,18 +1316,8 @@ private struct ProviderMark: View {
                 OpenAIMark()
             case "claude", "anthropic":
                 ClaudeMark()
-            case "local":
-                Image(systemName: "cpu")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundStyle(.secondary)
-            case "endpoint":
-                Image(systemName: "server.rack")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundStyle(.secondary)
             default:
-                Image(systemName: fallback)
+                Image(systemName: Self.symbols[providerId] ?? fallback)
                     .resizable()
                     .scaledToFit()
                     .foregroundStyle(.secondary)
@@ -1558,7 +1498,7 @@ private struct WelcomeStep: View {
         // comes back to this step.
         .onAppear {
             flow.model.refreshLocalSetup()
-            flow.checkSpeechProviders()
+            flow.checkSpeechProviders(followingPath: true)
         }
     }
 
@@ -1621,7 +1561,7 @@ private struct WelcomeStep: View {
                             .onSubmit { flow.commitCliproxyDirectory() }
                     }
                 }
-                Button("Check Again") { flow.checkSpeechProviders() }
+                Button("Check Again") { flow.checkSpeechProviders(followingPath: true) }
             }
     }
 }
@@ -1813,10 +1753,7 @@ private struct TranscriptionStep: View {
         .onAppear {
             flow.model.refreshLocalSetup()
             flow.checkSpeechProviders()
-            flow.adoptSuggestionIfUnpicked()
         }
-        // The suggestion is only known once the hardware probe answers.
-        .onChange(of: model.local.suggestedModel?.modelId) { flow.adoptSuggestionIfUnpicked() }
     }
 
     private var localRowStatus: (text: String, tone: StatusLabel.Tone) {
@@ -1836,10 +1773,7 @@ private struct TranscriptionStep: View {
     /// Writing this binding is the person choosing, which is what stops the
     /// auto-selection from moving them afterwards.
     private var selection: Binding<String> {
-        Binding(get: { flow.providerId }, set: {
-            flow.chooseSpeechProvider($0)
-            flow.adoptSuggestionIfUnpicked()
-        })
+        Binding(get: { flow.providerId }, set: { flow.chooseSpeechProvider($0) })
     }
 
     private var statusTone: StatusLabel.Tone {
@@ -1854,18 +1788,18 @@ private struct LocalChoiceSections: View {
     @ObservedObject var flow: SetupFlowModel
     let choice: LocalModelInfo
 
-    private var local: AppModel.LocalStatus { flow.model.local }
+    private var local: LocalSetupState { flow.model.local }
 
     var body: some View {
         Section {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(choice.suggested && local.hardwareKnown ? "Suggested for this computer" : "Your choice")
+                    Text(choice.suggested ? "Suggested for this computer" : "Your choice")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     Text(choice.name).fontWeight(.semibold)
                     Text(choice.streams ? "Words appear as you speak" : "Text appears after you stop speaking")
-                    Text(choice.speedLine)
+                    Text(choice.speedDetail)
                     Text("\(LocalModelText.wer(choice.librispeechWer)) of words wrong on clear speech, "
                         + "\(LocalModelText.wer(choice.fleursWer)) on everyday speech")
                         .fixedSize(horizontal: false, vertical: true)
@@ -1912,28 +1846,35 @@ private struct LocalChoiceSections: View {
         }
     }
 
+    // One selection, so a click or an arrow key names exactly one model.
     private var compareTable: some View {
-        Table(local.models, selection: Binding(get: { Set([choice.modelId]) },
-                                               set: { picked in
-                                                   if let id = picked.first { flow.chooseLocalModel(id) }
-                                               })) {
+        Table(local.models, selection: Binding<String?>(get: { choice.modelId },
+                                                        set: { if let id = $0 { flow.chooseLocalModel(id) } })) {
+            // Each fact column is as wide as its longest value, and the model
+            // column takes what is left, so every value reads whole at the
+            // assistant's width.
             TableColumn("Model") { entry in
-                Text(entry.suggested && local.hardwareKnown ? "\(entry.name) (suggested)" : entry.name)
+                Text(entry.suggested ? "\(entry.name) (suggested)" : entry.name)
             }
-            .width(min: 140, ideal: 160)
+            .width(min: 160)
             TableColumn("Download", value: \.sizeText)
+                .width(58)
             TableColumn("Word errors") { entry in
                 Text("\(LocalModelText.wer(entry.librispeechWer)) / \(LocalModelText.wer(entry.fleursWer))")
             }
-            TableColumn("10 s of speech", value: \.speedCell)
+            .width(88)
+            TableColumn("10 s of speech", value: \.speedText)
+                .width(100)
             TableColumn("Text shows") { entry in
                 Text(entry.streams ? "As you speak" : "After you stop")
             }
+            .width(84)
             TableColumn("Memory", value: \.fitLabel)
+                .width(58)
         }
-        // Six columns in a fixed-width assistant: the small size keeps every
-        // value whole.
         .controlSize(.small)
+        // A table in a scrolling form has no height of its own: one row per
+        // model and the header.
         .frame(height: CGFloat(local.models.count) * 22 + 30)
     }
 }
@@ -2072,9 +2013,9 @@ private struct RefinementStep: View {
                     // One radio group per card, labelled as the transcription
                     // step labels its own: a selection in the other card
                     // leaves this one with nothing checked.
-                    Picker(selection: selection) {
+                    Picker(selection: selection(in: group)) {
                         ForEach(group.rows) { row in
-                            option(row).tag(row.id)
+                            option(row).tag(Optional(row.id))
                         }
                     } label: {
                         Text(group.title)
@@ -2109,11 +2050,7 @@ private struct RefinementStep: View {
         .onAppear {
             flow.checkRefinementProviders()
             model.refreshLocalSetup()
-            flow.adoptFoundRunner()
         }
-        // A runner can answer before or after the step appears, and its list
-        // changes after a pull.
-        .onChange(of: model.local.runners.first?.models) { flow.adoptFoundRunner() }
     }
 
     private struct Group {
@@ -2148,8 +2085,11 @@ private struct RefinementStep: View {
         }
     }
 
-    private var selection: Binding<String> {
-        Binding(get: { flow.refinementProviderId }, set: { flow.chooseRefinementProvider($0) })
+    /// nil while the choice is in the other card, rather than a tag this
+    /// picker does not have.
+    private func selection(in group: Group) -> Binding<String?> {
+        Binding(get: { group.rows.contains { $0.id == flow.refinementProviderId } ? flow.refinementProviderId : nil },
+                set: { if let id = $0 { flow.chooseRefinementProvider(id) } })
     }
 }
 
@@ -2169,15 +2109,15 @@ private struct LocalRunnerSections: View {
                 Button("Check Again") { flow.detectRunners() }
                     .disabled(model.local.detectingRunners)
             }
-            if let runner = flow.runner {
-                if !runner.models.isEmpty, let row = model.row("localRunnerModel") {
+            if flow.runner != nil {
+                if !runnerModels.isEmpty, let row = model.row("localRunnerModel") {
                     Picker(selection: model.binding(row, read: RowView.text, write: { $0 })) {
-                        ForEach(runner.models, id: \.self) { Text($0).tag($0) }
+                        ForEach(runnerModels, id: \.self) { Text($0).tag($0) }
                     } label: {
                         RowView.label(row.label, help: row.help)
                     }
                 }
-                if runner.runnerId == "ollama", pull.running || !flow.runnerHasSuggestedModel {
+                if flow.runnerChoice.showSuggestion || pull.running {
                     suggestion
                 }
             } else if !model.local.detectingRunners {
@@ -2191,7 +2131,15 @@ private struct LocalRunnerSections: View {
         }
     }
 
-    private var pull: CleanupPullInfo { model.local.pull ?? model.bridge.cleanupPull }
+    private var pull: CleanupPullInfo { model.local.pull }
+
+    /// What the runner serves, and the saved model even when it does not
+    /// list it, so the picker never shows a blank choice.
+    private var runnerModels: [String] {
+        let choice = flow.runnerChoice
+        let served = choice.available?.models ?? []
+        return served.contains(choice.model) || choice.model.isEmpty ? served : served + [choice.model]
+    }
 
     @ViewBuilder private var suggestion: some View {
         let cleanup = model.local.cleanupModel
@@ -2215,7 +2163,7 @@ private struct LocalRunnerSections: View {
             Spacer(minLength: 12)
             if pull.running {
                 ProgressView(value: pull.fraction).frame(width: 140)
-            } else if cleanup != nil {
+            } else if flow.runnerChoice.offerPull {
                 Button("Download with Ollama") { flow.pullSuggestedCleanupModel() }
             }
         }
@@ -2233,26 +2181,32 @@ private struct EndpointSections: View {
     @State private var serverUrl = ""
     @State private var apiKey = ""
     @State private var modelName = ""
+    /// What each text field showed when it was filled, so only a field the
+    /// person changed is sent as an edit.
+    @State private var shownUrl = ""
+    @State private var shownKey = ""
 
     var body: some View {
         Section {
-            Picker("Format", selection: $format) {
+            Picker("Format", selection: Binding(get: { format }, set: {
+                format = $0
+                edit(format: $0)
+            })) {
                 Text("OpenAI-compatible (Chat Completions)").tag("openai")
                 Text("Anthropic-compatible (Messages)").tag("anthropic")
             }
-            .onChange(of: format) { save() }
             TextField("Server URL", text: $serverUrl, prompt: Text("http://localhost:8080/v1"))
-                .onSubmit { save() }
+                .onSubmit(commitTypedFields)
             SecureField("API key", text: $apiKey, prompt: Text("Optional"))
-                .onSubmit { save() }
+                .onSubmit(commitTypedFields)
             LabeledContent {
                 HStack {
                     SuggestingField(text: modelName, suggestions: model.local.endpointModels) { edited in
                         modelName = edited
-                        save()
+                        edit(model: edited)
                     }
                     Button("Connect") {
-                        save()
+                        commitTypedFields()
                         model.bridge.checkRefinementEndpoint()
                     }
                 }
@@ -2265,14 +2219,7 @@ private struct EndpointSections: View {
             }
         }
         .onAppear(perform: load)
-        .onDisappear(perform: save)
-        // The first model the server lists, when none is typed yet.
-        .onChange(of: model.local.endpointModels) { _, models in
-            if modelName.isEmpty, let first = models.first {
-                modelName = first
-                save()
-            }
-        }
+        .onDisappear(perform: commitTypedFields)
     }
 
     private func load() {
@@ -2281,11 +2228,21 @@ private struct EndpointSections: View {
         serverUrl = form.serverUrl
         apiKey = form.apiKey
         modelName = form.model
+        shownUrl = form.serverUrl
+        shownKey = form.apiKey
     }
 
-    private func save() {
-        model.bridge.saveRefinementEndpoint(format: format, serverUrl: serverUrl,
-                                            apiKey: apiKey, model: modelName)
+    private func commitTypedFields() {
+        let url = serverUrl == shownUrl ? nil : serverUrl
+        let key = apiKey == shownKey ? nil : apiKey
+        guard url != nil || key != nil else { return }
+        shownUrl = serverUrl
+        shownKey = apiKey
+        edit(serverUrl: url, apiKey: key)
+    }
+
+    private func edit(format: String? = nil, serverUrl: String? = nil, apiKey: String? = nil, model name: String? = nil) {
+        model.bridge.editRefinementEndpoint(format: format, serverUrl: serverUrl, apiKey: apiKey, model: name)
         model.reloadSettingsDraft()
     }
 }

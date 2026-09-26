@@ -504,14 +504,15 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @property (nonatomic, copy) NSString *fitLabel;
 @property (nonatomic) BOOL tooLarge;
 @property (nonatomic) BOOL suggested;
-@property (nonatomic, copy) NSString *speedLine;
-@property (nonatomic, copy) NSString *speedCell;
+@property (nonatomic) BOOL speedTestRunning;
+@property (nonatomic, copy) NSString *speedText;
+@property (nonatomic, copy) NSString *speedDetail;
 @property (nonatomic) BOOL downloaded;
 @property (nonatomic) BOOL downloading;
+@property (nonatomic) BOOL inUse;
+@property (nonatomic, copy) NSString *problem;
 @property (nonatomic) double downloadFraction;
 @property (nonatomic, copy) NSString *progressText;
-@property (nonatomic) BOOL speedTestRunning;
-@property (nonatomic, copy) NSString *problem;
 @end
 
 @implementation LocalModelInfo
@@ -534,6 +535,60 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @end
 
 @implementation CleanupModelInfo
+@end
+
+@interface LocalRunnerChoice ()
+@property (nonatomic, copy) NSString *runnerId;
+@property (nonatomic, copy) NSString *runnerName;
+@property (nonatomic, copy) NSString *model;
+@property (nonatomic, strong, nullable) LocalRunnerInfo *available;
+@property (nonatomic) BOOL offerPull;
+@property (nonatomic) BOOL showSuggestion;
+@end
+
+@implementation LocalRunnerChoice
+@end
+
+@implementation SetupWelcomeChoice {
+    speecher::WelcomeChoice _choice;
+}
+
+- (NSString *)updateWithProvider:(NSString *)provider
+                  readyProviders:(NSArray<NSString *> *)readyProviders
+               proxyAccountFound:(BOOL)proxyAccountFound
+                          choice:(NSNumber *)choice
+{
+    QStringList ready;
+    for (NSString *id in readyProviders) ready.append(QString::fromNSString(id));
+    const std::optional<bool> picked = choice ? std::optional<bool>(choice.boolValue) : std::nullopt;
+    return _choice.update(QString::fromNSString(provider), ready, proxyAccountFound, picked).toNSString();
+}
+
+- (void)providerChosen
+{
+    _choice.providerChosen();
+}
+
+- (BOOL)local
+{
+    return _choice.local();
+}
+@end
+
+@interface LocalSetupState ()
+@property (nonatomic, copy) NSString *hardwareLine;
+@property (nonatomic) BOOL hardwareKnown;
+@property (nonatomic, copy) NSArray<LocalModelInfo *> *models;
+@property (nonatomic, copy) NSString *speechModelChoice;
+@property (nonatomic, strong) LocalRunnerChoice *runnerChoice;
+@property (nonatomic) BOOL detectingRunners;
+@property (nonatomic, strong, nullable) CleanupModelInfo *cleanupModel;
+@property (nonatomic, strong) CleanupPullInfo *pull;
+@property (nonatomic, copy) NSString *endpointStatus;
+@property (nonatomic, copy) NSArray<NSString *> *endpointModels;
+@end
+
+@implementation LocalSetupState
 @end
 
 @interface RefinementEndpointForm ()
@@ -934,6 +989,9 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                                                                 *controller->providerRegistry(),
                                                                 controller->pendingWhatsNewVersion());
     context.liveFacts = [setup = controller->localSetup()] { return setup->liveFacts(); };
+    context.liveFactsForDraft = [setup = controller->localSetup()](const AppSettings &draft) {
+        return setup->liveFacts(draft);
+    };
     _settingsSchema = [[SettingsSchemaModel alloc]
         initWithStore:controller->settings()
                schema:speecher::buildSettingsSchema(context)
@@ -1567,6 +1625,33 @@ static void probeSpeechProvider(BridgeState *state,
     }
 }
 
+- (BOOL)ownModelRefinementReady
+{
+    const speecher::RefinementSettings refinement = _state->controller->settings()->snapshot().refinement;
+    speecher::TranscriptRefiner *refiner =
+        _state->controller->providerRegistry()->refinementProvider(refinement.providerId);
+    return refiner && refiner->prepare(refinement).ok;
+}
+
+- (NSString *)setupProviderChoiceForSaved:(NSString *)saved
+                           readyProviders:(NSArray<NSString *> *)readyProviders
+                         explicitlyChosen:(BOOL)explicitlyChosen
+{
+    QStringList ready;
+    for (NSString *id in readyProviders) ready.append(QString::fromNSString(id));
+    return speecher::setupProviderChoice(QString::fromNSString(saved), ready, explicitlyChosen).toNSString();
+}
+
+- (BOOL)isSetupSignInProvider:(NSString *)providerId
+{
+    return speecher::isSetupSignInProvider(QString::fromNSString(providerId));
+}
+
+- (NSString *)ownModelRefinementSummary
+{
+    return speecher::ownModelRefinementSummary(_state->controller->settings()->snapshot().refinement).toNSString();
+}
+
 static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
 {
     if (!state->setupSignIn) {
@@ -1789,16 +1874,6 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
     _state->controller->localSetup()->probeHardware();
 }
 
-- (NSString *)localHardwareLine
-{
-    return _state->controller->localSetup()->hardwareLine().toNSString();
-}
-
-- (BOOL)localHardwareKnown
-{
-    return _state->controller->localSetup()->hardwareKnown();
-}
-
 static QString progressText(qint64 done, qint64 total)
 {
     return QStringLiteral("%1 of %2").arg(speecher::downloadSizeText(done), speecher::downloadSizeText(total));
@@ -1820,51 +1895,84 @@ static LocalModelInfo *bridgedLocalModel(const speecher::LocalSetup &setup, cons
     info.cons = bridgedStrings(model.cons);
     info.fitLabel = setup.fitLabel(model).toNSString();
     info.tooLarge = setup.fit(model) == ModelFit::TooLarge;
-    info.suggested = model.id == setup.suggestedModel().id;
-
-    const HardwareProfile &hardware = setup.hardware().profile;
-    const std::optional<double> measured = setup.measuredSeconds(model.id);
+    info.suggested = setup.hardwareKnown() && model.id == setup.suggestedModel().id;
     info.speedTestRunning = setup.speedTestRunning(model.id);
-    info.speedLine = (info.speedTestRunning ? QStringLiteral("Testing…")
-                                            : localModelSpeedLine(model, hardware, measured))
-                         .toNSString();
-    const std::optional<SpeedEstimate> estimate = estimatedSpeed(model, hardware);
-    info.speedCell = (measured ? speechSecondsText(*measured)
-                      : estimate ? QStringLiteral("~") + speechSecondsText(estimate->secondsFor10sSpeech)
-                                 : QStringLiteral("Not measured"))
-                         .toNSString();
 
+    const LocalSetup::ModelState state = setup.modelState(model);
+    info.speedText = state.speedText.toNSString();
+    info.speedDetail = state.speedDetail.toNSString();
+    info.downloaded = state.downloaded;
+    info.downloading = state.downloading;
+    info.inUse = state.inUse;
+    info.problem = state.problem.toNSString();
     const auto progress = setup.downloadProgress(model.id);
-    info.downloading = progress.has_value();
-    info.downloaded = !progress && setup.models().isDownloaded(model);
     info.downloadFraction = progress && progress->second > 0 ? double(progress->first) / double(progress->second) : 0;
     info.progressText = progress ? progressText(progress->first, model.sizeBytes).toNSString() : @"";
-    const QString downloadError = setup.downloadError(model.id);
-    info.problem = (downloadError.isEmpty() ? setup.speedTestError(model.id) : downloadError).toNSString();
     return info;
 }
 
-- (NSArray<LocalModelInfo *> *)localModels
+static LocalRunnerChoice *bridgedRunnerChoice(const speecher::RunnerChoice &resolved)
 {
-    const speecher::LocalSetup &setup = *_state->controller->localSetup();
+    LocalRunnerChoice *choice = [[LocalRunnerChoice alloc] init];
+    choice.runnerId = resolved.selection.runner.toNSString();
+    choice.runnerName = speecher::localRunnerName(resolved.selection.runner).toNSString();
+    choice.model = resolved.selection.model.toNSString();
+    choice.offerPull = resolved.offerPull;
+    choice.showSuggestion = resolved.showSuggestion;
+    if (const std::optional<speecher::DetectedRunner> &runner = resolved.available) {
+        LocalRunnerInfo *info = [[LocalRunnerInfo alloc] init];
+        info.runnerId = runner->id.toNSString();
+        info.name = runner->name.toNSString();
+        info.version = runner->version.toNSString();
+        info.models = bridgedStrings(runner->models);
+        choice.available = info;
+    }
+    return choice;
+}
+
+- (LocalSetupState *)localSetupState
+{
+    using namespace speecher;
+    const LocalSetup &setup = *_state->controller->localSetup();
+    LocalSetupState *state = [[LocalSetupState alloc] init];
+    state.hardwareLine = setup.hardwareLine().toNSString();
+    state.hardwareKnown = setup.hardwareKnown();
     NSMutableArray<LocalModelInfo *> *models = [NSMutableArray array];
-    for (const speecher::LocalModel &model : speecher::localModelCatalog()) {
+    for (const LocalModel &model : localModelCatalog()) {
         [models addObject:bridgedLocalModel(setup, model)];
     }
-    return models;
+    state.models = models;
+    state.speechModelChoice = setup.speechModelChoice().id.toNSString();
+    state.runnerChoice = bridgedRunnerChoice(setup.runnerChoice());
+    state.detectingRunners = setup.detectingRunners();
+    if (const std::optional<CleanupModel> model = setup.suggestedCleanupModel()) {
+        CleanupModelInfo *info = [[CleanupModelInfo alloc] init];
+        info.ollamaTag = model->ollamaTag.toNSString();
+        info.name = model->name.toNSString();
+        info.sizeText = downloadSizeText(model->sizeBytes).toNSString();
+        state.cleanupModel = info;
+    }
+    const LocalSetup::Pull pull = setup.pull();
+    CleanupPullInfo *pullInfo = [[CleanupPullInfo alloc] init];
+    pullInfo.running = pull.running;
+    pullInfo.fraction = pull.totalBytes > 0 ? double(pull.completedBytes) / double(pull.totalBytes) : 0;
+    pullInfo.progressText = progressText(pull.completedBytes, pull.totalBytes).toNSString();
+    pullInfo.error = pull.error.toNSString();
+    state.pull = pullInfo;
+    const LiveFacts facts = setup.liveFacts();
+    state.endpointStatus = facts.refinementEndpointStatus.toNSString();
+    state.endpointModels = bridgedStrings(facts.refinementEndpointModels);
+    return state;
 }
 
-- (NSString *)localModelId
+- (void)initializeSpeechModel
 {
-    return _state->controller->settings()->localSpeechSettings().modelId.toNSString();
+    _state->controller->localSetup()->initializeSpeechModel();
 }
 
-- (void)setLocalModel:(NSString *)modelId
+- (void)chooseSpeechModel:(NSString *)modelId
 {
-    SettingsStore *store = _state->controller->settings();
-    speecher::LocalSpeechSettings local = store->localSpeechSettings();
-    local.modelId = QString::fromNSString(modelId);
-    store->setLocalSpeechSettings(local);
+    _state->controller->localSetup()->chooseSpeechModel(QString::fromNSString(modelId));
 }
 
 - (void)downloadLocalModel:(NSString *)modelId
@@ -1896,52 +2004,9 @@ static LocalModelInfo *bridgedLocalModel(const speecher::LocalSetup &setup, cons
     _state->controller->localSetup()->detectRunners();
 }
 
-- (BOOL)detectingLocalRunners
-{
-    return _state->controller->localSetup()->detectingRunners();
-}
-
-- (NSArray<LocalRunnerInfo *> *)localRunners
-{
-    NSMutableArray<LocalRunnerInfo *> *runners = [NSMutableArray array];
-    for (const speecher::DetectedRunner &runner : _state->controller->localSetup()->runners()) {
-        LocalRunnerInfo *info = [[LocalRunnerInfo alloc] init];
-        info.runnerId = runner.id.toNSString();
-        info.name = runner.name.toNSString();
-        info.version = runner.version.toNSString();
-        info.models = bridgedStrings(runner.models);
-        [runners addObject:info];
-    }
-    return runners;
-}
-
-- (CleanupModelInfo *)suggestedCleanupModel
-{
-    const std::optional<speecher::CleanupModel> model = _state->controller->localSetup()->suggestedCleanupModel();
-    if (!model) {
-        return nil;
-    }
-    CleanupModelInfo *info = [[CleanupModelInfo alloc] init];
-    info.ollamaTag = model->ollamaTag.toNSString();
-    info.name = model->name.toNSString();
-    info.sizeText = speecher::downloadSizeText(model->sizeBytes).toNSString();
-    return info;
-}
-
 - (void)pullCleanupModel:(NSString *)ollamaTag
 {
     _state->controller->localSetup()->pullCleanupModel(QString::fromNSString(ollamaTag));
-}
-
-- (CleanupPullInfo *)cleanupPull
-{
-    const speecher::LocalSetup::Pull pull = _state->controller->localSetup()->pull();
-    CleanupPullInfo *info = [[CleanupPullInfo alloc] init];
-    info.running = pull.running;
-    info.fraction = pull.totalBytes > 0 ? double(pull.completedBytes) / double(pull.totalBytes) : 0;
-    info.progressText = progressText(pull.completedBytes, pull.totalBytes).toNSString();
-    info.error = pull.error.toNSString();
-    return info;
 }
 
 - (RefinementEndpointForm *)refinementEndpointForm
@@ -1956,24 +2021,20 @@ static LocalModelInfo *bridgedLocalModel(const speecher::LocalSetup &setup, cons
     return form;
 }
 
-- (void)saveRefinementEndpointFormat:(NSString *)format
+static std::optional<QString> optionalString(NSString *value)
+{
+    return value ? std::optional<QString>(QString::fromNSString(value)) : std::nullopt;
+}
+
+- (void)editRefinementEndpointFormat:(NSString *)format
                            serverUrl:(NSString *)serverUrl
                               apiKey:(NSString *)apiKey
                                model:(NSString *)model
 {
     SettingsStore *store = _state->controller->settings();
     AppSettings settings = store->snapshot();
-    speecher::RefinementEndpointSettings &endpoint = settings.refinement.endpoint;
-    const speecher::RefinementEndpoint shown = speecher::resolvedRefinementEndpoint(settings.refinement);
-    const QString url = QString::fromNSString(serverUrl).trimmed();
-    const QString key = QString::fromNSString(apiKey).trimmed();
-    if (url != shown.apiBase || key != shown.apiKey) {
-        endpoint.preset.clear();
-        endpoint.baseUrl = url;
-        endpoint.apiKey = key;
-    }
-    endpoint.format = QString::fromNSString(format);
-    endpoint.model = QString::fromNSString(model).trimmed();
+    speecher::editRefinementEndpoint(settings, {optionalString(format), optionalString(serverUrl),
+                                                optionalString(apiKey), optionalString(model)});
     store->applySnapshot(settings);
 }
 
@@ -1983,14 +2044,5 @@ static LocalModelInfo *bridgedLocalModel(const speecher::LocalSetup &setup, cons
         _state->controller->settings()->snapshot().refinement);
 }
 
-- (NSString *)refinementEndpointStatus
-{
-    return _state->controller->localSetup()->liveFacts().refinementEndpointStatus.toNSString();
-}
-
-- (NSArray<NSString *> *)refinementEndpointModels
-{
-    return bridgedStrings(_state->controller->localSetup()->liveFacts().refinementEndpointModels);
-}
 
 @end

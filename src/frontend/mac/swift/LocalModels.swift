@@ -15,7 +15,7 @@ struct LocalModelBrowser: View {
     @State private var picked: String?
 
     private var inUse: String { RowView.text(row.value) }
-    private var local: AppModel.LocalStatus { model.local }
+    private var local: LocalSetupState { model.local }
 
     private var selection: Binding<String?> {
         Binding(get: { picked ?? (inUse.isEmpty ? local.suggestedModel?.modelId : inUse) },
@@ -34,10 +34,7 @@ struct LocalModelBrowser: View {
                 .listStyle(.bordered)
                 .frame(width: 250, height: CGFloat(local.models.count) * 44 + 8)
                 if let id = selection.wrappedValue, let entry = local.model(id) {
-                    LocalModelDetail(entry: entry,
-                                     suggested: entry.suggested && local.hardwareKnown,
-                                     inUse: entry.modelId == inUse,
-                                     model: model) {
+                    LocalModelDetail(entry: entry, model: model) {
                         model.setValue(entry.modelId, for: row.rowId)
                     }
                 }
@@ -50,7 +47,7 @@ struct LocalModelBrowser: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name)
                 Text("\(entry.sizeText) · \(LocalModelText.wer(entry.librispeechWer)) WER · "
-                    + (entry.suggested && local.hardwareKnown ? "suggested" : entry.fitLabel.lowercased()))
+                    + (entry.suggested ? "suggested" : entry.fitLabel.lowercased()))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -65,8 +62,6 @@ struct LocalModelBrowser: View {
 /// with it.
 private struct LocalModelDetail: View {
     let entry: LocalModelInfo
-    let suggested: Bool
-    let inUse: Bool
     @ObservedObject var model: AppModel
     let use: () -> Void
 
@@ -74,7 +69,7 @@ private struct LocalModelDetail: View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name).font(.headline)
-                Text(suggested ? "Suggested for this computer" : entry.fileName)
+                Text(entry.suggested ? "Suggested for this computer" : entry.fileName)
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -110,7 +105,7 @@ private struct LocalModelDetail: View {
 
     private var facts: [(name: String, value: String)] {
         [("Download", "\(entry.sizeText) · \(entry.fitLabel)"),
-         ("Speed here", entry.speedLine),
+         ("Speed here", entry.speedDetail),
          ("Word error rate", "\(LocalModelText.wer(entry.librispeechWer)) clear speech (LibriSpeech)\n"
             + "\(LocalModelText.wer(entry.fleursWer)) everyday speech (FLEURS)"),
          ("Text shows", entry.streams ? "As you speak" : "After you stop"),
@@ -125,7 +120,7 @@ private struct LocalModelDetail: View {
                 ProgressView(value: entry.downloadFraction).frame(width: 120)
                 Button("Cancel") { model.bridge.cancelLocalModelDownload(entry.modelId) }
             } else if entry.downloaded {
-                if inUse {
+                if entry.inUse {
                     Text("In use").foregroundStyle(.secondary)
                 } else {
                     Button("Use This Model", action: use)
@@ -154,4 +149,9 @@ enum LocalModelText {
 /// Tables and lists key a model by its catalog id.
 extension LocalModelInfo: Identifiable {
     public var id: String { modelId }
+}
+
+extension LocalSetupState {
+    func model(_ id: String) -> LocalModelInfo? { models.first { $0.modelId == id } }
+    var suggestedModel: LocalModelInfo? { models.first(where: \.suggested) }
 }

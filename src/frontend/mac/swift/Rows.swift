@@ -92,7 +92,7 @@ struct RowView: View {
             }
         } else if row.options.isEmpty, row.value is String {
             LabeledContent {
-                if row.rowId == "cliproxyApiKey" || row.secret {
+                if row.secret {
                     SecureTextRowField(row: row, model: model)
                 } else {
                     TextRowField(row: row, model: model)
