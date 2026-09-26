@@ -47,6 +47,19 @@ QString transcribePhaseLabel(TranscribePhase phase)
     return {};
 }
 
+QString transcribeStepLabel(TranscribeStep step)
+{
+    switch (step) {
+    case TranscribeStep::Configure:
+        return QStringLiteral("Configure");
+    case TranscribeStep::Transcribe:
+        return QStringLiteral("Transcribe");
+    case TranscribeStep::Export:
+        return QStringLiteral("Export");
+    }
+    return {};
+}
+
 QString durationLabel(qint64 ms)
 {
     const qint64 seconds = (ms + 500) / 1000;

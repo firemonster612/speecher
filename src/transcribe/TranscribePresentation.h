@@ -16,6 +16,11 @@ class ProviderRegistry;
 enum class TranscribePhase { Reading, Transcribing, Finishing, Refining };
 QString transcribePhaseLabel(TranscribePhase phase);
 
+// The steps the step indicator at the top of a Transcribe surface names:
+// the setup form, the running batch and the results.
+enum class TranscribeStep { Configure, Transcribe, Export };
+QString transcribeStepLabel(TranscribeStep step);
+
 // "3 min 7 s", or "42 s" under a minute.
 QString durationLabel(qint64 ms);
 // A setup list row's detail, "3 min 7 s · 3.6 MB"; the size alone while the
