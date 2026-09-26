@@ -463,6 +463,7 @@ void ApplicationController::showSetupAssistant(SetupAssistantPage page)
 
 void ApplicationController::showTranscribeFiles(const QStringList &paths)
 {
+    m_filesOpened = true;
     if (!m_settings->setupCompleted()) {
         m_pendingTranscribeFiles += paths;
         showSetupAssistant();
@@ -471,6 +472,11 @@ void ApplicationController::showTranscribeFiles(const QStringList &paths)
     if (m_frontEnd) {
         m_frontEnd->showTranscribeFiles(paths);
     }
+}
+
+bool ApplicationController::filesOpened() const
+{
+    return m_filesOpened;
 }
 
 // macOS answers the microphone grant asynchronously the first time, so a

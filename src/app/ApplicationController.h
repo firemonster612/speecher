@@ -105,6 +105,8 @@ public:
     // Before setup is complete it shows the setup assistant instead and holds
     // the files until completeSetup().
     void showTranscribeFiles(const QStringList &paths);
+    // Whether any files have been opened this run.
+    bool filesOpened() const;
     // Records that the setup assistant finished, then opens any files that
     // arrived while it was up.
     void completeSetup();
@@ -159,6 +161,7 @@ private:
     FileTranscriptionSession *m_fileTranscription = nullptr;
     // Files opened before setup was complete.
     QStringList m_pendingTranscribeFiles;
+    bool m_filesOpened = false;
     UpdateController *m_updates = nullptr;
     GlobalShortcutBinder *m_shortcutBinder = nullptr;
     SingleInstanceIpc *m_ipc = nullptr;

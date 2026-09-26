@@ -575,6 +575,43 @@ private slots:
         QVERIFY(!controller.fileTranscription()->isRunning());
     }
 
+    void openedFilesGetTheCompactWindowAlone()
+    {
+        ApplicationController controller(true);
+        controller.settings()->setSetupCompleted(true);
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        QFile file(audio);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("RIFF\0\0\0\0WAVEfmt ");
+        file.close();
+
+        // Earlier tests can leave windows behind; only what this opens counts.
+        const auto visibleWindows = [] {
+            QSet<QWidget *> visible;
+            for (QWidget *widget : QApplication::topLevelWidgets()) {
+                if (widget->isVisible()) {
+                    visible << widget;
+                }
+            }
+            return visible;
+        };
+        const QSet<QWidget *> before = visibleWindows();
+        controller.showTranscribeFiles({audio});
+        controller.showTranscribeFiles({audio});
+
+        const QWidgetList windows = (visibleWindows() - before).values();
+        QCOMPARE(windows.size(), 1);
+        QCOMPARE(windows.first()->objectName(), QStringLiteral("transcribeWindow"));
+        QCOMPARE(windows.first()->windowTitle(), QStringLiteral("Transcribe \u2014 Speecher"));
+        QVERIFY(!windows.first()->findChild<QListWidget *>(QStringLiteral("appNavigation")));
+        auto *start = windows.first()->findChild<QPushButton *>(QStringLiteral("transcribeStart"));
+        QVERIFY(start->isEnabled());
+        QCOMPARE(start->text(), QStringLiteral("Transcribe"));
+    }
+
     void aFileOpenedOverResultsIsKeptForTheNextBatch()
     {
         ApplicationController controller(true);

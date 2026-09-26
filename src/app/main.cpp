@@ -343,8 +343,18 @@ int main(int argc, char **argv)
             && restore.contains(QStringLiteral("settings"))) {
             QTimer::singleShot(0, &controller, &ApplicationController::showSettings);
         }
-        if (!daemon || !decision.grabPath.isEmpty()) {
+        if (!decision.grabPath.isEmpty()) {
             controller.showMainWindow();
+        } else if (!daemon && decision.transcribeFiles.isEmpty()) {
+            // A launch that opens files brings up the Transcribe window alone.
+            // macOS hands Finder's files over as events once the loop runs,
+            // so let those arrive before deciding.
+            QTimer::singleShot(0, &controller, [&controller] {
+                QCoreApplication::processEvents();
+                if (!controller.filesOpened()) {
+                    controller.showMainWindow();
+                }
+            });
         }
         if (!decision.transcribeFiles.isEmpty()) {
             QTimer::singleShot(0, &controller, [&controller, &decision] {
