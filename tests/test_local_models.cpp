@@ -244,17 +244,26 @@ private slots:
         unchanged.idleUnloadMinutes = 60;
         settings.setLocalSpeechSettings(unchanged);
         QVERIFY(!settings.localSpeechSettings().modelChosen);
+        const auto beforeProbe = settings.localSpeechSettings().modelId;
         setup.initializeSpeechModel();
+        QVERIFY(!settings.localSpeechSettings().modelChosen);
+        QCOMPARE(settings.localSpeechSettings().modelId, beforeProbe);
+        QCOMPARE(setup.modelState(*findLocalModel("cohere")).speedText, QString("Not measured"));
+#ifdef SPEECHER_WITH_LOCAL_SPEECH
+        setup.probeHardware();
+        QTRY_VERIFY(setup.hardwareKnown());
         QCOMPARE(settings.localSpeechSettings().modelId, setup.suggestedModel().id);
-        QVERIFY(settings.localSpeechSettings().modelChosen);
+        QCOMPARE(setup.speechModelChoice().id, setup.suggestedModel().id);
+        QVERIFY(!settings.localSpeechSettings().modelChosen);
+#endif
         setup.chooseSpeechModel("cohere");
+        QVERIFY(settings.localSpeechSettings().modelChosen);
         setup.initializeSpeechModel();
         QCOMPARE(setup.speechModelChoice().id, QString("cohere"));
         const auto &model = *findLocalModel("cohere");
         auto speech = settings.snapshot().speech;
         auto state = setup.modelState(model, speech);
         QVERIFY(!state.downloaded && !state.downloading && !state.inUse);
-        QCOMPARE(state.speedText, QString("Not measured"));
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
         setup.probeHardware();
         QTRY_VERIFY(setup.hardwareKnown());

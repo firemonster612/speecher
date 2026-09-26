@@ -106,7 +106,8 @@ public:
     std::optional<double> measuredSeconds(const QString &modelId) const;
     QString speedTestError(const QString &modelId) const;
 
-    // Commands, called on setup entry/explicit edits, never while rendering.
+    // Saves the hardware default once known, without marking a user choice.
+    // The hardware probe settles deferred initialization for every front end.
     void initializeSpeechModel();
     void chooseSpeechModel(const QString &id);
     const LocalModel &speechModelChoice() const;

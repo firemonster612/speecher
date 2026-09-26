@@ -224,6 +224,7 @@ void LocalSetup::probeHardware()
                                           m_hardware = summary;
                                           m_hardwareProbing = false;
                                           m_hardwareKnown = true;
+                                          initializeSpeechModel();
                                           emit changed();
                                       });
 #else
@@ -392,7 +393,11 @@ const LocalModel &LocalSetup::speechModelChoice() const
 
 void LocalSetup::initializeSpeechModel()
 {
-    if (!m_settings.localSpeechSettings().modelChosen) chooseSpeechModel(suggestedModel().id);
+    if (!m_hardwareKnown || m_settings.localSpeechSettings().modelChosen) return;
+    // The general settings setter treats a changed model as a user choice.
+    // A hardware default must remain replaceable until the person chooses.
+    m_settings.raw().setValue(SettingsKeys::LocalModel, suggestedModel().id);
+    m_settings.raw().setValue(SettingsKeys::LocalModelChosen, false);
 }
 
 void LocalSetup::chooseSpeechModel(const QString &id)

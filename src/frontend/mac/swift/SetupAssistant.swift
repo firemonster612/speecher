@@ -570,7 +570,6 @@ final class SetupFlowModel: ObservableObject {
                                       choice: choice.map { NSNumber(value: $0) })
         if provider != current {
             model.setValue(provider, for: "speechProvider")
-            if provider == "local" { model.bridge.initializeSpeechModel() }
             refreshCliproxy()
         }
     }
@@ -662,7 +661,6 @@ final class SetupFlowModel: ObservableObject {
         welcome.providerChosen()
         commitTypedDirectory()
         model.setValue(id, for: "speechProvider")
-        if id == "local" { model.bridge.initializeSpeechModel() }
         refreshCliproxy()
     }
 

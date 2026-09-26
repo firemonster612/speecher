@@ -909,17 +909,6 @@ struct SetupWindow::Native {
     void setSpeechProvider(const QString &id)
     {
         controller->settings()->setSpeechProvider(id);
-        settleLocalModel();
-    }
-
-    // With Local chosen, the suggestion becomes the saved model unless the
-    // person chose one. Before the hardware probe answers the suggestion is
-    // only the smallest model, so this waits for it.
-    void settleLocalModel()
-    {
-        if (localSelected() && localSpeech->hardwareKnown()) {
-            localSpeech->initializeSpeechModel();
-        }
     }
 
     // The Welcome path, the person's when choice is given and otherwise the
@@ -1777,9 +1766,7 @@ struct SetupWindow::Native {
         refreshSignInCard(controller->settings()->speechProvider());
         if (localSpeech) {
             panel.Children().Append(makeLocalSection());
-            settleLocalModel();
             const auto refresh = [this, describeSelected] {
-                settleLocalModel();
                 describeSelected();
                 refreshGates();
             };

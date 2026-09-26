@@ -1181,7 +1181,6 @@ void SpeechProviderSetupPage::setReady(bool ready)
 
 void SpeechProviderSetupPage::selectProvider(const QString &providerId)
 {
-    if (m_local && providerId == QStringLiteral("local")) m_local->initializeSpeechModel();
     const QList<ProviderDescriptor> providers = m_providers.speechProviders();
     const auto it = std::find_if(providers.cbegin(), providers.cend(),
                                  [&providerId](const ProviderDescriptor &provider) {
