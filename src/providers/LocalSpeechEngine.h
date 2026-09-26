@@ -12,6 +12,9 @@ struct transcribe_session;
 
 namespace speecher {
 
+// Resolve a raw final hypothesis against the stream's committed text.
+QString finalStreamText(const QString &committed, const QString &rawFinal);
+
 // transcribe.cpp behind Speecher's own types: its pre-1.0 ABI stops here.
 // One thread drives an engine at a time; every call blocks.
 class LocalSpeechEngine {
@@ -61,7 +64,8 @@ public:
 
     bool beginStream(QString *error);
     bool feed(const QByteArray &pcm16, StreamText *text, QString *error);
-    // The whole final transcript, which may revise committed text.
+    // The whole final transcript, preserving committed text if the raw
+    // hypothesis shrank below it.
     std::optional<QString> finalize(QString *error);
 
     // The Speed Test: seconds the loaded model takes for 10 s of speech,

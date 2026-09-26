@@ -6,6 +6,7 @@
 #include "common/test_http.h"
 #include "common/test_suites.h"
 #include "core/LocalModelCatalog.h"
+#include "core/TranscriptState.h"
 #include "providers/LocalModelStore.h"
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
 #include "providers/LocalSpeechTranscriber.h"
@@ -724,6 +725,30 @@ private slots:
         split = splitStreamText({{}, QStringLiteral("the night")}, 0);
         QVERIFY(split.finalWords.isEmpty());
         QCOMPARE(split.partial, QStringLiteral("the night"));
+    }
+
+    void shorterRawFinalDoesNotDiscardCommittedStreamText()
+    {
+        const QString committed = QStringLiteral(
+            "The night was clear, starlit and splendid. The tempest had passed away, "
+            "and the sweet influences of the evening had restored life, peace and security everywhere.");
+        const QString truncated = QStringLiteral(
+            "The night was clear, starlit and splendid. The tempest had passed away.");
+        TranscriptState transcript;
+        const StreamSplit split = splitStreamText({committed, {}}, 0);
+        transcript.commitFinal(split.finalWords);
+        transcript.setPartial(split.partial);
+        QCOMPARE(transcript.text(), committed);
+
+        // Finalization must not replace the already committed sentence with
+        // a shorter raw model hypothesis.
+        transcript.replaceFinals(finalStreamText(committed, truncated));
+        QCOMPARE(transcript.text(), committed);
+
+        const QString revised = QStringLiteral(
+            "The night was clear, starlit, and splendid. The tempest had passed away, "
+            "and the sweet influences of the evening had restored life, peace, and security everywhere.");
+        QCOMPARE(finalStreamText(committed, revised), revised);
     }
 
     void missingModelFailsWithAnActionableMessage()

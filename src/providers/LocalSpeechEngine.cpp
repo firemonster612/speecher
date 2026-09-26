@@ -98,6 +98,15 @@ std::vector<float> floatPcm(const QByteArray &pcm16)
 
 } // namespace
 
+QString finalStreamText(const QString &committed, const QString &rawFinal)
+{
+    // Moonshine may shrink its raw hypothesis even after committing words.
+    // Replacing the attempt with that snapshot would discard those words.
+    const QString committedText = committed.trimmed();
+    const QString finalText = rawFinal.trimmed();
+    return finalText.size() < committedText.size() ? committedText : finalText;
+}
+
 QList<LocalSpeechEngine::Device> LocalSpeechEngine::devices()
 {
     initBackendsOnce();
@@ -240,7 +249,14 @@ std::optional<QString> LocalSpeechEngine::finalize(QString *error)
     if (status == TRANSCRIBE_ERR_ABORTED || !succeeded(status, error)) {
         return std::nullopt;
     }
-    return QString::fromUtf8(transcribe_full_text(m_session)).trimmed();
+    transcribe_stream_text snapshot;
+    transcribe_stream_text_init(&snapshot);
+    if (!succeeded(transcribe_stream_get_text(m_session, &snapshot), error)) {
+        return std::nullopt;
+    }
+    return finalStreamText(
+        QString::fromUtf8(snapshot.committed_text, qsizetype(snapshot.committed_text_bytes)),
+        QString::fromUtf8(snapshot.full_text, qsizetype(snapshot.full_text_bytes)));
 }
 
 std::optional<double> LocalSpeechEngine::speedTestSeconds(QString *error)
