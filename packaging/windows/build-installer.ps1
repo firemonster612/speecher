@@ -42,6 +42,14 @@ if (-not $Winmds) {
     throw "Windows App Runtime winmd files were not found in $BuildDir"
 }
 $Winmds | Copy-Item -Destination $AppDir
+# transcribe.cpp and its ggml backend modules (one per CPU instruction set,
+# plus Vulkan), which it loads from its own directory.
+$Transcribe = Join-Path $BuildDir "transcribe.dll"
+if (-not (Test-Path $Transcribe)) {
+    throw "transcribe.cpp library not found: $Transcribe"
+}
+Copy-Item $Transcribe $AppDir
+Get-ChildItem $BuildDir -Filter "ggml*.dll" | Copy-Item -Destination $AppDir
 
 $WinDeployQt = (Get-Command windeployqt.exe).Source
 & $WinDeployQt --release --no-translations --compiler-runtime (Join-Path $AppDir "speecher.exe")

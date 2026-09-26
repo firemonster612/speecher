@@ -158,11 +158,13 @@ fi
 
 mkdir -p "$APPDIR_PATH/usr/lib" "$APPDIR_PATH/usr/plugins"
 
+# The Vulkan loader belongs to the system beside its GPU drivers. Without one,
+# transcribe.cpp's Vulkan module does not load and local models use the CPU.
 skip_library() {
   local name
   name="$(basename "$1")"
   case "$name" in
-    ld-linux*|linux-vdso*|libc.so*|libm.so*|libdl.so*|libpthread.so*|librt.so*|libresolv.so*|libutil.so*|libnss_*.so*|libcrypt.so*|libGL*.so*|libEGL*.so*|libOpenGL*.so*|libwayland-client.so*|libxcb.so*|libX11.so*|libfontconfig.so*|libfreetype.so*|libharfbuzz.so*)
+    ld-linux*|linux-vdso*|libc.so*|libm.so*|libdl.so*|libpthread.so*|librt.so*|libresolv.so*|libutil.so*|libnss_*.so*|libcrypt.so*|libGL*.so*|libEGL*.so*|libOpenGL*.so*|libwayland-client.so*|libxcb.so*|libX11.so*|libfontconfig.so*|libfreetype.so*|libharfbuzz.so*|libvulkan.so*)
       return 0
       ;;
     *)
@@ -184,7 +186,9 @@ copy_library() {
 copy_deps_for_elf() {
   local elf="$1"
   local dependencies
-  dependencies="$(LD_LIBRARY_PATH="$QT_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$elf" 2>&1 || true)"
+  # The install step already put transcribe.cpp's libraries in usr/lib, and
+  # nothing has an RUNPATH pointing there yet.
+  dependencies="$(LD_LIBRARY_PATH="$APPDIR_PATH/usr/lib:$QT_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$elf" 2>&1 || true)"
   if grep -Fq 'not found' <<<"$dependencies"; then
     echo "Unresolved dependency while bundling $elf:" >&2
     printf '%s\n' "$dependencies" >&2
