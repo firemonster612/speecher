@@ -259,6 +259,13 @@ typedef NS_ENUM(NSInteger, SpeecherTranscribePhase) {
     SpeecherTranscribePhaseRefining,
 };
 
+// Mirrors speecher::TranscribeStep.
+typedef NS_ENUM(NSInteger, SpeecherTranscribeStep) {
+    SpeecherTranscribeStepConfigure,
+    SpeecherTranscribeStepTranscribe,
+    SpeecherTranscribeStepExport,
+};
+
 // Mirrors speecher::TranscribeQueueState.
 typedef NS_ENUM(NSInteger, SpeecherTranscribeQueueState) {
     SpeecherTranscribeQueueStateWaiting,
@@ -507,6 +514,7 @@ typedef NS_ENUM(NSInteger, SpeecherTranscribeQueueState) {
 // The Transcribe pane's wording, shared with the Qt and Windows front ends
 // (speecher/transcribe/TranscribePresentation.h). A negative length is unknown.
 - (NSString *)transcribePhaseLabel:(SpeecherTranscribePhase)phase NS_SWIFT_NAME(phaseLabel(_:));
+- (NSString *)transcribeStepLabel:(SpeecherTranscribeStep)step NS_SWIFT_NAME(stepLabel(_:));
 - (NSString *)durationLabel:(int64_t)durationMs NS_SWIFT_NAME(durationLabel(_:));
 - (NSString *)audioFileDetailWithBytes:(int64_t)bytes durationMs:(int64_t)durationMs
     NS_SWIFT_NAME(audioFileDetail(bytes:durationMs:));

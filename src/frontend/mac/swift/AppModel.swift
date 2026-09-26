@@ -311,13 +311,6 @@ final class AppModel: ObservableObject {
         bridge.clearPendingWhatsNew()
     }
 
-    /// Opens the Transcribe pane with these files added to the list, not yet
-    /// started: what opening audio with Speecher does.
-    func showTranscribe(files: [String]) {
-        pane = "transcribe"
-        transcription.add(files)
-    }
-
     func dismissWhatsNew() {
         bridge.clearPendingWhatsNew()
     }
