@@ -376,10 +376,23 @@ StackPanel weekDots(const InsightsSummary &summary, const Brush &accent, const B
             dot.Background(active ? accent : empty);
         }
         if (day == summary.todayIndex) {
-            dot.BorderBrush(active ? themeBrush(L"SettingsCardDescriptionForeground", host) : accent);
-            dot.BorderThickness({2, 2, 2, 2});
+            // Today is ringed in the accent with a card-coloured gap, so the
+            // ring reads on a filled dot and an empty one alike.
+            constexpr double ring = kHeatCell + 6;
+            Border halo;
+            halo.Width(ring);
+            halo.Height(ring);
+            halo.CornerRadius({ring / 2, ring / 2, ring / 2, ring / 2});
+            halo.BorderBrush(accent);
+            halo.BorderThickness({1.5, 1.5, 1.5, 1.5});
+            halo.Padding({1.5, 1.5, 1.5, 1.5});
+            halo.Child(dot);
+            halo.HorizontalAlignment(HorizontalAlignment::Center);
+            column.Children().Append(halo);
+        } else {
+            dot.Margin({3, 3, 3, 3});
+            column.Children().Append(dot);
         }
-        column.Children().Append(dot);
         TextBlock letter = secondaryCaption(locale.dayName(day + 1, QLocale::NarrowFormat), host);
         letter.HorizontalAlignment(HorizontalAlignment::Center);
         column.Children().Append(letter);
