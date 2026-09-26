@@ -9,9 +9,9 @@ namespace speecher {
 
 // The Transcribe page's progress animation, approved as custom-painted
 // content the way WaveformWidget is: the file's waveform hangs at the top, a
-// playhead sweeps across it, and each bar it passes drops a mote into the
-// page below, where word pills weave themselves in line by line. Palette
-// colours only.
+// playhead sweeps across it, and word pills write themselves into the page
+// below, line by line. Each run is laid out and paced from its own seed.
+// Palette colours only.
 class TranscribeLoomWidget : public QWidget {
     Q_OBJECT
 
@@ -27,7 +27,7 @@ public slots:
     void startFile(const QVector<float> &peaks, int seed);
     void setProgress(qreal fraction);
     // The file is done: the playhead runs to the end and the last words land,
-    // then landed() follows. Hidden, it lands at once.
+    // then landed() follows, on the clock whether or not the widget is shown.
     void finishFile();
 
 signals:
@@ -45,30 +45,35 @@ private:
         qreal width;
         // The progress point where the word pops in.
         qreal at;
+        // How long it takes to pop in, relative to the others.
+        qreal pace;
     };
-    struct Mote {
-        QPointF from;
-        QPointF to;
-        qreal t;
-        qreal wobble;
+    // What varies from run to run besides the page layout.
+    struct Look {
+        qreal breathPeriod = 300.0;
+        qreal breathSpread = 0.7;
+        qreal breathDepth = 0.1;
+        qreal drop = 6.0;
+        qreal lineIndent = 0.0;
     };
 
+    qreal random();
     void tick();
     void land();
 
     QTimer m_timer;
+    QTimer m_landTimer;
     QElapsedTimer m_clock;
     QVector<float> m_peaks;
     QVector<Word> m_words;
-    QVector<Mote> m_motes;
+    Look m_look;
     qreal m_target = 0.0;
     // Eased toward m_target so progress that arrives in steps still glides.
     qreal m_shown = 0.0;
     quint32 m_random = 1;
     bool m_landing = false;
-    // When the playhead reached the end, or -1; the finished page stays up a
-    // moment before landed().
-    qint64 m_reachedEndAt = -1;
+    qreal m_landFrom = 0.0;
+    qint64 m_landStarted = 0;
 };
 
 } // namespace speecher

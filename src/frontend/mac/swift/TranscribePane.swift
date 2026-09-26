@@ -692,6 +692,8 @@ struct TranscribePane: View {
             Form {
                 Section {
                     TranscribeLoom(peaks: model.peaks, playhead: model.playhead(at:), text: model.partial)
+                        // A fresh loom, and so a fresh look, for every file.
+                        .id(model.current)
                     TimelineView(.periodic(from: .now, by: 0.25)) { timeline in
                         LabeledContent(model.phaseLabel) {
                             Text(percent(model.overallFileProgress(at: timeline.date)))
@@ -812,7 +814,7 @@ struct TranscribePane: View {
 
 /// The file being read, drawn as it is consumed: its waveform across the top,
 /// a playhead at the share of audio sent, and behind the playhead bars that
-/// shrink away as motes of sound fall toward the words written so far.
+/// shrink away. Each file breathes at its own pace, so no two runs look alike.
 struct TranscribeLoom: View {
     let peaks: [Float]
     /// The playhead's share of the file at a moment, which moves between the
@@ -820,10 +822,14 @@ struct TranscribeLoom: View {
     let playhead: @MainActor (Date) -> Double
     let text: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // Drawn once per loom, which is once per file.
+    @State private var breath = (period: Double.random(in: 2.2...4.4),
+                                 spread: Double.random(in: 0.4...1.3),
+                                 depth: Double.random(in: 0.06...0.16))
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Reduce Motion stills the bars and motes but not the playhead,
+            // Reduce Motion stills the bars but not the playhead,
             // which is the progress; a slower clock is enough for it.
             TimelineView(.animation(minimumInterval: reduceMotion ? 0.5 : nil)) { timeline in
                 Canvas { context, size in
@@ -864,7 +870,10 @@ struct TranscribeLoom: View {
                 height *= CGFloat(0.25 + 0.75 * fade)
                 context.opacity = 0.25 + 0.75 * fade
             } else {
-                if !reduceMotion { height *= CGFloat(0.9 + 0.1 * sin(time * 3.3 + Double(index) * 0.7)) }
+                if !reduceMotion {
+                    height *= CGFloat(1 - breath.depth
+                                      + breath.depth * sin(time * 10 / breath.period + Double(index) * breath.spread))
+                }
                 context.opacity = 0.5
             }
             let bar = CGRect(x: x - 0.8, y: middle - height / 2, width: 1.6, height: height)
@@ -879,21 +888,6 @@ struct TranscribeLoom: View {
                                            startPoint: CGPoint(x: head, y: 0),
                                            endPoint: CGPoint(x: head, y: waveHeight)))
 
-        guard !reduceMotion, !peaks.isEmpty, progress < 1 else { return }
-        // Motes leave the playhead and fall to the text below, each on its own
-        // phase so the stream never pulses in step.
-        for mote in 0..<10 {
-            let seed = (Double(mote) * 0.618_034).truncatingRemainder(dividingBy: 1)
-            let life = (time * 0.9 + seed).truncatingRemainder(dividingBy: 1)
-            let startY = Double(middle) + (seed - 0.5) * Double(waveHeight) * 0.6
-            let x = CGFloat(Double(head) + seed * 30 * life + sin(seed * 40 + life * 6) * 5 * (1 - life))
-            let y = CGFloat(startY + (Double(size.height) - startY) * life * life)
-            let radius = CGFloat(2.4 * (1 - life * 0.5))
-            context.opacity = 0.9 * (1 - life)
-            context.fill(Path(ellipseIn: CGRect(x: x - radius, y: y - radius,
-                                                width: radius * 2, height: radius * 2)),
-                         with: accent)
-        }
     }
 }
 

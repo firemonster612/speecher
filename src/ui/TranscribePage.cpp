@@ -33,6 +33,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <QRandomGenerator>
 
 namespace speecher {
 namespace {
@@ -416,7 +417,8 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
             m_currentPath = path;
             m_processingHeader->setText(processingTitle(m_batch, index));
             m_fractionSent = 0.0;
-            m_loom->startFile({}, index);
+            m_loomSeed = int(QRandomGenerator::global()->generate() & 0x7fffffff);
+            m_loom->startFile({}, m_loomSeed);
             setPhase(TranscribePhase::Reading);
             m_progressTimer.start();
         });
@@ -425,7 +427,7 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
             [this](int index, const QVector<float> &peaks, qint64 durationMs) {
                 afterLanding([this, index, peaks, durationMs] {
                     m_durationsMs.insert(m_currentPath, durationMs);
-                    m_loom->startFile(peaks, index);
+                    m_loom->startFile(peaks, m_loomSeed);
                     setPhase(TranscribePhase::Transcribing);
                 });
             });

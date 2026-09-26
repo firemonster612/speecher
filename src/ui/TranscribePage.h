@@ -120,6 +120,8 @@ private:
     TranscribeBatchLabels m_batchLabels;
     int m_current = -1;
     QString m_currentPath;
+    // A new one for every file, so no two runs animate alike.
+    int m_loomSeed = 0;
     QList<TranscribeFileResult> m_batchResults;
     bool m_cancelled = false;
     // The result row a retry is running for, or -1.

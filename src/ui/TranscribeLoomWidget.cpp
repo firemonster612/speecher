@@ -26,8 +26,10 @@ constexpr int kLines = 6;
 constexpr qreal kPopWindow = 0.045;
 // How far behind the playhead a consumed bar fades out, in pixels.
 constexpr qreal kFadeDistance = 60.0;
-// How long a finished page stays up, its last words settling, before the
-// next file replaces it.
+// How long the playhead takes to run to the end once a file is done, and how
+// long the finished page then stays up before the next file replaces it.
+// Both are measured on the clock, so a minimized window lands on time.
+constexpr qint64 kLandRunMs = 350;
 constexpr qint64 kLandedHoldMs = 450;
 
 qreal easeOutBack(qreal t)
@@ -52,6 +54,8 @@ TranscribeLoomWidget::TranscribeLoomWidget(QWidget *parent)
     m_clock.start();
     m_timer.setInterval(waveform::frameIntervalMs);
     connect(&m_timer, &QTimer::timeout, this, &TranscribeLoomWidget::tick);
+    m_landTimer.setSingleShot(true);
+    connect(&m_landTimer, &QTimer::timeout, this, &TranscribeLoomWidget::land);
 }
 
 QSize TranscribeLoomWidget::sizeHint() const
@@ -64,36 +68,48 @@ bool TranscribeLoomWidget::isLanding() const
     return m_landing;
 }
 
+qreal TranscribeLoomWidget::random()
+{
+    m_random = m_random * 1664525u + 1013904223u;
+    return (m_random >> 8) / qreal(1 << 24);
+}
+
 void TranscribeLoomWidget::startFile(const QVector<float> &peaks, int seed)
 {
     m_peaks = peaks;
-    m_motes.clear();
     m_words.clear();
     m_target = 0.0;
     m_shown = 0.0;
     m_landing = false;
-    m_reachedEndAt = -1;
+    m_landTimer.stop();
+    // The seed differs on every run, so each file lays out its own page and
+    // breathes and settles in its own way.
     m_random = quint32(seed) * 2654435761u + 1;
-    // Word pills laid out into lines; each gets the progress point where it
-    // pops in, spread evenly across the file.
-    const auto next = [this] {
-        m_random = m_random * 1664525u + 1013904223u;
-        return (m_random >> 8) / qreal(1 << 24);
-    };
+    m_look.breathPeriod = 220.0 + random() * 200.0;
+    m_look.breathSpread = 0.4 + random() * 0.9;
+    m_look.breathDepth = 0.06 + random() * 0.1;
+    m_look.drop = 3.0 + random() * 7.0;
+    m_look.lineIndent = random() * 0.12;
+    // Word pills laid out into lines, each line a little ragged on the left
+    // and ending short of the margin by its own amount; each word gets the
+    // progress point where it pops in, spread across the file with some jitter.
     int line = 0;
-    qreal x = 0.0;
+    qreal x = m_look.lineIndent * random();
+    qreal lineEnd = 0.8 + random() * 0.2;
     while (line < kLines) {
-        const qreal width = 0.035 + next() * 0.085;
-        if (x + width > 1.0) {
+        const qreal width = 0.025 + random() * random() * 0.14;
+        if (x + width > lineEnd) {
             ++line;
-            x = 0.0;
+            x = m_look.lineIndent * random();
+            lineEnd = line == kLines - 1 ? 0.3 + random() * 0.5 : 0.8 + random() * 0.2;
             continue;
         }
-        m_words.append({line, x, width, 0.0});
-        x += width + 0.018;
+        m_words.append({line, x, width, 0.0, 0.8 + random() * 0.4});
+        x += width + 0.012 + random() * 0.014;
     }
     for (int i = 0; i < m_words.size(); ++i) {
-        m_words[i].at = 0.06 + 0.88 * qreal(i) / m_words.size();
+        const qreal jitter = (random() - 0.5) * 0.6 / m_words.size();
+        m_words[i].at = std::clamp(0.06 + 0.88 * qreal(i) / m_words.size() + jitter, 0.05, 0.95);
     }
     update();
 }
@@ -107,15 +123,15 @@ void TranscribeLoomWidget::finishFile()
 {
     m_target = 1.0;
     m_landing = true;
-    m_reachedEndAt = -1;
-    if (!isVisible()) {
-        m_shown = 1.0;
-        land();
-    }
+    m_landFrom = m_shown;
+    m_landStarted = m_clock.elapsed();
+    m_landTimer.start(int(kLandRunMs + kLandedHoldMs));
 }
 
 void TranscribeLoomWidget::land()
 {
+    m_landTimer.stop();
+    m_shown = 1.0;
     m_landing = false;
     emit landed();
 }
@@ -130,48 +146,17 @@ void TranscribeLoomWidget::hideEvent(QHideEvent *event)
 {
     m_timer.stop();
     QWidget::hideEvent(event);
-    if (m_landing) {
-        m_shown = 1.0;
-        land();
-    }
 }
 
 void TranscribeLoomWidget::tick()
 {
-    // Landing runs the playhead to the end at a steady clip rather than the
-    // ease's ever-slower approach.
-    m_shown = m_landing ? std::min(1.0, m_shown + std::max((1.0 - m_shown) * 0.12, 0.01))
-                        : m_shown + (m_target - m_shown) * 0.12;
-    if (m_landing && m_shown >= 1.0) {
-        if (m_reachedEndAt < 0) {
-            m_reachedEndAt = m_clock.elapsed();
-        } else if (m_clock.elapsed() - m_reachedEndAt >= kLandedHoldMs) {
-            land();
-        }
+    if (m_landing) {
+        // Run the playhead to the end in a fixed time from wherever it was.
+        const qreal t = std::min(1.0, qreal(m_clock.elapsed() - m_landStarted) / kLandRunMs);
+        m_shown = m_landFrom + (1.0 - m_landFrom) * (1 - std::pow(1 - t, 3));
+    } else {
+        m_shown += (m_target - m_shown) * 0.12;
     }
-    const qreal innerWidth = width() - kSidePad * 2;
-    const qreal headX = kSidePad + innerWidth * m_shown;
-    const qreal pageTop = kWaveTop + kWaveHeight + kPageGap;
-    // Sound falls from the playhead toward the next word still to land.
-    const auto landing = std::find_if(m_words.cbegin(), m_words.cend(),
-                                      [this](const Word &word) { return word.at > m_shown; });
-    const auto next = [this] {
-        m_random = m_random * 1664525u + 1013904223u;
-        return (m_random >> 8) / qreal(1 << 24);
-    };
-    if (landing != m_words.cend() && m_shown < m_target + 0.001 && m_target < 1.0 && next() < 0.5) {
-        m_motes.append({QPointF(headX, kWaveTop + kWaveHeight / 2 + (next() - 0.5) * kWaveHeight * 0.6),
-                        QPointF(kSidePad + (landing->x + landing->width / 2) * innerWidth,
-                                pageTop + landing->line * kLineGap),
-                        0.0,
-                        next() * 2 * M_PI});
-    }
-    for (Mote &mote : m_motes) {
-        mote.t = std::min(1.0, mote.t + 0.028);
-    }
-    m_motes.erase(std::remove_if(m_motes.begin(), m_motes.end(),
-                                 [](const Mote &mote) { return mote.t >= 1.0; }),
-                  m_motes.end());
     update();
 }
 
@@ -189,7 +174,7 @@ void TranscribeLoomWidget::paintEvent(QPaintEvent *)
     const qreal waveMid = kWaveTop + kWaveHeight / 2;
 
     // The file's waveform: bars behind the playhead have given up their sound
-    // and shrink away; unread audio breathes gently.
+    // and shrink away; unread audio breathes, at this run's own pace.
     const int count = m_peaks.size();
     for (int i = 0; i < count; ++i) {
         const qreal x = kSidePad + (count > 1 ? qreal(i) / (count - 1) : 0.0) * innerWidth;
@@ -200,7 +185,8 @@ void TranscribeLoomWidget::paintEvent(QPaintEvent *)
             height *= 0.25 + 0.75 * fade;
             color = withAlpha(accent, 0.25 + 0.75 * fade);
         } else {
-            height *= 0.9 + 0.1 * std::sin(now / 300 + i * 0.7);
+            height *= 1 - m_look.breathDepth
+                      + m_look.breathDepth * std::sin(now / m_look.breathPeriod + i * m_look.breathSpread);
             color = withAlpha(dim, 0.55);
         }
         painter.setPen(QPen(color, 2.2, Qt::SolidLine, Qt::RoundCap));
@@ -215,36 +201,25 @@ void TranscribeLoomWidget::paintEvent(QPaintEvent *)
     painter.setPen(QPen(QBrush(glow), 2));
     painter.drawLine(QPointF(headX, kWaveTop - 6), QPointF(headX, kWaveTop + kWaveHeight + 6));
 
-    // Words weaving into the page: fresh ones glow in the accent, then
-    // settle into ink.
+    // Words writing themselves into the page: fresh ones drop in from above
+    // in the accent and grow to their length at their own speed, then settle
+    // into ink.
     const qreal pageTop = kWaveTop + kWaveHeight + kPageGap;
     painter.setPen(Qt::NoPen);
     const Word *newest = nullptr;
     for (const Word &word : std::as_const(m_words)) {
-        const qreal local = (m_shown - word.at) / kPopWindow;
+        const qreal local = (m_shown - word.at) / (kPopWindow * word.pace);
         if (local <= 0) {
             continue;
         }
         newest = &word;
         const qreal k = std::min(1.0, local);
         const qreal eased = easeOutBack(k);
-        const qreal y = pageTop + word.line * kLineGap - kPillHeight / 2 + (1 - eased) * 6;
+        const qreal y = pageTop + word.line * kLineGap - kPillHeight / 2 - (1 - eased) * m_look.drop;
         painter.setBrush(k < 1 ? withAlpha(accent, std::min(1.0, k * 1.4)) : withAlpha(ink, 0.82));
         painter.drawRoundedRect(QRectF(kSidePad + word.x * innerWidth, y,
                                        std::max(2.0, word.width * innerWidth * eased), kPillHeight),
                                 4.5, 4.5);
-    }
-
-    // Motes arcing down from the playhead to the word about to land.
-    for (const Mote &mote : std::as_const(m_motes)) {
-        const qreal k = mote.t;
-        const qreal arc = std::sin(k * M_PI) * 26;
-        const QPointF at(mote.from.x() + (mote.to.x() - mote.from.x()) * k
-                             + std::sin(mote.wobble + k * 6) * 5 * (1 - k),
-                         mote.from.y() + (mote.to.y() - mote.from.y()) * k * k - arc * (1 - k) * 0.3);
-        painter.setBrush(withAlpha(accent, 0.9 * (1 - std::abs(k - 0.5) * 0.6)));
-        const qreal radius = 2.6 * (1 - k * 0.5);
-        painter.drawEllipse(at, radius, radius);
     }
 
     // A caret blinking after the newest word.
