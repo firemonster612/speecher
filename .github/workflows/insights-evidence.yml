@@ -121,6 +121,13 @@ jobs:
             # A killed instance leaves its single-instance socket behind.
             find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
           done
+          # General with insights off, for the note under the toggle.
+          defaults write com.io-github-firemonster612.speecher insights.enabled -bool false
+          SPEECHER_GRAB_PAGE=general build/speecher.app/Contents/MacOS/speecher \
+            --grab evidence/mac-general-off.png > evidence/mac-general-off-grab.log 2>&1 || failed=1
+          defaults write com.io-github-firemonster612.speecher insights.enabled -bool true
+          pkill -9 -x speecher || true
+          find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
           exit $failed
 
       - name: Screen capture with the window shown
@@ -243,6 +250,19 @@ jobs:
               throw "speecher --grab for $shot exited with code $($process.ExitCode)"
             }
           }
+          # General with insights off, for the note under the toggle. Qt's
+          # native Windows settings live under this registry key.
+          $key = "HKCU:\Software\io.github.firemonster612\speecher\insights"
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name enabled -Value "false" -PropertyType String -Force | Out-Null
+          $env:SPEECHER_GRAB_PAGE = "general"
+          $env:SPEECHER_GRAB_SCROLL = ""
+          $out = Join-Path (Resolve-Path evidence).Path "win-general-off.png"
+          $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
+            throw "speecher --grab for general-off exited with code $($process.ExitCode)"
+          }
+          Remove-ItemProperty -Path $key -Name enabled
 
       - name: Upload Windows pictures
         if: always()

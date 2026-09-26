@@ -137,6 +137,7 @@ signals:
     void quitRequested();
 
 private:
+    void forgetLastRecord();
     void registerProviders();
     void startWithMicrophone(std::function<void()> start);
     void runDeferredStartup();

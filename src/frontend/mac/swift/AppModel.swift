@@ -187,7 +187,12 @@ final class AppModel: ObservableObject {
     var learnedCorrectionCount: Int { bridge.learnedCorrectionCount }
 
     func clearInsights() {
-        clearInsightsFailed = !bridge.clearInsights()
+        let cleared = bridge.clearInsights()
+        // On the next turn: this runs from the confirmation dialog's button,
+        // and an alert raised while that dialog is still dismissing is lost.
+        DispatchQueue.main.async { [weak self] in
+            self?.clearInsightsFailed = !cleared
+        }
     }
 
     func showCorrections() {

@@ -292,6 +292,30 @@ private slots:
         emit controller.session()->transcriptDelivered(QStringLiteral("four"));
         QVERIFY(!controller.lastRecord());
         QCOMPARE(changed.count(), 2);
+
+        // Clearing the history forgets the record the caption shows.
+        emit controller.session()->dictationRecorded(record);
+        QVERIFY(controller.clearInsights());
+        QVERIFY(!controller.lastRecord());
+    }
+
+    void aNewSessionForgetsTheLastRecord()
+    {
+        // The session drops its last transcript when the next one starts,
+        // delivered or not, so the caption's record must go with it: a
+        // cancelled or failed session must not wear the previous one's app.
+        QTemporaryDir dir;
+        const QString seed = dir.filePath(QStringLiteral("seed.jsonl"));
+        QFile(seed).open(QIODevice::WriteOnly);
+        qputenv("SPEECHER_INSIGHTS_SEED", seed.toLocal8Bit());
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_INSIGHTS_SEED"); });
+        ApplicationController controller(true);
+        emit controller.session()->dictationRecorded(
+            {QDateTime(QDate(2026, 9, 26), QTime(9, 0)), 4000, 3, QStringLiteral("Kate"),
+             WritingProfile::Other});
+        QVERIFY(controller.lastRecord());
+        controller.session()->toggle();
+        QTRY_VERIFY(!controller.lastRecord());
     }
 
     void dictationHasOneStartControlAndTheHeaderHasNone()

@@ -186,14 +186,16 @@ ApplicationController::ApplicationController(bool popupOnly,
     m_insightsToday =
         QDate::fromString(qEnvironmentVariable("SPEECHER_INSIGHTS_TODAY"), Qt::ISODate);
     connect(m_session, &DictationSession::dictationRecorded, m_insightsLog, &InsightsLog::append);
-    // The session reports a delivery first, then (while insights record it)
-    // its record.
-    connect(m_session, &DictationSession::transcriptDelivered, this, [this] {
-        if (m_lastRecord) {
-            m_lastRecord.reset();
-            emit lastRecordChanged();
+    // The record describes the transcript Home shows, so it goes whenever
+    // that transcript does: a new session starting (which drops the last
+    // transcript, delivered or not) and a delivery. The session reports a
+    // delivery first, then (while insights record it) its record.
+    connect(m_session, &DictationSession::stateChanged, this, [this] {
+        if (m_session->state() == DictationState::Starting) {
+            forgetLastRecord();
         }
     });
+    connect(m_session, &DictationSession::transcriptDelivered, this, &ApplicationController::forgetLastRecord);
     connect(m_session, &DictationSession::dictationRecorded, this, [this](const DictationRecord &record) {
         m_lastRecord = record;
         emit lastRecordChanged();
@@ -267,7 +269,19 @@ const std::optional<DictationRecord> &ApplicationController::lastRecord() const
 
 bool ApplicationController::clearInsights()
 {
-    return m_insightsLog->clear();
+    if (!m_insightsLog->clear()) {
+        return false;
+    }
+    forgetLastRecord();
+    return true;
+}
+
+void ApplicationController::forgetLastRecord()
+{
+    if (m_lastRecord) {
+        m_lastRecord.reset();
+        emit lastRecordChanged();
+    }
 }
 
 bool ApplicationController::popupOnly() const

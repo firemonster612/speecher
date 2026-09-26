@@ -371,6 +371,8 @@ InsightsSummary summarize(const QList<DictationRecord> &records,
     return summary;
 }
 
+namespace {
+
 qint64 heatValue(const HeatmapDay &day, HeatMeasure measure)
 {
     switch (measure) {
@@ -380,6 +382,8 @@ qint64 heatValue(const HeatmapDay &day, HeatMeasure measure)
     }
     return day.dictations;
 }
+
+} // namespace
 
 HeatScale::HeatScale(const QList<HeatmapDay> &days, HeatMeasure measure)
     : m_measure(measure)

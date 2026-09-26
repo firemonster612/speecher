@@ -124,8 +124,6 @@ enum class HeatMeasure {
     Audio,
 };
 
-qint64 heatValue(const HeatmapDay &day, HeatMeasure measure);
-
 // Heatmap colour levels 0..4 for one measure: 0 for no activity, then the
 // quartile of the day's value among the days with dictation.
 class HeatScale {

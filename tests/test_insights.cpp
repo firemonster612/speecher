@@ -2,6 +2,8 @@
 #include "core/InsightsLog.h"
 #include "core/InsightsSummary.h"
 
+#include <QDir>
+#include <QFileInfo>
 #include <QTemporaryDir>
 
 using namespace speecher;
@@ -141,18 +143,19 @@ private slots:
 
     void clearKeepsEverythingWhenTheFileCannotBeDeleted()
     {
+        // A non-empty directory where the log file should be: QFile::remove
+        // refuses it on every platform, unlike a read-only parent directory,
+        // which Windows ignores.
         QTemporaryDir dir;
         const QString path = dir.filePath(QStringLiteral("insights.jsonl"));
         InsightsLog log(path);
         log.append(recordOn(kToday));
-        const QFileDevice::Permissions writable = QFile::permissions(dir.path());
-        QFile::setPermissions(dir.path(), QFileDevice::ReadOwner | QFileDevice::ExeOwner);
+        QVERIFY(QFile::remove(path));
+        QVERIFY(QDir(dir.path()).mkpath(QStringLiteral("insights.jsonl/keep")));
         QSignalSpy changed(&log, &InsightsLog::changed);
         QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("could not be deleted")));
-        const bool cleared = log.clear();
-        QFile::setPermissions(dir.path(), writable);
-        QVERIFY(!cleared);
-        QVERIFY(QFile::exists(path));
+        QVERIFY(!log.clear());
+        QVERIFY(QFileInfo(path).isDir());
         QCOMPARE(log.records().size(), 1);
         QCOMPARE(changed.count(), 0);
     }
