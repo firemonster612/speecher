@@ -28,7 +28,12 @@ void editRefinementEndpoint(AppSettings &settings, const RefinementEndpointEdit 
     const bool urlEdited = edit.baseUrl && edit.baseUrl->trimmed() != effective.apiBase;
     const bool keyChanged = edit.apiKey && (edit.apiKey->trimmed() != effective.apiKey || unread);
     const bool leavingPreset = edit.preset && *edit.preset != QStringLiteral("cliproxy");
-    if ((serverChanged || keyChanged || leavingPreset) && endpoint.preset == QStringLiteral("cliproxy")) {
+    // The preset never overwrites the Custom fields, so a Custom server entered
+    // before comes back with its own key; only without one does Custom start
+    // from the proxy's address.
+    const bool customSaved = !endpoint.baseUrl.isEmpty();
+    if ((serverChanged || keyChanged || (leavingPreset && !customSaved))
+        && endpoint.preset == QStringLiteral("cliproxy")) {
         endpoint.preset.clear();
         endpoint.baseUrl = effective.apiBase;
         // The proxy's key may follow only to the proxy's own address; a new
