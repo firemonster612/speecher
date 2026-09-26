@@ -210,6 +210,18 @@ struct TrayIcon::Native {
         ownsCurrentIcon = false;
     }
 
+    void showMessage(const QString &title, const QString &message)
+    {
+        NOTIFYICONDATAW data = iconData();
+        data.uFlags = NIF_INFO;
+        data.dwInfoFlags = NIIF_INFO;
+        StringCchCopyW(data.szInfoTitle, ARRAYSIZE(data.szInfoTitle),
+                       reinterpret_cast<const wchar_t *>(title.utf16()));
+        StringCchCopyW(data.szInfo, ARRAYSIZE(data.szInfo),
+                       reinterpret_cast<const wchar_t *>(message.utf16()));
+        Shell_NotifyIconW(NIM_MODIFY, &data);
+    }
+
     RECT iconRect() const
     {
         NOTIFYICONIDENTIFIER identifier{};
@@ -270,6 +282,7 @@ struct TrayIcon::Native {
             flyout.show(iconRect());
             return 1;
         case WM_LBUTTONDBLCLK:
+        case NIN_BALLOONUSERCLICK:
             flyout.hide();
             showSettings();
             return 1;
@@ -302,5 +315,10 @@ TrayIcon::TrayIcon(ApplicationController *controller,
 }
 
 TrayIcon::~TrayIcon() = default;
+
+void TrayIcon::showMessage(const QString &title, const QString &message)
+{
+    m_native->showMessage(title, message);
+}
 
 } // namespace speecher

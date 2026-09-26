@@ -140,6 +140,15 @@ void WinFrontEnd::alert()
     MessageBeep(MB_OK);
 }
 
+void WinFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &message)
+{
+    if ((m_native->settings && m_native->settings->isVisible())
+        || (m_native->setup && m_native->setup->isVisible())) {
+        return;
+    }
+    m_native->tray->showMessage(title, message);
+}
+
 DictationPanel *WinFrontEnd::dictationPanelForTest()
 {
     return m_native->panel.get();
