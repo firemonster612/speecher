@@ -88,6 +88,8 @@ private:
     QList<QWidget *> m_tiles;
     QList<QBoxLayout *> m_pairs;
     HeatMeasure m_measure = HeatMeasure::Dictations;
+    // The day the insights shown were summarized up to.
+    QDate m_summarizedDay;
     bool m_sessionActive = false;
 };
 

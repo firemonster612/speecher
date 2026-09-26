@@ -438,9 +438,10 @@ void HomePage::refresh()
     const bool showStats = enabled && !records.isEmpty();
     m_notice->setVisible(!showStats);
     m_insightsHeader->setVisible(showStats);
+    m_summarizedDay = m_controller->insightsToday();
     if (showStats) {
         const auto range = static_cast<InsightsRange>(m_range->currentData().toInt());
-        m_insights = buildInsights(summarize(records, range, m_controller->insightsToday()));
+        m_insights = buildInsights(summarize(records, range, m_summarizedDay));
         m_columnLayout->insertWidget(m_columnLayout->indexOf(m_insightsHeader) + 1, m_insights);
         applyWidth();
     }
@@ -850,7 +851,12 @@ void HomePage::refreshLastTranscript()
 void HomePage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
-    refreshLastTranscript();
+    // The app can stay open past midnight; "today" has to move with it.
+    if (m_summarizedDay != m_controller->insightsToday()) {
+        refresh();
+    } else {
+        refreshLastTranscript();
+    }
 }
 
 bool HomePage::eventFilter(QObject *watched, QEvent *event)

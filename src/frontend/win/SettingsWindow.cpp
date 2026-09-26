@@ -241,6 +241,11 @@ struct SettingsWindow::Native {
     void show()
     {
         if (window) {
+            // Selecting Home rebuilds it, which re-reads today; bringing an
+            // open window back must too, or yesterday's streak stays up.
+            if (currentPane == kHomePane) {
+                queueRebuild();
+            }
             window.Activate();
             SetForegroundWindow(windowHandle());
             return;
