@@ -1043,11 +1043,12 @@ if(APPLE AND SPEECHER_WITH_SWIFT_UI)
   # Qt, still: the bridge reads the schema context and the theme through the Qt
   # front end's helpers rather than reassembling them. Every window this front
   # end shows is AppKit/SwiftUI. AVFoundation is the setup assistant's
-  # microphone permission.
+  # microphone permission; UserNotifications says a download finished.
   target_link_libraries(speecher_frontend_mac PUBLIC
     speecher_frontend_qt speecher_frontend_mac_swift
     "-framework AppKit"
     "-framework AVFoundation"
+    "-framework UserNotifications"
   )
   # Ninja cannot see that the .mm files need the generated header, so order the
   # whole Swift target ahead of them.

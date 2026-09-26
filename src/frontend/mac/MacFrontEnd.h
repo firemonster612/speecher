@@ -23,6 +23,7 @@ public:
     bool captureMainWindow(const QString &path) override;
     void showDictationError(const QString &message) override;
     void alert() override;
+    void notifyIfNoWindowShown(const QString &title, const QString &message) override;
 
 private:
     // The Objective-C objects, so this header stays includable from C++.

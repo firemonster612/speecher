@@ -154,4 +154,9 @@ void MacFrontEnd::alert()
     QApplication::beep();
 }
 
+void MacFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &message)
+{
+    [m_native->ui notifyIfNoWindowShownWithTitle:title.toNSString() message:message.toNSString()];
+}
+
 } // namespace speecher

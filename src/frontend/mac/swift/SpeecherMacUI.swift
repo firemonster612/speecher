@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 
 @MainActor
 private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
@@ -163,6 +164,29 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     /// an update puts back.
     @MainActor
     @objc public var settingsWindowVisible: Bool { settings?.isVisible ?? false }
+
+    /// News that arrives while no Speecher window is up, such as a Local
+    /// Model download finishing after setup closed, goes to Notification
+    /// Center. A window on screen already shows it.
+    @MainActor
+    @objc public func notifyIfNoWindowShown(title: String, message: String) {
+        // Notification Center only takes posts from an app bundle; asking
+        // from a bare executable (the tests) throws.
+        guard settings?.isVisible != true, setupAssistant?.isVisible != true,
+              Bundle.main.bundleURL.pathExtension == "app" else { return }
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+            guard granted else {
+                NSLog("Speecher: notifications are not allowed%@",
+                      error.map { ": \($0.localizedDescription)" } ?? "")
+                return
+            }
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = message
+            center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        }
+    }
 
     /// Brings Speecher forward so whatever it just put on screen can be seen.
     @MainActor
