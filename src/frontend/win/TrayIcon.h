@@ -16,6 +16,10 @@ public:
                       QObject *parent = nullptr);
     ~TrayIcon() override;
 
+    // A balloon from the notification-area icon, which Windows 11 shows as a
+    // toast. Clicking it runs clicked.
+    void showMessage(const QString &title, const QString &message, std::function<void()> clicked);
+
 private:
     struct Native;
     std::unique_ptr<Native> m_native;

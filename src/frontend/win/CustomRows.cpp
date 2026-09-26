@@ -3,6 +3,7 @@
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "core/Target.h"
+#include "frontend/win/LocalModelBrowser.h"
 #include "frontend/win/SettingsModel.h"
 #include "frontend/win/SettingsPage.h"
 #include "providers/ClaudeCredentials.h"
@@ -291,7 +292,8 @@ QString anthropicCredentialStatus(const AppSettings &draft, const SettingsStore 
 bool customRowIsFullWidth(const QString &rowId)
 {
     return rowId == QStringLiteral("writingProfileBehavior")
-        || rowId == QStringLiteral("whatsNewNotes");
+        || rowId == QStringLiteral("whatsNewNotes")
+        || rowId == QStringLiteral("localModelBrowser");
 }
 
 UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
@@ -301,6 +303,12 @@ UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
     }
     if (row.id == QStringLiteral("whatsNewNotes")) {
         return releaseNotes(row);
+    }
+    if (row.id == QStringLiteral("localModelBrowser")) {
+        if (!host.localModels) {
+            host.localModels = std::make_shared<LocalModelBrowser>(host);
+        }
+        return host.localModels->element(row);
     }
     if (row.id == QStringLiteral("openAiAuth")) {
         return credentialField(host);

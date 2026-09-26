@@ -41,7 +41,8 @@ HardwareSummary probeHardware()
     for (const Device &device : devices) {
         switch (device.type) {
         case Device::Type::Cpu:
-            summary.profile.chipName = device.description;
+            // Windows pads the processor brand string with spaces.
+            summary.profile.chipName = device.description.simplified();
             summary.profile.systemRamBytes = device.memoryTotalBytes;
             summary.profile.availableRamBytes = device.memoryFreeBytes;
             break;

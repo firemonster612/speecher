@@ -1,8 +1,10 @@
 #include "frontend/win/SetupWindow.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
 #include "app/PlatformComposition.h"
 #include "core/AppSettings.h"
+#include "core/EndpointSettings.h"
 #include "core/OutputFormat.h"
 #include "core/SettingsStore.h"
 #include "core/ShortcutBinding.h"
@@ -12,6 +14,8 @@
 #include "frontend/win/ShortcutRecorder.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "platform/win/WinGlobalShortcutBinder.h"
+#include "providers/CustomEndpoints.h"
+#include "providers/LocalModelStore.h"
 #include "providers/ProviderProbe.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/ProviderSignIn.h"
@@ -26,8 +30,10 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.System.h>
 #include <winrt/Windows.UI.Core.h>
+#include <winrt/Windows.UI.Xaml.Interop.h>
 #include <winrt/Microsoft.UI.Interop.h>
 #include <winrt/Microsoft.UI.Xaml.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
@@ -39,6 +45,7 @@
 #include <QHash>
 #include <QKeySequence>
 #include <QThread>
+#include <QPointer>
 #include <QTimer>
 
 #include <algorithm>
@@ -54,6 +61,7 @@ using namespace winrt;
 using namespace Microsoft::UI::Xaml;
 using namespace Microsoft::UI::Xaml::Controls;
 using namespace Microsoft::UI::Xaml::Media;
+using Microsoft::UI::Xaml::Automation::AutomationProperties;
 using Microsoft::UI::Xaml::Markup::XamlReader;
 
 // Every XAML fragment this file parses carries the presentation namespace, the
@@ -70,6 +78,20 @@ constexpr int lastGatedPage = 2;
 // The width a provider row states for itself inside RadioButtons, which lays
 // an item out to its content rather than to the list.
 constexpr double choiceRowWidth = 560;
+
+const QString kLocal = QStringLiteral("local");
+const QString kEndpoint = QStringLiteral("endpoint");
+const QString kNone = QStringLiteral("none");
+// Segoe Fluent Icons: a desktop PC for this computer, a contact for a sign-in,
+// a network for a server someone runs.
+constexpr wchar_t kComputerGlyph = L'\uE977';
+constexpr wchar_t kContactGlyph = L'\uE77B';
+constexpr wchar_t kServerGlyph = L'\uE968';
+
+void setShown(const UIElement &element, bool shown)
+{
+    element.Visibility(shown ? Visibility::Visible : Visibility::Collapsed);
+}
 
 // Where a status sits on the mockup's scale: neutral while a probe runs or
 // when a row is merely reporting, positive once a prerequisite holds, caution
@@ -155,8 +177,10 @@ struct StatusCell {
     FontIcon glyph{nullptr};
     TextBlock text{nullptr};
 
+    // An empty value hides the whole cell, glyph included.
     void set(const QString &value, StatusTone tone) const
     {
+        root.Visibility(value.isEmpty() ? Visibility::Collapsed : Visibility::Visible);
         const wchar_t mark = toneGlyph(tone);
         glyph.Glyph(hstring(std::wstring_view(&mark, 1)));
         text.Text(hstring(value.toStdWString()));
@@ -270,7 +294,7 @@ Grid cardRow(const FrameworkElement &mark, const StackPanel &text, const Framewo
 }
 
 // Appends a row to a list of rows, separated from the one above it.
-void appendRow(const StackPanel &list, const Grid &row)
+void appendRow(const StackPanel &list, const UIElement &row)
 {
     if (list.Children().Size()) {
         list.Children().Append(rowSeparator());
@@ -418,6 +442,15 @@ QString readyInstruction(ShortcutActivationMode mode, const QString &display)
     return QStringLiteral("To dictate, press %1 to start, press it again to stop.").arg(display);
 }
 
+// One choice on the Refinement step. The groups are separate cards, so the
+// choice is RadioButtons sharing a GroupName rather than one RadioButtons.
+struct RefinementOption {
+    QString id;
+    QString label;
+    RadioButton button{nullptr};
+    StatusCell status;
+};
+
 } // namespace
 
 struct SetupWindow::Native {
@@ -429,6 +462,10 @@ struct SetupWindow::Native {
         , setup(q)
         , launchAtLogin(controller->settings()->launchAtLogin())
     {
+        // Speech on this computer is only a path where the build can run it.
+        if (controller->providerRegistry()->speechProvider(kLocal)) {
+            localSpeech = controller->localSetup();
+        }
         microphone = controller->platform()->createAudioInput(controller->settings(), q);
         QObject::connect(microphone, &AudioInput::levelChanged, q, [this](float value) {
             if (microphoneLevel) {
@@ -478,10 +515,11 @@ struct SetupWindow::Native {
         window.SystemBackdrop(MicaBackdrop());
         window.ExtendsContentIntoTitleBar(true);
         window.Closed([this](const auto &, const auto &) {
-            microphone->stop();
+            clearPage();
             resumeShortcut();
             window = nullptr;
             content = nullptr;
+            skip = back = next = nullptr;
         });
 
         Grid root;
@@ -581,6 +619,10 @@ struct SetupWindow::Native {
 
     void show(SetupAssistantPage requested)
     {
+        // A new run of the assistant starts with no path chosen.
+        if (!window) {
+            welcomeChoice = WelcomeChoice();
+        }
         ensureWindow();
         singlePage = requested == SetupAssistantPage::GlobalShortcut;
         showPage(singlePage ? shortcutPage : 0);
@@ -597,15 +639,16 @@ struct SetupWindow::Native {
     {
         switch (index) {
         case 0:
-            // Welcome: at least one provider sign-in is on this machine, or a
-            // usable CLI Proxy API account the Transcription step can opt into.
-            for (auto entry = speechReady.cbegin(); entry != speechReady.cend(); ++entry) {
-                if (entry.value()) {
-                    return true;
-                }
-            }
-            return cliproxyReady;
+            // Welcome: running on this computer was chosen, or at least one
+            // provider sign-in is on this machine, or a usable CLI Proxy API
+            // account the Transcription step can opt into.
+            return (localSpeech && welcomeChoice.local()) || anySignInFound();
         case 1:
+            // A Local Model counts once its download has started: it keeps
+            // going while setup continues.
+            if (localSelected()) {
+                return localDownloadStarted();
+            }
             return speechReady.value(controller->settings()->speechProvider(), false);
         case 2:
             return microphoneDetected;
@@ -665,7 +708,9 @@ struct SetupWindow::Native {
     // A speech provider's credential probe, off the UI thread where the
     // provider offers a job, reported back on it. A result is discarded only
     // when a newer probe of the same provider superseded it; leaving the page
-    // does not — a late verdict still lands in the shared readiness maps.
+    // does not — a late verdict still lands in the shared readiness maps, but
+    // report, which draws on the page that asked, runs only while that page is
+    // on screen.
     void probeSpeechProvider(const QString &id,
                              quint64 generation,
                              std::function<void(const SpeechPrepareResult &)> report)
@@ -673,29 +718,36 @@ struct SetupWindow::Native {
         // Superseded per provider, not per wizard: re-probing one provider's
         // changed sign-in must not strand the others' in-flight verdicts.
         speechProbeGeneration.insert(id, generation);
+        const auto land = [this, id, page = QPointer<QObject>(pageScope.get()),
+                           report](const SpeechPrepareResult &result) {
+            recordSpeechVerdict(id, result);
+            if (page) {
+                report(result);
+            }
+        };
         SpeechTranscriber *transcriber = controller->providerRegistry()->speechProvider(id);
         if (!transcriber) {
-            report({false, QStringLiteral("No transcription service is available.")});
+            land({false, QStringLiteral("No transcription service is available.")});
             return;
         }
         const SpeechSettings settings = controller->settings()->snapshot().speech;
         std::optional<SpeechPrepareJob> job = transcriber->createPrepareJob(settings);
         if (!job || !job->run) {
-            report(transcriber->prepare(settings));
+            land(transcriber->prepare(settings));
             return;
         }
         auto prepareJob = std::make_shared<SpeechPrepareJob>(std::move(*job));
         runProviderProbe<SpeechPrepareResult>(
             controller->providerRegistry(), setup,
             [prepareJob] { return prepareJob->run(); },
-            [this, id, generation, prepareJob, report](const SpeechPrepareResult &result) {
+            [this, id, generation, prepareJob, land](const SpeechPrepareResult &result) {
                 if (generation != speechProbeGeneration.value(id)) {
                     return;
                 }
                 if (prepareJob->apply) {
                     prepareJob->apply(result);
                 }
-                report(result);
+                land(result);
             });
     }
 
@@ -706,30 +758,57 @@ struct SetupWindow::Native {
                                  std::function<void(bool)> report)
     {
         refinementProbeGeneration.insert(id, generation);
+        const auto land = [this, id, page = QPointer<QObject>(pageScope.get()), report](bool ok) {
+            refinementReady.insert(id, ok);
+            if (page) {
+                report(ok);
+            }
+        };
         TranscriptRefiner *refiner = controller->providerRegistry()->refinementProvider(id);
         if (!refiner) {
-            report(false);
+            land(false);
             return;
         }
         const RefinementSettings settings = controller->settings()->snapshot().refinement;
         std::optional<RefinementRefreshJob> job = refiner->createRefreshJob(settings);
         if (!job || !job->run) {
-            report(refiner->prepare(settings).ok);
+            land(refiner->prepare(settings).ok);
             return;
         }
         auto refreshJob = std::make_shared<RefinementRefreshJob>(std::move(*job));
         runProviderProbe<RefinementRefreshResult>(
             controller->providerRegistry(), setup,
             [refreshJob] { return refreshJob->run(); },
-            [this, id, generation, refreshJob, report](const RefinementRefreshResult &result) {
+            [this, id, generation, refreshJob, land](const RefinementRefreshResult &result) {
                 if (generation != refinementProbeGeneration.value(id)) {
                     return;
                 }
                 if (refreshJob->apply) {
                     refreshJob->apply(result);
                 }
-                report(result.ok);
+                land(result.ok);
             });
+    }
+
+    // Forgets the page on screen: its controls, its callbacks and its Qt
+    // connections, so nothing that answers later draws on a page that is gone.
+    void clearPage()
+    {
+        microphone->stop();
+        microphoneLevel = nullptr;
+        microphoneStatus = nullptr;
+        microphoneProblem = nullptr;
+        shortcutStatus = nullptr;
+        readyBody = nullptr;
+        readyDownload = {};
+        localCard = {};
+        localRowStatus = {};
+        runner = {};
+        endpointForm = {};
+        refinementRefresh = nullptr;
+        transcriptionRefresh = nullptr;
+        pageScope = std::make_unique<QObject>();
+        ++checkGeneration;
     }
 
     void showPage(int index)
@@ -737,13 +816,7 @@ struct SetupWindow::Native {
         if (index < 0 || index >= SetupWindow::pageTitles().size()) {
             return;
         }
-        microphone->stop();
-        microphoneLevel = nullptr;
-        microphoneStatus = nullptr;
-        microphoneProblem = nullptr;
-        shortcutStatus = nullptr;
-        readyBody = nullptr;
-        ++checkGeneration;
+        clearPage();
         pageIndex = index;
         // The recorder page needs the bound chord delivered as a key event,
         // which RegisterHotKey would otherwise consume system-wide.
@@ -811,6 +884,77 @@ struct SetupWindow::Native {
         return column;
     }
 
+    // The providers a sign-in answers for. Local models and a speech server
+    // are set up on their own pages, not signed in to.
+    QList<ProviderDescriptor> signInProviders() const
+    {
+        QList<ProviderDescriptor> providers = controller->providerRegistry()->speechProviders();
+        providers.removeIf([](const ProviderDescriptor &provider) {
+            return !isSetupSignInProvider(provider.id);
+        });
+        return providers;
+    }
+
+    bool anySignInFound() const
+    {
+        for (const ProviderDescriptor &provider : signInProviders()) {
+            if (speechReady.value(provider.id, false)) {
+                return true;
+            }
+        }
+        return cliproxyReady;
+    }
+
+    // Every speech provider this assistant sets.
+    void setSpeechProvider(const QString &id)
+    {
+        controller->settings()->setSpeechProvider(id);
+        settleLocalModel();
+    }
+
+    // With Local chosen, the suggestion becomes the saved model unless the
+    // person chose one. Before the hardware probe answers the suggestion is
+    // only the smallest model, so this waits for it.
+    void settleLocalModel()
+    {
+        if (localSelected() && localSpeech->hardwareKnown()) {
+            localSpeech->initializeSpeechModel();
+        }
+    }
+
+    // The Welcome path, the person's when choice is given and otherwise the
+    // default the completed checks suggest. WelcomeChoice decides the speech
+    // provider that goes with it, including undoing a default it wrote.
+    void choosePath(std::optional<bool> choice = std::nullopt)
+    {
+        QStringList ready;
+        for (const ProviderDescriptor &provider : signInProviders()) {
+            if (speechReady.value(provider.id, false)) {
+                ready.append(provider.id);
+            }
+        }
+        const QString current = controller->settings()->speechProvider();
+        const QString provider = welcomeChoice.update(current, ready, cliproxyReady, choice);
+        if (provider != current) {
+            setSpeechProvider(provider);
+        }
+        refreshGates();
+    }
+
+    // A line with the computer glyph and what the hardware probe found.
+    StackPanel hardwareLine(TextBlock &text)
+    {
+        StackPanel line;
+        line.Orientation(Orientation::Horizontal);
+        line.Spacing(8);
+        FontIcon icon = glyphMark(kComputerGlyph);
+        icon.FontSize(14);
+        line.Children().Append(icon);
+        text = textBlock(localSpeech->hardwareLine());
+        line.Children().Append(text);
+        return line;
+    }
+
     void showWelcome()
     {
         const QStringList copy = welcomeCopy();
@@ -819,7 +963,95 @@ struct SetupWindow::Native {
             copy.at(0));
         panel.Children().Append(textBlock(copy.at(1)));
 
-        StackPanel before = card(panel, QStringLiteral("Before you start"));
+        // Two ways into dictation: a sign-in the person already has, or a
+        // model on this computer. The sign-in rows below only matter for the
+        // first.
+        RadioButtons paths{nullptr};
+        StatusCell signInPathStatus;
+        StackPanel localDetail{nullptr};
+        StackPanel signInDetail;
+        signInDetail.Spacing(12);
+        if (localSpeech) {
+            panel.Children().Append(
+                strongTextBlock(QStringLiteral("How should Speecher turn speech into text?")));
+            paths = RadioButtons();
+            const auto addPath = [&paths](wchar_t glyph, const QString &title, const QString &note,
+                                          const FrameworkElement &trailing) {
+                StackPanel text = rowText(strongTextBlock(title));
+                text.Children().Append(secondaryTextBlock(note));
+                Grid item = cardRow(glyphMark(glyph), text, trailing);
+                item.MinWidth(choiceRowWidth);
+                AutomationProperties::SetName(item, win::hs(title));
+                paths.Items().Append(item);
+            };
+            signInPathStatus = statusCell(QStringLiteral("Checking…"), StatusTone::Neutral);
+            addPath(kContactGlyph, QStringLiteral("Use my ChatGPT or Claude sign-in"),
+                    QStringLiteral("Transcribed in the cloud by the service you already pay for."),
+                    signInPathStatus.root);
+            addPath(kComputerGlyph, QStringLiteral("Run on this computer"),
+                    QStringLiteral("Private, no account, works offline after a one-time download."),
+                    FrameworkElement{nullptr});
+            paths.SelectedIndex(welcomeChoice.local() ? 1 : 0);
+            panel.Children().Append(paths);
+
+            localDetail = StackPanel();
+            localDetail.Spacing(4);
+            TextBlock hardware{nullptr};
+            localDetail.Children().Append(hardwareLine(hardware));
+            localDetail.Children().Append(textBlock(QStringLiteral(
+                "Speecher will suggest a speech model for this computer on the next step. "
+                "Dictation stays on this computer and works offline once the model is downloaded.")));
+            panel.Children().Append(localDetail);
+            QObject::connect(localSpeech, &LocalSetup::changed, pageScope.get(), [this, hardware] {
+                hardware.Text(win::hs(localSpeech->hardwareLine()));
+            });
+            localSpeech->probeHardware();
+        }
+        panel.Children().Append(signInDetail);
+        const auto showPath = [localDetail, signInDetail, this] {
+            if (localDetail) {
+                setShown(localDetail, welcomeChoice.local());
+                setShown(signInDetail, !welcomeChoice.local());
+            }
+        };
+        if (paths) {
+            // The page selects the path WelcomeChoice holds, on building and
+            // after checks; only a move away from it is the person's choice.
+            // Treating the echo as a choice once sent Back to Welcome through
+            // a provider write the person never made.
+            paths.SelectionChanged([this, paths, showPath](const auto &, const auto &) {
+                const int index = paths.SelectedIndex();
+                if (index >= 0 && (index == 1) != welcomeChoice.local()) {
+                    choosePath(index == 1);
+                }
+                showPath();
+            });
+        }
+        showPath();
+        // Until the person picks, every round of checks sets the default:
+        // the sign-in when one is found, else this computer.
+        const auto checksAnswered = [this, paths, showPath] {
+            if (!paths) {
+                return;
+            }
+            choosePath();
+            const int wanted = welcomeChoice.local() ? 1 : 0;
+            if (paths.SelectedIndex() != wanted) {
+                paths.SelectedIndex(wanted);
+            }
+            showPath();
+        };
+        const auto showSignInPath = [this, signInPathStatus] {
+            if (!signInPathStatus.root) {
+                return;
+            }
+            const bool found = anySignInFound();
+            signInPathStatus.set(found ? QStringLiteral("Sign-in found") : QStringLiteral("None found"),
+                                 found ? StatusTone::Positive : StatusTone::Neutral);
+        };
+
+        StackPanel before = card(signInDetail, localSpeech ? QStringLiteral("Sign-ins on this computer")
+                                                           : QStringLiteral("Before you start"));
         before.Children().Append(secondaryTextBlock(QStringLiteral(
             "Speecher uses your existing ChatGPT or Claude sign-in, or an account saved by "
             "CLI Proxy API. Sign in to one of these, then choose Check again:")));
@@ -828,7 +1060,7 @@ struct SetupWindow::Native {
         QStringList ids;
         std::vector<StatusCell> statuses;
         std::vector<TextBlock> hints;
-        for (const ProviderDescriptor &provider : controller->providerRegistry()->speechProviders()) {
+        for (const ProviderDescriptor &provider : signInProviders()) {
             TextBlock hint = secondaryTextBlock(provider.setupHint);
             hint.Visibility(Visibility::Collapsed);
             StackPanel text = rowText(
@@ -857,7 +1089,8 @@ struct SetupWindow::Native {
                                                      StatusTone::Neutral);
         appendRow(list, cardRow(FrameworkElement{nullptr}, cliproxyText, cliproxyStatus.root));
 
-        const auto checkCliproxy = [this, ids, cliproxyStatus, cliproxyHint, cliproxyDir] {
+        const auto checkCliproxy = [this, ids, cliproxyStatus, cliproxyHint, cliproxyDir,
+                                    showSignInPath] {
             cliproxyDir.PlaceholderText(win::hs(signIn.resolvedAccountDirectory()));
             cliproxyReady = signIn.anyUsableAccount(ids);
             cliproxyStatus.set(cliproxyReady ? QStringLiteral("Accounts found")
@@ -873,6 +1106,7 @@ struct SetupWindow::Native {
                                            || cliproxyDir.FocusState() != FocusState::Unfocused
                                        ? Visibility::Visible
                                        : Visibility::Collapsed);
+            showSignInPath();
             refreshGates();
         };
         const auto commitCliproxyDir = [this, cliproxyDir, checkCliproxy] {
@@ -896,24 +1130,33 @@ struct SetupWindow::Native {
         Button check;
         check.Content(box_value(L"Check again"));
         check.HorizontalAlignment(HorizontalAlignment::Left);
-        const auto runChecks = [this, ids, statuses, hints, checkCliproxy] {
+        const auto runChecks = [this, ids, statuses, hints, checkCliproxy, checksAnswered,
+                                showSignInPath] {
             const quint64 generation = ++checkGeneration;
+            checkCliproxy();
+            auto outstanding = std::make_shared<qsizetype>(ids.size());
             for (int index = 0; index < ids.size(); ++index) {
                 const StatusCell status = statuses.at(size_t(index));
                 const TextBlock hint = hints.at(size_t(index));
                 status.set(QStringLiteral("Checking…"), StatusTone::Neutral);
                 probeSpeechProvider(ids.at(index), generation,
-                                    [this, id = ids.at(index), status, hint](
+                                    [this, id = ids.at(index), status, hint, outstanding,
+                                     checksAnswered, showSignInPath](
                                         const SpeechPrepareResult &result) {
-                    recordSpeechVerdict(id, result);
                     status.set(result.ok ? QStringLiteral("Sign-in found")
                                          : QStringLiteral("Not found"),
                                result.ok ? StatusTone::Positive : StatusTone::Neutral);
                     hint.Visibility(result.ok ? Visibility::Collapsed : Visibility::Visible);
+                    showSignInPath();
                     refreshGates();
+                    if (--*outstanding == 0) {
+                        checksAnswered();
+                    }
                 });
             }
-            checkCliproxy();
+            if (ids.isEmpty()) {
+                checksAnswered();
+            }
         };
         check.Click([runChecks](const auto &, const auto &) { runChecks(); });
         before.Children().Append(check);
@@ -961,28 +1204,259 @@ struct SetupWindow::Native {
         });
     }
 
-    // Once per wizard run, and never over a choice made here: a saved provider
-    // whose probe failed gives way to one whose probe succeeded.
+    // Once per wizard run, and never over a choice made here: a saved sign-in
+    // whose probe failed gives way to one whose probe succeeded, by the rule
+    // the other assistants share.
     void autoSelectSpeechProvider(const RadioButtons &choices,
                                   const QList<QPair<QString, QString>> &options)
     {
-        if (speechSelectionSettled) {
-            return;
-        }
         const QString saved = controller->settings()->speechProvider();
-        if (!speechReady.contains(saved) || speechReady.value(saved)) {
+        if (speechSelectionSettled || !speechReady.contains(saved)) {
             return;
         }
+        QStringList ready;
+        for (const auto &option : options) {
+            if (speechReady.value(option.first, false)) {
+                ready.append(option.first);
+            }
+        }
+        const QString chosen = setupProviderChoice(saved, ready, false);
         for (int index = 0; index < options.size(); ++index) {
-            if (!speechReady.value(options.at(index).first, false)) {
+            if (options.at(index).first != chosen || chosen == saved) {
                 continue;
             }
             // Persisted here rather than left to the selection handler, so the
             // switch holds whether or not the control reports it.
             speechSelectionSettled = true;
-            controller->settings()->setSpeechProvider(options.at(index).first);
+            setSpeechProvider(chosen);
             selectProgrammatically(choices, programmaticSpeechIndex, index);
             return;
+        }
+    }
+
+    bool localSelected() const
+    {
+        return localSpeech && controller->settings()->speechProvider() == kLocal;
+    }
+
+    // The model the Local card shows, which is the one dictation will use.
+    const LocalModel &localChoice() const
+    {
+        return localSpeech->speechModelChoice();
+    }
+
+    // Picking in the compare table is a choice the suggestion never
+    // overrides; chooseSpeechModel announces it, which redraws the page.
+    void setLocalChoice(const QString &modelId)
+    {
+        localSpeech->chooseSpeechModel(modelId);
+    }
+
+    bool localDownloadStarted() const
+    {
+        const auto state = localSpeech->modelState(localChoice());
+        return state.downloaded || state.downloading;
+    }
+
+    // The Local card: the hardware line, the suggested model with its facts
+    // and Download, and the comparison table behind an Expander.
+    StackPanel makeLocalSection()
+    {
+        LocalCard &card = localCard;
+        card.section = StackPanel();
+        card.section.Spacing(8);
+        card.section.Children().Append(hardwareLine(card.hardware));
+
+        StackPanel text;
+        text.Spacing(2);
+        card.caption = secondaryTextBlock(QString());
+        text.Children().Append(card.caption);
+        card.name = strongTextBlock(QString());
+        text.Children().Append(card.name);
+        card.facts = textBlock(QString());
+        text.Children().Append(card.facts);
+
+        StackPanel action;
+        action.Spacing(6);
+        action.VerticalAlignment(VerticalAlignment::Center);
+        card.download = Button();
+        card.download.HorizontalAlignment(HorizontalAlignment::Right);
+        action.Children().Append(card.download);
+        card.progress = ProgressBar();
+        card.progress.Width(160);
+        card.progress.Maximum(1000);
+        action.Children().Append(card.progress);
+        card.state = secondaryTextBlock(QString());
+        card.state.HorizontalAlignment(HorizontalAlignment::Right);
+        action.Children().Append(card.state);
+        card.cancel = Button();
+        card.cancel.Content(box_value(L"Cancel"));
+        card.cancel.HorizontalAlignment(HorizontalAlignment::Right);
+        action.Children().Append(card.cancel);
+        StackPanel body = ::speecher::card(card.section, QString());
+        body.Children().Append(cardRow(FrameworkElement{nullptr}, text, action));
+
+        // The comparison, as the settings collections draw a table: a header
+        // grid over a ListView whose rows share its columns.
+        const auto columnGrid = [] {
+            Grid grid;
+            grid.ColumnSpacing(8);
+            for (const GridLength width : {GridLength{1, GridUnitType::Star}, GridLength{72, GridUnitType::Pixel},
+                                           GridLength{92, GridUnitType::Pixel}, GridLength{92, GridUnitType::Pixel},
+                                           GridLength{96, GridUnitType::Pixel}, GridLength{72, GridUnitType::Pixel}}) {
+                ColumnDefinition column;
+                column.Width(width);
+                grid.ColumnDefinitions().Append(column);
+            }
+            return grid;
+        };
+        StackPanel table;
+        table.Spacing(4);
+        Grid header = columnGrid();
+        header.Padding({12, 0, 12, 0});
+        const QStringList titles{QStringLiteral("Model"), QStringLiteral("Download"),
+                                 QStringLiteral("Word errors"), QStringLiteral("10 s of speech"),
+                                 QStringLiteral("Text shows"), QStringLiteral("Memory")};
+        for (int column = 0; column < titles.size(); ++column) {
+            TextBlock title = secondaryTextBlock(titles.at(column));
+            Grid::SetColumn(title, column);
+            header.Children().Append(title);
+        }
+        table.Children().Append(header);
+        card.compare = ListView();
+        card.compare.SelectionMode(ListViewSelectionMode::Single);
+        AutomationProperties::SetName(card.compare, L"Speech models");
+        Style container(xaml_typename<ListViewItem>());
+        container.Setters().Append(Setter(Control::HorizontalContentAlignmentProperty(),
+                                          box_value(HorizontalAlignment::Stretch)));
+        container.Setters().Append(Setter(Control::PaddingProperty(), box_value(Thickness{12, 4, 12, 4})));
+        card.compare.ItemContainerStyle(container);
+        for (const LocalModel &model : localModelCatalog()) {
+            Grid row = columnGrid();
+            for (int column = 0; column < titles.size(); ++column) {
+                // The name and the speed ("~0.7 s (estimated)") wrap rather than clip.
+                TextBlock cell = textBlock(QString(), column == 0 || column == 3);
+                cell.VerticalAlignment(VerticalAlignment::Center);
+                Grid::SetColumn(cell, column);
+                row.Children().Append(cell);
+            }
+            AutomationProperties::SetName(row, win::hs(model.name));
+            card.compare.Items().Append(row);
+        }
+        table.Children().Append(card.compare);
+        table.Children().Append(secondaryTextBlock(QStringLiteral(
+            "Word errors: clear read speech / everyday speech. Times are estimates until a model is "
+            "downloaded and tested here.")));
+        Expander compare;
+        compare.Header(box_value(win::hs(QStringLiteral("Compare %1 other models")
+                                             .arg(localModelCatalog().size() - 1))));
+        compare.HorizontalAlignment(HorizontalAlignment::Stretch);
+        compare.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+        compare.Content(table);
+        card.section.Children().Append(compare);
+
+        card.download.Click([this](const auto &, const auto &) {
+            const LocalModel &model = localChoice();
+            localSpeech->chooseSpeechModel(model.id);
+            localSpeech->download(model);
+        });
+        card.cancel.Click([this](const auto &, const auto &) { localSpeech->cancelDownload(localChoice().id); });
+        // showLocalChoice re-selects the current choice after every refresh;
+        // only a move to another row is the person's.
+        card.compare.SelectionChanged([this](const winrt::Windows::Foundation::IInspectable &sender, const auto &) {
+            const int index = sender.as<ListView>().SelectedIndex();
+            if (index >= 0 && index < localModelCatalog().size()
+                && localModelCatalog().at(index).id != localChoice().id) {
+                setLocalChoice(localModelCatalog().at(index).id);
+            }
+        });
+        return card.section;
+    }
+
+    void showLocalChoice()
+    {
+        LocalCard &card = localCard;
+        if (!card.section) {
+            return;
+        }
+        setShown(card.section, localSelected());
+        const LocalModel &model = localChoice();
+        card.hardware.Text(win::hs(localSpeech->hardwareLine()));
+        card.caption.Text(model.id == localSpeech->suggestedModel().id ? L"Suggested for this computer"
+                                                                       : L"Your choice");
+        card.name.Text(win::hs(model.name));
+        card.facts.Text(win::hs(
+            QStringLiteral("%1\n%2\n%3% of words wrong on clear speech, %4% on everyday speech")
+                .arg(model.streams ? QStringLiteral("Words appear as you speak")
+                                   : QStringLiteral("Text appears after you stop speaking"),
+                     localSpeech->modelState(model).speedDetail)
+                .arg(model.librispeechCleanWer)
+                .arg(model.fleursEnglishWer)));
+        const bool tooLarge = localSpeech->fit(model) == ModelFit::TooLarge;
+        card.download.IsEnabled(!tooLarge);
+        card.download.Content(box_value(win::hs(tooLarge ? QStringLiteral("Too large for this computer")
+                                                         : QStringLiteral("Download %1")
+                                                               .arg(downloadSizeText(model.sizeBytes)))));
+
+        const QList<LocalModel> &catalog = localModelCatalog();
+        int selected = -1;
+        for (int row = 0; row < catalog.size(); ++row) {
+            const LocalModel &entry = catalog.at(row);
+            const QStringList cells{
+                entry.id == localSpeech->suggestedModel().id ? entry.name + QStringLiteral(" (suggested)")
+                                                             : entry.name,
+                downloadSizeText(entry.sizeBytes),
+                QStringLiteral("%1% / %2%").arg(entry.librispeechCleanWer).arg(entry.fleursEnglishWer),
+                localSpeech->modelState(entry).speedText,
+                entry.streams ? QStringLiteral("As you speak") : QStringLiteral("After you stop"),
+                localSpeech->fitLabel(entry),
+            };
+            const auto rowCells = card.compare.Items().GetAt(uint32_t(row)).as<Grid>().Children();
+            for (int column = 0; column < cells.size(); ++column) {
+                rowCells.GetAt(uint32_t(column)).as<TextBlock>().Text(win::hs(cells.at(column)));
+            }
+            if (entry.id == model.id) {
+                selected = row;
+            }
+        }
+        if (card.compare.SelectedIndex() != selected) {
+            card.compare.SelectedIndex(selected);
+        }
+        showLocalDownload();
+    }
+
+    // The part of the Local card a download's progress moves, many times a
+    // second, without touching the rest.
+    void showLocalDownload()
+    {
+        LocalCard &card = localCard;
+        if (!card.section) {
+            return;
+        }
+        const LocalModel &model = localChoice();
+        const auto progress = localSpeech->downloadProgress(model.id);
+        const auto modelState = localSpeech->modelState(model);
+        const bool downloaded = modelState.downloaded;
+        setShown(card.download, !progress && !downloaded);
+        setShown(card.progress, bool(progress));
+        setShown(card.cancel, bool(progress));
+        QString state;
+        if (progress) {
+            card.progress.Value(progress->second > 0 ? double(progress->first * 1000 / progress->second) : 0);
+            state = QStringLiteral("%1 of %2").arg(downloadSizeText(progress->first),
+                                                   downloadSizeText(model.sizeBytes));
+        } else if (downloaded) {
+            state = QStringLiteral("Downloaded");
+        } else {
+            state = modelState.problem;
+        }
+        card.state.Text(win::hs(state));
+        setShown(card.state, !state.isEmpty());
+        if (localRowStatus.root) {
+            localRowStatus.set(downloaded ? QStringLiteral("Ready")
+                               : progress ? QStringLiteral("Downloading")
+                                          : QString(),
+                               downloaded ? StatusTone::Positive : StatusTone::Neutral);
         }
     }
 
@@ -993,6 +1467,11 @@ struct SetupWindow::Native {
             QStringLiteral("Choose the service Speecher uses to turn speech into a raw transcript."));
         QList<QPair<QString, QString>> options;
         for (const ProviderDescriptor &provider : controller->providerRegistry()->speechProviders()) {
+            // The Local card is only a choice where the assistant can set it
+            // up, and a speech server is set up in Settings alone.
+            if ((provider.id == kLocal && !localSpeech) || provider.id == kEndpoint) {
+                continue;
+            }
             options.append({provider.id, provider.label});
         }
         // Every service is on screen with its own readiness, rather than one
@@ -1002,9 +1481,19 @@ struct SetupWindow::Native {
         int selectedIndex = 0;
         for (int index = 0; index < options.size(); ++index) {
             const QString id = options.at(index).first;
-            const StatusCell status = statusCell(QStringLiteral("Checking…"), StatusTone::Neutral);
-            Grid item = cardRow(brandMark(id), rowText(strongTextBlock(options.at(index).second)),
-                                status.root);
+            const bool local = id == kLocal;
+            // The Local row's status is its download, which showLocalChoice keeps.
+            const StatusCell status = statusCell(local ? QString() : QStringLiteral("Checking…"),
+                                                 StatusTone::Neutral);
+            StackPanel text = rowText(strongTextBlock(options.at(index).second));
+            if (local) {
+                text.Children().Append(secondaryTextBlock(
+                    QStringLiteral("Runs on this computer. No account, works offline.")));
+                localRowStatus = status;
+            }
+            Grid item = cardRow(local ? FrameworkElement(glyphMark(kComputerGlyph)) : brandMark(id),
+                                text, status.root);
+            AutomationProperties::SetName(item, win::hs(options.at(index).second));
             // A RadioButtons item is laid out to its content's width, so the
             // row states the width the mockup's card has; without it the
             // status would sit against the name rather than at the right edge.
@@ -1123,10 +1612,27 @@ struct SetupWindow::Native {
                 return;
             }
             const QString id = options.at(index).first;
-            showProviderStats(stats, controller->providerRegistry()->speechProviders(), id);
+            // The Local card explains itself; the generic facts would repeat it.
+            showProviderStats(stats, controller->providerRegistry()->speechProviders(),
+                              id == kLocal ? QString() : id);
             updateSignInVisibility(id);
             accuracy.Visibility(id == QStringLiteral("codex")
                                     ? Visibility::Visible : Visibility::Collapsed);
+            showLocalChoice();
+            if (id == kLocal) {
+                // Next opens as soon as a download has started: it keeps going
+                // while setup continues, and the Ready page shows where it got to.
+                const bool downloaded = localSpeech->modelState(localChoice()).downloaded;
+                status.set(downloaded ? QString()
+                           : localDownloadStarted()
+                               ? QStringLiteral("The download keeps going while you finish setup.")
+                               : QStringLiteral("Download a model to continue. It keeps going while "
+                                                "you finish setup."),
+                           StatusTone::Neutral);
+                setShown(hint, false);
+                setShown(check, false);
+                return;
+            }
             const bool ready = speechReady.value(id, false);
             const bool checked = speechReady.contains(id);
             status.set(speechMessage.value(id, QStringLiteral("Checking…")),
@@ -1146,6 +1652,7 @@ struct SetupWindow::Native {
             hint.Visibility(unready);
             check.Visibility(unready);
         };
+        transcriptionRefresh = describeSelected;
         choices.SelectionChanged([this, choices, options, describeSelected,
                                   refreshSignInCard](const auto &, const auto &) {
             const int index = choices.SelectedIndex();
@@ -1154,8 +1661,10 @@ struct SetupWindow::Native {
             }
             if (!wasProgrammatic(programmaticSpeechIndex, index)) {
                 speechSelectionSettled = true;
+                // An explicit choice here outranks the Welcome path's default.
+                welcomeChoice.providerChosen();
             }
-            controller->settings()->setSpeechProvider(options.at(index).first);
+            setSpeechProvider(options.at(index).first);
             describeSelected();
             refreshSignInCard(options.at(index).first);
             refreshGates();
@@ -1165,12 +1674,14 @@ struct SetupWindow::Native {
             const quint64 generation = ++checkGeneration;
             for (int index = 0; index < options.size(); ++index) {
                 const QString id = options.at(index).first;
+                if (id == kLocal) {
+                    continue;
+                }
                 const StatusCell rowStatus = statuses.at(size_t(index));
                 rowStatus.set(QStringLiteral("Checking…"), StatusTone::Neutral);
                 probeSpeechProvider(id, generation,
                                     [this, id, rowStatus, choices, options,
                                      describeSelected](const SpeechPrepareResult &result) {
-                    recordSpeechVerdict(id, result);
                     rowStatus.set(result.ok ? QStringLiteral("Ready")
                                             : QStringLiteral("Not set up"),
                                   result.ok ? StatusTone::Positive : StatusTone::Caution);
@@ -1203,7 +1714,6 @@ struct SetupWindow::Native {
             probeSpeechProvider(id, generation,
                                 [this, id, rowStatus, describeSelected](
                                     const SpeechPrepareResult &result) {
-                recordSpeechVerdict(id, result);
                 rowStatus.set(result.ok ? QStringLiteral("Ready")
                                         : QStringLiteral("Not set up"),
                               result.ok ? StatusTone::Positive : StatusTone::Caution);
@@ -1265,6 +1775,19 @@ struct SetupWindow::Native {
         panel.Children().Append(choices);
         panel.Children().Append(signInCard);
         refreshSignInCard(controller->settings()->speechProvider());
+        if (localSpeech) {
+            panel.Children().Append(makeLocalSection());
+            settleLocalModel();
+            const auto refresh = [this, describeSelected] {
+                settleLocalModel();
+                describeSelected();
+                refreshGates();
+            };
+            QObject::connect(localSpeech, &LocalSetup::changed, pageScope.get(), refresh);
+            QObject::connect(&localSpeech->models(), &LocalModelStore::downloadProgress, pageScope.get(),
+                             [this] { showLocalDownload(); });
+            localSpeech->probeHardware();
+        }
         panel.Children().Append(stats);
         // Under the facts about the chosen service, matching the Qt page and
         // where the refinement step puts Fast mode.
@@ -1368,27 +1891,41 @@ struct SetupWindow::Native {
         content.Children().Append(panel);
     }
 
-    // The refinement twin of autoSelectSpeechProvider. None is a deliberate
-    // choice, not an unready provider, so a saved None is left alone.
-    void autoSelectRefinementProvider(const RadioButtons &choices,
-                                      const QList<QPair<QString, QString>> &options)
+    // The refinement twin of autoSelectSpeechProvider. None, someone's own
+    // runner and their own server are choices, never an unready sign-in to
+    // move away from; setupProviderChoice keeps them. Saved before the button
+    // is checked, so its Checked handler finds nothing left to write.
+    void autoSelectRefinementProvider(const std::vector<RefinementOption> &options)
     {
-        if (refinementSelectionSettled) {
-            return;
-        }
         const QString saved = controller->settings()->refinementProvider();
-        if (saved == QStringLiteral("none") || !refinementReady.contains(saved)
-            || refinementReady.value(saved)) {
+        if (refinementSelectionSettled || !refinementReady.contains(saved)) {
             return;
         }
-        for (int index = 0; index < options.size(); ++index) {
-            if (!refinementReady.value(options.at(index).first, false)) {
-                continue;
+        QStringList ready;
+        for (const RefinementOption &option : options) {
+            if (refinementReady.value(option.id, false)) {
+                ready.append(option.id);
             }
-            refinementSelectionSettled = true;
-            controller->settings()->setRefinementProvider(options.at(index).first);
-            selectProgrammatically(choices, programmaticRefinementIndex, index);
-            return;
+        }
+        const QString chosen = setupProviderChoice(saved, ready, false);
+        for (const RefinementOption &option : options) {
+            if (option.id == chosen && chosen != saved) {
+                refinementSelectionSettled = true;
+                selectRefinement(chosen);
+                option.button.IsChecked(true);
+                return;
+            }
+        }
+    }
+
+    void selectRefinement(const QString &id)
+    {
+        controller->settings()->setRefinementProvider(id);
+        if (id != kNone) {
+            lastRefinementProvider = id;
+        }
+        if (refinementRefresh) {
+            refinementRefresh();
         }
     }
 
@@ -1396,62 +1933,87 @@ struct SetupWindow::Native {
     {
         StackPanel panel = page(
             QStringLiteral("Refinement"),
-            QStringLiteral("Refinement can clean up a raw transcript after dictation. Choose a provider, or None to skip cleanup."));
-        QList<QPair<QString, QString>> options;
-        // Both refiners ride on a transcription sign-in the user already made.
-        // The descriptor says which one; nothing else on the page does.
-        QHash<QString, QString> credentialNotes;
-        for (const ProviderDescriptor &provider : controller->providerRegistry()->refinementProviders()) {
-            options.append({provider.id, provider.label});
-            credentialNotes.insert(provider.id, provider.setupHint);
-        }
-        options.append({QStringLiteral("none"), QStringLiteral("None")});
-        RadioButtons choices;
-        std::vector<StatusCell> statuses;
-        int selectedIndex = 0;
-        for (int index = 0; index < options.size(); ++index) {
-            const QString id = options.at(index).first;
-            const bool none = id == QStringLiteral("none");
-            // None is a choice, not an unready provider: it reports what it
-            // does rather than a readiness the wizard never probes for.
-            const StatusCell status = statusCell(none ? QStringLiteral("No cleanup")
-                                                      : QStringLiteral("Checking…"),
-                                                 StatusTone::Neutral);
-            StackPanel text = rowText(strongTextBlock(options.at(index).second));
-            const QString note = credentialNotes.value(id);
-            text.Children().Append(secondaryTextBlock(
-                note.isEmpty() ? QStringLiteral("Skip cleanup entirely.") : note));
-            FrameworkElement mark = brandMark(id);
-            if (none) {
-                mark = glyphMark(L'');
+            QStringLiteral("Refinement can clean up a raw transcript after dictation. Choose a provider, or skip cleanup."));
+        const QList<ProviderDescriptor> registered = controller->providerRegistry()->refinementProviders();
+        const QString saved = controller->settings()->refinementProvider();
+        auto options = std::make_shared<std::vector<RefinementOption>>();
+        // The cloud providers use a sign-in; a local runner and a custom
+        // endpoint are models the person runs. Each group is its own card,
+        // and one GroupName makes them one choice.
+        const auto addGroup = [&](const QString &title, const QStringList &ids) {
+            StackPanel list{nullptr};
+            for (const QString &id : ids) {
+                const auto found = std::find_if(registered.cbegin(), registered.cend(),
+                                                [&id](const ProviderDescriptor &provider) { return provider.id == id; });
+                if (found == registered.cend()) {
+                    continue;
+                }
+                if (!list) {
+                    list = rowList(card(panel, title));
+                }
+                const bool ownModel = id == kLocal || id == kEndpoint;
+                RefinementOption option{id,
+                                        id == kLocal      ? QStringLiteral("This computer")
+                                        : id == kEndpoint ? QStringLiteral("A server I run")
+                                                          : found->label};
+                option.status = statusCell(ownModel ? QString() : QStringLiteral("Checking…"),
+                                           StatusTone::Neutral);
+                StackPanel text = rowText(strongTextBlock(option.label));
+                text.Children().Append(secondaryTextBlock(found->setupHint));
+                const FrameworkElement mark = id == kLocal      ? FrameworkElement(glyphMark(kComputerGlyph))
+                                              : id == kEndpoint ? FrameworkElement(glyphMark(kServerGlyph))
+                                                                : brandMark(id);
+                option.button = RadioButton();
+                option.button.GroupName(L"refinementProvider");
+                option.button.VerticalContentAlignment(VerticalAlignment::Center);
+                option.button.HorizontalAlignment(HorizontalAlignment::Stretch);
+                option.button.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+                option.button.Content(cardRow(mark, text, option.status.root));
+                AutomationProperties::SetName(option.button, win::hs(option.label));
+                option.button.IsChecked(id == saved);
+                appendRow(list, option.button);
+                options->push_back(option);
             }
-            Grid item = cardRow(mark, text, status.root);
-            item.MinWidth(choiceRowWidth);
-            choices.Items().Append(item);
-            statuses.push_back(status);
-            if (id == controller->settings()->refinementProvider()) {
-                selectedIndex = index;
+        };
+        addGroup(QStringLiteral("Uses your sign-in"), {QStringLiteral("anthropic"), QStringLiteral("openai")});
+        addGroup(QStringLiteral("Your own models"), {kLocal, kEndpoint});
+        // A registry with providers this page does not group still offers them.
+        QStringList others;
+        for (const ProviderDescriptor &provider : registered) {
+            if (!QStringList{QStringLiteral("anthropic"), QStringLiteral("openai"), kLocal, kEndpoint}
+                     .contains(provider.id)) {
+                others.append(provider.id);
             }
         }
-        selectProgrammatically(choices, programmaticRefinementIndex, selectedIndex);
-        reselectOnLoad(choices, options, programmaticRefinementIndex,
-                       [this] { return controller->settings()->refinementProvider(); });
+        addGroup(QStringLiteral("Cleanup provider"), others);
+        lastRefinementProvider = saved != kNone || options->empty() ? saved : options->front().id;
 
-        StackPanel stats;
+        // None is not a provider card but a way out of all of them: checking
+        // it clears the choice, unchecking it returns to the last provider.
+        CheckBox skip = wrappingCheckBox(QStringLiteral("Skip cleanup and deliver the raw transcript"));
+        skip.IsChecked(saved == kNone);
+        panel.Children().Append(skip);
+
         // Directly under the cards, where the mockup puts it: the warning
         // belongs to the selection above it, not to the stats below.
         InfoBar warning;
         warning.Severity(InfoBarSeverity::Warning);
         warning.IsClosable(false);
         warning.IsOpen(false);
+        panel.Children().Append(warning);
+        panel.Children().Append(makeRunnerDetail());
+        panel.Children().Append(makeEndpointForm());
+        StackPanel stats;
+        panel.Children().Append(stats);
         CheckBox fast = wrappingCheckBox(QStringLiteral("Fast mode"));
-        const auto refreshSelection = [this, choices, fast, options, stats, warning] {
-            const int index = choices.SelectedIndex();
-            if (index < 0 || index >= options.size()) {
-                return;
-            }
-            const QString id = options.at(index).first;
-            showProviderStats(stats, controller->providerRegistry()->refinementProviders(), id);
+        panel.Children().Append(fast);
+
+        refinementRefresh = [this, options, skip, fast, stats, warning] {
+            const QString id = controller->settings()->refinementProvider();
+            const bool ownModel = id == kLocal || id == kEndpoint;
+            skip.IsChecked(id == kNone);
+            showProviderStats(stats, controller->providerRegistry()->refinementProviders(),
+                              ownModel ? QString() : id);
             fast.Visibility(id == QStringLiteral("openai") || id == QStringLiteral("anthropic")
                                 ? Visibility::Visible : Visibility::Collapsed);
             if (id == QStringLiteral("openai")) {
@@ -1459,66 +2021,395 @@ struct SetupWindow::Native {
             } else if (id == QStringLiteral("anthropic")) {
                 fast.IsChecked(controller->settings()->anthropicFastMode());
             }
+            setShown(runner.root, id == kLocal);
+            setShown(endpointForm.root, id == kEndpoint);
             // Refinement stays ungated: an unready provider is a warning, not
-            // a wall, because the raw transcript is still delivered.
-            const bool unready = refinementReady.contains(id) && !refinementReady.value(id);
+            // a wall, because the raw transcript is still delivered. The
+            // own-model choices show their own state instead.
+            const bool unready = !ownModel && refinementReady.contains(id) && !refinementReady.value(id);
             warning.IsOpen(unready);
-            if (unready) {
-                warning.Message(hstring(
-                    QStringLiteral("%1 is not signed in. Dictation will deliver the raw transcript.")
-                        .arg(options.at(index).second)
-                        .toStdWString()));
+            for (const RefinementOption &option : *options) {
+                if (unready && option.id == id) {
+                    warning.Message(win::hs(
+                        QStringLiteral("%1 is not signed in. Dictation will deliver the raw transcript.")
+                            .arg(option.label)));
+                }
             }
+            showRunner(*options);
+            showEndpointCheck();
         };
-        choices.SelectionChanged([this, choices, options, refreshSelection](const auto &,
-                                                                           const auto &) {
-            const int index = choices.SelectedIndex();
-            if (index < 0 || index >= options.size()) {
+        for (const RefinementOption &option : *options) {
+            option.button.Checked([this, id = option.id](const auto &, const auto &) {
+                if (controller->settings()->refinementProvider() != id) {
+                    selectRefinement(id);
+                }
+            });
+            option.button.Click([this](const auto &, const auto &) { refinementSelectionSettled = true; });
+        }
+        skip.Click([this, skip, options](const auto &, const auto &) {
+            refinementSelectionSettled = true;
+            if (skip.IsChecked().Value()) {
+                for (const RefinementOption &option : *options) {
+                    option.button.IsChecked(false);
+                }
+                selectRefinement(kNone);
                 return;
             }
-            if (!wasProgrammatic(programmaticRefinementIndex, index)) {
-                refinementSelectionSettled = true;
+            for (const RefinementOption &option : *options) {
+                if (option.id == lastRefinementProvider) {
+                    selectRefinement(option.id);
+                    option.button.IsChecked(true);
+                }
             }
-            controller->settings()->setRefinementProvider(options.at(index).first);
-            refreshSelection();
         });
-        fast.Click([this, choices, fast, options](const auto &, const auto &) {
-            const int index = choices.SelectedIndex();
-            if (index < 0 || index >= options.size()) {
-                return;
-            }
+        fast.Click([this, fast](const auto &, const auto &) {
             const bool checked = fast.IsChecked().Value();
-            const QString id = options.at(index).first;
+            const QString id = controller->settings()->refinementProvider();
             if (id == QStringLiteral("openai")) {
                 controller->settings()->setOpenAiFastMode(checked);
             } else if (id == QStringLiteral("anthropic")) {
                 controller->settings()->setAnthropicFastMode(checked);
             }
         });
-        panel.Children().Append(choices);
-        panel.Children().Append(warning);
-        panel.Children().Append(stats);
-        panel.Children().Append(fast);
+        LocalSetup *local = controller->localSetup();
+        QObject::connect(local, &LocalSetup::changed, pageScope.get(), [this, options] {
+            showRunner(*options);
+            showEndpointCheck();
+        });
+        QObject::connect(local, &LocalSetup::pullProgress, pageScope.get(), [this] { showPull(); });
         content.Children().Append(panel);
-        refreshSelection();
+        refinementRefresh();
+        local->probeHardware();
+        local->detectRunners();
 
         const quint64 generation = ++checkGeneration;
-        for (int index = 0; index < options.size(); ++index) {
-            const QString id = options.at(index).first;
-            if (id == QStringLiteral("none")) {
-                continue;
-            }
-            const StatusCell rowStatus = statuses.at(size_t(index));
-            probeRefinementProvider(id, generation,
-                                    [this, id, rowStatus, choices, options,
-                                     refreshSelection](bool ok) {
-                refinementReady.insert(id, ok);
-                rowStatus.set(ok ? QStringLiteral("Ready") : QStringLiteral("Not signed in"),
-                              ok ? StatusTone::Positive : StatusTone::Caution);
-                autoSelectRefinementProvider(choices, options);
-                refreshSelection();
+        for (const RefinementOption &option : *options) {
+            probeRefinementProvider(option.id, generation,
+                                    [this, id = option.id, status = option.status, options](bool ok) {
+                // The own-model rows say what is on this computer, not a
+                // sign-in verdict; showRunner keeps them.
+                if (id != kLocal && id != kEndpoint) {
+                    status.set(ok ? QStringLiteral("Ready") : QStringLiteral("Not signed in"),
+                               ok ? StatusTone::Positive : StatusTone::Caution);
+                }
+                autoSelectRefinementProvider(*options);
+                refinementRefresh();
             });
         }
+    }
+
+    // Refinement through a Local Runner: what was found, the model to use,
+    // the suggested cleanup model to pull through Ollama, and what to do
+    // when nothing runs.
+    StackPanel makeRunnerDetail()
+    {
+        runner.root = StackPanel();
+        runner.root.Spacing(8);
+        runner.status = textBlock(QString());
+        runner.root.Children().Append(runner.status);
+
+        StackPanel body;
+        body.Margin({16, 4, 16, 4});
+        runner.card = win::cardContainer(body);
+        runner.root.Children().Append(runner.card);
+        StackPanel modelText = rowText(textBlock(QStringLiteral("Model"), false));
+        modelText.Children().Append(secondaryTextBlock(QStringLiteral("A cleanup model the runner has downloaded.")));
+        runner.model = ComboBox();
+        runner.model.MinWidth(240);
+        AutomationProperties::SetName(runner.model, L"Cleanup model");
+        runner.modelRow = cardRow(FrameworkElement{nullptr}, modelText, runner.model);
+        body.Children().Append(runner.modelRow);
+        runner.suggestionSeparator = rowSeparator();
+        body.Children().Append(runner.suggestionSeparator);
+        runner.suggestionText = textBlock(QString());
+        StackPanel pullColumn;
+        pullColumn.Spacing(6);
+        pullColumn.VerticalAlignment(VerticalAlignment::Center);
+        runner.pull = Button();
+        runner.pull.Content(box_value(L"Download with Ollama"));
+        runner.pull.HorizontalAlignment(HorizontalAlignment::Right);
+        pullColumn.Children().Append(runner.pull);
+        runner.pullProgress = ProgressBar();
+        runner.pullProgress.Width(160);
+        runner.pullProgress.Maximum(1000);
+        pullColumn.Children().Append(runner.pullProgress);
+        runner.suggestion = cardRow(FrameworkElement{nullptr}, rowText(runner.suggestionText), pullColumn);
+        body.Children().Append(runner.suggestion);
+
+        runner.noRunner = StackPanel();
+        runner.noRunner.Spacing(8);
+        runner.noRunner.Children().Append(secondaryTextBlock(QStringLiteral(
+            "Cleanup models run in a separate app. Install Ollama, then choose Check again and Speecher "
+            "will set up a model through it. LM Studio and llama-server work too.")));
+        StackPanel buttons;
+        buttons.Orientation(Orientation::Horizontal);
+        buttons.Spacing(8);
+        Button getOllama;
+        getOllama.Content(box_value(L"Get Ollama"));
+        buttons.Children().Append(getOllama);
+        Button checkAgain;
+        checkAgain.Content(box_value(L"Check again"));
+        buttons.Children().Append(checkAgain);
+        runner.noRunner.Children().Append(buttons);
+        InfoBar rawWarning;
+        rawWarning.Severity(InfoBarSeverity::Warning);
+        rawWarning.IsClosable(false);
+        rawWarning.Message(L"Until a runner is set up, dictation delivers the raw transcript.");
+        rawWarning.IsOpen(true);
+        runner.noRunner.Children().Append(rawWarning);
+        runner.root.Children().Append(runner.noRunner);
+
+        getOllama.Click([](const auto &, const auto &) {
+            ShellExecuteW(nullptr, L"open", L"https://ollama.com/download", nullptr, nullptr, SW_SHOWNORMAL);
+        });
+        checkAgain.Click([this](const auto &, const auto &) { controller->localSetup()->detectRunners(); });
+        runner.pull.Click([this](const auto &, const auto &) {
+            if (const std::optional<CleanupModel> model = controller->localSetup()->suggestedCleanupModel()) {
+                controller->localSetup()->pullCleanupModel(model->ollamaTag);
+            }
+        });
+        // A pick of another model is the person's; showRunner's own selection
+        // matches what is saved and writes nothing.
+        runner.model.SelectionChanged([this](const winrt::Windows::Foundation::IInspectable &sender, const auto &) {
+            const auto item = sender.as<ComboBox>().SelectedItem();
+            if (!item) {
+                return;
+            }
+            const RunnerChoice choice = controller->localSetup()->runnerChoice();
+            const QString model = win::qs(unbox_value<hstring>(item));
+            if (choice.available && choice.selection.model != model) {
+                controller->settings()->setLocalRunnerSettings({choice.available->id, model});
+            }
+        });
+        return runner.root;
+    }
+
+    void showRunner(const std::vector<RefinementOption> &options)
+    {
+        if (!runner.root) {
+            return;
+        }
+        LocalSetup *local = controller->localSetup();
+        const RunnerChoice choice = local->runnerChoice();
+        const bool found = choice.available.has_value();
+        const bool detecting = local->detectingRunners();
+        for (const RefinementOption &option : options) {
+            if (option.id == kLocal) {
+                option.status.set(detecting ? QStringLiteral("Checking…")
+                                  : found   ? QStringLiteral("%1 found").arg(choice.available->name)
+                                            : QStringLiteral("No runner"),
+                                  found ? StatusTone::Positive : StatusTone::Neutral);
+            }
+        }
+        runner.status.Text(win::hs(
+            detecting ? QStringLiteral("Looking for Ollama, LM Studio and llama-server…")
+            : found   ? QStringLiteral("%1 %2 is running on this computer.")
+                          .arg(choice.available->name, choice.available->version).simplified()
+            : choice.selection.runner.isEmpty()
+                ? QStringLiteral("No local runner found on this computer.")
+                : QStringLiteral("%1 is unavailable. Your saved selection is unchanged.")
+                      .arg(localRunnerName(choice.selection.runner))));
+        setShown(runner.noRunner, !found && !detecting);
+        setShown(runner.card, found);
+        if (!found) {
+            return;
+        }
+        // The runner's models, plus a saved one it does not list, so the
+        // saved choice stays on screen rather than silently changing.
+        QStringList models = choice.available->models;
+        if (!choice.selection.model.isEmpty() && !models.contains(choice.selection.model)) {
+            models.append(choice.selection.model);
+        }
+        if (runner.shownModels != models) {
+            runner.shownModels = models;
+            runner.model.Items().Clear();
+            for (const QString &model : models) {
+                runner.model.Items().Append(box_value(win::hs(model)));
+            }
+        }
+        runner.model.SelectedIndex(int(models.indexOf(choice.selection.model)));
+        setShown(runner.modelRow, !models.isEmpty());
+
+        const LocalSetup::Pull pull = local->pull();
+        const bool offer = choice.showSuggestion || pull.running;
+        setShown(runner.suggestion, offer);
+        setShown(runner.suggestionSeparator, offer && !models.isEmpty());
+        setShown(runner.pull, !pull.running && choice.offerPull);
+        showPull();
+    }
+
+    // The pull's bytes, many times a second, without the rest of the card.
+    void showPull()
+    {
+        if (!runner.root) {
+            return;
+        }
+        const LocalSetup::Pull pull = controller->localSetup()->pull();
+        const std::optional<CleanupModel> suggested = controller->localSetup()->suggestedCleanupModel();
+        setShown(runner.pullProgress, pull.running);
+        if (pull.running) {
+            runner.pullProgress.Value(pull.totalBytes > 0 ? double(pull.completedBytes * 1000 / pull.totalBytes) : 0);
+            runner.suggestionText.Text(win::hs(QStringLiteral("Downloading %1 through Ollama: %2 of %3")
+                                                   .arg(suggested ? suggested->name : pull.tag,
+                                                        downloadSizeText(pull.completedBytes),
+                                                        downloadSizeText(pull.totalBytes))));
+        } else if (suggested) {
+            runner.suggestionText.Text(win::hs(
+                QStringLiteral("Suggested for this computer: %1, %2.%3")
+                    .arg(suggested->name, downloadSizeText(suggested->sizeBytes),
+                         pull.error.isEmpty() ? QString() : QStringLiteral("\n") + pull.error)));
+        } else {
+            runner.suggestionText.Text(L"Cleanup would be slow on this computer. A cloud provider or "
+                                       L"skipping cleanup will feel faster.");
+        }
+    }
+
+    // The refinement Custom Endpoint: format, server, key, and a model the
+    // server lists once connected, or one typed.
+    StackPanel makeEndpointForm()
+    {
+        endpointForm.root = StackPanel();
+        endpointForm.root.Spacing(8);
+        // With the CLI Proxy API preset, the server and key shown are the proxy's.
+        const RefinementEndpoint saved = resolvedRefinementEndpoint(controller->settings()->snapshot().refinement);
+        StackPanel rows = rowList(card(endpointForm.root, QString()));
+        const auto addRow = [&rows](const QString &label, const QString &help, const FrameworkElement &control) {
+            StackPanel text = rowText(textBlock(label, false));
+            if (!help.isEmpty()) {
+                text.Children().Append(secondaryTextBlock(help));
+            }
+            AutomationProperties::SetName(control, win::hs(label));
+            appendRow(rows, cardRow(FrameworkElement{nullptr}, text, control));
+        };
+        endpointForm.format = combo({{QStringLiteral("openai"), QStringLiteral("OpenAI-compatible (Chat Completions)")},
+                                     {QStringLiteral("anthropic"), QStringLiteral("Anthropic-compatible (Messages)")}},
+                                    saved.format);
+        addRow(QStringLiteral("Format"), QString(), endpointForm.format);
+        endpointForm.url = TextBox();
+        endpointForm.url.MinWidth(280);
+        endpointForm.url.PlaceholderText(L"http://localhost:8080/v1");
+        endpointForm.url.Text(win::hs(saved.apiBase));
+        addRow(QStringLiteral("Server URL"), QString(), endpointForm.url);
+        endpointForm.key = PasswordBox();
+        endpointForm.key.MinWidth(280);
+        endpointForm.key.PlaceholderText(L"Optional");
+        endpointForm.key.Password(win::hs(saved.apiKey));
+        addRow(QStringLiteral("API key"), keyStorageHelp(), endpointForm.key);
+        StackPanel modelControls;
+        modelControls.Orientation(Orientation::Horizontal);
+        modelControls.Spacing(8);
+        endpointForm.model = ComboBox();
+        endpointForm.model.IsEditable(true);
+        endpointForm.model.MinWidth(200);
+        // An editable ComboBox drops Text set before it loads, and a save
+        // would then clear the model; the saved one goes in as an item.
+        if (!saved.model.isEmpty()) {
+            endpointForm.model.Items().Append(box_value(win::hs(saved.model)));
+            endpointForm.model.SelectedIndex(0);
+        }
+        AutomationProperties::SetName(endpointForm.model, L"Endpoint model");
+        modelControls.Children().Append(endpointForm.model);
+        Button connect;
+        connect.Content(box_value(L"Connect"));
+        modelControls.Children().Append(connect);
+        addRow(QStringLiteral("Model"), QStringLiteral("Connect to list the server's models, or type one."),
+               modelControls);
+        endpointForm.status = textBlock(QString());
+        endpointForm.root.Children().Append(endpointForm.status);
+
+        // Each field saves only its own edit, compared with what that field
+        // showed: editRefinementEndpoint decides what the edit does to a
+        // preset and to the stored key.
+        endpointForm.shownUrl = saved.apiBase;
+        endpointForm.shownKey = saved.apiKey;
+        endpointForm.url.LostFocus([this](const auto &, const auto &) { saveEndpointUrl(); });
+        endpointForm.key.LostFocus([this](const auto &, const auto &) { saveEndpointKey(); });
+        endpointForm.format.SelectionChanged([this](const auto &, const auto &) {
+            saveEndpointEdit({.format = endpointForm.format.SelectedIndex() == 1 ? QStringLiteral("anthropic")
+                                                                                 : QStringLiteral("openai")});
+        });
+        endpointForm.model.LostFocus([this](const auto &, const auto &) { saveEndpointModel(); });
+        endpointForm.model.SelectionChanged([this](const auto &, const auto &) { saveEndpointModel(); });
+        connect.Click([this](const auto &, const auto &) {
+            saveEndpointUrl();
+            saveEndpointKey();
+            saveEndpointModel();
+            controller->localSetup()->checkRefinementEndpoint(controller->settings()->snapshot().refinement);
+        });
+        return endpointForm.root;
+    }
+
+    void saveEndpointEdit(const RefinementEndpointEdit &edit)
+    {
+        AppSettings settings = controller->settings()->snapshot();
+        editRefinementEndpoint(settings, edit);
+        controller->settings()->applySnapshot(settings);
+        showEndpointCheck();
+    }
+
+    void saveEndpointUrl()
+    {
+        const QString url = win::qs(endpointForm.url.Text());
+        if (url != endpointForm.shownUrl) {
+            endpointForm.shownUrl = url;
+            saveEndpointEdit({.baseUrl = url});
+        }
+    }
+
+    void saveEndpointKey()
+    {
+        const QString key = win::qs(endpointForm.key.Password());
+        if (key != endpointForm.shownKey) {
+            endpointForm.shownKey = key;
+            saveEndpointEdit({.apiKey = key});
+        }
+    }
+
+    void saveEndpointModel()
+    {
+        // Refilling the list from a check is not the person picking a model.
+        if (endpointForm.refilling) {
+            return;
+        }
+        const QString model = endpointModel();
+        if (model != controller->settings()->snapshot().refinement.endpoint.model) {
+            saveEndpointEdit({.model = model});
+        }
+    }
+
+    // The model picked from the server's list, or typed.
+    QString endpointModel() const
+    {
+        const auto picked = endpointForm.model.SelectedItem();
+        return (picked ? win::qs(unbox_value<hstring>(picked)) : win::qs(endpointForm.model.Text())).trimmed();
+    }
+
+    void showEndpointCheck()
+    {
+        if (!endpointForm.root) {
+            return;
+        }
+        const LiveFacts facts = controller->localSetup()->liveFacts();
+        endpointForm.status.Text(win::hs(facts.refinementEndpointStatus));
+        setShown(endpointForm.status, !facts.refinementEndpointStatus.isEmpty());
+        if (facts.refinementEndpointModels.isEmpty() || endpointForm.shownModels == facts.refinementEndpointModels) {
+            return;
+        }
+        endpointForm.shownModels = facts.refinementEndpointModels;
+        const QString typed = endpointModel();
+        // A typed model the server does not list stays on offer, first; with
+        // none typed, the list waits for the person to pick.
+        QStringList models = facts.refinementEndpointModels;
+        if (!typed.isEmpty() && !models.contains(typed)) {
+            models.prepend(typed);
+        }
+        endpointForm.refilling = true;
+        endpointForm.model.Items().Clear();
+        for (const QString &model : models) {
+            endpointForm.model.Items().Append(box_value(win::hs(model)));
+        }
+        endpointForm.model.SelectedIndex(int(models.indexOf(typed)));
+        endpointForm.refilling = false;
     }
 
     void showProfiles()
@@ -1794,8 +2685,13 @@ struct SetupWindow::Native {
     {
         switch (index) {
         case 0:
-            return QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found on this computer.");
+            return localSpeech
+                ? QStringLiteral("No sign-in was found. Sign in, or choose to run on this computer.")
+                : QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found on this computer.");
         case 1:
+            if (localSelected()) {
+                return QStringLiteral("Download a speech model to continue.");
+            }
             return QStringLiteral("%1 is no longer signed in.")
                 .arg(providerLabel(controller->providerRegistry()->speechProviders(),
                                    controller->settings()->speechProvider()));
@@ -1851,11 +2747,34 @@ struct SetupWindow::Native {
             "Finish becomes available once every step above is resolved.")));
     }
 
+    // The Local Model the Transcription step chose while it is still
+    // downloading, else empty.
+    QString downloadingModel() const
+    {
+        if (!localSelected()) {
+            return {};
+        }
+        const LocalModel &model = localChoice();
+        return localSpeech->modelState(model).downloading ? model.id : QString();
+    }
+
     void renderReadyComplete()
     {
-        const StatusCell done = statusCell(QStringLiteral("Setup is complete."),
-                                           StatusTone::Positive);
-        readyBody.Children().Append(done.root);
+        const QString downloading = downloadingModel();
+        if (downloading.isEmpty()) {
+            readyBody.Children().Append(
+                statusCell(QStringLiteral("Setup is complete."), StatusTone::Positive).root);
+        } else {
+            readyBody.Children().Append(
+                textBlock(QStringLiteral("Setup is complete except for the speech model download.")));
+            InfoBar notice;
+            notice.Severity(InfoBarSeverity::Informational);
+            notice.IsClosable(false);
+            notice.Message(L"You can close this window. The download keeps going, and Speecher shows a "
+                           L"notification when you can start dictating.");
+            notice.IsOpen(true);
+            readyBody.Children().Append(notice);
+        }
 
         // The actual binding, not a hardcoded default: the shortcut step may
         // have recorded anything, a single key included.
@@ -1870,15 +2789,48 @@ struct SetupWindow::Native {
 
         StackPanel rows = rowList(card(readyBody, QString()));
         const QString speechId = controller->settings()->speechProvider();
-        appendRow(rows, readyRow(brandMark(speechId),
-                                 QStringLiteral("Transcription — %1%2")
-                                     .arg(providerLabel(
-                                              controller->providerRegistry()->speechProviders(),
-                                              speechId),
-                                          signIn.usingCliproxy(speechId)
-                                              ? QStringLiteral(" (CLI Proxy API)")
-                                              : QString()),
-                                 QStringLiteral("Ready"), StatusTone::Positive));
+        if (localSelected()) {
+            const QString label = QStringLiteral("Transcription — %1, on this computer")
+                                      .arg(localChoice().name);
+            if (downloading.isEmpty()) {
+                appendRow(rows, readyRow(glyphMark(kComputerGlyph), label, QStringLiteral("Ready"),
+                                         StatusTone::Positive));
+            } else {
+                // The download this step chose is still going: its row
+                // carries the progress instead of a verdict.
+                StackPanel progress;
+                progress.Orientation(Orientation::Horizontal);
+                progress.Spacing(8);
+                progress.VerticalAlignment(VerticalAlignment::Center);
+                readyDownload.modelId = downloading;
+                readyDownload.progress = ProgressBar();
+                readyDownload.progress.Width(120);
+                readyDownload.progress.Maximum(1000);
+                readyDownload.progress.VerticalAlignment(VerticalAlignment::Center);
+                progress.Children().Append(readyDownload.progress);
+                readyDownload.text = secondaryTextBlock(QString());
+                readyDownload.text.VerticalAlignment(VerticalAlignment::Center);
+                progress.Children().Append(readyDownload.text);
+                Button cancel;
+                cancel.Content(box_value(L"Cancel"));
+                cancel.Click([this, downloading](const auto &, const auto &) {
+                    localSpeech->cancelDownload(downloading);
+                });
+                progress.Children().Append(cancel);
+                appendRow(rows, cardRow(glyphMark(kComputerGlyph), rowText(textBlock(label)), progress));
+                showReadyDownload();
+            }
+        } else {
+            appendRow(rows, readyRow(brandMark(speechId),
+                                     QStringLiteral("Transcription — %1%2")
+                                         .arg(providerLabel(
+                                                  controller->providerRegistry()->speechProviders(),
+                                                  speechId),
+                                              signIn.usingCliproxy(speechId)
+                                                  ? QStringLiteral(" (CLI Proxy API)")
+                                                  : QString()),
+                                     QStringLiteral("Ready"), StatusTone::Positive));
+        }
 
         // Refinement is never gated, so this row reports what the refinement
         // page last saw rather than a readiness the Ready page insists on. A
@@ -1887,18 +2839,35 @@ struct SetupWindow::Native {
         QString refinementName = QStringLiteral("None");
         QString refinementStatus = QStringLiteral("No cleanup");
         StatusTone refinementTone = StatusTone::Neutral;
-        FrameworkElement refinementMark = glyphMark(L'');
-        if (refinementId != QStringLiteral("none")) {
-            refinementName = providerLabel(
-                controller->providerRegistry()->refinementProviders(), refinementId);
-            refinementMark = brandMark(refinementId);
-            if (!refinementReady.contains(refinementId)) {
+        FrameworkElement refinementMark = glyphMark(L'\uE738');
+        if (refinementId != kNone) {
+            const AppSettings saved = controller->settings()->snapshot();
+            refinementName = refinementId == kLocal
+                ? QStringLiteral("%1 with %2").arg(localRunnerName(saved.refinement.localRunner.runner),
+                                                   saved.refinement.localRunner.model)
+                : refinementId == kEndpoint
+                ? QStringLiteral("%1 on your server").arg(resolvedRefinementEndpoint(saved.refinement).model)
+                : providerLabel(controller->providerRegistry()->refinementProviders(), refinementId);
+            refinementMark = refinementId == kLocal      ? FrameworkElement(glyphMark(kComputerGlyph))
+                             : refinementId == kEndpoint ? FrameworkElement(glyphMark(kServerGlyph))
+                                                         : brandMark(refinementId);
+            // Someone's own runner or server is ready once its form is filled,
+            // which the refinement page's probe may have seen before it was.
+            const bool ownModel = refinementId == kLocal || refinementId == kEndpoint;
+            TranscriptRefiner *refiner = controller->providerRegistry()->refinementProvider(refinementId);
+            const std::optional<bool> ready = ownModel && refiner
+                ? std::optional<bool>(refiner->prepare(saved.refinement).ok)
+                : refinementReady.contains(refinementId) ? std::optional<bool>(refinementReady.value(refinementId))
+                                                         : std::nullopt;
+            if (!ready) {
                 refinementStatus = QStringLiteral("Not checked");
-            } else if (refinementReady.value(refinementId)) {
+            } else if (*ready) {
                 refinementStatus = QStringLiteral("Ready");
                 refinementTone = StatusTone::Positive;
             } else {
-                refinementStatus = QStringLiteral("Not signed in");
+                refinementStatus = refinementId == kLocal || refinementId == kEndpoint
+                    ? QStringLiteral("Not set up")
+                    : QStringLiteral("Not signed in");
                 refinementTone = StatusTone::Caution;
             }
         }
@@ -1914,6 +2883,20 @@ struct SetupWindow::Native {
                                  QStringLiteral("Ready"), StatusTone::Positive));
     }
 
+    void showReadyDownload()
+    {
+        if (!readyDownload.progress) {
+            return;
+        }
+        const auto progress = localSpeech->downloadProgress(readyDownload.modelId);
+        if (!progress) {
+            return;
+        }
+        readyDownload.progress.Value(progress->second > 0 ? double(progress->first * 1000 / progress->second) : 0);
+        readyDownload.text.Text(win::hs(QStringLiteral("%1 of %2").arg(downloadSizeText(progress->first),
+                                                                       downloadSizeText(progress->second))));
+    }
+
     void showReady()
     {
         StackPanel panel = page(QStringLiteral("Ready to dictate"), QString());
@@ -1922,6 +2905,16 @@ struct SetupWindow::Native {
         panel.Children().Append(readyBody);
         content.Children().Append(panel);
         renderReady();
+        if (localSpeech) {
+            // The download finishing changes the intro and the row, and a
+            // cancelled one sends the person back to choose again.
+            QObject::connect(localSpeech, &LocalSetup::changed, pageScope.get(), [this] {
+                refreshGates();
+                renderReady();
+            });
+            QObject::connect(&localSpeech->models(), &LocalModelStore::downloadProgress, pageScope.get(),
+                             [this] { showReadyDownload(); });
+        }
 
         // Finishing must not trust what the welcome and transcription pages saw
         // however long ago: a sign-in can expire while the wizard sits on a
@@ -1933,8 +2926,7 @@ struct SetupWindow::Native {
         for (const ProviderDescriptor &provider :
              controller->providerRegistry()->speechProviders()) {
             probeSpeechProvider(provider.id, generation,
-                                [this, id = provider.id](const SpeechPrepareResult &result) {
-                recordSpeechVerdict(id, result);
+                                [this](const SpeechPrepareResult &) {
                 refreshGates();
                 renderReady();
             });
@@ -2027,6 +3019,65 @@ struct SetupWindow::Native {
     // The Ready page's body, redrawn in place as its re-probes land, and null
     // whenever another page is on screen.
     StackPanel readyBody{nullptr};
+    // The Ready page's row for a download still going.
+    struct ReadyDownload {
+        QString modelId;
+        ProgressBar progress{nullptr};
+        TextBlock text{nullptr};
+    } readyDownload;
+    // Local speech, where this build runs it; null otherwise, and then the
+    // wizard offers no local path.
+    LocalSetup *localSpeech = nullptr;
+    // The Transcription page's Local card, null while another page is up.
+    struct LocalCard {
+        StackPanel section{nullptr};
+        TextBlock hardware{nullptr};
+        TextBlock caption{nullptr};
+        TextBlock name{nullptr};
+        TextBlock facts{nullptr};
+        Button download{nullptr};
+        ProgressBar progress{nullptr};
+        TextBlock state{nullptr};
+        Button cancel{nullptr};
+        ListView compare{nullptr};
+    } localCard;
+    StatusCell localRowStatus;
+    std::function<void()> transcriptionRefresh;
+    // The Refinement page's own-model details, null while another page is up.
+    struct Runner {
+        StackPanel root{nullptr};
+        TextBlock status{nullptr};
+        Border card{nullptr};
+        Grid modelRow{nullptr};
+        ComboBox model{nullptr};
+        QStringList shownModels;
+        Border suggestionSeparator{nullptr};
+        Grid suggestion{nullptr};
+        TextBlock suggestionText{nullptr};
+        Button pull{nullptr};
+        ProgressBar pullProgress{nullptr};
+        StackPanel noRunner{nullptr};
+    } runner;
+    struct EndpointForm {
+        StackPanel root{nullptr};
+        ComboBox format{nullptr};
+        TextBox url{nullptr};
+        PasswordBox key{nullptr};
+        ComboBox model{nullptr};
+        QStringList shownModels;
+        // What the server and key fields last showed or saved.
+        QString shownUrl;
+        QString shownKey;
+        bool refilling = false;
+        TextBlock status{nullptr};
+    } endpointForm;
+    std::function<void()> refinementRefresh;
+    // The provider to go back to when Skip cleanup is cleared.
+    QString lastRefinementProvider;
+    // The Welcome page's path, kept across Back and Next.
+    WelcomeChoice welcomeChoice;
+    // Owns the Qt connections of the page on screen.
+    std::unique_ptr<QObject> pageScope = std::make_unique<QObject>();
     // Discards the results of a check the wizard has moved on from.
     quint64 checkGeneration = 0;
     // What the last probe said about each provider, by id: the welcome and
@@ -2051,7 +3102,6 @@ struct SetupWindow::Native {
     // cleared straight after the write would already be false when the event
     // lands — and the wizard would read its own write as the user's choice.
     int programmaticSpeechIndex = -1;
-    int programmaticRefinementIndex = -1;
     int programmaticAccountIndex = -1;
     // Latched by the level meter: the microphone gate asks whether this
     // device has ever been heard, and starting a meter clears it again.
@@ -2079,6 +3129,16 @@ SetupWindow::~SetupWindow() = default;
 void SetupWindow::show(SetupAssistantPage page)
 {
     m_native->show(page);
+}
+
+bool SetupWindow::isVisible() const
+{
+    if (!m_native->window) {
+        return false;
+    }
+    HWND handle = nullptr;
+    m_native->window.as<::IWindowNative>()->get_WindowHandle(&handle);
+    return handle && IsWindowVisible(handle);
 }
 
 QStringList SetupWindow::pageTitles()

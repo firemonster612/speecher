@@ -24,6 +24,8 @@ public:
     // Creates the window if none is open, brings it forward, reloads the
     // draft, and remembers the pane from last time.
     void show();
+    // show(), on the pane with this schema page id.
+    void showPane(const QString &id);
     void showWhatsNew();
     bool isVisible() const;
 

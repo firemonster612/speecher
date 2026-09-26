@@ -57,6 +57,12 @@ LocalModel fakeModel(const QByteArray &content)
     return model;
 }
 
+// Header names are case-insensitive, and Qt on Windows sends them lowercase.
+bool asksForRange(const QByteArray &request, const QByteArray &range)
+{
+    return request.toLower().contains("\r\nrange: " + range + "\r\n");
+}
+
 // Answers one request with status and body, and hands back the request.
 QByteArray serveOnce(QTcpServer &server, const QByteArray &statusLine, const QByteArray &body,
                      qint64 declaredLength = -1)
@@ -378,8 +384,7 @@ private slots:
         const QByteArray request = serveOnce(server, "206 Partial Content", content.mid(1000));
 
         QVERIFY(request.startsWith("GET /owner/repo/resolve/abc123/fake.gguf "));
-        // Header names are case-insensitive; Qt on macOS sends them lowercase.
-        QVERIFY(request.toLower().contains("\r\nrange: bytes=1000-\r\n"));
+        QVERIFY(asksForRange(request, "bytes=1000-"));
         QVERIFY(finished.wait(5000));
         QCOMPARE(failed.size(), 0);
         QVERIFY(store.isDownloaded(model));
@@ -387,6 +392,8 @@ private slots:
         QFile file(store.modelPath(model));
         QVERIFY(file.open(QIODevice::ReadOnly));
         QCOMPARE(file.readAll(), content);
+        // Windows will not delete a file something still holds open.
+        file.close();
         QVERIFY(!QFile::exists(store.modelPath(model) + QStringLiteral(".part")));
 
         QVERIFY(store.remove(model));
@@ -498,13 +505,13 @@ private slots:
         QSignalSpy finished(&store, &LocalModelStore::downloadFinished);
 
         store.download(model);
-        QVERIFY(serveOnce(server, "416 Range Not Satisfiable", {}).toLower().contains("\r\nrange: bytes=1000-\r\n"));
+        QVERIFY(asksForRange(serveOnce(server, "416 Range Not Satisfiable", {}), "bytes=1000-"));
         // The retry comes from the event loop, which serveOnce does not run.
         QTRY_VERIFY(server.hasPendingConnections());
         const QByteArray retry = serveOnce(server, "200 OK", content);
 
         QVERIFY(retry.startsWith("GET "));
-        QVERIFY(!retry.toLower().contains("range:"));
+        QVERIFY(!retry.toLower().contains("\r\nrange:"));
         QVERIFY(finished.wait(5000));
         QVERIFY(store.isDownloaded(model));
     }
