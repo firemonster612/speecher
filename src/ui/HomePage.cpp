@@ -1,6 +1,7 @@
 #include "ui/HomePage.h"
 
 #include "app/ApplicationController.h"
+#include "core/InsightsExport.h"
 #include "core/InsightsLog.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
@@ -10,16 +11,22 @@
 
 #include <QClipboard>
 #include <QComboBox>
+#include <QDir>
 #include <QEvent>
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QFrame>
 #include <QGridLayout>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QImage>
 #include <QLabel>
 #include <QLocale>
+#include <QMenu>
 #include <QProgressBar>
+#include <QSaveFile>
+#include <QStandardPaths>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -210,6 +217,84 @@ QString twoLines(const QString &text, const QFont &font, int width)
         + QFontMetrics(font).elidedText(rest.simplified(), Qt::ElideRight, width);
 }
 
+
+// The picture "Copy image with stats" puts on the clipboard: the period's four
+// numbers over the year's heatmap, drawn by the same widgets as Home at twice
+// the scale so it stays sharp wherever it is pasted.
+QImage statsImage(const InsightsSummary &summary, InsightsRange range, HeatMeasure measure)
+{
+    QWidget root;
+    root.setAttribute(Qt::WA_DontShowOnScreen);
+    root.setAutoFillBackground(true);
+    auto *outer = new QVBoxLayout(&root);
+    outer->setContentsMargins(QMargins() + settings::largeSpacing());
+    QVBoxLayout *content = nullptr;
+    QFrame *card = makeCard(&root, &content);
+    outer->addWidget(card);
+    QWidget *host = content->parentWidget();
+
+    auto *title = new QHBoxLayout;
+    title->addWidget(boldLabel(QStringLiteral("My Speecher stats"), host), 1);
+    QLabel *period = mutedLabel(capitalized(insightsPeriodName(range)), host, false);
+    period->setWordWrap(false);
+    title->addWidget(period);
+    content->addLayout(title);
+
+    auto *numbers = new QHBoxLayout;
+    numbers->setSpacing(settings::largeSpacing() * 2);
+    const QString audio = audioTotalText(summary.audioMs);
+    const auto stat = [host, numbers](const QString &label, QWidget *value) {
+        auto *column = new QVBoxLayout;
+        column->setSpacing(0);
+        QLabel *caption = mutedLabel(label, host, false);
+        caption->setWordWrap(false);
+        column->addWidget(caption);
+        value->setParent(host);
+        column->addWidget(value);
+        numbers->addLayout(column);
+    };
+    stat(QStringLiteral("Words dictated"), bigNumber({{number(summary.words), {}}}, nullptr));
+    stat(QStringLiteral("Dictations"), bigNumber({{number(summary.dictations), {}}}, nullptr));
+    stat(QStringLiteral("Audio"), bigNumber({{audio.section(u' ', 0, -2), audio.section(u' ', -1)}}, nullptr));
+    stat(QStringLiteral("Streak"),
+         bigNumber({{number(summary.currentStreak),
+                     summary.currentStreak == 1 ? QStringLiteral("day") : QStringLiteral("days")}},
+                   nullptr));
+    numbers->addStretch();
+    content->addLayout(numbers);
+    if (summary.wordsPerMinute > 0) {
+        content->addWidget(mutedLabel(QStringLiteral("%1 · %2 words per minute")
+                                          .arg(summary.bookComparison, number(summary.wordsPerMinute)),
+                                      host, false));
+    }
+
+    content->addSpacing(settings::relatedSpacing());
+    auto *heatmap = new InsightsHeatmap(InsightsHeatmap::Shape::Year, host);
+    heatmap->setDays(summary.heatmap);
+    heatmap->setMeasure(measure);
+    heatmap->setFixedWidth(heatmap->sizeHint().width());
+    content->addWidget(heatmap);
+    auto *foot = new QHBoxLayout;
+    foot->setSpacing(settings::relatedSpacing());
+    foot->addWidget(mutedLabel(QStringLiteral("%1 with dictation in the last year")
+                                   .arg(plural(summary.activeDaysLastYear, QStringLiteral("day"),
+                                               QStringLiteral("days"))),
+                               host),
+                    1);
+    foot->addWidget(mutedLabel(QStringLiteral("Less"), host));
+    foot->addWidget(new InsightsHeatmap(InsightsHeatmap::Shape::Legend, host));
+    foot->addWidget(mutedLabel(QStringLiteral("More"), host));
+    content->addLayout(foot);
+
+    root.adjustSize();
+    constexpr qreal scale = 2;
+    QImage image(root.size() * scale, QImage::Format_ARGB32_Premultiplied);
+    image.setDevicePixelRatio(scale);
+    image.fill(root.palette().color(QPalette::Window));
+    root.render(&image);
+    return image;
+}
+
 } // namespace
 
 HomePage::HomePage(ApplicationController *controller, QWidget *parent)
@@ -275,6 +360,7 @@ HomePage::HomePage(ApplicationController *controller, QWidget *parent)
         m_range->setCurrentIndex(1);
         header->addWidget(m_range);
         connect(m_range, &QComboBox::currentIndexChanged, this, &HomePage::refresh);
+        header->addWidget(buildShareButton(m_insightsHeader));
     }
     m_columnLayout->addWidget(m_insightsHeader);
     m_columnLayout->addStretch();
@@ -441,8 +527,7 @@ void HomePage::refresh()
     m_insightsHeader->setVisible(showStats);
     m_summarizedDay = m_controller->insightsToday();
     if (showStats) {
-        const auto range = static_cast<InsightsRange>(m_range->currentData().toInt());
-        m_insights = buildInsights(summarize(records, range, m_summarizedDay));
+        m_insights = buildInsights(summarize(records, currentRange(), m_summarizedDay));
         m_columnLayout->insertWidget(m_columnLayout->indexOf(m_insightsHeader) + 1, m_insights);
         applyWidth();
     }
@@ -771,6 +856,68 @@ QFrame *HomePage::buildRecordsCard(const InsightsSummary &summary, QWidget *pare
                           : QStringLiteral("%1 ago").arg(plural(daysAgo, QStringLiteral("day"),
                                                                 QStringLiteral("days")))));
     return card;
+}
+
+QToolButton *HomePage::buildShareButton(QWidget *parent)
+{
+    auto *button = new QToolButton(parent);
+    button->setObjectName(QStringLiteral("shareInsights"));
+    const QIcon shareIcon = themedIcon(QStringLiteral("document-share"), QStringLiteral("emblem-shared"));
+    button->setIcon(shareIcon);
+    button->setText(QStringLiteral("Share"));
+    button->setToolButtonStyle(shareIcon.isNull() ? Qt::ToolButtonTextOnly : Qt::ToolButtonTextBesideIcon);
+    button->setAutoRaise(true);
+    button->setPopupMode(QToolButton::InstantPopup);
+    // The button's text says what the last choice did, then goes back.
+    const auto report = [button](const QString &text, const QString &tip = QString()) {
+        button->setText(text);
+        button->setToolTip(tip);
+        QTimer::singleShot(tip.isEmpty() ? 1500 : 5000, button, [button] {
+            button->setText(QStringLiteral("Share"));
+            button->setToolTip(QString());
+        });
+    };
+    const auto current = [this] {
+        return summarize(m_controller->insightsLog()->records(), currentRange(), m_summarizedDay);
+    };
+    auto *menu = new QMenu(button);
+    connect(menu->addAction(themedIcon(QStringLiteral("image-x-generic")),
+                            QStringLiteral("Copy image with stats")),
+            &QAction::triggered, this, [this, current, report] {
+                QGuiApplication::clipboard()->setImage(statsImage(current(), currentRange(), m_measure));
+                report(QStringLiteral("Copied"));
+            });
+    connect(menu->addAction(themedIcon(QStringLiteral("edit-copy")), QStringLiteral("Copy as text")),
+            &QAction::triggered, this, [this, current, report] {
+                QGuiApplication::clipboard()->setText(insightsShareText(current(), currentRange()));
+                report(QStringLiteral("Copied"));
+            });
+    menu->addSeparator();
+    connect(menu->addAction(themedIcon(QStringLiteral("document-save-as")), QStringLiteral("Save as JSON…")),
+            &QAction::triggered, this, [this, current, report] {
+                const QString suggested =
+                    QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
+                        .filePath(QStringLiteral("speecher-stats-%1.json")
+                                      .arg(m_summarizedDay.toString(Qt::ISODate)));
+                const QString path = QFileDialog::getSaveFileName(
+                    this, QStringLiteral("Save stats"), suggested, QStringLiteral("JSON files (*.json)"));
+                if (path.isEmpty()) return;
+                QSaveFile file(path);
+                if (file.open(QIODevice::WriteOnly)
+                    && file.write(insightsJson(current(), currentRange(), m_summarizedDay)) >= 0
+                    && file.commit()) {
+                    report(QStringLiteral("Saved"));
+                } else {
+                    report(QStringLiteral("Couldn't save"), file.errorString());
+                }
+            });
+    button->setMenu(menu);
+    return button;
+}
+
+InsightsRange HomePage::currentRange() const
+{
+    return static_cast<InsightsRange>(m_range->currentData().toInt());
 }
 
 QWidget *HomePage::buildFooter(QWidget *parent)
