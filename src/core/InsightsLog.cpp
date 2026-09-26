@@ -7,9 +7,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QTextBoundaryFinder>
 
-#include <algorithm>
 #include <optional>
 
 namespace speecher {
@@ -50,21 +48,6 @@ std::optional<DictationRecord> decode(const QByteArray &line)
 }
 
 } // namespace
-
-int countWords(const QString &text)
-{
-    QTextBoundaryFinder finder(QTextBoundaryFinder::Word, text);
-    int words = 0;
-    qsizetype start = 0;
-    for (qsizetype end = finder.toNextBoundary(); end != -1; end = finder.toNextBoundary()) {
-        const QStringView segment = QStringView(text).sliced(start, end - start);
-        if (std::any_of(segment.begin(), segment.end(), [](QChar c) { return c.isLetterOrNumber(); })) {
-            ++words;
-        }
-        start = end;
-    }
-    return words;
-}
 
 InsightsLog::InsightsLog(const QString &path, Access access, QObject *parent)
     : QObject(parent)

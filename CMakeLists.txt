@@ -236,6 +236,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/bindings/BindingMatcher.cpp
   src/core/bindings/NoBindDirectiveParser.cpp
   src/core/CliToolDiscovery.cpp
+  src/core/DictationRecord.cpp
   src/core/InsightsLog.cpp
   src/core/InsightsSummary.cpp
   src/core/LearnedCorrection.cpp
@@ -263,6 +264,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/bindings/BindingMatcher.h
   src/core/bindings/NoBindDirectiveParser.h
   src/core/CliToolDiscovery.h
+  src/core/DictationRecord.h
   src/core/InsightsLog.h
   src/core/InsightsSummary.h
   src/core/LearnedCorrection.h

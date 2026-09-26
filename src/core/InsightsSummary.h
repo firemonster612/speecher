@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/InsightsLog.h"
+#include "core/DictationRecord.h"
 
 #include <QDate>
 #include <QList>

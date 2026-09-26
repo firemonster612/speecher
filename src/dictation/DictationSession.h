@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/InsightsLog.h"
+#include "core/DictationRecord.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationTypes.h"
 #include "dictation/StartupPreparationRunner.h"
