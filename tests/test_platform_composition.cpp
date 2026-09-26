@@ -11,6 +11,7 @@
 #include "platform/CorrectionDiff.h"
 #include "platform/mac/MacMediaController.h"
 #include "platform/GlobalShortcutBinder.h"
+#include "platform/SingleKeyShortcutBinder.h"
 #ifdef Q_OS_LINUX
 #include "platform/KGlobalAccelShortcutBinder.h"
 #include "platform/LinuxDesktopIntegration.h"
@@ -138,6 +139,21 @@ public:
 
 private:
     ShortcutBinding m_shortcut;
+};
+
+// Drives SingleKeyShortcutBinder's down/up bookkeeping directly, the way a
+// platform subclass does from its key observer.
+class FakeSingleKeyShortcutBinder final : public SingleKeyShortcutBinder {
+public:
+    using SingleKeyShortcutBinder::SingleKeyShortcutBinder;
+    using SingleKeyShortcutBinder::keyDown;
+    using SingleKeyShortcutBinder::keyUp;
+
+    bool supported() const override { return true; }
+
+protected:
+    QString watch(const PhysicalKey &) override { return {}; }
+    void unwatch() override {}
 };
 
 // Answers for itself everything the seam added, and delegates the ports it does
@@ -355,6 +371,67 @@ private slots:
         emit platform->binder->deactivated();
         QCOMPARE(controller.session()->state(), DictationState::Error);
         QVERIFY(hidden.isEmpty());
+    }
+
+    void hybridTimesTheHoldByTheKeyNotByWhenTheReleaseIsHandled_data()
+    {
+        QTest::addColumn<qint64>("heldMs");
+        QTest::addColumn<bool>("keepsDictating");
+        QTest::newRow("tap") << qint64(80) << true;
+        QTest::newRow("hold") << qint64(410) << false;
+    }
+
+    // The first dictation after a launch opens the microphone cold, and the
+    // main thread only gets to a tap's release once that is done. The binder's
+    // physical hold, not the delay, decides whether it was push-to-talk.
+    void hybridTimesTheHoldByTheKeyNotByWhenTheReleaseIsHandled()
+    {
+        QFETCH(qint64, heldMs);
+        QFETCH(bool, keepsDictating);
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        const bool setupCompleted = controller.settings()->setupCompleted();
+        const ShortcutActivationMode mode = controller.settings()->shortcutActivationMode();
+        const auto restore = qScopeGuard([&] {
+            controller.settings()->setSetupCompleted(setupCompleted);
+            controller.settings()->setShortcutActivationMode(mode);
+        });
+        controller.settings()->setSetupCompleted(true);
+        controller.settings()->setShortcutActivationMode(ShortcutActivationMode::Hybrid);
+
+        emit platform->binder->activated();
+        QVERIFY(platform->microphoneAnswer);
+        platform->microphoneAnswer(true);
+        QCOMPARE(controller.session()->state(), DictationState::Starting);
+        QTest::qSleep(410);
+        emit platform->binder->deactivated(heldMs);
+        QCOMPARE(controller.session()->state(),
+                 keepsDictating ? DictationState::Starting : DictationState::Idle);
+        controller.stopListening();
+    }
+
+    // A single-key backend that timestamps its events reports the hold between
+    // them; one that cannot leaves the controller to time it.
+    void singleKeyBinderReportsThePhysicalHold()
+    {
+        FakeSingleKeyShortcutBinder binder;
+        QSignalSpy released(&binder, &GlobalShortcutBinder::deactivated);
+
+        binder.keyDown(1000);
+        binder.keyUp(1080);
+        QCOMPARE(released.count(), 1);
+        QCOMPARE(released.takeFirst().at(0).toLongLong(), 80);
+
+        binder.keyDown();
+        binder.keyUp();
+        QCOMPARE(released.count(), 1);
+        QCOMPARE(released.takeFirst().at(0).toLongLong(), -1);
+
+        // A press without a timestamp leaves nothing to measure a timed
+        // release against.
+        binder.keyDown();
+        binder.keyUp(2000);
+        QCOMPARE(released.takeFirst().at(0).toLongLong(), -1);
     }
 
     // A held key's auto-repeat presses arrive as extra activated() signals on

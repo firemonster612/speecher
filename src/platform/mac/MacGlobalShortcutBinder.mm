@@ -105,10 +105,21 @@ OSStatus handleHotKeyEvent(EventHandlerCallRef, EventRef event, void *userData)
         return eventNotHandledErr;
     }
 
+    // Carbon dispatches on the main runloop, so a release can be handled long
+    // after it happened while the main thread is busy; GetEventTime() is when
+    // it happened. One hot key is registered at a time, so one press time is
+    // enough.
+    static EventTime pressedAt = -1;
     if (GetEventKind(event) == kEventHotKeyPressed) {
+        pressedAt = GetEventTime(event);
         emit binder->activated();
     } else {
-        emit binder->deactivated();
+        const EventTime releasedAt = GetEventTime(event);
+        const qint64 heldMs = pressedAt >= 0 && releasedAt >= pressedAt
+            ? qint64((releasedAt - pressedAt) * 1000.0)
+            : -1;
+        pressedAt = -1;
+        emit binder->deactivated(heldMs);
     }
     return noErr;
 }

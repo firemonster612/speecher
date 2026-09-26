@@ -560,7 +560,7 @@ void ApplicationController::setLaunchAtLoginAccepted(bool accepted)
     emit launchAtLoginAcceptedChanged();
 }
 
-void ApplicationController::handleShortcutReleased()
+void ApplicationController::handleShortcutReleased(qint64 heldMs)
 {
     m_shortcutDown = false;
     const bool firstRelease = !m_shortcutReleaseSeen;
@@ -588,11 +588,18 @@ void ApplicationController::handleShortcutReleased()
             stopListening();
         }
         return;
-    case ShortcutActivationMode::Hybrid:
-        if (starting && m_shortcutPress.elapsed() > hybridHoldMs) {
+    case ShortcutActivationMode::Hybrid: {
+        // The first dictation after a launch opens the microphone cold and
+        // keeps the main thread busy for a few hundred milliseconds, so a
+        // tap's release is handled well past hybridHoldMs. Timed here it read
+        // as a hold and cancelled the dictation it had just started; the
+        // binder's physical hold says what the key actually did.
+        const qint64 held = heldMs >= 0 ? heldMs : m_shortcutPress.elapsed();
+        if (starting && held > hybridHoldMs) {
             stopListening();
         }
         return;
+    }
     }
 }
 

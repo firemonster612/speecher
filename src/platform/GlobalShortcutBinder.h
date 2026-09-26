@@ -81,7 +81,11 @@ public:
 
 signals:
     void activated();
-    void deactivated();
+    // heldMs is how long the key was physically down, read from the events'
+    // own timestamps, or -1 where the backend cannot tell. The main thread can
+    // be busy for hundreds of milliseconds (a cold microphone open), and a tap
+    // whose release is only dispatched afterwards must not read as a hold.
+    void deactivated(qint64 heldMs = -1);
     void bindingChanged();
     void supportChanged();
     void registrationFinished(bool bound, const QString &detail);
