@@ -103,13 +103,16 @@ AppSettings SettingsStore::dictationSnapshot() const
     return snapshotReading(wait);
 }
 
-// A key not read here stays unknown to SecretStore, and applySnapshot leaves
-// an unknown key as it was, so an unread key is never saved over.
+// Preserve unread state in the draft even if prefetch completes before save.
 AppSettings SettingsStore::snapshotReading(const SecretsToRead &wait) const
 {
     AppSettings settings = SettingsCodecs::snapshot();
-    const auto read = [this](SecretStore::Secret secret, bool waitForKeyring) {
-        return waitForKeyring ? m_secrets->secret(secret) : m_secrets->cachedSecret(secret);
+    const auto read = [this, &settings](SecretStore::Secret secret, bool waitForKeyring) {
+        const QString value = waitForKeyring ? m_secrets->secret(secret) : m_secrets->cachedSecret(secret);
+        if (!m_secrets->isSecretKnown(secret)) {
+            settings.unreadSecretKeys.append(SecretStore::settingsKey(secret));
+        }
+        return value;
     };
     settings.refinement.cliproxyApiKey = read(SecretStore::Secret::CliproxyApiKey, wait.cliproxyKey);
     settings.refinement.endpoint.apiKey =
@@ -120,6 +123,10 @@ AppSettings SettingsStore::snapshotReading(const SecretsToRead &wait) const
 
 void SettingsStore::applySnapshot(const AppSettings &draft)
 {
+    const auto save = [this, &draft](SecretStore::Secret secret, const QString &value) {
+        if (value.trimmed().isEmpty() && draft.unreadSecretKeys.contains(SecretStore::settingsKey(secret))) return;
+        m_secrets->saveSecret(secret, value);
+    };
     setSetupCompleted(draft.setupCompleted);
     setLaunchAtLogin(draft.launchAtLogin);
     setTheme(draft.ui.theme);
@@ -132,7 +139,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setCodexFinalRetranscribe(draft.speech.codexFinalRetranscribe);
     setLocalSpeechSettings(draft.speech.local);
     setSpeechEndpointSettings(draft.speech.endpoint);
-    m_secrets->saveSecret(SecretStore::Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey);
+    save(SecretStore::Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey);
     setAudioCaptureSettings(draft.audio);
     setAppRecognitionRules(draft.appRecognitionRules);
     setRefinementProvider(draft.refinement.providerId);
@@ -153,9 +160,9 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setAnthropicCliproxyAccount(draft.refinement.anthropicCliproxyAccount);
     setCliproxyOauthDir(draft.refinement.cliproxyOauthDirConfigured);
     setCliproxyBaseUrl(draft.refinement.cliproxyBaseUrl);
-    setCliproxyApiKey(draft.refinement.cliproxyApiKey);
+    save(SecretStore::Secret::CliproxyApiKey, draft.refinement.cliproxyApiKey);
     setRefinementEndpointSettings(draft.refinement.endpoint);
-    m_secrets->saveSecret(SecretStore::Secret::RefinementEndpointKey, draft.refinement.endpoint.apiKey);
+    save(SecretStore::Secret::RefinementEndpointKey, draft.refinement.endpoint.apiKey);
     setLocalRunnerSettings(draft.refinement.localRunner);
     setOutputMethod(draft.output.method);
     setOutputFormat(draft.output.format);

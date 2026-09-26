@@ -223,6 +223,8 @@ struct UpdateSettings {
 };
 
 struct AppSettings {
+    // Empty secret fields in this draft were unread, not cleared by the user.
+    QStringList unreadSecretKeys;
     bool setupCompleted = false;
 #if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     bool launchAtLogin = true;

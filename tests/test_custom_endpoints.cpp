@@ -780,6 +780,43 @@ private slots:
         QVERIFY(!reopened.raw().contains(SettingsKeys::SecretsInKeyring));
     }
 
+    void unreadDraftSurvivesPrefetchCompletion()
+    {
+        if (qEnvironmentVariableIntValue("SPEECHER_TEST_EXPECT_KEYRING") != 1)
+            QSKIP("Requires the private keyring suite");
+        SettingsStore saved;
+        saved.raw().clear();
+        saved.setCliproxyApiKey(QStringLiteral("keep-me"));
+        SettingsStore settings;
+        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
+        const AppSettings draft = settings.snapshot();
+        qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT");
+        QVERIFY(draft.refinement.cliproxyApiKey.isEmpty());
+        settings.secrets()->prefetch();
+        QTRY_COMPARE(settings.secrets()->cachedSecret(SecretStore::Secret::CliproxyApiKey),
+                     QStringLiteral("keep-me"));
+        settings.applySnapshot(draft);
+        QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("keep-me"));
+        saved.setCliproxyApiKey({});
+    }
+
+    void failedDeletionStaysClearedAfterRestart()
+    {
+        if (qEnvironmentVariableIntValue("SPEECHER_TEST_EXPECT_KEYRING") != 1)
+            QSKIP("Requires the private keyring suite");
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setCliproxyApiKey(QStringLiteral("remove-me"));
+        qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE"); });
+        QVERIFY(settings.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, {}));
+        QVERIFY(settings.secrets()->lastError().contains(QStringLiteral("denied")));
+        SettingsStore reopened;
+        reopened.secrets()->prefetch();
+        QCOMPARE(reopened.cliproxyApiKey(), QString());
+        QCOMPARE(reopened.snapshot().refinement.cliproxyApiKey, QString());
+    }
+
     // A keyring that does not answer must not make a migrated CLI Proxy API
     // key look unset, and a snapshot saved meanwhile must not erase it.
     void keyringTimeoutKeepsTheMigratedCliproxyKey()

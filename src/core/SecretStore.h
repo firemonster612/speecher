@@ -38,6 +38,7 @@ public:
     // Never blocks: the cached value, or the settings-file copy of a secret
     // not in the keyring, else an empty string.
     QString cachedSecret(Secret secret) const;
+    bool isSecretKnown(Secret secret) const;
     // Saves to the keychain, or to the settings file when no keychain works,
     // so a custom endpoint keeps working without one. An empty value for a
     // secret that was never read leaves the stored one alone: it came from a
@@ -63,6 +64,7 @@ private:
     CachedSecret &cached(Secret secret) const;
     void cacheValue(Secret secret, const QString &value) const;
     QString settingsFallback(Secret secret) const;
+    bool deletionPending(Secret secret) const;
     bool mayBeInKeyring(Secret secret) const;
     void recordKeyringEntry(Secret secret, bool present) const;
     QString keyringSecret(Secret secret) const;

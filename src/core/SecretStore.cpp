@@ -47,6 +47,11 @@ const SecretEntry &entryFor(SecretStore::Secret secret)
     return secretEntries[size_t(secret)];
 }
 
+QString pendingDeletionKey(SecretStore::Secret secret)
+{
+    return SecretStore::settingsKey(secret) + QStringLiteral("PendingDeletion");
+}
+
 QString keyringEntry(SecretStore::Secret secret)
 {
     return QString::fromLatin1(entryFor(secret).keyringEntry);
@@ -137,7 +142,7 @@ void SecretStore::prefetch()
 {
 #ifdef SPEECHER_WITH_QKEYCHAIN
     for (const SecretEntry &row : secretEntries) {
-        if (row.secret == Secret::OpenAiApiKey || !mayBeInKeyring(row.secret) || cached(row.secret).known
+        if (row.secret == Secret::OpenAiApiKey || deletionPending(row.secret) || !mayBeInKeyring(row.secret) || cached(row.secret).known
             || keyringReadsTimeOut()) {
             continue;
         }
@@ -190,8 +195,19 @@ void SecretStore::recordKeyringEntry(Secret secret, bool present) const
     }
 }
 
+bool SecretStore::deletionPending(Secret secret) const
+{
+    return m_settings && m_settings->raw().value(pendingDeletionKey(secret)).toBool();
+}
+
+bool SecretStore::isSecretKnown(Secret secret) const
+{
+    return deletionPending(secret) || cached(secret).known;
+}
+
 QString SecretStore::secret(Secret secret) const
 {
+    if (deletionPending(secret)) return {};
     CachedSecret &entry = cached(secret);
     if (entry.known) {
         return entry.value;
@@ -214,6 +230,7 @@ QString SecretStore::secret(Secret secret) const
 
 QString SecretStore::cachedSecret(Secret secret) const
 {
+    if (deletionPending(secret)) return {};
     const CachedSecret &entry = cached(secret);
     if (entry.known || mayBeInKeyring(secret)) return entry.value;
     // Not in the keyring, so the settings file is the whole answer.
@@ -238,6 +255,7 @@ bool SecretStore::saveToKeyring(Secret secret, const QString &value)
     }
     if (m_settings) {
         m_settings->raw().remove(settingsKey(secret));
+        m_settings->raw().remove(pendingDeletionKey(secret));
     }
     cacheValue(secret, cleaned);
     return true;
@@ -259,6 +277,15 @@ bool SecretStore::saveSecret(Secret secret, const QString &value)
     if (!m_settings) {
         return false;
     }
+    if (cleaned.isEmpty()) {
+        // Suppress the old key across restarts until deletion can be retried.
+        m_settings->raw().setValue(pendingDeletionKey(secret), true);
+        m_settings->raw().remove(settingsKey(secret));
+        m_settings->raw().sync();
+        cacheValue(secret, {});
+        return m_settings->raw().status() == QSettings::NoError;
+    }
+    m_settings->raw().remove(pendingDeletionKey(secret));
     qWarning().noquote() << "keyring unavailable, keeping" << keyringEntry(secret)
                          << "in the settings file:" << m_lastError;
     m_settings->raw().setValue(settingsKey(secret), cleaned);
@@ -351,12 +378,17 @@ bool SecretStore::writeKeyringSecret(Secret secret, const QString &value) const
 
 bool SecretStore::deleteKeyringSecret(Secret secret) const
 {
+    if (QStandardPaths::isTestModeEnabled()
+        && qEnvironmentVariableIntValue("SPEECHER_TEST_KEYRING_DELETE_FAILURE") == 1) {
+        m_lastError = QStringLiteral("Keyring deletion denied");
+        return false;
+    }
 #ifdef SPEECHER_WITH_QKEYCHAIN
     QKeychain::DeletePasswordJob job(keyringService());
     job.setKey(keyringEntry(secret));
     QString error;
-    runKeychainJob(job, &error);
-    if (keyringDeletionSucceeded(job.error())) {
+    const bool finished = runKeychainJob(job, &error);
+    if (finished || job.error() == QKeychain::EntryNotFound) {
         m_lastError.clear();
         recordKeyringEntry(secret, false);
         return true;
@@ -391,6 +423,13 @@ bool SecretStore::deleteKeyringSecrets() const
 void SecretStore::migrateSettingsFallbacks()
 {
     for (const SecretEntry &row : secretEntries) {
+        if (deletionPending(row.secret)) {
+            if (deleteKeyringSecret(row.secret)) {
+                m_settings->raw().remove(pendingDeletionKey(row.secret));
+            }
+            cacheValue(row.secret, {});
+            continue;
+        }
         const QString legacy = settingsFallback(row.secret);
         if (legacy.isEmpty()) {
             continue;
