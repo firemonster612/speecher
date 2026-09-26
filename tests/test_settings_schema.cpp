@@ -121,6 +121,22 @@ private slots:
         QVERIFY(!SettingsStore().insightsEnabled());
     }
 
+    void insightsOffNoteShowsOnlyWhileInsightsAreOff()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("general")),
+                                         QStringLiteral("insightsOffNote"));
+        QCOMPARE(row.kind, RowKind::Info);
+        AppSettings settings;
+        settings.insightsEnabled = true;
+        QVERIFY(!row.visible(settings, Capabilities{}));
+        settings.insightsEnabled = false;
+        QVERIFY(row.visible(settings, Capabilities{}));
+        QCOMPARE(row.label,
+                 QStringLiteral("Nothing new is recorded while this is off. History you already "
+                                "have stays until you clear it."));
+    }
+
     void staleDraftPreservesLearnedRecords()
     {
         SettingsStore store;

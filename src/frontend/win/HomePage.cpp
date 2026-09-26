@@ -818,9 +818,8 @@ UIElement buildHomePage(PaneHost &host)
     if (!controller->settings()->insightsEnabled()) {
         StackPanel off = notice(
             QStringLiteral("Insights are off"),
-            QStringLiteral("Speecher isn't keeping any record of your dictation. If you turn "
-                           "insights on, your stats are stored only on this computer and never "
-                           "sent to the cloud."),
+            QStringLiteral("Speecher isn't recording new dictation. History you already have "
+                           "stays on this computer until you clear it in Insights settings."),
             host);
         Button settings;
         settings.Content(box_value(L"Insights settings…"));

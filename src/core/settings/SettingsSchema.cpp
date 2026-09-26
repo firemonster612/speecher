@@ -665,6 +665,18 @@ SettingsPage generalPage(const SchemaContext &context)
         [](const AppSettings &settings) { return settings.insightsEnabled; },
         [](AppSettings &settings, bool value) { settings.insightsEnabled = value; });
     insightsEnabled.sinceVersion = QStringLiteral("0.2.1");
+    // Turning insights off stops recording; it does not delete what is kept.
+    // The note is the row's title, so it reads from the leading edge like
+    // every other row rather than filling the control slot.
+    SettingsRow insightsOffNote =
+        infoRow(QStringLiteral("insightsOffNote"),
+                QStringLiteral("Nothing new is recorded while this is off. History you already "
+                               "have stays until you clear it."),
+                QString(),
+                QString());
+    insightsOffNote.visible = [](const AppSettings &settings, const Capabilities &) {
+        return !settings.insightsEnabled;
+    };
 
     SettingsRow previewWords = numberRow(
         QStringLiteral("previewWords"),
@@ -723,6 +735,7 @@ SettingsPage generalPage(const SchemaContext &context)
              QString(),
              {
                  std::move(insightsEnabled),
+                 std::move(insightsOffNote),
                  actionRow(QStringLiteral("clearInsights"),
                            QStringLiteral("Insights history"),
                            QStringLiteral("Delete every recorded dictation from this computer."),
@@ -2069,6 +2082,7 @@ static QList<SettingsPane> settingsPanes()
                                    QStringLiteral("refinementPreviewEnabled"),
                                    QStringLiteral("previewWords")}),
               group("Insights", {QStringLiteral("insightsEnabled"),
+                                 QStringLiteral("insightsOffNote"),
                                  QStringLiteral("clearInsights")}),
               group("System", {QStringLiteral("launchAtLogin"),
                                QStringLiteral("launchAtLoginProblem"),

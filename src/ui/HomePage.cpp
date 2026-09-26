@@ -428,9 +428,9 @@ void HomePage::refresh()
     auto *body = m_notice->findChild<QLabel *>(QStringLiteral("insightsNoticeBody"));
     if (!enabled) {
         title->setText(QStringLiteral("Insights are off"));
-        body->setText(QStringLiteral("Speecher isn't keeping any record of your dictation. If you "
-                                     "turn insights on, your stats are stored only on this "
-                                     "computer and never sent to the cloud."));
+        body->setText(QStringLiteral("Speecher isn't recording new dictation. History you already "
+                                     "have stays on this computer until you clear it in Insights "
+                                     "settings."));
     } else {
         title->setText(QStringLiteral("No insights yet"));
         body->setText(QStringLiteral("Your stats appear here after your next dictation. They're "
