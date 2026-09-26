@@ -164,7 +164,7 @@ jobs:
       - name: Verify packaged AppImage
         run: |
           expected_version=
-          if [ "${GITHUB_REF_NAME}" != master ]; then
+          if [ "${GITHUB_REF_NAME}" != master ] && [ "${GITHUB_EVENT_NAME}" != pull_request ]; then
             expected_version="${GITHUB_REF_NAME#v}"
           fi
           docker run --rm \
@@ -315,11 +315,14 @@ jobs:
 
       - name: Package DMG
         env:
-          SPEECHER_SIGN_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          # Pull requests build an ad-hoc-signed DMG; releases require the stable identity.
+          SPEECHER_SIGN_IDENTITY: ${{ github.event_name == 'pull_request' && '-' || secrets.MACOS_SIGNING_IDENTITY }}
         run: |
-          if [ -z "${SPEECHER_SIGN_IDENTITY:-}" ] || [ "$SPEECHER_SIGN_IDENTITY" = - ]; then
-            echo "MACOS_SIGNING_IDENTITY must name the stable release signing identity." >&2
-            exit 1
+          if [ "${GITHUB_EVENT_NAME}" != pull_request ]; then
+            if [ -z "${SPEECHER_SIGN_IDENTITY:-}" ] || [ "$SPEECHER_SIGN_IDENTITY" = - ]; then
+              echo "MACOS_SIGNING_IDENTITY must name the stable release signing identity." >&2
+              exit 1
+            fi
           fi
           bash packaging/macos/build-dmg.sh build
           test -s build/designated-requirement.txt
