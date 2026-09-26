@@ -78,6 +78,7 @@ int runProviderAuthTests(int argc, char **argv);
 int runClaudeVoiceTests(int argc, char **argv);
 int runCodexDictationTests(int argc, char **argv);
 int runAudioPcmConverterTests(int argc, char **argv);
+int runFileTranscriptionTests(int argc, char **argv);
 #ifdef Q_OS_UNIX
 int runUpdateControllerTests(int argc, char **argv);
 #endif

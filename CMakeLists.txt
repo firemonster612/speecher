@@ -480,6 +480,7 @@ set(SPEECHER_APP_SOURCES
   src/app/ManifestUpdater.cpp
   src/app/PlatformSelection.cpp
   src/app/SingleInstanceIpc.cpp
+  src/transcribe/FileTranscriptionSession.cpp
 )
 
 set(SPEECHER_APP_HEADERS
@@ -492,6 +493,7 @@ set(SPEECHER_APP_HEADERS
   src/app/PlatformComposition.h
   src/app/SingleInstanceIpc.h
   src/app/UpdateController.h
+  src/transcribe/FileTranscriptionSession.h
 )
 
 set(SPEECHER_APP_LINUX_SOURCES
@@ -1262,6 +1264,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_claude_voice.cpp
     tests/test_codex_dictation.cpp
     tests/test_audio_pcm_converter.cpp
+    tests/test_file_transcription.cpp
   )
   if(UNIX)
     target_sources(speecher_tests PRIVATE tests/test_update_controller.cpp)
@@ -1336,6 +1339,7 @@ if(SPEECHER_BUILD_TESTS)
     claude_voice
     codex_dictation
     audio_pcm_converter
+    file_transcription
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND SPEECHER_TEST_SUITES linux_style_choice linux_tray keywatch helper_install)

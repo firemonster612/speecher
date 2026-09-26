@@ -51,6 +51,12 @@ public:
     SpeechTranscriber *speechProvider(const QString &id);
     TranscriptRefiner *refinementProvider(const QString &id);
 
+    // Fresh, caller-owned instances for work that must not share the cached
+    // ones with live dictation (a transcriber holds one attempt at a time).
+    // Null for an unknown id.
+    SpeechTranscriber *createSpeechProvider(const QString &id, QObject *parent);
+    TranscriptRefiner *createRefinementProvider(const QString &id, QObject *parent);
+
 private:
     struct SpeechEntry {
         ProviderDescriptor descriptor;
