@@ -619,6 +619,7 @@ private slots:
         QCOMPARE(parse({QStringLiteral("--headless")}).mode, LaunchMode::TranscribeHeadless);
         // Without options the files still open in the window.
         QCOMPARE(parse({}).mode, LaunchMode::RunGui);
+        QCOMPARE(parse({QStringLiteral("--grab"), QStringLiteral("shot.png")}).mode, LaunchMode::RunGui);
 
         for (const QStringList &mistake : {QStringList{QStringLiteral("--cleanup"), QStringLiteral("extreme")},
                                            QStringList{QStringLiteral("--frobnicate")},

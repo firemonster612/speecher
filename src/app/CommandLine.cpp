@@ -201,6 +201,14 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
             files << argument;
             continue;
         }
+        // Read before this for the screenshot rig, which opens the window.
+        if (argument == QStringLiteral("--grab")) {
+            ++index;
+            continue;
+        }
+        if (argument.startsWith(QStringLiteral("--grab="))) {
+            continue;
+        }
         headless = true;
         const auto value = [&]() -> std::optional<QString> {
             if (index + 1 < arguments.size()) {

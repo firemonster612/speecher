@@ -11,6 +11,7 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QTimer>
 
 #include <algorithm>
 #include <ostream>
@@ -60,12 +61,12 @@ int runHeadlessTranscribe(const QStringList &files,
 {
     const TranscribeOptions resolved = resolveOptions(options, settings->snapshot());
     if (!offers(providers->speechProviders(), resolved.speechProviderId)) {
-        err << "Unknown speech provider: " << resolved.speechProviderId.toStdString() << "\n";
+        err << "Unknown speech provider: " << resolved.speechProviderId.toStdString() << " (see speecher --help)\n";
         return 2;
     }
     if (resolved.refinementProviderId != QStringLiteral("none")
         && !offers(providers->refinementProviders(), resolved.refinementProviderId)) {
-        err << "Unknown refinement provider: " << resolved.refinementProviderId.toStdString() << "\n";
+        err << "Unknown refinement provider: " << resolved.refinementProviderId.toStdString() << " (see speecher --help)\n";
         return 2;
     }
     const bool refines = refinesTranscripts(resolved);
