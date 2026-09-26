@@ -78,6 +78,7 @@ require_tool file
 require_tool ldd
 require_tool ninja
 require_tool patchelf
+require_tool strip
 
 BUILD_DIR="$(readlink -m -- "$BUILD_DIR")"
 APPDIR_PATH="$(readlink -m -- "$APPDIR_PATH")"
@@ -125,6 +126,14 @@ echo "Compiling speecher"
 cmake --build "$BUILD_DIR" --parallel
 echo "Installing into AppDir at $APPDIR_PATH"
 DESTDIR="$APPDIR_PATH" cmake --install "$BUILD_DIR" --prefix /usr
+# The build keeps debug info for crash reports on the build host; the package
+# does not need it. libexec stays as built: the key-watch installer checks
+# its daemon against a digest compiled from the unstripped file.
+echo "Stripping debug info"
+# Regular files only: strip rewrites a symlink into a second copy.
+find "$APPDIR_PATH/usr/bin/speecher" "$APPDIR_PATH/usr/lib" -type f \
+  \( -name speecher -o -name 'libtranscribe.so.*' -o -name 'libggml*.so*' \) \
+  -exec strip --strip-debug {} +
 
 # Bundle the Qt the build actually linked against. The installed binary has no
 # RPATH and the host may carry a different system Qt, so both the ldd closure

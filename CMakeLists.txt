@@ -705,26 +705,33 @@ if(SPEECHER_WITH_LOCAL_SPEECH)
     set(SPEECHER_LOCAL_SPEECH_MODULES ON)
   endif()
 
-  set(SPEECHER_LOCAL_SPEECH_VULKAN_DEFAULT OFF)
+  set(SPEECHER_LOCAL_SPEECH_VULKAN_FOUND OFF)
   if(SPEECHER_LOCAL_SPEECH_MODULES)
-    # Where the LunarG SDK puts SPIRV-Headers on Windows, as ggml looks too.
+    # Where the LunarG SDK installs, as ggml looks too.
     if(DEFINED ENV{VULKAN_SDK})
       list(APPEND CMAKE_PREFIX_PATH "$ENV{VULKAN_SDK}")
     endif()
     find_package(Vulkan QUIET COMPONENTS glslc)
     find_package(SPIRV-Headers CONFIG QUIET)
     if(Vulkan_FOUND AND Vulkan_glslc_FOUND AND SPIRV-Headers_FOUND)
-      set(SPEECHER_LOCAL_SPEECH_VULKAN_DEFAULT ON)
-    else()
-      message(STATUS "Local speech: Vulkan is off because the Vulkan headers, glslc or "
-        "SPIRV-Headers were not found; models will run on the CPU.")
+      set(SPEECHER_LOCAL_SPEECH_VULKAN_FOUND ON)
     endif()
+  endif()
+  # Release builds must not quietly drop to the CPU: the Linux release profile
+  # always wants Vulkan, and the Windows release job asks for it explicitly.
+  set(SPEECHER_LOCAL_SPEECH_VULKAN_DEFAULT ${SPEECHER_LOCAL_SPEECH_VULKAN_FOUND})
+  if(SPEECHER_RELEASE_BUILD)
+    set(SPEECHER_LOCAL_SPEECH_VULKAN_DEFAULT ON)
   endif()
   option(SPEECHER_LOCAL_SPEECH_VULKAN "Build transcribe.cpp's Vulkan backend"
     ${SPEECHER_LOCAL_SPEECH_VULKAN_DEFAULT})
-  if(SPEECHER_RELEASE_BUILD AND NOT SPEECHER_LOCAL_SPEECH_VULKAN)
-    message(FATAL_ERROR "SPEECHER_RELEASE_BUILD requires SPEECHER_LOCAL_SPEECH_VULKAN=ON "
-      "(install libvulkan-dev, glslc and spirv-headers).")
+  if(SPEECHER_LOCAL_SPEECH_VULKAN AND NOT SPEECHER_LOCAL_SPEECH_VULKAN_FOUND)
+    message(FATAL_ERROR "SPEECHER_LOCAL_SPEECH_VULKAN needs the Vulkan headers, glslc and "
+      "SPIRV-Headers (Debian: libvulkan-dev glslc spirv-headers; Windows: the LunarG "
+      "Vulkan SDK plus SPIRV-Headers on CMAKE_PREFIX_PATH).")
+  endif()
+  if(NOT SPEECHER_LOCAL_SPEECH_VULKAN)
+    message(STATUS "Local speech: Vulkan is off; models will run on the CPU.")
   endif()
 
   set(TRANSCRIBE_BUILD_TESTS OFF CACHE BOOL "" FORCE)

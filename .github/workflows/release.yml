@@ -398,9 +398,26 @@ jobs:
           # Package directories contain .done markers, so never restore across SDK changes.
           key: windows-sdk-v1-${{ hashFiles('cmake/WindowsAppSdk.cmake') }}
 
+      # glslc for transcribe.cpp's Vulkan backend; the installer ships it.
+      - name: Install Vulkan SDK
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: 1.4.309.0
+          cache: true
+
+      # The SDK does not ship a SPIRV-HeadersConfig.cmake that find_package
+      # sees, so the header-only package comes from vcpkg.
+      - name: Install SPIRV-Headers
+        shell: pwsh
+        run: |
+          vcpkg install spirv-headers:x64-windows
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg install spirv-headers failed" }
+          $prefix = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows" -replace '\\','/'
+          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$prefix"
+
       - name: Configure
         shell: pwsh
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON
 
       - name: Build
         shell: pwsh
