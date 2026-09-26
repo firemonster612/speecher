@@ -546,7 +546,7 @@ bool LocalSetup::runSettingsAction(const QString &rowId, const AppSettings &show
 
 LiveFacts LocalSetup::liveFacts() const
 {
-    return liveFacts(m_settings.snapshot());
+    return liveFacts(m_settings.dictationSnapshot());
 }
 
 LiveFacts LocalSetup::liveFacts(const AppSettings &draft) const

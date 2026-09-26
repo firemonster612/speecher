@@ -268,7 +268,7 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     // verdicts, runners, model lists.
     connect(controller->localSetup(), &LocalSetup::changed, this, [this] {
         // LocalSetup writes Speed Test results and the model in use itself.
-        const auto current = m_controller->settings()->snapshot();
+        const auto current = m_controller->settings()->dictationSnapshot();
         m_draft = mergeSettingsDraft(m_schema, m_loaded, m_draft, current);
         m_loaded = current;
         for (SchemaSettingsPage *page : {m_audio, m_refinement, m_localModels}) {
