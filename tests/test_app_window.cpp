@@ -13,6 +13,7 @@
 #include "ui/HomePage.h"
 #include "ui/InsightsCharts.h"
 #include "ui/settings/SettingsPageSet.h"
+#include "ui/settings/SettingsPageSupport.h"
 #include "ui/Theme.h"
 #ifdef Q_OS_LINUX
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
@@ -340,6 +341,62 @@ private slots:
         hover(&hours, QPoint(480 * 10 / 24 + 5, 10));
         QTRY_VERIFY_WITH_TIMEOUT(QToolTip::isVisible(), 200);
         QVERIFY(QToolTip::text().contains(QStringLiteral("4 dictations")));
+        QToolTip::hideText();
+    }
+
+    void chartTipStaysWhenThePointerStopsInAGap()
+    {
+        // The pointer crosses a heatmap cell and stops in the 3 px gap beside
+        // it, which still counts as that cell. Qt hides a tip 300 ms after a
+        // move lands outside the area it was shown for, so that area has to
+        // take in the gap too, or the tip vanishes as the pointer stops.
+        const auto moveTo = [](QWidget *widget, QPoint at) {
+            QMouseEvent move(QEvent::MouseMove, QPointF(at), widget->mapToGlobal(QPointF(at)),
+                             Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(widget, &move);
+        };
+        const QDate today(2026, 9, 26);
+        QList<HeatmapDay> days;
+        for (int offset = 20; offset >= 0; --offset) {
+            days.append({today.addDays(-offset), 1, 30, 60000});
+        }
+        InsightsHeatmap year(InsightsHeatmap::Shape::Year);
+        year.setDays(days);
+        year.resize(600, year.heightForWidth(600));
+        year.show();
+        // Qt closes any open tooltip when a window activates, and a compositor
+        // may activate this one only after it is exposed.
+        year.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&year));
+        // From the rendered chart: the newest week's first cell (the topmost
+        // cell pixel at the right) and the first background pixel below it,
+        // which is in the gap just past the cell's edge.
+        const QImage pixels = year.grab().toImage();
+        const QColor background = pixels.pixelColor(0, pixels.height() - 1);
+        QPoint cellTop(-1, -1);
+        for (int y = 0; y < pixels.height() && cellTop.x() < 0; ++y) {
+            for (int x = pixels.width() - 1; x > pixels.width() / 2; --x) {
+                if (pixels.pixelColor(x, y) != background) {
+                    cellTop = QPoint(x - 3, y);
+                    break;
+                }
+            }
+        }
+        QVERIFY2(cellTop.x() > 0, "the heatmap drew no cells");
+        QPoint gap;
+        for (int y = cellTop.y(); y < pixels.height(); ++y) {
+            if (pixels.pixelColor(cellTop.x(), y) == background) {
+                gap = QPoint(cellTop.x(), y);
+                break;
+            }
+        }
+        QVERIFY2(!gap.isNull(), "found no gap below the newest cell");
+
+        moveTo(&year, cellTop + QPoint(0, 2));
+        QTRY_VERIFY_WITH_TIMEOUT(QToolTip::isVisible(), 200);
+        moveTo(&year, gap);
+        QTest::qWait(500);
+        QVERIFY2(QToolTip::isVisible(), "the tip closed with the pointer stopped in the gap");
         QToolTip::hideText();
     }
 
