@@ -423,7 +423,7 @@ private slots:
                      sse({chatChunk(QStringLiteral("Half")),
                           json({{QStringLiteral("error"), QJsonObject{{QStringLiteral("message"),
                                  QStringLiteral("chat_template_kwargs is not supported")}}}})}));
-        ChatCompletionsRefiner refiner(QStringLiteral("Custom endpoint"));
+        ChatCompletionsRefiner refiner(QStringLiteral("Custom endpoint"), ChatCompletionsRefiner::Audience::Server);
         QSignalSpy delta(&refiner, &ChatCompletionsRefiner::delta);
         QSignalSpy completed(&refiner, &ChatCompletionsRefiner::completed);
         QSignalSpy failed(&refiner, &ChatCompletionsRefiner::failed);
