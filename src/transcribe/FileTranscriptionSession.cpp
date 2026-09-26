@@ -25,12 +25,11 @@ namespace {
 constexpr int kBytesPerSecond = 16000 * 2;
 // 100 ms of 16 kHz mono s16, the chunk size live capture sends.
 constexpr qsizetype kChunkBytes = kBytesPerSecond / 10;
-// Audio goes out at eight times real time. Faster-than-real-time streaming is
-// unproven for Claude Voice, which also caps what it buffers before its socket
-// connects at 4 MB; at this rate even its 10 s connection timeout queues only
-// 80 s of audio (2.5 MB), so the cap is never reached.
-constexpr int kSpeedup = 8;
-constexpr int kSendIntervalMs = 100 / kSpeedup;
+// One 100 ms chunk every 12 ms, about 8.3 times real time. Faster-than-real-time
+// streaming is unproven for Claude Voice, which also caps what it buffers before
+// its socket connects at 4 MB; at this rate even its 10 s connection timeout
+// queues only about 83 s of audio (2.7 MB), so the cap is never reached.
+constexpr int kSendIntervalMs = 12;
 // Dropped streams reopened per file before it counts as failed; a stream that
 // ran for a while refills the budget, as it does for dictation.
 constexpr int kReconnectsPerFile = 2;
@@ -65,7 +64,10 @@ bool isAudioFile(const QString &path)
 }
 
 // Opened NewOnly, so an existing file is never overwritten even if one appears
-// between the check and the write.
+// between the check and the write. QSaveFile would be atomic, but its commit
+// renames over whatever took the name meanwhile. A write that fails part way
+// removes the file instead, so no truncated transcript is left to mistake for
+// a whole one.
 QString saveTranscript(const QString &audioPath, const QString &folder, const QString &text, QString *error)
 {
     const QString stem = QFileInfo(audioPath).completeBaseName() + QStringLiteral("-transcribed");
@@ -82,8 +84,9 @@ QString saveTranscript(const QString &audioPath, const QString &folder, const QS
             return {};
         }
         const QByteArray bytes = text.toUtf8() + '\n';
-        if (file.write(bytes) != bytes.size()) {
+        if (file.write(bytes) != bytes.size() || !file.flush()) {
             *error = QStringLiteral("Could not save %1: %2").arg(file.fileName(), file.errorString());
+            file.remove();
             return {};
         }
         return file.fileName();
@@ -284,6 +287,12 @@ void FileTranscriptionSession::sendNextChunk()
 
 // Mirrors DictationSession::startNextAttempt: a fresh stream on the same
 // transcriber while the audio keeps flowing.
+//
+// Known limitation: audio the old stream received but had not transcribed yet
+// is lost, leaving a silent gap in the transcript. The new stream picks up at
+// the next unsent chunk because no provider reports how far into the audio its
+// transcript reaches, so there is no position to rewind to; resending a guessed
+// window would duplicate words instead.
 void FileTranscriptionSession::startNextAttempt()
 {
     const QString partial = m_transcript->partial();

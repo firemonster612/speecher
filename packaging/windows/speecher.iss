@@ -53,11 +53,11 @@ Root: HKCU; Subkey: "Software\Classes\Speecher.AudioFile"; ValueType: string; Va
 Root: HKCU; Subkey: "Software\Classes\Speecher.AudioFile\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\speecher.exe,0"
 Root: HKCU; Subkey: "Software\Classes\Speecher.AudioFile\shell\open"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "Speecher"
 Root: HKCU; Subkey: "Software\Classes\Speecher.AudioFile\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\speecher.exe"" ""%1"""
-Root: HKCU; Subkey: "Software\Classes\.wav\OpenWithProgids"; ValueType: none; ValueName: "Speecher.AudioFile"; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Classes\.mp3\OpenWithProgids"; ValueType: none; ValueName: "Speecher.AudioFile"; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Classes\.m4a\OpenWithProgids"; ValueType: none; ValueName: "Speecher.AudioFile"; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Classes\.flac\OpenWithProgids"; ValueType: none; ValueName: "Speecher.AudioFile"; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Classes\.ogg\OpenWithProgids"; ValueType: none; ValueName: "Speecher.AudioFile"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.wav\OpenWithProgids"; ValueType: string; ValueName: "Speecher.AudioFile"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.mp3\OpenWithProgids"; ValueType: string; ValueName: "Speecher.AudioFile"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.m4a\OpenWithProgids"; ValueType: string; ValueName: "Speecher.AudioFile"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.flac\OpenWithProgids"; ValueType: string; ValueName: "Speecher.AudioFile"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.ogg\OpenWithProgids"; ValueType: string; ValueName: "Speecher.AudioFile"; ValueData: ""; Flags: uninsdeletevalue
 ; Lists Speecher in the Open with dialog's app list under its own name.
 Root: HKCU; Subkey: "Software\Classes\Applications\speecher.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "Speecher"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Applications\speecher.exe\SupportedTypes"; ValueType: string; ValueName: ".wav"; ValueData: ""

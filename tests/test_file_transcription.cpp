@@ -25,6 +25,7 @@ struct Script {
     bool expireFirstStream = false;
     int attempts = 0;
     qsizetype bytes = 0;
+    QStringList vocabulary;
 };
 
 // Answers a finished input with how many bytes of audio it received, and can
@@ -42,9 +43,10 @@ public:
     bool requiresRefresh(const SpeechSettings &) const override { return false; }
     SpeechPrepareResult prepare(const SpeechSettings &) override { return {true, {}}; }
 
-    void startAttempt(quint64, const SpeechSettings &) override
+    void startAttempt(quint64, const SpeechSettings &settings) override
     {
         ++m_script->attempts;
+        m_script->vocabulary = settings.vocabulary;
         m_bytes = 0;
     }
 
@@ -247,6 +249,45 @@ private slots:
         QVERIFY(finished.first().first().value<QList<TranscribeFileResult>>().isEmpty());
         QVERIFY(!session.isRunning());
         QVERIFY(!QFile::exists(m_dir.filePath(QStringLiteral("one-transcribed.txt"))));
+    }
+
+    void withoutVocabularyTheProviderHearsNone()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        settings.setVocabularyEntries({{QStringLiteral("Speecher")}});
+        QVERIFY(!settings.snapshot().speech.vocabulary.isEmpty());
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options = speechOnly();
+        options.applyVocabulary = false;
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        QCOMPARE(m_script.attempts, 1);
+        QVERIFY(m_script.vocabulary.isEmpty());
+    }
+
+    void savingNowhereWritesNothingAndStillDelivers()
+    {
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options = speechOnly();
+        options.destination = TranscriptDestination::None;
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        const auto results = finished.first().first().value<QList<TranscribeFileResult>>();
+        QVERIFY(results.first().refined.startsWith(QStringLiteral("heard ")));
+        QVERIFY(results.first().savedPath.isEmpty());
+        QCOMPARE(QDir(dir.path()).entryList(QDir::Files), QStringList({QStringLiteral("memo.wav")}));
     }
 
 private:
