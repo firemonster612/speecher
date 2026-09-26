@@ -16,9 +16,44 @@
 #include <QDebug>
 #include <QDesktopServices>
 #include <QElapsedTimer>
+#include <QFileOpenEvent>
 #include <QStringList>
 #include <QUrl>
 namespace speecher {
+
+namespace {
+
+// Opening audio with Speecher from Finder, or dropping it on the Dock icon,
+// arrives as a QFileOpenEvent: Qt's application delegate turns AppKit's
+// application:openFiles: into one, and the Swift delegate proxy in
+// SpeecherMacUI.swift forwards that selector to Qt's delegate. The files take
+// the command line's route, so a file opened before setup is finished waits
+// for setup the same way.
+class FileOpenFilter final : public QObject {
+public:
+    explicit FileOpenFilter(ApplicationController *controller)
+        : QObject(controller)
+        , m_controller(controller)
+    {
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() != QEvent::FileOpen) {
+            return QObject::eventFilter(watched, event);
+        }
+        const QString path = static_cast<QFileOpenEvent *>(event)->file();
+        if (!path.isEmpty()) {
+            m_controller->showTranscribeFiles({path});
+        }
+        return true;
+    }
+
+private:
+    ApplicationController *m_controller;
+};
+
+} // namespace
 
 struct MacFrontEnd::Native {
     SpeecherBridge *bridge = nil;
@@ -80,6 +115,9 @@ MacFrontEnd::MacFrontEnd(ApplicationController *controller)
                          QDesktopServices::openUrl(QUrl(QStringLiteral(
                              "https://github.com/firemonster612/speecher/releases")));
                      });
+    // Parented to the controller, which goes first, so the filter never
+    // reaches a controller that is gone.
+    qApp->installEventFilter(new FileOpenFilter(controller));
 }
 
 MacFrontEnd::~MacFrontEnd()
