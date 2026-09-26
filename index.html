@@ -3,475 +3,1346 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Speecher · dictation for Windows, macOS, and Linux on the subscriptions you already have</title>
-<meta name="description" content="Native speech-to-text for Windows, macOS, and Linux. Press a shortcut, talk, and clean text lands in the app you're using. Runs on your existing Claude Code or ChatGPT login.">
-<link rel="icon" href="assets/icon.svg?v=12" type="image/svg+xml">
+<title>Speecher: dictation that types what you meant</title>
+<meta name="description" content="Native dictation for Windows, macOS and Linux. Press a shortcut, talk, and clean text is typed into the focused app. Runs on your Claude Code or ChatGPT sign-in.">
+<link rel="canonical" href="https://firemonster612.github.io/speecher/">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0b0b0c">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Speecher">
+<meta property="og:title" content="Speecher: dictation that types what you meant">
+<meta property="og:description" content="Native dictation for Windows, macOS and Linux. Runs on your existing Claude Code or ChatGPT sign-in. Open source, MIT.">
+<meta property="og:url" content="https://firemonster612.github.io/speecher/">
+<meta property="og:image" content="https://firemonster612.github.io/speecher/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Dictation that types what you said, meant: said is struck through in red, next to the Speecher popup on a blue panel.">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Speecher",
+  "operatingSystem": "Windows, macOS, Linux",
+  "applicationCategory": "UtilitiesApplication",
+  "softwareVersion": "0.2.0",
+  "license": "https://opensource.org/license/mit",
+  "downloadUrl": "https://github.com/firemonster612/speecher/releases/latest",
+  "url": "https://firemonster612.github.io/speecher/",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+<script>document.documentElement.classList.add('js')</script>
 <style>
-:root{
-  --paper:#f5f2e9; --card:#fffdf6; --ink:#1b1b17; --muted:#6d6c60; --line:#e2ddcd;
-  --red:#d13c42; --pill:#ffffff; --pill-shadow:0 10px 30px rgba(27,27,23,.10), 0 2px 6px rgba(27,27,23,.06);
-  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",sans-serif;
-  --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
-}
-@media (prefers-color-scheme: dark){
-  :root{
-    --paper:#161613; --card:#1e1e1a; --ink:#f0eee2; --muted:#96948a; --line:#2c2c26;
-    --red:#ff5f66; --pill:#232320; --pill-shadow:0 10px 30px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
+  @font-face { font-family: "Mona Sans"; src: url("fonts/MonaSans.woff2") format("woff2"); font-weight: 200 900; font-stretch: 75% 125%; font-display: swap; }
+  @font-face { font-family: "Mona Sans Mono"; src: url("fonts/MonaSansMono.woff2") format("woff2"); font-weight: 200 900; font-display: swap; }
+  :root {
+    color-scheme: dark;
+    --bg: #0b0b0c;
+    --fg: #f2f2f0;
+    --dim: #8e8e93;
+    --soft: #c9c9cc;
+    --line: #26262a;
+    --red: #ff3b30;
+    --blue: #1d3bd1;
+    --blue-deep: #10228a;
+    --graphite: #1f2126;
+    --saffron: #f5b83d;
+    --ink: #121214;
+    --sans: "Mona Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Arial, sans-serif;
+    --mono: "Mona Sans Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Noto Sans Mono", monospace;
+    --pad: clamp(20px, 5vw, 72px);
+    --r-panel: clamp(28px, 4vw, 56px);
   }
-}
-*{margin:0;padding:0;box-sizing:border-box}
-html{scroll-behavior:smooth}
-body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
-a{color:inherit}
-img{max-width:100%;height:auto;display:block}
-b,strong{font-weight:650}
-.wrap{max-width:1020px;margin:0 auto;padding:0 24px}
-.mono{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
-code{font-family:var(--mono);font-size:.88em;background:color-mix(in srgb,var(--ink) 7%,transparent);padding:.12em .4em;border-radius:6px}
+  * { box-sizing: border-box; }
+  html { background: var(--bg); color: var(--fg); }
+  body { margin: 0; font: 400 1.125rem/1.55 var(--sans); -webkit-font-smoothing: antialiased; overflow-x: clip; }
+  a { color: inherit; text-underline-offset: .2em; text-decoration-thickness: 1px; }
+  :focus-visible { outline: 2px solid var(--fg); outline-offset: 4px; border-radius: 6px; }
+  code, pre { font-family: var(--mono); }
+  p { margin: 0; }
+  h1, h2, h3 { margin: 0; }
+  h1, h2 { font-weight: 820; font-stretch: 108%; letter-spacing: -.035em; text-wrap: balance; }
+  h1 { font-size: clamp(2.9rem, 7.4vw, 7.1rem); line-height: .9; }
+  h2 { font-size: clamp(2.3rem, 5.4vw, 5rem); line-height: .94; }
+  .wrap { max-width: 1400px; margin-inline: auto; padding-inline: var(--pad); }
+  .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
-/* header */
-header{padding:20px 0}
-header .wrap{display:flex;align-items:center;gap:28px}
-.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;text-decoration:none}
-.logo img{width:28px;height:28px;border-radius:7px}
-header .spacer{flex:1}
-header nav{display:flex;align-items:center;gap:22px}
-header nav a{text-decoration:none;font-weight:550;font-size:15px;color:var(--muted)}
-header nav a:hover{color:var(--ink)}
-.btn{display:inline-block;text-decoration:none;font-weight:600;font-size:15px;padding:11px 22px;border-radius:10px;border:1px solid var(--ink);transition:transform .12s ease}
-.btn:hover{transform:translateY(-1px)}
-.btn.primary{background:var(--ink);color:var(--paper)}
-header .btn{padding:8px 16px}
+  /* The correction mark: struck word dims, a red rule crosses it. */
+  del, ins { text-decoration: none; }
+  del { position: relative; color: color-mix(in srgb, currentColor 42%, transparent); white-space: nowrap; }
+  del::after {
+    content: ""; position: absolute; left: -.05em; right: -.05em; top: 52%;
+    height: max(3px, .08em); background: var(--red); transform-origin: left center;
+  }
+  .fix { white-space: nowrap; }
 
-/* hero */
-.hero{padding:72px 0 40px;text-align:center}
-.eyebrow{margin-bottom:22px}
-h1{font-size:clamp(38px,6.4vw,68px);line-height:1.04;letter-spacing:-.025em;font-weight:750;max-width:840px;margin:0 auto;text-wrap:balance}
-.lede{max-width:620px;margin:26px auto 0;font-size:19px;color:var(--muted);text-wrap:pretty}
-.lede b{color:var(--ink)}
-.cta{margin-top:44px;display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
-.cta .btn{font-size:16px}
+  /* Nav */
+  .nav { position: sticky; top: 0; z-index: 20; background: rgb(11 11 12 / .82); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 750; font-stretch: 110%; text-decoration: none; font-size: 1.15rem; }
+  .nav nav { display: flex; align-items: center; gap: 26px; font-size: 1rem; }
+  .nav nav a { text-decoration: none; color: var(--soft); }
+  .nav nav a:hover { color: var(--fg); }
+  .nav nav .pill { color: var(--ink); background: var(--fg); padding: 8px 16px; border-radius: 999px; font-weight: 650; }
+  .nav nav .pill:hover { color: var(--ink); background: #fff; }
 
-/* demo */
-.demo{max-width:640px;margin:56px auto 0;user-select:none}
-.dcap{width:118px;height:62px;margin:0 auto;background:var(--pill);border-radius:999px;box-shadow:var(--pill-shadow);display:flex;align-items:center;justify-content:center;gap:6px}
-.dcap i{width:6px;border-radius:3px;background:var(--ink);height:22px;transform-origin:center;animation:bar 1.1s ease-in-out infinite;animation-play-state:paused}
-.demo.listening .dcap i{animation-play-state:running}
-.dcap i:nth-child(1){animation-delay:0s;height:12px}
-.dcap i:nth-child(2){animation-delay:.15s;height:22px}
-.dcap i:nth-child(3){animation-delay:.3s;height:16px}
-.dcap i:nth-child(4){animation-delay:.05s;height:26px}
-.dcap i:nth-child(5){animation-delay:.25s;height:18px}
-.dcap i:nth-child(6){animation-delay:.4s;height:24px}
-.dcap i:nth-child(7){animation-delay:.1s;height:14px}
-.dcap i:nth-child(8){animation-delay:.35s;height:20px}
-.dcap i:nth-child(9){animation-delay:.2s;height:12px}
-@keyframes bar{0%,100%{transform:scaleY(.5)}50%{transform:scaleY(1.5)}}
-.dpill{margin-top:18px;background:var(--pill);border-radius:32px;box-shadow:var(--pill-shadow);min-height:60px;padding:16px 28px;display:flex;align-items:center;justify-content:center;text-align:left}
-.dpill .txt{font-size:17px;line-height:1.5;transition:opacity .25s ease}
-.dpill .txt.fade{opacity:0}
-.dpill .txt .cursor{display:inline-block;width:2px;height:1.05em;background:var(--ink);vertical-align:-.15em;margin-left:2px;animation:blink 1s steps(1) infinite}
-@keyframes blink{50%{opacity:0}}
-.dpill .txt span.strike{color:var(--muted);text-decoration:line-through;transition:color .3s ease}
-.dstat{margin-top:16px;display:flex;align-items:center;justify-content:center;gap:8px;font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
-.dstat .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
-.demo.listening .dstat .dot{background:var(--red);animation:pulse 1.2s ease-in-out infinite}
-@keyframes pulse{50%{opacity:.35}}
-@media (prefers-reduced-motion: reduce){
-  html{scroll-behavior:auto}
-  .dcap i,.dstat .dot,.dpill .txt .cursor{animation:none !important}
-}
-.demo{cursor:pointer;-webkit-tap-highlight-color:transparent}
-.demo:focus-visible{outline:2px solid var(--ink);outline-offset:8px;border-radius:12px}
-@media (max-width:480px){
-  header .wrap{gap:14px}
-  header nav{gap:12px}
-  header nav a{font-size:14px}
-  header .btn{padding:7px 12px}
-}
+  .btn {
+    display: inline-flex; align-items: center; gap: .5em; padding: 14px 26px; border-radius: 999px;
+    background: var(--fg); color: var(--ink); font-weight: 700; text-decoration: none; font-size: 1.05rem;
+  }
+  .btn:hover { background: #fff; }
+  .btn.ghost { background: none; color: inherit; box-shadow: inset 0 0 0 1.5px currentColor; }
 
-/* sections */
-section{padding:88px 0}
-.sechead{max-width:640px}
-h2{font-size:clamp(26px,3.6vw,38px);line-height:1.12;letter-spacing:-.02em;font-weight:700;text-wrap:balance}
+  /* Hero */
+  .hero { padding-top: clamp(28px, 5vh, 64px); padding-bottom: clamp(72px, 10vw, 140px); }
+  .hero h1 del::after { animation: strike .42s cubic-bezier(.6,0,.2,1) .15s both; }
+  @keyframes strike { from { transform: scaleX(0); } }
+  .hero-row { display: grid; grid-template-columns: minmax(0, 330px) minmax(0, 1fr); gap: clamp(28px, 4vw, 56px); margin-top: clamp(28px, 4vw, 48px); align-items: stretch; }
+  .hero-copy { display: flex; flex-direction: column; justify-content: flex-end; padding-bottom: 8px; }
+  .lede { font-size: clamp(1.15rem, 1.5vw, 1.35rem); line-height: 1.45; color: var(--soft); }
+  .cta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 22px; margin-top: 28px; }
+  .cta .quiet { color: var(--soft); font-size: 1rem; }
+  .meta { margin-top: 18px; color: var(--dim); font-size: .95rem; }
 
-/* zero band */
-.zero{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:56px 0;margin-top:96px}
-.zero .wrap{display:flex;align-items:center;gap:40px;flex-wrap:wrap}
-.zeronum{font-size:64px;font-weight:800;letter-spacing:-.03em;line-height:1;flex:none}
-.zerotext{max-width:560px;font-size:19px;text-wrap:pretty}
-.zerotext .sub{margin-top:6px;font-size:15px;color:var(--muted)}
+  /* Hero machine: words land in their slots, filler falls away, one clean line comes out.
+     A web mockup of the overlay, drawn in the page's own style. JS moves everything by transform. */
+  .machine {
+    position: relative; height: 420px; border-radius: var(--r-panel); overflow: hidden; isolation: isolate;
+    background:
+      radial-gradient(circle at 1px 1px, rgb(255 255 255 / .09) 1px, transparent 1.5px) 0 0 / 22px 22px,
+      radial-gradient(120% 90% at 30% 0%, #2e52f0 0%, transparent 60%),
+      linear-gradient(160deg, var(--blue) 0%, var(--blue-deep) 100%);
+  }
+  .machine svg.rails { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .rails path { fill: none; stroke: rgb(255 255 255 / .38); stroke-width: 2; stroke-linecap: round; }
+  .rails path.in-rail { stroke: rgb(255 255 255 / .3); stroke-width: 1.5; stroke-dasharray: 2 7; }
+  .machine .words { position: absolute; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 12px 10px; }
+  .machine .w {
+    white-space: nowrap; font: 600 1em/1 var(--sans); color: #fff;
+    padding: .42em .75em; border-radius: 999px; background: rgb(255 255 255 / .14);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / .22); opacity: 0; will-change: transform, opacity;
+  }
+  .machine .w.fall { color: rgb(255 255 255 / .55); background: rgb(0 0 30 / .25); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .1); }
+  .machine .tag-in, .machine .tag-out { position: absolute; font: 600 .75rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: rgb(255 255 255 / .6); }
+  .machine .tag-in { left: 28px; top: 26px; }
+  .machine .tag-out { right: 28px; top: 26px; }
+  .mock {
+    position: absolute; left: 0; top: 0; z-index: 2; display: grid; place-items: center;
+    width: 176px; height: 60px; border-radius: 999px; background: var(--ink); color: var(--fg);
+    box-shadow: 0 18px 40px -14px rgb(0 0 30 / .75), inset 0 0 0 1px rgb(255 255 255 / .14);
+    font: 650 17px/1 var(--sans); letter-spacing: -.005em;
+  }
+  .mock > span { grid-area: 1 / 1; display: flex; align-items: center; gap: 10px; will-change: opacity, transform; }
+  .mock-bars { height: 30px; gap: 5px !important; }
+  .mock-bars i { width: 5px; height: 5px; border-radius: 3px; background: var(--fg); }
+  .mock-ref em { font-style: normal; color: transparent; background: linear-gradient(90deg, rgb(242 242 240 / .45) 30%, var(--fg) 50%, rgb(242 242 240 / .45) 70%) 0 0 / 300% 100%; background-position-x: var(--sh, 0%); -webkit-background-clip: text; background-clip: text; }
+  .mock-sent b { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--fg); }
+  .mock-sent svg { width: 12px; height: 12px; fill: none; stroke: var(--ink); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+  .mock.small { width: 150px; height: 52px; font-size: 15px; }
+  .mock.small .mock-bars { height: 24px; gap: 4px !important; }
+  .mock.small .mock-bars i { width: 4px; }
+  speecher-popup {
+    --sp-base: #2b2b2b; --sp-text: #fff; --sp-stroke: rgba(255,255,255,.14);
+    --sp-shadow: drop-shadow(0 8px 18px rgb(0 0 0 / .45));
+    font: 14px/18px "Segoe UI", system-ui, -apple-system, "Noto Sans", sans-serif;
+  }
+  .light-pop speecher-popup {
+    --sp-base: #ececec; --sp-text: #1b1b1b; --sp-stroke: rgba(0,0,0,.1);
+    --sp-shadow: drop-shadow(0 6px 14px rgb(0 0 0 / .28));
+  }
+  .field {
+    position: absolute; z-index: 1; background: #fff; color: var(--ink); border-radius: 18px;
+    box-shadow: 0 24px 60px -18px rgb(0 0 20 / .55); padding: 14px 20px 18px;
+  }
+  .field-head { display: flex; align-items: center; gap: 8px; font: 600 .8rem/1 var(--mono); color: #6b6b73; letter-spacing: .02em; margin-bottom: 12px; }
+  .field-head i { width: 8px; height: 8px; border-radius: 50%; background: #d4d4da; }
+  .field-body { position: relative; height: calc(3 * 1.28em); font: 650 26px/1.28 var(--sans); letter-spacing: -.015em; }
+  .out { position: absolute; inset: 0; }
+  .out span { display: inline-block; white-space: pre; will-change: transform, opacity; }
+  .out .x, .tk.strike { position: relative; color: #9a9aa2; }
+  .out .x::after, .tk.strike::after {
+    content: ""; position: absolute; left: -.04em; right: .22em; top: 52%; height: max(2.5px, .09em);
+    background: var(--red); transform-origin: left; transform: scaleX(var(--k, 1));
+  }
 
-/* features */
-.feature{display:grid;grid-template-columns:5fr 6fr;gap:56px;align-items:center;padding:64px 0}
-.feature.flip .copy{order:2}
-.feature .num{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
-.feature h2{margin-bottom:16px}
-.feature p{color:var(--muted)}
-.feature p+p{margin-top:12px}
-.feature p b{color:var(--ink)}
-@media (max-width:860px){.feature{grid-template-columns:1fr;gap:28px}.feature.flip .copy{order:0}}
+  /* Panels */
+  .panel { border-radius: var(--r-panel); margin-inline: clamp(8px, 1.6vw, 24px); }
+  /* With motion, JS eases the corners and side gaps to 0 as a panel fills the viewport. */
+  .corners .panel { margin-inline: 0; border-radius: 0; }
 
-/* viz: capture — window stack with the overlay capsule */
-.viz{user-select:none}
-.vcapture{position:relative;height:330px;max-width:520px}
-.vwin{position:absolute;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 18px}
-.vwin .vname{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:block}
-.vline{height:9px;border-radius:5px;background:color-mix(in srgb,var(--ink) 11%,transparent);margin-top:12px}
-.w1{left:0;top:0;width:64%;height:120px;opacity:.45}
-.w2{right:0;top:22px;width:56%;height:130px;opacity:.7}
-.w3{left:7%;top:74px;width:74%;height:200px;box-shadow:0 18px 50px rgba(0,0,0,.10)}
-.vover{position:absolute;left:24%;top:196px;width:88px;height:46px;background:var(--pill);border-radius:999px;box-shadow:var(--pill-shadow);display:flex;align-items:center;justify-content:center;gap:4px}
-.vover i{width:4px;border-radius:2px;background:var(--ink)}
-.vover i:nth-child(1){height:9px}.vover i:nth-child(2){height:17px}.vover i:nth-child(3){height:12px}
-.vover i:nth-child(4){height:20px}.vover i:nth-child(5){height:14px}.vover i:nth-child(6){height:18px}
-.vover i:nth-child(7){height:10px}
-.vkey{position:absolute;right:8%;bottom:34px;font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--card);border:1px solid var(--line);border-bottom-width:3px;border-radius:9px;padding:9px 16px;box-shadow:0 8px 22px rgba(0,0,0,.08)}
-@media (max-width:860px){.vcapture{width:100%;margin:0 auto}}
-@media (max-width:560px){
-  .vcapture{height:280px}
-  .vwin .vname{font-size:10px;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .w1{display:none}
-  .w2{right:0;top:0;width:72%;height:112px;opacity:.55}
-  .w3{left:0;top:50px;width:82%;height:180px}
-  .vover{left:16%;top:158px}
-  .vkey{right:0;bottom:16px}
-}
+  /* Pinned showcase */
+  .show { position: relative; }
+  .show-stage {
+    height: 100vh; min-height: 620px; padding-top: 64px;
+    display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: clamp(28px, 5vw, 80px); align-items: center;
+  }
+  .show-left h2 { font-size: clamp(2.2rem, 4vw, 3.8rem); }
+  .steps { list-style: none; margin: 36px 0 0; padding: 0; display: grid; gap: 22px; }
+  .steps li { position: relative; padding-left: 22px; opacity: .36; transition: opacity .3s; cursor: pointer; }
+  .steps li:hover { opacity: .7; }
+  .steps li.on { opacity: 1; }
+  .steps button { all: unset; cursor: pointer; }
+  .steps button:focus-visible { outline: 2px solid var(--fg); outline-offset: 4px; border-radius: 4px; }
+  .steps li::before { content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: 3px; border-radius: 2px; background: #2c2c31; }
+  .steps .bar { position: absolute; left: 0; top: 2px; bottom: 2px; width: 3px; border-radius: 2px; background: var(--fg); transform-origin: top; transform: scaleY(0); }
+  .steps h3 { font-size: 1.35rem; font-weight: 720; font-stretch: 106%; letter-spacing: -.015em; line-height: 1.2; }
+  .steps p { margin-top: 6px; color: var(--soft); font-size: 1rem; line-height: 1.45; max-width: 36ch; }
+  .card-fit { position: relative; width: 100%; margin-inline: auto; }
+  #card-fit { will-change: transform, opacity; }
+  .card { position: absolute; left: 0; top: 0; width: 600px; height: 470px; transform-origin: 0 0; border-radius: 28px; overflow: hidden; box-shadow: 0 40px 90px -30px rgb(0 0 0 / .8); }
+  .wall { position: absolute; inset: 0; }
+  .wall.base { background: radial-gradient(90% 80% at 15% 10%, #6b5cff 0%, transparent 60%), radial-gradient(80% 90% at 90% 100%, #00b3a4 0%, transparent 55%), linear-gradient(135deg, #2a1f7a, #0d4f73); }
+  .menubar { position: absolute; left: 0; right: 0; top: 0; height: 24px; background: rgb(0 0 0 / .28); display: flex; align-items: center; gap: 12px; padding: 0 14px; font: 600 11px/1 var(--sans); color: rgb(255 255 255 / .85); }
+  .menubar i { width: 34px; height: 6px; border-radius: 3px; background: rgb(255 255 255 / .35); }
+  .menubar .clock { margin-left: auto; }
+  .menubar img { width: 14px; height: 14px; }
+  .win { position: absolute; left: 60px; top: 50px; width: 480px; height: 232px; border-radius: 14px; background: #fff; color: var(--ink); overflow: hidden; box-shadow: 0 22px 50px -16px rgb(0 0 0 / .55); }
+  .win-bar { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px; border-bottom: 1px solid #ececf0; font: 650 13px/1 var(--sans); color: #3a3a40; }
+  .app-ico { width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; color: #fff; font: 800 10px/1 var(--sans); }
+  .win-body { position: relative; padding: 18px 20px; }
+  .card.blank :is(.win-body, .cpop, .vocab, .flychip, .ctxboard) { visibility: hidden; }
+  .line { position: absolute; left: 20px; right: 20px; top: 18px; font: 620 22px/1.32 var(--sans); letter-spacing: -.01em; color: color-mix(in srgb, var(--ink) calc(var(--e, 1) * 100%), #a2a2aa); }
+  .tk { display: inline-block; white-space: pre; }
+  .tk.glue { margin-left: -.26em; }
+  .tk.sel { background: #cfe0ff; border-radius: 4px; }
+  .ctxboard { position: absolute; left: 24px; right: 24px; top: 36px; opacity: 0; }
+  .said-row { margin: 0 0 10px; padding: 11px 16px; border-radius: 12px; background: rgb(0 0 0 / .32); color: #fff; font: 600 15px/1.35 var(--sans); }
+  .said-row span { display: block; margin-bottom: 4px; font: 600 11px/1 var(--mono); letter-spacing: .06em; color: rgb(255 255 255 / .6); }
+  .ctxboard ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  /* One row style for every destination: same colour, same chunky fixed height, one line of
+     text each. Dark on this dark page; light if the system asks for light. */
+  .dest {
+    --row-bg: #1c1c20; --row-fg: #f2f2f0; --row-dim: #8e8e96; --row-edge: rgb(255 255 255 / .08);
+    display: grid; grid-template-columns: 30px 100px 1fr; gap: 12px; align-items: center;
+    height: 62px; padding: 0 16px; border-radius: 16px; background: var(--row-bg); color: var(--row-fg);
+    box-shadow: inset 0 0 0 1px var(--row-edge), 0 14px 30px -14px rgb(0 0 0 / .55);
+  }
+  @media (prefers-color-scheme: light) {
+    .dest { --row-bg: #fff; --row-fg: var(--ink); --row-dim: #74747c; --row-edge: rgb(0 0 0 / .06); }
+  }
+  .dest .app-ico { width: 30px; height: 30px; border-radius: 8px; font-size: 14px; }
+  .dest div { display: grid; gap: 4px; font: 700 14px/1.1 var(--sans); }
+  .dest i { font: 500 11px/1.1 var(--mono); font-style: normal; color: var(--row-dim); }
+  .dest .o { margin: 0; font: 620 15px/1.3 var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dest.term .o, .dest.cc .o { font: 500 13px/1.3 var(--mono); letter-spacing: -.02em; }
+  .dest.term .o::before { content: "$ "; color: #5fd4a0; }
+  .dest.cc .o::before { content: "> "; color: #d97757; }
+  .dest .cc-ico { background: #faf9f5; }
+  .dest .cc-ico img { width: 19px; height: 19px; }
+  .card .cpop { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); }
+  .vocab { position: absolute; right: 24px; top: 214px; width: 214px; border-radius: 14px; background: #fff; color: var(--ink); padding: 12px 14px; transform: rotate(3deg); box-shadow: 0 22px 50px -16px rgb(0 0 0 / .6); }
+  .vocab h4 { margin: 0 0 8px; font: 700 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: #6b6b73; }
+  .vocab ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .vocab li, .flychip { display: flex; justify-content: space-between; gap: 8px; font: 600 13px/1 var(--sans); background: #f1f1f5; border-radius: 8px; padding: 8px 10px; white-space: nowrap; }
+  .vocab li span:first-child, .flychip span:first-child { color: #85858d; }
+  .vocab li.slot { background: transparent; outline: 1.5px dashed #c4c4cc; outline-offset: -1.5px; }
+  .vocab li.slot span { visibility: hidden; }
+  .flychip { position: absolute; left: 0; top: 0; z-index: 5; background: #1d3bd1; color: #fff; box-shadow: 0 10px 24px -8px rgb(0 0 0 / .5); }
+  .flychip span:first-child { color: rgb(255 255 255 / .7); }
+  .static-rows { display: none; }
 
-/* viz: context — focus readouts */
-.vreadouts{display:grid;gap:14px;max-width:520px}
-.rcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px 22px;font-family:var(--mono);font-size:13px}
-.rrow{display:grid;grid-template-columns:110px 1fr;gap:14px;padding:11px 0;border-top:1px solid var(--line)}
-.rrow:first-child{border-top:0}
-.rrow .rk{letter-spacing:.08em;text-transform:uppercase;font-size:11px;color:var(--muted);align-self:baseline;padding-top:2px}
-.rrow .rv{color:var(--muted)}
-.rrow.rout .rv{color:var(--ink);font-weight:600}
+  /* Platforms */
+  .platforms { background: var(--graphite); padding-block: clamp(80px, 10vw, 140px); overflow: hidden; }
+  /* Pinned from the top: less padding so the heading and fan fit one viewport. */
+  /* It fills the viewport while pinned, so no page background shows below it; the fan
+     takes the space under the heading and centres in it. */
+  .platforms.pinned { min-height: 100vh; display: flex; flex-direction: column; padding-block: calc(64px + clamp(20px, 4vh, 48px)) clamp(32px, 5vh, 64px); }
+  .platforms.pinned .head { margin-bottom: clamp(24px, 4vh, 56px); }
+  .platforms.pinned .fan { margin-block: auto; }
+  .platforms .head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 24px; }
+  .platforms .head p { color: var(--soft); max-width: 34ch; font-size: clamp(1.1rem, 1.4vw, 1.3rem); }
+  .fan { position: relative; margin-top: clamp(40px, 6vw, 80px); }
+  .fan-inner { position: absolute; left: 50%; top: 0; width: 1240px; height: 440px; transform-origin: 50% 0; perspective: 1800px; }
+  .os { position: absolute; left: 350px; top: 40px; width: 540px; margin: 0; will-change: transform; }
+  .scr { position: relative; height: 350px; border-radius: 18px; overflow: hidden; box-shadow: 0 30px 70px -20px rgb(0 0 0 / .75), 0 0 0 1px rgb(255 255 255 / .06); }
+  .os figcaption { margin-top: 14px; text-align: center; font: 600 .95rem/1.2 var(--sans); color: var(--soft); }
+  .os figcaption b { color: var(--fg); font-weight: 700; }
+  .os .pp { position: absolute; left: 50%; transform: translateX(-50%); }
+  .appwin { position: absolute; border-radius: 10px; padding: 34px 16px 14px; display: grid; gap: 9px; align-content: start; }
+  .appwin::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 24px; border-bottom: 1px solid rgb(0 0 0 / .08); }
+  .appwin i { height: 7px; border-radius: 4px; background: rgb(0 0 0 / .12); }
+  .appwin i:nth-child(2) { width: 82%; } .appwin i:nth-child(3) { width: 64%; } .appwin i:nth-child(4) { width: 74%; }
+  .win11 .scr { background: radial-gradient(60% 80% at 50% 110%, #7fb6ff 0%, transparent 60%), radial-gradient(70% 70% at 70% 60%, #1e63e9 0%, transparent 70%), linear-gradient(180deg, #0a1f5c, #0b3aa8); }
+  .win11 .appwin { left: 70px; top: 36px; width: 340px; height: 180px; background: #202020; }
+  .win11 .appwin::before { border-color: rgb(255 255 255 / .08); }
+  .win11 .appwin i { background: rgb(255 255 255 / .16); }
+  .win11 .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; background: rgb(28 28 28 / .86); display: flex; justify-content: center; align-items: center; gap: 10px; }
+  .win11 .taskbar i { width: 18px; height: 18px; border-radius: 4px; background: rgb(255 255 255 / .22); }
+  .win11 .taskbar i.start { background: conic-gradient(#4cc2ff 0 25%, #1c9bf0 0 50%, #4cc2ff 0 75%, #1c9bf0 0); border-radius: 3px; }
+  .win11 .taskbar .clock { position: absolute; right: 12px; font: 600 11px/1 "Segoe UI", sans-serif; color: #fff; }
+  .win11 .pp { bottom: 48px; }
+  .mac .scr { background: radial-gradient(80% 90% at 0% 100%, #ff8a5c 0%, transparent 55%), radial-gradient(70% 80% at 100% 0%, #6d5bff 0%, transparent 60%), linear-gradient(140deg, #d8467a, #5b2bb5); }
+  .mac .menu { position: absolute; left: 0; right: 0; top: 0; height: 22px; background: rgb(255 255 255 / .28); display: flex; align-items: center; gap: 10px; padding: 0 12px; }
+  .mac .menu i { width: 26px; height: 6px; border-radius: 3px; background: rgb(0 0 0 / .45); }
+  .mac .menu i:first-child { width: 10px; height: 10px; border-radius: 50%; }
+  .mac .menu img { margin-left: auto; width: 14px; height: 14px; }
+  .mac .appwin { left: 110px; top: 50px; width: 320px; height: 170px; background: #f6f6f8; }
+  .mac .appwin::before { background: radial-gradient(circle 4px at 14px 12px, #ff5f57 97%, transparent), radial-gradient(circle 4px at 28px 12px, #febc2e 97%, transparent), radial-gradient(circle 4px at 42px 12px, #28c840 97%, transparent); }
+  .mac .dock { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); display: flex; gap: 7px; padding: 6px 8px; border-radius: 14px; background: rgb(255 255 255 / .3); }
+  .mac .dock i { width: 24px; height: 24px; border-radius: 7px; background: linear-gradient(135deg, #fff, #cfd2dc); }
+  .mac .dock i:nth-child(2) { background: linear-gradient(135deg, #5ac8fa, #1f7ae0); }
+  .mac .dock i:nth-child(3) { background: linear-gradient(135deg, #ffd35a, #ff9f0a); }
+  .mac .dock i:nth-child(4) { background: linear-gradient(135deg, #7ee37a, #26b24c); }
+  .mac .dock i:nth-child(5) { background: #1f1f1f url(assets/icon.svg) center / 100% no-repeat; }
+  .mac .pp { bottom: 56px; }
+  .plasma .scr { background:
+      linear-gradient(155deg, transparent 0 46%, rgb(61 174 233 / .55) 46% 58%, transparent 58%),
+      linear-gradient(30deg, transparent 0 55%, rgb(29 153 243 / .35) 55% 70%, transparent 70%),
+      linear-gradient(110deg, transparent 0 30%, rgb(147 206 233 / .22) 30% 40%, transparent 40%),
+      linear-gradient(180deg, #102a43, #1b3c5c); }
+  .plasma .appwin { left: 90px; top: 34px; width: 340px; height: 180px; background: #eff0f1; }
+  .plasma .panel-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 32px; background: rgb(32 35 38 / .95); display: flex; align-items: center; gap: 9px; padding: 0 10px; }
+  .plasma .panel-bar i { width: 18px; height: 18px; border-radius: 4px; background: rgb(255 255 255 / .2); }
+  .plasma .panel-bar i.k { border-radius: 50%; background: #3daee9; }
+  .plasma .panel-bar .clock { margin-left: auto; font: 600 11px/1 "Noto Sans", sans-serif; color: #fcfcfc; }
+  .plasma .pp { bottom: 46px; }
+  .win11 speecher-popup { font-family: "Segoe UI", system-ui, sans-serif; }
+  .plasma speecher-popup { font-family: "Noto Sans", system-ui, sans-serif; }
+  .mac speecher-popup { font-family: -apple-system, "SF Pro Text", system-ui, sans-serif; }
 
-/* viz: learn — the ledger */
-.vledger{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px 22px;max-width:520px}
-.lrow{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding:15px 0;border-top:1px solid var(--line)}
-.lrow:first-child{border-top:0}
-.lrow .lheard{color:var(--muted);font-style:italic}
-.lrow .larr{font-family:var(--mono);font-size:12px;color:var(--muted)}
-.lrow .lout{font-weight:600}
-.lrow .ltag{margin-left:auto;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 10px;white-space:nowrap}
+  /* Price */
+  .price { background: var(--saffron); color: var(--ink); padding-block: clamp(72px, 9vw, 130px); margin-top: clamp(16px, 2vw, 24px); }
+  .price-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 5vw, 72px); align-items: center; }
+  .price .body { margin-top: 24px; font-size: clamp(1.1rem, 1.4vw, 1.3rem); max-width: 34ch; color: #2a2418; }
+  .eq-fit { position: relative; }
+  .eq { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .eq svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .eq path { fill: none; stroke: var(--ink); stroke-width: 3; stroke-linecap: round; }
+  .eq > * { position: absolute; margin: 0; }
+  .tile { width: 124px; height: 124px; border-radius: 30px; background: #fff; display: grid; place-items: center; box-shadow: 0 18px 36px -14px rgb(60 30 0 / .5); }
+  .tile img { width: 64px; height: 64px; }
+  .tile.chatgpt img { width: 72px; height: 72px; border-radius: 16px; }
+  .tile.me { width: 168px; height: 168px; border-radius: 40px; background: none; box-shadow: 0 24px 44px -14px rgb(60 30 0 / .6); }
+  .tile.me img { width: 168px; height: 168px; }
+  .cap { font: 700 17px/1.2 var(--sans); }
+  .cap.small { font-weight: 600; color: #4a3f28; }
+  .cap.name { width: 168px; text-align: center; }
+  .zero-out { font: 860 132px/.85 var(--sans); font-stretch: 110%; letter-spacing: -.06em; }
+  .zero-out small { display: block; font-size: 30px; letter-spacing: -.02em; margin-top: 12px; font-weight: 750; }
+  .equals { font: 800 44px/1 var(--sans); }
+  /* Wide: sources left, Speecher centre, total right. */
+  .eq.wide { width: 680px; height: 400px; }
+  .wide .claude { left: 10px; top: 42px; --r: -6deg; }
+  .wide .chatgpt { left: 30px; top: 214px; --r: 5deg; }
+  .wide .cap.small { left: 0; top: 362px; width: 300px; }
+  .wide .me { left: 252px; top: 116px; }
+  .wide .name { left: 252px; top: 300px; }
+  .wide .equals { left: 446px; top: 176px; }
+  .wide .zero-out { left: 500px; top: 118px; }
+  /* Narrow: sources on top, Speecher below, total beside it. */
+  .eq.narrow { width: 340px; height: 470px; }
+  .narrow .cap.small { left: 0; top: 0; width: 340px; text-align: center; }
+  .narrow .claude { left: 24px; top: 38px; --r: -6deg; }
+  .narrow .chatgpt { left: 192px; top: 44px; --r: 5deg; }
+  .narrow .me { left: 0; top: 264px; width: 150px; height: 150px; }
+  .narrow .me img { width: 150px; height: 150px; }
+  .narrow .name { left: 0; top: 428px; width: 150px; }
+  .narrow .equals { left: 162px; top: 316px; font-size: 36px; }
+  .narrow .zero-out { left: 196px; top: 282px; font-size: 104px; }
+  .narrow .zero-out small { font-size: 26px; }
+  .trust { margin-top: clamp(56px, 7vw, 96px); }
+  .trust h3 { font-size: 1.25rem; font-weight: 750; margin-bottom: 18px; }
+  .trust ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  .trust li { background: var(--ink); color: var(--fg); border-radius: 22px; padding: 22px; font-size: 1rem; line-height: 1.4; display: grid; gap: 16px; align-content: start; }
+  .trust svg { width: 34px; height: 34px; stroke: var(--saffron); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
-/* before/after cards */
-.pairs{display:grid;gap:14px}
-.pair{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 22px}
-.pair .said{color:var(--muted);font-style:italic}
-.pair .arrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:10px 0 6px}
-.pair .out{font-weight:550}
+  /* Android */
+  .price .local-note { margin-top: 14px; font-size: clamp(1rem, 1.2vw, 1.15rem); }
+  .price .local-note a { color: inherit; font-weight: 700; text-underline-offset: 3px; }
 
-/* download */
-.download{border-top:1px solid var(--line)}
-.dlhead{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:32px}
-.ver{font-family:var(--mono);font-size:13px;letter-spacing:.08em;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:4px 12px}
-.dlgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}
-@media (max-width:980px){.dlgrid{grid-template-columns:1fr 1fr}}
-@media (max-width:720px){.dlgrid{grid-template-columns:1fr}}
-.dlcard{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px}
-.dlcard h3{font-size:20px;font-weight:700}
-.dltag{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px;vertical-align:2px;margin-left:8px}
-.dlcard .sub{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:6px 0 18px}
-.dlcard .btn{width:100%;text-align:center}
-.dlnote{margin-top:22px;color:var(--muted);font-size:15px}
-.facts{margin-top:44px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 28px;color:var(--muted);font-size:15px;list-style:none}
-.facts li{padding-left:18px;position:relative}
-.facts li::before{content:"";position:absolute;left:0;top:.62em;width:7px;height:7px;border-radius:2px;background:var(--line)}
+  .local { background: var(--graphite); padding-block: clamp(72px, 9vw, 130px); margin-top: clamp(16px, 2vw, 24px); }
+  .local-grid { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 6fr); gap: clamp(32px, 5vw, 72px); align-items: center; }
+  .local .body { margin-top: 24px; color: var(--soft); font-size: clamp(1.05rem, 1.3vw, 1.2rem); max-width: 40ch; }
+  .soon-chip { display: inline-block; margin: 0 0 20px; padding: 7px 12px; border-radius: 999px; background: rgb(124 240 184 / .12); color: #7cf0b8; font: 600 .85rem/1 var(--sans); }
+  .local-facts { list-style: none; margin: 28px 0 0; padding: 0; display: grid; gap: 14px; max-width: 46ch; color: var(--soft); }
+  .local-facts li { padding-left: 18px; position: relative; line-height: 1.45; }
+  .local-facts li::before { content: ""; position: absolute; left: 0; top: .6em; width: 7px; height: 7px; border-radius: 50%; background: #7cf0b8; }
+  .local-facts b { color: var(--fg); font-weight: 700; }
+  /* The combination machine: three reels spin and stop on a setup that works. */
+  .combo { --item: 76px; }
+  .reels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .reel { display: grid; gap: 10px; min-width: 0; }
+  .reel-k { font: 500 .8rem/1 var(--mono); color: var(--dim); padding-left: 4px; }
+  .reel-win { position: relative; height: calc(var(--item) * 3); border-radius: 20px; overflow: hidden; background: #1c1c20;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / .06);
+    -webkit-mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent);
+            mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent); }
+  .reel-win::after { content: ""; position: absolute; left: 6px; right: 6px; top: calc(50% - var(--item) / 2 + 4px); height: calc(var(--item) - 8px);
+    border-radius: 14px; box-shadow: inset 0 0 0 1.5px #7cf0b8; pointer-events: none; }
+  .reel ul { list-style: none; margin: 0; padding: 0; will-change: transform; }
+  .reel li { height: var(--item); display: grid; align-content: center; gap: 5px; padding: 0 18px; min-width: 0; }
+  .reel li b { font: 700 1.02rem/1.1 var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .reel li i { font: 500 .78rem/1.1 var(--mono); font-style: normal; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .reel-out { margin: 18px 0 0; display: flex; align-items: baseline; justify-content: flex-end; gap: 12px; font: 750 clamp(1.4rem, 2.2vw, 2rem)/1 var(--sans); letter-spacing: -.02em; color: var(--soft); }
+  .reel-out b { font: 860 clamp(2.6rem, 4.4vw, 4rem)/.9 var(--sans); font-stretch: 110%; letter-spacing: -.05em; color: #7cf0b8; display: inline-block; }
+  .reel-eq, .reel-dot { color: var(--dim); }
 
-/* footer */
-footer{border-top:1px solid var(--line);padding:36px 0 52px}
-footer .wrap{display:flex;align-items:center;gap:24px;flex-wrap:wrap;color:var(--muted);font-size:14px}
-footer a{color:inherit}
+  .android { background: linear-gradient(160deg, var(--blue) 0%, var(--blue-deep) 100%); padding-block: clamp(72px, 9vw, 130px); margin-top: clamp(16px, 2vw, 24px); overflow: hidden; }
+  .android-grid { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: clamp(32px, 5vw, 72px); align-items: center; }
+  .android .body { margin-top: 24px; color: #dfe4ff; font-size: clamp(1.05rem, 1.3vw, 1.2rem); max-width: 40ch; }
+  .android pre { margin: 26px 0 0; padding: 18px 20px; border-radius: 16px; background: rgb(0 0 0 / .3); white-space: pre-wrap; overflow-wrap: anywhere; font-size: clamp(.95rem, 1.4vw, 1.1rem); }
+  .android .after { margin-top: 16px; color: #dfe4ff; }
+  .phone-stage { position: relative; height: 620px; }
+  .phone { position: absolute; right: 8%; top: 0; width: 280px; height: 622px; border-radius: 44px; background: #0c0c0e; padding: 10px; box-shadow: 0 40px 80px -24px rgb(0 0 30 / .8), inset 0 0 0 2px #2c2c33; transform: rotate(4deg); will-change: transform; }
+  .phone img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 34px; }
+  .zoom { position: absolute; left: -2%; top: 230px; width: 330px; border-radius: 22px; overflow: hidden; background: #eeeef4; box-shadow: 0 30px 60px -18px rgb(0 0 30 / .8); transform: rotate(-4deg); will-change: transform; }
+  .zoom div { height: 159px; background: url(assets/panel-compact.png) 0 -579px / 330px auto no-repeat; }
+
+  /* Downloads */
+  .downloads { padding-block: clamp(96px, 11vw, 160px) clamp(64px, 8vw, 110px); }
+  .dl { list-style: none; margin: 48px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .dl li { background: var(--graphite); border-radius: 28px; padding: clamp(24px, 3vw, 36px); display: grid; gap: 14px; align-content: start; }
+  .dl h3 { font-size: clamp(1.8rem, 3vw, 2.6rem); font-weight: 820; font-stretch: 108%; letter-spacing: -.035em; line-height: 1; }
+  .tag { font: 600 .75rem/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink); background: var(--saffron); padding: 5px 8px; border-radius: 6px; vertical-align: middle; margin-left: .6em; position: relative; top: -.3em; }
+  .dl p { color: var(--soft); font-size: 1rem; }
+  .dl .btn { justify-self: start; margin-top: 8px; }
+
+  footer { border-top: 1px solid var(--line); padding-block: 40px 56px; }
+  footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 24px; color: var(--dim); font-size: .95rem; }
+  footer nav { display: flex; flex-wrap: wrap; gap: 24px; }
+  footer a { text-decoration: none; }
+  footer a:hover { color: var(--fg); }
+
+  @media (max-width: 980px) {
+    .hero-row, .price-grid, .android-grid, .local-grid { grid-template-columns: minmax(0, 1fr); }
+    .hero-copy { order: 0; }
+    .machine { height: 470px; }
+    .trust ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .phone-stage { height: 560px; max-width: 420px; margin-inline: auto; width: 100%; }
+  }
+  @media (max-width: 640px) {
+    .nav nav a:not(.pill) { display: none; }
+    .dl { grid-template-columns: minmax(0, 1fr); }
+    .trust ul { grid-template-columns: minmax(0, 1fr); }
+    .trust li { grid-template-columns: 34px 1fr; align-items: center; }
+    .fix { white-space: normal; }
+    .phone { width: 230px; height: 511px; border-radius: 38px; right: 0; }
+    .phone img { border-radius: 30px; }
+    .zoom { width: 270px; top: 200px; left: 0; }
+    .zoom div { height: 130px; background-size: 270px auto; background-position: 0 -474px; }
+    .phone-stage { height: 500px; }
+    .reels { grid-template-columns: minmax(0, 1fr); }
+    .reel-win { height: var(--item); -webkit-mask-image: none; mask-image: none; }
+    .reel-win::after { top: 4px; }
+    .reel-out { justify-content: flex-start; }
+  }
+
+  /* Narrow screens and reduced motion: one card per step, stacked, no pinning. */
+  .stacked .show-stage { height: auto; min-height: 0; display: block; padding-block: 96px 40px; }
+  .stacked .show-stage .steps, .stacked #card-fit { display: none; }
+  .stacked .static-rows { display: grid; gap: 64px; margin-top: 48px; }
+  .static-row { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 48px; align-items: center; }
+  .static-row h3 { font-size: 1.5rem; font-weight: 720; }
+  .static-row h3 + p { margin-top: 8px; color: var(--soft); }
+  @media (max-width: 980px) { .static-row { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
 </style>
+<script src="vendor/gsap.min.js" defer></script>
+<script src="vendor/ScrollTrigger.min.js" defer></script>
+<script type="module" src="shared/speecher-popup.js"></script>
 </head>
 <body>
-
-<header>
+<header class="nav">
   <div class="wrap">
-    <a class="logo" href="#"><img src="assets/icon.svg?v=12" alt="">Speecher</a>
-    <span class="spacer"></span>
-    <nav>
-      <a href="blog/">Blog</a>
+    <a class="brand" href="#top"><img src="assets/icon.svg" alt="" width="28" height="28">Speecher</a>
+    <nav aria-label="Main">
+      <a href="#how">How it works</a>
+      <a href="#price">Price</a>
       <a href="https://github.com/firemonster612/speecher">GitHub</a>
-      <a class="btn primary" href="#download">Download</a>
+      <a class="pill" href="#download">Download</a>
     </nav>
   </div>
 </header>
 
-<div class="hero">
-  <div class="wrap">
-    <p class="eyebrow mono">Native dictation for Windows, macOS, and Linux</p>
-    <h1>Speech-to-text that reuses the subscriptions you already have.</h1>
-    <p class="lede">Press a shortcut, say what you mean, and clean text lands in the app
-      you're using. Speecher runs on your existing <b>Claude Code</b> or <b>ChatGPT</b> login.
-      No API key, no meter, nothing new to pay for.</p>
-    <div class="demo" id="demo" role="button" tabindex="0" aria-label="Play or pause the dictation demo">
-      <div class="dcap" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-      <div class="dpill"><span class="txt" id="dtext"></span></div>
-      <div class="dstat"><span class="dot"></span><span id="dstate">listening</span></div>
-    </div>
-    <p class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">
-      Demo: Speecher's overlay transcribes rough speech, strikes out filler and spoken
-      corrections, and delivers a clean sentence to the focused app.</p>
-
-    <div class="cta">
-      <a class="btn primary" href="#download">Download</a>
-      <a class="btn" href="https://github.com/firemonster612/speecher">View source</a>
-    </div>
-  </div>
-</div>
-
-<div class="zero">
-  <div class="wrap">
-    <div class="zeronum">$0</div>
-    <div class="zerotext">
-      No new subscription. No API meter. Speecher signs in the way Claude Code and the
-      ChatGPT app already do, so transcription and cleanup run on the plan you're
-      already paying for.
-      <div class="sub">You need one of those sign-ins on the machine. If you're reading this, you probably have one.</div>
-    </div>
-  </div>
-</div>
-
-<div class="wrap">
-
-  <section class="feature">
-    <div class="copy">
-      <p class="num">01 · Capture</p>
-      <h2>One shortcut, any app</h2>
-      <p>Press your shortcut and the overlay appears over whatever you're doing: your
-        editor, a browser field, a chat box. Toggle it, or hold the key and talk,
-        push-to-talk style.</p>
-      <p>On Windows and macOS Speecher registers its own global hotkey. On Linux the compositor owns
-        shortcuts, so you bind one key to <code>speecher toggle</code> and you're done.</p>
-    </div>
-    <div class="viz vcapture" aria-hidden="true">
-      <div class="vwin w1"><span class="vname">release notes — browser</span></div>
-      <div class="vwin w2"><span class="vname">#standup — chat</span>
-        <div class="vline" style="width:70%"></div>
-        <div class="vline" style="width:44%"></div>
+<main id="top">
+  <section class="hero wrap" aria-labelledby="hero-h">
+    <h1 id="hero-h">Dictation that types what you <span class="fix"><del>said</del> <ins>meant.</ins></span></h1>
+    <div class="hero-row">
+      <div class="hero-copy">
+        <p class="lede">Press a shortcut and talk. Speecher cleans it up and types it into the app you're in. Native on Windows, macOS and Linux.</p>
+        <div class="cta">
+          <a class="btn" id="cta" href="#download">Download</a>
+          <a class="quiet" href="https://github.com/firemonster612/speecher">Source on GitHub</a>
+        </div>
+        <p class="meta">v0.2.0 · MIT · free on your existing sign-in</p>
       </div>
-      <div class="vwin w3"><span class="vname">notes.md — editor</span>
-        <div class="vline" style="width:84%"></div>
-        <div class="vline" style="width:62%"></div>
-        <div class="vline" style="width:38%"></div>
-      </div>
-      <div class="vover"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-      <div class="vkey">your shortcut</div>
-    </div>
-  </section>
-
-  <section class="feature flip">
-    <div class="copy">
-      <p class="num">02 · Context</p>
-      <h2>It knows where you're typing</h2>
-      <p>When a dictation starts, Speecher reads the focused app and control through
-        UI Automation on Windows, AT-SPI on Linux, and the Accessibility API on macOS: which app, which field,
-        the caret, a little of the surrounding text.</p>
-      <p>From the target it infers a writing profile, so a Slack message, a work email,
-        and a commit message don't come out sounding the same. <b>Cleanup lands in the
-        register the destination calls for.</b></p>
-    </div>
-    <div class="viz vreadouts" aria-hidden="true">
-      <div class="rcard">
-        <div class="rrow"><span class="rk">app</span><span class="rv">Slack</span></div>
-        <div class="rrow"><span class="rk">field</span><span class="rv">message · #standup</span></div>
-        <div class="rrow"><span class="rk">near caret</span><span class="rv">"…moved to Thursday?"</span></div>
-        <div class="rrow rout"><span class="rk">profile</span><span class="rv">casual, first person</span></div>
-      </div>
-      <div class="rcard">
-        <div class="rrow"><span class="rk">app</span><span class="rv">Terminal</span></div>
-        <div class="rrow"><span class="rk">field</span><span class="rv">git commit message</span></div>
-        <div class="rrow rout"><span class="rk">profile</span><span class="rv">imperative, no filler</span></div>
+      <div class="machine" id="machine" role="img" aria-label="Spoken words flow into the Speecher popup. Filler words fall away, and one clean sentence comes out with the wrong word struck through.">
+        <svg class="rails" aria-hidden="true"></svg>
+        <span class="tag-in" aria-hidden="true">You say</span><span class="tag-out" aria-hidden="true">It types</span>
+        <div class="words" aria-hidden="true"></div>
+        <div class="mock" aria-hidden="true">
+          <span class="mock-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+          <span class="mock-ref"><em>Refining</em></span>
+          <span class="mock-sent"><b><svg viewBox="0 0 12 12"><path d="M2.5 6.2l2.3 2.3 4.7-5"/></svg></b>Sent</span>
+        </div>
+        <div class="field" aria-hidden="true">
+          <div class="field-head"><i></i><span id="field-label">#team</span></div>
+          <div class="field-body"><p class="out"></p></div>
+        </div>
       </div>
     </div>
   </section>
 
-  <section class="feature">
-    <div class="copy">
-      <p class="num">03 · Speak edits</p>
-      <h2>Edit out loud</h2>
-      <p>Corrections you speak are applied before the text lands, then removed. The
-        final text carries only the fix.</p>
-      <p>Technical dictation stays literal: spoken symbols become real characters, and
-        commands, paths, and identifiers come out in backticks.</p>
-    </div>
-    <div class="pairs">
-      <div class="pair">
-        <div class="said">"deploy it to production… I meant staging, not production"</div>
-        <div class="arrow">becomes</div>
-        <div class="out">Deploy it to staging.</div>
+  <section class="show" id="how" aria-labelledby="how-h">
+    <div class="show-stage wrap">
+      <div class="show-left">
+        <h2 id="how-h">One shortcut, then talk.</h2>
+        <ol class="steps">
+          <li><span class="bar"></span><h3><button type="button">Speak naturally</button></h3><p>Talk the way you talk. The ums and restarts stay out of the text.</p></li>
+          <li><span class="bar"></span><h3><button type="button">Edit out loud</button></h3><p>Say "I meant staging, not production" and it types the fix.</p></li>
+          <li><span class="bar"></span><h3><button type="button">Knows where you're typing</button></h3><p>It reads the focused app and field, so a chat, a shell, a Claude Code prompt and an email each get the right kind of text.</p></li>
+          <li><span class="bar"></span><h3><button type="button">Learns your words</button></h3><p>Correct a word right after it lands and Speecher keeps the fix, locally.</p></li>
+        </ol>
       </div>
-      <div class="pair">
-        <div class="said">"git push origin slash fix dash overlay"</div>
-        <div class="arrow">becomes</div>
-        <div class="out"><code>git push origin/fix-overlay</code></div>
+      <div class="card-fit" id="card-fit"></div>
+      <div class="static-rows"></div>
+    </div>
+  </section>
+
+  <template id="card-tpl">
+    <div class="card" aria-hidden="true">
+      <div class="wall base"></div>
+      <div class="menubar"><i></i><i></i><i></i><img src="assets/icon.svg" alt=""><span class="clock">10:24</span></div>
+      <div class="win notes">
+        <div class="win-bar"><span class="app-ico" style="background:#f0a020">N</span>Notes</div>
+        <div class="win-body"><p class="line l0"></p><p class="line l1"></p><p class="line l3"></p></div>
+      </div>
+      <div class="ctxboard">
+        <p class="said-row"><span>You say</span>"fixed the bug where the overlay stays open after you paste"</p>
+        <ol>
+          <li class="dest"><span class="app-ico" style="background:#4a154b">#</span><div><b>Slack</b><i>chat message</i></div><p class="o"></p></li>
+          <li class="dest term"><span class="app-ico" style="background:#1f9d6b">$</span><div><b>Terminal</b><i>shell command</i></div><p class="o"></p></li>
+          <li class="dest cc"><span class="app-ico cc-ico"><img src="assets/claude.svg" alt=""></span><div><b>Claude Code</b><i>prompt</i></div><p class="o"></p></li>
+          <li class="dest"><span class="app-ico" style="background:#1f6fd6">@</span><div><b>Mail</b><i>work email</i></div><p class="o"></p></li>
+        </ol>
+      </div>
+      <div class="vocab"><h4>Vocabulary</h4><ul><li class="slot"><span>at spy</span><span>AT-SPI</span></li><li><span>kube cuddle</span><span>kubectl</span></li><li><span>sign off</span><span>Cheers, Sam</span></li></ul></div>
+      <div class="flychip"><span>at spy</span><span>AT-SPI</span></div>
+      <div class="cpop"><speecher-popup></speecher-popup></div>
+    </div>
+  </template>
+
+  <section class="panel platforms" aria-labelledby="os-h">
+    <div class="wrap head">
+      <div>
+        <h2 id="os-h">Looks like it<br>belongs there.</h2>
+      </div>
+      <p>Qt Widgets on KDE Plasma, SwiftUI on macOS, WinUI 3 on Windows. Not a web view.</p>
+    </div>
+    <div class="fan" id="fan">
+      <div class="fan-inner">
+        <figure class="os win11" data-i="0">
+          <div class="scr" aria-hidden="true">
+            <div class="appwin"><i></i><i></i><i></i><i></i></div>
+            <div class="pp"><speecher-popup></speecher-popup></div>
+            <div class="taskbar"><i class="start"></i><i></i><i></i><i></i><i></i><span class="clock">10:24</span></div>
+          </div>
+          <figcaption><b>Windows 11</b> · WinUI 3</figcaption>
+        </figure>
+        <figure class="os plasma light-pop" data-i="2">
+          <div class="scr" aria-hidden="true">
+            <div class="appwin"><i></i><i></i><i></i><i></i></div>
+            <div class="pp"><speecher-popup></speecher-popup></div>
+            <div class="panel-bar"><i class="k"></i><i></i><i></i><i></i><span class="clock">10:24</span></div>
+          </div>
+          <figcaption><b>KDE Plasma</b> · Qt Widgets</figcaption>
+        </figure>
+        <figure class="os mac light-pop" data-i="1">
+          <div class="scr" aria-hidden="true">
+            <div class="menu"><i></i><i></i><i></i><i></i><img src="assets/icon.svg" alt=""></div>
+            <div class="appwin"><i></i><i></i><i></i><i></i></div>
+            <div class="pp"><speecher-popup></speecher-popup></div>
+            <div class="dock"><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+          <figcaption><b>macOS</b> · SwiftUI</figcaption>
+        </figure>
       </div>
     </div>
   </section>
 
-  <section class="feature flip">
-    <div class="copy">
-      <p class="num">04 · Learn</p>
-      <h2>It learns how you talk</h2>
-      <p>Vocabulary entries keep names and jargon spelled your way. Snippets expand a
-        short spoken trigger into text you wrote once.</p>
-      <p>And when you correct a word right after Speecher delivers it, that fix is
-        learned locally. <b>Fixing "at spy" to "AT-SPI" only ever happens once.</b></p>
-    </div>
-    <div class="viz vledger" aria-hidden="true">
-      <div class="lrow"><span class="lheard">"at spy"</span><span class="larr">→</span><span class="lout">AT-SPI</span><span class="ltag">learned from one fix</span></div>
-      <div class="lrow"><span class="lheard">"kube cuddle"</span><span class="larr">→</span><span class="lout"><code>kubectl</code></span><span class="ltag">vocabulary</span></div>
-      <div class="lrow"><span class="lheard">"sign off"</span><span class="larr">→</span><span class="lout">Cheers, Sam</span><span class="ltag">snippet</span></div>
+  <section class="panel price" id="price" aria-labelledby="price-h">
+    <div class="wrap">
+      <div class="price-grid">
+        <div>
+          <h2 id="price-h">No new subscription.</h2>
+          <p class="body">Speecher signs in with your Claude Code or ChatGPT account, and transcription and cleanup run on that plan. No API key, no meter.</p>
+          <p class="body local-note">No subscription at all? <a href="#local">Run it on local models</a>, also $0.</p>
+        </div>
+        <div class="eq-fit" id="eq-fit">
+          <div class="eq" id="eq" role="img" aria-label="Claude or ChatGPT, the plan you already pay for, plus Speecher, equals $0 extra.">
+            <svg aria-hidden="true"><path pathLength="1"/><path pathLength="1"/></svg>
+            <div class="tile claude"><img src="assets/claude.svg" alt=""></div>
+            <div class="tile chatgpt"><img src="assets/chatgpt.svg" alt=""></div>
+            <p class="cap small">The plan you already pay for</p>
+            <div class="tile me"><img src="assets/icon.svg" alt=""></div>
+            <p class="cap name">Speecher</p>
+            <span class="equals" aria-hidden="true">=</span>
+            <p class="zero-out" aria-hidden="true">$0<small>extra</small></p>
+          </div>
+        </div>
+      </div>
+      <div class="trust">
+        <h3>Before you install</h3>
+        <ul>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/></svg>API keys live in the system keyring.</li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 14a3 3 0 1 0 1-4.2M9 8.5v2h2"/></svg>Your clipboard comes back after Speecher pastes.</li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3"/><path d="M3 3l18 18"/></svg>Screenshot context is off by default and never stored.</li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10M8 10l4 4 4-4M5 19h14"/></svg>Updates ask before they install.</li>
+        </ul>
+      </div>
     </div>
   </section>
 
-</div>
-
-<section class="download" id="download">
-  <div class="wrap">
-    <div class="dlhead">
-      <h2>Get Speecher</h2>
-      <span class="ver">v0.1.0</span>
+  <section class="panel local" id="local" aria-labelledby="local-h">
+    <div class="wrap local-grid">
+      <div>
+        <p class="soon-chip">Coming in the next release</p>
+        <h2 id="local-h">Or keep it all on your machine.</h2>
+        <p class="body">Speecher downloads a speech model and runs it on your computer. No account, and no network once the model is on disk. It reads your GPU and memory and suggests a model that fits.</p>
+        <ul class="local-facts">
+          <li><b>Speech runs inside Speecher.</b> On the GPU through Metal on macOS and Vulkan on Linux and Windows.</li>
+          <li><b>Cleanup uses the runner you have.</b> Ollama, LM Studio or llama-server, detected on their usual ports.</li>
+          <li><b>Or point it at your own server.</b> Any OpenAI-compatible speech endpoint, and OpenAI- or Anthropic-compatible cleanup.</li>
+        </ul>
+      </div>
+      <div class="combo">
+        <div class="reels" role="img" aria-label="Local setups Speecher can run. Your machine: a MacBook Air, a Mac Studio, a gaming PC or a Surface Laptop. Speech model: Moonshine Small, Parakeet 0.6B, Cohere Transcribe or Voxtral Small 24B, matched to what the machine can hold. Cleanup: Ollama, LM Studio, llama-server or your own server. Every combination works offline for $0.">
+          <div class="reel"><span class="reel-k" aria-hidden="true">Your machine</span><div class="reel-win" aria-hidden="true"><ul></ul></div></div>
+          <div class="reel"><span class="reel-k" aria-hidden="true">Speech model</span><div class="reel-win" aria-hidden="true"><ul></ul></div></div>
+          <div class="reel"><span class="reel-k" aria-hidden="true">Cleanup</span><div class="reel-win" aria-hidden="true"><ul></ul></div></div>
+        </div>
+        <p class="reel-out" aria-hidden="true"><span class="reel-eq">=</span> works offline <span class="reel-dot">·</span> <b>$0</b></p>
+      </div>
     </div>
-    <div class="dlgrid">
-      <div class="dlcard">
+  </section>
+
+  <section class="panel android" aria-labelledby="android-h">
+    <div class="wrap android-grid">
+      <div>
+        <h2 id="android-h">Android is <span class="fix"><del>here</del> <ins>coming.</ins></span></h2>
+        <p class="body">A dictation-only keyboard and a small floating chip. Tap the chip, speak, then tap Insert or Insert refined. It signs in with Claude or ChatGPT like the desktop app. Android 12 or newer.</p>
+        <p class="after">No published build yet. To try it now, build it and install the APK:</p>
+        <pre><code>cd android &amp;&amp; ./gradlew :app:assembleDebug</code></pre>
+        <p class="after"><a href="https://github.com/firemonster612/speecher/tree/master/android">Android source on GitHub</a></p>
+      </div>
+      <div class="phone-stage" id="phone-stage">
+        <div class="phone"><img src="assets/panel-compact.png" width="1080" height="2400" alt="The Android panel open under a New chat screen, with a Speak now prompt and Cancel, Insert and Insert refined buttons."></div>
+        <div class="zoom" aria-hidden="true"><div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="downloads wrap" id="download" aria-labelledby="dl-h">
+    <h2 id="dl-h">Version 0.2.0.</h2>
+    <ul class="dl">
+      <li>
         <h3>Linux</h3>
-        <div class="sub">AppImage · x86_64 · Wayland</div>
-        <a class="btn primary" href="https://github.com/firemonster612/speecher/releases">Download AppImage</a>
-      </div>
-      <div class="dlcard">
-        <h3>macOS <span class="dltag">beta</span></h3>
-        <div class="sub">DMG · Apple Silicon · macOS 26+</div>
-        <a class="btn primary" href="https://github.com/firemonster612/speecher/releases">Download DMG</a>
-      </div>
-      <div class="dlcard">
-        <h3>Windows <span class="dltag">alpha</span></h3>
-        <div class="sub">Installer · x64 · Windows 11</div>
-        <a class="btn primary" href="https://github.com/firemonster612/speecher/releases">Download Installer</a>
-      </div>
-    </div>
-    <p class="dlnote">Transcription needs a Claude Code or ChatGPT sign-in on the same machine.
-      Prefer to build it yourself? <a href="https://github.com/firemonster612/speecher#quick-start">make install</a> works too.</p>
-    <ul class="facts">
-      <li>Qt Widgets on Plasma, SwiftUI in the menu bar, WinUI 3 on Windows. Not a web view.</li>
-      <li>API keys live in your system keyring, not a config file.</li>
-      <li>Your clipboard comes back after Speecher pastes.</li>
-      <li>Screenshot context is off by default and never stored.</li>
-      <li>Updates ask before they install.</li>
+        <p>AppImage, x86_64, Wayland. Needs glibc 2.43+: Debian 14, Fedora 44, Ubuntu 26.04 or later. Bind a key to <code>speecher toggle</code>.</p>
+        <a class="btn" data-os="linux" href="https://github.com/firemonster612/speecher/releases/latest/download/Speecher-x86_64.AppImage">Download AppImage</a>
+      </li>
+      <li>
+        <h3>macOS<span class="tag">beta</span></h3>
+        <p>DMG, Apple Silicon, macOS 26 or later. Global shortcut from the menu bar.</p>
+        <a class="btn" data-os="mac" href="https://github.com/firemonster612/speecher/releases/latest/download/speecher.dmg">Download DMG</a>
+      </li>
+      <li>
+        <h3>Windows<span class="tag">alpha</span></h3>
+        <p>Installer, x64, Windows 11. Global shortcut, toggle or push-to-talk.</p>
+        <a class="btn" data-os="windows" href="https://github.com/firemonster612/speecher/releases/latest/download/Speecher-Setup-x64.exe">Download installer</a>
+      </li>
+      <li>
+        <h3>Source</h3>
+        <p><code>make install</code>, from the README quick start.</p>
+        <a class="btn ghost" href="https://github.com/firemonster612/speecher#readme">Read the README</a>
+      </li>
     </ul>
-  </div>
-</section>
+  </section>
+</main>
 
 <footer>
   <div class="wrap">
-    <span>Speecher</span>
-    <span>MIT license</span>
-    <a href="https://github.com/firemonster612/speecher">github.com/firemonster612/speecher</a>
+    <span>Speecher. MIT licensed, built by one developer.</span>
+    <nav aria-label="Footer">
+      <a href="https://github.com/firemonster612/speecher">GitHub</a>
+      <a href="https://github.com/firemonster612/speecher/releases">Releases</a>
+      <a href="https://firemonster612.github.io/speecher/blog/">Blog</a>
+      <a href="https://github.com/firemonster612/speecher/blob/master/LICENSE">License</a>
+    </nav>
   </div>
 </footer>
 
-<script>
-(function(){
-  var mqStill = matchMedia('(prefers-reduced-motion: reduce)');
-  function onMq(mq, fn){
-    if (mq.addEventListener) mq.addEventListener('change', fn);
-    else if (mq.addListener) mq.addListener(fn);
-  }
+<script type="module">
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = (t) => t * t * (3 - 2 * t);
+const outCubic = (t) => 1 - (1 - t) ** 3;
+const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  /* hero demo */
-  var demo = document.getElementById('demo');
-  var txt = document.getElementById('dtext');
-  var state = document.getElementById('dstate');
-  var scripts = [
-    { raw: ['um','so','can','we','push','the','meeting','to','friday','i','still','havent','finished','the','deck'],
-      cut: [0,1],
-      clean: "Can we push the meeting to Friday? I still haven't finished the deck.",
-      app: 'Slack' },
-    { raw: ['tell','them','the','release','lands','tuesday','scratch','that','thursday'],
-      cut: [5,6,7],
-      clean: 'Tell them the release lands Thursday.',
-      app: 'Mail' }
+// Point the hero button at this visitor's platform.
+const platform = (navigator.userAgentData?.platform || navigator.platform || '').toLowerCase();
+const os = platform.includes('mac') ? 'mac' : platform.includes('win') ? 'windows' : platform.includes('linux') ? 'linux' : null;
+if (os) {
+  $('#cta').href = $(`[data-os="${os}"]`).href;
+  $('#cta').textContent = `Download for ${{ mac: 'macOS', windows: 'Windows', linux: 'Linux' }[os]}`;
+}
+
+await customElements.whenDefined('speecher-popup');
+await document.fonts.ready;
+
+// Calls a popup method only when the wanted state changes.
+const driver = (pop) => {
+  let key = null;
+  return (next, fn) => { if (next !== key) { key = next; fn(pop); } };
+};
+
+gsap.registerPlugin(ScrollTrigger);
+// Pinning, snapping and scrubbing only on wide screens with motion allowed.
+const DESK = '(min-width: 992px) and (prefers-reduced-motion: no-preference)';
+const NOT_DESK = '(max-width: 991.98px), (prefers-reduced-motion: reduce)';
+const mm = gsap.matchMedia();
+
+/* ---------- Hero machine ---------- */
+// Every word has a reserved slot (flex layout) and only moves within it, so nothing overlaps.
+{
+  const root = $('#machine');
+  const svg = $('.rails', root);
+  const layer = $('.words', root);
+  const mock = $('.mock', root);
+  const [bars, refining, sent] = mock.children;
+  const barEls = $$('i', bars);
+  const shimmer = $('em', refining);
+  const field = $('.field', root);
+  const out = $('.out', root);
+  const label = $('#field-label');
+  const SCRIPTS = [
+    { label: '#team', said: '~um ~so can we ~like push the meeting to thursday ~uh ~actually friday', out: 'Can we push the meeting to -Thursday Friday?' },
+    { label: '#deploys', said: 'deploy it to production ~um ~I ~meant staging, ~not ~production', out: 'Deploy it to -production staging.' },
   ];
-  var timers = [];
-  var running = false;
+  const SP = 0.2, RISE = 0.35, FALL = 0.5, OUT_GAP = 0.07, LAND = 0.35, FADE = 0.15;
+  const timing = (n, m) => {
+    const heard = (n - 1) * SP + RISE;
+    const refine = heard + 0.2;
+    const outAt = refine + 0.9;
+    const strike = outAt + (m - 1) * OUT_GAP + LAND;
+    const sentAt = strike + 0.35;
+    const clear = sentAt + 1.8;
+    return { heard, refine, outAt, strike, sentAt, clear, end: clear + 0.45 };
+  };
+  let words = [], toks = [], shown = null, cycle = 0, t = 0, T;
 
-  function later(fn, ms){ timers.push(setTimeout(fn, ms)); }
-  function every(fn, ms){ var id = setInterval(fn, ms); timers.push(id); return id; }
-  function stopTimers(){ timers.forEach(function(id){ clearTimeout(id); clearInterval(id); }); timers = []; }
-  function setState(name, listening){
-    state.textContent = name;
-    demo.classList.toggle('listening', !!listening);
-  }
-  function showStatic(label){
-    stopTimers();
-    running = false;
-    txt.classList.remove('fade');
-    txt.textContent = scripts[0].clean;
-    setState(label || 'delivered to ' + scripts[0].app, false);
-  }
-
-  var si = 0;
-  function play(){
-    stopTimers(); /* nothing is pending here; drops fired handles so the loop doesn't accumulate them */
-    running = true;
-    var s = scripts[si];
-    txt.classList.remove('fade');
-    txt.innerHTML = '<span class="cursor"></span>';
-    setState('listening', true);
-    var cursor = txt.querySelector('.cursor');
-    var wi = 0;
-    var typer = every(function(){
-      if (wi >= s.raw.length){
-        clearInterval(typer);
-        later(refine, 700);
-        return;
-      }
-      var w = document.createElement('span');
-      w.textContent = (wi ? ' ' : '') + s.raw[wi];
-      if (s.cut.indexOf(wi) !== -1) w.className = 'cut';
-      txt.insertBefore(w, cursor);
-      wi++;
-    }, 170);
-
-    function refine(){
-      setState('refining', false);
-      cursor.remove();
-      txt.querySelectorAll('.cut').forEach(function(w){ w.classList.add('strike'); });
-      later(function(){
-        txt.classList.add('fade');
-        later(function(){
-          txt.textContent = s.clean;
-          txt.classList.remove('fade');
-          setState('delivered to ' + s.app, false);
-          later(next, 3000);
-        }, 280);
-      }, 900);
-    }
-    function next(){
-      txt.classList.add('fade');
-      later(function(){
-        si = (si + 1) % scripts.length;
-        play();
-      }, 320);
-    }
-  }
-
-  function toggle(){
-    if (running){ stopTimers(); running = false; setState('paused', false); }
-    else { play(); }
-  }
-  demo.addEventListener('click', toggle);
-  demo.addEventListener('keydown', function(e){
-    if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); toggle(); }
+  const pills = (script) => script.said.split(' ').map((w, i) => {
+    const el = document.createElement('span');
+    el.className = 'w';
+    el.textContent = w.replace(/^~/, '');
+    return { el, drop: w.startsWith('~'), dir: i % 2 ? 1 : -1 };
   });
-  onMq(mqStill, function(){ if (mqStill.matches) showStatic(); });
 
-  if (mqStill.matches) showStatic();
-  else play();
-})();
+  function spawn(script) {
+    words = pills(script);
+    let k = 0;
+    for (const w of words) if (w.drop) w.k = k++;
+    layer.replaceChildren(...words.map((w) => w.el));
+    T = timing(words.length, script.out.split(' ').length);
+  }
+
+  function geometry() {
+    root.style.height = '';
+    const W = root.clientWidth, wide = W >= 700;
+    mock.classList.toggle('small', !wide);
+    layer.style.fontSize = `${wide ? 19 : 15}px`;
+    $('.field-body', root).style.fontSize = `${wide ? 26 : 21}px`;
+    const fw = wide ? Math.min(330, W * 0.36) : W - 32;
+    const left = wide ? 28 : 20, right = wide ? W - fw - 28 - 48 : W - 20;
+    layer.style.cssText = `left:${left}px;top:0;width:${right - left}px;justify-content:center;font-size:${layer.style.fontSize}`;
+    // Reserve the height of the longer script so the layout never jumps between loops.
+    const current = [...layer.children];
+    let wh = 0;
+    for (const s of SCRIPTS) { layer.replaceChildren(...pills(s).map((w) => w.el)); wh = Math.max(wh, layer.offsetHeight); }
+    layer.replaceChildren(...current);
+    layer.style.height = `${wh}px`;
+    const pw = mock.offsetWidth, ph = mock.offsetHeight, gap = wide ? 40 : 32;
+    field.style.cssText = wide ? `left:${W - fw - 28}px;width:${fw}px` : `left:16px;right:16px`;
+    const fh = field.offsetHeight;
+    const block = wh + gap + ph + (wide ? 0 : gap + fh);
+    const H = Math.max(root.clientHeight, block + 120);
+    root.style.height = `${H}px`;
+    const top = Math.max(60, (H - block) / 2 + 8);
+    const px = (left + right) / 2, py = top + wh + gap + ph / 2;
+    layer.style.top = `${top}px`;
+    mock.style.transform = `translate(${px - pw / 2}px, ${py - ph / 2}px)`;
+    const ftop = wide ? clamp(py - fh / 2, 56, H - fh - 24) : py + ph / 2 + gap;
+    field.style.top = `${ftop}px`;
+    const fl = W - fw - 28;
+    svg.innerHTML = `<path class="in-rail" d="M${px},${top + wh + 8} L${px},${py - ph / 2}"/>` + (wide
+      ? `<path d="M${px + pw / 2},${py} C${px + pw / 2 + 60},${py} ${fl - 60},${ftop + fh / 2} ${fl},${ftop + fh / 2}"/>`
+      : `<path d="M${px},${py + ph / 2} L${px},${ftop}"/>`);
+  }
+
+  function buildOut(script) {
+    toks = script.out.split(' ').map((w, j, a) => {
+      const span = document.createElement('span');
+      span.textContent = w.replace(/^-/, '') + (j < a.length - 1 ? ' ' : '');
+      if (w.startsWith('-')) span.className = 'x';
+      return span;
+    });
+    out.replaceChildren(...toks);
+    label.textContent = script.label;
+    shown = script;
+  }
+
+  // Fades in over [a, a + FADE] and out over [b - FADE, b].
+  const vis = (a, b) => clamp((t - a) / FADE) * clamp((b - t) / FADE);
+
+  function frame() {
+    const script = SCRIPTS[cycle % SCRIPTS.length];
+    const gone = 1 - clamp((t - T.clear) / 0.35);
+    for (const [i, w] of words.entries()) {
+      const a = clamp((t - i * SP) / RISE), e = outCubic(a);
+      let op = a, tf = `translateY(${(1 - e) * 10}px) scale(${0.85 + 0.15 * e})`;
+      const f = w.drop ? clamp((t - T.refine - w.k * 0.06) / FALL) : 0;
+      w.el.classList.toggle('fall', f > 0);
+      if (f > 0) {
+        const g = ease(f);
+        op = 1 - f;
+        tf = `translateY(${g * 8}px) rotate(${w.dir * 6 * g}deg) scale(${1 - 0.3 * g})`;
+      }
+      w.el.style.opacity = op * gone;
+      w.el.style.transform = tf;
+    }
+
+    // Overlay: listening, then a short Refining, then Sent. One state at a time.
+    const states = [[bars, vis(0, T.refine)], [refining, vis(T.refine + FADE, T.sentAt)], [sent, vis(T.sentAt + FADE, T.end - 0.05)]];
+    for (const [el, o] of states) { el.style.opacity = o; el.style.transform = `scale(${0.9 + 0.1 * o})`; }
+    const level = 1 - clamp((t - T.heard) / 0.3);
+    barEls.forEach((b, i) => {
+      const shape = 1 - Math.abs(i - 3) * 0.16;
+      const v = 0.5 + 0.5 * Math.sin(t * 11 + i * 1.7) * Math.sin(t * 4.3 + i * 0.9);
+      b.style.height = `${5 + 22 * shape * level * v}px`;
+    });
+    shimmer.style.setProperty('--sh', `${((t - T.refine) * 110) % 300}%`);
+
+    // The old line leaves before the new one lands in the same place.
+    if (t >= T.outAt && shown !== script) buildOut(script);
+    if (shown === script) {
+      out.style.opacity = 1;
+      toks.forEach((span, j) => {
+        const q = clamp((t - T.outAt - j * OUT_GAP) / LAND);
+        span.style.opacity = q;
+        span.style.transform = `translateY(${(1 - outCubic(q)) * 0.3}em)`;
+        if (span.className === 'x') span.style.setProperty('--k', ease(clamp((t - T.strike) / 0.3)));
+      });
+    } else out.style.opacity = 1 - clamp((t - T.refine) / 0.3);
+  }
+
+  spawn(SCRIPTS[0]);
+  geometry();
+  buildOut(SCRIPTS[1]);
+  addEventListener('resize', () => { geometry(); frame(); });
+
+  if (still) {
+    // A finished state: filler gone, the clean line in the field, Sent.
+    cycle = 1;
+    spawn(SCRIPTS[1]);
+    t = T.clear - 0.01;
+    frame();
+  } else {
+    t = 0.3;
+    let last = 0, raf = 0;
+    const loop = (now) => {
+      t += Math.min((now - last) / 1000, 0.05);
+      last = now;
+      if (t >= T.end) {
+        t -= T.end;
+        cycle++;
+        spawn(SCRIPTS[cycle % SCRIPTS.length]);
+      }
+      frame();
+      raf = requestAnimationFrame(loop);
+    };
+    frame();
+    new IntersectionObserver(([e]) => {
+      cancelAnimationFrame(raf);
+      if (e.isIntersecting) { last = performance.now(); raf = requestAnimationFrame(loop); }
+    }).observe(root);
+  }
+}
+
+/* ---------- Pinned showcase ---------- */
+const STEP_LINES = {
+  l0: '~um ~so I think we ~uh should move the launch to Monday ^.',
+  l1: 'Deploy it to -production ~I ~meant staging ^. ~not ~production',
+  l3: 'It reads the field through -at_spy +AT-SPI.',
+};
+const SAID = [
+  'um so I think we uh should move the launch to monday',
+  'deploy it to production… I meant staging, not production',
+  'fixed the bug where the overlay stays open after you paste',
+  'it reads the field through at spy',
+];
+const DEST = [
+  { text: 'fixed the overlay, it closes after paste now' },
+  { text: 'git commit -m "Close overlay on paste"' },
+  { text: 'Fix the overlay not closing on paste' },
+  { text: "Hi all, the overlay now closes after pasting." },
+];
+
+// A line whose words can drop out, strike, or appear, moving only by transform.
+function makeLine(el, spec) {
+  el.textContent = '';
+  const toks = spec.split(' ').map((raw) => {
+    const kind = { '~': 'drop', '-': 'strike', '+': 'add', '^': 'glue' }[raw[0]] ?? 'keep';
+    const span = document.createElement('span');
+    span.className = `tk ${kind}`;
+    span.textContent = (kind === 'keep' ? raw : raw.slice(1)).replace(/_/g, ' ') + (kind === 'glue' ? '' : ' ');
+    el.append(span);
+    return { kind, span };
+  });
+  const positions = (hidden) => {
+    for (const t of toks) {
+      t.span.style.cssText = '';
+      t.span.style.display = hidden.includes(t.kind) ? 'none' : '';
+    }
+    return toks.map((t) => [t.span.offsetLeft, t.span.offsetTop]);
+  };
+  const A = positions(['add', 'glue']);
+  const B = positions(['drop']);
+  toks.forEach((t, i) => {
+    t.dx = A[i][0] - B[i][0];
+    t.dy = A[i][1] - B[i][1];
+    if (t.kind === 'drop') Object.assign(t.span.style, { display: '', position: 'absolute', left: `${A[i][0]}px`, top: `${A[i][1]}px` });
+  });
+  return toks;
+}
+
+function renderLine(el, toks, shown, e, k = 0) {
+  el.style.setProperty('--e', e > 0 ? 1 : 0.0);
+  let seen = 0;
+  for (const t of toks) {
+    const st = t.span.style;
+    const visible = t.kind === 'add' || t.kind === 'glue' ? e : seen++ < shown ? 1 : 0;
+    if (t.kind === 'drop') {
+      const f = clamp(e * 2.5);
+      st.opacity = visible * (1 - f);
+      st.transform = `translateY(${f * 34}px) rotate(${f * 12}deg)`;
+    } else if (t.kind === 'add' || t.kind === 'glue') {
+      st.opacity = e;
+      st.transform = `translateY(${(1 - e) * 8}px)`;
+    } else {
+      st.opacity = visible;
+      st.transform = `translate(${t.dx * (1 - ease(e))}px, ${t.dy * (1 - ease(e))}px)`;
+    }
+    if (t.kind === 'strike') st.setProperty('--k', k);
+  }
+}
+
+class StepCard {
+  constructor(host) {
+    host.append($('#card-tpl').content.cloneNode(true));
+    this.el = $('.card', host);
+    this.pop = $('speecher-popup', this.el);
+    this.setPop = driver(this.pop);
+    this.notes = $('.win.notes', this.el);
+    this.lines = Object.fromEntries(Object.entries(STEP_LINES).map(([k, spec]) => {
+      const el = $(`.${k}`, this.el);
+      return [k, { el, toks: makeLine(el, spec) }];
+    }));
+    this.board = $('.ctxboard', this.el);
+    this.dest = DEST.map((d, i) => {
+      const o = $$('.dest .o', this.el)[i];
+      o.textContent = '';
+      const spans = d.text.split(' ').map((w) => { const sp = document.createElement('span'); sp.textContent = w + ' '; o.append(sp); return sp; });
+      return { ...d, spans, row: $$('.dest', this.el)[i] };
+    });
+    this.vocab = $('.vocab', this.el);
+    this.chip = $('.flychip', this.el);
+    this.slot = $('.vocab li.slot', this.el);
+    this.said = SAID.map((s) => s.split(' '));
+  }
+
+  // t runs 0..4, one unit per step.
+  render(t) {
+    const step = Math.min(3, Math.floor(t)), p = t - step;
+    const win = (a, b) => clamp((t - a) / 0.05) * clamp((b - t) / 0.05);
+    // Step 3 shows one spoken sentence and, below it, what lands in three apps. Each row types
+    // in turn (d is the row being typed, dq how far), and the finished rows stay side by side.
+    const ROWS = DEST.length, ROW0 = 0.16, ROW = 0.19;
+    const d = step === 2 ? Math.min(ROWS - 1, Math.floor(clamp((p - ROW0) / ROW, 0, ROWS - 0.001))) : -1;
+    const dq = step === 2 ? clamp((p - ROW0 - d * ROW) / ROW) : 0;
+
+    this.notes.style.opacity = step === 2 ? 0 : 1;
+    this.board.style.opacity = step === 2 ? 1 : 0;
+    this.lines.l0.el.style.opacity = win(-1, 1);
+    this.lines.l1.el.style.opacity = win(1, 2);
+    this.lines.l3.el.style.opacity = win(3, 5);
+    this.vocab.style.opacity = step === 3 ? clamp((p - 0.15) / 0.12) : 0;
+
+    // Destination text is empty before step 2 and complete after it.
+    if (step !== 2) for (const dd of this.dest) for (const sp of dd.spans) sp.style.opacity = step > 2 ? 1 : 0;
+
+    const said = this.said[step];
+    const speak = (a, b) => {
+      const n = Math.ceil(clamp((p - a) / (b - a)) * said.length);
+      if (p < a) this.setPop('listen', (x) => { x.listen(); x.speak(false); });
+      else this.setPop(`say${step}-${n}`, (x) => { x.preview(said.slice(0, n).join(' ')); x.speak(true); });
+      return n;
+    };
+    const status = (s) => this.setPop(s, (x) => x.status(s));
+    const receipt = () => this.setPop('rcpt', (x) => x.receipt('Input sent'));
+
+    if (step === 0) {
+      const L = this.lines.l0;
+      const n = Math.round(clamp((p - 0.06) / 0.36) * 12);
+      if (p < 0.42) speak(0.06, 0.42); else if (p < 0.5) status('Transcribing…'); else if (p < 0.72) status('Refining…'); else receipt();
+      renderLine(L.el, L.toks, n, clamp((p - 0.5) / 0.22));
+    } else if (step === 1) {
+      const L = this.lines.l1;
+      const n = Math.round(clamp((p - 0.05) / 0.3) * 10);
+      if (p < 0.35) speak(0.05, 0.35); else if (p < 0.42) status('Transcribing…'); else if (p < 0.74) status('Refining…'); else receipt();
+      renderLine(L.el, L.toks, n, clamp((p - 0.56) / 0.18), ease(clamp((p - 0.44) / 0.1)));
+    } else if (step === 2) {
+      // The popup hears the sentence once, then delivers it to each app in turn.
+      // The sentence is already in the "You say" box, so the popup just listens here and
+      // stays its compact height, clear of the rows.
+      if (p < ROW0) this.setPop('listen3', (x) => { x.listen(); x.speak(true); });
+      else if (d < ROWS - 1 || dq < 0.75) this.setPop(`ref${d}`, (x) => x.status('Refining…'));
+      else receipt();
+      this.dest.forEach((dd, i) => {
+        const shown = i < d ? 1 : i > d ? 0 : clamp((dq - 0.1) / 0.6);
+        const n = Math.round(shown * dd.spans.length);
+        dd.spans.forEach((sp, j) => { sp.style.opacity = j < n ? 1 : 0; });
+        dd.row.style.opacity = i <= d ? 1 : 0.45;
+      });
+    } else {
+      const L = this.lines.l3;
+      const n = Math.round(clamp((p - 0.22) / 0.14) * 5);
+      if (p < 0.2) speak(0.02, 0.2); else if (p < 0.24) status('Refining…'); else receipt();
+      const strike = L.toks.find((x) => x.kind === 'strike');
+      strike.span.classList.toggle('sel', p > 0.42 && p < 0.52);
+      renderLine(L.el, L.toks, p > 0.36 ? 6 : n, clamp((p - 0.58) / 0.08), ease(clamp((p - 0.5) / 0.08)));
+      const f = clamp((p - 0.66) / 0.2);
+      if (p > 0.6) {
+        const s = this.scale || 1, c = this.el.getBoundingClientRect();
+        const a = strike.span.getBoundingClientRect(), b = this.slot.getBoundingClientRect();
+        const ax = (a.left - c.left) / s, ay = (a.top - c.top) / s - 36, bx = (b.left - c.left) / s, by = (b.top - c.top) / s;
+        const e = outCubic(f);
+        this.chip.style.opacity = clamp((p - 0.6) / 0.05);
+        this.chip.style.transform = `translate(${lerp(ax, bx, e)}px, ${lerp(ay, by, e) - Math.sin(Math.PI * e) * 40}px) rotate(${lerp(-4, 3, e)}deg)`;
+      } else this.chip.style.opacity = 0;
+    }
+    if (step !== 3) this.chip.style.opacity = 0;
+  }
+}
+
+// Seconds a full step would take, and where in it playback starts: each step opens mid-sentence,
+// so the card is never empty and its key moment lands within about 1.5 s. The loop blanks the
+// card for GAP seconds.
+const STEP_SECONDS = [5.33, 5.6, 9, 6.13];
+const STEP_START = [0.2, 0.18, 0.1, 0.2];
+const GAP = 0.4;
+
+// Plays one step of a card on a timer, looping, so a step is never shown half-done by scroll.
+function stepPlayer(card, onProgress = () => {}) {
+  let step = 0, t0 = 0;
+  const tick = () => {
+    const d = STEP_SECONDS[step], s0 = STEP_START[step], len = d * (1 - s0);
+    const e = ((performance.now() - t0) / 1000) % (len + GAP);
+    card.el.classList.toggle('blank', e >= len);
+    if (e < len) { const p = s0 + e / d; card.render(step + p); onProgress((p - s0) / (1 - s0)); }
+  };
+  return {
+    play(i) { step = i; t0 = performance.now(); gsap.ticker.add(tick); tick(); },
+    stop() { gsap.ticker.remove(tick); },
+  };
+}
+
+function fitCard(card, fit, maxH) {
+  fit.style.maxWidth = '';
+  const s = Math.min(1.25, fit.clientWidth / 600, Math.max(0.3, maxH / 470));
+  card.scale = s;
+  card.el.style.transform = `scale(${s})`;
+  fit.style.height = `${470 * s}px`;
+  fit.style.maxWidth = `${600 * s}px`;
+}
+
+/* ---------- Showcase ---------- */
+{
+  const section = $('#how');
+  const items = $$('.steps li', section);
+  const bars = $$('.steps .bar', section);
+
+  // Wide screens: the showcase plays by itself. Each step plays to its end, holds its finished
+  // state for a moment, then hands over to the next; after the last it starts again. Scrolling
+  // just scrolls the page. The step titles jump straight to a step.
+  mm.add(DESK, () => {
+    const fit = $('#card-fit');
+    const card = new StepCard(fit);
+    const N = items.length;
+    const HOLD = 1.32, FADE = 0.22;
+    const length = (i) => STEP_SECONDS[i] * (1 - STEP_START[i]);
+    let step = 0, t0 = performance.now(), elapsed = 0, playing = false;
+
+    const go = (i) => {
+      step = i;
+      t0 = performance.now();
+      items.forEach((li, k) => li.classList.toggle('on', k === i));
+    };
+    const draw = () => {
+      let e = (performance.now() - t0) / 1000;
+      if (e >= length(step) + HOLD) { go((step + 1) % N); e = 0; }
+      const len = length(step), f = Math.min(1, e / len);
+      card.render(step + STEP_START[step] + (1 - STEP_START[step]) * f * 0.999);
+      fit.style.opacity = Math.min(1, e / FADE, (len + HOLD - e) / FADE);
+      bars.forEach((bar, k) => { bar.style.transform = `scaleY(${k === step ? Math.min(1, e / (len + HOLD)) : 0})`; });
+    };
+    // Plays only while on screen, and resumes where it left off.
+    const play = () => { if (playing) return; playing = true; t0 = performance.now() - elapsed * 1000; gsap.ticker.add(draw); };
+    const pause = () => { if (!playing) return; playing = false; elapsed = (performance.now() - t0) / 1000; gsap.ticker.remove(draw); };
+    const io = new IntersectionObserver(([en]) => (en.isIntersecting ? play() : pause()), { threshold: 0.3 });
+    io.observe(section);
+
+    const clicks = items.map((li, i) => {
+      const f = (ev) => { if (ev.detail) ev.target.closest('button')?.blur(); go(i); elapsed = 0; draw(); };
+      li.addEventListener('click', f);
+      return f;
+    });
+
+    const refit = () => fitCard(card, fit, innerHeight - 140);
+    refit();
+    addEventListener('resize', refit);
+    go(0);
+    draw();
+
+    return () => {
+      pause();
+      io.disconnect();
+      removeEventListener('resize', refit);
+      items.forEach((li, i) => li.removeEventListener('click', clicks[i]));
+      bars.forEach((bar) => { bar.style.transform = ''; });
+      fit.textContent = '';
+      fit.style.cssText = '';
+    };
+  });
+
+  // Narrow screens and reduced motion: one card per step, stacked; each autoplays in view.
+  let rows = null;
+  mm.add(NOT_DESK, () => {
+    document.documentElement.classList.add('stacked');
+    rows ??= items.map((li, i) => {
+      const row = document.createElement('div');
+      row.className = 'static-row';
+      row.innerHTML = `<div><h3>${$('h3', li).textContent}</h3>${$('p', li).outerHTML}</div><div class="card-fit"></div>`;
+      $('.static-rows', section).append(row);
+      const fit = $('.card-fit', row);
+      const card = new StepCard(fit);
+      card.render(i + 0.9);
+      return { row, fit, card, player: still ? null : stepPlayer(card) };
+    });
+    const refit = () => rows.forEach((r) => fitCard(r.card, r.fit, 460));
+    refit();
+    addEventListener('resize', refit);
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        const i = rows.findIndex((r) => r.row === e.target);
+        if (e.isIntersecting) rows[i].player.play(i); else rows[i].player.stop();
+      }
+    }, { threshold: 0.35 });
+    if (!still) rows.forEach((r) => io.observe(r.row));
+    return () => {
+      document.documentElement.classList.remove('stacked');
+      io.disconnect();
+      rows.forEach((r) => r.player?.stop());
+      removeEventListener('resize', refit);
+    };
+  });
+}
+
+/* ---------- Platform fan ---------- */
+{
+  const fan = $('#fan');
+  const inner = $('.fan-inner', fan);
+  const cards = $$('.os', fan);
+  // Fanned-out pose per data-i: [x, y, rotate, rotateY].
+  const WIDE = [[-350, 40, -7, 22], [0, 0, 0, 0], [350, 40, 7, -22]];
+  const NARROW = [[-30, -392, -4, 0], [0, 0, 2, 0], [30, 392, -3, 0]];
+  let narrow = false;
+  const fanned = (c) => {
+    const [x, y, rotation, rotationY] = (narrow ? NARROW : WIDE)[c.dataset.i];
+    return { x, y, rotation, rotationY, scale: 1 };
+  };
+  // Stacked pose: flat, one pile, later cards on top.
+  const piled = (c, k) => {
+    const depth = cards.length - 1 - k;
+    return { x: 0, y: 40 - depth * 22, rotation: 0, rotationY: 0, scale: 1 - depth * 0.05 };
+  };
+  const section = $('.platforms');
+  const pinned = () => matchMedia(DESK).matches;
+  const size = () => {
+    narrow = fan.clientWidth < 760;
+    let s = narrow ? Math.min(1, fan.clientWidth / 620) : Math.min(1, fan.clientWidth / 1240);
+    // Pinned at the top, the heading and the whole fan must share one viewport.
+    if (pinned()) {
+      const above = fan.getBoundingClientRect().top - section.getBoundingClientRect().top;
+      const below = parseFloat(getComputedStyle(section).paddingBottom);
+      // 520: the fan's 470 px plus room for the captions and the spread cards' drop.
+      // On big screens it may grow past 1 so the fan fills the room instead of floating in it.
+      s = Math.min(fan.clientWidth / 1240, 1.35, Math.max(0.45, (innerHeight - above - below) / 520));
+    }
+    inner.style.transform = `translateX(-50%) scale(${s})`;
+    inner.style.height = narrow ? '1210px' : '470px';
+    fan.style.height = `${(narrow ? 1210 : 470) * s}px`;
+    for (const c of cards) c.style.top = narrow ? '410px' : '40px';
+  };
+  size();
+  addEventListener('resize', size);
+
+  mm.add(DESK, () => {
+    section.classList.add('pinned');
+    size();
+    const tl = gsap.timeline({ scrollTrigger: { trigger: section, start: 'top top', end: '+=70%', pin: true, anticipatePin: 1, scrub: 1, invalidateOnRefresh: true, onRefreshInit: size } });
+    cards.forEach((c, k) => tl.fromTo(c, piled(c, k), { ...fanned(c), ease: 'power2.inOut' }, 0));
+    return () => { section.classList.remove('pinned'); size(); };
+  });
+  mm.add(NOT_DESK, () => {
+    const place = () => cards.forEach((c) => gsap.set(c, fanned(c)));
+    place();
+    addEventListener('resize', place);
+    return () => removeEventListener('resize', place);
+  });
+
+  const scripts = [
+    [{ listen: 500 }, { say: 'ship it on friday', wordMs: 170 }, { stop: true, transcribingMs: 500 }, { refine: 'Ship it on Friday.' }, { receipt: 'Input sent', ms: 1500 }, { hide: 700 }],
+    [{ listen: 700 }, { say: 'um remind me to call the vet', wordMs: 170 }, { stop: true, transcribingMs: 500 }, { refine: 'Remind me to call the vet.' }, { receipt: 'Copied', ms: 1500 }, { hide: 700 }],
+    [{ listen: 900 }, { say: 'git push origin slash fix dash overlay', wordMs: 170 }, { stop: true, transcribingMs: 500 }, { refine: 'git push origin/fix-overlay' }, { receipt: 'Verified in Target', ms: 1500 }, { hide: 700 }],
+  ];
+  const pops = cards.map((c) => $('speecher-popup', c));
+  if (still) pops.forEach((p, i) => p.receipt(['Input sent', 'Copied', 'Verified in Target'][cards[i].dataset.i]));
+  else new IntersectionObserver(([e]) => {
+    pops.forEach((p, i) => (e.isIntersecting ? p.play(scripts[cards[i].dataset.i]) : p.stop()));
+  }).observe(fan);
+}
+
+// Scrubbed with smoothing on wide screens, played once elsewhere, finished under reduced motion.
+function reveal(tl, trigger) {
+  if (still) return tl.progress(1);
+  mm.add(DESK, () => { ScrollTrigger.create({ trigger, start: 'top 95%', end: 'top 40%', scrub: 1, animation: tl }); });
+  mm.add(NOT_DESK, () => { ScrollTrigger.create({ trigger, start: 'top 85%', animation: tl, once: true }); });
+}
+
+/* ---------- Price equation: two fixed layouts, scaled to the column ---------- */
+{
+  const fit = $('#eq-fit'), eq = $('#eq');
+  const paths = $$('path', eq);
+  const tiles = $$('.tile', eq);
+  const LAYOUTS = {
+    wide: { w: 680, h: 400, d: ['M136 104 C 200 104, 196 196, 252 196', 'M156 276 C 214 276, 200 204, 252 204'] },
+    narrow: { w: 340, h: 470, d: ['M86 166 C 86 220, 70 230, 70 264', 'M254 172 C 254 236, 92 222, 84 264'] },
+  };
+  const size = () => {
+    const name = fit.clientWidth < 560 ? 'narrow' : 'wide', L = LAYOUTS[name];
+    eq.className = `eq ${name}`;
+    paths.forEach((p, i) => p.setAttribute('d', L.d[i]));
+    const s = Math.min(1, fit.clientWidth / L.w);
+    eq.style.transform = `scale(${s})`;
+    fit.style.height = `${L.h * s}px`;
+  };
+  size();
+  addEventListener('resize', size);
+
+  const tilt = (t) => parseFloat(getComputedStyle(t).getPropertyValue('--r')) || 0;
+  const tl = gsap.timeline({ paused: true, defaults: { ease: 'power1.inOut' } });
+  tiles.forEach((t, i) => tl.fromTo(t, { opacity: 0, y: 30, scale: 0.85, rotation: tilt(t) }, { opacity: 1, y: 0, scale: 1, rotation: tilt(t), duration: 0.45 }, i * 0.16));
+  gsap.set(paths, { strokeDasharray: 1 });
+  tl.fromTo(paths, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.5 }, 0.25);
+  tl.fromTo($('.zero-out', eq), { opacity: 0, x: 30 }, { opacity: 1, x: 0, duration: 0.5 }, 0.5);
+  tl.fromTo($('.equals', eq), { opacity: 0 }, { opacity: 1, duration: 0.5 }, 0.5);
+  reveal(tl, fit);
+}
+
+/* ---------- Local models: the reels spin to a new working setup every few seconds ---------- */
+{
+  // [machine, speech model, cleanup]: each row is a setup that runs, the model sized to the machine.
+  const COMBOS = [
+    [['MacBook Air', '16 GB · Metal'], ['Parakeet 0.6B', '731 MB · streams'], ['Ollama', 'localhost:11434']],
+    [['Gaming PC', '12 GB GPU · Vulkan'], ['Cohere Transcribe', '2.4 GB · accurate'], ['LM Studio', 'localhost:1234']],
+    [['Surface Laptop', 'ARM · CPU'], ['Moonshine Small', '199 MB · streams'], ['llama-server', 'localhost:8080']],
+    [['Mac Studio', '64 GB · Metal'], ['Voxtral Small 24B', '17 GB · best'], ['Your own server', 'OpenAI-compatible']],
+  ];
+  const N = COMBOS.length, COPIES = 4;
+  const reels = $$('.reel').map((reel, k) => {
+    const ul = $('ul', reel);
+    for (let c = 0; c < COPIES; c++) for (const row of COMBOS) {
+      const li = document.createElement('li');
+      li.innerHTML = `<b></b><i></i>`;
+      li.children[0].textContent = row[k][0];
+      li.children[1].textContent = row[k][1];
+      ul.append(li);
+    }
+    return { ul, win: $('.reel-win', reel), pos: N };
+  });
+  const out = $('.reel-out b');
+  const itemH = () => reels[0].ul.children[0].offsetHeight;
+  const place = (r) => gsap.set(r.ul, { y: (r.win.clientHeight - itemH()) / 2 - r.pos * itemH() });
+  reels.forEach(place);
+  addEventListener('resize', () => reels.forEach(place));
+
+  let combo = 0, next = null, visible = false;
+  const spin = () => {
+    combo = (combo + 1) % N;
+    const tl = gsap.timeline({ onComplete: () => { next = visible ? gsap.delayedCall(2.4, spin) : null; } });
+    reels.forEach((r, k) => {
+      // Travel forward two full sets plus the offset, then settle back into the second set.
+      const to = r.pos - (r.pos % N) + 2 * N + combo;
+      tl.to(r.ul, { y: (r.win.clientHeight - itemH()) / 2 - to * itemH(), duration: 1 + k * 0.35, ease: 'power3.out',
+        onComplete: () => { r.pos = N + combo; place(r); } }, 0);
+    });
+    tl.fromTo(out, { scale: 0.8, opacity: 0.4 }, { scale: 1, opacity: 1, duration: 0.45, ease: 'back.out(2.2)' }, 1.7);
+  };
+  if (!still) new IntersectionObserver(([en]) => {
+    visible = en.isIntersecting;
+    if (visible && !next) next = gsap.delayedCall(0.6, spin);
+  }, { threshold: 0.35 }).observe($('.reels'));
+}
+/* ---------- Android phone rises in ---------- */
+{
+  const stage = $('#phone-stage');
+  const tl = gsap.timeline({ paused: true, defaults: { ease: 'power1.inOut', duration: 1 } });
+  tl.fromTo($('.phone', stage), { y: 90, rotation: 8 }, { y: 0, rotation: 4 }, 0);
+  tl.fromTo($('.zoom', stage), { x: -60, y: 40, rotation: -10, opacity: 0 }, { x: 0, y: 0, rotation: -4, opacity: 1 }, 0);
+  reveal(tl, stage);
+}
+
+/* ---------- Colour panels: corners and side gaps ease away at the viewport edges ---------- */
+mm.add(DESK, () => {
+  document.documentElement.classList.add('corners');
+  const GAP_X = 24, R = 80;
+  const panels = $$('.panel').map((el) => ({ el, t: R, b: R, open: false }));
+  const tick = () => {
+    const vh = innerHeight;
+    for (const p of panels) {
+      const r = p.el.getBoundingClientRect();
+      if (r.bottom < -R || r.top > vh + R) continue;
+      // A panel opens once it covers most of the screen and stays open while it is read;
+      // it only rounds back up as it leaves (the two thresholds keep it from flickering).
+      const cover = (Math.min(r.bottom, vh) - Math.max(r.top, 0)) / vh;
+      if (!p.open && cover > 0.7) p.open = true;
+      else if (p.open && cover < 0.45) p.open = false;
+      const tt = p.open ? 0 : clamp(r.top, 0, R), tb = p.open ? 0 : clamp(vh - r.bottom, 0, R);
+      p.t = lerp(p.t, tt, 0.16);
+      p.b = lerp(p.b, tb, 0.16);
+      const x = (GAP_X * Math.max(p.t, p.b)) / R;
+      p.el.style.clipPath = `inset(0 ${x.toFixed(1)}px round ${p.t.toFixed(1)}px ${p.t.toFixed(1)}px ${p.b.toFixed(1)}px ${p.b.toFixed(1)}px)`;
+    }
+  };
+  gsap.ticker.add(tick);
+  tick();
+  return () => {
+    gsap.ticker.remove(tick);
+    document.documentElement.classList.remove('corners');
+    panels.forEach((p) => { p.el.style.clipPath = ''; });
+  };
+});
 </script>
 </body>
 </html>
