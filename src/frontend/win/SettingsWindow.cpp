@@ -8,13 +8,8 @@
 #include "frontend/win/ShortcutRecorder.h"
 #include "frontend/win/TranscribePane.h"
 
-#include <QCoreApplication>
-#include <QDir>
 #include <QEventLoop>
-#include <QFile>
-#include <QImage>
 #include <QTimer>
-#include <QUrl>
 
 #include <algorithm>
 #include <memory>
@@ -34,7 +29,6 @@
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
-#include <winrt/Microsoft.UI.Xaml.Media.Imaging.h>
 #pragma pop_macro("GetCurrentTime")
 
 namespace speecher::win {
@@ -117,52 +111,13 @@ bool pageMatches(const PageSnapshot &page, const QString &query)
     return false;
 }
 
-// The window's client pixels through PrintWindow, which composes the swap
-// chain content DWM holds — RenderTargetBitmap misses the backdrop.
-bool printWindowTo(HWND handle, const QString &path)
-{
-    RECT rect{};
-    if (!GetWindowRect(handle, &rect)) {
-        return false;
-    }
-    const int width = rect.right - rect.left;
-    const int height = rect.bottom - rect.top;
-    if (width <= 0 || height <= 0) {
-        return false;
-    }
-    const HDC screen = GetDC(nullptr);
-    const HDC memory = CreateCompatibleDC(screen);
-    const HBITMAP bitmap = CreateCompatibleBitmap(screen, width, height);
-    const auto previous = SelectObject(memory, bitmap);
-    constexpr UINT renderFullContent = 0x00000002; // PW_RENDERFULLCONTENT
-    const bool painted = PrintWindow(handle, memory, renderFullContent) != 0;
-    bool saved = false;
-    if (painted) {
-        QImage image(width, height, QImage::Format_ARGB32_Premultiplied);
-        BITMAPINFO info{};
-        info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        info.bmiHeader.biWidth = width;
-        info.bmiHeader.biHeight = -height;
-        info.bmiHeader.biPlanes = 1;
-        info.bmiHeader.biBitCount = 32;
-        info.bmiHeader.biCompression = BI_RGB;
-        if (GetDIBits(memory, bitmap, 0, height, image.bits(), &info, DIB_RGB_COLORS)) {
-            saved = image.save(path);
-        }
-    }
-    SelectObject(memory, previous);
-    DeleteObject(bitmap);
-    DeleteDC(memory);
-    ReleaseDC(nullptr, screen);
-    return saved;
-}
-
 } // namespace
 
 struct SettingsWindow::Native {
-    explicit Native(ApplicationController *controller)
+    Native(ApplicationController *controller, TranscribePane *transcribe)
         : controller(controller)
         , model(controller)
+        , transcribe(transcribe)
     {
         host.model = &model;
         host.controller = controller;
@@ -179,11 +134,6 @@ struct SettingsWindow::Native {
         model.themeChanged = [this] { applyTheme(); };
         model.capabilitiesChanged = [this] { queueRebuild(); };
         model.anthropicCredentialsChanged = [this] { queueRebuild(); };
-        transcribe = std::make_unique<TranscribePane>(host, [this] {
-            if (currentPane == kTranscribePane) {
-                queueRebuild();
-            }
-        });
         QObject::connect(controller->updates(),
                          &UpdateController::changed,
                          &lifetime,
@@ -202,6 +152,7 @@ struct SettingsWindow::Native {
         // Dispatcher callbacks queued by this object can still be pending;
         // they hold a weak copy of this token and bail once it is cleared.
         *alive = false;
+        transcribe->forget(host);
         // The Closed token is revoked before Close(), so windowClosed() never
         // runs on this path; quitting with the window open must still save its
         // geometry and give a suspended hotkey back.
@@ -265,15 +216,7 @@ struct SettingsWindow::Native {
 
         titleBar = TitleBar();
         titleBar.Title(L"Speecher");
-        const QString icon = QDir(QCoreApplication::applicationDirPath())
-                                 .filePath(QStringLiteral("speecher.ico"));
-        if (QFile::exists(icon)) {
-            ImageIconSource iconSource;
-            iconSource.ImageSource(winrt::Microsoft::UI::Xaml::Media::Imaging::BitmapImage(
-                winrt::Windows::Foundation::Uri(hs(QUrl::fromLocalFile(icon).toString()))));
-            titleBar.IconSource(iconSource);
-            window.AppWindow().SetIcon(hs(QDir::toNativeSeparators(icon)));
-        }
+        setWindowIcon(window, titleBar);
         titleBar.IsBackButtonVisible(false);
         titleBar.BackRequested([this](const auto &, const auto &) { leaveWhatsNew(); });
         root.Children().Append(titleBar);
@@ -374,7 +317,7 @@ struct SettingsWindow::Native {
         // The editors hold XAML trees of the window that is going away.
         host.editors.clear();
         ShortcutRecorder::setRecording(host, false);
-        transcribe->forgetElements();
+        transcribe->forget(host);
         window = nullptr;
         root = nullptr;
         titleBar = nullptr;
@@ -513,7 +456,7 @@ struct SettingsWindow::Native {
         if (id == kTranscribePane) {
             transcribe->enter();
         } else {
-            transcribe->forgetElements();
+            transcribe->forget(host);
         }
         currentPane = id;
         controller->settings()->raw().setValue(kPaneSetting, id);
@@ -540,15 +483,6 @@ struct SettingsWindow::Native {
         const bool returnable = isHandBuiltPane(whatsNewReturnPane)
             || pageWithId(pages, whatsNewReturnPane);
         selectPane(returnable ? whatsNewReturnPane : pages.first().id);
-    }
-
-    void showTranscribeFiles(const QStringList &paths)
-    {
-        show();
-        transcribe->addFiles(paths);
-        if (currentPane != kTranscribePane) {
-            selectPane(kTranscribePane);
-        }
     }
 
     void runAction(const QString &id)
@@ -591,14 +525,10 @@ struct SettingsWindow::Native {
         if (!isHandBuiltPane(currentPane) && !schemaPage) {
             return;
         }
-        double offset = 0;
-        if (auto previous = pageHost.Child().try_as<ScrollViewer>()) {
-            offset = previous.VerticalOffset();
-        }
         UIElement page{nullptr};
         try {
             page = schemaPage                      ? buildPage(*schemaPage, host)
-                : currentPane == kTranscribePane ? transcribe->build()
+                : currentPane == kTranscribePane ? transcribe->build(host, kTranscribeTitle)
                                                  : buildShortcutPage(host);
         } catch (const winrt::hresult_error &error) {
             // A throw from a dispatcher callback dies as a stowed exception
@@ -608,14 +538,7 @@ struct SettingsWindow::Native {
                        << QString::fromWCharArray(error.message().c_str());
             return;
         }
-        pageHost.Child(page);
-        if (offset > 0) {
-            if (auto scroll = page.try_as<ScrollViewer>()) {
-                scroll.Loaded([offset](const IInspectable &sender, const auto &) {
-                    sender.as<ScrollViewer>().ChangeView(nullptr, offset, nullptr, true);
-                });
-            }
-        }
+        replacePage(pageHost, page);
     }
 
     void loadApiKey()
@@ -770,22 +693,13 @@ struct SettingsWindow::Native {
         return printWindowTo(windowHandle(), path);
     }
 
-    // Whether a deferred dispatcher callback may still touch this object.
-    // WinUiHost's dispatcher outlives this Native and drains queued work on
-    // shutdown, so every queued callback checks this before using `this`;
-    // a member-null check cannot establish object lifetime.
-    static bool gone(const std::weak_ptr<bool> &weak)
-    {
-        const std::shared_ptr<bool> alive = weak.lock();
-        return !alive || !*alive;
-    }
-
     std::shared_ptr<bool> alive = std::make_shared<bool>(true);
     ApplicationController *controller;
     SettingsModel model;
     PaneHost host;
-    // Holds its own state across rebuilds and reopenings, like host does.
-    std::unique_ptr<TranscribePane> transcribe;
+    // Shared with the Transcribe window; holds its own state across rebuilds
+    // and reopenings, like host does.
+    TranscribePane *transcribe;
     std::function<void(const QString &)> actionHook;
     QObject lifetime;
 
@@ -811,8 +725,8 @@ struct SettingsWindow::Native {
     std::function<void()> bannerCloseAction;
 };
 
-SettingsWindow::SettingsWindow(ApplicationController *controller)
-    : m_native(std::make_unique<Native>(controller))
+SettingsWindow::SettingsWindow(ApplicationController *controller, TranscribePane *transcribe)
+    : m_native(std::make_unique<Native>(controller, transcribe))
 {
 }
 
@@ -826,11 +740,6 @@ bool SettingsWindow::offersWhatsNew(const QString &currentPane, const QString &p
 void SettingsWindow::show()
 {
     m_native->show();
-}
-
-void SettingsWindow::showTranscribeFiles(const QStringList &paths)
-{
-    m_native->showTranscribeFiles(paths);
 }
 
 void SettingsWindow::showWhatsNew()

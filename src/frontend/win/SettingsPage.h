@@ -47,11 +47,12 @@ inline winrt::Microsoft::UI::Xaml::ElementTheme requestedTheme(const QString &se
 }
 
 // The services rows need from the window, plus the state that must survive a
-// pane rebuild. One of these lives on the settings window.
+// pane rebuild. One of these lives on each window that shows panes: the
+// settings window and the Transcribe window.
 struct PaneHost {
     SettingsModel *model = nullptr;
     ApplicationController *controller = nullptr;
-    // The settings window's lifetime token: XAML handlers that reference this
+    // The window's lifetime token: XAML handlers that reference this
     // host hold a weak copy and bail once the window's Native is gone — a
     // member-null check cannot establish object lifetime.
     std::shared_ptr<bool> alive;
@@ -59,7 +60,7 @@ struct PaneHost {
     std::function<void()> refresh;
     // Action rows (runSetup, checkForUpdates, whatsNew) and disabledAction ids.
     std::function<void(const QString &id)> action;
-    // The settings window's HWND, which the file picker needs.
+    // The window's HWND, which the file picker needs.
     std::function<HWND()> hwnd;
     // The window's XamlRoot, which ContentDialog needs.
     std::function<winrt::Microsoft::UI::Xaml::XamlRoot()> xamlRoot;
@@ -88,6 +89,29 @@ struct PaneHost {
     int shortcutPendingModifier = 0;
 };
 
+// Whether a deferred callback's window Native is gone. Dispatcher work and
+// coroutines resumed after a picker hold a weak copy of PaneHost::alive; a
+// member-null check cannot establish object lifetime.
+inline bool gone(const std::weak_ptr<bool> &weak)
+{
+    const std::shared_ptr<bool> alive = weak.lock();
+    return !alive || !*alive;
+}
+
+// Shows page in pageHost at the scroll offset of the page it replaces, so a
+// rebuild does not jump back to the top.
+void replacePage(const winrt::Microsoft::UI::Xaml::Controls::Border &pageHost,
+                 const winrt::Microsoft::UI::Xaml::UIElement &page);
+
+// Saves a window's client pixels for --grab through PrintWindow, which
+// composes the swap chain content DWM holds; RenderTargetBitmap misses the
+// backdrop.
+bool printWindowTo(HWND handle, const QString &path);
+
+// Gives a window and its TitleBar the speecher.ico beside the executable.
+void setWindowIcon(const winrt::Microsoft::UI::Xaml::Window &window,
+                   const winrt::Microsoft::UI::Xaml::Controls::TitleBar &titleBar);
+
 // One schema page as a WinUI page: ScrollViewer over a 1064-wide column with
 // the page title, one card per schema section — BodyStrong headers,
 // SettingsCard-shaped rows spaced 4 and Caption footnotes — the WinUI Gallery
@@ -99,7 +123,7 @@ winrt::Microsoft::UI::Xaml::UIElement buildPage(const PageSnapshot &page, PaneHo
 winrt::Microsoft::UI::Xaml::UIElement buildShortcutPage(PaneHost &host);
 
 // The Gallery's settings page scaffold: gutters on the scroller, the column
-// capped at 1064 inside them, the page title on top.
+// capped at 1064 inside them, the page title on top (none when empty).
 winrt::Microsoft::UI::Xaml::Controls::ScrollViewer pageScaffold(
     const QString &title, const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column);
 

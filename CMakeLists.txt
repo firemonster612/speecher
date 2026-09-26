@@ -645,6 +645,7 @@ set(SPEECHER_FRONTEND_WIN_SOURCES
   src/frontend/win/TrayFlyout.cpp
   src/frontend/win/TrayIcon.cpp
   src/frontend/win/TranscribePane.cpp
+  src/frontend/win/TranscribeWindow.cpp
   src/frontend/win/WinFrontEnd.cpp
   src/frontend/win/WinUiHost.cpp
 )
@@ -661,6 +662,7 @@ set(SPEECHER_FRONTEND_WIN_HEADERS
   src/frontend/win/TrayFlyout.h
   src/frontend/win/TrayIcon.h
   src/frontend/win/TranscribePane.h
+  src/frontend/win/TranscribeWindow.h
   src/frontend/win/WinFrontEnd.h
   src/frontend/win/WinUiHost.h
 )

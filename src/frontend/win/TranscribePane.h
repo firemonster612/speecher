@@ -22,55 +22,78 @@
 #include <winrt/Microsoft.UI.Xaml.Shapes.h>
 #pragma pop_macro("GetCurrentTime")
 
-namespace speecher::win {
+namespace speecher {
+
+class ApplicationController;
+
+namespace win {
 
 struct PaneHost;
 
 // The Transcribe pane: pick audio files and options, watch the batch, read and
-// export the transcripts. Its state outlives any one XAML tree, so the window
-// can rebuild the pane (a theme change, a stage change) or close and reopen
-// without losing the file list, a running batch or its results.
+// export the transcripts. One instance serves every window that shows it (the
+// settings window's Transcribe pane and the standalone Transcribe window), and
+// its state outlives any one XAML tree: a window can rebuild the pane or close
+// and reopen without losing the file list, a running batch or its results, and
+// a running batch shows in whichever window is open.
 class TranscribePane : public QObject {
 public:
-    // rebuild re-renders the pane when it is the one on screen.
-    TranscribePane(PaneHost &host, std::function<void()> rebuild);
+    explicit TranscribePane(ApplicationController *controller);
 
-    winrt::Microsoft::UI::Xaml::UIElement build();
+    // A fresh tree for host's window, which from then on gets the pane's
+    // rebuilds through host.refresh until forget(host). title heads the page;
+    // empty for none.
+    winrt::Microsoft::UI::Xaml::UIElement build(PaneHost &host, const QString &title);
     // Adds files to the setup list; paths that are not audio are skipped.
     void addFiles(const QStringList &paths);
-    // Re-reads the option defaults from the user's settings while in setup.
+    // The pane is coming on screen: while in setup and shown nowhere else,
+    // re-reads the option defaults from the user's settings.
     void enter();
-    // The pane left the screen or the window closed: stop updating elements
-    // nobody sees.
-    void forgetElements();
+    // The pane left host's window, or the window closed: stop updating
+    // elements nobody sees there.
+    void forget(const PaneHost &host);
 
 private:
-    enum class Stage { Setup, Processing, Results };
+    // One window's tree: the processing stage's elements, updated in place
+    // between rebuilds.
+    struct View {
+        PaneHost *host = nullptr;
+        winrt::Microsoft::UI::Xaml::Controls::ProgressBar progressBar{nullptr};
+        winrt::Microsoft::UI::Xaml::Controls::TextBlock phaseText{nullptr};
+        winrt::Microsoft::UI::Xaml::Controls::TextBlock percentText{nullptr};
+        winrt::Microsoft::UI::Xaml::Controls::TextBlock headerText{nullptr};
+        winrt::Microsoft::UI::Xaml::Controls::StackPanel queue{nullptr};
+        std::vector<winrt::Microsoft::UI::Xaml::Shapes::Rectangle> bars;
+    };
 
+    void rebuild();
     void seedOptions();
     void applyWritingProfile();
     TranscribeOptions options() const;
     void startBatch();
     void retry(int index);
     void backToSetup();
-    void appendSetup(const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column);
-    void appendProcessing(const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column);
-    void appendResults(const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column);
+    void appendSetup(const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column, PaneHost &host);
+    void appendProcessing(const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column, View &view);
+    void appendResults(const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column, PaneHost &host);
     void refreshQueue();
+    void refreshQueue(const View &view);
     winrt::Microsoft::UI::Xaml::Controls::Button copyButton(const QString &label, const QString &text);
-    void setProgress(qreal fraction);
-    void setPhase(const QString &phase);
+    void showProgress();
+    void setPhase(TranscribePhase phase);
     void animateBars();
+    void afterLanding(std::function<void()> event);
+    void land();
 
-    winrt::fire_and_forget chooseFiles();
-    winrt::fire_and_forget chooseFolder();
-    winrt::fire_and_forget exportOne(QString audioPath, QString text);
-    winrt::fire_and_forget exportAll();
-    winrt::fire_and_forget dropFiles(winrt::Microsoft::UI::Xaml::DragEventArgs args);
+    winrt::fire_and_forget chooseFiles(PaneHost &host);
+    winrt::fire_and_forget chooseFolder(PaneHost &host);
+    winrt::fire_and_forget exportOne(PaneHost &host, QString audioPath, QString text);
+    winrt::fire_and_forget exportAll(PaneHost &host);
+    winrt::fire_and_forget dropFiles(PaneHost &host, winrt::Microsoft::UI::Xaml::DragEventArgs args);
 
-    PaneHost &m_host;
-    std::function<void()> m_rebuild;
-    Stage m_stage = Stage::Setup;
+    ApplicationController *m_controller;
+    std::vector<View> m_views;
+    TranscribeStep m_step = TranscribeStep::Configure;
     QStringList m_files;
     QString m_startError;
 
@@ -96,20 +119,21 @@ private:
     QHash<QString, qint64> m_durationsMs;
     int m_current = -1;
     QString m_currentPath;
-    QString m_phase;
-    qreal m_progress = 0;
+    TranscribePhase m_phase = TranscribePhase::Reading;
+    // How long the current file has been in m_phase, which eases the
+    // open-ended waits forward.
+    QElapsedTimer m_phaseClock;
+    qreal m_fractionSent = 0;
+    // The current file is transcribed, refined and saved.
+    bool m_fileFinished = false;
+    // While a finished file shows at 100%, the session's later events wait here.
+    bool m_landing = false;
+    QList<std::function<void()>> m_afterLanding;
     QVector<float> m_peaks;
     bool m_showRaw = false;
     QSet<int> m_expanded;
     QString m_resultsProblem;
 
-    // Live elements of the processing stage, updated in place between rebuilds.
-    winrt::Microsoft::UI::Xaml::Controls::ProgressBar m_progressBar{nullptr};
-    winrt::Microsoft::UI::Xaml::Controls::TextBlock m_phaseText{nullptr};
-    winrt::Microsoft::UI::Xaml::Controls::TextBlock m_percentText{nullptr};
-    winrt::Microsoft::UI::Xaml::Controls::TextBlock m_headerText{nullptr};
-    winrt::Microsoft::UI::Xaml::Controls::StackPanel m_queue{nullptr};
-    std::vector<winrt::Microsoft::UI::Xaml::Shapes::Rectangle> m_bars;
     QTimer m_barTimer;
     QElapsedTimer m_barClock;
     qint64 m_lastFrame = 0;
@@ -117,4 +141,5 @@ private:
     waveform::LevelModel m_level;
 };
 
-} // namespace speecher::win
+} // namespace win
+} // namespace speecher

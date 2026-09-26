@@ -17,7 +17,9 @@
 
 #include <QApplication>
 #include <QTest>
+#include <QFile>
 #include <QScopeGuard>
+#include <QTemporaryDir>
 
 #include <memory>
 
@@ -424,6 +426,25 @@ private slots:
         // Skip is Finish minus the pages in between: it has to leave a working
         // shortcut behind, or the app it completes cannot start dictation.
         QVERIFY(!controller->globalShortcut().isEmpty());
+    }
+
+    void openedAudioFilesOpenTheTranscribeWindowAlone()
+    {
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI windows require an interactive desktop");
+        }
+        const bool settingsWasOpen = FindWindowW(nullptr, L"Speecher") != nullptr;
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        QFile file(audio);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("RIFF\0\0\0\0WAVEfmt ");
+        file.close();
+
+        frontEnd->showTranscribeFiles({audio});
+
+        QTRY_VERIFY_WITH_TIMEOUT(FindWindowW(nullptr, L"Transcribe — Speecher") != nullptr, 2000);
+        QCOMPARE(FindWindowW(nullptr, L"Speecher") != nullptr, settingsWasOpen);
     }
 
     void capabilitiesFollowWindowsAccessibility()
