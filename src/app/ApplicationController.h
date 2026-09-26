@@ -112,6 +112,10 @@ public:
     bool removeGlobalShortcutRegistration(QString *error = nullptr);
 
     void showMainWindow();
+    // What a plain launch shows. Files opened during startup, before anyone
+    // asked for this window, take it off screen again: a launch that opens
+    // files shows the Transcribe window alone even when they arrive late.
+    void showDefaultMainWindow();
     void showSettingsWindow();
     void showSetupAssistant();
     void showSetupAssistant(SetupAssistantPage page);
@@ -121,6 +125,9 @@ public:
     void showTranscribeFiles(const QStringList &paths);
     // Whether any files have been opened this run.
     bool filesOpened() const;
+    // Whether files opened before setup was complete are about to open now
+    // that it is, in which case the Transcribe window is all they need.
+    bool heldFilesOpening() const;
     // Records that the setup assistant finished, then opens any files that
     // arrived while it was up.
     void completeSetup();
@@ -178,6 +185,8 @@ private:
     // Files opened before setup was complete.
     QStringList m_pendingTranscribeFiles;
     bool m_filesOpened = false;
+    // The main window is up only because a plain launch shows it.
+    bool m_mainWindowByDefault = false;
     UpdateController *m_updates = nullptr;
     InsightsLog *m_insightsLog = nullptr;
     std::optional<DictationRecord> m_lastRecord;

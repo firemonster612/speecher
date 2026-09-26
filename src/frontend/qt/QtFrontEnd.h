@@ -26,6 +26,7 @@ public:
     ~QtFrontEnd() override;
 
     void showMainWindow() override;
+    void hideMainWindow() override;
     void showSettingsWindow() override;
     void showSetupAssistant(SetupAssistantPage page) override;
     void showTranscribeFiles(const QStringList &paths) override;

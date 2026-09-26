@@ -126,6 +126,13 @@ void WinFrontEnd::showMainWindow()
     showSettingsWindow();
 }
 
+void WinFrontEnd::hideMainWindow()
+{
+    if (m_native->settings) {
+        m_native->settings->close();
+    }
+}
+
 void WinFrontEnd::showSettingsWindow()
 {
     m_native->trayReady->stop();

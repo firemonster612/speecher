@@ -271,6 +271,11 @@ public:
         calls << QStringLiteral("showMainWindow");
     }
 
+    void hideMainWindow() override
+    {
+        calls << QStringLiteral("hideMainWindow");
+    }
+
     void showSettingsWindow() override
     {
         calls << QStringLiteral("showSettingsWindow");

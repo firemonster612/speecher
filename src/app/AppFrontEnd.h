@@ -19,6 +19,9 @@ public:
     virtual ~AppFrontEnd() = default;
 
     virtual void showMainWindow() = 0;
+    // Takes the main window off screen again, for when opened files arrive
+    // just after a plain launch put it up by default.
+    virtual void hideMainWindow() = 0;
     virtual void showSettingsWindow() = 0;
     virtual void showSetupAssistant(SetupAssistantPage page) = 0;
 

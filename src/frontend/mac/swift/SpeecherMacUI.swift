@@ -99,6 +99,13 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Takes the settings window off screen, for when opened files arrive
+    /// just after launch put it up.
+    @MainActor
+    @objc public func hideSettings() {
+        settings?.close()
+    }
+
     /// The Transcribe window with these files added, not yet started: what
     /// opening audio with Speecher does. Made on first use, like the settings
     /// window; the settings pane stays for people who go there themselves.

@@ -141,6 +141,11 @@ void MacFrontEnd::showMainWindow()
     m_controller->frontEndReady();
 }
 
+void MacFrontEnd::hideMainWindow()
+{
+    [m_native->ui hideSettings];
+}
+
 void MacFrontEnd::showSettingsWindow()
 {
     showMainWindow();
@@ -152,7 +157,8 @@ void MacFrontEnd::showSetupAssistant(SetupAssistantPage)
 {
     MacFrontEnd *frontEnd = this;
     [m_native->ui showSetupAssistantWithCompletion:^{
-        if (!frontEnd->m_controller->popupOnly()) {
+        // Files held through setup open in a window of their own.
+        if (!frontEnd->m_controller->popupOnly() && !frontEnd->m_controller->heldFilesOpening()) {
             frontEnd->showMainWindow();
         }
     }];
@@ -167,7 +173,9 @@ void MacFrontEnd::showTranscribeFiles(const QStringList &paths)
         [files addObject:path.toNSString()];
     }
     [m_native->ui showTranscribeFiles:files];
-    // As showMainWindow does, for when this window is the first on screen.
+    // As showMainWindow does. Only a cold launch that opens files needs it,
+    // to start the deferred work once this window is the first on screen;
+    // later calls return at once.
     m_controller->frontEndReady();
 }
 

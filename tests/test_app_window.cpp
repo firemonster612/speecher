@@ -20,6 +20,7 @@
 #endif
 
 #include <QComboBox>
+#include <QDialog>
 #include <QDir>
 #include <QFile>
 #include <QLabel>
@@ -629,23 +630,7 @@ private slots:
         controller.settings()->setSetupCompleted(true);
         QtFrontEnd frontEnd(&controller);
         controller.setFrontEnd(&frontEnd);
-        QTemporaryDir dir;
-        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
-        QFile file(audio);
-        QVERIFY(file.open(QIODevice::WriteOnly));
-        file.write("RIFF\0\0\0\0WAVEfmt ");
-        file.close();
-
-        // Earlier tests can leave windows behind; only what this opens counts.
-        const auto visibleWindows = [] {
-            QSet<QWidget *> visible;
-            for (QWidget *widget : QApplication::topLevelWidgets()) {
-                if (widget->isVisible()) {
-                    visible << widget;
-                }
-            }
-            return visible;
-        };
+        const QString audio = writeHeaderOnlyWav();
         const QSet<QWidget *> before = visibleWindows();
         controller.showTranscribeFiles({audio});
         controller.showTranscribeFiles({audio});
@@ -658,6 +643,57 @@ private slots:
         auto *start = windows.first()->findChild<QPushButton *>(QStringLiteral("transcribeStart"));
         QVERIFY(start->isEnabled());
         QCOMPARE(start->text(), QStringLiteral("Transcribe"));
+    }
+
+    // Files opened before setup was done wait for it, then open alone: the
+    // assistant finishing does not bring the main window up beside them.
+    void filesHeldThroughSetupGetTheCompactWindowAlone()
+    {
+        ApplicationController controller(false);
+        controller.settings()->setSetupCompleted(false);
+        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(true); });
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
+        const QString audio = writeHeaderOnlyWav();
+        const QSet<QWidget *> before = visibleWindows();
+
+        controller.showTranscribeFiles({audio});
+        const QWidgetList opened = (visibleWindows() - before).values();
+        QCOMPARE(opened.size(), 1);
+        auto *assistant = qobject_cast<QDialog *>(opened.first());
+        QVERIFY(assistant);
+        // What the assistant's Finish does, without walking its pages.
+        controller.completeSetup();
+        assistant->done(QDialog::Accepted);
+
+        QTRY_VERIFY(!(visibleWindows() - before).contains(assistant));
+        QTRY_COMPARE((visibleWindows() - before).size(), 1);
+        QCOMPARE((visibleWindows() - before).values().first()->objectName(), QStringLiteral("transcribeWindow"));
+    }
+
+    // Files that arrive just after a plain launch put the main window up
+    // take its place, however late the platform delivers them.
+    void filesOpenedAtLaunchReplaceTheDefaultMainWindow()
+    {
+        ApplicationController controller(false);
+        controller.settings()->setSetupCompleted(true);
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
+        const QString audio = writeHeaderOnlyWav();
+        const QSet<QWidget *> before = visibleWindows();
+
+        controller.showDefaultMainWindow();
+        const QWidgetList shown = (visibleWindows() - before).values();
+        QCOMPARE(shown.size(), 1);
+        QWidget *main = shown.first();
+        controller.showTranscribeFiles({audio});
+        QVERIFY(!main->isVisible());
+
+        // Asked for by name, the main window stays when more files arrive.
+        controller.showMainWindow();
+        controller.showTranscribeFiles({audio});
+        QVERIFY(main->isVisible());
+        main->hide();
     }
 
     void aFileOpenedOverResultsIsKeptForTheNextBatch()
@@ -852,6 +888,32 @@ private slots:
                  QStringList{QStringLiteral(
                      "Row 2 duplicates the normalized spoken phrase from row 1.")});
     }
+
+private:
+    // Earlier tests can leave windows behind; a test counts only what it opens.
+    static QSet<QWidget *> visibleWindows()
+    {
+        QSet<QWidget *> visible;
+        for (QWidget *widget : QApplication::topLevelWidgets()) {
+            if (widget->isVisible()) {
+                visible << widget;
+            }
+        }
+        return visible;
+    }
+
+    // A WAV header with no audio: an audio file to list, which fails to decode.
+    QString writeHeaderOnlyWav()
+    {
+        const QString path = m_files.filePath(QStringLiteral("memo.wav"));
+        QFile file(path);
+        if (file.open(QIODevice::WriteOnly)) {
+            file.write("RIFF\0\0\0\0WAVEfmt ", 16);
+        }
+        return path;
+    }
+
+    QTemporaryDir m_files;
 };
 
 int runAppWindowTests(int argc, char **argv)

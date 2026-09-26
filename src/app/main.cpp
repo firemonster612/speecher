@@ -425,10 +425,11 @@ int main(int argc, char **argv)
             // A launch that opens files brings up the Transcribe window alone.
             // macOS hands Finder's files over as events once the loop runs,
             // so let those arrive before deciding.
+            // Files arriving later still replace it; see showDefaultMainWindow.
             QTimer::singleShot(0, &controller, [&controller] {
                 QCoreApplication::processEvents();
                 if (!controller.filesOpened()) {
-                    controller.showMainWindow();
+                    controller.showDefaultMainWindow();
                 }
             });
         }

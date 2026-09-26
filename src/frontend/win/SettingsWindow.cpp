@@ -838,6 +838,13 @@ void SettingsWindow::showWhatsNew()
     m_native->showWhatsNew();
 }
 
+void SettingsWindow::close()
+{
+    if (m_native->window) {
+        m_native->window.Close();
+    }
+}
+
 bool SettingsWindow::isVisible() const
 {
     const HWND handle = m_native->windowHandle();

@@ -130,6 +130,13 @@ void QtFrontEnd::showMainWindow()
     m_appWindow->activateWindow();
 }
 
+void QtFrontEnd::hideMainWindow()
+{
+    if (m_appWindow) {
+        m_appWindow->hide();
+    }
+}
+
 void QtFrontEnd::showSettingsWindow()
 {
     showMainWindow();
@@ -162,7 +169,8 @@ void QtFrontEnd::showSetupAssistant(SetupAssistantPage page)
         m_setupAssistant = new SetupAssistant(m_controller, page);
         m_setupAssistant->setAttribute(Qt::WA_DeleteOnClose);
         connect(m_setupAssistant, &QDialog::finished, this, [this] {
-            if (!m_controller->popupOnly()) {
+            // Files held through setup open in a window of their own.
+            if (!m_controller->popupOnly() && !m_controller->heldFilesOpening()) {
                 showMainWindow();
             }
         });

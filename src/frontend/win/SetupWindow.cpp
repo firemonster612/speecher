@@ -2006,7 +2006,8 @@ struct SetupWindow::Native {
         }
         controller->completeSetup();
         window.Close();
-        if (!controller->popupOnly()) {
+        // Files held through setup open in a window of their own.
+        if (!controller->popupOnly() && !controller->heldFilesOpening()) {
             controller->showSettingsWindow();
         }
     }

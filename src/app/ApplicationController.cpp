@@ -51,6 +51,8 @@ constexpr int mediaResumeGraceMs = 200;
 #ifdef Q_OS_MACOS
 constexpr int accessibilityPollMs = 5000;
 #endif
+// How long after launch opened files still replace the default main window.
+constexpr int defaultMainWindowGraceMs = 3000;
 
 } // namespace
 
@@ -498,13 +500,24 @@ bool ApplicationController::startIpc(QString *error)
 
 void ApplicationController::showMainWindow()
 {
+    m_mainWindowByDefault = false;
     if (m_frontEnd) {
         m_frontEnd->showMainWindow();
     }
 }
 
+void ApplicationController::showDefaultMainWindow()
+{
+    showMainWindow();
+    m_mainWindowByDefault = true;
+    // Finder's open event lands within moments of launch; after this long a
+    // file opened is a new request, and the window someone may be using stays.
+    QTimer::singleShot(defaultMainWindowGraceMs, this, [this] { m_mainWindowByDefault = false; });
+}
+
 void ApplicationController::showSettingsWindow()
 {
+    m_mainWindowByDefault = false;
     if (m_frontEnd) {
         m_frontEnd->showSettingsWindow();
     }
@@ -530,14 +543,23 @@ void ApplicationController::showTranscribeFiles(const QStringList &paths)
         showSetupAssistant();
         return;
     }
-    if (m_frontEnd) {
-        m_frontEnd->showTranscribeFiles(paths);
+    if (!m_frontEnd) {
+        return;
     }
+    if (std::exchange(m_mainWindowByDefault, false)) {
+        m_frontEnd->hideMainWindow();
+    }
+    m_frontEnd->showTranscribeFiles(paths);
 }
 
 bool ApplicationController::filesOpened() const
 {
     return m_filesOpened;
+}
+
+bool ApplicationController::heldFilesOpening() const
+{
+    return m_settings->setupCompleted() && !m_pendingTranscribeFiles.isEmpty();
 }
 
 // macOS answers the microphone grant asynchronously the first time, so a

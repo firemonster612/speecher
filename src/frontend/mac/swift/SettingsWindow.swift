@@ -287,6 +287,10 @@ final class SpeecherSettingsWindow {
     /// Whether the window is on screen, which a Sparkle relaunch restores.
     var isVisible: Bool { window.isVisible }
 
+    func close() {
+        window.close()
+    }
+
     func show() {
         window.makeKeyAndOrderFront(nil)
         // The device enumeration and the keyring read would both delay the first

@@ -28,6 +28,8 @@ public:
     // draft, and remembers the pane from last time.
     void show();
     void showWhatsNew();
+    // Closes the window, as its close button does.
+    void close();
     bool isVisible() const;
 
     // Saves a picture of the window for --grab. SPEECHER_GRAB_PAGE names a
