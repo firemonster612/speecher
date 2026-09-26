@@ -1,5 +1,6 @@
 #include "ui/TranscribeLoomWidget.h"
 
+#include "transcribe/TranscribePresentation.h"
 #include "ui/WaveformModel.h"
 
 #include <QHideEvent>
@@ -26,11 +27,10 @@ constexpr int kLines = 6;
 constexpr qreal kPopWindow = 0.045;
 // How far behind the playhead a consumed bar fades out, in pixels.
 constexpr qreal kFadeDistance = 60.0;
-// How long the playhead takes to run to the end once a file is done, and how
-// long the finished page then stays up before the next file replaces it.
-// Both are measured on the clock, so a minimized window lands on time.
+// How long the playhead takes to run to the end once a file is done, within
+// the shared landing hold before the next file replaces the page. Measured on
+// the clock, so a minimized window lands on time.
 constexpr qint64 kLandRunMs = 350;
-constexpr qint64 kLandedHoldMs = 450;
 
 qreal easeOutBack(qreal t)
 {
@@ -125,7 +125,7 @@ void TranscribeLoomWidget::finishFile()
     m_landing = true;
     m_landFrom = m_shown;
     m_landStarted = m_clock.elapsed();
-    m_landTimer.start(int(kLandRunMs + kLandedHoldMs));
+    m_landTimer.start(kTranscribeLandingMs);
 }
 
 void TranscribeLoomWidget::land()
