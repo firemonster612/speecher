@@ -272,6 +272,28 @@ private slots:
         QVERIFY(page.findChildren<QFrame *>(QStringLiteral("insightTile")).isEmpty());
     }
 
+    void controllerKeepsTheRecordOfTheLastTranscript()
+    {
+        QTemporaryDir dir;
+        const QString seed = dir.filePath(QStringLiteral("seed.jsonl"));
+        QFile(seed).open(QIODevice::WriteOnly);
+        qputenv("SPEECHER_INSIGHTS_SEED", seed.toLocal8Bit());
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_INSIGHTS_SEED"); });
+        ApplicationController controller(true);
+        QSignalSpy changed(&controller, &ApplicationController::lastRecordChanged);
+        const DictationRecord record{QDateTime(QDate(2026, 9, 26), QTime(9, 0)), 4000, 3,
+                                     QStringLiteral("Kate"), WritingProfile::Other};
+
+        emit controller.session()->transcriptDelivered(QStringLiteral("one two three"));
+        emit controller.session()->dictationRecorded(record);
+        QCOMPARE(controller.lastRecord()->appName, QStringLiteral("Kate"));
+
+        // A delivery insights did not record leaves no record behind.
+        emit controller.session()->transcriptDelivered(QStringLiteral("four"));
+        QVERIFY(!controller.lastRecord());
+        QCOMPARE(changed.count(), 2);
+    }
+
     void dictationHasOneStartControlAndTheHeaderHasNone()
     {
         ApplicationController controller(true);

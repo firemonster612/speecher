@@ -21,7 +21,6 @@ constexpr int kMinCell = 10;
 constexpr int kCellGap = 3;
 constexpr int kDot = 10;
 constexpr int kBarGap = 2;
-constexpr int kLevelPercent[] = {0, 30, 52, 76, 100};
 constexpr int kMutedBarPercent = 42;
 
 QColor mix(const QColor &from, const QColor &to, int percent)
@@ -37,11 +36,11 @@ QString plural(int count, const QString &one, const QString &many)
     return QStringLiteral("%1 %2").arg(QLocale().toString(count), count == 1 ? one : many);
 }
 
-QString audioText(int audioMs)
+QString audioText(qint64 audioMs)
 {
-    const int seconds = (audioMs + 500) / 1000;
+    const qint64 seconds = (audioMs + 500) / 1000;
     if (seconds < 60) return QStringLiteral("%1s").arg(seconds);
-    const int minutes = (seconds + 30) / 60;
+    const qint64 minutes = (seconds + 30) / 60;
     if (minutes < 60) return QStringLiteral("%1 min").arg(minutes);
     return minutes % 60 ? QStringLiteral("%1 h %2 min").arg(minutes / 60).arg(minutes % 60)
                         : QStringLiteral("%1 h").arg(minutes / 60);
@@ -57,12 +56,6 @@ QString dayText(const QDate &date)
 QColor accentTint(const QPalette &palette, int percent)
 {
     return mix(palette.color(QPalette::Base), palette.color(QPalette::Highlight), percent);
-}
-
-QString hourLabel(int hour)
-{
-    // A no-break space keeps "10 am" on one line in a wrapped sentence.
-    return QStringLiteral("%1\u00a0%2").arg(hour % 12 == 0 ? 12 : hour % 12).arg(hour < 12 ? u"am" : u"pm");
 }
 
 InsightsHeatmap::InsightsHeatmap(Shape shape, QWidget *parent)
@@ -82,37 +75,24 @@ void InsightsHeatmap::setDays(const QList<HeatmapDay> &days)
     setMeasure(m_measure);
 }
 
-void InsightsHeatmap::setMeasure(Measure measure)
+void InsightsHeatmap::setMeasure(HeatMeasure measure)
 {
     m_measure = measure;
-    m_activeValues.clear();
-    for (const HeatmapDay &day : std::as_const(m_days)) {
-        if (day.dictations > 0) m_activeValues.append(value(day));
-    }
+    m_scale = HeatScale(m_days, measure);
     updateGeometry();
     update();
-}
-
-int InsightsHeatmap::value(const HeatmapDay &day) const
-{
-    switch (m_measure) {
-    case Measure::Words: return day.words;
-    case Measure::Minutes: return day.audioMs;
-    case Measure::Dictations: break;
-    }
-    return day.dictations;
 }
 
 QString InsightsHeatmap::describe(const HeatmapDay &day) const
 {
     if (day.dictations == 0) return QStringLiteral("No dictation");
     switch (m_measure) {
-    case Measure::Words:
+    case HeatMeasure::Words:
         return QStringLiteral("%1 from %2").arg(plural(day.words, QStringLiteral("word"), QStringLiteral("words")),
                                                plural(day.dictations, QStringLiteral("dictation"), QStringLiteral("dictations")));
-    case Measure::Minutes:
+    case HeatMeasure::Audio:
         return QStringLiteral("%1 of audio").arg(audioText(day.audioMs));
-    case Measure::Dictations: break;
+    case HeatMeasure::Dictations: break;
     }
     return QStringLiteral("%1, %2").arg(plural(day.dictations, QStringLiteral("dictation"), QStringLiteral("dictations")),
                                         plural(day.words, QStringLiteral("word"), QStringLiteral("words")));
@@ -124,7 +104,7 @@ QColor InsightsHeatmap::levelColor(int level) const
         // No activity: a faint trace of the text colour on the card.
         return mix(palette().color(QPalette::Base), palette().color(QPalette::Text), 8);
     }
-    return accentTint(palette(), kLevelPercent[level]);
+    return accentTint(palette(), qRound(kHeatStrengths[level] * 100));
 }
 
 InsightsHeatmap::Geometry InsightsHeatmap::layOut(int width) const
@@ -156,26 +136,19 @@ InsightsHeatmap::Geometry InsightsHeatmap::layOutYear(int width) const
     const QDate today = m_days.last().date;
     const QDate firstMonday = today.addDays(-(today.dayOfWeek() - 1) - (weeks - 1) * 7);
     const QDate oldest = m_days.first().date;
-    const QLocale locale;
-    int lastMonth = -1;
+    const QMap<int, QString> months = monthLabels(m_days, weeks);
+    for (auto month = months.cbegin(); month != months.cend(); ++month) {
+        geometry.labels.append({QPointF(labelWidth + month.key() * pitch, metrics.ascent()), month.value()});
+    }
     for (int week = 0; week < weeks; ++week) {
         const QDate monday = firstMonday.addDays(week * 7);
         const qreal x = labelWidth + week * pitch;
-        // A month is named on its first full week; a half week at the left
-        // edge would put the label under the wrong month.
-        if (monday.month() != lastMonth && week < weeks - 2) {
-            if (lastMonth != -1 || monday.day() <= 7) {
-                geometry.labels.append({QPointF(x, metrics.ascent()),
-                                        locale.monthName(monday.month(), QLocale::ShortFormat)});
-            }
-            lastMonth = monday.month();
-        }
         for (int row = 0; row < 7; ++row) {
             const QDate date = monday.addDays(row);
             if (date > today || date < oldest) continue;
             const HeatmapDay &day = m_days.at(oldest.daysTo(date));
             geometry.cells.append({QRectF(x, labelHeight + row * pitch, cell, cell),
-                                   day.dictations ? heatLevel(value(day), m_activeValues) : 0,
+                                   m_scale.level(day),
                                    false,
                                    QStringLiteral("<b>%1</b><br>%2").arg(describe(day), dayText(date))});
         }

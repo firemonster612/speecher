@@ -186,6 +186,18 @@ ApplicationController::ApplicationController(bool popupOnly,
     m_insightsToday =
         QDate::fromString(qEnvironmentVariable("SPEECHER_INSIGHTS_TODAY"), Qt::ISODate);
     connect(m_session, &DictationSession::dictationRecorded, m_insightsLog, &InsightsLog::append);
+    // The session reports a delivery first, then (while insights record it)
+    // its record.
+    connect(m_session, &DictationSession::transcriptDelivered, this, [this] {
+        if (m_lastRecord) {
+            m_lastRecord.reset();
+            emit lastRecordChanged();
+        }
+    });
+    connect(m_session, &DictationSession::dictationRecorded, this, [this](const DictationRecord &record) {
+        m_lastRecord = record;
+        emit lastRecordChanged();
+    });
 
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::stateChanged);
@@ -246,6 +258,11 @@ InsightsLog *ApplicationController::insightsLog() const
 QDate ApplicationController::insightsToday() const
 {
     return m_insightsToday.isValid() ? m_insightsToday : QDate::currentDate();
+}
+
+const std::optional<DictationRecord> &ApplicationController::lastRecord() const
+{
+    return m_lastRecord;
 }
 
 bool ApplicationController::clearInsights()

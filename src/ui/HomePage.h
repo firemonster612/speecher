@@ -6,8 +6,6 @@
 
 #include <QWidget>
 
-#include <optional>
-
 class QBoxLayout;
 class QComboBox;
 class QFrame;
@@ -89,9 +87,7 @@ private:
     QGridLayout *m_tileGrid = nullptr;
     QList<QWidget *> m_tiles;
     QList<QBoxLayout *> m_pairs;
-    // App and time of the transcript on the card, when insights recorded it.
-    std::optional<DictationRecord> m_lastRecord;
-    InsightsHeatmap::Measure m_measure = InsightsHeatmap::Measure::Dictations;
+    HeatMeasure m_measure = HeatMeasure::Dictations;
     bool m_sessionActive = false;
 };
 

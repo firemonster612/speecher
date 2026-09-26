@@ -4,6 +4,7 @@
 
 #include <QDate>
 #include <QList>
+#include <QMap>
 #include <QString>
 
 #include <array>
@@ -93,7 +94,11 @@ struct InsightsSummary {
     bool hasHourData = false;
 
     int wordsPerMinute = 0;
+    // The typing pace the saving and the speed-up are measured against.
+    int typingWordsPerMinute = 0;
     int minutesSavedVersusTyping = 0;
+    // "That's 3.6× faster than typing at 40 words per minute."; empty with no audio.
+    QString speedupText;
 
     // Top five apps by words, then an "N other apps" fold when the rest has words.
     QList<AppShare> apps;
@@ -112,11 +117,57 @@ InsightsSummary summarize(const QList<DictationRecord> &records,
                           InsightsRange range,
                           const QDate &today);
 
-// Heatmap colour level 0..4: 0 for no activity, then the quartile of `value`
-// among `activeValues`, the chosen measure on every day with dictation.
-int heatLevel(int value, const QList<int> &activeValues);
+// What the activity heatmap colours its days by.
+enum class HeatMeasure {
+    Dictations,
+    Words,
+    Audio,
+};
+
+qint64 heatValue(const HeatmapDay &day, HeatMeasure measure);
+
+// Heatmap colour levels 0..4 for one measure: 0 for no activity, then the
+// quartile of the day's value among the days with dictation.
+class HeatScale {
+public:
+    HeatScale(const QList<HeatmapDay> &days, HeatMeasure measure);
+    int level(const HeatmapDay &day) const;
+
+private:
+    HeatMeasure m_measure;
+    std::array<qint64, 3> m_quartiles{};
+};
+
+// How strongly each heat level shows the accent over the card, level 0 none.
+inline constexpr std::array<double, 5> kHeatStrengths{0, 0.30, 0.52, 0.76, 1};
+
+// Month names over the heatmap's latest `weeksShown` week columns, by column
+// (0 is the oldest shown): on the first week starting in each month, never on
+// a part month at the left edge or in the last two columns. Fewer weeks shown
+// only drops columns from the left, so the labels for any width are the tail
+// of those for every week.
+QMap<int, QString> monthLabels(const QList<HeatmapDay> &heatmap, int weeksShown);
+
+// Wording every Home shares.
 
 // "today", "yesterday", a weekday within the last six days, else "Mar 1, 2026".
 QString relativeDay(const QDate &date, const QDate &today);
+// "▲ 29% vs previous 30 days", "▼ 4% vs previous week", "Same as previous
+// week"; empty without a delta.
+QString deltaText(const std::optional<int> &delta, const QString &period);
+// The line under the streak: "Your longest yet", "Best: 12 days", "Dictate
+// today to keep it going", "3-day run ended Tuesday"; empty with no history.
+QString streakText(const InsightsSummary &summary, const QDate &today);
+// "4,000 to go. You passed 1,000 already.", or "You passed 1,000,000 words"
+// once every milestone is.
+QString milestoneText(const InsightsSummary &summary);
+// "4.0 hours" from an hour up, else "34 min".
+QString audioTotalText(qint64 audioMs);
+// "Average dictation 1:07", or "Nothing yet" for an empty period.
+QString averageDictationText(const InsightsSummary &summary);
+// "m:ss".
+QString clockText(qint64 ms);
+// "12 am", "10 am", "6 pm", with a no-break space.
+QString hourLabel(int hour);
 
 } // namespace speecher

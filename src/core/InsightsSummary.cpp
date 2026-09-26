@@ -90,9 +90,14 @@ QList<DictationRecord> between(const QList<DictationRecord> &records, const QDat
     return inside;
 }
 
-QString formatNumber(int value)
+QString formatNumber(qint64 value)
 {
     return QLocale().toString(value);
+}
+
+QString plural(int count, const QString &noun)
+{
+    return QStringLiteral("%1 %2").arg(formatNumber(count), count == 1 ? noun : noun + u's');
 }
 
 // "About half of Hamlet": the book and plain fraction closest to the count.
@@ -345,11 +350,16 @@ InsightsSummary summarize(const QList<DictationRecord> &records,
     }
     describeAsBook(summary.words, summary);
 
+    summary.typingWordsPerMinute = kTypingWpm;
     if (summary.audioMs > 0) {
         const double minutes = summary.audioMs / 60000.0;
         summary.wordsPerMinute = roundHalfUp(summary.words / minutes);
         const double typingMinutes = double(summary.words) / kTypingWpm;
         summary.minutesSavedVersusTyping = roundHalfUp(std::max(0.0, typingMinutes - minutes));
+        summary.speedupText =
+            QStringLiteral("That's %1× faster than typing at %2 words per minute.")
+                .arg(QLocale().toString(double(summary.wordsPerMinute) / kTypingWpm, 'f', 1))
+                .arg(kTypingWpm);
     }
     summarizeHours(period, summary);
     summarizeApps(period, summary);
@@ -361,20 +371,55 @@ InsightsSummary summarize(const QList<DictationRecord> &records,
     return summary;
 }
 
-int heatLevel(int value, const QList<int> &activeValues)
+qint64 heatValue(const HeatmapDay &day, HeatMeasure measure)
 {
-    if (value == 0) {
-        return 0;
+    switch (measure) {
+    case HeatMeasure::Words: return day.words;
+    case HeatMeasure::Audio: return day.audioMs;
+    case HeatMeasure::Dictations: break;
     }
-    QList<int> sorted = activeValues;
-    std::sort(sorted.begin(), sorted.end());
-    const auto quartile = [&sorted](double p) {
-        return sorted.isEmpty() ? 0 : sorted[qsizetype(std::floor(p * (sorted.size() - 1)))];
-    };
-    if (value <= quartile(0.25)) return 1;
-    if (value <= quartile(0.5)) return 2;
-    if (value <= quartile(0.75)) return 3;
-    return 4;
+    return day.dictations;
+}
+
+HeatScale::HeatScale(const QList<HeatmapDay> &days, HeatMeasure measure)
+    : m_measure(measure)
+{
+    QList<qint64> active;
+    for (const HeatmapDay &day : days) {
+        if (day.dictations > 0) active.append(heatValue(day, measure));
+    }
+    if (active.isEmpty()) return;
+    std::sort(active.begin(), active.end());
+    for (int index = 0; index < 3; ++index) {
+        const double p = (index + 1) / 4.0;
+        m_quartiles[index] = active[qsizetype(std::floor(p * (active.size() - 1)))];
+    }
+}
+
+int HeatScale::level(const HeatmapDay &day) const
+{
+    const qint64 value = heatValue(day, m_measure);
+    if (day.dictations == 0 || value == 0) return 0;
+    const auto above = std::find_if(m_quartiles.begin(), m_quartiles.end(),
+                                    [value](qint64 quartile) { return value <= quartile; });
+    return int(above - m_quartiles.begin()) + 1;
+}
+
+QMap<int, QString> monthLabels(const QList<HeatmapDay> &heatmap, int weeksShown)
+{
+    QMap<int, QString> labels;
+    const int weeks = int((heatmap.size() + 6) / 7);
+    const int first = std::max(0, weeks - weeksShown);
+    const QLocale locale;
+    for (int column = 0; column < weeks - first - 2; ++column) {
+        const QDate monday = heatmap.at((first + column) * 7).date;
+        // The week before is in the previous month exactly when this Monday
+        // is one of its month's first seven days.
+        if (monday.day() <= 7) {
+            labels.insert(column, locale.standaloneMonthName(monday.month(), QLocale::ShortFormat));
+        }
+    }
+    return labels;
 }
 
 QString relativeDay(const QDate &date, const QDate &today)
@@ -385,6 +430,74 @@ QString relativeDay(const QDate &date, const QDate &today)
     const QLocale locale;
     if (daysAgo > 1 && daysAgo < 7) return locale.dayName(date.dayOfWeek(), QLocale::LongFormat);
     return locale.toString(date, QStringLiteral("MMM d, yyyy"));
+}
+
+QString deltaText(const std::optional<int> &delta, const QString &period)
+{
+    if (!delta) return {};
+    if (*delta == 0) return QStringLiteral("Same as previous %1").arg(period);
+    return QStringLiteral("%1 %2% vs previous %3")
+        .arg(*delta > 0 ? QStringLiteral("▲") : QStringLiteral("▼"))
+        .arg(std::abs(*delta))
+        .arg(period);
+}
+
+QString streakText(const InsightsSummary &summary, const QDate &today)
+{
+    if (summary.currentStreak > 0) {
+        if (!summary.weekActivity[summary.todayIndex]) {
+            return QStringLiteral("Dictate today to keep it going");
+        }
+        return summary.currentStreak >= summary.bestStreak
+            ? QStringLiteral("Your longest yet")
+            : QStringLiteral("Best: %1").arg(plural(summary.bestStreak, QStringLiteral("day")));
+    }
+    if (summary.brokenStreakLength > 0) {
+        return QStringLiteral("%1-day run ended %2")
+            .arg(summary.brokenStreakLength)
+            .arg(relativeDay(summary.brokenStreakEnded, today));
+    }
+    return {};
+}
+
+QString milestoneText(const InsightsSummary &summary)
+{
+    if (summary.nextMilestone == 0) {
+        return QStringLiteral("You passed %1 words").arg(formatNumber(summary.passedMilestone.value_or(0)));
+    }
+    QString text = QStringLiteral("%1 to go").arg(formatNumber(summary.nextMilestone - summary.allTimeWords));
+    if (summary.passedMilestone) {
+        text += QStringLiteral(". You passed %1 already.").arg(formatNumber(*summary.passedMilestone));
+    }
+    return text;
+}
+
+QString audioTotalText(qint64 audioMs)
+{
+    constexpr qint64 hourMs = 3600 * 1000;
+    if (audioMs >= hourMs) {
+        return QStringLiteral("%1 hours").arg(QLocale().toString(double(audioMs) / hourMs, 'f', 1));
+    }
+    return QStringLiteral("%1 min").arg(roundHalfUp(audioMs / 60000.0));
+}
+
+QString averageDictationText(const InsightsSummary &summary)
+{
+    return summary.dictations
+        ? QStringLiteral("Average dictation %1").arg(clockText(summary.averageAudioMs))
+        : QStringLiteral("Nothing yet");
+}
+
+QString clockText(qint64 ms)
+{
+    const qint64 seconds = (ms + 500) / 1000;
+    return QStringLiteral("%1:%2").arg(seconds / 60).arg(seconds % 60, 2, 10, QLatin1Char('0'));
+}
+
+QString hourLabel(int hour)
+{
+    // A no-break space keeps "10 am" on one line in a wrapped sentence.
+    return QStringLiteral("%1\u00a0%2").arg(hour % 12 == 0 ? 12 : hour % 12).arg(hour < 12 ? u"am" : u"pm");
 }
 
 } // namespace speecher

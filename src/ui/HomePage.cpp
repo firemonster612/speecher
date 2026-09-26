@@ -42,7 +42,6 @@ constexpr int kTwoUpMinimumWidth = 560;
 // progress fill darker than its palette colour, so the charts' 42 % mix would
 // sink into the groove; this reads at the same step below the lead bar.
 constexpr int kMutedProgressPercent = 70;
-constexpr int kTypingWpm = 40;
 
 QString number(int value)
 {
@@ -52,12 +51,6 @@ QString number(int value)
 QString plural(int count, const QString &one, const QString &many)
 {
     return QStringLiteral("%1 %2").arg(number(count), count == 1 ? one : many);
-}
-
-QString clock(int milliseconds)
-{
-    const int seconds = (milliseconds + 500) / 1000;
-    return QStringLiteral("%1:%2").arg(seconds / 60).arg(seconds % 60, 2, 10, QLatin1Char('0'));
 }
 
 QString capitalized(QString text)
@@ -191,16 +184,6 @@ QGridLayout *makeBarGrid(QVBoxLayout *content)
     return grid;
 }
 
-QString deltaText(const std::optional<int> &delta, const QString &period)
-{
-    if (!delta) return {};
-    if (*delta == 0) return QStringLiteral("Same as previous %1").arg(period);
-    return QStringLiteral("%1 %2% vs previous %3")
-        .arg(*delta > 0 ? QStringLiteral("▲") : QStringLiteral("▼"))
-        .arg(std::abs(*delta))
-        .arg(period);
-}
-
 // Clamps text to two lines at the label's width, ending in an ellipsis.
 QString twoLines(const QString &text, const QFont &font, int width)
 {
@@ -300,17 +283,10 @@ HomePage::HomePage(ApplicationController *controller, QWidget *parent)
     connect(controller, &ApplicationController::stateChanged, this, &HomePage::applyState);
     connect(controller, &ApplicationController::statusChanged, this, &HomePage::setDisplayStatus);
     connect(controller, &ApplicationController::audioLevelChanged, m_waveform, &WaveformWidget::setLevel);
-    // The session reports the delivered text first, then (while insights are
-    // on) the record naming its app and time.
-    connect(controller, &ApplicationController::transcriptDelivered, this, [this] {
-        m_lastRecord.reset();
-        refreshLastTranscript();
-    });
-    connect(controller->session(), &DictationSession::dictationRecorded, this,
-            [this](const DictationRecord &record) {
-                m_lastRecord = record;
-                refreshLastTranscript();
-            });
+    connect(controller, &ApplicationController::transcriptDelivered, this,
+            &HomePage::refreshLastTranscript);
+    connect(controller, &ApplicationController::lastRecordChanged, this,
+            &HomePage::refreshLastTranscript);
     connect(controller->session(), &DictationSession::popupErrorRequested, this,
             [this](const QString &message) {
                 m_errorText->setText(message.simplified());
@@ -543,25 +519,12 @@ QWidget *HomePage::buildTiles(const InsightsSummary &summary, QWidget *parent)
          {summary.bookComparison, deltaText(summary.wordsDelta, period)},
          summary.bookComparisonTip);
 
-    QString streakLine;
-    if (summary.currentStreak > 0) {
-        const bool dictatedToday = summary.weekActivity[summary.todayIndex];
-        streakLine = !dictatedToday ? QStringLiteral("Dictate today to keep it going")
-            : summary.currentStreak >= summary.bestStreak
-            ? QStringLiteral("Your longest yet")
-            : QStringLiteral("Best: %1").arg(plural(summary.bestStreak, QStringLiteral("day"),
-                                                    QStringLiteral("days")));
-    } else if (summary.brokenStreakLength > 0) {
-        streakLine = QStringLiteral("%1-day run ended %2")
-                         .arg(summary.brokenStreakLength)
-                         .arg(relativeDay(summary.brokenStreakEnded, m_controller->insightsToday()));
-    }
     QVBoxLayout *streak = tile(
         QStringLiteral("games-highscores"), QStringLiteral("Streak"),
         bigNumber({{number(summary.currentStreak),
                     summary.currentStreak == 1 ? QStringLiteral("day") : QStringLiteral("days")}},
                   nullptr),
-        {streakLine}, {});
+        {streakText(summary, m_controller->insightsToday())}, {});
     auto *week = new InsightsHeatmap(InsightsHeatmap::Shape::Week, streak->parentWidget());
     week->setObjectName(QStringLiteral("streakWeek"));
     week->setDays(summary.heatmap);
@@ -577,16 +540,11 @@ QWidget *HomePage::buildTiles(const InsightsSummary &summary, QWidget *parent)
           deltaText(summary.dictationsDelta, period)},
          {});
 
-    const bool hours = summary.audioMs >= 3600 * 1000;
+    // "4.0 hours": the figure large, its unit small.
+    const QString audio = audioTotalText(summary.audioMs);
     tile(QStringLiteral("waveform"), QStringLiteral("Audio transcribed"),
-         bigNumber({{hours ? QLocale().toString(summary.audioMs / 3600000.0, 'f', 1)
-                           : number((summary.audioMs + 30000) / 60000),
-                     hours ? QStringLiteral("hours") : QStringLiteral("min")}},
-                   nullptr),
-         {summary.dictations
-              ? QStringLiteral("Average dictation %1").arg(clock(summary.averageAudioMs))
-              : QStringLiteral("Nothing yet")},
-         {});
+         bigNumber({{audio.section(u' ', 0, 0), audio.section(u' ', 1)}}, nullptr),
+         {averageDictationText(summary)}, {});
     return host;
 }
 
@@ -601,9 +559,9 @@ QFrame *HomePage::buildActivityCard(const InsightsSummary &summary, QWidget *par
     auto *measure = new QComboBox(host);
     measure->setObjectName(QStringLiteral("activityMeasure"));
     measure->setAccessibleName(QStringLiteral("Measure"));
-    measure->addItem(QStringLiteral("Dictations"), int(InsightsHeatmap::Measure::Dictations));
-    measure->addItem(QStringLiteral("Words"), int(InsightsHeatmap::Measure::Words));
-    measure->addItem(QStringLiteral("Minutes of audio"), int(InsightsHeatmap::Measure::Minutes));
+    measure->addItem(QStringLiteral("Dictations"), int(HeatMeasure::Dictations));
+    measure->addItem(QStringLiteral("Words"), int(HeatMeasure::Words));
+    measure->addItem(QStringLiteral("Minutes of audio"), int(HeatMeasure::Audio));
     measure->setCurrentIndex(measure->findData(int(m_measure)));
     head->addWidget(measure);
     content->addLayout(head);
@@ -614,7 +572,7 @@ QFrame *HomePage::buildActivityCard(const InsightsSummary &summary, QWidget *par
     heatmap->setMeasure(m_measure);
     content->addWidget(heatmap);
     connect(measure, &QComboBox::currentIndexChanged, heatmap, [this, measure, heatmap] {
-        m_measure = static_cast<InsightsHeatmap::Measure>(measure->currentData().toInt());
+        m_measure = static_cast<HeatMeasure>(measure->currentData().toInt());
         heatmap->setMeasure(m_measure);
     });
 
@@ -701,12 +659,9 @@ QFrame *HomePage::buildPaceCard(const InsightsSummary &summary, QWidget *parent)
     addBarRow(grid, new QLabel(QStringLiteral("You, speaking"), host),
               makeBar(summary.wordsPerMinute, scale, true, host), number(summary.wordsPerMinute));
     addBarRow(grid, new QLabel(QStringLiteral("Typical typing"), host),
-              makeBar(kTypingWpm, scale, false, host), number(kTypingWpm));
-    content->addWidget(mutedLabel(
-        QStringLiteral("That's %1× faster than typing at %2 words per minute.")
-            .arg(QLocale().toString(double(summary.wordsPerMinute) / kTypingWpm, 'f', 1))
-            .arg(kTypingWpm),
-        host));
+              makeBar(summary.typingWordsPerMinute, scale, false, host),
+              number(summary.typingWordsPerMinute));
+    content->addWidget(mutedLabel(summary.speedupText, host));
     return card;
 }
 
@@ -792,15 +747,10 @@ QFrame *HomePage::buildRecordsCard(const InsightsSummary &summary, QWidget *pare
         progress->setTextVisible(false);
         progress->setFixedWidth(settings::gridUnit() * 6);
         progress->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-        QString description = QStringLiteral("%1 to go").arg(number(summary.nextMilestone - summary.allTimeWords));
-        if (summary.passedMilestone) {
-            description += QStringLiteral(". You passed %1 already.").arg(number(*summary.passedMilestone));
-        }
         add(QStringLiteral("Next milestone: %1 words").arg(number(summary.nextMilestone)),
-            description, progress);
+            milestoneText(summary), progress);
     } else {
-        add(QStringLiteral("Every milestone passed"),
-            QStringLiteral("You passed %1 words").arg(number(summary.passedMilestone.value_or(0))),
+        add(QStringLiteral("Every milestone passed"), milestoneText(summary),
             text(plural(summary.allTimeWords, QStringLiteral("word"), QStringLiteral("words"))));
     }
     add(QStringLiteral("Longest streak"),
@@ -812,7 +762,7 @@ QFrame *HomePage::buildRecordsCard(const InsightsSummary &summary, QWidget *pare
         QStringLiteral("%1 words into %2, %3")
             .arg(number(summary.longest.words), summary.longest.appName,
                  relativeDay(summary.longest.date, today)),
-        text(clock(summary.longest.audioMs)));
+        text(clockText(summary.longest.audioMs)));
     add(QStringLiteral("Busiest day"), capitalized(relativeDay(summary.busiestDay.date, today)),
         text(plural(summary.busiestDay.dictations, QStringLiteral("dictation"),
                     QStringLiteral("dictations"))));
@@ -890,10 +840,9 @@ void HomePage::refreshLastTranscript()
     m_lastText->setText(twoLines(transcript, m_lastText->font(), std::max(1, m_lastText->width())));
     m_lastText->setToolTip(transcript);
     QString meta = plural(countWords(transcript), QStringLiteral("word"), QStringLiteral("words"));
-    if (m_lastRecord) {
+    if (const std::optional<DictationRecord> &record = m_controller->lastRecord()) {
         meta += QStringLiteral(", %1, %2").arg(
-            m_lastRecord->appName,
-            relativeDay(m_lastRecord->finishedAt.date(), m_controller->insightsToday()));
+            record->appName, relativeDay(record->finishedAt.date(), m_controller->insightsToday()));
     }
     m_lastMeta->setText(meta);
 }
