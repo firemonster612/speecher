@@ -781,13 +781,28 @@ struct SettingsWindow::Native {
         dialog.PrimaryButtonText(hs(confirmLabel));
         dialog.CloseButtonText(L"Cancel");
         dialog.DefaultButton(ContentDialogButton::Close);
-        dialog.PrimaryButtonClick([confirmed = std::move(confirmed),
-                                   weak = std::weak_ptr<bool>(alive)](const ContentDialog &,
-                                                                      const ContentDialogButtonClickEventArgs &) {
-            if (!gone(weak)) {
+        // On Closed rather than PrimaryButtonClick, so `confirmed` may open
+        // a dialog of its own: WinUI allows one ContentDialog at a time.
+        dialog.Closed([confirmed = std::move(confirmed),
+                       weak = std::weak_ptr<bool>(alive)](const ContentDialog &,
+                                                          const ContentDialogClosedEventArgs &args) {
+            if (args.Result() == ContentDialogResult::Primary && !gone(weak)) {
                 confirmed();
             }
         });
+        dialog.ShowAsync();
+    }
+
+    void inform(const QString &title)
+    {
+        if (!root) {
+            return;
+        }
+        ContentDialog dialog;
+        dialog.XamlRoot(root.XamlRoot());
+        dialog.RequestedTheme(root.ActualTheme());
+        dialog.Title(box_value(hs(title)));
+        dialog.CloseButtonText(L"OK");
         dialog.ShowAsync();
     }
 
@@ -870,6 +885,11 @@ void SettingsWindow::confirm(const QString &title,
                              std::function<void()> confirmed)
 {
     m_native->confirm(title, text, confirmLabel, std::move(confirmed));
+}
+
+void SettingsWindow::inform(const QString &title)
+{
+    m_native->inform(title);
 }
 
 void SettingsWindow::setActionHook(std::function<void(const QString &)> hook)

@@ -375,8 +375,9 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 @property (nonatomic, copy, nullable) void (^insightsChanged)(void);
 - (SpeecherInsightsModel *)insightsSummaryForRange:(SpeecherInsightsRange)range
     NS_SWIFT_NAME(insightsSummary(range:));
-// Deletes every record, once the person has confirmed it.
-- (void)clearInsights;
+// Deletes every record, once the person has confirmed it. NO when the
+// history file could not be deleted.
+- (BOOL)clearInsights;
 @property (nonatomic, readonly) NSInteger learnedCorrectionCount;
 
 // The desktop-wide shortcut, which nothing surfaced after the setup assistant.

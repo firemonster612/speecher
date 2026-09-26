@@ -55,7 +55,8 @@ public:
     // screenshots, so front ends ask here rather than reading the clock.
     QDate insightsToday() const;
     // The Clear insights history action, once the person has confirmed it.
-    void clearInsights();
+    // False when the history file could not be deleted.
+    bool clearInsights();
     QString pendingWhatsNewVersion() const;
     void clearPendingWhatsNew();
     SecretStore *secretStore() const;

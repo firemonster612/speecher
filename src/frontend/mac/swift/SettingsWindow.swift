@@ -32,6 +32,10 @@ struct RootView: View {
         } message: {
             Text("Your stats, streaks and records are erased from this computer. This can't be undone.")
         }
+        .alert("Speecher couldn't delete the insights history.",
+               isPresented: $model.clearInsightsFailed) {
+            Button("OK", role: .cancel) {}
+        }
     }
 
     @ViewBuilder private var detail: some View {

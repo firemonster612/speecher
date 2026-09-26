@@ -248,9 +248,9 @@ QDate ApplicationController::insightsToday() const
     return m_insightsToday.isValid() ? m_insightsToday : QDate::currentDate();
 }
 
-void ApplicationController::clearInsights()
+bool ApplicationController::clearInsights()
 {
-    m_insightsLog->clear();
+    return m_insightsLog->clear();
 }
 
 bool ApplicationController::popupOnly() const

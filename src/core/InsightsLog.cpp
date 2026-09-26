@@ -93,13 +93,15 @@ void InsightsLog::append(const DictationRecord &record)
     emit changed();
 }
 
-void InsightsLog::clear()
+bool InsightsLog::clear()
 {
-    m_records.clear();
     if (m_access == Access::ReadWrite && QFile::exists(m_path) && !QFile::remove(m_path)) {
         qWarning().noquote() << "insights log could not be deleted path=" + m_path;
+        return false;
     }
+    m_records.clear();
     emit changed();
+    return true;
 }
 
 } // namespace speecher

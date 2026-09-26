@@ -75,6 +75,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var transcriptDetail = ""
     /// The Clear insights history row asked, and the confirmation is up.
     @Published var confirmingClearInsights = false
+    /// Deleting the history failed, and the alert saying so is up.
+    @Published var clearInsightsFailed = false
     /// The group an alternatives pane should switch to when it next shows,
     /// by title; the pane clears it once it has.
     @Published var requestedGroup: String? = nil
@@ -182,7 +184,7 @@ final class AppModel: ObservableObject {
     var learnedCorrectionCount: Int { bridge.learnedCorrectionCount }
 
     func clearInsights() {
-        bridge.clearInsights()
+        clearInsightsFailed = !bridge.clearInsights()
     }
 
     func showCorrections() {

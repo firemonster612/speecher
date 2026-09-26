@@ -39,6 +39,8 @@ public:
                  const QString &text,
                  const QString &confirmLabel,
                  std::function<void()> confirmed);
+    // Tells the person something in a ContentDialog with an OK button.
+    void inform(const QString &title);
 
     // What Action rows run. The window handles whatsNew itself and forwards
     // everything (whatsNew included) here; W4's front end wires the rest.

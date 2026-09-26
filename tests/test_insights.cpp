@@ -96,9 +96,27 @@ private slots:
         InsightsLog log(path);
         log.append(recordOn(kToday));
         QVERIFY(QFile::exists(path));
-        log.clear();
+        QVERIFY(log.clear());
         QVERIFY(!QFile::exists(path));
         QVERIFY(log.records().isEmpty());
+    }
+
+    void clearKeepsEverythingWhenTheFileCannotBeDeleted()
+    {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("insights.jsonl"));
+        InsightsLog log(path);
+        log.append(recordOn(kToday));
+        const QFileDevice::Permissions writable = QFile::permissions(dir.path());
+        QFile::setPermissions(dir.path(), QFileDevice::ReadOwner | QFileDevice::ExeOwner);
+        QSignalSpy changed(&log, &InsightsLog::changed);
+        QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("could not be deleted")));
+        const bool cleared = log.clear();
+        QFile::setPermissions(dir.path(), writable);
+        QVERIFY(!cleared);
+        QVERIFY(QFile::exists(path));
+        QCOMPARE(log.records().size(), 1);
+        QCOMPARE(changed.count(), 0);
     }
 
     void readOnlyLogNeverTouchesItsFile()
@@ -113,7 +131,7 @@ private slots:
         log.append(recordOn(kToday));
         QCOMPARE(log.records().size(), 2);
         QCOMPARE(readAll(path), seed);
-        log.clear();
+        QVERIFY(log.clear());
         QVERIFY(log.records().isEmpty());
         QCOMPARE(readAll(path), seed);
     }

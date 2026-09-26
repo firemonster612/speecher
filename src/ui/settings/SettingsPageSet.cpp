@@ -467,8 +467,10 @@ void SettingsPageSet::runPageAction(const QString &rowId)
         confirm.addButton(QMessageBox::Cancel);
         confirm.setDefaultButton(QMessageBox::Cancel);
         confirm.exec();
-        if (confirm.clickedButton() == remove) {
-            m_controller->clearInsights();
+        if (confirm.clickedButton() == remove && !m_controller->clearInsights()) {
+            QMessageBox::warning(qobject_cast<QWidget *>(parent()),
+                                 QStringLiteral("Clear insights history"),
+                                 QStringLiteral("Speecher couldn't delete the insights history."));
         }
         return;
     }

@@ -1342,9 +1342,9 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
                            today);
 }
 
-- (void)clearInsights
+- (BOOL)clearInsights
 {
-    _state->controller->clearInsights();
+    return _state->controller->clearInsights();
 }
 
 - (NSInteger)learnedCorrectionCount

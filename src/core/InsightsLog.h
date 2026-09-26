@@ -28,8 +28,9 @@ public:
 
     const QList<DictationRecord> &records() const;
     void append(const DictationRecord &record);
-    // Forgets every record and deletes the file (a read-only seed is kept).
-    void clear();
+    // Deletes the file (a read-only seed is kept), then forgets every record.
+    // False, with nothing forgotten, when the file could not be deleted.
+    bool clear();
 
 signals:
     void changed();
