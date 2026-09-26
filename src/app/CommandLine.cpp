@@ -3,6 +3,8 @@
 #include "app/PlatformComposition.h"
 #include "app/SingleInstanceIpc.h"
 
+#include <QFileInfo>
+#include <QMimeDatabase>
 #include <QProcess>
 
 #include <iostream>
@@ -79,6 +81,27 @@ bool startDetachedSetup(const SingleInstancePlatform *platform)
         {QStringLiteral("--daemon"), QStringLiteral("--show-setup")});
 }
 
+// Video counts too: the decoder transcribes a container's audio track, and
+// shared-mime-info files audio-only .webm and .mp4 under video/.
+bool isMediaFile(const QString &path)
+{
+    const QFileInfo info(path);
+    if (!info.isFile()) {
+        return false;
+    }
+    const QString mime = QMimeDatabase().mimeTypeForFile(info).name();
+    return mime.startsWith(QStringLiteral("audio/")) || mime.startsWith(QStringLiteral("video/"));
+}
+
+QStringList absolutePaths(const QStringList &paths)
+{
+    QStringList absolute;
+    for (const QString &path : paths) {
+        absolute << QFileInfo(path).absoluteFilePath();
+    }
+    return absolute;
+}
+
 } // namespace
 
 CommandLineDecision parseCommandLine(const QStringList &arguments, const QString &logPath)
@@ -134,6 +157,26 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     decision.mode = arguments.contains(QStringLiteral("--daemon"))
         ? LaunchMode::RunDaemon
         : LaunchMode::RunGui;
+    if (verb == QStringLiteral("transcribe")) {
+        QStringList files;
+        for (const QString &argument : arguments.mid(2)) {
+            if (!argument.startsWith(QLatin1Char('-'))) {
+                files << argument;
+            }
+        }
+        decision.transcribeFiles = absolutePaths(files);
+    } else {
+        QStringList files;
+        for (const QString &argument : arguments.mid(1)) {
+            if (isMediaFile(argument)) {
+                files << argument;
+            }
+        }
+        decision.transcribeFiles = absolutePaths(files);
+    }
+    if (!decision.transcribeFiles.isEmpty()) {
+        decision.mode = LaunchMode::RunGui;
+    }
     return decision;
 }
 

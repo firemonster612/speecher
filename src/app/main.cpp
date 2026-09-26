@@ -258,12 +258,15 @@ int main(int argc, char **argv)
             }
             return 1;
         }
-        const QString showCommand = decision.showSettings ? QStringLiteral("showSettings")
-                                                          : QStringLiteral("showMain");
+        const QString showCommand = !decision.transcribeFiles.isEmpty()
+            ? QStringLiteral("transcribe")
+            : decision.showSettings ? QStringLiteral("showSettings")
+                                    : QStringLiteral("showMain");
 #ifdef Q_OS_WIN
         if (!daemon) {
             AllowSetForegroundWindow(ASFW_ANY);
-            auto result = SingleInstanceIpc::sendCommandDetailed(showCommand, nullptr);
+            auto result = SingleInstanceIpc::sendCommandDetailed(
+                showCommand, std::nullopt, decision.transcribeFiles, nullptr);
             // The startup claim can precede the winning instance's pipe listener.
             if (ipcError.startsWith(QStringLiteral("Another Speecher instance"))) {
                 QDeadlineTimer deadline(750);
@@ -273,8 +276,8 @@ int main(int argc, char **argv)
                     if (remaining <= 0) {
                         break;
                     }
-                    result = SingleInstanceIpc::sendCommandDetailed(showCommand, nullptr,
-                                                                   int(remaining));
+                    result = SingleInstanceIpc::sendCommandDetailed(
+                        showCommand, std::nullopt, decision.transcribeFiles, nullptr, int(remaining));
                 }
             }
             if (result == IpcCommandResult::Sent) {
@@ -282,7 +285,9 @@ int main(int argc, char **argv)
             }
         }
 #else
-        if (!daemon && SingleInstanceIpc::sendCommand(showCommand, nullptr)) {
+        if (!daemon
+            && SingleInstanceIpc::sendCommandDetailed(showCommand, std::nullopt, decision.transcribeFiles, nullptr)
+                == IpcCommandResult::Sent) {
             return 0;
         }
 #endif
@@ -324,6 +329,11 @@ int main(int argc, char **argv)
         }
         if (!daemon || !decision.grabPath.isEmpty()) {
             controller.showMainWindow();
+        }
+        if (!decision.transcribeFiles.isEmpty()) {
+            QTimer::singleShot(0, &controller, [&controller, &decision] {
+                controller.showTranscribeFiles(decision.transcribeFiles);
+            });
         }
     }
     if (!decision.grabPath.isEmpty()) {

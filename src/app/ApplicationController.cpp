@@ -23,6 +23,7 @@
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
 #include "platform/GlobalShortcutBinder.h"
+#include "transcribe/FileTranscriptionSession.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -164,6 +165,7 @@ ApplicationController::ApplicationController(bool popupOnly,
                                      this);
     m_session->setScreenshotContextProvider(
         m_platform->createScreenshotContextProvider(this));
+    m_fileTranscription = new FileTranscriptionSession(m_settings, m_providers, this);
 #ifdef Q_OS_MACOS
     m_updates = new MacSparkleUpdater(m_settings, m_session, this);
 #elif defined(Q_OS_WIN)
@@ -221,6 +223,30 @@ void ApplicationController::setFrontEnd(AppFrontEnd *frontEnd)
 DictationSession *ApplicationController::session() const
 {
     return m_session;
+}
+
+FileTranscriptionSession *ApplicationController::fileTranscription() const
+{
+    return m_fileTranscription;
+}
+
+bool ApplicationController::startFileTranscription(const QStringList &paths,
+                                                   const TranscribeOptions &options,
+                                                   QString *error)
+{
+    const DictationState state = m_session->state();
+    const QString refusal = m_fileTranscription->isRunning()
+        ? QStringLiteral("Files are already being transcribed.")
+        : (state != DictationState::Idle && state != DictationState::Error) || m_microphoneStartPending
+            ? QStringLiteral("Finish the dictation in progress, then transcribe the files.")
+            : QString();
+    if (!refusal.isEmpty()) {
+        if (error) {
+            *error = refusal;
+        }
+        return false;
+    }
+    return m_fileTranscription->start(paths, options);
 }
 
 bool ApplicationController::popupOnly() const
@@ -441,6 +467,16 @@ void ApplicationController::showSetupAssistant(SetupAssistantPage page)
     }
 }
 
+void ApplicationController::showTranscribeFiles(const QStringList &paths)
+{
+    if (!ensureSetupCompleted()) {
+        return;
+    }
+    if (m_frontEnd) {
+        m_frontEnd->showTranscribeFiles(paths);
+    }
+}
+
 // macOS answers the microphone grant asynchronously the first time, so a
 // session start has to wait for the answer instead of capturing silence.
 void ApplicationController::startWithMicrophone(std::function<void()> start)
@@ -448,6 +484,13 @@ void ApplicationController::startWithMicrophone(std::function<void()> start)
     // Every session start funnels through here; a start dispatched during the
     // quit pump would re-pause the media quitApplication just resumed.
     if (m_quitting) {
+        return;
+    }
+    if (m_fileTranscription->isRunning()) {
+        if (m_frontEnd) {
+            m_frontEnd->showDictationError(QStringLiteral(
+                "Dictation is unavailable while files are being transcribed."));
+        }
         return;
     }
 #ifdef SPEECHER_E2E_HOOKS
@@ -674,7 +717,8 @@ void ApplicationController::quitApplication()
 
 void ApplicationController::handleIpcCommand(const QString &command,
                                              const QString &outputFormat,
-                                             QLocalSocket *socket)
+                                             QLocalSocket *socket,
+                                             const QStringList &files)
 {
     const bool hasFormat = !outputFormat.isEmpty();
     if (hasFormat && outputFormat != QStringLiteral("plain") && outputFormat != QStringLiteral("html")) {
@@ -715,6 +759,9 @@ void ApplicationController::handleIpcCommand(const QString &command,
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("showSetup")) {
         showSetup();
+        SingleInstanceIpc::writeResponse(socket, response());
+    } else if (command == QStringLiteral("transcribe")) {
+        showTranscribeFiles(files);
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("grab")) {
         // Screenshot seam for end-to-end runs: saves the main window into
@@ -762,6 +809,8 @@ ApplicationController::~ApplicationController()
 {
     delete m_updates;
     m_updates = nullptr;
+    delete m_fileTranscription;
+    m_fileTranscription = nullptr;
     delete m_session;
     m_session = nullptr;
 }

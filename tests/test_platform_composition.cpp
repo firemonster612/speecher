@@ -15,6 +15,7 @@
 #include "platform/KGlobalAccelShortcutBinder.h"
 #include "platform/LinuxDesktopIntegration.h"
 #include "platform/PortalGlobalShortcutBinder.h"
+#include "transcribe/FileTranscriptionSession.h"
 #include "ui/SetupAssistant.h"
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
 #include "ui/setup/SetupPages.h"
@@ -36,6 +37,7 @@
 #include <QStringList>
 #include <QSystemTrayIcon>
 #include <QTemporaryDir>
+#include <QtEndian>
 
 #ifdef SPEECHER_WITH_KASSISTANT
 #include <KPageWidget>
@@ -335,6 +337,43 @@ private slots:
         controller.stopListening();
     }
 
+    void dictationAndFileTranscriptionExcludeEachOther()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        const bool setupCompleted = controller.settings()->setupCompleted();
+        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(setupCompleted); });
+        controller.settings()->setSetupCompleted(true);
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("silence.wav"));
+        {
+            // One second of 16 kHz mono s16 silence.
+            const QByteArray data(32000, '\0');
+            const auto le32 = [](quint32 v) { QByteArray b(4, 0); qToLittleEndian(v, b.data()); return b; };
+            const auto le16 = [](quint16 v) { QByteArray b(2, 0); qToLittleEndian(v, b.data()); return b; };
+            QFile file(audio);
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write("RIFF" + le32(36 + data.size()) + "WAVEfmt " + le32(16) + le16(1) + le16(1)
+                       + le32(16000) + le32(32000) + le16(2) + le16(16) + "data" + le32(data.size()) + data);
+        }
+        TranscribeOptions options;
+        options.speechProviderId = QStringLiteral("claude");
+
+        // A batch in flight turns the dictation shortcut away.
+        QVERIFY(controller.startFileTranscription({audio}, options));
+        controller.toggle();
+        QVERIFY(!platform->microphoneAnswer);
+        controller.fileTranscription()->cancel();
+
+        // A dictation waiting on the microphone turns a batch away.
+        controller.toggle();
+        QVERIFY(platform->microphoneAnswer);
+        QString error;
+        QVERIFY(!controller.startFileTranscription({audio}, options, &error));
+        QVERIFY(!error.isEmpty());
+        controller.stopListening();
+    }
+
     void shortcutReleasePreservesRecordingError()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
@@ -514,6 +553,32 @@ private slots:
                  QStringList({QStringLiteral("--daemon"),
                               QStringLiteral("--format"),
                               QStringLiteral("plain")}));
+    }
+
+    void audioFileArgumentsOpenTheTranscribePage()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        const QString notes = dir.filePath(QStringLiteral("notes.txt"));
+        for (const auto &[path, bytes] : {std::pair{audio, QByteArrayLiteral("RIFF\0\0\0\0WAVEfmt ")},
+                                          std::pair{notes, QByteArrayLiteral("plain text")}}) {
+            QFile file(path);
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write(bytes);
+        }
+
+        // What a file manager's "Open with" passes: bare paths, of which only
+        // the audio is taken.
+        const CommandLineDecision opened = parseCommandLine(
+            {QStringLiteral("speecher"), audio, notes}, {});
+        QCOMPARE(opened.mode, LaunchMode::RunGui);
+        QCOMPARE(opened.transcribeFiles, QStringList{audio});
+
+        const CommandLineDecision verb = parseCommandLine(
+            {QStringLiteral("speecher"), QStringLiteral("transcribe"), QStringLiteral("later.mp3")}, {});
+        QCOMPARE(verb.mode, LaunchMode::RunGui);
+        QCOMPARE(verb.transcribeFiles, QStringList{QDir::current().absoluteFilePath(QStringLiteral("later.mp3"))});
     }
 
     void quitIsAClientCommand()

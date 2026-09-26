@@ -32,6 +32,10 @@ struct CommandLineDecision {
     bool showSettings = false;
     bool showSetup = false;
     QString grabPath;
+    // RunGui: absolute paths to open on the Transcribe page, from
+    // `speecher transcribe <files...>` or bare audio file arguments (what a
+    // file manager's "Open with" passes).
+    QStringList transcribeFiles;
 };
 
 // Decides what the process is for, before any GUI type is constructed, so that
