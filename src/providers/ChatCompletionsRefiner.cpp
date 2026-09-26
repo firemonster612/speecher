@@ -1,5 +1,6 @@
 #include "providers/ChatCompletionsRefiner.h"
 
+#include "core/EndpointUrl.h"
 #include "providers/TranscriptRefinementPrompt.h"
 
 #include <QDebug>
@@ -101,9 +102,7 @@ void ChatCompletionsRefiner::refine(const QString &rawTranscript,
 {
     m_serverModel = endpointBase + QLatin1Char('\n') + model;
     m_buildRequest = [=](bool withReasoningFields) -> StreamingRefinement::Request {
-        QString base = endpointBase;
-        while (base.endsWith(QLatin1Char('/'))) base.chop(1);
-        QNetworkRequest request(QUrl(base + QStringLiteral("/chat/completions")));
+        QNetworkRequest request(QUrl(withoutTrailingSlashes(endpointBase) + QStringLiteral("/chat/completions")));
         request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
         if (!apiKey.isEmpty()) {
             request.setRawHeader("Authorization", "Bearer " + apiKey.toUtf8());

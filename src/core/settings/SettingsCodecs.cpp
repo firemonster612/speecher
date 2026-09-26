@@ -59,15 +59,6 @@ QString normalizedEndpointPath(const QString &path)
     return trimmed.startsWith(QLatin1Char('/')) ? trimmed : QLatin1Char('/') + trimmed;
 }
 
-QString withoutTrailingSlashes(QString url)
-{
-    url = url.trimmed();
-    while (url.endsWith(QLatin1Char('/'))) {
-        url.chop(1);
-    }
-    return url;
-}
-
 QString defaultRefinementProvider()
 {
     if (CliToolDiscovery::isCodexInstalled()) {

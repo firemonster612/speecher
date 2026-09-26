@@ -140,7 +140,7 @@ QJsonArray userMessages(const QString &rawTranscript,
     }};
 }
 
-StreamingRefinement::Event anthropicEvent(const QByteArray &name, const QByteArray &data)
+StreamingRefinement::Event anthropicEvent(const QString &label, const QByteArray &name, const QByteArray &data)
 {
     using Event = StreamingRefinement::Event;
     const QJsonObject object = QJsonDocument::fromJson(data).object();
@@ -148,10 +148,10 @@ StreamingRefinement::Event anthropicEvent(const QByteArray &name, const QByteArr
     const QString stopReason = delta.value(QStringLiteral("stop_reason")).toString();
     if (name == "message_delta" && !stopReason.isEmpty()
         && stopReason != QStringLiteral("end_turn") && stopReason != QStringLiteral("stop_sequence")) {
-        return {Event::Failed, QStringLiteral("Anthropic refinement stopped: %1").arg(stopReason)};
+        return {Event::Failed, QStringLiteral("%1 refinement stopped: %2").arg(label, stopReason)};
     }
     if (name == "error" || object.value(QStringLiteral("type")).toString() == QStringLiteral("error")) {
-        return {Event::Rejected, anthropicErrorMessage(data, QStringLiteral("Anthropic refinement error"))};
+        return {Event::Rejected, anthropicErrorMessage(data, QStringLiteral("%1 refinement error").arg(label))};
     }
     if (name == "content_block_delta" && delta.value(QStringLiteral("type")).toString() == QStringLiteral("text_delta")) {
         return {Event::Delta, delta.value(QStringLiteral("text")).toString()};
@@ -168,10 +168,12 @@ StreamingRefinement::Event anthropicEvent(const QByteArray &name, const QByteArr
 
 AnthropicApiRefiner::AnthropicApiRefiner(QObject *parent,
                                          int requestTimeoutMs,
-                                         int absoluteDeadlineMs)
+                                         int absoluteDeadlineMs,
+                                         const QString &label)
     : QObject(parent)
-    , m_stream(QStringLiteral("Anthropic"), anthropicEvent, anthropicErrorMessage,
-               requestTimeoutMs, absoluteDeadlineMs, this)
+    , m_stream(label,
+               [label](const QByteArray &name, const QByteArray &data) { return anthropicEvent(label, name, data); },
+               anthropicErrorMessage, requestTimeoutMs, absoluteDeadlineMs, this)
 {
     connect(&m_stream, &StreamingRefinement::delta, this, &AnthropicApiRefiner::delta);
     connect(&m_stream, &StreamingRefinement::completed, this, &AnthropicApiRefiner::completed);

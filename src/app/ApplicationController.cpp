@@ -133,6 +133,7 @@ ApplicationController::ApplicationController(bool popupOnly,
             &GlobalShortcutBinder::registrationFinished,
             this,
             &ApplicationController::globalShortcutRegistrationFinished);
+    m_secrets->prefetch();
     registerProviders();
     TargetProvider *targetProvider = m_platform->createTargetProvider(this);
     targetProvider->setCorrectionObservationEnabled(m_settings->correctionLearningEnabled());

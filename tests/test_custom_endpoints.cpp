@@ -8,6 +8,7 @@
 #include "providers/LocalRunner.h"
 
 #include <QHttpMultiPart>
+#include <QScopeGuard>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 
@@ -234,6 +235,88 @@ private slots:
         QCOMPARE(completed.size(), 0);
     }
 
+    // The server keeps the connection busy past the inactivity limit, then
+    // goes quiet: the streamed text so far is the dictation.
+    void speechEndpointKeepsStreamingPastTheInactivityLimitAndKeepsTextWhenItStalls()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        SpeechSettings settings;
+        settings.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+        EndpointSpeechTranscriber transcriber(nullptr, 300, 5000);
+        QSignalSpy transcript(&transcriber, &SpeechTranscriber::attemptTranscript);
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
+
+        transcriber.startAttempt(1, settings);
+        transcriber.sendAudio(1, QByteArray(640, '\0'));
+        transcriber.finishInput(1);
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 2000);
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(!readRequest(socket).isEmpty());
+        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n");
+        for (const char *word : {"One", " two", " three", " four"}) {
+            socket->write("data: {\"type\":\"transcript.text.delta\",\"delta\":\"" + QByteArray(word) + "\"}\n\n");
+            socket->flush();
+            QTest::qWait(150);
+        }
+        QCOMPARE(failed.size(), 0);
+        QCOMPARE(completed.size(), 0);
+
+        QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 2000);
+        QCOMPARE(failed.size(), 0);
+        QCOMPARE(transcript.size(), 1);
+        QCOMPARE(transcript.first().at(1).toString(), QStringLiteral("One two three four"));
+    }
+
+    void speechEndpointFailsWhenAQuietServerStallsBeforeAnyText()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        SpeechSettings settings;
+        settings.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+        EndpointSpeechTranscriber transcriber(nullptr, 200, 5000);
+        QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+
+        transcriber.startAttempt(2, settings);
+        transcriber.sendAudio(2, QByteArray(640, '\0'));
+        transcriber.finishInput(2);
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 2000);
+        QVERIFY(!readRequest(server.nextPendingConnection()).isEmpty());
+
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
+        const QString message = failed.first().first().value<SpeechFailure>().message;
+        QVERIFY2(message.contains(QStringLiteral("sent nothing")), qPrintable(message));
+        QCOMPARE(completed.size(), 0);
+    }
+
+    void speechEndpointCancelledMidFlightEmitsNothing()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        SpeechSettings settings;
+        settings.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+        EndpointSpeechTranscriber transcriber;
+        QSignalSpy partial(&transcriber, &SpeechTranscriber::partialTranscript);
+        QSignalSpy transcript(&transcriber, &SpeechTranscriber::attemptTranscript);
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
+
+        transcriber.startAttempt(4, settings);
+        transcriber.sendAudio(4, QByteArray(640, '\0'));
+        transcriber.finishInput(4);
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 2000);
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(!readRequest(socket).isEmpty());
+        transcriber.cancelAttempt(4);
+        socket->write(httpResponse("200 OK", "application/json", "{\"text\":\"too late\"}"));
+        socket->flush();
+
+        QTest::qWait(200);
+        QCOMPARE(partial.size() + transcript.size() + completed.size() + failed.size(), 0);
+    }
+
     void chatCompletionsSendsThePromptAndStreamsTheReply()
     {
         FakeServer server;
@@ -301,6 +384,51 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 2, 2000);
         QCOMPARE(server.requests.size(), 3);
         QVERIFY(!server.jsonBody(2).contains(QStringLiteral("reasoning_effort")));
+    }
+
+    // Text already delivered must not be replayed, even when the error that
+    // follows names a reasoning field.
+    void chatCompletionsDoesNotRetryAfterStreamedOutput()
+    {
+        FakeServer server;
+        server.route("POST /v1/chat/completions",
+                     sse({chatChunk(QStringLiteral("Half")),
+                          json({{QStringLiteral("error"), QJsonObject{{QStringLiteral("message"),
+                                 QStringLiteral("chat_template_kwargs is not supported")}}}})}));
+        ChatCompletionsRefiner refiner(QStringLiteral("Custom endpoint"));
+        QSignalSpy delta(&refiner, &ChatCompletionsRefiner::delta);
+        QSignalSpy completed(&refiner, &ChatCompletionsRefiner::completed);
+        QSignalSpy failed(&refiner, &ChatCompletionsRefiner::failed);
+        RefinementContext context;
+        refiner.refine(QStringLiteral("half"), {}, {}, {}, server.origin() + QStringLiteral("/v1"),
+                       QStringLiteral("m"), QStringLiteral("balanced"), context);
+
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
+        QCOMPARE(delta.size(), 1);
+        QCOMPARE(completed.size(), 0);
+        QTest::qWait(100);
+        QCOMPARE(server.requests.size(), 1);
+    }
+
+    void messagesFormatFailuresNameTheEndpoint()
+    {
+        FakeServer server;
+        server.route("POST /v1/messages",
+                     httpResponse("200 OK", "text/event-stream",
+                                  "event: message_delta\ndata: {\"delta\":{\"stop_reason\":\"max_tokens\"}}\n\n"));
+        RefinementSettings settings;
+        settings.endpoint.format = QStringLiteral("anthropic");
+        settings.endpoint.baseUrl = server.origin() + QStringLiteral("/v1");
+        settings.endpoint.model = QStringLiteral("m");
+        EndpointTranscriptRefiner refiner;
+        QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
+        RefinementContext context;
+        refiner.refine(QStringLiteral("x"), {}, context, settings);
+
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
+        const QString message = failed.first().first().toString();
+        QVERIFY2(message.startsWith(QStringLiteral("Custom endpoint refinement")), qPrintable(message));
+        QVERIFY(!message.contains(QStringLiteral("Anthropic")));
     }
 
     void chatCompletionsDoesNotRetryOtherErrors()
@@ -421,6 +549,39 @@ private slots:
         QVERIFY(!probeOllama(kobold.origin(), 2000));
         QVERIFY(!probeLlamaServer(kobold.origin(), 2000));
         QVERIFY(!probeLmStudio(kobold.origin(), 2000));
+    }
+
+    void llamaServerLoadingItsModelIsFound()
+    {
+        FakeServer llama;
+        llama.route("GET /health", httpResponse("503 Service Unavailable", "application/json",
+                                                "{\"error\":{\"message\":\"Loading model\","
+                                                "\"type\":\"unavailable_error\",\"code\":503}}"));
+        const std::optional<DetectedRunner> loading = probeLlamaServer(llama.origin(), 2000);
+        QVERIFY(loading);
+        QCOMPARE(loading->id, QStringLiteral("llama-server"));
+        QVERIFY(loading->models.isEmpty());
+
+        // whisper.cpp's server loading its model is not llama-server.
+        FakeServer whisper;
+        whisper.route("GET /health", httpResponse("503 Service Unavailable", "application/json",
+                                                  "{\"status\":\"loading model\"}"));
+        QVERIFY(!probeLlamaServer(whisper.origin(), 2000));
+    }
+
+    void lmStudioBefore04IsFoundThroughItsV0Listing()
+    {
+        FakeServer lmStudio;
+        lmStudio.route("GET /api/v0/models",
+                       httpResponse("200 OK", "application/json",
+                                    "{\"object\":\"list\",\"data\":["
+                                    "{\"id\":\"qwen2-vl-7b-instruct\",\"object\":\"model\",\"type\":\"vlm\","
+                                    "\"compatibility_type\":\"mlx\",\"state\":\"not-loaded\"},"
+                                    "{\"id\":\"text-embedding-nomic\",\"object\":\"model\",\"type\":\"embeddings\","
+                                    "\"compatibility_type\":\"gguf\"}]}"));
+        const std::optional<DetectedRunner> studio = probeLmStudio(lmStudio.origin(), 2000);
+        QVERIFY(studio);
+        QCOMPARE(studio->models, QStringList{QStringLiteral("qwen2-vl-7b-instruct")});
     }
 
     void llamaServerAndLmStudioAreIdentified()
@@ -555,6 +716,32 @@ private slots:
         QCOMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QString());
         QVERIFY(!reopened.raw().contains(SettingsKeys::SpeechEndpointApiKey));
         QVERIFY(!reopened.raw().contains(SettingsKeys::SecretsInKeyring));
+    }
+
+    // A keyring that does not answer must not make a migrated CLI Proxy API
+    // key look unset, and a snapshot saved meanwhile must not erase it.
+    void keyringTimeoutKeepsTheMigratedCliproxyKey()
+    {
+        {
+            SettingsStore settings;
+            settings.raw().clear();
+            settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
+            settings.setCliproxyBaseUrl(QStringLiteral("http://proxy.example:8317"));
+            // As SecretStore records a key it moved into the keyring.
+            settings.raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("cliproxy-api-key")});
+            settings.raw().sync();
+        }
+        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
+        SettingsStore settings;
+        AppSettings draft = settings.snapshot();
+        QCOMPARE(draft.refinement.cliproxyApiKey, QString());
+
+        draft.refinement.cliproxyBaseUrl = QStringLiteral("http://proxy.example:8318");
+        settings.applySnapshot(draft);
+        QCOMPARE(settings.raw().value(SettingsKeys::SecretsInKeyring).toStringList(),
+                 QStringList{QStringLiteral("cliproxy-api-key")});
+        QVERIFY(!settings.raw().contains(SettingsKeys::CliproxyApiKey));
     }
 
     // Existing CLI Proxy API users keep their key: it moves from the settings

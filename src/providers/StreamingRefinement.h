@@ -26,7 +26,7 @@ public:
         Kind kind = Ignore;
         QString text;
     };
-    using DecodeEvent = Event (*)(const QByteArray &name, const QByteArray &data);
+    using DecodeEvent = std::function<Event(const QByteArray &name, const QByteArray &data)>;
     using DecodeError = QString (*)(const QByteArray &body, const QString &fallback);
     using BuildRequest = std::function<Request(bool fast)>;
 
