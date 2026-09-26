@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
 
 #include <functional>
 #include <memory>
@@ -25,12 +26,16 @@ public:
     // draft, and remembers the pane from last time.
     void show();
     void showWhatsNew();
+    // Shows the window on the Transcribe pane with these files added to its
+    // list; the batch is not started.
+    void showTranscribeFiles(const QStringList &paths);
     bool isVisible() const;
 
     // Saves a picture of the window for --grab. SPEECHER_GRAB_PAGE names a
     // schema page id (general, audio, refinement, output, vocabulary,
-    // corrections, bindings, providers, whatsNew) or the shortcut pane, to
-    // show before the grab. A ":index" suffix is tolerated and ignored.
+    // corrections, bindings, providers, whatsNew) or a hand-built pane
+    // (shortcut, transcribe), to show before the grab. A ":index" suffix is
+    // tolerated and ignored.
     bool capture(const QString &path);
 
     // What Action rows run. The window handles whatsNew itself and forwards

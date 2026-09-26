@@ -98,6 +98,11 @@ winrt::Microsoft::UI::Xaml::UIElement buildPage(const PageSnapshot &page, PaneHo
 // page behind it.
 winrt::Microsoft::UI::Xaml::UIElement buildShortcutPage(PaneHost &host);
 
+// The Gallery's settings page scaffold: gutters on the scroller, the column
+// capped at 1064 inside them, the page title on top.
+winrt::Microsoft::UI::Xaml::Controls::ScrollViewer pageScaffold(
+    const QString &title, const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column);
+
 // A SettingsCard-shaped container (Card brushes, 1 px stroke, control corner
 // radius) around arbitrary content; shared with the collection editor and the
 // full-width custom rows so every card on screen is the same card.
@@ -110,6 +115,10 @@ winrt::Microsoft::UI::Xaml::Controls::Grid rowGrid(const RowSnapshot &row,
                                                    const winrt::Microsoft::UI::Xaml::UIElement &control,
                                                    PaneHost &host,
                                                    bool followsRow);
+
+// A grid with the inset top separator that rows following another row in the
+// same card share.
+winrt::Microsoft::UI::Xaml::Controls::Grid separatedGrid();
 
 // Detaches an element from whatever parent a discarded pane left it in, so a
 // cached element can be shown in a rebuilt one.

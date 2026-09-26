@@ -367,9 +367,9 @@ void appendSection(const StackPanel &column, const SectionSnapshot &section, Pan
     }
 }
 
-// The Gallery's settings page scaffold: gutters on the scroller, the column
-// capped at 1064 inside them, the page title on top.
-ScrollViewer pageScaffold(const QString &title, StackPanel &column)
+} // namespace
+
+ScrollViewer pageScaffold(const QString &title, const StackPanel &column)
 {
     ScrollViewer scroll;
     scroll.Padding({36, 0, 36, 0});
@@ -379,8 +379,6 @@ ScrollViewer pageScaffold(const QString &title, StackPanel &column)
     scroll.Content(column);
     return scroll;
 }
-
-} // namespace
 
 TextBlock styledTextBlock(const QString &text, const wchar_t *styleKey)
 {
@@ -465,16 +463,17 @@ Border cardContainer(const UIElement &content)
     return card;
 }
 
+Grid separatedGrid()
+{
+    // Drawn by the card's own stroke so it matches in every theme.
+    static const hstring xaml = hstring(L"<Grid ") + kXmlns
+        + LR"( BorderThickness="0,1,0,0" BorderBrush="{ThemeResource SettingsCardBorderBrush}"/>)";
+    return XamlReader::Load(xaml).as<Grid>();
+}
+
 Grid rowGrid(const RowSnapshot &row, const UIElement &control, PaneHost &host, bool followsRow)
 {
-    Grid grid;
-    if (followsRow) {
-        // The inset separator grouped rows share, drawn by the card's own
-        // stroke so it matches in every theme.
-        static const hstring xaml = hstring(L"<Grid ") + kXmlns
-            + LR"( BorderThickness="0,1,0,0" BorderBrush="{ThemeResource SettingsCardBorderBrush}"/>)";
-        grid = XamlReader::Load(xaml).as<Grid>();
-    }
+    Grid grid = followsRow ? separatedGrid() : Grid();
     grid.MinHeight(68);
     grid.Padding({16, 16, 16, 16});
     grid.ColumnSpacing(16);

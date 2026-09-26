@@ -125,6 +125,13 @@ void WinFrontEnd::showSetupAssistant(SetupAssistantPage page)
     m_native->setup->show(page);
 }
 
+void WinFrontEnd::showTranscribeFiles(const QStringList &paths)
+{
+    m_native->trayReady->stop();
+    m_native->settingsWindow()->showTranscribeFiles(paths);
+    QTimer::singleShot(0, this, &WinFrontEnd::reportReady);
+}
+
 bool WinFrontEnd::captureMainWindow(const QString &path)
 {
     return m_native->settings && m_native->settings->capture(path);
