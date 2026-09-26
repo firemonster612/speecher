@@ -396,6 +396,37 @@ private slots:
                  qPrintable(transcripts.first().at(1).toString()));
     }
 
+    void streamSplitKeepsPartWordsTentative()
+    {
+        // Mid-word commit: "wor" is not a whole word yet.
+        StreamSplit split = splitStreamText({QStringLiteral("hello wor"), QStringLiteral("ld again")}, 0);
+        QCOMPARE(split.finalWords, QStringLiteral("hello"));
+        QCOMPARE(split.partial, QStringLiteral(" world again"));
+        QCOMPARE(split.finalChars, 5);
+
+        // The committed word is complete once a space follows it.
+        split = splitStreamText({QStringLiteral("hello world "), QStringLiteral("again")}, 5);
+        QCOMPARE(split.finalWords, QStringLiteral(" world"));
+        QCOMPARE(split.partial, QStringLiteral(" again"));
+        QCOMPARE(split.finalChars, 11);
+
+        // Committed text that grows only inside the last word adds no final.
+        split = splitStreamText({QStringLiteral("hello world aga"), QStringLiteral("in")}, 11);
+        QVERIFY(split.finalWords.isEmpty());
+        QCOMPARE(split.partial, QStringLiteral(" again"));
+        QCOMPARE(split.finalChars, 11);
+
+        split = splitStreamText({}, 0);
+        QVERIFY(split.finalWords.isEmpty());
+        QVERIFY(split.partial.isEmpty());
+        QCOMPARE(split.finalChars, 0);
+
+        // Nothing committed yet: all of it is tentative.
+        split = splitStreamText({{}, QStringLiteral("the night")}, 0);
+        QVERIFY(split.finalWords.isEmpty());
+        QCOMPARE(split.partial, QStringLiteral("the night"));
+    }
+
     void missingModelFailsWithAnActionableMessage()
     {
         QTemporaryDir dir;

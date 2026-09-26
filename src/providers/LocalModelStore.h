@@ -3,17 +3,19 @@
 #include "core/LocalModelCatalog.h"
 
 #include <QHash>
-#include <QNetworkAccessManager>
 #include <QObject>
+#include <QThread>
 #include <QUrl>
 
-class QFile;
-class QNetworkReply;
+#include <atomic>
+#include <memory>
 
 namespace speecher {
 
 // Local Model files on disk: downloads that resume, are checked against the
-// catalog's sha256 before they count, and can be cancelled or deleted.
+// catalog's sha256 before they count, and can be cancelled or deleted. The
+// network, disk writes, hashing and rename run on a thread of the store's own;
+// the calls and signals here belong to the thread that created it.
 class LocalModelStore : public QObject {
     Q_OBJECT
 
@@ -44,18 +46,24 @@ signals:
     void downloadFailed(const QString &modelId, const QString &message);
 
 private:
-    struct Download;
+    class Worker;
 
-    QString partPath(const LocalModel &model) const;
-    void writeReceived(Download *download);
-    void finishReply(const QString &modelId);
-    void verify(const LocalModel &model);
-    void fail(const QString &modelId, const QString &message);
+    // A report from the worker about download `serial`; stale ones are dropped.
+    void reportProgress(const QString &modelId, quint64 serial, qint64 received, qint64 total);
+    void reportEnd(const QString &modelId, quint64 serial, const QString &error);
+
+    struct Running {
+        quint64 serial = 0;
+        // Read by the worker while it hashes, so cancel() need not wait for
+        // a whole multi-gigabyte file.
+        std::shared_ptr<std::atomic_bool> cancelled;
+    };
 
     QString m_directory;
-    QUrl m_server;
-    QNetworkAccessManager m_network;
-    QHash<QString, Download *> m_downloads;
+    QHash<QString, Running> m_downloads;
+    quint64 m_lastSerial = 0;
+    QThread m_thread;
+    Worker *m_worker = nullptr;
 };
 
 } // namespace speecher
