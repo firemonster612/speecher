@@ -545,7 +545,7 @@ QWidget *HomePage::buildTiles(const InsightsSummary &summary, QWidget *parent)
     // "4.0 hours": the figure large, its unit small.
     const QString audio = audioTotalText(summary.audioMs);
     tile(QStringLiteral("waveform"), QStringLiteral("Audio transcribed"),
-         bigNumber({{audio.section(u' ', 0, 0), audio.section(u' ', 1)}}, nullptr),
+         bigNumber({{audio.section(u' ', 0, -2), audio.section(u' ', -1)}}, nullptr),
          {averageDictationText(summary)}, {});
     return host;
 }
