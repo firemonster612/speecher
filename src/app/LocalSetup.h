@@ -48,6 +48,10 @@ RunnerChoice resolveRunnerChoice(const LocalRunnerSettings &saved,
                                 const QList<DetectedRunner> &runners,
                                 const std::optional<CleanupModel> &suggestion);
 
+// What the Ready step names for an own-model refinement choice: "Ollama with
+// gemma4:e4b", "qwen3 on your server". Empty for any other provider.
+QString ownModelRefinementSummary(const RefinementSettings &settings);
+
 // Everything a front end shows about running models on this computer beyond
 // the files themselves: the hardware, Local Runners, the Custom Endpoints'
 // connection tests, Speed Tests and cleanup models pulled through Ollama.
@@ -136,6 +140,11 @@ public:
 
     void checkSpeechEndpoint(const SpeechEndpointSettings &endpoint);
     void checkRefinementEndpoint(const RefinementSettings &settings);
+
+    // The settings rows' actions this class answers: the endpoint tests (of
+    // the settings shown), runner detection and the model folder. False for
+    // any other row.
+    bool runSettingsAction(const QString &rowId, const AppSettings &shown);
 
     // What the schema's rows report; see LiveFacts.
     LiveFacts liveFacts() const;

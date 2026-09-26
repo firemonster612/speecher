@@ -2292,13 +2292,9 @@ int RefinementSetupPage::selectedIndex() const
 
 QString RefinementSetupPage::readySummary() const
 {
-    const QString provider = selectedProviderId();
-    if (provider == QStringLiteral("local")) {
-        return QStringLiteral("Refinement — %1 with %2")
-            .arg(localRunnerName(m_settings.localRunnerSettings().runner), m_settings.localRunnerSettings().model);
-    }
-    if (provider == QStringLiteral("endpoint")) {
-        return QStringLiteral("Refinement — %1 on your server").arg(m_settings.snapshot().refinement.endpoint.model);
+    const QString ownModel = ownModelRefinementSummary(m_settings.snapshot().refinement);
+    if (!ownModel.isEmpty()) {
+        return QStringLiteral("Refinement — %1").arg(ownModel);
     }
     const int index = selectedIndex();
     return QStringLiteral("Refinement — %1")

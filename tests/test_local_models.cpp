@@ -158,6 +158,11 @@ private slots:
             QCOMPARE(setupProviderChoice(id, {"claude"}, false), QString(id));
         QCOMPARE(setupProviderChoice("claude", {"codex"}, false), QString("codex"));
         QCOMPARE(setupProviderChoice("claude", {"codex"}, true), QString("claude"));
+        // A pull is saved under the name Ollama lists it by.
+        QCOMPARE(ollamaListedName("gemma4:e4b"), QString("gemma4:e4b"));
+        QCOMPARE(ollamaListedName("LiquidAI/lfm2.5-1.2b-instruct"), QString("LiquidAI/lfm2.5-1.2b-instruct:latest"));
+        QCOMPARE(ownModelRefinementSummary({.providerId = "local", .localRunner = {"lmstudio", "m"}}),
+                 QString("LM Studio with m"));
     }
 
     void welcomeDefaultsFollowOnlySignInsAndUndoTheirOwnWrite()
@@ -499,7 +504,7 @@ private slots:
         const QByteArray retry = serveOnce(server, "200 OK", content);
 
         QVERIFY(retry.startsWith("GET "));
-        QVERIFY(!retry.contains("Range:"));
+        QVERIFY(!retry.toLower().contains("range:"));
         QVERIFY(finished.wait(5000));
         QVERIFY(store.isDownloaded(model));
     }

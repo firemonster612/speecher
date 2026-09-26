@@ -33,6 +33,9 @@ struct DetectedRunner {
 // The origin a runner listens on by default, e.g. http://127.0.0.1:11434.
 QString localRunnerOrigin(const QString &runnerId);
 
+// The name Ollama lists a pulled model under: an untagged name gains ":latest".
+QString ollamaListedName(const QString &model);
+
 // Each probe asks for a server-specific answer, since KoboldCpp and Lemonade
 // also serve Ollama's /api/version and /api/tags. Blocking, up to about
 // three requests of timeoutMs each; run it through runProviderProbe.

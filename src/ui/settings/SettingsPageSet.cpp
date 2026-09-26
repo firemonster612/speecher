@@ -492,23 +492,7 @@ void SettingsPageSet::runPageAction(const QString &rowId)
         }
         return;
     }
-    LocalSetup *local = m_controller->localSetup();
-    if (rowId == QStringLiteral("speechEndpointTest")) {
-        local->checkSpeechEndpoint(m_draft.speech.endpoint);
-        return;
-    }
-    if (rowId == QStringLiteral("refinementEndpointTest")) {
-        local->checkRefinementEndpoint(m_draft.refinement);
-        return;
-    }
-    if (rowId == QStringLiteral("localRunnerDetect") || rowId == QStringLiteral("localModelsRunner")) {
-        local->detectRunners();
-        return;
-    }
-    if (rowId == QStringLiteral("localModelFolder")) {
-        const QString folder = local->models().directory();
-        QDir().mkpath(folder);
-        QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+    if (m_controller->localSetup()->runSettingsAction(rowId, m_draft)) {
         return;
     }
     if (rowId == QStringLiteral("whatsNew")) {

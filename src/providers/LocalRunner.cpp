@@ -66,6 +66,11 @@ QString localRunnerOrigin(const QString &runnerId)
     return QString::fromLatin1(runnerFor(runnerId).origin);
 }
 
+QString ollamaListedName(const QString &model)
+{
+    return model.section(QLatin1Char('/'), -1).contains(QLatin1Char(':')) ? model : model + QStringLiteral(":latest");
+}
+
 std::optional<DetectedRunner> probeOllama(const QString &origin, int timeoutMs)
 {
     // The root's fixed banner is Ollama's alone; the impostors serve a web UI

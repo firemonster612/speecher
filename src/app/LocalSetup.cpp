@@ -9,8 +9,10 @@
 #include "providers/LocalSpeechTranscriber.h"
 #endif
 
+#include <QDesktopServices>
 #include <QDir>
 #include <QTimer>
+#include <QUrl>
 
 #include <algorithm>
 
@@ -106,6 +108,20 @@ RunnerChoice resolveRunnerChoice(const LocalRunnerSettings &saved,
     return choice;
 }
 
+QString ownModelRefinementSummary(const RefinementSettings &settings)
+{
+    if (settings.providerId == QStringLiteral("local")) {
+        const QString runner = localRunnerName(settings.localRunner.runner);
+        return settings.localRunner.model.isEmpty()
+            ? runner : QStringLiteral("%1 with %2").arg(runner, settings.localRunner.model);
+    }
+    if (settings.providerId == QStringLiteral("endpoint")) {
+        return settings.endpoint.model.isEmpty()
+            ? QStringLiteral("your server") : QStringLiteral("%1 on your server").arg(settings.endpoint.model);
+    }
+    return {};
+}
+
 LocalSetup::LocalSetup(SettingsStore &settings,
                        ProviderRegistry &providers,
                        LocalModelStore &models,
@@ -142,7 +158,7 @@ LocalSetup::LocalSetup(SettingsStore &settings,
         m_pull.running = false;
         LocalRunnerSettings runner = m_settings.localRunnerSettings();
         runner.runner = QStringLiteral("ollama");
-        runner.model = m_pull.tag;
+        runner.model = ollamaListedName(m_pull.tag);
         m_settings.setLocalRunnerSettings(runner);
         emit cleanupModelPulled(m_pull.tag);
         detectRunners();
@@ -498,6 +514,23 @@ void LocalSetup::checkRefinementEndpoint(const RefinementSettings &settings)
 QString LocalSetup::endpointStatus(const EndpointState &state)
 {
     return state.checking ? QStringLiteral("Checking…") : state.result.message;
+}
+
+bool LocalSetup::runSettingsAction(const QString &rowId, const AppSettings &shown)
+{
+    if (rowId == QStringLiteral("speechEndpointTest")) {
+        checkSpeechEndpoint(shown.speech.endpoint);
+    } else if (rowId == QStringLiteral("refinementEndpointTest")) {
+        checkRefinementEndpoint(shown.refinement);
+    } else if (rowId == QStringLiteral("localRunnerDetect") || rowId == QStringLiteral("localModelsRunner")) {
+        detectRunners();
+    } else if (rowId == QStringLiteral("localModelFolder")) {
+        QDir().mkpath(m_models.directory());
+        QDesktopServices::openUrl(QUrl::fromLocalFile(m_models.directory()));
+    } else {
+        return false;
+    }
+    return true;
 }
 
 LiveFacts LocalSetup::liveFacts() const

@@ -2145,6 +2145,7 @@ SettingsSection cliproxyServerSection()
         QStringLiteral("One of the keys the server accepts. Needed when a server URL is set. ")
             + keyStorageHelp());
     apiKey.tooltip = keyStorageHelp();
+    apiKey.secret = true;
     apiKey.value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.cliproxyApiKey);
     };
