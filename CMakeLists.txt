@@ -237,6 +237,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/bindings/NoBindDirectiveParser.cpp
   src/core/CliToolDiscovery.cpp
   src/core/LearnedCorrection.cpp
+  src/core/LocalModelCatalog.cpp
   src/core/OutputMethod.cpp
   src/core/OutputFormat.cpp
   src/core/PasteRules.cpp
@@ -262,6 +263,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/bindings/NoBindDirectiveParser.h
   src/core/CliToolDiscovery.h
   src/core/LearnedCorrection.h
+  src/core/LocalModelCatalog.h
   src/core/OutputMethod.h
   src/core/OutputFormat.h
   src/core/PasteRules.h
@@ -312,6 +314,7 @@ set(SPEECHER_PROVIDER_SOURCES
   src/providers/ProviderSignIn.cpp
   src/providers/CodexDictationClient.cpp
   src/providers/CodexSpeechTranscriber.cpp
+  src/providers/LocalModelStore.cpp
   src/providers/OpenAiAuthProvider.cpp
   src/providers/OpenAiRefiner.cpp
   src/providers/OpenAiTranscriptRefiner.cpp
@@ -338,6 +341,7 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/ProviderSignIn.h
   src/providers/CodexDictationClient.h
   src/providers/CodexSpeechTranscriber.h
+  src/providers/LocalModelStore.h
   src/providers/OpenAiAuthProvider.h
   src/providers/OpenAiRefiner.h
   src/providers/OpenAiTranscriptRefiner.h
@@ -1262,6 +1266,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_claude_voice.cpp
     tests/test_codex_dictation.cpp
     tests/test_audio_pcm_converter.cpp
+    tests/test_local_models.cpp
   )
   if(UNIX)
     target_sources(speecher_tests PRIVATE tests/test_update_controller.cpp)
@@ -1336,6 +1341,7 @@ if(SPEECHER_BUILD_TESTS)
     claude_voice
     codex_dictation
     audio_pcm_converter
+    local_models
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND SPEECHER_TEST_SUITES linux_style_choice linux_tray keywatch helper_install)
