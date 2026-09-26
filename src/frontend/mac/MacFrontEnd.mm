@@ -15,6 +15,7 @@
 #include <QApplication>
 #include <QDebug>
 #include <QDesktopServices>
+#include <QElapsedTimer>
 #include <QStringList>
 #include <QUrl>
 namespace speecher {
@@ -115,8 +116,35 @@ void MacFrontEnd::showSetupAssistant(SetupAssistantPage)
     }];
 }
 
+void MacFrontEnd::showTranscribeFiles(const QStringList &paths)
+{
+    showMainWindow();
+    NSMutableArray<NSString *> *files = [NSMutableArray arrayWithCapacity:NSUInteger(paths.size())];
+    for (const QString &path : paths) {
+        [files addObject:path.toNSString()];
+    }
+    [m_native->ui showTranscribeFiles:files];
+}
+
 bool MacFrontEnd::captureMainWindow(const QString &path)
 {
+    // SPEECHER_GRAB_PAGE=transcribe grabs the Transcribe pane, with any audio
+    // files the command line named. As on Qt, SPEECHER_GRAB_CLICK=
+    // transcribeStart starts them and SPEECHER_GRAB_WAIT_MS lets the batch
+    // run before the grab.
+    if (qEnvironmentVariable("SPEECHER_GRAB_PAGE").toLower() == QStringLiteral("transcribe")) {
+        showTranscribeFiles({});
+        if (qEnvironmentVariable("SPEECHER_GRAB_CLICK") == QStringLiteral("transcribeStart")) {
+            [m_native->ui startTranscription];
+        }
+        // At least one pass, so SwiftUI draws the pane before the grab.
+        QElapsedTimer waited;
+        waited.start();
+        const int waitMs = qEnvironmentVariableIntValue("SPEECHER_GRAB_WAIT_MS");
+        do {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        } while (waited.elapsed() < waitMs);
+    }
     return [m_native->ui captureSettingsToPath:path.toNSString()];
 }
 

@@ -186,6 +186,8 @@ enum class PaneLayout {
     Alternatives,
     // The shortcut recorder, which has no schema rows behind it.
     Shortcut,
+    // Transcribing audio files, which has no schema rows behind it either.
+    Transcribe,
 };
 
 // One card a pane shows: a heading, a footnote, and the schema rows it names.

@@ -17,6 +17,7 @@
 #include "providers/ProviderProbe.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/ProviderSignIn.h"
+#include "transcribe/FileTranscriptionSession.h"
 #include "ui/Theme.h"
 
 #include <QDebug>
@@ -99,6 +100,8 @@ SpeecherPaneLayout bridgedPaneLayout(PaneLayout layout)
         return SpeecherPaneLayoutAlternatives;
     case PaneLayout::Shortcut:
         return SpeecherPaneLayoutShortcut;
+    case PaneLayout::Transcribe:
+        return SpeecherPaneLayoutTranscribe;
     }
 }
 
@@ -387,10 +390,38 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @property (nonatomic, copy) NSString *label;
 @property (nonatomic, copy) NSString *credentialSource;
 @property (nonatomic, copy) NSString *setupHint;
+@property (nonatomic, copy) NSString *summary;
 @end
 
 @implementation SpeecherProviderModel
 @end
+
+@implementation SpeecherTranscribeOptions
+@end
+
+@interface SpeecherTranscriptResult ()
+@property (nonatomic, copy) NSString *path;
+@property (nonatomic, copy) NSString *raw;
+@property (nonatomic, copy) NSString *refined;
+@property (nonatomic, copy) NSString *savedPath;
+@property (nonatomic, copy) NSString *error;
+@property (nonatomic) BOOL failed;
+@end
+
+@implementation SpeecherTranscriptResult
+@end
+
+static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::TranscribeFileResult &result)
+{
+    SpeecherTranscriptResult *bridged = [[SpeecherTranscriptResult alloc] init];
+    bridged.path = result.path.toNSString();
+    bridged.raw = result.raw.toNSString();
+    bridged.refined = result.refined.toNSString();
+    bridged.savedPath = result.savedPath.toNSString();
+    bridged.error = result.error.toNSString();
+    bridged.failed = result.failed();
+    return bridged;
+}
 
 @interface CollectionColumnModel ()
 @property (nonatomic, copy) NSString *columnId;
@@ -495,6 +526,7 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 - (instancetype)initWithStore:(SettingsStore *)store
                        schema:(const SettingsSchema &)schema
                  capabilities:(const Capabilities &)capabilities;
+- (NSArray<RowOptionModel *> *)bridgedOptions:(const QList<RowOption> &)options;
 - (void)setTargetAccessibility:(BOOL)available;
 - (void)setLaunchAtLoginAccepted:(BOOL)accepted;
 // The settings as they stand, including edits not yet committed, which is what
@@ -946,7 +978,93 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
                          }
                      });
     [self connectPanelTo:controller->session()];
+    [self connectTranscriptionTo:controller->fileTranscription()];
     return self;
+}
+
+// The file batch's signals, which only the Transcribe pane renders.
+- (void)connectTranscriptionTo:(speecher::FileTranscriptionSession *)session
+{
+    using speecher::FileTranscriptionSession;
+    __weak SpeecherBridge *weakSelf = self;
+    QObject *lifetime = &_state->lifetime;
+    QObject::connect(session, &FileTranscriptionSession::batchStarted, lifetime, [weakSelf](int count) {
+        SpeecherBridge *bridge = weakSelf;
+        if (bridge.transcriptionBatchStarted) {
+            bridge.transcriptionBatchStarted(count);
+        }
+    });
+    QObject::connect(session,
+                     &FileTranscriptionSession::fileStarted,
+                     lifetime,
+                     [weakSelf](int index, const QString &path) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.transcriptionFileStarted) {
+                             bridge.transcriptionFileStarted(index, path.toNSString());
+                         }
+                     });
+    QObject::connect(session,
+                     &FileTranscriptionSession::fileDecoded,
+                     lifetime,
+                     [weakSelf](int index, const QVector<float> &peaks, qint64 durationMs) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (!bridge.transcriptionFileDecoded) {
+                             return;
+                         }
+                         NSMutableArray<NSNumber *> *levels =
+                             [NSMutableArray arrayWithCapacity:NSUInteger(peaks.size())];
+                         for (float peak : peaks) {
+                             [levels addObject:@(peak)];
+                         }
+                         bridge.transcriptionFileDecoded(index, levels, durationMs);
+                     });
+    QObject::connect(session,
+                     &FileTranscriptionSession::fileProgress,
+                     lifetime,
+                     [weakSelf](int index, qreal fraction) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.transcriptionFileProgress) {
+                             bridge.transcriptionFileProgress(index, fraction);
+                         }
+                     });
+    QObject::connect(session,
+                     &FileTranscriptionSession::filePartialText,
+                     lifetime,
+                     [weakSelf](int index, const QString &text) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.transcriptionFilePartial) {
+                             bridge.transcriptionFilePartial(index, text.toNSString());
+                         }
+                     });
+    QObject::connect(session, &FileTranscriptionSession::fileRefining, lifetime, [weakSelf](int index) {
+        SpeecherBridge *bridge = weakSelf;
+        if (bridge.transcriptionFileRefining) {
+            bridge.transcriptionFileRefining(index);
+        }
+    });
+    QObject::connect(session,
+                     &FileTranscriptionSession::fileFinished,
+                     lifetime,
+                     [weakSelf](int index, const speecher::TranscribeFileResult &result) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.transcriptionFileFinished) {
+                             bridge.transcriptionFileFinished(index, bridgedTranscriptResult(result));
+                         }
+                     });
+    QObject::connect(session,
+                     &FileTranscriptionSession::batchFinished,
+                     lifetime,
+                     [weakSelf](const QList<speecher::TranscribeFileResult> &results, bool cancelled) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (!bridge.transcriptionBatchFinished) {
+                             return;
+                         }
+                         NSMutableArray<SpeecherTranscriptResult *> *bridged = [NSMutableArray array];
+                         for (const speecher::TranscribeFileResult &result : results) {
+                             [bridged addObject:bridgedTranscriptResult(result)];
+                         }
+                         bridge.transcriptionBatchFinished(bridged, cancelled);
+                     });
 }
 
 // The dictation panel's signals, which the session emits and no page renders.
@@ -1345,6 +1463,7 @@ bridgedProviders(const QList<speecher::ProviderDescriptor> &providers)
         model.credentialSource =
             speecher::credentialSourceLabel(provider.id, provider.label).toNSString();
         model.setupHint = provider.setupHint.toNSString();
+        model.summary = provider.summary.toNSString();
         [bridged addObject:model];
     }
     return bridged;
@@ -1666,6 +1785,115 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
         return nil;
     }
     return secrets->status().toNSString();
+}
+
+- (NSArray<RowOptionModel *> *)cleanupStrengths
+{
+    return [_settingsSchema bridgedOptions:speecher::cleanupStrengths()];
+}
+
+- (NSArray<RowOptionModel *> *)writingTones
+{
+    return [_settingsSchema bridgedOptions:speecher::writingTones()];
+}
+
+- (NSArray<RowOptionModel *> *)writingProfiles
+{
+    using speecher::WritingProfile;
+    QList<RowOption> profiles;
+    for (WritingProfile profile : {WritingProfile::Work, WritingProfile::Email, WritingProfile::Personal,
+                                   WritingProfile::AiCoding, WritingProfile::Other}) {
+        profiles.append({speecher::writingProfileName(profile), speecher::writingProfileLabel(profile)});
+    }
+    return [_settingsSchema bridgedOptions:profiles];
+}
+
+- (SpeecherTranscribeOptions *)transcribeOptionsWithWritingProfile:(NSString *)profile
+{
+    const AppSettings settings = _state->controller->settings()->snapshot();
+    const QString profileName = profile ? QString::fromNSString(profile)
+                                        : settings.refinement.defaultWritingProfile;
+    const speecher::WritingProfileSettings chosen = speecher::writingProfileSettingsFor(
+        settings.refinement.writingProfiles, speecher::writingProfileFromName(profileName));
+    SpeecherTranscribeOptions *options = [[SpeecherTranscribeOptions alloc] init];
+    options.speechProviderId = settings.speech.providerId.toNSString();
+    options.applyVocabulary = YES;
+    options.refinementProviderId = settings.refinement.providerId.toNSString();
+    options.cleanupStrength = chosen.cleanupStrength.toNSString();
+    options.tone = chosen.tone.toNSString();
+    options.writingProfile = speecher::writingProfileName(chosen.profile).toNSString();
+    options.destination = SpeecherTranscriptDestinationBesideInput;
+    options.folder = @"";
+    return options;
+}
+
+- (NSString *)refinementModelForProvider:(NSString *)providerId
+{
+    const speecher::RefinementSettings refinement = _state->controller->settings()->snapshot().refinement;
+    const QString provider = QString::fromNSString(providerId);
+    if (provider == QStringLiteral("openai")) {
+        return refinement.openAiModel.toNSString();
+    }
+    if (provider == QStringLiteral("anthropic")) {
+        return refinement.anthropicModel.toNSString();
+    }
+    return @"";
+}
+
+- (NSArray<NSString *> *)audioFilesAmong:(NSArray<NSString *> *)paths
+{
+    NSMutableArray<NSString *> *audio = [NSMutableArray array];
+    for (NSString *path in paths) {
+        if (speecher::isAudioFile(QString::fromNSString(path))) {
+            [audio addObject:path];
+        }
+    }
+    return audio;
+}
+
+- (NSString *)startTranscribingFiles:(NSArray<NSString *> *)paths options:(SpeecherTranscribeOptions *)options
+{
+    QStringList files;
+    for (NSString *path in paths) {
+        files.append(QString::fromNSString(path));
+    }
+    speecher::TranscribeOptions core;
+    core.speechProviderId = QString::fromNSString(options.speechProviderId);
+    core.applyVocabulary = options.applyVocabulary;
+    core.refinementProviderId = QString::fromNSString(options.refinementProviderId);
+    core.cleanupStrength = QString::fromNSString(options.cleanupStrength);
+    core.tone = QString::fromNSString(options.tone);
+    core.writingProfile = QString::fromNSString(options.writingProfile);
+    switch (options.destination) {
+    case SpeecherTranscriptDestinationFolder:
+        core.destination = speecher::TranscriptDestination::Folder;
+        break;
+    case SpeecherTranscriptDestinationNowhere:
+        core.destination = speecher::TranscriptDestination::None;
+        break;
+    case SpeecherTranscriptDestinationBesideInput:
+        core.destination = speecher::TranscriptDestination::BesideInput;
+        break;
+    }
+    core.folder = QString::fromNSString(options.folder);
+    QString error;
+    if (_state->controller->startFileTranscription(files, core, &error)) {
+        return nil;
+    }
+    return error.isEmpty() ? @"There are no audio files to transcribe." : error.toNSString();
+}
+
+- (void)cancelTranscription
+{
+    _state->controller->fileTranscription()->cancel();
+}
+
+- (NSString *)saveTranscript:(NSString *)text forAudioFile:(NSString *)audioPath inFolder:(NSString *)folder
+{
+    QString error;
+    speecher::saveTranscript(QString::fromNSString(audioPath), QString::fromNSString(folder),
+                             QString::fromNSString(text), &error);
+    return error.isEmpty() ? nil : error.toNSString();
 }
 
 @end

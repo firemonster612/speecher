@@ -41,11 +41,14 @@ enum PaneLayout {
     case alternatives
     /// The shortcut recorder, which has no schema rows behind it.
     case shortcut
+    /// Transcribing audio files, which has no schema rows behind it either.
+    case transcribe
 
     init(_ layout: SpeecherPaneLayout) {
         switch layout {
         case .alternatives: self = .alternatives
         case .shortcut: self = .shortcut
+        case .transcribe: self = .transcribe
         case .sections: self = .sections
         @unknown default: self = .sections
         }
@@ -83,6 +86,8 @@ struct PaneView: View {
         switch pane.layout {
         case .shortcut:
             ShortcutPane(model: model)
+        case .transcribe:
+            TranscribePane(model: model.transcription)
         case .sections:
             Form {
                 ForEach(model.groupCards(for: pane)) { card($0) }
