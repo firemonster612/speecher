@@ -60,45 +60,6 @@ constexpr double kBarWidth = 3.2;
 constexpr double kBarDotHeight = 3.2;
 // How long a finished file shows at 100% before the next one replaces it.
 constexpr int kLandingMs = 600;
-// TODO(round2): switch to core transcribeStepHint
-const QString kConfigureHint = QStringLiteral("Check these options, then press Transcribe.");
-
-// How far the current file is through all of its work, 0..1: reading the
-// audio, sending it, waiting for the final text, refining. Sending takes most
-// of the bar because it grows with the file's length; without refinement,
-// sending and finishing stretch over refining's share. The open-ended waits
-// (reading, finishing, refining) ease toward the end of their share, covering
-// about two thirds of it in kWaitEaseMs, and never pass it: every span ends
-// below 1, which only fileFinished shows, once the transcript is refined and
-// saved.
-// TODO(round2): switch to core overallFileProgress
-constexpr qreal kWaitEaseMs = 4000.0;
-qreal wholeFileProgress(qreal fractionSent, TranscribePhase phase, bool refines, qint64 msInPhase)
-{
-    struct Span {
-        qreal from;
-        qreal to;
-    };
-    Span span{0.0, 0.05};
-    switch (phase) {
-    case TranscribePhase::Reading:
-        break;
-    case TranscribePhase::Transcribing:
-        span = {0.05, refines ? 0.75 : 0.90};
-        break;
-    case TranscribePhase::Finishing:
-        span = refines ? Span{0.75, 0.80} : Span{0.90, 0.97};
-        break;
-    case TranscribePhase::Refining:
-        span = {0.80, 0.97};
-        break;
-    }
-    const qreal within = phase == TranscribePhase::Transcribing
-        ? std::clamp(fractionSent, 0.0, 1.0)
-        : 1.0 - std::exp(-qreal(std::max<qint64>(msInPhase, 0)) / kWaitEaseMs);
-    return span.from + (span.to - span.from) * within;
-}
-
 QString writeText(const QString &path, const QString &text)
 {
     QSaveFile file(path);
@@ -203,7 +164,7 @@ void appendSteps(const StackPanel &column, TranscribeStep current, const PaneHos
     }
     column.Children().Append(steps);
     if (current == TranscribeStep::Configure) {
-        TextBlock hint = secondaryTextBlock(kConfigureHint, L"SettingsCardDescriptionStyle", host);
+        TextBlock hint = secondaryTextBlock(transcribeStepHint(TranscribeStep::Configure), L"SettingsCardDescriptionStyle", host);
         hint.HorizontalAlignment(HorizontalAlignment::Center);
         hint.Margin({0, 4, 0, 0});
         column.Children().Append(hint);
@@ -712,7 +673,7 @@ void TranscribePane::showProgress()
 {
     const qreal progress = m_fileFinished
         ? 1.0
-        : wholeFileProgress(m_fractionSent, m_phase, refinesTranscripts(m_batchOptions), m_phaseClock.elapsed());
+        : overallFileProgress(m_fractionSent, m_phase, refinesTranscripts(m_batchOptions), m_phaseClock.elapsed());
     for (const View &view : m_views) {
         if (view.progressBar) {
             view.progressBar.Value(progress * 100);
