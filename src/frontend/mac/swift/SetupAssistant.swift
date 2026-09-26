@@ -39,7 +39,7 @@ struct SetupStep: Identifiable {
         SetupStep(id: "refinement",
                   title: "Refinement",
                   intro: "Refinement can clean up a raw transcript after dictation. "
-                      + "Choose a provider, or None to skip cleanup."),
+                      + "Choose a provider, or skip cleanup."),
         SetupStep(id: "profiles",
                   title: "Writing profiles",
                   intro: "Speecher picks a writing profile from the app you dictate into. "
@@ -255,6 +255,21 @@ final class SetupFlowModel: ObservableObject {
     // Start at login, applied when setup finishes so a skip leaves it alone.
     @Published var launchAtLogin: Bool
 
+    // Running on this computer. The welcome step's path follows the sign-in
+    // checks until the person picks one.
+    @Published private(set) var localPath = false
+    private var pathPicked = false
+    /// The Local Model the transcription step shows, which is the one
+    /// dictation will use. A saved model the person dictates with, has on disk
+    /// or is downloading was their choice; anything else is only the default,
+    /// and the suggestion replaces it.
+    @Published private(set) var localModelId: String
+    private var localModelPicked: Bool
+    @Published var compareOpen = false
+    /// What the steps read through this model from AppModel (rows, local
+    /// models, runners) redraws them when AppModel changes.
+    private var modelChanges: AnyCancellable?
+
     static let shortcutHint = "Tap the shortcut to start dictation and tap it again to stop, "
         + "or hold it and talk — dictation ends when you let go."
 
@@ -266,7 +281,15 @@ final class SetupFlowModel: ObservableObject {
         speechProviders = model.bridge.speechProviders.map(ProviderRow.init)
         refinementProviders = model.bridge.refinementProviders.map(ProviderRow.init)
         launchAtLogin = RowView.flag(model.row("launchAtLogin")?.value)
+        let savedRefinement = RowView.text(model.row("refinementProvider")?.value)
+        lastRefinementProvider = savedRefinement == "none" ? "" : savedRefinement
+        localModelId = model.bridge.localModelId
+        let saved = model.local.model(model.bridge.localModelId)
+        localModelPicked = saved.map {
+            RowView.text(model.row("speechProvider")?.value) == "local" || $0.downloaded || $0.downloading
+        } ?? false
         cliproxyDirectory = model.bridge.setupCliproxyDirectory
+        modelChanges = model.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         if !model.shortcut.isEmpty {
             // The binder already holds a shortcut; finishing keeps it unless a
             // new one is recorded over it. A bound single key carries its code
@@ -295,9 +318,8 @@ final class SetupFlowModel: ObservableObject {
         // With no speech provider registered at all there is nothing to sign in
         // to, and holding here would strand the person on step one.
         case "welcome":
-            return speechProviders.isEmpty || speechProviders.contains(where: \.ready)
-                || cliproxyAvailable
-        case "transcription": return providerReady
+            return localPath || speechProviders.isEmpty || signInFound
+        case "transcription": return localSelected ? localDownloadStarted : providerReady
         case "microphone":
             return microphonePermission == .authorized && microphoneInputDetected
         case "accessibility": return model.accessibilityEnabled
@@ -335,8 +357,10 @@ final class SetupFlowModel: ObservableObject {
     private func blockedReason(_ stepId: String) -> String {
         switch stepId {
         case "welcome":
-            return "No ChatGPT, Claude, or CLI Proxy API sign-in was found."
+            return offersLocal ? "No sign-in was found. Sign in, or choose to run on this computer."
+                               : "No ChatGPT, Claude, or CLI Proxy API sign-in was found."
         case "transcription":
+            if localSelected { return "Download a speech model to continue." }
             let line = providerStatus
             return line.isEmpty ? "The transcription service is not signed in." : line
         case "microphone":
@@ -354,7 +378,14 @@ final class SetupFlowModel: ObservableObject {
     /// that chose something, naming the choice rather than repeating the step.
     var readyChecklist: [ReadyItem] {
         var items: [ReadyItem] = []
-        if let speech = selectedSpeechProvider {
+        if localSelected, let chosen = localChoice {
+            items.append(ReadyItem(id: "transcription",
+                                   providerId: "local",
+                                   symbol: "cpu",
+                                   label: "Transcription — \(chosen.name), on this computer",
+                                   status: "Ready",
+                                   ready: true))
+        } else if let speech = selectedSpeechProvider {
             let signIn = model.bridge.setupUsesCliproxy(provider: speech.id)
                 ? " (CLI Proxy API)" : ""
             items.append(ReadyItem(id: "transcription",
@@ -382,9 +413,9 @@ final class SetupFlowModel: ObservableObject {
         if let refinement = selectedRefinementProvider {
             items.append(ReadyItem(id: "refinement",
                                    providerId: refinement.id,
-                                   symbol: "wand.and.stars",
-                                   label: "Refinement — \(refinement.label)",
-                                   status: refinement.ready ? "Ready" : "Not signed in",
+                                   symbol: refinement.id == "local" ? "cpu" : "server.rack",
+                                   label: "Refinement — \(refinementSummary(refinement))",
+                                   status: refinement.ready ? "Ready" : "Not set up",
                                    ready: refinement.ready))
         } else {
             items.append(ReadyItem(id: "refinement",
@@ -395,6 +426,22 @@ final class SetupFlowModel: ObservableObject {
                                    ready: false))
         }
         return items
+    }
+
+    /// What the ready checklist names for a refinement choice: the runner and
+    /// model for this computer, the model for a server.
+    private func refinementSummary(_ provider: ProviderRow) -> String {
+        switch provider.id {
+        case "local":
+            let runner = model.row("localRunner")
+            let runnerId = RowView.text(runner?.value)
+            let name = runner?.options.first { $0.rowOptionId == runnerId }?.label ?? runnerId
+            return "\(name) with \(RowView.text(model.row("localRunnerModel")?.value))"
+        case "endpoint":
+            return "\(model.bridge.refinementEndpointForm.model) on your server"
+        default:
+            return provider.label
+        }
     }
 
     /// What the audio device row currently names, for the ready checklist.
@@ -461,6 +508,20 @@ final class SetupFlowModel: ObservableObject {
         refinementProviders.first { $0.id == refinementProviderId }
     }
 
+    /// The services the transcription step lists. A speech server is set up
+    /// in Settings alone, and Local only where this build can run it.
+    var transcriptionChoices: [ProviderRow] {
+        speechProviders.filter { $0.id != "endpoint" && ($0.id != "local" || offersLocal) }
+    }
+
+    /// The sign-ins the welcome step checks: not Local or a speech server,
+    /// which need none.
+    var signInProviders: [ProviderRow] {
+        speechProviders.filter { $0.id != "local" && $0.id != "endpoint" }
+    }
+
+    var signInFound: Bool { signInProviders.contains(where: \.ready) || cliproxyAvailable }
+
     var providerHint: String { selectedSpeechProvider?.setupHint ?? "" }
     var providerReady: Bool { selectedSpeechProvider?.ready ?? false }
     /// Whether a probe has answered about the selected service at all, which
@@ -480,7 +541,8 @@ final class SetupFlowModel: ObservableObject {
     /// Refinement stays optional, so an unready provider is a warning rather
     /// than a gate: dictation still delivers, just without the cleanup.
     var refinementWarning: String {
-        guard let provider = selectedRefinementProvider, provider.probed, !provider.ready else {
+        guard let provider = selectedRefinementProvider, provider.probed, !provider.ready,
+              !Self.ownModelProviders.contains(provider.id) else {
             return ""
         }
         return "\(provider.label) is not signed in. Dictation will deliver the raw transcript."
@@ -495,7 +557,137 @@ final class SetupFlowModel: ObservableObject {
             guard let self else { return }
             record(&speechProviders, id: id, ready: ready, message: message)
             autoSelectReadySpeechProvider()
+            if signInProviders.allSatisfy(\.probed) {
+                followSignInsWithPath()
+            }
         }
+    }
+
+    // MARK: Running on this computer
+
+    static let ownModelProviders: Set<String> = ["local", "endpoint"]
+
+    var offersLocal: Bool { model.bridge.localSpeechAvailable }
+
+    /// Until the person picks, every finished round of sign-in checks sets
+    /// the path: the sign-in when one is found, this computer otherwise.
+    private func followSignInsWithPath() {
+        guard offersLocal, !pathPicked else { return }
+        setPath(local: !signInFound)
+    }
+
+    func pickPath(local: Bool) {
+        pathPicked = true
+        setPath(local: local)
+    }
+
+    /// Choosing this computer starts the transcription step on Local model,
+    /// as if the person had chosen it there.
+    private func setPath(local: Bool) {
+        let changed = local != localPath
+        localPath = local
+        if local, changed || pathPicked {
+            speechChosenByUser = true
+            if providerId != "local" {
+                model.setValue("local", for: "speechProvider")
+            }
+            adoptSuggestionIfUnpicked()
+        }
+    }
+
+    var localSelected: Bool { offersLocal && providerId == "local" }
+
+    /// The model the Local card shows.
+    var localChoice: LocalModelInfo? {
+        localModelPicked ? model.local.model(localModelId) ?? model.local.suggestedModel
+                         : model.local.suggestedModel
+    }
+
+    var localDownloadStarted: Bool {
+        guard let choice = localChoice else { return false }
+        return choice.downloaded || choice.downloading
+    }
+
+    /// The suggestion is what dictation will use unless the person picks, but
+    /// only once Local is the choice: a visit to this step must not rewrite a
+    /// model someone set up for later.
+    func adoptSuggestionIfUnpicked() {
+        guard localSelected, !localModelPicked,
+              let suggestion = model.local.suggestedModel?.modelId,
+              suggestion != model.bridge.localModelId else { return }
+        model.bridge.setLocalModel(suggestion)
+        localModelId = suggestion
+    }
+
+    /// Picking in the comparison table, or downloading, is a choice.
+    func chooseLocalModel(_ id: String) {
+        localModelPicked = true
+        localModelId = id
+        model.bridge.setLocalModel(id)
+    }
+
+    func downloadLocalChoice() {
+        guard let choice = localChoice else { return }
+        chooseLocalModel(choice.modelId)
+        model.bridge.downloadLocalModel(choice.modelId)
+    }
+
+    /// The Local Model a finished setup still waits for, if any.
+    var downloadingModel: LocalModelInfo? {
+        guard localSelected, let choice = localChoice, choice.downloading else { return nil }
+        return choice
+    }
+
+    // MARK: Refinement on this computer or a server
+
+    var runner: LocalRunnerInfo? { model.local.runners.first }
+
+    /// The first runner found is the one the settings name, with the
+    /// suggested cleanup model when it has it, else its first model.
+    func adoptFoundRunner() {
+        guard refinementProviderId == "local", let runner else { return }
+        if RowView.text(model.row("localRunner")?.value) != runner.runnerId {
+            model.setValue(runner.runnerId, for: "localRunner")
+        }
+        guard RowView.text(model.row("localRunnerModel")?.value).isEmpty,
+              let first = runner.models.first else { return }
+        let suggested = model.local.cleanupModel?.ollamaTag
+        let installed = runner.models.first { suggested != nil && $0.hasPrefix(suggested!) }
+        model.setValue(installed ?? first, for: "localRunnerModel")
+    }
+
+    /// Whether the runner already has the suggested cleanup model.
+    var runnerHasSuggestedModel: Bool {
+        guard let runner, let tag = model.local.cleanupModel?.ollamaTag else { return false }
+        return runner.models.contains { $0 == tag || $0 == tag + ":latest" }
+    }
+
+    func pullSuggestedCleanupModel() {
+        guard let tag = model.local.cleanupModel?.ollamaTag else { return }
+        model.bridge.pullCleanupModel(tag)
+    }
+
+    func openOllamaDownload() {
+        NSWorkspace.shared.open(URL(string: "https://ollama.com/download")!)
+    }
+
+    func detectRunners() {
+        model.bridge.detectLocalRunners()
+    }
+
+    /// The step's own words for the chosen runner.
+    var runnerStatus: String {
+        if model.local.detectingRunners { return "Looking for Ollama, LM Studio and llama-server…" }
+        guard let runner else { return "No local runner found on this computer." }
+        return "\(runner.name) \(runner.version) is running on this computer."
+    }
+
+    /// The "This computer" row's status, which reports what is running here
+    /// rather than a sign-in verdict.
+    fileprivate var runnerRowStatus: (text: String, tone: StatusLabel.Tone) {
+        if model.local.detectingRunners { return ("Checking…", .pending) }
+        guard let runner else { return ("No runner", .pending) }
+        return ("\(runner.name) found", .positive)
     }
 
     func checkRefinementProviders() {
@@ -592,7 +784,24 @@ final class SetupFlowModel: ObservableObject {
     func chooseRefinementProvider(_ id: String) {
         guard id != refinementProviderId else { return }
         refinementChosenByUser = true
+        if id != "none" {
+            lastRefinementProvider = id
+        }
         model.setValue(id, for: "refinementProvider")
+        adoptFoundRunner()
+    }
+
+    /// None is not a provider row but a way out of all of them: clearing it
+    /// returns to the last provider.
+    private var lastRefinementProvider = ""
+
+    var skipCleanup: Bool {
+        get { selectedRefinementProvider == nil }
+        set {
+            let fallback = lastRefinementProvider.isEmpty
+                ? refinementProviders.first?.id ?? "none" : lastRefinementProvider
+            chooseRefinementProvider(newValue ? "none" : fallback)
+        }
     }
 
     /// The saved service cannot transcribe but another one can: start the
@@ -601,8 +810,8 @@ final class SetupFlowModel: ObservableObject {
         guard !speechAutoSelected, !speechChosenByUser,
               speechProviders.allSatisfy(\.probed) else { return }
         speechAutoSelected = true
-        guard selectedSpeechProvider?.ready != true,
-              let ready = speechProviders.first(where: \.ready) else { return }
+        guard !localSelected, selectedSpeechProvider?.ready != true,
+              let ready = signInProviders.first(where: \.ready) else { return }
         model.setValue(ready.id, for: "speechProvider")
     }
 
@@ -612,8 +821,13 @@ final class SetupFlowModel: ObservableObject {
         guard !refinementAutoSelected, !refinementChosenByUser,
               refinementProviders.allSatisfy(\.probed) else { return }
         refinementAutoSelected = true
+        // Someone's own runner or server was their choice, made in Settings or
+        // on an earlier run; its setup is on this step, not a reason to move.
         guard let selected = selectedRefinementProvider, !selected.ready,
-              let ready = refinementProviders.first(where: \.ready) else { return }
+              !Self.ownModelProviders.contains(selected.id),
+              let ready = refinementProviders.first(where: {
+                  $0.ready && !Self.ownModelProviders.contains($0.id)
+              }) else { return }
         model.setValue(ready.id, for: "refinementProvider")
     }
 
@@ -1151,6 +1365,16 @@ private struct ProviderMark: View {
                 OpenAIMark()
             case "claude", "anthropic":
                 ClaudeMark()
+            case "local":
+                Image(systemName: "cpu")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(.secondary)
+            case "endpoint":
+                Image(systemName: "server.rack")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(.secondary)
             default:
                 Image(systemName: fallback)
                     .resizable()
@@ -1293,13 +1517,58 @@ private struct WelcomeStep: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            // Nothing later in the assistant can succeed without one of these
-            // sign-ins, so the one real prerequisite is stated on the first step.
-            Section("Before you start") {
+            // Two ways into dictation: a sign-in the person already has, or a
+            // model on this computer. The sign-in rows only matter for the first.
+            if flow.offersLocal {
+                Section("How should Speecher turn speech into text?") {
+                    Picker(selection: Binding(get: { flow.localPath },
+                                              set: { flow.pickPath(local: $0) })) {
+                        PathOptionLabel(symbol: "person.crop.circle",
+                                        title: "Use my ChatGPT or Claude sign-in",
+                                        note: "Transcribed in the cloud by the service you already pay for.",
+                                        status: flow.signInFound ? "Sign-in found" : "None found",
+                                        tone: flow.signInFound ? .positive : .pending)
+                            .tag(false)
+                        PathOptionLabel(symbol: "cpu",
+                                        title: "Run on this computer",
+                                        note: "Private, no account, works offline after a one-time download.")
+                            .tag(true)
+                    } label: {
+                        EmptyView()
+                    }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
+                }
+            }
+            if flow.localPath {
+                Section {
+                    Label(flow.model.local.hardwareLine, systemImage: "cpu")
+                    Text("Speecher will suggest a speech model for this computer on the next step. "
+                        + "Dictation stays on this computer and works offline once the model is downloaded.")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                signIns
+            }
+        }
+        .formStyle(.grouped)
+        // Probed on appearance rather than at construction: a sign-in made in a
+        // terminal while the assistant sat open counts as soon as the person
+        // comes back to this step.
+        .onAppear {
+            flow.model.refreshLocalSetup()
+            flow.checkSpeechProviders()
+        }
+    }
+
+    // Nothing later in the assistant can succeed without one of these sign-ins
+    // or this computer, so the one real prerequisite is stated on the first step.
+    private var signIns: some View {
+            Section(flow.offersLocal ? "Sign-ins on this computer" : "Before you start") {
                 Text("Speecher uses your existing ChatGPT or Claude sign-in, or an account "
                     + "saved by CLI Proxy API. Sign in to one of these, then choose Check again:")
                     .fixedSize(horizontal: false, vertical: true)
-                ForEach(flow.speechProviders) { provider in
+                ForEach(flow.signInProviders) { provider in
                     // The mark, then the sign-in's name with its verdict on the
                     // trailing edge, and the hint indented under the name: the
                     // stack starts past the mark, so nothing measures an inset.
@@ -1353,12 +1622,40 @@ private struct WelcomeStep: View {
                 }
                 Button("Check Again") { flow.checkSpeechProviders() }
             }
+    }
+}
+
+/// One of the welcome step's two paths: a glyph, its name, the line under it,
+/// and for the sign-in path what the checks found.
+private struct PathOptionLabel: View {
+    let symbol: String
+    let title: String
+    let note: String
+    var status = ""
+    var tone = StatusLabel.Tone.pending
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: symbol)
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).fontWeight(.semibold)
+                Text(note)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            if !status.isEmpty {
+                StatusLabel(text: status, tone: tone)
+            }
         }
-        .formStyle(.grouped)
-        // Probed on appearance rather than at construction: a sign-in made in a
-        // terminal while the assistant sat open counts as soon as the person
-        // comes back to this step.
-        .onAppear { flow.checkSpeechProviders() }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(Text(status))
     }
 }
 
@@ -1385,7 +1682,9 @@ private struct ProviderOptionLabel: View {
                 }
             }
             Spacer(minLength: 12)
-            StatusLabel(text: status, tone: tone)
+            if !status.isEmpty {
+                StatusLabel(text: status, tone: tone)
+            }
         }
         // A radio's label is offered the row, not only what it needs, which is
         // what puts the status against the trailing edge.
@@ -1424,18 +1723,32 @@ private struct TranscriptionStep: View {
                 // than hidden behind a pop-up button that has to be opened to
                 // find out what is there.
                 Picker(selection: selection) {
-                    ForEach(flow.speechProviders) { provider in
-                        ProviderOptionLabel(providerId: provider.id,
-                                            title: provider.label,
-                                            status: provider.readinessStatus,
-                                            tone: StatusLabel.tone(for: provider))
-                            .tag(provider.id)
+                    ForEach(flow.transcriptionChoices) { provider in
+                        if provider.id == "local" {
+                            // Its status is the download, not a sign-in.
+                            ProviderOptionLabel(providerId: provider.id,
+                                                title: provider.label,
+                                                status: localRowStatus.text,
+                                                tone: localRowStatus.tone,
+                                                note: "Runs on this computer. No account, works offline.")
+                                .tag(provider.id)
+                        } else {
+                            ProviderOptionLabel(providerId: provider.id,
+                                                title: provider.label,
+                                                status: provider.readinessStatus,
+                                                tone: StatusLabel.tone(for: provider))
+                                .tag(provider.id)
+                        }
                     }
                 } label: {
                     Text("Transcription service")
                 }
                 .pickerStyle(.radioGroup)
-                ProviderStatsRows(stats: model.bridge.stats(forSpeechProvider: flow.providerId))
+                // The Local card explains itself; the generic facts would
+                // repeat it.
+                if !flow.localSelected {
+                    ProviderStatsRows(stats: model.bridge.stats(forSpeechProvider: flow.providerId))
+                }
                 // Under the facts about the chosen service, matching the Qt and
                 // Windows steps. The bridge already drops rows whose schema
                 // visibility fails, so this only appears for the codex provider.
@@ -1444,7 +1757,11 @@ private struct TranscriptionStep: View {
                 }
                 // The verdict and the way to ask again sit on one row, so a
                 // held Continue and its remedy are read together.
-                if !flow.providerStatus.isEmpty {
+                if flow.localSelected {
+                    if let line = localStatus {
+                        Text(line).foregroundStyle(.secondary)
+                    }
+                } else if !flow.providerStatus.isEmpty {
                     HStack(alignment: .firstTextBaseline) {
                         StatusLabel(text: flow.providerStatus, tone: statusTone)
                         Spacer(minLength: 12)
@@ -1454,9 +1771,12 @@ private struct TranscriptionStep: View {
                     }
                 }
             } footer: {
-                if !flow.providerReady, !flow.providerHint.isEmpty {
+                if !flow.localSelected, !flow.providerReady, !flow.providerHint.isEmpty {
                     Text(flow.providerHint)
                 }
+            }
+            if flow.localSelected, let choice = flow.localChoice {
+                LocalChoiceSections(flow: flow, choice: choice)
             }
             // The service's own sign-in stays the silent default; CLI Proxy API
             // is the exception this toggle opts into, matching the Qt and
@@ -1489,18 +1809,131 @@ private struct TranscriptionStep: View {
         .formStyle(.grouped)
         // One round covers every row, so selecting a different service shows a
         // verdict this step already holds rather than starting a new probe.
-        .onAppear { flow.checkSpeechProviders() }
+        .onAppear {
+            flow.model.refreshLocalSetup()
+            flow.checkSpeechProviders()
+            flow.adoptSuggestionIfUnpicked()
+        }
+        // The suggestion is only known once the hardware probe answers.
+        .onChange(of: model.local.suggestedModel?.modelId) { flow.adoptSuggestionIfUnpicked() }
+    }
+
+    private var localRowStatus: (text: String, tone: StatusLabel.Tone) {
+        guard let choice = flow.localChoice else { return ("", .pending) }
+        if choice.downloaded { return ("Ready", .positive) }
+        return (choice.downloading ? "Downloading" : "", .pending)
+    }
+
+    /// Next opens as soon as a download has started: it keeps going while
+    /// setup continues, and the ready step shows where it got to.
+    private var localStatus: String? {
+        guard let choice = flow.localChoice, !choice.downloaded else { return nil }
+        return choice.downloading ? "The download keeps going while you finish setup."
+                                  : "Download a model to continue. It keeps going while you finish setup."
     }
 
     /// Writing this binding is the person choosing, which is what stops the
     /// auto-selection from moving them afterwards.
     private var selection: Binding<String> {
-        Binding(get: { flow.providerId }, set: { flow.chooseSpeechProvider($0) })
+        Binding(get: { flow.providerId }, set: {
+            flow.chooseSpeechProvider($0)
+            flow.adoptSuggestionIfUnpicked()
+        })
     }
 
     private var statusTone: StatusLabel.Tone {
         if flow.providerReady { return .positive }
         return flow.providerProbed ? .warning : .pending
+    }
+}
+
+/// The Local choice on the transcription step: the hardware line, the
+/// suggested (or chosen) model with its Download, and the comparison table.
+private struct LocalChoiceSections: View {
+    @ObservedObject var flow: SetupFlowModel
+    let choice: LocalModelInfo
+
+    private var local: AppModel.LocalStatus { flow.model.local }
+
+    var body: some View {
+        Section {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(choice.suggested && local.hardwareKnown ? "Suggested for this computer" : "Your choice")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Text(choice.name).fontWeight(.semibold)
+                    Text(choice.streams ? "Words appear as you speak" : "Text appears after you stop speaking")
+                    Text(choice.speedLine)
+                    Text("\(LocalModelText.wer(choice.librispeechWer)) of words wrong on clear speech, "
+                        + "\(LocalModelText.wer(choice.fleursWer)) on everyday speech")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                download
+            }
+        } header: {
+            Label(local.hardwareLine, systemImage: "cpu")
+                .fontWeight(.regular)
+                .foregroundStyle(.secondary)
+        }
+        Section {
+            DisclosureGroup(flow.compareOpen ? "Hide other models"
+                                             : "Compare \(local.models.count - 1) other models",
+                            isExpanded: $flow.compareOpen) {
+                compareTable
+            }
+        } footer: {
+            if flow.compareOpen {
+                Text("Word errors: clear read speech / everyday speech. Times are estimates until a "
+                    + "model is downloaded and tested here.")
+            }
+        }
+    }
+
+    @ViewBuilder private var download: some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            if choice.downloading {
+                ProgressView(value: choice.downloadFraction).frame(width: 140)
+                Text(choice.progressText).font(.callout).foregroundStyle(.secondary)
+                Button("Cancel") { flow.model.bridge.cancelLocalModelDownload(choice.modelId) }
+            } else if choice.downloaded {
+                StatusLabel(text: "Downloaded", tone: .positive)
+            } else {
+                Button(choice.tooLarge ? "Too Large for This Computer" : "Download \(choice.sizeText)") {
+                    flow.downloadLocalChoice()
+                }
+                .disabled(choice.tooLarge)
+                if !choice.problem.isEmpty {
+                    Text(choice.problem).font(.callout).foregroundStyle(.orange)
+                }
+            }
+        }
+    }
+
+    private var compareTable: some View {
+        Table(local.models, selection: Binding(get: { Set([choice.modelId]) },
+                                               set: { picked in
+                                                   if let id = picked.first { flow.chooseLocalModel(id) }
+                                               })) {
+            TableColumn("Model") { entry in
+                Text(entry.suggested && local.hardwareKnown ? "\(entry.name) (suggested)" : entry.name)
+            }
+            .width(min: 140, ideal: 160)
+            TableColumn("Download", value: \.sizeText)
+            TableColumn("Word errors") { entry in
+                Text("\(LocalModelText.wer(entry.librispeechWer)) / \(LocalModelText.wer(entry.fleursWer))")
+            }
+            TableColumn("10 s of speech", value: \.speedCell)
+            TableColumn("Text shows") { entry in
+                Text(entry.streams ? "As you speak" : "After you stop")
+            }
+            TableColumn("Memory", value: \.fitLabel)
+        }
+        // Six columns in a fixed-width assistant: the small size keeps every
+        // value whole.
+        .controlSize(.small)
+        .frame(height: CGFloat(local.models.count) * 22 + 30)
     }
 }
 
@@ -1618,6 +2051,13 @@ private struct RefinementStep: View {
     @ObservedObject var flow: SetupFlowModel
     @ObservedObject var model: AppModel
 
+    /// The cloud providers use a sign-in; a runner here and a server are
+    /// models the person runs. Each group is its own card.
+    private static let groups: [(title: String, ids: [String])] = [
+        ("Uses your sign-in", ["anthropic", "openai"]),
+        ("Your own models", ["local", "endpoint"]),
+    ]
+
     var body: some View {
         // Only the selected provider's fast-mode row: the settings window
         // separates these onto per-provider panes, so the schema does not gate
@@ -1626,46 +2066,221 @@ private struct RefinementStep: View {
         let fastModeIds = (provider == "openai" ? ["openAiFastMode"] : [])
             + (provider == "anthropic" ? ["anthropicFastMode"] : [])
         Form {
-            Section {
-                Picker(selection: selection) {
-                    ForEach(flow.refinementProviders) { row in
-                        // The brands differ from the transcription step's, so
-                        // each row says which sign-in it actually uses.
-                        ProviderOptionLabel(providerId: row.id,
-                                            title: row.label,
-                                            status: row.readinessStatus,
-                                            tone: StatusLabel.tone(for: row),
-                                            note: row.setupHint)
-                            .tag(row.id)
+            ForEach(sections, id: \.title) { group in
+                Section {
+                    // One radio group per card, labelled as the transcription
+                    // step labels its own: a selection in the other card
+                    // leaves this one with nothing checked.
+                    Picker(selection: selection) {
+                        ForEach(group.rows) { row in
+                            option(row).tag(row.id)
+                        }
+                    } label: {
+                        Text(group.title)
                     }
-                    ProviderOptionLabel(providerId: "none",
-                                        title: "None",
-                                        status: "No cleanup",
-                                        tone: .pending,
-                                        note: "Skip cleanup entirely.")
-                        .tag("none")
-                } label: {
-                    Text("Cleanup provider")
+                    .pickerStyle(.radioGroup)
                 }
-                .pickerStyle(.radioGroup)
-                // Directly under the rows, above the facts, so it reads as
-                // attached to the selection it is about.
+            }
+            Section {
+                Toggle("Skip cleanup and deliver the raw transcript",
+                       isOn: Binding(get: { flow.skipCleanup }, set: { flow.skipCleanup = $0 }))
+                    .toggleStyle(.checkbox)
+                // Directly under the choices, so it reads as attached to the
+                // selection it is about.
                 if !flow.refinementWarning.isEmpty {
                     StatusLabel(text: flow.refinementWarning, tone: .warning)
                 }
-                // None has no facts worth a block, so choosing it hides them.
-                ProviderStatsRows(stats: model.bridge.stats(forRefinementProvider: provider))
+                // None and the own-model choices have no facts worth a block.
+                if !SetupFlowModel.ownModelProviders.contains(provider) {
+                    ProviderStatsRows(stats: model.bridge.stats(forRefinementProvider: provider))
+                }
                 ForEach(model.rows(matching: fastModeIds), id: \.rowId) { row in
                     RowView(row: row, model: model)
                 }
             }
+            if provider == "local" {
+                LocalRunnerSections(flow: flow, model: model)
+            } else if provider == "endpoint" {
+                EndpointSections(flow: flow, model: model)
+            }
         }
         .formStyle(.grouped)
-        .onAppear { flow.checkRefinementProviders() }
+        .onAppear {
+            flow.checkRefinementProviders()
+            model.refreshLocalSetup()
+        }
+        .onChange(of: model.local.runners.first?.runnerId) { flow.adoptFoundRunner() }
+    }
+
+    private struct Group {
+        let title: String
+        let rows: [ProviderRow]
+    }
+
+    /// The groups the registry fills, in order; a provider no group names
+    /// still gets a card of its own.
+    private var sections: [Group] {
+        let named = Set(Self.groups.flatMap(\.ids))
+        let others = flow.refinementProviders.filter { !named.contains($0.id) }
+        return (Self.groups.map { group in
+            Group(title: group.title,
+                  rows: group.ids.compactMap { id in flow.refinementProviders.first { $0.id == id } })
+        } + [Group(title: "Cleanup provider", rows: others)]).filter { !$0.rows.isEmpty }
+    }
+
+    @ViewBuilder private func option(_ row: ProviderRow) -> some View {
+        switch row.id {
+        case "local":
+            ProviderOptionLabel(providerId: row.id, title: "This computer",
+                                status: flow.runnerRowStatus.text, tone: flow.runnerRowStatus.tone,
+                                note: row.setupHint)
+        case "endpoint":
+            ProviderOptionLabel(providerId: row.id, title: "A server I run",
+                                status: "", tone: .pending, note: row.setupHint)
+        default:
+            ProviderOptionLabel(providerId: row.id, title: row.label,
+                                status: row.readinessStatus, tone: StatusLabel.tone(for: row),
+                                note: row.setupHint)
+        }
     }
 
     private var selection: Binding<String> {
         Binding(get: { flow.refinementProviderId }, set: { flow.chooseRefinementProvider($0) })
+    }
+}
+
+/// "This computer" on the refinement step: which runner answered, the model it
+/// cleans up with, the cleanup model to pull through Ollama, or how to get a
+/// runner at all.
+private struct LocalRunnerSections: View {
+    @ObservedObject var flow: SetupFlowModel
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Section {
+            // Which runner answered, and the way to look again, on one row.
+            HStack(alignment: .firstTextBaseline) {
+                StatusLabel(text: flow.runnerStatus, tone: flow.runner == nil ? .pending : .positive)
+                Spacer(minLength: 12)
+                Button("Check Again") { flow.detectRunners() }
+                    .disabled(model.local.detectingRunners)
+            }
+            if let runner = flow.runner {
+                if !runner.models.isEmpty, let row = model.row("localRunnerModel") {
+                    Picker(selection: model.binding(row, read: RowView.text, write: { $0 })) {
+                        ForEach(runner.models, id: \.self) { Text($0).tag($0) }
+                    } label: {
+                        RowView.label(row.label, help: row.help)
+                    }
+                }
+                if runner.runnerId == "ollama", pull.running || !flow.runnerHasSuggestedModel {
+                    suggestion
+                }
+            } else if !model.local.detectingRunners {
+                Text("Cleanup models run in a separate app. Install Ollama, then choose Check Again "
+                    + "and Speecher will set up a model through it. LM Studio and llama-server work too.")
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Get Ollama") { flow.openOllamaDownload() }
+                StatusLabel(text: "Until a runner is set up, dictation delivers the raw transcript.",
+                            tone: .warning)
+            }
+        }
+    }
+
+    private var pull: CleanupPullInfo { model.local.pull ?? model.bridge.cleanupPull }
+
+    @ViewBuilder private var suggestion: some View {
+        let cleanup = model.local.cleanupModel
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                if pull.running {
+                    Text("Downloading \(cleanup?.name ?? "the model") through Ollama: \(pull.progressText)")
+                } else if let cleanup {
+                    Text("Suggested for this computer: \(cleanup.name), \(cleanup.sizeText).")
+                    if !pull.error.isEmpty {
+                        Text(pull.error).foregroundStyle(.orange)
+                    }
+                } else {
+                    Text("Cleanup would be slow on this computer. A cloud provider or skipping "
+                        + "cleanup will feel faster.")
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 12)
+            if pull.running {
+                ProgressView(value: pull.fraction).frame(width: 140)
+            } else if cleanup != nil {
+                Button("Download with Ollama") { flow.pullSuggestedCleanupModel() }
+            }
+        }
+    }
+}
+
+/// "A server I run" on the refinement step: the endpoint's format, address,
+/// key and model, and the connection check that lists the server's models.
+/// With the CLI Proxy API preset the address and key shown are the proxy's,
+/// and the preset stays until one of them is edited.
+private struct EndpointSections: View {
+    @ObservedObject var flow: SetupFlowModel
+    @ObservedObject var model: AppModel
+    @State private var format = "openai"
+    @State private var serverUrl = ""
+    @State private var apiKey = ""
+    @State private var modelName = ""
+
+    var body: some View {
+        Section {
+            Picker("Format", selection: $format) {
+                Text("OpenAI-compatible (Chat Completions)").tag("openai")
+                Text("Anthropic-compatible (Messages)").tag("anthropic")
+            }
+            .onChange(of: format) { save() }
+            TextField("Server URL", text: $serverUrl, prompt: Text("http://localhost:8080/v1"))
+                .onSubmit { save() }
+            SecureField("API key", text: $apiKey, prompt: Text("Optional"))
+                .onSubmit { save() }
+            LabeledContent {
+                HStack {
+                    SuggestingField(text: modelName, suggestions: model.local.endpointModels) { edited in
+                        modelName = edited
+                        save()
+                    }
+                    Button("Connect") {
+                        save()
+                        model.bridge.checkRefinementEndpoint()
+                    }
+                }
+            } label: {
+                RowView.label("Model", help: "Connect to list the server's models, or type one.")
+            }
+        } footer: {
+            if !model.local.endpointStatus.isEmpty {
+                Text(model.local.endpointStatus)
+            }
+        }
+        .onAppear(perform: load)
+        .onDisappear(perform: save)
+        // The first model the server lists, when none is typed yet.
+        .onChange(of: model.local.endpointModels) { _, models in
+            if modelName.isEmpty, let first = models.first {
+                modelName = first
+                save()
+            }
+        }
+    }
+
+    private func load() {
+        let form = model.bridge.refinementEndpointForm
+        format = form.format
+        serverUrl = form.serverUrl
+        apiKey = form.apiKey
+        modelName = form.model
+    }
+
+    private func save() {
+        model.bridge.saveRefinementEndpoint(format: format, serverUrl: serverUrl,
+                                            apiKey: apiKey, model: modelName)
+        model.reloadSettingsDraft()
     }
 }
 
@@ -1798,7 +2413,14 @@ private struct ReadyStep: View {
 
     @ViewBuilder private var complete: some View {
         Section {
-            StatusLabel(text: "Setup is complete.", tone: .positive)
+            if flow.downloadingModel != nil {
+                Text("Setup is complete except for the speech model download.")
+                Label("You can close this window. The download keeps going, and Speecher shows a "
+                    + "notification when you can start dictating.", systemImage: "info.circle")
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                StatusLabel(text: "Setup is complete.", tone: .positive)
+            }
         }
         Section("How to dictate") {
             Text(flow.createShortcut
@@ -1818,7 +2440,15 @@ private struct ReadyStep: View {
                     ProviderMark(providerId: item.providerId, fallback: item.symbol)
                     Text(item.label)
                     Spacer(minLength: 12)
-                    StatusLabel(text: item.status, tone: item.ready ? .positive : .pending)
+                    // The download this step chose is still going: its row
+                    // carries the progress instead of a verdict.
+                    if item.id == "transcription", let download = flow.downloadingModel {
+                        ProgressView(value: download.downloadFraction).frame(width: 120)
+                        Text(download.progressText).foregroundStyle(.secondary)
+                        Button("Cancel") { flow.model.bridge.cancelLocalModelDownload(download.modelId) }
+                    } else {
+                        StatusLabel(text: item.status, tone: item.ready ? .positive : .pending)
+                    }
                 }
             }
         } footer: {
@@ -1886,7 +2516,7 @@ final class SpeecherSetupAssistant: NSObject, NSWindowDelegate {
         self.onClosed = onClosed
         // Fixed size: an assistant is a fixed course, not a document. Closable
         // so setup can be abandoned, in which case it returns at next launch.
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 560),
+        window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.contentSize),
                           styleMask: [.titled, .closable],
                           backing: .buffered,
                           defer: false)
@@ -1898,12 +2528,22 @@ final class SpeecherSetupAssistant: NSObject, NSWindowDelegate {
         // not turn its preferred size into a window taller than the screen.
         hosting.sizingOptions = []
         window.contentViewController = hosting
-        window.setContentSize(NSSize(width: 700, height: 560))
+        window.setContentSize(Self.contentSize)
         window.center()
         super.init()
         window.delegate = self
         flow.onFinished = onFinished
         flow.closeWindow = { [weak self] in self?.window.close() }
+    }
+
+    var isVisible: Bool { window.isVisible }
+
+    /// Screenshot automation can ask for a taller window with
+    /// SPEECHER_GRAB_SIZE=WxH, as on Qt, so a step is captured whole.
+    private static var contentSize: NSSize {
+        let size = ProcessInfo.processInfo.environment["SPEECHER_GRAB_SIZE"]?
+            .split(separator: "x").compactMap { Double($0) } ?? []
+        return size.count == 2 ? NSSize(width: size[0], height: size[1]) : NSSize(width: 700, height: 560)
     }
 
     func show() {
