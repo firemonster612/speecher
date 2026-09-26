@@ -233,13 +233,14 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
         QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
         QThread::msleep(10);
     }
-    // SPEECHER_GRAB_SCROLL=<pixels> scrolls the visible page, so a second
-    // grab can show what lies below the first screen.
+    // SPEECHER_GRAB_SCROLL=<pixels> or =bottom scrolls the visible page, so
+    // a second grab can show what lies below the first screen.
     const QString scroll = qEnvironmentVariable("SPEECHER_GRAB_SCROLL");
     if (!scroll.isEmpty()) {
         for (QScrollArea *area : m_appWindow->findChildren<QScrollArea *>()) {
             if (area->isVisible()) {
-                area->verticalScrollBar()->setValue(scroll.toInt());
+                QScrollBar *bar = area->verticalScrollBar();
+                bar->setValue(scroll == QStringLiteral("bottom") ? bar->maximum() : scroll.toInt());
             }
         }
         QCoreApplication::processEvents();

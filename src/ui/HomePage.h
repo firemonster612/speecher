@@ -30,7 +30,6 @@ class HomePage : public QWidget {
 public:
     explicit HomePage(ApplicationController *controller, QWidget *parent = nullptr);
     QPushButton *toggleButton() const;
-    QScrollArea *scrollArea() const;
 
 public slots:
     void setStatus(const QString &status);

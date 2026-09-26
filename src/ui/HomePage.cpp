@@ -878,11 +878,6 @@ QPushButton *HomePage::toggleButton() const
     return m_toggle;
 }
 
-QScrollArea *HomePage::scrollArea() const
-{
-    return m_scroll;
-}
-
 void HomePage::updateShortcutHint()
 {
     const QString shortcut = m_controller->globalShortcutDisplay();

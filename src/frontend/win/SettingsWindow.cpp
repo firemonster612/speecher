@@ -767,6 +767,15 @@ struct SettingsWindow::Native {
         QEventLoop settle;
         QTimer::singleShot(250, &settle, &QEventLoop::quit);
         settle.exec();
+        // SPEECHER_GRAB_SCROLL=bottom shows the end of the page, as on the
+        // other platforms.
+        if (qEnvironmentVariable("SPEECHER_GRAB_SCROLL") == QStringLiteral("bottom")) {
+            if (const auto scroll = pageHost.Child().try_as<ScrollViewer>()) {
+                scroll.ChangeView(nullptr, scroll.ScrollableHeight(), nullptr, true);
+                QTimer::singleShot(250, &settle, &QEventLoop::quit);
+                settle.exec();
+            }
+        }
         return printWindowTo(windowHandle(), path);
     }
 
