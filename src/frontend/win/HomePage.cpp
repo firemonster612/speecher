@@ -377,15 +377,17 @@ StackPanel weekDots(const InsightsSummary &summary, const Brush &accent, const B
         }
         if (day == summary.todayIndex) {
             // Today is ringed in the accent with a card-coloured gap, so the
-            // ring reads on a filled dot and an empty one alike.
+            // ring reads on a filled dot and an empty one alike. Whole pixels
+            // only: a half-pixel ring or gap rounds differently on each side
+            // and pushes the dot off centre.
             constexpr double ring = kHeatCell + 6;
             Border halo;
             halo.Width(ring);
             halo.Height(ring);
             halo.CornerRadius({ring / 2, ring / 2, ring / 2, ring / 2});
             halo.BorderBrush(accent);
-            halo.BorderThickness({1.5, 1.5, 1.5, 1.5});
-            halo.Padding({1.5, 1.5, 1.5, 1.5});
+            halo.BorderThickness({1, 1, 1, 1});
+            halo.Padding({2, 2, 2, 2});
             halo.Child(dot);
             halo.HorizontalAlignment(HorizontalAlignment::Center);
             column.Children().Append(halo);
