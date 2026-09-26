@@ -6,12 +6,11 @@ name: Insights evidence
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - feat/insights-home
   pull_request:
     paths:
-      - src/**
+      - src/ui/**
+      - src/frontend/**
+      - src/core/Insights*
       - .github/workflows/insights-evidence.yml
 
 permissions:
@@ -97,27 +96,26 @@ jobs:
           export SPEECHER_INSIGHTS_SEED="$GITHUB_WORKSPACE/docs/insights-mockup/seed-active.jsonl"
           # The backing store is not bound by the runner's 1024x768 screen.
           export SPEECHER_GRAB_SIZE=1000x1000
-          for shot in home general home-bottom; do
-            page="${shot%-bottom}"
-            scroll=""
-            [ "$shot" = home-bottom ] && scroll=bottom
+          # No home-bottom here: the backing store draws the page unscrolled,
+          # so the screen capture step below takes that one.
+          for page in home general; do
             status=0
-            SPEECHER_GRAB_PAGE="$page" SPEECHER_GRAB_SCROLL="$scroll" QT_LOGGING_RULES="*.debug=false" \
+            SPEECHER_GRAB_PAGE="$page" QT_LOGGING_RULES="*.debug=false" \
               build/speecher.app/Contents/MacOS/speecher \
-              --grab "evidence/mac-$shot.png" > "evidence/mac-$shot-grab.log" 2>&1 || status=$?
-            echo "mac-$shot exit=$status"
-            tail -20 "evidence/mac-$shot-grab.log"
-            if [ ! -s "evidence/mac-$shot.png" ]; then
+              --grab "evidence/mac-$page.png" > "evidence/mac-$page-grab.log" 2>&1 || status=$?
+            echo "mac-$page exit=$status"
+            tail -20 "evidence/mac-$page-grab.log"
+            if [ ! -s "evidence/mac-$page.png" ]; then
               failed=1
               # Run it again under lldb for the crashing thread's backtrace. SIP
               # strips DYLD_* from lldb itself, so hand the kit to the target.
-              SPEECHER_GRAB_PAGE="$page" SPEECHER_GRAB_SCROLL="$scroll" \
+              SPEECHER_GRAB_PAGE="$page" \
                 lldb --batch \
                 -o "settings set target.env-vars DYLD_FRAMEWORK_PATH=$QT_ROOT_DIR/lib" \
                 -o run -k "thread backtrace -c 60" -k "quit 1" \
-                -- build/speecher.app/Contents/MacOS/speecher --grab "evidence/mac-$shot.png" \
-                > "evidence/mac-$shot-lldb.txt" 2>&1 || true
-              grep -A60 "stop reason" "evidence/mac-$shot-lldb.txt" | head -70 || true
+                -- build/speecher.app/Contents/MacOS/speecher --grab "evidence/mac-$page.png" \
+                > "evidence/mac-$page-lldb.txt" 2>&1 || true
+              grep -A60 "stop reason" "evidence/mac-$page-lldb.txt" | head -70 || true
             fi
             pkill -9 -x speecher || true
             # A killed instance leaves its single-instance socket behind.
@@ -236,12 +234,13 @@ jobs:
           New-Item -ItemType Directory -Force -Path evidence | Out-Null
           $env:SPEECHER_INSIGHTS_SEED = (Resolve-Path docs/insights-mockup/seed-active.jsonl).Path
           $exe = (Resolve-Path build/speecher.exe).Path
-          foreach ($page in "home", "general") {
-            $env:SPEECHER_GRAB_PAGE = $page
-            $out = Join-Path (Resolve-Path evidence).Path "win-$page.png"
+          foreach ($shot in "home", "general", "home-bottom") {
+            $env:SPEECHER_GRAB_PAGE = $shot -replace '-bottom$', ''
+            $env:SPEECHER_GRAB_SCROLL = if ($shot -eq "home-bottom") { "bottom" } else { "" }
+            $out = Join-Path (Resolve-Path evidence).Path "win-$shot.png"
             $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
             if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
-              throw "speecher --grab for $page exited with code $($process.ExitCode)"
+              throw "speecher --grab for $shot exited with code $($process.ExitCode)"
             }
           }
 
