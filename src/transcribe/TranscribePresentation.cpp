@@ -8,6 +8,7 @@
 #include <QRegularExpression>
 
 #include <algorithm>
+#include <cmath>
 
 // Non-ASCII text is written as \u escapes: this file is also compiled by
 // MSVC, which reads a source without a BOM in the system code page.
@@ -47,6 +48,48 @@ QString transcribePhaseLabel(TranscribePhase phase)
     return {};
 }
 
+namespace {
+
+struct ProgressSpan {
+    qreal from;
+    qreal to;
+};
+
+// Each phase's share of a file's progress bar. Sending takes most of it: it
+// is the part that grows with the file's length, where finishing and
+// refining take seconds whatever the length. Without refinement, sending and
+// finishing stretch over refining's share. Every span ends below 1.
+ProgressSpan progressSpan(TranscribePhase phase, bool refines)
+{
+    switch (phase) {
+    case TranscribePhase::Reading:
+        return {0.0, 0.05};
+    case TranscribePhase::Transcribing:
+        return {0.05, refines ? 0.75 : 0.90};
+    case TranscribePhase::Finishing:
+        return refines ? ProgressSpan{0.75, 0.80} : ProgressSpan{0.90, 0.97};
+    case TranscribePhase::Refining:
+        // Picks up where finishing stopped.
+        return {progressSpan(TranscribePhase::Finishing, refines).to, 0.97};
+    }
+    return {0.0, 0.0};
+}
+
+// An open-ended wait covers about two thirds of its span in this time, and
+// keeps slowing after that.
+constexpr qreal kWaitEaseMs = 4000.0;
+
+} // namespace
+
+qreal overallFileProgress(qreal fractionSent, TranscribePhase phase, bool refines, qint64 msInPhase)
+{
+    const ProgressSpan span = progressSpan(phase, refines);
+    const qreal within = phase == TranscribePhase::Transcribing
+        ? std::clamp(fractionSent, 0.0, 1.0)
+        : 1.0 - std::exp(-qreal(std::max<qint64>(msInPhase, 0)) / kWaitEaseMs);
+    return span.from + (span.to - span.from) * within;
+}
+
 QString transcribeStepLabel(TranscribeStep step)
 {
     switch (step) {
@@ -58,6 +101,12 @@ QString transcribeStepLabel(TranscribeStep step)
         return QStringLiteral("Export");
     }
     return {};
+}
+
+QString transcribeStepHint(TranscribeStep step)
+{
+    return step == TranscribeStep::Configure ? QStringLiteral("Check these options, then press Transcribe.")
+                                             : QString();
 }
 
 QString durationLabel(qint64 ms)

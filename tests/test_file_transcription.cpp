@@ -4,6 +4,7 @@
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "transcribe/FileTranscriptionSession.h"
+#include "transcribe/TranscribePresentation.h"
 
 #include <QDir>
 #include <QScopeGuard>
@@ -288,6 +289,37 @@ private slots:
         QVERIFY(results.first().refined.startsWith(QStringLiteral("heard ")));
         QVERIFY(results.first().savedPath.isEmpty());
         QCOMPARE(QDir(dir.path()).entryList(QDir::Files), QStringList({QStringLiteral("memo.wav")}));
+    }
+
+    // The bar climbs through the phases in order, never backwards, and stays
+    // short of the end however long a wait runs: only fileFinished fills it.
+    void fileProgressOnlyEndsWhenTheFileDoes()
+    {
+        for (bool refines : {true, false}) {
+            const QList<qreal> samples{
+                overallFileProgress(0.0, TranscribePhase::Reading, refines, 0),
+                overallFileProgress(0.0, TranscribePhase::Reading, refines, 60000),
+                overallFileProgress(0.0, TranscribePhase::Transcribing, refines, 0),
+                overallFileProgress(0.5, TranscribePhase::Transcribing, refines, 0),
+                overallFileProgress(1.0, TranscribePhase::Transcribing, refines, 0),
+                overallFileProgress(1.0, TranscribePhase::Finishing, refines, 0),
+                overallFileProgress(1.0, TranscribePhase::Finishing, refines, 2000),
+                overallFileProgress(1.0, TranscribePhase::Finishing, refines, 600000),
+                overallFileProgress(1.0, TranscribePhase::Refining, refines, 0),
+                overallFileProgress(1.0, TranscribePhase::Refining, refines, 2000),
+                overallFileProgress(1.0, TranscribePhase::Refining, refines, 600000),
+            };
+            for (int i = 1; i < samples.size(); ++i) {
+                QVERIFY2(samples.at(i) >= samples.at(i - 1), qPrintable(QString::number(i)));
+            }
+            QCOMPARE(samples.first(), 0.0);
+            QVERIFY(samples.last() < 1.0);
+        }
+        // Without a refinement pass, sending and finishing take its share.
+        QCOMPARE(overallFileProgress(1.0, TranscribePhase::Transcribing, true, 0), 0.75);
+        QCOMPARE(overallFileProgress(1.0, TranscribePhase::Transcribing, false, 0), 0.90);
+        QVERIFY(overallFileProgress(1.0, TranscribePhase::Finishing, true, 600000) <= 0.80);
+        QVERIFY(overallFileProgress(1.0, TranscribePhase::Finishing, false, 600000) <= 0.97);
     }
 
 private:

@@ -16,10 +16,21 @@ class ProviderRegistry;
 enum class TranscribePhase { Reading, Transcribing, Finishing, Refining };
 QString transcribePhaseLabel(TranscribePhase phase);
 
+// How far a file is through all of its work, 0..1, for its progress bar:
+// reading the audio, sending it, waiting for the final text, refining.
+// fractionSent is fileProgress's value. msInPhase is how long the file has
+// been in its phase; it eases the open-ended waits (reading, finishing,
+// refining) toward the end of their share without passing it. The result
+// stays below 1: a front end shows 1 when fileFinished arrives, once the
+// transcript is refined and saved.
+qreal overallFileProgress(qreal fractionSent, TranscribePhase phase, bool refines, qint64 msInPhase);
+
 // The steps the step indicator at the top of a Transcribe surface names:
 // the setup form, the running batch and the results.
 enum class TranscribeStep { Configure, Transcribe, Export };
 QString transcribeStepLabel(TranscribeStep step);
+// The line under the step indicator; empty for a step that needs none.
+QString transcribeStepHint(TranscribeStep step);
 
 // "3 min 7 s", or "42 s" under a minute.
 QString durationLabel(qint64 ms);
