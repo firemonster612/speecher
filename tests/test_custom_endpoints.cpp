@@ -759,6 +759,17 @@ private slots:
                                    .contains(QStringLiteral("speech-endpoint-key"));
         QCOMPARE(reopened.raw().contains(SettingsKeys::SpeechEndpointApiKey), !inKeyring);
         qInfo() << "endpoint keys stored in" << (inKeyring ? "the keyring" : "the settings file");
+        // Set by the ctest that runs this suite against a real keyring.
+        if (qEnvironmentVariableIntValue("SPEECHER_TEST_EXPECT_KEYRING") == 1) {
+            QVERIFY(inKeyring);
+        }
+
+        // The startup prefetch fills the cache without blocking, so a
+        // dictation finds keys it would otherwise wait for.
+        SettingsStore prefetched;
+        prefetched.secrets()->prefetch();
+        QTRY_COMPARE_WITH_TIMEOUT(prefetched.dictationSnapshot().speech.endpoint.apiKey,
+                                  QStringLiteral("speech-secret"), 3000);
 
         draft = loaded;
         draft.speech.endpoint.apiKey.clear();
@@ -793,6 +804,41 @@ private slots:
         QCOMPARE(settings.raw().value(SettingsKeys::SecretsInKeyring).toStringList(),
                  QStringList{QStringLiteral("cliproxy-api-key")});
         QVERIFY(!settings.raw().contains(SettingsKeys::CliproxyApiKey));
+    }
+
+    // The settings window's snapshot shows a saved key for an endpoint that
+    // is not selected; dictation start does not wait for that key; and when
+    // the keyring does not answer, switching to the endpoint and saving the
+    // empty field keeps the stored key.
+    void onlyTheSettingsSnapshotWaitsForUnselectedKeys()
+    {
+        {
+            SettingsStore settings;
+            settings.raw().clear();
+            // As SecretStore records a key it wrote to the keyring.
+            settings.raw().setValue(SettingsKeys::SecretsInKeyring,
+                                    QStringList{QStringLiteral("speech-endpoint-key")});
+            settings.raw().sync();
+        }
+        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
+
+        SettingsStore settings;
+        QVERIFY(settings.speechProvider() != QStringLiteral("endpoint"));
+        settings.dictationSnapshot();
+        QVERIFY2(settings.secrets()->lastError().isEmpty(), qPrintable(settings.secrets()->lastError()));
+
+        AppSettings draft = settings.snapshot();
+        QVERIFY(settings.secrets()->lastError().contains(QStringLiteral("timed out")));
+        QCOMPARE(draft.speech.endpoint.apiKey, QString());
+
+        draft.speech.providerId = QStringLiteral("endpoint");
+        draft.speech.endpoint.baseUrl = QStringLiteral("http://whisper.local:8080");
+        settings.applySnapshot(draft);
+        QCOMPARE(settings.speechProvider(), QStringLiteral("endpoint"));
+        QCOMPARE(settings.raw().value(SettingsKeys::SecretsInKeyring).toStringList(),
+                 QStringList{QStringLiteral("speech-endpoint-key")});
+        QVERIFY(!settings.raw().contains(SettingsKeys::SpeechEndpointApiKey));
     }
 
     // Existing CLI Proxy API users keep their key: it moves from the settings

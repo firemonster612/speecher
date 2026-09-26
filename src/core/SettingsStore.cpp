@@ -88,24 +88,33 @@ void SettingsStore::setCliproxyApiKey(const QString &value)
 
 AppSettings SettingsStore::snapshot() const
 {
+    return snapshotReading({});
+}
+
+AppSettings SettingsStore::dictationSnapshot() const
+{
+    const QString endpointPreset = refinementEndpointSettings().preset;
+    SecretsToRead wait;
+    wait.cliproxyKey = openAiAuthMode() == QStringLiteral("cliproxy")
+        || anthropicAuthMode() == QStringLiteral("cliproxy")
+        || endpointPreset == QStringLiteral("cliproxy");
+    wait.refinementEndpointKey = refinementProvider() == QStringLiteral("endpoint") && endpointPreset.isEmpty();
+    wait.speechEndpointKey = speechProvider() == QStringLiteral("endpoint");
+    return snapshotReading(wait);
+}
+
+// A key not read here stays unknown to SecretStore, and applySnapshot leaves
+// an unknown key as it was, so an unread key is never saved over.
+AppSettings SettingsStore::snapshotReading(const SecretsToRead &wait) const
+{
     AppSettings settings = SettingsCodecs::snapshot();
-    // Only the secrets the chosen providers send may wait for the keyring;
-    // the rest come from memory, and applySnapshot leaves an unread one as
-    // it was.
-    const RefinementSettings &refinement = settings.refinement;
-    const bool usesCliproxyKey = refinement.openAiAuthMode == QStringLiteral("cliproxy")
-        || refinement.anthropicAuthMode == QStringLiteral("cliproxy")
-        || refinement.endpoint.preset == QStringLiteral("cliproxy");
-    const bool usesRefinementEndpointKey = refinement.providerId == QStringLiteral("endpoint")
-        && refinement.endpoint.preset.isEmpty();
-    const auto read = [this](SecretStore::Secret secret, bool needed) {
-        return needed ? m_secrets->secret(secret) : m_secrets->cachedSecret(secret);
+    const auto read = [this](SecretStore::Secret secret, bool waitForKeyring) {
+        return waitForKeyring ? m_secrets->secret(secret) : m_secrets->cachedSecret(secret);
     };
-    settings.refinement.cliproxyApiKey = read(SecretStore::Secret::CliproxyApiKey, usesCliproxyKey);
+    settings.refinement.cliproxyApiKey = read(SecretStore::Secret::CliproxyApiKey, wait.cliproxyKey);
     settings.refinement.endpoint.apiKey =
-        read(SecretStore::Secret::RefinementEndpointKey, usesRefinementEndpointKey);
-    settings.speech.endpoint.apiKey = read(SecretStore::Secret::SpeechEndpointKey,
-                                           settings.speech.providerId == QStringLiteral("endpoint"));
+        read(SecretStore::Secret::RefinementEndpointKey, wait.refinementEndpointKey);
+    settings.speech.endpoint.apiKey = read(SecretStore::Secret::SpeechEndpointKey, wait.speechEndpointKey);
     return settings;
 }
 
