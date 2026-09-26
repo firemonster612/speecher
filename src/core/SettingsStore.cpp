@@ -88,36 +88,70 @@ void SettingsStore::setCliproxyApiKey(const QString &value)
 
 AppSettings SettingsStore::snapshot() const
 {
-    return snapshotReading({});
+    return snapshotReading(true);
 }
 
 AppSettings SettingsStore::dictationSnapshot() const
 {
-    const QString endpointPreset = refinementEndpointSettings().preset;
-    SecretsToRead wait;
-    wait.cliproxyKey = openAiAuthMode() == QStringLiteral("cliproxy")
-        || anthropicAuthMode() == QStringLiteral("cliproxy")
-        || endpointPreset == QStringLiteral("cliproxy");
-    wait.refinementEndpointKey = refinementProvider() == QStringLiteral("endpoint") && endpointPreset.isEmpty();
-    wait.speechEndpointKey = speechProvider() == QStringLiteral("endpoint");
-    return snapshotReading(wait);
+    return snapshotReading(false);
+}
+
+QString SettingsStore::resolveDictationSecrets(AppSettings &settings)
+{
+    using Secret = SecretStore::Secret;
+    QList<std::pair<Secret, QString *>> required;
+    const auto require = [&](Secret secret, QString &value) {
+        if (settings.unreadSecretKeys.contains(SecretStore::settingsKey(secret))) {
+            required.append({secret, &value});
+        }
+    };
+    auto &refinement = settings.refinement;
+    if (settings.speech.providerId == QStringLiteral("endpoint")) {
+        require(Secret::SpeechEndpointKey, settings.speech.endpoint.apiKey);
+    }
+    if (refinement.providerId == QStringLiteral("endpoint") && refinement.endpoint.preset.isEmpty()) {
+        require(Secret::RefinementEndpointKey, refinement.endpoint.apiKey);
+    }
+    // Speech uses local OAuth account files, never the remote proxy API key.
+    const bool proxyPreset = refinement.providerId == QStringLiteral("endpoint")
+        && refinement.endpoint.preset == QStringLiteral("cliproxy");
+    const bool remoteProxy = !refinement.cliproxyBaseUrl.isEmpty()
+        && ((refinement.providerId == QStringLiteral("openai") && refinement.openAiAuthMode == QStringLiteral("cliproxy"))
+            || (refinement.providerId == QStringLiteral("anthropic") && refinement.anthropicAuthMode == QStringLiteral("cliproxy")));
+    if (proxyPreset || remoteProxy) {
+        require(Secret::CliproxyApiKey, refinement.cliproxyApiKey);
+    }
+    if (required.isEmpty()) return {};
+
+    // Own QSettings and SecretStore in this worker; never access the GUI cache
+    // or its in-flight prefetch jobs from another thread.
+    SettingsStore source;
+    for (const auto &[secret, value] : required) {
+        *value = source.secrets()->secret(secret);
+        if (value->isEmpty() && !source.secrets()->isSecretKnown(secret)) {
+            return QStringLiteral("Desktop keyring unavailable for %1: %2")
+                .arg(SecretStore::settingsKey(secret), source.secrets()->lastError());
+        }
+        settings.unreadSecretKeys.removeAll(SecretStore::settingsKey(secret));
+    }
+    return {};
 }
 
 // Preserve unread state in the draft even if prefetch completes before save.
-AppSettings SettingsStore::snapshotReading(const SecretsToRead &wait) const
+AppSettings SettingsStore::snapshotReading(bool waitForKeyring) const
 {
     AppSettings settings = SettingsCodecs::snapshot();
-    const auto read = [this, &settings](SecretStore::Secret secret, bool waitForKeyring) {
+    const auto read = [this, &settings, waitForKeyring](SecretStore::Secret secret) {
         const QString value = waitForKeyring ? m_secrets->secret(secret) : m_secrets->cachedSecret(secret);
         if (!m_secrets->isSecretKnown(secret)) {
             settings.unreadSecretKeys.append(SecretStore::settingsKey(secret));
         }
         return value;
     };
-    settings.refinement.cliproxyApiKey = read(SecretStore::Secret::CliproxyApiKey, wait.cliproxyKey);
+    settings.refinement.cliproxyApiKey = read(SecretStore::Secret::CliproxyApiKey);
     settings.refinement.endpoint.apiKey =
-        read(SecretStore::Secret::RefinementEndpointKey, wait.refinementEndpointKey);
-    settings.speech.endpoint.apiKey = read(SecretStore::Secret::SpeechEndpointKey, wait.speechEndpointKey);
+        read(SecretStore::Secret::RefinementEndpointKey);
+    settings.speech.endpoint.apiKey = read(SecretStore::Secret::SpeechEndpointKey);
     return settings;
 }
 

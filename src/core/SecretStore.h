@@ -42,7 +42,8 @@ public:
     // Saves to the keychain, or to the settings file when no keychain works,
     // so a custom endpoint keeps working without one. An empty value for a
     // secret that was never read leaves the stored one alone: it came from a
-    // skipped or failed read, not from the person.
+    // skipped or failed read, not from the person. Failed deletions leave a
+    // persisted marker that suppresses reads until deletion succeeds.
     bool saveSecret(Secret secret, const QString &value);
     // Removes every Speecher entry from the keychain.
     bool deleteKeyringSecrets() const;

@@ -316,6 +316,16 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
         m_mediaController->pausePlaying();
     }
 
+    if (!settings.unreadSecretKeys.isEmpty()) {
+        m_startupRunner->start(generation, std::nullopt, std::nullopt, {true, {}}, settings);
+        return;
+    }
+    prepareProviders(generation);
+}
+
+void DictationSession::prepareProviders(quint64 generation)
+{
+    const AppSettings settings = *m_sessionSettings;
     std::optional<SpeechPrepareJob> speechPrepareJob = m_transcriber->createPrepareJob(settings.speech);
     const bool speechRefreshRequired = speechPrepareJob ? speechPrepareJob->showRefreshIndicator
                                                         : m_transcriber->requiresRefresh(settings.speech);
@@ -469,6 +479,12 @@ void DictationSession::finishStartupPreparation(const StartupPreparationResult &
 
     if (!result.speech.ok) {
         failStartup(result.generation, result.speech.message);
+        return;
+    }
+
+    if (result.resolvedSettings) {
+        m_sessionSettings = *result.resolvedSettings;
+        prepareProviders(result.generation);
         return;
     }
 

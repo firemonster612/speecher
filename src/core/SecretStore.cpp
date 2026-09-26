@@ -1,13 +1,16 @@
 #include "core/SecretStore.h"
 
-#include "core/KeyringResult.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
 
+#include <QCoreApplication>
 #include <QDebug>
 #include <QStandardPaths>
+#include <QThread>
 
 #include <iterator>
+#include <memory>
+#include <optional>
 
 #ifdef SPEECHER_WITH_QKEYCHAIN
 #if __has_include(<qt6keychain/keychain.h>)
@@ -83,7 +86,14 @@ namespace {
 
 #ifdef SPEECHER_WITH_QKEYCHAIN
 template <typename Job>
-bool runKeychainJob(Job &job, QString *error)
+auto makeKeychainJob()
+{
+    return std::unique_ptr<Job, void (*)(Job *)>(new Job(keyringService()),
+                                               [](Job *job) { job->deleteLater(); });
+}
+
+template <typename Job>
+std::optional<QKeychain::Error> runKeychainJob(Job &job, QString *error)
 {
     QEventLoop loop;
     QTimer watchdog;
@@ -95,6 +105,10 @@ bool runKeychainJob(Job &job, QString *error)
     });
     watchdog.setSingleShot(true);
     QObject::connect(&watchdog, &QTimer::timeout, &loop, &QEventLoop::quit);
+    // QtKeychain's process-wide executor is not thread-safe. Its jobs run
+    // asynchronously on the GUI thread; only this caller's thread waits.
+    // Deferred deletion also keeps the job alive through executor cleanup.
+    job.moveToThread(QCoreApplication::instance()->thread());
     job.start();
     if (!finished) {
         watchdog.start(keyringTimeoutMs);
@@ -104,15 +118,12 @@ bool runKeychainJob(Job &job, QString *error)
         if (error) {
             *error = QStringLiteral("Desktop keyring request timed out");
         }
-        return false;
+        return std::nullopt;
     }
-    if (job.error() == QKeychain::NoError) {
-        return true;
-    }
-    if (error) {
+    if (job.error() != QKeychain::NoError && error) {
         *error = job.errorString();
     }
-    return false;
+    return job.error();
 }
 #endif
 
@@ -334,19 +345,24 @@ bool SecretStore::usesInsecureSettingsFallback() const
 
 QString SecretStore::keyringSecret(Secret secret) const
 {
+    if (QStandardPaths::isTestModeEnabled()) {
+        const int delay = qEnvironmentVariableIntValue("SPEECHER_TEST_KEYRING_READ_DELAY_MS");
+        if (delay > 0) QThread::msleep(delay);
+    }
 #ifdef SPEECHER_WITH_QKEYCHAIN
     if (keyringReadsTimeOut()) {
         m_lastError = QStringLiteral("Desktop keyring request timed out");
         return {};
     }
-    QKeychain::ReadPasswordJob job(keyringService());
-    job.setKey(keyringEntry(secret));
+    auto job = makeKeychainJob<QKeychain::ReadPasswordJob>();
+    job->setKey(keyringEntry(secret));
     QString error;
-    if (runKeychainJob(job, &error)) {
+    const auto result = runKeychainJob(*job, &error);
+    if (result == QKeychain::NoError) {
         m_lastError.clear();
-        return job.textData().trimmed();
+        return job->textData().trimmed();
     }
-    if (job.error() == QKeychain::EntryNotFound) {
+    if (result == QKeychain::EntryNotFound) {
         m_lastError.clear();
         return {};
     }
@@ -360,10 +376,10 @@ QString SecretStore::keyringSecret(Secret secret) const
 bool SecretStore::writeKeyringSecret(Secret secret, const QString &value) const
 {
 #ifdef SPEECHER_WITH_QKEYCHAIN
-    QKeychain::WritePasswordJob job(keyringService());
-    job.setKey(keyringEntry(secret));
-    job.setTextData(value);
-    const bool ok = runKeychainJob(job, &m_lastError);
+    auto job = makeKeychainJob<QKeychain::WritePasswordJob>();
+    job->setKey(keyringEntry(secret));
+    job->setTextData(value);
+    const bool ok = runKeychainJob(*job, &m_lastError) == QKeychain::NoError;
     if (ok) {
         recordKeyringEntry(secret, true);
     }
@@ -384,11 +400,11 @@ bool SecretStore::deleteKeyringSecret(Secret secret) const
         return false;
     }
 #ifdef SPEECHER_WITH_QKEYCHAIN
-    QKeychain::DeletePasswordJob job(keyringService());
-    job.setKey(keyringEntry(secret));
+    auto job = makeKeychainJob<QKeychain::DeletePasswordJob>();
+    job->setKey(keyringEntry(secret));
     QString error;
-    const bool finished = runKeychainJob(job, &error);
-    if (finished || job.error() == QKeychain::EntryNotFound) {
+    const auto result = runKeychainJob(*job, &error);
+    if (result == QKeychain::NoError || result == QKeychain::EntryNotFound) {
         m_lastError.clear();
         recordKeyringEntry(secret, false);
         return true;
