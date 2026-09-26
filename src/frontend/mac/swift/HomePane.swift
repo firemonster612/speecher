@@ -408,7 +408,10 @@ struct HomePane: View {
         LabeledContent {
             HStack {
                 ProgressView(value: Double(value), total: Double(max(total, 1)))
-                    .tint(Color.accentColor.opacity(emphasised ? 1 : 0.42))
+                    // The system accent itself, not Color.accentColor: a tint
+                    // defined in terms of the accent it replaces resolves
+                    // recursively and overflows the stack.
+                    .tint(Color(nsColor: .controlAccentColor).opacity(emphasised ? 1 : 0.42))
                 Text(caption).monospacedDigit()
             }
         } label: {
