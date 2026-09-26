@@ -27,7 +27,7 @@ QString endpointErrorMessage(const QByteArray &body, const QString &fallback)
     const QJsonObject object = QJsonDocument::fromJson(body).object();
     const QJsonValue error = object.value(QStringLiteral("error"));
     const QString message = error.isObject() ? error.toObject().value(QStringLiteral("message")).toString()
-                                             : error.toString();
+                                             : error.isString() ? error.toString() : object.value(QStringLiteral("message")).toString();
     return message.isEmpty() ? fallback : message;
 }
 
@@ -133,6 +133,7 @@ void EndpointSpeechTranscriber::finishInput(quint64 attemptId)
     m_doneText.clear();
     m_streaming = false;
     m_timeoutReason.clear();
+    m_streamError.clear();
     QNetworkReply *reply = m_network.post(upload.request, upload.parts);
     upload.parts->setParent(reply);
     m_reply = reply;
@@ -154,10 +155,17 @@ void EndpointSpeechTranscriber::finishInput(quint64 attemptId)
 // transcript.text.delta events carry pieces, transcript.text.done the whole.
 void EndpointSpeechTranscriber::readStream()
 {
+    if (!m_streamError.isEmpty()) return;
     m_sseBuffer += m_reply->readAll();
     while (const std::optional<SseFrame> frame = takeSseFrame(m_sseBuffer)) {
         const QJsonObject event = QJsonDocument::fromJson(frame->data).object();
         const QString type = event.value(QStringLiteral("type")).toString(QString::fromUtf8(frame->name));
+        if (type == QStringLiteral("error") || frame->name == "error") {
+            m_streamError = endpointErrorMessage(frame->data, QStringLiteral("stream error"));
+            // Avoid re-entering the reply's readyRead handler through abort().
+            QMetaObject::invokeMethod(m_reply, &QNetworkReply::abort, Qt::QueuedConnection);
+            return;
+        }
         if (type == QStringLiteral("transcript.text.delta")) {
             m_streamedText += event.value(QStringLiteral("delta")).toString();
             emit partialTranscript(m_attemptId, m_streamedText);
@@ -178,8 +186,8 @@ void EndpointSpeechTranscriber::finishReply(QNetworkReply *reply, quint64 attemp
     m_inactivityTimer.stop();
     m_deadlineTimer.stop();
     const QByteArray body = m_streaming ? QByteArray() : reply->readAll();
-    if (reply->error() != QNetworkReply::NoError) {
-        const QString detail = !m_timeoutReason.isEmpty()
+    if (!m_streamError.isEmpty() || reply->error() != QNetworkReply::NoError) {
+        const QString detail = !m_streamError.isEmpty() ? m_streamError : !m_timeoutReason.isEmpty()
             ? m_timeoutReason
             : endpointErrorMessage(body, reply->errorString());
         const QString message = QStringLiteral("Speech endpoint failed: %1").arg(detail);
@@ -188,7 +196,8 @@ void EndpointSpeechTranscriber::finishReply(QNetworkReply *reply, quint64 attemp
         if (m_streaming && !m_streamedText.trimmed().isEmpty()) {
             qWarning().noquote() << message << "- keeping the text streamed so far";
             emit attemptTranscript(attemptId, m_streamedText.trimmed());
-            emit attemptCompleted(attemptId);
+            if (!m_streamError.isEmpty()) fail(attemptId, message);
+            else emit attemptCompleted(attemptId);
             return;
         }
         fail(attemptId, message);

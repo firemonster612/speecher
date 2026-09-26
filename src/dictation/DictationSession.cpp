@@ -740,7 +740,9 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
                          << "message=" + failure.message;
     if (!m_transcript->isEmpty()
         && (m_state == DictationState::Listening || m_state == DictationState::Stopping)) {
-        m_speechWarning = QStringLiteral("Part of the dictation may be missing. The connection dropped.");
+        m_speechWarning = failure.phase == QStringLiteral("finalize")
+            ? QStringLiteral("Part of the dictation may be missing. ") + failure.message
+            : QStringLiteral("Part of the dictation may be missing. The connection dropped.");
         if (m_state == DictationState::Listening) {
             m_audio->stop();
             m_audioGeneration = 0;

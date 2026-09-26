@@ -235,6 +235,40 @@ private slots:
         QCOMPARE(completed.size(), 0);
     }
 
+    void speechEndpointReportsSseErrors_data()
+    {
+        QTest::addColumn<bool>("partial");
+        QTest::newRow("before-output") << false;
+        QTest::newRow("after-output") << true;
+    }
+
+    void speechEndpointReportsSseErrors()
+    {
+        QFETCH(bool, partial);
+        FakeServer server;
+        QByteArray stream;
+        if (partial) stream += "data: {\"type\":\"transcript.text.delta\",\"delta\":\"Keep this\"}\n\n";
+        stream += "event: error\ndata: {\"type\":\"error\",\"message\":\"model failed\"}\n\n";
+        server.route("POST /v1/audio/transcriptions", httpResponse("200 OK", "text/event-stream", stream));
+        SpeechSettings settings;
+        settings.endpoint.baseUrl = server.origin();
+        EndpointSpeechTranscriber transcriber;
+        QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
+        QSignalSpy transcript(&transcriber, &SpeechTranscriber::attemptTranscript);
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        transcriber.startAttempt(5, settings);
+        transcriber.sendAudio(5, QByteArray(640, '\0'));
+        transcriber.finishInput(5);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
+        const SpeechFailure failure = failed.first().first().value<SpeechFailure>();
+        QVERIFY(failure.message.contains(QStringLiteral("model failed")));
+        QVERIFY(!failure.retryable);
+        QCOMPARE(transcript.size(), partial ? 1 : 0);
+        if (partial) QCOMPARE(transcript.first().at(1).toString(), QStringLiteral("Keep this"));
+        QCOMPARE(completed.size(), 0);
+        QCOMPARE(server.requests.size(), 1);
+    }
+
     // The server keeps the connection busy past the inactivity limit, then
     // goes quiet: the streamed text so far is the dictation.
     void speechEndpointKeepsStreamingPastTheInactivityLimitAndKeepsTextWhenItStalls()
@@ -476,6 +510,35 @@ private slots:
                  qPrintable(failed.first().first().toString()));
         QTest::qWait(100);
         QCOMPARE(server.requests.size(), 1);
+    }
+
+    void reasoningFieldErrorsOnlyRetryHttp400_data()
+    {
+        QTest::addColumn<QByteArray>("response");
+        QTest::newRow("http-500") << httpResponse("500 Internal Server Error", "application/json",
+            "{\"error\":{\"message\":\"reasoning_effort crashed\"}}");
+        QTest::newRow("sse-200") << sse({"{\"error\":{\"message\":\"reasoning_effort crashed\"}}"});
+    }
+
+    void reasoningFieldErrorsOnlyRetryHttp400()
+    {
+        QFETCH(QByteArray, response);
+        FakeServer server;
+        server.route("POST /v1/chat/completions", response);
+        ChatCompletionsRefiner refiner(QStringLiteral("Custom endpoint"), ChatCompletionsRefiner::Audience::Server);
+        QSignalSpy failed(&refiner, &ChatCompletionsRefiner::failed);
+        const auto refine = [&] {
+            refiner.refine(QStringLiteral("x"), {}, {}, {}, server.origin() + QStringLiteral("/v1"),
+                           QStringLiteral("m"), QStringLiteral("balanced"), {});
+        };
+        refine();
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
+        QVERIFY(failed.first().first().toString().contains(QStringLiteral("reasoning_effort crashed")));
+        QCOMPARE(server.requests.size(), 1);
+        refine();
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 2, 2000);
+        QCOMPARE(server.requests.size(), 2);
+        QVERIFY(server.jsonBody(1).contains(QStringLiteral("reasoning_effort")));
     }
 
     void anthropicFormatUsesAnApiKeyWithoutClaudeCodeHeaders()

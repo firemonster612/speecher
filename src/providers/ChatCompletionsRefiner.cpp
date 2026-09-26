@@ -80,9 +80,9 @@ ChatCompletionsRefiner::ChatCompletionsRefiner(const QString &label,
         emit delta(text);
     });
     connect(&m_stream, &StreamingRefinement::completed, this, &ChatCompletionsRefiner::completed);
-    connect(&m_stream, &StreamingRefinement::failed, this, [this](const QString &message) {
+    connect(&m_stream, &StreamingRefinement::failed, this, [this](const QString &message, int httpStatus) {
         // Text already delivered must never be replayed.
-        if (m_sentReasoningFields && !m_streamedOutput && namesReasoningField(message)) {
+        if (httpStatus == 400 && m_sentReasoningFields && !m_streamedOutput && namesReasoningField(message)) {
             qInfo().noquote() << "chat completions server rejected the reasoning fields,"
                               << "retrying without them:" << message;
             m_rejectsReasoningFields.insert(m_serverModel);
