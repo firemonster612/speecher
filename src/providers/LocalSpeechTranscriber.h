@@ -62,6 +62,9 @@ private:
     // The attempt the caller still wants results for, 0 for none. The worker
     // reads it to abandon work, and the engine to abort a running call.
     std::atomic<quint64> m_liveAttempt = 0;
+    // Set on destruction so a running Speed Test stops too, at the next point
+    // transcribe.cpp checks: between chunks and decode steps, not mid-encoder.
+    std::atomic_bool m_shuttingDown = false;
     QTimer m_idleTimer;
     // Audio for m_liveAttempt the worker has not taken yet. When inference
     // falls behind the microphone, the worker feeds everything that piled up

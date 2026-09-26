@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFile>
 #include <QNetworkReply>
+#include <QPointer>
 #include <QStandardPaths>
 #include <QThread>
 
@@ -47,17 +48,8 @@ LocalModelStore::LocalModelStore(const QString &directory, const QUrl &server, Q
 
 LocalModelStore::~LocalModelStore()
 {
-    for (Download *download : std::as_const(m_downloads)) {
-        download->cancelled = true;
-        if (download->reply) {
-            download->reply->disconnect(this);
-            download->reply->abort();
-        }
-        if (download->verifier) {
-            download->verifier->wait();
-            delete download->verifier;
-        }
-        delete download;
+    for (const QString &modelId : m_downloads.keys()) {
+        cancel(modelId);
     }
 }
 
@@ -152,6 +144,17 @@ void LocalModelStore::finishReply(const QString &modelId)
     QNetworkReply *reply = download->reply;
     download->reply = nullptr;
     reply->deleteLater();
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    // The server has no bytes past the partial file, so it is not a prefix of
+    // this model: start over rather than ask for the same range again.
+    constexpr int rangeNotSatisfiable = 416;
+    if (status == rangeNotSatisfiable && download->resumedFrom > 0) {
+        const LocalModel model = download->model;
+        delete m_downloads.take(modelId);
+        QFile::remove(partPath(model));
+        this->download(model);
+        return;
+    }
     if (download->file.error() != QFileDevice::NoError) {
         fail(modelId, QStringLiteral("Speecher could not save the download: %1.")
                           .arg(download->file.errorString()));
@@ -182,15 +185,17 @@ void LocalModelStore::verify(const LocalModel &model)
         }
         *matches = !download->cancelled && hash.result().toHex() == expected.toLatin1();
     });
-    connect(download->verifier, &QThread::finished, this, [this, model, matches] {
+    const QPointer<QThread> verifier = download->verifier;
+    connect(verifier, &QThread::finished, this, [this, model, matches, verifier] {
         Download *download = m_downloads.value(model.id);
-        download->verifier->deleteLater();
-        download->verifier = nullptr;
-        if (download->cancelled) {
-            m_downloads.remove(model.id);
-            delete download;
+        // cancel() already joined and deleted this verifier.
+        if (!download || !verifier || download->verifier != verifier) {
             return;
         }
+        // finished() comes just before the thread ends.
+        download->verifier->wait();
+        delete download->verifier;
+        download->verifier = nullptr;
         if (!*matches) {
             QFile::remove(partPath(model));
             fail(model.id, QStringLiteral("The downloaded file was damaged, so Speecher deleted it. Download it again."));
@@ -202,8 +207,7 @@ void LocalModelStore::verify(const LocalModel &model)
                                .arg(m_directory));
             return;
         }
-        m_downloads.remove(model.id);
-        delete download;
+        delete m_downloads.take(model.id);
         emit downloadFinished(model.id);
     });
     download->verifier->start();
@@ -211,20 +215,23 @@ void LocalModelStore::verify(const LocalModel &model)
 
 void LocalModelStore::cancel(const QString &modelId)
 {
-    Download *download = m_downloads.value(modelId);
+    Download *download = m_downloads.take(modelId);
     if (!download) {
         return;
     }
     download->cancelled = true;
     if (download->verifier) {
-        return;
+        // The hash loop checks the flag every megabyte, so this is brief, and
+        // it closes the file before remove() deletes it (Windows refuses to
+        // delete an open file).
+        download->verifier->wait();
+        delete download->verifier;
     }
     if (download->reply) {
         download->reply->disconnect(this);
         download->reply->abort();
         download->reply->deleteLater();
     }
-    m_downloads.remove(modelId);
     delete download;
 }
 

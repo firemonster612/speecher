@@ -232,6 +232,80 @@ private slots:
         QVERIFY(!store.isDownloading(model.id));
     }
 
+    void cancelKeepsThePartialFile()
+    {
+        QTemporaryDir dir;
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        const QByteArray content(4000, 'd');
+        const LocalModel model = fakeModel(content);
+        LocalModelStore store(dir.path(), QUrl(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort())));
+        QSignalSpy progress(&store, &LocalModelStore::downloadProgress);
+
+        store.download(model);
+        QVERIFY(server.waitForNewConnection(5000));
+        QTcpSocket *socket = server.nextPendingConnection();
+        test::readHttpRequest(socket, 2000);
+        socket->write("HTTP/1.1 200 OK\r\nContent-Length: 4000\r\n\r\n" + content.left(1200));
+        socket->flush();
+        QTRY_VERIFY(!progress.isEmpty());
+        store.cancel(model.id);
+
+        QVERIFY(!store.isDownloading(model.id));
+        QCOMPARE(QFileInfo(store.modelPath(model) + QStringLiteral(".part")).size(), 1200);
+    }
+
+    void serverIgnoringTheRangeRestartsFromZero()
+    {
+        QTemporaryDir dir;
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        const QByteArray content = QByteArray(3000, 'e') + "tail";
+        const LocalModel model = fakeModel(content);
+        LocalModelStore store(dir.path(), QUrl(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort())));
+        {
+            QFile part(store.modelPath(model) + QStringLiteral(".part"));
+            QVERIFY(part.open(QIODevice::WriteOnly));
+            part.write(QByteArray(1000, 'z'));
+        }
+        QSignalSpy finished(&store, &LocalModelStore::downloadFinished);
+
+        store.download(model);
+        serveOnce(server, "200 OK", content);
+
+        QVERIFY(finished.wait(5000));
+        QFile file(store.modelPath(model));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(), content);
+    }
+
+    void rangeNotSatisfiableRestartsTheDownload()
+    {
+        QTemporaryDir dir;
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        const QByteArray content(2500, 'f');
+        const LocalModel model = fakeModel(content);
+        LocalModelStore store(dir.path(), QUrl(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort())));
+        {
+            QFile part(store.modelPath(model) + QStringLiteral(".part"));
+            QVERIFY(part.open(QIODevice::WriteOnly));
+            part.write(QByteArray(1000, 'z'));
+        }
+        QSignalSpy finished(&store, &LocalModelStore::downloadFinished);
+
+        store.download(model);
+        QVERIFY(serveOnce(server, "416 Range Not Satisfiable", {}).contains("\r\nRange: bytes=1000-\r\n"));
+        // The retry comes from the event loop, which serveOnce does not run.
+        QTRY_VERIFY(server.hasPendingConnections());
+        const QByteArray retry = serveOnce(server, "200 OK", content);
+
+        QVERIFY(retry.startsWith("GET "));
+        QVERIFY(!retry.contains("Range:"));
+        QVERIFY(finished.wait(5000));
+        QVERIFY(store.isDownloaded(model));
+    }
+
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
     // Runs a real model when SPEECHER_TEST_LOCAL_MODEL names a catalog id and
     // SPEECHER_TEST_LOCAL_MODEL_DIR holds its file.
@@ -285,6 +359,41 @@ private slots:
         QVERIFY2(speed.first().at(2).toString().isEmpty(), qPrintable(speed.first().at(2).toString()));
         qInfo() << "speed test:" << speed.first().at(1).toDouble() << "s for 10 s of speech";
         QVERIFY(speed.first().at(1).toDouble() > 0);
+    }
+
+    // An attempt that starts while the worker is busy must still get every
+    // chunk, including the ones sent before its begin() runs. The Speed Test
+    // keeps the worker busy so the calls below all queue behind it.
+    void attemptStartedWhileTheWorkerIsBusyKeepsItsAudio()
+    {
+        const QString modelId = qEnvironmentVariable("SPEECHER_TEST_LOCAL_MODEL");
+        const QString modelDir = qEnvironmentVariable("SPEECHER_TEST_LOCAL_MODEL_DIR");
+        if (modelId.isEmpty() || modelDir.isEmpty()) {
+            QSKIP("Set SPEECHER_TEST_LOCAL_MODEL and SPEECHER_TEST_LOCAL_MODEL_DIR to run a real model.");
+        }
+        LocalModelStore store(modelDir, QUrl());
+        LocalSpeechTranscriber transcriber(store);
+        QSignalSpy transcripts(&transcriber, &SpeechTranscriber::attemptTranscript);
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        SpeechSettings settings;
+        settings.local.modelId = modelId;
+        QFile clip(QStringLiteral(":/speedtest/librispeech-6930-75918-0018.s16le"));
+        QVERIFY(clip.open(QIODevice::ReadOnly));
+        const QByteArray pcm = clip.readAll();
+
+        transcriber.runSpeedTest(modelId, {});
+        transcriber.startAttempt(1, settings);
+        transcriber.sendAudio(1, pcm.left(3200));
+        transcriber.cancelAttempt(1);
+        transcriber.startAttempt(2, settings);
+        transcriber.sendAudio(2, pcm);
+        transcriber.finishInput(2);
+
+        QVERIFY(completed.wait(120000));
+        QCOMPARE(completed.first().at(0).toULongLong(), quint64(2));
+        QVERIFY2(transcripts.first().at(1).toString().contains(QStringLiteral("security everywhere"),
+                                                                Qt::CaseInsensitive),
+                 qPrintable(transcripts.first().at(1).toString()));
     }
 
     void missingModelFailsWithAnActionableMessage()

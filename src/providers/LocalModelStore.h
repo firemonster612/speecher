@@ -32,7 +32,8 @@ public:
     // Picks up a partial file where it stopped. Does nothing while the model
     // is already downloading.
     void download(const LocalModel &model);
-    // Keeps the partial file for the next download to resume.
+    // Keeps the partial file for the next download to resume. Returns once
+    // nothing holds the file open.
     void cancel(const QString &modelId);
     // Deletes the model and any partial download. False if a file stayed.
     bool remove(const LocalModel &model);

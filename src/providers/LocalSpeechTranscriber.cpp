@@ -3,10 +3,19 @@
 #include "core/LocalModelCatalog.h"
 #include "providers/LocalModelStore.h"
 
+#include <algorithm>
+
 namespace speecher {
 namespace {
 
 constexpr int msPerMinute = 60 * 1000;
+// Keeps the timer's millisecond interval well inside an int.
+constexpr int maxIdleUnloadMinutes = 24 * 60;
+
+int idleUnloadMs(int minutes)
+{
+    return std::clamp(minutes, 0, maxIdleUnloadMinutes) * msPerMinute;
+}
 
 } // namespace
 
@@ -14,11 +23,11 @@ LocalSpeechTranscriber::LocalSpeechTranscriber(const LocalModelStore &store, QOb
     : SpeechTranscriber(parent)
     , m_store(store)
     // Whatever the worker is running stops once the caller moves on from it.
-    , m_engine([this] { return m_liveAttempt.load() != m_workerAttempt; })
+    , m_engine([this] { return m_shuttingDown || m_liveAttempt.load() != m_workerAttempt; })
 {
     m_idleTimer.setSingleShot(true);
     // Until an attempt brings the person's setting.
-    m_idleTimer.setInterval(LocalSpeechSettings().idleUnloadMinutes * msPerMinute);
+    m_idleTimer.setInterval(idleUnloadMs(LocalSpeechSettings().idleUnloadMinutes));
     connect(&m_idleTimer, &QTimer::timeout, this, [this] {
         onWorker([this] {
             if (m_liveAttempt.load() == 0) {
@@ -33,6 +42,7 @@ LocalSpeechTranscriber::LocalSpeechTranscriber(const LocalModelStore &store, QOb
 
 LocalSpeechTranscriber::~LocalSpeechTranscriber()
 {
+    m_shuttingDown = true;
     m_liveAttempt = 0;
     m_thread.quit();
     m_thread.wait();
@@ -63,7 +73,7 @@ SpeechPrepareResult LocalSpeechTranscriber::prepare(const SpeechSettings &settin
 void LocalSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettings &settings)
 {
     m_idleTimer.stop();
-    m_idleTimer.setInterval(settings.local.idleUnloadMinutes * msPerMinute);
+    m_idleTimer.setInterval(idleUnloadMs(settings.local.idleUnloadMinutes));
     {
         const QMutexLocker lock(&m_pendingMutex);
         m_liveAttempt = attemptId;
@@ -227,7 +237,9 @@ void LocalSpeechTranscriber::begin(quint64 attemptId, const QString &modelPath, 
     if (!ensureLoaded(modelPath, deviceId, &error)
         || (m_engine.streams() && !m_engine.beginStream(&error))) {
         failAttempt(attemptId, error, QStringLiteral("load"));
+        return;
     }
+    feedPending();
 }
 
 void LocalSpeechTranscriber::feedPending()
@@ -236,11 +248,16 @@ void LocalSpeechTranscriber::feedPending()
     QByteArray pcm;
     {
         const QMutexLocker lock(&m_pendingMutex);
-        attemptId = m_liveAttempt.load();
-        pcm.swap(m_pendingPcm);
         m_feedQueued = false;
+        attemptId = m_liveAttempt.load();
+        // Audio for an attempt the worker has not begun yet stays pending;
+        // begin() takes it.
+        if (attemptId != m_workerAttempt) {
+            return;
+        }
+        pcm.swap(m_pendingPcm);
     }
-    if (!attemptRunning(attemptId)) {
+    if (pcm.isEmpty() || !attemptRunning(attemptId)) {
         return;
     }
     if (!m_engine.streams()) {
