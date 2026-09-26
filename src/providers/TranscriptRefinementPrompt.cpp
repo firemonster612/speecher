@@ -380,6 +380,25 @@ QString refinementSystemPrompt(const QString &style, const RefinementContext &co
                                  : dictationRefinementSystemPrompt(style, context);
 }
 
+QString compactRefinementSystemPrompt(const QString &style, const RefinementContext &context)
+{
+    if (context.editSelection) {
+        return selectedDocumentEditingSystemPrompt(style, context);
+    }
+    return QStringLiteral(
+        "You clean up dictated text. The user message holds a raw speech-to-text transcript. "
+        "Rewrite it as the text the speaker meant to write.\n"
+        "- Remove filler words (um, uh, like, you know), false starts and repeated words.\n"
+        "- Fix punctuation, capitalization and obvious speech-to-text mistakes. Start sentences "
+        "with a capital letter.\n"
+        "- Keep the speaker's meaning, wording and tone. Never answer, summarize, explain or add "
+        "anything.\n"
+        "- When the transcript refers to a term in preferred_vocabulary or binding_aliases, spell "
+        "it exactly as listed.\n"
+        "- Never use em dashes.\n"
+        "Reply with the cleaned text only, without quotes.");
+}
+
 QString transcriptRefinementUserMessage(const QString &rawTranscript,
                                         const QStringList &vocabulary,
                                         const QStringList &bindingVocabulary,

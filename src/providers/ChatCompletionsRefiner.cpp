@@ -65,10 +65,12 @@ bool namesReasoningField(const QString &message)
 } // namespace
 
 ChatCompletionsRefiner::ChatCompletionsRefiner(const QString &label,
+                                               Audience audience,
                                                QObject *parent,
                                                int requestTimeoutMs,
                                                int absoluteDeadlineMs)
     : QObject(parent)
+    , m_audience(audience)
     , m_stream(label, chatCompletionsEvent, chatCompletionsErrorMessage,
                requestTimeoutMs, absoluteDeadlineMs, this)
 {
@@ -100,6 +102,9 @@ void ChatCompletionsRefiner::refine(const QString &rawTranscript,
                                     const RefinementContext &context)
 {
     m_serverModel = endpointBase + QLatin1Char('\n') + model;
+    const bool smallModel = m_audience == Audience::SmallLocalModel;
+    const QString systemPrompt = smallModel ? compactRefinementSystemPrompt(refinementStyle, context)
+                                            : refinementSystemPrompt(refinementStyle, context);
     m_buildRequest = [=](bool withReasoningFields) -> StreamingRefinement::Request {
         QString base = endpointBase;
         while (base.endsWith(QLatin1Char('/'))) base.chop(1);
@@ -113,12 +118,15 @@ void ChatCompletionsRefiner::refine(const QString &rawTranscript,
             {QStringLiteral("stream"), true},
             {QStringLiteral("messages"), QJsonArray{
                 QJsonObject{{QStringLiteral("role"), QStringLiteral("system")},
-                            {QStringLiteral("content"), refinementSystemPrompt(refinementStyle, context)}},
+                            {QStringLiteral("content"), systemPrompt}},
                 QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
                             {QStringLiteral("content"), transcriptRefinementUserMessage(
                                  rawTranscript, vocabulary, bindingVocabulary, context)}},
             }},
         };
+        if (smallModel) {
+            body.insert(QStringLiteral("temperature"), 0);
+        }
         // Cleanup gains nothing from a reasoning pass and waits for all of
         // it. reasoning_effort covers Ollama, vLLM, LocalAI and KoboldCpp;
         // the template flag covers llama-server and templates that ignore it.

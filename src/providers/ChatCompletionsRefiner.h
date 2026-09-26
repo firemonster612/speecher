@@ -16,11 +16,21 @@ class ChatCompletionsRefiner final : public QObject {
     Q_OBJECT
 
 public:
+    // Who the requests are shaped for.
+    enum class Audience {
+        // A server whose model can follow the full prompt.
+        Server,
+        // The small models a Local Runner serves: the compact prompt, sampled
+        // at temperature 0 so a 1B model does not wander off the transcript.
+        SmallLocalModel,
+    };
+
     // label names the provider in failure messages.
-    explicit ChatCompletionsRefiner(const QString &label,
-                                    QObject *parent = nullptr,
-                                    int requestTimeoutMs = 60000,
-                                    int absoluteDeadlineMs = 120000);
+    ChatCompletionsRefiner(const QString &label,
+                           Audience audience,
+                           QObject *parent = nullptr,
+                           int requestTimeoutMs = 60000,
+                           int absoluteDeadlineMs = 120000);
 
     void refine(const QString &rawTranscript,
                 const QStringList &vocabulary,
@@ -40,6 +50,7 @@ signals:
 private:
     void post(bool withReasoningFields);
 
+    Audience m_audience;
     StreamingRefinement m_stream;
     std::function<StreamingRefinement::Request(bool withReasoningFields)> m_buildRequest;
     QString m_serverModel;

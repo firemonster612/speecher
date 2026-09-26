@@ -135,7 +135,8 @@ std::optional<CleanupModel> suggestedCleanupModel(CleanupHardware hardware)
 
 LocalRunnerRefiner::LocalRunnerRefiner(QObject *parent)
     : TranscriptRefiner(parent)
-    , m_chat(new ChatCompletionsRefiner(QStringLiteral("Local model"), this))
+    , m_chat(new ChatCompletionsRefiner(QStringLiteral("Local model"),
+                                        ChatCompletionsRefiner::Audience::SmallLocalModel, this))
 {
     connect(m_chat, &ChatCompletionsRefiner::delta, this, &TranscriptRefiner::delta);
     connect(m_chat, &ChatCompletionsRefiner::completed, this, &TranscriptRefiner::completed);

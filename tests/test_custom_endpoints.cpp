@@ -240,7 +240,7 @@ private slots:
         server.route("POST /v1/chat/completions",
                      sse({chatChunk(QStringLiteral("Hello")), chatChunk(QStringLiteral(" there."), QStringLiteral("stop")),
                           "[DONE]"}));
-        ChatCompletionsRefiner refiner(QStringLiteral("Custom endpoint"));
+        ChatCompletionsRefiner refiner(QStringLiteral("Custom endpoint"), ChatCompletionsRefiner::Audience::Server);
         QSignalSpy completed(&refiner, &ChatCompletionsRefiner::completed);
         QSignalSpy failed(&refiner, &ChatCompletionsRefiner::failed);
 
@@ -269,6 +269,34 @@ private slots:
         const QString user = messages.at(1).toObject().value(QStringLiteral("content")).toString();
         QVERIFY(user.contains(QStringLiteral("hello there")));
         QVERIFY(user.contains(QStringLiteral("\"preferred_vocabulary\":[\"Qt\"]")));
+        QVERIFY(!body.contains(QStringLiteral("temperature")));
+    }
+
+    void aSmallLocalModelGetsTheCompactPromptAtTemperatureZero()
+    {
+        FakeServer server;
+        server.route("POST /v1/chat/completions",
+                     sse({chatChunk(QStringLiteral("Hello there."), QStringLiteral("stop")), "[DONE]"}));
+        ChatCompletionsRefiner refiner(QStringLiteral("Local model"),
+                                       ChatCompletionsRefiner::Audience::SmallLocalModel);
+        QSignalSpy completed(&refiner, &ChatCompletionsRefiner::completed);
+        RefinementContext context;
+        refiner.refine(QStringLiteral("um hello there"), {QStringLiteral("Qt")}, {}, {},
+                       server.origin() + QStringLiteral("/v1"), QStringLiteral("lfm2.5"),
+                       QStringLiteral("balanced"), context);
+
+        QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 2000);
+        const QJsonObject body = server.jsonBody(0);
+        QCOMPARE(body.value(QStringLiteral("temperature")).toDouble(-1), 0.0);
+        const QJsonArray messages = body.value(QStringLiteral("messages")).toArray();
+        const QString system = messages.at(0).toObject().value(QStringLiteral("content")).toString();
+        QVERIFY(system.startsWith(QStringLiteral("You clean up dictated text.")));
+        // The full prompt's examples are what a 1B model answered with.
+        QVERIFY(!system.contains(QStringLiteral("apple pie")));
+        QVERIFY2(system.split(QLatin1Char(' ')).size() < 150, qPrintable(system));
+        QVERIFY(system.contains(QStringLiteral("preferred_vocabulary")));
+        const QString user = messages.at(1).toObject().value(QStringLiteral("content")).toString();
+        QVERIFY(user.contains(QStringLiteral("\"preferred_vocabulary\":[\"Qt\"]")));
     }
 
     void chatCompletionsRetriesOnceWithoutTheReasoningFields()
@@ -279,7 +307,7 @@ private slots:
                                   "{\"error\":{\"message\":\"Unrecognized request argument supplied: reasoning_effort\"}}"));
         server.route("POST /v1/chat/completions",
                      sse({chatChunk(QStringLiteral("Fine."), QStringLiteral("stop")), "[DONE]"}));
-        ChatCompletionsRefiner refiner(QStringLiteral("Custom endpoint"));
+        ChatCompletionsRefiner refiner(QStringLiteral("Custom endpoint"), ChatCompletionsRefiner::Audience::Server);
         QSignalSpy completed(&refiner, &ChatCompletionsRefiner::completed);
         QSignalSpy failed(&refiner, &ChatCompletionsRefiner::failed);
         RefinementContext context;
@@ -309,7 +337,7 @@ private slots:
         server.route("POST /v1/chat/completions",
                      httpResponse("404 Not Found", "application/json",
                                   "{\"error\":\"model \\\"m\\\" not found, try pulling it first\"}"));
-        ChatCompletionsRefiner refiner(QStringLiteral("Local model"));
+        ChatCompletionsRefiner refiner(QStringLiteral("Local model"), ChatCompletionsRefiner::Audience::SmallLocalModel);
         QSignalSpy failed(&refiner, &ChatCompletionsRefiner::failed);
         RefinementContext context;
         refiner.refine(QStringLiteral("x"), {}, {}, {}, server.origin() + QStringLiteral("/v1"),
