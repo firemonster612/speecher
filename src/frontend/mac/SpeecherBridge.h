@@ -478,6 +478,11 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
                            readyProviders:(NSArray<NSString *> *)readyProviders
                          explicitlyChosen:(BOOL)explicitlyChosen
     NS_SWIFT_NAME(setupProviderChoice(saved:readyProviders:explicitlyChosen:));
+// Core's refinement default for the saved provider; nil while the runner
+// check is still looking.
+- (nullable NSString *)setupRefinementChoiceForSaved:(NSString *)saved
+                                      readyProviders:(NSArray<NSString *> *)readyProviders
+    NS_SWIFT_NAME(setupRefinementChoice(saved:readyProviders:));
 - (BOOL)offersSetupSpeechProvider:(NSString *)providerId saved:(NSString *)saved localAvailable:(BOOL)localAvailable
     NS_SWIFT_NAME(offersSetupSpeechProvider(_:saved:localAvailable:));
 - (BOOL)isSetupSignInProvider:(NSString *)providerId NS_SWIFT_NAME(isSetupSignInProvider(_:));
