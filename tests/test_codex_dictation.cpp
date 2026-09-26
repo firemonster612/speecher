@@ -110,16 +110,27 @@ private slots:
         peer->deleteLater();
     }
 
-    void codexDictationClientSeparatesServiceEndFromDroppedStream_data()
+    void codexDictationClientEndsAStreamOnAnyServiceEnd_data()
     {
+        QTest::addColumn<bool>("sessionStarted");
         QTest::addColumn<bool>("dropped");
-        QTest::newRow("clean close") << false;
-        QTest::newRow("dropped connection") << true;
+        QTest::addColumn<bool>("finishing");
+        QTest::addColumn<QString>("failedPhase");
+        QTest::newRow("clean close while streaming") << true << false << false << QString();
+        QTest::newRow("dropped while streaming") << true << true << false << QString();
+        QTest::newRow("dropped while finalizing") << true << true << true << QStringLiteral("finalize");
+        QTest::newRow("dropped before session.started") << false << true << false << QStringLiteral("connect");
     }
 
-    void codexDictationClientSeparatesServiceEndFromDroppedStream()
+    // Qt cannot tell a service's clean close from a drop, so any end of a live
+    // session is the service ending it; before session.started, or once the
+    // client asked to finish, an end is still a failure.
+    void codexDictationClientEndsAStreamOnAnyServiceEnd()
     {
+        QFETCH(bool, sessionStarted);
         QFETCH(bool, dropped);
+        QFETCH(bool, finishing);
+        QFETCH(QString, failedPhase);
         QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
         server.setSupportedSubprotocols({QStringLiteral("openai-bearer.test-token")});
         QVERIFY(server.listen(QHostAddress::LocalHost));
@@ -128,27 +139,64 @@ private slots:
         QSignalSpy connected(&client, &CodexDictationClient::connected);
         QSignalSpy completed(&client, &CodexDictationClient::completed);
         QSignalSpy failed(&client, &CodexDictationClient::failed);
+        QSignalSpy closed(&client, &CodexDictationClient::closed);
         client.start(QUrl(QStringLiteral("ws://127.0.0.1:%1/dictation/stream")
                               .arg(server.serverPort())),
                      QStringLiteral("test-token"),
                      16000);
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         std::unique_ptr<QWebSocket> peer(server.nextPendingConnection());
-        peer->sendTextMessage(QStringLiteral(
-            R"({"type":"session.started","sequence_no":1,"session":{"session_id":"s1","status":"active","config":{"provider_mode":"streaming_sse","transcript_delivery_mode":"final_only"}}})"));
-        QTRY_COMPARE_WITH_TIMEOUT(connected.count(), 1, 1000);
+        QSignalSpy serverMessages(peer.get(), &QWebSocket::textMessageReceived);
+        if (sessionStarted) {
+            peer->sendTextMessage(QStringLiteral(
+                R"({"type":"session.started","sequence_no":1,"session":{"session_id":"s1","status":"active","config":{"provider_mode":"streaming_sse","transcript_delivery_mode":"final_only"}}})"));
+            QTRY_COMPARE_WITH_TIMEOUT(connected.count(), 1, 1000);
+        }
+        if (finishing) {
+            client.stop();
+            QTRY_VERIFY_WITH_TIMEOUT(serverMessages.contains(
+                                         QVariantList{QStringLiteral("{\"type\":\"session.close\"}")}), 1000);
+        }
 
         if (dropped) {
             peer->abort();
-            QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
-            QCOMPARE(failed.first().at(1).toBool(), true);
-            QCOMPARE(failed.first().at(2).toString(), QStringLiteral("streaming"));
-            QCOMPARE(completed.count(), 0);
         } else {
             peer->close();
-            QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 1000);
-            QCOMPARE(failed.count(), 0);
         }
+        QTRY_COMPARE_WITH_TIMEOUT(closed.count(), 1, 1000);
+        if (failedPhase.isEmpty()) {
+            QCOMPARE(completed.count(), 1);
+            QCOMPARE(failed.count(), 0);
+        } else {
+            QCOMPARE(completed.count(), 0);
+            QCOMPARE(failed.count(), 1);
+            QCOMPARE(failed.first().at(1).toBool(), true);
+            QCOMPARE(failed.first().at(2).toString(), failedPhase);
+        }
+    }
+
+    void codexDictationClientClassifiesAuthenticationRefusal()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        connect(&server, &QTcpServer::newConnection, this, [&server] {
+            QTcpSocket *socket = server.nextPendingConnection();
+            connect(socket, &QTcpSocket::readyRead, socket, [socket] {
+                socket->readAll();
+                socket->write("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
+            });
+        });
+
+        CodexDictationClient client;
+        QSignalSpy failed(&client, &CodexDictationClient::failed);
+        client.start(QUrl(QStringLiteral("ws://127.0.0.1:%1/dictation/stream")
+                              .arg(server.serverPort())),
+                     QStringLiteral("invalid-token"),
+                     16000);
+
+        QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
+        QCOMPARE(failed.first().at(1).toBool(), false);
+        QCOMPARE(failed.first().at(2).toString(), QStringLiteral("authentication"));
     }
 
     void codexSessionEndedByTheServiceRollsOverWithoutLosingDictation_data()

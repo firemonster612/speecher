@@ -51,6 +51,7 @@ class SettingsStore(private val context: Context) {
                 },
             buttonLayout =
                 enumOf(preferences.getString("buttonLayout", null), ButtonLayout.RefinedPrimary),
+            panelSize = enumOf(preferences.getString("panelSize", null), PanelSize.Full),
         )
     }
 
@@ -81,6 +82,7 @@ class SettingsStore(private val context: Context) {
                 putString("${profile.name}Tone", choice.tone.name)
             }
             putString("buttonLayout", settings.buttonLayout.name)
+            putString("panelSize", settings.panelSize.name)
         }
     }
 

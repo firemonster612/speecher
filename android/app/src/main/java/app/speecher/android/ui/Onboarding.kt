@@ -107,6 +107,8 @@ fun Onboarding(
         ButtonLayoutPicker(settings.buttonLayout) {
             onChangeSettings(settings.copy(buttonLayout = it))
         }
+        Section("Dictation panel size")
+        PanelSizePicker(settings.panelSize) { onChangeSettings(settings.copy(panelSize = it)) }
         Section("Refinement")
         OptionalSwitch(
             "Fast mode",

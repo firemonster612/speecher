@@ -878,6 +878,28 @@ SettingsPage generalPage(const SchemaContext &context)
         return capabilities.automaticUpdateDownloads;
     };
 
+    SettingsRow insightsEnabled = toggleRow(
+        QStringLiteral("insightsEnabled"),
+        QStringLiteral("Keep insights about your dictation"),
+        QStringLiteral("Records word counts, times and app names for the stats on Home, never "
+                       "the text or audio. Stored only on this computer and never sent to the "
+                       "cloud."),
+        [](const AppSettings &settings) { return settings.insightsEnabled; },
+        [](AppSettings &settings, bool value) { settings.insightsEnabled = value; });
+    insightsEnabled.sinceVersion = QStringLiteral("0.2.1");
+    // Turning insights off stops recording; it does not delete what is kept.
+    // The note is the row's title, so it reads from the leading edge like
+    // every other row rather than filling the control slot.
+    SettingsRow insightsOffNote =
+        infoRow(QStringLiteral("insightsOffNote"),
+                QStringLiteral("Nothing new is recorded while this is off. History you already "
+                               "have stays until you clear it."),
+                QString(),
+                QString());
+    insightsOffNote.visible = [](const AppSettings &settings, const Capabilities &) {
+        return !settings.insightsEnabled;
+    };
+
     SettingsRow previewWords = numberRow(
         QStringLiteral("previewWords"),
         QStringLiteral("Preview words"),
@@ -930,6 +952,16 @@ SettingsPage generalPage(const SchemaContext &context)
                            [](const AppSettings &settings) { return settings.ui.refinementPreviewEnabled; },
                            [](AppSettings &settings, bool value) { settings.ui.refinementPreviewEnabled = value; }),
                  std::move(previewWords),
+             }},
+            {QStringLiteral("Insights"),
+             QString(),
+             {
+                 std::move(insightsEnabled),
+                 std::move(insightsOffNote),
+                 actionRow(QStringLiteral("clearInsights"),
+                           QStringLiteral("Insights history"),
+                           QStringLiteral("Delete every recorded dictation from this computer."),
+                           QStringLiteral("Clear insights history…")),
              }},
             {
 #ifdef Q_OS_LINUX
@@ -2396,6 +2428,7 @@ static QList<SettingsPane> settingsPanes()
         return SettingsPaneGroup{QLatin1String(title), QString(), std::move(rows)};
     };
     return {
+        pane("home", "Home", "house", {}, PaneLayout::Home, {}),
         pane("general", "General", "gearshape", {QStringLiteral("general")},
              PaneLayout::Sections,
              {group("Appearance", {QStringLiteral("themeControl"),
@@ -2404,6 +2437,9 @@ static QList<SettingsPane> settingsPanes()
                                    QStringLiteral("transcriptionPreviewEnabled"),
                                    QStringLiteral("refinementPreviewEnabled"),
                                    QStringLiteral("previewWords")}),
+              group("Insights", {QStringLiteral("insightsEnabled"),
+                                 QStringLiteral("insightsOffNote"),
+                                 QStringLiteral("clearInsights")}),
               group("System", {QStringLiteral("launchAtLogin"),
                                QStringLiteral("launchAtLoginProblem"),
                                QStringLiteral("activationMode")}),
@@ -2430,6 +2466,7 @@ static QList<SettingsPane> settingsPanes()
               group("Silence", {QStringLiteral("vadEnabled"),
                                 QStringLiteral("vadThresholdPercent")})}),
         pane("shortcut", "Shortcut", "command", {}, PaneLayout::Shortcut, {}),
+        pane("transcribe", "Transcribe", "waveform", {}, PaneLayout::Transcribe, {}),
         pane("text", "Text", "text.cursor", {QStringLiteral("refinement")},
              PaneLayout::Sections,
              {group("Refinement", {QStringLiteral("refinementProvider"),
@@ -2491,9 +2528,11 @@ static QList<SettingsPane> settingsPanes()
 static QList<QStringList> settingsSidebarRuns()
 {
     return {
+        {QStringLiteral("home")},
         {QStringLiteral("general")},
         {QStringLiteral("dictation"), QStringLiteral("shortcut"), QStringLiteral("text"),
          QStringLiteral("localModels")},
+        {QStringLiteral("transcribe")},
         {QStringLiteral("delivery"), QStringLiteral("apps")},
         {QStringLiteral("vocabulary"), QStringLiteral("accounts")},
     };

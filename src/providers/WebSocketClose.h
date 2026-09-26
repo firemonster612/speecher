@@ -1,20 +1,23 @@
 #pragma once
 
-#include <QWebSocketProtocol>
+#include <QAbstractSocket>
 
 namespace speecher {
 
-// Call only from a disconnected handler that has already ruled out a reported
-// error and a close this client started itself. The close code cannot tell a
-// drop from a clean close: Qt 6.8 starts it at CloseCodeNormal and changes it
-// only inside close(), so an abort, FIN or reset still reads 1000, and an empty
-// close frame also reads 1000. What separates them is ordering: a dropped
-// connection emits errorOccurred before disconnected, so the client's failure
-// flag is already set when this runs. Anything that closes or aborts the socket
-// must set that flag, or a cancelled/completed flag, first.
-inline bool isCleanWebSocketClose(QWebSocketProtocol::CloseCode code)
+// Whether a socket error only reports that the server's side of a live stream
+// went away. Qt cannot tell a server ending the stream from a dropped
+// connection at this point: a clean close (the server sends a Close frame,
+// then shuts TCP while the client's data is unread) resets the connection, and
+// Qt reports RemoteHostClosedError, in ConnectedState, before the Close frame
+// is visible through any public API; closeCode() reads 1000 either way. So a
+// live stream the client has not asked to finish treats every remote end as
+// the server ending it and rolls over; Qt always emits disconnected() after
+// this error, and the disconnected handler does that. A stream that keeps
+// ending straight away still fails: the Dictation Session treats an attempt
+// that ends within its stable window as a failure.
+inline bool isRemoteClose(QAbstractSocket::SocketError error)
 {
-    return code == QWebSocketProtocol::CloseCodeNormal;
+    return error == QAbstractSocket::RemoteHostClosedError;
 }
 
 } // namespace speecher

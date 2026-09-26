@@ -8,6 +8,8 @@
 #include "ui/AppPage.h"
 #include "ui/AppWindow.h"
 #include "ui/SetupAssistant.h"
+#include "ui/TranscribePage.h"
+#include "ui/TranscribeWindow.h"
 #include "ui/TranscriberPopup.h"
 
 #ifdef Q_OS_LINUX
@@ -17,13 +19,17 @@
 
 #include <QApplication>
 #include <QAbstractButton>
+#include <QListWidget>
 #include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QTabWidget>
 #include <QTimer>
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QElapsedTimer>
 #include <QEvent>
+#include <QEventLoop>
 #include <QThread>
 #include <QWidget>
 #include <QWindow>
@@ -112,6 +118,7 @@ QtFrontEnd::~QtFrontEnd()
     // back into this object and its windows.
     m_controller->updates()->setRestoreStateProvider({});
     delete m_popup;
+    delete m_transcribeWindow;
 }
 
 void QtFrontEnd::showMainWindow()
@@ -125,10 +132,37 @@ void QtFrontEnd::showMainWindow()
     m_appWindow->activateWindow();
 }
 
+void QtFrontEnd::hideMainWindow()
+{
+    if (m_appWindow) {
+        m_appWindow->hide();
+    }
+}
+
 void QtFrontEnd::showSettingsWindow()
 {
     showMainWindow();
     m_appWindow->navigateToSettings();
+}
+
+// Opened files get the compact window, not the main one; the Transcribe page
+// in the main window's sidebar stays for people who go there themselves.
+void QtFrontEnd::showTranscribeFiles(const QStringList &paths)
+{
+    TranscribeWindow *window = transcribeWindow();
+    window->page()->addFiles(paths);
+    window->show();
+    window->raise();
+    window->activateWindow();
+}
+
+TranscribeWindow *QtFrontEnd::transcribeWindow()
+{
+    if (!m_transcribeWindow) {
+        m_transcribeWindow = new TranscribeWindow(m_controller);
+        watchForFirstFrame(m_transcribeWindow);
+    }
+    return m_transcribeWindow;
 }
 
 void QtFrontEnd::showSetupAssistant(SetupAssistantPage page)
@@ -137,7 +171,8 @@ void QtFrontEnd::showSetupAssistant(SetupAssistantPage page)
         m_setupAssistant = new SetupAssistant(m_controller, page);
         m_setupAssistant->setAttribute(Qt::WA_DeleteOnClose);
         connect(m_setupAssistant, &QDialog::finished, this, [this] {
-            if (!m_controller->popupOnly()) {
+            // Files held through setup open in a window of their own.
+            if (!m_controller->popupOnly() && !m_controller->heldFilesOpening()) {
                 showMainWindow();
             }
         });
@@ -153,10 +188,11 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
     if (!m_appWindow) {
         return false;
     }
-    // Screenshot automation: SPEECHER_GRAB_PAGE names a settings page
-    // (general, audio, output, auth, refinement, localmodels, vocabulary),
-    // optionally with a tab index ("vocabulary:2"), to show before the grab.
-    // Unset or unknown leaves the window as launched.
+    // Screenshot automation: SPEECHER_GRAB_PAGE names a page (home, general,
+    // audio, output, auth, refinement, localmodels, vocabulary), optionally
+    // with a tab index ("vocabulary:2"), or "transcribe", to show before the
+    // grab. "transcribe-window" grabs the compact Transcribe window instead.
+    // Unset or unknown leaves the window as launched, which is Home.
     static const QStringList pageNames{
         QStringLiteral("general"), QStringLiteral("audio"), QStringLiteral("output"),
         QStringLiteral("auth"), QStringLiteral("refinement"), QStringLiteral("localmodels"),
@@ -214,10 +250,20 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
         return saved;
     }
     const int page = pageNames.indexOf(request.first());
+    QWidget *target = m_appWindow;
+    if (request.first() == QStringLiteral("transcribe-window")) {
+        showTranscribeFiles({});
+        QCoreApplication::processEvents();
+        target = m_transcribeWindow;
+    }
     // SPEECHER_GRAB_SIZE=WxH resizes the window first.
     const QStringList size = qEnvironmentVariable("SPEECHER_GRAB_SIZE").split(u'x');
     if (size.size() == 2) {
-        m_appWindow->resize(size.at(0).toInt(), size.at(1).toInt());
+        target->resize(size.at(0).toInt(), size.at(1).toInt());
+    }
+    if (request.first() == QStringLiteral("transcribe")) {
+        m_appWindow->showTranscribeFiles({});
+        QCoreApplication::processEvents();
     }
     if (request.first() == QStringLiteral("whatsnew")) {
         m_appWindow->showWhatsNew();
@@ -234,13 +280,37 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
         }
         QCoreApplication::processEvents();
     }
+    if (request.first() == QStringLiteral("home")) {
+        m_appWindow->findChild<QListWidget *>(QStringLiteral("appNavigation"))->setCurrentRow(0);
+        QCoreApplication::processEvents();
+    }
+    // Height-for-width rows (wrapped labels, the heatmap) settle over a few
+    // posted relayouts; one processEvents pass grabs them half laid out.
+    QElapsedTimer settle;
+    settle.start();
+    while (settle.elapsed() < 300) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(10);
+    }
+    // SPEECHER_GRAB_SCROLL=<pixels> or =bottom scrolls the visible page, so
+    // a second grab can show what lies below the first screen.
+    const QString scroll = qEnvironmentVariable("SPEECHER_GRAB_SCROLL");
+    if (!scroll.isEmpty()) {
+        for (QScrollArea *area : m_appWindow->findChildren<QScrollArea *>()) {
+            if (area->isVisible()) {
+                QScrollBar *bar = area->verticalScrollBar();
+                bar->setValue(scroll == QStringLiteral("bottom") ? bar->maximum() : scroll.toInt());
+            }
+        }
+        QCoreApplication::processEvents();
+    }
     // SPEECHER_GRAB_CLICK names buttons (by objectName, comma-separated) to
     // click once the page is up, so a grab can show what an interaction
     // leaves behind. SPEECHER_GRAB_WAIT_MS lets what they started run first.
-    if (!clickGrabButtons(m_appWindow)) {
+    if (!clickGrabButtons(target)) {
         return false;
     }
-    return m_appWindow->grab().save(path);
+    return target->grab().save(path);
 }
 
 bool QtFrontEnd::clickGrabButtons(QWidget *window)

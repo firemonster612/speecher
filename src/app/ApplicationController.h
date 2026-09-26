@@ -2,11 +2,14 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 
+#include <QDate>
 #include <QElapsedTimer>
 #include <QObject>
 
 #include "app/SingleInstanceIpc.h"
+#include "core/DictationRecord.h"
 #include "core/ShortcutBinding.h"
 
 class QLocalSocket;
@@ -17,8 +20,11 @@ namespace speecher {
 class AppFrontEnd;
 enum class SetupAssistantPage;
 class DictationSession;
+class FileTranscriptionSession;
+struct TranscribeOptions;
 class AudioInput;
 class GlobalShortcutBinder;
+class InsightsLog;
 class LocalModelStore;
 class LocalSetup;
 class ProviderRegistry;
@@ -41,6 +47,13 @@ public:
     // The session the front end renders. Everything it shows about a dictation
     // arrives on these signals.
     DictationSession *session() const;
+    // The batch the Transcribe page drives. One runs at a time, and it and
+    // dictation exclude each other: a batch will not start while a dictation
+    // is under way, and dictation will not start while a batch runs.
+    FileTranscriptionSession *fileTranscription() const;
+    bool startFileTranscription(const QStringList &paths,
+                                const TranscribeOptions &options,
+                                QString *error = nullptr);
     // Called by the front end once its first window is on screen. Startup work
     // that would compete with the first paint waits for this.
     void frontEndReady();
@@ -50,6 +63,16 @@ public:
     bool popupOnly() const;
     SettingsStore *settings() const;
     UpdateController *updates() const;
+    InsightsLog *insightsLog() const;
+    // The day Home summarizes up to. SPEECHER_INSIGHTS_TODAY pins it for
+    // screenshots, so front ends ask here rather than reading the clock.
+    QDate insightsToday() const;
+    // What insights recorded of the last delivered transcript: its app and
+    // day. Empty while insights did not record it.
+    const std::optional<DictationRecord> &lastRecord() const;
+    // The Clear insights history action, once the person has confirmed it.
+    // False when the history file could not be deleted.
+    bool clearInsights();
     QString pendingWhatsNewVersion() const;
     void clearPendingWhatsNew();
     SecretStore *secretStore() const;
@@ -96,9 +119,25 @@ public:
     bool removeGlobalShortcutRegistration(QString *error = nullptr);
 
     void showMainWindow();
+    // What a plain launch shows. Files opened during startup, before anyone
+    // asked for this window, take it off screen again: a launch that opens
+    // files shows the Transcribe window alone even when they arrive late.
+    void showDefaultMainWindow();
     void showSettingsWindow();
     void showSetupAssistant();
     void showSetupAssistant(SetupAssistantPage page);
+    // Opens the Transcribe page with these files listed, not yet started.
+    // Before setup is complete it shows the setup assistant instead and holds
+    // the files until completeSetup().
+    void showTranscribeFiles(const QStringList &paths);
+    // Whether any files have been opened this run.
+    bool filesOpened() const;
+    // Whether files opened before setup was complete are about to open now
+    // that it is, in which case the Transcribe window is all they need.
+    bool heldFilesOpening() const;
+    // Records that the setup assistant finished, then opens any files that
+    // arrived while it was up.
+    void completeSetup();
     bool startIpc(QString *error = nullptr);
 
 public slots:
@@ -111,13 +150,15 @@ public slots:
     void quitApplication();
     void handleIpcCommand(const QString &command,
                           const QString &outputFormat,
-                          QLocalSocket *socket);
+                          QLocalSocket *socket,
+                          const QStringList &files = {});
 
 signals:
     void stateChanged(const QString &stateName);
     void statusChanged(const QString &status);
     void previewChanged(const QString &preview);
     void transcriptDelivered(const QString &text);
+    void lastRecordChanged();
     void audioLevelChanged(float level);
     void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
     void globalShortcutChanged();
@@ -129,14 +170,14 @@ signals:
     void quitRequested();
 
 private:
-    void registerProviders();
+    void forgetLastRecord();
     void notifyModelReady(const QString &modelId);
     void startWithMicrophone(std::function<void()> start);
     void runDeferredStartup();
     bool ensureSetupCompleted();
     bool sessionActive() const;
     void handleShortcutPressed();
-    void handleShortcutReleased();
+    void handleShortcutReleased(qint64 heldMs);
     void forgetShortcutGesture();
     void setLaunchAtLoginAccepted(bool accepted);
 
@@ -150,7 +191,16 @@ private:
     LocalSetup *m_localSetup = nullptr;
     AudioInput *m_audio = nullptr;
     DictationSession *m_session = nullptr;
+    FileTranscriptionSession *m_fileTranscription = nullptr;
+    // Files opened before setup was complete.
+    QStringList m_pendingTranscribeFiles;
+    bool m_filesOpened = false;
+    // The main window is up only because a plain launch shows it.
+    bool m_mainWindowByDefault = false;
     UpdateController *m_updates = nullptr;
+    InsightsLog *m_insightsLog = nullptr;
+    std::optional<DictationRecord> m_lastRecord;
+    QDate m_insightsToday;
     GlobalShortcutBinder *m_shortcutBinder = nullptr;
     SingleInstanceIpc *m_ipc = nullptr;
     bool m_accessibilitySupported = false;

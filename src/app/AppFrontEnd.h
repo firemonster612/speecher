@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
 
 namespace speecher {
 
@@ -18,8 +19,19 @@ public:
     virtual ~AppFrontEnd() = default;
 
     virtual void showMainWindow() = 0;
+    // Takes the main window off screen again, for when opened files arrive
+    // just after a plain launch put it up by default.
+    virtual void hideMainWindow() = 0;
     virtual void showSettingsWindow() = 0;
     virtual void showSetupAssistant(SetupAssistantPage page) = 0;
+
+    // Shows the file transcription surface with these files listed, not yet
+    // started. A front end without one shows its main window.
+    virtual void showTranscribeFiles(const QStringList &paths)
+    {
+        Q_UNUSED(paths);
+        showMainWindow();
+    }
 
     // Saves a picture of the main window, for the --grab screenshot path.
     // False when there is no main window yet or the file could not be written.

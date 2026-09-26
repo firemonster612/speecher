@@ -36,13 +36,17 @@ protected:
     // source queued while it was looking away.
     virtual void resuming() {}
     // Called by the subclass for every observed transition of the watched
-    // key; auto-repeat and suspension are filtered here.
-    void keyDown();
-    void keyUp();
+    // key; auto-repeat and suspension are filtered here. eventTimeMs is the
+    // event's own timestamp on any monotonic clock, or -1 where the backend
+    // has none; a press and release that both carry one report the physical
+    // hold with deactivated().
+    void keyDown(qint64 eventTimeMs = -1);
+    void keyUp(qint64 eventTimeMs = -1);
 
 private:
     ShortcutBinding m_binding;
     bool m_down = false;
+    qint64 m_downEventTimeMs = -1;
     int m_suspensionCount = 0;
 };
 

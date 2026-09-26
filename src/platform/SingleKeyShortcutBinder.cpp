@@ -106,22 +106,27 @@ QString SingleKeyShortcutBinder::resume()
     return {};
 }
 
-void SingleKeyShortcutBinder::keyDown()
+void SingleKeyShortcutBinder::keyDown(qint64 eventTimeMs)
 {
     if (m_down || m_suspensionCount > 0) {
         return;
     }
     m_down = true;
+    m_downEventTimeMs = eventTimeMs;
     emit activated();
 }
 
-void SingleKeyShortcutBinder::keyUp()
+void SingleKeyShortcutBinder::keyUp(qint64 eventTimeMs)
 {
     if (!m_down) {
         return;
     }
     m_down = false;
-    emit deactivated();
+    const qint64 heldMs = m_downEventTimeMs >= 0 && eventTimeMs >= m_downEventTimeMs
+        ? eventTimeMs - m_downEventTimeMs
+        : -1;
+    m_downEventTimeMs = -1;
+    emit deactivated(heldMs);
 }
 
 } // namespace speecher

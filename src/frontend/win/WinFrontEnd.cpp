@@ -7,6 +7,8 @@
 #include "frontend/win/DictationPanel.h"
 #include "frontend/win/SettingsWindow.h"
 #include "frontend/win/SetupWindow.h"
+#include "frontend/win/TranscribePane.h"
+#include "frontend/win/TranscribeWindow.h"
 #include "frontend/win/TrayIcon.h"
 #include "frontend/win/WinUiHost.h"
 
@@ -26,6 +28,7 @@ struct WinFrontEnd::Native {
         : controller(owner)
         , frontEnd(q)
         , host(std::move(winUiHost))
+        , transcribe(std::make_unique<win::TranscribePane>(owner))
     {
         panel = std::make_unique<DictationPanel>(controller, frontEnd);
         tray = std::make_unique<TrayIcon>(
@@ -40,7 +43,10 @@ struct WinFrontEnd::Native {
     ~Native()
     {
         setup.reset();
+        transcribeWindow.reset();
         settings.reset();
+        // Its copy buttons hold XAML elements, released before WinUI shuts down.
+        transcribe.reset();
         tray.reset();
         panel.reset();
         host->shutdown();
@@ -49,19 +55,37 @@ struct WinFrontEnd::Native {
     win::SettingsWindow *settingsWindow()
     {
         if (!settings) {
-            settings = std::make_unique<win::SettingsWindow>(controller);
+            settings = std::make_unique<win::SettingsWindow>(controller, transcribe.get());
             settings->setActionHook(
                 [q = frontEnd](const QString &id) { q->actionTriggered(id); });
+            // A theme change in settings reaches the Transcribe window too.
+            settings->setThemeHook([this] {
+                if (transcribeWindow) {
+                    transcribeWindow->applyTheme();
+                }
+            });
         }
         return settings.get();
+    }
+
+    win::TranscribeWindow *transcribeWindowInstance()
+    {
+        if (!transcribeWindow) {
+            transcribeWindow = std::make_unique<win::TranscribeWindow>(controller, transcribe.get());
+        }
+        return transcribeWindow.get();
     }
 
     ApplicationController *controller;
     WinFrontEnd *frontEnd;
     std::unique_ptr<WinUiHost> host;
+    // Shared by the settings window's Transcribe pane and the Transcribe
+    // window, so it outlives both.
+    std::unique_ptr<win::TranscribePane> transcribe;
     std::unique_ptr<DictationPanel> panel;
     std::unique_ptr<TrayIcon> tray;
     std::unique_ptr<win::SettingsWindow> settings;
+    std::unique_ptr<win::TranscribeWindow> transcribeWindow;
     std::unique_ptr<SetupWindow> setup;
     QTimer *trayReady = nullptr;
     bool ready = false;
@@ -108,6 +132,13 @@ void WinFrontEnd::showMainWindow()
     showSettingsWindow();
 }
 
+void WinFrontEnd::hideMainWindow()
+{
+    if (m_native->settings) {
+        m_native->settings->close();
+    }
+}
+
 void WinFrontEnd::showSettingsWindow()
 {
     m_native->trayReady->stop();
@@ -125,8 +156,21 @@ void WinFrontEnd::showSetupAssistant(SetupAssistantPage page)
     m_native->setup->show(page);
 }
 
+void WinFrontEnd::showTranscribeFiles(const QStringList &paths)
+{
+    m_native->trayReady->stop();
+    m_native->transcribe->addFiles(paths);
+    m_native->transcribeWindowInstance()->show();
+    QTimer::singleShot(0, this, &WinFrontEnd::reportReady);
+}
+
 bool WinFrontEnd::captureMainWindow(const QString &path)
 {
+    // The one grab page that is its own window rather than a settings pane.
+    const QString page = qEnvironmentVariable("SPEECHER_GRAB_PAGE").toLower().section(QLatin1Char(':'), 0, 0);
+    if (page == QStringLiteral("transcribe-window")) {
+        return m_native->transcribeWindowInstance()->capture(path);
+    }
     return m_native->settings && m_native->settings->capture(path);
 }
 
@@ -188,6 +232,17 @@ void WinFrontEnd::actionTriggered(const QString &rowId)
 {
     if (rowId == QStringLiteral("runSetup")) {
         m_controller->showSetupAssistant();
+    } else if (rowId == QStringLiteral("clearInsights")) {
+        m_native->settingsWindow()->confirm(
+            QStringLiteral("Delete all insights history?"),
+            QStringLiteral("Your stats, streaks and records are erased from this computer. "
+                           "This can't be undone."),
+            QStringLiteral("Delete History"),
+            [controller = m_controller, window = m_native->settingsWindow()] {
+                if (!controller->clearInsights()) {
+                    window->inform(QStringLiteral("Speecher couldn't delete the insights history."));
+                }
+            });
     } else if (rowId == QStringLiteral("checkForUpdates")) {
         if (m_controller->updates()->state() == UpdateController::State::UpdateAvailable) {
             m_controller->updates()->updateNow();

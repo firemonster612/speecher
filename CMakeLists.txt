@@ -238,6 +238,9 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/bindings/BindingMatcher.cpp
   src/core/bindings/NoBindDirectiveParser.cpp
   src/core/CliToolDiscovery.cpp
+  src/core/DictationRecord.cpp
+  src/core/InsightsLog.cpp
+  src/core/InsightsSummary.cpp
   src/core/LearnedCorrection.cpp
   src/core/EndpointSettings.cpp
   src/core/LocalModelCatalog.cpp
@@ -265,6 +268,9 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/bindings/BindingMatcher.h
   src/core/bindings/NoBindDirectiveParser.h
   src/core/CliToolDiscovery.h
+  src/core/DictationRecord.h
+  src/core/InsightsLog.h
+  src/core/InsightsSummary.h
   src/core/LearnedCorrection.h
   src/core/LocalModelCatalog.h
   src/core/OutputMethod.h
@@ -498,9 +504,13 @@ set(SPEECHER_APP_SOURCES
   src/app/LocalSetup.cpp
   src/app/CommandLine.cpp
   src/app/CompositionSockets.cpp
+  src/app/HeadlessTranscribe.cpp
   src/app/ManifestUpdater.cpp
   src/app/PlatformSelection.cpp
+  src/app/ProviderSetup.cpp
   src/app/SingleInstanceIpc.cpp
+  src/transcribe/FileTranscriptionSession.cpp
+  src/transcribe/TranscribePresentation.cpp
 )
 
 set(SPEECHER_APP_HEADERS
@@ -509,11 +519,15 @@ set(SPEECHER_APP_HEADERS
   src/app/LocalSetup.h
   src/app/CommandLine.h
   src/app/CompositionSockets.h
+  src/app/HeadlessTranscribe.h
   src/app/ManifestUpdater.h
   src/app/ShortcutSuspendingDelivery.h
   src/app/PlatformComposition.h
+  src/app/ProviderSetup.h
   src/app/SingleInstanceIpc.h
   src/app/UpdateController.h
+  src/transcribe/FileTranscriptionSession.h
+  src/transcribe/TranscribePresentation.h
 )
 
 set(SPEECHER_APP_LINUX_SOURCES
@@ -556,7 +570,8 @@ set(SPEECHER_FRONTEND_QT_SOURCES
   src/frontend/qt/WritingProfileGrid.cpp
   src/ui/AccessibilityNotice.cpp
   src/ui/AppWindow.cpp
-  src/ui/DictationPage.cpp
+  src/ui/HomePage.cpp
+  src/ui/InsightsCharts.cpp
   src/ui/SetupAssistant.cpp
   src/ui/setup/SetupPages.cpp
   src/ui/settings/SettingsPageSupport.cpp
@@ -564,6 +579,9 @@ set(SPEECHER_FRONTEND_QT_SOURCES
   src/ui/HostStylePlugin.cpp
   src/ui/InlineMessage.cpp
   src/ui/Theme.cpp
+  src/ui/TranscribeLoomWidget.cpp
+  src/ui/TranscribePage.cpp
+  src/ui/TranscribeWindow.cpp
   src/ui/TranscriberPopup.cpp
   src/ui/WaveformWidget.cpp
 )
@@ -581,7 +599,8 @@ set(SPEECHER_FRONTEND_QT_HEADERS
   src/ui/AccessibilityNotice.h
   src/ui/AppPage.h
   src/ui/AppWindow.h
-  src/ui/DictationPage.h
+  src/ui/HomePage.h
+  src/ui/InsightsCharts.h
   src/ui/SetupAssistant.h
   src/ui/setup/SetupPages.h
   src/ui/settings/SettingsPageSupport.h
@@ -589,6 +608,9 @@ set(SPEECHER_FRONTEND_QT_HEADERS
   src/ui/HostStylePlugin.h
   src/ui/InlineMessage.h
   src/ui/Theme.h
+  src/ui/TranscribeLoomWidget.h
+  src/ui/TranscribePage.h
+  src/ui/TranscribeWindow.h
   src/ui/TranscriberPopup.h
   src/ui/WaveformModel.h
   src/ui/WaveformWidget.h
@@ -632,6 +654,7 @@ set(SPEECHER_FRONTEND_MAC_SWIFT_SOURCES
   src/frontend/mac/swift/AppModel.swift
   src/frontend/mac/swift/Collections.swift
   src/frontend/mac/swift/DictationPanel.swift
+  src/frontend/mac/swift/HomePane.swift
   src/frontend/mac/swift/LocalModels.swift
   src/frontend/mac/swift/MenuBarExtra.swift
   src/frontend/mac/swift/Panes.swift
@@ -640,6 +663,7 @@ set(SPEECHER_FRONTEND_MAC_SWIFT_SOURCES
   src/frontend/mac/swift/SetupAssistant.swift
   src/frontend/mac/swift/ShortcutPane.swift
   src/frontend/mac/swift/SpeecherMacUI.swift
+  src/frontend/mac/swift/TranscribePane.swift
   src/frontend/mac/swift/UpdatePreview.swift
 )
 
@@ -647,6 +671,7 @@ set(SPEECHER_FRONTEND_WIN_SOURCES
   src/frontend/win/CollectionEditor.cpp
   src/frontend/win/CustomRows.cpp
   src/frontend/win/DictationPanel.cpp
+  src/frontend/win/HomePage.cpp
   src/frontend/win/LocalModelBrowser.cpp
   src/frontend/win/SettingsModel.cpp
   src/frontend/win/SettingsPage.cpp
@@ -655,6 +680,8 @@ set(SPEECHER_FRONTEND_WIN_SOURCES
   src/frontend/win/SetupWindow.cpp
   src/frontend/win/TrayFlyout.cpp
   src/frontend/win/TrayIcon.cpp
+  src/frontend/win/TranscribePane.cpp
+  src/frontend/win/TranscribeWindow.cpp
   src/frontend/win/WinFrontEnd.cpp
   src/frontend/win/WinUiHost.cpp
 )
@@ -663,6 +690,7 @@ set(SPEECHER_FRONTEND_WIN_HEADERS
   src/frontend/win/CollectionEditor.h
   src/frontend/win/CustomRows.h
   src/frontend/win/DictationPanel.h
+  src/frontend/win/HomePage.h
   src/frontend/win/LocalModelBrowser.h
   src/frontend/win/SettingsModel.h
   src/frontend/win/SettingsPage.h
@@ -671,6 +699,8 @@ set(SPEECHER_FRONTEND_WIN_HEADERS
   src/frontend/win/SetupWindow.h
   src/frontend/win/TrayFlyout.h
   src/frontend/win/TrayIcon.h
+  src/frontend/win/TranscribePane.h
+  src/frontend/win/TranscribeWindow.h
   src/frontend/win/WinFrontEnd.h
   src/frontend/win/WinUiHost.h
 )
@@ -1428,12 +1458,14 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_dictation_session_refinement.cpp
     tests/test_refiners.cpp
     tests/test_vocabulary.cpp
+    tests/test_insights.cpp
     tests/test_provider_auth.cpp
     tests/test_claude_voice.cpp
     tests/test_codex_dictation.cpp
     tests/test_audio_pcm_converter.cpp
     tests/test_local_models.cpp
     tests/test_custom_endpoints.cpp
+    tests/test_file_transcription.cpp
   )
   if(UNIX)
     target_sources(speecher_tests PRIVATE tests/test_update_controller.cpp)
@@ -1504,12 +1536,14 @@ if(SPEECHER_BUILD_TESTS)
     dictation_session_refinement
     refiners
     vocabulary
+    insights
     provider_auth
     claude_voice
     codex_dictation
     audio_pcm_converter
     local_models
     custom_endpoints
+    file_transcription
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND SPEECHER_TEST_SUITES linux_style_choice linux_tray keywatch helper_install)

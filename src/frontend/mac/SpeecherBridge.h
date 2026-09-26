@@ -120,6 +120,8 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
     SpeecherPaneLayoutSections,
     SpeecherPaneLayoutAlternatives,
     SpeecherPaneLayoutShortcut,
+    SpeecherPaneLayoutTranscribe,
+    SpeecherPaneLayoutHome,
 };
 
 // One card a pane shows: a heading, a footnote, and the schema rows it names.
@@ -210,6 +212,181 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
 // What a person must do before this provider works, or empty when it needs
 // nothing.
 @property (nonatomic, readonly, copy) NSString *setupHint;
+// One or two lines on what the provider is good at, for a picker's help.
+@property (nonatomic, readonly, copy) NSString *summary;
+@end
+
+// Where a batch saves its transcripts. Mirrors speecher::TranscriptDestination.
+typedef NS_ENUM(NSInteger, SpeecherTranscriptDestination) {
+    SpeecherTranscriptDestinationBesideInput,
+    SpeecherTranscriptDestinationFolder,
+    // Saved nowhere: the transcripts are only shown.
+    SpeecherTranscriptDestinationNowhere,
+};
+
+// One batch's choices. Mirrors speecher::TranscribeOptions; ids are the ones
+// the provider and cleanup/tone/profile lists below carry.
+@interface SpeecherTranscribeOptions : NSObject
+@property (nonatomic, copy) NSString *speechProviderId;
+@property (nonatomic) BOOL applyVocabulary;
+// "none" skips refinement.
+@property (nonatomic, copy) NSString *refinementProviderId;
+@property (nonatomic, copy) NSString *cleanupStrength;
+@property (nonatomic, copy) NSString *tone;
+@property (nonatomic, copy) NSString *writingProfile;
+@property (nonatomic) SpeecherTranscriptDestination destination;
+// Used only with SpeecherTranscriptDestinationFolder.
+@property (nonatomic, copy) NSString *folder;
+@end
+
+// One file's outcome. Mirrors speecher::TranscribeFileResult.
+@interface SpeecherTranscriptResult : NSObject
+@property (nonatomic, readonly, copy) NSString *path;
+// What the speech provider heard.
+@property (nonatomic, readonly, copy) NSString *raw;
+// The saved transcript: refined when refinement ran, otherwise the raw text
+// after vocabulary corrections. Empty when the file failed.
+@property (nonatomic, readonly, copy) NSString *refined;
+// Empty unless the transcript was written to disk.
+@property (nonatomic, readonly, copy) NSString *savedPath;
+// Why the file failed, or what went wrong on the way for one that finished.
+@property (nonatomic, readonly, copy) NSString *error;
+@property (nonatomic, readonly) BOOL failed;
+@end
+
+// Mirrors speecher::TranscribePhase.
+typedef NS_ENUM(NSInteger, SpeecherTranscribePhase) {
+    SpeecherTranscribePhaseReading,
+    SpeecherTranscribePhaseTranscribing,
+    SpeecherTranscribePhaseFinishing,
+    SpeecherTranscribePhaseRefining,
+};
+
+// Mirrors speecher::TranscribeStep.
+typedef NS_ENUM(NSInteger, SpeecherTranscribeStep) {
+    SpeecherTranscribeStepConfigure,
+    SpeecherTranscribeStepTranscribe,
+    SpeecherTranscribeStepExport,
+};
+
+// Mirrors speecher::TranscribeQueueState.
+typedef NS_ENUM(NSInteger, SpeecherTranscribeQueueState) {
+    SpeecherTranscribeQueueStateWaiting,
+    SpeecherTranscribeQueueStateCurrent,
+    SpeecherTranscribeQueueStateDone,
+    SpeecherTranscribeQueueStateFailed,
+};
+
+// What a batch's results summary names its choices, captured when it starts.
+// Mirrors speecher::TranscribeBatchLabels.
+@interface SpeecherTranscribeBatchLabels : NSObject
+@end
+
+// The period Home's totals cover. Mirrors speecher::InsightsRange.
+typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
+    SpeecherInsightsRangeLast7Days,
+    SpeecherInsightsRangeLast30Days,
+    SpeecherInsightsRangeThisYear,
+    SpeecherInsightsRangeAllTime,
+};
+
+// One day of the activity heatmap, with its colour level 0..4 under each
+// measure the heatmap can show (speecher::HeatScale).
+@interface SpeecherInsightsDayModel : NSObject
+@property (nonatomic, readonly, copy) NSDate *date;
+@property (nonatomic, readonly) NSInteger dictations;
+@property (nonatomic, readonly) NSInteger words;
+@property (nonatomic, readonly) NSInteger audioMs;
+@property (nonatomic, readonly) NSInteger dictationsLevel;
+@property (nonatomic, readonly) NSInteger wordsLevel;
+@property (nonatomic, readonly) NSInteger audioLevel;
+@end
+
+// One row of "Where your words go". The "N other apps" fold has no profile.
+@interface SpeecherInsightsAppModel : NSObject
+@property (nonatomic, readonly, copy) NSString *name;
+@property (nonatomic, readonly, copy) NSString *profileLabel;
+@property (nonatomic, readonly) NSInteger words;
+@property (nonatomic, readonly) NSInteger percent;
+@end
+
+// Everything Home shows for one period, as speecher::summarize computed it.
+// Days the page words relative to today ("yesterday", "Mar 1, 2026") arrive
+// already worded, and are empty where the summary has no such day. So do the
+// lines every Home shares (the speecher text helpers beside summarize).
+@interface SpeecherInsightsModel : NSObject
+// Every record in the log, whatever the period: 0 means Home has nothing yet.
+@property (nonatomic, readonly) NSInteger recordCount;
+
+// The period.
+@property (nonatomic, readonly) NSInteger words;
+@property (nonatomic, readonly) NSInteger dictations;
+@property (nonatomic, readonly) double dictationsPerActiveDay;
+// "▲ 29% vs previous 30 days"; empty without a previous period to compare.
+@property (nonatomic, readonly, copy) NSString *wordsDeltaText;
+@property (nonatomic, readonly, copy) NSString *dictationsDeltaText;
+@property (nonatomic, readonly, copy) NSString *bookComparison;
+@property (nonatomic, readonly, copy) NSString *bookComparisonTip;
+// "4.0 hours", and "Average dictation 1:07" (or "Nothing yet").
+@property (nonatomic, readonly, copy) NSString *audioTotalText;
+@property (nonatomic, readonly, copy) NSString *averageDictationText;
+
+// Streak.
+@property (nonatomic, readonly) NSInteger currentStreak;
+@property (nonatomic, readonly) NSInteger bestStreak;
+@property (nonatomic, readonly, copy) NSString *bestStreakEnd;
+@property (nonatomic, readonly) BOOL bestStreakEndsToday;
+// The line under the streak; empty with no history.
+@property (nonatomic, readonly, copy) NSString *streakText;
+// Seven BOOLs, Monday first, and today's slot among them.
+@property (nonatomic, readonly, copy) NSArray<NSNumber *> *weekActivity;
+@property (nonatomic, readonly) NSInteger todayIndex;
+// The locale's narrow weekday names, Monday first.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *weekLetters;
+
+// Every day of the last 53 Monday-first weeks up to today, oldest first.
+@property (nonatomic, readonly, copy) NSArray<SpeecherInsightsDayModel *> *heatmap;
+// One per heatmap week: the month named over it, or empty. Whatever the
+// number of weeks shown, the labels are the tail of this list.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *weekMonthLabels;
+// How strongly each heat level 0..4 shows the accent.
+@property (nonatomic, readonly, copy) NSArray<NSNumber *> *heatStrengths;
+@property (nonatomic, readonly) NSInteger activeDaysLastYear;
+
+// The period by local hour: 24 counts, and each hour's label ("10 am").
+@property (nonatomic, readonly, copy) NSArray<NSNumber *> *hourCounts;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *hourLabels;
+@property (nonatomic, readonly) NSInteger peakHour;
+// The weekday's name, such as "Tuesday".
+@property (nonatomic, readonly, copy) NSString *busiestWeekday;
+@property (nonatomic, readonly, copy) NSString *persona;
+@property (nonatomic, readonly) BOOL hasHourData;
+
+@property (nonatomic, readonly) NSInteger wordsPerMinute;
+@property (nonatomic, readonly) NSInteger typingWordsPerMinute;
+@property (nonatomic, readonly) NSInteger minutesSavedVersusTyping;
+// "That's 3.6× faster than typing at 40 words per minute."
+@property (nonatomic, readonly, copy) NSString *speedupText;
+
+@property (nonatomic, readonly, copy) NSArray<SpeecherInsightsAppModel *> *apps;
+
+// Records, all time.
+@property (nonatomic, readonly) NSInteger allTimeWords;
+// 0 once every milestone is passed.
+@property (nonatomic, readonly) NSInteger nextMilestone;
+// "8,850 to go. You passed 1,000 already.", or "You passed 1,000,000 words".
+@property (nonatomic, readonly, copy) NSString *milestoneText;
+// "m:ss".
+@property (nonatomic, readonly, copy) NSString *longestDuration;
+@property (nonatomic, readonly) NSInteger longestWords;
+@property (nonatomic, readonly, copy) NSString *longestApp;
+@property (nonatomic, readonly, copy) NSString *longestDay;
+@property (nonatomic, readonly, copy) NSString *busiestDay;
+@property (nonatomic, readonly) NSInteger busiestDayDictations;
+@property (nonatomic, readonly, copy) NSString *wordiestDay;
+@property (nonatomic, readonly) NSInteger wordiestDayWords;
+@property (nonatomic, readonly, copy, nullable) NSDate *firstDictation;
+@property (nonatomic, readonly) NSInteger firstDictationDaysAgo;
 @end
 
 // One Local Model as the Local models page and the setup assistant show it:
@@ -391,9 +568,29 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
 - (void)notePopupPresented:(uint64_t)generation NS_SWIFT_NAME(notePopupPresented(generation:));
 
 // The last transcript Speecher heard, which the menu bar panel offers to copy
-// again. Empty until one exists.
+// again: the running preview, then the text as delivered. Empty until one
+// exists.
 @property (nonatomic, readonly, copy) NSString *lastTranscript;
 @property (nonatomic, copy, nullable) void (^transcriptChanged)(NSString *transcript);
+// The last transcript's word count (speecher::countWords).
+@property (nonatomic, readonly) NSInteger lastTranscriptWords;
+// The app and relative day insights recorded for the last delivered
+// transcript (ApplicationController::lastRecord). Empty strings with none.
+@property (nonatomic, readonly, copy) NSString *lastRecordApp;
+@property (nonatomic, readonly, copy) NSString *lastRecordDay;
+@property (nonatomic, copy, nullable) void (^lastRecordChanged)(void);
+
+// Home's insights. The setting says whether new dictations are recorded; the
+// log keeps what it has either way until it is cleared.
+@property (nonatomic, readonly) BOOL insightsEnabled;
+// The log gained or lost records.
+@property (nonatomic, copy, nullable) void (^insightsChanged)(void);
+- (SpeecherInsightsModel *)insightsSummaryForRange:(SpeecherInsightsRange)range
+    NS_SWIFT_NAME(insightsSummary(range:));
+// Deletes every record, once the person has confirmed it. NO when the
+// history file could not be deleted.
+- (BOOL)clearInsights;
+@property (nonatomic, readonly) NSInteger learnedCorrectionCount;
 
 // The desktop-wide shortcut, which nothing surfaced after the setup assistant.
 @property (nonatomic, readonly) BOOL shortcutSupported;
@@ -590,6 +787,96 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
 // Tests the saved endpoint; the verdict and model list arrive with
 // localSetupChanged.
 - (void)checkRefinementEndpoint;
+
+// Transcribing audio files: the Transcribe pane's seams into the core's
+// FileTranscriptionSession. One batch runs at a time, and it and dictation
+// exclude each other.
+
+// The same lists the Qt Transcribe page offers. Refinement's "None" is the
+// pane's own first choice and is not in refinementProviders.
+@property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *cleanupStrengths;
+@property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *writingTones;
+@property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *writingProfiles;
+// Choices seeded from the user's settings, with the cleanup strength and tone
+// of the named writing profile as the user set it up; nil names the default
+// profile. Never written back to the settings.
+- (SpeecherTranscribeOptions *)transcribeOptionsWithWritingProfile:(nullable NSString *)profile
+    NS_SWIFT_NAME(transcribeOptions(writingProfile:));
+// The model a refinement provider is set to use, or empty for none.
+- (NSString *)refinementModelForProvider:(NSString *)providerId
+    NS_SWIFT_NAME(refinementModel(provider:));
+// The paths among these that are files the decoder can take.
+- (NSArray<NSString *> *)audioFilesAmong:(NSArray<NSString *> *)paths
+    NS_SWIFT_NAME(audioFiles(among:));
+// nil once started; otherwise why not, such as a dictation under way.
+- (nullable NSString *)startTranscribingFiles:(NSArray<NSString *> *)paths
+                                      options:(SpeecherTranscribeOptions *)options
+    NS_SWIFT_NAME(startTranscribing(files:options:));
+// Stops the current file and skips the rest; the batch still finishes.
+- (void)cancelTranscription;
+// Writes text as "<name>-transcribed.txt" in folder, numbered rather than
+// overwriting. nil once written, otherwise why not.
+- (nullable NSString *)saveTranscript:(NSString *)text
+                          forAudioFile:(NSString *)audioPath
+                              inFolder:(NSString *)folder
+    NS_SWIFT_NAME(saveTranscript(_:forAudioFile:inFolder:));
+// The Transcribe pane's wording, shared with the Qt and Windows front ends
+// (speecher/transcribe/TranscribePresentation.h). A negative length is unknown.
+- (NSString *)transcribePhaseLabel:(SpeecherTranscribePhase)phase NS_SWIFT_NAME(phaseLabel(_:));
+- (NSString *)transcribeStepLabel:(SpeecherTranscribeStep)step NS_SWIFT_NAME(stepLabel(_:));
+// The line under the step indicator; empty for a step that needs none.
+- (NSString *)transcribeStepHint:(SpeecherTranscribeStep)step NS_SWIFT_NAME(stepHint(_:));
+// How long a finished file holds at the end before the next one replaces it.
+@property (nonatomic, readonly) double transcribeLandingSeconds;
+// A file's share of its whole work, below 1 until the file has finished.
+- (double)overallFileProgress:(double)fractionSent
+                        phase:(SpeecherTranscribePhase)phase
+                      refines:(BOOL)refines
+                    msInPhase:(int64_t)msInPhase
+    NS_SWIFT_NAME(overallFileProgress(fractionSent:phase:refines:msInPhase:));
+- (NSString *)durationLabel:(int64_t)durationMs NS_SWIFT_NAME(durationLabel(_:));
+- (NSString *)audioFileDetailWithBytes:(int64_t)bytes durationMs:(int64_t)durationMs
+    NS_SWIFT_NAME(audioFileDetail(bytes:durationMs:));
+- (BOOL)refinesTranscripts:(SpeecherTranscribeOptions *)options NS_SWIFT_NAME(refinesTranscripts(_:));
+- (NSString *)shownTranscript:(SpeecherTranscriptResult *)result raw:(BOOL)raw
+    NS_SWIFT_NAME(shownTranscript(_:raw:));
+- (NSString *)resultMeta:(SpeecherTranscriptResult *)result durationMs:(int64_t)durationMs raw:(BOOL)raw
+    NS_SWIFT_NAME(resultMeta(_:durationMs:raw:));
+- (NSString *)allTranscripts:(NSArray<SpeecherTranscriptResult *> *)results raw:(BOOL)raw
+    NS_SWIFT_NAME(allTranscripts(_:raw:));
+- (NSString *)processingTitleForBatch:(NSArray<NSString *> *)batch current:(NSInteger)current
+    NS_SWIFT_NAME(processingTitle(batch:current:));
+- (SpeecherTranscribeQueueState)queueStateAt:(NSInteger)index
+                                     current:(NSInteger)current
+                                    finished:(NSArray<SpeecherTranscriptResult *> *)finished
+    NS_SWIFT_NAME(queueState(at:current:finished:));
+- (NSString *)queueStateLabel:(SpeecherTranscribeQueueState)state phase:(NSString *)phase
+    NS_SWIFT_NAME(queueStateLabel(_:phase:));
+- (SpeecherTranscribeBatchLabels *)batchLabelsForOptions:(SpeecherTranscribeOptions *)options
+    NS_SWIFT_NAME(batchLabels(for:));
+- (NSString *)batchSummaryForResults:(NSArray<SpeecherTranscriptResult *> *)results
+                           batchSize:(NSInteger)batchSize
+                           cancelled:(BOOL)cancelled
+                           durations:(NSDictionary<NSString *, NSNumber *> *)durationsMs
+                             options:(SpeecherTranscribeOptions *)options
+                              labels:(SpeecherTranscribeBatchLabels *)labels
+    NS_SWIFT_NAME(batchSummary(results:batchSize:cancelled:durations:options:labels:));
+// The batch as it runs, on the main thread. Indexes count files in the order
+// they were passed to startTranscribing.
+@property (nonatomic, copy, nullable) void (^transcriptionBatchStarted)(NSInteger count);
+@property (nonatomic, copy, nullable) void (^transcriptionFileStarted)(NSInteger index, NSString *path);
+// The decoded file's peak levels (0 to 1) across its length, and its length.
+@property (nonatomic, copy, nullable) void (^transcriptionFileDecoded)
+    (NSInteger index, NSArray<NSNumber *> *peaks, int64_t durationMs);
+@property (nonatomic, copy, nullable) void (^transcriptionFileProgress)(NSInteger index, double fraction);
+// The transcript so far, whole each time.
+@property (nonatomic, copy, nullable) void (^transcriptionFilePartial)(NSInteger index, NSString *text);
+@property (nonatomic, copy, nullable) void (^transcriptionFileRefining)(NSInteger index);
+@property (nonatomic, copy, nullable) void (^transcriptionFileFinished)
+    (NSInteger index, SpeecherTranscriptResult *result);
+// Every file that finished or failed; a cancelled one is left out.
+@property (nonatomic, copy, nullable) void (^transcriptionBatchFinished)
+    (NSArray<SpeecherTranscriptResult *> *results, BOOL cancelled);
 @end
 
 #ifdef __cplusplus

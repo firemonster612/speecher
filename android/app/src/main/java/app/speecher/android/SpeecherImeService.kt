@@ -5,8 +5,11 @@ import android.content.Context
 import android.content.Intent
 import android.inputmethodservice.InputMethodService
 import android.view.View
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.WindowCompat
 import app.speecher.android.auth.TokenStore
@@ -14,6 +17,7 @@ import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
 import app.speecher.android.dictation.resolveSignedIn
+import app.speecher.android.dictation.shownPanelSize
 import app.speecher.android.dictation.targetApp
 import app.speecher.android.ui.DictationPanel
 import app.speecher.android.ui.SpeecherTheme
@@ -24,8 +28,10 @@ fun speecherImeId(context: Context): String =
 
 class SpeecherImeService : InputMethodService() {
     private val owner = ServiceViewOwner()
-    private var panelState =
-        androidx.compose.runtime.mutableStateOf<DictationState>(DictationState.Listening())
+    private var panelState = mutableStateOf<DictationState>(DictationState.Listening())
+    /** Whether the minimize control flipped this session's panel away from its chosen size. */
+    private val sizeToggled = mutableStateOf(false)
+    private var panel: View? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -42,6 +48,7 @@ class SpeecherImeService : InputMethodService() {
 
     override fun onCreateInputView(): View =
         ComposeView(this).also { view ->
+            panel = view
             // Draw edge-to-edge so the nav-bar inset reaches Compose instead of being consumed
             // first; otherwise navigationBarsPadding() collapses to 0 and the panel's background
             // stops short of the bottom edge, leaving the app behind the keyboard showing through.
@@ -50,10 +57,20 @@ class SpeecherImeService : InputMethodService() {
             window.window?.decorView?.let(owner::attach)
             owner.attach(view)
             view.setContent {
+                val size =
+                    shownPanelSize(
+                        ActiveDictation.settings.panelSize,
+                        sizeToggled.value,
+                        panelState.value,
+                    )
+                // A new height needs a layout pass, and that pass is what recomputes the insets.
+                LaunchedEffect(size) { view.requestLayout() }
                 SpeecherTheme {
                     DictationPanel(
                         panelState.value,
                         ActiveDictation.settings.shownButtonLayout,
+                        size,
+                        onToggleSize = { sizeToggled.value = !sizeToggled.value },
                         onCancel = ::switchBack,
                         onInsert = { ActiveDictation.engine?.insert() },
                         onInsertRefined = {
@@ -69,6 +86,29 @@ class SpeecherImeService : InputMethodService() {
                 }
             }
         }
+
+    /**
+     * Tells Android the panel covers only itself: the app behind resizes to the panel's top, and
+     * touches anywhere else in the IME window, including the gesture-navigation strip under the
+     * panel, go to the app or the system.
+     */
+    override fun onComputeInsets(outInsets: Insets) {
+        super.onComputeInsets(outInsets)
+        val view = panel?.takeIf { it.isAttachedToWindow && !isFullscreenMode } ?: return
+        val location = IntArray(2).also(view::getLocationInWindow)
+        val top = location[1]
+        val navigationBar =
+            view.rootWindowInsets?.getInsets(WindowInsets.Type.navigationBars())?.bottom ?: 0
+        outInsets.contentTopInsets = top
+        outInsets.visibleTopInsets = top
+        outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
+        outInsets.touchableRegion.set(
+            location[0],
+            top,
+            location[0] + view.width,
+            top + view.height - navigationBar,
+        )
+    }
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
@@ -88,6 +128,7 @@ class SpeecherImeService : InputMethodService() {
      */
     private val dismiss = Runnable {
         ActiveDictation.end()
+        sizeToggled.value = false
         keepScreenOn(null)
         if (
             android.provider.Settings.Secure.getString(
@@ -148,6 +189,7 @@ class SpeecherImeService : InputMethodService() {
 
     private fun switchBack() {
         ActiveDictation.end()
+        sizeToggled.value = false
         keepScreenOn(null)
         ImeSwap(this).switchBack(this)
     }
@@ -156,6 +198,7 @@ class SpeecherImeService : InputMethodService() {
         handler.removeCallbacks(dismiss)
         ActiveDictation.observe = null
         ActiveDictation.onInserted = null
+        panel = null
         owner.destroy()
         super.onDestroy()
     }

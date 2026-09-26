@@ -50,11 +50,9 @@ CodexDictationClient::CodexDictationClient(QObject *parent)
             this, &CodexDictationClient::handleTextMessage);
     connect(&m_socket, &QWebSocket::disconnected, this, [this] {
         if (!m_cancelled && !m_sessionClosed && !m_failureEmitted) {
-            // A drop reports errorOccurred first, so reaching here unfailed
-            // with a normal close means the service closed the stream on purpose.
-            const bool cleanServiceClose = m_sessionStarted && !m_finishRequested && !m_finalizing
-                && isCleanWebSocketClose(m_socket.closeCode());
-            if (cleanServiceClose) {
+            // Any end of a live stream is the service ending it (see isRemoteClose).
+            const bool serviceEndedStream = m_sessionStarted && !m_finishRequested && !m_finalizing;
+            if (serviceEndedStream) {
                 m_sessionClosed = true;
                 emit completed();
             } else {
@@ -70,8 +68,11 @@ CodexDictationClient::CodexDictationClient(QObject *parent)
         emit closed();
     });
     connect(&m_socket, &QWebSocket::errorOccurred, this,
-            [this](QAbstractSocket::SocketError) {
+            [this](QAbstractSocket::SocketError error) {
                 if (m_cancelled || m_failureEmitted || m_sessionClosed) {
+                    return;
+                }
+                if (isRemoteClose(error) && m_sessionStarted && !m_finishRequested && !m_finalizing) {
                     return;
                 }
                 const QString detail = m_socket.errorString();

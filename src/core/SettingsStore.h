@@ -70,6 +70,7 @@ public:
     using SettingsCodecs::customVocabulary;
     using SettingsCodecs::defaultWritingProfile;
     using SettingsCodecs::includeScreenshotContext;
+    using SettingsCodecs::insightsEnabled;
     using SettingsCodecs::learnedCorrections;
     using SettingsCodecs::openAiAuthMode;
     using SettingsCodecs::openAiCliproxyAccount;
@@ -99,6 +100,7 @@ public:
     using SettingsCodecs::setCustomVocabulary;
     using SettingsCodecs::setDefaultWritingProfile;
     using SettingsCodecs::setIncludeScreenshotContext;
+    using SettingsCodecs::setInsightsEnabled;
     using SettingsCodecs::setLearnedCorrectionEnabled;
     using SettingsCodecs::setLearnedCorrections;
     using SettingsCodecs::setOpenAiAuthMode;

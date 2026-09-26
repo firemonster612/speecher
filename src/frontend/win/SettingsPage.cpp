@@ -5,15 +5,23 @@
 #include "frontend/win/SettingsModel.h"
 #include "frontend/win/ShortcutRecorder.h"
 
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QImage>
+#include <QUrl>
+
 #pragma push_macro("GetCurrentTime")
 #undef GetCurrentTime
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.System.h>
+#include <winrt/Microsoft.UI.Windowing.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
+#include <winrt/Microsoft.UI.Xaml.Media.Imaging.h>
 #pragma pop_macro("GetCurrentTime")
 
 #include <algorithm>
@@ -394,20 +402,87 @@ void appendSection(const StackPanel &column, const SectionSnapshot &section, Pan
     }
 }
 
-// The Gallery's settings page scaffold: gutters on the scroller, the column
-// capped at 1064 inside them, the page title on top.
-ScrollViewer pageScaffold(const QString &title, StackPanel &column)
+} // namespace
+
+ScrollViewer pageScaffold(const QString &title, const StackPanel &column)
 {
     ScrollViewer scroll;
     scroll.Padding({36, 0, 36, 0});
     column.MaxWidth(1064);
     column.Padding({0, 0, 0, 36});
-    column.Children().Append(styledText(title, L"SettingsPageTitleStyle"));
+    if (!title.isEmpty()) {
+        column.Children().Append(styledText(title, L"SettingsPageTitleStyle"));
+    }
     scroll.Content(column);
     return scroll;
 }
 
-} // namespace
+void replacePage(const Border &pageHost, const UIElement &page)
+{
+    double offset = 0;
+    if (auto previous = pageHost.Child().try_as<ScrollViewer>()) {
+        offset = previous.VerticalOffset();
+    }
+    pageHost.Child(page);
+    if (offset > 0) {
+        if (auto scroll = page.try_as<ScrollViewer>()) {
+            scroll.Loaded([offset](const IInspectable &sender, const auto &) {
+                sender.as<ScrollViewer>().ChangeView(nullptr, offset, nullptr, true);
+            });
+        }
+    }
+}
+
+bool printWindowTo(HWND handle, const QString &path)
+{
+    RECT rect{};
+    if (!GetWindowRect(handle, &rect)) {
+        return false;
+    }
+    const int width = rect.right - rect.left;
+    const int height = rect.bottom - rect.top;
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+    const HDC screen = GetDC(nullptr);
+    const HDC memory = CreateCompatibleDC(screen);
+    const HBITMAP bitmap = CreateCompatibleBitmap(screen, width, height);
+    const auto previous = SelectObject(memory, bitmap);
+    constexpr UINT renderFullContent = 0x00000002; // PW_RENDERFULLCONTENT
+    const bool painted = PrintWindow(handle, memory, renderFullContent) != 0;
+    bool saved = false;
+    if (painted) {
+        QImage image(width, height, QImage::Format_ARGB32_Premultiplied);
+        BITMAPINFO info{};
+        info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        info.bmiHeader.biWidth = width;
+        info.bmiHeader.biHeight = -height;
+        info.bmiHeader.biPlanes = 1;
+        info.bmiHeader.biBitCount = 32;
+        info.bmiHeader.biCompression = BI_RGB;
+        if (GetDIBits(memory, bitmap, 0, height, image.bits(), &info, DIB_RGB_COLORS)) {
+            saved = image.save(path);
+        }
+    }
+    SelectObject(memory, previous);
+    DeleteObject(bitmap);
+    DeleteDC(memory);
+    ReleaseDC(nullptr, screen);
+    return saved;
+}
+
+void setWindowIcon(const Window &window, const TitleBar &titleBar)
+{
+    const QString icon = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("speecher.ico"));
+    if (!QFile::exists(icon)) {
+        return;
+    }
+    ImageIconSource iconSource;
+    iconSource.ImageSource(winrt::Microsoft::UI::Xaml::Media::Imaging::BitmapImage(
+        winrt::Windows::Foundation::Uri(hs(QUrl::fromLocalFile(icon).toString()))));
+    titleBar.IconSource(iconSource);
+    window.AppWindow().SetIcon(hs(QDir::toNativeSeparators(icon)));
+}
 
 TextBlock styledTextBlock(const QString &text, const wchar_t *styleKey)
 {
@@ -420,6 +495,22 @@ TextBlock styledTextBlock(const QString &text, const wchar_t *styleKey)
 TextBlock secondaryTextBlock(const QString &text, const wchar_t *styleKey, const PaneHost &host)
 {
     TextBlock block = styledTextBlock(text, styleKey);
+    if (const auto brush = themeBrush(L"SettingsCardDescriptionForeground", host)) {
+        block.Foreground(brush);
+    }
+    return block;
+}
+
+bool highContrastOn()
+{
+    HIGHCONTRASTW contrast{};
+    contrast.cbSize = sizeof(contrast);
+    return SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0)
+        && (contrast.dwFlags & HCF_HIGHCONTRASTON);
+}
+
+winrt::Microsoft::UI::Xaml::Media::Brush themeBrush(const wchar_t *key, const PaneHost &host)
+{
     const ElementTheme theme = host.effectiveTheme ? host.effectiveTheme()
                                                    : ElementTheme::Default;
     // A contrast theme overrides Light/Dark: XAML resolves ThemeResource from
@@ -431,12 +522,7 @@ TextBlock secondaryTextBlock(const QString &text, const wchar_t *styleKey, const
     // here — the explicit RequestedTheme pins ActualTheme, so
     // ActualThemeChanged never fires for it; the correct brush arrives on the
     // next rebuild or reopen.
-    HIGHCONTRASTW contrast{};
-    contrast.cbSize = sizeof(contrast);
-    const bool highContrast =
-        SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0)
-        && (contrast.dwFlags & HCF_HIGHCONTRASTON);
-    const hstring themeKey = highContrast ? L"HighContrast"
+    const hstring themeKey = highContrastOn() ? L"HighContrast"
         : theme == ElementTheme::Light   ? L"Light"
                                          : L"Dark";
     // The style dictionary is the merged dictionary that carries our theme
@@ -447,13 +533,12 @@ TextBlock secondaryTextBlock(const QString &text, const wchar_t *styleKey, const
             continue;
         }
         const auto dictionary = themes.Lookup(box_value(themeKey)).as<ResourceDictionary>();
-        if (const auto brush = dictionary.TryLookup(
-                box_value(L"SettingsCardDescriptionForeground"))) {
-            block.Foreground(brush.as<winrt::Microsoft::UI::Xaml::Media::Brush>());
+        if (const auto brush = dictionary.TryLookup(box_value(key))) {
+            return brush.as<winrt::Microsoft::UI::Xaml::Media::Brush>();
         }
         break;
     }
-    return block;
+    return nullptr;
 }
 
 void detachFromParent(const UIElement &element)
@@ -492,16 +577,17 @@ Border cardContainer(const UIElement &content)
     return card;
 }
 
+Grid separatedGrid()
+{
+    // Drawn by the card's own stroke so it matches in every theme.
+    static const hstring xaml = hstring(L"<Grid ") + kXmlns
+        + LR"( BorderThickness="0,1,0,0" BorderBrush="{ThemeResource SettingsCardBorderBrush}"/>)";
+    return XamlReader::Load(xaml).as<Grid>();
+}
+
 Grid rowGrid(const RowSnapshot &row, const UIElement &control, PaneHost &host, bool followsRow)
 {
-    Grid grid;
-    if (followsRow) {
-        // The inset separator grouped rows share, drawn by the card's own
-        // stroke so it matches in every theme.
-        static const hstring xaml = hstring(L"<Grid ") + kXmlns
-            + LR"( BorderThickness="0,1,0,0" BorderBrush="{ThemeResource SettingsCardBorderBrush}"/>)";
-        grid = XamlReader::Load(xaml).as<Grid>();
-    }
+    Grid grid = followsRow ? separatedGrid() : Grid();
     grid.MinHeight(68);
     grid.Padding({16, 16, 16, 16});
     grid.ColumnSpacing(16);

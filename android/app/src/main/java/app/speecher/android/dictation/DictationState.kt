@@ -155,6 +155,25 @@ enum class ButtonLayout(val actions: List<InsertAction>) {
     RefinedOnly(listOf(InsertAction.InsertRefined)),
 }
 
+/** How much of the screen the dictation panel covers. */
+enum class PanelSize {
+    Full,
+    Compact,
+    /** A thin bar: recording dot, waveform, the newest words and the primary Insert. */
+    Minimized,
+}
+
+/**
+ * The size the panel shows: the [chosen] one it opens at, or, once [toggled] by the minimize
+ * control, the other side of it (Full and Compact collapse to the bar, the bar expands to Full). A
+ * failure never shows as the bar, so its recovery action is always in view.
+ */
+fun shownPanelSize(chosen: PanelSize, toggled: Boolean, state: DictationState): PanelSize {
+    val expanded = if (chosen == PanelSize.Minimized) PanelSize.Full else chosen
+    val minimized = (chosen == PanelSize.Minimized) != toggled
+    return if (minimized && state !is DictationState.Failed) PanelSize.Minimized else expanded
+}
+
 /** Everything the user can change in Settings. */
 data class SpeecherSettings(
     val transcriptionProvider: Provider = providerOrder.first(),
@@ -191,6 +210,8 @@ data class SpeecherSettings(
     val writingProfiles: Map<WritingProfile, WritingProfileSettings> =
         WritingProfile.entries.associateWith { WritingProfileSettings() },
     val buttonLayout: ButtonLayout = ButtonLayout.RefinedPrimary,
+    /** The size the panel opens at. */
+    val panelSize: PanelSize = PanelSize.Full,
 ) {
     /**
      * The layout the panel shows. With refinement off there is nothing to refine, so only Insert.

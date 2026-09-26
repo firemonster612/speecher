@@ -248,6 +248,7 @@ struct AppSettings {
     QList<VocabularyEntry> vocabulary;
     QList<LearnedCorrection> learnedCorrections;
     bool correctionLearningEnabled = true;
+    bool insightsEnabled = true;
 };
 
 } // namespace speecher

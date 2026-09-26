@@ -168,9 +168,15 @@ QString MacSingleKeyShortcutBinder::watch(const PhysicalKey &key)
             down = event.type == NSEventTypeKeyDown;
         }
         // The monitors fire on the main runloop, which is Qt's main thread,
-        // but marshal explicitly rather than trusting AppKit's delivery.
+        // but marshal explicitly rather than trusting AppKit's delivery. The
+        // event's own timestamp travels with it: a release handled after the
+        // main thread was busy opening the microphone still reports how long
+        // the key was actually held.
+        const qint64 eventTimeMs = qint64(event.timestamp * 1000.0);
         QMetaObject::invokeMethod(
-            this, [this, down] { down ? keyDown() : keyUp(); }, Qt::QueuedConnection);
+            this,
+            [this, down, eventTimeMs] { down ? keyDown(eventTimeMs) : keyUp(eventTimeMs); },
+            Qt::QueuedConnection);
     };
 
     // A global monitor only sees events dispatched to other applications; the

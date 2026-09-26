@@ -38,18 +38,32 @@ private val ButtonLayout.label: String
 /** One radio row per [ButtonLayout], each with a sketch of the panel's buttons. */
 @Composable
 fun ButtonLayoutPicker(selected: ButtonLayout, onSelect: (ButtonLayout) -> Unit) {
+    IllustratedPicker(ButtonLayout.entries, selected, onSelect, { it.label }) { layout, modifier ->
+        ButtonLayoutIllustration(layout, modifier)
+    }
+}
+
+/** A radio row per option: the button, a sketch of the option, then its label. */
+@Composable
+internal fun <T> IllustratedPicker(
+    options: List<T>,
+    selected: T,
+    onSelect: (T) -> Unit,
+    label: (T) -> String,
+    illustration: @Composable (T, Modifier) -> Unit,
+) {
     Column(Modifier.selectableGroup()) {
-        ButtonLayout.entries.forEach { layout ->
+        options.forEach { option ->
             Row(
                 Modifier.fillMaxWidth()
-                    .selectable(layout == selected, role = Role.RadioButton) { onSelect(layout) }
+                    .selectable(option == selected, role = Role.RadioButton) { onSelect(option) }
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                RadioButton(layout == selected, onClick = null)
-                ButtonLayoutIllustration(layout, Modifier.padding(start = 16.dp))
+                RadioButton(option == selected, onClick = null)
+                illustration(option, Modifier.padding(start = 16.dp))
                 Text(
-                    layout.label,
+                    label(option),
                     Modifier.padding(start = 16.dp),
                     style = MaterialTheme.typography.bodyLarge,
                 )

@@ -13,11 +13,12 @@ class AppWindow;
 class LinuxTrayIcon;
 class ApplicationController;
 class SetupAssistant;
+class TranscribeWindow;
 class TranscriberPopup;
 class QtFrontEndTestAccess;
 
 // Speecher's user interface on Qt Widgets: the main window, the setup
-// assistant and the dictation popup.
+// assistant, the dictation popup and the Transcribe window opened files use.
 class QtFrontEnd final : public QObject, public AppFrontEnd {
     Q_OBJECT
 
@@ -26,8 +27,10 @@ public:
     ~QtFrontEnd() override;
 
     void showMainWindow() override;
+    void hideMainWindow() override;
     void showSettingsWindow() override;
     void showSetupAssistant(SetupAssistantPage page) override;
+    void showTranscribeFiles(const QStringList &paths) override;
     bool captureMainWindow(const QString &path) override;
     void showDictationError(const QString &message) override;
     void alert() override;
@@ -43,6 +46,7 @@ private:
     void refreshUpdateChip();
     void refreshWhatsNewChip();
     void watchForFirstFrame(QWidget *window);
+    TranscribeWindow *transcribeWindow();
     // Screenshot automation; see captureMainWindow.
     static bool clickGrabButtons(QWidget *window);
 
@@ -53,6 +57,7 @@ private:
     LinuxTrayIcon *m_tray = nullptr;
 #endif
     QPointer<SetupAssistant> m_setupAssistant;
+    TranscribeWindow *m_transcribeWindow = nullptr;
     bool m_reportedReady = false;
 };
 

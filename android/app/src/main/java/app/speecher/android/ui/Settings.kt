@@ -274,6 +274,8 @@ fun Settings(
             Section("Buttons")
             ButtonLayoutPicker(settings.buttonLayout) { onChange(settings.copy(buttonLayout = it)) }
         }
+        Section("Dictation panel size")
+        PanelSizePicker(settings.panelSize) { onChange(settings.copy(panelSize = it)) }
 
         Section("Dictation button")
         ListItem(

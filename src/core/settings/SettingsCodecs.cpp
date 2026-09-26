@@ -457,6 +457,16 @@ void SettingsCodecs::setCorrectionLearningEnabled(bool enabled)
     CorrectionSettingsCodec::storeLearningEnabled(m_settings, enabled);
 }
 
+bool SettingsCodecs::insightsEnabled() const
+{
+    return value(SettingsKeys::InsightsEnabled, true).toBool();
+}
+
+void SettingsCodecs::setInsightsEnabled(bool enabled)
+{
+    m_settings.setValue(SettingsKeys::InsightsEnabled, enabled);
+}
+
 QList<LearnedCorrection> SettingsCodecs::learnedCorrections() const
 {
     return CorrectionSettingsCodec::load(m_settings);
@@ -1158,6 +1168,7 @@ AppSettings SettingsCodecs::snapshot() const
     settings.bindings = bindingRules();
     settings.vocabulary = vocabularyEntries();
     settings.correctionLearningEnabled = correctionLearningEnabled();
+    settings.insightsEnabled = insightsEnabled();
     settings.learnedCorrections = learnedCorrections();
     for (const LearnedCorrection &correction : settings.learnedCorrections) {
         if (!correction.enabled) {

@@ -1,6 +1,7 @@
 #include "app/SingleInstanceIpc.h"
 
 #include <QDeadlineTimer>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -131,9 +132,14 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                         continue;
                     }
                     const QJsonObject object = document.object();
+                    QStringList files;
+                    for (const QJsonValue &file : object.value(QStringLiteral("files")).toArray()) {
+                        files << file.toString();
+                    }
                     emit commandReceived(object.value(QStringLiteral("command")).toString(),
                                          object.value(QStringLiteral("outputFormat")).toString(),
-                                         socket);
+                                         socket,
+                                         files);
                 }
                 m_socketsInCommand.remove(socket);
                 if (m_socketsPendingDelete.remove(socket)) {
@@ -284,6 +290,17 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
                                                         std::shared_ptr<const SingleInstancePlatform> platform,
                                                         QString *error)
 {
+    return sendCommandDetailed(command, outputFormat, {}, response, timeoutMs, std::move(platform), error);
+}
+
+IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
+                                                        std::optional<OutputFormat> outputFormat,
+                                                        const QStringList &files,
+                                                        IpcResponse *response,
+                                                        int timeoutMs,
+                                                        std::shared_ptr<const SingleInstancePlatform> platform,
+                                                        QString *error)
+{
     const std::shared_ptr<const SingleInstancePlatform> resolved = platform ? std::move(platform) : platformComposition();
     for (const QString &candidate : resolved->ipcConnectCandidates()) {
         QLocalSocket socket;
@@ -294,6 +311,9 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
         QJsonObject request{{QStringLiteral("command"), command}};
         if (outputFormat) {
             request.insert(QStringLiteral("outputFormat"), outputFormatName(*outputFormat));
+        }
+        if (!files.isEmpty()) {
+            request.insert(QStringLiteral("files"), QJsonArray::fromStringList(files));
         }
         QByteArray requestBytes = QJsonDocument(request).toJson(QJsonDocument::Compact);
         requestBytes.append('\n');

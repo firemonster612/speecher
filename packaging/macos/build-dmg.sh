@@ -132,7 +132,9 @@ if [[ "$SIGN_IDENTITY" != "-" ]] \
 fi
 DESIGNATED_REQUIREMENT="$BUILD_DIR/designated-requirement.txt"
 codesign -d -r- "$STAGING_DIR/speecher.app" 2>/dev/null > "$DESIGNATED_REQUIREMENT"
-if ! grep -q '^designated =>' "$DESIGNATED_REQUIREMENT"; then
+# Ad-hoc signatures carry no designated requirement; only a real identity
+# must produce one, since Sparkle pins updates to it.
+if [ "$SIGN_IDENTITY" != - ] && ! grep -q '^designated =>' "$DESIGNATED_REQUIREMENT"; then
   echo "codesign did not produce a designated requirement." >&2
   exit 1
 fi

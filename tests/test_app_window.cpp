@@ -3,7 +3,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/UpdateController.h"
-#include "core/OutputMethod.h"
+#include "core/InsightsLog.h"
 #include "core/SettingsStore.h"
 #include "core/SecretStore.h"
 #include "core/settings/SettingsKeys.h"
@@ -13,17 +13,23 @@
 #include "ui/AppPage.h"
 #include "ui/AppWindow.h"
 #include "ui/InlineMessage.h"
-#include "ui/DictationPage.h"
+#include "ui/HomePage.h"
+#include "ui/InsightsCharts.h"
 #include "ui/settings/SettingsPageSet.h"
+#include "ui/settings/SettingsPageSupport.h"
+#include "transcribe/FileTranscriptionSession.h"
 #include "ui/Theme.h"
 #ifdef Q_OS_LINUX
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
 #endif
 
 #include <QComboBox>
+#include <QDialog>
 #include <QDir>
 #include <QFile>
 #include <QLabel>
+#include <QMouseEvent>
+#include <QToolTip>
 #include <QSet>
 #include <QLineEdit>
 #include <QListWidget>
@@ -33,7 +39,6 @@
 #include <QCheckBox>
 #include <QGuiApplication>
 #include <QIcon>
-#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QToolButton>
 #include <QSaveFile>
@@ -43,6 +48,7 @@
 #include <QStandardPaths>
 #include <QStackedWidget>
 #include <QTableWidget>
+#include <QTemporaryDir>
 #include <QVBoxLayout>
 
 using namespace speecher;
@@ -78,34 +84,28 @@ private slots:
         }
     }
 
-    void dictationPageRecoversBackgroundTranscript()
+    void homeRecoversBackgroundTranscript()
     {
         ApplicationController controller(true);
         auto *transcript = controller.session()->findChild<TranscriptState *>();
         QVERIFY(transcript);
         transcript->commitFinal(QStringLiteral("Words from the background session."));
-        DictationPage page(&controller);
-        auto *editor = page.findChild<QPlainTextEdit *>(QStringLiteral("dictationTranscript"));
-        QVERIFY(editor);
-        QCOMPARE(editor->toPlainText(), QStringLiteral("Words from the background session."));
-        editor->clear();
+        HomePage page(&controller);
+        page.resize(900, 700);
         page.show();
-        QCOMPARE(editor->toPlainText(), QStringLiteral("Words from the background session."));
-        const QString screenshot = qEnvironmentVariable("SPEECHER_T4_SCREENSHOT");
-        if (!screenshot.isEmpty()) {
-            page.resize(760, 700);
-            QCoreApplication::processEvents();
-            QVERIFY(page.grab().save(screenshot));
-        }
-        controller.session()->stateChanged(QStringLiteral("starting"));
-        QVERIFY(editor->toPlainText().isEmpty());
+        auto *last = page.findChild<QLabel *>(QStringLiteral("lastTranscript"));
+        QVERIFY(last);
+        QTRY_COMPARE(last->text(), QStringLiteral("Words from the background session."));
+        auto *meta = page.findChild<QLabel *>(QStringLiteral("lastTranscriptMeta"));
+        QCOMPARE(meta->text(), QStringLiteral("5 words"));
     }
 
     void sidebarShellConstructsWithSharedPageTitles()
     {
         ApplicationController controller(true);
         const QStringList titles{
-            QStringLiteral("Dictation"),
+            QStringLiteral("Home"),
+            QStringLiteral("Transcribe"),
             QStringLiteral("General"),
             QStringLiteral("Audio"),
             QStringLiteral("Output"),
@@ -218,103 +218,212 @@ private slots:
         QVERIFY(!pages->save(false, false));
     }
 
-    void dictationSummaryDefersSavedMicrophoneResolutionUntilShow()
+    void homeCopiesTheLastTranscript()
     {
         ApplicationController controller(true);
-        AppSettings settings = controller.settings()->snapshot();
-        settings.audio.deviceId = QStringLiteral("saved-device");
-        controller.settings()->applySnapshot(settings);
-
-        AppWindow window(&controller);
-        auto *microphone = window.findChild<QLabel *>(QStringLiteral("microphoneSummary"));
-        QVERIFY(microphone);
-        QCOMPARE(microphone->property("fullText").toString(),
-                 QStringLiteral("Selected microphone"));
-    }
-
-    void dictationSummaryCardsNavigate()
-    {
-        ApplicationController controller(true);
-        DictationPage page(&controller);
+        controller.session()->findChild<TranscriptState *>()->commitFinal(
+            QStringLiteral("hello transcript"));
+        HomePage page(&controller);
         page.show();
-        QCoreApplication::processEvents();
-
-        QLabel *value = page.findChild<QLabel *>(QStringLiteral("refinementSummary"));
-        QVERIFY(value);
-        QWidget *card = value->parentWidget();
-        while (card && !card->property("navTarget").isValid()) {
-            card = card->parentWidget();
-        }
-        QVERIFY(card);
-
-        QSignalSpy navigate(&page, &DictationPage::navigateRequested);
-        QTest::mouseClick(card, Qt::LeftButton);
-        QCOMPARE(navigate.count(), 1);
-        QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::Refinement);
-    }
-
-    void dictationSummaryNamesTheShortcutAndOutputInUserTerms()
-    {
-        ApplicationController controller(true);
-        DictationPage page(&controller);
-        page.show();
-        QCoreApplication::processEvents();
-
-        // No Theme card; the slot shows the Global Shortcut and opens General.
-        QVERIFY(!page.findChild<QLabel *>(QStringLiteral("themeSummary")));
-        QLabel *shortcut = page.findChild<QLabel *>(QStringLiteral("shortcutSummary"));
-        QVERIFY(shortcut);
-        const QString expected = controller.globalShortcutDisplay().isEmpty()
-            ? QString()
-            : controller.globalShortcutDisplay();
-        if (!expected.isEmpty()) {
-            QCOMPARE(shortcut->property("fullText").toString(), expected);
-        } else {
-            QVERIFY(!shortcut->property("fullText").toString().isEmpty());
-        }
-        QWidget *card = shortcut->parentWidget();
-        while (card && !card->property("navTarget").isValid()) {
-            card = card->parentWidget();
-        }
-        QVERIFY(card);
-        QSignalSpy navigate(&page, &DictationPage::navigateRequested);
-        QTest::mouseClick(card, Qt::LeftButton);
-        QCOMPARE(navigate.count(), 1);
-        QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::General);
-
-        // The Output card names the chosen method, not the platform's status.
-        QLabel *output = nullptr;
-        for (QLabel *label : page.findChildren<QLabel *>()) {
-            if (label->property("fullText").toString()
-                == OutputMethod::label(controller.settings()->outputMethod())) {
-                output = label;
-            }
-        }
-        QVERIFY(output);
-    }
-
-    void dictationTranscriptStaysReadOnlyAndCopies()
-    {
-        ApplicationController controller(true);
-        DictationPage page(&controller);
-        page.show();
-        QCoreApplication::processEvents();
-
-        auto *transcript = page.findChild<QPlainTextEdit *>(QStringLiteral("dictationTranscript"));
-        QVERIFY(transcript);
-        // Edits would go nowhere, so the transcript never unlocks.
-        QVERIFY(transcript->isReadOnly());
-        page.setStatus(QStringLiteral("listening"));
-        QVERIFY(transcript->isReadOnly());
-        page.setStatus(QStringLiteral("idle"));
-        QVERIFY(transcript->isReadOnly());
-        QVERIFY(transcript->textInteractionFlags() & Qt::TextSelectableByMouse);
-
-        transcript->setPlainText(QStringLiteral("hello transcript"));
-        auto *copy = transcript->findChild<QToolButton *>(QStringLiteral("copyTranscript"));
+        auto *copy = page.findChild<QToolButton *>(QStringLiteral("copyTranscript"));
         QVERIFY(copy);
         copy->click();
         QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("hello transcript"));
+    }
+
+    void homeShowsInsightsOnlyWhenOnAndRecorded()
+    {
+        QTemporaryDir dir;
+        QFile seed(dir.filePath(QStringLiteral("seed.jsonl")));
+        QVERIFY(seed.open(QIODevice::WriteOnly));
+        seed.write(R"({"finishedAt":"2026-09-25T09:55:00","audioMs":38000,"words":90,"app":"Thunderbird","profile":"email"})"
+                   "\n");
+        seed.close();
+        qputenv("SPEECHER_INSIGHTS_SEED", seed.fileName().toLocal8Bit());
+        qputenv("SPEECHER_INSIGHTS_TODAY", "2026-09-26");
+        const auto restore = qScopeGuard([] {
+            qunsetenv("SPEECHER_INSIGHTS_SEED");
+            qunsetenv("SPEECHER_INSIGHTS_TODAY");
+        });
+        ApplicationController controller(true);
+        QCOMPARE(controller.insightsLog()->records().size(), 1);
+
+        controller.settings()->setInsightsEnabled(false);
+        HomePage page(&controller);
+        page.resize(1000, 800);
+        page.show();
+        auto *notice = page.findChild<QFrame *>(QStringLiteral("insightsNotice"));
+        QVERIFY(notice);
+        QVERIFY(notice->isVisible());
+        QCOMPARE(notice->findChild<QLabel *>(QStringLiteral("insightsNoticeTitle"))->text(),
+                 QStringLiteral("Insights are off"));
+        QVERIFY(page.findChildren<QFrame *>(QStringLiteral("insightTile")).isEmpty());
+        QSignalSpy navigate(&page, &HomePage::navigateRequested);
+        page.findChild<QPushButton *>(QStringLiteral("insightsNoticeSettings"))->click();
+        QCOMPARE(navigate.count(), 1);
+        QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::General);
+
+        controller.settings()->setInsightsEnabled(true);
+        page.refresh();
+        QVERIFY(!notice->isVisible());
+        const QList<QFrame *> tiles = page.findChildren<QFrame *>(QStringLiteral("insightTile"));
+        QCOMPARE(tiles.size(), 4);
+        QStringList values;
+        for (QFrame *tile : tiles) {
+            values << tile->findChild<QLabel *>(QStringLiteral("insightValue"))->text();
+        }
+        QCOMPARE(values.first(), QStringLiteral("90"));
+        QVERIFY(page.findChild<QWidget *>(QStringLiteral("activityHeatmap")));
+
+        // Clearing the log leaves "No insights yet".
+        controller.clearInsights();
+        QVERIFY(notice->isVisible());
+        QCOMPARE(notice->findChild<QLabel *>(QStringLiteral("insightsNoticeTitle"))->text(),
+                 QStringLiteral("No insights yet"));
+        QVERIFY(page.findChildren<QFrame *>(QStringLiteral("insightTile")).isEmpty());
+    }
+
+    void controllerKeepsTheRecordOfTheLastTranscript()
+    {
+        QTemporaryDir dir;
+        const QString seed = dir.filePath(QStringLiteral("seed.jsonl"));
+        QFile(seed).open(QIODevice::WriteOnly);
+        qputenv("SPEECHER_INSIGHTS_SEED", seed.toLocal8Bit());
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_INSIGHTS_SEED"); });
+        ApplicationController controller(true);
+        QSignalSpy changed(&controller, &ApplicationController::lastRecordChanged);
+        const DictationRecord record{QDateTime(QDate(2026, 9, 26), QTime(9, 0)), 4000, 3,
+                                     QStringLiteral("Kate"), WritingProfile::Other};
+
+        emit controller.session()->transcriptDelivered(QStringLiteral("one two three"));
+        emit controller.session()->dictationRecorded(record);
+        QCOMPARE(controller.lastRecord()->appName, QStringLiteral("Kate"));
+
+        // A delivery insights did not record leaves no record behind.
+        emit controller.session()->transcriptDelivered(QStringLiteral("four"));
+        QVERIFY(!controller.lastRecord());
+        QCOMPARE(changed.count(), 2);
+
+        // Clearing the history forgets the record the caption shows.
+        emit controller.session()->dictationRecorded(record);
+        QVERIFY(controller.clearInsights());
+        QVERIFY(!controller.lastRecord());
+    }
+
+    void chartsDescribeTheCellUnderThePointerAtOnce()
+    {
+        // Hovering a heatmap day or an hour bar shows its tip on the move
+        // itself, not after the platform's tooltip delay. The moves go to the
+        // chart directly: a synthetic cursor would reach whatever window an
+        // earlier test left under it.
+        const auto hover = [](QWidget *widget, QPoint at) {
+            QMouseEvent move(QEvent::MouseMove, QPointF(at), widget->mapToGlobal(QPointF(at)),
+                             Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(widget, &move);
+        };
+        const QDate today(2026, 9, 26);
+        QList<HeatmapDay> days;
+        for (int offset = 6; offset >= 0; --offset) {
+            days.append({today.addDays(-offset), offset == 0 ? 3 : 1, 30, 60000});
+        }
+        InsightsHeatmap week(InsightsHeatmap::Shape::Week);
+        week.setDays(days);
+        week.resize(week.sizeHint());
+        week.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&week));
+        // Monday's dot: the first of seven equal columns, just under the top.
+        hover(&week, QPoint(week.width() / 14, 6));
+        QTRY_VERIFY_WITH_TIMEOUT(QToolTip::isVisible(), 200);
+        QVERIFY(QToolTip::text().contains(QStringLiteral("dictation")));
+        hover(&week, QPoint(week.width() - 1, week.height() - 1));
+        QTRY_VERIFY_WITH_TIMEOUT(!QToolTip::isVisible(), 1000);
+
+        InsightsBarChart hours;
+        std::array<int, 24> counts{};
+        counts[10] = 4;
+        hours.setCounts(counts, 10);
+        hours.resize(480, hours.sizeHint().height());
+        hours.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&hours));
+        hover(&hours, QPoint(480 * 10 / 24 + 5, 10));
+        QTRY_VERIFY_WITH_TIMEOUT(QToolTip::isVisible(), 200);
+        QVERIFY(QToolTip::text().contains(QStringLiteral("4 dictations")));
+        QToolTip::hideText();
+    }
+
+    void chartTipStaysWhenThePointerStopsInAGap()
+    {
+        // The pointer crosses a heatmap cell and stops in the 3 px gap beside
+        // it, which still counts as that cell. Qt hides a tip 300 ms after a
+        // move lands outside the area it was shown for, so that area has to
+        // take in the gap too, or the tip vanishes as the pointer stops.
+        const auto moveTo = [](QWidget *widget, QPoint at) {
+            QMouseEvent move(QEvent::MouseMove, QPointF(at), widget->mapToGlobal(QPointF(at)),
+                             Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(widget, &move);
+        };
+        const QDate today(2026, 9, 26);
+        QList<HeatmapDay> days;
+        for (int offset = 20; offset >= 0; --offset) {
+            days.append({today.addDays(-offset), 1, 30, 60000});
+        }
+        InsightsHeatmap year(InsightsHeatmap::Shape::Year);
+        year.setDays(days);
+        year.resize(600, year.heightForWidth(600));
+        year.show();
+        // Qt closes any open tooltip when a window activates, and a compositor
+        // may activate this one only after it is exposed.
+        year.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&year));
+        // From the rendered chart: the newest week's first cell (the topmost
+        // cell pixel at the right) and the first background pixel below it,
+        // which is in the gap just past the cell's edge.
+        const QImage pixels = year.grab().toImage();
+        const QColor background = pixels.pixelColor(0, pixels.height() - 1);
+        QPoint cellTop(-1, -1);
+        for (int y = 0; y < pixels.height() && cellTop.x() < 0; ++y) {
+            for (int x = pixels.width() - 1; x > pixels.width() / 2; --x) {
+                if (pixels.pixelColor(x, y) != background) {
+                    cellTop = QPoint(x - 3, y);
+                    break;
+                }
+            }
+        }
+        QVERIFY2(cellTop.x() > 0, "the heatmap drew no cells");
+        QPoint gap;
+        for (int y = cellTop.y(); y < pixels.height(); ++y) {
+            if (pixels.pixelColor(cellTop.x(), y) == background) {
+                gap = QPoint(cellTop.x(), y);
+                break;
+            }
+        }
+        QVERIFY2(!gap.isNull(), "found no gap below the newest cell");
+
+        moveTo(&year, cellTop + QPoint(0, 2));
+        QTRY_VERIFY_WITH_TIMEOUT(QToolTip::isVisible(), 200);
+        moveTo(&year, gap);
+        QTest::qWait(500);
+        QVERIFY2(QToolTip::isVisible(), "the tip closed with the pointer stopped in the gap");
+        QToolTip::hideText();
+    }
+
+    void aNewSessionForgetsTheLastRecord()
+    {
+        // The session drops its last transcript when the next one starts,
+        // delivered or not, so the caption's record must go with it: a
+        // cancelled or failed session must not wear the previous one's app.
+        QTemporaryDir dir;
+        const QString seed = dir.filePath(QStringLiteral("seed.jsonl"));
+        QFile(seed).open(QIODevice::WriteOnly);
+        qputenv("SPEECHER_INSIGHTS_SEED", seed.toLocal8Bit());
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_INSIGHTS_SEED"); });
+        ApplicationController controller(true);
+        emit controller.session()->dictationRecorded(
+            {QDateTime(QDate(2026, 9, 26), QTime(9, 0)), 4000, 3, QStringLiteral("Kate"),
+             WritingProfile::Other});
+        QVERIFY(controller.lastRecord());
+        controller.session()->toggle();
+        QTRY_VERIFY(!controller.lastRecord());
     }
 
     void dictationHasOneStartControlAndTheHeaderHasNone()
@@ -332,10 +441,10 @@ private slots:
         QCOMPARE(startControls, 1);
     }
 
-    void dictationPageKeepsTheLastErrorUntilTheNextSession()
+    void homeKeepsTheLastErrorUntilTheNextSession()
     {
         ApplicationController controller(true);
-        DictationPage page(&controller);
+        HomePage page(&controller);
         page.show();
         QCoreApplication::processEvents();
 
@@ -376,10 +485,10 @@ private slots:
         QCOMPARE(copy->toolButtonStyle(), Qt::ToolButtonTextOnly);
     }
 
-    void dictationPageShowsHonestBusyActions()
+    void homeShowsHonestBusyActions()
     {
         ApplicationController controller(true);
-        DictationPage page(&controller);
+        HomePage page(&controller);
 
         page.setStatus(QStringLiteral("Refining"));
         QCOMPARE(page.toggleButton()->text(), QStringLiteral("Cancel Refinement"));
@@ -551,8 +660,135 @@ private slots:
         QVERIFY(window.findChild<QSplitter *>() && search);
 
         search->setText(QStringLiteral("Keep before speech"));
-        QVERIFY(navigation && navigation->item(1)->isHidden()
-                && !navigation->item(2)->isHidden());
+        QVERIFY(navigation && navigation->item(2)->isHidden()
+                && !navigation->item(3)->isHidden());
+    }
+
+    void openedAudioFilesLandOnTheTranscribePage()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        QFile file(audio);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("RIFF\0\0\0\0WAVEfmt ");
+        file.close();
+
+        window.showTranscribeFiles({audio, dir.filePath(QStringLiteral("missing.wav"))});
+
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Transcribe"));
+        auto *start = window.findChild<QPushButton *>(QStringLiteral("transcribeStart"));
+        QVERIFY(start->isEnabled());
+        QCOMPARE(start->text(), QStringLiteral("Transcribe"));
+        QVERIFY(!controller.fileTranscription()->isRunning());
+    }
+
+    void openedFilesGetTheCompactWindowAlone()
+    {
+        ApplicationController controller(true);
+        controller.settings()->setSetupCompleted(true);
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
+        const QString audio = writeHeaderOnlyWav();
+        const QSet<QWidget *> before = visibleWindows();
+        controller.showTranscribeFiles({audio});
+        controller.showTranscribeFiles({audio});
+
+        const QWidgetList windows = (visibleWindows() - before).values();
+        QCOMPARE(windows.size(), 1);
+        QCOMPARE(windows.first()->objectName(), QStringLiteral("transcribeWindow"));
+        QCOMPARE(windows.first()->windowTitle(), QStringLiteral("Transcribe \u2014 Speecher"));
+        QVERIFY(!windows.first()->findChild<QListWidget *>(QStringLiteral("appNavigation")));
+        auto *start = windows.first()->findChild<QPushButton *>(QStringLiteral("transcribeStart"));
+        QVERIFY(start->isEnabled());
+        QCOMPARE(start->text(), QStringLiteral("Transcribe"));
+    }
+
+    // Files opened before setup was done wait for it, then open alone: the
+    // assistant finishing does not bring the main window up beside them.
+    void filesHeldThroughSetupGetTheCompactWindowAlone()
+    {
+        ApplicationController controller(false);
+        controller.settings()->setSetupCompleted(false);
+        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(true); });
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
+        const QString audio = writeHeaderOnlyWav();
+        const QSet<QWidget *> before = visibleWindows();
+
+        controller.showTranscribeFiles({audio});
+        const QWidgetList opened = (visibleWindows() - before).values();
+        QCOMPARE(opened.size(), 1);
+        auto *assistant = qobject_cast<QDialog *>(opened.first());
+        QVERIFY(assistant);
+        // What the assistant's Finish does, without walking its pages.
+        controller.completeSetup();
+        assistant->done(QDialog::Accepted);
+
+        QTRY_VERIFY(!(visibleWindows() - before).contains(assistant));
+        QTRY_COMPARE((visibleWindows() - before).size(), 1);
+        QCOMPARE((visibleWindows() - before).values().first()->objectName(), QStringLiteral("transcribeWindow"));
+    }
+
+    // Files that arrive just after a plain launch put the main window up
+    // take its place, however late the platform delivers them.
+    void filesOpenedAtLaunchReplaceTheDefaultMainWindow()
+    {
+        ApplicationController controller(false);
+        controller.settings()->setSetupCompleted(true);
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
+        const QString audio = writeHeaderOnlyWav();
+        const QSet<QWidget *> before = visibleWindows();
+
+        controller.showDefaultMainWindow();
+        const QWidgetList shown = (visibleWindows() - before).values();
+        QCOMPARE(shown.size(), 1);
+        QWidget *main = shown.first();
+        controller.showTranscribeFiles({audio});
+        QVERIFY(!main->isVisible());
+
+        // Asked for by name, the main window stays when more files arrive.
+        controller.showMainWindow();
+        controller.showTranscribeFiles({audio});
+        QVERIFY(main->isVisible());
+        main->hide();
+    }
+
+    void aFileOpenedOverResultsIsKeptForTheNextBatch()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        QTemporaryDir dir;
+        const auto writeHeaderOnlyWav = [&dir](const QString &name) {
+            QFile file(dir.filePath(name));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write("RIFF\0\0\0\0WAVEfmt ");
+        };
+        writeHeaderOnlyWav(QStringLiteral("first.wav"));
+        writeHeaderOnlyWav(QStringLiteral("second.wav"));
+        window.showTranscribeFiles({dir.filePath(QStringLiteral("first.wav"))});
+
+        // A header with no audio fails to decode, which still ends on results.
+        window.findChild<QPushButton *>(QStringLiteral("transcribeStart"))->click();
+        auto *again = window.findChild<QPushButton *>(QStringLiteral("transcribeAgain"));
+        QTRY_VERIFY_WITH_TIMEOUT(again->isVisibleTo(&window), 10000);
+        QVERIFY(window.findChild<QToolButton *>(QStringLiteral("transcribeRetry")));
+
+        window.showTranscribeFiles({dir.filePath(QStringLiteral("second.wav"))});
+
+        auto *start = window.findChild<QPushButton *>(QStringLiteral("transcribeStart"));
+        QVERIFY(start->isVisibleTo(&window));
+        QVERIFY(start->isEnabled());
+        QStringList listed;
+        for (const QLabel *label : window.findChildren<QLabel *>()) {
+            if (label->text().endsWith(QStringLiteral(".wav")) && label->isVisibleTo(&window)) {
+                listed << label->text();
+            }
+        }
+        QCOMPARE(listed, QStringList({QStringLiteral("second.wav")}));
     }
 
     void programmaticNavigationUpdatesShellChrome()
@@ -573,12 +809,12 @@ private slots:
         auto *whatsNew = window.findChild<QPushButton *>(QStringLiteral("whatsNew"));
         QVERIFY(navigation && stack && whatsNew);
 
-        navigation->setCurrentRow(1);
+        navigation->setCurrentRow(2);
         whatsNew->click();
         // What's New sits after the sidebar's pages.
         QCOMPARE(stack->currentIndex(), window.pageCount());
-        navigation->setCurrentRow(1);
-        QCOMPARE(stack->currentIndex(), 1);
+        navigation->setCurrentRow(2);
+        QCOMPARE(stack->currentIndex(), 2);
     }
 
     void whatsNewOffersAWayBackToThePageItWasOpenedFrom()
@@ -595,7 +831,7 @@ private slots:
         QVERIFY(!back->isVisible());
 
         // Opened from General, the same way the update banner opens it.
-        navigation->setCurrentRow(1);
+        navigation->setCurrentRow(2);
         whatsNew->click();
         // What's New sits after the sidebar's pages.
         QCOMPARE(stack->currentIndex(), window.pageCount());
@@ -604,8 +840,8 @@ private slots:
         QVERIFY(!navigation->currentItem());
 
         back->click();
-        QCOMPARE(stack->currentIndex(), 1);
-        QCOMPARE(navigation->currentRow(), 1);
+        QCOMPARE(stack->currentIndex(), 2);
+        QCOMPARE(navigation->currentRow(), 2);
         QCOMPARE(title->text(), QStringLiteral("General"));
         QVERIFY(!back->isVisible());
     }
@@ -751,6 +987,32 @@ private slots:
                  QStringList{QStringLiteral(
                      "Row 2 duplicates the normalized spoken phrase from row 1.")});
     }
+
+private:
+    // Earlier tests can leave windows behind; a test counts only what it opens.
+    static QSet<QWidget *> visibleWindows()
+    {
+        QSet<QWidget *> visible;
+        for (QWidget *widget : QApplication::topLevelWidgets()) {
+            if (widget->isVisible()) {
+                visible << widget;
+            }
+        }
+        return visible;
+    }
+
+    // A WAV header with no audio: an audio file to list, which fails to decode.
+    QString writeHeaderOnlyWav()
+    {
+        const QString path = m_files.filePath(QStringLiteral("memo.wav"));
+        QFile file(path);
+        if (file.open(QIODevice::WriteOnly)) {
+            file.write("RIFF\0\0\0\0WAVEfmt ", 16);
+        }
+        return path;
+    }
+
+    QTemporaryDir m_files;
 };
 
 int runAppWindowTests(int argc, char **argv)

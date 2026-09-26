@@ -96,7 +96,6 @@ void AccessibilityNotice::setCompact(bool compact)
         return;
     }
     m_compact = compact;
-    m_message->setWordWrap(!compact);
     if (m_stateKnown) {
         setState(m_supported, m_enabled, m_persistent);
     }

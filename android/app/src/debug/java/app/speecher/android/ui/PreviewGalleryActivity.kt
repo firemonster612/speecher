@@ -97,6 +97,8 @@ private val states: Map<String, @Composable () -> Unit> =
         "panel-listening" to bottom { PanelListeningPreview() },
         "panel-listening-no-refine" to bottom { PanelListeningNoRefinePreview() },
         "panel-listening-refined-only" to bottom { PanelListeningRefinedOnlyPreview() },
+        "panel-compact" to bottom { PanelCompactPreview() },
+        "panel-minimized" to bottom { PanelMinimizedPreview() },
         "panel-reconnecting" to bottom { PanelReconnectingPreview() },
         "panel-refining" to bottom { PanelRefiningPreview() },
         "panel-refining-stream" to bottom { PanelRefiningStreamPreview() },
@@ -116,6 +118,7 @@ private val states: Map<String, @Composable () -> Unit> =
         "settings" to { SettingsPreview() },
         "settings-refinement-off" to { SettingsRefinementOffPreview() },
         "button-layouts" to { ButtonLayoutPickerPreview() },
+        "panel-sizes" to { PanelSizePickerPreview() },
         "restricted-settings-illustrations" to { RestrictedSettingsIllustrationsPreview() },
     )
 
