@@ -1469,7 +1469,7 @@ struct SetupWindow::Native {
         for (const ProviderDescriptor &provider : controller->providerRegistry()->speechProviders()) {
             // The Local card is only a choice where the assistant can set it
             // up, and a speech server is set up in Settings alone.
-            if ((provider.id == kLocal && !localSpeech) || provider.id == kEndpoint) {
+            if (!offersSetupSpeechProvider(provider.id, controller->settings()->speechProvider(), localSpeech != nullptr)) {
                 continue;
             }
             options.append({provider.id, provider.label});

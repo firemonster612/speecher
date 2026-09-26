@@ -1642,6 +1642,11 @@ static void probeSpeechProvider(BridgeState *state,
     return speecher::setupProviderChoice(QString::fromNSString(saved), ready, explicitlyChosen).toNSString();
 }
 
+- (BOOL)offersSetupSpeechProvider:(NSString *)providerId saved:(NSString *)saved localAvailable:(BOOL)localAvailable
+{
+    return speecher::offersSetupSpeechProvider(QString::fromNSString(providerId), QString::fromNSString(saved), localAvailable);
+}
+
 - (BOOL)isSetupSignInProvider:(NSString *)providerId
 {
     return speecher::isSetupSignInProvider(QString::fromNSString(providerId));

@@ -276,7 +276,7 @@ final class SetupFlowModel: ObservableObject {
         launchAtLogin = RowView.flag(model.row("launchAtLogin")?.value)
         let savedRefinement = RowView.text(model.row("refinementProvider")?.value)
         lastRefinementProvider = savedRefinement == "none" ? "" : savedRefinement
-        speechEndpointSaved = RowView.text(model.row("speechProvider")?.value) == "endpoint"
+        savedSpeechProvider = RowView.text(model.row("speechProvider")?.value)
         cliproxyDirectory = model.bridge.setupCliproxyDirectory
         modelChanges = model.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         if !model.shortcut.isEmpty {
@@ -490,10 +490,10 @@ final class SetupFlowModel: ObservableObject {
     /// Local only where this build can run it.
     var transcriptionChoices: [ProviderRow] {
         speechProviders.filter {
-            ($0.id != "endpoint" || speechEndpointSaved) && ($0.id != "local" || offersLocal)
+            model.bridge.offersSetupSpeechProvider($0.id, saved: savedSpeechProvider, localAvailable: offersLocal)
         }
     }
-    private let speechEndpointSaved: Bool
+    private let savedSpeechProvider: String
 
     /// The sign-ins the welcome step checks: not Local or a speech server,
     /// which need none.

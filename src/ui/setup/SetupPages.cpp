@@ -774,7 +774,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     for (const ProviderDescriptor &provider : m_providers.speechProviders()) {
         // The Local card is only a choice where the assistant can set it up,
         // and a speech server is set up in Settings alone.
-        if ((provider.id == QStringLiteral("local") && !m_local) || provider.id == QStringLiteral("endpoint")) {
+        if (!offersSetupSpeechProvider(provider.id, savedProvider, m_local != nullptr)) {
             continue;
         }
         m_options.append(addOptionRow(choices, group, provider.id, provider.label,
@@ -854,6 +854,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
         });
         connect(option.button, &QRadioButton::toggled, this, [this, providerId](bool checked) {
             if (checked) {
+                m_settings.setSpeechProvider(providerId);
                 selectProvider(providerId);
             }
         });
@@ -1181,7 +1182,6 @@ void SpeechProviderSetupPage::setReady(bool ready)
 void SpeechProviderSetupPage::selectProvider(const QString &providerId)
 {
     if (m_local && providerId == QStringLiteral("local")) m_local->initializeSpeechModel();
-    m_settings.setSpeechProvider(providerId);
     const QList<ProviderDescriptor> providers = m_providers.speechProviders();
     const auto it = std::find_if(providers.cbegin(), providers.cend(),
                                  [&providerId](const ProviderDescriptor &provider) {

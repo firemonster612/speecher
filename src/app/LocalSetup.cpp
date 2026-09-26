@@ -35,6 +35,12 @@ QString acceleratorName(const QString &kind)
 
 } // namespace
 
+bool offersSetupSpeechProvider(const QString &id, const QString &saved, bool localAvailable)
+{
+    return (id != QStringLiteral("endpoint") || id == saved)
+        && (id != QStringLiteral("local") || localAvailable);
+}
+
 bool isSetupSignInProvider(const QString &id)
 {
     return id == QStringLiteral("claude") || id == QStringLiteral("codex")

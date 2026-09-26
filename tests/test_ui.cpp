@@ -9,6 +9,7 @@
 #include "core/SecretStore.h"
 #include "app/LocalSetup.h"
 #include "providers/LocalModelStore.h"
+#include "providers/EndpointSpeechTranscriber.h"
 #include <QTemporaryDir>
 #include <QFile>
 #include <QTcpServer>
@@ -877,6 +878,26 @@ private slots:
         QCOMPARE(model->currentText(), QStringLiteral("Claude Haiku 4.5"));
         QVERIFY(caution->isVisibleTo(page.get()));
         QVERIFY(caution->text().contains(QStringLiteral("instructions")));
+    }
+
+    void constructingAndReopeningSetupPreservesTheSavedSpeechEndpoint()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setSpeechProvider(QStringLiteral("endpoint"));
+        ProviderRegistry providers;
+        providers.registerSpeechProvider({"claude", "Claude Voice", {}},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        providers.registerSpeechProvider({"endpoint", "Custom endpoint", {}},
+            [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
+        for (int opening = 0; opening < 2; ++opening) {
+            SpeechProviderSetupPage page(settings, providers);
+            QCOMPARE(settings.speechProvider(), QStringLiteral("endpoint"));
+            auto *endpoint = page.findChild<QRadioButton *>("speechProviderOption_endpoint");
+            QVERIFY(endpoint && endpoint->isChecked());
+            page.show();
+            QCOMPARE(settings.speechProvider(), QStringLiteral("endpoint"));
+        }
     }
 
     void setupStartsOnAServiceThatIsActuallySignedIn()
