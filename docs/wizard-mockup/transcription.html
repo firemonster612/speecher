@@ -5,7 +5,7 @@
 <title>Speecher setup — Transcription</title>
 <link rel="stylesheet" href="wizard.css">
 </head>
-<body data-states="ready notready" data-default-state="ready">
+<body data-states="ready notready local localcompare downloading" data-default-state="ready">
 
 <div class="dialog" role="dialog" aria-labelledby="page-title">
 
@@ -26,7 +26,8 @@
              data-hint="Sign in with ChatGPT in the ChatGPT app, or install the Codex CLI and run codex login."
              data-stats='[["Score","9 / 10"],["Engine","GPT Live Transcribe"],["Languages","Around 100"],["Speed","A phrase at a time, after a short pause"],["Accuracy","Excellent, even with accents and noise"],["Formatting","Natural punctuation and phrasing"]]'
              data-states='{"ready":{"status":"Ready","tone":"ok","line":"ChatGPT Codex is ready."},
-                           "notready":{"status":"Not set up","tone":"warn","line":"ChatGPT Codex is not signed in."}}'>
+                           "notready":{"status":"Not set up","tone":"warn","line":"ChatGPT Codex is not signed in."},
+                           "*":{"status":"Not set up","tone":"warn","line":"ChatGPT Codex is not signed in."}}'>
         <input type="radio" name="speech" value="codex" data-checked-in="ready notready">
         <svg class="icon lg" aria-hidden="true"><use href="#icon-openai"/></svg>
         <span class="choice-text">
@@ -40,7 +41,8 @@
              data-hint="Install Claude Code from claude.com/code, run claude in a terminal, and use /login."
              data-stats='[["Score","8 / 10"],["Engine","Deepgram Nova 3"],["Languages","About 60"],["Speed","Live stream; words appear as you speak"],["Accuracy","Strong, holds up in noisy rooms"],["Formatting","Automatic punctuation, capitals, numerals"]]'
              data-states='{"ready":{"status":"Not set up","tone":"warn","line":"Claude Voice is not signed in."},
-                           "notready":{"status":"Not set up","tone":"warn","line":"Claude Voice is not signed in."}}'>
+                           "notready":{"status":"Not set up","tone":"warn","line":"Claude Voice is not signed in."},
+                           "*":{"status":"Not set up","tone":"warn","line":"Claude Voice is not signed in."}}'>
         <input type="radio" name="speech" value="claude">
         <svg class="icon lg" aria-hidden="true"><use href="#icon-anthropic"/></svg>
         <span class="choice-text">
@@ -48,6 +50,63 @@
         </span>
         <span class="choice-status"></span>
       </label>
+
+      <!-- Local model: its detail is the suggestion card below, not stats.
+           Next opens once a download has started. -->
+      <label class="choice"
+             data-name="Local model"
+             data-stats='[]'
+             data-states='{"local":{"line":"Download a model to continue. It keeps going while you finish setup.","tone":""},
+                           "localcompare":{"line":"Download a model to continue. It keeps going while you finish setup.","tone":""},
+                           "downloading":{"status":"Downloading","line":"The download keeps going while you finish setup.","tone":"ok"},
+                           "*":{"line":null}}'>
+        <input type="radio" name="speech" value="local" data-checked-in="local localcompare downloading">
+        <svg class="icon lg" aria-hidden="true"><use href="#icon-chip"/></svg>
+        <span class="choice-text">
+          <span class="choice-name">Local model</span>
+          <span class="choice-note">Runs on this computer. No account, works offline.</span>
+        </span>
+        <span class="choice-status"></span>
+      </label>
+    </div>
+
+    <div data-show="local localcompare downloading">
+      <p class="hwline">
+        <svg class="icon" aria-hidden="true"><use href="#icon-chip"/></svg>
+        <span>AMD Ryzen 7 PRO 4750U, 16 threads · AMD Radeon Graphics, Vulkan · 16 GB memory</span>
+      </p>
+      <section class="card suggest">
+        <div style="flex:1;min-width:0">
+          <span class="fine">Suggested for this computer</span>
+          <h3>Parakeet 0.6B</h3>
+          <ul class="facts">
+            <li>Words appear as you speak</li>
+            <li>About 0.4 s for 10 s of speech (measured on the same chip)</li>
+            <li>1.6% of words wrong on clear speech, 3.99% on everyday speech</li>
+          </ul>
+        </div>
+        <div class="suggest-action">
+          <button type="button" class="primary" data-show="local localcompare">Download 731 MB</button>
+          <span class="progress" data-show="downloading"><span style="width:38%"></span></span>
+          <span class="fine" data-show="downloading">278 MB of 731 MB</span>
+          <button type="button" class="small" data-show="downloading">Cancel</button>
+        </div>
+      </section>
+      <p class="fine" style="margin:8px 0 0">
+        <button type="button" class="link" data-text-for='{"local":"Compare 3 other models","downloading":"Compare 3 other models","localcompare":"Hide other models"}'></button></p>
+      <div data-show="localcompare">
+        <table class="cmp">
+          <thead><tr><th>Model</th><th>Download</th><th>Word errors</th><th>10 s of speech</th><th>Text shows</th><th>Memory</th></tr></thead>
+          <tbody>
+            <tr><td>Moonshine Small</td><td>199 MB</td><td>2.54% / 8.55%</td><td>~0.7 s</td><td>As you speak</td><td>Fits</td></tr>
+            <tr class="sel"><td>Parakeet 0.6B (suggested)</td><td>731 MB</td><td>1.6% / 3.99%</td><td>~0.4 s</td><td>As you speak</td><td>Fits</td></tr>
+            <tr><td>Cohere Transcribe</td><td>2.4 GB</td><td>1.27% / 5.08%</td><td>~1.2 s</td><td>After you stop</td><td>Fits</td></tr>
+            <tr><td>Voxtral Small 24B</td><td>17.1 GB</td><td>1.6% / 3.55%</td><td>Not measured</td><td>After you stop</td><td>Too large</td></tr>
+          </tbody>
+        </table>
+        <p class="fine" style="margin:4px 0 0">Word errors: clear read speech / everyday
+          speech. Times are estimates until a model is downloaded and tested here.</p>
+      </div>
     </div>
 
     <section id="detail">

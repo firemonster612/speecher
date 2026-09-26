@@ -5,7 +5,7 @@
 <title>Speecher setup — Refinement</title>
 <link rel="stylesheet" href="wizard.css">
 </head>
-<body data-states="ready notready none" data-default-state="ready">
+<body data-states="ready notready none ollama pulling norunner custom" data-default-state="ready">
 
 <div class="dialog" role="dialog" aria-labelledby="page-title">
 
@@ -16,10 +16,12 @@
 
   <main class="dialog-body">
     <p class="lead">Refinement can clean up a raw transcript after dictation.
-      Choose a provider, or None to skip cleanup.</p>
+      Choose a provider, or skip cleanup.</p>
 
-    <div class="choices" role="radiogroup" aria-label="Cleanup provider"
+    <div role="radiogroup" aria-label="Cleanup provider"
          data-choicegroup data-gate="false" data-panel="#detail">
+      <h2 class="section-title" style="margin-top:4px">Uses your sign-in</h2>
+      <div class="choices two compact">
 
       <label class="choice"
              data-name="Anthropic"
@@ -27,7 +29,7 @@
              data-stats='[["Score","8 / 10"],["Default model","Claude Opus 5.5"],["Speed","About 3 seconds per dictation (estimated)"],["Efficiency","Always reasons, kept light at low effort"],["Quality","Excellent cleanup; can leave a spoken correction in"]]'
              data-states='{"ready":{"status":"Ready","tone":"ok","line":"Anthropic is ready."},
                            "notready":{"status":"Ready","tone":"ok","line":"Anthropic is ready."},
-                           "none":{"status":"Ready","tone":"ok","line":"Anthropic is ready."}}'>
+                           "*":{"status":"Ready","tone":"ok","line":"Anthropic is ready."}}'>
         <input type="radio" name="refine" value="anthropic">
         <svg class="icon lg" aria-hidden="true"><use href="#icon-anthropic"/></svg>
         <span class="choice-text">
@@ -43,6 +45,7 @@
              data-stats='[["Score","9 / 10"],["Default model","gpt-6-luna"],["Speed","About 3 seconds per dictation (estimated)"],["Efficiency","No reasoning pass; time varies run to run"],["Quality","Excellent cleanup; applies spoken corrections reliably"]]'
              data-states='{"ready":{"status":"Ready","tone":"ok","line":"OpenAI is ready."},
                            "notready":{"status":"Not signed in","tone":"warn","line":"OpenAI is not signed in.","warning":"OpenAI is not signed in. Dictation will deliver the raw transcript."},
+                           "*":{"status":"Not signed in","tone":"warn","line":"OpenAI is not signed in."},
                            "none":{"status":"Ready","tone":"ok","line":"OpenAI is ready."}}'>
         <input type="radio" name="refine" value="openai" data-checked-in="ready notready">
         <svg class="icon lg" aria-hidden="true"><use href="#icon-openai"/></svg>
@@ -53,18 +56,99 @@
         <span class="choice-status"></span>
       </label>
 
-      <label class="choice"
-             data-name="None"
-             data-stats='[]'
-             data-states='{"*":{"status":"No cleanup","line":"Dictation delivers the raw transcript, exactly as heard."}}'>
-        <input type="radio" name="refine" value="none" data-checked-in="none">
-        <svg class="icon lg" aria-hidden="true" style="color:var(--text-faint)"><use href="#icon-pending"/></svg>
-        <span class="choice-text">
-          <span class="choice-name">None</span>
-          <span class="choice-note">Skip cleanup entirely.</span>
-        </span>
-        <span class="choice-status"></span>
+      </div>
+
+      <h2 class="section-title">Your own models</h2>
+      <div class="choices two compact">
+        <label class="choice"
+               data-name="This computer"
+               data-stats='[]'
+               data-states='{"ollama":{"status":"Ollama found","tone":"ok","line":null},
+                             "pulling":{"status":"Ollama found","tone":"ok","line":null},
+                             "norunner":{"status":"No runner","tone":"warn","line":null},
+                             "*":{"status":"Ollama found","tone":"ok","line":null}}'>
+          <input type="radio" name="refine" value="local" data-checked-in="ollama pulling norunner">
+          <svg class="icon lg" aria-hidden="true"><use href="#icon-chip"/></svg>
+          <span class="choice-text">
+            <span class="choice-name">This computer</span>
+            <span class="choice-note">Ollama, LM Studio or llama-server.</span>
+          </span>
+          <span class="choice-status"></span>
+        </label>
+        <label class="choice"
+               data-name="A server I run"
+               data-stats='[]'
+               data-states='{"*":{"line":null}}'>
+          <input type="radio" name="refine" value="endpoint" data-checked-in="custom">
+          <svg class="icon lg" aria-hidden="true"><use href="#icon-server"/></svg>
+          <span class="choice-text">
+            <span class="choice-name">A server I run</span>
+            <span class="choice-note">OpenAI- or Anthropic-compatible.</span>
+          </span>
+          <span class="choice-status"></span>
+        </label>
+      </div>
+
+      <!-- None is a way out of every card rather than a card of its own. -->
+      <label class="check" style="margin:10px 0 4px">
+        <input type="radio" name="refine" value="none" data-checked-in="none" style="display:none">
+        <input type="checkbox" data-checked-in="none">
+        <span>Skip cleanup and deliver the raw transcript</span>
       </label>
+    </div>
+
+    <!-- This computer, runner found: status, model, and the suggested
+         cleanup model to pull through Ollama. -->
+    <div data-show="ollama pulling" style="margin-top:10px">
+      <p class="status ok">
+        <svg class="icon sm" aria-hidden="true"><use href="#icon-check"/></svg>
+        <span>Ollama 0.34.4 is running on this computer.</span></p>
+      <div class="field" style="margin-top:8px"><label>Model</label>
+        <select><option>llama3.2:3b</option></select></div>
+      <section class="card suggest" style="margin-top:10px">
+        <div style="flex:1">
+          <span class="fine">Suggested for this computer</span>
+          <h3>LFM2.5 1.2B</h3>
+          <span class="muted">730 MB · about 1.6 s per dictation</span>
+        </div>
+        <div class="suggest-action">
+          <button type="button" class="primary" data-show="ollama">Download with Ollama</button>
+          <span class="progress" data-show="pulling"><span style="width:41%"></span></span>
+          <span class="fine" data-show="pulling">299 MB of 730 MB</span>
+        </div>
+      </section>
+    </div>
+
+    <!-- This computer, nothing answering. -->
+    <div data-show="norunner" style="margin-top:10px">
+      <p class="status warn">
+        <svg class="icon sm" aria-hidden="true"><use href="#icon-warning"/></svg>
+        <span>No local runner found on this computer.</span></p>
+      <p class="hint" style="max-width:62ch">Cleanup models run in a separate app.
+        Install Ollama, then choose Check again and Speecher will set up a model
+        through it. LM Studio and llama-server work too.</p>
+      <div class="button-row"><button type="button">Get Ollama</button>
+        <button type="button">Check again</button></div>
+      <div class="notice warn" style="margin-top:12px">
+        <svg class="icon sm" aria-hidden="true"><use href="#icon-warning"/></svg>
+        <p>Until a runner is set up, dictation delivers the raw transcript.</p></div>
+    </div>
+
+    <!-- A server I run. -->
+    <div data-show="custom" style="margin-top:10px">
+      <div class="field"><label>Format</label><select>
+        <option>OpenAI-compatible (Chat Completions)</option>
+        <option>Anthropic-compatible (Messages)</option></select></div>
+      <div class="field"><label>Server URL</label>
+        <input type="url" style="flex:1" value="http://localhost:8080/v1"></div>
+      <div class="field"><label>API key</label>
+        <input type="password" style="flex:1" placeholder="Optional"></div>
+      <div class="field"><label>Model</label>
+        <select><option>qwen3.5-4b-instruct</option><option>gemma-4-e4b-it</option></select>
+        <button type="button" class="small">Connect</button></div>
+      <p class="status ok">
+        <svg class="icon sm" aria-hidden="true"><use href="#icon-check"/></svg>
+        <span>Connected. Models available: 3.</span></p>
     </div>
 
     <section id="detail">

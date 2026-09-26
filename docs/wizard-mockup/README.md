@@ -19,11 +19,15 @@ Example: `transcription.html?state=notready`
 
 | # | File | State | What it shows |
 |---|------|-------|---------------|
-| 1 | `welcome.html` | `nocreds` *(default)* | Neither sign-in found; both hint lines visible; Next disabled |
+| 1 | `welcome.html` | `local` *(default)* | Two paths; no sign-in found, so Run on this computer is chosen, with the hardware line; Next enabled |
+| | | `nocreds` | Sign-in path chosen, neither sign-in found; both hint lines visible; Next disabled |
 | | | `checking` | Both rows spinning on "Checking…"; Check again disabled; Next disabled |
 | | | `found` | ChatGPT sign-in found, Claude Code still missing with its hint; Next enabled |
 | 2 | `transcription.html` | `ready` *(default)* | ChatGPT Codex selected and Ready; stats table; Next enabled |
 | | | `notready` | Selected provider not signed in; status line, sign-in hint, Check again; Next disabled |
+| | | `local` | Local model chosen: hardware line, suggested model card with Download; Next disabled until a download starts |
+| | | `localcompare` | As `local`, with the comparison table of every model expanded |
+| | | `downloading` | Suggested model downloading with progress and Cancel; Next enabled, the download keeps going |
 | 3 | `microphone.html` | `listening` *(default)* | Level bar moving at a low level; "Listening for microphone input…"; Next disabled |
 | | | `detected` | Level bar moving strongly; "Microphone input detected."; Next enabled |
 | | | `silent` | Flat bar at 0%; escalated hint about mute/other device; Check again; Next disabled |
@@ -35,12 +39,22 @@ Example: `transcription.html?state=notready`
 | | | `signout` | Log-out-and-back-in instruction, Set up button still offered; Next enabled |
 | 6 | `refinement.html` | `ready` *(default)* | OpenAI selected and Ready; stats; Fast mode |
 | | | `notready` | OpenAI selected but not signed in; warning that dictation delivers the raw transcript |
-| | | `none` | None selected; no stats table, no Fast mode |
+| | | `none` | Skip cleanup checked; no stats table, no Fast mode |
+| | | `ollama` | This computer chosen, Ollama found: model choice and the suggested cleanup model with Download with Ollama |
+| | | `pulling` | As `ollama`, the suggested model downloading through Ollama |
+| | | `norunner` | This computer chosen, no runner found: Get Ollama, Check again, raw-transcript warning |
+| | | `custom` | A server I run chosen: format, URL, key, model with Connect, connected status |
 | 7 | `profiles.html` | *(single state)* | Default-profile dropdown and the Cleanup/Tone grid |
 | 8 | `shortcut.html` | `captured` *(default)* | F13 set, Set shortcut button, full behaviour dropdown |
 | | | `manual` | Desktop cannot register a shortcut; copyable command; behaviour locked to Toggle with the hold-to-talk note |
 | 9 | `ready.html` | `complete` *(default)* | "Setup is complete.", the activation instruction, per-step Ready list; Finish enabled |
+| | | `downloading` | Complete except the speech model download: notice that a notification follows, progress and Cancel on the Transcription row; Finish enabled |
 | | | `blocked` | Checklist of unfinished steps, each with a reason and a "Go to step" button; Finish disabled |
+
+Refinement groups its providers into "Uses your sign-in" and "Your own
+models" (This computer, A server I run); None is the Skip cleanup check box.
+A speech Custom Endpoint is set up in Settings only, so the Transcription step
+does not offer it.
 
 Refinement (6) and Writing profiles (7) are never gated — Next is always
 enabled. Every other gated page states, on screen, why Next is unavailable;
@@ -49,17 +63,22 @@ enabled. Every other gated page states, on screen, why Next is unavailable;
 ## Screenshotting every state
 
 ```sh
-for p in welcome.html?state=nocreds welcome.html?state=checking \
-         welcome.html?state=found transcription.html?state=ready \
-         transcription.html?state=notready microphone.html?state=listening \
+for p in welcome.html?state=local welcome.html?state=nocreds \
+         welcome.html?state=checking welcome.html?state=found \
+         transcription.html?state=ready transcription.html?state=notready \
+         transcription.html?state=local transcription.html?state=localcompare \
+         transcription.html?state=downloading microphone.html?state=listening \
          microphone.html?state=detected microphone.html?state=silent \
          microphone.html?state=nomic accessibility.html?state=off \
          accessibility.html?state=on delivery.html?state=notinstalled \
          delivery.html?state=ready delivery.html?state=signout \
          refinement.html?state=ready refinement.html?state=notready \
-         refinement.html?state=none profiles.html \
+         refinement.html?state=none refinement.html?state=ollama \
+         refinement.html?state=pulling refinement.html?state=norunner \
+         refinement.html?state=custom profiles.html \
          shortcut.html?state=captured shortcut.html?state=manual \
-         ready.html?state=complete ready.html?state=blocked; do
+         ready.html?state=complete ready.html?state=downloading \
+         ready.html?state=blocked; do
   out=$(echo "$p" | sed 's/[?=.]/_/g')
   chromium --headless --disable-gpu --hide-scrollbars \
     --window-size=800,660 --screenshot="$out.png" "file://$PWD/$p"
@@ -109,6 +128,10 @@ grid in `currentColor`, so a native port can copy the path data directly. An
 | `icon-spinner` | "Checking…" (rotates; static under `prefers-reduced-motion`) |
 | `icon-copy` | Copy button on the manual shortcut command |
 | `icon-arrow` | Spare, for a trailing "go to" affordance |
+| `icon-chip` | Run on this computer, Local model, the hardware line |
+| `icon-download` | A model download in progress |
+| `icon-server` | A server I run (refinement Custom Endpoint) |
+| `icon-user` | Use my ChatGPT or Claude sign-in |
 
 Both brand marks are the real trademarks, not alikes, so the shipping app has
 to be permitted to use them. They keep their own colours because that is what

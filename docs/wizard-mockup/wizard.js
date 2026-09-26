@@ -80,6 +80,25 @@ const ICONS = {
     `<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">` +
     `<path d="M4.6 12h13.6"/><path d="M13 6.8 18.2 12 13 17.2"/></g>`,
 
+  chip:
+    `<g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">` +
+    `<rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx=".8"/>` +
+    `<path d="M9 2.8V6M15 2.8V6M9 18v3.2M15 18v3.2M2.8 9H6M2.8 15H6M18 9h3.2M18 15h3.2"/></g>`,
+
+  download:
+    `<g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">` +
+    `<path d="M12 3.6v11.2"/><path d="M7.4 10.4 12 15l4.6-4.6"/>` +
+    `<path d="M4.4 17.6v1.6a1.4 1.4 0 0 0 1.4 1.4h12.4a1.4 1.4 0 0 0 1.4-1.4v-1.6"/></g>`,
+
+  server:
+    `<g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">` +
+    `<rect x="3.6" y="4" width="16.8" height="6.4" rx="1.6"/><rect x="3.6" y="13.6" width="16.8" height="6.4" rx="1.6"/>` +
+    `<path d="M7.2 7.2h.01M7.2 16.8h.01"/></g>`,
+
+  user:
+    `<g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">` +
+    `<circle cx="12" cy="8.4" r="3.8"/><path d="M4.6 20.2a7.4 7.4 0 0 1 14.8 0"/></g>`,
+
   cursor:
     `<g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">` +
     `<path d="M5.6 3.4 18.6 11.2l-5.6 1.4-2.2 5.5Z"/><path d="M13.6 14.2 19 20"/></g>`,

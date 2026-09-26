@@ -634,3 +634,60 @@ select {
 
 /* state machinery */
 [hidden] { display: none !important; }
+
+/* ----------------------------------------------- local models and servers */
+
+.choices.compact .choice { padding: 6px 12px; }
+
+/* One line naming this computer's processor, graphics and memory. */
+.hwline {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0 8px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.hwline .icon { flex: none; width: 16px; height: 16px; margin-top: 1px; }
+
+/* The suggested model, with its facts and the action beside it. */
+.suggest { display: flex; gap: 12px; align-items: center; }
+.suggest h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.facts { margin: 6px 0 0; padding: 0; list-style: none; font-size: 12.5px; }
+.facts li { margin: 1px 0; }
+.suggest-action { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+
+/* The comparison table the Transcription step expands. */
+.cmp {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  font-size: 12.5px;
+}
+.cmp th, .cmp td { text-align: left; padding: 4px 10px; white-space: nowrap; }
+.cmp thead th {
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border);
+}
+.cmp tbody tr + tr td { border-top: 1px solid var(--border); }
+.cmp tbody tr.sel td { background: var(--accent); color: #fff; }
+
+/* A download or pull in progress. */
+.progress {
+  position: relative;
+  display: inline-block;
+  width: 140px;
+  height: 6px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  vertical-align: middle;
+}
+.progress > span { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
+
+.row-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
