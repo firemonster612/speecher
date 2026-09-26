@@ -105,10 +105,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
         QJsonObject body;
         body.insert(QStringLiteral("model"), model);
         body.insert(QStringLiteral("reasoning"), QJsonObject{{QStringLiteral("effort"), effort.isEmpty() ? QStringLiteral("none") : effort}});
-        body.insert(QStringLiteral("instructions"),
-                    context.editSelection
-                        ? selectedDocumentEditingSystemPrompt(refinementStyle, context)
-                        : dictationRefinementSystemPrompt(refinementStyle, context));
+        body.insert(QStringLiteral("instructions"), refinementSystemPrompt(refinementStyle, context));
         body.insert(QStringLiteral("stream"), true);
         body.insert(QStringLiteral("store"), false);
         if (fast) {

@@ -79,6 +79,7 @@ int runClaudeVoiceTests(int argc, char **argv);
 int runCodexDictationTests(int argc, char **argv);
 int runAudioPcmConverterTests(int argc, char **argv);
 int runLocalModelsTests(int argc, char **argv);
+int runCustomEndpointsTests(int argc, char **argv);
 #ifdef Q_OS_UNIX
 int runUpdateControllerTests(int argc, char **argv);
 #endif

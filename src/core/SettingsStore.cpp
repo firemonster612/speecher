@@ -1,4 +1,5 @@
 #include "core/SettingsStore.h"
+#include "core/SecretStore.h"
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
 
@@ -67,6 +68,31 @@ SettingsStore::SettingsStore(QObject *parent)
     : QObject(parent)
     , SettingsCodecs()
 {
+    m_secrets = new SecretStore(this, this);
+}
+
+SecretStore *SettingsStore::secrets() const
+{
+    return m_secrets;
+}
+
+QString SettingsStore::cliproxyApiKey() const
+{
+    return m_secrets->secret(SecretStore::Secret::CliproxyApiKey);
+}
+
+void SettingsStore::setCliproxyApiKey(const QString &value)
+{
+    m_secrets->saveSecret(SecretStore::Secret::CliproxyApiKey, value);
+}
+
+AppSettings SettingsStore::snapshot() const
+{
+    AppSettings settings = SettingsCodecs::snapshot();
+    settings.refinement.cliproxyApiKey = cliproxyApiKey();
+    settings.refinement.endpoint.apiKey = m_secrets->secret(SecretStore::Secret::RefinementEndpointKey);
+    settings.speech.endpoint.apiKey = m_secrets->secret(SecretStore::Secret::SpeechEndpointKey);
+    return settings;
 }
 
 void SettingsStore::applySnapshot(const AppSettings &draft)
@@ -82,6 +108,8 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setSpeechProvider(draft.speech.providerId);
     setCodexFinalRetranscribe(draft.speech.codexFinalRetranscribe);
     setLocalSpeechSettings(draft.speech.local);
+    setSpeechEndpointSettings(draft.speech.endpoint);
+    m_secrets->saveSecret(SecretStore::Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey);
     setAudioCaptureSettings(draft.audio);
     setAppRecognitionRules(draft.appRecognitionRules);
     setRefinementProvider(draft.refinement.providerId);
@@ -103,6 +131,9 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setCliproxyOauthDir(draft.refinement.cliproxyOauthDirConfigured);
     setCliproxyBaseUrl(draft.refinement.cliproxyBaseUrl);
     setCliproxyApiKey(draft.refinement.cliproxyApiKey);
+    setRefinementEndpointSettings(draft.refinement.endpoint);
+    m_secrets->saveSecret(SecretStore::Secret::RefinementEndpointKey, draft.refinement.endpoint.apiKey);
+    setLocalRunnerSettings(draft.refinement.localRunner);
     setOutputMethod(draft.output.method);
     setOutputFormat(draft.output.format);
     setPasteRules(draft.output.pasteRules);

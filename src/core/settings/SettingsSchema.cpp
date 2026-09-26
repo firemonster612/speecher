@@ -1,6 +1,6 @@
 #include "core/settings/SettingsSchema.h"
 
-#include "core/CliProxyUrl.h"
+#include "core/EndpointUrl.h"
 
 #include "core/BindingProcessor.h"
 #include "core/Vocabulary.h"
@@ -1799,7 +1799,7 @@ SettingsSection cliproxyServerSection()
         return QVariant(settings.refinement.cliproxyBaseUrl);
     };
     baseUrl.apply = [](AppSettings &settings, const QVariant &value) {
-        settings.refinement.cliproxyBaseUrl = cliproxyServerBase(value.toString());
+        settings.refinement.cliproxyBaseUrl = endpointServerBase(value.toString());
     };
     baseUrl.visible = cliproxyServerRowVisible;
 

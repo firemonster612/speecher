@@ -21,6 +21,10 @@ public:
     QString speechProvider() const; void setSpeechProvider(const QString &value);
     bool codexFinalRetranscribe() const; void setCodexFinalRetranscribe(bool value);
     LocalSpeechSettings localSpeechSettings() const; void setLocalSpeechSettings(const LocalSpeechSettings &value);
+    // Without apiKey: SettingsStore keeps the key in the keyring.
+    SpeechEndpointSettings speechEndpointSettings() const; void setSpeechEndpointSettings(const SpeechEndpointSettings &value);
+    RefinementEndpointSettings refinementEndpointSettings() const; void setRefinementEndpointSettings(const RefinementEndpointSettings &value);
+    LocalRunnerSettings localRunnerSettings() const; void setLocalRunnerSettings(const LocalRunnerSettings &value);
     QStringList customVocabulary() const; void setCustomVocabulary(const QStringList &value);
     QList<VocabularyEntry> vocabularyEntries() const; void setVocabularyEntries(const QList<VocabularyEntry> &entries);
     void recordVocabularyUsage(const QString &text);
@@ -50,7 +54,6 @@ public:
     QString cliproxyOauthDir() const;
     QString configuredCliproxyOauthDir() const; void setCliproxyOauthDir(const QString &value);
     QString cliproxyBaseUrl() const; void setCliproxyBaseUrl(const QString &value);
-    QString cliproxyApiKey() const; void setCliproxyApiKey(const QString &value);
     QString outputMethod() const; void setOutputMethod(const QString &value);
     OutputFormat outputFormat() const; void setOutputFormat(OutputFormat value);
     bool ydotoolEnabled() const; void setYdotoolEnabled(bool value);

@@ -584,11 +584,11 @@ void SettingsPageSet::removeSpeecher()
     const bool deleteUserSettings = deleteSettings->isChecked();
     if (deleteUserSettings) {
         prepareForSettingsDeletion();
-        if (m_controller->secretStore()->deleteKeyringApiKey()) {
-            done.append(QStringLiteral("Deleted your API key from the desktop keyring."));
+        if (m_controller->secretStore()->deleteKeyringSecrets()) {
+            done.append(QStringLiteral("Deleted your API keys from the desktop keyring."));
         } else {
             notDone.append(
-                QStringLiteral("Could not delete your API key from the desktop keyring: %1")
+                QStringLiteral("Could not delete your API keys from the desktop keyring: %1")
                     .arg(m_controller->secretStore()->lastError()));
         }
         QSettings &raw = m_controller->settings()->raw();
