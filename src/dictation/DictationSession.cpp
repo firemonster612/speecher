@@ -664,6 +664,9 @@ void DictationSession::deliverFinal(const QString &text)
         : !m_target.processName.isEmpty()                      ? m_target.processName
                                                                : QStringLiteral("Unknown app");
     const WritingProfile profile = m_transcriptPipeline.refinementContext.writingProfile;
+    // A selection edit delivers the revised selection; what was dictated is
+    // the instruction.
+    const int words = countWords(m_transcriptPipeline.editsSelection ? m_transcript->text() : text);
     m_refinementGeneration = 0;
     m_lastTranscript = text;
     const bool usedFallback = !m_lastMessage.isEmpty();
@@ -690,7 +693,7 @@ void DictationSession::deliverFinal(const QString &text)
         // mid-session must stop this one being recorded.
         if (m_settings->insightsEnabled()) {
             emit dictationRecorded(
-                {QDateTime::currentDateTime(), m_listeningMs, countWords(text), appName, profile});
+                {QDateTime::currentDateTime(), m_listeningMs, words, appName, profile});
         }
         QString outcome = usedFallback
             ? QStringLiteral("Used raw transcript • %1").arg(result.message)
