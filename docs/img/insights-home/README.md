@@ -25,3 +25,9 @@ Every capture uses the seed log `docs/insights-mockup/seed-active.jsonl`
   chart rendered offscreen with a day and an hour hovered, in Breeze Dark and
   Light. CI captures pages without a pointer, so hover has no Windows or macOS
   capture.
+
+## Heatmap gap hover
+
+- `gap-windows-heatmap.png`, `gap-macos-heatmap.png`: the heatmap cropped from
+  the `insights-evidence` run at `ad77d035`, after each cell took in half the
+  gap for hover. They show the layout is unchanged; CI captures no pointer.

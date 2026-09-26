@@ -498,6 +498,10 @@ private struct ActivityHeatmap: View {
                                     }
                                 }
                                 .frame(width: Self.cell, height: Self.cell)
+                                // Half the gap on each side is this day's, so
+                                // a pointer between two cells still hovers one.
+                                .padding(gap / 2)
+                                .contentShape(Rectangle())
                                 .onHover { inside in
                                     if inside {
                                         hovered = day.date
@@ -513,6 +517,7 @@ private struct ActivityHeatmap: View {
                                         .font(.caption)
                                         .padding(8)
                                 }
+                                .padding(-gap / 2)
                         }
                     }
                 }

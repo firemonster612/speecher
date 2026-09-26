@@ -265,8 +265,11 @@ void InsightsHeatmap::mouseMoveEvent(QMouseEvent *event)
         return;
     }
     const Cell &cell = cells.at(hovered);
+    // The tip's area is the whole hover area, gap included: Qt hides a tip
+    // once the pointer rests outside the rect it was given.
+    const qreal pad = kCellGap / 2.0;
     QToolTip::showText(event->globalPosition().toPoint(), cell.tip, this,
-                       cell.rect.toAlignedRect());
+                       cell.rect.adjusted(-pad, -pad, pad, pad).toAlignedRect());
 }
 
 void InsightsHeatmap::leaveEvent(QEvent *event)
