@@ -612,6 +612,7 @@ set(SPEECHER_FRONTEND_MAC_SWIFT_SOURCES
   src/frontend/mac/swift/AppModel.swift
   src/frontend/mac/swift/Collections.swift
   src/frontend/mac/swift/DictationPanel.swift
+  src/frontend/mac/swift/HomePane.swift
   src/frontend/mac/swift/MenuBarExtra.swift
   src/frontend/mac/swift/Panes.swift
   src/frontend/mac/swift/Rows.swift

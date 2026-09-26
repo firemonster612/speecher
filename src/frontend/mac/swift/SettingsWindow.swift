@@ -25,6 +25,13 @@ struct RootView: View {
         .searchable(text: $query, placement: .sidebar, prompt: "Search")
         .toolbar(removing: .sidebarToggle)
         .toolbar(removing: .title)
+        .confirmationDialog("Delete all insights history?",
+                            isPresented: $model.confirmingClearInsights) {
+            Button("Delete History", role: .destructive) { model.clearInsights() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your stats, streaks and records are erased from this computer. This can't be undone.")
+        }
     }
 
     @ViewBuilder private var detail: some View {
@@ -290,7 +297,20 @@ final class SpeecherSettingsWindow {
     // detail column and the titlebar are real. SwiftUI's ImageRenderer is not an
     // alternative: it refuses NavigationSplitView outright. For a composited
     // shot, screencapture with Screen Recording granted is the way.
+    //
+    // SPEECHER_GRAB_PAGE names the pane to show first, as on the other front
+    // ends; unset or unknown leaves the window as it is.
     func capture(toPath path: String) -> Bool {
+        let request = ProcessInfo.processInfo.environment["SPEECHER_GRAB_PAGE"]?
+            .lowercased().split(separator: ":").first.map(String.init) ?? ""
+        if let pane = model.panes.first(where: { $0.id.lowercased() == request }),
+           model.pane != pane.id {
+            model.pane = pane.id
+            // Let SwiftUI render the pane before the backing store is read.
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+        }
         guard let content = window.contentView,
               let view = content.superview ?? window.contentView,
               let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
