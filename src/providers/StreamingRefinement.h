@@ -38,7 +38,7 @@ public:
 signals:
     void delta(const QString &text);
     void completed(const QString &text);
-    void failed(const QString &message);
+    void failed(const QString &message, int httpStatus);
 
 private:
     enum class Retry { Never, AfterStall, AfterRejection };

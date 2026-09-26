@@ -53,6 +53,7 @@ private:
     QTimer m_inactivityTimer;
     QTimer m_deadlineTimer;
     QString m_timeoutReason;
+    QString m_streamError;
     QNetworkAccessManager m_network;
     QPointer<QNetworkReply> m_reply;
     SpeechEndpointSettings m_endpoint;

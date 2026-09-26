@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/test_http.h"
+#include "common/test_doubles.h"
 #include "core/settings/SettingsKeys.h"
 #include "providers/ChatCompletionsRefiner.h"
 #include "providers/CustomEndpoints.h"
@@ -233,6 +234,40 @@ private slots:
         QTest::qWait(100);
         QCOMPARE(server.requests.size(), 1);
         QCOMPARE(completed.size(), 0);
+    }
+
+    void speechEndpointReportsSseErrors_data()
+    {
+        QTest::addColumn<bool>("partial");
+        QTest::newRow("before-output") << false;
+        QTest::newRow("after-output") << true;
+    }
+
+    void speechEndpointReportsSseErrors()
+    {
+        QFETCH(bool, partial);
+        FakeServer server;
+        QByteArray stream;
+        if (partial) stream += "data: {\"type\":\"transcript.text.delta\",\"delta\":\"Keep this\"}\n\n";
+        stream += "event: error\ndata: {\"type\":\"error\",\"message\":\"model failed\"}\n\n";
+        server.route("POST /v1/audio/transcriptions", httpResponse("200 OK", "text/event-stream", stream));
+        SpeechSettings settings;
+        settings.endpoint.baseUrl = server.origin();
+        EndpointSpeechTranscriber transcriber;
+        QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
+        QSignalSpy transcript(&transcriber, &SpeechTranscriber::attemptTranscript);
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        transcriber.startAttempt(5, settings);
+        transcriber.sendAudio(5, QByteArray(640, '\0'));
+        transcriber.finishInput(5);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
+        const SpeechFailure failure = failed.first().first().value<SpeechFailure>();
+        QVERIFY(failure.message.contains(QStringLiteral("model failed")));
+        QVERIFY(!failure.retryable);
+        QCOMPARE(transcript.size(), partial ? 1 : 0);
+        if (partial) QCOMPARE(transcript.first().at(1).toString(), QStringLiteral("Keep this"));
+        QCOMPARE(completed.size(), 0);
+        QCOMPARE(server.requests.size(), 1);
     }
 
     // The server keeps the connection busy past the inactivity limit, then
@@ -476,6 +511,35 @@ private slots:
                  qPrintable(failed.first().first().toString()));
         QTest::qWait(100);
         QCOMPARE(server.requests.size(), 1);
+    }
+
+    void reasoningFieldErrorsOnlyRetryHttp400_data()
+    {
+        QTest::addColumn<QByteArray>("response");
+        QTest::newRow("http-500") << httpResponse("500 Internal Server Error", "application/json",
+            "{\"error\":{\"message\":\"reasoning_effort crashed\"}}");
+        QTest::newRow("sse-200") << sse({"{\"error\":{\"message\":\"reasoning_effort crashed\"}}"});
+    }
+
+    void reasoningFieldErrorsOnlyRetryHttp400()
+    {
+        QFETCH(QByteArray, response);
+        FakeServer server;
+        server.route("POST /v1/chat/completions", response);
+        ChatCompletionsRefiner refiner(QStringLiteral("Custom endpoint"), ChatCompletionsRefiner::Audience::Server);
+        QSignalSpy failed(&refiner, &ChatCompletionsRefiner::failed);
+        const auto refine = [&] {
+            refiner.refine(QStringLiteral("x"), {}, {}, {}, server.origin() + QStringLiteral("/v1"),
+                           QStringLiteral("m"), QStringLiteral("balanced"), {});
+        };
+        refine();
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
+        QVERIFY(failed.first().first().toString().contains(QStringLiteral("reasoning_effort crashed")));
+        QCOMPARE(server.requests.size(), 1);
+        refine();
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 2, 2000);
+        QCOMPARE(server.requests.size(), 2);
+        QVERIFY(server.jsonBody(1).contains(QStringLiteral("reasoning_effort")));
     }
 
     void anthropicFormatUsesAnApiKeyWithoutClaudeCodeHeaders()
@@ -780,30 +844,156 @@ private slots:
         QVERIFY(!reopened.raw().contains(SettingsKeys::SecretsInKeyring));
     }
 
-    // A keyring that does not answer must not make a migrated CLI Proxy API
-    // key look unset, and a snapshot saved meanwhile must not erase it.
-    void keyringTimeoutKeepsTheMigratedCliproxyKey()
+    void unreadDraftSurvivesPrefetchCompletion()
     {
-        {
-            SettingsStore settings;
-            settings.raw().clear();
-            settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
-            settings.setCliproxyBaseUrl(QStringLiteral("http://proxy.example:8317"));
-            // As SecretStore records a key it moved into the keyring.
-            settings.raw().setValue(SettingsKeys::SecretsInKeyring, QStringList{QStringLiteral("cliproxy-api-key")});
-            settings.raw().sync();
-        }
-        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
-        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT"); });
+        if (qEnvironmentVariableIntValue("SPEECHER_TEST_EXPECT_KEYRING") != 1)
+            QSKIP("Requires the private keyring suite");
+        SettingsStore saved;
+        saved.raw().clear();
+        saved.setCliproxyApiKey(QStringLiteral("keep-me"));
         SettingsStore settings;
-        AppSettings draft = settings.snapshot();
-        QCOMPARE(draft.refinement.cliproxyApiKey, QString());
-
-        draft.refinement.cliproxyBaseUrl = QStringLiteral("http://proxy.example:8318");
+        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
+        const AppSettings draft = settings.snapshot();
+        qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT");
+        QVERIFY(draft.refinement.cliproxyApiKey.isEmpty());
+        settings.secrets()->prefetch();
+        QTRY_COMPARE(settings.secrets()->cachedSecret(SecretStore::Secret::CliproxyApiKey),
+                     QStringLiteral("keep-me"));
         settings.applySnapshot(draft);
-        QCOMPARE(settings.raw().value(SettingsKeys::SecretsInKeyring).toStringList(),
-                 QStringList{QStringLiteral("cliproxy-api-key")});
-        QVERIFY(!settings.raw().contains(SettingsKeys::CliproxyApiKey));
+        QCOMPARE(SettingsStore().cliproxyApiKey(), QStringLiteral("keep-me"));
+        saved.setCliproxyApiKey({});
+    }
+
+    void failedDeletionStaysClearedAfterRestart()
+    {
+        if (qEnvironmentVariableIntValue("SPEECHER_TEST_EXPECT_KEYRING") != 1)
+            QSKIP("Requires the private keyring suite");
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setCliproxyApiKey(QStringLiteral("remove-me"));
+        qputenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE", "1");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_DELETE_FAILURE"); });
+        QVERIFY(settings.secrets()->saveSecret(SecretStore::Secret::CliproxyApiKey, {}));
+        QVERIFY(settings.secrets()->lastError().contains(QStringLiteral("denied")));
+        SettingsStore reopened;
+        reopened.secrets()->prefetch();
+        QCOMPARE(reopened.cliproxyApiKey(), QString());
+        QCOMPARE(reopened.snapshot().refinement.cliproxyApiKey, QString());
+    }
+
+    void dictationResolvesOnlySelectedSecretsOffThread_data()
+    {
+        QTest::addColumn<QString>("refiner");
+        QTest::addColumn<QString>("speechProvider");
+        QTest::addColumn<bool>("remote");
+        QTest::addColumn<bool>("unavailable");
+        QTest::newRow("openai-proxy") << QStringLiteral("openai") << QStringLiteral("claude") << true << true;
+        QTest::newRow("anthropic-proxy") << QStringLiteral("anthropic") << QStringLiteral("claude") << true << true;
+        QTest::newRow("proxy-preset") << QStringLiteral("endpoint") << QStringLiteral("claude") << true << true;
+        QTest::newRow("speech-endpoint") << QStringLiteral("none") << QStringLiteral("endpoint") << true << true;
+        QTest::newRow("none-inactive-proxy") << QStringLiteral("none") << QStringLiteral("claude") << true << false;
+        QTest::newRow("local-inactive-proxy") << QStringLiteral("local") << QStringLiteral("claude") << true << false;
+        QTest::newRow("local-account-files") << QStringLiteral("openai") << QStringLiteral("claude") << false << false;
+    }
+
+    void dictationResolvesOnlySelectedSecretsOffThread()
+    {
+        QFETCH(QString, refiner);
+        QFETCH(QString, speechProvider);
+        QFETCH(bool, remote);
+        QFETCH(bool, unavailable);
+        {
+            SettingsStore reset;
+            reset.raw().clear();
+        }
+        SettingsStore settings;
+        settings.setRefinementProvider(refiner);
+        settings.setSpeechProvider(speechProvider);
+        settings.setOpenAiAuthMode(QStringLiteral("cliproxy"));
+        settings.setAnthropicAuthMode(QStringLiteral("cliproxy"));
+        settings.setCliproxyBaseUrl(remote ? QStringLiteral("http://proxy.example:8317") : QString());
+        settings.raw().setValue(SettingsKeys::RefinementEndpointPreset, QStringLiteral("cliproxy"));
+        settings.raw().setValue(SettingsKeys::SpeechEndpointBaseUrl, QStringLiteral("http://speech.example"));
+        settings.raw().setValue(SettingsKeys::SecretsInKeyring,
+            QStringList{QStringLiteral("cliproxy-api-key"), QStringLiteral("speech-endpoint-key")});
+        settings.raw().sync();
+        qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
+        qputenv("SPEECHER_TEST_KEYRING_READ_DELAY_MS", "250");
+        const auto restore = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT");
+            qunsetenv("SPEECHER_TEST_KEYRING_READ_DELAY_MS");
+        });
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registry.registerSpeechProvider({QStringLiteral("endpoint"), QStringLiteral("Endpoint")},
+            [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        QElapsedTimer elapsed;
+        elapsed.start();
+        session.startListening();
+        QVERIFY2(elapsed.elapsed() < 100, "Dictation start waited for the keyring on the GUI thread");
+        QVERIFY(settings.secrets()->lastError().isEmpty());
+        int heartbeats = 0;
+        QTimer heartbeat;
+        connect(&heartbeat, &QTimer::timeout, this, [&] { ++heartbeats; });
+        heartbeat.start(10);
+        if (unavailable) {
+            QTRY_COMPARE_WITH_TIMEOUT(session.state(), DictationState::Error, 2000);
+            QVERIFY(heartbeats >= 5);
+            QVERIFY2(session.lastMessage().contains(QStringLiteral("keyring unavailable")),
+                     qPrintable(session.lastMessage()));
+            QVERIFY(!session.lastMessage().contains(QStringLiteral("not set")));
+            QVERIFY(!audio.started);
+        } else {
+            QTRY_COMPARE_WITH_TIMEOUT(session.state(), DictationState::Listening, 200);
+        }
+        session.cancelForShutdown();
+    }
+
+    void dictationUsesTheKeyResolvedDuringStartup()
+    {
+        if (qEnvironmentVariableIntValue("SPEECHER_TEST_EXPECT_KEYRING") != 1)
+            QSKIP("Requires the private keyring suite");
+        FakeServer server;
+        server.route("POST /v1/audio/transcriptions",
+                     httpResponse("200 OK", "application/json", "{\"text\":\"Hello\"}"));
+        {
+            SettingsStore saved;
+            saved.raw().clear();
+            saved.setSpeechProvider(QStringLiteral("endpoint"));
+            saved.setRefinementProvider(QStringLiteral("none"));
+            saved.raw().setValue(SettingsKeys::SpeechEndpointBaseUrl, server.origin());
+            QVERIFY(saved.secrets()->saveSecret(SecretStore::Secret::SpeechEndpointKey, QStringLiteral("speech-key")));
+            saved.raw().sync();
+        }
+        SettingsStore settings;
+        qputenv("SPEECHER_TEST_KEYRING_READ_DELAY_MS", "250");
+        const auto restore = qScopeGuard([] { qunsetenv("SPEECHER_TEST_KEYRING_READ_DELAY_MS"); });
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        registry.registerSpeechProvider({QStringLiteral("endpoint"), QStringLiteral("Endpoint")},
+            [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        QElapsedTimer elapsed;
+        elapsed.start();
+        session.startListening();
+        QVERIFY(elapsed.elapsed() < 100);
+        QTRY_COMPARE_WITH_TIMEOUT(session.state(), DictationState::Listening, 2000);
+        audio.pushAudio(QByteArray(640, '\0'));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 2000);
+        QCOMPARE(delivery.lastText, QStringLiteral("Hello"));
+        QCOMPARE(server.requests.size(), 1);
+        QVERIFY(headersOf(server.requests.first()).contains("authorization: bearer speech-key"));
+        session.cancelForShutdown();
+        settings.secrets()->secret(SecretStore::Secret::SpeechEndpointKey);
+        settings.secrets()->saveSecret(SecretStore::Secret::SpeechEndpointKey, {});
     }
 
     // The settings window's snapshot shows a saved key for an endpoint that

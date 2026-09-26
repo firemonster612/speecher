@@ -1,4 +1,5 @@
 #include "dictation/StartupPreparationRunner.h"
+#include "core/SettingsStore.h"
 
 #include <QDebug>
 #include <QThread>
@@ -36,17 +37,24 @@ StartupPreparationRunner::~StartupPreparationRunner()
 void StartupPreparationRunner::start(quint64 generation,
                                      std::optional<SpeechPrepareJob> speechJob,
                                      std::optional<RefinementRefreshJob> refinerJob,
-                                     SpeechPrepareResult speechPrepared)
+                                     SpeechPrepareResult speechPrepared,
+                                     std::optional<AppSettings> secretsToResolve)
 {
     cancel();
 
     auto preparation = std::make_shared<Preparation>();
     preparation->result.generation = generation;
     preparation->result.speech = std::move(speechPrepared);
+    preparation->result.resolvedSettings = std::move(secretsToResolve);
     preparation->speechJob = std::move(speechJob);
     preparation->refinerJob = std::move(refinerJob);
 
     QThread *thread = QThread::create([preparation] {
+        if (!preparation->cancelled && preparation->result.resolvedSettings) {
+            const QString error = SettingsStore::resolveDictationSecrets(*preparation->result.resolvedSettings);
+            preparation->result.speech = {error.isEmpty(), error};
+            if (!error.isEmpty()) return;
+        }
         if (!preparation->cancelled && preparation->speechJob) {
             preparation->result.speech = preparation->speechJob->run
                 ? preparation->speechJob->run()
