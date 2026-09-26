@@ -14,6 +14,8 @@
 #include <QTimer>
 #include <QVector>
 
+#include <functional>
+
 class QAudioDecoder;
 
 namespace speecher {
@@ -61,6 +63,11 @@ struct TranscribeFileResult {
 // True for a file the decoder can take: audio, or video whose audio track it
 // reads (shared-mime-info files audio-only .webm and .mp4 under video/).
 bool isAudioFile(const QString &path);
+
+// Reads an audio file's length in the background and hands it to done, in
+// milliseconds, on receiver's thread. done is never called for a file that
+// cannot be read, or once receiver is gone.
+void probeAudioDuration(const QString &path, QObject *receiver, std::function<void(qint64)> done);
 
 // Writes text as "<name>-transcribed.txt" in folder, numbering it
 // "<name>-transcribed (2).txt" and so on rather than overwrite a file.

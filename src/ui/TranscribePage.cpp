@@ -1,6 +1,7 @@
 #include "ui/TranscribePage.h"
 
 #include "app/ApplicationController.h"
+#include "transcribe/TranscribePresentation.h"
 #include "core/SettingsStore.h"
 #include "core/Target.h"
 #include "providers/ProviderRegistry.h"
@@ -24,10 +25,8 @@
 #include <QIcon>
 #include <QLabel>
 #include <QLocale>
-#include <QMediaPlayer>
 #include <QMimeData>
 #include <QPushButton>
-#include <QRegularExpression>
 #include <QSaveFile>
 #include <QScrollArea>
 #include <QSignalBlocker>
@@ -39,19 +38,6 @@ namespace speecher {
 namespace {
 
 const QString kSaveHint = QStringLiteral("Each transcript is saved as ⟨name⟩-transcribed.txt");
-
-QString durationLabel(qint64 ms)
-{
-    const qint64 seconds = (ms + 500) / 1000;
-    return seconds >= 60 ? QStringLiteral("%1 min %2 s").arg(seconds / 60).arg(seconds % 60)
-                         : QStringLiteral("%1 s").arg(seconds);
-}
-
-int wordCount(const QString &text)
-{
-    static const QRegularExpression whitespace(QStringLiteral("\\s+"));
-    return int(text.split(whitespace, Qt::SkipEmptyParts).size());
-}
 
 QIcon themedIcon(const QString &name, const QString &fallback)
 {
@@ -365,16 +351,7 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     settings::addCardRow(settings::cardFormLayout(resultsCard), top, resultsCard);
     m_resultsCard = resultsCard;
     connect(copyAll, &QPushButton::clicked, this, [this, copyAll] {
-        QStringList parts;
-        for (const TranscribeFileResult &result : std::as_const(m_batchResults)) {
-            if (result.failed()) {
-                continue;
-            }
-            parts << (m_batchResults.size() > 1
-                          ? QStringLiteral("# %1\n\n%2").arg(QFileInfo(result.path).fileName(), shownText(result))
-                          : shownText(result));
-        }
-        QGuiApplication::clipboard()->setText(parts.join(QStringLiteral("\n\n\n")));
+        QGuiApplication::clipboard()->setText(allTranscripts(m_batchResults, showingRaw()));
         copyAll->setText(QStringLiteral("Copied"));
         QTimer::singleShot(1500, copyAll, [copyAll] { copyAll->setText(QStringLiteral("Copy all")); });
     });
@@ -388,7 +365,7 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
         for (const TranscribeFileResult &result : std::as_const(m_batchResults)) {
             QString error;
             if (!result.failed()) {
-                saveTranscript(result.path, folder, shownText(result), &error);
+                saveTranscript(result.path, folder, shownTranscript(result, showingRaw()), &error);
             }
             if (!error.isEmpty()) {
                 errors << error;
@@ -398,12 +375,7 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     });
     auto *again = new QPushButton(QStringLiteral("Transcribe more files"), m_results);
     again->setObjectName(QStringLiteral("transcribeAgain"));
-    connect(again, &QPushButton::clicked, this, [this] {
-        m_files.clear();
-        refreshFileList();
-        seedOptionsFromSettings();
-        showStage(Stage::Setup);
-    });
+    connect(again, &QPushButton::clicked, this, &TranscribePage::backToSetup);
     addCentered(results, again);
     column->addWidget(m_results);
     column->addStretch();
@@ -411,44 +383,51 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     FileTranscriptionSession *session = m_controller->fileTranscription();
     connect(session, &FileTranscriptionSession::fileStarted, this, [this](int index, const QString &path) {
         m_current = index;
-        m_processingHeader->setText(
-            m_batch.size() > 1 ? QStringLiteral("Transcribing · %1 (%2 of %3)")
-                                     .arg(QFileInfo(path).fileName()).arg(index + 1).arg(m_batch.size())
-                               : QStringLiteral("Transcribing · %1").arg(QFileInfo(path).fileName()));
+        m_currentPath = path;
+        m_processingHeader->setText(processingTitle(m_batch, index));
         m_percent->setText(QStringLiteral("0%"));
         m_loom->startFile({}, index);
-        setPhase(QStringLiteral("Reading the audio…"));
+        setPhase(transcribePhaseLabel(TranscribePhase::Reading));
     });
     connect(session, &FileTranscriptionSession::fileDecoded, this,
             [this](int index, const QVector<float> &peaks, qint64 durationMs) {
-                m_durationsMs.insert(m_batch.value(index), durationMs);
+                m_durationsMs.insert(m_currentPath, durationMs);
                 m_loom->startFile(peaks, index);
-                setPhase(QStringLiteral("Transcribing…"));
+                setPhase(transcribePhaseLabel(TranscribePhase::Transcribing));
             });
     connect(session, &FileTranscriptionSession::fileProgress, this, [this](int, qreal fraction) {
         m_loom->setProgress(fraction);
         m_percent->setText(QStringLiteral("%1%").arg(qRound(fraction * 100)));
         if (fraction >= 1.0) {
-            setPhase(QStringLiteral("Finishing the transcript…"));
+            setPhase(transcribePhaseLabel(TranscribePhase::Finishing));
         }
     });
     connect(session, &FileTranscriptionSession::fileRefining, this,
-            [this] { setPhase(QStringLiteral("Refining…")); });
+            [this] { setPhase(transcribePhaseLabel(TranscribePhase::Refining)); });
     connect(session, &FileTranscriptionSession::fileFinished, this,
             [this](int, const TranscribeFileResult &result) {
-                m_batchResults.append(result);
-                refreshQueue();
+                if (m_retrying < 0) {
+                    m_batchResults.append(result);
+                    refreshQueue();
+                }
             });
     connect(session, &FileTranscriptionSession::batchFinished, this,
-            [this](const QList<TranscribeFileResult> &, bool cancelled) {
+            [this](const QList<TranscribeFileResult> &results, bool cancelled) {
                 m_current = -1;
-                if (cancelled) {
+                if (m_retrying >= 0) {
+                    if (!results.isEmpty()) {
+                        m_batchResults[m_retrying] = results.first();
+                    }
+                    m_retrying = -1;
+                    showResults();
+                    return;
+                }
+                if (m_batchResults.isEmpty()) {
                     showStage(Stage::Setup);
                     return;
                 }
-                const bool refined = m_batchOptions.refinementProviderId != QStringLiteral("none")
-                    && m_batchOptions.cleanupStrength != QStringLiteral("none");
-                m_variants->setVisible(refined);
+                m_cancelled = cancelled;
+                m_variants->setVisible(refinesTranscripts(m_batchOptions));
                 m_showRefined->setChecked(true);
                 showResults();
                 showStage(Stage::Results);
@@ -462,14 +441,34 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
 
 void TranscribePage::addFiles(const QStringList &paths)
 {
+    // Files opened over finished results start the next batch; files opened
+    // while one runs wait in the setup list it returns to.
+    if (m_results->isVisibleTo(this)) {
+        backToSetup();
+    }
     for (const QString &path : paths) {
         const QString absolute = QFileInfo(path).absoluteFilePath();
         if (isAudioFile(absolute) && !m_files.contains(absolute)) {
             m_files << absolute;
-            probeDuration(absolute);
+            probeAudioDuration(absolute, this, [this, absolute](qint64 durationMs) {
+                m_durationsMs.insert(absolute, durationMs);
+                refreshFileList();
+            });
         }
     }
     refreshFileList();
+}
+
+// The finished files leave the list; files added meanwhile, and any a
+// cancelled batch never reached, stay.
+void TranscribePage::backToSetup()
+{
+    for (const TranscribeFileResult &result : std::as_const(m_batchResults)) {
+        m_files.removeOne(result.path);
+    }
+    refreshFileList();
+    seedOptionsFromSettings();
+    showStage(Stage::Setup);
 }
 
 void TranscribePage::dragEnterEvent(QDragEnterEvent *event)
@@ -536,10 +535,18 @@ void TranscribePage::applyWritingProfile()
         m_controller->settings()->snapshot().refinement.writingProfiles,
         writingProfileFromName(m_profile->currentData().toString()));
     const QList<RowOption> strengths = cleanupStrengths();
-    for (int i = 0; i < strengths.size(); ++i) {
-        if (strengths.at(i).id == profile.cleanupStrength) {
-            m_cleanup->button(i)->setChecked(true);
-        }
+    const auto indexOf = [&strengths](const QString &id) {
+        return int(std::find_if(strengths.cbegin(), strengths.cend(),
+                                [&id](const RowOption &option) { return option.id == id; })
+                   - strengths.cbegin());
+    };
+    // A stored strength this build does not know falls back to the middle one.
+    int checked = indexOf(profile.cleanupStrength);
+    if (checked == strengths.size()) {
+        checked = indexOf(QStringLiteral("balanced"));
+    }
+    if (QAbstractButton *button = m_cleanup->button(checked)) {
+        button->setChecked(true);
     }
     settings::selectData(m_tone, profile.tone);
 }
@@ -547,10 +554,7 @@ void TranscribePage::applyWritingProfile()
 void TranscribePage::refreshRefinementRows()
 {
     const QString provider = m_refiner->currentData().toString();
-    const RefinementSettings refinement = m_controller->settings()->snapshot().refinement;
-    const QString model = provider == QStringLiteral("openai")      ? refinement.openAiModel
-                        : provider == QStringLiteral("anthropic") ? refinement.anthropicModel
-                                                                   : QString();
+    const QString model = refinementModel(provider, m_controller->settings()->snapshot().refinement);
     m_refinerModel->setText(model);
     setCardRowVisible(m_refinerModelRow, !model.isEmpty());
     for (QWidget *row : std::as_const(m_refinementDependents)) {
@@ -574,8 +578,6 @@ void TranscribePage::refreshFileList()
     QFormLayout *form = settings::cardFormLayout(m_filesCard);
     for (const QString &path : std::as_const(m_files)) {
         const QFileInfo info(path);
-        const QString size = QLocale().formattedDataSize(info.size(), 1, QLocale::DataSizeSIFormat);
-        const qint64 duration = m_durationsMs.value(path, -1);
         auto *remove = new QToolButton(m_filesCard);
         remove->setIcon(themedIcon(QStringLiteral("edit-delete-remove"), QStringLiteral("list-remove")));
         remove->setText(QStringLiteral("Remove"));
@@ -589,8 +591,7 @@ void TranscribePage::refreshFileList()
         });
         settings::addCardRow(form,
                              settings::makeRow(info.fileName(),
-                                               duration >= 0 ? durationLabel(duration) + QStringLiteral(" · ") + size
-                                                             : size,
+                                               audioFileDetail(info.size(), m_durationsMs.value(path, -1)),
                                                remove, m_filesCard),
                              m_filesCard);
     }
@@ -604,28 +605,14 @@ void TranscribePage::refreshFileList()
     settings::applyLabelHierarchy(m_filesCard);
 }
 
-void TranscribePage::probeDuration(const QString &path)
-{
-    auto *player = new QMediaPlayer(this);
-    connect(player, &QMediaPlayer::mediaStatusChanged, this, [this, player, path](QMediaPlayer::MediaStatus status) {
-        if (status == QMediaPlayer::LoadedMedia && player->duration() > 0) {
-            m_durationsMs.insert(path, player->duration());
-            refreshFileList();
-        }
-        if (status == QMediaPlayer::LoadedMedia || status == QMediaPlayer::InvalidMedia) {
-            player->deleteLater();
-        }
-    });
-    player->setSource(QUrl::fromLocalFile(path));
-}
-
 TranscribeOptions TranscribePage::options() const
 {
     TranscribeOptions options;
     options.speechProviderId = m_speech->currentData().toString();
     options.applyVocabulary = m_vocabulary->isChecked();
     options.refinementProviderId = m_refiner->currentData().toString();
-    options.cleanupStrength = cleanupStrengths().value(m_cleanup->checkedId()).id;
+    options.cleanupStrength = m_cleanup->checkedId() >= 0 ? cleanupStrengths().value(m_cleanup->checkedId()).id
+                                                          : QStringLiteral("none");
     options.tone = m_tone->currentData().toString();
     options.writingProfile = m_profile->currentData().toString();
     options.destination = TranscriptDestination(m_destination->currentData().toInt());
@@ -637,15 +624,34 @@ void TranscribePage::startBatch()
 {
     m_batch = m_files;
     m_batchOptions = options();
+    m_batchLabels = batchLabels(m_batchOptions, *m_controller->providerRegistry(),
+                                m_controller->settings()->snapshot().refinement);
     m_batchResults.clear();
+    m_cancelled = false;
+    // Before start(): a batch whose files all fail at once finishes inside it.
+    showStage(Stage::Processing);
     QString error;
     if (!m_controller->startFileTranscription(m_batch, m_batchOptions, &error)) {
         m_startError->setText(error);
         m_startError->show();
+        showStage(Stage::Setup);
         return;
     }
     m_startError->hide();
-    showStage(Stage::Processing);
+}
+
+// Runs one failed file again with the batch's choices; its row takes the new
+// result.
+void TranscribePage::retry(int index)
+{
+    m_retrying = index;
+    QString error;
+    if (!m_controller->startFileTranscription({m_batchResults.at(index).path}, m_batchOptions, &error)) {
+        m_retrying = -1;
+        m_summary->setText(error);
+        return;
+    }
+    showResults();
 }
 
 void TranscribePage::setPhase(const QString &phase)
@@ -663,16 +669,20 @@ void TranscribePage::refreshQueue()
     QFormLayout *form = settings::cardFormLayout(m_queueCard);
     const int iconSize = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
     for (int i = 0; i < m_batch.size(); ++i) {
+        const TranscribeQueueState state = queueState(i, m_current, m_batchResults);
         QIcon icon;
-        QString state = QStringLiteral("Waiting");
-        if (i < m_batchResults.size()) {
-            const bool failed = m_batchResults.at(i).failed();
-            icon = failed ? themedIcon(QStringLiteral("dialog-error"), QStringLiteral("emblem-error"))
-                          : themedIcon(QStringLiteral("checkmark"), QStringLiteral("dialog-ok-apply"));
-            state = failed ? QStringLiteral("Failed") : QStringLiteral("Done");
-        } else if (i == m_current) {
+        switch (state) {
+        case TranscribeQueueState::Waiting:
+            break;
+        case TranscribeQueueState::Current:
             icon = themedIcon(QStringLiteral("media-playback-start"), QStringLiteral("go-next"));
-            state = m_phase->text();
+            break;
+        case TranscribeQueueState::Done:
+            icon = themedIcon(QStringLiteral("checkmark"), QStringLiteral("dialog-ok-apply"));
+            break;
+        case TranscribeQueueState::Failed:
+            icon = themedIcon(QStringLiteral("dialog-error"), QStringLiteral("emblem-error"));
+            break;
         }
         QHBoxLayout *layout = nullptr;
         QWidget *row = plainRow(m_queueCard, &layout);
@@ -680,19 +690,19 @@ void TranscribePage::refreshQueue()
         mark->setFixedSize(iconSize, iconSize);
         mark->setPixmap(icon.pixmap(iconSize, iconSize));
         auto *name = new QLabel(QFileInfo(m_batch.at(i)).fileName(), row);
-        if (i > m_current && i >= m_batchResults.size()) {
+        if (state == TranscribeQueueState::Waiting) {
             name->setForegroundRole(QPalette::PlaceholderText);
         }
         layout->addWidget(mark);
         layout->addWidget(name, 1);
-        layout->addWidget(dimLabel(state, row));
+        layout->addWidget(dimLabel(queueStateLabel(state, m_phase->text()), row));
         settings::addCardRow(form, row, m_queueCard);
     }
 }
 
-QString TranscribePage::shownText(const TranscribeFileResult &result) const
+bool TranscribePage::showingRaw() const
 {
-    return !m_variants->isHidden() && !m_showRefined->isChecked() ? result.raw : result.refined;
+    return !m_variants->isHidden() && !m_showRefined->isChecked();
 }
 
 void TranscribePage::showResults()
@@ -700,12 +710,9 @@ void TranscribePage::showResults()
     QFrame *card = m_resultsCard;
     clearCardRows(card, 1);
     QFormLayout *form = settings::cardFormLayout(card);
-    qint64 totalMs = 0;
-    int saved = 0;
-    for (const TranscribeFileResult &result : std::as_const(m_batchResults)) {
-        totalMs += m_durationsMs.value(result.path, 0);
-        saved += !result.savedPath.isEmpty();
-
+    const bool raw = showingRaw();
+    for (int index = 0; index < m_batchResults.size(); ++index) {
+        const TranscribeFileResult &result = m_batchResults.at(index);
         auto *item = new QWidget(card);
         auto *itemLayout = new QVBoxLayout(item);
         itemLayout->setContentsMargins(0, 0, 0, 0);
@@ -719,16 +726,8 @@ void TranscribePage::showResults()
         head->addWidget(expand);
         auto *name = new QLabel(QFileInfo(result.path).fileName(), headRow);
         head->addWidget(name);
-        const QString text = shownText(result);
-        const qint64 duration = m_durationsMs.value(result.path, -1);
-        QString meta = result.failed()
-            ? result.error
-            : QStringLiteral("%1 words").arg(wordCount(text));
-        if (duration >= 0 && !result.failed()) {
-            meta.prepend(durationLabel(duration) + QStringLiteral(" · "));
-        }
-        QLabel *metaLabel = dimLabel(meta, headRow);
-        metaLabel->setToolTip(result.error);
+        const QString text = shownTranscript(result, raw);
+        QLabel *metaLabel = dimLabel(resultMeta(result, m_durationsMs.value(result.path, -1), raw), headRow);
         head->addWidget(metaLabel, 1);
         if (!result.savedPath.isEmpty()) {
             auto *savedLabel = new QLabel(QStringLiteral("Saved"), headRow);
@@ -740,12 +739,24 @@ void TranscribePage::showResults()
         }
         itemLayout->addWidget(headRow);
 
-        auto *body = new QLabel(text.isEmpty() ? result.raw : text, item);
+        auto *body = new QLabel(text, item);
         body->setWordWrap(true);
         body->setTextInteractionFlags(Qt::TextSelectableByMouse);
         QMargins bodyMargins = settings::rowPadding();
         bodyMargins.setTop(0);
         bodyMargins.setLeft(bodyMargins.left() + expand->sizeHint().width() + settings::relatedSpacing());
+        // A transcript that came through with a problem on the way (refinement
+        // fell back to the raw text, saving failed) says so above its text.
+        if (!result.failed() && !result.error.isEmpty()) {
+            auto *warning = new InlineMessage(item);
+            warning->setType(InlineMessage::Type::Warning);
+            warning->setText(result.error);
+            auto *warningRow = new QWidget(item);
+            auto *warningLayout = new QHBoxLayout(warningRow);
+            warningLayout->setContentsMargins(bodyMargins.left(), 0, bodyMargins.right(), bodyMargins.bottom());
+            warningLayout->addWidget(warning);
+            itemLayout->addWidget(warningRow);
+        }
         body->setContentsMargins(bodyMargins);
         body->setVisible(false);
         itemLayout->addWidget(body);
@@ -753,10 +764,18 @@ void TranscribePage::showResults()
             expand->setArrowType(open ? Qt::DownArrow : Qt::RightArrow);
             body->setVisible(open);
         });
-        expand->setEnabled(!body->text().isEmpty());
-        expand->setChecked(form->rowCount() == 1 && !body->text().isEmpty());
+        expand->setEnabled(!text.isEmpty());
+        expand->setChecked(form->rowCount() == 1 && !text.isEmpty());
 
-        if (!result.failed()) {
+        if (result.failed()) {
+            QToolButton *retryButton = textButton(index == m_retrying ? QStringLiteral("Retrying\u2026")
+                                                                      : QStringLiteral("Retry"),
+                                                  headRow);
+            retryButton->setObjectName(QStringLiteral("transcribeRetry"));
+            retryButton->setEnabled(m_retrying < 0);
+            connect(retryButton, &QToolButton::clicked, this, [this, index] { retry(index); });
+            head->addWidget(retryButton);
+        } else {
             QToolButton *copy = textButton(QStringLiteral("Copy"), headRow);
             connect(copy, &QToolButton::clicked, this, [copy, text] {
                 QGuiApplication::clipboard()->setText(text);
@@ -786,31 +805,9 @@ void TranscribePage::showResults()
         settings::addCardRow(form, item, card);
     }
 
-    const int count = int(m_batchResults.size());
-    m_resultsHeader->setText(count > 1 ? QStringLiteral("Transcripts") : QStringLiteral("Transcript"));
-    const int failed = int(std::count_if(m_batchResults.cbegin(), m_batchResults.cend(),
-                                         [](const TranscribeFileResult &result) { return result.failed(); }));
-    QStringList parts;
-    if (count > 1) {
-        parts << QStringLiteral("%1 transcripts").arg(count - failed);
-    }
-    if (failed > 0) {
-        parts << QStringLiteral("%1 failed").arg(failed);
-    }
-    if (totalMs > 0) {
-        parts << QStringLiteral("%1 of audio").arg(durationLabel(totalMs));
-    }
-    parts << QStringLiteral("transcribed with %1").arg(m_speech->itemText(m_speech->findData(m_batchOptions.speechProviderId)));
-    if (!m_variants->isHidden()) {
-        const int refiner = m_refiner->findData(m_batchOptions.refinementProviderId);
-        parts << QStringLiteral("refined with %1 %2").arg(m_refiner->itemText(refiner), m_refinerModel->text()).trimmed();
-    }
-    if (saved > 0) {
-        parts << (m_batchOptions.destination == TranscriptDestination::Folder
-                      ? QStringLiteral("saved to %1").arg(QDir::toNativeSeparators(m_batchOptions.folder))
-                      : QStringLiteral("saved next to each audio file"));
-    }
-    m_summary->setText(parts.join(QStringLiteral(" · ")));
+    m_resultsHeader->setText(m_batchResults.size() > 1 ? QStringLiteral("Transcripts") : QStringLiteral("Transcript"));
+    m_summary->setText(batchSummary(m_batchResults, int(m_batch.size()), m_cancelled, m_durationsMs,
+                                    m_batchOptions, m_batchLabels));
 }
 
 } // namespace speecher

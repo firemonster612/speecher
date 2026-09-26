@@ -12,6 +12,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QMediaPlayer>
 #include <QMimeDatabase>
 #include <QUrl>
 
@@ -61,6 +62,21 @@ bool isAudioFile(const QString &path)
     }
     const QString mime = QMimeDatabase().mimeTypeForFile(info).name();
     return mime.startsWith(QStringLiteral("audio/")) || mime.startsWith(QStringLiteral("video/"));
+}
+
+void probeAudioDuration(const QString &path, QObject *receiver, std::function<void(qint64)> done)
+{
+    auto *player = new QMediaPlayer(receiver);
+    QObject::connect(player, &QMediaPlayer::mediaStatusChanged, receiver,
+                     [player, done = std::move(done)](QMediaPlayer::MediaStatus status) {
+                         if (status == QMediaPlayer::LoadedMedia && player->duration() > 0) {
+                             done(player->duration());
+                         }
+                         if (status == QMediaPlayer::LoadedMedia || status == QMediaPlayer::InvalidMedia) {
+                             player->deleteLater();
+                         }
+                     });
+    player->setSource(QUrl::fromLocalFile(path));
 }
 
 // Opened NewOnly, so an existing file is never overwritten even if one appears

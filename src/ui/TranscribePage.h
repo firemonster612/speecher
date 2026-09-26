@@ -1,6 +1,7 @@
 #pragma once
 
 #include "transcribe/FileTranscriptionSession.h"
+#include "transcribe/TranscribePresentation.h"
 
 #include <QHash>
 #include <QWidget>
@@ -45,12 +46,13 @@ private:
     void refreshRefinementRows();
     void refreshOutputRows();
     void refreshFileList();
-    void probeDuration(const QString &path);
+    void backToSetup();
     void startBatch();
+    void retry(int index);
     void setPhase(const QString &phase);
     void refreshQueue();
     void showResults();
-    QString shownText(const TranscribeFileResult &result) const;
+    bool showingRaw() const;
     TranscribeOptions options() const;
 
     ApplicationController *m_controller;
@@ -97,8 +99,13 @@ private:
     // The running or last batch.
     QStringList m_batch;
     TranscribeOptions m_batchOptions;
+    TranscribeBatchLabels m_batchLabels;
     int m_current = -1;
+    QString m_currentPath;
     QList<TranscribeFileResult> m_batchResults;
+    bool m_cancelled = false;
+    // The result row a retry is running for, or -1.
+    int m_retrying = -1;
 };
 
 } // namespace speecher

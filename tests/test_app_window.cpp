@@ -575,6 +575,40 @@ private slots:
         QVERIFY(!controller.fileTranscription()->isRunning());
     }
 
+    void aFileOpenedOverResultsIsKeptForTheNextBatch()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        QTemporaryDir dir;
+        const auto writeHeaderOnlyWav = [&dir](const QString &name) {
+            QFile file(dir.filePath(name));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write("RIFF\0\0\0\0WAVEfmt ");
+        };
+        writeHeaderOnlyWav(QStringLiteral("first.wav"));
+        writeHeaderOnlyWav(QStringLiteral("second.wav"));
+        window.showTranscribeFiles({dir.filePath(QStringLiteral("first.wav"))});
+
+        // A header with no audio fails to decode, which still ends on results.
+        window.findChild<QPushButton *>(QStringLiteral("transcribeStart"))->click();
+        auto *again = window.findChild<QPushButton *>(QStringLiteral("transcribeAgain"));
+        QTRY_VERIFY_WITH_TIMEOUT(again->isVisibleTo(&window), 10000);
+        QVERIFY(window.findChild<QToolButton *>(QStringLiteral("transcribeRetry")));
+
+        window.showTranscribeFiles({dir.filePath(QStringLiteral("second.wav"))});
+
+        auto *start = window.findChild<QPushButton *>(QStringLiteral("transcribeStart"));
+        QVERIFY(start->isVisibleTo(&window));
+        QVERIFY(start->isEnabled());
+        QStringList listed;
+        for (const QLabel *label : window.findChildren<QLabel *>()) {
+            if (label->text().endsWith(QStringLiteral(".wav")) && label->isVisibleTo(&window)) {
+                listed << label->text();
+            }
+        }
+        QCOMPARE(listed, QStringList({QStringLiteral("second.wav")}));
+    }
+
     void programmaticNavigationUpdatesShellChrome()
     {
         ApplicationController controller(true);

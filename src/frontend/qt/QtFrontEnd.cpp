@@ -22,6 +22,7 @@
 #include <QDesktopServices>
 #include <QElapsedTimer>
 #include <QEvent>
+#include <QEventLoop>
 #include <QThread>
 #include <QWidget>
 #include <QWindow>
@@ -242,11 +243,10 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
     }
     // SPEECHER_GRAB_WAIT_MS lets what the click started run for a while
     // first, so a grab can catch work in progress or its result.
-    QElapsedTimer waited;
-    waited.start();
-    const int waitMs = qEnvironmentVariableIntValue("SPEECHER_GRAB_WAIT_MS");
-    while (waited.elapsed() < waitMs) {
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    if (const int waitMs = qEnvironmentVariableIntValue("SPEECHER_GRAB_WAIT_MS"); waitMs > 0) {
+        QEventLoop wait;
+        QTimer::singleShot(waitMs, &wait, &QEventLoop::quit);
+        wait.exec();
     }
     return m_appWindow->grab().save(path);
 }

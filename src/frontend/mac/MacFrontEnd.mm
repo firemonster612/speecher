@@ -15,10 +15,14 @@
 #include <QApplication>
 #include <QDebug>
 #include <QDesktopServices>
-#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFileOpenEvent>
 #include <QStringList>
+#include <QTimer>
 #include <QUrl>
+
+#include <algorithm>
+
 namespace speecher {
 
 namespace {
@@ -176,12 +180,10 @@ bool MacFrontEnd::captureMainWindow(const QString &path)
             [m_native->ui startTranscription];
         }
         // At least one pass, so SwiftUI draws the pane before the grab.
-        QElapsedTimer waited;
-        waited.start();
-        const int waitMs = qEnvironmentVariableIntValue("SPEECHER_GRAB_WAIT_MS");
-        do {
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        } while (waited.elapsed() < waitMs);
+        QEventLoop wait;
+        QTimer::singleShot(std::max(1, qEnvironmentVariableIntValue("SPEECHER_GRAB_WAIT_MS")), &wait,
+                           &QEventLoop::quit);
+        wait.exec();
     }
     return [m_native->ui captureSettingsToPath:path.toNSString()];
 }

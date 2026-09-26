@@ -481,6 +481,7 @@ set(SPEECHER_APP_SOURCES
   src/app/PlatformSelection.cpp
   src/app/SingleInstanceIpc.cpp
   src/transcribe/FileTranscriptionSession.cpp
+  src/transcribe/TranscribePresentation.cpp
 )
 
 set(SPEECHER_APP_HEADERS
@@ -494,6 +495,7 @@ set(SPEECHER_APP_HEADERS
   src/app/SingleInstanceIpc.h
   src/app/UpdateController.h
   src/transcribe/FileTranscriptionSession.h
+  src/transcribe/TranscribePresentation.h
 )
 
 set(SPEECHER_APP_LINUX_SOURCES
