@@ -32,7 +32,24 @@ struct HomePane: View {
 
     private var insights: SpeecherInsightsModel { model.insights }
 
+    /// Screenshot automation: SPEECHER_GRAB_SCROLL=bottom opens Home scrolled
+    /// to its last card, so one grab can show the records and the footer.
+    private static let opensAtBottom =
+        ProcessInfo.processInfo.environment["SPEECHER_GRAB_SCROLL"] == "bottom"
+    private static let bottomID = "homeBottom"
+
     var body: some View {
+        ScrollViewReader { proxy in
+            form.onAppear {
+                guard Self.opensAtBottom else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                }
+            }
+        }
+    }
+
+    private var form: some View {
         Form {
             dictationCard
             if !model.insightsEnabled {
@@ -115,32 +132,13 @@ struct HomePane: View {
 
     // MARK: Stat tiles
 
+    /// The four tiles as one grid on the section's own background: four
+    /// across when they fit, two by two when they do not.
     private var tiles: some View {
         Section {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), alignment: .top)],
-                      alignment: .leading) {
-                tile("Words dictated", symbol: "text.alignleft",
-                     value: insights.words.formatted()) {
-                    Text(insights.bookComparison).help(insights.bookComparisonTip)
-                    delta(insights.wordsDelta)
-                }
-                tile("Streak", symbol: "flame",
-                     value: plural(insights.currentStreak, "day")) {
-                    if let line = streakLine { Text(line) }
-                    weekDots
-                }
-                tile("Dictations", symbol: "mic",
-                     value: insights.dictations.formatted()) {
-                    Text(insights.dictations == 0
-                         ? "Nothing yet"
-                         : "\(insights.dictationsPerActiveDay.formatted(.number.precision(.fractionLength(1)))) a day when you dictate")
-                    delta(insights.dictationsDelta)
-                }
-                tile("Audio transcribed", symbol: "waveform", value: audioTotal) {
-                    Text(insights.dictations == 0
-                         ? "Nothing yet"
-                         : "Average dictation \(clock(insights.averageAudioMs))")
-                }
+            ViewThatFits(in: .horizontal) {
+                tileGrid(perRow: 4)
+                tileGrid(perRow: 2)
             }
         } header: {
             HStack {
@@ -159,29 +157,76 @@ struct HomePane: View {
         }
     }
 
-    private func tile<Detail: View>(_ title: String, symbol: String, value: String,
-                                    @ViewBuilder detail: () -> Detail) -> some View {
-        GroupBox {
-            VStack(alignment: .leading) {
-                Text(value)
-                    .font(.title2.weight(.semibold))
-                    .monospacedDigit()
-                Group { detail() }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+    private func tileGrid(perRow: Int) -> some View {
+        let tiles = [wordsTile, streakTile, dictationsTile, audioTile]
+        return Grid(alignment: .topLeading, horizontalSpacing: 24, verticalSpacing: 16) {
+            ForEach(Array(stride(from: 0, to: tiles.count, by: perRow)), id: \.self) { start in
+                GridRow {
+                    ForEach(start..<min(start + perRow, tiles.count), id: \.self) { tiles[$0] }
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } label: {
-            Label(title, systemImage: symbol)
         }
     }
 
+    private var wordsTile: AnyView {
+        tile("Words dictated", symbol: "text.alignleft", value: insights.words.formatted()) {
+            Text(insights.bookComparison).help(insights.bookComparisonTip)
+            delta(insights.wordsDelta)
+        }
+    }
+
+    private var streakTile: AnyView {
+        tile("Streak", symbol: "flame", value: plural(insights.currentStreak, "day")) {
+            if let line = streakLine { Text(line) }
+            weekDots
+        }
+    }
+
+    private var dictationsTile: AnyView {
+        tile("Dictations", symbol: "mic", value: insights.dictations.formatted()) {
+            Text(insights.dictations == 0
+                 ? "Nothing yet"
+                 : "\(insights.dictationsPerActiveDay.formatted(.number.precision(.fractionLength(1)))) a day when you dictate")
+            delta(insights.dictationsDelta)
+        }
+    }
+
+    private var audioTile: AnyView {
+        tile("Audio transcribed", symbol: "waveform", value: audioTotal) {
+            Text(insights.dictations == 0
+                 ? "Nothing yet"
+                 : "Average dictation \(clock(insights.averageAudioMs))")
+        }
+    }
+
+    /// A tile: its name, the figure, and the lines under it, leading-aligned
+    /// in one plain stack. The lines may wrap but never shrink below their
+    /// own width, so none is clipped at its leading edge.
+    private func tile<Detail: View>(_ title: String, symbol: String, value: String,
+                                    @ViewBuilder detail: () -> Detail) -> AnyView {
+        AnyView(
+            VStack(alignment: .leading, spacing: 4) {
+                Label(title, systemImage: symbol)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.title2.weight(.semibold))
+                    .monospacedDigit()
+                VStack(alignment: .leading, spacing: 2) { detail() }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(minWidth: 150, maxWidth: .infinity, alignment: .leading)
+        )
+    }
+
+    /// "+29% vs previous 30 days", with a true minus sign for a fall.
     @ViewBuilder private func delta(_ change: NSNumber?) -> some View {
         if let change = change?.intValue {
             let period = insights.deltaPeriodLabel
             Text(change == 0
                  ? "same as previous \(period)"
-                 : "\(change > 0 ? "▲" : "▼") \(abs(change))% vs previous \(period)")
+                 : "\(change > 0 ? "+" : "\u{2212}")\(abs(change))% vs previous \(period)")
         }
     }
 
@@ -266,12 +311,12 @@ struct HomePane: View {
 
     // MARK: Card pairs
 
-    /// Two cards side by side, one above the other once the window is too
-    /// narrow for both.
+    /// Two cards side by side in one section, one above the other once the
+    /// window is too narrow for both. The section is the only box.
     private func pair<Cards: View>(@ViewBuilder _ cards: () -> Cards) -> some View {
         Section {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), alignment: .top)],
-                      alignment: .leading) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 24, alignment: .top)],
+                      alignment: .leading, spacing: 16) {
                 cards()
             }
         }
@@ -279,10 +324,11 @@ struct HomePane: View {
 
     private func card<Content: View>(_ title: String,
                                      @ViewBuilder content: () -> Content) -> some View {
-        GroupBox(title) {
-            VStack(alignment: .leading) { content() }
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading) {
+            Text(title).font(.headline)
+            content()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var whenYouTalk: some View {
@@ -404,6 +450,7 @@ struct HomePane: View {
                 Button("Insights settings") { model.pane = "general" }
                     .buttonStyle(.link)
             }
+            .id(Self.bottomID)
         }
     }
 
@@ -436,14 +483,16 @@ struct HomePane: View {
 }
 
 /// The last 53 weeks, one column per week with Monday on top, in GitHub's
-/// layout. The window is rarely wide enough for all of them, so the weeks
-/// scroll and open on the latest; cells keep their size.
+/// layout. Cells keep their size, so a narrow window shows only the latest
+/// weeks that fit whole.
 private struct ActivityHeatmap: View {
     let days: [SpeecherInsightsDayModel]
     let measure: HeatMeasure
+    @State private var width: CGFloat = 0
 
     static let cell: CGFloat = 11
     private static let rowLabels = ["Mon", "", "Wed", "", "Fri", "", ""]
+    private static let labelWidth: CGFloat = 28
     private let gap: CGFloat = 3
 
     private var weeks: [[SpeecherInsightsDayModel]] {
@@ -451,35 +500,35 @@ private struct ActivityHeatmap: View {
     }
 
     var body: some View {
-        let columns = weeks
-        HStack(alignment: .top, spacing: gap) {
+        // Whole weeks only: the gap follows every column but the last.
+        let fitting = Int((width - Self.labelWidth + gap) / (Self.cell + gap))
+        let columns = Array(weeks.suffix(max(fitting, 1)))
+        HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: gap) {
                 label("")
                 ForEach(Array(Self.rowLabels.enumerated()), id: \.offset) { _, text in
                     label(text).frame(height: Self.cell)
                 }
             }
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: gap) {
-                    ForEach(columns.indices, id: \.self) { index in
-                        VStack(alignment: .leading, spacing: gap) {
-                            label(monthLabel(columns, index))
-                                .fixedSize()
-                                .frame(width: Self.cell, alignment: .leading)
-                            ForEach(columns[index], id: \.date) { day in
-                                RoundedRectangle(cornerRadius: 2)
-                                    .fill(heatColor(measure.level(day)))
-                                    .frame(width: Self.cell, height: Self.cell)
-                                    .help(tooltip(day))
-                            }
+            .frame(width: Self.labelWidth, alignment: .leading)
+            HStack(alignment: .top, spacing: gap) {
+                ForEach(columns.indices, id: \.self) { index in
+                    VStack(alignment: .leading, spacing: gap) {
+                        label(monthLabel(columns, index))
+                            .fixedSize()
+                            .frame(width: Self.cell, alignment: .leading)
+                        ForEach(columns[index], id: \.date) { day in
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(heatColor(measure.level(day)))
+                                .frame(width: Self.cell, height: Self.cell)
+                                .help(tooltip(day))
                         }
                     }
                 }
             }
-            .defaultScrollAnchor(.trailing)
-            .scrollIndicators(.hidden)
-            .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 
     private func label(_ text: String) -> some View {
