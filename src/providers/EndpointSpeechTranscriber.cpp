@@ -1,0 +1,191 @@
+#include "providers/EndpointSpeechTranscriber.h"
+
+#include "providers/PcmWav.h"
+#include "providers/ServerSentEvents.h"
+
+#include <QHttpMultiPart>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkReply>
+#include <QTimer>
+
+namespace speecher {
+namespace {
+
+constexpr int sampleRateHz = 16000;
+
+QHttpPart formField(const QString &name, const QByteArray &value)
+{
+    QHttpPart part;
+    part.setHeader(QNetworkRequest::ContentDispositionHeader,
+                   QStringLiteral("form-data; name=\"%1\"").arg(name));
+    part.setBody(value);
+    return part;
+}
+
+QString endpointErrorMessage(const QByteArray &body, const QString &fallback)
+{
+    const QJsonObject object = QJsonDocument::fromJson(body).object();
+    const QJsonValue error = object.value(QStringLiteral("error"));
+    const QString message = error.isObject() ? error.toObject().value(QStringLiteral("message")).toString()
+                                             : error.toString();
+    return message.isEmpty() ? fallback : message;
+}
+
+} // namespace
+
+SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint, const QByteArray &pcm16kMono)
+{
+    QNetworkRequest request{QUrl(endpoint.baseUrl + endpoint.path)};
+    if (!endpoint.apiKey.isEmpty()) {
+        request.setRawHeader("Authorization", "Bearer " + endpoint.apiKey.toUtf8());
+    }
+    auto *parts = new QHttpMultiPart(QHttpMultiPart::FormDataType);
+    QHttpPart file;
+    file.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("audio/wav"));
+    file.setHeader(QNetworkRequest::ContentDispositionHeader,
+                   QStringLiteral("form-data; name=\"file\"; filename=\"dictation.wav\""));
+    file.setBody(wavFromPcm16Mono(pcm16kMono, sampleRateHz));
+    parts->append(file);
+    if (!endpoint.model.isEmpty()) {
+        parts->append(formField(QStringLiteral("model"), endpoint.model.toUtf8()));
+    }
+    parts->append(formField(QStringLiteral("response_format"), "json"));
+    parts->append(formField(QStringLiteral("language"), "en"));
+    // Servers that stream answer with text/event-stream; the rest ignore it.
+    parts->append(formField(QStringLiteral("stream"), "true"));
+    return {request, parts};
+}
+
+EndpointSpeechTranscriber::EndpointSpeechTranscriber(QObject *parent, int responseTimeoutMs)
+    : SpeechTranscriber(parent)
+    , m_responseTimeoutMs(responseTimeoutMs)
+{
+}
+
+QString EndpointSpeechTranscriber::id() const
+{
+    return QStringLiteral("endpoint");
+}
+
+QString EndpointSpeechTranscriber::label() const
+{
+    return QStringLiteral("Custom endpoint");
+}
+
+bool EndpointSpeechTranscriber::requiresRefresh(const SpeechSettings &) const
+{
+    return false;
+}
+
+SpeechPrepareResult EndpointSpeechTranscriber::prepare(const SpeechSettings &settings)
+{
+    if (settings.endpoint.baseUrl.isEmpty()) {
+        return {false, QStringLiteral("Set the speech endpoint's server URL in Settings.")};
+    }
+    return {true, {}};
+}
+
+void EndpointSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettings &settings)
+{
+    cancelAttempt(m_attemptId);
+    m_attemptId = attemptId;
+    m_endpoint = settings.endpoint;
+    m_pcm.clear();
+}
+
+void EndpointSpeechTranscriber::sendAudio(quint64 attemptId, const QByteArray &pcm)
+{
+    if (attemptId == m_attemptId && !m_reply) {
+        m_pcm += pcm;
+    }
+}
+
+void EndpointSpeechTranscriber::finishInput(quint64 attemptId)
+{
+    if (attemptId != m_attemptId || m_reply) {
+        return;
+    }
+    if (m_pcm.isEmpty()) {
+        emit attemptCompleted(attemptId);
+        return;
+    }
+    const SpeechEndpointUpload upload = speechEndpointUpload(m_endpoint, std::exchange(m_pcm, {}));
+    m_sseBuffer.clear();
+    m_streamedText.clear();
+    m_doneText.clear();
+    m_streaming = false;
+    QNetworkReply *reply = m_network.post(upload.request, upload.parts);
+    upload.parts->setParent(reply);
+    m_reply = reply;
+    // Aborting leaves m_reply set, so the finished handler reports a failure.
+    QTimer::singleShot(m_responseTimeoutMs, reply, [reply] { reply->abort(); });
+    connect(reply, &QNetworkReply::readyRead, this, [this, reply] {
+        if (reply != m_reply) return;
+        m_streaming = reply->header(QNetworkRequest::ContentTypeHeader).toString()
+                          .startsWith(QStringLiteral("text/event-stream"));
+        if (m_streaming) readStream();
+    });
+    connect(reply, &QNetworkReply::finished, this, [this, reply, attemptId] { finishReply(reply, attemptId); });
+}
+
+// transcript.text.delta events carry pieces, transcript.text.done the whole.
+void EndpointSpeechTranscriber::readStream()
+{
+    m_sseBuffer += m_reply->readAll();
+    while (const std::optional<SseFrame> frame = takeSseFrame(m_sseBuffer)) {
+        const QJsonObject event = QJsonDocument::fromJson(frame->data).object();
+        const QString type = event.value(QStringLiteral("type")).toString(QString::fromUtf8(frame->name));
+        if (type == QStringLiteral("transcript.text.delta")) {
+            m_streamedText += event.value(QStringLiteral("delta")).toString();
+            emit partialTranscript(m_attemptId, m_streamedText);
+        } else if (type == QStringLiteral("transcript.text.done")) {
+            m_doneText = event.value(QStringLiteral("text")).toString();
+        }
+    }
+}
+
+void EndpointSpeechTranscriber::finishReply(QNetworkReply *reply, quint64 attemptId)
+{
+    reply->deleteLater();
+    if (reply != m_reply || attemptId != m_attemptId) {
+        return;
+    }
+    if (m_streaming) readStream();
+    m_reply.clear();
+    const QByteArray body = m_streaming ? QByteArray() : reply->readAll();
+    if (reply->error() != QNetworkReply::NoError) {
+        const QString detail = reply->error() == QNetworkReply::OperationCanceledError
+            ? QStringLiteral("no answer within %1 s").arg(m_responseTimeoutMs / 1000)
+            : endpointErrorMessage(body, reply->errorString());
+        fail(attemptId, QStringLiteral("Speech endpoint failed: %1").arg(detail));
+        return;
+    }
+    const QString text = m_streaming
+        ? (m_doneText.isEmpty() ? m_streamedText : m_doneText)
+        : QJsonDocument::fromJson(body).object().value(QStringLiteral("text")).toString();
+    const QString trimmed = text.trimmed();
+    if (!trimmed.isEmpty()) {
+        emit attemptTranscript(attemptId, trimmed);
+    }
+    emit attemptCompleted(attemptId);
+}
+
+void EndpointSpeechTranscriber::fail(quint64 attemptId, const QString &message)
+{
+    emit failed({attemptId, message, false, QStringLiteral("finalize")});
+}
+
+void EndpointSpeechTranscriber::cancelAttempt(quint64 attemptId)
+{
+    if (attemptId != m_attemptId) {
+        return;
+    }
+    m_pcm.clear();
+    if (QNetworkReply *reply = m_reply) {
+        m_reply.clear();
+        reply->abort();
+    }
+}
+
+} // namespace speecher

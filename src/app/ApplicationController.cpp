@@ -20,6 +20,8 @@
 #include "providers/E2EProviders.h"
 #endif
 #include "providers/CodexSpeechTranscriber.h"
+#include "providers/EndpointSpeechTranscriber.h"
+#include "providers/EndpointTranscriptRefiner.h"
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
 #include "platform/GlobalShortcutBinder.h"
@@ -862,6 +864,25 @@ void ApplicationController::registerProviders()
          QStringLiteral("Uses your Claude Code sign-in."), true,
          QString(), refinementProviderStats(QStringLiteral("anthropic"))},
         [](QObject *parent) { return new AnthropicTranscriptRefiner(parent); });
+    m_providers->registerSpeechProvider(
+        {QStringLiteral("endpoint"),
+         QStringLiteral("Custom endpoint"),
+         QStringLiteral("Set your server's URL in Settings. Any server with an OpenAI-style "
+                        "audio transcriptions API works, including whisper.cpp and Speaches."),
+         false,
+         QStringLiteral("A server you run: text appears after you stop. "
+                        "Speed, accuracy and languages depend on the server and its model."),
+         {{QStringLiteral("Engine"), QStringLiteral("Your server's model")},
+          {QStringLiteral("Speed"), QStringLiteral("Text appears after you stop")},
+          {QStringLiteral("Formatting"), QStringLiteral("Whatever the server returns")}}},
+        [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
+    m_providers->registerRefinementProvider(
+        {QStringLiteral("endpoint"), QStringLiteral("Custom endpoint"),
+         QStringLiteral("A server you run, or CLI Proxy API, with an OpenAI- or Anthropic-compatible API."),
+         false, QString(),
+         {{QStringLiteral("Model"), QStringLiteral("Any model your server offers")},
+          {QStringLiteral("Speed"), QStringLiteral("Depends on the server and model")}}},
+        [](QObject *parent) { return new EndpointTranscriptRefiner(parent); });
 }
 
 void ApplicationController::refreshAccessibilityState()

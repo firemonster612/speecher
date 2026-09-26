@@ -299,6 +299,10 @@ set(SPEECHER_WORKFLOW_HEADERS
 
 set(SPEECHER_PROVIDER_SOURCES
   src/providers/StreamingRefinement.cpp
+  src/providers/ChatCompletionsRefiner.cpp
+  src/providers/CustomEndpoints.cpp
+  src/providers/EndpointSpeechTranscriber.cpp
+  src/providers/EndpointTranscriptRefiner.cpp
   src/providers/AnthropicApiRefiner.cpp
   src/providers/AnthropicTranscriptRefiner.cpp
   src/providers/CodexCredentialStorage.cpp
@@ -324,6 +328,13 @@ endif()
 
 set(SPEECHER_PROVIDER_HEADERS
   src/providers/StreamingRefinement.h
+  src/providers/BlockingHttp.h
+  src/providers/ChatCompletionsRefiner.h
+  src/providers/CustomEndpoints.h
+  src/providers/EndpointSpeechTranscriber.h
+  src/providers/EndpointTranscriptRefiner.h
+  src/providers/PcmWav.h
+  src/providers/ServerSentEvents.h
   src/providers/AnthropicApiRefiner.h
   src/providers/AnthropicTranscriptRefiner.h
   src/providers/CodexCredentialStorage.h
@@ -1262,6 +1273,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_claude_voice.cpp
     tests/test_codex_dictation.cpp
     tests/test_audio_pcm_converter.cpp
+    tests/test_custom_endpoints.cpp
   )
   if(UNIX)
     target_sources(speecher_tests PRIVATE tests/test_update_controller.cpp)
@@ -1336,6 +1348,7 @@ if(SPEECHER_BUILD_TESTS)
     claude_voice
     codex_dictation
     audio_pcm_converter
+    custom_endpoints
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND SPEECHER_TEST_SUITES linux_style_choice linux_tray keywatch helper_install)
