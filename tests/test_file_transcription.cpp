@@ -374,6 +374,39 @@ private slots:
         QVERIFY(!QFile::exists(dir.filePath(QStringLiteral("memo-transcribed (2).txt"))));
     }
 
+    // A transcript that could not be saved fails its file; a run that cannot
+    // start says why instead of exiting quietly.
+    void headlessRunFailsUnsavedTranscriptsAndRefusalsOutLoud()
+    {
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        HeadlessTranscribeOptions options;
+        options.speechProviderId = QStringLiteral("claude");
+        options.refinementProviderId = QStringLiteral("none");
+        options.destination = TranscriptDestination::Folder;
+        options.folder = dir.filePath(QStringLiteral("gone"));
+        options.json = true;
+        std::ostringstream out;
+        std::ostringstream err;
+
+        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 1);
+        QStringList lines = QString::fromStdString(out.str()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        QCOMPARE(lines.size(), 2);
+        const QJsonObject result = QJsonDocument::fromJson(lines.at(0).toUtf8()).object();
+        QCOMPARE(result.value(QStringLiteral("ok")).toBool(), false);
+        QVERIFY(result.value(QStringLiteral("error")).toString().startsWith(QStringLiteral("Could not save")));
+        QCOMPARE(QJsonDocument::fromJson(lines.at(1).toUtf8()).object().value(QStringLiteral("failed")).toInt(), 1);
+        QVERIFY(QString::fromStdString(err.str()).contains(QStringLiteral("memo.wav: failed: Could not save")));
+
+        out.str({});
+        err.str({});
+        QCOMPARE(runHeadlessTranscribe({}, options, &settings, m_registry.get(), out, err, false), 2);
+        QVERIFY(!err.str().empty());
+        QVERIFY(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object().value(QStringLiteral("summary")).toBool());
+    }
+
 private:
     static TranscribeOptions speechOnly()
     {

@@ -59,15 +59,35 @@ int runHeadlessTranscribe(const QStringList &files,
                           std::ostream &err,
                           bool errIsTerminal)
 {
+    int failed = 0;
+    // The summary closes every --json run, including one that never started.
+    const auto finish = [&](int exitCode, const QString &error = {}) {
+        if (!error.isEmpty()) {
+            err << error.toStdString() << "\n";
+        }
+        if (options.json) {
+            QJsonObject summary{{QStringLiteral("summary"), true},
+                                {QStringLiteral("files"), int(files.size())},
+                                {QStringLiteral("succeeded"), int(files.size()) - failed},
+                                {QStringLiteral("failed"), failed}};
+            if (!error.isEmpty()) {
+                summary.insert(QStringLiteral("error"), error);
+            }
+            writeJson(out, summary);
+        }
+        return exitCode;
+    };
+    if (files.isEmpty()) {
+        return finish(2, QStringLiteral("No audio files to transcribe"));
+    }
     const TranscribeOptions resolved = resolveOptions(options, settings->snapshot());
     if (!offers(providers->speechProviders(), resolved.speechProviderId)) {
-        err << "Unknown speech provider: " << resolved.speechProviderId.toStdString() << " (see speecher --help)\n";
-        return 2;
+        return finish(2, QStringLiteral("Unknown speech provider: %1 (see speecher --help)").arg(resolved.speechProviderId));
     }
     if (resolved.refinementProviderId != QStringLiteral("none")
         && !offers(providers->refinementProviders(), resolved.refinementProviderId)) {
-        err << "Unknown refinement provider: " << resolved.refinementProviderId.toStdString() << " (see speecher --help)\n";
-        return 2;
+        return finish(2, QStringLiteral("Unknown refinement provider: %1 (see speecher --help)")
+                             .arg(resolved.refinementProviderId));
     }
     const bool refines = refinesTranscripts(resolved);
     // Saving happens here rather than in the session, so --raw can save what
@@ -121,14 +141,16 @@ int runHeadlessTranscribe(const QStringList &files,
     QObject::connect(&session, &FileTranscriptionSession::fileRefining, &loop,
                      [&] { setPhase(TranscribePhase::Refining); });
 
-    int failed = 0;
     QObject::connect(&session, &FileTranscriptionSession::fileFinished, &loop,
                      [&](int, TranscribeFileResult result) {
                          if (errIsTerminal) {
                              err << "\r\033[K";
                          }
                          const QString text = shownTranscript(result, options.raw);
-                         if (!result.failed() && resolved.destination != TranscriptDestination::None) {
+                         // A transcript that was asked to be saved and was not
+                         // fails the file, though it still prints.
+                         bool ok = !result.failed();
+                         if (ok && resolved.destination != TranscriptDestination::None) {
                              const QString folder = resolved.destination == TranscriptDestination::Folder
                                  ? resolved.folder
                                  : QFileInfo(result.path).absolutePath();
@@ -136,9 +158,10 @@ int runHeadlessTranscribe(const QStringList &files,
                              result.savedPath = saveTranscript(result.path, folder, text, &error);
                              if (!error.isEmpty()) {
                                  result.error = error;
+                                 ok = false;
                              }
                          }
-                         if (result.failed()) {
+                         if (!ok) {
                              ++failed;
                              err << name.toStdString() << ": failed: " << result.error.toStdString() << "\n";
                          } else {
@@ -154,7 +177,7 @@ int runHeadlessTranscribe(const QStringList &files,
                          err.flush();
                          if (options.json) {
                              QJsonObject object{{QStringLiteral("file"), result.path},
-                                                {QStringLiteral("ok"), !result.failed()},
+                                                {QStringLiteral("ok"), ok},
                                                 {QStringLiteral("text"), text}};
                              if (!result.savedPath.isEmpty()) {
                                  object.insert(QStringLiteral("saved"), result.savedPath);
@@ -170,6 +193,8 @@ int runHeadlessTranscribe(const QStringList &files,
                              out << text.toStdString() << "\n" << (files.size() > 1 ? "\n" : "");
                              out.flush();
                          }
+                         // No progress line until the next file starts.
+                         name.clear();
                      });
     QObject::connect(&session, &FileTranscriptionSession::batchFinished, &loop, [&] { loop.quit(); });
 
@@ -182,19 +207,15 @@ int runHeadlessTranscribe(const QStringList &files,
         }
     });
     tick.start();
+    // The session is this run's own and the files are there, so a refusal
+    // would mean a batch already under way.
     if (!session.start(files, sessionOptions)) {
-        return 1;
+        return finish(1, QStringLiteral("Could not start: a transcription is already running"));
     }
     if (session.isRunning()) {
         loop.exec();
     }
-    if (options.json) {
-        writeJson(out, {{QStringLiteral("summary"), true},
-                        {QStringLiteral("files"), int(files.size())},
-                        {QStringLiteral("succeeded"), int(files.size()) - failed},
-                        {QStringLiteral("failed"), failed}});
-    }
-    return failed > 0 ? 1 : 0;
+    return finish(failed > 0 ? 1 : 0);
 }
 
 } // namespace speecher

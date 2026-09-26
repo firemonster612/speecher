@@ -3,8 +3,6 @@
 #include "app/PlatformComposition.h"
 #include "app/ProviderSetup.h"
 #include "app/SingleInstanceIpc.h"
-#include "core/Target.h"
-#include "core/settings/SettingsSchema.h"
 #include "providers/ProviderRegistry.h"
 #include "transcribe/FileTranscriptionSession.h"
 
@@ -129,30 +127,34 @@ Options:
   --help                   print this help
 )";
 
-// Stored ids as the command line spells them: a hyphen for the underscore,
-// and the cleanup levels by their labels. The lists themselves come from the
-// settings schema, so a new strength or tone reaches the command line too.
-QString cliName(const QString &id)
-{
-    return QString(id).replace(QLatin1Char('_'), QLatin1Char('-'));
-}
+// Each stored id and the name the command line gives it. Spelled out rather
+// than derived from the settings labels, so renaming a label never changes the
+// command line.
+using CliNames = QList<std::pair<QString, QString>>;
 
-QStringList cliNames(const QList<RowOption> &options, bool byLabel)
+const CliNames kCleanupNames{{QStringLiteral("none"), QStringLiteral("none")},
+                             {QStringLiteral("light_cleanup"), QStringLiteral("light")},
+                             {QStringLiteral("balanced"), QStringLiteral("medium")},
+                             {QStringLiteral("strong_polish"), QStringLiteral("high")}};
+const CliNames kProfileNames{{QStringLiteral("work"), QStringLiteral("work")},
+                             {QStringLiteral("email"), QStringLiteral("email")},
+                             {QStringLiteral("personal"), QStringLiteral("personal")},
+                             {QStringLiteral("ai_coding"), QStringLiteral("ai-coding")},
+                             {QStringLiteral("other"), QStringLiteral("other")}};
+const CliNames kToneNames{{QStringLiteral("none"), QStringLiteral("none")},
+                          {QStringLiteral("formal"), QStringLiteral("formal")},
+                          {QStringLiteral("casual"), QStringLiteral("casual")},
+                          {QStringLiteral("very_casual"), QStringLiteral("very-casual")},
+                          {QStringLiteral("excited"), QStringLiteral("excited")},
+                          {QStringLiteral("gen_z"), QStringLiteral("gen-z")}};
+
+QStringList cliNames(const CliNames &choices)
 {
     QStringList names;
-    for (const RowOption &option : options) {
-        names << (byLabel ? option.label.toLower() : cliName(option.id));
+    for (const auto &[id, name] : choices) {
+        names << name;
     }
     return names;
-}
-
-QList<RowOption> writingProfileOptions()
-{
-    QList<RowOption> profiles;
-    for (const WritingProfileSettings &profile : defaultWritingProfileSettings()) {
-        profiles << RowOption{writingProfileName(profile.profile), writingProfileLabel(profile.profile)};
-    }
-    return profiles;
 }
 
 QStringList providerIds(const QList<ProviderDescriptor> &providers)
@@ -175,17 +177,16 @@ QString helpText()
     return QString::fromUtf8(kHelp)
         .arg(providerIds(registry.speechProviders()).join(separator),
              providerIds(registry.refinementProviders()).join(separator),
-             cliNames(cleanupStrengths(), true).join(separator),
-             cliNames(writingProfileOptions(), false).join(separator),
-             cliNames(writingTones(), false).join(separator));
+             cliNames(kCleanupNames).join(separator),
+             cliNames(kProfileNames).join(separator),
+             cliNames(kToneNames).join(separator));
 }
 
 // The stored id for a command-line name, or nothing for a name not offered.
-std::optional<QString> storedId(const QList<RowOption> &options, const QString &name, bool byLabel)
+std::optional<QString> storedId(const CliNames &choices, const QString &name)
 {
-    const QStringList names = cliNames(options, byLabel);
-    const qsizetype index = names.indexOf(name.toLower());
-    return index < 0 ? std::nullopt : std::optional(options.at(index).id);
+    const qsizetype index = cliNames(choices).indexOf(name.toLower());
+    return index < 0 ? std::nullopt : std::optional(choices.at(index).first);
 }
 
 // Reads `speecher transcribe`'s arguments. Returns an error message for a
@@ -195,10 +196,15 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
     HeadlessTranscribeOptions &options = decision->headless;
     bool headless = false;
     QStringList files;
+    bool optionsEnded = false;
     for (qsizetype index = 0; index < arguments.size(); ++index) {
         const QString argument = arguments.at(index);
-        if (!argument.startsWith(QStringLiteral("--"))) {
+        if (optionsEnded || !argument.startsWith(QLatin1Char('-'))) {
             files << argument;
+            continue;
+        }
+        if (argument == QStringLiteral("--")) {
+            optionsEnded = true;
             continue;
         }
         // Read before this for the screenshot rig, which opens the window.
@@ -216,17 +222,15 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
             }
             return std::nullopt;
         };
-        const auto choice = [&](const QList<RowOption> &choices, bool byLabel,
-                                std::optional<QString> *target) -> QString {
+        const auto choice = [&](const CliNames &choices, std::optional<QString> *target) -> QString {
             const std::optional<QString> given = value();
             if (!given) {
                 return QStringLiteral("%1 requires a value").arg(argument);
             }
-            *target = storedId(choices, *given, byLabel);
+            *target = storedId(choices, *given);
             return *target ? QString()
                            : QStringLiteral("Unknown %1 value: %2 (expected %3)")
-                                 .arg(argument, *given,
-                                      cliNames(choices, byLabel).join(QStringLiteral(", ")));
+                                 .arg(argument, *given, cliNames(choices).join(QStringLiteral(", ")));
         };
         QString error;
         if (argument == QStringLiteral("--headless")) {
@@ -248,18 +252,18 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
                                                        : options.refinementProviderId) = given->toLower();
             }
         } else if (argument == QStringLiteral("--cleanup")) {
-            error = choice(cleanupStrengths(), true, &options.cleanupStrength);
+            error = choice(kCleanupNames, &options.cleanupStrength);
         } else if (argument == QStringLiteral("--profile")) {
-            error = choice(writingProfileOptions(), false, &options.writingProfile);
+            error = choice(kProfileNames, &options.writingProfile);
         } else if (argument == QStringLiteral("--tone")) {
-            error = choice(writingTones(), false, &options.tone);
+            error = choice(kToneNames, &options.tone);
         } else if (argument == QStringLiteral("--output")) {
             const std::optional<QString> given = value();
             if (!given) {
                 error = QStringLiteral("--output requires beside, none or a folder");
-            } else if (*given == QStringLiteral("beside")) {
+            } else if (given->toLower() == QStringLiteral("beside")) {
                 options.destination = TranscriptDestination::BesideInput;
-            } else if (*given == QStringLiteral("none")) {
+            } else if (given->toLower() == QStringLiteral("none")) {
                 options.destination = TranscriptDestination::None;
             } else if (QFileInfo(*given).isDir()) {
                 options.destination = TranscriptDestination::Folder;
@@ -267,6 +271,8 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
             } else {
                 error = QStringLiteral("--output folder does not exist: %1").arg(*given);
             }
+        } else if (argument == QStringLiteral("--daemon")) {
+            error = QStringLiteral("--daemon cannot be used with transcribe");
         } else {
             error = QStringLiteral("Unknown transcribe option: %1").arg(argument);
         }

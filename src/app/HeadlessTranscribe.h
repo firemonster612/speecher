@@ -34,8 +34,9 @@ struct HeadlessTranscribeOptions {
 // Transcribes files without a window, with its own providers, so it never
 // touches a running instance's dictation. Progress, saved paths and failures
 // go to err (rewriting one line when err is a terminal), transcripts to out.
-// Returns the exit code: 0 when every file succeeded, 1 when any failed, 2
-// for a provider the registry does not offer.
+// Returns the exit code: 0 when every file succeeded, 1 when any failed
+// (saving included) or the session is busy, 2 for no files or a provider the
+// registry does not offer. Each refusal is explained on err.
 int runHeadlessTranscribe(const QStringList &files,
                           const HeadlessTranscribeOptions &options,
                           SettingsStore *settings,

@@ -621,8 +621,26 @@ private slots:
         QCOMPARE(parse({}).mode, LaunchMode::RunGui);
         QCOMPARE(parse({QStringLiteral("--grab"), QStringLiteral("shot.png")}).mode, LaunchMode::RunGui);
 
+        QCOMPARE(parse({QStringLiteral("--output"), QStringLiteral("NONE")}).headless.destination,
+                 TranscriptDestination::None);
+        QCOMPARE(parse({QStringLiteral("--cleanup"), QStringLiteral("Medium")}).headless.cleanupStrength,
+                 std::optional(QStringLiteral("balanced")));
+        // After --, everything is a file, even a name that looks like an option.
+        const QString dashed = dir.filePath(QStringLiteral("--memo.wav"));
+        QFile dashedFile(dashed);
+        QVERIFY(dashedFile.open(QIODevice::WriteOnly));
+        dashedFile.close();
+        const CommandLineDecision ended = parseCommandLine(
+            {QStringLiteral("speecher"), QStringLiteral("transcribe"), QStringLiteral("--json"),
+             QStringLiteral("--"), dashed},
+            {});
+        QCOMPARE(ended.mode, LaunchMode::TranscribeHeadless);
+        QCOMPARE(ended.transcribeFiles, QStringList{dashed});
+
         for (const QStringList &mistake : {QStringList{QStringLiteral("--cleanup"), QStringLiteral("extreme")},
                                            QStringList{QStringLiteral("--frobnicate")},
+                                           QStringList{QStringLiteral("-x")},
+                                           QStringList{QStringLiteral("--daemon")},
                                            QStringList{QStringLiteral("--output"), dir.filePath(QStringLiteral("nowhere"))}}) {
             const CommandLineDecision refused = parse(mistake);
             QCOMPARE(refused.mode, LaunchMode::Exit);
