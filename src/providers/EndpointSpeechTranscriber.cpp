@@ -197,8 +197,7 @@ void EndpointSpeechTranscriber::finishReply(QNetworkReply *reply, quint64 attemp
         if (m_streaming && !m_streamedText.trimmed().isEmpty()) {
             qWarning().noquote() << message << "- keeping the text streamed so far";
             emit attemptTranscript(attemptId, m_streamedText.trimmed());
-            if (!m_streamError.isEmpty()) fail(attemptId, message);
-            else emit attemptCompleted(attemptId);
+            fail(attemptId, message);
             return;
         }
         fail(attemptId, message);

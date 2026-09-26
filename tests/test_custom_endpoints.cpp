@@ -338,10 +338,42 @@ private slots:
         QCOMPARE(failed.size(), 0);
         QCOMPARE(completed.size(), 0);
 
-        QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 2000);
-        QCOMPARE(failed.size(), 0);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
+        QCOMPARE(completed.size(), 0);
+        const auto failure = failed.first().first().value<SpeechFailure>();
+        QCOMPARE(failure.phase, QStringLiteral("finalize"));
+        QVERIFY(failure.message.contains(QStringLiteral("sent nothing")));
+        QVERIFY(!failure.retryable);
+        QVERIFY(!server.hasPendingConnections());
         QCOMPARE(transcript.size(), 1);
         QCOMPARE(transcript.first().at(1).toString(), QStringLiteral("One two three four"));
+    }
+
+    void speechEndpointKeepsPartialTextAndFailsWhenDisconnected()
+    {
+        FakeServer server;
+        server.route("POST /v1/audio/transcriptions",
+                     "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
+                     "Content-Length: 10000\r\nConnection: close\r\n\r\n"
+                     "data: {\"type\":\"transcript.text.delta\",\"delta\":\"Keep this\"}\n\n");
+        SpeechSettings settings;
+        settings.endpoint.baseUrl = server.origin();
+        EndpointSpeechTranscriber transcriber;
+        QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
+        QSignalSpy transcript(&transcriber, &SpeechTranscriber::attemptTranscript);
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        transcriber.startAttempt(6, settings);
+        transcriber.sendAudio(6, QByteArray(640, '\0'));
+        transcriber.finishInput(6);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
+        QCOMPARE(transcript.size(), 1);
+        QCOMPARE(transcript.first().at(1).toString(), QStringLiteral("Keep this"));
+        const auto failure = failed.first().first().value<SpeechFailure>();
+        QCOMPARE(failure.phase, QStringLiteral("finalize"));
+        QVERIFY(!failure.retryable);
+        QVERIFY(!failure.message.isEmpty());
+        QCOMPARE(completed.size(), 0);
+        QCOMPARE(server.requests.size(), 1);
     }
 
     void speechEndpointFailsWhenAQuietServerStallsBeforeAnyText()
