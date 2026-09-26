@@ -22,6 +22,7 @@
 #include "providers/CodexSpeechTranscriber.h"
 #include "providers/EndpointSpeechTranscriber.h"
 #include "providers/EndpointTranscriptRefiner.h"
+#include "providers/LocalRunner.h"
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
 #include "platform/GlobalShortcutBinder.h"
@@ -883,6 +884,14 @@ void ApplicationController::registerProviders()
          {{QStringLiteral("Model"), QStringLiteral("Any model your server offers")},
           {QStringLiteral("Speed"), QStringLiteral("Depends on the server and model")}}},
         [](QObject *parent) { return new EndpointTranscriptRefiner(parent); });
+    m_providers->registerRefinementProvider(
+        {QStringLiteral("local"), QStringLiteral("Local model"),
+         QStringLiteral("Runs on this computer through Ollama, LM Studio or llama-server."),
+         false, QString(),
+         {{QStringLiteral("Model"), QStringLiteral("A cleanup model in your local runner")},
+          {QStringLiteral("Speed"), QStringLiteral("Depends on this computer")},
+          {QStringLiteral("Privacy"), QStringLiteral("The transcript stays on this computer")}}},
+        [](QObject *parent) { return new LocalRunnerRefiner(parent); });
 }
 
 void ApplicationController::refreshAccessibilityState()

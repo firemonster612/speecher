@@ -303,6 +303,7 @@ set(SPEECHER_PROVIDER_SOURCES
   src/providers/CustomEndpoints.cpp
   src/providers/EndpointSpeechTranscriber.cpp
   src/providers/EndpointTranscriptRefiner.cpp
+  src/providers/LocalRunner.cpp
   src/providers/AnthropicApiRefiner.cpp
   src/providers/AnthropicTranscriptRefiner.cpp
   src/providers/CodexCredentialStorage.cpp
@@ -333,6 +334,7 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/CustomEndpoints.h
   src/providers/EndpointSpeechTranscriber.h
   src/providers/EndpointTranscriptRefiner.h
+  src/providers/LocalRunner.h
   src/providers/PcmWav.h
   src/providers/ServerSentEvents.h
   src/providers/AnthropicApiRefiner.h

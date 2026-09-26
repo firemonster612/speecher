@@ -5,6 +5,7 @@
 #include "providers/CustomEndpoints.h"
 #include "providers/EndpointSpeechTranscriber.h"
 #include "providers/EndpointTranscriptRefiner.h"
+#include "providers/LocalRunner.h"
 
 #include <QHttpMultiPart>
 #include <QNetworkAccessManager>
@@ -391,6 +392,103 @@ private slots:
 
         settings.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:1/v1");
         QVERIFY(!checkRefinementEndpoint(settings, 2000).ok);
+    }
+
+    void ollamaIsIdentifiedByItsOwnBanner()
+    {
+        FakeServer ollama;
+        ollama.route("GET /", httpResponse("200 OK", "text/plain; charset=utf-8", "Ollama is running"));
+        ollama.route("GET /api/version", httpResponse("200 OK", "application/json", "{\"version\":\"0.34.4\"}"));
+        ollama.route("GET /api/tags", httpResponse("200 OK", "application/json",
+                                                   "{\"models\":[{\"name\":\"gemma4:e4b\",\"model\":\"gemma4:e4b\"}]}"));
+        const std::optional<DetectedRunner> found = probeOllama(ollama.origin(), 2000);
+        QVERIFY(found);
+        QCOMPARE(found->id, QStringLiteral("ollama"));
+        QCOMPARE(found->version, QStringLiteral("0.34.4"));
+        QCOMPARE(found->apiBase, ollama.origin() + QStringLiteral("/v1"));
+        QCOMPARE(found->models, QStringList{QStringLiteral("gemma4:e4b")});
+
+        // KoboldCpp answers Ollama's API routes with a fixed version, but
+        // serves its own page at the root.
+        FakeServer kobold;
+        kobold.route("GET /", httpResponse("200 OK", "text/html", "<html>KoboldAI Lite</html>"));
+        kobold.route("GET /api/version", httpResponse("200 OK", "application/json", "{\"version\":\"0.7.0\"}"));
+        kobold.route("GET /api/tags", httpResponse("200 OK", "application/json",
+                                                   "{\"models\":[{\"name\":\"koboldcpp/model\"}]}"));
+        kobold.route("GET /props", httpResponse("200 OK", "application/json",
+                                                "{\"model_path\":\"model\",\"total_slots\":1}"));
+        kobold.route("GET /health", httpResponse("200 OK", "application/json", "{\"status\":\"ok\"}"));
+        QVERIFY(!probeOllama(kobold.origin(), 2000));
+        QVERIFY(!probeLlamaServer(kobold.origin(), 2000));
+        QVERIFY(!probeLmStudio(kobold.origin(), 2000));
+    }
+
+    void llamaServerAndLmStudioAreIdentified()
+    {
+        FakeServer llama;
+        llama.route("GET /health", httpResponse("200 OK", "application/json", "{\"status\":\"ok\"}"));
+        llama.route("GET /props", httpResponse("200 OK", "application/json",
+                                               "{\"model_path\":\"/models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf\","
+                                               "\"build_info\":\"b11185-abc1234\"}"));
+        const std::optional<DetectedRunner> server = probeLlamaServer(llama.origin(), 2000);
+        QVERIFY(server);
+        QCOMPARE(server->version, QStringLiteral("b11185-abc1234"));
+        QCOMPARE(server->models, QStringList{QStringLiteral("LFM2.5-1.2B-Instruct-Q4_K_M.gguf")});
+        QVERIFY(!probeOllama(llama.origin(), 2000));
+
+        FakeServer lmStudio;
+        lmStudio.route("GET /api/v1/models",
+                       httpResponse("200 OK", "application/json",
+                                    "{\"models\":[{\"type\":\"llm\",\"key\":\"google/gemma-4-e4b\"},"
+                                    "{\"type\":\"embedding\",\"key\":\"nomic-embed\"}]}"));
+        const std::optional<DetectedRunner> studio = probeLmStudio(lmStudio.origin(), 2000);
+        QVERIFY(studio);
+        QCOMPARE(studio->models, QStringList{QStringLiteral("google/gemma-4-e4b")});
+    }
+
+    void cleanupSuggestionFollowsTheLatencyTable()
+    {
+        QCOMPARE(suggestedCleanupModel(CleanupHardware::DedicatedGpu)->ollamaTag, QStringLiteral("gemma4:e4b"));
+        QCOMPARE(suggestedCleanupModel(CleanupHardware::AppleMax)->ollamaTag, QStringLiteral("gemma4:e4b"));
+        QCOMPARE(suggestedCleanupModel(CleanupHardware::IntegratedGpu)->ollamaTag,
+                 QStringLiteral("LiquidAI/lfm2.5-1.2b-instruct"));
+        QCOMPARE(suggestedCleanupModel(CleanupHardware::Cpu)->ollamaTag,
+                 QStringLiteral("LiquidAI/lfm2.5-1.2b-instruct"));
+        QCOMPARE(suggestedCleanupModel(CleanupHardware::ApplePro)->ollamaTag,
+                 QStringLiteral("LiquidAI/lfm2.5-1.2b-instruct"));
+    }
+
+    void ollamaPullReportsProgressAcrossLayers()
+    {
+        FakeServer ollama;
+        const QByteArray lines =
+            "{\"status\":\"pulling manifest\"}\n"
+            "{\"status\":\"pulling a\",\"digest\":\"sha256:a\",\"total\":100,\"completed\":50}\n"
+            "{\"status\":\"pulling b\",\"digest\":\"sha256:b\",\"total\":300,\"completed\":300}\n"
+            "{\"status\":\"pulling a\",\"digest\":\"sha256:a\",\"total\":100,\"completed\":100}\n"
+            "{\"status\":\"success\"}\n";
+        ollama.route("POST /api/pull", httpResponse("200 OK", "application/x-ndjson", lines));
+        OllamaPull pull;
+        QSignalSpy progress(&pull, &OllamaPull::progress);
+        QSignalSpy finished(&pull, &OllamaPull::finished);
+        QSignalSpy failed(&pull, &OllamaPull::failed);
+
+        pull.start(QStringLiteral("gemma4:e4b"), ollama.origin());
+
+        QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 2000);
+        QCOMPARE(failed.size(), 0);
+        QCOMPARE(ollama.jsonBody(0).value(QStringLiteral("model")).toString(), QStringLiteral("gemma4:e4b"));
+        QCOMPARE(progress.at(2).at(0).toLongLong(), 350);
+        QCOMPARE(progress.at(2).at(1).toLongLong(), 400);
+        QCOMPARE(progress.at(3).at(0).toLongLong(), 400);
+
+        FakeServer missing;
+        missing.route("POST /api/pull", httpResponse("200 OK", "application/x-ndjson",
+                                                     "{\"status\":\"pulling manifest\"}\n"
+                                                     "{\"error\":\"pull model manifest: file does not exist\"}\n"));
+        pull.start(QStringLiteral("nope"), missing.origin());
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
+        QVERIFY(failed.first().first().toString().contains(QStringLiteral("file does not exist")));
     }
 
     void endpointSettingsRoundTrip()
