@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 
+#include <QDate>
 #include <QElapsedTimer>
 #include <QObject>
 
@@ -19,6 +20,7 @@ enum class SetupAssistantPage;
 class DictationSession;
 class AudioInput;
 class GlobalShortcutBinder;
+class InsightsLog;
 class ProviderRegistry;
 class SecretStore;
 class SettingsStore;
@@ -48,6 +50,12 @@ public:
     bool popupOnly() const;
     SettingsStore *settings() const;
     UpdateController *updates() const;
+    InsightsLog *insightsLog() const;
+    // The day Home summarizes up to. SPEECHER_INSIGHTS_TODAY pins it for
+    // screenshots, so front ends ask here rather than reading the clock.
+    QDate insightsToday() const;
+    // The Clear insights history action, once the person has confirmed it.
+    void clearInsights();
     QString pendingWhatsNewVersion() const;
     void clearPendingWhatsNew();
     SecretStore *secretStore() const;
@@ -141,6 +149,8 @@ private:
     AudioInput *m_audio = nullptr;
     DictationSession *m_session = nullptr;
     UpdateController *m_updates = nullptr;
+    InsightsLog *m_insightsLog = nullptr;
+    QDate m_insightsToday;
     GlobalShortcutBinder *m_shortcutBinder = nullptr;
     SingleInstanceIpc *m_ipc = nullptr;
     bool m_accessibilitySupported = false;

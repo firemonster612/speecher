@@ -445,6 +445,11 @@ void DictationSession::cancelForShutdown()
 
 void DictationSession::setState(DictationState state, const QString &message)
 {
+    if (state == DictationState::Listening) {
+        m_listeningClock.start();
+    } else if (state == DictationState::Stopping && m_state == DictationState::Listening) {
+        m_listeningMs = int(m_listeningClock.elapsed());
+    }
     m_state = state;
     m_lastMessage = message;
     const QString label = dictationStateLabel(state, message);
@@ -655,6 +660,10 @@ void DictationSession::deliverFinal(const QString &text)
     }
     const AppSettings settings = *m_sessionSettings;
     const quint64 generation = m_generation;
+    const QString appName = !m_target.applicationName.isEmpty() ? m_target.applicationName
+        : !m_target.processName.isEmpty()                      ? m_target.processName
+                                                               : QStringLiteral("Unknown app");
+    const WritingProfile profile = m_transcriptPipeline.refinementContext.writingProfile;
     m_refinementGeneration = 0;
     m_lastTranscript = text;
     const bool usedFallback = !m_lastMessage.isEmpty();
@@ -677,6 +686,10 @@ void DictationSession::deliverFinal(const QString &text)
     m_target = {};
     if (result.ok) {
         emit transcriptDelivered(text);
+        if (settings.insightsEnabled) {
+            emit dictationRecorded(
+                {QDateTime::currentDateTime(), m_listeningMs, countWords(text), appName, profile});
+        }
         QString outcome = usedFallback
             ? QStringLiteral("Used raw transcript • %1").arg(result.message)
             : result.message;

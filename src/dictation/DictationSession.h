@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/InsightsLog.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationTypes.h"
 #include "dictation/StartupPreparationRunner.h"
@@ -70,6 +71,9 @@ signals:
     void statusChanged(const QString &status);
     void previewChanged(const QString &transcript);
     void transcriptDelivered(const QString &text);
+    // A delivered Dictation Session while insights are on; the controller
+    // owns the log it goes into.
+    void dictationRecorded(const DictationRecord &record);
     void previewDisplayChanged(const QString &preview);
     void audioLevelChanged(float level);
     void popupStatusChanged(const QString &status);
@@ -144,6 +148,9 @@ private:
     bool m_heardSpeech = false;
     int m_speechReconnectsLeft = 0;
     QElapsedTimer m_attemptClock;
+    // From Listening to Stopping: the audio a Dictation Session transcribed.
+    QElapsedTimer m_listeningClock;
+    int m_listeningMs = 0;
     // Committed text carried over from before the current speech attempt; a
     // whole-attempt transcript replaces only what followed it.
     QString m_attemptBaseText;

@@ -236,6 +236,8 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/bindings/BindingMatcher.cpp
   src/core/bindings/NoBindDirectiveParser.cpp
   src/core/CliToolDiscovery.cpp
+  src/core/InsightsLog.cpp
+  src/core/InsightsSummary.cpp
   src/core/LearnedCorrection.cpp
   src/core/OutputMethod.cpp
   src/core/OutputFormat.cpp
@@ -261,6 +263,8 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/bindings/BindingMatcher.h
   src/core/bindings/NoBindDirectiveParser.h
   src/core/CliToolDiscovery.h
+  src/core/InsightsLog.h
+  src/core/InsightsSummary.h
   src/core/LearnedCorrection.h
   src/core/OutputMethod.h
   src/core/OutputFormat.h
@@ -1258,6 +1262,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_dictation_session_refinement.cpp
     tests/test_refiners.cpp
     tests/test_vocabulary.cpp
+    tests/test_insights.cpp
     tests/test_provider_auth.cpp
     tests/test_claude_voice.cpp
     tests/test_codex_dictation.cpp
@@ -1332,6 +1337,7 @@ if(SPEECHER_BUILD_TESTS)
     dictation_session_refinement
     refiners
     vocabulary
+    insights
     provider_auth
     claude_voice
     codex_dictation

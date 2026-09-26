@@ -106,6 +106,21 @@ private slots:
         QVERIFY(!refinement.value(saved).toBool());
     }
 
+    void insightsSettingPersistsThroughSchemaDraft()
+    {
+        SettingsStore store;
+        store.raw().clear();
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsRow &row = rowById(schema.page(QStringLiteral("general")),
+                                         QStringLiteral("insightsEnabled"));
+        const AppSettings loaded = store.snapshot();
+        QVERIFY(row.value(loaded).toBool());
+        AppSettings edited = loaded;
+        row.apply(edited, false);
+        store.applySnapshot(mergeSettingsDraft(schema, loaded, edited, store.snapshot()));
+        QVERIFY(!SettingsStore().insightsEnabled());
+    }
+
     void staleDraftPreservesLearnedRecords()
     {
         SettingsStore store;

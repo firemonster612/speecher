@@ -656,6 +656,16 @@ SettingsPage generalPage(const SchemaContext &context)
         return capabilities.automaticUpdateDownloads;
     };
 
+    SettingsRow insightsEnabled = toggleRow(
+        QStringLiteral("insightsEnabled"),
+        QStringLiteral("Keep insights about your dictation"),
+        QStringLiteral("Records word counts, times and app names for the stats on Home, never "
+                       "the text or audio. Stored only on this computer and never sent to the "
+                       "cloud."),
+        [](const AppSettings &settings) { return settings.insightsEnabled; },
+        [](AppSettings &settings, bool value) { settings.insightsEnabled = value; });
+    insightsEnabled.sinceVersion = QStringLiteral("0.2.1");
+
     SettingsRow previewWords = numberRow(
         QStringLiteral("previewWords"),
         QStringLiteral("Preview words"),
@@ -708,6 +718,15 @@ SettingsPage generalPage(const SchemaContext &context)
                            [](const AppSettings &settings) { return settings.ui.refinementPreviewEnabled; },
                            [](AppSettings &settings, bool value) { settings.ui.refinementPreviewEnabled = value; }),
                  std::move(previewWords),
+             }},
+            {QStringLiteral("Insights"),
+             QString(),
+             {
+                 std::move(insightsEnabled),
+                 actionRow(QStringLiteral("clearInsights"),
+                           QStringLiteral("Insights history"),
+                           QStringLiteral("Delete every recorded dictation from this computer."),
+                           QStringLiteral("Clear insights history…")),
              }},
             {
 #ifdef Q_OS_LINUX
@@ -2048,6 +2067,8 @@ static QList<SettingsPane> settingsPanes()
                                    QStringLiteral("transcriptionPreviewEnabled"),
                                    QStringLiteral("refinementPreviewEnabled"),
                                    QStringLiteral("previewWords")}),
+              group("Insights", {QStringLiteral("insightsEnabled"),
+                                 QStringLiteral("clearInsights")}),
               group("System", {QStringLiteral("launchAtLogin"),
                                QStringLiteral("launchAtLoginProblem"),
                                QStringLiteral("activationMode")}),
