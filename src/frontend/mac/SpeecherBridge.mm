@@ -1736,7 +1736,7 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
 
 - (void)completeSetup
 {
-    _state->controller->settings()->setSetupCompleted(true);
+    _state->controller->completeSetup();
 }
 
 - (void)relaunch

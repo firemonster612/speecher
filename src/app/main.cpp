@@ -262,11 +262,23 @@ int main(int argc, char **argv)
             ? QStringLiteral("transcribe")
             : decision.showSettings ? QStringLiteral("showSettings")
                                     : QStringLiteral("showMain");
+        // An older running instance answers a command it does not know, such
+        // as transcribe, with a refusal; say so rather than exit as if the
+        // files had opened.
+        IpcResponse response;
+        const auto answered = [&response, &showCommand] {
+            if (response.ok) {
+                return 0;
+            }
+            std::cerr << "The running Speecher instance refused " << showCommand.toStdString() << ": "
+                      << response.message.toStdString() << "\n";
+            return 1;
+        };
 #ifdef Q_OS_WIN
         if (!daemon) {
             AllowSetForegroundWindow(ASFW_ANY);
             auto result = SingleInstanceIpc::sendCommandDetailed(
-                showCommand, std::nullopt, decision.transcribeFiles, nullptr);
+                showCommand, std::nullopt, decision.transcribeFiles, &response);
             // The startup claim can precede the winning instance's pipe listener.
             if (ipcError.startsWith(QStringLiteral("Another Speecher instance"))) {
                 QDeadlineTimer deadline(750);
@@ -277,18 +289,18 @@ int main(int argc, char **argv)
                         break;
                     }
                     result = SingleInstanceIpc::sendCommandDetailed(
-                        showCommand, std::nullopt, decision.transcribeFiles, nullptr, int(remaining));
+                        showCommand, std::nullopt, decision.transcribeFiles, &response, int(remaining));
                 }
             }
             if (result == IpcCommandResult::Sent) {
-                return 0;
+                return answered();
             }
         }
 #else
         if (!daemon
-            && SingleInstanceIpc::sendCommandDetailed(showCommand, std::nullopt, decision.transcribeFiles, nullptr)
+            && SingleInstanceIpc::sendCommandDetailed(showCommand, std::nullopt, decision.transcribeFiles, &response)
                 == IpcCommandResult::Sent) {
-            return 0;
+            return answered();
         }
 #endif
         std::cerr << ipcError.toStdString() << "\n";
@@ -296,8 +308,12 @@ int main(int argc, char **argv)
     }
 
     if ((!controller.settings()->setupCompleted() && decision.grabPath.isEmpty()) || decision.showSetup) {
-        QTimer::singleShot(0, &controller, [&controller] {
+        QTimer::singleShot(0, &controller, [&controller, &decision] {
             controller.showSetupAssistant();
+            // Held by the controller until setup completes, then opened.
+            if (!decision.transcribeFiles.isEmpty()) {
+                controller.showTranscribeFiles(decision.transcribeFiles);
+            }
         });
     } else {
         if (decision.startListening) {

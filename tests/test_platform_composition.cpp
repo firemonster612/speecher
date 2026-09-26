@@ -282,6 +282,11 @@ public:
                       : QStringLiteral("showSetupAssistant GlobalShortcut"));
     }
 
+    void showTranscribeFiles(const QStringList &paths) override
+    {
+        calls << QStringLiteral("showTranscribeFiles ") + paths.join(QLatin1Char(' '));
+    }
+
     bool captureMainWindow(const QString &path) override
     {
         calls << QStringLiteral("captureMainWindow ") + path;
@@ -1842,6 +1847,38 @@ private slots:
         QCOMPARE(frontEnd.calls,
                  QStringList({QStringLiteral("showSetupAssistant"),
                               QStringLiteral("showSetupAssistant")}));
+    }
+
+    void transcribeCommandOpensTheFilesOnTheFrontEnd()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        FakeAppFrontEnd frontEnd;
+        controller.setFrontEnd(&frontEnd);
+        controller.settings()->setSetupCompleted(true);
+
+        controller.handleIpcCommand(QStringLiteral("transcribe"), {}, nullptr,
+                                    {QStringLiteral("/a.wav"), QStringLiteral("/b.mp3")});
+
+        QCOMPARE(frontEnd.calls, QStringList({QStringLiteral("showTranscribeFiles /a.wav /b.mp3")}));
+    }
+
+    void filesOpenedBeforeSetupOpenOnceItCompletes()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        FakeAppFrontEnd frontEnd;
+        controller.setFrontEnd(&frontEnd);
+        controller.settings()->setSetupCompleted(false);
+
+        controller.showTranscribeFiles({QStringLiteral("/a.wav")});
+        controller.handleIpcCommand(QStringLiteral("transcribe"), {}, nullptr, {QStringLiteral("/b.wav")});
+        QCOMPARE(frontEnd.calls,
+                 QStringList({QStringLiteral("showSetupAssistant"), QStringLiteral("showSetupAssistant")}));
+
+        controller.completeSetup();
+        QTRY_COMPARE(frontEnd.calls.size(), 3);
+        QCOMPARE(frontEnd.calls.last(), QStringLiteral("showTranscribeFiles /a.wav /b.wav"));
     }
 };
 

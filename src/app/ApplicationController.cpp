@@ -469,7 +469,9 @@ void ApplicationController::showSetupAssistant(SetupAssistantPage page)
 
 void ApplicationController::showTranscribeFiles(const QStringList &paths)
 {
-    if (!ensureSetupCompleted()) {
+    if (!m_settings->setupCompleted()) {
+        m_pendingTranscribeFiles += paths;
+        showSetupAssistant();
         return;
     }
     if (m_frontEnd) {
@@ -813,6 +815,19 @@ ApplicationController::~ApplicationController()
     m_fileTranscription = nullptr;
     delete m_session;
     m_session = nullptr;
+}
+
+void ApplicationController::completeSetup()
+{
+    m_settings->setSetupCompleted(true);
+    if (m_pendingTranscribeFiles.isEmpty()) {
+        return;
+    }
+    // Queued, so the front end has closed its assistant and shown its window
+    // before the Transcribe surface comes up over it.
+    QTimer::singleShot(0, this, [this] {
+        showTranscribeFiles(std::exchange(m_pendingTranscribeFiles, {}));
+    });
 }
 
 bool ApplicationController::ensureSetupCompleted()

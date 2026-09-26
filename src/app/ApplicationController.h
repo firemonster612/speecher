@@ -102,7 +102,12 @@ public:
     void showSetupAssistant();
     void showSetupAssistant(SetupAssistantPage page);
     // Opens the Transcribe page with these files listed, not yet started.
+    // Before setup is complete it shows the setup assistant instead and holds
+    // the files until completeSetup().
     void showTranscribeFiles(const QStringList &paths);
+    // Records that the setup assistant finished, then opens any files that
+    // arrived while it was up.
+    void completeSetup();
     bool startIpc(QString *error = nullptr);
 
 public slots:
@@ -153,6 +158,8 @@ private:
     AudioInput *m_audio = nullptr;
     DictationSession *m_session = nullptr;
     FileTranscriptionSession *m_fileTranscription = nullptr;
+    // Files opened before setup was complete.
+    QStringList m_pendingTranscribeFiles;
     UpdateController *m_updates = nullptr;
     GlobalShortcutBinder *m_shortcutBinder = nullptr;
     SingleInstanceIpc *m_ipc = nullptr;

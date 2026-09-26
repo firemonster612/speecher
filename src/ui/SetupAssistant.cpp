@@ -496,7 +496,7 @@ void SetupAssistant::accept()
     if (!m_skipping) {
         m_finishPage->setSignInRequired(m_deliveryPage->needsSignIn());
     }
-    m_controller->settings()->setSetupCompleted(true);
+    m_controller->completeSetup();
 #ifdef SPEECHER_WITH_KASSISTANT
     KAssistantDialog::accept();
 #else
