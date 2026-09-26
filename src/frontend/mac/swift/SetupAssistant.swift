@@ -1856,7 +1856,7 @@ private struct LocalChoiceSections: View {
             TableColumn("Model") { entry in
                 Text(entry.suggested ? "\(entry.name) (suggested)" : entry.name)
             }
-            .width(min: 160)
+            .width(min: 150)
             TableColumn("Download", value: \.sizeText)
                 .width(58)
             TableColumn("Word errors") { entry in
@@ -1864,13 +1864,13 @@ private struct LocalChoiceSections: View {
             }
             .width(88)
             TableColumn("10 s of speech", value: \.speedText)
-                .width(100)
+                .width(108)
             TableColumn("Text shows") { entry in
                 Text(entry.streams ? "As you speak" : "After you stop")
             }
             .width(84)
             TableColumn("Memory", value: \.fitLabel)
-                .width(58)
+                .width(62)
         }
         .controlSize(.small)
         // A table in a scrolling form has no height of its own: one row per
@@ -2104,7 +2104,8 @@ private struct LocalRunnerSections: View {
         Section {
             // Which runner answered, and the way to look again, on one row.
             HStack(alignment: .firstTextBaseline) {
-                StatusLabel(text: flow.runnerStatus, tone: flow.runner == nil ? .pending : .positive)
+                StatusLabel(text: flow.runnerStatus,
+                            tone: model.local.detectingRunners || flow.runner == nil ? .pending : .positive)
                 Spacer(minLength: 12)
                 Button("Check Again") { flow.detectRunners() }
                     .disabled(model.local.detectingRunners)
