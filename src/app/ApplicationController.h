@@ -169,7 +169,7 @@ private:
     bool ensureSetupCompleted();
     bool sessionActive() const;
     void handleShortcutPressed();
-    void handleShortcutReleased();
+    void handleShortcutReleased(qint64 heldMs);
     void forgetShortcutGesture();
     void setLaunchAtLoginAccepted(bool accepted);
 
