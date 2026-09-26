@@ -1,6 +1,7 @@
 #include "ui/setup/SetupPages.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
 #include "app/PlatformComposition.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
@@ -10,7 +11,9 @@
 #include "output/YdotoolSetupFlow.h"
 #endif
 #include "providers/ProviderProbe.h"
+#include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
+#include "ui/InlineMessage.h"
 #include "ui/settings/SettingsPageSupport.h"
 #ifdef Q_OS_LINUX
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
@@ -24,7 +27,9 @@
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QDesktopServices>
 #include <QHash>
+#include <QHeaderView>
 #include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
@@ -35,8 +40,11 @@
 #include <QSignalBlocker>
 #include <QStyle>
 #include <QSystemTrayIcon>
+#include <QTableWidget>
 #include <QThread>
 #include <QTimer>
+#include <QToolButton>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -139,10 +147,19 @@ int markSize()
     return settings::gridUnit();
 }
 
-// The provider's own mark, or nothing for a provider that has none.
+// The provider's own mark; a themed glyph for the choices that run on this
+// computer or a person's own server; nothing for any other provider.
 QLabel *makeProviderMark(const QString &providerId, QWidget *parent)
 {
-    const QPixmap mark = providerMark(providerId, markSize(), parent->devicePixelRatioF());
+    static const QHash<QString, QString> glyphs{
+        {QStringLiteral("local"), QStringLiteral("computer")},
+        {QStringLiteral("endpoint"), QStringLiteral("network-server")},
+    };
+    QPixmap mark = providerMark(providerId, markSize(), parent->devicePixelRatioF());
+    if (mark.isNull() && glyphs.contains(providerId)) {
+        mark = QIcon::fromTheme(glyphs.value(providerId)).pixmap(QSize(markSize(), markSize()),
+                                                                 parent->devicePixelRatioF());
+    }
     if (mark.isNull()) {
         return nullptr;
     }
@@ -339,6 +356,34 @@ ProviderOptionRow addOptionRow(QFormLayout *card,
     return {id, label, button, status};
 }
 
+// A small grey line under something, indented to start where its text does.
+QLabel *makeNote(const QString &text, QWidget *parent, int indent = 0)
+{
+    auto *note = new WrappingLabel(text, parent);
+    note->setWordWrap(true);
+    note->setFont(settings::smallFont(note->font()));
+    note->setForegroundRole(QPalette::PlaceholderText);
+    note->setContentsMargins(indent, 0, 0, 0);
+    return note;
+}
+
+// A themed glyph at mark size beside a line of text.
+QWidget *makeGlyphLine(QWidget *parent, const QString &iconName, QLabel **textOut)
+{
+    auto *line = new QWidget(parent);
+    auto *layout = new QHBoxLayout(line);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(settings::relatedSpacing());
+    auto *glyph = new QLabel(line);
+    glyph->setPixmap(QIcon::fromTheme(iconName).pixmap(settings::smallFont(line->font()).pointSize() + 6));
+    layout->addWidget(glyph, 0, Qt::AlignTop);
+    auto *text = new WrappingLabel(line);
+    text->setWordWrap(true);
+    layout->addWidget(text, 1);
+    *textOut = text;
+    return line;
+}
+
 // What the shortcut actually does depends on the activation mode chosen a
 // page earlier, so the closing instruction has to follow it.
 QString activationInstruction(ShortcutActivationMode mode, const QString &shortcut)
@@ -375,11 +420,13 @@ QString profileLabel(WritingProfile profile)
 
 WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
                                    ProviderRegistry &providers,
+                                   LocalSetup *local,
                                    QWidget *parent)
     : QWidget(parent)
     , m_settings(settings)
     , m_providers(providers)
     , m_signIn(settings)
+    , m_local(local)
 {
     QVBoxLayout *layout = makePage(
         this,
@@ -393,9 +440,77 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
     checks->setWordWrap(true);
     layout->addWidget(checks);
 
+    // Two ways into dictation: a sign-in the person already has, or a model
+    // on this computer. The sign-in rows below only matter for the first.
+    if (m_local) {
+        QFormLayout *paths = addCard(layout, this, QStringLiteral("How should Speecher turn speech into text?"));
+        QWidget *pathsHost = paths->parentWidget();
+        auto *group = new QButtonGroup(this);
+        const auto addPath = [&](const QString &name, const QString &title, const QString &note,
+                                 const QString &iconName) {
+            auto *row = new QWidget(pathsHost);
+            auto *rowLayout = new QVBoxLayout(row);
+            rowLayout->setContentsMargins(settings::rowPadding());
+            rowLayout->setSpacing(settings::smallSpacing());
+            auto *top = new QHBoxLayout;
+            top->setSpacing(settings::largeSpacing());
+            top->addWidget(makeGlyph(row, iconName, QStyle::SP_ComputerIcon), 0, Qt::AlignVCenter);
+            auto *button = new QRadioButton(title, row);
+            button->setObjectName(name);
+            QFont bold = button->font();
+            bold.setBold(true);
+            button->setFont(bold);
+            top->addWidget(button, 1);
+            rowLayout->addLayout(top);
+            rowLayout->addWidget(makeNote(note, row, markSize() + settings::largeSpacing()));
+            settings::addCardRow(paths, row, pathsHost);
+            group->addButton(button);
+            return std::pair{button, qobject_cast<QHBoxLayout *>(top)};
+        };
+        auto [signInPath, signInTop] = addPath(QStringLiteral("welcomePathSignIn"),
+                                               QStringLiteral("Use my ChatGPT or Claude sign-in"),
+                                               QStringLiteral("Transcribed in the cloud by the service you already pay for."),
+                                               QStringLiteral("im-user"));
+        m_signInPath = signInPath;
+        m_signInPathStatus = new QLabel(pathsHost);
+        m_signInPathStatus->setObjectName(QStringLiteral("welcomePathSignInStatus"));
+        signInTop->addWidget(m_signInPathStatus, 0, Qt::AlignRight | Qt::AlignVCenter);
+        m_localPath = addPath(QStringLiteral("welcomePathLocal"),
+                              QStringLiteral("Run on this computer"),
+                              QStringLiteral("Private, no account, works offline after a one-time download."),
+                              QStringLiteral("computer"))
+                          .first;
+        connect(m_signInPath, &QRadioButton::clicked, this, [this] { choosePath(false); });
+        connect(m_localPath, &QRadioButton::clicked, this, [this] { choosePath(true); });
+
+        m_localDetail = new QWidget(this);
+        auto *localLayout = new QVBoxLayout(m_localDetail);
+        localLayout->setContentsMargins(0, 0, 0, 0);
+        localLayout->setSpacing(settings::smallSpacing());
+        localLayout->addWidget(makeGlyphLine(m_localDetail, QStringLiteral("computer"), &m_hardware));
+        m_hardware->setObjectName(QStringLiteral("welcomeHardware"));
+        auto *localNote = new WrappingLabel(
+            QStringLiteral("Speecher will suggest a speech model for this computer on the next step. "
+                           "Dictation stays on this computer and works offline once the model is downloaded."),
+            m_localDetail);
+        localNote->setWordWrap(true);
+        localLayout->addWidget(localNote);
+        layout->addWidget(m_localDetail);
+        connect(m_local, &LocalSetup::changed, this, [this] { m_hardware->setText(m_local->hardwareLine()); });
+        m_hardware->setText(m_local->hardwareLine());
+    }
+
+    m_signInDetail = new QWidget(this);
+    auto *signInLayout = new QVBoxLayout(m_signInDetail);
+    signInLayout->setContentsMargins(0, 0, 0, 0);
+    signInLayout->setSpacing(settings::largeSpacing());
+    layout->addWidget(m_signInDetail);
+
     // Nothing later in the assistant can succeed without one of these
     // sign-ins, so the one real prerequisite is stated on the first page.
-    QFormLayout *card = addCard(layout, this, QStringLiteral("Before you start"));
+    QFormLayout *card = addCard(signInLayout, m_signInDetail,
+                                m_local ? QStringLiteral("Sign-ins on this computer")
+                                        : QStringLiteral("Before you start"));
     QWidget *host = card->parentWidget();
 
     auto *leadRow = new QWidget(host);
@@ -447,20 +562,59 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
     });
     settings::addCardRow(card, cliproxyRow.widget, host);
 
-    auto *checkAgain = new QPushButton(QStringLiteral("Check again"), this);
+    auto *checkAgain = new QPushButton(QStringLiteral("Check again"), m_signInDetail);
     checkAgain->setObjectName(QStringLiteral("welcomeCheckAgain"));
     checkAgain->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     connect(checkAgain, &QPushButton::clicked, this, &WelcomeSetupPage::checkCredentials);
-    layout->addWidget(checkAgain, 0, Qt::AlignLeft);
+    signInLayout->addWidget(checkAgain, 0, Qt::AlignLeft);
 
     layout->addStretch();
+    if (m_local) {
+        m_signInPath->setChecked(true);
+        m_localDetail->hide();
+        // Default to the sign-in when the first round finds one, else to this
+        // computer; either way only until the person picks.
+        connect(this, &WelcomeSetupPage::checkFinished, this, [this] {
+            if (m_pathDecided) {
+                return;
+            }
+            const bool anyFound = std::any_of(m_rows.cbegin(), m_rows.cend(),
+                                              [](const CredentialRow &row) { return row.found; });
+            choosePath(!anyFound && !m_cliproxyFound);
+        });
+    }
     // The first showEvent runs the first probe. Probing from here as well
     // aimed two rounds at the same providers before the page was even visible.
+}
+
+void WelcomeSetupPage::choosePath(bool local)
+{
+    m_pathDecided = true;
+    m_localPath->setChecked(local);
+    m_signInPath->setChecked(!local);
+    m_localDetail->setVisible(local);
+    m_signInDetail->setVisible(!local);
+    if (local) {
+        emit localPathChosen();
+    }
+    updateReady();
+}
+
+void WelcomeSetupPage::showSignInPathStatus()
+{
+    const bool found = std::any_of(m_rows.cbegin(), m_rows.cend(),
+                                   [](const CredentialRow &row) { return row.found; })
+        || m_cliproxyFound;
+    setStatusColor(m_signInPathStatus, found);
+    m_signInPathStatus->setText(found ? QStringLiteral("Sign-in found") : QStringLiteral("None found"));
 }
 
 void WelcomeSetupPage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
+    if (m_local) {
+        m_local->probeHardware();
+    }
     // A sign-in performed in a terminal while the assistant sat open counts
     // as soon as the user comes back to this page.
     checkCredentials();
@@ -560,6 +714,13 @@ void WelcomeSetupPage::updateReady()
 {
     const bool anyFound = std::any_of(m_rows.cbegin(), m_rows.cend(),
                                       [](const CredentialRow &row) { return row.found; });
+    if (m_local) {
+        showSignInPathStatus();
+        if (m_localPath->isChecked()) {
+            setReady(true);
+            return;
+        }
+    }
     // With no speech providers registered at all there is nothing to sign in
     // to, and holding Next would strand the user on page one.
     setReady(m_rows.isEmpty() || anyFound || m_cliproxyFound);
@@ -567,7 +728,8 @@ void WelcomeSetupPage::updateReady()
 
 QString WelcomeSetupPage::blockedReason() const
 {
-    return QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found.");
+    return m_local ? QStringLiteral("No sign-in was found. Sign in, or choose to run on this computer.")
+                   : QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found.");
 }
 
 void WelcomeSetupPage::setReady(bool ready)
@@ -581,10 +743,12 @@ void WelcomeSetupPage::setReady(bool ready)
 
 SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
                                                  ProviderRegistry &providers,
+                                                 LocalSetup *local,
                                                  QWidget *parent)
     : QWidget(parent)
     , m_settings(settings)
     , m_providers(providers)
+    , m_local(local)
     , m_signIn(settings)
     , m_accuracyPass(new QCheckBox(QStringLiteral("Extra transcription accuracy (will increase transcription time)"), this))
     , m_stats(new ProviderStatsBlock(this))
@@ -602,8 +766,16 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     auto *group = new QButtonGroup(this);
     const QString savedProvider = m_settings.speechProvider();
     for (const ProviderDescriptor &provider : m_providers.speechProviders()) {
+        // The Local card is only a choice where the assistant can set it up,
+        // and a speech server is set up in Settings alone.
+        if ((provider.id == QStringLiteral("local") && !m_local) || provider.id == QStringLiteral("endpoint")) {
+            continue;
+        }
         m_options.append(addOptionRow(choices, group, provider.id, provider.label,
-                                      QString(), QStringLiteral("speechProvider")));
+                                      provider.id == QStringLiteral("local")
+                                          ? QStringLiteral("Runs on this computer. No account, works offline.")
+                                          : QString(),
+                                      QStringLiteral("speechProvider")));
         m_options.last().button->setChecked(provider.id == savedProvider);
     }
     if (!m_options.isEmpty() && selectedIndex() < 0) {
@@ -655,6 +827,10 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     m_checkAgain->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     m_accuracyPass->setObjectName(QStringLiteral("codexFinalRetranscribe"));
     m_accuracyPass->setChecked(m_settings.codexFinalRetranscribe());
+    if (m_local) {
+        m_localModelId = m_settings.localSpeechSettings().modelId;
+        layout->addWidget(makeLocalSection());
+    }
     layout->addWidget(m_stats);
     // Under the facts about the chosen service, where the refinement page puts
     // Fast mode: it is a setting for that service, not part of the sign-in
@@ -714,9 +890,241 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
                                        : m_options.at(std::max(0, selectedIndex())).id);
 }
 
+QWidget *SpeechProviderSetupPage::makeLocalSection()
+{
+    m_localSection = new QWidget(this);
+    auto *layout = new QVBoxLayout(m_localSection);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(settings::relatedSpacing());
+    layout->addWidget(makeGlyphLine(m_localSection, QStringLiteral("computer"), &m_localHardware));
+    m_localHardware->setObjectName(QStringLiteral("speechLocalHardware"));
+
+    QFormLayout *card = addCard(layout, m_localSection, QString());
+    QWidget *host = card->parentWidget();
+    m_localCard = new QWidget(host);
+    auto *cardLayout = new QHBoxLayout(m_localCard);
+    cardLayout->setContentsMargins(settings::rowPadding());
+    cardLayout->setSpacing(settings::largeSpacing());
+    auto *text = new QVBoxLayout;
+    text->setSpacing(settings::smallSpacing());
+    m_localCaption = makeNote(QString(), m_localCard);
+    text->addWidget(m_localCaption);
+    m_localName = new QLabel(m_localCard);
+    m_localName->setObjectName(QStringLiteral("speechLocalModelName"));
+    QFont bold = m_localName->font();
+    bold.setBold(true);
+    m_localName->setFont(bold);
+    text->addWidget(m_localName);
+    m_localFacts = new WrappingLabel(m_localCard);
+    m_localFacts->setWordWrap(true);
+    text->addWidget(m_localFacts);
+    cardLayout->addLayout(text, 1);
+
+    auto *action = new QVBoxLayout;
+    action->setSpacing(settings::smallSpacing());
+    m_localDownload = new QPushButton(m_localCard);
+    m_localDownload->setObjectName(QStringLiteral("speechLocalDownload"));
+    m_localDownload->setDefault(true);
+    action->addWidget(m_localDownload, 0, Qt::AlignRight);
+    m_localProgress = new QProgressBar(m_localCard);
+    m_localProgress->setTextVisible(false);
+    m_localProgress->setRange(0, 1000);
+    m_localProgress->setMaximumWidth(settings::gridUnit() * 9);
+    action->addWidget(m_localProgress, 0, Qt::AlignRight);
+    m_localState = new QLabel(m_localCard);
+    m_localState->setObjectName(QStringLiteral("speechLocalState"));
+    action->addWidget(m_localState, 0, Qt::AlignRight);
+    m_localCancel = new QPushButton(QStringLiteral("Cancel"), m_localCard);
+    action->addWidget(m_localCancel, 0, Qt::AlignRight);
+    cardLayout->addLayout(action);
+    settings::addCardRow(card, m_localCard, host);
+
+    m_compareToggle = new QToolButton(m_localSection);
+    m_compareToggle->setObjectName(QStringLiteral("speechLocalCompare"));
+    m_compareToggle->setAutoRaise(true);
+    m_compareToggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_compareToggle->setArrowType(Qt::RightArrow);
+    layout->addWidget(m_compareToggle, 0, Qt::AlignLeft);
+
+    const QStringList headers{QStringLiteral("Model"), QStringLiteral("Download"),
+                              QStringLiteral("Word errors"), QStringLiteral("10 s of speech"),
+                              QStringLiteral("Text shows"), QStringLiteral("Memory")};
+    m_compare = new QTableWidget(int(localModelCatalog().size()), int(headers.size()), m_localSection);
+    m_compare->setObjectName(QStringLiteral("speechLocalCompareTable"));
+    m_compare->setHorizontalHeaderLabels(headers);
+    m_compare->verticalHeader()->hide();
+    m_compare->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_compare->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_compare->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_compare->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_compare->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_compare->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContents);
+    m_compare->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    m_compare->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_compare->hide();
+    layout->addWidget(m_compare);
+    auto *compareNote = makeNote(QStringLiteral("Word errors: clear read speech / everyday speech. Times are "
+                                                "estimates until a model is downloaded and tested here."),
+                                 m_localSection);
+    compareNote->setObjectName(QStringLiteral("speechLocalCompareNote"));
+    compareNote->hide();
+    layout->addWidget(compareNote);
+
+    connect(m_compareToggle, &QToolButton::clicked, this, [this, compareNote] {
+        const bool open = !m_compare->isVisible();
+        m_compareToggle->setArrowType(open ? Qt::DownArrow : Qt::RightArrow);
+        m_compare->setVisible(open);
+        compareNote->setVisible(open);
+        showLocalChoice();
+    });
+    connect(m_compare, &QTableWidget::cellClicked, this, [this](int row, int) {
+        m_localPicked = true;
+        setLocalChoice(localModelCatalog().at(row).id);
+    });
+    connect(m_localDownload, &QPushButton::clicked, this, [this] {
+        m_local->download(localChoice());
+        setLocalChoice(localChoice().id);
+    });
+    connect(m_localCancel, &QPushButton::clicked, this, [this] { m_local->cancelDownload(localChoice().id); });
+    connect(m_local, &LocalSetup::changed, this, [this] {
+        showLocalChoice();
+        showSelectedProvider();
+    });
+    connect(&m_local->models(), &LocalModelStore::downloadProgress, this, [this] { showLocalChoice(); });
+    return m_localSection;
+}
+
+bool SpeechProviderSetupPage::localSelected() const
+{
+    const int index = selectedIndex();
+    return m_local && index >= 0 && m_options.at(index).id == QStringLiteral("local");
+}
+
+const LocalModel &SpeechProviderSetupPage::localChoice() const
+{
+    const LocalModel *chosen = findLocalModel(m_localModelId);
+    return m_localPicked && chosen ? *chosen : m_local->suggestedModel();
+}
+
+void SpeechProviderSetupPage::setLocalChoice(const QString &modelId)
+{
+    m_localModelId = modelId;
+    LocalSpeechSettings local = m_settings.localSpeechSettings();
+    local.modelId = modelId;
+    m_settings.setLocalSpeechSettings(local);
+    showLocalChoice();
+    showSelectedProvider();
+}
+
+bool SpeechProviderSetupPage::localDownloadStarted() const
+{
+    const LocalModel &model = localChoice();
+    return m_local->models().isDownloaded(model) || m_local->models().isDownloading(model.id);
+}
+
+QString SpeechProviderSetupPage::localModelId() const
+{
+    return localSelected() ? localChoice().id : QString();
+}
+
+void SpeechProviderSetupPage::showLocalChoice()
+{
+    if (!m_localSection) {
+        return;
+    }
+    m_localSection->setVisible(localSelected());
+    const HardwareProfile &hardware = m_local->hardware().profile;
+    const LocalModel &model = localChoice();
+    const bool suggested = model.id == m_local->suggestedModel().id;
+    if (!m_localPicked && m_settings.localSpeechSettings().modelId != model.id) {
+        // The suggestion is what dictation will use unless the person picks.
+        LocalSpeechSettings local = m_settings.localSpeechSettings();
+        local.modelId = model.id;
+        m_settings.setLocalSpeechSettings(local);
+    }
+    m_localHardware->setText(m_local->hardwareLine());
+    m_localCaption->setText(suggested ? QStringLiteral("Suggested for this computer") : QStringLiteral("Your choice"));
+    m_localName->setText(model.name);
+    m_localFacts->setText(QStringLiteral("%1\n%2\n%3% of words wrong on clear speech, %4% on everyday speech")
+                              .arg(model.streams ? QStringLiteral("Words appear as you speak")
+                                                 : QStringLiteral("Text appears after you stop speaking"),
+                                   localModelSpeedLine(model, hardware, m_local->measuredSeconds(model.id)))
+                              .arg(model.librispeechCleanWer)
+                              .arg(model.fleursEnglishWer));
+
+    const auto progress = m_local->downloadProgress(model.id);
+    const bool downloaded = !progress && m_local->models().isDownloaded(model);
+    const bool tooLarge = m_local->fit(model) == ModelFit::TooLarge;
+    m_localDownload->setVisible(!progress && !downloaded);
+    m_localDownload->setEnabled(!tooLarge);
+    m_localDownload->setText(tooLarge ? QStringLiteral("Too large for this computer")
+                                      : QStringLiteral("Download %1").arg(downloadSizeText(model.sizeBytes)));
+    m_localProgress->setVisible(bool(progress));
+    m_localCancel->setVisible(bool(progress));
+    if (progress) {
+        m_localProgress->setValue(progress->second > 0 ? int(progress->first * 1000 / progress->second) : 0);
+        m_localState->setText(QStringLiteral("%1 of %2").arg(downloadSizeText(progress->first),
+                                                             downloadSizeText(model.sizeBytes)));
+    } else if (downloaded) {
+        setStatusColor(m_localState, true);
+        m_localState->setText(QStringLiteral("Downloaded"));
+    } else {
+        m_localState->setText(m_local->downloadError(model.id));
+    }
+    m_localState->setVisible(!m_localState->text().isEmpty());
+
+    m_compareToggle->setText(m_compare->isVisible()
+                                 ? QStringLiteral("Hide other models")
+                                 : QStringLiteral("Compare %1 other models").arg(localModelCatalog().size() - 1));
+    for (int row = 0; row < localModelCatalog().size(); ++row) {
+        const LocalModel &entry = localModelCatalog().at(row);
+        const std::optional<double> measured = m_local->measuredSeconds(entry.id);
+        const std::optional<SpeedEstimate> estimate = estimatedSpeed(entry, hardware);
+        const QString speed = measured ? speechSecondsText(*measured)
+            : estimate                 ? QStringLiteral("~") + speechSecondsText(estimate->secondsFor10sSpeech)
+                                       : QStringLiteral("Not measured");
+        const QStringList cells{
+            entry.id == m_local->suggestedModel().id ? entry.name + QStringLiteral(" (suggested)") : entry.name,
+            downloadSizeText(entry.sizeBytes),
+            QStringLiteral("%1% / %2%").arg(entry.librispeechCleanWer).arg(entry.fleursEnglishWer),
+            speed,
+            entry.streams ? QStringLiteral("As you speak") : QStringLiteral("After you stop"),
+            m_local->fitLabel(entry),
+        };
+        for (int column = 0; column < cells.size(); ++column) {
+            QTableWidgetItem *item = m_compare->item(row, column);
+            if (!item) {
+                item = new QTableWidgetItem;
+                m_compare->setItem(row, column, item);
+            }
+            item->setText(cells.at(column));
+        }
+    }
+    {
+        const QSignalBlocker blocker(m_compare);
+        m_compare->selectRow(int(std::find_if(localModelCatalog().cbegin(), localModelCatalog().cend(),
+                                              [&model](const LocalModel &entry) { return entry.id == model.id; })
+                                 - localModelCatalog().cbegin()));
+    }
+}
+
+void SpeechProviderSetupPage::chooseProvider(const QString &providerId)
+{
+    for (const ProviderOptionRow &option : m_options) {
+        if (option.id == providerId) {
+            m_userSelected = true;
+            option.button->setChecked(true);
+            return;
+        }
+    }
+}
+
 void SpeechProviderSetupPage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
+    if (m_local) {
+        m_local->probeHardware();
+    }
     // Probing here rather than in the constructor keeps this page's credential
     // reads off the Welcome page's, which contend for the same lock file, and
     // catches a sign-in the user performed after passing Welcome.
@@ -744,6 +1152,9 @@ QString SpeechProviderSetupPage::blockedReason() const
     if (index < 0) {
         return QStringLiteral("No transcription service is available.");
     }
+    if (localSelected()) {
+        return QStringLiteral("Download a speech model to continue.");
+    }
     return QStringLiteral("%1 is no longer signed in.").arg(m_options.at(index).label);
 }
 
@@ -754,6 +1165,9 @@ QString SpeechProviderSetupPage::readySummary() const
         return QString();
     }
     const ProviderOptionRow &option = m_options.at(index);
+    if (localSelected()) {
+        return QStringLiteral("Transcription — %1, on this computer").arg(localChoice().name);
+    }
     QString summary = QStringLiteral("Transcription — %1").arg(option.label);
     if (m_signIn.usingCliproxy(option.id)) {
         summary += QStringLiteral(" (CLI Proxy API)");
@@ -779,9 +1193,11 @@ void SpeechProviderSetupPage::selectProvider(const QString &providerId)
                                      return provider.id == providerId;
                                  });
     m_hint->setText(it == providers.cend() ? QString() : it->setupHint);
-    m_stats->setStats(it == providers.cend() ? QVector<ProviderStat>{} : it->stats);
+    // The Local card explains itself; the generic facts would repeat it.
+    m_stats->setStats(it == providers.cend() || localSelected() ? QVector<ProviderStat>{} : it->stats);
     m_accuracyPass->setVisible(providerId == QStringLiteral("codex"));
     updateSignInControls();
+    showLocalChoice();
     showSelectedProvider();
 }
 
@@ -906,9 +1322,12 @@ void SpeechProviderSetupPage::finishProbe(int index,
     option.probed = true;
     option.ok = result.ok;
     option.message = result.message;
-    setStatusColor(option.status, result.ok);
-    option.status->setText(result.ok ? QStringLiteral("Ready")
-                                     : QStringLiteral("Not set up"));
+    // The Local row's status is its download, which showLocalRowStatus keeps.
+    if (option.id != QStringLiteral("local") || !m_local) {
+        setStatusColor(option.status, result.ok);
+        option.status->setText(result.ok ? QStringLiteral("Ready")
+                                         : QStringLiteral("Not set up"));
+    }
     showSelectedProvider();
     // A single-provider re-probe runs outside the counted rounds; it must not
     // drive the one-time auto-selection or push the count negative.
@@ -929,6 +1348,27 @@ void SpeechProviderSetupPage::showSelectedProvider()
         return;
     }
     const ProviderOptionRow &option = m_options.at(index);
+    if (localSelected()) {
+        // Next opens as soon as a download has started: it keeps going while
+        // setup continues, and the Ready page shows where it got to.
+        const bool downloaded = m_local->models().isDownloaded(localChoice());
+        const bool started = localDownloadStarted();
+        setStatusColor(m_status, false);
+        m_status->setText(downloaded ? QString()
+                          : started  ? QStringLiteral("The download keeps going while you finish setup.")
+                                     : QStringLiteral("Download a model to continue. It keeps going while "
+                                                      "you finish setup."));
+        m_status->setVisible(!m_status->text().isEmpty());
+        m_hint->hide();
+        m_checkAgain->hide();
+        option.status->setText(downloaded ? QStringLiteral("Ready")
+                               : started  ? QStringLiteral("Downloading")
+                                          : QString());
+        setStatusColor(option.status, downloaded);
+        setReady(started);
+        return;
+    }
+    m_status->show();
     if (!option.probed) {
         setStatusColor(m_status, false);
         m_status->setText(QStringLiteral("Checking…"));
@@ -1455,11 +1895,12 @@ void TextDeliverySetupPage::runSetup() {}
 
 RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
                                          ProviderRegistry &providers,
+                                         LocalSetup *local,
                                          QWidget *parent)
     : QWidget(parent)
     , m_settings(settings)
     , m_providers(providers)
-    , m_none(nullptr)
+    , m_local(local)
     , m_stats(new ProviderStatsBlock(this))
     , m_warning(new WrappingLabel(this))
     , m_fastMode(new QCheckBox(QStringLiteral("Fast mode"), this))
@@ -1467,29 +1908,53 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
 {
     QVBoxLayout *layout = makePage(
         this,
-        QStringLiteral("Refinement can clean up a raw transcript after dictation. Choose a provider, or None to skip cleanup."));
+        QStringLiteral("Refinement can clean up a raw transcript after dictation. Choose a provider, or skip cleanup."));
 
-    QFormLayout *choices = addCard(layout, this, QStringLiteral("Cleanup provider"));
-    QWidget *host = choices->parentWidget();
-    auto *group = new QButtonGroup(this);
+    // The cloud providers use a sign-in; a local runner and a custom endpoint
+    // are models the person runs. Each group is its own card.
+    m_group = new QButtonGroup(this);
     const QString savedProvider = m_settings.refinementProvider();
-    for (const ProviderDescriptor &provider : providers.refinementProviders()) {
-        // The brands differ from the transcription page's, so say which
-        // sign-in each one actually uses.
-        m_options.append(addOptionRow(choices, group, provider.id, provider.label,
-                                      provider.setupHint,
-                                      QStringLiteral("refinementProvider")));
-        m_options.last().button->setChecked(provider.id == savedProvider);
+    const QList<ProviderDescriptor> registered = providers.refinementProviders();
+    const auto addGroup = [&](const QString &title, const QStringList &ids) {
+        QFormLayout *card = nullptr;
+        for (const QString &id : ids) {
+            const auto found = std::find_if(registered.cbegin(), registered.cend(),
+                                            [&id](const ProviderDescriptor &provider) { return provider.id == id; });
+            if (found == registered.cend()) {
+                continue;
+            }
+            const ProviderDescriptor &provider = *found;
+            if (!card) {
+                card = addCard(layout, this, title);
+            }
+            const QString label = provider.id == QStringLiteral("local")      ? QStringLiteral("This computer")
+                                  : provider.id == QStringLiteral("endpoint") ? QStringLiteral("A server I run")
+                                                                              : provider.label;
+            m_options.append(addOptionRow(card, m_group, provider.id, label, provider.setupHint,
+                                          QStringLiteral("refinementProvider")));
+            m_options.last().button->setChecked(provider.id == savedProvider);
+        }
+    };
+    addGroup(QStringLiteral("Uses your sign-in"), {QStringLiteral("anthropic"), QStringLiteral("openai")});
+    addGroup(QStringLiteral("Your own models"), {QStringLiteral("local"), QStringLiteral("endpoint")});
+    // A registry with providers this page does not group still offers them.
+    const QStringList grouped{QStringLiteral("anthropic"), QStringLiteral("openai"), QStringLiteral("local"),
+                        QStringLiteral("endpoint")};
+    QStringList others;
+    for (const ProviderDescriptor &provider : registered) {
+        if (!grouped.contains(provider.id)) {
+            others.append(provider.id);
+        }
     }
+    addGroup(QStringLiteral("Cleanup provider"), others);
 
-    const ProviderOptionRow none = addOptionRow(choices, group,
-                                                QStringLiteral("none"),
-                                                QStringLiteral("None"),
-                                                QStringLiteral("Skip cleanup entirely."),
-                                                QStringLiteral("refinementProvider"));
-    m_none = none.button;
-    none.status->setText(QStringLiteral("No cleanup"));
-    m_none->setChecked(selectedIndex() < 0);
+    m_skip = new QCheckBox(QStringLiteral("Skip cleanup and deliver the raw transcript"), this);
+    m_skip->setObjectName(QStringLiteral("refinementSkip"));
+    m_skip->setChecked(selectedIndex() < 0);
+    layout->addWidget(m_skip);
+    m_lastProvider = selectedIndex() >= 0 ? selectedProviderId()
+                     : m_options.isEmpty() ? QString()
+                                           : m_options.first().id;
 
     m_warning->setObjectName(QStringLiteral("refinementProviderWarning"));
     m_warning->setWordWrap(true);
@@ -1497,6 +1962,10 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
     // Directly under the cards, so it reads as attached to the selection above
     // it rather than to the facts below.
     layout->addWidget(m_warning);
+    if (m_local) {
+        layout->addWidget(makeLocalRunnerDetail());
+        layout->addWidget(makeEndpointDetail());
+    }
     layout->addWidget(m_stats);
     m_fastMode->setObjectName(QStringLiteral("refinementFastMode"));
     m_fastModeHint->setWordWrap(true);
@@ -1509,15 +1978,16 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
         connect(option.button, &QRadioButton::clicked, this, [this] { m_userSelected = true; });
         connect(option.button, &QRadioButton::toggled, this, [this, providerId](bool checked) {
             if (checked) {
+                m_lastProvider = providerId;
+                const QSignalBlocker blocker(m_skip);
+                m_skip->setChecked(false);
                 selectProvider(providerId);
             }
         });
     }
-    connect(m_none, &QRadioButton::clicked, this, [this] { m_userSelected = true; });
-    connect(m_none, &QRadioButton::toggled, this, [this](bool checked) {
-        if (checked) {
-            selectProvider(QStringLiteral("none"));
-        }
+    connect(m_skip, &QCheckBox::clicked, this, [this](bool skip) {
+        m_userSelected = true;
+        skipCleanup(skip);
     });
     connect(m_fastMode, &QCheckBox::toggled, this, [this](bool checked) {
         const QString provider = selectedProviderId();
@@ -1530,6 +2000,293 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
     selectProvider(selectedProviderId());
 }
 
+// None is not a provider card but a way out of all of them: checking it
+// clears the choice, unchecking it returns to the last provider.
+void RefinementSetupPage::skipCleanup(bool skip)
+{
+    if (!skip) {
+        for (const ProviderOptionRow &option : m_options) {
+            if (option.id == m_lastProvider) {
+                option.button->setChecked(true);
+                return;
+            }
+        }
+        return;
+    }
+    m_group->setExclusive(false);
+    for (const ProviderOptionRow &option : m_options) {
+        option.button->setChecked(false);
+    }
+    m_group->setExclusive(true);
+    selectProvider(QStringLiteral("none"));
+}
+
+QWidget *RefinementSetupPage::makeLocalRunnerDetail()
+{
+    m_localDetail = new QWidget(this);
+    auto *layout = new QVBoxLayout(m_localDetail);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(settings::relatedSpacing());
+    m_runnerStatus = new WrappingLabel(m_localDetail);
+    m_runnerStatus->setObjectName(QStringLiteral("refinementRunnerStatus"));
+    m_runnerStatus->setWordWrap(true);
+    layout->addWidget(m_runnerStatus);
+
+    QFormLayout *card = addCard(layout, m_localDetail, QString());
+    QWidget *host = card->parentWidget();
+    m_runnerModel = new QComboBox(host);
+    m_runnerModel->setObjectName(QStringLiteral("refinementRunnerModel"));
+    m_runnerModel->setMinimumContentsLength(20);
+    m_runnerModelRow = settings::makeRow(QStringLiteral("Model"),
+                                         QStringLiteral("A cleanup model the runner has downloaded."),
+                                         m_runnerModel, host);
+    settings::addCardRow(card, m_runnerModelRow, host);
+
+    m_cleanupSuggestion = new QWidget(host);
+    auto *suggestion = new QHBoxLayout(m_cleanupSuggestion);
+    suggestion->setContentsMargins(settings::rowPadding());
+    suggestion->setSpacing(settings::largeSpacing());
+    m_cleanupSuggestionText = new WrappingLabel(m_cleanupSuggestion);
+    m_cleanupSuggestionText->setWordWrap(true);
+    suggestion->addWidget(m_cleanupSuggestionText, 1);
+    auto *pullColumn = new QVBoxLayout;
+    m_pull = new QPushButton(QStringLiteral("Download with Ollama"), m_cleanupSuggestion);
+    m_pull->setObjectName(QStringLiteral("refinementPull"));
+    pullColumn->addWidget(m_pull, 0, Qt::AlignRight);
+    m_pullProgress = new QProgressBar(m_cleanupSuggestion);
+    m_pullProgress->setTextVisible(false);
+    m_pullProgress->setRange(0, 1000);
+    m_pullProgress->setMaximumWidth(settings::gridUnit() * 9);
+    pullColumn->addWidget(m_pullProgress, 0, Qt::AlignRight);
+    suggestion->addLayout(pullColumn);
+    settings::addCardRow(card, m_cleanupSuggestion, host);
+
+    m_noRunner = new QWidget(m_localDetail);
+    auto *noRunner = new QVBoxLayout(m_noRunner);
+    noRunner->setContentsMargins(0, 0, 0, 0);
+    noRunner->setSpacing(settings::relatedSpacing());
+    auto *explain = makeNote(QStringLiteral("Cleanup models run in a separate app. Install Ollama, then choose "
+                                            "Check again and Speecher will set up a model through it. LM Studio "
+                                            "and llama-server work too."),
+                             m_noRunner);
+    noRunner->addWidget(explain);
+    auto *buttons = new QHBoxLayout;
+    auto *getOllama = new QPushButton(QStringLiteral("Get Ollama"), m_noRunner);
+    getOllama->setObjectName(QStringLiteral("refinementGetOllama"));
+    auto *checkAgain = new QPushButton(QStringLiteral("Check again"), m_noRunner);
+    checkAgain->setObjectName(QStringLiteral("refinementRunnerCheckAgain"));
+    buttons->addWidget(getOllama);
+    buttons->addWidget(checkAgain);
+    buttons->addStretch();
+    noRunner->addLayout(buttons);
+    auto *rawWarning = new InlineMessage(m_noRunner);
+    rawWarning->setType(InlineMessage::Type::Warning);
+    rawWarning->setCloseButtonVisible(false);
+    rawWarning->setText(QStringLiteral("Until a runner is set up, dictation delivers the raw transcript."));
+    noRunner->addWidget(rawWarning);
+    layout->addWidget(m_noRunner);
+
+    connect(getOllama, &QPushButton::clicked, this,
+            [] { QDesktopServices::openUrl(QUrl(QStringLiteral("https://ollama.com/download"))); });
+    connect(checkAgain, &QPushButton::clicked, this, [this] { m_local->detectRunners(); });
+    connect(m_pull, &QPushButton::clicked, this, [this] {
+        if (const std::optional<CleanupModel> model = m_local->suggestedCleanupModel()) {
+            m_local->pullCleanupModel(model->ollamaTag);
+        }
+    });
+    connect(m_runnerModel, &QComboBox::activated, this, [this] {
+        LocalRunnerSettings runner = m_settings.localRunnerSettings();
+        runner.model = m_runnerModel->currentText();
+        m_settings.setLocalRunnerSettings(runner);
+        showSelectedProvider();
+    });
+    connect(m_local, &LocalSetup::changed, this, [this] { showLocalRunner(); });
+    return m_localDetail;
+}
+
+QWidget *RefinementSetupPage::makeEndpointDetail()
+{
+    m_endpointDetail = new QWidget(this);
+    auto *layout = new QVBoxLayout(m_endpointDetail);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(settings::relatedSpacing());
+    QFormLayout *card = addCard(layout, m_endpointDetail, QString());
+    QWidget *host = card->parentWidget();
+    const RefinementEndpointSettings saved = m_settings.snapshot().refinement.endpoint;
+
+    m_endpointFormat = new QComboBox(host);
+    m_endpointFormat->setObjectName(QStringLiteral("refinementEndpointFormat"));
+    m_endpointFormat->addItem(QStringLiteral("OpenAI-compatible (Chat Completions)"), QStringLiteral("openai"));
+    m_endpointFormat->addItem(QStringLiteral("Anthropic-compatible (Messages)"), QStringLiteral("anthropic"));
+    settings::selectData(m_endpointFormat, saved.format);
+    settings::addCardRow(card, settings::makeRow(QStringLiteral("Format"), QString(), m_endpointFormat, host), host);
+
+    m_endpointUrl = new QLineEdit(saved.baseUrl, host);
+    m_endpointUrl->setObjectName(QStringLiteral("refinementEndpointUrl"));
+    m_endpointUrl->setPlaceholderText(QStringLiteral("http://localhost:8080/v1"));
+    m_endpointUrl->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    settings::addCardRow(card, settings::makeRow(QStringLiteral("Server URL"), QString(), m_endpointUrl, host), host);
+
+    m_endpointKey = new QLineEdit(saved.apiKey, host);
+    m_endpointKey->setObjectName(QStringLiteral("refinementEndpointKey"));
+    m_endpointKey->setEchoMode(QLineEdit::Password);
+    m_endpointKey->setPlaceholderText(QStringLiteral("Optional"));
+    m_endpointKey->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    settings::addCardRow(card, settings::makeRow(QStringLiteral("API key"), keyStorageHelp(), m_endpointKey, host),
+                         host);
+
+    auto *modelControls = new QWidget(host);
+    auto *modelLayout = new QHBoxLayout(modelControls);
+    modelLayout->setContentsMargins(0, 0, 0, 0);
+    modelLayout->setSpacing(settings::relatedSpacing());
+    m_endpointModel = new QComboBox(modelControls);
+    m_endpointModel->setObjectName(QStringLiteral("refinementEndpointModel"));
+    m_endpointModel->setEditable(true);
+    m_endpointModel->setInsertPolicy(QComboBox::NoInsert);
+    m_endpointModel->setMinimumContentsLength(18);
+    m_endpointModel->setEditText(saved.model);
+    modelLayout->addWidget(m_endpointModel);
+    auto *connectButton = new QPushButton(QStringLiteral("Connect"), modelControls);
+    connectButton->setObjectName(QStringLiteral("refinementEndpointConnect"));
+    modelLayout->addWidget(connectButton);
+    settings::addCardRow(card, settings::makeRow(QStringLiteral("Model"),
+                                                 QStringLiteral("Connect to list the server's models, or type one."),
+                                                 modelControls, host),
+                         host);
+    m_endpointStatus = new WrappingLabel(m_endpointDetail);
+    m_endpointStatus->setObjectName(QStringLiteral("refinementEndpointStatus"));
+    m_endpointStatus->setWordWrap(true);
+    layout->addWidget(m_endpointStatus);
+
+    for (QLineEdit *edit : {m_endpointUrl, m_endpointKey}) {
+        connect(edit, &QLineEdit::editingFinished, this, [this] { saveEndpointFields(); });
+    }
+    connect(m_endpointFormat, &QComboBox::activated, this, [this] { saveEndpointFields(); });
+    connect(m_endpointModel, &QComboBox::currentTextChanged, this, [this] { saveEndpointFields(); });
+    connect(connectButton, &QPushButton::clicked, this, [this] {
+        saveEndpointFields();
+        m_local->checkRefinementEndpoint(endpointFromFields());
+    });
+    connect(m_local, &LocalSetup::changed, this, [this] { showEndpointCheck(); });
+    return m_endpointDetail;
+}
+
+RefinementSettings RefinementSetupPage::endpointFromFields() const
+{
+    RefinementSettings settings = m_settings.snapshot().refinement;
+    settings.endpoint.preset.clear();
+    settings.endpoint.format = m_endpointFormat->currentData().toString();
+    settings.endpoint.baseUrl = m_endpointUrl->text().trimmed();
+    settings.endpoint.apiKey = m_endpointKey->text().trimmed();
+    settings.endpoint.model = m_endpointModel->currentText().trimmed();
+    return settings;
+}
+
+void RefinementSetupPage::saveEndpointFields()
+{
+    AppSettings settings = m_settings.snapshot();
+    settings.refinement = endpointFromFields();
+    m_settings.applySnapshot(settings);
+    showSelectedProvider();
+}
+
+void RefinementSetupPage::showEndpointCheck()
+{
+    const LiveFacts facts = m_local->liveFacts();
+    m_endpointStatus->setText(facts.refinementEndpointStatus);
+    m_endpointStatus->setVisible(!facts.refinementEndpointStatus.isEmpty());
+    if (!facts.refinementEndpointModels.isEmpty()) {
+        const QString typed = m_endpointModel->currentText();
+        const QSignalBlocker blocker(m_endpointModel);
+        m_endpointModel->clear();
+        m_endpointModel->addItems(facts.refinementEndpointModels);
+        m_endpointModel->setEditText(typed.isEmpty() ? facts.refinementEndpointModels.first() : typed);
+    }
+}
+
+void RefinementSetupPage::showLocalRunner()
+{
+    const QList<DetectedRunner> runners = m_local->runners();
+    const LocalSetup::Pull pull = m_local->pull();
+    const bool found = !runners.isEmpty();
+    // The own-model rows say what is on this computer, not a sign-in verdict.
+    for (const ProviderOptionRow &option : m_options) {
+        if (option.id == QStringLiteral("local")) {
+            setStatusColor(option.status, found);
+            option.status->setText(m_local->detectingRunners() ? QStringLiteral("Checking…")
+                                   : found ? QStringLiteral("%1 found").arg(runners.first().name)
+                                           : QStringLiteral("No runner"));
+        } else if (option.id == QStringLiteral("endpoint")) {
+            option.status->clear();
+        }
+    }
+    if (m_local->detectingRunners()) {
+        setStatusColor(m_runnerStatus, false);
+        m_runnerStatus->setText(QStringLiteral("Looking for Ollama, LM Studio and llama-server…"));
+    } else if (found) {
+        const DetectedRunner &runner = runners.first();
+        setStatusColor(m_runnerStatus, true);
+        m_runnerStatus->setText(QStringLiteral("%1 %2 is running on this computer.").arg(runner.name, runner.version));
+    } else {
+        setStatusColor(m_runnerStatus, false);
+        m_runnerStatus->setText(QStringLiteral("No local runner found on this computer."));
+    }
+    m_noRunner->setVisible(!found && !m_local->detectingRunners());
+    m_runnerModelRow->parentWidget()->parentWidget()->parentWidget()->setVisible(found);
+
+    // The first runner found is the one the settings name.
+    if (found) {
+        const DetectedRunner &runner = runners.first();
+        LocalRunnerSettings chosen = m_settings.localRunnerSettings();
+        if (chosen.runner != runner.id) {
+            chosen.runner = runner.id;
+            m_settings.setLocalRunnerSettings(chosen);
+        }
+        const QSignalBlocker blocker(m_runnerModel);
+        m_runnerModel->clear();
+        m_runnerModel->addItems(runner.models);
+        if (chosen.model.isEmpty() && !runner.models.isEmpty()) {
+            // The suggested cleanup model when the runner has it.
+            const std::optional<CleanupModel> suggested = m_local->suggestedCleanupModel();
+            const auto installed = std::find_if(runner.models.cbegin(), runner.models.cend(),
+                                                [&suggested](const QString &model) {
+                                                    return suggested && model.startsWith(suggested->ollamaTag);
+                                                });
+            chosen.model = installed != runner.models.cend() ? *installed : runner.models.first();
+            m_settings.setLocalRunnerSettings(chosen);
+        }
+        m_runnerModel->setCurrentText(chosen.model);
+        m_runnerModelRow->setVisible(!runner.models.isEmpty());
+    }
+
+    const std::optional<CleanupModel> suggested = m_local->suggestedCleanupModel();
+    const bool haveSuggested = found && suggested
+        && std::any_of(runners.first().models.cbegin(), runners.first().models.cend(),
+                       [&suggested](const QString &model) {
+                           return model == suggested->ollamaTag
+                               || model == suggested->ollamaTag + QStringLiteral(":latest");
+                       });
+    const bool ollama = found && runners.first().id == QStringLiteral("ollama");
+    settings::setCardRowVisible(m_cleanupSuggestion, ollama && (pull.running || !haveSuggested));
+    m_pull->setVisible(!pull.running && suggested.has_value());
+    m_pullProgress->setVisible(pull.running);
+    if (pull.running) {
+        m_pullProgress->setValue(pull.totalBytes > 0 ? int(pull.completedBytes * 1000 / pull.totalBytes) : 0);
+        m_cleanupSuggestionText->setText(QStringLiteral("Downloading %1 through Ollama: %2 of %3")
+                                             .arg(suggested ? suggested->name : pull.tag,
+                                                  downloadSizeText(pull.completedBytes),
+                                                  downloadSizeText(pull.totalBytes)));
+    } else if (suggested) {
+        m_cleanupSuggestionText->setText(
+            QStringLiteral("Suggested for this computer: %1, %2.%3")
+                .arg(suggested->name, downloadSizeText(suggested->sizeBytes),
+                     pull.error.isEmpty() ? QString() : QStringLiteral("\n") + pull.error));
+    } else {
+        m_cleanupSuggestionText->setText(QStringLiteral("Cleanup would be slow on this computer. A cloud "
+                                                        "provider or skipping cleanup will feel faster."));
+    }
+}
+
 void RefinementSetupPage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
@@ -1537,6 +2294,10 @@ void RefinementSetupPage::showEvent(QShowEvent *event)
     // not while the wizard is building, so the credential reads serialize and
     // a mid-wizard sign-in is picked up.
     checkProviders();
+    if (m_local) {
+        m_local->probeHardware();
+        m_local->detectRunners();
+    }
 }
 
 int RefinementSetupPage::selectedIndex() const
@@ -1551,6 +2312,14 @@ int RefinementSetupPage::selectedIndex() const
 
 QString RefinementSetupPage::readySummary() const
 {
+    const QString provider = selectedProviderId();
+    if (provider == QStringLiteral("local")) {
+        return QStringLiteral("Refinement — %1 with %2")
+            .arg(localRunnerName(m_settings.localRunnerSettings().runner), m_settings.localRunnerSettings().model);
+    }
+    if (provider == QStringLiteral("endpoint")) {
+        return QStringLiteral("Refinement — %1 on your server").arg(m_settings.snapshot().refinement.endpoint.model);
+    }
     const int index = selectedIndex();
     return QStringLiteral("Refinement — %1")
         .arg(index < 0 ? QStringLiteral("None") : m_options.at(index).label);
@@ -1565,6 +2334,12 @@ QString RefinementSetupPage::selectedProviderId() const
 void RefinementSetupPage::selectProvider(const QString &providerId)
 {
     m_settings.setRefinementProvider(providerId);
+    if (m_localDetail) {
+        m_localDetail->setVisible(providerId == QStringLiteral("local"));
+        m_endpointDetail->setVisible(providerId == QStringLiteral("endpoint"));
+        showLocalRunner();
+        showEndpointCheck();
+    }
     updateProviderStats();
     updateFastModeControl();
     showSelectedProvider();
@@ -1636,6 +2411,9 @@ void RefinementSetupPage::finishProbe(int index,
     setStatusColor(option.status, result.ok);
     option.status->setText(result.ok ? QStringLiteral("Ready")
                                      : QStringLiteral("Not set up"));
+    if (m_local && (option.id == QStringLiteral("local") || option.id == QStringLiteral("endpoint"))) {
+        showLocalRunner();
+    }
     showSelectedProvider();
     // Unlike the speech page, this page has no single-provider re-probe:
     // every probe belongs to a counted round, and the guard only keeps a
@@ -1654,8 +2432,11 @@ void RefinementSetupPage::showSelectedProvider()
     }
     const ProviderOptionRow &option = m_options.at(index);
     // Refinement stays optional, so an unready provider is a warning rather
-    // than a gate: dictation still delivers, just without the cleanup.
-    const bool warn = option.probed && !option.ok;
+    // than a gate: dictation still delivers, just without the cleanup. The
+    // own-model choices show their own state instead.
+    const bool ownModel = m_localDetail && (option.id == QStringLiteral("local")
+                                            || option.id == QStringLiteral("endpoint"));
+    const bool warn = option.probed && !option.ok && !ownModel;
     m_warning->setVisible(warn);
     if (warn) {
         setStatusColor(m_warning, false);
@@ -1686,6 +2467,10 @@ void RefinementSetupPage::autoSelectReadyProvider()
 void RefinementSetupPage::updateProviderStats()
 {
     const QString providerId = selectedProviderId();
+    if (m_localDetail && (providerId == QStringLiteral("local") || providerId == QStringLiteral("endpoint"))) {
+        m_stats->setStats({});
+        return;
+    }
     const QList<ProviderDescriptor> providers = m_providers.refinementProviders();
     const auto it = std::find_if(providers.cbegin(), providers.cend(),
                                  [&providerId](const ProviderDescriptor &provider) {
@@ -1786,6 +2571,18 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
 {
     QVBoxLayout *layout = makePage(this, QStringLiteral("Setup is complete."), &m_intro);
     setStatusColor(m_intro, true);
+    m_downloadNotice = new InlineMessage(this);
+    m_downloadNotice->setObjectName(QStringLiteral("finishDownloadNotice"));
+    m_downloadNotice->setCloseButtonVisible(false);
+    m_downloadNotice->setText(QStringLiteral("You can close this window. The download keeps going, and Speecher "
+                                             "shows a notification when you can start dictating."));
+    m_downloadNotice->hide();
+    layout->addWidget(m_downloadNotice);
+    // The download finishing changes the intro and the step's row, and a
+    // cancelled one sends the person back to choose again.
+    connect(m_controller.localSetup(), &LocalSetup::changed, this, [this] { setSteps(m_steps); });
+    connect(m_controller.localModelStore(), &LocalModelStore::downloadProgress,
+            this, &FinishSetupPage::showDownloadProgress);
     m_shortcutStatus->setWordWrap(true);
     m_shortcutStatus->setObjectName(QStringLiteral("finishGlobalShortcutStatus"));
     m_signInNote->setWordWrap(true);
@@ -1868,12 +2665,16 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
 
 void FinishSetupPage::setSteps(const QList<SetupStepStatus> &steps)
 {
+    m_steps = steps;
     const bool blocked = std::any_of(steps.cbegin(), steps.cend(),
                                      [](const SetupStepStatus &step) { return !step.ok; });
-    m_intro->setText(blocked
-        ? QStringLiteral("Speecher can't dictate yet. Finish the steps below, or go back and change your choices.")
-        : QStringLiteral("Setup is complete."));
-    setStatusColor(m_intro, !blocked);
+    const bool downloading = !blocked && !downloadingModel().isEmpty();
+    m_intro->setText(blocked       ? QStringLiteral("Speecher can't dictate yet. Finish the steps below, or go back "
+                                                    "and change your choices.")
+                     : downloading ? QStringLiteral("Setup is complete except for the speech model download.")
+                                   : QStringLiteral("Setup is complete."));
+    setStatusColor(m_intro, !blocked && !downloading);
+    m_downloadNotice->setVisible(downloading);
     m_completed->setVisible(!blocked);
     m_blocked->setVisible(blocked);
     if (blocked) {
@@ -1916,8 +2717,11 @@ void FinishSetupPage::showBlockedSteps(const QList<SetupStepStatus> &steps)
 void FinishSetupPage::showCompletedSteps(const QList<SetupStepStatus> &steps)
 {
     qDeleteAll(m_completedList->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly));
+    m_downloadProgress = nullptr;
+    m_downloadText = nullptr;
     auto *layout = qobject_cast<QVBoxLayout *>(m_completedList->layout());
     QFormLayout *card = nullptr;
+    const QString downloading = downloadingModel();
     for (const SetupStepStatus &step : steps) {
         // Only the steps where something was chosen have anything to report.
         if (step.detail.isEmpty()) {
@@ -1927,12 +2731,63 @@ void FinishSetupPage::showCompletedSteps(const QList<SetupStepStatus> &steps)
             card = addCard(layout, m_completedList, QString());
         }
         QWidget *host = card->parentWidget();
-        const StatusRow row = makeStatusRow(host, nullptr, step.detail, false);
-        setStatusColor(row.status, true);
-        row.status->setText(QStringLiteral("Ready"));
+        QWidget *download = nullptr;
+        if (!downloading.isEmpty() && step.localModelId == downloading) {
+            // The download this step chose is still going: its row carries
+            // the progress instead of a verdict.
+            download = new QWidget(host);
+            auto *downloadLayout = new QHBoxLayout(download);
+            downloadLayout->setContentsMargins(0, 0, 0, 0);
+            downloadLayout->setSpacing(settings::relatedSpacing());
+            m_downloadProgress = new QProgressBar(download);
+            m_downloadProgress->setObjectName(QStringLiteral("finishDownloadProgress"));
+            m_downloadProgress->setTextVisible(false);
+            m_downloadProgress->setRange(0, 1000);
+            m_downloadProgress->setFixedWidth(settings::gridUnit() * 7);
+            downloadLayout->addWidget(m_downloadProgress);
+            m_downloadText = new QLabel(download);
+            m_downloadText->setForegroundRole(QPalette::PlaceholderText);
+            downloadLayout->addWidget(m_downloadText);
+            auto *cancel = new QPushButton(QStringLiteral("Cancel"), download);
+            cancel->setObjectName(QStringLiteral("finishDownloadCancel"));
+            connect(cancel, &QPushButton::clicked, this,
+                    [this, downloading] { m_controller.localSetup()->cancelDownload(downloading); });
+            downloadLayout->addWidget(cancel);
+        }
+        const StatusRow row = makeStatusRow(host, nullptr, step.detail, false, download);
+        if (!download) {
+            setStatusColor(row.status, true);
+            row.status->setText(QStringLiteral("Ready"));
+        }
         settings::addCardRow(card, row.widget, host);
     }
     showRebuiltList(m_completedList);
+    showDownloadProgress();
+}
+
+QString FinishSetupPage::downloadingModel() const
+{
+    for (const SetupStepStatus &step : m_steps) {
+        if (!step.localModelId.isEmpty() && m_controller.localModelStore()->isDownloading(step.localModelId)) {
+            return step.localModelId;
+        }
+    }
+    return {};
+}
+
+void FinishSetupPage::showDownloadProgress()
+{
+    const QString modelId = downloadingModel();
+    if (!m_downloadProgress || modelId.isEmpty()) {
+        return;
+    }
+    const auto progress = m_controller.localSetup()->downloadProgress(modelId);
+    if (!progress) {
+        return;
+    }
+    m_downloadProgress->setValue(progress->second > 0 ? int(progress->first * 1000 / progress->second) : 0);
+    m_downloadText->setText(QStringLiteral("%1 of %2").arg(downloadSizeText(progress->first),
+                                                           downloadSizeText(progress->second)));
 }
 
 void FinishSetupPage::showEvent(QShowEvent *event)

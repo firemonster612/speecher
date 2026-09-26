@@ -4,6 +4,10 @@
 #include "core/VocabularyLimit.h"
 #include "ui/AccessibilityNotice.h"
 #include "core/SecretStore.h"
+#include "app/LocalSetup.h"
+#include "providers/LocalModelStore.h"
+#include <QTemporaryDir>
+#include <QTcpServer>
 #include "frontend/qt/OutputCustomRows.h"
 #ifdef SPEECHER_WITH_YDOTOOL
 #include "output/YdotoolSetupFlow.h"
@@ -1006,6 +1010,78 @@ private slots:
         QVERIFY(status);
         QCOMPARE(status->text(), QStringLiteral("Accounts found"));
         QVERIFY(welcome.ready());
+    }
+
+    void theWelcomePageOffersThisComputerWhenNoSignInIsFound()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        QTemporaryDir emptyCliproxyDir;
+        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), emptyCliproxyDir.path());
+        ProviderRegistry providers;
+        providers.registerSpeechProvider(
+            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
+            [](QObject *parent) {
+                auto *provider = new FakeSpeechTranscriber(parent);
+                provider->prepareResult = {false, QStringLiteral("Sign-in required")};
+                return provider;
+            });
+        QTemporaryDir models;
+        LocalModelStore store(models.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
+        LocalSetup local(settings, providers, store);
+
+        WelcomeSetupPage welcome(settings, providers, &local);
+        QSignalSpy localChosen(&welcome, &WelcomeSetupPage::localPathChosen);
+        welcome.show();
+        auto *signIn = welcome.findChild<QRadioButton *>(QStringLiteral("welcomePathSignIn"));
+        auto *here = welcome.findChild<QRadioButton *>(QStringLiteral("welcomePathLocal"));
+        auto *status = welcome.findChild<QLabel *>(QStringLiteral("welcomePathSignInStatus"));
+        QVERIFY(signIn && here && status);
+        // Nothing to sign in with, so this computer is the default and Next
+        // is open.
+        QVERIFY(here->isChecked());
+        QCOMPARE(status->text(), QStringLiteral("None found"));
+        QVERIFY(welcome.ready());
+        QCOMPARE(localChosen.size(), 1);
+
+        // The sign-in path waits for a sign-in.
+        signIn->click();
+        QVERIFY(!welcome.ready());
+        here->click();
+        QVERIFY(welcome.ready());
+    }
+
+    void theLocalModelCardHoldsNextUntilADownloadStarts()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setSpeechProvider(QStringLiteral("local"));
+        ProviderRegistry providers;
+        providers.registerSpeechProvider(
+            {QStringLiteral("local"), QStringLiteral("Local model"), QString()},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        QTemporaryDir models;
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        LocalModelStore store(models.path(), QUrl(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort())));
+        LocalSetup local(settings, providers, store);
+
+        SpeechProviderSetupPage setup(settings, providers, &local);
+        setup.show();
+        auto *download = setup.findChild<QPushButton *>(QStringLiteral("speechLocalDownload"));
+        auto *name = setup.findChild<QLabel *>(QStringLiteral("speechLocalModelName"));
+        QVERIFY(download && name);
+        QVERIFY(!setup.ready());
+        QCOMPARE(name->text(), local.suggestedModel().name);
+        QVERIFY(download->text().startsWith(QStringLiteral("Download ")));
+
+        download->click();
+        QVERIFY(store.isDownloading(local.suggestedModel().id));
+        QVERIFY(setup.ready());
+        QCOMPARE(setup.localModelId(), local.suggestedModel().id);
+        QCOMPARE(settings.localSpeechSettings().modelId, local.suggestedModel().id);
+        QVERIFY(setup.readySummary().endsWith(QStringLiteral(", on this computer")));
+        local.cancelDownload(local.suggestedModel().id);
     }
 
     void setupSignInSourceSwitchesToCliProxy()

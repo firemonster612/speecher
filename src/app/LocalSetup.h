@@ -43,6 +43,12 @@ public:
     // "AMD Ryzen 7 PRO 4750U, 16 threads · AMD Radeon Graphics, Vulkan · 16 GB".
     QString hardwareLine() const;
     const LocalModel &suggestedModel() const;
+    // Empty until the hardware probe answers: nothing is too large before
+    // anyone knows.
+    std::optional<ModelFit> fit(const LocalModel &model) const;
+    // What a list shows for fit: "Fits", "Tight fit", "Too large", or
+    // "Checking…" before the probe answers.
+    QString fitLabel(const LocalModel &model) const;
 
     // Downloads go through here so the failure a person has not seen yet can be
     // shown by whichever window opens next.

@@ -201,7 +201,7 @@ private:
             const LocalModel &model = *findLocalModel(item->data(Qt::UserRole).toString());
             const QString verdict = model.id == suggested && m_setup.hardwareKnown()
                 ? QStringLiteral("suggested")
-                : modelFitLabel(modelFit(model, hardware)).toLower();
+                : m_setup.fitLabel(model).toLower();
             item->setText(QStringLiteral("%1\n%2 · %3 WER · %4")
                               .arg(model.name, downloadSizeText(model.sizeBytes),
                                    werLine(model.librispeechCleanWer), verdict));
@@ -214,12 +214,12 @@ private:
 
     void showDetail(const LocalModel &model, const HardwareProfile &hardware, const QString &suggested)
     {
-        const ModelFit fit = modelFit(model, hardware);
+        const bool tooLarge = m_setup.fit(model) == ModelFit::TooLarge;
         m_name->setText(model.name);
         m_subtitle->setText(model.id == suggested && m_setup.hardwareKnown()
                                 ? QStringLiteral("Suggested for this computer")
                                 : model.fileName);
-        m_size->setText(QStringLiteral("%1 · %2").arg(downloadSizeText(model.sizeBytes), modelFitLabel(fit)));
+        m_size->setText(QStringLiteral("%1 · %2").arg(downloadSizeText(model.sizeBytes), m_setup.fitLabel(model)));
         m_speed->setText(m_setup.speedTestRunning(model.id)
                              ? QStringLiteral("Testing…")
                              : localModelSpeedLine(model, hardware, m_setup.measuredSeconds(model.id)));
@@ -257,8 +257,8 @@ private:
         }
         m_state->setVisible(!m_state->text().isEmpty());
         m_download->setVisible(!progress && !downloaded);
-        m_download->setEnabled(fit != ModelFit::TooLarge);
-        m_download->setText(fit == ModelFit::TooLarge
+        m_download->setEnabled(!tooLarge);
+        m_download->setText(tooLarge
                                 ? QStringLiteral("Too large for this computer")
                                 : QStringLiteral("Download %1").arg(downloadSizeText(model.sizeBytes)));
         m_use->setVisible(downloaded && !inUse);

@@ -154,6 +154,17 @@ const LocalModel &LocalSetup::suggestedModel() const
     return suggestedLocalModel(m_hardware.profile);
 }
 
+std::optional<ModelFit> LocalSetup::fit(const LocalModel &model) const
+{
+    return m_hardwareKnown ? std::optional<ModelFit>(modelFit(model, m_hardware.profile)) : std::nullopt;
+}
+
+QString LocalSetup::fitLabel(const LocalModel &model) const
+{
+    const std::optional<ModelFit> known = fit(model);
+    return known ? modelFitLabel(*known) : QStringLiteral("Checking…");
+}
+
 void LocalSetup::download(const LocalModel &model)
 {
     m_downloadErrors.remove(model.id);

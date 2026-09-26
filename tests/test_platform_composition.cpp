@@ -10,6 +10,7 @@
 #include "dictation/DictationSession.h"
 #include "platform/CorrectionDiff.h"
 #include "platform/mac/MacMediaController.h"
+#include "app/LocalSetup.h"
 #include "providers/LocalModelStore.h"
 #include "platform/GlobalShortcutBinder.h"
 #ifdef Q_OS_LINUX
@@ -860,6 +861,39 @@ private slots:
         // A step with nothing chosen has nothing to report back.
         QVERIFY(!shown.contains(QStringLiteral("Desktop accessibility")));
         QVERIFY(!shown.contains(QStringLiteral("A few steps still need attention:")));
+    }
+
+    void finishPageShowsADownloadThatIsStillGoing()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        const LocalModel &model = *findLocalModel(QStringLiteral("moonshine-small"));
+        FinishSetupPage page(controller);
+        page.setSteps({
+            {QStringLiteral("Transcription"), true, QStringLiteral("Transcription — Moonshine Small, on this computer"),
+             model.id},
+        });
+        page.show();
+        QCoreApplication::processEvents();
+        QVERIFY(page.findChild<QWidget *>(QStringLiteral("finishDownloadNotice"))->isHidden());
+        QVERIFY(!page.findChild<QWidget *>(QStringLiteral("finishDownloadProgress")));
+
+        controller.localSetup()->download(model);
+        QCoreApplication::processEvents();
+        QVERIFY(!page.findChild<QWidget *>(QStringLiteral("finishDownloadNotice"))->isHidden());
+        QVERIFY(page.findChild<QWidget *>(QStringLiteral("finishDownloadProgress")));
+        QStringList shown;
+        for (const QLabel *label : page.findChildren<QLabel *>()) {
+            if (label->isVisible()) {
+                shown << label->text();
+            }
+        }
+        QVERIFY(shown.contains(QStringLiteral("Setup is complete except for the speech model download.")));
+
+        page.findChild<QPushButton *>(QStringLiteral("finishDownloadCancel"))->click();
+        QCoreApplication::processEvents();
+        QVERIFY(!controller.localModelStore()->isDownloading(model.id));
+        QVERIFY(page.findChild<QWidget *>(QStringLiteral("finishDownloadNotice"))->isHidden());
     }
 
     void finishPageListsUnfinishedStepsAndGoesBackToThem()

@@ -1,6 +1,7 @@
 #include "frontend/qt/QtFrontEnd.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
 #include "app/PlatformComposition.h"
 #include "app/UpdateController.h"
 #include "dictation/DictationSession.h"
@@ -164,7 +165,16 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
     // "setup" or "setup:<page title>" grabs the setup assistant instead,
     // advanced to the first page whose title matches (e.g. "setup:refinement").
     if (request.first() == QStringLiteral("setup")) {
+        // SPEECHER_GRAB_DOWNLOAD names a Local Model to start downloading
+        // first, so later pages show a download in flight.
+        if (const LocalModel *model = findLocalModel(qEnvironmentVariable("SPEECHER_GRAB_DOWNLOAD"))) {
+            m_controller->localSetup()->download(*model);
+        }
         auto *assistant = new SetupAssistant(m_controller);
+        const QStringList assistantSize = qEnvironmentVariable("SPEECHER_GRAB_SIZE").split(u'x');
+        if (assistantSize.size() == 2) {
+            assistant->resize(assistantSize.at(0).toInt(), assistantSize.at(1).toInt());
+        }
         const QStringList titles = assistant->pageTitles();
         const QString wanted = request.value(1);
         int target = 0;
