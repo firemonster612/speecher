@@ -77,6 +77,16 @@ jobs:
           defaults write com.io-github-firemonster612.speecher app.setupCompleted -bool true
           defaults write com.io-github-firemonster612.speecher updates.autoCheck -bool false
           defaults write com.io-github-firemonster612.speecher updates.autoInstall -bool false
+          # This build as the last one run, so no "is installed" strip covers
+          # the page (ApplicationController compares these at startup).
+          export DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib"
+          version="$(build/speecher.app/Contents/MacOS/speecher --version | head -1)"
+          number="$(printf '%s\n' "$version" | sed -n 's/^speecher \(.*\) (build \([0-9]*\))$/\1/p')"
+          build="$(printf '%s\n' "$version" | sed -n 's/^speecher \(.*\) (build \([0-9]*\))$/\2/p')"
+          test -n "$number" && test -n "$build"
+          defaults write com.io-github-firemonster612.speecher updates.lastRunVersion -string "$number"
+          defaults write com.io-github-firemonster612.speecher updates.lastRunBuildNumber -int "$build"
+          defaults delete com.io-github-firemonster612.speecher updates.pendingWhatsNewVersion 2>/dev/null || true
 
       - name: Grab Home and General
         run: |
@@ -84,10 +94,16 @@ jobs:
           # As .github/macos-e2e/common.sh runs the app: Qt from the installed kit.
           export DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib"
           export SPEECHER_INSIGHTS_SEED="$GITHUB_WORKSPACE/docs/insights-mockup/seed-active.jsonl"
-          for page in home general; do
-            SPEECHER_GRAB_PAGE="$page" build/speecher.app/Contents/MacOS/speecher \
-              --grab "evidence/mac-$page.png" 2>&1 | tee "evidence/mac-$page-grab.log"
-            test -s "evidence/mac-$page.png"
+          # The backing store is not bound by the runner's 1024x768 screen.
+          export SPEECHER_GRAB_SIZE=1000x1000
+          for shot in home general home-bottom; do
+            page="${shot%-bottom}"
+            scroll=""
+            [ "$shot" = home-bottom ] && scroll=bottom
+            SPEECHER_GRAB_PAGE="$page" SPEECHER_GRAB_SCROLL="$scroll" \
+              build/speecher.app/Contents/MacOS/speecher \
+              --grab "evidence/mac-$shot.png" 2>&1 | tee "evidence/mac-$shot-grab.log"
+            test -s "evidence/mac-$shot.png"
             pkill -9 -x speecher || true
             # A killed instance leaves its single-instance socket behind.
             find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
@@ -106,12 +122,18 @@ jobs:
             > evidence/tcc-seeding.log 2>&1 || true
           sudo launchctl kickstart -k system/com.apple.tccd >/dev/null 2>&1 \
             || sudo killall tccd >/dev/null 2>&1 || true
-          for page in home general; do
+          # Within the runner's 1024x768 screen, below the menu bar.
+          export SPEECHER_GRAB_SIZE=900x640
+          for shot in home general home-bottom; do
+            page="${shot%-bottom}"
+            scroll=""
+            [ "$shot" = home-bottom ] && scroll=bottom
             # The settings window opens on the pane AppModel remembers.
             defaults write io.github.firemonster612.speecher settingsPane "$page"
-            build/speecher.app/Contents/MacOS/speecher > "evidence/mac-$page-screen.log" 2>&1 &
+            SPEECHER_GRAB_SCROLL="$scroll" build/speecher.app/Contents/MacOS/speecher \
+              > "evidence/mac-$shot-screen.log" 2>&1 &
             sleep 8
-            screencapture -x "evidence/mac-$page-screen.png" || true
+            screencapture -x "evidence/mac-$shot-screen.png" || true
             pkill -9 -x speecher || true
             # A killed instance leaves its single-instance socket behind.
             find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
@@ -123,5 +145,94 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: insights-evidence-macos
+          path: evidence/
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: win64_msvc2022_64
+          modules: qtmultimedia qtwebsockets
+          cache: true
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Cache Windows compiler outputs
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          variant: sccache
+          key: windows-2025-release
+
+      - name: Cache Windows SDK packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/nupkg
+            !build/nupkg/*.nupkg
+          # Package directories contain .done markers, so never restore across SDK changes.
+          key: windows-sdk-v1-${{ hashFiles('cmake/WindowsAppSdk.cmake') }}
+
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=OFF
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --parallel --target speecher
+
+      - name: Install Windows App Runtime
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "WindowsAppRuntimeInstall-x64.exe"
+          Invoke-WebRequest "https://aka.ms/windowsappsdk/2.4/2.4.0/windowsappruntimeinstall-x64.exe" -OutFile $installer
+          $sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha256 -ne "851c35b0b0a59ce4c55f9171f601193322fc3413143b0dc3390ea11e14cfa7fc") {
+            throw "Windows App Runtime installer checksum mismatch: $sha256"
+          }
+          $process = Start-Process $installer -ArgumentList "--quiet" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Windows App Runtime installer exited with code $($process.ExitCode)"
+          }
+
+      # --grab skips the setup assistant and opens the settings window, so a
+      # fresh runner needs no seeded settings. speecher.exe is a GUI binary,
+      # which PowerShell does not wait for; Start-Process -Wait does.
+      - name: Grab Home and General
+        shell: pwsh
+        env:
+          SPEECHER_INSIGHTS_TODAY: "2026-09-26"
+        run: |
+          New-Item -ItemType Directory -Force -Path evidence | Out-Null
+          $env:SPEECHER_INSIGHTS_SEED = (Resolve-Path docs/insights-mockup/seed-active.jsonl).Path
+          $exe = (Resolve-Path build/speecher.exe).Path
+          foreach ($page in "home", "general") {
+            $env:SPEECHER_GRAB_PAGE = $page
+            $out = Join-Path (Resolve-Path evidence).Path "win-$page.png"
+            $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
+            if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
+              throw "speecher --grab for $page exited with code $($process.ExitCode)"
+            }
+          }
+
+      - name: Upload Windows pictures
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: insights-evidence-windows
           path: evidence/
           if-no-files-found: error
