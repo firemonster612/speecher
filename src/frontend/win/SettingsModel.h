@@ -94,6 +94,9 @@ public:
     void commit();
     // Discards edits left from the last showing and re-reads the store.
     void reloadDraft();
+    // Takes in what the store gained since the draft was read, such as the
+    // model LocalSetup moved dictation to, keeping the draft's own edits.
+    void syncWithStore();
     // Lets the rows whose choices are slow to gather — a device enumeration —
     // offer them from now on. Called once the window has painted.
     void loadExpensiveRows();

@@ -70,6 +70,7 @@ SchemaContext winSchemaContext(const PlatformComposition &platform,
         QStringLiteral(SPEECHER_VERSION),
         lastSeenVersion,
         [&localSetup] { return localSetup.liveFacts(); },
+        [&localSetup](const AppSettings &draft) { return localSetup.liveFacts(draft); },
     };
 }
 
@@ -330,6 +331,13 @@ void SettingsModel::commit()
 void SettingsModel::reloadDraft()
 {
     m_draft = m_loaded = m_store->snapshot();
+}
+
+void SettingsModel::syncWithStore()
+{
+    const AppSettings current = m_store->snapshot();
+    m_draft = mergeSettingsDraft(m_schema, m_loaded, m_draft, current);
+    m_loaded = current;
 }
 
 void SettingsModel::loadExpensiveRows()
