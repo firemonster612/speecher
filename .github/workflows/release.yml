@@ -325,7 +325,9 @@ jobs:
             fi
           fi
           bash packaging/macos/build-dmg.sh build
-          test -s build/designated-requirement.txt
+          if [ "${GITHUB_EVENT_NAME}" != pull_request ]; then
+            test -s build/designated-requirement.txt
+          fi
 
       - name: Sign DMG for Sparkle
         if: github.event_name != 'pull_request'
