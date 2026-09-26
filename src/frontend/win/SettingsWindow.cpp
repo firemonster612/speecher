@@ -561,21 +561,8 @@ struct SettingsWindow::Native {
         if (id == QStringLiteral("whatsNew")) {
             showWhatsNew();
         }
-        // The rows LiveFacts reports on; every edit is already committed, so
-        // the draft is what is stored.
-        LocalSetup *local = controller->localSetup();
-        if (id == QStringLiteral("speechEndpointTest")) {
-            local->checkSpeechEndpoint(model.draft().speech.endpoint);
-        } else if (id == QStringLiteral("refinementEndpointTest")) {
-            local->checkRefinementEndpoint(model.draft().refinement);
-        } else if (id == QStringLiteral("localRunnerDetect") || id == QStringLiteral("localModelsRunner")) {
-            local->detectRunners();
-        } else if (id == QStringLiteral("localModelFolder")) {
-            const QString folder = local->models().directory();
-            QDir().mkpath(folder);
-            ShellExecuteW(nullptr, L"open", reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(folder).utf16()),
-                          nullptr, nullptr, SW_SHOWNORMAL);
-        }
+        // Every edit is already committed, so the draft is what is stored.
+        controller->localSetup()->runSettingsAction(id, model.draft());
         if (actionHook) {
             actionHook(id);
         }
