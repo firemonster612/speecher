@@ -14,6 +14,21 @@ namespace speecher {
 
 class LocalModelStore;
 
+// How one streaming update divides into text the session keeps and text it
+// may still revise. Committed text can end mid-word, and each final is joined
+// to the next with a space, so only whole words become final.
+struct StreamSplit {
+    // Newly final words; empty when none completed.
+    QString finalWords;
+    // Everything after the final text: the rest of committed plus tentative.
+    QString partial;
+    // How much of committed text is final after this update.
+    qsizetype finalChars = 0;
+};
+
+// finalChars is what the previous update returned for this stream.
+StreamSplit splitStreamText(const LocalSpeechEngine::StreamText &text, qsizetype finalChars);
+
 // Speech-to-text with a Local Model. Inference runs on a thread of its own:
 // every call here only queues work there, and results come back as signals on
 // the caller's thread.

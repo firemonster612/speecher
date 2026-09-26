@@ -19,6 +19,18 @@ int idleUnloadMs(int minutes)
 
 } // namespace
 
+StreamSplit splitStreamText(const LocalSpeechEngine::StreamText &text, qsizetype finalChars)
+{
+    StreamSplit split{{}, {}, finalChars};
+    const qsizetype wordEnd = text.committed.lastIndexOf(QLatin1Char(' '));
+    if (wordEnd > finalChars) {
+        split.finalWords = text.committed.mid(finalChars, wordEnd - finalChars);
+        split.finalChars = wordEnd;
+    }
+    split.partial = text.committed.mid(split.finalChars) + text.tentative;
+    return split;
+}
+
 LocalSpeechTranscriber::LocalSpeechTranscriber(const LocalModelStore &store, QObject *parent)
     : SpeechTranscriber(parent)
     , m_store(store)
@@ -272,16 +284,16 @@ void LocalSpeechTranscriber::feedPending()
         }
         return;
     }
-    // Committed text can end mid-word, and each final is joined to the next
-    // with a space, so only whole words become final.
-    const qsizetype wordEnd = text.committed.lastIndexOf(QLatin1Char(' '));
-    if (wordEnd > m_emittedCommittedChars) {
-        const QString words = text.committed.mid(m_emittedCommittedChars, wordEnd - m_emittedCommittedChars);
-        m_emittedCommittedChars = wordEnd;
-        report(attemptId, [this, attemptId, words] { emit finalTranscript(attemptId, words); });
+    const StreamSplit split = splitStreamText(text, m_emittedCommittedChars);
+    m_emittedCommittedChars = split.finalChars;
+    if (!split.finalWords.isEmpty()) {
+        report(attemptId, [this, attemptId, words = split.finalWords] {
+            emit finalTranscript(attemptId, words);
+        });
     }
-    const QString partial = text.committed.mid(m_emittedCommittedChars) + text.tentative;
-    report(attemptId, [this, attemptId, partial] { emit partialTranscript(attemptId, partial); });
+    report(attemptId, [this, attemptId, partial = split.partial] {
+        emit partialTranscript(attemptId, partial);
+    });
 }
 
 void LocalSpeechTranscriber::finish(quint64 attemptId)
