@@ -129,6 +129,12 @@ void QtFrontEnd::showSettingsWindow()
     m_appWindow->navigateToSettings();
 }
 
+void QtFrontEnd::showTranscribeFiles(const QStringList &paths)
+{
+    showMainWindow();
+    m_appWindow->showTranscribeFiles(paths);
+}
+
 void QtFrontEnd::showSetupAssistant(SetupAssistantPage page)
 {
     if (!m_setupAssistant) {
@@ -153,8 +159,8 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
     }
     // Screenshot automation: SPEECHER_GRAB_PAGE names a settings page
     // (general, audio, output, auth, refinement, vocabulary), optionally with
-    // a tab index ("vocabulary:2"), to show before the grab. Unset or unknown
-    // leaves the window as launched.
+    // a tab index ("vocabulary:2"), or "transcribe", to show before the grab.
+    // Unset or unknown leaves the window as launched.
     static const QStringList pageNames{
         QStringLiteral("general"), QStringLiteral("audio"), QStringLiteral("output"),
         QStringLiteral("auth"), QStringLiteral("refinement"), QStringLiteral("vocabulary")};
@@ -203,6 +209,10 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
     if (size.size() == 2) {
         m_appWindow->resize(size.at(0).toInt(), size.at(1).toInt());
     }
+    if (request.first() == QStringLiteral("transcribe")) {
+        m_appWindow->showTranscribeFiles({});
+        QCoreApplication::processEvents();
+    }
     if (request.first() == QStringLiteral("whatsnew")) {
         m_appWindow->showWhatsNew();
         QCoreApplication::processEvents();
@@ -229,6 +239,14 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
         }
         button->click();
         QCoreApplication::processEvents();
+    }
+    // SPEECHER_GRAB_WAIT_MS lets what the click started run for a while
+    // first, so a grab can catch work in progress or its result.
+    QElapsedTimer waited;
+    waited.start();
+    const int waitMs = qEnvironmentVariableIntValue("SPEECHER_GRAB_WAIT_MS");
+    while (waited.elapsed() < waitMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
     return m_appWindow->grab().save(path);
 }

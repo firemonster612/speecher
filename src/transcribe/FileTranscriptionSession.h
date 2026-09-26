@@ -58,6 +58,15 @@ struct TranscribeFileResult {
     bool failed() const { return refined.isEmpty(); }
 };
 
+// True for a file the decoder can take: audio, or video whose audio track it
+// reads (shared-mime-info files audio-only .webm and .mp4 under video/).
+bool isAudioFile(const QString &path);
+
+// Writes text as "<name>-transcribed.txt" in folder, numbering it
+// "<name>-transcribed (2).txt" and so on rather than overwrite a file.
+// Returns the path written, or empty with error set.
+QString saveTranscript(const QString &audioPath, const QString &folder, const QString &text, QString *error);
+
 // Transcribes audio files one after another with fresh provider instances,
 // so a batch never shares a transcriber or refiner with live dictation.
 class FileTranscriptionSession : public QObject {

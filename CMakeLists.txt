@@ -543,6 +543,8 @@ set(SPEECHER_FRONTEND_QT_SOURCES
   src/ui/HostStylePlugin.cpp
   src/ui/InlineMessage.cpp
   src/ui/Theme.cpp
+  src/ui/TranscribeLoomWidget.cpp
+  src/ui/TranscribePage.cpp
   src/ui/TranscriberPopup.cpp
   src/ui/WaveformWidget.cpp
 )
@@ -567,6 +569,8 @@ set(SPEECHER_FRONTEND_QT_HEADERS
   src/ui/HostStylePlugin.h
   src/ui/InlineMessage.h
   src/ui/Theme.h
+  src/ui/TranscribeLoomWidget.h
+  src/ui/TranscribePage.h
   src/ui/TranscriberPopup.h
   src/ui/WaveformModel.h
   src/ui/WaveformWidget.h

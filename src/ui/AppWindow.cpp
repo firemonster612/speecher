@@ -6,6 +6,7 @@
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/DictationPage.h"
 #include "ui/InlineMessage.h"
+#include "ui/TranscribePage.h"
 #include "ui/settings/SettingsPageSet.h"
 #include "ui/settings/SettingsPageSupport.h"
 
@@ -72,8 +73,12 @@ struct PageDefinition {
 // preferences-* and app icons live in a different visual language (colourful,
 // or gradients that stay dark on dark schemes), so one of them in the list
 // makes the whole column read as mismatched.
+constexpr int kTranscribeRow = 1;
+// The settings pages follow Dictation and Transcribe, in AppPageId order.
+constexpr int kFirstSettingsRow = 2;
 const QList<PageDefinition> kPages{
     {QStringLiteral("Dictation"), QStringLiteral("audio-input-microphone"), QString()},
+    {QStringLiteral("Transcribe"), QStringLiteral("view-media-lyrics"), QStringLiteral("document-import")},
     {QStringLiteral("General"), QStringLiteral("settings-configure"), QStringLiteral("configure")},
     {QStringLiteral("Audio"), QStringLiteral("audio-volume-high"), QStringLiteral("player-volume")},
     {QStringLiteral("Output"), QStringLiteral("edit-paste"), QStringLiteral("edit-copy")},
@@ -173,6 +178,7 @@ AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
     , m_controller(controller)
     , m_pages(new SettingsPageSet(controller, this))
     , m_dictation(new DictationPage(controller, this))
+    , m_transcribe(new TranscribePage(controller, this))
 {
     setObjectName(QStringLiteral("appWindow"));
     setWindowTitle(QStringLiteral("Speecher"));
@@ -221,11 +227,17 @@ void AppWindow::navigateToSettings(AppPageId page)
     const int settingsIndex = static_cast<int>(page);
     for (int row = 0; row < m_navigation->count(); ++row) {
         QListWidgetItem *item = m_navigation->item(row);
-        if (item->data(Qt::UserRole).toInt() == settingsIndex + 1) {
+        if (item->data(Qt::UserRole).toInt() == settingsIndex + kFirstSettingsRow) {
             m_navigation->setCurrentItem(item);
             break;
         }
     }
+}
+
+void AppWindow::showTranscribeFiles(const QStringList &paths)
+{
+    m_transcribe->addFiles(paths);
+    m_navigation->setCurrentRow(kTranscribeRow);
 }
 
 void AppWindow::refreshHeaderStripColor()
@@ -450,6 +462,7 @@ void AppWindow::buildSharedPages()
 
     m_pageWidgets = {
         m_dictation,
+        m_transcribe,
         m_pages->general(),
         m_pages->audio(),
         m_pages->output(),

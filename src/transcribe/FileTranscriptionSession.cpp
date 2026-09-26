@@ -12,6 +12,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QMimeDatabase>
 #include <QUrl>
 
 #include <algorithm>
@@ -51,9 +52,20 @@ QVector<float> peakLevels(const QByteArray &pcm)
     return peaks;
 }
 
-// "<name>-transcribed.txt" in folder, or "<name>-transcribed (2).txt" and so
-// on when that is taken. Opened NewOnly, so an existing file is never
-// overwritten even if one appears between the check and the write.
+} // namespace
+
+bool isAudioFile(const QString &path)
+{
+    const QFileInfo info(path);
+    if (!info.isFile()) {
+        return false;
+    }
+    const QString mime = QMimeDatabase().mimeTypeForFile(info).name();
+    return mime.startsWith(QStringLiteral("audio/")) || mime.startsWith(QStringLiteral("video/"));
+}
+
+// Opened NewOnly, so an existing file is never overwritten even if one appears
+// between the check and the write.
 QString saveTranscript(const QString &audioPath, const QString &folder, const QString &text, QString *error)
 {
     const QString stem = QFileInfo(audioPath).completeBaseName() + QStringLiteral("-transcribed");
@@ -77,8 +89,6 @@ QString saveTranscript(const QString &audioPath, const QString &folder, const QS
         return file.fileName();
     }
 }
-
-} // namespace
 
 FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
                                                    ProviderRegistry *providers,

@@ -12,6 +12,7 @@
 #include "ui/InlineMessage.h"
 #include "ui/DictationPage.h"
 #include "ui/settings/SettingsPageSet.h"
+#include "transcribe/FileTranscriptionSession.h"
 #include "ui/Theme.h"
 #ifdef Q_OS_LINUX
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
@@ -39,6 +40,7 @@
 #include <QSplitter>
 #include <QStandardPaths>
 #include <QStackedWidget>
+#include <QTemporaryDir>
 #include <QTableWidget>
 #include <QVBoxLayout>
 
@@ -103,6 +105,7 @@ private slots:
         ApplicationController controller(true);
         const QStringList titles{
             QStringLiteral("Dictation"),
+            QStringLiteral("Transcribe"),
             QStringLiteral("General"),
             QStringLiteral("Audio"),
             QStringLiteral("Output"),
@@ -111,7 +114,7 @@ private slots:
             QStringLiteral("Vocabulary"),
         };
         AppWindow window(&controller);
-        QCOMPARE(window.pageCount(), 7);
+        QCOMPARE(window.pageCount(), 8);
         QCOMPARE(window.pageTitles(), titles);
     }
 
@@ -547,8 +550,29 @@ private slots:
         QVERIFY(window.findChild<QSplitter *>() && search);
 
         search->setText(QStringLiteral("Keep before speech"));
-        QVERIFY(navigation && navigation->item(1)->isHidden()
-                && !navigation->item(2)->isHidden());
+        QVERIFY(navigation && navigation->item(2)->isHidden()
+                && !navigation->item(3)->isHidden());
+    }
+
+    void openedAudioFilesLandOnTheTranscribePage()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        QFile file(audio);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("RIFF\0\0\0\0WAVEfmt ");
+        file.close();
+
+        window.showTranscribeFiles({audio, dir.filePath(QStringLiteral("missing.wav"))});
+
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Transcribe"));
+        auto *start = window.findChild<QPushButton *>(QStringLiteral("transcribeStart"));
+        QVERIFY(start->isEnabled());
+        QCOMPARE(start->text(), QStringLiteral("Transcribe"));
+        QVERIFY(!controller.fileTranscription()->isRunning());
     }
 
     void programmaticNavigationUpdatesShellChrome()
@@ -569,11 +593,11 @@ private slots:
         auto *whatsNew = window.findChild<QPushButton *>(QStringLiteral("whatsNew"));
         QVERIFY(navigation && stack && whatsNew);
 
-        navigation->setCurrentRow(1);
+        navigation->setCurrentRow(2);
         whatsNew->click();
-        QCOMPARE(stack->currentIndex(), 7);
-        navigation->setCurrentRow(1);
-        QCOMPARE(stack->currentIndex(), 1);
+        QCOMPARE(stack->currentIndex(), 8);
+        navigation->setCurrentRow(2);
+        QCOMPARE(stack->currentIndex(), 2);
     }
 
     void whatsNewOffersAWayBackToThePageItWasOpenedFrom()
@@ -590,16 +614,16 @@ private slots:
         QVERIFY(!back->isVisible());
 
         // Opened from General, the same way the update banner opens it.
-        navigation->setCurrentRow(1);
+        navigation->setCurrentRow(2);
         whatsNew->click();
-        QCOMPARE(stack->currentIndex(), 7);
+        QCOMPARE(stack->currentIndex(), 8);
         QCOMPARE(title->text(), QStringLiteral("What's New"));
         QVERIFY(back->isVisible());
         QVERIFY(!navigation->currentItem());
 
         back->click();
-        QCOMPARE(stack->currentIndex(), 1);
-        QCOMPARE(navigation->currentRow(), 1);
+        QCOMPARE(stack->currentIndex(), 2);
+        QCOMPARE(navigation->currentRow(), 2);
         QCOMPARE(title->text(), QStringLiteral("General"));
         QVERIFY(!back->isVisible());
     }

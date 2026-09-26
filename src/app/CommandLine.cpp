@@ -2,9 +2,9 @@
 
 #include "app/PlatformComposition.h"
 #include "app/SingleInstanceIpc.h"
+#include "transcribe/FileTranscriptionSession.h"
 
 #include <QFileInfo>
-#include <QMimeDatabase>
 #include <QProcess>
 
 #include <iostream>
@@ -79,18 +79,6 @@ bool startDetachedSetup(const SingleInstancePlatform *platform)
     return QProcess::startDetached(
         platform->detachedExecutablePath(),
         {QStringLiteral("--daemon"), QStringLiteral("--show-setup")});
-}
-
-// Video counts too: the decoder transcribes a container's audio track, and
-// shared-mime-info files audio-only .webm and .mp4 under video/.
-bool isMediaFile(const QString &path)
-{
-    const QFileInfo info(path);
-    if (!info.isFile()) {
-        return false;
-    }
-    const QString mime = QMimeDatabase().mimeTypeForFile(info).name();
-    return mime.startsWith(QStringLiteral("audio/")) || mime.startsWith(QStringLiteral("video/"));
 }
 
 QStringList absolutePaths(const QStringList &paths)
@@ -168,7 +156,7 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     } else {
         QStringList files;
         for (const QString &argument : arguments.mid(1)) {
-            if (isMediaFile(argument)) {
+            if (isAudioFile(argument)) {
                 files << argument;
             }
         }
