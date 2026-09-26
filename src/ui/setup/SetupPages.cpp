@@ -1039,25 +1039,19 @@ void SpeechProviderSetupPage::showLocalChoice()
     }
     m_localSection->setVisible(localSelected());
     const LocalModel &model = localChoice();
-    const bool suggested = model.id == m_local->suggestedModel().id;
+    const auto state = m_local->modelState(model);
     m_localHardware->setText(m_local->hardwareLine());
-    m_localCaption->setText(suggested ? QStringLiteral("Suggested for this computer") : QStringLiteral("Your choice"));
+    m_localCaption->setText(state.suggested ? QStringLiteral("Suggested for this computer")
+                                            : QStringLiteral("Your choice"));
     m_localName->setText(model.name);
-    m_localFacts->setText(QStringLiteral("%1\n%2\n%3% of words wrong on clear speech, %4% on everyday speech")
-                              .arg(model.streams ? QStringLiteral("Words appear as you speak")
-                                                 : QStringLiteral("Text appears after you stop speaking"),
-                                   m_local->modelState(model, m_settings.snapshot().speech).speedDetail)
-                              .arg(model.librispeechCleanWer)
-                              .arg(model.fleursEnglishWer));
+    m_localFacts->setText(state.cardFacts);
 
     const auto progress = m_local->downloadProgress(model.id);
-    const auto state = m_local->modelState(model);
     const bool downloaded = state.downloaded;
-    const bool tooLarge = m_local->fit(model) == ModelFit::TooLarge;
     m_localDownload->setVisible(!progress && !downloaded);
-    m_localDownload->setEnabled(!tooLarge);
-    m_localDownload->setText(tooLarge ? QStringLiteral("Too large for this computer")
-                                      : QStringLiteral("Download %1").arg(downloadSizeText(model.sizeBytes)));
+    m_localDownload->setEnabled(!state.tooLarge);
+    m_localDownload->setText(state.tooLarge ? QStringLiteral("Too large for this computer")
+                                            : QStringLiteral("Download %1").arg(downloadSizeText(model.sizeBytes)));
     m_localProgress->setVisible(bool(progress));
     m_localCancel->setVisible(bool(progress));
     if (progress) {
@@ -1076,16 +1070,7 @@ void SpeechProviderSetupPage::showLocalChoice()
                                  ? QStringLiteral("Hide other models")
                                  : QStringLiteral("Compare %1 other models").arg(localModelCatalog().size() - 1));
     for (int row = 0; row < localModelCatalog().size(); ++row) {
-        const LocalModel &entry = localModelCatalog().at(row);
-        const QString speed = m_local->modelState(entry, m_settings.snapshot().speech).speedText;
-        const QStringList cells{
-            entry.id == m_local->suggestedModel().id ? entry.name + QStringLiteral(" (suggested)") : entry.name,
-            downloadSizeText(entry.sizeBytes),
-            QStringLiteral("%1% / %2%").arg(entry.librispeechCleanWer).arg(entry.fleursEnglishWer),
-            speed,
-            entry.streams ? QStringLiteral("As you speak") : QStringLiteral("After you stop"),
-            m_local->fitLabel(entry),
-        };
+        const QStringList cells = m_local->modelState(localModelCatalog().at(row)).tableCells;
         for (int column = 0; column < cells.size(); ++column) {
             QTableWidgetItem *item = m_compare->item(row, column);
             if (!item) {

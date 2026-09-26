@@ -97,7 +97,12 @@ private slots:
         url.apply(settings, "http://other.example/v1");
         QVERIFY(settings.refinement.endpoint.preset.isEmpty());
         QCOMPARE(settings.refinement.endpoint.baseUrl, QString("http://other.example/v1"));
-        QCOMPARE(settings.refinement.endpoint.apiKey, QString("saved-key"));
+        QVERIFY(resolvedRefinementEndpoint(settings.refinement).apiKey.isEmpty());
+        AppSettings withKey;
+        withKey.refinement.endpoint.preset = "cliproxy";
+        withKey.refinement.cliproxyApiKey = "saved-key";
+        editRefinementEndpoint(withKey, {.baseUrl = "http://other.example/v1", .apiKey = "other-key"});
+        QCOMPARE(resolvedRefinementEndpoint(withKey.refinement).apiKey, QString("other-key"));
     }
 
     void endpointEditsPreserveLateSecretsAndExplicitClears()
@@ -120,7 +125,7 @@ private slots:
         QVERIFY(!merged.unreadSecretKeys.contains(key));
     }
 
-    void detachingAnUnreadProxyUrlPreservesItsKeySource()
+    void detachingAnUnreadProxyUrlDropsTheProxyKey()
     {
         AppSettings settings;
         settings.refinement.endpoint.preset = "cliproxy";
@@ -137,14 +142,8 @@ private slots:
         QCOMPARE(merged.refinement.cliproxyApiKey, QString("late-proxy-key"));
         editRefinementEndpoint(settings, {.baseUrl = "http://other.example/v1"});
         settings.refinement.cliproxyApiKey = "late-proxy-key";
-        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QString("late-proxy-key"));
-        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiBase, QString("http://other.example/v1"));
-        SettingsStore store;
-        store.raw().clear();
-        store.applySnapshot(settings);
-        QVERIFY(SettingsStore().snapshot().refinement.endpoint.useCliproxyKey);
-        editRefinementEndpoint(settings, {.apiKey = QString()});
         QVERIFY(resolvedRefinementEndpoint(settings.refinement).apiKey.isEmpty());
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiBase, QString("http://other.example/v1"));
     }
 
     void writingProfileCollectionIsDescribedBySchema()

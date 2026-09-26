@@ -442,6 +442,22 @@ LocalSetup::ModelState LocalSetup::modelState(const LocalModel &model, std::opti
     state.speedDetail = speedTestRunning(model.id) ? QStringLiteral("Testing…")
         : measured || estimate ? localModelSpeedLine(model, m_hardware.profile, measured)
                                : QStringLiteral("Not measured");
+    state.suggested = m_hardwareKnown && model.id == suggestedModel().id;
+    state.tooLarge = fit(model) == ModelFit::TooLarge;
+    state.cardFacts = QStringLiteral("%1\n%2\n%3% of words wrong on clear speech, %4% on everyday speech")
+                          .arg(model.streams ? QStringLiteral("Words appear as you speak")
+                                             : QStringLiteral("Text appears after you stop speaking"),
+                               state.speedDetail)
+                          .arg(model.librispeechCleanWer)
+                          .arg(model.fleursEnglishWer);
+    state.tableCells = {
+        state.suggested ? model.name + QStringLiteral(" (suggested)") : model.name,
+        downloadSizeText(model.sizeBytes),
+        QStringLiteral("%1% / %2%").arg(model.librispeechCleanWer).arg(model.fleursEnglishWer),
+        state.speedText,
+        model.streams ? QStringLiteral("As you speak") : QStringLiteral("After you stop"),
+        fitLabel(model),
+    };
     return state;
 }
 
