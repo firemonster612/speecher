@@ -170,8 +170,9 @@ private:
     QWidget *m_signInDetail = nullptr;
     QWidget *m_localDetail = nullptr;
     QLabel *m_hardware = nullptr;
-    // The default path follows the first round of checks, once.
-    bool m_pathDecided = false;
+    // Until the person picks a path, every round of checks sets the
+    // default: the sign-in when one is found, else this computer.
+    bool m_pathPicked = false;
 };
 
 class SpeechProviderSetupPage final : public QWidget, public SetupStep {
@@ -426,6 +427,8 @@ private:
     QString m_lastProvider;
     QWidget *m_localDetail = nullptr;
     QLabel *m_runnerStatus = nullptr;
+    // The card holding the model choice and the suggestion.
+    QWidget *m_runnerCard = nullptr;
     QWidget *m_runnerModelRow = nullptr;
     QComboBox *m_runnerModel = nullptr;
     QWidget *m_cleanupSuggestion = nullptr;

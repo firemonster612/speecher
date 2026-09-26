@@ -11,6 +11,7 @@
 #include "output/YdotoolSetupFlow.h"
 #endif
 #include "providers/ProviderProbe.h"
+#include "providers/CustomEndpoints.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
 #include "ui/InlineMessage.h"
@@ -480,8 +481,14 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
                               QStringLiteral("Private, no account, works offline after a one-time download."),
                               QStringLiteral("computer"))
                           .first;
-        connect(m_signInPath, &QRadioButton::clicked, this, [this] { choosePath(false); });
-        connect(m_localPath, &QRadioButton::clicked, this, [this] { choosePath(true); });
+        connect(m_signInPath, &QRadioButton::clicked, this, [this] {
+            m_pathPicked = true;
+            choosePath(false);
+        });
+        connect(m_localPath, &QRadioButton::clicked, this, [this] {
+            m_pathPicked = true;
+            choosePath(true);
+        });
 
         m_localDetail = new QWidget(this);
         auto *localLayout = new QVBoxLayout(m_localDetail);
@@ -575,7 +582,7 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
         // Default to the sign-in when the first round finds one, else to this
         // computer; either way only until the person picks.
         connect(this, &WelcomeSetupPage::checkFinished, this, [this] {
-            if (m_pathDecided) {
+            if (m_pathPicked) {
                 return;
             }
             const bool anyFound = std::any_of(m_rows.cbegin(), m_rows.cend(),
@@ -589,12 +596,13 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
 
 void WelcomeSetupPage::choosePath(bool local)
 {
-    m_pathDecided = true;
+    const bool changed = m_localPath->isChecked() != local;
     m_localPath->setChecked(local);
     m_signInPath->setChecked(!local);
     m_localDetail->setVisible(local);
     m_signInDetail->setVisible(!local);
-    if (local) {
+    // A repeat of the same default is not news to the Transcription step.
+    if (local && (changed || m_pathPicked)) {
         emit localPathChosen();
     }
     updateReady();
@@ -828,7 +836,14 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     m_accuracyPass->setObjectName(QStringLiteral("codexFinalRetranscribe"));
     m_accuracyPass->setChecked(m_settings.codexFinalRetranscribe());
     if (m_local) {
+        // A saved model the person already dictates with, or has on disk or
+        // coming, is their choice; anything else is only the default and the
+        // suggestion replaces it.
         m_localModelId = m_settings.localSpeechSettings().modelId;
+        const LocalModel *saved = findLocalModel(m_localModelId);
+        m_localPicked = saved
+            && (m_settings.speechProvider() == QStringLiteral("local")
+                || m_local->models().isDownloaded(*saved) || m_local->models().isDownloading(saved->id));
         layout->addWidget(makeLocalSection());
     }
     layout->addWidget(m_stats);
@@ -978,7 +993,6 @@ QWidget *SpeechProviderSetupPage::makeLocalSection()
         showLocalChoice();
     });
     connect(m_compare, &QTableWidget::cellClicked, this, [this](int row, int) {
-        m_localPicked = true;
         setLocalChoice(localModelCatalog().at(row).id);
     });
     connect(m_localDownload, &QPushButton::clicked, this, [this] {
@@ -1008,6 +1022,7 @@ const LocalModel &SpeechProviderSetupPage::localChoice() const
 
 void SpeechProviderSetupPage::setLocalChoice(const QString &modelId)
 {
+    m_localPicked = true;
     m_localModelId = modelId;
     LocalSpeechSettings local = m_settings.localSpeechSettings();
     local.modelId = modelId;
@@ -1036,7 +1051,7 @@ void SpeechProviderSetupPage::showLocalChoice()
     const HardwareProfile &hardware = m_local->hardware().profile;
     const LocalModel &model = localChoice();
     const bool suggested = model.id == m_local->suggestedModel().id;
-    if (!m_localPicked && m_settings.localSpeechSettings().modelId != model.id) {
+    if (localSelected() && !m_localPicked && m_settings.localSpeechSettings().modelId != model.id) {
         // The suggestion is what dictation will use unless the person picks.
         LocalSpeechSettings local = m_settings.localSpeechSettings();
         local.modelId = model.id;
@@ -2033,6 +2048,8 @@ QWidget *RefinementSetupPage::makeLocalRunnerDetail()
     layout->addWidget(m_runnerStatus);
 
     QFormLayout *card = addCard(layout, m_localDetail, QString());
+    // addCard puts the card in a section of its own as the layout's last item.
+    m_runnerCard = layout->itemAt(layout->count() - 1)->widget();
     QWidget *host = card->parentWidget();
     m_runnerModel = new QComboBox(host);
     m_runnerModel->setObjectName(QStringLiteral("refinementRunnerModel"));
@@ -2101,6 +2118,7 @@ QWidget *RefinementSetupPage::makeLocalRunnerDetail()
         showSelectedProvider();
     });
     connect(m_local, &LocalSetup::changed, this, [this] { showLocalRunner(); });
+    connect(m_local, &LocalSetup::pullProgress, this, [this] { showLocalRunner(); });
     return m_localDetail;
 }
 
@@ -2112,7 +2130,8 @@ QWidget *RefinementSetupPage::makeEndpointDetail()
     layout->setSpacing(settings::relatedSpacing());
     QFormLayout *card = addCard(layout, m_endpointDetail, QString());
     QWidget *host = card->parentWidget();
-    const RefinementEndpointSettings saved = m_settings.snapshot().refinement.endpoint;
+    // With the CLI Proxy API preset, the server and key shown are the proxy's.
+    const RefinementEndpoint saved = resolvedRefinementEndpoint(m_settings.snapshot().refinement);
 
     m_endpointFormat = new QComboBox(host);
     m_endpointFormat->setObjectName(QStringLiteral("refinementEndpointFormat"));
@@ -2121,7 +2140,7 @@ QWidget *RefinementSetupPage::makeEndpointDetail()
     settings::selectData(m_endpointFormat, saved.format);
     settings::addCardRow(card, settings::makeRow(QStringLiteral("Format"), QString(), m_endpointFormat, host), host);
 
-    m_endpointUrl = new QLineEdit(saved.baseUrl, host);
+    m_endpointUrl = new QLineEdit(saved.apiBase, host);
     m_endpointUrl->setObjectName(QStringLiteral("refinementEndpointUrl"));
     m_endpointUrl->setPlaceholderText(QStringLiteral("http://localhost:8080/v1"));
     m_endpointUrl->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -2174,10 +2193,16 @@ QWidget *RefinementSetupPage::makeEndpointDetail()
 RefinementSettings RefinementSetupPage::endpointFromFields() const
 {
     RefinementSettings settings = m_settings.snapshot().refinement;
-    settings.endpoint.preset.clear();
+    const RefinementEndpoint shown = resolvedRefinementEndpoint(settings);
+    const QString url = m_endpointUrl->text().trimmed();
+    const QString key = m_endpointKey->text().trimmed();
+    // A preset stays until the person edits the server or key it supplies.
+    if (url != shown.apiBase || key != shown.apiKey) {
+        settings.endpoint.preset.clear();
+        settings.endpoint.baseUrl = url;
+        settings.endpoint.apiKey = key;
+    }
     settings.endpoint.format = m_endpointFormat->currentData().toString();
-    settings.endpoint.baseUrl = m_endpointUrl->text().trimmed();
-    settings.endpoint.apiKey = m_endpointKey->text().trimmed();
     settings.endpoint.model = m_endpointModel->currentText().trimmed();
     return settings;
 }
@@ -2232,7 +2257,7 @@ void RefinementSetupPage::showLocalRunner()
         m_runnerStatus->setText(QStringLiteral("No local runner found on this computer."));
     }
     m_noRunner->setVisible(!found && !m_local->detectingRunners());
-    m_runnerModelRow->parentWidget()->parentWidget()->parentWidget()->setVisible(found);
+    m_runnerCard->setVisible(found);
 
     // The first runner found is the one the settings name.
     if (found) {
@@ -2453,7 +2478,11 @@ void RefinementSetupPage::autoSelectReadyProvider()
     }
     m_autoSelectDone = true;
     const int index = selectedIndex();
-    if (index < 0 || m_options.at(index).ok) {
+    // Someone's own runner or server was their choice, made in Settings or on
+    // an earlier run; its setup is on this page, not a reason to move away.
+    const QString chosen = index < 0 ? QString() : m_options.at(index).id;
+    if (index < 0 || m_options.at(index).ok || chosen == QStringLiteral("local")
+        || chosen == QStringLiteral("endpoint")) {
         return;
     }
     for (const ProviderOptionRow &option : m_options) {

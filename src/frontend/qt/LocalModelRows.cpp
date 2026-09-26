@@ -65,8 +65,12 @@ public:
         columns->addWidget(makeDetail(), 1);
         layout->addLayout(columns);
 
-        connect(m_list, &QListWidget::itemClicked, this, [this] { m_userPicked = true; });
-        connect(m_list, &QListWidget::currentRowChanged, this, [this] { refresh(); });
+        // Only refresh() moves the selection with signals blocked, so any
+        // change that arrives here is the person's, by mouse or keyboard.
+        connect(m_list, &QListWidget::currentRowChanged, this, [this] {
+            m_userPicked = true;
+            refresh();
+        });
         connect(&m_setup, &LocalSetup::changed, this, [this] { refresh(); });
         connect(&m_setup.models(), &LocalModelStore::downloadProgress, this, [this] { refresh(); });
         refresh();

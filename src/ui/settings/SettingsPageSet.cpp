@@ -231,8 +231,10 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     , m_audio(addPage(QStringLiteral("audio"), parent))
     , m_output(addPage(QStringLiteral("output"), parent, m_outputRows.factory()))
     , m_refinement(addPage(QStringLiteral("refinement"), parent))
-    , m_localModels(addPage(QStringLiteral("localModels"), parent,
-                            localModelRows(*controller->localSetup())))
+    , m_localModels(m_schema.hasPage(QStringLiteral("localModels"))
+                        ? addPage(QStringLiteral("localModels"), parent,
+                                  localModelRows(*controller->localSetup()))
+                        : nullptr)
     , m_vocabulary(addPage(QStringLiteral("vocabulary"), parent))
     , m_corrections(addPage(QStringLiteral("corrections"), parent))
     , m_bindings(addPage(QStringLiteral("bindings"), parent, m_bindingRows.factory()))
@@ -262,7 +264,12 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     // What LocalSetup learns shows up in rows on three pages: endpoint
     // verdicts, runners, model lists.
     connect(controller->localSetup(), &LocalSetup::changed, this, [this] {
+        // LocalSetup writes Speed Test results and the model in use itself.
+        m_loaded.speech.local = m_draft.speech.local = m_controller->settings()->localSpeechSettings();
         for (SchemaSettingsPage *page : {m_audio, m_refinement, m_localModels}) {
+            if (!page) {
+                continue;
+            }
             const QSignalBlocker blocker(page);
             page->load(m_draft);
         }
@@ -680,7 +687,9 @@ void SettingsPageSet::applyCapabilities()
     m_general->setCapabilities(capabilities);
     m_output->setCapabilities(capabilities);
     m_refinement->setCapabilities(capabilities);
-    m_localModels->setCapabilities(capabilities);
+    if (m_localModels) {
+        m_localModels->setCapabilities(capabilities);
+    }
     m_corrections->setCapabilities(capabilities);
     m_whatsNew->setCapabilities(capabilities);
 }

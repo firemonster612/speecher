@@ -47,6 +47,7 @@ public:
     SchemaSettingsPage *audio() const;
     SchemaSettingsPage *output() const;
     SchemaSettingsPage *refinement() const;
+    // Null in a build without local speech.
     SchemaSettingsPage *localModels() const;
     SchemaSettingsPage *providerModels() const;
     SchemaSettingsPage *providerAuth() const;

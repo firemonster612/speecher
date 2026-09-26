@@ -7,6 +7,7 @@
 #include "app/LocalSetup.h"
 #include "providers/LocalModelStore.h"
 #include <QTemporaryDir>
+#include <QFile>
 #include <QTcpServer>
 #include "frontend/qt/OutputCustomRows.h"
 #ifdef SPEECHER_WITH_YDOTOOL
@@ -1053,9 +1054,9 @@ private slots:
 
     void theLocalModelCardHoldsNextUntilADownloadStarts()
     {
+        // A fresh install: the only provider is Local, nothing is chosen yet.
         SettingsStore settings;
         settings.raw().clear();
-        settings.setSpeechProvider(QStringLiteral("local"));
         ProviderRegistry providers;
         providers.registerSpeechProvider(
             {QStringLiteral("local"), QStringLiteral("Local model"), QString()},
@@ -1082,6 +1083,101 @@ private slots:
         QCOMPARE(settings.localSpeechSettings().modelId, local.suggestedModel().id);
         QVERIFY(setup.readySummary().endsWith(QStringLiteral(", on this computer")));
         local.cancelDownload(local.suggestedModel().id);
+    }
+
+    void reopeningSetupKeepsTheSavedLocalModel()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setSpeechProvider(QStringLiteral("claude"));
+        ProviderRegistry providers;
+        providers.registerSpeechProvider(
+            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        providers.registerSpeechProvider(
+            {QStringLiteral("local"), QStringLiteral("Local model"), QString()},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        QTemporaryDir models;
+        LocalModelStore store(models.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
+        LocalSetup local(settings, providers, store);
+        // A model that is not the suggestion, already on disk.
+        const LocalModel &chosen = *findLocalModel(QStringLiteral("cohere"));
+        QVERIFY(chosen.id != local.suggestedModel().id);
+        {
+            QFile file(store.modelPath(chosen));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            QVERIFY(file.resize(chosen.sizeBytes));
+        }
+        LocalSpeechSettings saved = settings.localSpeechSettings();
+        saved.modelId = chosen.id;
+        settings.setLocalSpeechSettings(saved);
+
+        // Opened while another provider is chosen, the page leaves it alone.
+        {
+            SpeechProviderSetupPage setup(settings, providers, &local);
+            setup.show();
+            QCOMPARE(settings.localSpeechSettings().modelId, chosen.id);
+        }
+
+        // Choosing Local shows the saved model, which is downloaded.
+        settings.setSpeechProvider(QStringLiteral("local"));
+        SpeechProviderSetupPage setup(settings, providers, &local);
+        setup.show();
+        QCOMPARE(settings.localSpeechSettings().modelId, chosen.id);
+        QCOMPARE(setup.findChild<QLabel *>(QStringLiteral("speechLocalModelName"))->text(), chosen.name);
+        QCOMPARE(setup.localModelId(), chosen.id);
+        QVERIFY(setup.ready());
+    }
+
+    void deletingTheModelInUseMovesDictationToAnotherDownloadedOne()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        QTemporaryDir models;
+        LocalModelStore store(models.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
+        LocalSetup local(settings, providers, store);
+        for (const QString &id : {QStringLiteral("moonshine-small"), QStringLiteral("parakeet")}) {
+            const LocalModel &model = *findLocalModel(id);
+            QFile file(store.modelPath(model));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            QVERIFY(file.resize(model.sizeBytes));
+        }
+        LocalSpeechSettings saved = settings.localSpeechSettings();
+        saved.modelId = QStringLiteral("parakeet");
+        settings.setLocalSpeechSettings(saved);
+
+        QVERIFY(local.removeModel(*findLocalModel(QStringLiteral("parakeet"))));
+        QCOMPARE(settings.localSpeechSettings().modelId, QStringLiteral("moonshine-small"));
+    }
+
+    void theAssistantKeepsTheCliProxyPresetUntilItsServerIsEdited()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("endpoint"));
+        settings.setCliproxyBaseUrl(QStringLiteral("http://proxy.example:8317"));
+        AppSettings snapshot = settings.snapshot();
+        snapshot.refinement.endpoint.preset = QStringLiteral("cliproxy");
+        snapshot.refinement.endpoint.model = QStringLiteral("claude-opus-5-5");
+        settings.applySnapshot(snapshot);
+        ProviderRegistry providers;
+        QTemporaryDir models;
+        LocalModelStore store(models.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
+        LocalSetup local(settings, providers, store);
+
+        RefinementSetupPage page(settings, providers, &local);
+        auto *url = page.findChild<QLineEdit *>(QStringLiteral("refinementEndpointUrl"));
+        QVERIFY(url);
+        // The proxy's own address is what the form shows.
+        QCOMPARE(url->text(), QStringLiteral("http://proxy.example:8317/v1"));
+        emit url->editingFinished();
+        QCOMPARE(settings.snapshot().refinement.endpoint.preset, QStringLiteral("cliproxy"));
+
+        url->setText(QStringLiteral("http://localhost:8080/v1"));
+        emit url->editingFinished();
+        QCOMPARE(settings.snapshot().refinement.endpoint.preset, QString());
+        QCOMPARE(settings.snapshot().refinement.endpoint.baseUrl, QStringLiteral("http://localhost:8080/v1"));
     }
 
     void setupSignInSourceSwitchesToCliProxy()

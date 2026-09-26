@@ -72,6 +72,7 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
 void LinuxTrayIcon::showMessage(const QString &title, const QString &message)
 {
     m_tray->showMessage(title, message, QSystemTrayIcon::Information);
+    emit messageShown(title, message);
 }
 
 void LinuxTrayIcon::applyState(const QString &stateName)

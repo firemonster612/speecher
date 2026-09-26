@@ -3,6 +3,7 @@
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
 #include "frontend/qt/LinuxTrayIcon.h"
+#include "frontend/qt/QtFrontEnd.h"
 
 #include <QAction>
 #include <QMenu>
@@ -84,6 +85,25 @@ private slots:
         QSignalSpy quitRequests(&controller, &ApplicationController::quitRequested);
         icon->contextMenu()->actions().last()->trigger();
         QCOMPARE(quitRequests.count(), 1);
+    }
+
+    void aModelReadyNoticeOnlyGoesToTheTrayWhileNoWindowIsShown()
+    {
+        ApplicationController controller(true);
+        QtFrontEnd frontEnd(&controller);
+        auto *tray = frontEnd.findChild<LinuxTrayIcon *>();
+        QVERIFY(tray);
+        QSignalSpy shown(tray, &LinuxTrayIcon::messageShown);
+
+        frontEnd.notifyIfNoWindowShown(QStringLiteral("Parakeet 0.6B is ready"), QStringLiteral("Dictate."));
+        QCOMPARE(shown.size(), 1);
+        QCOMPARE(shown.first().first().toString(), QStringLiteral("Parakeet 0.6B is ready"));
+
+        // With the window up, the Local models page already says so.
+        frontEnd.showMainWindow();
+        QCoreApplication::processEvents();
+        frontEnd.notifyIfNoWindowShown(QStringLiteral("Parakeet 0.6B is ready"), QStringLiteral("Dictate."));
+        QCOMPARE(shown.size(), 1);
     }
 };
 
