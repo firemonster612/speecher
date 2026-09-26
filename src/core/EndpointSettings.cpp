@@ -29,10 +29,11 @@ void editRefinementEndpoint(AppSettings &settings, const RefinementEndpointEdit 
     if ((serverChanged || keyChanged || leavingPreset) && endpoint.preset == QStringLiteral("cliproxy")) {
         endpoint.preset.clear();
         endpoint.baseUrl = effective.apiBase;
-        // Leaving the preset must not send the proxy's key to another server
-        // unless this same edit supplies the key.
-        endpoint.apiKey = edit.apiKey ? effective.apiKey : QString();
-        endpoint.useCliproxyKey = false;
+        // The proxy's key may follow only to the proxy's own address; a new
+        // server gets it only if this same edit supplies it.
+        const bool sameServer = !serverChanged;
+        endpoint.apiKey = sameServer || edit.apiKey ? effective.apiKey : QString();
+        endpoint.useCliproxyKey = sameServer && unread;
         settings.unreadSecretKeys.removeAll(endpointKey);
     }
     if (serverChanged) endpoint.baseUrl = withoutTrailingSlashes(*edit.baseUrl);
