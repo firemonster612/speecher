@@ -182,6 +182,37 @@ void SettingsCodecs::setCodexFinalRetranscribe(bool value)
     m_settings.setValue(SettingsKeys::CodexFinalRetranscribe, value);
 }
 
+LocalSpeechSettings SettingsCodecs::localSpeechSettings() const
+{
+    const LocalSpeechSettings defaults;
+    LocalSpeechSettings settings;
+    settings.modelId = value(SettingsKeys::LocalModel, defaults.modelId).toString();
+    settings.deviceId = value(SettingsKeys::LocalDevice, QString()).toString();
+    settings.idleUnloadMinutes =
+        std::max(0, value(SettingsKeys::LocalIdleUnloadMinutes, defaults.idleUnloadMinutes).toInt());
+    const QString speedTestPrefix = SettingsKeys::LocalSpeedTest + QLatin1Char('/');
+    for (const QString &key : m_settings.allKeys()) {
+        if (key.startsWith(speedTestPrefix)) {
+            settings.speedTestSeconds.insert(key.mid(speedTestPrefix.size()),
+                                             m_settings.value(key).toDouble());
+        }
+    }
+    return settings;
+}
+
+void SettingsCodecs::setLocalSpeechSettings(const LocalSpeechSettings &value)
+{
+    m_settings.setValue(SettingsKeys::LocalModel, value.modelId);
+    m_settings.setValue(SettingsKeys::LocalDevice, value.deviceId);
+    m_settings.setValue(SettingsKeys::LocalIdleUnloadMinutes, std::max(0, value.idleUnloadMinutes));
+    m_settings.remove(SettingsKeys::LocalSpeedTest);
+    m_settings.beginGroup(SettingsKeys::LocalSpeedTest);
+    for (auto it = value.speedTestSeconds.cbegin(); it != value.speedTestSeconds.cend(); ++it) {
+        m_settings.setValue(it.key(), it.value());
+    }
+    m_settings.endGroup();
+}
+
 // The terms a transcription request carries. Everything a person typed is
 // stored; only this list is capped, taking entries in the priority order
 // normalizeVocabularyEntries already put them in.
@@ -1040,6 +1071,7 @@ AppSettings SettingsCodecs::snapshot() const
 
     settings.speech.providerId = speechProvider();
     settings.speech.codexFinalRetranscribe = codexFinalRetranscribe();
+    settings.speech.local = localSpeechSettings();
     settings.speech.claudeAuthMode = anthropicAuthMode();
     settings.speech.codexAuthMode = openAiAuthMode();
     settings.speech.vocabulary = customVocabulary();

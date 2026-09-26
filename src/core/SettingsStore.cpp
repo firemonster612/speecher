@@ -81,6 +81,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setPreviewWords(draft.ui.previewWords);
     setSpeechProvider(draft.speech.providerId);
     setCodexFinalRetranscribe(draft.speech.codexFinalRetranscribe);
+    setLocalSpeechSettings(draft.speech.local);
     setAudioCaptureSettings(draft.audio);
     setAppRecognitionRules(draft.appRecognitionRules);
     setRefinementProvider(draft.refinement.providerId);

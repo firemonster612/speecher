@@ -17,6 +17,11 @@ inline const QString UiPauseMedia = QStringLiteral("ui/pauseMediaDuringTranscrip
 inline const QString UiSoundsEnabled = QStringLiteral("ui/soundsEnabled");
 inline const QString SpeechProvider = QStringLiteral("stt/provider");
 inline const QString CodexFinalRetranscribe = QStringLiteral("stt/codexFinalRetranscribe");
+inline const QString LocalModel = QStringLiteral("local/model");
+inline const QString LocalDevice = QStringLiteral("local/device");
+inline const QString LocalIdleUnloadMinutes = QStringLiteral("local/idleUnloadMinutes");
+// A group: one key per model id, holding the measured seconds for the clip.
+inline const QString LocalSpeedTest = QStringLiteral("local/speedTest");
 inline const QString VocabularyEntries = QStringLiteral("stt/vocabularyEntries");
 inline const QString LegacyVocabulary = QStringLiteral("stt/customVocabulary");
 inline const QString AudioDeviceId = QStringLiteral("audio/deviceId");

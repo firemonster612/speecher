@@ -418,6 +418,31 @@ private slots:
         QCOMPARE(settings.snapshot().shortcutActivationMode, ShortcutActivationMode::PushToTalk);
     }
 
+    void localSpeechSettingsRoundTrip()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        QCOMPARE(settings.snapshot().speech.local, LocalSpeechSettings{});
+        QCOMPARE(settings.snapshot().speech.local.modelId, QStringLiteral("parakeet"));
+        QCOMPARE(settings.snapshot().speech.local.idleUnloadMinutes, 10);
+
+        AppSettings draft = settings.snapshot();
+        draft.speech.local.modelId = QStringLiteral("cohere");
+        draft.speech.local.deviceId = QStringLiteral("0000:c1:00.0");
+        draft.speech.local.idleUnloadMinutes = 0;
+        draft.speech.local.speedTestSeconds = {{QStringLiteral("parakeet"), 0.42},
+                                               {QStringLiteral("cohere"), 1.7}};
+        settings.applySnapshot(draft);
+        QCOMPARE(SettingsStore().snapshot().speech.local, draft.speech.local);
+        QCOMPARE(settings.raw().value(QStringLiteral("local/speedTest/cohere")).toDouble(), 1.7);
+
+        draft.speech.local.speedTestSeconds.remove(QStringLiteral("cohere"));
+        settings.applySnapshot(draft);
+        QCOMPARE(SettingsStore().snapshot().speech.local.speedTestSeconds.keys(),
+                 QStringList{QStringLiteral("parakeet")});
+        settings.raw().clear();
+    }
+
     void settingsDefaultRefinementProviderUsesInstalledCli()
     {
         const auto cleanup = qScopeGuard([] {

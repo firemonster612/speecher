@@ -7,6 +7,7 @@
 #include <QString>
 #include <QStringList>
 #include <QList>
+#include <QMap>
 
 namespace speecher {
 
@@ -86,6 +87,19 @@ struct UiSettings {
     bool soundsEnabled = false;
 };
 
+struct LocalSpeechSettings {
+    // A LocalModelCatalog id.
+    QString modelId = QStringLiteral("parakeet");
+    // A transcribe.cpp device_id (PCI bus id), or empty for automatic choice.
+    QString deviceId;
+    // 0 keeps the model loaded until Speecher quits.
+    int idleUnloadMinutes = 10;
+    // Model id to the Speed Test's measured seconds for the bundled clip.
+    QMap<QString, double> speedTestSeconds;
+
+    bool operator==(const LocalSpeechSettings &other) const = default;
+};
+
 struct SpeechSettings {
     QString providerId = QStringLiteral("claude");
     QString claudeAuthMode = QStringLiteral("oauth");
@@ -99,6 +113,7 @@ struct SpeechSettings {
     QString cliproxyOauthDir;
     QString claudeCliproxyAccount;
     QString codexCliproxyAccount;
+    LocalSpeechSettings local;
 };
 
 struct AudioCaptureSettings {
