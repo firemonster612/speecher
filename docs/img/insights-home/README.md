@@ -8,7 +8,7 @@ Every capture uses the seed log `docs/insights-mockup/seed-active.jsonl`
   Breeze style in isolated configuration directories, 1040×900 (the narrow
   one 720×900), from `e4ed5d05`.
 - `mac-*`: the `insights-evidence` workflow on a macOS 26 runner at
-  `e4ed5d05`. `mac-home.png` and `mac-home-bottom.png` are screen captures of
+  `eb803ca6`. `mac-home.png` and `mac-home-bottom.png` are screen captures of
   the composited window; `mac-general-insights-off.png` is the window's
   backing store, which leaves the sidebar blank.
 - `win-*`: the same workflow on a Windows Server 2025 runner at `e6399c02`,
