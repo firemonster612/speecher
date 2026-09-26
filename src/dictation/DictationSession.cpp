@@ -686,7 +686,9 @@ void DictationSession::deliverFinal(const QString &text)
     m_target = {};
     if (result.ok) {
         emit transcriptDelivered(text);
-        if (settings.insightsEnabled) {
+        // The live setting, not the session snapshot: turning insights off
+        // mid-session must stop this one being recorded.
+        if (m_settings->insightsEnabled()) {
             emit dictationRecorded(
                 {QDateTime::currentDateTime(), m_listeningMs, countWords(text), appName, profile});
         }

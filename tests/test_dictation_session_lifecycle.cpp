@@ -622,6 +622,32 @@ private slots:
         }
     }
 
+    void turningInsightsOffMidSessionRecordsNothing()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.setInsightsEnabled(true);
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("Hello"));
+        settings.setInsightsEnabled(false);
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+
+        QCOMPARE(recorded.count(), 0);
+    }
+
     void dictationSessionDefersTargetCaptureUntilPopupCanPaint()
     {
         SettingsStore settings;
