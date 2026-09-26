@@ -682,6 +682,8 @@ void SchemaSettingsPage::appendToDraft(AppSettings &draft) const
         // and must not overwrite the saved value with its empty one.
         const QVariant value = row.value();
         if (value.isValid()) {
+            if (row.descriptor.secret && row.descriptor.value
+                && value == row.descriptor.value(m_loaded)) continue;
             row.descriptor.apply(draft, value);
         }
     }

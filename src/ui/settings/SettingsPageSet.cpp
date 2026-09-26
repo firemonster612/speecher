@@ -86,6 +86,9 @@ SettingsSchema settingsSchema(ApplicationController *controller)
                                             *controller->providerRegistry(),
                                             controller->pendingWhatsNewVersion());
     context.liveFacts = [setup = controller->localSetup()] { return setup->liveFacts(); };
+    context.liveFactsForDraft = [setup = controller->localSetup()](const AppSettings &draft) {
+        return setup->liveFacts(draft);
+    };
     SettingsSchema schema = buildSettingsSchema(context);
     UpdateController *updates = controller->updates();
     SettingsPage &general = pageById(schema, QStringLiteral("general"));
@@ -265,7 +268,9 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     // verdicts, runners, model lists.
     connect(controller->localSetup(), &LocalSetup::changed, this, [this] {
         // LocalSetup writes Speed Test results and the model in use itself.
-        m_loaded.speech.local = m_draft.speech.local = m_controller->settings()->localSpeechSettings();
+        const auto current = m_controller->settings()->snapshot();
+        m_draft = mergeSettingsDraft(m_schema, m_loaded, m_draft, current);
+        m_loaded = current;
         for (SchemaSettingsPage *page : {m_audio, m_refinement, m_localModels}) {
             if (!page) {
                 continue;
