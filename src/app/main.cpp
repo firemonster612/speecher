@@ -52,9 +52,7 @@
 #include <cstdio>
 #include <iostream>
 #ifdef Q_OS_WIN
-#include <io.h>
-#define isatty _isatty
-#define fileno _fileno
+#include <windows.h>
 #else
 #include <unistd.h>
 #endif
@@ -128,6 +126,57 @@ static QStringList commandLineArguments(int argc, char **argv)
     return arguments;
 }
 
+#ifdef Q_OS_WIN
+// Speecher is a GUI-subsystem program, so a command-line run starts with no
+// console. Borrow the one it was started from, if any, and point stdout and
+// stderr at it unless they already go to a file or pipe. cmd.exe does not
+// wait for a GUI-subsystem program, so its prompt can come back first.
+static void attachParentConsole()
+{
+    if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
+        return;
+    }
+    const auto unredirected = [](DWORD stream) {
+        const HANDLE handle = GetStdHandle(stream);
+        return handle == nullptr || handle == INVALID_HANDLE_VALUE || GetFileType(handle) == FILE_TYPE_UNKNOWN;
+    };
+    if (unredirected(STD_OUTPUT_HANDLE)) {
+        std::freopen("CONOUT$", "w", stdout);
+    }
+    if (unredirected(STD_ERROR_HANDLE)) {
+        std::freopen("CONOUT$", "w", stderr);
+    }
+    std::cout.clear();
+    std::cerr.clear();
+}
+
+// A window or daemon run outlives the console it was started from, and
+// closing that console ends every process attached to it.
+static void detachParentConsole()
+{
+    FreeConsole();
+}
+
+// Whether stderr is a console that takes the escape codes that rewrite the
+// progress line; NUL and files are not, and neither is a console that
+// refuses virtual terminal processing.
+static bool stderrIsTerminal()
+{
+    const HANDLE handle = GetStdHandle(STD_ERROR_HANDLE);
+    DWORD mode = 0;
+    return GetConsoleMode(handle, &mode)
+        && SetConsoleMode(handle, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+}
+#else
+static void attachParentConsole() {}
+static void detachParentConsole() {}
+
+static bool stderrIsTerminal()
+{
+    return isatty(fileno(stderr));
+}
+#endif
+
 #ifdef Q_OS_LINUX
 static QString kdeWidgetStyle()
 {
@@ -197,6 +246,11 @@ int main(int argc, char **argv)
     const std::shared_ptr<const PlatformComposition> platform = platformComposition();
 
     const QStringList arguments = commandLineArguments(argc, argv);
+    // Before parsing, which prints --help, --version and usage errors itself.
+    // A plain launch has no command line to talk to.
+    if (argc > 1) {
+        attachParentConsole();
+    }
     const CommandLineDecision decision = parseCommandLine(arguments, logPath);
     if (decision.mode == LaunchMode::Exit) {
         return decision.exitCode;
@@ -215,7 +269,7 @@ int main(int argc, char **argv)
         ProviderRegistry providers;
         registerProviders(providers, &secrets);
         return runHeadlessTranscribe(decision.transcribeFiles, decision.headless, &settings, &providers,
-                                     std::cout, std::cerr, isatty(fileno(stderr)));
+                                     std::cout, std::cerr, stderrIsTerminal());
     }
 
 #ifdef SPEECHER_WITH_WINUI
@@ -389,5 +443,6 @@ int main(int argc, char **argv)
             app.exit(controller.grabMainWindow(decision.grabPath) ? 0 : 1);
         });
     }
+    detachParentConsole();
     return app.exec();
 }
