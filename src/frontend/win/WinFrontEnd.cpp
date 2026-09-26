@@ -205,6 +205,17 @@ void WinFrontEnd::actionTriggered(const QString &rowId)
 {
     if (rowId == QStringLiteral("runSetup")) {
         m_controller->showSetupAssistant();
+    } else if (rowId == QStringLiteral("clearInsights")) {
+        m_native->settingsWindow()->confirm(
+            QStringLiteral("Delete all insights history?"),
+            QStringLiteral("Your stats, streaks and records are erased from this computer. "
+                           "This can't be undone."),
+            QStringLiteral("Delete History"),
+            [controller = m_controller, window = m_native->settingsWindow()] {
+                if (!controller->clearInsights()) {
+                    window->inform(QStringLiteral("Speecher couldn't delete the insights history."));
+                }
+            });
     } else if (rowId == QStringLiteral("checkForUpdates")) {
         if (m_controller->updates()->state() == UpdateController::State::UpdateAvailable) {
             m_controller->updates()->updateNow();

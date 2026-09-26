@@ -2,7 +2,9 @@
 
 #include "app/ApplicationController.h"
 #include "app/UpdateController.h"
+#include "core/InsightsLog.h"
 #include "core/SettingsStore.h"
+#include "frontend/win/HomePage.h"
 #include "frontend/win/SettingsModel.h"
 #include "frontend/win/SettingsPage.h"
 #include "frontend/win/ShortcutRecorder.h"
@@ -44,18 +46,22 @@ using winrt::Microsoft::UI::Xaml::Media::MicaBackdrop;
 const QString kPaneSetting = QStringLiteral("ui/settingsPane");
 const QString kGeometrySetting = QStringLiteral("ui/settingsWindowGeometry");
 const QString kWhatsNewPane = QStringLiteral("whatsNew");
-// The two hand-built panes with no schema page behind them: the global-shortcut
-// recorder, and file transcription, which sits after the dictation (audio)
-// page. Everything else in the sidebar comes from the schema.
+// The hand-built panes with no schema page behind them: Home, the
+// global-shortcut recorder, and file transcription, which sits after the
+// dictation (audio) page. Everything else in the sidebar comes from the schema.
 const QString kShortcutPane = QStringLiteral("shortcut");
 const QString kShortcutTitle = QStringLiteral("Shortcut");
 const QString kTranscribePane = QStringLiteral("transcribe");
 const QString kTranscribeTitle = QStringLiteral("Transcribe");
 const QString kTranscribeAfterPage = QStringLiteral("audio");
+// Home is drawn from the insights log; it leads the sidebar and is where the
+// window opens when no pane is remembered.
+const QString kHomePane = QStringLiteral("home");
+const QString kHomeTitle = QStringLiteral("Home");
 
 bool isHandBuiltPane(const QString &id)
 {
-    return id == kShortcutPane || id == kTranscribePane;
+    return id == kShortcutPane || id == kTranscribePane || id == kHomePane;
 }
 
 // Segoe Fluent Icons for the schema's platform-neutral icon ids — the one
@@ -74,6 +80,7 @@ wchar_t glyphForIconId(const QString &iconId)
         {QStringLiteral("key"), L'\uE192'},
         {QStringLiteral("shortcut"), L'\uE765'},
         {QStringLiteral("transcribe"), L'\uE8D6'},
+        {QStringLiteral("home"), L'\uE80F'},
     };
     return glyphs.value(iconId, L'\uE713');
 }
@@ -124,6 +131,15 @@ struct SettingsWindow::Native {
         host.alive = alive;
         host.refresh = [this] { queueRebuild(); };
         host.action = [this](const QString &id) { runAction(id); };
+        // Queued: the link that asks is inside the page the switch replaces.
+        host.showPane = [this](const QString &id) {
+            winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread().TryEnqueue(
+                [this, id, weak = std::weak_ptr<bool>(alive)] {
+                    if (!gone(weak) && window) {
+                        selectPane(id);
+                    }
+                });
+        };
         host.hwnd = [this] { return windowHandle(); };
         host.xamlRoot = [this] {
             return root ? root.XamlRoot() : winrt::Microsoft::UI::Xaml::XamlRoot{nullptr};
@@ -145,6 +161,16 @@ struct SettingsWindow::Native {
                              refreshBanner();
                              rebuildSidebar();
                          });
+        // Only Home shows these; rebuilding another pane mid-dictation would
+        // take focus from a field being dictated into.
+        const auto rebuildHome = [this] {
+            if (currentPane == kHomePane) {
+                queueRebuild();
+            }
+        };
+        QObject::connect(controller, &ApplicationController::stateChanged, &lifetime, rebuildHome);
+        QObject::connect(controller->insightsLog(), &InsightsLog::changed, &lifetime, rebuildHome);
+        QObject::connect(controller, &ApplicationController::lastRecordChanged, &lifetime, rebuildHome);
     }
 
     ~Native()
@@ -177,6 +203,11 @@ struct SettingsWindow::Native {
     void show()
     {
         if (window) {
+            // Selecting Home rebuilds it, which re-reads today; bringing an
+            // open window back must too, or yesterday's streak stays up.
+            if (currentPane == kHomePane) {
+                queueRebuild();
+            }
             window.Activate();
             SetForegroundWindow(windowHandle());
             return;
@@ -185,7 +216,7 @@ struct SettingsWindow::Native {
         model.reloadDraft();
         currentPane = controller->settings()->raw().value(kPaneSetting).toString();
         if (!isHandBuiltPane(currentPane) && !pageWithId(model.pages(), currentPane)) {
-            currentPane = model.pages().first().id;
+            currentPane = kHomePane;
         }
         if (currentPane == kTranscribePane) {
             transcribe->enter();
@@ -426,6 +457,9 @@ struct SettingsWindow::Native {
         const auto matches = [this](const QString &title) {
             return query.isEmpty() || title.toLower().contains(query.toLower());
         };
+        if (matches(kHomeTitle)) {
+            append(kHomePane, kHomeTitle, glyphForIconId(kHomePane));
+        }
         // One item per schema page, in schema order; a search filters them.
         for (const PageSnapshot &page : pages) {
             if (page.id == kWhatsNewPane) {
@@ -482,7 +516,7 @@ struct SettingsWindow::Native {
         const QList<PageSnapshot> pages = model.pages();
         const bool returnable = isHandBuiltPane(whatsNewReturnPane)
             || pageWithId(pages, whatsNewReturnPane);
-        selectPane(returnable ? whatsNewReturnPane : pages.first().id);
+        selectPane(returnable ? whatsNewReturnPane : kHomePane);
     }
 
     void runAction(const QString &id)
@@ -528,6 +562,7 @@ struct SettingsWindow::Native {
         UIElement page{nullptr};
         try {
             page = schemaPage                      ? buildPage(*schemaPage, host)
+                : currentPane == kHomePane       ? buildHomePage(host)
                 : currentPane == kTranscribePane ? transcribe->build(host, kTranscribeTitle)
                                                  : buildShortcutPage(host);
         } catch (const winrt::hresult_error &error) {
@@ -690,7 +725,62 @@ struct SettingsWindow::Native {
         QEventLoop settle;
         QTimer::singleShot(250, &settle, &QEventLoop::quit);
         settle.exec();
+        // SPEECHER_GRAB_SCROLL=bottom shows the end of the page, as on the
+        // other platforms; "middle" shows what lies between, which a window
+        // this short would otherwise never capture.
+        const QString scrollTo = qEnvironmentVariable("SPEECHER_GRAB_SCROLL");
+        if (scrollTo == QStringLiteral("bottom") || scrollTo == QStringLiteral("middle")) {
+            if (const auto scroll = pageHost.Child().try_as<ScrollViewer>()) {
+                const double end = scroll.ScrollableHeight();
+                scroll.ChangeView(nullptr, scrollTo == QStringLiteral("middle") ? end * 0.6 : end,
+                                  nullptr, true);
+                QTimer::singleShot(250, &settle, &QEventLoop::quit);
+                settle.exec();
+            }
+        }
         return printWindowTo(windowHandle(), path);
+    }
+
+    void confirm(const QString &title,
+                 const QString &text,
+                 const QString &confirmLabel,
+                 std::function<void()> confirmed)
+    {
+        if (!root) {
+            return;
+        }
+        ContentDialog dialog;
+        dialog.XamlRoot(root.XamlRoot());
+        // The dialog opens in the popup layer, outside the root's RequestedTheme.
+        dialog.RequestedTheme(root.ActualTheme());
+        dialog.Title(box_value(hs(title)));
+        dialog.Content(box_value(hs(text)));
+        dialog.PrimaryButtonText(hs(confirmLabel));
+        dialog.CloseButtonText(L"Cancel");
+        dialog.DefaultButton(ContentDialogButton::Close);
+        // On Closed rather than PrimaryButtonClick, so `confirmed` may open
+        // a dialog of its own: WinUI allows one ContentDialog at a time.
+        dialog.Closed([confirmed = std::move(confirmed),
+                       weak = std::weak_ptr<bool>(alive)](const ContentDialog &,
+                                                          const ContentDialogClosedEventArgs &args) {
+            if (args.Result() == ContentDialogResult::Primary && !gone(weak)) {
+                confirmed();
+            }
+        });
+        dialog.ShowAsync();
+    }
+
+    void inform(const QString &title)
+    {
+        if (!root) {
+            return;
+        }
+        ContentDialog dialog;
+        dialog.XamlRoot(root.XamlRoot());
+        dialog.RequestedTheme(root.ActualTheme());
+        dialog.Title(box_value(hs(title)));
+        dialog.CloseButtonText(L"OK");
+        dialog.ShowAsync();
     }
 
     std::shared_ptr<bool> alive = std::make_shared<bool>(true);
@@ -757,6 +847,19 @@ bool SettingsWindow::isVisible() const
 bool SettingsWindow::capture(const QString &path)
 {
     return m_native->capture(path);
+}
+
+void SettingsWindow::confirm(const QString &title,
+                             const QString &text,
+                             const QString &confirmLabel,
+                             std::function<void()> confirmed)
+{
+    m_native->confirm(title, text, confirmLabel, std::move(confirmed));
+}
+
+void SettingsWindow::inform(const QString &title)
+{
+    m_native->inform(title);
 }
 
 void SettingsWindow::setActionHook(std::function<void(const QString &)> hook)

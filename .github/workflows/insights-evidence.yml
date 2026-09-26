@@ -1,0 +1,273 @@
+name: Insights evidence
+
+# Screenshots of Home and the General page's Insights group on macOS and
+# Windows, from the seeded insights log (docs/insights-mockup/seed-active.jsonl)
+# with today pinned so the numbers match the mockup. Uploads evidence/.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - src/ui/**
+      - src/frontend/**
+      - src/core/Insights*
+      - .github/workflows/insights-evidence.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: insights-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CMAKE_OBJCXX_COMPILER_LAUNCHER: ccache
+      SPEECHER_INSIGHTS_TODAY: "2026-09-26"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: clang_64
+          modules: qtmultimedia qtwebsockets
+          cache: true
+
+      - name: Cache macOS compiler outputs
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: macos-26-release
+
+      - name: Remove obsolete AGL references
+        run: |
+          # Same workaround as release.yml: the macOS 26 SDK has no AGL.
+          wrap="$QT_ROOT_DIR/lib/cmake/Qt6/FindWrapOpenGL.cmake"
+          sed -i '' \
+            -e 's/find_library(WrapOpenGL_AGL NAMES AGL)/set(WrapOpenGL_AGL "")/' \
+            -e 's/set(__opengl_agl_fw_path "-framework AGL")//' \
+            "$wrap"
+          if grep -n 'framework AGL' "$wrap"; then
+            echo "AGL reference survived in FindWrapOpenGL.cmake" >&2
+            exit 1
+          fi
+          find "$QT_ROOT_DIR" -type f \( -name '*.prl' -o -name '*.cmake' \) -exec \
+            sed -i '' -e 's/-framework[[:space:]]*AGL//g' -e 's/AGL;//g' -e 's/AGL\.framework//g' {} +
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Seed settings
+        run: |
+          # Qt's settings domain, as .github/macos-e2e/common.sh seeds it: no
+          # setup assistant and no update banner over the page.
+          defaults write com.io-github-firemonster612.speecher app.setupCompleted -bool true
+          defaults write com.io-github-firemonster612.speecher updates.autoCheck -bool false
+          defaults write com.io-github-firemonster612.speecher updates.autoInstall -bool false
+          # This build as the last one run, so no "is installed" strip covers
+          # the page (ApplicationController compares these at startup).
+          export DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib"
+          version="$(build/speecher.app/Contents/MacOS/speecher --version | head -1)"
+          number="$(printf '%s\n' "$version" | sed -n 's/^speecher \(.*\) (build \([0-9]*\))$/\1/p')"
+          build="$(printf '%s\n' "$version" | sed -n 's/^speecher \(.*\) (build \([0-9]*\))$/\2/p')"
+          test -n "$number" && test -n "$build"
+          defaults write com.io-github-firemonster612.speecher updates.lastRunVersion -string "$number"
+          defaults write com.io-github-firemonster612.speecher updates.lastRunBuildNumber -int "$build"
+          defaults delete com.io-github-firemonster612.speecher updates.pendingWhatsNewVersion 2>/dev/null || true
+
+      - name: Grab Home and General
+        run: |
+          mkdir -p evidence
+          failed=0
+          # As .github/macos-e2e/common.sh runs the app: Qt from the installed kit.
+          export DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib"
+          export SPEECHER_INSIGHTS_SEED="$GITHUB_WORKSPACE/docs/insights-mockup/seed-active.jsonl"
+          # The backing store is not bound by the runner's 1024x768 screen.
+          export SPEECHER_GRAB_SIZE=1000x1000
+          # No home-bottom here: the backing store draws the page unscrolled,
+          # so the screen capture step below takes that one.
+          for page in home general; do
+            status=0
+            SPEECHER_GRAB_PAGE="$page" QT_LOGGING_RULES="*.debug=false" \
+              build/speecher.app/Contents/MacOS/speecher \
+              --grab "evidence/mac-$page.png" > "evidence/mac-$page-grab.log" 2>&1 || status=$?
+            echo "mac-$page exit=$status"
+            tail -20 "evidence/mac-$page-grab.log"
+            if [ ! -s "evidence/mac-$page.png" ]; then
+              failed=1
+              # Run it again under lldb for the crashing thread's backtrace. SIP
+              # strips DYLD_* from lldb itself, so hand the kit to the target.
+              SPEECHER_GRAB_PAGE="$page" \
+                lldb --batch \
+                -o "settings set target.env-vars DYLD_FRAMEWORK_PATH=$QT_ROOT_DIR/lib" \
+                -o run -k "thread backtrace -c 60" -k "quit 1" \
+                -- build/speecher.app/Contents/MacOS/speecher --grab "evidence/mac-$page.png" \
+                > "evidence/mac-$page-lldb.txt" 2>&1 || true
+              grep -A60 "stop reason" "evidence/mac-$page-lldb.txt" | head -70 || true
+            fi
+            pkill -9 -x speecher || true
+            # A killed instance leaves its single-instance socket behind.
+            find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
+          done
+          # General with insights off, for the note under the toggle.
+          defaults write com.io-github-firemonster612.speecher insights.enabled -bool false
+          SPEECHER_GRAB_PAGE=general build/speecher.app/Contents/MacOS/speecher \
+            --grab evidence/mac-general-off.png > evidence/mac-general-off-grab.log 2>&1 || failed=1
+          defaults write com.io-github-firemonster612.speecher insights.enabled -bool true
+          pkill -9 -x speecher || true
+          find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
+          exit $failed
+
+      - name: Screen capture with the window shown
+        # The backing-store grab has no sidebar vibrancy; screencapture shows
+        # the composited window when the runner lets it record the screen.
+        continue-on-error: true
+        run: |
+          export DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib"
+          export SPEECHER_INSIGHTS_SEED="$GITHUB_WORKSPACE/docs/insights-mockup/seed-active.jsonl"
+          seed=.github/macos-e2e/tcc_seed.py
+          db="/Library/Application Support/com.apple.TCC/TCC.db"
+          sudo python3 "$seed" "$db" kTCCServiceScreenCapture /usr/sbin/screencapture 2 UNUSED 1 \
+            > evidence/tcc-seeding.log 2>&1 || true
+          sudo launchctl kickstart -k system/com.apple.tccd >/dev/null 2>&1 \
+            || sudo killall tccd >/dev/null 2>&1 || true
+          # Within the runner's 1024x768 screen, below the menu bar.
+          export SPEECHER_GRAB_SIZE=900x640
+          for shot in home general home-bottom; do
+            page="${shot%-bottom}"
+            scroll=""
+            [ "$shot" = home-bottom ] && scroll=bottom
+            # The settings window opens on the pane AppModel remembers.
+            defaults write io.github.firemonster612.speecher settingsPane "$page"
+            SPEECHER_GRAB_SCROLL="$scroll" build/speecher.app/Contents/MacOS/speecher \
+              > "evidence/mac-$shot-screen.log" 2>&1 &
+            sleep 8
+            screencapture -x "evidence/mac-$shot-screen.png" || true
+            pkill -9 -x speecher || true
+            # A killed instance leaves its single-instance socket behind.
+            find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
+            sleep 1
+          done
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: insights-evidence-macos
+          path: evidence/
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: win64_msvc2022_64
+          modules: qtmultimedia qtwebsockets
+          cache: true
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Cache Windows compiler outputs
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          variant: sccache
+          key: windows-2025-release
+
+      - name: Cache Windows SDK packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/nupkg
+            !build/nupkg/*.nupkg
+          # Package directories contain .done markers, so never restore across SDK changes.
+          key: windows-sdk-v1-${{ hashFiles('cmake/WindowsAppSdk.cmake') }}
+
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=OFF
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --parallel --target speecher
+
+      - name: Install Windows App Runtime
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "WindowsAppRuntimeInstall-x64.exe"
+          Invoke-WebRequest "https://aka.ms/windowsappsdk/2.4/2.4.0/windowsappruntimeinstall-x64.exe" -OutFile $installer
+          $sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha256 -ne "851c35b0b0a59ce4c55f9171f601193322fc3413143b0dc3390ea11e14cfa7fc") {
+            throw "Windows App Runtime installer checksum mismatch: $sha256"
+          }
+          $process = Start-Process $installer -ArgumentList "--quiet" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Windows App Runtime installer exited with code $($process.ExitCode)"
+          }
+
+      # --grab skips the setup assistant and opens the settings window, so a
+      # fresh runner needs no seeded settings. speecher.exe is a GUI binary,
+      # which PowerShell does not wait for; Start-Process -Wait does.
+      - name: Grab Home and General
+        shell: pwsh
+        env:
+          SPEECHER_INSIGHTS_TODAY: "2026-09-26"
+        run: |
+          New-Item -ItemType Directory -Force -Path evidence | Out-Null
+          $env:SPEECHER_INSIGHTS_SEED = (Resolve-Path docs/insights-mockup/seed-active.jsonl).Path
+          $exe = (Resolve-Path build/speecher.exe).Path
+          foreach ($shot in "home", "general", "home-middle", "home-bottom") {
+            $env:SPEECHER_GRAB_PAGE = $shot -replace '-(middle|bottom)$', ''
+            $env:SPEECHER_GRAB_SCROLL = if ($shot -match '-(middle|bottom)$') { $Matches[1] } else { "" }
+            $out = Join-Path (Resolve-Path evidence).Path "win-$shot.png"
+            $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
+            if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
+              throw "speecher --grab for $shot exited with code $($process.ExitCode)"
+            }
+          }
+          # General with insights off, for the note under the toggle. Qt's
+          # native Windows settings live under this registry key.
+          $key = "HKCU:\Software\io.github.firemonster612\speecher\insights"
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name enabled -Value "false" -PropertyType String -Force | Out-Null
+          $env:SPEECHER_GRAB_PAGE = "general"
+          $env:SPEECHER_GRAB_SCROLL = ""
+          $out = Join-Path (Resolve-Path evidence).Path "win-general-off.png"
+          $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
+            throw "speecher --grab for general-off exited with code $($process.ExitCode)"
+          }
+          Remove-ItemProperty -Path $key -Name enabled
+
+      - name: Upload Windows pictures
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: insights-evidence-windows
+          path: evidence/
+          if-no-files-found: error

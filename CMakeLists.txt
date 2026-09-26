@@ -236,6 +236,9 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/bindings/BindingMatcher.cpp
   src/core/bindings/NoBindDirectiveParser.cpp
   src/core/CliToolDiscovery.cpp
+  src/core/DictationRecord.cpp
+  src/core/InsightsLog.cpp
+  src/core/InsightsSummary.cpp
   src/core/LearnedCorrection.cpp
   src/core/OutputMethod.cpp
   src/core/OutputFormat.cpp
@@ -261,6 +264,9 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/bindings/BindingMatcher.h
   src/core/bindings/NoBindDirectiveParser.h
   src/core/CliToolDiscovery.h
+  src/core/DictationRecord.h
+  src/core/InsightsLog.h
+  src/core/InsightsSummary.h
   src/core/LearnedCorrection.h
   src/core/OutputMethod.h
   src/core/OutputFormat.h
@@ -541,7 +547,8 @@ set(SPEECHER_FRONTEND_QT_SOURCES
   src/frontend/qt/WritingProfileGrid.cpp
   src/ui/AccessibilityNotice.cpp
   src/ui/AppWindow.cpp
-  src/ui/DictationPage.cpp
+  src/ui/HomePage.cpp
+  src/ui/InsightsCharts.cpp
   src/ui/SetupAssistant.cpp
   src/ui/setup/SetupPages.cpp
   src/ui/settings/SettingsPageSupport.cpp
@@ -568,7 +575,8 @@ set(SPEECHER_FRONTEND_QT_HEADERS
   src/ui/AccessibilityNotice.h
   src/ui/AppPage.h
   src/ui/AppWindow.h
-  src/ui/DictationPage.h
+  src/ui/HomePage.h
+  src/ui/InsightsCharts.h
   src/ui/SetupAssistant.h
   src/ui/setup/SetupPages.h
   src/ui/settings/SettingsPageSupport.h
@@ -622,6 +630,7 @@ set(SPEECHER_FRONTEND_MAC_SWIFT_SOURCES
   src/frontend/mac/swift/AppModel.swift
   src/frontend/mac/swift/Collections.swift
   src/frontend/mac/swift/DictationPanel.swift
+  src/frontend/mac/swift/HomePane.swift
   src/frontend/mac/swift/MenuBarExtra.swift
   src/frontend/mac/swift/Panes.swift
   src/frontend/mac/swift/Rows.swift
@@ -637,6 +646,7 @@ set(SPEECHER_FRONTEND_WIN_SOURCES
   src/frontend/win/CollectionEditor.cpp
   src/frontend/win/CustomRows.cpp
   src/frontend/win/DictationPanel.cpp
+  src/frontend/win/HomePage.cpp
   src/frontend/win/SettingsModel.cpp
   src/frontend/win/SettingsPage.cpp
   src/frontend/win/SettingsWindow.cpp
@@ -654,6 +664,7 @@ set(SPEECHER_FRONTEND_WIN_HEADERS
   src/frontend/win/CollectionEditor.h
   src/frontend/win/CustomRows.h
   src/frontend/win/DictationPanel.h
+  src/frontend/win/HomePage.h
   src/frontend/win/SettingsModel.h
   src/frontend/win/SettingsPage.h
   src/frontend/win/SettingsWindow.h
@@ -1277,6 +1288,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_dictation_session_refinement.cpp
     tests/test_refiners.cpp
     tests/test_vocabulary.cpp
+    tests/test_insights.cpp
     tests/test_provider_auth.cpp
     tests/test_claude_voice.cpp
     tests/test_codex_dictation.cpp
@@ -1352,6 +1364,7 @@ if(SPEECHER_BUILD_TESTS)
     dictation_session_refinement
     refiners
     vocabulary
+    insights
     provider_auth
     claude_voice
     codex_dictation

@@ -163,7 +163,7 @@ stored_shortcut() {
 
 # The settings window's AX name is the pane it shows, so any other window — an
 # alert, the updater — does not satisfy this.
-SETTINGS_PANE_TITLES='General|What.s New|Dictation|Shortcut|Text|Delivery|Apps|Vocabulary|Settings'
+SETTINGS_PANE_TITLES='Home|General|What.s New|Dictation|Shortcut|Text|Delivery|Apps|Vocabulary|Settings'
 
 settings_window_present() {
   local deadline=$((SECONDS + 20))

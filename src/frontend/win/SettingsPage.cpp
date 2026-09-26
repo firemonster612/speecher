@@ -468,6 +468,22 @@ TextBlock styledTextBlock(const QString &text, const wchar_t *styleKey)
 TextBlock secondaryTextBlock(const QString &text, const wchar_t *styleKey, const PaneHost &host)
 {
     TextBlock block = styledTextBlock(text, styleKey);
+    if (const auto brush = themeBrush(L"SettingsCardDescriptionForeground", host)) {
+        block.Foreground(brush);
+    }
+    return block;
+}
+
+bool highContrastOn()
+{
+    HIGHCONTRASTW contrast{};
+    contrast.cbSize = sizeof(contrast);
+    return SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0)
+        && (contrast.dwFlags & HCF_HIGHCONTRASTON);
+}
+
+winrt::Microsoft::UI::Xaml::Media::Brush themeBrush(const wchar_t *key, const PaneHost &host)
+{
     const ElementTheme theme = host.effectiveTheme ? host.effectiveTheme()
                                                    : ElementTheme::Default;
     // A contrast theme overrides Light/Dark: XAML resolves ThemeResource from
@@ -479,12 +495,7 @@ TextBlock secondaryTextBlock(const QString &text, const wchar_t *styleKey, const
     // here — the explicit RequestedTheme pins ActualTheme, so
     // ActualThemeChanged never fires for it; the correct brush arrives on the
     // next rebuild or reopen.
-    HIGHCONTRASTW contrast{};
-    contrast.cbSize = sizeof(contrast);
-    const bool highContrast =
-        SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0)
-        && (contrast.dwFlags & HCF_HIGHCONTRASTON);
-    const hstring themeKey = highContrast ? L"HighContrast"
+    const hstring themeKey = highContrastOn() ? L"HighContrast"
         : theme == ElementTheme::Light   ? L"Light"
                                          : L"Dark";
     // The style dictionary is the merged dictionary that carries our theme
@@ -495,13 +506,12 @@ TextBlock secondaryTextBlock(const QString &text, const wchar_t *styleKey, const
             continue;
         }
         const auto dictionary = themes.Lookup(box_value(themeKey)).as<ResourceDictionary>();
-        if (const auto brush = dictionary.TryLookup(
-                box_value(L"SettingsCardDescriptionForeground"))) {
-            block.Foreground(brush.as<winrt::Microsoft::UI::Xaml::Media::Brush>());
+        if (const auto brush = dictionary.TryLookup(box_value(key))) {
+            return brush.as<winrt::Microsoft::UI::Xaml::Media::Brush>();
         }
         break;
     }
-    return block;
+    return nullptr;
 }
 
 void detachFromParent(const UIElement &element)

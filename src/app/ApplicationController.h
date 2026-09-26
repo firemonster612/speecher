@@ -2,11 +2,14 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 
+#include <QDate>
 #include <QElapsedTimer>
 #include <QObject>
 
 #include "app/SingleInstanceIpc.h"
+#include "core/DictationRecord.h"
 #include "core/ShortcutBinding.h"
 
 class QLocalSocket;
@@ -21,6 +24,7 @@ class FileTranscriptionSession;
 struct TranscribeOptions;
 class AudioInput;
 class GlobalShortcutBinder;
+class InsightsLog;
 class ProviderRegistry;
 class SecretStore;
 class SettingsStore;
@@ -57,6 +61,16 @@ public:
     bool popupOnly() const;
     SettingsStore *settings() const;
     UpdateController *updates() const;
+    InsightsLog *insightsLog() const;
+    // The day Home summarizes up to. SPEECHER_INSIGHTS_TODAY pins it for
+    // screenshots, so front ends ask here rather than reading the clock.
+    QDate insightsToday() const;
+    // What insights recorded of the last delivered transcript: its app and
+    // day. Empty while insights did not record it.
+    const std::optional<DictationRecord> &lastRecord() const;
+    // The Clear insights history action, once the person has confirmed it.
+    // False when the history file could not be deleted.
+    bool clearInsights();
     QString pendingWhatsNewVersion() const;
     void clearPendingWhatsNew();
     SecretStore *secretStore() const;
@@ -130,6 +144,7 @@ signals:
     void statusChanged(const QString &status);
     void previewChanged(const QString &preview);
     void transcriptDelivered(const QString &text);
+    void lastRecordChanged();
     void audioLevelChanged(float level);
     void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
     void globalShortcutChanged();
@@ -141,6 +156,7 @@ signals:
     void quitRequested();
 
 private:
+    void forgetLastRecord();
     void startWithMicrophone(std::function<void()> start);
     void runDeferredStartup();
     bool ensureSetupCompleted();
@@ -163,6 +179,9 @@ private:
     QStringList m_pendingTranscribeFiles;
     bool m_filesOpened = false;
     UpdateController *m_updates = nullptr;
+    InsightsLog *m_insightsLog = nullptr;
+    std::optional<DictationRecord> m_lastRecord;
+    QDate m_insightsToday;
     GlobalShortcutBinder *m_shortcutBinder = nullptr;
     SingleInstanceIpc *m_ipc = nullptr;
     bool m_accessibilitySupported = false;

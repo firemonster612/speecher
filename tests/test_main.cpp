@@ -150,6 +150,7 @@ int main(int argc, char **argv)
     if (selected("dictation_session_refinement")) result |= runDictationSessionRefinementTests(argc, argv);
     if (selected("refiners")) result |= runRefinersTests(argc, argv);
     if (selected("vocabulary")) result |= runVocabularyTests(argc, argv);
+    if (selected("insights")) result |= runInsightsTests(argc, argv);
     if (selected("provider_auth")) result |= runProviderAuthTests(argc, argv);
     if (selected("claude_voice")) result |= runClaudeVoiceTests(argc, argv);
     if (selected("codex_dictation")) result |= runCodexDictationTests(argc, argv);
