@@ -63,7 +63,7 @@ int roundHalfUp(double value)
 struct DayTotals {
     int dictations = 0;
     int words = 0;
-    int audioMs = 0;
+    qint64 audioMs = 0;
 };
 
 QMap<QDate, DayTotals> byDay(const QList<DictationRecord> &records)

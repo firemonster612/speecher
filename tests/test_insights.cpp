@@ -249,6 +249,16 @@ private slots:
         QVERIFY(!year.dictationsDelta);
     }
 
+    void audioTotalsPastIntMaxDoNotOverflow()
+    {
+        // 25 dictations of 100,000,000 ms: 2.5 billion ms, above INT_MAX.
+        const QList<DictationRecord> records(25, recordOn(kToday, 10, 100'000'000));
+        const InsightsSummary summary = summarize(records, InsightsRange::AllTime, kToday);
+        QCOMPARE(summary.audioMs, 2'500'000'000LL);
+        QCOMPARE(summary.averageAudioMs, 100'000'000);
+        QCOMPARE(summary.heatmap.last().audioMs, 2'500'000'000LL);
+    }
+
     void noDeltaWhenThePreviousPeriodIsEmpty()
     {
         const InsightsSummary summary =

@@ -22,7 +22,7 @@ struct HeatmapDay {
     QDate date;
     int dictations = 0;
     int words = 0;
-    int audioMs = 0;
+    qint64 audioMs = 0;
 };
 
 struct AppShare {
@@ -57,7 +57,7 @@ struct InsightsSummary {
     // The period.
     int words = 0;
     int dictations = 0;
-    int audioMs = 0;
+    qint64 audioMs = 0;
     int activeDays = 0;
     int averageAudioMs = 0;
     double dictationsPerActiveDay = 0;
